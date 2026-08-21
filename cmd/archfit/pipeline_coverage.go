@@ -7,8 +7,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -107,38 +110,43 @@ func buildPrimaryToolProjectMarkers() map[string][]string {
 // services/api/go.mod repo answers "no Go here", which turns a real analyzer
 // failure into "language not present" — the one absent shape both --base and
 // `config compare` read as safely comparable.
-var primaryToolProjectProbe = map[string]func(root string) bool{
+var primaryToolProjectProbe = map[string]func(root string, exclusions []string) bool{
 	toolGoPackages: goProjectPresent,
 }
 
 // primaryProjectPresent reports whether the language behind a primary coverage
 // tool is present under root, using the analyzer's own discovery shape.
-func primaryProjectPresent(tool, root string, markers []string) bool {
+// exclusions are the run's EFFECTIVE exclusion globs (defaults merged with
+// config) — the same set the extractors filter on.
+func primaryProjectPresent(tool, root string, markers, exclusions []string) bool {
 	if probe, ok := primaryToolProjectProbe[tool]; ok {
-		return probe(root)
+		return probe(root, exclusions)
 	}
 	return projectMarkerPresent(root, markers)
 }
 
-// goProjectPresent reports whether any go.mod exists at or under root. A go.work
-// above root is deliberately NOT evidence: when it lists members inside root
-// those members carry their own go.mod (the walk finds them), and when it lists
-// none, Go is not in this scan root at all.
-func goProjectPresent(root string) bool {
-	return markerInTree(root, markerGoMod)
+// goProjectPresent reports whether any go.mod the Go extractor would actually
+// load exists at or under root. A go.work above root is deliberately NOT
+// evidence: when it lists members inside root those members carry their own
+// go.mod (the walk finds them), and when it lists none, Go is not in this scan
+// root at all.
+func goProjectPresent(root string, exclusions []string) bool {
+	return markerInTree(root, markerGoMod, exclusions)
 }
 
-// markerWalkPrune are directory names the marker walk never descends. Pruning
-// bounds the walk; it is not a correctness filter. A marker found in a fixture
-// directory only over-reports the language, which yields a coverage gap — the
-// conservative direction — never a false "language absent".
-var markerWalkPrune = map[string]struct{}{
-	"node_modules": {}, "vendor": {}, "target": {}, "dist": {}, "build": {},
-}
-
-// markerInTree reports whether marker exists in root or any non-pruned
-// directory under it. Stops at the first hit.
-func markerInTree(root, marker string) bool {
+// markerInTree reports whether marker exists in root or any directory under it
+// that the run's exclusions do not remove. Stops at the first hit.
+//
+// The exclusion check is a CORRECTNESS filter, not a bound: a marker the
+// extractor excludes but this walk counts makes the analyzer's "absent" read as
+// a coverage gap instead of "the language is not here", which turns the whole
+// origin delta inert (`--base`) or not-comparable (`config compare`). It is
+// applied to the marker's repo-relative path with the same doublestar matcher
+// the extractors use, so a `go.mod` under `testdata/` or an excluded subtree
+// cannot be counted. Directory pruning is derived from the same globs and is
+// only a walk bound.
+func markerInTree(root, marker string, exclusions []string) bool {
+	prune := scope.ExcludedDirNames(exclusions)
 	found := false
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || !d.IsDir() {
@@ -146,17 +154,32 @@ func markerInTree(root, marker string) bool {
 		}
 		if path != root {
 			name := d.Name()
-			if _, pruned := markerWalkPrune[name]; pruned || strings.HasPrefix(name, ".") {
+			if _, pruned := prune[name]; pruned || strings.HasPrefix(name, ".") {
 				return fs.SkipDir
 			}
 		}
-		if _, statErr := os.Stat(filepath.Join(path, marker)); statErr == nil {
-			found = true
-			return fs.SkipAll
+		if _, statErr := os.Stat(filepath.Join(path, marker)); statErr != nil {
+			return nil
 		}
-		return nil
+		rel, relErr := filepath.Rel(root, filepath.Join(path, marker))
+		if relErr != nil || matchesAnyGlob(exclusions, filepath.ToSlash(rel)) {
+			return nil
+		}
+		found = true
+		return fs.SkipAll
 	})
 	return found
+}
+
+// matchesAnyGlob reports whether path matches any of the exclusion globs, using
+// the same matcher the extractors apply to their own relative paths.
+func matchesAnyGlob(globs []string, path string) bool {
+	for _, g := range globs {
+		if matched, _ := doublestar.Match(g, path); matched {
+			return true
+		}
+	}
+	return false
 }
 
 // projectMarkerPresent reports whether any of the given project-marker filenames
@@ -192,6 +215,11 @@ func projectMarkerPresent(root string, markers []string) bool {
 // gate on that tool overrides the suppression — except gate: off, which is a
 // deliberate opt-out and never produces an install prompt.
 func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string) []diagnostic.CoverageGap {
+	// The EFFECTIVE exclusions, so the marker probe agrees with the extractors:
+	// a marker they never see must not become evidence the language is present.
+	// MergeExclusions is set-based and idempotent, so re-merging an already
+	// merged cfg.Exclude is a no-op.
+	exclusions := scope.MergeExclusions(cfg.Exclude)
 	var gaps []diagnostic.CoverageGap
 	for _, c := range cov {
 		// Only truly absent tools produce a gap. Disabled-by-config tools are an
@@ -225,7 +253,7 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 			default:
 				if markers, ok := primaryToolProjectMarkers[c.Tool]; ok {
 					lang := primaryToolLanguage[c.Tool]
-					if cfg.ToolGate(lang) == "" && !primaryProjectPresent(c.Tool, root, markers) {
+					if cfg.ToolGate(lang) == "" && !primaryProjectPresent(c.Tool, root, markers, exclusions) {
 						continue
 					}
 				}

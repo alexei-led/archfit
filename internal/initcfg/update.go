@@ -33,6 +33,11 @@ type NameDrift struct {
 	ConfigName     string
 	DiscoveredName string
 	Paths          []string
+	// Existing is the configured stanza the drift was built from. It is carried
+	// so ResolveNameDrift can run the per-module field checks over it: the
+	// stanza is real config with real settings, and DiffModules skipped it only
+	// because name-only matching had put it in Removed.
+	Existing ExistingModule
 }
 
 // UpdateReport is the result of DiffModules.
@@ -126,6 +131,10 @@ func pathSetsEqual(a, b []string) bool {
 //     sorted by module then code. Modules with no paths classify nothing and are
 //     skipped, mirroring config.Config.Lint; Unclassified keeps them.
 //
+// Issues and Unclassified are PROVISIONAL here: they cover only the modules
+// discovery matched by name. ResolveNameDrift recomputes both once it knows
+// which Removed entries were merely renamed — call it before reading either.
+//
 // Narrowing Unclassified also narrows what `--ai-classify` targets, deliberately:
 // `layer:` is read only by the forbidden_layer_direction rule, so proposing one
 // for a config without that rule adds a field nothing consumes.
@@ -177,12 +186,35 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool
 	}
 	sort.Slice(drift, func(i, j int) bool { return drift[i].Name < drift[j].Name })
 
-	var unclassified []string
-	var issues []ModuleIssue
+	var checked []ExistingModule
 	for _, e := range existing {
 		if _, isRemoved := removedSet[e.Name]; isRemoved {
 			continue
 		}
+		checked = append(checked, e)
+	}
+	unclassified, issues := checkModuleFields(checked, requireLayer)
+
+	return UpdateReport{
+		Added:            added,
+		Removed:          removed,
+		PathDrift:        drift,
+		Unclassified:     unclassified,
+		Issues:           issues,
+		StructuralInSync: len(added) == 0 && len(removed) == 0 && len(drift) == 0,
+	}
+}
+
+// checkModuleFields runs the per-module config-quality checks over the modules
+// discovery accounts for, returning the sorted Unclassified names and Issues.
+//
+// It is a function rather than an inline loop because the set it runs over is
+// only final AFTER ResolveNameDrift: DiffModules matches by name, so a stanza
+// discovery merely names differently starts out in Removed and would otherwise
+// never be checked. `issues: []` must mean "checked and clean", never "not
+// evaluated".
+func checkModuleFields(mods []ExistingModule, requireLayer bool) (unclassified []string, issues []ModuleIssue) {
+	for _, e := range mods {
 		missingVolatilityInput := !e.HasSubdomain && !e.HasVolatility
 		missingLayer := requireLayer && !e.HasLayer
 		if missingVolatilityInput || missingLayer {
@@ -214,15 +246,7 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool
 		}
 		return issues[i].Code < issues[j].Code
 	})
-
-	return UpdateReport{
-		Added:            added,
-		Removed:          removed,
-		PathDrift:        drift,
-		Unclassified:     unclassified,
-		Issues:           issues,
-		StructuralInSync: len(added) == 0 && len(removed) == 0 && len(drift) == 0,
-	}
+	return unclassified, issues
 }
 
 // ResolveNameDrift reclassifies every Added/Removed pair that owns exactly the
@@ -240,9 +264,15 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool
 // bucket: guessing which stanza a key belongs to is exactly the failure mode
 // this pass exists to prevent.
 //
-// The returned report keeps every other field; Added, Removed, NameDrift, and
-// StructuralInSync are recomputed. Pure: no I/O, deterministic order.
-func ResolveNameDrift(r UpdateReport) UpdateReport {
+// The returned report keeps every other field; Added, Removed, NameDrift,
+// StructuralInSync, Issues, and Unclassified are recomputed.
+//
+// Issues and Unclassified have to be recomputed here because DiffModules skips
+// everything in Removed, and a name-drifted stanza sat there: on this repo's own
+// reference config that left 30 of 45 modules unevaluated while the document
+// still reported `issues: []`. requireLayer must be the same value DiffModules
+// was called with. Pure: no I/O, deterministic order.
+func ResolveNameDrift(r UpdateReport, requireLayer bool) UpdateReport {
 	addedByPaths := uniquePathKeyIndex(len(r.Added), func(i int) []string { return r.Added[i].Paths })
 	removedByPaths := uniquePathKeyIndex(len(r.Removed), func(i int) []string { return r.Removed[i].Paths })
 
@@ -270,6 +300,7 @@ func ResolveNameDrift(r UpdateReport) UpdateReport {
 			ConfigName:     r.Removed[ri].Name,
 			DiscoveredName: def.Name,
 			Paths:          normalizePaths(def.Paths),
+			Existing:       r.Removed[ri],
 		})
 	}
 
@@ -285,7 +316,33 @@ func ResolveNameDrift(r UpdateReport) UpdateReport {
 	out.Removed = removed
 	out.NameDrift = drift
 	out.StructuralInSync = len(added) == 0 && len(removed) == 0 && len(drift) == 0 && len(r.PathDrift) == 0
+	out.Unclassified, out.Issues = mergeDriftFieldChecks(r, drift, requireLayer)
 	return out
+}
+
+// mergeDriftFieldChecks re-runs the per-module field checks over the stanzas
+// name-drift just rescued from Removed and merges them into the report's
+// existing results, keeping both lists sorted and duplicate-free.
+func mergeDriftFieldChecks(r UpdateReport, drift []NameDrift, requireLayer bool) ([]string, []ModuleIssue) {
+	mods := make([]ExistingModule, 0, len(drift))
+	for _, d := range drift {
+		mods = append(mods, d.Existing)
+	}
+	driftUnclassified, driftIssues := checkModuleFields(mods, requireLayer)
+	if len(driftUnclassified) == 0 && len(driftIssues) == 0 {
+		return r.Unclassified, r.Issues
+	}
+
+	unclassified := append(append([]string{}, r.Unclassified...), driftUnclassified...)
+	issues := append(append([]ModuleIssue{}, r.Issues...), driftIssues...)
+	sort.Strings(unclassified)
+	sort.SliceStable(issues, func(i, j int) bool {
+		if issues[i].Module != issues[j].Module {
+			return issues[i].Module < issues[j].Module
+		}
+		return issues[i].Code < issues[j].Code
+	})
+	return unclassified, issues
 }
 
 // uniquePathKeyIndex maps each normalized path set to the single index that owns

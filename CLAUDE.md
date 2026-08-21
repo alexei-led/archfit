@@ -136,36 +136,45 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   gapless-`absent` PRIMARY, which means the language is not in that tree. A
   gapless `absent` on a NON-primary analyzer is evidence about the tool, not the
   tree, so it pairs only with itself — symmetric absence is safe (neither side
-  produced findings), asymmetric absence is not. `absent` with a coverage gap,
-  timed out, a missing row, and a duplicate row are all unavailable evidence.
+  produced findings), asymmetric absence is not. A timeout, a missing row, and a
+  duplicate row are all unavailable evidence.
   `comparison_status: comparable` can still ship with non-empty
   `comparison_reasons`: the status reports task placement, the reasons report
   evidence.
   **Shared with `config compare`'s `decision.gradeTool` (keep these three in
   step):** one row per tool per side, so a repeated coverage name is unpairable;
   the coverage-gap condition is PER SIDE, so a gap on one side only is an
-  asymmetry; symmetric absence of a non-primary analyzer never blocks. The two
-  paths deliberately DIFFER twice, because `--base` compares two trees and
-  `config compare` compares one: (a) `ok` vs gapless-`absent` primary is
-  comparable for `--base` (a language appearing is expected) but
-  `not_comparable` for `config compare` (a status change on one tree is
-  config-caused); (b) symmetric `absent`-WITH-a-gap is `comparable_with_gaps`
-  for `config compare` (shared blindness) but unavailable for `--base` (the
-  stricter side; both err safe).
-- **`partial` means two different things and `Coverage.Unresolved` separates
-  them.** dependency-cruiser and grimp mark a COMPLETED run partial as soon as
-  one import specifier anywhere fails to resolve (`Unresolved > 0`) — the normal
-  steady state on any TS/Python repo, which `score.tsUnresolvedRatioCeiling`
-  already tolerates to 10%. Every other partial producer (a failed extractor in
-  `engine.extract`, a rejected ast-grep rule file, an empty SCIP index, a failed
-  jscpd run) builds its Coverage without that field, so `Unresolved == 0` means
-  "did not finish". Both pairing paths split on exactly that: a SYMMETRIC
+  asymmetry; symmetric absence never blocks, gapped or not. Symmetric
+  `absent`-WITH-a-gap (an enabled analyzer whose tool is not installed) pairs on
+  BOTH paths — `comparable_with_gaps` in `decision.gradeTool`,
+  `familyPairedDegradedAbsent` in `pairFamily`, always with a disclosed reason.
+  Failing it made `--base` permanently all-`unknown` for a whole class of
+  environments, including archfit's own runtime image (no Rust toolchain) on any
+  repo carrying a `Cargo.toml`. The two paths deliberately DIFFER once, because
+  `--base` compares two trees and `config compare` compares one: `ok` vs
+  gapless-`absent` primary is comparable for `--base` (a language appearing is
+  expected) but `not_comparable` for `config compare` (a status change on one
+  tree is config-caused).
+- **`partial` means two different things and the TOOL NAME separates them, not
+  `Coverage.Unresolved`** (`decision.PartialFromUnresolvedSpecifiers`, the single
+  predicate both pairing paths call). dependency-cruiser and grimp mark a
+  COMPLETED run partial as soon as one import specifier anywhere fails to resolve
+  — the normal steady state on any TS/Python repo, which
+  `score.tsUnresolvedRatioCeiling` already tolerates to 10%. `go/packages` ALSO
+  sets `Unresolved`, but there it counts whole packages it SKIPPED because they
+  failed to load (`collectNodesEdges`, synthetic-error packages), which is the
+  "did not finish" meaning and must never grade comparable — so `Unresolved > 0`
+  is not a completion marker and never was. Every remaining partial producer (a
+  failed extractor in `engine.extract`, a rejected ast-grep rule file, an empty
+  SCIP index, a failed jscpd run) leaves `Unresolved` at zero. A SYMMETRIC
   unresolved-specifier partial pairs (`comparable_with_gaps` in
-  `decision.gradeTool`, `familyPairedDegraded` in `pairFamily`) and always
-  discloses a reason; everything else partial, plus timed-out, stays unavailable.
-  Treating all partial as unusable made both features permanently inert on
-  TypeScript and Python. Keep the invariant when adding a partial producer: set
-  `Unresolved` only for a run that completed.
+  `decision.gradeTool`, `familyPairedDegradedUnresolved` in `pairFamily`) and
+  always discloses a reason CARRYING BOTH MAGNITUDES — the rule is
+  magnitude-blind, so `3 unresolved` and `5000/6000 unresolved` must be
+  distinguishable in the output. Treating all partial as unusable made both
+  features permanently inert on TypeScript and Python. When adding a
+  specifier-granular extractor, add its coverage name to
+  `PartialFromUnresolvedSpecifiers`.
 - **Extractor-failure coverage rows use `CoverageTool()`, not `Name()`**
   (`ports.Extractor`, `engine.extract`). A failed `Extract` returns a zero
   Coverage, so the engine stamps the row itself; filing it under the language

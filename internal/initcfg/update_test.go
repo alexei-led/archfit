@@ -97,13 +97,13 @@ func TestDiffModules(t *testing.T) {
 		{
 			name: "removed-and-unclassified: removed module excluded from Unclassified",
 			existing: []ExistingModule{
-				ex("gone", false, false, false, "gone/**"), // removed AND missing all fields
+				ex(testGone, false, false, false, "gone/**"), // removed AND missing all fields
 			},
 			fresh: nil,
 			want: UpdateReport{
-				Removed:          []ExistingModule{ex("gone", false, false, false, "gone/**")},
+				Removed:          []ExistingModule{ex(testGone, false, false, false, "gone/**")},
 				StructuralInSync: false,
-				// Unclassified must be nil/empty — "gone" is removed
+				// Unclassified must be nil/empty — testGone is removed
 			},
 		},
 		{
@@ -310,9 +310,19 @@ func TestResolveNameDrift(t *testing.T) {
 		},
 	}
 
+	// driftNames strips the carried ExistingModule so a case can state only the
+	// naming pair it is about.
+	driftNames := func(drift []NameDrift) []NameDrift {
+		out := make([]NameDrift, 0, len(drift))
+		for _, d := range drift {
+			out = append(out, NameDrift{ConfigName: d.ConfigName, DiscoveredName: d.DiscoveredName, Paths: d.Paths})
+		}
+		return out
+	}
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ResolveNameDrift(tc.in)
+			got := ResolveNameDrift(tc.in, false)
 			if tc.wantUntouched {
 				if !reflect.DeepEqual(got, tc.in) {
 					t.Fatalf("report must be returned unchanged:\n  got  %#v\n  want %#v", got, tc.in)
@@ -325,12 +335,71 @@ func TestResolveNameDrift(t *testing.T) {
 			if names := existingModuleNames(got.Removed); !reflect.DeepEqual(names, tc.wantRemoved) {
 				t.Errorf("Removed: got %v, want %v", names, tc.wantRemoved)
 			}
-			if !reflect.DeepEqual(got.NameDrift, tc.wantDrift) {
+			// Compared on the naming fields only: NameDrift also carries the
+			// source ExistingModule so the per-module field checks can run over it.
+			if !reflect.DeepEqual(driftNames(got.NameDrift), tc.wantDrift) {
 				t.Errorf("NameDrift:\n  got  %#v\n  want %#v", got.NameDrift, tc.wantDrift)
+			}
+			for _, d := range got.NameDrift {
+				if d.Existing.Name != d.ConfigName {
+					t.Errorf("NameDrift must carry the configured stanza it was built from: %#v", d)
+				}
 			}
 			if got.StructuralInSync != tc.wantInSync {
 				t.Errorf("StructuralInSync: got %v, want %v", got.StructuralInSync, tc.wantInSync)
 			}
 		})
 	}
+
+	// DiffModules matches by NAME and skips everything it put in Removed, so a
+	// stanza discovery merely names differently was never field-checked: on this
+	// repo's own reference config that left 30 of 45 modules unevaluated while
+	// the document still reported `issues: []`. "Not evaluated" must never render
+	// as "clean".
+	t.Run("a name-drifted stanza is field-checked like any other", func(t *testing.T) {
+		existing := []ExistingModule{
+			{Name: "internal/api", Paths: []string{"internal/api/**"}},                 // no owner, no volatility input
+			{Name: "internal/db", Paths: []string{"internal/db/**"}, HasOwner: true},   // no volatility input
+			{Name: "kept", Paths: []string{"kept/**"}, HasOwner: true, HasLayer: true}, // no volatility input
+			{Name: testGone, Paths: []string{"gone/**"}},                               // discovery does not emit it
+		}
+		fresh := []ModuleDef{
+			mod("api", "internal/api/**"),
+			mod("db", "internal/db/**"),
+			mod("kept", "kept/**"),
+		}
+		requireLayer := true
+		got := ResolveNameDrift(DiffModules(existing, fresh, requireLayer), requireLayer)
+
+		want := []string{
+			"internal/api|" + IssueMissingLayer,
+			"internal/api|" + IssueMissingOwner,
+			"internal/api|" + IssueMissingVolatilityInput,
+			"internal/db|" + IssueMissingLayer,
+			"internal/db|" + IssueMissingVolatilityInput,
+			"kept|" + IssueMissingVolatilityInput,
+		}
+		gotKeys := make([]string, 0, len(got.Issues))
+		for _, i := range got.Issues {
+			gotKeys = append(gotKeys, i.Module+"|"+i.Code)
+		}
+		if !reflect.DeepEqual(gotKeys, want) {
+			t.Errorf("issues:\n  got  %v\n  want %v", gotKeys, want)
+		}
+		// The issue names the CONFIG key, which is what a human edits.
+		if !reflect.DeepEqual(got.Unclassified, []string{"internal/api", "internal/db", "kept"}) {
+			t.Errorf("unclassified = %v, want the config keys of every checked module", got.Unclassified)
+		}
+		// An unpaired removal is still not checked — discovery found no code for
+		// it — so it must be disclosed rather than silently counted as clean.
+		for _, i := range got.Issues {
+			if i.Module == testGone {
+				t.Errorf("an unmatched module must not be field-checked: %+v", i)
+			}
+		}
+		unchecked := BuildConfigReview(got).UncheckedModules
+		if len(unchecked) != 1 || unchecked[0].Module != testGone || unchecked[0].Reason == "" {
+			t.Errorf("unchecked_modules = %+v, want exactly the unmatched module with a reason", unchecked)
+		}
+	})
 }

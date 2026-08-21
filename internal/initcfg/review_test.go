@@ -238,7 +238,7 @@ func TestBuildConfigReview_EmptyListsMarshalAsArrays(t *testing.T) {
 	}
 	for _, key := range []string{
 		`"added_modules":[]`, `"removed_modules":[]`, `"path_drift":[]`, `"settings":[]`,
-		`"issues":[]`, `"deploy_units":[]`, `"distance_config":[]`,
+		`"issues":[]`, `"unchecked_modules":[]`, `"deploy_units":[]`, `"distance_config":[]`,
 	} {
 		if !strings.Contains(string(data), key) {
 			t.Errorf("missing empty array %s:\n%s", key, data)
@@ -334,7 +334,19 @@ func TestRenderReviewStatus(t *testing.T) {
 				Removed:   []ExistingModule{{Name: testGone}},
 				NameDrift: []NameDrift{{ConfigName: testGone, DiscoveredName: testSvc}},
 			},
-			want: "status: action_required — 1 module issue(s), 1 pending edit(s)\n",
+			// The unchecked-module clause is not decoration: Removed stanzas are
+			// never field-checked, so the issue count is a partial audit and the
+			// line has to say so.
+			want: "status: action_required — 1 module issue(s), 1 pending edit(s) (1 module(s) unchecked — discovery did not emit them)\n",
+		},
+		{
+			// Name drift alone leaves nothing unchecked: ResolveNameDrift rescues
+			// those stanzas and their fields are evaluated like any other.
+			name: "name drift alone leaves nothing unchecked",
+			report: UpdateReport{
+				NameDrift: []NameDrift{{ConfigName: testGone, DiscoveredName: testSvc}},
+			},
+			want: "status: review_available — nothing to apply; review items only\n",
 		},
 	}
 

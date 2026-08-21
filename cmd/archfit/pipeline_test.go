@@ -278,14 +278,35 @@ func testGoProjectMarkerGaps(t *testing.T) {
 	goMarkerTests := []struct {
 		name    string
 		goModAt string // repo-relative dir holding go.mod; "" = none
-		want    bool   // want a go/packages gap
+		exclude []string
+		want    bool // want a go/packages gap
 	}{
 		{name: "nested go.mod still produces a gap", goModAt: filepath.Join("services", "api"), want: true},
 		{name: "root go.mod produces a gap", goModAt: ".", want: true},
 		{name: "no go.mod anywhere suppresses the gap", goModAt: "", want: false},
-		// The walk prunes dependency and build directories so a vendored
-		// manifest cannot resurrect a language absent from the source tree.
-		{name: "go.mod under a pruned directory does not count", goModAt: filepath.Join("node_modules", "pkg"), want: false},
+		// The probe must agree with the extractors' EFFECTIVE exclusions. A marker
+		// they never see is not evidence the language is present: counting it
+		// turns a gapless absence (comparable) into absent-with-a-gap, which is
+		// the strictest evidence class on both comparison paths.
+		{name: "go.mod under a pruned dependency directory does not count", goModAt: filepath.Join("node_modules", "pkg"), want: false},
+		// scope.DefaultExclusions covers these two and the hand-written prune list
+		// did not — a fixture module under testdata/ is routine in Go repos.
+		{name: "go.mod under testdata does not count", goModAt: filepath.Join("testdata", "fixture"), want: false},
+		{name: "go.mod under reports does not count", goModAt: filepath.Join("reports", "snapshot"), want: false},
+		// A config exclusion names no single directory, so only a full-path match
+		// can honour it.
+		{
+			name:    "go.mod under a config-excluded subtree does not count",
+			goModAt: filepath.Join("services", "legacy"),
+			exclude: []string{"services/legacy/**"},
+			want:    false,
+		},
+		{
+			name:    "an unrelated config exclusion still leaves the gap",
+			goModAt: filepath.Join("services", "api"),
+			exclude: []string{"services/legacy/**"},
+			want:    true,
+		},
 	}
 	for _, tc := range goMarkerTests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -301,7 +322,8 @@ func testGoProjectMarkerGaps(t *testing.T) {
 				}
 			}
 			gaps := buildCoverageGaps(
-				[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, config.Config{}, root)
+				[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}},
+				config.Config{Exclude: tc.exclude}, root)
 			if gotGap := hasGapForTool(gaps, toolGoPackages); gotGap != tc.want {
 				t.Errorf("go/packages gap = %v, want %v (gaps: %+v)", gotGap, tc.want, gaps)
 			}

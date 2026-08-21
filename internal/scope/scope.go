@@ -108,6 +108,34 @@ func MergeExclusions(configured []string) []string {
 	return out
 }
 
+// ExcludedDirNames returns the directory names named by the `**/<name>/**`
+// exclusion globs in globs, as a set. It is the only honest way to turn
+// path-glob exclusions back into a directory-prune list for a filesystem walk,
+// so a walk that must agree with the extractors' exclusions derives its prune
+// set from here instead of hand-maintaining a second list (the recurring
+// "file-walk exclusion fragmentation" hazard).
+//
+// It is deliberately incomplete: a glob with a multi-segment or anchored body
+// (`**/pkg/mod/**`, `services/legacy/**`) names no single directory, so it is
+// skipped. A walk that needs those must still match full paths against the
+// globs; this only bounds which directories are worth descending into. Pure: no
+// filesystem access.
+func ExcludedDirNames(globs []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(globs))
+	for _, g := range globs {
+		body, ok := strings.CutPrefix(g, "**/")
+		if !ok {
+			continue
+		}
+		name, ok := strings.CutSuffix(body, "/**")
+		if !ok || name == "" || strings.Contains(name, "/") {
+			continue
+		}
+		out[name] = struct{}{}
+	}
+	return out
+}
+
 // ScopeMode distinguishes full-repo analysis from delta (diff-based) analysis.
 // The name is intentionally ScopeMode (not Mode) to match the design contract
 // shared across packages; the stutter is acceptable here.

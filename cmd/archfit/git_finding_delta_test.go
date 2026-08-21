@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/decision"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/module"
@@ -30,7 +31,105 @@ func TestGitFindingDelta(t *testing.T) {
 	t.Run("base_finding_ids", testGitDeltaBaseFindingIDs)
 	t.Run("effective_config", testGitDeltaEffectiveConfig)
 	t.Run("check_base_json", testGitDeltaCheckBaseJSON)
+	t.Run("cross_path_agreement", testGitDeltaCrossPathAgreement)
 }
+
+// testGitDeltaCrossPathAgreement drives ONE table of coverage shapes through
+// BOTH comparison paths — pairFamily here and decision.gradeTool behind
+// `config compare` — and asserts they reach the same verdict.
+//
+// Three review rounds found the same defect: the two paths graded one input
+// shape oppositely (symmetric partial-with-unresolved, then symmetric
+// absent-with-a-gap). Prose saying "keep these in step" did not stop it, so the
+// agreement is asserted mechanically. The ONE deliberate divergence is listed as
+// data, not left implicit.
+func testGitDeltaCrossPathAgreement(t *testing.T) {
+	t.Parallel()
+	partial := func(tool string, unresolved int) diagnostic.Coverage {
+		c := covRow(tool, diagnostic.StatusPartial)
+		c.Unresolved = unresolved
+		return c
+	}
+	gapFor := func(tool string) []diagnostic.CoverageGap { return []diagnostic.CoverageGap{{Tool: tool}} }
+
+	tests := []struct {
+		name       string
+		fam        analyzerFamily
+		head, base []diagnostic.Coverage
+		headGap    []diagnostic.CoverageGap
+		baseGap    []diagnostic.CoverageGap
+		// wantGit is `--base` comparability; wantDecision is `config compare`
+		// reaching anything better than not_comparable. They must be equal unless
+		// divergent says otherwise.
+		wantGit      bool
+		wantDecision bool
+		// divergent marks the one shape the two paths are SPECIFIED to grade
+		// differently, with the reason.
+		divergent string
+	}{
+		{name: "ok both sides", fam: scipFamily, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK)}, wantGit: true, wantDecision: true},
+		{name: "absent both sides, no gap", fam: scipFamily, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, wantGit: true, wantDecision: true},
+		{name: "absent both sides with a gap", fam: scipFamily, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, headGap: gapFor(toolScip), baseGap: gapFor(toolScip), wantGit: true, wantDecision: true},
+		{name: "absent gapped on one side only", fam: scipFamily, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, headGap: gapFor(toolScip), wantGit: false, wantDecision: false},
+		{name: "absent against ok", fam: scipFamily, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK)}, wantGit: false, wantDecision: false},
+		{name: "disabled both sides", fam: scipFamily, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusDisabled)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusDisabled)}, wantGit: true, wantDecision: true},
+		{name: "timed out both sides", fam: scipFamily, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusTimedOut)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusTimedOut)}, wantGit: false, wantDecision: false},
+		{name: "duplicate rows both sides", fam: scipFamily, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK), covRow(toolScip, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK), covRow(toolScip, diagnostic.StatusOK)}, wantGit: false, wantDecision: false},
+		{name: "specifier partial both sides", fam: analyzerFamily{name: toolDepCruiser}, head: []diagnostic.Coverage{partial(toolDepCruiser, 4)}, base: []diagnostic.Coverage{partial(toolDepCruiser, 9)}, wantGit: true, wantDecision: true},
+		{name: "specifier partial against ok", fam: analyzerFamily{name: toolDepCruiser}, head: []diagnostic.Coverage{partial(toolDepCruiser, 4)}, base: []diagnostic.Coverage{covRow(toolDepCruiser, diagnostic.StatusOK)}, wantGit: false, wantDecision: false},
+		{name: "partial with no unresolved count both sides", fam: analyzerFamily{name: toolDepCruiser}, head: []diagnostic.Coverage{covRow(toolDepCruiser, diagnostic.StatusPartial)}, base: []diagnostic.Coverage{covRow(toolDepCruiser, diagnostic.StatusPartial)}, wantGit: false, wantDecision: false},
+		// go/packages counts SKIPPED PACKAGES in Unresolved, so its partial is a
+		// run that did not finish — both paths must refuse it.
+		{name: "go/packages skipped-package partial both sides", fam: analyzerFamily{name: toolGoPackages, primary: true}, head: []diagnostic.Coverage{partial(toolGoPackages, 3)}, base: []diagnostic.Coverage{partial(toolGoPackages, 3)}, wantGit: false, wantDecision: false},
+		{
+			name: "ok against a gapless-absent primary",
+			fam:  analyzerFamily{name: toolGoPackages, primary: true},
+			head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)},
+			base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusAbsent)},
+			// --base compares two TREES, so a language appearing between them is
+			// expected; `config compare` compares ONE tree, so the same status move
+			// can only have been caused by the configuration.
+			wantGit: true, wantDecision: false,
+			divergent: "--base compares two trees, config compare compares one",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotGit, _ := compareAnalyzerEvidence([]analyzerFamily{tc.fam},
+				analyzerEvidence{Coverage: tc.head, Gaps: tc.headGap},
+				analyzerEvidence{Coverage: tc.base, Gaps: tc.baseGap})
+			if gotGit != tc.wantGit {
+				t.Fatalf("--base comparable = %v, want %v", gotGit, tc.wantGit)
+			}
+
+			var primary []string
+			if tc.fam.primary {
+				primary = []string{tc.fam.name}
+			}
+			cmp := decision.CompareConfigs(decision.ConfigCompareInput{
+				Current: decision.ConfigCompareSide{Diag: diagnostic.Diagnostic{
+					ToolCoverage: tc.head, CoverageGaps: tc.headGap, PrimaryExtractorTools: primary,
+				}},
+				Candidate: decision.ConfigCompareSide{Diag: diagnostic.Diagnostic{
+					ToolCoverage: tc.base, CoverageGaps: tc.baseGap, PrimaryExtractorTools: primary,
+				}},
+			})
+			gotDecision := cmp.Coverage.Status != decision.CoverageNotComparable
+			if gotDecision != tc.wantDecision {
+				t.Fatalf("config compare comparable = %v, want %v (status %q)", gotDecision, tc.wantDecision, cmp.Coverage.Status)
+			}
+			if tc.divergent == "" && gotGit != gotDecision {
+				t.Fatalf("the two comparison paths disagree on an undocumented shape: --base=%v, config compare=%v (%q)",
+					gotGit, gotDecision, cmp.Coverage.Status)
+			}
+		})
+	}
+}
+
+// scipFamily is the non-primary analyzer family the cross-path table compares on.
+var scipFamily = analyzerFamily{name: toolScip}
 
 // gitDeltaRef is the base ref label used by the pure-comparison subtests.
 const gitDeltaRef = "main"
@@ -248,6 +347,14 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 		c.Unresolved = n
 		return c
 	}
+	// goUnresolvedRow is NOT that shape: go/packages counts whole packages it
+	// SKIPPED because they failed to load, so its partial means the run did not
+	// finish over the tree.
+	goUnresolvedRow := func(n int) diagnostic.Coverage {
+		c := covRow(toolGoPackages, diagnostic.StatusPartial)
+		c.Unresolved = n
+		return c
+	}
 
 	tests := []struct {
 		name           string
@@ -271,6 +378,12 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 		{name: "symmetric unresolved partial is comparable and disclosed", fam: dcFam, head: []diagnostic.Coverage{unresolvedRow(4)}, base: []diagnostic.Coverage{unresolvedRow(9)}, want: true, degraded: true},
 		{name: "unresolved partial never pairs with ok", fam: dcFam, head: []diagnostic.Coverage{unresolvedRow(4)}, base: []diagnostic.Coverage{covRow(toolDepCruiser, diagnostic.StatusOK)}, want: false},
 		{name: "unresolved partial never pairs with a failed partial", fam: dcFam, head: []diagnostic.Coverage{unresolvedRow(4)}, base: []diagnostic.Coverage{covRow(toolDepCruiser, diagnostic.StatusPartial)}, want: false},
+		// go/packages sets Unresolved on a partial too, but there it counts whole
+		// packages it SKIPPED because they failed to load — the "did not finish"
+		// meaning. A symmetric Go partial must NOT read as shared incompleteness,
+		// or a base side with N unloaded packages produces a false "introduced".
+		{name: "go/packages skipped-package partial is unavailable on both sides", fam: goFam, head: []diagnostic.Coverage{goUnresolvedRow(3)}, base: []diagnostic.Coverage{goUnresolvedRow(3)}, want: false},
+		{name: "go/packages skipped-package partial never pairs with ok", fam: goFam, head: []diagnostic.Coverage{goUnresolvedRow(3)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, want: false},
 		{name: "timed out is unavailable", fam: goFam, head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusTimedOut)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, want: false},
 		{name: "missing row on one side is unavailable", fam: goFam, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, want: false},
 		{name: "missing row on both sides is unavailable", fam: goFam, want: false},
@@ -288,7 +401,26 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 		// absence means neither side produced one.
 		{name: "non-primary absent on one side only is unavailable", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, want: false},
 		{name: "non-primary absent on both sides is comparable", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, want: true},
-		{name: "non-primary absent with a coverage gap is unavailable", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, headGap: scipGap, bsGap: scipGap, want: false},
+		// CHANGED from want:false. An enabled analyzer whose tool is missing on
+		// the host reports absent WITH a gap on BOTH sides. Symmetric, that is the
+		// same safety argument as gapless symmetric absence — neither side ran it,
+		// so neither has a finding the other hides — and decision.gradeTool
+		// already grades it comparable_with_gaps. Failing it made --base
+		// permanently all-unknown wherever an enabled analyzer is uninstalled,
+		// including archfit's own runtime image on any repo with a Cargo.toml.
+		// It pairs DEGRADED: the shared blindness is always disclosed.
+		{name: "absent with a coverage gap on both sides is comparable and disclosed", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, headGap: scipGap, bsGap: scipGap, want: true, degraded: true},
+		{name: "primary absent with a coverage gap on both sides is comparable and disclosed", fam: goFam, head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusAbsent)}, headGap: goGap, bsGap: goGap, want: true, degraded: true},
+		// The gap is derived per side from that side's own tree, so a project
+		// marker ADDED by the change gaps head and not base. That asymmetry means
+		// the two sides are not equally blind and must never pair.
+		{name: "absent gapped on head only is unavailable", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, headGap: scipGap, want: false},
+		{name: "absent gapped on base only is unavailable", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, bsGap: scipGap, want: false},
+		{name: "absent gapped never pairs with ok", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK)}, headGap: scipGap, want: false},
+		{name: "absent gapped never pairs with a timeout", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusTimedOut)}, headGap: scipGap, want: false},
+		// A timeout is flaky, not structural: symmetry proves nothing about what
+		// either side would have found, so it stays unavailable on both sides.
+		{name: "timed out on both sides is still unavailable", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusTimedOut)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusTimedOut)}, want: false},
 		{name: "non-primary absent never pairs with ok", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK)}, want: false},
 	}
 
@@ -315,6 +447,26 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 			}
 		})
 	}
+
+	// The degraded pairing rule is magnitude-blind on purpose, so the reason it
+	// emits is the ONLY place the magnitude can appear. Without the numbers,
+	// 4 unresolved specifiers and 5000 of 6000 read identically.
+	t.Run("a degraded reason carries both sides' unresolved magnitudes", func(t *testing.T) {
+		t.Parallel()
+		heavy := unresolvedRow(5000)
+		heavy.SpecifiersSeen = 6000
+		ok, reasons := compareAnalyzerEvidence([]analyzerFamily{dcFam},
+			analyzerEvidence{Coverage: []diagnostic.Coverage{unresolvedRow(4)}},
+			analyzerEvidence{Coverage: []diagnostic.Coverage{heavy}})
+		if !ok || len(reasons) != 1 {
+			t.Fatalf("comparable=%v reasons=%v, want comparable with one reason", ok, reasons)
+		}
+		for _, want := range []string{"4 unresolved", "5000/6000 unresolved"} {
+			if !strings.Contains(reasons[0], want) {
+				t.Errorf("reason %q must contain %q", reasons[0], want)
+			}
+		}
+	})
 
 	t.Run("reasons are sorted and one per family", func(t *testing.T) {
 		t.Parallel()

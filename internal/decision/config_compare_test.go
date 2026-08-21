@@ -2,6 +2,7 @@ package decision_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/decision"
@@ -333,21 +334,38 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 	// specifier anywhere in the tree is unresolvable — the normal steady state,
 	// not a completion failure. Grading it not_comparable pinned every
 	// TypeScript and Python comparison to not_comparable forever.
-	unresolved := func(n int) diagnostic.Coverage {
-		c := cov(gapTool, diagnostic.StatusPartial)
+	//
+	// The TOOL NAME is the discriminator, not Unresolved > 0: go/packages sets
+	// Unresolved on a partial too, counting whole packages it SKIPPED because
+	// they failed to load. That is "did not finish" and must stay not_comparable.
+	unresolved := func(tool string, n int) diagnostic.Coverage {
+		c := cov(tool, diagnostic.StatusPartial)
 		c.Unresolved = n
 		return c
 	}
+	const (
+		specifierTool = "dependency-cruiser"
+		grimpTool     = "grimp"
+		goTool        = "go/packages"
+	)
 	partialPairs := []struct {
 		name               string
 		current, candidate diagnostic.Coverage
 		want               decision.CoverageComparability
 	}{
-		{"unresolved_both", unresolved(3), unresolved(7), decision.CoverageComparableWithGaps},
-		{"unresolved_current_only", unresolved(3), cov(gapTool, diagnostic.StatusPartial), decision.CoverageNotComparable},
-		{"unresolved_candidate_only", cov(gapTool, diagnostic.StatusPartial), unresolved(3), decision.CoverageNotComparable},
-		{"unresolved_vs_ok", unresolved(3), cov(gapTool, diagnostic.StatusOK), decision.CoverageNotComparable},
-		{"ok_vs_unresolved", cov(gapTool, diagnostic.StatusOK), unresolved(3), decision.CoverageNotComparable},
+		{"unresolved_both", unresolved(specifierTool, 3), unresolved(specifierTool, 7), decision.CoverageComparableWithGaps},
+		{"unresolved_both_grimp", unresolved(grimpTool, 3), unresolved(grimpTool, 7), decision.CoverageComparableWithGaps},
+		{"unresolved_current_only", unresolved(specifierTool, 3), cov(specifierTool, diagnostic.StatusPartial), decision.CoverageNotComparable},
+		{"unresolved_candidate_only", cov(specifierTool, diagnostic.StatusPartial), unresolved(specifierTool, 3), decision.CoverageNotComparable},
+		{"unresolved_vs_ok", unresolved(specifierTool, 3), cov(specifierTool, diagnostic.StatusOK), decision.CoverageNotComparable},
+		{"ok_vs_unresolved", cov(specifierTool, diagnostic.StatusOK), unresolved(specifierTool, 3), decision.CoverageNotComparable},
+		// go/packages counts SKIPPED PACKAGES in Unresolved, so a symmetric Go
+		// partial is two runs that both failed to load part of the tree — never
+		// comparable, however equal the two counts look.
+		{"go_packages_skipped_both", unresolved(goTool, 3), unresolved(goTool, 3), decision.CoverageNotComparable},
+		{"go_packages_skipped_vs_ok", unresolved(goTool, 3), cov(goTool, diagnostic.StatusOK), decision.CoverageNotComparable},
+		// Neither does any other partial producer that happens to set a count.
+		{"unknown_tool_unresolved_both", unresolved(gapTool, 3), unresolved(gapTool, 3), decision.CoverageNotComparable},
 	}
 	for _, tt := range partialPairs {
 		t.Run("partial_"+tt.name, func(t *testing.T) {
@@ -366,6 +384,30 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 			}
 		})
 	}
+
+	// The reason for a comparable_with_gaps partial pair must carry BOTH sides'
+	// magnitudes: the pairing rule is magnitude-blind, so 3 unresolved and
+	// 5000/6000 unresolved are indistinguishable without them. Current/Candidate
+	// stay the raw status — they are typed machine fields, not prose.
+	t.Run("partial_reason_carries_magnitudes", func(t *testing.T) {
+		cur := unresolved(specifierTool, 3)
+		cand := unresolved(specifierTool, 5000)
+		cand.SpecifiersSeen = 6000
+		got := decision.CompareConfigs(decision.ConfigCompareInput{
+			Current:   side([]diagnostic.Coverage{cur}, nil),
+			Candidate: side([]diagnostic.Coverage{cand}, nil),
+		}).Coverage
+		if len(got.Details) != 1 {
+			t.Fatalf("details = %+v, want exactly one", got.Details)
+		}
+		d := got.Details[0]
+		if !strings.Contains(d.Reason, "3 unresolved") || !strings.Contains(d.Reason, "5000/6000 unresolved") {
+			t.Errorf("reason must name both magnitudes, got %q", d.Reason)
+		}
+		if d.Current != diagnostic.StatusPartial || d.Candidate != diagnostic.StatusPartial {
+			t.Errorf("Current/Candidate must stay raw statuses, got %q/%q", d.Current, d.Candidate)
+		}
+	})
 }
 
 // TestCompareCoverage_RowCount pins the missing-row and duplicate-row rules,

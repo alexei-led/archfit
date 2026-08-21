@@ -103,11 +103,13 @@ stanza discards its `owner`, `subdomain`, `volatility`, `layer`, and `public`
 values, so both stay your decision. Neither raises the status to
 `action_required`; a report with only these reads `review_available`.
 
-Because the module-field checks run over stanzas discovery matched by name, a
-stanza listed under `name_drift` or `removed_modules` is not checked for
-`missing_owner`, `missing_volatility_input`, or `missing_layer`. Read a `0
-module issue(s)` line next to a long `name_drift` list as "not checked", not as
-"all clean".
+A `name_drift` stanza IS checked for `missing_owner`,
+`missing_volatility_input`, and `missing_layer` — only the key differs, the code
+is there. A `removed_modules` stanza is not: discovery found no code for it, so
+its fields describe nothing archfit can see. Every such module is listed in
+`unchecked_modules` (with the reason) in the JSON document and counted in the
+text status line, so an empty `issues` list is never a claim that every
+configured module was examined.
 
 ## Config update cannot edit module paths
 

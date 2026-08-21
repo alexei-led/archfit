@@ -10,10 +10,13 @@
 //     gate-vs-advisory promotion are ignored — the same seam keeps its ID.
 //   - An unmatched task is "introduced" only when every ACTIVE finding-producing
 //     analyzer family covered both sides equivalently. Missing, timed-out, or
-//     asymmetric evidence yields "unknown", never a false "introduced". A
-//     symmetric "partial" from unresolved import specifiers is the normal
-//     dependency-cruiser/grimp state, so it pairs — and says so in
-//     comparison_reasons.
+//     asymmetric evidence yields "unknown", never a false "introduced".
+//   - Two SYMMETRIC degradations still pair, because neither side could have
+//     produced a finding the other hid: a "partial" from unresolved import
+//     specifiers (the normal dependency-cruiser/grimp state) and an analyzer
+//     that was unavailable on both sides. Both stay comparable and both always
+//     name themselves in comparison_reasons — pairing them silently would trade
+//     one half of the defect for the other.
 //
 // Isolation: the only base-side inputs are finding IDs, coverage rows/gaps, and
 // the config hash (see baseEvidence in worktree.go). Base paths, locations, and
@@ -26,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/decision"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
@@ -46,6 +50,14 @@ const (
 	// It pairs only with itself: symmetric absence means neither side produced
 	// findings from this analyzer, which is safe; asymmetric absence is not.
 	evidenceAbsent
+	// evidenceAbsentGapped — an analyzer that config ENABLED reported absent and
+	// raised a coverage gap: the tool it needs is not installed. Symmetric, that
+	// is the same safety argument as evidenceAbsent — neither side ran it, so
+	// neither side has a finding the other could hide — so it pairs, in DEGRADED
+	// form, which discloses the shared blindness. Asymmetric it never pairs: the
+	// gap is derived per side from that side's own tree, so head-gapped /
+	// base-clean means the analyzer's absence is not shared.
+	evidenceAbsentGapped
 	// evidenceDisabled — the analyzer is turned off in config.
 	evidenceDisabled
 	// evidencePartialUnresolved — the analyzer ran over the whole tree and left
@@ -53,11 +65,14 @@ const (
 	// dependency-cruiser and grimp (one unresolvable specifier anywhere sets it),
 	// not a completion failure, so it must not read as "the analyzer did not
 	// run". It pairs only with itself: both sides ran, both are equally
-	// incomplete, and the degradation is disclosed in comparison_reasons.
+	// incomplete, and the degradation is disclosed in comparison_reasons with
+	// each side's magnitude.
 	evidencePartialUnresolved
-	// evidenceUnavailable — absent with a gap, timed out, or partial with no
-	// unresolved count: the analyzer could have produced findings and did not
-	// finish doing so.
+	// evidenceUnavailable — timed out, or partial from a run that did not finish
+	// (see decision.PartialFromUnresolvedSpecifiers): the analyzer could have
+	// produced findings and did not finish doing so, and unlike an uninstalled
+	// tool the failure is flaky rather than structural, so symmetry proves
+	// nothing. It pairs with nothing, including itself.
 	evidenceUnavailable
 )
 
@@ -222,9 +237,13 @@ func compareAnalyzerEvidence(fams []analyzerFamily, head, base analyzerEvidence)
 		switch pairFamily(h, b) {
 		case familyPaired:
 			continue
-		case familyPairedDegraded:
+		case familyPairedDegradedUnresolved:
 			reasons = append(reasons, fmt.Sprintf(
 				"%s: head %s, base %s — unresolved import specifiers on both sides", f.name, h.raw(), b.raw()))
+		case familyPairedDegradedAbsent:
+			reasons = append(reasons, fmt.Sprintf(
+				"%s: head %s, base %s — analyzer unavailable on both sides; neither run could report its findings",
+				f.name, h.raw(), b.raw()))
 		case familyUnpaired:
 			ok = false
 			reasons = append(reasons, fmt.Sprintf("%s: head %s, base %s", f.name, h.raw(), b.raw()))
@@ -237,7 +256,10 @@ func compareAnalyzerEvidence(fams []analyzerFamily, head, base analyzerEvidence)
 type familySummary struct {
 	statuses []evidenceStatus
 	// rawStatuses are the coverage rows' own status strings, sorted, for the
-	// human-readable reason. Empty when the family had no row at all.
+	// human-readable reason. Empty when the family had no row at all. A partial
+	// row carries its unresolved magnitude: the degraded pairing rule is
+	// magnitude-blind, so without the numbers nothing in the output separates a
+	// handful of unresolved specifiers from a repo-wide resolution failure.
 	rawStatuses []string
 }
 
@@ -259,10 +281,19 @@ func summariseFamily(f analyzerFamily, side analyzerEvidence) familySummary {
 			continue
 		}
 		out.statuses = append(out.statuses, normalizeCoverage(f, c, side.Gaps))
-		out.rawStatuses = append(out.rawStatuses, c.Status)
+		out.rawStatuses = append(out.rawStatuses, rawCoverageStatus(c))
 	}
 	sort.Strings(out.rawStatuses)
 	return out
+}
+
+// rawCoverageStatus renders one coverage row for a comparison reason: the status
+// alone, plus the unresolved magnitude when the row has one to report.
+func rawCoverageStatus(c diagnostic.Coverage) string {
+	if c.Status != diagnostic.StatusPartial || c.Unresolved <= 0 {
+		return c.Status
+	}
+	return fmt.Sprintf("%s (%s)", c.Status, decision.UnresolvedMagnitude(c))
 }
 
 // normalizeCoverage maps one coverage row to its comparability status.
@@ -273,9 +304,11 @@ func normalizeCoverage(f analyzerFamily, c diagnostic.Coverage, gaps []diagnosti
 	case diagnostic.StatusDisabled:
 		return evidenceDisabled
 	case diagnostic.StatusAbsent:
-		// With a coverage gap, an installable analyzer really did not run.
+		// With a coverage gap, an installable analyzer this config enabled really
+		// did not run. Decided before the primary check: an uninstalled tool is
+		// evidence about the HOST, so it reads the same for every family.
 		if hasGap(gaps, c.Tool) {
-			return evidenceUnavailable
+			return evidenceAbsentGapped
 		}
 		// Gapless absence means two different things. For a primary analyzer the
 		// project markers decided it: the language is not in this tree, so that
@@ -286,13 +319,10 @@ func normalizeCoverage(f analyzerFamily, c diagnostic.Coverage, gaps []diagnosti
 		}
 		return evidenceAbsent
 	case diagnostic.StatusPartial:
-		// Unresolved is the only structural discriminator between the two
-		// meanings of "partial". dependency-cruiser and grimp set it on a
-		// COMPLETED run that could not resolve every import specifier; every
-		// other partial producer (a failed extractor, a rejected ast-grep rule
-		// file, an empty SCIP index, a failed jscpd run) builds its Coverage
-		// without it. Keep that invariant when adding a partial producer.
-		if c.Unresolved > 0 {
+		// Shared with `config compare` so the two paths cannot grade one row
+		// differently. Note that Unresolved > 0 is NOT the discriminator on its
+		// own: go/packages also sets it, counting whole packages it skipped.
+		if decision.PartialFromUnresolvedSpecifiers(c) {
 			return evidencePartialUnresolved
 		}
 		return evidenceUnavailable
@@ -308,9 +338,12 @@ type familyPairing int
 const (
 	// familyPaired — the two sides rest on equivalent evidence.
 	familyPaired familyPairing = iota
-	// familyPairedDegraded — the two sides pair, but both ran with unresolved
-	// import specifiers. Comparable, and disclosed in comparison_reasons.
-	familyPairedDegraded
+	// familyPairedDegradedUnresolved — the two sides pair, but both ran with
+	// unresolved import specifiers. Comparable, and disclosed with magnitudes.
+	familyPairedDegradedUnresolved
+	// familyPairedDegradedAbsent — the two sides pair, but the analyzer was
+	// unavailable on both. Comparable, and disclosed in comparison_reasons.
+	familyPairedDegradedAbsent
 	// familyUnpaired — the evidence does not support attributing an origin.
 	familyUnpaired
 )
@@ -322,37 +355,53 @@ const (
 // neither can hide an origin. The only cross-status pair is ok against
 // not_applicable — that side genuinely has none of the language.
 //
-// Symmetric partial-with-unresolved pairs as DEGRADED rather than failing: for
-// dependency-cruiser and grimp that status is the normal steady state, and
-// treating it as unusable made the whole origin delta inert on every TypeScript
-// and Python repo. Both sides ran the same analyzer over the same tree, so the
-// blindness is shared — the residual risk is that a base counterpart hid behind
-// an unresolved specifier, which the disclosed reason exists to surface.
+// Two shapes pair as DEGRADED rather than failing, both because SYMMETRY is the
+// safety argument (neither side ran what the other could hide behind) and both
+// disclosed in comparison_reasons, never silently:
 //
-// A missing row, a duplicated row, and anything unavailable (absent with a gap,
-// timed out, partial with no unresolved count) are all unavailable evidence.
+//   - Symmetric partial-with-unresolved-specifiers. For dependency-cruiser and
+//     grimp that status is the normal steady state; treating it as unusable made
+//     the whole origin delta inert on every TypeScript and Python repo. The
+//     residual risk — a base counterpart hidden behind an unresolved specifier —
+//     is bounded only by the magnitudes the reason carries.
+//   - Symmetric absent-with-a-coverage-gap: an enabled analyzer whose tool is
+//     not installed on this host. Treating it as unusable made the delta inert
+//     for a whole class of environments, including archfit's own runtime image
+//     (no Rust toolchain) on any repo carrying a Cargo.toml. decision.gradeTool
+//     already grades this shape symmetric-comparable; the two paths must agree.
+//
+// Asymmetry never pairs in either shape. For the gapped case that matters
+// concretely: gaps are derived per side from that side's own tree, so a
+// Cargo.toml ADDED by the change gives head a gap and base none.
+//
+// A missing row, a duplicated row, a timeout, and a partial from a run that did
+// not finish are all unavailable evidence and pair with nothing.
 func pairFamily(head, base familySummary) familyPairing {
 	if head.rows() != 1 || base.rows() != 1 {
 		return familyUnpaired // a missing or duplicated coverage row is unavailable evidence
 	}
 	h, b := head.statuses[0], base.statuses[0]
-	if h == evidencePartialUnresolved || b == evidencePartialUnresolved {
+	switch {
+	case h == evidencePartialUnresolved || b == evidencePartialUnresolved:
 		if h == b {
-			return familyPairedDegraded
+			return familyPairedDegradedUnresolved
 		}
 		return familyUnpaired
-	}
-	if h == evidenceUnavailable || b == evidenceUnavailable {
+	case h == evidenceAbsentGapped || b == evidenceAbsentGapped:
+		if h == b {
+			return familyPairedDegradedAbsent
+		}
+		return familyUnpaired
+	case h == evidenceUnavailable || b == evidenceUnavailable:
+		return familyUnpaired
+	case h == b:
+		return familyPaired
+	case h == evidenceOK && b == evidenceNotApplicable,
+		h == evidenceNotApplicable && b == evidenceOK:
+		return familyPaired
+	default:
 		return familyUnpaired
 	}
-	if h == b {
-		return familyPaired
-	}
-	if (h == evidenceOK && b == evidenceNotApplicable) ||
-		(h == evidenceNotApplicable && b == evidenceOK) {
-		return familyPaired
-	}
-	return familyUnpaired
 }
 
 func hasGap(gaps []diagnostic.CoverageGap, tool string) bool {

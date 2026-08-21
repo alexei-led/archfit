@@ -221,13 +221,22 @@ const (
 	// reasonPartialBoth covers a symmetric partial that both sides earned by
 	// leaving import specifiers unresolved. The analyzer ran over the whole tree
 	// on both sides, so the incompleteness is shared and the comparison rests on
-	// it — with the loss stated.
+	// it — with the loss stated. partialBothReason appends each side's magnitude:
+	// the pairing rule is magnitude-blind, so the reason has to carry the numbers
+	// or nothing in the output distinguishes 3 unresolved from 5000.
 	reasonPartialBoth = "analyzer left import specifiers unresolved under both configurations"
 	// reasonAbsentAsymmetric covers equal absent rows where only one
 	// configuration reported a coverage gap: one side expected the analyzer to
 	// run and the other did not, so the blindness is not shared.
 	reasonAbsentAsymmetric = "analyzer absent, but only one configuration expected it to run"
 )
+
+// partialBothReason states the shared unresolved-specifier degradation with the
+// counts each side earned it with.
+func partialBothReason(cur, cand diagnostic.Coverage) string {
+	return fmt.Sprintf("%s (current %s, candidate %s)",
+		reasonPartialBoth, UnresolvedMagnitude(cur), UnresolvedMagnitude(cand))
+}
 
 // compareCoverage grades the union of analyzer names across both sides.
 func compareCoverage(current, candidate diagnostic.Diagnostic) ConfigCompareCoverage {
@@ -287,8 +296,8 @@ func gradeTool(
 	case diagnostic.StatusPartial:
 		// Both sides survived unstableStatus, so both ran fully and left import
 		// specifiers unresolved. Shared incompleteness over one tree — comparable,
-		// with the loss reported.
-		return CoverageComparableWithGaps, reasonPartialBoth, false
+		// with the loss reported, magnitudes included.
+		return CoverageComparableWithGaps, partialBothReason(c, d), false
 	case diagnostic.StatusAbsent:
 		// A coverage gap is per-side evidence: it says this configuration
 		// EXPECTED the analyzer to run. One side gapped and the other not is an
@@ -314,20 +323,57 @@ func gradeTool(
 	}
 }
 
-// unstableStatus reports whether a coverage row means the analyzer could have
-// produced findings and did not finish doing so.
+// Analyzers whose Coverage.Unresolved counts import SPECIFIERS a COMPLETED run
+// could not resolve. Named here rather than imported because the decision core
+// never depends on an adapter package — internal/score declares
+// "dependency-cruiser" the same way for the same reason.
+const (
+	toolDepCruiser = "dependency-cruiser"
+	toolGrimp      = "grimp"
+)
+
+// PartialFromUnresolvedSpecifiers reports whether a "partial" coverage row came
+// from a run that COMPLETED over the whole tree and merely left import
+// specifiers unresolved — the normal steady state for dependency-cruiser and
+// grimp, which one unresolvable specifier anywhere is enough to trigger.
 //
-// "partial" carries two meanings and Unresolved separates them: dependency-
-// cruiser and grimp set it on a COMPLETED run that could not resolve every
-// import specifier — the normal steady state — while every other partial
-// producer (a failed extractor, a rejected ast-grep rule file, an empty SCIP
-// index, a failed jscpd run) leaves Unresolved at zero. Keep that invariant when
-// adding a partial producer.
+// The tool name is the discriminator, not Unresolved > 0: go/packages sets
+// Unresolved too, but there it counts whole packages it SKIPPED because they
+// failed to load, which is exactly "the analyzer could have produced findings
+// and did not finish" and must never grade as comparable. Every remaining
+// partial producer (a rejected ast-grep rule file, an empty SCIP index, a failed
+// jscpd run) leaves Unresolved at zero and is unstable by that check alone.
+//
+// `analyze --base` reads this same function (cmd/archfit/git_finding_delta.go)
+// so the two comparison paths cannot grade one coverage row differently.
+func PartialFromUnresolvedSpecifiers(c diagnostic.Coverage) bool {
+	if c.Status != diagnostic.StatusPartial || c.Unresolved <= 0 {
+		return false
+	}
+	return c.Tool == toolDepCruiser || c.Tool == toolGrimp
+}
+
+// unstableStatus reports whether a coverage row means the analyzer could have
+// produced findings and did not finish doing so. Every partial that is not a
+// completed unresolved-specifier run counts, plus every timeout.
 func unstableStatus(c diagnostic.Coverage) bool {
 	if c.Status == diagnostic.StatusPartial {
-		return c.Unresolved == 0
+		return !PartialFromUnresolvedSpecifiers(c)
 	}
 	return c.Status == diagnostic.StatusTimedOut
+}
+
+// UnresolvedMagnitude renders one coverage row's unresolved count for a human
+// reason string, with the import-specifier denominator when the extractor tracks
+// one (only dependency-cruiser does). Without it, "3 unresolved" and "5000
+// unresolved" would be indistinguishable in the output that discloses the
+// degradation. Shared with the --base path for the same reason as
+// PartialFromUnresolvedSpecifiers.
+func UnresolvedMagnitude(c diagnostic.Coverage) string {
+	if c.SpecifiersSeen > 0 {
+		return fmt.Sprintf("%d/%d unresolved", c.Unresolved, c.SpecifiersSeen)
+	}
+	return fmt.Sprintf("%d unresolved", c.Unresolved)
 }
 
 // rowsByTool groups coverage rows by analyzer name, sorted by status within each

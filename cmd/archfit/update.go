@@ -78,11 +78,13 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}
 
-	// ResolveNameDrift runs before anything reads Added/Removed: the review
+	// ResolveNameDrift runs before anything reads Added/Removed/Issues: the review
 	// document, --ai-classify targets, and the apply edits must all see the same
-	// buckets, or the status names changes --apply would not make.
+	// buckets, or the status names changes --apply would not make — and the
+	// per-module field checks are only final once name drift is resolved.
+	requireLayer := requiresLayerClassification(cfg)
 	report := initcfg.ResolveNameDrift(
-		initcfg.DiffModules(existing, freshCfg.Modules, requiresLayerClassification(cfg)))
+		initcfg.DiffModules(existing, freshCfg.Modules, requireLayer), requireLayer)
 	candidateCfg := candidateConfigForUpdate(cfg, freshCfg)
 	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, candidateCfg, deps)
 	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, candidateCfg, deps)

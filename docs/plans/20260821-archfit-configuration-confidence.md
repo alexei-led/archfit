@@ -816,21 +816,22 @@ files under `go/packages`, not a phantom `go`), and the `BundleDir` bullet at
 Residual, accepted: symmetric-partial pairing in the git delta can still produce
 a false `introduced` on a badly misconfigured TypeScript repo where most
 specifiers are unresolved on both sides. The alternative is a permanently inert
-feature; the disclosure reason covers it.
+feature. SUPERSEDED in the third review: the claim that "the disclosure reason
+covers it" was false — the reason rendered only the status. It now carries both
+sides' unresolved magnitudes. Point 1's claim that `Coverage.Unresolved` is the
+discriminator is also WRONG and was corrected; see "Third-review corrections".
 
 `internal/testdata/model_surface.golden` did not move — none of these fixes
 touch `internal/model/*` or `internal/view`.
 
 ### Known limitations recorded, not fixed
 
-- `DiffModules` skips every `Removed` module from both `Unclassified` and
-  `Issues`, and `removedSet` is name-keyed. On this repo that means the 30
-  name-drift stanzas were never checked for `missing_owner`,
-  `missing_volatility_input`, or `missing_layer`, so `0 module issue(s)` means
-  "not checked" for them, not "clean". Fixing it needs either a wider
-  `NameDrift` (it carries no `HasOwner`/`HasSubdomain`) or a change to
-  `DiffModules`' bucketing — the redesign this plan rules out. Disclosed in
-  `docs/guide/troubleshooting.md` instead.
+- ~~`DiffModules` skips every `Removed` module from both `Unclassified` and
+  `Issues`~~ FIXED in the third review. The cost claim ("needs a redesign this
+  plan rules out") was wrong: `NameDrift` carries its source `ExistingModule` —
+  one struct field — and `ResolveNameDrift` re-runs the field checks. Only
+  unpaired removals stay unchecked, and they are now disclosed by name in
+  `unchecked_modules`.
 - `analyze --base` in a worktree checkout reports
   `go/packages: head ok, base absent` because the parent repository's gitignored
   `go.work` names `use` paths outside the base scan root, so no Go member loads
@@ -856,3 +857,85 @@ input. The two paths now agree:
   origin. It still never pairs with `ok`, which would call a head finding
   introduced on a base side the analyzer never examined. Without this, enabling
   `scip` with no indexer installed made every repair task unknown-origin.
+
+### Third-review corrections
+
+A third critical-only review found one CRITICAL defect and four MAJOR ones, all
+introduced or left standing by the second round (`839670d`). All are fixed.
+
+1. **CRITICAL — the `Unresolved > 0` discriminator was factually wrong.** The
+   second round rested on "only dependency-cruiser and grimp set
+   `Coverage.Unresolved` on a completed run". `internal/extract/golang` sets it
+   too (`golang.go:264,279`), counting whole packages `collectNodesEdges`
+   SKIPPED because they failed to load — the exact "did not finish" meaning the
+   rule was supposed to route to unavailable. A Go partial therefore graded
+   `comparable_with_gaps` in `config compare` (with a reason that falsely named
+   import specifiers) and could produce a false `introduced` in `--base`. The
+   discriminator is now the TOOL NAME, in one shared predicate
+   (`decision.PartialFromUnresolvedSpecifiers`) both paths call, so they cannot
+   diverge again. The false invariant was also written into two code comments
+   and `CLAUDE.md:155-168`; all three now state the real rule and name
+   `go/packages` explicitly.
+2. **MAJOR — symmetric gapped-absent made the git delta inert.** An enabled
+   analyzer whose tool is not installed reports `absent` + gap on BOTH sides;
+   `normalizeCoverage` mapped that to `evidenceUnavailable`, which pairs with
+   nothing, so every repair task landed in `unknown_origin_finding_ids`.
+   `decision.gradeTool` already had the correct rule (fail only on ASYMMETRY),
+   so this was the same two-paths-two-rules defect a fourth time. Symmetric
+   gapped-absent now routes to `familyPairedDegradedAbsent` — comparable, and
+   always disclosed, never a silent `familyPaired`. Asymmetric absence stays
+   unavailable, gapped-absent still never pairs with `ok`, and timeouts plus
+   `partial`-without-unresolved stay unavailable (a timeout is flaky, not
+   structural, so symmetry proves nothing there). Verified end-to-end on a
+   Go+Rust fixture with no cargo installed: `comparison_status` moved from
+   `unknown` to `comparable` with the new violation in
+   `introduced_finding_ids`, and both blind analyzers named in
+   `comparison_reasons`. Reach: archfit's own runtime image ships without the
+   Rust toolchain, so every repo with a `Cargo.toml` was permanently inert
+   there. `git_finding_delta_test.go` CHANGED: the case
+   "non-primary absent with a coverage gap is unavailable" pinned the buggy
+   outcome and now asserts comparable-and-disclosed.
+3. **MAJOR — the disclosure that justified the accepted residual risk did not
+   exist.** Both reason strings rendered only `Status`, so `unresolved=3` and
+   `unresolved=5000` were indistinguishable. Both now carry each side's
+   magnitude, with the specifier denominator when the extractor tracks one
+   (`decision.UnresolvedMagnitude`). `CoverageDetail.Current/Candidate` stay raw
+   statuses — they are typed machine fields, not prose. The magnitude-asymmetry
+   grading the reviewer offered as an alternative was NOT added: disclosure was
+   the stated either/or, and a ratio threshold is new policy.
+4. **MAJOR — `markerWalkPrune` diverged from `scope.DefaultExclusions`.** It
+   missed `testdata/` and `reports/`, so a `go.mod` under `testdata/` (routine
+   in Go repos) was excluded by the extractor but FOUND by the marker walk, and
+   the resulting gap reinstated the inertness of item 2. The prune set is now
+   derived from the effective exclusions (`scope.ExcludedDirNames`), and the
+   marker's repo-relative path is matched against those globs with the same
+   doublestar matcher the extractors use — so config entries like
+   `services/legacy/**`, which name no single directory, are honoured too.
+   `target/` was dropped from the hand-written list: it is NOT in
+   `DefaultExclusions`, so pruning it was itself a divergence.
+5. **MAJOR — `config update` reported `issues: []` for modules it never
+   checked** (44 of 45 on this repo's own config). See the corrected "Known
+   limitations" bullet above. Verified: stripping `owner`, `subdomain`, and
+   `volatility` from the name-drifted `internal/agenttask` stanza now yields
+   `missing_owner` + `missing_volatility_input`; before the fix it yielded
+   nothing. Unpaired removals stay unchecked by design (discovery found no code
+   for them) and are listed in the new `unchecked_modules` field, which the text
+   status line also counts.
+
+Minor, also fixed: `updateEvidenceDiagnostics` now includes `name_drift`, so the
+`--ai-classify` evidence pack no longer reads `added=0 removed=0 path_drift=0
+structurally_in_sync=false`.
+
+Structural guard added: `TestGitFindingDelta/cross_path_agreement` drives one
+table of coverage shapes through BOTH `pairFamily` and `decision.gradeTool` and
+fails when they disagree on any shape not explicitly marked divergent. Three
+rounds found the same class of defect; the agreement is now asserted rather than
+restated in prose. The one specified divergence (`ok` vs gapless-`absent`
+primary — `--base` compares two trees, `config compare` compares one) is table
+data. Symmetric `disabled` is not a divergence at the pairing level: both paths
+call it comparable; the git path additionally drops disabled families in
+`analyzerFamilies`, which is Task 7 required behavior.
+
+`internal/testdata/model_surface.golden` did not move: no fix touches
+`internal/model/*` or `internal/view`. `.archfit-baseline.json` was not
+regenerated.

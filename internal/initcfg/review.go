@@ -77,12 +77,29 @@ func newModuleIssue(code, moduleName string) ModuleIssue {
 // list is a non-null array so a consumer never has to distinguish null from
 // empty.
 type ConfigReview struct {
-	SchemaVersion     string            `json:"schema_version"`
-	Status            string            `json:"status"`
-	Structure         ReviewStructure   `json:"structure"`
-	Issues            []ModuleIssue     `json:"issues"`
-	ReviewSuggestions ReviewSuggestions `json:"review_suggestions"`
+	SchemaVersion string          `json:"schema_version"`
+	Status        string          `json:"status"`
+	Structure     ReviewStructure `json:"structure"`
+	Issues        []ModuleIssue   `json:"issues"`
+	// UncheckedModules names every configured module the per-module field checks
+	// did NOT evaluate, so an empty Issues list can never be read as "every
+	// module is clean". It exists because that reading was wrong before: a
+	// consumer saw `issues: []` over a config whose modules were mostly skipped.
+	UncheckedModules  []ReviewUncheckedModule `json:"unchecked_modules"`
+	ReviewSuggestions ReviewSuggestions       `json:"review_suggestions"`
 }
+
+// ReviewUncheckedModule is one configured module whose fields were not
+// evaluated, with the reason it was skipped.
+type ReviewUncheckedModule struct {
+	Module string `json:"module"`
+	Reason string `json:"reason"`
+}
+
+// reasonUncheckedUnmatched is why an unmatched configured module goes
+// unevaluated: discovery found no code for it, so archfit cannot tell whether
+// its fields describe anything that still exists.
+const reasonUncheckedUnmatched = "discovery did not emit this module; its fields were not evaluated"
 
 // ReviewStructure holds the structural difference between the config and
 // discovery. AddedModules, PathDrift, and Settings are the pending edits
@@ -134,7 +151,8 @@ func BuildConfigReview(r UpdateReport) ConfigReview {
 			PathDrift:      reviewPathDrift(r.PathDrift),
 			Settings:       append(make([]SettingChange, 0, len(r.Settings)), r.Settings...),
 		},
-		Issues: append(make([]ModuleIssue, 0, len(r.Issues)), r.Issues...),
+		Issues:           append(make([]ModuleIssue, 0, len(r.Issues)), r.Issues...),
+		UncheckedModules: uncheckedModules(r.Removed),
 		ReviewSuggestions: ReviewSuggestions{
 			DeployUnits:    append(make([]DeployUnitSuggestion, 0, len(r.DeployUnitSuggestions)), r.DeployUnitSuggestions...),
 			DistanceConfig: append(make([]DistanceConfigCandidate, 0, len(r.DistanceConfigCandidates)), r.DistanceConfigCandidates...),
@@ -143,14 +161,19 @@ func BuildConfigReview(r UpdateReport) ConfigReview {
 }
 
 // RenderReviewStatus renders the one-line status header printed above the text
-// report. It never states that the config is complete or healthy.
+// report. It never states that the config is complete or healthy, and it names
+// the unchecked modules so an issue count can never be read as a full audit.
 func RenderReviewStatus(rev ConfigReview) string {
+	unchecked := ""
+	if n := len(rev.UncheckedModules); n > 0 {
+		unchecked = fmt.Sprintf(" (%d module(s) unchecked — discovery did not emit them)", n)
+	}
 	switch rev.Status {
 	case ReviewStatusActionRequired:
-		return fmt.Sprintf("status: %s — %d module issue(s), %d pending edit(s)\n",
-			rev.Status, len(rev.Issues), pendingEditCount(rev.Structure))
+		return fmt.Sprintf("status: %s — %d module issue(s), %d pending edit(s)%s\n",
+			rev.Status, len(rev.Issues), pendingEditCount(rev.Structure), unchecked)
 	case ReviewStatusReviewAvailable:
-		return fmt.Sprintf("status: %s — nothing to apply; review items only\n", rev.Status)
+		return fmt.Sprintf("status: %s — nothing to apply; review items only%s\n", rev.Status, unchecked)
 	default:
 		return fmt.Sprintf("status: %s — nothing detected by these checks\n", rev.Status)
 	}
@@ -213,6 +236,17 @@ func moduleDefNames(defs []ModuleDef) []string {
 	out := make([]string, 0, len(defs))
 	for _, d := range defs {
 		out = append(out, d.Name)
+	}
+	return out
+}
+
+// uncheckedModules projects the configured modules discovery did not emit into
+// the disclosure list. Name-drifted modules are NOT here: ResolveNameDrift
+// rescues them and their fields are checked like any other stanza.
+func uncheckedModules(mods []ExistingModule) []ReviewUncheckedModule {
+	out := make([]ReviewUncheckedModule, 0, len(mods))
+	for _, m := range mods {
+		out = append(out, ReviewUncheckedModule{Module: m.Name, Reason: reasonUncheckedUnmatched})
 	}
 	return out
 }

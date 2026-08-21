@@ -431,6 +431,7 @@ Review model:
 | -------------------- | ------------------------------------------------------------------------------------- |
 | `structure`          | Discovery differences: pending edits plus the review-only buckets below.              |
 | `issues`             | Per-module config gaps that need a decision, each with a reason and a next action.    |
+| `unchecked_modules`  | Configured modules the per-module checks did NOT evaluate, with the reason. An empty `issues` list is only "clean" for the modules that are not listed here. |
 | `review_suggestions` | Deterministic deploy-unit and distance-config proposals. `--apply` never writes them. |
 
 `structure` fields:

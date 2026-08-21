@@ -39,12 +39,16 @@ func discoveredEvidenceDiagnostics(cfg initcfg.DiscoveredConfig) []initcfg.Evide
 	}}
 }
 
+// updateEvidenceDiagnostics summarises the post-ResolveNameDrift report for the
+// LLM classification pass. name_drift is included because without it a report
+// whose adds and removes were all resolved to naming differences reads as
+// "nothing changed, yet structurally_in_sync=false" — a self-contradictory input.
 func updateEvidenceDiagnostics(report initcfg.UpdateReport) []initcfg.EvidenceDiagnostic {
 	return []initcfg.EvidenceDiagnostic{{
 		Source: "update",
 		Summary: fmt.Sprintf(
-			"added=%d suggested=%d removed=%d path_drift=%d unclassified=%d distance_config_candidates=%d structurally_in_sync=%t",
-			len(report.Added), len(report.Suggested), len(report.Removed), len(report.PathDrift), len(report.Unclassified), len(report.DistanceConfigCandidates), report.StructuralInSync,
+			"added=%d suggested=%d removed=%d name_drift=%d path_drift=%d unclassified=%d distance_config_candidates=%d structurally_in_sync=%t",
+			len(report.Added), len(report.Suggested), len(report.Removed), len(report.NameDrift), len(report.PathDrift), len(report.Unclassified), len(report.DistanceConfigCandidates), report.StructuralInSync,
 		),
 	}}
 }
