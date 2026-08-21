@@ -109,7 +109,7 @@ func scoreSnapshotMismatchDetails(b baseline.Baseline, mismatches []string) []st
 		case baseline.InputScoreVersion:
 			out = append(out, fmt.Sprintf("%s %q, current %q", input, b.Score.ScoreVersion, coupling.ScoreVersion))
 		case baseline.InputRubricVersion:
-			out = append(out, fmt.Sprintf("%s %d, current %d", input, b.Score.RubricVersion, score.RubricVersion))
+			out = append(out, fmt.Sprintf("%s %d, current %d", input, b.Score.EffectiveRubricVersion(), score.RubricVersion))
 		default:
 			out = append(out, input)
 		}

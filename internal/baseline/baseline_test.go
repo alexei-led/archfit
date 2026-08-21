@@ -216,6 +216,27 @@ func TestEntries(t *testing.T) {
 	}
 }
 
+// TestEffectiveRubricVersion pins the legacy read: a snapshot written before
+// rubric tracking stores 0 but was banded under rubric 1, so both the
+// compatibility check and any disclosure must see 1, never the raw 0.
+func TestEffectiveRubricVersion(t *testing.T) {
+	tests := []struct {
+		name string
+		s    baseline.ScoreSnapshot
+		want int
+	}{
+		{name: "missing reads as the pre-tracking rubric", want: 1},
+		{name: "stored value is used verbatim", s: baseline.ScoreSnapshot{RubricVersion: 7}, want: 7},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.s.EffectiveRubricVersion(); got != tc.want {
+				t.Errorf("EffectiveRubricVersion() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestCouplingScore locks the max_drop anchor contract: only a snapshot
 // compatible with the current scorer AND rubric anchors a drop. A snapshot
 // written before rubric tracking is read as rubric 1 and still anchors; any

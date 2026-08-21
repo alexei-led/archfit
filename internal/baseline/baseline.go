@@ -70,9 +70,11 @@ type ScoreSnapshot struct {
 	RubricVersion int `json:"rubric_version,omitempty"`
 }
 
-// rubricVersion returns the rubric the snapshot was banded under, defaulting a
-// missing value to the pre-tracking rubric.
-func (s ScoreSnapshot) rubricVersion() int {
+// EffectiveRubricVersion returns the rubric the snapshot was banded under,
+// reading a missing value as the pre-tracking rubric. Disclosures must quote
+// this, not the raw field: a legacy snapshot stores 0 but was banded under
+// rubric 1, and reporting the 0 would misstate what is stored.
+func (s ScoreSnapshot) EffectiveRubricVersion() int {
 	if s.RubricVersion == 0 {
 		return legacyRubricVersion
 	}
@@ -113,7 +115,7 @@ func (b Baseline) ScoreSnapshotMismatches() []string {
 	if b.Score.ScoreVersion != coupling.ScoreVersion {
 		out = append(out, InputScoreVersion)
 	}
-	if b.Score.rubricVersion() != score.RubricVersion {
+	if b.Score.EffectiveRubricVersion() != score.RubricVersion {
 		out = append(out, InputRubricVersion)
 	}
 	return out
