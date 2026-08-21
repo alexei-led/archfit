@@ -545,12 +545,12 @@ go test ./internal/decision
 go test ./internal -run TestArchImports -count=1
 ```
 
-- [ ] Add the pure comparison result in `internal/decision`.
-- [ ] Add current-only, candidate-only, both, and fixed-entry rules.
-- [ ] Add aggregate coverage priority and missing-row rules.
-- [ ] Add nullable score delta and stable measurement-warning codes.
-- [ ] Add identity, finding, coverage, unavailable-score, and measurement-loss tests.
-- [ ] Run the narrow checks and the full validation rule.
+- [x] Add the pure comparison result in `internal/decision`.
+- [x] Add current-only, candidate-only, both, and fixed-entry rules.
+- [x] Add aggregate coverage priority and missing-row rules.
+- [x] Add nullable score delta and stable measurement-warning codes.
+- [x] Add identity, finding, coverage, unavailable-score, and measurement-loss tests.
+- [x] Run the narrow checks and the full validation rule.
 
 ### Task 8: Add the report-only `config compare` command
 
