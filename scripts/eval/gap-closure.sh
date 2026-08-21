@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gap-closure.sh — run archfit full + delta across all 6 eval repos and write results.
+# gap-closure.sh — run archfit check full + delta across all 6 eval repos and write results.
 #
 # Writes to docs/archived/reports/eval/gap-closure/<repo>/{full,delta}.{json,md}
 # Skips repos whose toolchain or config is absent; logs each skip reason.
@@ -8,15 +8,29 @@
 #   ./scripts/eval/gap-closure.sh
 #
 # The archfit binary is built with `make build` before running this script.
+#
+# Test seams (defaults preserve the normal command):
+#   ARCHFIT_BIN            override the archfit binary path
+#   ARCHFIT_EVAL_WORKSPACE override the workspace directory holding the repos
+#   ARCHFIT_EVAL_OUTPUT    override the output base directory
+#   ARCHFIT_EVAL_REPOS     space-separated repo list override
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-ARCHFIT="${REPO_ROOT}/.bin/archfit"
-WORKSPACE="${HOME}/Workspace"
-OUTPUT_BASE="${REPO_ROOT}/docs/archived/reports/eval/gap-closure"
-REPOS=(archfit pumba codegraph ccgram yazi herdr)
+ARCHFIT="${ARCHFIT_BIN:-${REPO_ROOT}/.bin/archfit}"
+WORKSPACE="${ARCHFIT_EVAL_WORKSPACE:-${HOME}/Workspace}"
+OUTPUT_BASE="${ARCHFIT_EVAL_OUTPUT:-${REPO_ROOT}/docs/archived/reports/eval/gap-closure}"
+if [[ -n "${ARCHFIT_EVAL_REPOS:-}" ]]; then
+	read -r -a REPOS <<<"${ARCHFIT_EVAL_REPOS}"
+else
+	REPOS=(archfit pumba codegraph ccgram yazi herdr)
+fi
+
+# FAILED flips to 1 when any archfit run exits with a parser, config, or tool
+# error (exit 3); the sweep finishes the remaining repos, then exits 3.
+FAILED=0
 
 # Toolchain checks per language.
 # Returns 0 if all required tools are present, non-zero otherwise.
@@ -58,6 +72,35 @@ check_toolchain() {
 	fi
 
 	return 0
+}
+
+# run_check runs `archfit check`, keeping stdout in out_file and appending
+# stderr to err_file. Exit-code contract (stable): 0 = pass, 1 = gate
+# violations, 2 = warnings, 3 = parser/config/tool error. Exit 0, 1, and 2 all
+# produce valid output; exit 3 leaves empty/invalid output, so it is removed —
+# the coverage generator must never silently process stale or invalid output.
+run_check() {
+	local label="$1" out_file="$2" err_file="$3" workdir="$4"
+	shift 4
+	local rc=0
+	(cd "${workdir}" && "${ARCHFIT}" check "$@" >"${out_file}" 2>>"${err_file}") || rc=$?
+	case "${rc}" in
+	0)
+		echo "  ${label}: OK → ${out_file}"
+		;;
+	1)
+		echo "  ${label}: exit 1 (gate violations) — output still written → ${out_file}"
+		;;
+	2)
+		echo "  ${label}: exit 2 (warnings) — output still written → ${out_file}"
+		;;
+	*)
+		echo "  ${label}: exit ${rc} (parser, config, or tool error) — removing invalid output"
+		rm -f "${out_file}"
+		cat "${err_file}" >&2
+		FAILED=1
+		;;
+	esac
 }
 
 if [[ ! -x "${ARCHFIT}" ]]; then
@@ -110,80 +153,48 @@ for repo in "${REPOS[@]}"; do
 		continue
 	fi
 
-	# Create output directory.
+	# Create output directory; truncate per-mode stderr logs for this sweep.
 	mkdir -p "${out_dir}"
+	: >"${out_dir}/full.stderr"
+	: >"${out_dir}/delta.stderr"
 
-	# Run full analyze — JSON (coverage generator reads this).
-	# Exit-code contract (stable): 0 = clean, 1 = gate violations, 3 = config/tool error.
-	# Only 0 and 1 produce valid JSON output. Exit 3 (crash) leaves empty/invalid JSON;
-	# remove it so the coverage generator does not silently process stale or empty output.
-	echo "  full analyze (json)..."
-	full_json_exit=0
-	"${ARCHFIT}" analyze --gate \
+	# Run full check — JSON (coverage generator reads this).
+	echo "  full check (json)..."
+	run_check "full json" "${out_dir}/full.json" "${out_dir}/full.stderr" "${REPO_ROOT}" \
 		--config "${config_file}" \
 		--root "${repo_dir}" \
-		--full \
-		--format json \
-		>"${out_dir}/full.json" \
-		2>"${out_dir}/full.stderr" ||
-		full_json_exit=$?
-	if [[ "${full_json_exit}" -eq 0 ]]; then
-		echo "  full json: OK → ${out_dir}/full.json"
-	elif [[ "${full_json_exit}" -eq 1 ]]; then
-		echo "  full json: exit 1 (gate violations) — output still written → ${out_dir}/full.json"
-	else
-		echo "  full json: UNEXPECTED exit ${full_json_exit} (config/tool error) — removing output to prevent stale JSON"
-		rm -f "${out_dir}/full.json"
-		cat "${out_dir}/full.stderr" >&2
-	fi
+		--format json
 
-	# Run full analyze — Markdown (human-readable report).
-	echo "  full analyze (md)..."
-	if "${ARCHFIT}" analyze --gate \
+	# Run full check — Markdown (human-readable report).
+	echo "  full check (md)..."
+	run_check "full md" "${out_dir}/full.md" "${out_dir}/full.stderr" "${REPO_ROOT}" \
 		--config "${config_file}" \
 		--root "${repo_dir}" \
-		--full \
-		--format md \
-		>"${out_dir}/full.md" \
-		2>>"${out_dir}/full.stderr"; then
-		echo "  full md: OK → ${out_dir}/full.md"
-	else
-		exit_code=$?
-		echo "  full md: archfit exited ${exit_code} (gate violations expected — output still written)"
-	fi
+		--format md
 
-	# Run delta analyze (smoke: HEAD~1 base) — JSON.
-	echo "  delta analyze (HEAD~1, json)..."
-	if (cd "${repo_dir}" && "${ARCHFIT}" analyze --gate \
+	# Run delta check (smoke: HEAD~1 base) — JSON. Runs from the repo dir so
+	# the base ref resolves against that repo's history.
+	echo "  delta check (HEAD~1, json)..."
+	run_check "delta json" "${out_dir}/delta.json" "${out_dir}/delta.stderr" "${repo_dir}" \
 		--config "${config_file}" \
 		--root "${repo_dir}" \
 		--base HEAD~1 \
-		--format json \
-		>"${out_dir}/delta.json" \
-		2>"${out_dir}/delta.stderr"); then
-		echo "  delta json: OK → ${out_dir}/delta.json"
-	else
-		exit_code=$?
-		echo "  delta json: archfit exited ${exit_code} (expected for gate violations or shallow history)"
-	fi
+		--format json
 
-	# Run delta analyze — Markdown.
-	echo "  delta analyze (HEAD~1, md)..."
-	if (cd "${repo_dir}" && "${ARCHFIT}" analyze --gate \
+	# Run delta check — Markdown.
+	echo "  delta check (HEAD~1, md)..."
+	run_check "delta md" "${out_dir}/delta.md" "${out_dir}/delta.stderr" "${repo_dir}" \
 		--config "${config_file}" \
 		--root "${repo_dir}" \
 		--base HEAD~1 \
-		--format md \
-		>"${out_dir}/delta.md" \
-		2>>"${out_dir}/delta.stderr"); then
-		echo "  delta md: OK → ${out_dir}/delta.md"
-	else
-		exit_code=$?
-		echo "  delta md: archfit exited ${exit_code} (expected for gate violations or shallow history)"
-	fi
+		--format md
 
 	echo ""
 	PROCESSED=$((PROCESSED + 1))
 done
 
 echo "==> Done: ${PROCESSED} processed, ${SKIPPED} skipped"
+if [[ "${FAILED}" -ne 0 ]]; then
+	echo "==> ERROR: at least one archfit run failed with a parser, config, or tool error (exit 3)" >&2
+	exit 3
+fi

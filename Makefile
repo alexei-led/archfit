@@ -168,7 +168,7 @@ calibrate: build-calibrate ## compare scorers on archfit; emits calibration-repo
 
 ## bench-gate: cold vs warm fact-cache gate timing on this repo (reported number, not a CI assert)
 .PHONY: bench-gate
-bench-gate: build ## time analyze --gate --full cold (fact cache cleared) then warm
+bench-gate: build ## time archfit check cold (fact cache cleared) then warm
 	@sh scripts/bench-gate.sh
 
 ## clean: remove build artefacts

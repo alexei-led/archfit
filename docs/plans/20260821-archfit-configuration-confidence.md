@@ -125,12 +125,12 @@ bash scripts/tests/cli_exit_contract_test.sh
 make bench-gate
 ```
 
-- [ ] Replace the removed gate command in both scripts and the Make help text.
-- [ ] Handle valid gate results `0`, `1`, and `2` explicitly.
-- [ ] Propagate exit code `3` and remove invalid evaluation output.
-- [ ] Add the narrow binary-path test seam.
-- [ ] Add a fake-binary regression test for all result codes and output retention.
-- [ ] Run the narrow checks and the full validation rule.
+- [x] Replace the removed gate command in both scripts and the Make help text.
+- [x] Handle valid gate results `0`, `1`, and `2` explicitly.
+- [x] Propagate exit code `3` and remove invalid evaluation output.
+- [x] Add the narrow binary-path test seam.
+- [x] Add a fake-binary regression test for all result codes and output retention.
+- [x] Run the narrow checks and the full validation rule.
 
 ### Task 2: Align active CLI text and historical notices
 
