@@ -184,34 +184,38 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   Coverage, so the engine stamps the row itself; filing it under the language
   name ("go") instead of the coverage name ("go/packages") created a phantom
   analyzer next to the real family and left the family with zero rows.
-- **Coverage-gap suppression follows the analyzer's REAL discovery**
-  (`primaryToolProjectProbe`, `cmd/archfit/pipeline_coverage.go`). A missing
-  project marker suppresses the gap, and a gapless `absent` primary row is the
-  one shape both pairing paths read as "language not present". Root-only marker
-  checks are correct for dependency-cruiser, grimp, and cargo (all resolve from a
-  root manifest) but wrong for Go, which walks for nested `go.mod` dirs — so Go
-  probes the tree (`goProjectPresent`, pruning dependency/build dirs). Without
-  it, a real go/packages failure in a `services/api/go.mod` repo was
-  indistinguishable from "no Go here" and could manufacture a false `introduced`.
-  The probe must match what the analyzer ACTUALLY does, not a rough stand-in:
-  Go reuses the extractor's own `golang.FilterMembers`, so a
-  `languages.go.modules` include/exclude that empties the member set never reads
-  as a missing toolchain; Rust reads `languages.rust.manifest`
-  (`rustProjectPresent`, shared with the cargo-modules row), so a configured
-  sub-crate manifest is applicable with no root `Cargo.toml`. `buildCoverageGaps`
-  reads `cfg.Exclude` AS GIVEN — `runPipeline` merges it once at setup and
-  `scope.MergeExclusions` is NOT idempotent (it consumes `!` re-includes), so a
-  second merge re-seeds defaults the user removed and hides markers the
-  extractors saw.
+- **Applicability is decided by the extractor, never by a marker list**
+  (`LanguageDescriptor.ProjectPresent`, `cmd/archfit/registry.go` — the row's doc
+  comment is the contract; probes are wired in `cmd/archfit/pipeline_coverage.go`).
+  Every language answers "is this language present under root?" by calling its OWN
+  exported applicability function — `golang.AnalysableMembers`, `ts.Applicable`,
+  `py.Applicable`, `rust.Applicable` — and that same function is what the
+  extractor's `Extract` calls to decide whether to run. There is no
+  `ProjectMarkers []string` and no marker-list fallback: a new language MUST
+  supply a `ProjectPresent` that delegates to its extractor, never a hand-rolled
+  list of filenames. **A probe that disagrees with its extractor turns "we did not
+  measure" into "there is nothing here"**, and gapless `absent` on a primary row
+  is the ONE shape both pairing paths read as "language not present" — so
+  `analyze --base` and `config compare` drop the analyzer and report confidence
+  neither side earned (a fabricated `introduced`; a fully-comparable grade over a
+  language nothing looked at). Both directions have shipped as bugs: a marker the
+  extractor ignores (`tsconfig.json` with no `package.json`, `setup.cfg`, a
+  `go.mod` the `languages.go.modules` filter removes) fabricates presence; a
+  marker it accepts but a list omits (`languages.python.package`, a sub-crate
+  `languages.rust.manifest`, a `go.work` member a walk cannot reach) fabricates
+  absence. `buildCoverageGaps` reads `cfg.Exclude` AS GIVEN — `runPipeline`
+  merges it once at setup and `scope.MergeExclusions` is NOT idempotent (it
+  consumes `!` re-includes), so a second merge re-seeds defaults the user removed
+  and the probe then skips trees the extractors analysed.
 - **A language switched off over a language that IS PRESENT reports `disabled`,
   never `absent`** (`markDisabledPrimaries`, `cmd/archfit/pipeline_coverage.go`,
   applied to `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode
   `ModeOff` as `StatusAbsent`, which both pairing paths read as "this language is
   not in the tree" and drop from the comparison — so two configs that BOTH
   disabled Go over a Go repo graded fully comparable while neither had looked.
-  Rewriting the row leaves gapless-`absent` with exactly ONE cause (markers
-  missing), which is what `decision.gradeTool` and `normalizeCoverage` already
-  assume. Two conditions are load-bearing, both narrowing:
+  Rewriting the row leaves gapless-`absent` with exactly ONE cause (the
+  extractor's own applicability probe says the language is not in the tree),
+  which is what `decision.gradeTool` and `normalizeCoverage` already assume. Two conditions are load-bearing, both narrowing:
   `primaryDisabledByConfig` (mode off AND no explicit `gate:` — a pinned gate
   keeps `absent` so its gap and `--require-tools` still fire; it is also the
   single predicate behind the gap suppression), and `primaryLanguagePresent`,
@@ -281,13 +285,13 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   positional path arguments. Each field selects one thing, and a caller that
   leaves one zero silently gets head-tree state on a base or candidate run:
   `ConfigSource` → config hash + validation command; `BundleDir` → pinned labels
-  + fact-cache location; `ScanRoot` → scope + on-disk path resolution;
-  `EvaluatedAt` → the single instant waiver expiry and staleness age against
-  (zero samples `time.Now()` on read). Per-run values: normal analysis = current
-  path / current config dir / current tree / persisted baseline; git base =
-  same, with the base worktree as ScanRoot and an empty baseline; compare
-  current and compare candidate = the common tree, the current config dir, one
-  shared `EvaluatedAt`, empty baselines, and only `ConfigSource` differing.
+  - fact-cache location; `ScanRoot` → scope + on-disk path resolution;
+    `EvaluatedAt` → the single instant waiver expiry and staleness age against
+    (zero samples `time.Now()` on read). Per-run values: normal analysis = current
+    path / current config dir / current tree / persisted baseline; git base =
+    same, with the base worktree as ScanRoot and an empty baseline; compare
+    current and compare candidate = the common tree, the current config dir, one
+    shared `EvaluatedAt`, empty baselines, and only `ConfigSource` differing.
 - **Owner inheritance for auto-registered synthetic submodules**
   (`classify.AugmentModulesFromGraph`, `AugmentGoWorkspaceModules`): propagates
   `owner` from the nearest config-declared ancestor module to each synthetic module.

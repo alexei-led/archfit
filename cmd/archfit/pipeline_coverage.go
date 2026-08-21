@@ -258,8 +258,9 @@ func primaryDisabledByConfig(cfg config.Config, tool string) bool {
 // normalizeCoverage). Two configs that BOTH disabled Go over a Go repo then
 // graded fully comparable while neither had looked at a line of it.
 //
-// After this pass, absent-without-a-gap has exactly ONE cause left — project
-// markers missing — which is what both consumers' rules already assume. A
+// After this pass, absent-without-a-gap has exactly ONE cause left — the
+// extractor's own applicability probe says the language is not in the tree —
+// which is what both consumers' rules already assume. A
 // disabled row lands on their existing StatusDisabled arm and reports as shared,
 // declared blindness.
 //

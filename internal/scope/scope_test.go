@@ -360,27 +360,6 @@ func TestMergeExclusions(t *testing.T) {
 		}
 	})
 
-	// ExcludedDirNames turns the merged globs back into a walk-prune set. A
-	// filesystem walk that must agree with the extractors derives its prune list
-	// from here; a second hand-written list is the recorded "file-walk exclusion
-	// fragmentation" hazard, and the one that shipped missed testdata/ and
-	// reports/.
-	t.Run("excluded dir names derive from the merged globs", func(t *testing.T) {
-		got := scope.ExcludedDirNames(scope.MergeExclusions([]string{"**/custom/**", "services/legacy/**"}))
-		for _, want := range []string{"node_modules", "vendor", "dist", "build", "testdata", "reports", "custom"} {
-			if _, ok := got[want]; !ok {
-				t.Errorf("dir %q missing from prune set %v", want, got)
-			}
-		}
-		// A multi-segment or anchored glob names no single directory, so it is
-		// skipped rather than guessed at — full-path matching covers those.
-		for _, unwanted := range []string{"mod", "pkg", "legacy", "services", ".archfit-baseline.json"} {
-			if _, ok := got[unwanted]; ok {
-				t.Errorf("dir %q must not be derived from a multi-segment or anchored glob: %v", unwanted, got)
-			}
-		}
-	})
-
 	t.Run("bare-name negation re-includes a default", func(t *testing.T) {
 		got := scope.MergeExclusions([]string{"!reports"})
 		if slices.Contains(got, "**/reports/**") {

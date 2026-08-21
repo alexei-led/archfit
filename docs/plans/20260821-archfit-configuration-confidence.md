@@ -938,6 +938,11 @@ introduced or left standing by the second round (`839670d`). All are fixed.
    `services/legacy/**`, which name no single directory, are honoured too.
    `target/` was dropped from the hand-written list: it is NOT in
    `DefaultExclusions`, so pruning it was itself a divergence.
+   **Superseded by `118c8f5`:** the marker walk no longer exists. Each language's
+   applicability comes from its extractor's own exported function
+   (`golang.AnalysableMembers`, `ts.Applicable`, `py.Applicable`,
+   `rust.Applicable`), so no prune set is derived and `scope.ExcludedDirNames`
+   was deleted with its last caller.
 5. **MAJOR — `config update` reported `issues: []` for modules it never
    checked** (44 of 45 on this repo's own config). See the corrected "Known
    limitations" bullet above. Verified: stripping `owner`, `subdomain`, and
