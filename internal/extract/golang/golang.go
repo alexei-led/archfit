@@ -239,18 +239,19 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		}
 	}
 
-	nodes, edges, filesSeen, skipped, illTyped := e.collectNodesEdges(
+	nodes, edges, filesSeen, inputsMissing, precisionOnly := e.collectNodesEdges(
 		allPkgs, stripImportPath, strengthHints, connascenceHints,
 	)
 	// Both conditions leave the load incomplete over the tree, so both count
 	// toward Unresolved and both keep the row partial. They are NOT the same
 	// failure, and the consumers that pair two runs' coverage rows (`config
-	// compare`, the `--base` origin delta) decide differently on each: an
-	// ill-typed-only load saw every package, so two of them rest on the same
-	// inputs, while a skipped package can hide a whole subtree's edges. Both the
-	// prose reason (for humans) and the two typed Coverage counters (for those
-	// consumers) carry the split — a reason string is not a machine contract.
-	unresolved := skipped + illTyped
+	// compare`, the `--base` origin delta) decide differently on each: a load
+	// that lost only go/types precision still saw every package and produced
+	// every edge, so two of them rest on the same graph, while one missing input
+	// can hide a whole subtree's edges. Both the prose reason (for humans) and
+	// the two typed Coverage counters (for those consumers) carry the split — a
+	// reason string is not a machine contract.
+	unresolved := inputsMissing + precisionOnly
 
 	status := statusOK
 	switch {
@@ -277,12 +278,12 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		FilesSeen:               filesSeen,
 		FilesApplicable:         filesSeen,
 		Unresolved:              unresolved,
-		UnresolvedInputsMissing: skipped,
-		UnresolvedPrecisionOnly: illTyped,
+		UnresolvedInputsMissing: inputsMissing,
+		UnresolvedPrecisionOnly: precisionOnly,
 		Status:                  status,
 	}
 	if status == statusPartial {
-		cov.Reason = goPartialReason(skipped, illTyped)
+		cov.Reason = goPartialReason(inputsMissing, precisionOnly)
 	}
 	return facts, cov, nil
 }
@@ -291,15 +292,15 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 // This is the human half of the split; the machine half is the two typed
 // Coverage counters set beside it. The two conditions need different fixes, so
 // the row has to say which occurred rather than leaving the reader to assume.
-func goPartialReason(skipped, illTyped int) string {
+func goPartialReason(inputsMissing, precisionOnly int) string {
 	switch {
-	case illTyped == 0:
-		return fmt.Sprintf("%d package(s) failed to load; their imports are missing from the graph", skipped)
-	case skipped == 0:
-		return fmt.Sprintf("%d package(s) did not type-check; imports are complete, go/types strength is not", illTyped)
+	case precisionOnly == 0:
+		return fmt.Sprintf("%d package(s) did not load completely; some imports are missing from the graph", inputsMissing)
+	case inputsMissing == 0:
+		return fmt.Sprintf("%d package(s) did not type-check; imports are complete, go/types strength is not", precisionOnly)
 	default:
-		return fmt.Sprintf("%d package(s) failed to load (imports missing) and %d did not type-check (strength degraded)",
-			skipped, illTyped)
+		return fmt.Sprintf("%d package(s) left imports missing from the graph and %d did not type-check (strength degraded)",
+			inputsMissing, precisionOnly)
 	}
 }
 
@@ -307,21 +308,29 @@ func goPartialReason(skipped, illTyped int) string {
 // graph nodes and edges. Extracted from Extract to keep Extract's cyclomatic
 // complexity below the gate.
 //
-// Two DIFFERENT incomplete-load conditions are counted separately, because one
-// number for both is what let a doc claim Unresolved means only the first:
+// Two DIFFERENT incomplete-load conditions are counted separately, split by
+// what the incompleteness COST rather than by how the load failed. That is the
+// question every consumer of the count actually asks — can this run hide an edge
+// another run reports? — and one number for both meant it could not be asked:
 //
-//   - skipped — synthetic-error packages (Module==nil && Errors non-empty at
-//     derive time). Their facts are dropped entirely: no node, no import edges.
-//   - illTyped — the package's facts ARE emitted (nodes and every import edge),
-//     but type checking did not complete, so the go/types-derived StrengthHints
-//     this extractor exists to provide are missing or wrong for it. IllTyped
-//     propagates from any dependency, so one bad package can mark a swath.
+//   - inputsMissing — part of the package's input set never reached the graph.
+//     Either its facts were dropped entirely (synthetic-error packages:
+//     Module==nil && Errors non-empty at derive time, no node and no edges), or
+//     they were emitted with an import that did not resolve or a file that did
+//     not parse (packageFacts.InputsMissing). Both leave edges absent, so both
+//     count here — a comparison must never rest on this run.
+//   - precisionOnly — the package's facts are ALL emitted (nodes and every
+//     import edge) and only type checking did not complete, so the go/types
+//     StrengthHints this extractor exists to provide are missing or wrong for
+//     it. IllTyped propagates from any dependency, so one bad package can mark a
+//     swath — and a package marked purely by propagation is safe to count here,
+//     because whatever package caused it is itself counted for its own reason.
 func (e *GoExtractor) collectNodesEdges(
 	pkgs []packageFacts,
 	stripImportPath func(string) string,
 	strengthHints map[string]string,
 	connascenceHints map[string][]graph.ConnascenceHint,
-) (nodes []graph.Node, edges []graph.Edge, filesSeen, skipped, illTyped int) {
+) (nodes []graph.Node, edges []graph.Edge, filesSeen, inputsMissing, precisionOnly int) {
 	// seenNodes deduplicates package/file nodes within this extractor.
 	seenNodes := make(map[string]struct{})
 	emitNode := func(n graph.Node) {
@@ -333,11 +342,15 @@ func (e *GoExtractor) collectNodesEdges(
 	}
 	for _, p := range pkgs {
 		if p.Synthetic {
-			skipped++
+			inputsMissing++
 			continue
 		}
 		if p.IllTyped {
-			illTyped++
+			if p.InputsMissing {
+				inputsMissing++
+			} else {
+				precisionOnly++
+			}
 		}
 
 		pkgPath := stripImportPath(p.PkgPath)

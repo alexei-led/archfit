@@ -352,10 +352,16 @@ func configToolGate(cfg config.Config, tool string) string {
 	return gateWarn
 }
 
-// applyToolGate finalises the hard-gate decision for a check/scan run: --require-tools
-// raises every coverage gap to fail, and any gap that gates fail stamps the verdict
-// fail so the rendered output reflects the policy failure. Returns true when the run
-// must exit 1. The policy decision lives here in cmd/ (the layering invariant) — the
+// applyToolGate finalises the hard-gate decision for a check/scan run:
+// --require-tools raises every coverage gap that is not an explicit opt-out to
+// fail, and any gap that gates fail stamps the verdict fail so the rendered
+// output reflects the policy failure. Returns true when the run must exit 1.
+//
+// The gate: off carve-out is what lets buildCoverageGaps report a gap it used to
+// swallow. A gap is a disclosure ("this analyzer did not run here"); the gate is
+// a policy ("and that fails the build"). Conflating them is why an opt-out had
+// to be silent to stay non-blocking, and that silence read downstream as "the
+// language is not in this tree". The policy decision lives here in cmd/ (the layering invariant) — the
 // core ring never sees tool names or gate config. Idempotent and render-order safe:
 // callers invoke it before rendering so the output shows the effective gate.
 func applyToolGate(diag *diagnostic.Diagnostic, requireTools bool) bool {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
@@ -161,6 +162,43 @@ func TestExtract_IllTypedPackage(t *testing.T) {
 	if !hasEdge(facts.Edges, "pkg/a/a.go", pkgB, graph.EdgeKindImports) {
 		t.Errorf("ill-typed package must still contribute its import edge; edges: %v", facts.Edges)
 	}
+
+	// The boundary in the other direction. An UNRESOLVABLE import also fails
+	// type-checking, but there the graph is genuinely missing an edge, so the row
+	// must NOT look like precision-only loss — pairing it would let a base
+	// finding hide behind the missing target and be reported as introduced.
+	t.Run("unresolvable import counts as a missing input", func(t *testing.T) {
+		missDir := t.TempDir()
+		for rel, content := range map[string]string{
+			"go.mod":     "module example.com/missing\n\ngo 1.21\n",
+			"pkg/x/x.go": "package x\n\nimport \"example.com/missing/pkg/nope\"\n\nvar Use = nope.X\n",
+		} {
+			path := filepath.Join(missDir, filepath.FromSlash(rel))
+			if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+				t.Fatalf("mkdir %s: %v", rel, err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatalf("write %s: %v", rel, err)
+			}
+		}
+		_, missCov, err := goextract.New(view.ExtractConfig{}).
+			Extract(context.Background(), scope.Scope{Root: missDir, Mode: scope.ModeFull})
+		if err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+		if missCov.Status != statusPartial {
+			t.Fatalf("Status = %q, want %q", missCov.Status, statusPartial)
+		}
+		if missCov.UnresolvedInputsMissing == 0 {
+			t.Errorf("UnresolvedInputsMissing = 0 over an unresolvable import: the graph is missing an edge, "+
+				"so this row must not read as precision-only loss (coverage %+v)", missCov)
+		}
+		// The prose has to agree with the counters — it claimed "imports are
+		// complete" over a package whose import did not resolve.
+		if strings.Contains(missCov.Reason, "imports are complete") {
+			t.Errorf("reason claims complete imports over an unresolvable import: %q", missCov.Reason)
+		}
+	})
 }
 
 func TestExtract_SimpleImport(t *testing.T) {

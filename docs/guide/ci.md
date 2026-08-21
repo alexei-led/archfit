@@ -125,6 +125,10 @@ archfit check --require-tools -c .archfit.yaml
 Use this when the runner image is supposed to have the full analyzer toolchain
 installed and any gap is a CI defect.
 
+One carve-out: a gap whose tool is configured `gate: off` is still reported, but
+`--require-tools` does not raise it. An explicit opt-out is not overruled by a
+flag. Set that tool's gate to `warn` or `fail` if you want it required.
+
 ## 6. Baseline workflow
 
 Commit `.archfit-baseline.json` to the repo. `archfit check` uses that file to
