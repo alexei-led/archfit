@@ -199,6 +199,51 @@ func TestExtract_IllTypedPackage(t *testing.T) {
 			t.Errorf("reason claims complete imports over an unresolvable import: %q", missCov.Reason)
 		}
 	})
+
+	// Both conditions in one module. IllTyped propagates from any dependency, so
+	// this is where a naive count double-reports: the package that merely imports
+	// a broken one is ill-typed too, and if its own imports were also read as
+	// unresolved it would land in the missing bucket it did not earn.
+	t.Run("mixed conditions count once each", func(t *testing.T) {
+		mixedDir := t.TempDir()
+		for rel, content := range map[string]string{
+			"go.mod":     "module example.com/mixed\n\ngo 1.21\n",
+			"pkg/t/t.go": "package t\n\nvar Bad int = \"not an int\"\n",
+			"pkg/u/u.go": "package u\n\nimport \"example.com/mixed/pkg/gone\"\n\nvar Use = gone.X\n",
+			"pkg/v/v.go": "package v\n\nimport \"example.com/mixed/pkg/t\"\n\nvar Use = t.Bad\n",
+		} {
+			path := filepath.Join(mixedDir, filepath.FromSlash(rel))
+			if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+				t.Fatalf("mkdir %s: %v", rel, err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatalf("write %s: %v", rel, err)
+			}
+		}
+		_, mixedCov, err := goextract.New(view.ExtractConfig{}).
+			Extract(context.Background(), scope.Scope{Root: mixedDir, Mode: scope.ModeFull})
+		if err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+		// pkg/u earned the missing bucket. pkg/t and pkg/v are ill-typed with every
+		// import resolved, so they are precision-only — v by propagation, which is
+		// safe precisely because whatever caused it is counted for its own reason.
+		if mixedCov.UnresolvedInputsMissing != 1 {
+			t.Errorf("UnresolvedInputsMissing = %d, want 1 (coverage %+v)", mixedCov.UnresolvedInputsMissing, mixedCov)
+		}
+		if mixedCov.UnresolvedPrecisionOnly != 2 {
+			t.Errorf("UnresolvedPrecisionOnly = %d, want 2 (coverage %+v)", mixedCov.UnresolvedPrecisionOnly, mixedCov)
+		}
+		if mixedCov.Unresolved != mixedCov.UnresolvedInputsMissing+mixedCov.UnresolvedPrecisionOnly {
+			t.Errorf("counters do not account for Unresolved=%d: %+v", mixedCov.Unresolved, mixedCov)
+		}
+		// The both-conditions arm of the reason, which no other case reaches.
+		for _, want := range []string{"imports missing", "did not type-check"} {
+			if !strings.Contains(mixedCov.Reason, want) {
+				t.Errorf("mixed reason %q does not name %q", mixedCov.Reason, want)
+			}
+		}
+	})
 }
 
 func TestExtract_SimpleImport(t *testing.T) {
