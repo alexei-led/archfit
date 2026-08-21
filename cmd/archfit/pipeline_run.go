@@ -180,7 +180,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	// Manifest deprecation markers (go.mod retract, package.json deprecated).
 	// Report-only — never modifies the graph, metric verdict, or gate.
-	// Ceiling: cargo yanked and live EOL are not locally declarable — use archfit analyze --llm / enrich.
+	// Ceiling: cargo yanked and live EOL are not locally declarable — use archfit analyze --ai-summary / config enrich.
 	change.DeprecatedDeps = manifest.Scan(s.Root)
 
 	// Runtime async-bridge detection (deterministic FS scan + optional ast-grep).

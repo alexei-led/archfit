@@ -104,7 +104,7 @@ func locFilesSeen(t *testing.T, data []byte) (int, bool) {
 }
 
 // TestRun_Check_Root_NonGitFullMode verifies that a plain directory (no git
-// repository) analysed with --full produces a scorecard and does NOT exit 3.
+// repository) analysed in full mode produces a scorecard and does NOT exit 3.
 // This exercises the non-fatal RepoRoot path added in Task 2.
 func TestRun_Check_Root_NonGitFullMode(t *testing.T) {
 	t.Parallel()

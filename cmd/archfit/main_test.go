@@ -84,6 +84,7 @@ const (
 	flagRefresh       = "--refresh"
 	flagRoot          = "--root"
 	flagJSON          = "--json"
+	flagNoAdvisories  = "--no-advisories"
 	goModStub         = "module example.com/test\n\ngo 1.21\n" // minimal go.mod shared by fixture repos
 	cmdAnalyze        = "analyze"
 	cmdCheck          = "check"
@@ -302,7 +303,7 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 		var buf bytes.Buffer
 		code := Run([]string{cmdCheck, flagRoot, repoDir, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
 		if code != 1 {
-			t.Fatalf("analyze --gate --root: exit = %d, want 1 (forbidden-dependency gate)\noutput:\n%s", code, buf.String())
+			t.Fatalf("check --root: exit = %d, want 1 (forbidden-dependency gate)\noutput:\n%s", code, buf.String())
 		}
 		var diag struct {
 			Findings []struct {
@@ -499,7 +500,7 @@ func TestRun_Explain_HonorsRoot(t *testing.T) {
 	var checkBuf bytes.Buffer
 	code := Run([]string{cmdCheck, flagRoot, repoDir, "-c", cfgPath, flagRefresh, fmtJSON}, &checkBuf)
 	if code != 1 {
-		t.Fatalf("analyze --gate --root: exit = %d, want 1 (gate violation)\noutput:\n%s", code, checkBuf.String())
+		t.Fatalf("check --root: exit = %d, want 1 (gate violation)\noutput:\n%s", code, checkBuf.String())
 	}
 	var checkDiag struct {
 		Findings []struct {
@@ -681,7 +682,7 @@ func TestRun_Check_AgentTaskValidationReplaysRootAndQuotesPaths(t *testing.T) {
 }
 
 // TestRun_Check_MissingBaselineFile verifies that when no .archfit-baseline.json
-// exists, analyze --gate exits on the real verdict (exit 1 for violations), not
+// exists, archfit check exits on the real verdict (exit 1 for violations), not
 // a hard error (exit 3). The baseline file is optional; its absence is not an error.
 func TestRun_Check_MissingBaselineFile(t *testing.T) {
 	t.Parallel()

@@ -4,7 +4,8 @@
 // it with the full pipeline, and returns the base Scorecard. analyze attaches
 // the resulting before/after delta as a section of the HEAD decision report, so
 // --base renders through the SAME pipeline and output format as a normal run
-// (consistent JSON schema, honoured --gate / --advisory / --require-tools).
+// (consistent JSON schema; advisory output and required-tool enforcement are
+// honoured exactly as the caller set them).
 //
 // Invariants:
 //   - The user's working tree is never mutated.
@@ -140,8 +141,8 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, confi
 }
 
 // runScoreSide loads config, runs the full pipeline on root, and returns the
-// synthesised Scorecard. advisory mirrors the caller's --advisory so the base
-// and HEAD sides are scored identically.
+// synthesised Scorecard. advisory mirrors the caller's advisory setting
+// (`--no-advisories`) so the base and HEAD sides are scored identically.
 func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, advisory bool) (score.Scorecard, error) {
 	cfg, err := loadConfig(ctx, configPath)
 	if err != nil {

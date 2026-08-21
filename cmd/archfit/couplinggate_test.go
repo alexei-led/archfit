@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -372,7 +373,7 @@ func TestRun_Analyze_CouplingGate_TripWithoutAdvisories(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh, "--no-advisories"}, &buf)
+	code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh, flagNoAdvisories}, &buf)
 	if code != 1 {
 		t.Fatalf("check --no-advisories with tripped coupling gate: exit = %d, want 1\noutput:\n%s", code, buf.String())
 	}
@@ -415,8 +416,8 @@ func TestRun_Analyze_CouplingGate_TripWithoutAdvisories(t *testing.T) {
 }
 
 // TestRun_Baseline_KeepsNativeAdvisoryKind guards the finding-lifecycle
-// contract: `archfit baseline --advisory` under a tripped coupling.gate must
-// persist BC findings with their native advisory kind, not the per-run gate
+// contract: `archfit baseline` (advisories on by default) under a tripped
+// coupling.gate must persist BC findings with their native advisory kind, not the per-run gate
 // promotion — a stored "gate" kind orphans the entry (status.Assign matches
 // stored kind against the pass kind, so the edge would surface as a phantom
 // "fixed" gate finding and never resolve on the advisory side).
@@ -426,7 +427,7 @@ func TestRun_Baseline_KeepsNativeAdvisoryKind(t *testing.T) {
 
 	var buf bytes.Buffer
 	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh}, &buf); code != 0 {
-		t.Fatalf("baseline --advisory: exit = %d\noutput:\n%s", code, buf.String())
+		t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
 	}
 	b, err := baseline.Load(context.Background(), filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath))
 	if err != nil {
@@ -443,12 +444,12 @@ func TestRun_Baseline_KeepsNativeAdvisoryKind(t *testing.T) {
 		}
 	}
 	if !sawBC {
-		t.Fatal("fixture regression: baseline --advisory persisted no BC advisory")
+		t.Fatal("fixture regression: baseline persisted no BC advisory")
 	}
 }
 
-// TestRun_Baseline_SkipsSyntheticCouplingGateFinding: `archfit baseline`
-// without --advisory under a tripped coupling.gate synthesizes the
+// TestRun_Baseline_SkipsSyntheticCouplingGateFinding: `archfit baseline
+// --no-advisories` under a tripped coupling.gate synthesizes the
 // bc/coupling_gate trip finding (no BC advisory exists to promote), but must
 // not persist it — the engine never regenerates its fingerprint, so a stored
 // entry would orphan and surface as a phantom "fixed" finding on later runs.
@@ -456,9 +457,23 @@ func TestRun_Baseline_SkipsSyntheticCouplingGateFinding(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
 
+	// Guard against a vacuous assertion: prove this fixture + --no-advisories
+	// really does synthesize the trip finding before asserting it is not stored.
+	var checkBuf bytes.Buffer
+	if code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh, flagNoAdvisories}, &checkBuf); code != 1 {
+		t.Fatalf("check --no-advisories: exit = %d, want 1 (tripped coupling gate)\noutput:\n%s", code, checkBuf.String())
+	}
+	var diag diagnostic.Diagnostic
+	if err := json.Unmarshal(checkBuf.Bytes(), &diag); err != nil {
+		t.Fatalf("unmarshal check JSON: %v", err)
+	}
+	if !slices.ContainsFunc(diag.Findings, func(f finding.Finding) bool { return f.RuleID == ruleIDBCCouplingGate }) {
+		t.Fatalf("fixture regression: no %s finding to skip: %+v", ruleIDBCCouplingGate, diag.Findings)
+	}
+
 	var buf bytes.Buffer
-	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh}, &buf); code != 0 {
-		t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
+	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh, flagNoAdvisories}, &buf); code != 0 {
+		t.Fatalf("baseline --no-advisories: exit = %d\noutput:\n%s", code, buf.String())
 	}
 	b, err := baseline.Load(context.Background(), filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath))
 	if err != nil {

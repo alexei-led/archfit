@@ -11,7 +11,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - `make test` — `go test -race -coverprofile=coverage.out ./...` + `python3 internal/extract/scip/scip_reader_test.py` (CI runs the Python step too)
 - `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.1.6)
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
-- `make archfit` — dogfood architecture-drift gate: `.bin/archfit analyze --gate --config .archfit.yaml --full`
+- `make archfit` — dogfood architecture-drift gate: `.bin/archfit check --config .archfit.yaml`
 - `make arch-lint` — architecture drift linter (alias for `make archfit`); wired into the pre-push hook
 - `make archfit-report` — write `docs/reports/archfit-report.md` via `archfit analyze --markdown`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
@@ -202,7 +202,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   non-penalising 60 (calibration-only, unreachable from engine.go).
 - Parse config once into typed views; pass a package its view, not the whole config.
 - LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `config enrich`,
-  `config init --llm`, `config update --llm`, `analyze --llm`, and `explain --llm`
+  `config init --ai-classify`, `config update --ai-classify`, `analyze --ai-summary`, and `explain --ai-summary`
   touch them, never the gate. Enforced structurally — `arch_test.go` forbids any
   `internal/*` package from importing `internal/llm`, so the LLM commands live in
   `cmd`.

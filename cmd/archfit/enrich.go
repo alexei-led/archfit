@@ -387,7 +387,7 @@ func buildCachedProvider(override llm.Provider, cfg config.LLMConfig, cacheDir s
 
 // llmCacheDir returns the on-disk LLM response cache directory under baseDir.
 // One definition of the ".archfit-cache/llm" layout shared by every LLM command
-// (config init/update/enrich, analyze --llm, explain --llm) and reported by doctor.
+// (config init/update/enrich, analyze --ai-summary, explain --ai-summary) and reported by doctor.
 func llmCacheDir(baseDir string) string {
 	return filepath.Join(baseDir, ".archfit-cache", "llm")
 }

@@ -8,10 +8,11 @@ import (
 
 const fmtScorecard = "--format=scorecard"
 
-// TestRun_Analyze_ScorecardFullFlagParses verifies that `analyze --format scorecard --full`
-// parses and runs (rc 0). Scorecard is always report-only, so a violating repo
-// still exits 0; the assertion is that the flag is accepted and a scorecard renders.
-func TestRun_Analyze_ScorecardFullFlagParses(t *testing.T) {
+// TestRun_Analyze_ScorecardFormatParses verifies that `analyze --format scorecard`
+// parses and runs (rc 0) both on a cold cache (--refresh) and on the cached path.
+// Scorecard is always report-only, so a violating repo still exits 0; the
+// assertion is that the format is accepted and a scorecard renders.
+func TestRun_Analyze_ScorecardFormatParses(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 
@@ -19,8 +20,8 @@ func TestRun_Analyze_ScorecardFullFlagParses(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"with --full", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath, flagRefresh}},
-		{"without --full (implied)", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath}},
+		{"with --refresh", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath, flagRefresh}},
+		{"without --refresh (cached facts)", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

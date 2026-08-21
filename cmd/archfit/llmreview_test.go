@@ -101,7 +101,7 @@ func appendLLMConfig(t *testing.T, cfgPath string) {
 // runLLMReviewForTest exercises runLLMReview end-to-end using a real runner (matching
 // the appDeps that the top-level Run() function provides) and the given provider
 // override. It loads config + runs the pipeline, then delegates to runLLMReview —
-// mirrors AnalyzeCmd with --llm without going through the CLI parser.
+// mirrors AnalyzeCmd with --ai-summary without going through the CLI parser.
 func runLLMReviewForTest(t *testing.T, cfgPath string, provider llm.Provider) (string, error) {
 	t.Helper()
 	ctx := context.Background()
@@ -123,7 +123,7 @@ func runLLMReviewForTest(t *testing.T, cfgPath string, provider llm.Provider) (s
 	return buf.String(), err
 }
 
-// TestRun_Analyze_LLM_DeterministicFirst verifies the analyze --llm integration
+// TestRun_Analyze_LLM_DeterministicFirst verifies the analyze --ai-summary integration
 // through the provider seam: the deterministic decision report (ARCHFIT RESULT)
 // renders BEFORE the off-gate LLM narrative section.
 func TestRun_Analyze_LLM_DeterministicFirst(t *testing.T) {
@@ -165,7 +165,7 @@ func (p *failingProvider) Complete(context.Context, llm.Request) (llm.Response, 
 }
 
 // TestRun_Analyze_GateLLM_FailureDoesNotMaskVerdict is the regression guard for
-// the off-gate LLM contract: when `analyze --gate --llm` hits a gate violation
+// the off-gate LLM contract: when a gate run with an AI summary hits a violation
 // AND the LLM narration fails, the exit code must reflect the gate verdict (1),
 // never the LLM error (3). The LLM is advisory — its failure must not mask or
 // change the gate result.
@@ -245,7 +245,7 @@ func TestRun_Analyze_JSONStableSectionsIgnoreAIConfigWithoutLLM(t *testing.T) {
 		t.Fatalf("analyze after ai config: %v\n%s", err, after)
 	}
 	if !reflect.DeepEqual(decodeAnalyzeJSONStableSections(t, before), decodeAnalyzeJSONStableSections(t, after)) {
-		t.Fatalf("ai config changed verdict/findings/score without --llm\nbefore:\n%s\nafter:\n%s", before, after)
+		t.Fatalf("ai config changed verdict/findings/score without --ai-summary\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
@@ -260,7 +260,7 @@ func TestRun_Analyze_LLMJSONDeterministicSectionsUnchanged(t *testing.T) {
 	}
 	llmOut, llmErr, err := runAnalyzeJSONWithStderr(t, cfgPath, true, &fixedProvider{text: validReviewJSON, name: reviewProviderName})
 	if err != nil {
-		t.Fatalf("analyze --llm: %v\n%s", err, llmOut)
+		t.Fatalf("analyze --ai-summary: %v\n%s", err, llmOut)
 	}
 
 	deterministic := decodeAnalyzeJSONStableSections(t, deterministicOut)
@@ -269,14 +269,14 @@ func TestRun_Analyze_LLMJSONDeterministicSectionsUnchanged(t *testing.T) {
 		t.Fatalf("LLM review changed deterministic JSON sections\ndeterministic: %+v\nwith LLM: %+v", deterministic, withLLM)
 	}
 	if strings.Contains(llmOut, "Architecture Review") {
-		t.Fatalf("analyze --llm JSON stdout must stay valid JSON without appended review markdown:\n%s", llmOut)
+		t.Fatalf("analyze --ai-summary JSON stdout must stay valid JSON without appended review markdown:\n%s", llmOut)
 	}
 	if !strings.Contains(llmErr, "Architecture Review") {
-		t.Fatalf("analyze --llm JSON should emit the review section on stderr to keep stdout parseable:\n%s", llmErr)
+		t.Fatalf("analyze --ai-summary JSON should emit the review section on stderr to keep stdout parseable:\n%s", llmErr)
 	}
 }
 
-// TestLLMReview_Run_SchemaValidation drives analyze --llm end-to-end with a fake
+// TestLLMReview_Run_SchemaValidation drives analyze --ai-summary end-to-end with a fake
 // provider returning valid JSON and asserts all required output sections appear.
 func TestLLMReview_Run_SchemaValidation(t *testing.T) {
 	t.Parallel()

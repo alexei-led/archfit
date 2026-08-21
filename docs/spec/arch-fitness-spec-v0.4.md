@@ -2,7 +2,9 @@
 
 <!-- markdownlint-configure-file { "MD013": { "line_length": 180, "code_blocks": false, "tables": false } } -->
 
-> **Historical spec (v0.4).** Commands have since been unified under `archfit analyze`; see [docs/guide/commands.md](../guide/commands.md).
+> **Superseded — historical document (v0.4 draft, 2026-06-06).** This is not the current build spec. The command surface and the configuration schema have both
+> changed since it was written. For current behavior read [Commands](../guide/commands.md) and [Configuration](../guide/configuration.md) (full key list:
+> [Configuration reference](../guide/configuration-reference.md)). Keep this file only as a record of the original design rationale.
 
 **Version:** 0.4 draft
 **Date:** 2026-06-06

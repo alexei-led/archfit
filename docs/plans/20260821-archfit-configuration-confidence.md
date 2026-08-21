@@ -189,12 +189,12 @@ bash -c 'if out=$(rg -n -- "--gate|--advisory|--require-tools" cmd/archfit/workt
 go test ./cmd/archfit ./internal/agenttask ./internal/engine ./internal/output/jsonout ./internal/output/markdown
 ```
 
-- [ ] Replace removed commands only in the listed active surfaces.
-- [ ] Fix stale test names and comments without weakening negative CLI tests.
-- [ ] Fix the advisory-mode baseline test so it covers `--no-advisories`.
-- [ ] Add one clear superseded notice to the v0.4 specification.
-- [ ] Preserve migration help and historical records.
-- [ ] Run the narrow checks and the full validation rule.
+- [x] Replace removed commands only in the listed active surfaces.
+- [x] Fix stale test names and comments without weakening negative CLI tests.
+- [x] Fix the advisory-mode baseline test so it covers `--no-advisories`.
+- [x] Add one clear superseded notice to the v0.4 specification.
+- [x] Preserve migration help and historical records.
+- [x] Run the narrow checks and the full validation rule.
 
 ### Task 3: Make baseline and score-format behavior truthful
 

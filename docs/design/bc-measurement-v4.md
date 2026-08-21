@@ -399,11 +399,11 @@ Self-scan result (v5 final validation, 2026-07-05): 572 external edges excluded
 
 | Stage                     | LLM?          | Role                                                          |
 | ------------------------- | ------------- | ------------------------------------------------------------- |
-| `analyze --gate`          | **never**     | reads pinned config + tool facts only                         |
+| `check`                   | **never**     | reads pinned config + tool facts only                         |
 | `config enrich labels`    | yes, off-gate | draft → human review → approved → `analyze` consumes          |
 | `config enrich subdomain` | yes, off-gate | draft subdomain/volatility → human review → apply into config |
 | `explain <fingerprint>`   | yes, off-gate | narrate finding in prose                                      |
-| `analyze --llm`           | yes, off-gate | LLM architecture narrative from gathered evidence             |
+| `analyze --ai-summary`    | yes, off-gate | LLM architecture narrative from gathered evidence             |
 
 `arch_test.go` structurally forbids any `internal/*` package from importing
 `internal/llm`, so LLM code is confined to `cmd/archfit`.

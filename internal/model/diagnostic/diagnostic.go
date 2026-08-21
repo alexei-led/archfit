@@ -329,7 +329,7 @@ type RuntimeAsyncEdge struct {
 // in a manifest file. Report-only evidence — never consumed by verdict or gate
 // logic, never alters the dependency graph or any metric.
 // Ceiling: cargo yanked and live-version EOL require external registry queries
-// and are routed to the LLM path (archfit analyze --llm / enrich), not this detector.
+// and are routed to the LLM path (archfit analyze --ai-summary / config enrich), not this detector.
 type DeprecatedDep struct {
 	File    string `json:"file"`           // repo-relative manifest file path
 	Kind    string `json:"kind"`           // "retract" | "deprecated"
@@ -734,7 +734,7 @@ type Diagnostic struct {
 	// marker block. Evidence only — never consumed by verdict or gate logic, never
 	// alters the dependency graph or any metric. Omitted when no markers were found.
 	// Ceiling: cargo yanked and live-version EOL require external registry queries
-	// and are routed to the LLM path (archfit analyze --llm / enrich), not here.
+	// and are routed to the LLM path (archfit analyze --ai-summary / config enrich), not here.
 	DeprecatedDeps []DeprecatedDep `json:"deprecated_deps,omitempty"`
 	// SemanticStrengthOverlay reports SCIP semantic-strength overlay coverage by
 	// language. Report-only visibility for the refinement layer; never consumed by

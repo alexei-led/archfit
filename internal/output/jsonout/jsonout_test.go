@@ -77,7 +77,7 @@ func TestJSONRenderer_AdvisoryTasks(t *testing.T) {
 		ScoreValue:   8,
 		TopFiles:     []string{"a.go", "b.go"},
 		Constraints:  []string{"report-only"},
-		Validation:   []string{"archfit analyze --gate --full"},
+		Validation:   []string{"archfit check"},
 	}}
 
 	var buf bytes.Buffer

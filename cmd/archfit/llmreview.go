@@ -607,7 +607,7 @@ func printReview(deps *appDeps, providerName string, rev reviewResponse) {
 
 	_, _ = fmt.Fprintln(w, "---")
 	_, _ = fmt.Fprintln(w, "_Review generated from deterministic archfit evidence. LLM narratives are advisory")
-	_, _ = fmt.Fprintln(w, "and never affect the `analyze --gate` gate._")
+	_, _ = fmt.Fprintln(w, "and never affect the `archfit check` gate._")
 }
 
 func reviewRiskSuffix(r reviewRisk) string {
