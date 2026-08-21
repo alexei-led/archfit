@@ -156,9 +156,7 @@ func TestDiffCmd_Formats(t *testing.T) {
 		// not on a parent the test recomputes: the parent moved from the config
 		// dir to the git root once already, and a recomputed absolute path stops
 		// matching (silently passing) the moment the code picks a different one.
-		if strings.Contains(buf.String(), baseWorktreeSegment) {
-			t.Errorf("head output leaked a base-worktree path (%q): %s", baseWorktreeSegment, buf.String())
-		}
+		assertNoBaseWorktreeLeak(t, buf.String())
 	})
 
 	// T1: --format=markdown produces a markdown report with expected headings.
@@ -354,13 +352,27 @@ func TestDiffCmd_ConfigInSubdir(t *testing.T) {
 	}
 }
 
-// baseWorktreeSegment is the path segment every base-side checkout lives under,
-// wherever the parent is rooted. Base-worktree isolation is asserted against
-// this rather than a recomputed absolute parent: the previous assertions rebuilt
-// the parent from the CONFIG dir, so moving the parent to the git root would
-// have left them comparing against a path the code no longer produces — passing
-// while checking nothing.
-var baseWorktreeSegment = filepath.Join(".archfit-cache", "worktrees")
+// baseWorktreeSegments are the path fragments a base-side checkout can live
+// under: the deterministic cache parent, and the random temp dir
+// baseWorktreeParent falls back to when the cache path is unusable. BOTH are
+// asserted — checking only the cache parent would leave the fallback layout
+// unexamined while the assertion looked comprehensive.
+//
+// Isolation is asserted on these fragments rather than on a recomputed absolute
+// parent: the previous assertions rebuilt the parent from the CONFIG dir, so
+// moving it to the git root would have left them comparing against a path the
+// code no longer produces — passing while checking nothing.
+var baseWorktreeSegments = []string{filepath.Join(".archfit-cache", "worktrees"), "archfit-base-"}
+
+// assertNoBaseWorktreeLeak fails when output names any base-side checkout path.
+func assertNoBaseWorktreeLeak(t *testing.T, out string) {
+	t.Helper()
+	for _, seg := range baseWorktreeSegments {
+		if strings.Contains(out, seg) {
+			t.Errorf("head output leaked a base-worktree path (%q): %s", seg, out)
+		}
+	}
+}
 
 func TestBaseWorktreeParent_LocksDeterministicDir(t *testing.T) {
 	sha := strings.Repeat("a", 40)

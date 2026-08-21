@@ -853,6 +853,16 @@ touch `internal/model/*` or `internal/view`.
   Fixing only the in-process loader would have satisfied a `go/packages`-only
   check while `scip` and `scip-symbols` kept the feature inert.
 
+- The base-side worktree parent moved from the config directory to `gitRoot`
+  (fourth review), so the checkout always sits inside the analyzed repo and
+  inherits its gitignored resolution inputs (`node_modules`, generated code).
+  Ceiling: this writes `.archfit-cache/worktrees/` into the analyzed repo even
+  for a user who deliberately keeps all archfit state outside it. On a read-only
+  checkout the `os.MkdirTemp` fallback still fires, and there the inherited-input
+  rescue does NOT apply — a TypeScript repo analyzed that way can still report a
+  base-side `partial (n/n unresolved)`. Disclosed in `comparison_reasons`, not
+  silent, and no known layout hits it in CI.
+
 ### Post-review corrections
 
 Code review found that Task 6 and Task 7 implemented the same "pair two runs'

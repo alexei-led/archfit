@@ -255,16 +255,22 @@ func compareAnalyzerEvidence(fams []analyzerFamily, head, base analyzerEvidence)
 
 // unpairedReason renders the reason one family blocked origin classification.
 //
-// The raw coverage status alone can read as its own opposite. The shape that
-// blocks classification most often is an ASYMMETRY inside a single status —
-// "cargo: head absent, base absent" was the message for head-has-Cargo.toml
-// (analyzer expected, missing) against base-has-none (Rust not in that tree) —
-// which states two identical facts as the reason they could not be compared, and
-// differs from the symmetric-blindness message that stays COMPARABLE only by a
-// trailing clause. When the raw statuses match, name the discriminator instead.
+// Two raw statuses that MATCH never explain themselves. "cargo: head absent,
+// base absent" was the message for head-has-Cargo.toml (analyzer expected,
+// missing) against base-has-none (Rust not in that tree): two identical facts
+// offered as the reason they could not be compared, distinguishable from the
+// symmetric-blindness message that stays COMPARABLE only by a trailing clause.
+// The same emptiness afflicts every other equal-raw failure — "head timed_out,
+// base timed_out", "head ok+ok, base ok+ok" — where what the reader needs is why
+// symmetry did NOT rescue the comparison, which the status cannot say.
+//
+// So whenever the raw statuses match, both sides carry their meaning, even when
+// the meanings match too. Differing raw statuses already carry the information
+// and stay terse.
 func unpairedReason(name string, head, base familySummary) string {
-	if hm, bm := head.meaning(), base.meaning(); head.raw() == base.raw() && hm != bm {
-		return fmt.Sprintf("%s: head %s (%s), base %s (%s)", name, head.raw(), hm, base.raw(), bm)
+	if head.raw() == base.raw() {
+		return fmt.Sprintf("%s: head %s (%s), base %s (%s)",
+			name, head.raw(), head.meaning(), base.raw(), base.meaning())
 	}
 	return fmt.Sprintf("%s: head %s, base %s", name, head.raw(), base.raw())
 }

@@ -50,15 +50,31 @@ func testGitDeltaUnpairedReason(t *testing.T) {
 		head, base       []diagnostic.Coverage
 		headGap, baseGap []diagnostic.CoverageGap
 		want             string
-		wantNotEqual     bool // the two rendered sides must differ
 	}{
 		{
 			// head has the project markers (analyzer expected, missing); base does
 			// not (language simply absent). Both rows read "absent".
 			name: "equal raw statuses name the discriminator",
 			head: absent, base: absent, headGap: goGap,
-			want:         "go/packages: head absent (analyzer expected, did not run), base absent (language not present)",
-			wantNotEqual: true,
+			want: "go/packages: head absent (analyzer expected, did not run), base absent (language not present)",
+		},
+		{
+			// Equal statuses AND equal meanings still explain nothing on their own:
+			// what the reader needs is why symmetry did not rescue the comparison.
+			name: "equal statuses explain themselves even when both mean the same",
+			head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusTimedOut)},
+			base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusTimedOut)},
+			want: "go/packages: head timed out (run did not finish), base timed out (run did not finish)",
+		},
+		{
+			name: "duplicate rows on both sides say so",
+			head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK), covRow(toolGoPackages, diagnostic.StatusOK)},
+			base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK), covRow(toolGoPackages, diagnostic.StatusOK)},
+			want: "go/packages: head ok+ok (duplicate coverage rows), base ok+ok (duplicate coverage rows)",
+		},
+		{
+			name: "a missing row on both sides says so",
+			want: "go/packages: head missing (no coverage row), base missing (no coverage row)",
 		},
 		{
 			// Different raw statuses already carry the information; do not clutter.
@@ -80,11 +96,12 @@ func testGitDeltaUnpairedReason(t *testing.T) {
 			if len(reasons) != 1 || reasons[0] != tc.want {
 				t.Fatalf("reason = %v, want [%q]", reasons, tc.want)
 			}
-			if tc.wantNotEqual {
-				head, _, found := strings.Cut(reasons[0], ", base ")
-				if !found || strings.TrimPrefix(head, "go/packages: head ") == "absent" {
-					t.Errorf("the reason must not state the same fact for both sides: %q", reasons[0])
-				}
+			// The general invariant behind every row: two matching raw statuses
+			// never explain why the comparison failed, so a reason that repeats one
+			// must add what each side MEANT.
+			if headRaw, baseRaw, _ := strings.Cut(reasons[0], ", base "); headRaw == "go/packages: head "+baseRaw &&
+				!strings.Contains(reasons[0], "(") {
+				t.Errorf("the reason states the same status twice and explains neither: %q", reasons[0])
 			}
 		})
 	}
@@ -1010,11 +1027,9 @@ func testGitDeltaCheckBaseJSON(t *testing.T) {
 			}
 			// Isolation: the base worktree is deleted before output is read, so
 			// no base-side path may appear anywhere in the head report. Asserted
-			// on the path SEGMENT, not on a parent the test recomputes — see
-			// baseWorktreeSegment.
-			if strings.Contains(stdout, baseWorktreeSegment) {
-				t.Errorf("head output leaked a base-worktree path (%q): %s", baseWorktreeSegment, stdout)
-			}
+			// on the path SEGMENTS, not on a parent the test recomputes — see
+			// baseWorktreeSegments.
+			assertNoBaseWorktreeLeak(t, stdout)
 		})
 	}
 }
