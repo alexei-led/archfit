@@ -203,6 +203,10 @@ func RenderReviewStatus(rev ConfigReview) string {
 //     action_required while the recommended remedy destroyed it.
 //   - Removed is never applied — deleting a stanza discards its settings — so it
 //     is a review item, not a pending edit.
+//
+// Unclassified and Pathless sit in the same review-only tier. They are gaps, not
+// edits, and Issues already carries the ones a human must decide, so they lift
+// the status to review_available without reaching action_required.
 func reviewStatus(r UpdateReport) string {
 	if len(r.Issues) > 0 || hasPendingEdits(r) {
 		return ReviewStatusActionRequired

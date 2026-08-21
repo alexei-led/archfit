@@ -422,33 +422,39 @@ Notes:
 - The report leads with one status line: `action_required`, `review_available`,
   or `no_known_issues`. `no_known_issues` means these checks found nothing; it is
   not a claim that the config is complete.
+- With `--apply`, a run with nothing to write still prints the same status line
+  and report as the preview. A structure with no pending edits is not a clean
+  config: module gaps, unclassifiable modules, and unchecked stanzas are still
+  reported.
 - The report lists every change `--apply` would write, including non-module
   settings such as the Rust deep-analysis defaults.
 
 Review model:
 
-| Field                | Meaning                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------- |
-| `structure`          | Discovery differences: pending edits plus the review-only buckets below.              |
-| `issues`             | Per-module config gaps that need a decision, each with a reason and a next action.    |
+| Field                | Meaning                                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `structure`          | Discovery differences: pending edits plus the review-only buckets below.                                                                                     |
+| `issues`             | Per-module config gaps that need a decision, each with a reason and a next action.                                                                           |
 | `unchecked_modules`  | Configured modules the per-module checks did NOT evaluate, with the reason. An empty `issues` list is only "clean" for the modules that are not listed here. |
-| `review_suggestions` | Deterministic deploy-unit and distance-config proposals. `--apply` never writes them. |
+| `review_suggestions` | Deterministic deploy-unit and distance-config proposals. `--apply` never writes them.                                                                        |
 
 `structure` fields:
 
-| Field             | Applied by `--apply`? | Meaning                                                                                                  |
-| ----------------- | --------------------- | -------------------------------------------------------------------------------------------------------- |
-| `added_modules`   | yes                   | Modules discovery found that the config does not declare.                                                |
-| `path_drift`      | yes                   | Declared modules whose configured paths differ from the discovered paths.                                |
-| `settings`        | yes                   | Non-module settings, such as the Rust deep-analysis defaults.                                            |
-| `name_drift`      | no                    | A configured module and a discovered module own the same paths under different names.                    |
-| `removed_modules` | no                    | Configured modules discovery did not emit.                                                               |
+| Field             | Applied by `--apply`? | Meaning                                                                               |
+| ----------------- | --------------------- | ------------------------------------------------------------------------------------- |
+| `added_modules`   | yes                   | Modules discovery found that the config does not declare.                             |
+| `path_drift`      | yes                   | Declared modules whose configured paths differ from the discovered paths.             |
+| `settings`        | yes                   | Non-module settings, such as the Rust deep-analysis defaults.                         |
+| `name_drift`      | no                    | A configured module and a discovered module own the same paths under different names. |
+| `removed_modules` | no                    | Configured modules discovery did not emit.                                            |
 
 `name_drift` and `removed_modules` are review-only. Resolving either means
 re-keying or deleting a stanza, which discards its `owner`, `subdomain`,
 `volatility`, `layer`, and `public` values, so both stay human decisions.
-Only pending edits raise the status to `action_required`; a report with review
-items alone reads `review_available`.
+Neither raises the status to `action_required` — only pending edits and module
+`issues` do. A report whose findings are review items alone reads
+`review_available`, and those items are not just these two buckets: modules
+archfit cannot classify and the stanzas in `unchecked_modules` count as well.
 
 Issue codes:
 
