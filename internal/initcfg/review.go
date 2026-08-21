@@ -183,7 +183,12 @@ func RenderReviewStatus(rev ConfigReview) string {
 	case ReviewStatusReviewAvailable:
 		return fmt.Sprintf("status: %s — nothing to apply; review items only%s\n", rev.Status, unchecked)
 	default:
-		return fmt.Sprintf("status: %s — nothing detected by these checks\n", rev.Status)
+		// The unchecked clause belongs here too: "nothing detected" over skipped
+		// modules is the exact misreading this line exists to prevent. Defensive —
+		// BuildConfigReview cannot reach it, because both sources of
+		// UncheckedModules (Removed, Pathless) also make HasReviewItems true and so
+		// lift the status to review_available. A hand-built ConfigReview can.
+		return fmt.Sprintf("status: %s — nothing detected by these checks%s\n", rev.Status, unchecked)
 	}
 }
 
@@ -210,10 +215,18 @@ func reviewStatus(r UpdateReport) string {
 
 // HasReviewItems reports whether the report carries anything a human should
 // look at even though `--apply` has nothing to write: a review suggestion, a
-// naming difference, or a configured module discovery did not emit. Callers use
-// it to decide whether "nothing to apply" may be printed on its own.
+// naming difference, a configured module discovery did not emit, a module gap
+// needing a decision, a module archfit cannot classify, or a stanza whose field
+// checks were skipped. Callers use it to decide whether "nothing to apply" may
+// be printed on its own.
+//
+// The three field-check buckets are deliberately in the list. They are exactly
+// what makes a structurally in-sync config still action_required, so omitting
+// them let `--apply` print a clean result over the same findings the run without
+// --apply reports.
 func HasReviewItems(r UpdateReport) bool {
-	return HasReviewSuggestions(r) || len(r.NameDrift) > 0 || len(r.Removed) > 0
+	return HasReviewSuggestions(r) || len(r.NameDrift) > 0 || len(r.Removed) > 0 ||
+		len(r.Issues) > 0 || len(r.Unclassified) > 0 || len(r.Pathless) > 0
 }
 
 // hasPendingEdits reports whether `config update --apply` would write anything.

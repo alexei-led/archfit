@@ -1531,6 +1531,7 @@ func TestUpdateCmd_ConfigReview(t *testing.T) {
 		{"text report leads with the status line and lists issues", runConfigReviewTextStatus},
 		{"rust setting preview matches what apply writes", runConfigReviewRustSettingParity},
 		{"a naming difference is review-only, never a pending edit", runConfigReviewNameDrift},
+		{"apply never claims a clean config over module issues", runConfigReviewApplyDisclosesIssues},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1659,6 +1660,55 @@ rules:
 	}
 	if !bytes.Equal(before, after) {
 		t.Errorf("--apply must not rewrite a name-only difference; file became:\n%s", after)
+	}
+}
+
+// runConfigReviewApplyDisclosesIssues pins that `--apply` never prints the
+// no-changes line over module gaps a human has to decide.
+//
+// The fixture is structurally in sync — nothing to add, remove, or path-drift —
+// but its one module declares no owner, no layer, and no volatility input, so
+// the run carries three issues. The apply path used to key that decision on
+// HasReviewItems, which counted only suggestions, name drift, and removals: the
+// identical config reported action_required without --apply and "structurally in
+// sync — no changes to apply" with it.
+func runConfigReviewApplyDisclosesIssues(t *testing.T) {
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, testUpdateReviewConfig)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir, Apply: true},
+		matchingRunner(testUpdateReviewPkg))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(out, "no changes to apply") {
+		t.Errorf("--apply must not claim a clean config while issues are unreported:\n%s", out)
+	}
+	if !strings.HasPrefix(out, "status: "+initcfg.ReviewStatusActionRequired) {
+		t.Errorf("--apply must lead with the same status line the preview prints:\n%s", out)
+	}
+	for _, want := range []string{
+		initcfg.IssueMissingOwner,
+		initcfg.IssueMissingLayer,
+		initcfg.IssueMissingVolatilityInput,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--apply output missing issue code %q:\n%s", want, out)
+		}
+	}
+
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("an issue-only report has nothing to write; file became:\n%s", after)
 	}
 }
 

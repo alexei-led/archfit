@@ -129,10 +129,15 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	if !hasEdits {
-		// Review-only items (naming differences, configured modules discovery did
-		// not emit) count here too: printing "structurally in sync" over them
-		// would claim a clean config while the report has findings to show.
+		// Review-only items (module gaps, unclassifiable or unchecked modules,
+		// naming differences, configured modules discovery did not emit) count here
+		// too: printing "structurally in sync" over them would claim a clean config
+		// while the report has findings to show.
 		if (c.AIClassify && ann != nil) || initcfg.HasReviewItems(report) {
+			// Same status line the preview prints. It is also the only text-path
+			// disclosure of unchecked modules — RenderUpdateReport has no section for
+			// them, so without it a pathless-only report would print nothing at all.
+			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderReviewStatus(initcfg.BuildConfigReview(report)))
 			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
 			return nil
 		}

@@ -409,6 +409,22 @@ func TestRenderReviewStatus(t *testing.T) {
 			}
 		})
 	}
+
+	// Defensive: no_known_issues has to name unchecked modules too — "nothing
+	// detected by these checks" over skipped modules is the misreading the clause
+	// exists to prevent. Built by hand because BuildConfigReview cannot produce
+	// this pair: both sources of UncheckedModules (Removed, Pathless) also make
+	// HasReviewItems true, which lifts the status to review_available.
+	t.Run("no_known_issues still names unchecked modules", func(t *testing.T) {
+		got := RenderReviewStatus(ConfigReview{
+			Status:           ReviewStatusNoKnownIssues,
+			UncheckedModules: []ReviewUncheckedModule{{Module: testGone, Reason: reasonUncheckedPathless}},
+		})
+		want := "status: no_known_issues — nothing detected by these checks (1 module(s) unchecked — see unchecked_modules)\n"
+		if got != want {
+			t.Errorf("status line:\n  got  %q\n  want %q", got, want)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
