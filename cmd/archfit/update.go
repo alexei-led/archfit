@@ -110,7 +110,15 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 
 	// Settings is the single source for the Rust deep-analysis edit: the preview,
 	// the JSON document, and the apply pass all read it, so they cannot drift.
-	if needsRustDeepAnalysisConfig(cfg, freshCfg.HasRust) {
+	//
+	// Applicability comes from the same probe the coverage layer uses, NOT from
+	// freshCfg.HasRust: discovery only stats a ROOT Cargo.toml, so a config that
+	// already points languages.rust.manifest at a sub-crate manifest describes a
+	// repo archfit analyses as Rust while `config update` refused to offer it the
+	// deep-analysis defaults that make a single-crate graph measurable.
+	// `config init` keeps the root-only check — it has no existing config to read
+	// a manifest from.
+	if needsRustDeepAnalysisConfig(cfg, rustProjectPresent(root, cfg)) {
 		report.Settings = append(report.Settings, initcfg.RustDeepAnalysisSetting())
 	}
 	hasSettingEdits := len(report.Settings) > 0

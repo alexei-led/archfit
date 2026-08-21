@@ -405,6 +405,60 @@ modules:
 			}
 		}
 	})
+
+	// Rust applicability here must be the manifest-aware probe the coverage layer
+	// uses, not initcfg's root-Cargo.toml-only HasRust flag. A config already
+	// pointing languages.rust.manifest at a sub-crate manifest describes a repo
+	// archfit analyses as Rust, and `config update` refused to offer it the
+	// deep-analysis defaults that make a single-crate graph measurable.
+	t.Run("a configured sub-crate manifest enables the deep analyzers", func(t *testing.T) {
+		subDir := t.TempDir()
+		writeFileAt(t, subDir, filepath.Join("crates", "core", markerCargoToml), "[package]\nname = \"core\"\n")
+		subCfg := writeConfig(t, subDir, `version: 1
+languages:
+  rust:
+    enabled: true
+    manifest: crates/core/Cargo.toml
+modules: {}
+`)
+		if _, err := runUpdateCmd(t, &UpdateCmd{Config: subCfg, Root: subDir, Apply: true}, emptyRunner()); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		gotBytes, err := os.ReadFile(subCfg) //nolint:gosec
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := string(gotBytes)
+		for _, want := range []string{
+			rustEnabledAuto,
+			"manifest: crates/core/Cargo.toml",
+			"analyzers:\n  cargo_modules:\n    enabled: true\n  scip:\n    enabled: true",
+		} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("updated config missing %q:\n%s", want, got)
+			}
+		}
+	})
+
+	// The mirror: no root manifest and no configured one is not a Rust project,
+	// so update must not write a Rust stanza into it.
+	t.Run("no manifest anywhere writes no Rust stanza", func(t *testing.T) {
+		plainDir := t.TempDir()
+		writeFileAt(t, plainDir, markerGoMod, "module example\n")
+		plainCfg := writeConfig(t, plainDir, `version: 1
+modules: {}
+`)
+		if _, err := runUpdateCmd(t, &UpdateCmd{Config: plainCfg, Root: plainDir, Apply: true}, emptyRunner()); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		gotBytes, err := os.ReadFile(plainCfg) //nolint:gosec
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := string(gotBytes); strings.Contains(got, "rust:") {
+			t.Fatalf("Rust stanza written into a repo with no Cargo.toml:\n%s", got)
+		}
+	})
 }
 
 func TestEnsureRustDeepAnalysisConfig_IgnoresCommentBoundaries(t *testing.T) {

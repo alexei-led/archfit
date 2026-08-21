@@ -1,18 +1,14 @@
 package main
 
 import (
-	"io/fs"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
-
-	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/golang"
+	"github.com/alexei-led/archfit/internal/extract/py"
+	"github.com/alexei-led/archfit/internal/extract/rust"
+	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -88,157 +84,80 @@ func buildPrimaryToolLanguage() map[string]string {
 	return m
 }
 
-// primaryToolProjectMarkers maps a language's primary-tool coverage name to the
-// project-marker filenames that signal the language is present in a repo root
-// (e.g. "go/packages" → ["go.mod"], "cargo" → ["Cargo.toml"]). Used by
-// buildCoverageGaps to suppress gaps for languages whose project is absent from
-// the scan root. Built once at init.
-var primaryToolProjectMarkers = buildPrimaryToolProjectMarkers()
+// primaryToolProjectProbe maps a language's primary-tool coverage name to the
+// registry row's applicability probe, so buildCoverageGaps and
+// markDisabledPrimaries can ask "is this language present?" by coverage name.
+// Built once at init.
+var primaryToolProjectProbe = buildPrimaryToolProjectProbe()
 
-func buildPrimaryToolProjectMarkers() map[string][]string {
-	m := make(map[string][]string, len(languageRegistry))
+func buildPrimaryToolProjectProbe() map[string]func(root string, cfg config.Config) bool {
+	m := make(map[string]func(root string, cfg config.Config) bool, len(languageRegistry))
 	for _, lang := range languageRegistry {
-		m[lang.PrimaryTool] = lang.ProjectMarkers
+		m[lang.PrimaryTool] = lang.ProjectPresent
 	}
 	return m
 }
 
-// primaryToolProjectProbe overrides the root-only marker check for analyzers
-// whose real discovery is not root-only. Two languages need it:
-//
-//   - Go: go/packages discovers members by walking for nested go.mod dirs
-//     (CLAUDE.md, "Go workspace loading") and then applies the
-//     languages.go.modules include/exclude filter. Without the override a
-//     services/api/go.mod repo answers "no Go here".
-//   - Rust: languages.rust.manifest can point cargo at a sub-crate manifest with
-//     no root Cargo.toml at all, so the root-only check answers "no Rust here"
-//     for a project the extractor happily analyses.
-//
-// Getting either wrong turns a real analyzer failure into "language not
-// present" — the one absent shape both --base and `config compare` read as
-// safely comparable. dependency-cruiser (package.json) and grimp (pyproject and
-// friends) do resolve from a root manifest, so they keep the plain check.
-var primaryToolProjectProbe = map[string]func(root string, cfg config.Config, exclusions []string) bool{
-	toolGoPackages: goProjectPresent,
-	toolCargo:      rustProjectPresent,
-}
-
 // primaryProjectPresent reports whether the language behind a primary coverage
-// tool is present under root, using the analyzer's own discovery shape.
-// exclusions are the run's EFFECTIVE exclusion globs (defaults merged with
-// config) — the same set the extractors filter on.
-func primaryProjectPresent(tool, root string, cfg config.Config, markers, exclusions []string) bool {
-	if probe, ok := primaryToolProjectProbe[tool]; ok {
-		return probe(root, cfg, exclusions)
-	}
-	return projectMarkerPresent(root, markers)
-}
-
-// goProjectPresent reports whether any go.mod the Go extractor would actually
-// load exists at or under root. A go.work above root is deliberately NOT
-// evidence: when it lists members inside root those members carry their own
-// go.mod (the walk finds them), and when it lists none, Go is not in this scan
-// root at all.
+// tool is present under root, using the analyzer's own applicability code.
 //
-// The languages.go.modules include/exclude filter is applied through the
-// extractor's own golang.FilterMembers, not a re-implementation of it: the
-// extractor reports absent when the filter removes every member, so a probe
-// that ignored the filter would call that deliberate scoping a coverage gap.
-// FilterMembers short-circuits when neither list is configured, so the common
-// case costs nothing.
-func goProjectPresent(root string, cfg config.Config, exclusions []string) bool {
-	ec := cfg.ForExtract(config.LangGo)
-	return markerInTree(root, markerGoMod, exclusions, func(dir string) bool {
-		return len(golang.FilterMembers([]string{dir}, root, ec.GoModuleInclude, ec.GoModuleExclude)) == 1
-	})
-}
-
-// rustProjectPresent mirrors the Rust extractor's applicability marker
-// (internal/extract/rust, Extract): a configured languages.rust.manifest
-// resolved against root exactly like cargo's --manifest-path when set, else the
-// root Cargo.toml. Exclusions play no part — the extractor stats the manifest
-// directly, and a probe that filtered it would disagree with the run.
-func rustProjectPresent(root string, cfg config.Config, _ []string) bool {
-	manifest := cfg.ForExtract(config.LangRust).CargoManifest
-	if manifest == "" {
-		return projectMarkerPresent(root, []string{markerCargoToml})
-	}
-	if !filepath.IsAbs(manifest) {
-		manifest = filepath.Join(root, manifest)
-	}
-	_, err := os.Stat(manifest)
-	return err == nil
-}
-
-// markerInTree reports whether marker exists in root or any directory under it
-// that the run's exclusions do not remove and accept approves. accept receives
-// the absolute directory holding the marker. Stops at the first ACCEPTED hit —
-// a rejected candidate must not end the walk, or a filtered member shadows an
-// analysed one deeper in the tree.
-//
-// The exclusion check is a CORRECTNESS filter, not a bound: a marker the
-// extractor excludes but this walk counts makes the analyzer's "absent" read as
-// a coverage gap instead of "the language is not here", which turns the whole
-// origin delta inert (`--base`) or not-comparable (`config compare`). It is
-// applied to the marker's repo-relative path with the same doublestar matcher
-// the extractors use, so a `go.mod` under `testdata/` or an excluded subtree
-// cannot be counted. Directory pruning is derived from the same globs and is
-// only a walk bound.
-func markerInTree(root, marker string, exclusions []string, accept func(dir string) bool) bool {
-	prune := scope.ExcludedDirNames(exclusions)
-	found := false
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || !d.IsDir() {
-			return nil //nolint:nilerr // an unreadable entry is skipped, not fatal
-		}
-		if path != root {
-			name := d.Name()
-			if _, pruned := prune[name]; pruned || strings.HasPrefix(name, ".") {
-				return fs.SkipDir
-			}
-		}
-		if _, statErr := os.Stat(filepath.Join(path, marker)); statErr != nil {
-			return nil
-		}
-		rel, relErr := filepath.Rel(root, filepath.Join(path, marker))
-		if relErr != nil || matchesAnyGlob(exclusions, filepath.ToSlash(rel)) {
-			return nil
-		}
-		if !accept(path) {
-			return nil
-		}
-		found = true
-		return fs.SkipAll
-	})
-	return found
-}
-
-// matchesAnyGlob reports whether path matches any of the exclusion globs, using
-// the same matcher the extractors apply to their own relative paths.
-func matchesAnyGlob(globs []string, path string) bool {
-	for _, g := range globs {
-		if matched, _ := doublestar.Match(g, path); matched {
-			return true
-		}
-	}
-	return false
-}
-
-// projectMarkerPresent reports whether any of the given project-marker filenames
-// exist in root. Checks only the root dir (not recursive) — the analyzers that
-// use it (dependency-cruiser, grimp, cargo) resolve their project from a root
-// manifest. Go goes through primaryToolProjectProbe instead. Returns true when
-// markers is empty (no marker = cannot determine absence, so don't suppress).
-func projectMarkerPresent(root string, markers []string) bool {
-	if len(markers) == 0 {
+// An analyzer with no probe answers "present": absence cannot be established,
+// and the safe direction is to disclose the gap rather than silently call the
+// language missing.
+func primaryProjectPresent(tool, root string, cfg config.Config) bool {
+	probe, ok := primaryToolProjectProbe[tool]
+	if !ok || probe == nil {
 		return true
 	}
-	for _, m := range markers {
-		if _, err := os.Stat(filepath.Join(root, m)); err == nil {
-			return true
-		}
-	}
-	return false
+	return probe(root, cfg)
+}
+
+// goProjectPresent reports whether the Go extractor would find anything to load
+// under root, by running the extractor's OWN member selection: go.work members
+// where a workspace governs the scan root, else the root go.mod, else a walk —
+// then the languages.go.modules include/exclude filter.
+//
+// Walking for go.mod instead (the previous shape) disagreed with the extractor
+// in both directions: it ignored go.work, so a workspace naming members the
+// module filter then removes reported a coverage gap over a deliberately empty
+// scope, and a workspace member the walk cannot reach (a `use` directive into a
+// dot-directory) read as "there is no Go here".
+//
+// cfg.Exclude — projected here through the same ForExtract view the extractor
+// consumes — is ALREADY the run's effective exclusion set: runPipeline merges
+// the defaults in once, at setup. Never re-merge it. scope.MergeExclusions is
+// not idempotent: it CONSUMES `!` re-includes, so a second pass re-seeds the
+// very defaults the user removed (pinned by scope.TestMergeExclusions) and the
+// probe then skips trees the extractors analysed.
+//
+// A discovery error (unreadable or unparseable go.work) is not evidence of
+// absence — the extractor fails the run over it, so the probe discloses.
+func goProjectPresent(root string, cfg config.Config) bool {
+	ec := cfg.ForExtract(config.LangGo)
+	members, err := golang.AnalysableMembers(root, ec.Exclusions, ec.GoModuleInclude, ec.GoModuleExclude)
+	return err != nil || len(members.Dirs) > 0
+}
+
+// tsProjectPresent defers to the TypeScript extractor's own applicability test:
+// a package.json in the scan root. A tsconfig.json alone is not a TypeScript
+// project as far as dependency-cruiser is concerned.
+func tsProjectPresent(root string, _ config.Config) bool {
+	return ts.Applicable(root)
+}
+
+// pyProjectPresent defers to the Python extractor's own applicability test:
+// pyproject.toml, setup.py, or the configured languages.python.package
+// directory. setup.cfg is not one of them.
+func pyProjectPresent(root string, cfg config.Config) bool {
+	return py.Applicable(root, cfg.ForExtract(config.LangPython).PyPackage)
+}
+
+// rustProjectPresent defers to the Rust extractor's own applicability test: a
+// configured languages.rust.manifest resolved against root exactly like cargo's
+// --manifest-path, else the root Cargo.toml. Exclusions play no part — the
+// extractor stats the manifest directly.
+func rustProjectPresent(root string, cfg config.Config) bool {
+	return rust.Applicable(root, cfg.ForExtract(config.LangRust).CargoManifest)
 }
 
 // buildCoverageGaps derives the CoverageGaps block from the absent tool-coverage
@@ -257,14 +176,6 @@ func projectMarkerPresent(root string, markers []string) bool {
 // gate on that tool overrides the suppression — except gate: off, which is a
 // deliberate opt-out and never produces an install prompt.
 func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string) []diagnostic.CoverageGap {
-	// cfg.Exclude is ALREADY the run's effective exclusion set: runPipeline merges
-	// the defaults in once, at setup, before projecting any view, so the marker
-	// probe reads exactly what the extractors filtered on. Never re-merge here.
-	// scope.MergeExclusions is not idempotent — it CONSUMES `!` re-includes, so a
-	// second pass re-seeds the very defaults the user removed (pinned by
-	// scope.TestMergeExclusions). Re-merging made the probe skip trees the
-	// extractors analysed, suppressing real coverage gaps.
-	exclusions := cfg.Exclude
 	var gaps []diagnostic.CoverageGap
 	for _, c := range cov {
 		// Only truly absent tools produce a gap. Disabled-by-config tools are an
@@ -285,12 +196,11 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 		if primaryDisabledByConfig(cfg, c.Tool) {
 			continue
 		}
-		// Suppress the gap when the language's project marker is absent from the
-		// scan root — the language simply isn't present in this repo, so the missing
-		// tool is not actionable. An explicit warn/fail gate overrides this (same
-		// carve-out as the disabled-language check above). cargo-modules (opt-in
-		// intra-crate tool, not a language primary) is also suppressed when no
-		// Cargo.toml is present.
+		// Suppress the gap when the language's project is absent from the scan root
+		// — the language simply isn't present in this repo, so the missing tool is
+		// not actionable. An explicit warn/fail gate overrides this (same carve-out
+		// as the disabled-language check above). cargo-modules (opt-in intra-crate
+		// tool, not a language primary) is also suppressed when Rust is absent.
 		if root != "" {
 			switch c.Tool {
 			case toolCargoModules:
@@ -298,13 +208,12 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 				// the Rust extractor and behind the SAME applicability marker, so it
 				// reads the marker through rustProjectPresent — a configured
 				// languages.rust.manifest points both at the sub-crate manifest.
-				if configToolGate(cfg, c.Tool) == gateWarn && !rustProjectPresent(root, cfg, exclusions) {
+				if configToolGate(cfg, c.Tool) == gateWarn && !rustProjectPresent(root, cfg) {
 					continue
 				}
 			default:
-				if markers, ok := primaryToolProjectMarkers[c.Tool]; ok {
-					lang := primaryToolLanguage[c.Tool]
-					if cfg.ToolGate(lang) == "" && !primaryProjectPresent(c.Tool, root, cfg, markers, exclusions) {
+				if lang, isPrimary := primaryToolLanguage[c.Tool]; isPrimary {
+					if cfg.ToolGate(lang) == "" && !primaryProjectPresent(c.Tool, root, cfg) {
 						continue
 					}
 				}
@@ -389,7 +298,7 @@ func primaryLanguagePresent(cfg config.Config, tool, root string) bool {
 	if root == "" {
 		return true
 	}
-	return primaryProjectPresent(tool, root, cfg, primaryToolProjectMarkers[tool], cfg.Exclude)
+	return primaryProjectPresent(tool, root, cfg)
 }
 
 // languageDisabledReason is the reason text stamped on a disabled primary row,

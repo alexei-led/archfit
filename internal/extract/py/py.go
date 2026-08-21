@@ -81,7 +81,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	}
 
 	// Applicability: requires pyproject.toml, setup.py, or cfg.PyPackage directory.
-	if !e.isApplicable(s.Root) {
+	if !Applicable(s.Root, e.cfg.PyPackage) {
 		if e.cfg.Mode == view.ModeOn {
 			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: no Python project marker found at %s", s.Root)
 		}
@@ -291,15 +291,27 @@ func cacheableGrimp(out toolrun.Output) bool {
 	return h.Error == "" && h.Unresolved == 0
 }
 
-// isApplicable returns true if s.Root contains a Python project marker.
-func (e *Extractor) isApplicable(root string) bool {
+// Applicable reports whether this extractor has a Python project to analyse at
+// root: a pyproject.toml or setup.py in the root itself, or the configured
+// languages.python.package directory. setup.cfg is NOT a marker — the extractor
+// reports absent over a repo that carries only that.
+//
+// Exported so the CLI's coverage probe can answer "is this language present?"
+// with the extractor's own code instead of a parallel marker list. A probe that
+// disagreed turned "the extractor never looked" into "there is nothing here",
+// the one absent shape both `analyze --base` and `config compare` read as safely
+// comparable — and in the other direction hid a configured package dir behind
+// "no Python here".
+//
+// pkg is view.ExtractConfig.PyPackage (empty when unset).
+func Applicable(root, pkg string) bool {
 	for _, marker := range []string{"pyproject.toml", "setup.py"} {
 		if _, err := os.Stat(filepath.Join(root, marker)); err == nil {
 			return true
 		}
 	}
-	if e.cfg.PyPackage != "" {
-		if _, err := os.Stat(filepath.Join(root, e.cfg.PyPackage)); err == nil {
+	if pkg != "" {
+		if _, err := os.Stat(filepath.Join(root, pkg)); err == nil {
 			return true
 		}
 	}

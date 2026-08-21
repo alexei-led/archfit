@@ -83,6 +83,38 @@ func DiscoverMembers(scanRoot string, exclusions []string) (Members, error) {
 	return Members{Dirs: members, GoWorkOff: goWorkOff}, nil // Dirs may be nil → caller reports absent
 }
 
+// AnalysableMembers is the whole member-selection decision in one call:
+// DiscoverMembers followed by the tools.go.modules include/exclude filter. The
+// returned Members carries the filtered Dirs and the untouched GoWorkOff flag;
+// an empty Dirs means the extractor reports absent.
+//
+// The filter is a deliberate POST-discovery step: DiscoverMembers handles scope
+// exclusions (testdata, generated dirs), FilterMembers handles the user knob
+// that restricts analysis to a named subset of workspace members for large
+// workspaces where a full run exceeds acceptable wall-clock budgets.
+//
+// Scale ceiling: on a ~178-member workspace (omni), a full NeedTypesInfo load
+// takes >5 minutes. Two mitigations are available: languages.go.modules narrows
+// the member set; analyzers.<x>.timeout caps the per-analyzer wall-clock budget
+// (the watchdog fires before the full pipeline hangs). Use them together for
+// large workspaces.
+//
+// Exported and used by BOTH the extractor and the CLI's Go coverage probe. The
+// two must reach the same verdict on "does this scan root have Go in it?": a
+// probe that walked for go.mod itself ignored go.work entirely, so a workspace
+// that names members the module filter then removes read as a coverage gap
+// ("install the Go toolchain") instead of a deliberately empty scope — and the
+// reverse shape turned "the extractor never looked" into "there is no Go here",
+// which both `analyze --base` and `config compare` treat as safely comparable.
+func AnalysableMembers(scanRoot string, exclusions, include, exclude []string) (Members, error) {
+	m, err := DiscoverMembers(scanRoot, exclusions)
+	if err != nil {
+		return Members{}, err
+	}
+	m.Dirs = FilterMembers(m.Dirs, scanRoot, include, exclude)
+	return m, nil
+}
+
 // membersFromGoWork locates a go.work file (at scanRoot or in a parent), parses
 // its use directives, and returns the subset of member dirs that are under
 // scanRoot and not exclusion-matched.

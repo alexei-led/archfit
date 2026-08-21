@@ -110,25 +110,13 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
 	}
 
-	// Discover workspace members (go.work → per-member dirs, or single go.mod).
-	members, err := DiscoverMembers(s.Root, e.cfg.Exclusions)
+	// Discover the members this run will load: go.work → per-member dirs (or a
+	// single go.mod, or a walk), then the tools.go.modules include/exclude filter.
+	members, err := AnalysableMembers(s.Root, e.cfg.Exclusions, e.cfg.GoModuleInclude, e.cfg.GoModuleExclude)
 	if err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/golang: discover members: %w", err)
 	}
 	memberDirs := members.Dirs
-
-	// Apply tools.go.modules include/exclude globs (user-facing member scoping).
-	// This is a deliberate post-discovery filter: DiscoverMembers handles scope
-	// exclusions (testdata, generated dirs); FilterMembers handles the user knob
-	// that restricts analysis to a named subset of workspace members for large
-	// workspaces where a full run exceeds acceptable wall-clock budgets.
-	//
-	// Scale ceiling: on a ~178-member workspace (omni), a full NeedTypesInfo load
-	// takes >5 minutes. Two mitigations are available: tools.go.modules narrows
-	// the member set; tools.<x>.timeout caps the per-analyzer wall-clock budget
-	// (the watchdog fires before the full pipeline hangs). Use them together for
-	// large workspaces.
-	memberDirs = FilterMembers(memberDirs, s.Root, e.cfg.GoModuleInclude, e.cfg.GoModuleExclude)
 
 	if len(memberDirs) == 0 {
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
