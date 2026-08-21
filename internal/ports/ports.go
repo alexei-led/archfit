@@ -84,7 +84,9 @@ type SymbolResolver interface {
 //
 //go:generate moq -out syntax_provider_moq.go . SyntaxProvider
 type SyntaxProvider interface {
-	// Name returns the tool name (e.g. "ast-grep").
+	// Name returns the tool name (e.g. "ast-grep"). This is the ADAPTER name, not
+	// the coverage name: the syntax pass reports coverage under its own
+	// "ast-grep/syntax" row so tool_coverage never carries two rows for one name.
 	Name() string
 
 	// Syntax runs embedded ast-grep rules for the requested languages against the

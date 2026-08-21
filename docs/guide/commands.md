@@ -508,11 +508,11 @@ Notes:
 
 Report model:
 
-| Section                 | Meaning                                                                                                                           |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `coverage evidence`     | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences.                  |
-| measurement differences | Only what changed: the overall score and the one-sided finding IDs. Nothing changed prints `No measurement differences detected.` |
-| measurement loss        | Warnings raised when the candidate measured less of the same tree.                                                                |
+| Section                 | Meaning                                                                                                                                                        |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coverage evidence`     | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences.                                               |
+| measurement differences | Only what changed: the overall score, the one-sided finding IDs, and the classified-edge counts. Nothing changed prints `No measurement differences detected.` |
+| measurement loss        | Warnings raised when the candidate measured less of the same tree.                                                                                             |
 
 Coverage grades:
 

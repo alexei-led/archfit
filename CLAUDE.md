@@ -131,16 +131,27 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   finding-producing analyzer family compared equivalently — otherwise `unknown`,
   never a fabricated new task. One family = one `ToolCoverage` name: the
   per-language primaries, the `ast-grep` pattern pass, the `ast-grep/syntax`
-  pass, and opt-in `scip`/`scip-symbols`/`jscpd`/`cargo-modules`. Pairing rules
-  (shared with `config compare`, see below): equal statuses always pair; the only
-  cross-status pair is `ok` against a gapless-`absent` PRIMARY, which means the
-  language is not in that tree. A gapless `absent` on a NON-primary analyzer is
-  evidence about the tool, not the tree, so it pairs only with itself —
-  symmetric absence is safe (neither side produced findings), asymmetric absence
-  is not. `absent` with a coverage gap, `partial`, timed out, a missing row, and
-  a duplicate row are all unavailable evidence. `comparison_status: comparable`
-  can still ship with non-empty `comparison_reasons`: the status reports task
-  placement, the reasons report evidence.
+  pass, and opt-in `scip`/`scip-symbols`/`jscpd`/`cargo-modules`. Pairing rules:
+  equal statuses always pair; the only cross-status pair is `ok` against a
+  gapless-`absent` PRIMARY, which means the language is not in that tree. A
+  gapless `absent` on a NON-primary analyzer is evidence about the tool, not the
+  tree, so it pairs only with itself — symmetric absence is safe (neither side
+  produced findings), asymmetric absence is not. `absent` with a coverage gap,
+  `partial`, timed out, a missing row, and a duplicate row are all unavailable
+  evidence. `comparison_status: comparable` can still ship with non-empty
+  `comparison_reasons`: the status reports task placement, the reasons report
+  evidence.
+  **Shared with `config compare`'s `decision.gradeTool` (keep these three in
+  step):** one row per tool per side, so a repeated coverage name is unpairable;
+  the coverage-gap condition is PER SIDE, so a gap on one side only is an
+  asymmetry; symmetric absence of a non-primary analyzer never blocks. The two
+  paths deliberately DIFFER twice, because `--base` compares two trees and
+  `config compare` compares one: (a) `ok` vs gapless-`absent` primary is
+  comparable for `--base` (a language appearing is expected) but
+  `not_comparable` for `config compare` (a status change on one tree is
+  config-caused); (b) symmetric `absent`-WITH-a-gap is `comparable_with_gaps`
+  for `config compare` (shared blindness) but unavailable for `--base` (the
+  stricter side; both err safe).
   Isolation: only base finding IDs, coverage rows/gaps, and the config
   hash cross over — `runScoreSide` projects the base Diagnostic to `baseEvidence`
   at the source, because base agent tasks carry paths and a validation command
@@ -173,13 +184,13 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   positional path arguments. Each field selects one thing, and a caller that
   leaves one zero silently gets head-tree state on a base or candidate run:
   `ConfigSource` → config hash + validation command; `BundleDir` → pinned labels
-  + fact-cache location; `ScanRoot` → scope + on-disk path resolution;
-  `EvaluatedAt` → the single instant waiver expiry and staleness age against
-  (zero samples `time.Now()` on read). Per-run values: normal analysis = current
-  path / current config dir / current tree / persisted baseline; git base =
-  same, with the base worktree as ScanRoot and an empty baseline; compare
-  current and compare candidate = the common tree, the current config dir, one
-  shared `EvaluatedAt`, empty baselines, and only `ConfigSource` differing.
+  - fact-cache location; `ScanRoot` → scope + on-disk path resolution;
+    `EvaluatedAt` → the single instant waiver expiry and staleness age against
+    (zero samples `time.Now()` on read). Per-run values: normal analysis = current
+    path / current config dir / current tree / persisted baseline; git base =
+    same, with the base worktree as ScanRoot and an empty baseline; compare
+    current and compare candidate = the common tree, the current config dir, one
+    shared `EvaluatedAt`, empty baselines, and only `ConfigSource` differing.
 - **Owner inheritance for auto-registered synthetic submodules**
   (`classify.AugmentModulesFromGraph`, `AugmentGoWorkspaceModules`): propagates
   `owner` from the nearest config-declared ancestor module to each synthetic module.
