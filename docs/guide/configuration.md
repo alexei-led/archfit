@@ -22,6 +22,17 @@ the `archfit.config-review.v1` document for scripts and agents. Its status line
 reads `action_required`, `review_available`, or `no_known_issues`; the last one
 means these checks found nothing, not that the config is complete.
 
+Before adopting a config edit, measure it. `archfit config compare
+candidate.archfit.yaml -c .archfit.yaml` runs the full pipeline twice over the
+same source tree — once per config — and reports which findings each config
+observes, whether the two rest on comparable analyzer evidence, and whether the
+candidate measured less of the tree (`scored_fraction_fell`,
+`abstained_edges_rose`, `external_edges_rose`). It is report-only: it writes
+nothing, ignores `.archfit-baseline.json`, and never states that a candidate is
+better — a config that scores higher because it stopped measuring edges is a
+measurement loss, not an improvement. `--json` emits the
+`archfit.config-compare.v1` document.
+
 LLM authoring commands are off-gate. `config init --ai-classify` emits commented
 suggestions by default; `config init --ai-classify --apply` writes those model judgments
 live into the generated file, so review the result before using it as a gate.

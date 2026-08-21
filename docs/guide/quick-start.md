@@ -116,6 +116,40 @@ Score      71 / 100  serviceable
 
 **If something looks wrong:** If the first gate run fails on already-known issues, you probably need to finish step 4 or narrow the policy. If it exits `3`, fix the config or toolchain problem before wiring it into CI.
 
+## Optional: measure a config change before adopting it
+
+```sh
+cp .archfit.yaml candidate.archfit.yaml   # edit the copy
+archfit config compare candidate.archfit.yaml -c .archfit.yaml
+```
+
+This runs the full pipeline twice over the same code — once per config — and
+prints only what changed. It writes nothing, ignores the baseline, and never
+exits non-zero on a difference.
+
+Sample output:
+
+```text
+config compare
+  current:   .archfit.yaml
+  candidate: candidate.archfit.yaml
+
+coverage evidence: comparable
+
+measurement differences:
+  score: 71 (serviceable) → 84 (strong) (+13)
+  findings only under the current config (2): 4f1c..., 9ab2...
+
+measurement loss:
+  - external_edges_rose: edges excluded as external rose (0 to 37)
+```
+
+**If something looks wrong:** Read the warnings before the score. A candidate
+that scores higher while `external_edges_rose` or `scored_fraction_fell` fired
+measured less of the same code — that is a loss of evidence, not an
+improvement. A `coverage evidence` grade of `not_comparable` means the two runs
+did not rest on the same analyzer evidence, so trust the difference less.
+
 ## Next steps
 
 - [Commands reference](commands.md)

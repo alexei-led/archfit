@@ -55,6 +55,7 @@ Use this when you know the job, not the command.
 | create the first config file for a repo                             | `archfit config init --root .`                                                                                |
 | sync an existing config to the current repo structure               | `archfit config update -c .archfit.yaml`                                                                      |
 | read the config review from a script or an agent                    | `archfit config update --json -c .archfit.yaml`                                                               |
+| see what a candidate config would measure on the same code          | `archfit config compare candidate.archfit.yaml -c .archfit.yaml`                                              |
 | draft AI labels or module metadata for review                       | `archfit config enrich <kind>` where `<kind>` is `labels`, `abstained`, `owner`, `volatility`, or `subdomain` |
 
 ## Exit codes
@@ -63,7 +64,7 @@ Use this when you know the job, not the command.
 
 | Code | Meaning                                                                                 | Commands that produce it                                                                                                                                                            |
 | ---- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | Success. For `analyze`, this still includes runs that report findings.                  | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config enrich ...` |
+| `0`  | Success. For `analyze`, this still includes runs that report findings.                  | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config compare`, `archfit config enrich ...` |
 | `1`  | Violations. Gate failed. Missing required tools under `--require-tools` also land here. | `archfit check`; `archfit analyze` never exits `1` on a successful run                                                                                                              |
 | `2`  | Warning verdict. No blocking violations, but warnings were promoted to the exit code.   | `archfit check`                                                                                                                                                                     |
 | `3`  | Usage, parse, config, or runtime error.                                                 | All commands                                                                                                                                                                        |
@@ -469,6 +470,98 @@ archfit config update --apply -c .archfit.yaml
 archfit config update --ai-classify -c .archfit.yaml
 archfit config update --ai-classify --apply -c .archfit.yaml
 archfit config update --ai-classify --refresh -c .archfit.yaml
+```
+
+## `archfit config compare <candidate>`
+
+Purpose:
+
+- Measure one source tree twice: once under the current config, once under a candidate config.
+- Report the finding, coverage, and measurement differences between the two.
+
+Use cases:
+
+- checking what a proposed module split, rule change, or analyzer switch would report;
+- checking whether a config edit measured more of the tree, or simply less of it;
+- reviewing a config change without touching the baseline or the gate.
+
+Synopsis:
+
+```sh
+archfit config compare <candidate> [flags]
+```
+
+Notes:
+
+- Report-only. Exit `0` after a successful comparison, exit `3` on an input or
+  runtime error. Findings never change the exit code.
+- Both runs use an empty accepted baseline. `.archfit-baseline.json` records
+  findings accepted under the current config, so applying it would silence the
+  candidate's findings by the current config's history.
+- Both runs measure the same tree with the same pinned labels and fact cache.
+  Only the config file differs, so a candidate stored outside the repo is fine.
+- Nothing is written. Config, baseline, labels, candidate, and policy files stay
+  byte-identical; normal fact-cache reads and writes still happen.
+- The report never states that a candidate config is better. A config that scores
+  higher because it measured less of the tree is a measurement loss, not an
+  improvement.
+
+Report model:
+
+| Section              | Meaning                                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| `coverage evidence`  | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences. |
+| measurement differences | Only what changed: the overall score and the one-sided finding IDs. Nothing changed prints `No measurement differences detected.` |
+| measurement loss     | Warnings raised when the candidate measured less of the same tree.                             |
+
+Coverage grades:
+
+| Grade                  | Condition                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------- |
+| `comparable`           | Every compared analyzer ran on both sides.                                                       |
+| `comparable_with_gaps` | The sides agree, but an analyzer was absent or disabled on both sides.                            |
+| `not_comparable`       | An analyzer's evidence differs between the sides, is partial or timed out, or its coverage row is missing or duplicated. |
+
+A `not_comparable` grade is about evidence, not about the configs: it can appear
+on a run that reports no measurement differences at all. Read the grade first,
+then the differences.
+
+Measurement-loss warnings:
+
+| Code                   | Condition                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------- |
+| `scored_fraction_fell` | The candidate placed a smaller share of cross-boundary edges on a concrete balance. |
+| `abstained_edges_rose` | The candidate abstained on more cross-boundary edges.                          |
+| `external_edges_rose`  | The candidate pushed more edges outside the declared module set, excluding them from `coupling_balance`. |
+
+JSON:
+
+- `--json` emits the comparison as `archfit.config-compare.v1`.
+- Every list is a JSON array, never `null`. All ID lists are sorted.
+- `score_delta` is `null` when either side could not measure `coupling_balance`.
+  `null` means unknown; `0` means measured and unchanged.
+- `classified_edges` is `null` when a side classified no edges at all.
+- `finding_count` counts the distinct observed finding IDs of that side, with
+  fixed entries excluded.
+- Findings are bucketed as `current_only_ids`, `candidate_only_ids`, and
+  `both_ids`. Alternative configs have no time order, so nothing is labelled
+  introduced or resolved. Gate and advisory forms of one finding share one ID.
+
+Flags:
+
+| Flag           | Type | Default                 | Effect                                             | Example                                                                |
+| -------------- | ---- | ----------------------- | -------------------------------------------------- | ------------------------------------------------------------------------ |
+| `<candidate>`  | path | required                | Candidate config file to measure against the current one. | `archfit config compare candidate.archfit.yaml`                    |
+| `-c, --config` | path | `.archfit.yaml`         | Current config file path.                          | `archfit config compare cand.yaml -c .archfit.yaml`                     |
+| `--root`       | path | directory of `--config` | Repository root to analyze.                        | `archfit config compare cand.yaml --root . -c ci/.archfit.yaml`         |
+| `--json`       | bool | `false`                 | Emit the comparison as JSON. Report-only.          | `archfit config compare cand.yaml --json -c .archfit.yaml`              |
+
+Examples:
+
+```sh
+archfit config compare candidate.archfit.yaml -c .archfit.yaml
+archfit config compare candidate.archfit.yaml --json -c .archfit.yaml | jq .
+archfit config compare candidate.archfit.yaml --root . -c ci/.archfit.yaml
 ```
 
 ## `archfit config enrich ...`

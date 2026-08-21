@@ -96,6 +96,35 @@ layer assignments, and wrong `paths:` globs are outside their reach — use
 `paths: [pkg/**]`; it rewrites them as a block-style list. Flow-style
 `modules: {}` is still unsupported. Convert that section to block YAML first.
 
+## Config compare reports `not_comparable` and no differences at once
+
+These are two separate statements, and both can be true. `coverage evidence:`
+grades the analyzer evidence the two runs rest on; the differences section
+reports what the two configs actually measured. A duplicated or missing coverage
+row, a partial or timed-out analyzer, or an analyzer that ran on only one side
+grades the evidence `not_comparable` even when both runs produced identical
+findings and an identical score.
+
+Read the coverage detail lines to see which analyzer caused it. A
+`not_comparable` grade means "trust this difference less", not "the comparison
+failed" — the command still exits `0`.
+
+## Config compare says the candidate scores higher
+
+A higher score is not a better config. `coupling_balance` is measured over the
+edges a config declares, so a config that declares fewer modules measures fewer
+edges and can score higher while seeing less of the same code. Check the
+measurement-loss warnings before reading the score:
+
+| Code                   | Meaning                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| `scored_fraction_fell` | A smaller share of cross-boundary edges got a concrete balance.               |
+| `abstained_edges_rose` | More cross-boundary edges had unknown strength or distance.                   |
+| `external_edges_rose`  | More edges fell outside the declared module set and left `coupling_balance` entirely. |
+
+A `score_delta` of `null` means one side could not measure `coupling_balance` at
+all. That is an unknown, not a tie.
+
 ## Installed but still reported missing
 
 `archfit` finds tools through the current process `PATH`. A package manager can

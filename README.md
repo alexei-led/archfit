@@ -112,6 +112,7 @@ go install github.com/alexei-led/archfit/cmd/archfit@latest
 archfit doctor                      # check which analyzers are available
 archfit config init --root .        # generate a starter .archfit.yaml
 archfit config update --json        # review the config: drift, pending edits, open decisions
+archfit config compare cand.yaml    # measure this tree under a candidate config (report-only)
 archfit analyze                     # human review: the decision report
 archfit baseline -c .archfit.yaml   # accept current findings as baseline
 archfit check -c .archfit.yaml      # CI gate: exit 0 clean / 1 violation / 2 warn / 3 error
@@ -142,6 +143,9 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
   separately so missing or report-only evidence is not mistaken for score input.
 - **Honest coverage** — a missing analyzer degrades the affected metric to `n/a`
   with the install step, never a false green.
+- **Config comparison** — `archfit config compare <candidate>` measures one source
+  tree under two configs and reports the finding, coverage, and measurement-loss
+  differences. Report-only: a higher candidate score never means "better".
 - **Content-addressed fact cache** — warm runs skip unchanged extractor
   subprocesses (typically 3–5× faster gates), byte-identical to a cold run;
   `--refresh` re-runs extractors and updates the cache ([details](docs/guide/caching.md)).

@@ -632,12 +632,12 @@ make build
 bash -o pipefail -c '.bin/archfit config compare .archfit.yaml --json -c .archfit.yaml | jq -e .'
 ```
 
-- [ ] Register `compare` under the existing `config` group and update top-level help.
-- [ ] Run both configs with advisory facts, empty baselines, shared project inputs, and one time.
-- [ ] Render the pure decision result as short text and versioned JSON.
-- [ ] Add identity, warning, baseline-isolation, advisory-promotion, protected-file, and exit-code tests.
-- [ ] Update command selection, configuration, troubleshooting, and quick-start guides.
-- [ ] Run the narrow checks and the full validation rule.
+- [x] Register `compare` under the existing `config` group and update top-level help.
+- [x] Run both configs with advisory facts, empty baselines, shared project inputs, and one time.
+- [x] Render the pure decision result as short text and versioned JSON.
+- [x] Add identity, warning, baseline-isolation, advisory-promotion, protected-file, and exit-code tests.
+- [x] Update command selection, configuration, troubleshooting, and quick-start guides.
+- [x] Run the narrow checks and the full validation rule.
 
 ### Task 9: Verify one complete product workflow
 
