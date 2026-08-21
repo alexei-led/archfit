@@ -476,9 +476,12 @@ error (it would gate nothing).
   the score snapshot stored by `archfit baseline`. `0` means any drop trips.
   A baseline written before the snapshot existed, or while the score was
   unmeasured, carries no anchor — the drop check is skipped, never guessed.
-  A snapshot recorded under a different scorer version (`score_version`)
-  also carries no anchor: a methodology change is not a regression. The skip
-  is disclosed on stderr — re-run `archfit baseline` to re-anchor.
+  A snapshot recorded under a different scorer version (`score_version`) or a
+  different scorecard rubric (`rubric_version`) also carries no anchor: a
+  methodology change is not a regression. A snapshot written before rubric
+  tracking is read as rubric `1` — the only rubric shipped so far — so it keeps
+  anchoring. The skip is disclosed on stderr and names the incompatible input —
+  re-run `archfit baseline` to re-anchor.
 
 An unmeasured score (band `n/a`) never trips the gate, whatever the knobs say:
 abstention is not failure. Only the unmeasured case is exempt — a run with

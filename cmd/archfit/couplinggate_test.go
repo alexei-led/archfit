@@ -179,9 +179,9 @@ func TestRun_Analyze_CouplingGate_BandNANeverTrips(t *testing.T) {
 // baseline score anchors max_drop (trip on regression beyond it), and a
 // baseline without a score snapshot cannot anchor a drop (no trip). It also
 // pins the stderr disclosure contract per case (see analyze.go): a trip
-// prints the max_drop-specific reason, a stale scorer version prints the
-// "max_drop skipped" disclosure instead of gating silent, and a missing
-// snapshot prints neither.
+// prints the max_drop-specific reason, an incompatible score snapshot prints
+// the "max_drop skipped" disclosure naming the offending input instead of
+// gating silent, and a missing snapshot prints neither.
 func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 	t.Parallel()
 	const (
@@ -197,9 +197,19 @@ func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 	}{
 		{
 			name:       "stored score anchors the drop",
-			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: "strong", ScoreVersion: coupling.ScoreVersion},
+			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: coupling.ScoreVersion, RubricVersion: score.RubricVersion},
 			wantCode:   1,
 			wantStderr: []string{tripFragment},
+		},
+		// A snapshot written before rubric tracking reads as rubric 1 — the only
+		// rubric shipped so far — so it still anchors instead of forcing a
+		// re-baseline.
+		{
+			name:         "legacy snapshot without a rubric version still anchors",
+			score:        &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: coupling.ScoreVersion},
+			wantCode:     1,
+			wantStderr:   []string{tripFragment},
+			wantNoStderr: []string{skipFragment},
 		},
 		{
 			name:         "no stored score skips the check",
@@ -210,10 +220,18 @@ func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 		// A snapshot from a different scorer version is a methodology change,
 		// not a regression — it must never anchor a drop.
 		{
-			name:       "stale scorer version skips the check",
-			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: "strong", ScoreVersion: "bc_score.v3"},
+			name:       "incompatible scorer version skips the check and names the input",
+			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: "bc_score.v3", RubricVersion: score.RubricVersion},
 			wantCode:   0,
-			wantStderr: []string{skipFragment},
+			wantStderr: []string{skipFragment, `score_version "bc_score.v3"`},
+		},
+		// A rubric change re-cuts the band edges, so the stored value is no longer
+		// the same measurement either.
+		{
+			name:       "incompatible rubric version skips the check and names the input",
+			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: coupling.ScoreVersion, RubricVersion: score.RubricVersion + 1},
+			wantCode:   0,
+			wantStderr: []string{skipFragment, "rubric_version"},
 		},
 	}
 	for _, tc := range cases {
@@ -270,6 +288,12 @@ func TestRun_Baseline_WritesScoreSnapshot(t *testing.T) {
 	}
 	if b.Score.ScoreVersion != coupling.ScoreVersion {
 		t.Fatalf("baseline score_version = %q, want %q", b.Score.ScoreVersion, coupling.ScoreVersion)
+	}
+	if b.Score.RubricVersion != score.RubricVersion {
+		t.Fatalf("baseline rubric_version = %d, want %d", b.Score.RubricVersion, score.RubricVersion)
+	}
+	if m := b.ScoreSnapshotMismatches(); len(m) > 0 {
+		t.Fatalf("freshly written snapshot reports incompatible inputs %v", m)
 	}
 	if got := b.CouplingScore(); got == nil || *got != b.Score.CouplingBalance {
 		t.Fatalf("CouplingScore() = %v, want %d", got, b.Score.CouplingBalance)

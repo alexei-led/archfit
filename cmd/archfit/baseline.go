@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/score"
 )
 
 // BaselineCmd runs the engine and saves findings as the new baseline.
@@ -17,12 +18,13 @@ type BaselineCmd struct {
 	Config       string `short:"c" help:"Config file." default:".archfit.yaml"`
 	Root         string `short:"r" help:"Repository root to analyze (default: directory of --config)." type:"path"`
 	NoAdvisories bool   `name:"no-advisories" help:"Exclude informational Balanced-Coupling advisories from the baseline."`
-	Base         string `help:"Git ref to compare against when baselining a delta run."`
 	Refresh      bool   `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
 }
 
 func (*BaselineCmd) Help() string {
 	return `Use baseline after reviewing current findings so CI can block only new architecture drift.
+
+It records one full baseline of the tree as checked out. There is no git-base mode; compare against a ref with ` + "`archfit check --base`" + ` instead.
 
 Typical calibration:
   archfit check --config .archfit.yaml
@@ -45,7 +47,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	}
 
 	advisory := !c.NoAdvisories
-	mode := engine.Mode{Full: true, Advisory: advisory, Base: c.Base}
+	mode := engine.Mode{Full: true, Advisory: advisory}
 	deps.refresh = c.Refresh
 	diag, sc, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, mode, existingBase)
 	if err != nil {
@@ -83,6 +85,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 			CouplingBalance: sc.Overall,
 			Band:            string(sc.OverallBand),
 			ScoreVersion:    coupling.ScoreVersion,
+			RubricVersion:   sc.RubricVersion,
 		}
 	}
 
@@ -93,4 +96,23 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 
 	_, _ = fmt.Fprintf(deps.Stdout, "baseline saved: %s\n", bPath)
 	return nil
+}
+
+// scoreSnapshotMismatchDetails renders one "stored vs current" phrase per
+// incompatible score-snapshot input, so the max_drop skip disclosure names what
+// changed instead of just saying the snapshot is stale. Formatting lives here,
+// not in the persistence layer: baseline reports input names, cmd renders them.
+func scoreSnapshotMismatchDetails(b baseline.Baseline, mismatches []string) []string {
+	out := make([]string, 0, len(mismatches))
+	for _, input := range mismatches {
+		switch input {
+		case baseline.InputScoreVersion:
+			out = append(out, fmt.Sprintf("%s %q, current %q", input, b.Score.ScoreVersion, coupling.ScoreVersion))
+		case baseline.InputRubricVersion:
+			out = append(out, fmt.Sprintf("%s %d, current %d", input, b.Score.RubricVersion, score.RubricVersion))
+		default:
+			out = append(out, input)
+		}
+	}
+	return out
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -36,6 +37,60 @@ func TestRun_Analyze_ScorecardFormatParses(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRun_Analyze_NoAdvisoriesWithScorecardAndJSON pins one meaning for
+// --no-advisories across output combinations: requesting a scorecard alongside
+// JSON no longer forces advisories back on, and suppressing them does not move
+// the score — coupling_balance is synthesised from ClassifiedEdges, before
+// advisory filtering.
+func TestRun_Analyze_NoAdvisoriesWithScorecardAndJSON(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeCoupledRepo(t, coupledModulesCfg)
+
+	run := func(t *testing.T, extra ...string) (advisoryCheckDiag, string) {
+		t.Helper()
+		args := append([]string{cmdAnalyze, fmtJSON, fmtScorecard, "-c", cfgPath}, extra...)
+		var buf bytes.Buffer
+		if code := Run(args, &buf); code != 0 {
+			t.Fatalf("analyze %v: exit = %d\noutput:\n%s", extra, code, buf.String())
+		}
+		// JSON renders first; decode just that document and leave the scorecard
+		// text that follows it in the buffer.
+		var d advisoryCheckDiag
+		if err := json.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&d); err != nil {
+			t.Fatalf("decode leading JSON document: %v\noutput:\n%s", err, buf.String())
+		}
+		return d, scorecardOverallLine(t, buf.String())
+	}
+
+	withDiag, withOverall := run(t)
+	if countAdvisoryFindings(withDiag)+len(withDiag.AdvisoryTasks) == 0 {
+		t.Skip("fixture produced no advisory findings; test is not meaningful")
+	}
+
+	withoutDiag, withoutOverall := run(t, flagNoAdvisories)
+	if n := countAdvisoryFindings(withoutDiag); n > 0 {
+		t.Errorf("--no-advisories alongside --format scorecard: %d advisory finding(s) still in output", n)
+	}
+	if n := len(withoutDiag.AdvisoryTasks); n > 0 {
+		t.Errorf("--no-advisories alongside --format scorecard: %d advisory task(s) still in output", n)
+	}
+	if withOverall != withoutOverall {
+		t.Errorf("--no-advisories moved the score: %q, want %q", withoutOverall, withOverall)
+	}
+}
+
+// scorecardOverallLine returns the scorecard's overall value/band line.
+func scorecardOverallLine(t *testing.T, out string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "**Overall:**") {
+			return line
+		}
+	}
+	t.Fatalf("no scorecard overall line in output:\n%s", out)
+	return ""
 }
 
 // TestRun_Analyze_NoConfigFlagRejected verifies that --no-config (removed in v2)

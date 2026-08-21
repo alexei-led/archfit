@@ -7,7 +7,7 @@ import "context"
 type CheckCmd struct {
 	Config string `short:"c" help:"Path to config file." default:".archfit.yaml"`
 	Root   string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
-	Base   string `help:"Git ref to compare against for scorecard delta (e.g. main, HEAD~1). When set, runs a before/after delta table instead of a single-run render."`
+	Base   string `help:"Git ref to compare against (e.g. main, HEAD~1). When set, the normal output gains a base-vs-head delta."`
 
 	NoAdvisories bool     `name:"no-advisories" help:"Hide informational Balanced-Coupling advisories from the output."`
 	MinSeverity  string   `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/baseline"
@@ -14,7 +14,6 @@ import (
 	"github.com/alexei-led/archfit/internal/decision"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
@@ -30,7 +29,7 @@ import (
 type AnalyzeCmd struct {
 	Config string `short:"c" help:"Path to config file." default:".archfit.yaml"`
 	Root   string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
-	Base   string `help:"Git ref to compare against for scorecard delta (e.g. main, HEAD~1). When set, runs a before/after delta table instead of a single-run render."`
+	Base   string `help:"Git ref to compare against (e.g. main, HEAD~1). When set, the normal output gains a base-vs-head delta."`
 
 	AISummary bool `name:"ai-summary" help:"Append an off-gate AI narrative review after the normal render. Requires ai configured in the config file."`
 	Refresh   bool `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
@@ -70,7 +69,7 @@ Common runs:
   archfit analyze --json -c .archfit.yaml | jq .
   archfit analyze --format sarif > archfit.sarif
   archfit analyze --format scorecard            # banded scorecard only
-  archfit analyze --base origin/main            # scorecard delta vs base ref
+  archfit analyze --base origin/main            # add a base-vs-head delta
   archfit analyze --ai-summary -c .archfit.yaml # add AI narrative section
 
 AI agents should read agent_tasks[] from JSON output, make the constrained
@@ -201,10 +200,11 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
+	// --no-advisories has one meaning for every requested format: the scorecard
+	// value is synthesised from ClassifiedEdges (before advisory filtering), so
+	// suppressing advisory findings never moves the score and the format no
+	// longer needs to force them back on.
 	advisory := !req.noAdvisories
-	if slices.Contains(formats, formatScorecard) {
-		advisory = true
-	}
 
 	mode := engine.Mode{
 		Base:       req.baseRef,
@@ -224,10 +224,12 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	for _, reason := range score.EvaluateCouplingGate(sc, gateView, base.CouplingScore()).Reasons {
 		_, _ = fmt.Fprintln(deps.stderr(), "coupling gate: "+reason)
 	}
-	if gateView.Enabled && gateView.MaxDrop != nil && base.ScoreVersionStale() {
-		_, _ = fmt.Fprintf(deps.stderr(),
-			"coupling gate: max_drop skipped — baseline score was recorded under scorer version %q, current is %q; run `archfit baseline` to re-anchor\n",
-			base.Score.ScoreVersion, coupling.ScoreVersion)
+	if gateView.Enabled && gateView.MaxDrop != nil {
+		if mismatches := base.ScoreSnapshotMismatches(); len(mismatches) > 0 {
+			_, _ = fmt.Fprintf(deps.stderr(),
+				"coupling gate: max_drop skipped — baseline score snapshot is incompatible (%s); run `archfit baseline` to re-anchor\n",
+				strings.Join(scoreSnapshotMismatchDetails(base, mismatches), ", "))
+		}
 	}
 
 	hardGate := applyToolGate(&diag, req.requireTools)

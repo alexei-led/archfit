@@ -89,7 +89,10 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   (re-evaluated there via the pure `score.EvaluateCouplingGate`) — never from
   baseline/enrich/explain/`--base` scoring, which share `runPipeline`. A separate
   stale-baseline notice can also print from `analyze` when `max_drop` is skipped
-  because the stored score snapshot uses an older `ScoreVersion`.
+  because the stored score snapshot is incompatible with this binary —
+  `baseline.ScoreSnapshotMismatches` names the offending input
+  (`score_version`, `rubric_version`); a snapshot written before rubric tracking
+  reads as rubric `1` and still anchors.
   The score comes from `ClassifiedEdges` (pre-advisory-filter), so a trip with
   no promotable advisory (advisory off, or `coupling.min_severity` above every
   active edge) emits one synthetic `bc/coupling_gate` gate finding carrying

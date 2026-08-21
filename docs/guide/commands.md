@@ -216,7 +216,10 @@ Use cases:
 
 - first-time rollout;
 - re-anchoring after a deliberate cleanup wave;
-- baselining a delta run with `--base`.
+- re-anchoring `coupling.gate.max_drop` after a scorer or rubric change.
+
+A baseline is always the accepted state of the tree as checked out. There is no
+git-base mode; compare against a ref with `archfit check --base` instead.
 
 Synopsis:
 
@@ -228,23 +231,24 @@ What it writes:
 
 - Saves the baseline beside the config as `.archfit-baseline.json`.
 - Keeps metrics and score snapshots so later runs can detect fixed findings and score movement.
+- Records the scorer version (`score_version`) and rubric version (`rubric_version`)
+  the score snapshot was produced under, so an incompatible snapshot cannot anchor
+  `coupling.gate.max_drop`.
 
 Flags:
 
-| Flag              | Type    | Default                 | Effect                                                                | Example                                                 |
-| ----------------- | ------- | ----------------------- | --------------------------------------------------------------------- | ------------------------------------------------------- |
-| `-c, --config`    | path    | `.archfit.yaml`         | Config file.                                                          | `archfit baseline -c .archfit.yaml`                     |
-| `-r, --root`      | path    | directory of `--config` | Repo root to analyze.                                                 | `archfit baseline -r ../repo -c ./policy/.archfit.yaml` |
-| `--no-advisories` | bool    | `false`                 | Exclude informational Balanced Coupling advisories from the baseline. | `archfit baseline --no-advisories`                      |
-| `--base`          | git ref | none                    | Compare against a base ref when baselining a delta run.               | `archfit baseline --base origin/main`                   |
-| `--refresh`       | bool    | `false`                 | Re-run extractors and refresh the cache.                              | `archfit baseline --refresh`                            |
+| Flag              | Type | Default                 | Effect                                                                | Example                                                 |
+| ----------------- | ---- | ----------------------- | --------------------------------------------------------------------- | ------------------------------------------------------- |
+| `-c, --config`    | path | `.archfit.yaml`         | Config file.                                                          | `archfit baseline -c .archfit.yaml`                     |
+| `-r, --root`      | path | directory of `--config` | Repo root to analyze.                                                 | `archfit baseline -r ../repo -c ./policy/.archfit.yaml` |
+| `--no-advisories` | bool | `false`                 | Exclude informational Balanced Coupling advisories from the baseline. | `archfit baseline --no-advisories`                      |
+| `--refresh`       | bool | `false`                 | Re-run extractors and refresh the cache.                              | `archfit baseline --refresh`                            |
 
 Examples:
 
 ```sh
 archfit baseline -c .archfit.yaml
 archfit baseline --no-advisories -c .archfit.yaml
-archfit baseline --base origin/main -c .archfit.yaml
 archfit baseline --refresh -r . -c .archfit.yaml
 ```
 
@@ -672,20 +676,18 @@ Used by:
 
 - `archfit analyze`
 - `archfit check`
-- `archfit baseline`
 
 Effect:
 
 - Compares the current branch against a git ref such as `main` or `origin/main`.
-- On `analyze` and `check`, renders a scorecard delta.
-- On `baseline`, records a delta baseline.
+- Adds a base-vs-head delta to the normal output.
+- Not accepted by `archfit baseline`, which always records the tree as checked out.
 
 Examples:
 
 ```sh
 archfit analyze --base origin/main -c .archfit.yaml
 archfit check --base main --json -c .archfit.yaml
-archfit baseline --base origin/main -c .archfit.yaml
 ```
 
 ### `--format` and format shorthands

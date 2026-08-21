@@ -77,9 +77,12 @@ type Scorecard struct {
 }
 
 // Synthesize derives the scorecard from a computed Diagnostic.
-// The Diagnostic must include Balanced-Coupling advisories (run with advisory
-// mode on) for coupling_balance to see the BC edges; without them the dimension
-// reports "no unbalanced coupling detected" at medium confidence.
+// coupling_balance is measured from d.ClassifiedEdges, which the engine
+// populates before advisory filtering — so running with advisory mode off
+// (--no-advisories) never moves the value, band, or confidence. Advisory
+// findings still supply the worst-case edge count quoted in the evidence of an
+// unmeasured (n/a) dimension, and they are the only input on the legacy
+// nil-ClassifiedEdges path used by calibration suites.
 func Synthesize(d diagnostic.Diagnostic) Scorecard {
 	mi := indexMetrics(d.Metrics)
 	edges := bcEdges(d.Findings)

@@ -241,13 +241,13 @@ make build
 .bin/archfit check --help
 ```
 
-- [ ] Remove `--base` from the baseline command, help, current examples, and tests.
-- [ ] Add scorer and rubric compatibility to the baseline score snapshot.
-- [ ] Replace scorer-only stale names and text with score-snapshot terms.
-- [ ] Remove the obsolete scorecard override that enables advisories.
-- [ ] Fix the score comment that still requires advisory findings.
-- [ ] Add legacy, current, incompatible, removed-flag, and mixed-output tests.
-- [ ] Run the narrow checks and the full validation rule.
+- [x] Remove `--base` from the baseline command, help, current examples, and tests.
+- [x] Add scorer and rubric compatibility to the baseline score snapshot.
+- [x] Replace scorer-only stale names and text with score-snapshot terms.
+- [x] Remove the obsolete scorecard override that enables advisories.
+- [x] Fix the score comment that still requires advisory findings.
+- [x] Add legacy, current, incompatible, removed-flag, and mixed-output tests.
+- [x] Run the narrow checks and the full validation rule.
 
 ### Task 4: Make `config update` clear and machine-readable
 
