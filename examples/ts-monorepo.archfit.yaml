@@ -5,7 +5,7 @@
 # package imports must go through the package entry point (public), not deep
 # internal files. Install dependency-cruiser and, for semantic strength
 # (SCIP coupling-strength hints), run `npm ci` so node_modules exists.
-#   archfit analyze --config .archfit.yaml --full
+#   archfit analyze --config .archfit.yaml
 version: 1
 coupling:
   min_severity: medium

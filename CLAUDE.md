@@ -8,10 +8,10 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 ## Commands (Makefile)
 
 - `make build` — static binary, `CGO_ENABLED=0` → `.bin/archfit`
-- `make test` — `go test -race -coverprofile=coverage.out ./...` + `python3 internal/extract/scip/scip_reader_test.py` (CI runs the Python step too)
+- `make test` — `go test -race -coverprofile=coverage.out ./...` + `python3 internal/extract/scip/scip_reader_test.py` + `bash scripts/tests/cli_exit_contract_test.sh` (CI runs both non-Go steps too)
 - `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.1.6)
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
-- `make archfit` — dogfood architecture-drift gate: `.bin/archfit analyze --gate --config .archfit.yaml --full`
+- `make archfit` — dogfood architecture-drift gate: `.bin/archfit check --config .archfit.yaml`
 - `make arch-lint` — architecture drift linter (alias for `make archfit`); wired into the pre-push hook
 - `make archfit-report` — write `docs/reports/archfit-report.md` via `archfit analyze --markdown`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
@@ -89,7 +89,10 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   (re-evaluated there via the pure `score.EvaluateCouplingGate`) — never from
   baseline/enrich/explain/`--base` scoring, which share `runPipeline`. A separate
   stale-baseline notice can also print from `analyze` when `max_drop` is skipped
-  because the stored score snapshot uses an older `ScoreVersion`.
+  because the stored score snapshot is incompatible with this binary —
+  `baseline.ScoreSnapshotMismatches` names the offending input
+  (`score_version`, `rubric_version`); a snapshot written before rubric tracking
+  reads as rubric `1` and still anchors.
   The score comes from `ClassifiedEdges` (pre-advisory-filter), so a trip with
   no promotable advisory (advisory off, or `coupling.min_severity` above every
   active edge) emits one synthetic `bc/coupling_gate` gate finding carrying
@@ -112,6 +115,183 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   pipeline, and emits a dimension-by-dimension delta table. Off-gate, report-only
   (exit 0 on success, exit 3 on git/config error). Both sides use the current
   `--config`. Formats: `text` (default), `json`, `markdown`.
+  The base sub-run receives the caller's EFFECTIVE head config (after `--lang` /
+  `--min-severity`) and never reparses the file. `analyze.go` hands it a copy
+  with an independent `Modules` map (`withIndependentModules`) — `config.Config`
+  is a value but its map is shared, and `runPipeline`'s owner/deploy-unit
+  backfill writes through it, so without the copy the base side would inherit
+  head-tree owners and skip its own resolution.
+- **`git_finding_delta`** (`cmd/archfit/git_finding_delta.go`) — report-only JSON
+  block emitted only with `--base`, classifying the CURRENT `agent_tasks[]` as
+  `introduced` / `pre_existing` / `unknown` origin. Pointer + `omitempty`, so a
+  run without `--base` stays byte-identical; never changes the verdict, the exit
+  code, or text/markdown/scorecard/SARIF output. Matching uses stable finding IDs
+  only (lifecycle labels and gate/advisory promotion ignored; base `status=fixed`
+  entries dropped). An unmatched task is `introduced` ONLY when every ACTIVE
+  finding-producing analyzer family compared equivalently — otherwise `unknown`,
+  never a fabricated new task. One family = one `ToolCoverage` name: the
+  per-language primaries, the `ast-grep` pattern pass, the `ast-grep/syntax`
+  pass, and opt-in `scip`/`scip-symbols`/`jscpd`/`cargo-modules`. Pairing rules:
+  equal statuses always pair; the only cross-status pair is `ok` against a
+  gapless-`absent` PRIMARY, which means the language is not in that tree. A
+  gapless `absent` on a NON-primary analyzer is evidence about the tool, not the
+  tree, so it pairs only with itself — symmetric absence is safe (neither side
+  produced findings), asymmetric absence is not. A timeout, a missing row, and a
+  duplicate row are all unavailable evidence.
+  Isolation: only base finding IDs, coverage rows/gaps, and the config hash
+  cross over — `runScoreSide` projects the base Diagnostic to `baseEvidence` at
+  the source, because base agent tasks carry paths and a validation command
+  rooted in a temp worktree that is deleted on return.
+  `comparison_status: comparable` can still ship with non-empty
+  `comparison_reasons`: the status reports task placement, the reasons report
+  evidence.
+  **Shared with `config compare`'s `decision.gradeTool` (keep these three in
+  step):** one row per tool per side, so a repeated coverage name is unpairable;
+  the coverage-gap condition is PER SIDE, so a gap on one side only is an
+  asymmetry; symmetric absence never blocks, gapped or not. Symmetric
+  `absent`-WITH-a-gap (an enabled analyzer whose tool is not installed) pairs on
+  BOTH paths — `comparable_with_gaps` in `decision.gradeTool`,
+  `familyPairedDegradedAbsent` in `pairFamily`, always with a disclosed reason.
+  Failing it made `--base` permanently all-`unknown` for a whole class of
+  environments, including archfit's own runtime image (no Rust toolchain) on any
+  repo carrying a `Cargo.toml`. The two paths deliberately DIFFER once, because
+  `--base` compares two trees and `config compare` compares one: `ok` vs
+  gapless-`absent` primary is comparable for `--base` (a language appearing is
+  expected) but `not_comparable` for `config compare` (a status change on one
+  tree is config-caused).
+- **`partial` means two different things and the TOOL NAME separates them, not
+  `Coverage.Unresolved`** (`decision.PartialFromUnresolvedSpecifiers`, the single
+  predicate both pairing paths call). dependency-cruiser and grimp mark a
+  COMPLETED run partial as soon as one import specifier anywhere fails to resolve
+  — the normal steady state on any TS/Python repo, which
+  `score.tsUnresolvedRatioCeiling` already tolerates to 10%. `go/packages` ALSO
+  sets `Unresolved`, but there it counts whole packages it SKIPPED because they
+  failed to load (`collectNodesEdges`, synthetic-error packages), which is the
+  "did not finish" meaning and must never grade comparable — so `Unresolved > 0`
+  is not a completion marker and never was. Every remaining partial producer (a
+  failed extractor in `engine.extract`, a rejected ast-grep rule file, an empty
+  SCIP index, a failed jscpd run) leaves `Unresolved` at zero. A SYMMETRIC
+  unresolved-specifier partial pairs (`comparable_with_gaps` in
+  `decision.gradeTool`, `familyPairedDegradedUnresolved` in `pairFamily`) and
+  always discloses a reason CARRYING BOTH MAGNITUDES — the rule is
+  magnitude-blind, so `3 unresolved` and `5000/6000 unresolved` must be
+  distinguishable in the output. Treating all partial as unusable made both
+  features permanently inert on TypeScript and Python. When adding a
+  specifier-granular extractor, add its coverage name to
+  `PartialFromUnresolvedSpecifiers`.
+- **Extractor-failure coverage rows use `CoverageTool()`, not `Name()`**
+  (`ports.Extractor`, `engine.extract`). A failed `Extract` returns a zero
+  Coverage, so the engine stamps the row itself; filing it under the language
+  name ("go") instead of the coverage name ("go/packages") created a phantom
+  analyzer next to the real family and left the family with zero rows.
+- **Applicability is decided by the extractor, never by a marker list**
+  (`LanguageDescriptor.ProjectPresent`, `cmd/archfit/registry.go` — the row's doc
+  comment is the contract; probes are wired in `cmd/archfit/pipeline_coverage.go`).
+  Every language answers "is this language present under root?" by calling its OWN
+  exported applicability function — `golang.AnalysableMembers`, `ts.Applicable`,
+  `py.Applicable`, `rust.Applicable` — and that same function is what the
+  extractor's `Extract` calls to decide whether to run. There is no
+  `ProjectMarkers []string` and no marker-list fallback: a new language MUST
+  supply a `ProjectPresent` that delegates to its extractor, never a hand-rolled
+  list of filenames. **A probe that disagrees with its extractor turns "we did not
+  measure" into "there is nothing here"**, and gapless `absent` on a primary row
+  is the ONE shape both pairing paths read as "language not present" — so
+  `analyze --base` and `config compare` drop the analyzer and report confidence
+  neither side earned (a fabricated `introduced`; a fully-comparable grade over a
+  language nothing looked at). Both directions have shipped as bugs: a marker the
+  extractor ignores (`tsconfig.json` with no `package.json`, `setup.cfg`, a
+  `go.mod` the `languages.go.modules` filter removes) fabricates presence; a
+  marker it accepts but a list omits (`languages.python.package`, a sub-crate
+  `languages.rust.manifest`, a `go.work` member a walk cannot reach) fabricates
+  absence. `buildCoverageGaps` reads `cfg.Exclude` AS GIVEN — `runPipeline`
+  merges it once at setup and `scope.MergeExclusions` is NOT idempotent (it
+  consumes `!` re-includes), so a second merge re-seeds defaults the user removed
+  and the probe then skips trees the extractors analysed.
+- **A language switched off over a language that IS PRESENT reports `disabled`,
+  never `absent`** (`markDisabledPrimaries`, `cmd/archfit/pipeline_coverage.go`,
+  applied to `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode
+  `ModeOff` as `StatusAbsent`, which both pairing paths read as "this language is
+  not in the tree" and drop from the comparison — so two configs that BOTH
+  disabled Go over a Go repo graded fully comparable while neither had looked.
+  Rewriting the row leaves gapless-`absent` with exactly ONE cause (the
+  extractor's own applicability probe says the language is not in the tree),
+  which is what `decision.gradeTool` and `normalizeCoverage` already assume. Two conditions are load-bearing, both narrowing:
+  `primaryDisabledByConfig` (mode off AND no explicit `gate:` — a pinned gate
+  keeps `absent` so its gap and `--require-tools` still fire; it is also the
+  single predicate behind the gap suppression), and `primaryLanguagePresent`,
+  which runs the SAME probe `buildCoverageGaps` suppresses on. Without the
+  presence probe the rewrite is the mirror image of the bug: a repo with no
+  TypeScript is told TypeScript analysis is switched off, and
+  `python: {enabled: false}` on a Go-only repo grades `not_comparable` against a
+  config that merely left python unset. An empty root cannot be probed and
+  answers "present" — disclose the opt-out rather than hide it, matching
+  `buildCoverageGaps`' empty-root behaviour.
+- **One coverage name per analyzer.** `internal/extract/astgrep` drives one
+  binary for two passes and they report under two names: `ast-grep` (patterns)
+  and `ast-grep/syntax` (`syntaxToolName`). Both consumers that pair coverage
+  rows — `pairFamily` (git origin delta) and `decision.gradeTool` (config
+  compare) — read a repeated name as an unpairable duplicate and grade the pair
+  unavailable/`not_comparable`. Never give two analyzers one coverage name.
+- **`archfit config compare <candidate>`** (`cmd/archfit/config_compare.go`,
+  pure decision in `internal/decision.CompareConfigs`). Two full pipelines over
+  ONE source tree, report-only: exit 0 on success, exit 3 on an input or runtime
+  error; findings never move the exit code. Both sides use an EMPTY accepted
+  baseline (never reads `.archfit-baseline.json` — it records findings accepted
+  under the current config, so applying it would silence the candidate's
+  findings by the current config's history), share the CURRENT config's bundle
+  directory (pinned labels, fact cache) and one `EvaluatedAt`; only
+  `ConfigSource` differs, so a candidate file outside the repo cannot move the
+  analysis boundary. Config, baseline, labels, candidate, and policy files stay
+  byte-identical; normal fact-cache reads/writes are the only filesystem effect.
+  Finding buckets are `current_only`/`candidate_only`/`both` — never
+  introduced/resolved, because alternative configurations have no time order —
+  and no output ever says the candidate is better.
+- **`archfit config update --json`** emits `archfit.config-review.v1`. The
+  non-obvious part: `--json` with `--apply`, `--ai-classify`, or `--refresh` is
+  a usage error (exit 3) rejected BEFORE discovery, tool calls, cache access, or
+  any write. Schema in `docs/guide/commands.md`.
+- **`config update` never destroys a configured module stanza.** `DiffModules`
+  matches config keys to discovery keys by NAME, and the conventions need not
+  agree — this repo configures `internal/agenttask` while discovery emits
+  `agenttask` over the identical path set. `DiffModules` runs the name-drift
+  pass ITSELF (`resolveNameDrift`, unexported — there is no two-step call a
+  consumer can get wrong), reclassifying each 1:1 add/remove pair with an equal
+  normalized path set as `NameDrift`. On top of that, `Removed` is review-only:
+  `initcfg.HasModuleEdits` (module stanzas), `initcfg.HasPendingEdits`
+  (`HasModuleEdits` plus settings — the single source for "would `--apply` write
+  anything"), and `buildUpdateEdits` all exclude it, so `--apply`
+  writes only added modules, path drift, and settings. Deleting or re-keying a
+  stanza discards its `owner`/`subdomain`/`volatility`/`layer`/`public`, so both
+  stay human decisions and the report says so (NAME DRIFT / UNMATCHED sections,
+  `review_available` status). Before this, `config update --apply` on archfit's
+  own config commented out all 44 modules and added 31 bare stanzas, and the
+  status read `action_required` with 0 real issues.
+  Two consequences of that name-only matching:
+  (1) `candidateConfigForUpdate` (`cmd/archfit/update.go`) — the "config after
+  `--apply`" projection the deploy-unit and distance suggestion builders read —
+  resolves each discovered module through the drift pairs FIRST, so a drifted
+  module enters under its CONFIG name carrying the config's metadata. Keying on
+  the discovered name dropped `owner`/`deploy_unit`/`subdomain` and proposed
+  fields the config already sets, under a module name `.archfit.yaml` does not
+  contain. The config name cannot collide: it comes from `Removed`, which holds
+  only names discovery did not emit.
+  (2) `--apply` discloses the review-only half on BOTH branches. The write branch
+  gates on `initcfg.HasReviewItems` and prints `initcfg.RenderAppliedReview`,
+  which reuses `writeUnappliedModuleSections` + `writeModuleGapSections` — the
+  same helpers `RenderUpdateReport` uses. Gating on `HasReviewSuggestions` there
+  hid module gaps, name drift, unmatched and pathless stanzas exactly when apply
+  had an edit to make.
+- **`runContext`** (`cmd/archfit/pipeline_run.go`) replaces `runPipeline`'s
+  positional path arguments. Each field selects one thing, and a caller that
+  leaves one zero silently gets head-tree state on a base or candidate run:
+  `ConfigSource` → config hash + validation command; `BundleDir` → pinned labels
+  - fact-cache location; `ScanRoot` → scope + on-disk path resolution;
+    `EvaluatedAt` → the single instant waiver expiry and staleness age against
+    (zero samples `time.Now()` on read). Per-run values: normal analysis = current
+    path / current config dir / current tree / persisted baseline; git base =
+    same, with the base worktree as ScanRoot and an empty baseline; compare
+    current and compare candidate = the common tree, the current config dir, one
+    shared `EvaluatedAt`, empty baselines, and only `ConfigSource` differing.
 - **Owner inheritance for auto-registered synthetic submodules**
   (`classify.AugmentModulesFromGraph`, `AugmentGoWorkspaceModules`): propagates
   `owner` from the nearest config-declared ancestor module to each synthetic module.
@@ -202,7 +382,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   non-penalising 60 (calibration-only, unreachable from engine.go).
 - Parse config once into typed views; pass a package its view, not the whole config.
 - LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `config enrich`,
-  `config init --llm`, `config update --llm`, `analyze --llm`, and `explain --llm`
+  `config init --ai-classify`, `config update --ai-classify`, `analyze --ai-summary`, and `explain --ai-summary`
   touch them, never the gate. Enforced structurally — `arch_test.go` forbids any
   `internal/*` package from importing `internal/llm`, so the LLM commands live in
   `cmd`.

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,12 +27,17 @@ import (
 	"github.com/alexei-led/archfit/internal/view"
 )
 
+// ruleTypeForbiddenLayerDirection is the rule type whose presence makes a
+// module's `layer:` field load-bearing.
+const ruleTypeForbiddenLayerDirection = "forbidden_layer_direction"
+
 // UpdateCmd syncs .archfit.yaml with the current project structure.
 type UpdateCmd struct {
 	Config     string `short:"c" help:"Config file path." default:".archfit.yaml"`
 	Root       string `short:"r" help:"Project root directory (default: directory of --config)."`
 	AIClassify bool   `name:"ai-classify" help:"Run AI classification for unclassified modules (off-gate)."`
 	Apply      bool   `name:"apply" help:"Write structural changes live into .archfit.yaml (backup created; AI semantic proposals remain review-only)."`
+	JSON       bool   `name:"json" help:"Emit the review as a JSON document (report-only; not combinable with --apply, --ai-classify, or --refresh)."`
 	Refresh    bool   `name:"refresh" help:"Re-run the AI calls and refresh the cache."`
 	AIProvider string `name:"ai-provider" help:"AI provider override." default:"anthropic"`
 	AIModel    string `name:"ai-model" help:"AI model override." default:"claude-opus-4-8"`
@@ -41,6 +48,12 @@ type UpdateCmd struct {
 }
 
 func (c *UpdateCmd) Run(deps *appDeps) error {
+	// Flag conflicts are rejected before discovery, tool runs, cache access, or
+	// any write, so an invalid invocation has no side effects.
+	if err := c.validateFlags(); err != nil {
+		return err
+	}
+
 	root, err := c.resolveRoot()
 	if err != nil {
 		return err
@@ -65,8 +78,12 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}
 
-	report := initcfg.DiffModules(existing, freshCfg.Modules)
-	candidateCfg := candidateConfigForUpdate(cfg, freshCfg)
+	// DiffModules resolves name drift internally, so the review document,
+	// --ai-classify targets, and the apply edits all read the same buckets and no
+	// caller can read a provisional Issues/Unclassified list.
+	requireLayer := requiresLayerClassification(cfg)
+	report := initcfg.DiffModules(existing, freshCfg.Modules, requireLayer)
+	candidateCfg := candidateConfigForUpdate(cfg, freshCfg, report.NameDrift)
 	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, candidateCfg, deps)
 	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, candidateCfg, deps)
 	if c.AIClassify {
@@ -91,16 +108,43 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		warnPartialClassify(deps.Stdout, warnTargets, ann)
 	}
 
-	rustConfigNeeded := needsRustDeepAnalysisConfig(cfg, freshCfg.HasRust)
-	hasEdits := hasActionableEdits(report) || rustConfigNeeded
+	// Settings is the single source for the Rust deep-analysis edit: the preview,
+	// the JSON document, and the apply pass all read it, so they cannot drift.
+	//
+	// Applicability comes from the same probe the coverage layer uses, NOT from
+	// freshCfg.HasRust: discovery only stats a ROOT Cargo.toml, so a config that
+	// already points languages.rust.manifest at a sub-crate manifest describes a
+	// repo archfit analyses as Rust while `config update` refused to offer it the
+	// deep-analysis defaults that make a single-crate graph measurable.
+	// `config init` keeps the root-only check — it has no existing config to read
+	// a manifest from.
+	if needsRustDeepAnalysisConfig(cfg, rustProjectPresent(root, cfg)) {
+		report.Settings = append(report.Settings, initcfg.RustDeepAnalysisSetting())
+	}
+	hasSettingEdits := len(report.Settings) > 0
+	hasEdits := initcfg.HasPendingEdits(report)
 
 	if !c.Apply {
+		review := initcfg.BuildConfigReview(report)
+		if c.JSON {
+			return writeConfigReviewJSON(deps.Stdout, review)
+		}
+		_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderReviewStatus(review))
 		_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
 		return nil
 	}
 
 	if !hasEdits {
-		if (c.AIClassify && ann != nil) || hasReviewOnlySuggestions(report) {
+		// Review-only items (module gaps, unclassifiable or unchecked modules,
+		// naming differences, configured modules discovery did not emit) count here
+		// too: printing "structurally in sync" over them would claim a clean config
+		// while the report has findings to show.
+		if (c.AIClassify && ann != nil) || initcfg.HasReviewItems(report) {
+			// Same status line the preview prints: the one-line summary above the
+			// report. The unchecked modules it counts are also named in the report's
+			// own UNMATCHED and UNCHECKED sections, so neither disclosure is the
+			// only one.
+			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderReviewStatus(initcfg.BuildConfigReview(report)))
 			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
 			return nil
 		}
@@ -109,14 +153,14 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	edited := originalBytes
-	if hasActionableEdits(report) {
+	if initcfg.HasModuleEdits(report) {
 		edits := buildUpdateEdits(report)
 		edited, err = initcfg.ApplyEdits(originalBytes, edits)
 		if err != nil {
 			return fmt.Errorf("applying edits: %w", err)
 		}
 	}
-	if rustConfigNeeded {
+	if hasSettingEdits {
 		edited = ensureRustDeepAnalysisConfig(edited, cfg)
 	}
 	if err := safeWriteConfig(ctx, deps, c.Config, edited, originalBytes); err != nil {
@@ -125,10 +169,58 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	if len(report.PathDrift) > 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "note: module paths replaced with discovered paths")
 	}
-	if (c.AIClassify && ann != nil) || hasReviewOnlySuggestions(report) {
-		if rendered := initcfg.RenderAppliedLLMReview(report, ann); rendered != "" {
+	// HasReviewItems, not HasReviewSuggestions: module gaps, naming differences,
+	// unmatched and pathless stanzas are review-only too, so gating on the
+	// suggestion families alone hid them on the ONE path that also writes. A run
+	// that had an edit to make reported less than the same run without --apply.
+	if (c.AIClassify && ann != nil) || initcfg.HasReviewItems(report) {
+		if rendered := initcfg.RenderAppliedReview(report, ann); rendered != "" {
 			_, _ = fmt.Fprint(deps.Stdout, rendered)
 		}
+	}
+	return nil
+}
+
+// validateFlags rejects --json combined with a mode that mutates state or calls
+// out to an AI provider. Report-only JSON must stay side-effect free.
+func (c *UpdateCmd) validateFlags() error {
+	if !c.JSON {
+		return nil
+	}
+	conflicts := make([]string, 0, 3)
+	if c.Apply {
+		conflicts = append(conflicts, "--apply")
+	}
+	if c.AIClassify {
+		conflicts = append(conflicts, "--ai-classify")
+	}
+	if c.Refresh {
+		conflicts = append(conflicts, "--refresh")
+	}
+	if len(conflicts) == 0 {
+		return nil
+	}
+	return &exitError{code: 3, msg: "error: --json cannot be combined with " + strings.Join(conflicts, ", ")}
+}
+
+// requiresLayerClassification reports whether a module without `layer:` blocks an
+// active layer policy. A forbidden_layer_direction rule is live unless its gate
+// is "off" — unset and "warn" both still check layers.
+func requiresLayerClassification(cfg config.Config) bool {
+	for _, r := range cfg.Rules {
+		if r.Type == ruleTypeForbiddenLayerDirection && r.Gate != gateOff {
+			return true
+		}
+	}
+	return false
+}
+
+// writeConfigReviewJSON emits the versioned review document.
+func writeConfigReviewJSON(w io.Writer, review initcfg.ConfigReview) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(review); err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: encoding config review: %v", err)}
 	}
 	return nil
 }
@@ -293,31 +385,46 @@ func classifyTargetsForUpdate(
 	return targets
 }
 
-// hasActionableEdits returns true when there is at least one structural change.
-// LLM role/volatility output is review-only: it is rendered as a diff but never
-// written by config update --apply.
-func hasActionableEdits(report initcfg.UpdateReport) bool {
-	return len(report.Added) > 0 || len(report.Removed) > 0 || len(report.PathDrift) > 0
-}
-
-func hasReviewOnlySuggestions(report initcfg.UpdateReport) bool {
-	return len(report.Suggested) > 0 || len(report.DeployUnitSuggestions) > 0 || len(report.DistanceConfigCandidates) > 0 || len(report.RuleSuggestions) > 0 || len(report.ExternalSystemSuggestions) > 0
-}
-
-func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig) config.Config {
+// candidateConfigForUpdate projects the config as it stands AFTER `config update
+// --apply`: discovery's module set, with every preserved stanza's hand-authored
+// metadata carried across. The deploy-unit and distance suggestion builders read
+// this projection, so a stanza whose metadata goes missing here yields a
+// suggestion to set a field the real config already sets.
+//
+// drift is why the lookup cannot key on the discovered name alone. When
+// discovery re-emits `internal/foo` as `foo` over the SAME path set, --apply
+// writes nothing at all: the stanza keeps its name and every field it carries
+// (name drift is review-only precisely because rewriting it would discard them).
+// So a drifted module enters the candidate under its CONFIG name, which is also
+// the only name the metadata lookup can find. Resolving the name BEFORE the
+// lookup keeps one copy of the field list — a second branch is a second place to
+// forget a field.
+//
+// The config name cannot collide with another discovered module: it comes from
+// the report's Removed bucket, which by construction holds only names discovery
+// did not emit, and each drift pairing is unique.
+func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig, drift []initcfg.NameDrift) config.Config {
 	if len(discovered.Modules) == 0 {
 		return cfg
+	}
+	configNameFor := make(map[string]string, len(drift))
+	for _, d := range drift {
+		configNameFor[d.DiscoveredName] = d.ConfigName
 	}
 	out := cfg
 	out.Modules = make(map[string]module.ModuleDef, len(discovered.Modules))
 	for _, mod := range discovered.Modules {
+		name := mod.Name
+		if configName, drifted := configNameFor[name]; drifted {
+			name = configName
+		}
 		def := module.ModuleDef{
 			Paths:    append([]string(nil), mod.Paths...),
 			Public:   append([]string(nil), mod.Public...),
 			Internal: append([]string(nil), mod.Internal...),
 			Layer:    mod.Layer,
 		}
-		if existing, ok := cfg.Modules[mod.Name]; ok {
+		if existing, ok := cfg.Modules[name]; ok {
 			def.Public = append([]string(nil), existing.Public...)
 			def.Internal = append([]string(nil), existing.Internal...)
 			def.Layer = existing.Layer
@@ -329,7 +436,7 @@ func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredCo
 			def.ReviewedAt = existing.ReviewedAt
 			def.ReviewedBy = existing.ReviewedBy
 		}
-		out.Modules[mod.Name] = def
+		out.Modules[name] = def
 	}
 	return out
 }
@@ -528,7 +635,7 @@ func externalSystemSuggestionsFromAnnotations(ann map[string]initcfg.ModuleAnnot
 
 // buildUpdateEdits constructs the ordered Edit slice for an apply pass.
 func buildUpdateEdits(report initcfg.UpdateReport) []initcfg.Edit {
-	edits := make([]initcfg.Edit, 0, len(report.Added)+len(report.PathDrift)+len(report.Removed)+len(report.Unclassified))
+	edits := make([]initcfg.Edit, 0, len(report.Added)+len(report.PathDrift))
 
 	for _, def := range report.Added {
 		edits = append(edits, initcfg.AddModuleEdit{Def: def})
@@ -538,9 +645,8 @@ func buildUpdateEdits(report initcfg.UpdateReport) []initcfg.Edit {
 		edits = append(edits, initcfg.UpdateModulePathsEdit{Module: d.Name, Paths: d.DiscoveredPaths})
 	}
 
-	for _, e := range report.Removed {
-		edits = append(edits, initcfg.CommentModuleEdit{Module: e.Name, Note: "not found in discovery"})
-	}
+	// No edit is built for report.Removed: see hasActionableEdits. Removing a
+	// configured stanza stays a human decision, and the report says so.
 
 	return edits
 }
@@ -561,6 +667,7 @@ func configToExisting(modules map[string]module.ModuleDef) []initcfg.ExistingMod
 			HasSubdomain:  def.Subdomain != "",
 			HasVolatility: def.Volatility != "",
 			HasLayer:      def.Layer != "",
+			HasOwner:      def.Owner != "",
 		})
 	}
 	return out

@@ -39,7 +39,7 @@ func TestRun_Help_ConfigSubtree(t *testing.T) {
 		t.Fatalf("config --help exit = %d, want 0", code)
 	}
 	out := buf.String()
-	for _, want := range []string{"init", "update", cmdEnrich} {
+	for _, want := range []string{"init", "update", cmdCompare, cmdEnrich} {
 		if !strings.Contains(out, want) {
 			t.Errorf("config --help missing %q:\n%s", want, out)
 		}

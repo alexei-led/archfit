@@ -2,16 +2,18 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
 
 const fmtScorecard = "--format=scorecard"
 
-// TestRun_Analyze_ScorecardFullFlagParses verifies that `analyze --format scorecard --full`
-// parses and runs (rc 0). Scorecard is always report-only, so a violating repo
-// still exits 0; the assertion is that the flag is accepted and a scorecard renders.
-func TestRun_Analyze_ScorecardFullFlagParses(t *testing.T) {
+// TestRun_Analyze_ScorecardFormatParses verifies that `analyze --format scorecard`
+// parses and runs (rc 0) both on a cold cache (--refresh) and on the cached path.
+// Scorecard is always report-only, so a violating repo still exits 0; the
+// assertion is that the format is accepted and a scorecard renders.
+func TestRun_Analyze_ScorecardFormatParses(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 
@@ -19,8 +21,8 @@ func TestRun_Analyze_ScorecardFullFlagParses(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"with --full", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath, flagRefresh}},
-		{"without --full (implied)", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath}},
+		{"with --refresh", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath, flagRefresh}},
+		{"without --refresh (cached facts)", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -35,6 +37,62 @@ func TestRun_Analyze_ScorecardFullFlagParses(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRun_Analyze_NoAdvisoriesWithScorecardAndJSON pins one meaning for
+// --no-advisories across output combinations: requesting a scorecard alongside
+// JSON no longer forces advisories back on, and suppressing them does not move
+// the score — coupling_balance is synthesised from ClassifiedEdges, before
+// advisory filtering.
+func TestRun_Analyze_NoAdvisoriesWithScorecardAndJSON(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeCoupledRepo(t, coupledModulesCfg)
+
+	run := func(t *testing.T, extra ...string) (advisoryCheckDiag, string) {
+		t.Helper()
+		args := append([]string{cmdAnalyze, fmtJSON, fmtScorecard, "-c", cfgPath}, extra...)
+		var buf bytes.Buffer
+		if code := Run(args, &buf); code != 0 {
+			t.Fatalf("analyze %v: exit = %d\noutput:\n%s", extra, code, buf.String())
+		}
+		// JSON renders first; decode just that document and leave the scorecard
+		// text that follows it in the buffer.
+		var d advisoryCheckDiag
+		if err := json.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&d); err != nil {
+			t.Fatalf("decode leading JSON document: %v\noutput:\n%s", err, buf.String())
+		}
+		return d, scorecardOverallLine(t, buf.String())
+	}
+
+	withDiag, withOverall := run(t)
+	// The fixture must actually produce advisories, or every assertion below
+	// holds over an empty set and the test silently stops testing.
+	if countAdvisoryFindings(withDiag)+len(withDiag.AdvisoryTasks) == 0 {
+		t.Fatalf("fixture regression: the coupled repo produced no advisory findings or tasks: %+v", withDiag)
+	}
+
+	withoutDiag, withoutOverall := run(t, flagNoAdvisories)
+	if n := countAdvisoryFindings(withoutDiag); n > 0 {
+		t.Errorf("--no-advisories alongside --format scorecard: %d advisory finding(s) still in output", n)
+	}
+	if n := len(withoutDiag.AdvisoryTasks); n > 0 {
+		t.Errorf("--no-advisories alongside --format scorecard: %d advisory task(s) still in output", n)
+	}
+	if withOverall != withoutOverall {
+		t.Errorf("--no-advisories moved the score: %q, want %q", withoutOverall, withOverall)
+	}
+}
+
+// scorecardOverallLine returns the scorecard's overall value/band line.
+func scorecardOverallLine(t *testing.T, out string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "**Overall:**") {
+			return line
+		}
+	}
+	t.Fatalf("no scorecard overall line in output:\n%s", out)
+	return ""
 }
 
 // TestRun_Analyze_NoConfigFlagRejected verifies that --no-config (removed in v2)

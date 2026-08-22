@@ -34,9 +34,20 @@ type LanguageDescriptor struct {
 	// Aliases are the extra --lang / install short forms that resolve to ID (the
 	// ID itself always resolves) — e.g. typescript ← "ts".
 	Aliases []string
-	// ProjectMarkers are repo-root filenames that signal the language is present
-	// (e.g. go.mod, package.json, Cargo.toml). Used by language discovery.
-	ProjectMarkers []string
+	// ProjectPresent reports whether this language's extractor has a project to
+	// analyse under root. It is the coverage layer's applicability probe: when it
+	// says "not present", an absent primary analyzer is read as "the language is
+	// not in this tree" rather than a coverage gap or a declared opt-out.
+	//
+	// Every row MUST answer by calling the extractor's own applicability code
+	// (golang.AnalysableMembers, ts.Applicable, py.Applicable, rust.Applicable) —
+	// never a hand-rolled marker list. A parallel reimplementation is how "we did
+	// not look" repeatedly rendered as "there is nothing here": a marker the
+	// extractor ignores (tsconfig.json without package.json, setup.cfg, a go.mod
+	// the module filter removes) fabricates presence, and a marker it accepts but
+	// the list omits (a configured python package dir, a sub-crate Cargo.toml, a
+	// go.work member) fabricates absence.
+	ProjectPresent func(root string, cfg config.Config) bool
 	// NewExtractor builds the language's ports.Extractor from the shared runner,
 	// the language's projected ExtractConfig view, and the fact-cache store.
 	// Store.RefreshMode lets a caller force fresh extraction while still writing
@@ -59,7 +70,7 @@ type LanguageDescriptor struct {
 var languageRegistry = []LanguageDescriptor{
 	{
 		ID:             config.LangGo,
-		ProjectMarkers: []string{markerGoMod},
+		ProjectPresent: goProjectPresent,
 		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
 			ex := golang.New(cfg)
 			ex.Runner = r // go-toolchain version probe for the fact-cache key
@@ -76,7 +87,7 @@ var languageRegistry = []LanguageDescriptor{
 	{
 		ID:             config.LangTypeScript,
 		Aliases:        []string{"ts"},
-		ProjectMarkers: []string{"package.json", "tsconfig.json"},
+		ProjectPresent: tsProjectPresent,
 		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
 			ex := ts.New(r, cfg)
 			ex.Cache = fc
@@ -94,7 +105,7 @@ var languageRegistry = []LanguageDescriptor{
 	{
 		ID:             config.LangPython,
 		Aliases:        []string{"py"},
-		ProjectMarkers: []string{"pyproject.toml", "setup.py", "setup.cfg"},
+		ProjectPresent: pyProjectPresent,
 		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
 			ex := py.New(r, cfg)
 			ex.Cache = fc
@@ -110,7 +121,7 @@ var languageRegistry = []LanguageDescriptor{
 	{
 		ID:             config.LangRust,
 		Aliases:        []string{"rs"},
-		ProjectMarkers: []string{markerCargoToml},
+		ProjectPresent: rustProjectPresent,
 		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
 			ex := rust.New(r, cfg)
 			ex.Cache = fc
@@ -124,6 +135,19 @@ var languageRegistry = []LanguageDescriptor{
 			{toolCargoModules, toolCargoModules, "cargo install cargo-modules (opt-in: analyzers.cargo_modules.enabled: true)"},
 		},
 	},
+}
+
+// goWorkOff reports whether the Go toolchain must be told to ignore the go.work
+// governing scanRoot, by asking the SAME discovery the Go extractor runs. It is
+// a whole-run fact, not a Go-extractor detail: any Go-toolchain subprocess the
+// run starts (today scip-go) sees the same workspace and must reach the same
+// conclusion, or two analyzers report contradictory coverage over one tree.
+//
+// False whenever discovery is unavailable or errors — never disable a workspace
+// on a guess.
+func goWorkOff(scanRoot string, cfg config.Config) bool {
+	m, err := golang.DiscoverMembers(scanRoot, cfg.ForExtract(config.LangGo).Exclusions)
+	return err == nil && m.GoWorkOff
 }
 
 // buildExtractors instantiates the per-language extractors in registry order,

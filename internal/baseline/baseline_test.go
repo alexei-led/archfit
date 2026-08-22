@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/score"
 	"github.com/alexei-led/archfit/internal/status"
 )
 
@@ -214,36 +216,74 @@ func TestEntries(t *testing.T) {
 	}
 }
 
+// TestEffectiveRubricVersion pins the legacy read: a snapshot written before
+// rubric tracking stores 0 but was banded under rubric 1, so both the
+// compatibility check and any disclosure must see 1, never the raw 0.
+func TestEffectiveRubricVersion(t *testing.T) {
+	tests := []struct {
+		name string
+		s    baseline.ScoreSnapshot
+		want int
+	}{
+		{name: "missing reads as the pre-tracking rubric", want: 1},
+		{name: "stored value is used verbatim", s: baseline.ScoreSnapshot{RubricVersion: 7}, want: 7},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.s.EffectiveRubricVersion(); got != tc.want {
+				t.Errorf("EffectiveRubricVersion() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestCouplingScore locks the max_drop anchor contract: only a snapshot
-// recorded under the CURRENT scorer version anchors a drop — no snapshot,
-// a pre-version-tracking snapshot (empty version), or a different version
-// all return nil (a cross-version drop is a methodology change, not a
-// regression).
+// compatible with the current scorer AND rubric anchors a drop. A snapshot
+// written before rubric tracking is read as rubric 1 and still anchors; any
+// other mismatch returns nil and names the incompatible input (a scorer or
+// rubric change is a methodology change, not a regression).
 func TestCouplingScore(t *testing.T) {
 	tests := []struct {
-		name      string
-		b         baseline.Baseline
-		want      *int
-		wantStale bool
+		name          string
+		b             baseline.Baseline
+		want          *int
+		wantMismatchs []string
 	}{
 		{
 			name: "no snapshot",
 			b:    baseline.Baseline{},
 		},
 		{
-			name:      "legacy snapshot without score_version is stale",
-			b:         baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed}},
-			wantStale: true,
+			name:          "legacy snapshot without score_version is stale",
+			b:             baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed}},
+			wantMismatchs: []string{baseline.InputScoreVersion},
 		},
 		{
-			name:      "snapshot from a different scorer version is stale",
-			b:         baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: "bc_score.v3"}},
-			wantStale: true,
+			name:          "snapshot from a different scorer version is stale",
+			b:             baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: "bc_score.v3"}},
+			wantMismatchs: []string{baseline.InputScoreVersion},
 		},
 		{
-			name: "current-version snapshot anchors",
+			// Pre-rubric-tracking snapshot: rubric_version absent reads as 1, the
+			// only rubric shipped so far, so it must keep anchoring.
+			name: "snapshot without rubric_version anchors under rubric 1",
 			b:    baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: coupling.ScoreVersion}},
 			want: func() *int { v := 42; return &v }(),
+		},
+		{
+			name: "current scorer and rubric anchors",
+			b:    baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: coupling.ScoreVersion, RubricVersion: score.RubricVersion}},
+			want: func() *int { v := 42; return &v }(),
+		},
+		{
+			name:          "snapshot from a different rubric version is stale",
+			b:             baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: coupling.ScoreVersion, RubricVersion: score.RubricVersion + 1}},
+			wantMismatchs: []string{baseline.InputRubricVersion},
+		},
+		{
+			name:          "both inputs incompatible name both, scorer first",
+			b:             baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: "bc_score.v3", RubricVersion: score.RubricVersion + 1}},
+			wantMismatchs: []string{baseline.InputScoreVersion, baseline.InputRubricVersion},
 		},
 	}
 	for _, tc := range tests {
@@ -255,8 +295,8 @@ func TestCouplingScore(t *testing.T) {
 			case tc.want != nil && (got == nil || *got != *tc.want):
 				t.Errorf("CouplingScore() = %v, want %d", got, *tc.want)
 			}
-			if stale := tc.b.ScoreVersionStale(); stale != tc.wantStale {
-				t.Errorf("ScoreVersionStale() = %v, want %v", stale, tc.wantStale)
+			if diff := tc.b.ScoreSnapshotMismatches(); !slices.Equal(diff, tc.wantMismatchs) {
+				t.Errorf("ScoreSnapshotMismatches() = %v, want %v", diff, tc.wantMismatchs)
 			}
 		})
 	}

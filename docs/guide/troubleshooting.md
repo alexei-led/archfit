@@ -69,11 +69,87 @@ lives elsewhere.
 | `warning: dependency-cruiser: N of M import specifiers unresolved (P%) — check tsconfig paths/baseUrl and installed dependencies` | TypeScript dependency-cruiser could not resolve import specifiers. Internal edges can fall into the external bucket when aliases or dependencies are missing.                              | Fix `tsconfig` `paths`/`baseUrl` and install `node_modules`.               |
 | `SCIP analysis timed out — increase analyzers.scip.timeout or reduce the scope`                                                   | SCIP indexing exceeded the analyzer watchdog. Large Python repos can need more than the default 20m watchdog.                                                                              | Set `analyzers.scip.timeout`, for example `30m`.                           |
 
+## Config update rejects `--json`
+
+`--json` is report-only. Combining it with `--apply`, `--ai-classify`, or
+`--refresh` prints `error: --json cannot be combined with ...` and exits `3`
+before any discovery, analyzer call, or write. Run the JSON review first, then
+run the mutating command separately:
+
+```sh
+archfit config update --json -c .archfit.yaml
+archfit config update --apply -c .archfit.yaml
+```
+
+## Config update reports `no_known_issues` but the config still looks wrong
+
+`no_known_issues` means the discovery diff, the module-field checks, and the
+suggestion passes found nothing. It is not a completeness or health claim. The
+checks cover structure drift, pending settings edits, `missing_owner`,
+`missing_volatility_input`, and `missing_layer`. Wrong-but-present values, wrong
+layer assignments, and wrong `paths:` globs are outside their reach — use
+`archfit analyze -c .archfit.yaml` and its coverage warnings for those.
+
+## Config update lists modules under `name_drift` or `removed_modules`
+
+Module discovery derives its own key for each module (`agenttask` for
+`internal/agenttask/**`), and it does not have to match the key your config
+uses. When a configured module and a discovered module own exactly the same
+paths under different names, `config update` reports the pair under
+`name_drift`, not as an add plus a remove.
+
+Neither `name_drift` nor `removed_modules` is applied. Re-keying or deleting a
+stanza discards its `owner`, `subdomain`, `volatility`, `layer`, and `public`
+values, so both stay your decision. Neither raises the status to
+`action_required`; a report with only these reads `review_available`.
+
+A `name_drift` stanza IS checked for `missing_owner`,
+`missing_volatility_input`, and `missing_layer` — only the key differs, the code
+is there. A `removed_modules` stanza is not: discovery found no code for it, so
+its fields describe nothing archfit can see. Every such module is listed in
+`unchecked_modules` (with the reason) in the JSON document and counted in the
+text status line, so an empty `issues` list is never a claim that every
+configured module was examined.
+
 ## Config update cannot edit module paths
 
 `archfit config update` can now replace flow-style module paths such as
 `paths: [pkg/**]`; it rewrites them as a block-style list. Flow-style
 `modules: {}` is still unsupported. Convert that section to block YAML first.
+
+## Config compare reports `not_comparable` and no differences at once
+
+These are two separate statements, and both can be true. `coverage evidence:`
+grades the analyzer evidence the two runs rest on; the differences section
+reports what the two configs actually measured. A duplicated or missing coverage
+row, a timed-out analyzer, an analyzer that failed to finish, or an analyzer that
+ran on only one side grades the evidence `not_comparable` even when both runs
+produced identical findings and an identical score.
+
+An analyzer that ran fully on both sides but left import specifiers unresolved
+(the normal dependency-cruiser and grimp state) grades `comparable_with_gaps`
+instead: the incompleteness is shared, so the comparison rests on it, and the
+detail line names the analyzer so the loss is visible.
+
+Read the coverage detail lines to see which analyzer caused it. A
+`not_comparable` grade means "trust this difference less", not "the comparison
+failed" — the command still exits `0`.
+
+## Config compare says the candidate scores higher
+
+A higher score is not a better config. `coupling_balance` is measured over the
+edges a config declares, so a config that declares fewer modules measures fewer
+edges and can score higher while seeing less of the same code. Check the
+measurement-loss warnings before reading the score:
+
+| Code                   | Meaning                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| `scored_fraction_fell` | A smaller share of cross-boundary edges got a concrete balance.               |
+| `abstained_edges_rose` | More cross-boundary edges had unknown strength or distance.                   |
+| `external_edges_rose`  | More edges fell outside the declared module set and left `coupling_balance` entirely. |
+
+A `score_delta` of `null` means one side could not measure `coupling_balance` at
+all. That is an unknown, not a tie.
 
 ## Installed but still reported missing
 

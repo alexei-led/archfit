@@ -57,10 +57,11 @@ func TestDiscoverMembers_GoWorkWithMembers(t *testing.T) {
 	writeFile(t, filepath.Join(modA, "go.mod"), "module example.com/a\ngo 1.21\n")
 	writeFile(t, filepath.Join(modB, "go.mod"), "module example.com/b\ngo 1.21\n")
 
-	got, err := goextract.DiscoverMembers(root, nil)
+	res, err := goextract.DiscoverMembers(root, nil)
 	if err != nil {
 		t.Fatalf("DiscoverMembers: %v", err)
 	}
+	got := res.Dirs
 	want := sortedCopy([]string{modA, modB})
 	if len(got) != len(want) {
 		t.Fatalf("got %d members %v, want %d %v", len(got), got, len(want), want)
@@ -76,10 +77,11 @@ func TestDiscoverMembers_SingleGoMod(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "go.mod"), "module example.com/single\ngo 1.21\n")
 
-	got, err := goextract.DiscoverMembers(root, nil)
+	res, err := goextract.DiscoverMembers(root, nil)
 	if err != nil {
 		t.Fatalf("DiscoverMembers: %v", err)
 	}
+	got := res.Dirs
 	if len(got) != 1 || got[0] != root {
 		t.Errorf("got %v, want [%s]", got, root)
 	}
@@ -94,10 +96,11 @@ func TestDiscoverMembers_MultiGoModWalk(t *testing.T) {
 	writeFile(t, filepath.Join(modA, "go.mod"), "module example.com/alpha\ngo 1.21\n")
 	writeFile(t, filepath.Join(modB, "go.mod"), "module example.com/beta\ngo 1.21\n")
 
-	got, err := goextract.DiscoverMembers(root, nil)
+	res, err := goextract.DiscoverMembers(root, nil)
 	if err != nil {
 		t.Fatalf("DiscoverMembers: %v", err)
 	}
+	got := res.Dirs
 	want := sortedCopy([]string{modA, modB})
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -121,10 +124,11 @@ func TestDiscoverMembers_ExclusionFiltering(t *testing.T) {
 	writeFile(t, filepath.Join(modSkip, "go.mod"), "module example.com/skip\ngo 1.21\n")
 
 	exclusions := []string{"**/testdata/**"}
-	got, err := goextract.DiscoverMembers(root, exclusions)
+	res, err := goextract.DiscoverMembers(root, exclusions)
 	if err != nil {
 		t.Fatalf("DiscoverMembers: %v", err)
 	}
+	got := res.Dirs
 	if len(got) != 1 || got[0] != modKeep {
 		t.Errorf("got %v, want [%s]", got, modKeep)
 	}
@@ -143,10 +147,11 @@ func TestDiscoverMembers_SubtreeFiltering(t *testing.T) {
 	writeFile(t, filepath.Join(modOut, "go.mod"), "module example.com/other\ngo 1.21\n")
 
 	// scanRoot is the inner subdir — only ./sub/app should survive.
-	got, err := goextract.DiscoverMembers(inner, nil)
+	res, err := goextract.DiscoverMembers(inner, nil)
 	if err != nil {
 		t.Fatalf("DiscoverMembers: %v", err)
 	}
+	got := res.Dirs
 	if len(got) != 1 || got[0] != modIn {
 		t.Errorf("got %v, want [%s]", got, modIn)
 	}
@@ -163,22 +168,94 @@ func TestDiscoverMembers_GoWorkZeroInScope_FallsBackToGoMod(t *testing.T) {
 	writeFile(t, filepath.Join(root, "go.mod"), "module example.com/root\ngo 1.21\n")
 
 	exclusions := []string{"**/testdata/**"}
-	got, err := goextract.DiscoverMembers(root, exclusions)
+	res, err := goextract.DiscoverMembers(root, exclusions)
 	if err != nil {
 		t.Fatalf("DiscoverMembers: %v", err)
 	}
+	got := res.Dirs
 	if len(got) != 1 || got[0] != root {
 		t.Errorf("got %v, want [%s]", got, root)
+	}
+	// Discovery ignored the workspace; the toolchain must be told to as well or
+	// `go list ./...` fails with "directory prefix . does not contain modules
+	// listed in go.work" and the extractor reports absent over a readable tree.
+	if !res.GoWorkOff {
+		t.Errorf("GoWorkOff = false after falling back past an in-scope-empty go.work, want true")
+	}
+}
+
+// TestDiscoverMembers_GoWorkOutOfScope is the shape that made `analyze --base`
+// inert on every Go repo that gitignores go.work (the `go help work` default):
+// the base ref is checked out as TRACKED FILES ONLY into a directory inside the
+// repo, so the repo's go.work is absent from the checkout but still governs it
+// from above — and names nothing inside it.
+func TestDiscoverMembers_GoWorkOutOfScope(t *testing.T) {
+	outer := t.TempDir()
+	// The workspace names only the outer module, never the checkout below it.
+	writeFile(t, filepath.Join(outer, "go.work"), "go 1.21\nuse .\n")
+	writeFile(t, filepath.Join(outer, "go.mod"), "module example.com/outer\ngo 1.21\n")
+
+	checkout := filepath.Join(outer, ".archfit-cache", "worktrees", "abc", "wt")
+	writeFile(t, filepath.Join(checkout, "go.mod"), "module example.com/outer\ngo 1.21\n")
+
+	res, err := goextract.DiscoverMembers(checkout, nil)
+	if err != nil {
+		t.Fatalf("DiscoverMembers: %v", err)
+	}
+	if len(res.Dirs) != 1 || res.Dirs[0] != checkout {
+		t.Fatalf("Dirs = %v, want [%s]", res.Dirs, checkout)
+	}
+	if !res.GoWorkOff {
+		t.Errorf("GoWorkOff = false for a checkout an out-of-scope go.work governs, want true")
+	}
+}
+
+// TestDiscoverMembers_GoWorkOutOfScope_WalkFallback covers the same out-of-scope
+// go.work reaching the walk branch: no go.mod at the scan root, modules below.
+func TestDiscoverMembers_GoWorkOutOfScope_WalkFallback(t *testing.T) {
+	outer := t.TempDir()
+	writeFile(t, filepath.Join(outer, "go.work"), "go 1.21\nuse ./elsewhere\n")
+	writeFile(t, filepath.Join(outer, "elsewhere", "go.mod"), "module example.com/elsewhere\ngo 1.21\n")
+
+	sub := filepath.Join(outer, "sub")
+	writeFile(t, filepath.Join(sub, "svc", "go.mod"), "module example.com/svc\ngo 1.21\n")
+
+	res, err := goextract.DiscoverMembers(sub, nil)
+	if err != nil {
+		t.Fatalf("DiscoverMembers: %v", err)
+	}
+	if len(res.Dirs) != 1 || res.Dirs[0] != filepath.Join(sub, "svc") {
+		t.Fatalf("Dirs = %v, want [%s]", res.Dirs, filepath.Join(sub, "svc"))
+	}
+	if !res.GoWorkOff {
+		t.Errorf("GoWorkOff = false on the walk fallback past an out-of-scope go.work, want true")
+	}
+}
+
+// TestDiscoverMembers_NoGoWork_KeepsWorkspaceOn pins the negative: with no
+// go.work anywhere above the scan root there is nothing for the toolchain to
+// ignore, so GOWORK must be left alone.
+func TestDiscoverMembers_NoGoWork_KeepsWorkspaceOn(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "go.mod"), "module example.com/plain\ngo 1.21\n")
+
+	res, err := goextract.DiscoverMembers(root, nil)
+	if err != nil {
+		t.Fatalf("DiscoverMembers: %v", err)
+	}
+	if res.GoWorkOff {
+		t.Errorf("GoWorkOff = true with no go.work in play, want false")
 	}
 }
 
 func TestDiscoverMembers_NoMembers_ReturnsNil(t *testing.T) {
 	// No go.work, no go.mod — result is nil.
 	root := t.TempDir()
-	got, err := goextract.DiscoverMembers(root, nil)
+	res, err := goextract.DiscoverMembers(root, nil)
 	if err != nil {
 		t.Fatalf("DiscoverMembers: %v", err)
 	}
+	got := res.Dirs
 	if got != nil {
 		t.Errorf("got %v, want nil", got)
 	}
@@ -194,10 +271,11 @@ func TestDiscoverMembers_Sorted(t *testing.T) {
 			"module example.com/"+sub+"\ngo 1.21\n")
 	}
 
-	got, err := goextract.DiscoverMembers(root, nil)
+	res, err := goextract.DiscoverMembers(root, nil)
 	if err != nil {
 		t.Fatalf("DiscoverMembers: %v", err)
 	}
+	got := res.Dirs
 	if !sort.StringsAreSorted(got) {
 		t.Errorf("members not sorted: %v", got)
 	}
@@ -297,9 +375,16 @@ func TestFilterMembers(t *testing.T) {
 func TestDiscoverMembers_ArchfitSelfCollapses(t *testing.T) {
 	repoRoot := archfitRepoRoot(t)
 
-	got, err := goextract.DiscoverMembers(repoRoot, scope.DefaultExclusions)
+	res, err := goextract.DiscoverMembers(repoRoot, scope.DefaultExclusions)
 	if err != nil {
 		t.Fatalf("DiscoverMembers on archfit root: %v", err)
+	}
+	got := res.Dirs
+	// The repo root IS a go.work member, so the workspace governs the load and
+	// must stay ON. GoWorkOff here would drop the workspace on the head side of
+	// every run.
+	if res.GoWorkOff {
+		t.Errorf("GoWorkOff = true on the archfit repo root, want false — the root is a go.work member")
 	}
 	if len(got) != 1 {
 		t.Fatalf("expected exactly 1 member, got %d: %v", len(got), got)

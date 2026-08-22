@@ -75,6 +75,78 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 	return cs.Files, nil
 }
 
+// runContext carries the per-run path and time inputs of one pipeline run.
+// Before it existed the config path stood in for four unrelated things, so a
+// run could not measure one config file while reading labels and facts from
+// another directory. Each field now selects exactly one concern.
+type runContext struct {
+	// ConfigSource is the config file this run measures. It selects the config
+	// hash and the validation command emitted in agent_tasks[]. A comparison
+	// run points it at the candidate file while BundleDir stays current.
+	ConfigSource string
+
+	// BundleDir is the config-bundle directory: pinned labels, the fact cache,
+	// the base-worktree cache, and the output-hygiene warning resolve against
+	// it. It is the CURRENT config's directory even when ConfigSource names a
+	// candidate file somewhere else.
+	BundleDir string
+
+	// ScanRoot is the explicit --root analysis boundary. Empty means "resolve
+	// the git root" — scope.Resolve falls through to gitRoot and the emitted
+	// validation command omits --root. Never default it to BundleDir: that
+	// would move the analysis boundary to the config directory and stamp a
+	// spurious --root on every repair task.
+	ScanRoot string
+
+	// EvaluatedAt is the single instant waiver and staleness logic evaluate
+	// against. Zero samples the current time once inside the pipeline, which
+	// is what a normal single run wants; the head and base sides of a --base
+	// comparison set it explicitly so both sides age findings identically.
+	EvaluatedAt time.Time
+}
+
+// newRunContext builds the run context of a normal single-config run: the
+// config file is both the measured source and the bundle anchor, and the time
+// is sampled later inside the pipeline.
+func newRunContext(configPath, root string) runContext {
+	return runContext{
+		ConfigSource: configPath,
+		BundleDir:    filepath.Dir(configPath),
+		ScanRoot:     root,
+	}
+}
+
+// baseRunContext derives the base side of a --base comparison from the head
+// run context: same config source and bundle directory (so config drift never
+// masquerades as code drift), the base worktree as scan root, and the head
+// run's evaluation time so both sides resolve waivers and staleness against
+// one instant.
+func baseRunContext(head runContext, baseRoot string) runContext {
+	head.ScanRoot = baseRoot
+	return head
+}
+
+// evaluatedAt returns the run's evaluation instant, sampling the current time
+// when the caller left EvaluatedAt zero.
+func (rc runContext) evaluatedAt() time.Time {
+	if rc.EvaluatedAt.IsZero() {
+		return time.Now()
+	}
+	return rc.EvaluatedAt
+}
+
+// scanDir returns the directory that anchors scope and git resolution. An
+// explicit --root decouples the analyzed repo from where the config bundle
+// lives (external-CI use case); without one the bundle directory is the
+// anchor. This is only the resolution anchor — the analysis boundary itself
+// stays rc.ScanRoot, empty included.
+func (rc runContext) scanDir() string {
+	if rc.ScanRoot != "" {
+		return rc.ScanRoot
+	}
+	return rc.BundleDir
+}
+
 // runPipeline resolves scope, builds extractors/rules/metrics, collects change
 // history and optional tool inputs, and executes the engine. check, scan,
 // explain, and baseline all run through this single path: baseline snapshots
@@ -85,17 +157,8 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 // promoted findings are visible to agenttask.Build below and to every renderer
 // — then the agent_tasks repair block is attached from the active gate
 // findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, score.Scorecard, error) {
-	configDir := filepath.Dir(configPath)
-	// scanDir anchors scope/git resolution. An explicit --root decouples the
-	// analyzed repo from where the config lives (external-CI use case); when it is
-	// empty the config directory is the root, identical to the historical
-	// behaviour. Baseline, labels, and the config hash stay config-adjacent
-	// regardless — they are part of the config bundle, not the scanned tree.
-	scanDir := root
-	if scanDir == "" {
-		scanDir = configDir
-	}
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runContext, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, score.Scorecard, error) {
+	scanDir := rc.scanDir()
 	// Merge the built-in artifact/cache excludes into the config exclusions
 	// (additive — see scope.MergeExclusions) before projecting any view, so every
 	// extractor inherits them. Keeps archfit from measuring its own tool outputs
@@ -109,7 +172,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// behaviour. Without this line, --root only sets the gitResolver workDir
 	// (which resolves UP to the git toplevel), leaving ScanRoot == gitRoot
 	// even when --root points at a subtree of a monorepo.
-	sc.Root = root
+	sc.Root = rc.ScanRoot
 	sc.Base = mode.Base
 	sc.Full = mode.Full
 	deps.reportPhase("Discovering project")
@@ -119,10 +182,10 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 
 	// Extractor fact cache (fact-cache.md D1/D2): facts/ beside the AI cache
-	// under the config dir. Refresh mode bypasses reads but still records fresh
-	// facts on success. The cache stores subprocess/loader FACTS keyed by
+	// under the config bundle dir. Refresh mode bypasses reads but still records
+	// fresh facts on success. The cache stores subprocess/loader FACTS keyed by
 	// content; classification and scoring below never consult it.
-	facts := factcache.NewStore(factsCacheDir(configDir))
+	facts := factcache.NewStore(factsCacheDir(rc.BundleDir))
 	facts.RefreshMode = deps.refresh
 
 	extractors := buildExtractors(deps.Runner, cfg, facts)
@@ -149,13 +212,13 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		deps.warn(msg)
 	}
 
-	// Output-path hygiene: when the config/output directory sits strictly inside
-	// the analyzed root, archfit writes cache/baseline/report artifacts into the
-	// scanned tree — a source of non-deterministic repeat scans (OpenAI Sec 7.4).
+	// Output-path hygiene: when the config bundle/output directory sits strictly
+	// inside the analyzed root, archfit writes cache/baseline/report artifacts into
+	// the scanned tree — a source of non-deterministic repeat scans (OpenAI Sec 7.4).
 	// Built-in excludes neutralise the known artifacts, but the directory itself
 	// (and any user-redirected report) is still a hazard, so we surface it.
-	if absConfigDir, aerr := filepath.Abs(configDir); aerr == nil {
-		if w := outputInsideRootWarning(s.Root, absConfigDir); w != "" {
+	if absBundleDir, aerr := filepath.Abs(rc.BundleDir); aerr == nil {
+		if w := outputInsideRootWarning(s.Root, absBundleDir); w != "" {
 			toolWarnings = append(toolWarnings, w)
 			deps.warn(w)
 		}
@@ -180,7 +243,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	// Manifest deprecation markers (go.mod retract, package.json deprecated).
 	// Report-only — never modifies the graph, metric verdict, or gate.
-	// Ceiling: cargo yanked and live EOL are not locally declarable — use archfit analyze --llm / enrich.
+	// Ceiling: cargo yanked and live EOL are not locally declarable — use archfit analyze --ai-summary / config enrich.
 	change.DeprecatedDeps = manifest.Scan(s.Root)
 
 	// Runtime async-bridge detection (deterministic FS scan + optional ast-grep).
@@ -259,7 +322,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// Pinned coupling labels (.archfit-labels.yaml): the human-reviewed output of
 	// `archfit enrich`. Optional; a malformed file fails loudly — a half-read
 	// labels file must never silently alter the gate.
-	lbls, err := labelsio.Load(filepath.Join(configDir, defaultLabelsPath))
+	lbls, err := labelsio.Load(filepath.Join(rc.BundleDir, defaultLabelsPath))
 	if err != nil {
 		return diagnostic.Diagnostic{}, score.Scorecard{}, err
 	}
@@ -273,6 +336,12 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if cfg.ScipEnabled() {
 		scipAdapter := scip.New(deps.Runner, cfg.ToolTimeout(config.ToolScip))
 		scipAdapter.Cache = facts
+		// scip-go is a Go-toolchain process, so it must honour the same go.work
+		// decision the in-process Go loader makes — otherwise it walks up to an
+		// out-of-scope go.work, indexes one synthetic package, and writes an empty
+		// index. Asking discovery is a handful of stats; deriving it separately
+		// here would be a second implementation of the same decision.
+		scipAdapter.GoWorkOff = goWorkOff(s.Root, cfg)
 		resolver = scipAdapter
 	} else {
 		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
@@ -299,7 +368,11 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		})
 	}
 
-	configHash := effectiveConfigHash(configPath)
+	configHash := effectiveConfigHash(rc.ConfigSource)
+	// One evaluation instant for waiver expiry and staleness. A --base run
+	// hands the same value to both sides so head and base age findings against
+	// the same moment rather than two samples taken minutes apart.
+	now := rc.evaluatedAt()
 
 	patternCfg := cfg.ForPatterns()
 	patternProvider := astgrep.New(deps.Runner)
@@ -327,7 +400,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		MetricGates: cfg.Metrics,
 		Labels:      lbls,
 		Signals:     change,
-		Now:         time.Now(),
+		Now:         now,
 		ConfigHash:  configHash,
 		// Primary dependency-graph analyzer coverage names, in registry order, so
 		// score synthesis names them without the core ring hardcoding tool strings.
@@ -382,7 +455,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 			modulePublic[name] = def.Public
 		}
 	}
-	validate := validationCommand(configPath, root)
+	validate := validationCommand(rc.ConfigSource, rc.ScanRoot)
 	// PathResolver lets agenttask.Build turn a bare config module key, a Rust
 	// "crate::mod" id, or a Python dotted module id into a path that actually
 	// exists on disk, using facts already gathered above — agenttask itself
@@ -412,6 +485,11 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)
 	// and surface config-quality lint plus any swallowed optional-tool errors in
 	// ConfigWarnings so they reach md/json/CI instead of being stderr-only.
+	// Disclose switched-off primaries as "disabled" BEFORE deriving gaps: an
+	// extractor reports ModeOff as "absent", which both comparison paths read as
+	// "this language is not in the tree" (see markDisabledPrimaries). s.Root is
+	// the presence probe's boundary — a language that is not here stays absent.
+	diag.ToolCoverage = markDisabledPrimaries(diag.ToolCoverage, cfg, s.Root)
 	diag.CoverageGaps = buildCoverageGaps(diag.ToolCoverage, cfg, s.Root)
 	diag.ConfigWarnings = buildConfigWarnings(cfg, toolWarnings)
 
@@ -419,7 +497,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// placing edges on the book's scale. Appended to ConfigWarnings so they reach
 	// the JSON/md output and are actionable for humans and AI agents.
 	diag.ConfigWarnings = append(diag.ConfigWarnings,
-		buildJudgmentDecisionTasks(cfg, lbls, configPath)...)
+		buildJudgmentDecisionTasks(cfg, lbls, rc.ConfigSource)...)
 
 	return diag, card, nil
 }
@@ -467,6 +545,11 @@ func shellQuoteArg(arg string) string {
 // (advisory output off, or coupling.min_severity above every active edge).
 // Per-run trip state, never a triageable edge: `archfit baseline` skips it.
 const ruleIDBCCouplingGate = "bc/coupling_gate"
+
+// findingIDCouplingGate is the fixed finding ID of that synthetic summary
+// finding. It is per-run trip state, not a content fingerprint, so the git
+// origin delta always classifies its task as unknown.
+const findingIDCouplingGate = "coupling-gate"
 
 // couplingGateView projects the coupling.gate config block into the score
 // package's gate view. It lives here in the composition root — config sits
@@ -527,7 +610,7 @@ func applyCouplingGate(diag *diagnostic.Diagnostic, card score.Scorecard, gate s
 	diag.Summary.Warnings = max(0, diag.Summary.Warnings-promoted)
 	if promoted == 0 {
 		diag.Findings = append(diag.Findings, finding.Finding{
-			ID:       "coupling-gate",
+			ID:       findingIDCouplingGate,
 			Kind:     finding.KindGate,
 			RuleID:   ruleIDBCCouplingGate,
 			Status:   finding.StatusNew,

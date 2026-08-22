@@ -65,6 +65,38 @@ func (e *Extractor) Name() string {
 	return langRust
 }
 
+// CoverageTool returns the name this extractor stamps on its primary Coverage
+// row. The opt-in module-graph row (cargo-modules) is reported separately.
+func (e *Extractor) CoverageTool() string {
+	return toolCargo
+}
+
+// manifestPath resolves the Cargo manifest this extractor drives cargo from: a
+// configured languages.rust.manifest resolved against root exactly like cargo's
+// --manifest-path, else the root Cargo.toml. A sub-crate manifest therefore
+// makes Rust analysable with NO root manifest at all.
+func manifestPath(root, manifest string) string {
+	if manifest == "" {
+		return filepath.Join(root, manifestFile)
+	}
+	if filepath.IsAbs(manifest) {
+		return manifest
+	}
+	return filepath.Join(root, manifest)
+}
+
+// Applicable reports whether this extractor has a Rust project to analyse at
+// root. Any stat error (absent, unreadable) means not-applicable, matching
+// Extract's own marker test.
+//
+// Exported so the CLI's coverage probe can answer "is this language present?"
+// with the extractor's own code instead of a parallel marker list — a root-only
+// Cargo.toml check called a configured sub-crate manifest "no Rust here".
+func Applicable(root, manifest string) bool {
+	_, err := os.Stat(manifestPath(root, manifest))
+	return err == nil
+}
+
 // Extract detects cargo, runs `cargo metadata` against the project root, parses
 // the JSON output, and returns a graph.Facts + diagnostic.Coverage.
 //
@@ -82,18 +114,10 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, absentCoverage(""), nil
 	}
 
-	// Applicability marker: a configured rust_manifest (resolved against s.Root
-	// exactly like cargo's --manifest-path) when set, else the root Cargo.toml.
-	// This lets a sub-crate manifest drive analysis without a root manifest. Any
-	// stat error (absent, unreadable) means not-applicable, matching the py
-	// extractor's presence test — don't fall through to cargo on a non-ENOENT error.
-	marker := filepath.Join(s.Root, manifestFile)
-	if e.cfg.CargoManifest != "" {
-		marker = e.cfg.CargoManifest
-		if !filepath.IsAbs(marker) {
-			marker = filepath.Join(s.Root, marker)
-		}
-	}
+	// Applicability marker (see manifestPath). Any stat error (absent,
+	// unreadable) means not-applicable, matching the py extractor's presence test
+	// — don't fall through to cargo on a non-ENOENT error.
+	marker := manifestPath(s.Root, e.cfg.CargoManifest)
 	if _, err := os.Stat(marker); err != nil {
 		// An explicitly configured rust_manifest that is missing is a
 		// misconfiguration → error in on mode. But a missing DEFAULT root

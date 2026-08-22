@@ -19,6 +19,13 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
+// syntaxToolName is the coverage name for the SYNTAX pass. It is deliberately
+// distinct from the pattern pass's toolName: both passes drive the same "sg"
+// binary, but a shared name puts two rows under one tool in tool_coverage, and
+// every consumer that pairs rows by tool (config compare, the git-origin delta)
+// then sees an unpairable duplicate instead of two independent analyzers.
+const syntaxToolName = toolName + "/syntax"
+
 //go:embed rules/go.yml
 var goRules string
 
@@ -232,7 +239,7 @@ var goTypeAliasNameRe = regexp.MustCompile(`^type\s+(\w+)`)
 func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
 	_, ok := a.runner.Detect(ctx, "sg")
 	if !ok {
-		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusAbsent}, nil
+		return nil, diagnostic.Coverage{Tool: syntaxToolName, Status: diagnostic.StatusAbsent}, nil
 	}
 
 	var facts []diagnostic.SyntaxFact
@@ -268,7 +275,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		// report status=ok — a false green. Surface it as a partial/degraded result.
 		if out.ExitCode != 0 && len(raw) == 0 {
 			reason := fmt.Sprintf("sg rejected rule file for %q (exit %d): %s", lang, out.ExitCode, strings.TrimSpace(string(out.Stderr)))
-			return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusPartial, Reason: reason}, nil
+			return nil, diagnostic.Coverage{Tool: syntaxToolName, Status: diagnostic.StatusPartial, Reason: reason}, nil
 		}
 		if len(raw) == 0 {
 			continue
@@ -337,7 +344,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 	for i := range facts {
 		seen[facts[i].File] = struct{}{}
 	}
-	cov := diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusOK, FilesSeen: len(seen)}
+	cov := diagnostic.Coverage{Tool: syntaxToolName, Status: diagnostic.StatusOK, FilesSeen: len(seen)}
 	return facts, cov, nil
 }
 

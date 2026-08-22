@@ -19,7 +19,7 @@ uncached run on the same tree** — the cache stores facts, never decisions.
 - The path is built in exactly one place: `llmCacheDir` (`cmd/archfit/enrich.go`)
   → `<configDir>/.archfit-cache/llm`. Imported exclusively from `cmd/archfit/*`.
 - `--no-cache` exists only on the five LLM commands (`config init/update/enrich`,
-  `explain --llm`, `analyze --llm`) with help text "Bypass the LLM response cache."
+  `explain --ai-summary`, `analyze --ai-summary`) with help text "Bypass the LLM response cache."
 - `**/.archfit-cache/**` is already in `scope.DefaultExclusions` (`scope.go`).
   Task 5 re-verifies the loc and gocyclo walkers (they walk independently — see
   project memory `archfit-file-walk-exclusion-fragmentation`) and the

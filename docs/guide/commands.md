@@ -54,18 +54,20 @@ Use this when you know the job, not the command.
 | verify analyzers are installed, or install what archfit can install | `archfit doctor` or `archfit doctor --fix`                                                                    |
 | create the first config file for a repo                             | `archfit config init --root .`                                                                                |
 | sync an existing config to the current repo structure               | `archfit config update -c .archfit.yaml`                                                                      |
+| read the config review from a script or an agent                    | `archfit config update --json -c .archfit.yaml`                                                               |
+| see what a candidate config would measure on the same code          | `archfit config compare candidate.archfit.yaml -c .archfit.yaml`                                              |
 | draft AI labels or module metadata for review                       | `archfit config enrich <kind>` where `<kind>` is `labels`, `abstained`, `owner`, `volatility`, or `subdomain` |
 
 ## Exit codes
 
 `archfit check` is the only command that uses all four exit codes.
 
-| Code | Meaning                                                                                 | Commands that produce it                                                                                                                                                            |
-| ---- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | Success. For `analyze`, this still includes runs that report findings.                  | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config enrich ...` |
-| `1`  | Violations. Gate failed. Missing required tools under `--require-tools` also land here. | `archfit check`; `archfit analyze` never exits `1` on a successful run                                                                                                              |
-| `2`  | Warning verdict. No blocking violations, but warnings were promoted to the exit code.   | `archfit check`                                                                                                                                                                     |
-| `3`  | Usage, parse, config, or runtime error.                                                 | All commands                                                                                                                                                                        |
+| Code | Meaning                                                                                 | Commands that produce it                                                                                                                                                                                      |
+| ---- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success. For `analyze`, this still includes runs that report findings.                  | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config compare`, `archfit config enrich ...` |
+| `1`  | Violations. Gate failed. Missing required tools under `--require-tools` also land here. | `archfit check`; `archfit analyze` never exits `1` on a successful run                                                                                                                                        |
+| `2`  | Warning verdict. No blocking violations, but warnings were promoted to the exit code.   | `archfit check`                                                                                                                                                                                               |
+| `3`  | Usage, parse, config, or runtime error.                                                 | All commands                                                                                                                                                                                                  |
 
 Notes:
 
@@ -216,7 +218,10 @@ Use cases:
 
 - first-time rollout;
 - re-anchoring after a deliberate cleanup wave;
-- baselining a delta run with `--base`.
+- re-anchoring `coupling.gate.max_drop` after a scorer or rubric change.
+
+A baseline is always the accepted state of the tree as checked out. There is no
+git-base mode; compare against a ref with `archfit check --base` instead.
 
 Synopsis:
 
@@ -228,23 +233,24 @@ What it writes:
 
 - Saves the baseline beside the config as `.archfit-baseline.json`.
 - Keeps metrics and score snapshots so later runs can detect fixed findings and score movement.
+- Records the scorer version (`score_version`) and rubric version (`rubric_version`)
+  the score snapshot was produced under, so an incompatible snapshot cannot anchor
+  `coupling.gate.max_drop`.
 
 Flags:
 
-| Flag              | Type    | Default                 | Effect                                                                | Example                                                 |
-| ----------------- | ------- | ----------------------- | --------------------------------------------------------------------- | ------------------------------------------------------- |
-| `-c, --config`    | path    | `.archfit.yaml`         | Config file.                                                          | `archfit baseline -c .archfit.yaml`                     |
-| `-r, --root`      | path    | directory of `--config` | Repo root to analyze.                                                 | `archfit baseline -r ../repo -c ./policy/.archfit.yaml` |
-| `--no-advisories` | bool    | `false`                 | Exclude informational Balanced Coupling advisories from the baseline. | `archfit baseline --no-advisories`                      |
-| `--base`          | git ref | none                    | Compare against a base ref when baselining a delta run.               | `archfit baseline --base origin/main`                   |
-| `--refresh`       | bool    | `false`                 | Re-run extractors and refresh the cache.                              | `archfit baseline --refresh`                            |
+| Flag              | Type | Default                 | Effect                                                                | Example                                                 |
+| ----------------- | ---- | ----------------------- | --------------------------------------------------------------------- | ------------------------------------------------------- |
+| `-c, --config`    | path | `.archfit.yaml`         | Config file.                                                          | `archfit baseline -c .archfit.yaml`                     |
+| `-r, --root`      | path | directory of `--config` | Repo root to analyze.                                                 | `archfit baseline -r ../repo -c ./policy/.archfit.yaml` |
+| `--no-advisories` | bool | `false`                 | Exclude informational Balanced Coupling advisories from the baseline. | `archfit baseline --no-advisories`                      |
+| `--refresh`       | bool | `false`                 | Re-run extractors and refresh the cache.                              | `archfit baseline --refresh`                            |
 
 Examples:
 
 ```sh
 archfit baseline -c .archfit.yaml
 archfit baseline --no-advisories -c .archfit.yaml
-archfit baseline --base origin/main -c .archfit.yaml
 archfit baseline --refresh -r . -c .archfit.yaml
 ```
 
@@ -392,12 +398,13 @@ Purpose:
 
 - Re-discover project structure.
 - Diff it against the existing config.
-- Print a drift report, or apply structural edits.
+- Print a drift report and a config review, or apply structural edits.
 
 Use cases:
 
 - after adding, removing, or moving modules;
 - after enabling more language analyzers;
+- checking which config fields still need a decision;
 - reviewing AI proposals for new modules without changing the gate behavior.
 
 Synopsis:
@@ -409,8 +416,65 @@ archfit config update [flags]
 Notes:
 
 - Without `--apply`, this command is report-only.
-- With `--apply`, only structural changes are written live.
+- With `--apply`, only added modules, path drift, and settings are written live.
+- `--apply` never deletes, comments out, or re-keys a configured module stanza.
 - AI semantic proposals remain review-only even when `--apply` is used.
+- The report leads with one status line: `action_required`, `review_available`,
+  or `no_known_issues`. `no_known_issues` means these checks found nothing; it is
+  not a claim that the config is complete.
+- With `--apply`, a run with nothing to write still prints the same status line
+  and report as the preview. A structure with no pending edits is not a clean
+  config: module gaps, unclassifiable modules, and unchecked stanzas are still
+  reported.
+- With `--apply`, a run that DOES write an edit reports the review-only half too:
+  the edit it made, then module gaps, unclassifiable modules, naming
+  differences, unmatched stanzas, and unchecked stanzas. Having an edit to apply
+  never hides what apply refuses to write.
+- The report lists every change `--apply` would write, including non-module
+  settings such as the Rust deep-analysis defaults.
+
+Review model:
+
+| Field                | Meaning                                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `structure`          | Discovery differences: pending edits plus the review-only buckets below.                                                                                     |
+| `issues`             | Per-module config gaps that need a decision, each with a reason and a next action.                                                                           |
+| `unchecked_modules`  | Configured modules the per-module checks did NOT evaluate, with the reason. An empty `issues` list is only "clean" for the modules that are not listed here. |
+| `review_suggestions` | Deterministic deploy-unit and distance-config proposals. `--apply` never writes them.                                                                        |
+
+`structure` fields:
+
+| Field             | Applied by `--apply`? | Meaning                                                                               |
+| ----------------- | --------------------- | ------------------------------------------------------------------------------------- |
+| `added_modules`   | yes                   | Modules discovery found that the config does not declare.                             |
+| `path_drift`      | yes                   | Declared modules whose configured paths differ from the discovered paths.             |
+| `settings`        | yes                   | Non-module settings, such as the Rust deep-analysis defaults.                         |
+| `name_drift`      | no                    | A configured module and a discovered module own the same paths under different names. |
+| `removed_modules` | no                    | Configured modules discovery did not emit.                                            |
+
+`name_drift` and `removed_modules` are review-only. Resolving either means
+re-keying or deleting a stanza, which discards its `owner`, `subdomain`,
+`volatility`, `layer`, and `public` values, so both stay human decisions.
+Neither raises the status to `action_required` — only pending edits and module
+`issues` do. A report whose findings are review items alone reads
+`review_available`, and those items are not just these two buckets: modules
+archfit cannot classify and the stanzas in `unchecked_modules` count as well.
+
+Issue codes:
+
+| Code                       | Condition                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| `missing_owner`            | The module has no `owner:`, so cross-module distance falls back to code structure. |
+| `missing_volatility_input` | The module has neither `subdomain:` nor `volatility:`. Either field closes it.     |
+| `missing_layer`            | The module has no `layer:` while a `forbidden_layer_direction` rule is not `off`.  |
+
+JSON:
+
+- `--json` emits the review as `archfit.config-review.v1`.
+- Every list is a JSON array, never `null`.
+- Issues sort by module, then by code. All other lists keep their report order.
+- `--json` is report-only and cannot be combined with `--apply`, `--ai-classify`,
+  or `--refresh`. Those combinations exit `3` before any discovery or write.
 
 Flags:
 
@@ -420,6 +484,7 @@ Flags:
 | `-r, --root`    | path   | directory of `--config` | Project root directory to scan.                                          | `archfit config update -r . -c .archfit.yaml`                               |
 | `--ai-classify` | bool   | `false`                 | Run AI classification for unclassified modules. Off-gate.                | `archfit config update --ai-classify -c .archfit.yaml`                      |
 | `--apply`       | bool   | `false`                 | Write structural changes live into `.archfit.yaml`. Backups are created. | `archfit config update --apply -c .archfit.yaml`                            |
+| `--json`        | bool   | `false`                 | Emit the review as JSON. Report-only.                                    | `archfit config update --json -c .archfit.yaml`                             |
 | `--refresh`     | bool   | `false`                 | Re-run AI calls and refresh the AI cache.                                | `archfit config update --ai-classify --refresh -c .archfit.yaml`            |
 | `--ai-provider` | string | `anthropic`             | Override the AI provider.                                                | `archfit config update --ai-classify --ai-provider ollama -c .archfit.yaml` |
 | `--ai-model`    | string | `claude-opus-4-8`       | Override the AI model.                                                   | `archfit config update --ai-classify --ai-model llama3.1 -c .archfit.yaml`  |
@@ -428,10 +493,109 @@ Examples:
 
 ```sh
 archfit config update -c .archfit.yaml
+archfit config update --json -c .archfit.yaml
 archfit config update --apply -c .archfit.yaml
 archfit config update --ai-classify -c .archfit.yaml
 archfit config update --ai-classify --apply -c .archfit.yaml
 archfit config update --ai-classify --refresh -c .archfit.yaml
+```
+
+## `archfit config compare <candidate>`
+
+Purpose:
+
+- Measure one source tree twice: once under the current config, once under a candidate config.
+- Report the finding, coverage, and measurement differences between the two.
+
+Use cases:
+
+- checking what a proposed module split, rule change, or analyzer switch would report;
+- checking whether a config edit measured more of the tree, or simply less of it;
+- reviewing a config change without touching the baseline or the gate.
+
+Synopsis:
+
+```sh
+archfit config compare <candidate> [flags]
+```
+
+Notes:
+
+- Report-only. Exit `0` after a successful comparison, exit `3` on an input or
+  runtime error. Findings never change the exit code.
+- Both runs use an empty accepted baseline. `.archfit-baseline.json` records
+  findings accepted under the current config, so applying it would silence the
+  candidate's findings by the current config's history.
+- Both runs measure the same tree with the same pinned labels and fact cache.
+  Only the config file differs, so a candidate stored outside the repo is fine.
+- Nothing is written. Config, baseline, labels, candidate, and policy files stay
+  byte-identical; normal fact-cache reads and writes still happen.
+- The report never states that a candidate config is better. A config that scores
+  higher because it measured less of the tree is a measurement loss, not an
+  improvement.
+
+Report model:
+
+| Section                 | Meaning                                                                                                                                                        |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coverage evidence`     | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences.                                               |
+| measurement differences | Only what changed: the overall score, the one-sided finding IDs, the classified-edge counts, and the classification mix (strength, distance, distance basis, volatility, severity, and volatility provenance). Nothing changed prints `No change in score, findings, edge counts, or classification mix.` — a claim about those measurements, not a claim that the two configs are equivalent. |
+| measurement loss        | Warnings raised when the candidate measured less of the same tree.                                                                                             |
+
+Coverage grades:
+
+| Grade                  | Condition                                                                                                                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `comparable`           | Every compared analyzer ran on both sides. A per-language analyzer absent on both sides with no coverage gap drops out of the comparison entirely — that language is simply not in the tree. A language the repo contains but the config switched off reports `disabled`, not absent, so it never drops out this way.                                  |
+| `comparable_with_gaps` | The sides agree, but at least one analyzer was absent, disabled, or left import specifiers unresolved on **both** sides. The blindness is shared, so the comparison rests on it — each such analyzer is listed with a reason. |
+| `not_comparable`       | An analyzer's evidence differs between the sides, did not finish (timed out, or partial from a run that did not complete), was absent on both sides but expected by only one, or its coverage row is missing or duplicated.   |
+
+A `not_comparable` grade is about evidence, not about the configs: it can appear
+on a run that reports no measurement differences at all. Read the grade first,
+then the differences.
+
+An `owner:` or `deploy_unit:` edit typically moves edges between distance rungs
+without moving the score: with `balance = max(|S−D|, 10−V)` the `10−V` term
+dominates for every low-volatility target. That shift shows up as a
+classification-mix line; `--json` carries the full histograms on both sides under
+`current.classified_edges` and `candidate.classified_edges`.
+
+Measurement-loss warnings:
+
+| Code                   | Condition                                                                                                |
+| ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| `scored_fraction_fell` | The candidate placed a smaller share of cross-boundary edges on a concrete balance.                      |
+| `abstained_edges_rose` | The candidate abstained on more cross-boundary edges.                                                    |
+| `external_edges_rose`  | The candidate pushed more edges outside the declared module set, excluding them from `coupling_balance`. |
+
+JSON:
+
+- `--json` emits the comparison as `archfit.config-compare.v1`.
+- Every list is a JSON array, never `null`. All ID lists are sorted.
+- `score_delta` is `null` when either side could not measure `coupling_balance`.
+  `null` means unknown; `0` means measured and unchanged.
+- `classified_edges` is `null` when a side classified no edges at all.
+- `finding_count` counts the distinct observed finding IDs of that side, with
+  fixed entries excluded.
+- Findings are bucketed as `current_only_ids`, `candidate_only_ids`, and
+  `both_ids`. Alternative configs have no time order, so nothing is labelled
+  introduced or resolved. Gate and advisory forms of one finding share one ID.
+
+Flags:
+
+| Flag           | Type | Default                 | Effect                                                    | Example                                                         |
+| -------------- | ---- | ----------------------- | --------------------------------------------------------- | --------------------------------------------------------------- |
+| `<candidate>`  | path | required                | Candidate config file to measure against the current one. | `archfit config compare candidate.archfit.yaml`                 |
+| `-c, --config` | path | `.archfit.yaml`         | Current config file path.                                 | `archfit config compare cand.yaml -c .archfit.yaml`             |
+| `--root`       | path | directory of `--config` | Repository root to analyze.                               | `archfit config compare cand.yaml --root . -c ci/.archfit.yaml` |
+| `--json`       | bool | `false`                 | Emit the comparison as JSON. Report-only.                 | `archfit config compare cand.yaml --json -c .archfit.yaml`      |
+
+Examples:
+
+```sh
+archfit config compare candidate.archfit.yaml -c .archfit.yaml
+archfit config compare candidate.archfit.yaml --json -c .archfit.yaml | jq .
+archfit config compare candidate.archfit.yaml --root . -c ci/.archfit.yaml
 ```
 
 ## `archfit config enrich ...`
@@ -629,6 +793,7 @@ Used by:
 - `archfit baseline`
 - `archfit explain`
 - `archfit config update`
+- `archfit config compare`
 - `archfit config enrich ...`
 
 Rules:
@@ -636,6 +801,8 @@ Rules:
 - Default path is `.archfit.yaml`.
 - `analyze` and `check` expect a real config file at that default path.
 - `baseline`, `explain`, and the `config` subcommands resolve sidecar files beside the config.
+- For `config compare`, `-c` is the CURRENT config. The candidate is the positional
+  argument, and sidecar files still resolve beside the current config.
 
 Examples:
 
@@ -649,7 +816,7 @@ archfit config update -c ./policy/.archfit.yaml
 
 Used by:
 
-- long form only: `archfit analyze`, `archfit check`
+- long form only: `archfit analyze`, `archfit check`, `archfit config compare`
 - short and long form: `archfit baseline`, `archfit explain`, `archfit config init`, `archfit config update`, `archfit config enrich ...`
 
 Effect:
@@ -672,21 +839,43 @@ Used by:
 
 - `archfit analyze`
 - `archfit check`
-- `archfit baseline`
 
 Effect:
 
 - Compares the current branch against a git ref such as `main` or `origin/main`.
-- On `analyze` and `check`, renders a scorecard delta.
-- On `baseline`, records a delta baseline.
+- Adds a base-vs-head delta to the normal output.
+- Adds `git_finding_delta` to `--json` output: which current repair tasks the
+  change introduced, which pre-date the base ref, and which could not be placed.
+- Never changes the verdict or the exit code. A base worktree or base pipeline
+  error exits `3` and prints no partial output.
+- Not accepted by `archfit baseline`, which always records the tree as checked out.
 
 Examples:
 
 ```sh
 archfit analyze --base origin/main -c .archfit.yaml
 archfit check --base main --json -c .archfit.yaml
-archfit baseline --base origin/main -c .archfit.yaml
 ```
+
+Reading the origin block:
+
+```sh
+archfit check --base main --json -c .archfit.yaml \
+  | jq '.git_finding_delta.introduced_finding_ids'
+```
+
+A task is called introduced only when every active analyzer covered both sides
+equivalently. A missing or duplicated coverage row, a timeout, a partial from a
+run that did not complete, and any one-sided analyzer evidence all put the task
+in `unknown_origin_finding_ids` and name the family in `comparison_reasons`.
+
+Two **symmetric** degradations still pair, so the origin block stays usable in
+the environments where they are normal: a partial from unresolved import
+specifiers (the steady state for dependency-cruiser and grimp) and an analyzer
+that was unavailable on both sides (its tool is not installed). Both keep the
+status `comparable` and both always name themselves in `comparison_reasons`,
+with each side's magnitude — they are never paired silently. See
+[the agent feedback loop](agent-feedback.md#git_finding_delta--which-repair-tasks-this-change-introduced).
 
 ### `--format` and format shorthands
 

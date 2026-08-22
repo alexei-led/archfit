@@ -12,11 +12,25 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/score"
 	"github.com/alexei-led/archfit/internal/status"
 )
 
 // SchemaVersion is the fixed schema_version value for baseline files.
 const SchemaVersion = "archfit.baseline.v1"
+
+// legacyRubricVersion is the rubric a score snapshot written before rubric
+// tracking was recorded under. Rubric 1 is the only rubric shipped so far, so a
+// legacy snapshot stays comparable with the current binary instead of reading
+// as incompatible.
+const legacyRubricVersion = 1
+
+// Score-snapshot input names reported by ScoreSnapshotMismatches. They are the
+// snapshot's own JSON field names so a disclosure can point at the stored value.
+const (
+	InputScoreVersion  = "score_version"
+	InputRubricVersion = "rubric_version"
+)
 
 // AcceptedFinding records a finding that has been accepted into the baseline.
 // Fingerprint is the SHA256 hex ID from finding.New; RuleID is the rule that produced it.
@@ -48,6 +62,23 @@ type ScoreSnapshot struct {
 	// max_drop on a mismatched snapshot. Empty in baselines written before
 	// version tracking — treated as stale (re-baseline to re-anchor).
 	ScoreVersion string `json:"score_version,omitempty"`
+	// RubricVersion is the scorecard rubric (score.RubricVersion) the snapshot
+	// was banded under. A rubric change re-cuts the band edges, so the stored
+	// value is no longer the same measurement. Absent in baselines written
+	// before rubric tracking — read as rubric 1, the only rubric shipped so far,
+	// so a legacy snapshot keeps anchoring without a forced re-baseline.
+	RubricVersion int `json:"rubric_version,omitempty"`
+}
+
+// EffectiveRubricVersion returns the rubric the snapshot was banded under,
+// reading a missing value as the pre-tracking rubric. Disclosures must quote
+// this, not the raw field: a legacy snapshot stores 0 but was banded under
+// rubric 1, and reporting the 0 would misstate what is stored.
+func (s ScoreSnapshot) EffectiveRubricVersion() int {
+	if s.RubricVersion == 0 {
+		return legacyRubricVersion
+	}
+	return s.RubricVersion
 }
 
 // Baseline is the on-disk baseline file structure.
@@ -61,21 +92,33 @@ type Baseline struct {
 }
 
 // CouplingScore returns the stored coupling_balance value, or nil when the
-// baseline carries no score snapshot or the snapshot was computed under a
-// different scorer version — a cross-version drop is a methodology change,
-// not a regression, so it must never anchor coupling.gate.max_drop.
+// baseline carries no score snapshot or the snapshot is incompatible with the
+// current binary — a cross-version drop is a methodology change, not a
+// regression, so it must never anchor coupling.gate.max_drop.
 func (b Baseline) CouplingScore() *int {
-	if b.Score == nil || b.Score.ScoreVersion != coupling.ScoreVersion {
+	if b.Score == nil || len(b.ScoreSnapshotMismatches()) > 0 {
 		return nil
 	}
 	return &b.Score.CouplingBalance
 }
 
-// ScoreVersionStale reports whether a score snapshot exists but was computed
-// under a different scorer version than the current binary. Callers use it to
-// disclose why max_drop was skipped instead of skipping silent.
-func (b Baseline) ScoreVersionStale() bool {
-	return b.Score != nil && b.Score.ScoreVersion != coupling.ScoreVersion
+// ScoreSnapshotMismatches names the stored score-snapshot inputs that differ
+// from the current binary's, in stable order. Empty when no snapshot exists
+// (nothing to disclose) or when the snapshot still anchors max_drop. Callers
+// use it to say WHICH input made the snapshot incomparable instead of skipping
+// the drop check silently.
+func (b Baseline) ScoreSnapshotMismatches() []string {
+	if b.Score == nil {
+		return nil
+	}
+	var out []string
+	if b.Score.ScoreVersion != coupling.ScoreVersion {
+		out = append(out, InputScoreVersion)
+	}
+	if b.Score.EffectiveRubricVersion() != score.RubricVersion {
+		out = append(out, InputRubricVersion)
+	}
+	return out
 }
 
 // HasFingerprint reports whether the given fingerprint exists in the baseline's

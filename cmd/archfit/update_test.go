@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -28,6 +31,7 @@ const (
 	testUpdateLayerAdapter  = "adapter"
 	testUpdateOwnerTeamA    = "team-a"
 	testUpdateWebModule     = "web"
+	testUpdateWebGlob       = "cmd/web/**"
 	rustEnabledAuto         = "rust:\n    enabled: auto"
 )
 
@@ -165,7 +169,7 @@ func TestCandidateConfigForUpdate_UsesDiscoveredModules(t *testing.T) {
 		{Name: testUpdateWebModule, Paths: []string{"web/**"}, Public: []string{"web/api/**"}, Internal: []string{"web/internal/**"}, Layer: testUpdateLayerAdapter},
 	}}
 
-	got := candidateConfigForUpdate(cfg, discovered)
+	got := candidateConfigForUpdate(cfg, discovered, nil)
 	mm := got.ModuleMapView()
 	if mod, ok := mm.ModuleForFile(testUpdateModuleAPath); !ok || mod != testUpdateModuleA {
 		t.Fatalf("ModuleForFile(services/a/impl.go) = (%q,%t), want (services/a,true)", mod, ok)
@@ -208,7 +212,7 @@ func TestStaticExternalDistanceConfigCandidatesFromGraph_UsesDiscoveredModuleCon
 		Paths: []string{testUpdateModuleAGlob},
 	}}}
 
-	raw := staticExternalDistanceConfigCandidatesFromGraph(g, candidateConfigForUpdate(cfg, discovered))
+	raw := staticExternalDistanceConfigCandidatesFromGraph(g, candidateConfigForUpdate(cfg, discovered, nil))
 	if len(raw) != 1 {
 		t.Fatalf("staticExternalDistanceConfigCandidatesFromGraph len = %d, want 1: %+v", len(raw), raw)
 	}
@@ -233,7 +237,7 @@ func TestDeployUnitSuggestions_DeterministicHintsOnlyForMissingConfig(t *testing
 		},
 	}
 	cfg := config.Config{Modules: map[string]module.ModuleDef{
-		testUpdateWebModule: {Paths: []string{"cmd/web/**"}},
+		testUpdateWebModule: {Paths: []string{testUpdateWebGlob}},
 		"api":               {Paths: []string{"cmd/api/**"}, DeployUnit: "api-service"},
 	}}
 
@@ -262,15 +266,38 @@ func TestDeployUnitSuggestions_UsesDiscoveredModuleMap(t *testing.T) {
 		},
 	}
 	cfg := config.Config{}
-	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{{Name: testUpdateWebModule, Paths: []string{"cmd/web/**"}}}}
+	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{{Name: testUpdateWebModule, Paths: []string{testUpdateWebGlob}}}}
 
-	got := deployUnitSuggestions(context.Background(), dir, candidateConfigForUpdate(cfg, discovered), &appDeps{Runner: runner})
+	got := deployUnitSuggestions(context.Background(), dir, candidateConfigForUpdate(cfg, discovered, nil), &appDeps{Runner: runner})
 	if len(got) != 1 {
 		t.Fatalf("deployUnitSuggestions len = %d, want 1: %+v", len(got), got)
 	}
 	if got[0].Module != testUpdateWebModule || got[0].Unit != testUpdateWebModule || got[0].Source != "cmd/web" {
 		t.Fatalf("deployUnitSuggestions[0] = %+v", got[0])
 	}
+
+	// A name-drifted stanza is preserved verbatim by --apply, so the candidate
+	// config must carry its metadata. Keying the copy on the DISCOVERED name lost
+	// it, and the builder then proposed a deploy_unit the config already sets —
+	// under a module name that does not exist in the config either.
+	t.Run("name-drifted module keeps its configured deploy unit", func(t *testing.T) {
+		const driftedName = "internal/" + testUpdateWebModule
+		driftedCfg := config.Config{Modules: map[string]module.ModuleDef{
+			driftedName: {Paths: []string{testUpdateWebGlob}, DeployUnit: "web-service"},
+		}}
+		drift := []initcfg.NameDrift{{
+			ConfigName:     driftedName,
+			DiscoveredName: testUpdateWebModule,
+			Paths:          []string{testUpdateWebGlob},
+		}}
+		candidate := candidateConfigForUpdate(driftedCfg, discovered, drift)
+		if _, ok := candidate.Modules[driftedName]; !ok {
+			t.Fatalf("candidate modules = %+v, want the module under its config name", candidate.Modules)
+		}
+		if suggestions := deployUnitSuggestions(context.Background(), dir, candidate, &appDeps{Runner: runner}); len(suggestions) != 0 {
+			t.Errorf("deployUnitSuggestions = %+v, want none — the config already sets deploy_unit", suggestions)
+		}
+	})
 }
 
 func TestClassifyTargetsForUpdate_IncludesSyntheticOverridePath(t *testing.T) {
@@ -349,6 +376,89 @@ rules:
 			t.Fatalf("updated config missing %q:\n%s", want, got)
 		}
 	}
+
+	// A run that WRITES must still report the review-only half. Gating that
+	// output on the suggestion families alone hid module gaps exactly when apply
+	// had an edit to make, so the same config reported less with --apply than
+	// without it.
+	t.Run("apply reports review-only module sections alongside the edit", func(t *testing.T) {
+		applyDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(applyDir, markerCargoToml), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		applyCfg := writeConfig(t, applyDir, `version: 1
+languages:
+  rust:
+    enabled: true
+modules:
+  ghost:
+    paths:
+      - nowhere/**
+`)
+		out, err := runUpdateCmd(t, &UpdateCmd{Config: applyCfg, Root: applyDir, Apply: true}, emptyRunner())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		for _, want := range []string{"wrote ", "UNMATCHED", "ghost"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("apply output missing %q:\n%s", want, out)
+			}
+		}
+	})
+
+	// Rust applicability here must be the manifest-aware probe the coverage layer
+	// uses, not initcfg's root-Cargo.toml-only HasRust flag. A config already
+	// pointing languages.rust.manifest at a sub-crate manifest describes a repo
+	// archfit analyses as Rust, and `config update` refused to offer it the
+	// deep-analysis defaults that make a single-crate graph measurable.
+	t.Run("a configured sub-crate manifest enables the deep analyzers", func(t *testing.T) {
+		subDir := t.TempDir()
+		writeFileAt(t, subDir, filepath.Join("crates", "core", markerCargoToml), "[package]\nname = \"core\"\n")
+		subCfg := writeConfig(t, subDir, `version: 1
+languages:
+  rust:
+    enabled: true
+    manifest: crates/core/Cargo.toml
+modules: {}
+`)
+		if _, err := runUpdateCmd(t, &UpdateCmd{Config: subCfg, Root: subDir, Apply: true}, emptyRunner()); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		gotBytes, err := os.ReadFile(subCfg) //nolint:gosec
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := string(gotBytes)
+		for _, want := range []string{
+			rustEnabledAuto,
+			"manifest: crates/core/Cargo.toml",
+			"analyzers:\n  cargo_modules:\n    enabled: true\n  scip:\n    enabled: true",
+		} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("updated config missing %q:\n%s", want, got)
+			}
+		}
+	})
+
+	// The mirror: no root manifest and no configured one is not a Rust project,
+	// so update must not write a Rust stanza into it.
+	t.Run("no manifest anywhere writes no Rust stanza", func(t *testing.T) {
+		plainDir := t.TempDir()
+		writeFileAt(t, plainDir, markerGoMod, "module example\n")
+		plainCfg := writeConfig(t, plainDir, `version: 1
+modules: {}
+`)
+		if _, err := runUpdateCmd(t, &UpdateCmd{Config: plainCfg, Root: plainDir, Apply: true}, emptyRunner()); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		gotBytes, err := os.ReadFile(plainCfg) //nolint:gosec
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := string(gotBytes); strings.Contains(got, "rust:") {
+			t.Fatalf("Rust stanza written into a repo with no Cargo.toml:\n%s", got)
+		}
+	})
 }
 
 func TestEnsureRustDeepAnalysisConfig_IgnoresCommentBoundaries(t *testing.T) {
@@ -572,7 +682,7 @@ analyzers:
 	if !bytes.Equal(before, after) {
 		t.Fatal("--llm synthetic suggestions must leave config unchanged")
 	}
-	if hasActionableEdits(initcfg.UpdateReport{Suggested: []initcfg.ModuleDef{{Name: "herdr-api"}}}) {
+	if initcfg.HasPendingEdits(initcfg.UpdateReport{Suggested: []initcfg.ModuleDef{{Name: "herdr-api"}}}) {
 		t.Fatal("review-only synthetic suggestions must not be actionable edits")
 	}
 }
@@ -636,8 +746,8 @@ func TestUpdateCmd_PlanMode_FileUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(out, "REMOVED") {
-		t.Errorf("plan output should mention REMOVED; got: %q", out)
+	if !strings.Contains(out, "UNMATCHED") {
+		t.Errorf("plan output should mention UNMATCHED; got: %q", out)
 	}
 
 	after, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -649,12 +759,22 @@ func TestUpdateCmd_PlanMode_FileUnchanged(t *testing.T) {
 	}
 }
 
-// TestUpdateCmd_Apply_CommentsRemoved verifies --apply: comments a removed module
-// and preserves rules and comments.
-func TestUpdateCmd_Apply_CommentsRemoved(t *testing.T) {
+// TestUpdateCmd_Apply_KeepsUnmatchedModule verifies that --apply never deletes
+// or comments out a configured module discovery did not emit.
+//
+// DiffModules matches config keys to discovered keys by NAME, and the two
+// conventions need not agree (this repo configures `internal/agenttask` while
+// discovery emits `agenttask`). Commenting the stanza out on that evidence
+// discarded owner, subdomain, volatility, layer, and public on every module of
+// this repo's own config. Removal is now a reported human decision.
+func TestUpdateCmd_Apply_KeepsUnmatchedModule(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
 	cfgPath := writeConfig(t, dir, configWithRemovedModule)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := &UpdateCmd{
 		Config: cfgPath,
@@ -665,31 +785,28 @@ func TestUpdateCmd_Apply_CommentsRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(out, "wrote") {
-		t.Errorf("apply output should mention 'wrote'; got: %q", out)
-	}
 
-	data, err := os.ReadFile(cfgPath) //nolint:gosec
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := string(data)
+	if !bytes.Equal(before, after) {
+		t.Errorf("--apply must leave an unmatched module untouched; file changed to:\n%s", after)
+	}
+	if strings.Contains(string(after), "archfit: removed module") {
+		t.Error("--apply must not comment out a configured module")
+	}
+	if _, statErr := os.Stat(cfgPath + ".bak"); statErr == nil {
+		t.Error("no backup should be written when there is nothing to apply")
+	}
 
-	// Removed module should be commented out.
-	if !strings.Contains(content, "archfit: removed module") {
-		t.Error("removed module should have archfit marker comment")
+	// The run must still report the unmatched module rather than claim the
+	// config is in sync.
+	if !strings.Contains(out, "UNMATCHED") {
+		t.Errorf("apply output must report the unmatched module; got: %q", out)
 	}
-	// Rules must be preserved.
-	if !strings.Contains(content, "no-bad-deps") {
-		t.Error("rules must be preserved after apply")
-	}
-	if !strings.Contains(content, "forbidden_dependency") {
-		t.Error("rules content should be preserved after apply")
-	}
-	// Backup must exist.
-	bakPath := cfgPath + ".bak"
-	if _, statErr := os.Stat(bakPath); statErr != nil {
-		t.Error("backup (.archfit.yaml.bak) should exist after apply")
+	if strings.Contains(out, "structurally in sync") {
+		t.Errorf("apply output must not claim in-sync with an unmatched module; got: %q", out)
 	}
 }
 
@@ -697,8 +814,9 @@ func TestUpdateCmd_Apply_CommentsRemoved(t *testing.T) {
 // structurally in-sync config writes only absent fields.
 //
 // Setup: go.mod + module "mymod" at internal/mymod matched by discovery.
-// Config has mymod with subdomain+volatility but no layer.
-// LLM suggests layer=core (in layers). Expected: only layer is added.
+// Config has mymod with subdomain+volatility but no layer, plus an active
+// forbidden_layer_direction rule — the rule is what makes the missing layer
+// classifiable. LLM suggests layer=core (in layers). Expected: only layer is added.
 func TestUpdateCmd_LLMApply_WritesOnlyAbsentFields(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
@@ -718,6 +836,9 @@ rules:
     gate: warn
     from: "internal/a/**"
     to: "internal/b/**"
+  - id: layer-direction
+    type: forbidden_layer_direction
+    gate: warn
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	before, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -885,7 +1006,9 @@ rules:
 
 // TestUpdateCmd_MissingLayerFilledWhenValid verifies that a module with
 // subdomain+volatility but no layer gets the layer written when the LLM
-// returns a value that is in the allowed set.
+// returns a value that is in the allowed set. The active
+// forbidden_layer_direction rule is a precondition: `layer:` is only classified
+// while a layer rule consumes it.
 func TestUpdateCmd_MissingLayerFilledWhenValid(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
@@ -905,6 +1028,9 @@ rules:
     gate: warn
     from: "internal/a/**"
     to: "internal/b/**"
+  - id: layer-direction
+    type: forbidden_layer_direction
+    gate: warn
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	before, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -945,6 +1071,7 @@ func TestUpdateCmd_OutOfSetLayerWritesNothing(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
 	// mymod has subdomain+volatility but no layer; LLM will suggest "infra" NOT in layers.
+	// The forbidden_layer_direction rule is what makes the missing layer classifiable.
 	cfg := `version: 1
 layers:
   - core
@@ -961,6 +1088,9 @@ rules:
     gate: warn
     from: "internal/a/**"
     to: "internal/b/**"
+  - id: layer-direction
+    type: forbidden_layer_direction
+    gate: warn
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	before, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -1002,7 +1132,8 @@ rules:
 }
 
 // TestUpdateCmd_BackupCreatedOnApply verifies a backup file is created on a
-// real structural apply.
+// real structural apply — here a newly discovered module, the one module edit
+// --apply still writes.
 func TestUpdateCmd_BackupCreatedOnApply(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
@@ -1013,7 +1144,7 @@ func TestUpdateCmd_BackupCreatedOnApply(t *testing.T) {
 		Root:   dir,
 		Apply:  true,
 	}
-	_, err := runUpdateCmd(t, cmd, emptyRunner())
+	_, err := runUpdateCmd(t, cmd, matchingRunner("internal/newmod"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1026,7 +1157,7 @@ func TestUpdateCmd_BackupCreatedOnApply(t *testing.T) {
 // TestUpdateCmd_Apply_Idempotent verifies that running --apply twice on the same
 // divergent fixture is a no-op on the second run: the file is byte-identical after
 // both runs, and no backup is created by the second run (because there are no
-// actionable edits left — AddModule and CommentModule are both no-ops on re-apply).
+// actionable edits left — AddModule is a no-op on re-apply).
 func TestUpdateCmd_Apply_Idempotent(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
@@ -1034,8 +1165,8 @@ func TestUpdateCmd_Apply_Idempotent(t *testing.T) {
 
 	cmd := &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}
 
-	// First apply: structural changes (comment removed module).
-	if _, err := runUpdateCmd(t, cmd, emptyRunner()); err != nil {
+	// First apply: adds the newly discovered module stanza.
+	if _, err := runUpdateCmd(t, cmd, matchingRunner("internal/newmod")); err != nil {
 		t.Fatalf("first apply: unexpected error: %v", err)
 	}
 	afterFirst, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -1046,8 +1177,8 @@ func TestUpdateCmd_Apply_Idempotent(t *testing.T) {
 	// Remove the .bak so we can detect whether the second run creates a new one.
 	_ = os.Remove(cfgPath + ".bak")
 
-	// Second apply: no actionable edits — CommentModule and AddModule are no-ops.
-	if _, err = runUpdateCmd(t, cmd, emptyRunner()); err != nil {
+	// Second apply: no actionable edits — AddModule is a no-op on re-apply.
+	if _, err = runUpdateCmd(t, cmd, matchingRunner("internal/newmod")); err != nil {
 		t.Fatalf("second apply: unexpected error: %v", err)
 	}
 	afterSecond, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -1383,3 +1514,437 @@ func rustSyntheticRunner(root string) *toolrun.RunnerMock {
 }
 
 var _ llm.Provider = rustSyntheticProvider{}
+
+// ---------------------------------------------------------------------------
+// config update review: status, JSON document, and flag conflicts
+// ---------------------------------------------------------------------------
+
+const testUpdateReviewConfig = `version: 1
+layers:
+  - core
+  - adapter
+modules:
+  mymod:
+    paths:
+      - "internal/mymod/**"
+rules:
+  - id: layer-direction
+    type: forbidden_layer_direction
+    gate: warn
+`
+
+const (
+	testUpdateReviewModule = "mymod"
+	testUpdateReviewPkg    = "internal/mymod"
+)
+
+// TestRequiresLayerClassification pins that `layer:` is load-bearing only while a
+// forbidden_layer_direction rule is live: unset and "warn" gates both keep it live.
+func TestRequiresLayerClassification(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		rules []view.RuleDef
+		want  bool
+	}{
+		{"no rules", nil, false},
+		{"other rule type", []view.RuleDef{{Type: "forbidden_dependency", Gate: gateFail}}, false},
+		{"layer rule gate unset", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection}}, true},
+		{"layer rule gate warn", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateWarn}}, true},
+		{"layer rule gate fail", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateFail}}, true},
+		{"layer rule gate off", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateOff}}, false},
+		{
+			name: "one live layer rule among several",
+			rules: []view.RuleDef{
+				{Type: ruleTypeForbiddenLayerDirection, Gate: gateOff},
+				{Type: ruleTypeForbiddenLayerDirection, Gate: gateWarn},
+			},
+			want: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := requiresLayerClassification(config.Config{Rules: tc.rules}); got != tc.want {
+				t.Errorf("requiresLayerClassification: got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestUpdateCmd_JSON_RejectsConflictingFlagsBeforeSideEffects verifies the usage
+// error is exit 3 AND that nothing ran: no tool call, no config write.
+func TestUpdateCmd_JSON_RejectsConflictingFlagsBeforeSideEffects(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		mutate  func(*UpdateCmd)
+		wantSub string
+	}{
+		{"apply", func(c *UpdateCmd) { c.Apply = true }, "--apply"},
+		{"ai-classify", func(c *UpdateCmd) { c.AIClassify = true }, "--ai-classify"},
+		{"refresh", func(c *UpdateCmd) { c.Refresh = true }, "--refresh"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := minimalRoot(t)
+			cfgPath := writeConfig(t, dir, testUpdateReviewConfig)
+			before, err := os.ReadFile(cfgPath) //nolint:gosec
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			runner := matchingRunner(testUpdateReviewPkg)
+			cmd := &UpdateCmd{Config: cfgPath, Root: dir, JSON: true}
+			tc.mutate(cmd)
+
+			out, err := runUpdateCmd(t, cmd, runner)
+			var ee *exitError
+			if !errors.As(err, &ee) || ee.code != 3 {
+				t.Fatalf("want exitError{code:3}, got %v", err)
+			}
+			if !strings.Contains(ee.msg, tc.wantSub) {
+				t.Errorf("error must name %s: %q", tc.wantSub, ee.msg)
+			}
+			if out != "" {
+				t.Errorf("rejected invocation must emit no output:\n%s", out)
+			}
+			if n := len(runner.RunCalls()) + len(runner.DetectCalls()); n != 0 {
+				t.Errorf("discovery must not run before the conflict is rejected: %d tool call(s)", n)
+			}
+			after, err := os.ReadFile(cfgPath) //nolint:gosec
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Error("rejected invocation must leave the config byte-identical")
+			}
+		})
+	}
+}
+
+// TestUpdateCmd_ConfigReview covers the report-only review surface: the JSON
+// contract, the status line, the issue codes, and the settings preview/apply
+// parity for the Rust deep-analysis defaults.
+func TestUpdateCmd_ConfigReview(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		run  func(*testing.T)
+	}{
+		{"json emits the versioned document and writes nothing", runConfigReviewJSONDocument},
+		{"fully specified config reports no_known_issues without a health claim", runConfigReviewNoKnownIssues},
+		{"text report leads with the status line and lists issues", runConfigReviewTextStatus},
+		{"rust setting preview matches what apply writes", runConfigReviewRustSettingParity},
+		{"a naming difference is review-only, never a pending edit", runConfigReviewNameDrift},
+		{"apply never claims a clean config over module issues", runConfigReviewApplyDisclosesIssues},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.run(t)
+		})
+	}
+}
+
+func runConfigReviewJSONDocument(t *testing.T) {
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, testUpdateReviewConfig)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir, JSON: true},
+		matchingRunner(testUpdateReviewPkg))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	review := decodeConfigReview(t, out)
+	if review.SchemaVersion != initcfg.ConfigReviewSchemaVersion {
+		t.Errorf("schema_version: got %q, want %q", review.SchemaVersion, initcfg.ConfigReviewSchemaVersion)
+	}
+	if review.Status != initcfg.ReviewStatusActionRequired {
+		t.Errorf("status: got %q, want %q", review.Status, initcfg.ReviewStatusActionRequired)
+	}
+	wantCodes := []string{
+		initcfg.IssueMissingLayer,
+		initcfg.IssueMissingOwner,
+		initcfg.IssueMissingVolatilityInput,
+	}
+	gotCodes := make([]string, 0, len(review.Issues))
+	for _, issue := range review.Issues {
+		if issue.Module != testUpdateReviewModule {
+			t.Errorf("unexpected issue module %q", issue.Module)
+		}
+		gotCodes = append(gotCodes, issue.Code)
+	}
+	if !reflect.DeepEqual(gotCodes, wantCodes) {
+		t.Errorf("issue codes: got %v, want %v", gotCodes, wantCodes)
+	}
+	if strings.Contains(out, "null") {
+		t.Errorf("JSON lists must be arrays, never null:\n%s", out)
+	}
+
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("--json is report-only and must leave the config byte-identical")
+	}
+	if _, statErr := os.Stat(cfgPath + ".bak"); statErr == nil {
+		t.Error("--json must not create a backup")
+	}
+}
+
+// runConfigReviewNameDrift pins the end-to-end wiring of the naming-difference
+// pass. The config key is `internal/mymod` and discovery emits `mymod` over the
+// same paths — a name-only difference. It must land in name_drift, leave
+// added/removed empty, keep the status below action_required, and give --apply
+// nothing to write.
+func runConfigReviewNameDrift(t *testing.T) {
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, `version: 1
+layers:
+  - core
+  - adapter
+modules:
+  internal/mymod:
+    paths:
+      - "internal/mymod/**"
+    owner: team-a
+    subdomain: supporting
+    layer: adapter
+rules:
+  - id: no-bad-deps
+    type: forbidden_dependency
+    gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
+`)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir, JSON: true},
+		matchingRunner("internal/mymod"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	review := decodeConfigReview(t, out)
+	if review.Status == initcfg.ReviewStatusActionRequired {
+		t.Errorf("a name-only difference must not read action_required; got %q", review.Status)
+	}
+	if len(review.Structure.AddedModules) != 0 || len(review.Structure.RemovedModules) != 0 {
+		t.Errorf("name drift must not appear as add/remove: added=%v removed=%v",
+			review.Structure.AddedModules, review.Structure.RemovedModules)
+	}
+	if len(review.Structure.NameDrift) != 1 {
+		t.Fatalf("name_drift: got %+v, want one entry", review.Structure.NameDrift)
+	}
+	drift := review.Structure.NameDrift[0]
+	if drift.ConfigModule != "internal/mymod" || drift.DiscoveredModule != "mymod" {
+		t.Errorf("name_drift entry = %+v, want config internal/mymod ↔ discovered mymod", drift)
+	}
+
+	// --apply must have nothing to write: rewriting the key would discard owner,
+	// subdomain, and layer.
+	if _, err = runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir, Apply: true},
+		matchingRunner("internal/mymod")); err != nil {
+		t.Fatalf("apply: unexpected error: %v", err)
+	}
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("--apply must not rewrite a name-only difference; file became:\n%s", after)
+	}
+}
+
+// runConfigReviewApplyDisclosesIssues pins that `--apply` never prints the
+// no-changes line over module gaps a human has to decide.
+//
+// The fixture is structurally in sync — nothing to add, remove, or path-drift —
+// but its one module declares no owner, no layer, and no volatility input, so
+// the run carries three issues. The apply path used to key that decision on
+// HasReviewItems, which counted only suggestions, name drift, and removals: the
+// identical config reported action_required without --apply and "structurally in
+// sync — no changes to apply" with it.
+func runConfigReviewApplyDisclosesIssues(t *testing.T) {
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, testUpdateReviewConfig)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir, Apply: true},
+		matchingRunner(testUpdateReviewPkg))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(out, "no changes to apply") {
+		t.Errorf("--apply must not claim a clean config while issues are unreported:\n%s", out)
+	}
+	if !strings.HasPrefix(out, "status: "+initcfg.ReviewStatusActionRequired) {
+		t.Errorf("--apply must lead with the same status line the preview prints:\n%s", out)
+	}
+	for _, want := range []string{
+		initcfg.IssueMissingOwner,
+		initcfg.IssueMissingLayer,
+		initcfg.IssueMissingVolatilityInput,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--apply output missing issue code %q:\n%s", want, out)
+		}
+	}
+
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("an issue-only report has nothing to write; file became:\n%s", after)
+	}
+}
+
+func runConfigReviewNoKnownIssues(t *testing.T) {
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, `version: 1
+layers:
+  - core
+  - adapter
+modules:
+  mymod:
+    paths:
+      - "internal/mymod/**"
+    owner: team-a
+    subdomain: supporting
+    layer: adapter
+rules:
+  - id: layer-direction
+    type: forbidden_layer_direction
+    gate: warn
+`)
+
+	out, err := runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir, JSON: true},
+		matchingRunner(testUpdateReviewPkg))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	review := decodeConfigReview(t, out)
+	if review.Status != initcfg.ReviewStatusNoKnownIssues {
+		t.Fatalf("status: got %q, want %q\n%s", review.Status, initcfg.ReviewStatusNoKnownIssues, out)
+	}
+	for _, banned := range []string{"healthy", "complete"} {
+		if strings.Contains(strings.ToLower(out), banned) {
+			t.Errorf("review must not claim %q:\n%s", banned, out)
+		}
+	}
+}
+
+func runConfigReviewTextStatus(t *testing.T) {
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, testUpdateReviewConfig)
+
+	out, err := runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir},
+		matchingRunner(testUpdateReviewPkg))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(out, "status: "+initcfg.ReviewStatusActionRequired) {
+		t.Errorf("report must lead with the status line:\n%s", out)
+	}
+	for _, want := range []string{
+		initcfg.IssueMissingOwner,
+		initcfg.IssueMissingLayer,
+		initcfg.IssueMissingVolatilityInput,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report missing issue code %q:\n%s", want, out)
+		}
+	}
+}
+
+func runConfigReviewRustSettingParity(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := writeConfig(t, dir, `version: 1
+languages:
+  rust:
+    enabled: true
+modules: {}
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	textOut, err := runUpdateCmd(t, &UpdateCmd{Config: cfgPath, Root: dir}, emptyRunner())
+	if err != nil {
+		t.Fatalf("preview failed: %v", err)
+	}
+	if !strings.Contains(textOut, initcfg.SettingCodeRustDeepAnalysis) {
+		t.Errorf("preview must name the setting --apply would write:\n%s", textOut)
+	}
+
+	jsonOut, err := runUpdateCmd(t, &UpdateCmd{Config: cfgPath, Root: dir, JSON: true}, emptyRunner())
+	if err != nil {
+		t.Fatalf("json preview failed: %v", err)
+	}
+	review := decodeConfigReview(t, jsonOut)
+	if len(review.Structure.Settings) != 1 || review.Structure.Settings[0].Code != initcfg.SettingCodeRustDeepAnalysis {
+		t.Fatalf("settings: got %+v", review.Structure.Settings)
+	}
+	if review.Status != initcfg.ReviewStatusActionRequired {
+		t.Errorf("a pending settings edit is an action: got %q", review.Status)
+	}
+
+	mid, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, mid) {
+		t.Fatal("preview must not write the config")
+	}
+
+	if _, err = runUpdateCmd(t, &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}, emptyRunner()); err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	applied, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(applied), rustEnabledAuto) {
+		t.Errorf("apply must write the previewed setting:\n%s", applied)
+	}
+}
+
+// decodeConfigReview parses the `config update --json` document.
+func decodeConfigReview(t *testing.T, out string) initcfg.ConfigReview {
+	t.Helper()
+	var review initcfg.ConfigReview
+	if err := json.Unmarshal([]byte(out), &review); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	return review
+}

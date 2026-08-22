@@ -41,7 +41,7 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 	// Same pipeline as check/scan: explain must resolve the finding from the
 	// same evidence (providers, change history) that produced it.
 	deps.refresh = c.Refresh
-	diag, _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, engine.Mode{Full: true, Advisory: true}, existingBase)
+	diag, _, err := runPipeline(ctx, deps, cfg, newRunContext(c.Config, c.Root), engine.Mode{Full: true, Advisory: true}, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

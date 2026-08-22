@@ -432,7 +432,7 @@ func TestDraftLabels_BatchesAndParses(t *testing.T) {
 	}
 }
 
-// TestRun_Explain_LLMNarrative drives explain --llm end-to-end against a mock
+// TestRun_Explain_LLMNarrative drives explain --ai-summary end-to-end against a mock
 // OpenAI-compatible server (the ollama provider path).
 func TestRun_Explain_LLMNarrative(t *testing.T) {
 	t.Parallel()
@@ -466,7 +466,7 @@ func TestRun_Explain_LLMNarrative(t *testing.T) {
 	buf.Reset()
 	code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath, "--ai-summary", flagRefresh}, &buf)
 	if code != 0 {
-		t.Fatalf("explain --llm exit = %d\n%s", code, buf.String())
+		t.Fatalf("explain --ai-summary exit = %d\n%s", code, buf.String())
 	}
 	out := buf.String()
 	if !strings.Contains(out, "narrative (ollama/test-model, off-gate):") {

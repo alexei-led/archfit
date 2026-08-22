@@ -41,7 +41,7 @@ func (autopilotProvider) Complete(_ context.Context, req llm.Request) (llm.Respo
 }
 
 // TestInit_LLMDraft_OwnerCommentWritten verifies the owner-draft pass that was
-// folded from the former `autopilot` command into `config init --llm`: when
+// folded from the former `autopilot` command into `config init --ai-classify`: when
 // Apply is false, the owner suggestion must appear as a commented annotation.
 // The subdomain/volatility side is covered by TestInitCmd_LLM_CommentedSuggestions.
 func TestInit_LLMDraft_OwnerCommentWritten(t *testing.T) {
@@ -76,7 +76,7 @@ func TestInit_LLMDraft_OwnerCommentWritten(t *testing.T) {
 	got := string(data)
 	// Owner draft pass must write a commented annotation (plan mode = never live).
 	if !strings.Contains(got, "# owner:") {
-		t.Errorf("init --llm plan mode missing commented owner suggestion:\n%s", got)
+		t.Errorf("config init --ai-classify plan mode missing commented owner suggestion:\n%s", got)
 	}
 	// Verify no uncommented live owner field leaked through.
 	for _, line := range strings.Split(got, "\n") {

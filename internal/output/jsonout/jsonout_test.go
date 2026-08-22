@@ -77,7 +77,7 @@ func TestJSONRenderer_AdvisoryTasks(t *testing.T) {
 		ScoreValue:   8,
 		TopFiles:     []string{"a.go", "b.go"},
 		Constraints:  []string{"report-only"},
-		Validation:   []string{"archfit analyze --gate --full"},
+		Validation:   []string{"archfit check"},
 	}}
 
 	var buf bytes.Buffer
@@ -477,6 +477,57 @@ func TestJSONRenderer_Delta(t *testing.T) {
 	}
 	if bytes.Contains(pbuf.Bytes(), []byte("\"delta\"")) {
 		t.Errorf("delta should be omitted when nil\noutput: %s", pbuf.String())
+	}
+}
+
+// TestJSONRenderer_GitFindingDelta pins the --base git-origin block: it rides
+// the embedded Diagnostic (no envelope field of its own), keeps every ID list a
+// non-null array, and is omitted entirely on a run without --base.
+func TestJSONRenderer_GitFindingDelta(t *testing.T) {
+	d := diagnostic.New()
+	d.GitFindingDelta = &diagnostic.GitFindingDelta{
+		BaseRef:                 "main",
+		ComparisonStatus:        diagnostic.GitComparisonUnknown,
+		IntroducedFindingIDs:    []string{},
+		PreExistingFindingIDs:   []string{"f1"},
+		UnknownOriginFindingIDs: []string{"f2"},
+		ComparisonReasons:       []string{"scip: head ok, base absent"},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	var envelope struct {
+		GitFindingDelta json.RawMessage `json:"git_finding_delta"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &envelope); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if bytes.Contains(envelope.GitFindingDelta, []byte("null")) {
+		t.Errorf("git_finding_delta lists must never render as null: %s", envelope.GitFindingDelta)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("cannot unmarshal back into Diagnostic: %v", err)
+	}
+	if got.GitFindingDelta == nil {
+		t.Fatalf("git_finding_delta missing from JSON output: %s", buf.String())
+	}
+	if got.GitFindingDelta.BaseRef != "main" || got.GitFindingDelta.ComparisonStatus != diagnostic.GitComparisonUnknown {
+		t.Errorf("round-trip git_finding_delta = %+v", got.GitFindingDelta)
+	}
+	if len(got.GitFindingDelta.PreExistingFindingIDs) != 1 || got.GitFindingDelta.PreExistingFindingIDs[0] != "f1" {
+		t.Errorf("pre_existing_finding_ids = %v, want [f1]", got.GitFindingDelta.PreExistingFindingIDs)
+	}
+
+	var pbuf bytes.Buffer
+	if err := jsonout.New().Render(diagnostic.New(), score.Scorecard{}, nil, &pbuf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if bytes.Contains(pbuf.Bytes(), []byte("\"git_finding_delta\"")) {
+		t.Errorf("git_finding_delta should be omitted without --base\noutput: %s", pbuf.String())
 	}
 }
 

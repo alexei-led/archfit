@@ -66,7 +66,7 @@ func TestBuildAdvisoryTasks_GroupedBCAdvisories(t *testing.T) {
 		},
 	}
 
-	tasks := BuildAdvisoryTasks(findings, []string{"archfit analyze --gate --full"})
+	tasks := BuildAdvisoryTasks(findings, []string{"archfit check"})
 	if len(tasks) != 1 {
 		t.Fatalf("BuildAdvisoryTasks() = %d tasks, want 1: %+v", len(tasks), tasks)
 	}
@@ -87,7 +87,7 @@ func TestBuildAdvisoryTasks_GroupedBCAdvisories(t *testing.T) {
 	if !reflect.DeepEqual(task.TopFiles, wantFiles) {
 		t.Errorf("TopFiles = %v, want %v", task.TopFiles, wantFiles)
 	}
-	wantValidation := []string{"archfit analyze --gate --full"}
+	wantValidation := []string{"archfit check"}
 	if !reflect.DeepEqual(task.Validation, wantValidation) {
 		t.Errorf("Validation = %v, want %v", task.Validation, wantValidation)
 	}

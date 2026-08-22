@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -178,9 +179,9 @@ func TestRun_Analyze_CouplingGate_BandNANeverTrips(t *testing.T) {
 // baseline score anchors max_drop (trip on regression beyond it), and a
 // baseline without a score snapshot cannot anchor a drop (no trip). It also
 // pins the stderr disclosure contract per case (see analyze.go): a trip
-// prints the max_drop-specific reason, a stale scorer version prints the
-// "max_drop skipped" disclosure instead of gating silent, and a missing
-// snapshot prints neither.
+// prints the max_drop-specific reason, an incompatible score snapshot prints
+// the "max_drop skipped" disclosure naming the offending input instead of
+// gating silent, and a missing snapshot prints neither.
 func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 	t.Parallel()
 	const (
@@ -196,9 +197,19 @@ func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 	}{
 		{
 			name:       "stored score anchors the drop",
-			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: "strong", ScoreVersion: coupling.ScoreVersion},
+			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: coupling.ScoreVersion, RubricVersion: score.RubricVersion},
 			wantCode:   1,
 			wantStderr: []string{tripFragment},
+		},
+		// A snapshot written before rubric tracking reads as rubric 1 — the only
+		// rubric shipped so far — so it still anchors instead of forcing a
+		// re-baseline.
+		{
+			name:         "legacy snapshot without a rubric version still anchors",
+			score:        &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: coupling.ScoreVersion},
+			wantCode:     1,
+			wantStderr:   []string{tripFragment},
+			wantNoStderr: []string{skipFragment},
 		},
 		{
 			name:         "no stored score skips the check",
@@ -209,10 +220,18 @@ func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 		// A snapshot from a different scorer version is a methodology change,
 		// not a regression — it must never anchor a drop.
 		{
-			name:       "stale scorer version skips the check",
-			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: "strong", ScoreVersion: "bc_score.v3"},
+			name:       "incompatible scorer version skips the check and names the input",
+			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: "bc_score.v3", RubricVersion: score.RubricVersion},
 			wantCode:   0,
-			wantStderr: []string{skipFragment},
+			wantStderr: []string{skipFragment, `score_version "bc_score.v3"`},
+		},
+		// A rubric change re-cuts the band edges, so the stored value is no longer
+		// the same measurement either.
+		{
+			name:       "incompatible rubric version skips the check and names the input",
+			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: coupling.ScoreVersion, RubricVersion: score.RubricVersion + 1},
+			wantCode:   0,
+			wantStderr: []string{skipFragment, "rubric_version"},
 		},
 	}
 	for _, tc := range cases {
@@ -269,6 +288,12 @@ func TestRun_Baseline_WritesScoreSnapshot(t *testing.T) {
 	}
 	if b.Score.ScoreVersion != coupling.ScoreVersion {
 		t.Fatalf("baseline score_version = %q, want %q", b.Score.ScoreVersion, coupling.ScoreVersion)
+	}
+	if b.Score.RubricVersion != score.RubricVersion {
+		t.Fatalf("baseline rubric_version = %d, want %d", b.Score.RubricVersion, score.RubricVersion)
+	}
+	if m := b.ScoreSnapshotMismatches(); len(m) > 0 {
+		t.Fatalf("freshly written snapshot reports incompatible inputs %v", m)
 	}
 	if got := b.CouplingScore(); got == nil || *got != b.Score.CouplingBalance {
 		t.Fatalf("CouplingScore() = %v, want %d", got, b.Score.CouplingBalance)
@@ -372,7 +397,7 @@ func TestRun_Analyze_CouplingGate_TripWithoutAdvisories(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh, "--no-advisories"}, &buf)
+	code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh, flagNoAdvisories}, &buf)
 	if code != 1 {
 		t.Fatalf("check --no-advisories with tripped coupling gate: exit = %d, want 1\noutput:\n%s", code, buf.String())
 	}
@@ -415,8 +440,8 @@ func TestRun_Analyze_CouplingGate_TripWithoutAdvisories(t *testing.T) {
 }
 
 // TestRun_Baseline_KeepsNativeAdvisoryKind guards the finding-lifecycle
-// contract: `archfit baseline --advisory` under a tripped coupling.gate must
-// persist BC findings with their native advisory kind, not the per-run gate
+// contract: `archfit baseline` (advisories on by default) under a tripped
+// coupling.gate must persist BC findings with their native advisory kind, not the per-run gate
 // promotion — a stored "gate" kind orphans the entry (status.Assign matches
 // stored kind against the pass kind, so the edge would surface as a phantom
 // "fixed" gate finding and never resolve on the advisory side).
@@ -426,7 +451,7 @@ func TestRun_Baseline_KeepsNativeAdvisoryKind(t *testing.T) {
 
 	var buf bytes.Buffer
 	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh}, &buf); code != 0 {
-		t.Fatalf("baseline --advisory: exit = %d\noutput:\n%s", code, buf.String())
+		t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
 	}
 	b, err := baseline.Load(context.Background(), filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath))
 	if err != nil {
@@ -443,12 +468,12 @@ func TestRun_Baseline_KeepsNativeAdvisoryKind(t *testing.T) {
 		}
 	}
 	if !sawBC {
-		t.Fatal("fixture regression: baseline --advisory persisted no BC advisory")
+		t.Fatal("fixture regression: baseline persisted no BC advisory")
 	}
 }
 
-// TestRun_Baseline_SkipsSyntheticCouplingGateFinding: `archfit baseline`
-// without --advisory under a tripped coupling.gate synthesizes the
+// TestRun_Baseline_SkipsSyntheticCouplingGateFinding: `archfit baseline
+// --no-advisories` under a tripped coupling.gate synthesizes the
 // bc/coupling_gate trip finding (no BC advisory exists to promote), but must
 // not persist it — the engine never regenerates its fingerprint, so a stored
 // entry would orphan and surface as a phantom "fixed" finding on later runs.
@@ -456,18 +481,34 @@ func TestRun_Baseline_SkipsSyntheticCouplingGateFinding(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
 
+	// Guard against a vacuous assertion: prove this fixture + --no-advisories
+	// really does synthesize the trip finding before asserting it is not stored.
+	var checkBuf bytes.Buffer
+	if code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh, flagNoAdvisories}, &checkBuf); code != 1 {
+		t.Fatalf("check --no-advisories: exit = %d, want 1 (tripped coupling gate)\noutput:\n%s", code, checkBuf.String())
+	}
+	var diag diagnostic.Diagnostic
+	if err := json.Unmarshal(checkBuf.Bytes(), &diag); err != nil {
+		t.Fatalf("unmarshal check JSON: %v", err)
+	}
+	if !slices.ContainsFunc(diag.Findings, func(f finding.Finding) bool { return f.RuleID == ruleIDBCCouplingGate }) {
+		t.Fatalf("fixture regression: no %s finding to skip: %+v", ruleIDBCCouplingGate, diag.Findings)
+	}
+
 	var buf bytes.Buffer
-	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh}, &buf); code != 0 {
-		t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
+	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh, flagNoAdvisories}, &buf); code != 0 {
+		t.Fatalf("baseline --no-advisories: exit = %d\noutput:\n%s", code, buf.String())
 	}
 	b, err := baseline.Load(context.Background(), filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, a := range b.Accepted {
-		if a.RuleID == ruleIDBCCouplingGate {
-			t.Errorf("baseline persisted the synthetic coupling-gate finding: %+v", a)
-		}
+	// The trip finding is the ONLY finding this run produces with advisories off,
+	// so the baseline must come back empty. Asserting the length (not just
+	// scanning for the rule ID) keeps the check from passing on an empty set.
+	if len(b.Accepted) != 0 {
+		t.Errorf("baseline persisted %d findings, want 0 (the %s trip finding is the only candidate and must be skipped): %+v",
+			len(b.Accepted), ruleIDBCCouplingGate, b.Accepted)
 	}
 }
 

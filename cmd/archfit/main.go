@@ -54,19 +54,20 @@ type cli struct {
 	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
 
 	Doctor DoctorCmd `cmd:"" group:"setup" help:"Check analyzer/tool availability (use --fix to install missing tools)."`
-	Config ConfigCmd `cmd:"" group:"setup" help:"Create, sync, and enrich the .archfit.yaml config."`
+	Config ConfigCmd `cmd:"" group:"setup" help:"Create, sync, compare, and enrich the .archfit.yaml config."`
 
 	Version versionFlag `short:"v" help:"Print version and exit."`
 }
 
 // ConfigCmd groups the config-authoring subcommands. init scaffolds a config (or,
 // with --ai-classify, drafts a full AI-classified config); update syncs the
-// config with the project structure; enrich drafts per-dimension AI
-// annotations for review.
+// config with the project structure; compare measures one tree under two
+// configs; enrich drafts per-dimension AI annotations for review.
 type ConfigCmd struct {
-	Init   InitCmd   `cmd:"" help:"Create a starter config (use --ai-classify for an AI-classified draft)."`
-	Update UpdateCmd `cmd:"" help:"Sync the config with current project structure."`
-	Enrich EnrichCmd `cmd:"" help:"Draft AI annotations (labels/owner/volatility/subdomain) for review."`
+	Init    InitCmd    `cmd:"" help:"Create a starter config (use --ai-classify for an AI-classified draft)."`
+	Update  UpdateCmd  `cmd:"" help:"Sync the config with current project structure."`
+	Compare CompareCmd `cmd:"" help:"Measure one source tree under two configs and report the difference (report-only)."`
+	Enrich  EnrichCmd  `cmd:"" help:"Draft AI annotations (labels/owner/volatility/subdomain) for review."`
 }
 
 func (cli) Help() string {
@@ -77,6 +78,10 @@ First run:
   archfit config init --root .                      # scaffold .archfit.yaml (config init --ai-classify to draft via AI)
   archfit check --config .archfit.yaml              # CI gate
   archfit baseline --config .archfit.yaml           # accept current findings as the baseline
+
+Config work:
+  archfit config update --config .archfit.yaml            # structure drift + config review
+  archfit config compare candidate.archfit.yaml           # one tree, two configs, report-only
 
 CI / agent loop:
   archfit check --config .archfit.yaml --base origin/main --format json
@@ -107,7 +112,7 @@ func commandGroups() []kong.Group {
 		{
 			Key:         commandGroupSetup,
 			Title:       "Setup & config",
-			Description: "Create configs (config init), sync structure (config update), install analyzers (doctor --fix), and draft off-gate AI annotations (config enrich).",
+			Description: "Create configs (config init), sync structure (config update), compare two configs on one tree (config compare), install analyzers (doctor --fix), and draft off-gate AI annotations (config enrich).",
 		},
 	}
 }

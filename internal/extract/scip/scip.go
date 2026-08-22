@@ -55,6 +55,15 @@ type Adapter struct {
 	// JSON is orders of magnitude smaller (fact-cache.md D4 size cap).
 	Cache *factcache.Store
 
+	// GoWorkOff makes the indexer subprocess ignore the go.work it would find by
+	// walking up. Set by the composition root from the SAME discovery decision
+	// the Go extractor's in-process loader honours (golang.Members.GoWorkOff):
+	// a run where packages.Load ignores an out-of-scope workspace while scip-go
+	// obeys it produces two contradictory views of one tree — scip-go loads a
+	// single synthetic package and writes an EMPTY index, which surfaces as
+	// `scip: partial (empty index)` and unpairs the family in `--base`.
+	GoWorkOff bool
+
 	once      sync.Once
 	toolFound string // empty when no SCIP indexer detected
 

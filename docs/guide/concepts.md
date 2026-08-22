@@ -351,7 +351,7 @@ Book alignment status in the deterministic gate:
 | Report-only      | `connascence`, `local_coupling`, `runtime_async`, `runtime_async_edges`, `dynamic_imports`, `distance_config_candidates`, distance compression, and tail risk. |
 | Out of scope     | Dynamic connascence scoring, runtime/lifecycle distance scoring, churn-derived volatility scoring, and LLM-only gate changes.                                  |
 
-The workflow: change code → `archfit analyze --gate` → deterministic finding or
+The workflow: change code → `archfit check` → deterministic finding or
 metric delta with strength / distance / volatility vocabulary → repair within the
 stated constraint → rerun.
 
@@ -375,8 +375,11 @@ Concept pages (companion site to the book):
 - Afferent and efferent coupling — <https://coupling.dev/posts/related-topics/afferent-and-efferent-coupling/>
 
 See the [Metrics reference](metrics.md) for how each of these concepts becomes a
-measured signal, and the build spec (`docs/spec/arch-fitness-spec-v0.4.md`) for
-the full design rationale.
+measured signal. The superseded v0.4 draft spec
+(`docs/spec/arch-fitness-spec-v0.4.md`) records the original design rationale; it
+is a historical document, not the current build spec — see
+[Commands](commands.md) and [Configuration](configuration.md) for current
+behavior.
 
 [bc-book]: https://www.informit.com/store/balancing-coupling-in-software-design-universal-design-9780137353484
 [lddd-book]: https://www.oreilly.com/library/view/learning-domain-driven-design/9781098100124/

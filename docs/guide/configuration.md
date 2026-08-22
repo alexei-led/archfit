@@ -13,6 +13,33 @@ while calibrating. Keep `gate` values aligned with the intended CI policy.
 Use `archfit analyze --config .archfit.yaml` for local review and `archfit check
 --config .archfit.yaml` for CI validation.
 
+To see what the config still needs, run `archfit config update -c .archfit.yaml`.
+It reports structure drift, every change `--apply` would write, and per-module
+gaps such as a missing `owner:`, a module with neither `subdomain:` nor
+`volatility:`, and a missing `layer:` while a `forbidden_layer_direction` rule is
+active. `archfit config update --json -c .archfit.yaml` emits the same review as
+the `archfit.config-review.v1` document for scripts and agents. Its status line
+reads `action_required`, `review_available`, or `no_known_issues`; the last one
+means these checks found nothing, not that the config is complete.
+
+`--apply` writes added modules, path drift, and settings only. Two structure
+buckets stay review-only because resolving them would discard a stanza's
+`owner`, `subdomain`, `volatility`, `layer`, and `public` values: `name_drift`
+(a configured module and a discovered module own the same paths under different
+names) and `removed_modules` (configured modules discovery did not emit). Decide
+those by hand.
+
+Before adopting a config edit, measure it. `archfit config compare
+candidate.archfit.yaml -c .archfit.yaml` runs the full pipeline twice over the
+same source tree — once per config — and reports which findings each config
+observes, whether the two rest on comparable analyzer evidence, and whether the
+candidate measured less of the tree (`scored_fraction_fell`,
+`abstained_edges_rose`, `external_edges_rose`). It is report-only: it writes
+nothing, ignores `.archfit-baseline.json`, and never states that a candidate is
+better — a config that scores higher because it stopped measuring edges is a
+measurement loss, not an improvement. `--json` emits the
+`archfit.config-compare.v1` document.
+
 LLM authoring commands are off-gate. `config init --ai-classify` emits commented
 suggestions by default; `config init --ai-classify --apply` writes those model judgments
 live into the generated file, so review the result before using it as a gate.

@@ -6,8 +6,8 @@
 # module; contexts integrate through a published contract (public surface), never
 # through each other's internals (which would be intrusive coupling across a
 # context boundary -> a flag).
-#   archfit analyze --config .archfit.yaml --full
-#   archfit analyze --score --config .archfit.yaml --full
+#   archfit analyze --config .archfit.yaml
+#   archfit analyze --format scorecard --config .archfit.yaml
 version: 1
 coupling:
   min_severity: medium

@@ -12,38 +12,25 @@ import (
 	"testing"
 )
 
-// xfail: Task 9 sets this to false once the workspace refactor (Tasks 2-8) is
-// complete and both fixtures produce verified, byte-identical output.
-const xfail = false
-
 // Fixture dirs relative to this source file (cmd/archfit/).
 const (
 	fixtureSingleModule       = "../../internal/extract/golang/testdata/single-module"
 	fixtureOneMemberWorkspace = "../../internal/extract/golang/testdata/one-member-workspace"
 )
 
-// TestByteIdentical_SingleModule captures a pre-refactor baseline for a
-// minimal single-module Go fixture and verifies byte-identical output on
-// re-run. xfail-tolerant until Task 9.
-//
-// Divergence risk (Task 9): old code picks modPath from the first pkg with
-// pkg.Module != nil; Task 6 changes to pkg.Module.Dir per package. They
-// diverge on Module==nil packages (vendored/synthetic). Single-module is
-// expected to be stable across the refactor — any diff here is a regression.
+// TestByteIdentical_SingleModule pins the committed JSON baseline for a
+// minimal single-module Go fixture: any diff is a regression. It is the
+// detector for path-plumbing changes that leak into rendered output — a
+// wrongly derived scan root, for instance, shows up as a spurious `--root` in
+// every agent_tasks[].validate string and nowhere else.
 func TestByteIdentical_SingleModule(t *testing.T) {
 	t.Parallel()
 	runByteIdenticalTest(t, fixtureSingleModule)
 }
 
-// TestByteIdentical_OneMemberWorkspace captures a pre-refactor baseline for a
+// TestByteIdentical_OneMemberWorkspace pins the committed JSON baseline for a
 // go.work fixture with one real member plus one excluded (testdata/extra)
-// member. xfail-tolerant until Task 9.
-//
-// Divergence risk (Task 9): the current extractor loads ./... from the
-// workspace root; after Tasks 5-6 only the surviving member's packages are
-// loaded. The baseline is expected to differ before and after — Task 9 updates
-// it and flips xfail to false. After the refactor both fixtures must produce
-// byte-identical output (the Tier-0 gate).
+// member: only the surviving member's packages are loaded.
 func TestByteIdentical_OneMemberWorkspace(t *testing.T) {
 	t.Parallel()
 	runByteIdenticalTest(t, fixtureOneMemberWorkspace)
@@ -55,13 +42,20 @@ func TestByteIdentical_OneMemberWorkspace(t *testing.T) {
 // the fixture.
 //
 // First run (no baseline.json): the file is written so the developer can
-// review and commit it. Subsequent runs compare. When xfail is true a diff is
-// logged, not fatal.
+// review and commit it. Subsequent runs compare and fail on any diff — never
+// delete a committed baseline.json to get green; that makes this test pass
+// vacuously by re-recording whatever the code now emits.
 func runByteIdenticalTest(t *testing.T, fixtureRelPath string) {
 	t.Helper()
 
 	absFixture, root := materializeFixtureRepo(t, fixtureRelPath)
 	got := runAnalyzeNormalized(t, root)
+
+	// A run without --base must not gain the git-origin block: the field is a
+	// pointer with omitempty precisely so normal output stays byte-identical.
+	if bytes.Contains(got, []byte(`"git_finding_delta"`)) {
+		t.Errorf("git_finding_delta must be omitted without --base:\n%s", got)
+	}
 
 	// Read or bootstrap the committed baseline.
 	baselinePath := filepath.Join(absFixture, "baseline.json")
@@ -79,21 +73,14 @@ func runByteIdenticalTest(t *testing.T, fixtureRelPath string) {
 	}
 
 	if !bytes.Equal(got, want) {
-		diff := firstDiffLine(string(want), string(got))
-		if xfail {
-			t.Logf("XFAIL (Task 9 will resolve): output differs from baseline\n%s", diff)
-		} else {
-			t.Fatalf("output differs from baseline:\n%s", diff)
-		}
+		t.Fatalf("output differs from baseline:\n%s", firstDiffLine(string(want), string(got)))
 	}
 }
 
-// TestByteIdentical_ColdWarmNoCache pins the Wave 6 fact-cache correctness
-// gate: on the SAME materialized tree, a second (warm, cache-populated) run
-// and a --refresh run must produce output byte-identical to the first
-// (cold) run. Trivially green until the per-language cache wiring lands
-// (plan Task 3) — committed first so the contract is pinned before any
-// analyzer consults the cache.
+// TestByteIdentical_ColdWarmNoCache pins the fact-cache correctness gate: on
+// the SAME materialized tree, a second (warm, cache-populated) run and a
+// --refresh run must produce output byte-identical to the first (cold) run.
+// A cache hit may never change what archfit reports.
 func TestByteIdentical_ColdWarmNoCache(t *testing.T) {
 	t.Parallel()
 	_, root := materializeFixtureRepo(t, fixtureSingleModule)

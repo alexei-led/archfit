@@ -74,6 +74,87 @@ Only `bc/imbalanced_coupling` findings are rolled up (cap 8 members per
 group); `bc/duplicated_knowledge` findings pass through individually and
 never carry a `group_count`.
 
+## git_finding_delta — which repair tasks this change introduced
+
+`--base <ref>` adds one report-only JSON block that sorts the CURRENT
+`agent_tasks[]` by git origin. It appears only with `--base`, only in `--json`
+output, and never changes the verdict or the exit code.
+
+```json
+{
+  "git_finding_delta": {
+    "base_ref": "main",
+    "comparison_status": "comparable",
+    "introduced_finding_ids": ["finding-a"],
+    "pre_existing_finding_ids": ["finding-b"],
+    "unknown_origin_finding_ids": [],
+    "comparison_reasons": []
+  }
+}
+```
+
+- `introduced_finding_ids` — no matching finding on the base ref. Your change
+  brought this task in; fix it before merging.
+- `pre_existing_finding_ids` — the same stable finding ID was also observed on
+  the base ref. Pre-existing debt, not a merge blocker.
+- `unknown_origin_finding_ids` — archfit could not place the task. Treat it as
+  possibly introduced.
+- `comparison_status` — `unknown` when any task has unknown origin, otherwise
+  `comparable`.
+
+All three lists are sorted, non-null arrays, and every current repair task lands
+in exactly one of them.
+
+`comparison_status` reports task placement, not evidence quality, so a run can
+report `comparable` alongside a non-empty `comparison_reasons`: with zero tasks
+to place, or with every task matched on the base ref, no task ends up unknown
+even though an analyzer failed to compare. Read `comparison_reasons` whenever it
+is non-empty — a later change that adds a task would then be `unknown`.
+
+**Conservative by construction.** A task is called `introduced` only when every
+active finding-producing analyzer covered both sides equivalently. A missing or
+duplicated coverage row, a timed-out analyzer, a partial from a run that did not
+complete, one-sided evidence of any kind (absent, disabled, or unresolved on one
+side only), or a config-hash mismatch moves unmatched tasks to
+`unknown_origin_finding_ids` and names the family in `comparison_reasons`
+(`"scip: head ok, base absent"`). Missing evidence never manufactures a "new"
+task. The synthetic `bc/coupling_gate` task is per-run trip state with no stable
+counterpart, so it is always `unknown`.
+
+**Symmetric degradations pair, and say so.** Two shapes would otherwise make the
+block permanently inert on whole classes of repos and hosts, so they stay
+comparable instead:
+
+- Both sides `partial` from unresolved import specifiers — the normal steady
+  state for dependency-cruiser and grimp, so treating it as unusable disabled
+  the feature on every TypeScript and Python repo.
+- Both sides `partial` with every input covered and only edge precision
+  degraded — go/packages reports this when some packages fail to type-check.
+  Their imports are all in the graph, only the `go/types` strength hints are
+  missing, so nothing can hide behind them; one such package anywhere used to
+  disable the feature on an ordinary Go repo.
+- Both sides `absent` for an analyzer the config activated — typically its tool
+  is not installed on this host (archfit's own runtime image ships no Rust
+  toolchain and no SCIP indexer).
+
+The safety argument is symmetry: neither side ran what the other could hide
+behind. None is ever paired silently — each always emits a `comparison_reasons`
+entry, and the two partial cases carry each side's count, so `3 unresolved` and
+`5000/6000 unresolved` are distinguishable, as are `2 degraded` and `900
+degraded`. An **asymmetric** absence or partial is still unavailable evidence,
+and the two partial shapes never pair with each other: complete-but-imprecise is
+not the same evidence as incomplete.
+
+A go/packages `partial` earned by packages that failed to LOAD is the incomplete
+kind — their imports never reached the graph — and it pairs with nothing. The
+common cause is a gitignored generated Go package, which is absent from the
+tracked-files-only base checkout; see the known ceiling in
+[ci.md](ci.md#2-github-actions-recipe).
+
+Matching uses stable finding IDs only: lifecycle labels (`new`, `waived`,
+`baseline`) and gate-vs-advisory promotion do not affect it, and a base entry
+reported as `fixed` never makes a current task pre-existing.
+
 ## advisory_tasks — the report-only rollup channel
 
 Grouped `bc/imbalanced_coupling` advisories (`group_count > 1`) also produce

@@ -68,6 +68,29 @@ func (e *Extractor) Name() string {
 	return langTS
 }
 
+// CoverageTool returns the name this extractor stamps on its Coverage rows.
+func (e *Extractor) CoverageTool() string {
+	return coverageTool
+}
+
+// Applicable reports whether this extractor has a TypeScript/JavaScript project
+// to analyse at root: dependency-cruiser is driven from a package.json in the
+// root itself, so that one file is the whole applicability test. A tsconfig.json
+// alone is NOT enough — the extractor reports absent over it.
+//
+// Exported so the CLI's coverage probe can answer "is this language present?"
+// with the extractor's own code instead of a parallel marker list. A probe that
+// disagreed turned "the extractor never looked" into "there is nothing here",
+// the one absent shape both `analyze --base` and `config compare` read as
+// safely comparable.
+//
+// Only a definite not-exist answers false: on any other stat error (permission,
+// I/O) Extract runs anyway, so the probe must not call the language absent.
+func Applicable(root string) bool {
+	_, err := os.Stat(filepath.Join(root, "package.json"))
+	return !os.IsNotExist(err)
+}
+
 // Extract detects dependency-cruiser, runs it against the project root,
 // parses the JSON output, and returns a graph.Facts + diagnostic.Coverage.
 //
@@ -81,8 +104,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	}
 
 	// Applicability: requires package.json in the project root.
-	pkgJSON := filepath.Join(s.Root, "package.json")
-	if _, err := os.Stat(pkgJSON); os.IsNotExist(err) {
+	if !Applicable(s.Root) {
 		if e.cfg.Mode == view.ModeOn {
 			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: package.json not found at %s", s.Root)
 		}

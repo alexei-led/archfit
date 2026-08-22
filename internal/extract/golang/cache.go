@@ -46,8 +46,23 @@ type packageFacts struct {
 	// unresolvable pattern counted as unresolved and otherwise skipped.
 	Synthetic bool `json:"synthetic,omitempty"`
 	// IllTyped mirrors pkg.IllTyped || len(pkg.Errors)>0.
-	IllTyped bool        `json:"ill_typed,omitempty"`
-	Files    []fileFacts `json:"files,omitempty"`
+	IllTyped bool `json:"ill_typed,omitempty"`
+	// InputsMissing marks an ill-typed package whose failure means part of its
+	// INPUT SET never reached the graph — an import that did not resolve
+	// (packages.ListError) or a file that did not parse (packages.ParseError).
+	// A pure type error leaves this false: the package's imports are all present
+	// and only go/types precision was lost.
+	//
+	// The two are not interchangeable downstream. Comparability rests on whether
+	// one side could hide an edge from the other, so an unresolvable import must
+	// never grade like a type error — that is a run whose graph is missing an
+	// edge a base finding could be sitting behind.
+	//
+	// Not a cache-schema hazard: deriveMemberFacts marks any member carrying such
+	// a package unclean, and unclean members are never written, so no stored entry
+	// can decode this as false when it was true.
+	InputsMissing bool        `json:"inputs_missing,omitempty"`
+	Files         []fileFacts `json:"files,omitempty"`
 	// Hints maps relFile+"\x00"+rawImportedPkgPath to the strongest BC
 	// integration-strength label seen (buildStrengthHints, pre-strip).
 	Hints map[string]string `json:"hints,omitempty"`
@@ -76,12 +91,15 @@ type importFacts struct {
 // concurrently, one goroutine per member bounded by GOMAXPROCS, writing
 // mfs[i] by index so merge order is deterministic regardless of goroutine
 // completion order.
-func (e *GoExtractor) loadMemberFacts(ctx context.Context, root string, memberDirs []string) ([]memberFacts, error) {
+//
+// goWorkOff comes from DiscoverMembers: when set, an out-of-scope go.work
+// governs these dirs and the loader must ignore it (see Members.GoWorkOff).
+func (e *GoExtractor) loadMemberFacts(ctx context.Context, root string, memberDirs []string, goWorkOff bool) ([]memberFacts, error) {
 	mfs := make([]memberFacts, len(memberDirs))
 	cached := make([]bool, len(memberDirs))
 	var keys []string
 	if e.Cache != nil {
-		keys = e.memberKeys(ctx, root, memberDirs)
+		keys = e.memberKeys(ctx, root, memberDirs, goWorkOff)
 	}
 	for i := 0; keys != nil && i < len(memberDirs); i++ {
 		if keys[i] == "" {
@@ -115,6 +133,7 @@ func (e *GoExtractor) loadMemberFacts(ctx context.Context, root string, memberDi
 				Dir:        dir,
 				Context:    egCtx,
 				BuildFlags: e.cfg.BuildFlags,
+				Env:        loaderEnv(goWorkOff),
 			}
 			pkgs, loadErr := e.loadPackages(cfg, "./...")
 			if loadErr != nil {
@@ -137,6 +156,22 @@ func (e *GoExtractor) loadMemberFacts(ctx context.Context, root string, memberDi
 		return nil, err
 	}
 	return mfs, nil
+}
+
+// goWorkOffEnv is the environment assignment that makes a Go-toolchain process
+// ignore the go.work it would otherwise find by walking up. The out-of-process
+// Go indexer (scip-go) applies the same assignment from the same decision — see
+// Members.GoWorkOff.
+const goWorkOffEnv = "GOWORK=off"
+
+// loaderEnv returns the packages.Config environment. nil (the default,
+// os.Environ()) unless discovery decided an out-of-scope go.work must be
+// ignored — see Members.GoWorkOff.
+func loaderEnv(goWorkOff bool) []string {
+	if !goWorkOff {
+		return nil
+	}
+	return append(os.Environ(), goWorkOffEnv)
 }
 
 // loadPackages is the packages.Load seam (see loadFunc).
@@ -190,6 +225,10 @@ func deriveMemberFacts(pkgs []*packages.Package, root string) (mf memberFacts, c
 			Synthetic: pkg.Module == nil && len(pkg.Errors) > 0,
 			IllTyped:  pkg.IllTyped || len(pkg.Errors) > 0,
 		}
+		// Asked only of a package that is ALREADY failing, so a false positive can
+		// only make an already-partial row refuse to pair — never the reverse, and
+		// never anything at all on a clean load.
+		pf.InputsMissing = !pf.Synthetic && pf.IllTyped && importsUnresolved(pkg)
 		if pf.Synthetic || pf.IllTyped {
 			clean = false
 		}
@@ -200,6 +239,31 @@ func deriveMemberFacts(pkgs []*packages.Package, root string) (mf memberFacts, c
 		mf.Packages = append(mf.Packages, pf)
 	}
 	return mf, clean
+}
+
+// importsUnresolved reports whether any import of an already-failing package did
+// not resolve to a real package — the condition that makes the package's own
+// failure a MISSING EDGE rather than lost precision.
+//
+// An unresolved import comes back in pkg.Imports with an empty Name (go list
+// could not identify a package there; the type checker reports it as
+// `could not import X (invalid package name: "")`). Every resolved import has a
+// Name, including stdlib, third-party, and first-party imports that are
+// themselves ill-typed.
+//
+// packages.Error.Kind is NOT the discriminator, however much it looks like one.
+// Measured against the go list driver at this load mode, a plain type error
+// yields both a ListError and a TypeError, while an unresolved import yields
+// only a TypeError — the exact inverse of the reading "ListError means the list
+// step failed". Kind describes which driver stage reported the text, not what
+// the failure cost.
+func importsUnresolved(pkg *packages.Package) bool {
+	for _, imp := range pkg.Imports {
+		if imp == nil || imp.Name == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // deriveFileFacts extracts the per-file import facts collectFromFacts needs.
@@ -333,14 +397,18 @@ var goListHashExcludes = []string{"**/testdata/**"}
 // dependencies' source, so their edits must invalidate its facts too.
 // Members nobody depends on invalidate alone ("edit one member file → only
 // that member re-loads").
-func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDirs []string) []string {
+func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDirs []string, goWorkOff bool) []string {
 	env := e.goCacheEnv(ctx)
+	// GoWorkOff rides the key explicitly: it changes what the loader sees, and it
+	// is derived from a go.work whose CONTENT the process env cannot report (the
+	// probe reads the ambient one either way).
 	cfgHash, err := factcache.HashJSON(struct {
-		Cfg    view.ExtractConfig
-		Root   string
-		GoWork string
-		Env    map[string]string
-	}{e.cfg, scanRoot, hashGoWork(scanRoot, env), env})
+		Cfg       view.ExtractConfig
+		Root      string
+		GoWork    string
+		GoWorkOff bool
+		Env       map[string]string
+	}{e.cfg, scanRoot, hashGoWork(scanRoot, env), goWorkOff, env})
 	if err != nil {
 		return nil
 	}

@@ -959,7 +959,7 @@ func TestRenderer_Render_AgentTasks(t *testing.T) {
 		Goal:        "Replace the internal-API access from pkg/a/a.go to pkg/b/internal/impl.go with b's public API.",
 		Constraints: []string{"Use only the public API of module b"},
 		Files:       []string{taskFileA, "pkg/b/internal/impl.go"},
-		Validation:  []string{"archfit analyze --gate -c .archfit.yaml --full"},
+		Validation:  []string{"archfit check -c .archfit.yaml"},
 	}}
 
 	var buf bytes.Buffer
@@ -972,7 +972,7 @@ func TestRenderer_Render_AgentTasks(t *testing.T) {
 		"**no_internal_access** [`abcdef12`]",
 		"files: pkg/a/a.go, pkg/b/internal/impl.go",
 		"constraint: Use only the public API of module b",
-		"validate: `archfit analyze --gate -c .archfit.yaml --full`",
+		"validate: `archfit check -c .archfit.yaml`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)
@@ -1006,7 +1006,7 @@ func TestRenderer_Render_AdvisoryTasks(t *testing.T) {
 		ScoreValue:   8,
 		TopFiles:     []string{taskFileA, taskFileB},
 		Constraints:  []string{"keep agent_tasks[] reserved for active gate findings"},
-		Validation:   []string{"archfit analyze --gate --full"},
+		Validation:   []string{"archfit check"},
 	}}
 
 	var buf bytes.Buffer
@@ -1024,7 +1024,7 @@ func TestRenderer_Render_AdvisoryTasks(t *testing.T) {
 		"score: 8/10",
 		"top files: " + taskFileA + ", " + taskFileB,
 		"constraint: keep agent_tasks[] reserved for active gate findings",
-		"validate: `archfit analyze --gate --full`",
+		"validate: `archfit check`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("advisory task output missing %q\nfull output:\n%s", want, out)

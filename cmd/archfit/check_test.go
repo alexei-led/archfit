@@ -92,6 +92,22 @@ func TestRun_Analyze_RejectsGateFlag(t *testing.T) {
 	}
 }
 
+// TestRun_Baseline_RejectsBaseFlag pins the removal of the ineffective
+// `baseline --base` mode: the flag never changed what was written, so it is a
+// parse error now rather than a silent no-op.
+func TestRun_Baseline_RejectsBaseFlag(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeFailingCheckRepo(t)
+
+	code, stdout, stderr := runArchfit(t, cmdBaseline, "--base", "main", "-c", cfgPath)
+	if code != 3 {
+		t.Fatalf("baseline --base: exit = %d, want 3\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "--base") {
+		t.Errorf("parse error should name the removed flag; stderr:\n%s", stderr)
+	}
+}
+
 func TestRun_Check_RejectsFullFlag(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeFailingCheckRepo(t)

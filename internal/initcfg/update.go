@@ -13,6 +13,7 @@ type ExistingModule struct {
 	HasSubdomain  bool
 	HasVolatility bool
 	HasLayer      bool
+	HasOwner      bool
 }
 
 // PathDelta records a module present in both config and discovery whose paths differ.
@@ -22,13 +23,39 @@ type PathDelta struct {
 	DiscoveredPaths []string
 }
 
+// NameDrift records a configured module that discovery re-emitted under a
+// different NAME while owning exactly the same paths. It is a naming difference,
+// not a structural change: the code did not move, only the key discovery would
+// choose for it. `update --apply` never resolves one, because rewriting the key
+// would discard the owner, subdomain, volatility, layer, and public settings the
+// configured stanza carries.
+type NameDrift struct {
+	ConfigName     string
+	DiscoveredName string
+	Paths          []string
+	// Existing is the configured stanza the drift was built from. It is carried
+	// so resolveNameDrift can run the per-module field checks over it: the
+	// stanza is real config with real settings, and the name pass skipped it
+	// only because name-only matching had put it in Removed.
+	Existing ExistingModule
+}
+
 // UpdateReport is the result of DiffModules.
 type UpdateReport struct {
-	Added                     []ModuleDef
-	Suggested                 []ModuleDef
-	Removed                   []ExistingModule
-	PathDrift                 []PathDelta
-	Unclassified              []string
+	Added        []ModuleDef
+	Suggested    []ModuleDef
+	Removed      []ExistingModule
+	NameDrift    []NameDrift
+	PathDrift    []PathDelta
+	Unclassified []string
+	// Pathless names the configured modules whose field checks were SKIPPED
+	// because the stanza declares no paths. They raise no issue by design (a
+	// pathless stanza classifies nothing), which is exactly why they have to be
+	// reported: otherwise `issues: []` reads as "every module is clean" over a
+	// stanza nothing evaluated.
+	Pathless                  []string
+	Issues                    []ModuleIssue
+	Settings                  []SettingChange
 	DeployUnitSuggestions     []DeployUnitSuggestion
 	DistanceConfigCandidates  []DistanceConfigCandidate
 	RuleSuggestions           []RuleSuggestion
@@ -39,14 +66,21 @@ type UpdateReport struct {
 // DistanceConfigCandidate is one review-only config hint derived from runtime or
 // dynamic evidence. It is a display copy of diagnostic.DistanceConfigCandidate;
 // config update never applies it automatically.
+//
+// The json tags are not decoration: this struct is serialized inside the
+// archfit.config-review.v1 document, whose every other key is snake_case, and
+// analyze --json already prints the same logical object under these names. The
+// one deliberate divergence from diagnostic.DistanceConfigCandidate is
+// evidence_refs — flattened "file:line" strings here, structured evidence_sites
+// there — so the key names the shape it actually carries.
 type DistanceConfigCandidate struct {
-	SourceBlock           string
-	Module                string
-	Target                string
-	IntegrationKind       string
-	Count                 int
-	EvidenceRefs          []string
-	SuggestedReviewAction string
+	SourceBlock           string   `json:"source_block"`
+	Module                string   `json:"module"`
+	Target                string   `json:"target"`
+	IntegrationKind       string   `json:"integration_kind"`
+	Count                 int      `json:"count"`
+	EvidenceRefs          []string `json:"evidence_refs"`
+	SuggestedReviewAction string   `json:"suggested_review_action"`
 }
 
 // DeployUnitSuggestion is one deterministic deploy_unit proposal from checked-in
@@ -54,9 +88,9 @@ type DistanceConfigCandidate struct {
 // manifests). It is rendered as a human-reviewed config hint; update --apply does
 // not write it automatically because deploy topology is an architecture decision.
 type DeployUnitSuggestion struct {
-	Module string
-	Unit   string
-	Source string
+	Module string `json:"module"`
+	Unit   string `json:"unit"`
+	Source string `json:"source"`
 }
 
 // normalizePaths returns a sorted, deduplicated, non-empty slice copy for comparison.
@@ -93,17 +127,47 @@ func pathSetsEqual(a, b []string) bool {
 	return true
 }
 
-// DiffModules computes the structural difference between the existing config modules
-// and freshly discovered modules. Output slices are sorted by Name for determinism.
+// DiffModules computes the difference between the existing config modules and
+// freshly discovered modules, ready to read. Output slices are sorted by Name
+// for determinism.
 //
-//   - Added: modules in fresh (by Name) not in existing.
-//   - Removed: modules in existing (by Name) not in fresh.
+//   - Added: modules in fresh not in existing, after name drift is resolved.
+//   - Removed: modules in existing not in fresh, after name drift is resolved.
+//   - NameDrift: Added/Removed pairs that own exactly the same paths, so the
+//     only difference is the key (see resolveNameDrift).
 //   - PathDrift: modules present in both whose paths differ as normalized sets.
 //     ConfigPaths and DiscoveredPaths preserve their original ordering.
-//   - StructuralInSync: true when Added, Removed, and PathDrift are all empty.
-//   - Unclassified: non-removed existing modules missing any of subdomain/volatility/layer.
-//     Modules in Removed are excluded from Unclassified.
-func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
+//   - StructuralInSync: true when Added, Removed, NameDrift, and PathDrift are
+//     all empty.
+//   - Unclassified: existing modules discovery still accounts for that cannot be
+//     classified — neither subdomain nor volatility is set (either one supplies
+//     volatility), or layer is missing while requireLayer says an active layer
+//     policy needs it. Modules in Removed are excluded from Unclassified.
+//   - Issues: the Unclassified reasons plus missing owner, one entry per gap,
+//     sorted by module then code. Modules with no paths classify nothing and are
+//     skipped, mirroring config.Config.Lint; Unclassified keeps them.
+//
+// The name-drift pass runs INSIDE this function rather than beside it: matching
+// is by name, so a stanza discovery merely renamed starts out in Removed, and
+// every module-level field check over it would otherwise be provisional until a
+// caller remembered to run a second pass. `issues: []` must mean "checked and
+// clean", never "not evaluated", and no call order can make it mean the latter.
+//
+// Narrowing Unclassified also narrows what `--ai-classify` targets, deliberately:
+// `layer:` is read only by the forbidden_layer_direction rule, so proposing one
+// for a config without that rule adds a field nothing consumes.
+//
+// requireLayer must be true only when a forbidden_layer_direction rule is active
+// (gate other than "off"); layer is optional for every other config.
+func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool) UpdateReport {
+	return resolveNameDrift(diffModulesByName(existing, fresh, requireLayer), requireLayer)
+}
+
+// diffModulesByName is the name-matching structural pass. Its Issues and
+// Unclassified are provisional — they skip everything it put in Removed — which
+// is why it is unexported and only DiffModules, after resolveNameDrift, is
+// reachable from outside the package.
+func diffModulesByName(existing []ExistingModule, fresh []ModuleDef, requireLayer bool) UpdateReport {
 	existingByName := make(map[string]ExistingModule, len(existing))
 	for _, e := range existing {
 		existingByName[e.Name] = e
@@ -148,23 +212,269 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
 	}
 	sort.Slice(drift, func(i, j int) bool { return drift[i].Name < drift[j].Name })
 
-	var unclassified []string
+	var checked []ExistingModule
 	for _, e := range existing {
 		if _, isRemoved := removedSet[e.Name]; isRemoved {
 			continue
 		}
-		if !e.HasSubdomain || !e.HasVolatility || !e.HasLayer {
-			unclassified = append(unclassified, e.Name)
-		}
+		checked = append(checked, e)
 	}
-	sort.Strings(unclassified)
+	unclassified, pathless, issues := checkModuleFields(checked, requireLayer)
 
 	return UpdateReport{
 		Added:            added,
 		Removed:          removed,
 		PathDrift:        drift,
 		Unclassified:     unclassified,
+		Pathless:         pathless,
+		Issues:           issues,
 		StructuralInSync: len(added) == 0 && len(removed) == 0 && len(drift) == 0,
+	}
+}
+
+// checkModuleFields runs the per-module config-quality checks over the modules
+// discovery accounts for, returning the sorted Unclassified names and Issues.
+//
+// It is a function rather than an inline loop because the set it runs over is
+// only final AFTER resolveNameDrift: the name pass matches by name, so a stanza
+// discovery merely names differently starts out in Removed and would otherwise
+// never be checked. `issues: []` must mean "checked and clean", never "not
+// evaluated".
+func checkModuleFields(mods []ExistingModule, requireLayer bool) (unclassified, pathless []string, issues []ModuleIssue) {
+	for _, e := range mods {
+		missingVolatilityInput := !e.HasSubdomain && !e.HasVolatility
+		missingLayer := requireLayer && !e.HasLayer
+		if missingVolatilityInput || missingLayer {
+			unclassified = append(unclassified, e.Name)
+		}
+		if len(normalizePaths(e.Paths)) == 0 {
+			// A pathless entry classifies nothing, so it raises no issue — this
+			// mirrors config.Config.Lint. Unclassified deliberately does NOT skip
+			// it: a pathless module still needs classification input before it
+			// can do any work, and the AI pass targets that list.
+			//
+			// But skipping it silently is what `unchecked_modules` exists to
+			// prevent: a pathless stanza carrying `subdomain:` and no `owner:`
+			// raises no issue, lands in no unclassified list, and would leave
+			// `issues: []` reading as "every module is clean". Report it as
+			// unchecked with its own reason.
+			pathless = append(pathless, e.Name)
+			continue
+		}
+		// Owner and subdomain/volatility are also checked by config.Config.Lint for
+		// the analyze pipeline; here they are scoped to modules discovery still sees.
+		if missingLayer {
+			issues = append(issues, newModuleIssue(IssueMissingLayer, e.Name))
+		}
+		if !e.HasOwner {
+			issues = append(issues, newModuleIssue(IssueMissingOwner, e.Name))
+		}
+		if missingVolatilityInput {
+			issues = append(issues, newModuleIssue(IssueMissingVolatilityInput, e.Name))
+		}
+	}
+	sort.Strings(unclassified)
+	sort.Strings(pathless)
+	sortModuleIssues(issues)
+	return unclassified, pathless, issues
+}
+
+// sortModuleIssues applies the documented issue order: module, then code. Both
+// producers (the first pass and the name-drift merge) sort with it, so the two
+// cannot order the same list differently.
+func sortModuleIssues(issues []ModuleIssue) {
+	sort.SliceStable(issues, func(i, j int) bool {
+		if issues[i].Module != issues[j].Module {
+			return issues[i].Module < issues[j].Module
+		}
+		return issues[i].Code < issues[j].Code
+	})
+}
+
+// resolveNameDrift reclassifies every Added/Removed pair that owns exactly the
+// same paths as a NAMING difference rather than a structural change.
+//
+// diffModulesByName matches config modules to discovered modules by NAME, and
+// the two naming conventions do not have to agree: this repo configures
+// `internal/agenttask` while discovery emits `agenttask` for the identical
+// `internal/agenttask/**` path set. Read as add + remove, that is 75 phantom
+// "changes" whose only honest resolution — rewriting every key — would discard
+// the owner, subdomain, volatility, layer, and public settings on 44 stanzas.
+//
+// Pairing is by normalized path set and strictly 1:1. A path set claimed by more
+// than one added or removed module is ambiguous and stays in its original
+// bucket: guessing which stanza a key belongs to is exactly the failure mode
+// this pass exists to prevent.
+//
+// The returned report keeps every other field; Added, Removed, NameDrift,
+// StructuralInSync, Issues, and Unclassified are recomputed.
+//
+// Issues and Unclassified have to be recomputed here because diffModulesByName
+// skips everything in Removed, and a name-drifted stanza sat there: on this
+// repo's own reference config that left 30 of 45 modules unevaluated while the
+// document still reported `issues: []`. requireLayer must be the same value the
+// name pass was called with. Pure: no I/O, deterministic order.
+func resolveNameDrift(r UpdateReport, requireLayer bool) UpdateReport {
+	addedByPaths := uniquePathKeyIndex(len(r.Added), func(i int) []string { return r.Added[i].Paths })
+	removedByPaths := uniquePathKeyIndex(len(r.Removed), func(i int) []string { return r.Removed[i].Paths })
+
+	paired := make(map[int]int, len(r.Added)) // added index → removed index
+	for key, ai := range addedByPaths {
+		if ri, ok := removedByPaths[key]; ok {
+			paired[ai] = ri
+		}
+	}
+	if len(paired) == 0 {
+		return r
+	}
+
+	pairedRemoved := make(map[int]struct{}, len(paired))
+	drift := make([]NameDrift, 0, len(paired))
+	added := make([]ModuleDef, 0, len(r.Added))
+	for i, def := range r.Added {
+		ri, ok := paired[i]
+		if !ok {
+			added = append(added, def)
+			continue
+		}
+		pairedRemoved[ri] = struct{}{}
+		drift = append(drift, NameDrift{
+			ConfigName:     r.Removed[ri].Name,
+			DiscoveredName: def.Name,
+			Paths:          normalizePaths(def.Paths),
+			Existing:       r.Removed[ri],
+		})
+	}
+
+	removed := make([]ExistingModule, 0, len(r.Removed))
+	for i, e := range r.Removed {
+		if _, isPaired := pairedRemoved[i]; !isPaired {
+			removed = append(removed, e)
+		}
+	}
+
+	out := r
+	out.Added = added
+	out.Removed = removed
+	out.NameDrift = drift
+	out.StructuralInSync = len(added) == 0 && len(removed) == 0 && len(drift) == 0 && len(r.PathDrift) == 0
+	out.Unclassified, out.Pathless, out.Issues = mergeDriftFieldChecks(r, drift, requireLayer)
+	return out
+}
+
+// mergeDriftFieldChecks re-runs the per-module field checks over the stanzas
+// name-drift just rescued from Removed and merges them into the report's
+// existing results, keeping every list sorted and duplicate-free.
+func mergeDriftFieldChecks(r UpdateReport, drift []NameDrift, requireLayer bool) ([]string, []string, []ModuleIssue) {
+	mods := make([]ExistingModule, 0, len(drift))
+	for _, d := range drift {
+		mods = append(mods, d.Existing)
+	}
+	driftUnclassified, driftPathless, driftIssues := checkModuleFields(mods, requireLayer)
+	if len(driftUnclassified) == 0 && len(driftPathless) == 0 && len(driftIssues) == 0 {
+		return r.Unclassified, r.Pathless, r.Issues
+	}
+
+	unclassified := append(append([]string{}, r.Unclassified...), driftUnclassified...)
+	pathless := append(append([]string{}, r.Pathless...), driftPathless...)
+	issues := append(append([]ModuleIssue{}, r.Issues...), driftIssues...)
+	sort.Strings(unclassified)
+	sort.Strings(pathless)
+	sortModuleIssues(issues)
+	return unclassified, pathless, issues
+}
+
+// uniquePathKeyIndex maps each normalized path set to the single index that owns
+// it. A path set claimed by two or more entries is dropped: it cannot be paired
+// unambiguously.
+func uniquePathKeyIndex(n int, pathsAt func(int) []string) map[string]int {
+	index := make(map[string]int, n)
+	duplicate := make(map[string]struct{})
+	for i := range n {
+		paths := normalizePaths(pathsAt(i))
+		if len(paths) == 0 {
+			continue // a pathless stanza owns nothing to pair on
+		}
+		key := strings.Join(paths, "\x00")
+		if _, seen := index[key]; seen {
+			duplicate[key] = struct{}{}
+			continue
+		}
+		index[key] = i
+	}
+	for key := range duplicate {
+		delete(index, key)
+	}
+	return index
+}
+
+// writeUnappliedModuleSections renders the module sections `update --apply`
+// deliberately leaves alone: naming differences (same paths, different key),
+// configured modules discovery did not emit, and stanzas that declare no paths.
+// The first two would need a stanza rewritten or deleted, which discards the
+// settings it carries, so both stay human decisions and the section text says so.
+//
+// UNCHECKED is here rather than in the status line alone because the status line
+// is unusable after a write (it counts "pending" edits that were just applied),
+// and a pathless stanza appears in no other section: the per-module field checks
+// skip it before raising anything.
+//
+// Module keys go through sanitizeComment, the convention every other renderer in
+// this file follows for config- and discovery-supplied values (writeModuleStanza,
+// writeDeployUnitSuggestion, writeDistanceConfigCandidate, and the SETTINGS and
+// ISSUES sections). It is a no-op on a well-formed key.
+func writeUnappliedModuleSections(b *strings.Builder, r UpdateReport) {
+	if len(r.NameDrift) > 0 {
+		fmt.Fprintf(b, "NAME DRIFT (%d module(s) discovery names differently — same paths, review only):\n", len(r.NameDrift))
+		b.WriteString("  NOTE: `update --apply` does NOT rename these; rewriting the key would discard owner, subdomain, volatility, layer, and public settings.\n")
+		for _, d := range r.NameDrift {
+			fmt.Fprintf(b, "  - config %q, discovery %q: %s\n",
+				sanitizeComment(d.ConfigName), sanitizeComment(d.DiscoveredName), joinPaths(d.Paths))
+		}
+	}
+
+	if len(r.Removed) > 0 {
+		fmt.Fprintf(b, "UNMATCHED (%d configured module(s) discovery did not emit — review only):\n", len(r.Removed))
+		b.WriteString("  NOTE: `update --apply` does NOT remove these; deleting a stanza discards its settings, so it stays a human decision.\n")
+		for _, e := range r.Removed {
+			fmt.Fprintf(b, "  - %s: not found in discovery — verify or remove by hand\n", sanitizeComment(e.Name))
+		}
+	}
+
+	if len(r.Pathless) > 0 {
+		fmt.Fprintf(b, "UNCHECKED (%d configured module(s) declaring no paths — review only):\n", len(r.Pathless))
+		b.WriteString("  NOTE: a stanza that selects no source is skipped by the per-module field checks, so it raises no ISSUES entry either way.\n")
+		for _, name := range r.Pathless {
+			fmt.Fprintf(b, "  - %s: declares no `paths:` — add one or remove the stanza\n", sanitizeComment(name))
+		}
+	}
+}
+
+// writeModuleGapSections renders the two per-module field-check results: gaps
+// needing a human decision, and modules archfit cannot classify. Neither is ever
+// written by `update --apply`, so both the preview and the post-write appendix
+// show them from this one place.
+func writeModuleGapSections(b *strings.Builder, r UpdateReport, ann map[string]ModuleAnnotation) {
+	if len(r.Issues) > 0 {
+		fmt.Fprintf(b, "ISSUES (%d module gap(s) needing a decision):\n", len(r.Issues))
+		for _, issue := range r.Issues {
+			fmt.Fprintf(b, "  - %s [%s]: %s → %s\n",
+				sanitizeComment(issue.Module), sanitizeComment(issue.Code),
+				sanitizeComment(issue.Reason), sanitizeComment(issue.NextAction))
+		}
+	}
+
+	if len(r.Unclassified) > 0 {
+		fmt.Fprintf(b, "UNCLASSIFIED (%d module(s) archfit cannot classify):\n", len(r.Unclassified))
+		for _, name := range r.Unclassified {
+			if ann != nil {
+				if a, ok := ann[name]; ok {
+					writeAnnotationDiff(b, name, a)
+					continue
+				}
+			}
+			fmt.Fprintf(b, "  - %s: run with --ai-classify to get classification suggestions\n", name)
+		}
 	}
 }
 
@@ -175,9 +485,14 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
 //     visible to copy; out-of-set layers still render as comments per writeModuleStanza rules).
 //   - SUGGESTED: paste-ready review-only module override stanzas. These are not
 //     structural discovery results and `config update --apply` never writes them.
-//   - REMOVED: each removed module noted as "not found in discovery — verify or remove".
+//   - NAME DRIFT: config/discovery key pairs over one path set, review-only.
+//   - UNMATCHED: each configured module discovery did not emit, review-only —
+//     `--apply` never deletes a stanza.
 //   - PATH DRIFT: config vs discovered paths, with an explicit note that --apply replaces
 //     module paths with the discovered paths and writes a backup.
+//   - SETTINGS: non-module config settings `update --apply` would write, so the
+//     preview shows every edit apply makes.
+//   - ISSUES: per-module config gaps with their reason and next action.
 //   - UNCLASSIFIED: modules missing classification; shows LLM suggestion from ann when
 //     present, otherwise suggests running with --ai-classify.
 //   - DEPLOY UNIT HINTS: deterministic deploy_unit proposals from checked-in
@@ -222,12 +537,7 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 		}
 	}
 
-	if len(r.Removed) > 0 {
-		fmt.Fprintf(&b, "REMOVED (%d module(s) not found in discovery — verify or remove):\n", len(r.Removed))
-		for _, e := range r.Removed {
-			fmt.Fprintf(&b, "  - %s: not found in discovery — verify or remove\n", e.Name)
-		}
-	}
+	writeUnappliedModuleSections(&b, r)
 
 	if len(r.PathDrift) > 0 {
 		fmt.Fprintf(&b, "PATH DRIFT (%d module(s) — paths changed since last sync):\n", len(r.PathDrift))
@@ -239,18 +549,14 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 		}
 	}
 
-	if len(r.Unclassified) > 0 {
-		fmt.Fprintf(&b, "UNCLASSIFIED (%d module(s) missing subdomain/volatility/layer):\n", len(r.Unclassified))
-		for _, name := range r.Unclassified {
-			if ann != nil {
-				if a, ok := ann[name]; ok {
-					writeAnnotationDiff(&b, name, a)
-					continue
-				}
-			}
-			fmt.Fprintf(&b, "  - %s: run with --ai-classify to get classification suggestions\n", name)
+	if len(r.Settings) > 0 {
+		fmt.Fprintf(&b, "SETTINGS (%d config setting(s) `update --apply` would write):\n", len(r.Settings))
+		for _, s := range r.Settings {
+			fmt.Fprintf(&b, "  - %s: %s\n", sanitizeComment(s.Code), sanitizeComment(s.Reason))
 		}
 	}
+
+	writeModuleGapSections(&b, r, ann)
 
 	if len(r.DeployUnitSuggestions) > 0 {
 		fmt.Fprintf(&b, "DEPLOY UNIT HINTS (%d deterministic config proposal(s) — apply manually after review):\n", len(r.DeployUnitSuggestions))
@@ -287,16 +593,29 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 	return b.String()
 }
 
-// RenderAppliedLLMReview renders the review-only LLM appendix that still matters
-// after update --apply has written structural drift. Structural edits are already
-// in the file; this output preserves the semantic proposals that are deliberately
-// NOT auto-applied.
-func RenderAppliedLLMReview(r UpdateReport, ann map[string]ModuleAnnotation) string {
+// RenderAppliedReview renders everything `config update --apply` did NOT write,
+// after it has written the structural drift it does. Structural edits are
+// already in the file; what remains is the review-only half of the report.
+//
+// That half is not only the semantic proposals. Module gaps, naming differences,
+// unmatched stanzas, and pathless stanzas are review-only too, and a run that
+// wrote an edit used to print none of them — the same findings the run WITHOUT
+// --apply reports disappeared exactly when apply had something to do. Both
+// module halves come from the helpers RenderUpdateReport uses, so the two
+// renderings cannot drift.
+func RenderAppliedReview(r UpdateReport, ann map[string]ModuleAnnotation) string {
 	var b strings.Builder
 
+	writeUnappliedModuleSections(&b, r)
+	writeModuleGapSections(&b, r, ann)
+
+	// Added and Suggested only. Unclassified is deliberately NOT collected here:
+	// writeModuleGapSections above already renders its annotation diff, and
+	// collecting it too printed every unclassified module's proposal twice, under
+	// two headers. (It was correct before this function rendered UNCLASSIFIED.)
 	if len(ann) > 0 {
 		seen := map[string]struct{}{}
-		names := make([]string, 0, len(r.Added)+len(r.Suggested)+len(r.Unclassified))
+		names := make([]string, 0, len(r.Added)+len(r.Suggested))
 		collect := func(name string) {
 			if _, done := seen[name]; done {
 				return
@@ -316,9 +635,6 @@ func RenderAppliedLLMReview(r UpdateReport, ann map[string]ModuleAnnotation) str
 		}
 		for _, m := range r.Suggested {
 			collect(m.Name)
-		}
-		for _, name := range r.Unclassified {
-			collect(name)
 		}
 		if len(names) > 0 {
 			fmt.Fprintf(&b, "LLM MODULE SUGGESTIONS (%d review-only classification proposal(s) — not applied):\n", len(names))
@@ -399,8 +715,16 @@ func writeAnnotationDiff(b *strings.Builder, name string, a ModuleAnnotation) {
 	}
 }
 
+// writeDeployUnitSuggestion renders one paste-ready `deploy_unit:` stanza. The
+// module name prints AS IT IS KEYED IN THE CONFIG — deploy-unit suggestions are
+// only ever emitted for a module the config already declares, so mangling `/`
+// into `_` (yamlKey) produced a header for a module `.archfit.yaml` does not
+// contain, and pasting it created a second stanza instead of editing the first.
+// `/` needs no quoting in a YAML key; this repo's own config keys are
+// `internal/model:` and friends. The sibling distance-candidate renderer below
+// already prints module names unmangled.
 func writeDeployUnitSuggestion(b *strings.Builder, s DeployUnitSuggestion) {
-	fmt.Fprintf(b, "  %s:\n", sanitizeComment(yamlKey(s.Module)))
+	fmt.Fprintf(b, "  %s:\n", sanitizeComment(s.Module))
 	fmt.Fprintf(b, "    deploy_unit: %s\n", yamlScalar(s.Unit))
 	if s.Source != "" {
 		fmt.Fprintf(b, "    source: %s\n", sanitizeComment(s.Source))

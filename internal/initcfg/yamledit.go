@@ -57,6 +57,12 @@ func (UpdateModulePathsEdit) editMarker() {}
 
 // CommentModuleEdit prefixes the module's full source range (incl. head comment)
 // with a removal marker. NO-OP if the marker already exists.
+//
+// No production caller builds one: `config update --apply` stopped removing
+// stanzas, because DiffModules matches by name and a stanza discovery merely
+// names differently would lose its owner/subdomain/volatility/layer/public
+// settings. The edit stays part of the sealed Edit vocabulary for a caller that
+// can prove a module is genuinely gone.
 type CommentModuleEdit struct {
 	Module string
 	Note   string

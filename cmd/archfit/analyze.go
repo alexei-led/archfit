@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/baseline"
@@ -14,7 +14,6 @@ import (
 	"github.com/alexei-led/archfit/internal/decision"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
@@ -30,7 +29,7 @@ import (
 type AnalyzeCmd struct {
 	Config string `short:"c" help:"Path to config file." default:".archfit.yaml"`
 	Root   string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
-	Base   string `help:"Git ref to compare against for scorecard delta (e.g. main, HEAD~1). When set, runs a before/after delta table instead of a single-run render."`
+	Base   string `help:"Git ref to compare against (e.g. main, HEAD~1). When set, the normal output gains a base-vs-head delta."`
 
 	AISummary bool `name:"ai-summary" help:"Append an off-gate AI narrative review after the normal render. Requires ai configured in the config file."`
 	Refresh   bool `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
@@ -70,7 +69,7 @@ Common runs:
   archfit analyze --json -c .archfit.yaml | jq .
   archfit analyze --format sarif > archfit.sarif
   archfit analyze --format scorecard            # banded scorecard only
-  archfit analyze --base origin/main            # scorecard delta vs base ref
+  archfit analyze --base origin/main            # add a base-vs-head delta
   archfit analyze --ai-summary -c .archfit.yaml # add AI narrative section
 
 AI agents should read agent_tasks[] from JSON output, make the constrained
@@ -182,12 +181,23 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	rep.advance("Loading config")
 	cfg, err := loadAnalysisConfig(ctx, req.configPath)
 	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+		return configLoadError(err)
 	}
 	if err := applyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 	printConfigLint(deps.stderr(), cfg.Lint())
+
+	// Snapshot the EFFECTIVE config for the --base sub-run before the head
+	// pipeline touches it. runPipeline's owner and deploy-unit backfill
+	// (FillMissingOwners / FillMissingDeployUnits) writes through the shared
+	// cfg.Modules map, so without an independent map the base side would inherit
+	// head-tree owners, skip its own resolution, and classify distance against
+	// evidence its own tree never produced.
+	baseCfg := cfg
+	if req.baseRef != "" {
+		baseCfg = withIndependentModules(cfg)
+	}
 
 	configDir := filepath.Dir(req.configPath)
 	deps.scanRoot = req.root
@@ -201,10 +211,11 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
+	// --no-advisories has one meaning for every requested format: the scorecard
+	// value is synthesised from ClassifiedEdges (before advisory filtering), so
+	// suppressing advisory findings never moves the score and the format no
+	// longer needs to force them back on.
 	advisory := !req.noAdvisories
-	if slices.Contains(formats, formatScorecard) {
-		advisory = true
-	}
 
 	mode := engine.Mode{
 		Base:       req.baseRef,
@@ -214,7 +225,15 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 		Formats:    formats,
 	}
 
-	diag, sc, err := runPipeline(ctx, deps, cfg, req.configPath, req.root, mode, base)
+	// One run context for the whole comparison: the head run and the --base
+	// sub-run share the config source, the config bundle directory, and one
+	// sampled evaluation instant. Only the scan root differs (the base side
+	// swaps in its worktree), so a finding never ages differently between the
+	// two sides just because the second pipeline started later.
+	rc := newRunContext(req.configPath, req.root)
+	rc.EvaluatedAt = time.Now()
+
+	diag, sc, err := runPipeline(ctx, deps, cfg, rc, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -224,10 +243,12 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	for _, reason := range score.EvaluateCouplingGate(sc, gateView, base.CouplingScore()).Reasons {
 		_, _ = fmt.Fprintln(deps.stderr(), "coupling gate: "+reason)
 	}
-	if gateView.Enabled && gateView.MaxDrop != nil && base.ScoreVersionStale() {
-		_, _ = fmt.Fprintf(deps.stderr(),
-			"coupling gate: max_drop skipped — baseline score was recorded under scorer version %q, current is %q; run `archfit baseline` to re-anchor\n",
-			base.Score.ScoreVersion, coupling.ScoreVersion)
+	if gateView.Enabled && gateView.MaxDrop != nil {
+		if mismatches := base.ScoreSnapshotMismatches(); len(mismatches) > 0 {
+			_, _ = fmt.Fprintf(deps.stderr(),
+				"coupling gate: max_drop skipped — baseline score snapshot is incompatible (%s); run `archfit baseline` to re-anchor\n",
+				strings.Join(scoreSnapshotMismatchDetails(base, mismatches), ", "))
+		}
 	}
 
 	hardGate := applyToolGate(&diag, req.requireTools)
@@ -235,11 +256,21 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	var baseSC *score.Scorecard
 	if req.baseRef != "" {
 		rep.advance("Comparing against base")
-		bsc, berr := scoreBaseRef(ctx, deps, req.baseRef, req.configPath, configDir, req.root, advisory)
+		bsc, bev, berr := scoreBaseRef(ctx, deps, req.baseRef, rc, baseCfg, advisory)
 		if berr != nil {
 			return berr
 		}
 		baseSC = &bsc
+		// Report-only: the origin block is attached after the verdict and the
+		// tool gate are final, so it can never change either.
+		diag.GitFindingDelta = buildGitFindingDelta(gitDeltaInput{
+			BaseRef:        req.baseRef,
+			Tasks:          diag.AgentTasks,
+			BaseFindingIDs: bev.FindingIDs,
+			Head:           analyzerEvidence{Coverage: diag.ToolCoverage, Gaps: diag.CoverageGaps, Hash: diag.ConfigHash},
+			Base:           analyzerEvidence{Coverage: bev.Coverage, Gaps: bev.CoverageGaps, Hash: bev.ConfigHash},
+			Families:       analyzerFamilies(cfg),
+		})
 	}
 
 	if err := analyzeRender(deps, diag, sc, baseSC, formats, hardGate); err != nil {
@@ -278,6 +309,18 @@ func loadAnalysisConfig(ctx context.Context, path string) (config.Config, error)
 		return config.Config{}, err
 	}
 	return cfg, nil
+}
+
+// configLoadError normalises a config-load failure into an exit-3 error.
+// loadAnalysisConfig already returns an *exitError for the missing-config case,
+// and that message carries its own "error: " prefix plus a next-step hint —
+// wrapping it a second time prints the prefix twice.
+func configLoadError(err error) error {
+	var already *exitError
+	if errors.As(err, &already) {
+		return already
+	}
+	return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 }
 
 // analyzeRender writes the diagnostic to deps.Stdout in each requested format.

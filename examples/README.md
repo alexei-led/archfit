@@ -12,7 +12,7 @@ and owners, then run:
 ```sh
 cp examples/go-monolith.archfit.yaml .archfit.yaml
 $EDITOR .archfit.yaml
-archfit analyze --config .archfit.yaml --full
+archfit analyze --config .archfit.yaml
 ```
 
 | Template                                      | Shape                                                 |
@@ -33,7 +33,7 @@ volatile a target is. Omit them and you get the structural fallback plus
 `undeclared` volatility — which is exactly what produces advisory floods on flat
 configs.
 
-Run `archfit init` first to discover your real structure, then borrow the
+Run `archfit config init` first to discover your real structure, then borrow the
 metadata patterns from the closest template here. See
 [Language support](../docs/guide/languages.md) for per-language path and tool
 details.

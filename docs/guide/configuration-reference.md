@@ -207,7 +207,9 @@ languages:
         - "**/testdata/**" # drop members matching these after include
 ```
 
-When the resulting member set is empty the Go extractor reports `absent`.
+When the resulting member set is empty the Go extractor reports `absent`. No
+coverage gap is raised for it: the gap probe applies the same include/exclude
+filter, so scoping the member set never reads as a missing Go toolchain.
 
 **Scale note:** a full `NeedTypesInfo` load of 100+ members takes 1–2 minutes
 wall-clock on a warm build cache. Use `languages.go.modules` to scope the load;
@@ -377,7 +379,14 @@ on the missing tool:
 When an analyzer is **disabled by config** (`enabled: false`), it is simply
 skipped — no coverage gap is emitted and no install prompt is shown.
 Disabled-by-config is distinct from absent: a tool you deliberately turned off
-should not appear as a gap to resolve.
+should not appear as a gap to resolve. A language switched off with
+`languages.<id>.enabled: false` **on a repo that contains that language** reports
+`disabled` in `tool_coverage`, not `absent`, so "measurement switched off" is
+never read as "this language is not in the tree" by `config compare` or
+`analyze --base`. Switching off a language the repo does not contain changes
+nothing: the row stays `absent`, because there was nothing to stop measuring.
+Pinning an explicit `gate:` on a disabled language opts back in: the row stays
+`absent` and still raises its gap.
 
 ```yaml
 languages:
@@ -476,9 +485,12 @@ error (it would gate nothing).
   the score snapshot stored by `archfit baseline`. `0` means any drop trips.
   A baseline written before the snapshot existed, or while the score was
   unmeasured, carries no anchor — the drop check is skipped, never guessed.
-  A snapshot recorded under a different scorer version (`score_version`)
-  also carries no anchor: a methodology change is not a regression. The skip
-  is disclosed on stderr — re-run `archfit baseline` to re-anchor.
+  A snapshot recorded under a different scorer version (`score_version`) or a
+  different scorecard rubric (`rubric_version`) also carries no anchor: a
+  methodology change is not a regression. A snapshot written before rubric
+  tracking is read as rubric `1` — the only rubric shipped so far — so it keeps
+  anchoring. The skip is disclosed on stderr and names the incompatible input —
+  re-run `archfit baseline` to re-anchor.
 
 An unmeasured score (band `n/a`) never trips the gate, whatever the knobs say:
 abstention is not failure. Only the unmeasured case is exempt — a run with

@@ -9,10 +9,13 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/decision"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/ownership"
+	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // TestBuildCoverageGaps verifies the coverage-gap table derivation:
@@ -56,10 +59,16 @@ func TestBuildCoverageGaps(t *testing.T) {
 			wantTools: nil,
 		},
 		{
-			name:      "absent tool with configured off gate produces no gap",
+			// gate: off no longer suppresses on its own. It suppresses only where
+			// the language's marker is absent, and an unprobeable root (root == ""
+			// here) answers "present" — the same abstain-toward-disclosure rule the
+			// "empty root disables suppression" case below pins. The gap keeps
+			// Gate: off, which applyToolGate never escalates.
+			name:      "absent tool with configured off gate is disclosed, gated off",
 			cov:       []diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}},
 			cfg:       cfgOffGo,
-			wantTools: nil,
+			wantTools: []string{toolGoPackages},
+			wantGate:  gateOff,
 		},
 		{
 			name:      "unknown tool produces no gap",
@@ -136,14 +145,8 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	cfgRustGate := config.Config{Languages: config.LanguagesConfig{
 		Rust: config.RustLanguage{Gate: config.GateFail},
 	}}
-	cfgGoOff := config.Config{Languages: config.LanguagesConfig{
-		Go: config.GoLanguage{Gate: config.GateOff},
-	}}
 	cfgCargoModulesGate := config.Config{Analyzers: config.AnalyzersConfig{
 		CargoModules: config.Analyzer{Gate: config.GateFail},
-	}}
-	cfgCargoModulesOff := config.Config{Analyzers: config.AnalyzersConfig{
-		CargoModules: config.Analyzer{Gate: config.GateOff},
 	}}
 
 	allRustAbsent := []diagnostic.Coverage{
@@ -231,25 +234,7 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 		}
 	})
 
-	t.Run("gate off suppresses cargo-modules gap", func(t *testing.T) {
-		t.Parallel()
-		gaps := buildCoverageGaps([]diagnostic.Coverage{{Tool: toolCargoModules, Status: diagnostic.StatusAbsent}}, cfgCargoModulesOff, mixedDir)
-		for _, g := range gaps {
-			if g.Tool == toolCargoModules {
-				t.Fatalf("gate off should suppress cargo-modules gap, got %+v", gaps)
-			}
-		}
-	})
-
-	t.Run("gate off suppresses go/packages gap", func(t *testing.T) {
-		t.Parallel()
-		gaps := buildCoverageGaps([]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, cfgGoOff, goOnlyDir)
-		for _, g := range gaps {
-			if g.Tool == toolGoPackages {
-				t.Fatalf("gate off should suppress go/packages gap, got %+v", gaps)
-			}
-		}
-	})
+	t.Run("gate off discloses over a present language", testGateOffGapDisclosure)
 
 	t.Run("empty root disables suppression (backward compat)", func(t *testing.T) {
 		t.Parallel()
@@ -264,6 +249,547 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 			t.Error("empty root: expected cargo gap (no suppression), got none")
 		}
 	})
+
+	t.Run("go project markers", testGoProjectMarkerGaps)
+	t.Run("go module filter", testGoModuleFilterGaps)
+	t.Run("go workspace members", testGoWorkspaceMarkerGaps)
+	t.Run("typescript markers", testTSProjectMarkerGaps)
+	t.Run("python markers", testPyProjectMarkerGaps)
+	t.Run("rust manifest markers", testRustManifestMarkerGaps)
+	t.Run("disabled primaries", testMarkDisabledPrimaries)
+}
+
+// testGateOffGapDisclosure pins that `gate: off` suppresses a coverage gap only
+// where the language is ABSENT, and that the disclosed gap still never gates.
+//
+// It replaces two subtests that pinned unconditional suppression. That silence
+// was read downstream as a fact about the TREE: `config compare` and
+// `analyze --base` both take a primary analyzer that is absent WITHOUT a gap as
+// "this language is not present here", so a gated-off analyzer over a repo full
+// of that language dropped out of both comparisons unmeasured and unmentioned.
+// Suppression now keys on the language marker; `gate: off` keeps its meaning in
+// applyToolGate, which refuses to escalate it even under --require-tools.
+func testGateOffGapDisclosure(t *testing.T) {
+	t.Parallel()
+	goOnlyDir := t.TempDir()
+	writeFileAt(t, goOnlyDir, markerGoMod, "module example\n")
+	rustDir := t.TempDir()
+	writeFileAt(t, rustDir, markerCargoToml, "[package]\nname = \"x\"\n")
+
+	cfgGoOff := config.Config{Languages: config.LanguagesConfig{
+		Go: config.GoLanguage{Gate: config.GateOff},
+	}}
+	cfgCargoModulesOff := config.Config{Analyzers: config.AnalyzersConfig{
+		CargoModules: config.Analyzer{Gate: config.GateOff},
+	}}
+	goAbsent := []diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}
+	cargoModulesAbsent := []diagnostic.Coverage{{Tool: toolCargoModules, Status: diagnostic.StatusAbsent}}
+
+	t.Run("language present keeps the gap", func(t *testing.T) {
+		t.Parallel()
+		if !decision.HasCoverageGap(buildCoverageGaps(goAbsent, cfgGoOff, goOnlyDir), toolGoPackages) {
+			t.Error("gate off over a go.mod repo must still disclose the go/packages gap")
+		}
+		if !decision.HasCoverageGap(buildCoverageGaps(cargoModulesAbsent, cfgCargoModulesOff, rustDir), toolCargoModules) {
+			t.Error("gate off over a Cargo.toml repo must still disclose the cargo-modules gap")
+		}
+	})
+
+	t.Run("language absent suppresses the gap", func(t *testing.T) {
+		t.Parallel()
+		if decision.HasCoverageGap(buildCoverageGaps(cargoModulesAbsent, cfgCargoModulesOff, goOnlyDir), toolCargoModules) {
+			t.Error("no Cargo.toml: an opt-out needs no install prompt")
+		}
+	})
+
+	t.Run("disclosed gap never gates, even under --require-tools", func(t *testing.T) {
+		t.Parallel()
+		diag := diagnostic.Diagnostic{CoverageGaps: buildCoverageGaps(goAbsent, cfgGoOff, goOnlyDir)}
+		if applyToolGate(&diag, true) {
+			t.Error("--require-tools must not escalate a gate: off gap")
+		}
+		if diag.Verdict == diagnostic.VerdictFail {
+			t.Errorf("verdict = %q, want it untouched by a gate: off gap", diag.Verdict)
+		}
+		if diag.CoverageGaps[0].Gate != gateOff {
+			t.Errorf("gap gate = %q, want %q", diag.CoverageGaps[0].Gate, gateOff)
+		}
+	})
+}
+
+// writeFileAt writes content into root/rel, creating parent directories.
+func writeFileAt(t *testing.T, root, rel, content string) {
+	t.Helper()
+	full := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// testGoWorkspaceMarkerGaps pins that the Go probe answers through the SAME
+// member selection the extractor runs (golang.AnalysableMembers): go.work first,
+// then the languages.go.modules filter. A probe that walked for go.mod itself
+// never saw go.work, so it disagreed with the extractor in both directions.
+func testGoWorkspaceMarkerGaps(t *testing.T) {
+	t.Parallel()
+
+	// go.work claims services/api; libs/util also carries a go.mod but the
+	// workspace does not use it. With modules.include scoped to libs/**, the
+	// extractor loads NOTHING (the filter removes the only member go.work named)
+	// and reports absent — a deliberately empty scope, not a missing toolchain.
+	// The walking probe found libs/util/go.mod, accepted it against libs/**, and
+	// raised "install the Go toolchain" over a run the user scoped away.
+	t.Run("go.work member set is what the module filter is applied to", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeFileAt(t, root, "go.work", "go 1.26\n\nuse ./services/api\n")
+		writeFileAt(t, root, filepath.Join("services", "api", markerGoMod), "module example/api\n")
+		writeFileAt(t, root, filepath.Join("libs", "util", markerGoMod), "module example/util\n")
+		cfg := config.Config{
+			Exclude: scope.MergeExclusions(nil),
+			Languages: config.LanguagesConfig{Go: config.GoLanguage{
+				Modules: config.GoModuleFilter{Include: []string{"libs/**"}},
+			}},
+		}
+		gaps := buildCoverageGaps(
+			[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, cfg, root)
+		if decision.HasCoverageGap(gaps, toolGoPackages) {
+			t.Errorf("gap raised over a member set go.work never named: %+v", gaps)
+		}
+	})
+
+	// The same tree with the filter naming the workspace member: the extractor
+	// loads it, so the absence IS a real gap.
+	t.Run("a filter naming the go.work member keeps the gap", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeFileAt(t, root, "go.work", "go 1.26\n\nuse ./services/api\n")
+		writeFileAt(t, root, filepath.Join("services", "api", markerGoMod), "module example/api\n")
+		writeFileAt(t, root, filepath.Join("libs", "util", markerGoMod), "module example/util\n")
+		cfg := config.Config{
+			Exclude: scope.MergeExclusions(nil),
+			Languages: config.LanguagesConfig{Go: config.GoLanguage{
+				Modules: config.GoModuleFilter{Include: []string{"services/**"}},
+			}},
+		}
+		gaps := buildCoverageGaps(
+			[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, cfg, root)
+		if !decision.HasCoverageGap(gaps, toolGoPackages) {
+			t.Errorf("no gap for a workspace member the extractor loads: %+v", gaps)
+		}
+	})
+
+	// The other direction: a workspace member the old walk could not reach (it
+	// pruned every dot-directory) made "the extractor loads this tree" read as
+	// "there is no Go here" — the one absent shape both comparison paths treat as
+	// safely comparable.
+	t.Run("a go.work member under a dot-directory counts", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeFileAt(t, root, "go.work", "go 1.26\n\nuse ./.tools/gen\n")
+		writeFileAt(t, root, filepath.Join(".tools", "gen", markerGoMod), "module example/gen\n")
+		cfg := config.Config{Exclude: scope.MergeExclusions(nil)}
+		gaps := buildCoverageGaps(
+			[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, cfg, root)
+		if !decision.HasCoverageGap(gaps, toolGoPackages) {
+			t.Errorf("no gap for a go.work member the extractor loads: %+v", gaps)
+		}
+	})
+}
+
+// testTSProjectMarkerGaps pins that the TypeScript probe uses the extractor's
+// own applicability test (ts.Applicable — package.json in the scan root). The
+// registry's marker list also accepted tsconfig.json, which dependency-cruiser
+// never looks at: a tsconfig-only repo raised an install prompt for an analyzer
+// that would have reported absent regardless, and `typescript.enabled: false`
+// over it was disclosed as a switched-off language that was never there.
+func testTSProjectMarkerGaps(t *testing.T) {
+	t.Parallel()
+	tsAbsent := func() []diagnostic.Coverage {
+		return []diagnostic.Coverage{{Tool: toolDepCruiser, Status: diagnostic.StatusAbsent}}
+	}
+	cfg := config.Config{Exclude: scope.MergeExclusions(nil)}
+
+	t.Run("package.json keeps the gap", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeFileAt(t, root, "package.json", "{}\n")
+		if !decision.HasCoverageGap(buildCoverageGaps(tsAbsent(), cfg, root), toolDepCruiser) {
+			t.Error("expected a dependency-cruiser gap for a repo with package.json")
+		}
+	})
+
+	t.Run("tsconfig.json alone suppresses the gap", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeFileAt(t, root, "tsconfig.json", "{}\n")
+		if decision.HasCoverageGap(buildCoverageGaps(tsAbsent(), cfg, root), toolDepCruiser) {
+			t.Error("tsconfig.json without package.json is not a project this extractor analyses")
+		}
+	})
+
+	t.Run("tsconfig.json alone is not a switched-off language", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeFileAt(t, root, "tsconfig.json", "{}\n")
+		off := config.Config{Languages: config.LanguagesConfig{
+			TypeScript: config.TypeScriptLanguage{Enabled: view.ModeOff},
+		}}
+		cov := markDisabledPrimaries(tsAbsent(), off, root)
+		if cov[0].Status != diagnostic.StatusAbsent {
+			t.Errorf("status = %q, want %q (no package.json — nothing was switched off)", cov[0].Status, diagnostic.StatusAbsent)
+		}
+	})
+}
+
+// testPyProjectMarkerGaps pins that the Python probe uses the extractor's own
+// applicability test (py.Applicable). The registry's marker list disagreed in
+// both directions: it accepted setup.cfg, which grimp's extractor does not, and
+// it never looked at languages.python.package, which the extractor accepts on
+// its own.
+func testPyProjectMarkerGaps(t *testing.T) {
+	t.Parallel()
+	pyAbsent := func() []diagnostic.Coverage {
+		return []diagnostic.Coverage{{Tool: toolGrimp, Status: diagnostic.StatusAbsent}}
+	}
+	plain := config.Config{Exclude: scope.MergeExclusions(nil)}
+
+	t.Run("pyproject.toml keeps the gap", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeFileAt(t, root, "pyproject.toml", "[project]\nname = \"x\"\n")
+		if !decision.HasCoverageGap(buildCoverageGaps(pyAbsent(), plain, root), toolGrimp) {
+			t.Error("expected a grimp gap for a repo with pyproject.toml")
+		}
+	})
+
+	t.Run("setup.cfg alone suppresses the gap", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeFileAt(t, root, "setup.cfg", "[metadata]\nname = x\n")
+		if decision.HasCoverageGap(buildCoverageGaps(pyAbsent(), plain, root), toolGrimp) {
+			t.Error("setup.cfg is not a marker this extractor accepts")
+		}
+	})
+
+	// The configured package dir is the extractor's third marker, and the only
+	// one a marker-filename list structurally cannot express.
+	t.Run("a configured package dir keeps the gap", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeFileAt(t, root, filepath.Join("mypkg", "__init__.py"), "")
+		cfg := config.Config{
+			Exclude:   scope.MergeExclusions(nil),
+			Languages: config.LanguagesConfig{Python: config.PythonLanguage{Package: "mypkg"}},
+		}
+		if !decision.HasCoverageGap(buildCoverageGaps(pyAbsent(), cfg, root), toolGrimp) {
+			t.Error("expected a grimp gap for a configured languages.python.package directory")
+		}
+	})
+
+	t.Run("a configured package dir that is not there suppresses the gap", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		cfg := config.Config{
+			Exclude:   scope.MergeExclusions(nil),
+			Languages: config.LanguagesConfig{Python: config.PythonLanguage{Package: "mypkg"}},
+		}
+		if decision.HasCoverageGap(buildCoverageGaps(pyAbsent(), cfg, root), toolGrimp) {
+			t.Error("a configured package dir that does not exist is not a Python project")
+		}
+	})
+}
+
+// testGoModuleFilterGaps pins that the marker probe honours
+// languages.go.modules.include/exclude, which the Go extractor applies through
+// FilterMembers before deciding it has nothing to load. A probe that ignored the
+// filter reported a coverage gap ("install the Go toolchain") over a member set
+// the user deliberately scoped away, and made both comparison paths grade the
+// run's evidence as degraded.
+func testGoModuleFilterGaps(t *testing.T) {
+	t.Parallel()
+	const memberDir = "member"
+	goModFilterTests := []struct {
+		name    string
+		goModAt []string // repo-relative dirs holding a go.mod
+		include []string
+		exclude []string
+		want    bool // want a go/packages gap
+	}{
+		{name: "no filter keeps the gap", goModAt: []string{memberDir}, want: true},
+		{name: "include matching no member suppresses the gap", goModAt: []string{memberDir}, include: []string{"other/**"}, want: false},
+		{name: "include matching the member keeps the gap", goModAt: []string{memberDir}, include: []string{memberDir}, want: true},
+		{name: "exclude removing the only member suppresses the gap", goModAt: []string{memberDir}, exclude: []string{memberDir}, want: false},
+		// The walk must not stop at the first REJECTED candidate: "a" sorts before
+		// "b", so an early return there would hide the member the extractor loads.
+		{
+			name:    "an excluded member does not hide a later included one",
+			goModAt: []string{"a", "b"},
+			exclude: []string{"a"},
+			want:    true,
+		},
+	}
+	for _, tc := range goModFilterTests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			for _, dir := range tc.goModAt {
+				full := filepath.Join(root, dir)
+				if err := os.MkdirAll(full, 0o750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(full, markerGoMod), []byte("module example\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg := config.Config{
+				Exclude: scope.MergeExclusions(nil),
+				Languages: config.LanguagesConfig{Go: config.GoLanguage{
+					Modules: config.GoModuleFilter{Include: tc.include, Exclude: tc.exclude},
+				}},
+			}
+			gaps := buildCoverageGaps(
+				[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, cfg, root)
+			if gotGap := decision.HasCoverageGap(gaps, toolGoPackages); gotGap != tc.want {
+				t.Errorf("go/packages gap = %v, want %v (gaps: %+v)", gotGap, tc.want, gaps)
+			}
+		})
+	}
+}
+
+// testRustManifestMarkerGaps pins that the Rust marker probe reads
+// languages.rust.manifest, the same applicability marker the extractor stats.
+// A configured sub-crate manifest makes cargo applicable with NO root
+// Cargo.toml, and the root-only check called that "Rust is not present here".
+func testRustManifestMarkerGaps(t *testing.T) {
+	t.Parallel()
+	// Sub-crate manifest only: no Cargo.toml at the scan root.
+	subCrateDir := t.TempDir()
+	crateDir := filepath.Join(subCrateDir, "crates", "core")
+	if err := os.MkdirAll(crateDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(crateDir, markerCargoToml), []byte("[package]\nname = \"core\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	subManifest := filepath.Join("crates", "core", markerCargoToml)
+
+	rustCfg := func(manifest string) config.Config {
+		return config.Config{
+			Exclude:   scope.MergeExclusions(nil),
+			Languages: config.LanguagesConfig{Rust: config.RustLanguage{Manifest: manifest}},
+		}
+	}
+	rustAbsent := []diagnostic.Coverage{
+		{Tool: toolCargo, Status: diagnostic.StatusAbsent},
+		{Tool: toolCargoModules, Status: diagnostic.StatusAbsent},
+	}
+
+	t.Run("configured sub-crate manifest keeps the cargo gap", func(t *testing.T) {
+		t.Parallel()
+		gaps := buildCoverageGaps(rustAbsent, rustCfg(subManifest), subCrateDir)
+		if !decision.HasCoverageGap(gaps, toolCargo) {
+			t.Errorf("expected cargo gap for a configured sub-crate manifest, got %+v", gaps)
+		}
+	})
+
+	t.Run("configured sub-crate manifest keeps the cargo-modules gap", func(t *testing.T) {
+		t.Parallel()
+		gaps := buildCoverageGaps(rustAbsent, rustCfg(subManifest), subCrateDir)
+		if !decision.HasCoverageGap(gaps, toolCargoModules) {
+			t.Errorf("expected cargo-modules gap for a configured sub-crate manifest, got %+v", gaps)
+		}
+	})
+
+	t.Run("no manifest configured and no root Cargo.toml suppresses the gap", func(t *testing.T) {
+		t.Parallel()
+		gaps := buildCoverageGaps(rustAbsent, rustCfg(""), subCrateDir)
+		if decision.HasCoverageGap(gaps, toolCargo) {
+			t.Errorf("unsuppressed cargo gap without a root Cargo.toml: %+v", gaps)
+		}
+	})
+
+	t.Run("configured manifest that does not exist suppresses the gap", func(t *testing.T) {
+		t.Parallel()
+		gaps := buildCoverageGaps(rustAbsent, rustCfg(filepath.Join("crates", "missing", markerCargoToml)), subCrateDir)
+		if decision.HasCoverageGap(gaps, toolCargo) {
+			t.Errorf("unsuppressed cargo gap for a nonexistent manifest: %+v", gaps)
+		}
+	})
+}
+
+// testMarkDisabledPrimaries pins that a language switched off in config reports
+// its primary analyzer as "disabled", not "absent". The extractors report
+// ModeOff as absent, and both comparison paths read primary+absent+no-gap as
+// "the language is not in this tree" — so two configs that BOTH disabled a
+// language over a repo that HAS it graded as fully comparable evidence.
+func testMarkDisabledPrimaries(t *testing.T) {
+	t.Parallel()
+	off := config.Config{Languages: config.LanguagesConfig{
+		TypeScript: config.TypeScriptLanguage{Enabled: view.ModeOff},
+	}}
+	offGated := config.Config{Languages: config.LanguagesConfig{
+		TypeScript: config.TypeScriptLanguage{Enabled: view.ModeOff, Gate: config.GateFail},
+	}}
+	// A repo that HAS TypeScript: package.json is dependency-cruiser's marker.
+	tsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tsDir, "package.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A repo that does not: only go.mod.
+	goOnly := t.TempDir()
+	if err := os.WriteFile(filepath.Join(goOnly, markerGoMod), []byte("module example\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	absent := func() []diagnostic.Coverage {
+		return []diagnostic.Coverage{{Tool: toolDepCruiser, Status: diagnostic.StatusAbsent}}
+	}
+
+	t.Run("disabled language primary becomes a disabled row", func(t *testing.T) {
+		t.Parallel()
+		cov := markDisabledPrimaries(absent(), off, tsDir)
+		if cov[0].Status != diagnostic.StatusDisabled {
+			t.Fatalf("status = %q, want %q", cov[0].Status, diagnostic.StatusDisabled)
+		}
+		if !strings.Contains(cov[0].Reason, "languages.typescript.enabled") {
+			t.Errorf("reason %q does not name the config key that switched it off", cov[0].Reason)
+		}
+	})
+
+	// The mirror of the bug being fixed: "nothing here" must not render as "we
+	// did not look". A repo with no TypeScript must not be told TypeScript
+	// analysis is switched off, and `enabled: false` on a language that is not
+	// there must not grade not_comparable against a config that left it unset.
+	t.Run("a language that is not in the tree stays absent", func(t *testing.T) {
+		t.Parallel()
+		cov := markDisabledPrimaries(absent(), off, goOnly)
+		if cov[0].Status != diagnostic.StatusAbsent {
+			t.Fatalf("status = %q, want %q (no package.json — nothing was switched off)", cov[0].Status, diagnostic.StatusAbsent)
+		}
+		if cov[0].Reason != "" {
+			t.Errorf("reason = %q, want none", cov[0].Reason)
+		}
+	})
+
+	t.Run("explicit gate keeps the row absent so the gap survives", func(t *testing.T) {
+		t.Parallel()
+		cov := markDisabledPrimaries(absent(), offGated, tsDir)
+		if cov[0].Status != diagnostic.StatusAbsent {
+			t.Fatalf("status = %q, want %q (an explicit gate opts back into the gap)", cov[0].Status, diagnostic.StatusAbsent)
+		}
+		if !decision.HasCoverageGap(buildCoverageGaps(cov, offGated, ""), toolDepCruiser) {
+			t.Error("explicit gate on a disabled language must still raise a coverage gap")
+		}
+	})
+
+	t.Run("non-primary and non-absent rows are untouched", func(t *testing.T) {
+		t.Parallel()
+		in := []diagnostic.Coverage{
+			{Tool: toolJscpd, Status: diagnostic.StatusAbsent},
+			{Tool: toolDepCruiser, Status: diagnostic.StatusOK},
+		}
+		cov := markDisabledPrimaries(in, off, tsDir)
+		if cov[0].Status != diagnostic.StatusAbsent || cov[1].Status != diagnostic.StatusOK {
+			t.Errorf("rewrote rows it must not touch: %+v", cov)
+		}
+	})
+
+	t.Run("a disabled row raises no install gap", func(t *testing.T) {
+		t.Parallel()
+		cov := markDisabledPrimaries(absent(), off, tsDir)
+		if gaps := buildCoverageGaps(cov, off, ""); len(gaps) != 0 {
+			t.Errorf("disabled language must not prompt an install: %+v", gaps)
+		}
+	})
+
+	// An unprobeable root discloses the opt-out rather than hiding it — the same
+	// choice buildCoverageGaps makes when it skips marker suppression for "".
+	t.Run("an empty root discloses the opt-out", func(t *testing.T) {
+		t.Parallel()
+		cov := markDisabledPrimaries(absent(), off, "")
+		if cov[0].Status != diagnostic.StatusDisabled {
+			t.Errorf("status = %q, want %q", cov[0].Status, diagnostic.StatusDisabled)
+		}
+	})
+}
+
+// testGoProjectMarkerGaps pins Go's marker probe. go/packages discovers members
+// by walking for nested go.mod dirs, so a root-only marker check would call a
+// services/api/go.mod repo "no Go here" and suppress the gap — turning a real
+// analyzer failure into "language not present", the one absent shape that pairs
+// with ok in both `--base` and `config compare`.
+func testGoProjectMarkerGaps(t *testing.T) {
+	t.Parallel()
+	goMarkerTests := []struct {
+		name    string
+		goModAt string // repo-relative dir holding go.mod; "" = none
+		exclude []string
+		want    bool // want a go/packages gap
+	}{
+		{name: "nested go.mod still produces a gap", goModAt: filepath.Join("services", "api"), want: true},
+		{name: "root go.mod produces a gap", goModAt: ".", want: true},
+		{name: "no go.mod anywhere suppresses the gap", goModAt: "", want: false},
+		// The probe must agree with the extractors' EFFECTIVE exclusions. A marker
+		// they never see is not evidence the language is present: counting it
+		// turns a gapless absence (comparable) into absent-with-a-gap, which is
+		// the strictest evidence class on both comparison paths.
+		{name: "go.mod under a pruned dependency directory does not count", goModAt: filepath.Join("node_modules", "pkg"), want: false},
+		// scope.DefaultExclusions covers these two and the hand-written prune list
+		// did not — a fixture module under testdata/ is routine in Go repos.
+		{name: "go.mod under testdata does not count", goModAt: filepath.Join("testdata", "fixture"), want: false},
+		{name: "go.mod under reports does not count", goModAt: filepath.Join("reports", "snapshot"), want: false},
+		// A config exclusion names no single directory, so only a full-path match
+		// can honour it.
+		{
+			name:    "go.mod under a config-excluded subtree does not count",
+			goModAt: filepath.Join("services", "legacy"),
+			exclude: []string{"services/legacy/**"},
+			want:    false,
+		},
+		{
+			name:    "an unrelated config exclusion still leaves the gap",
+			goModAt: filepath.Join("services", "api"),
+			exclude: []string{"services/legacy/**"},
+			want:    true,
+		},
+		// A `!` re-include removes the default, so the extractors DO walk
+		// testdata/ and the probe must count the marker they see. This only holds
+		// while the effective exclusions are merged exactly once: a second
+		// MergeExclusions pass re-seeds **/testdata/** and hides the marker again.
+		{
+			name:    "a re-included testdata tree counts",
+			goModAt: filepath.Join("testdata", "fixture"),
+			exclude: []string{"!testdata"},
+			want:    true,
+		},
+	}
+	for _, tc := range goMarkerTests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			if tc.goModAt != "" {
+				dir := filepath.Join(root, tc.goModAt)
+				if err := os.MkdirAll(dir, 0o750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, markerGoMod), []byte("module example\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Merged exactly once, exactly where runPipeline merges it. Passing the
+			// raw config globs would make the `!testdata` row pass vacuously: with
+			// no defaults present there is nothing left to exclude the marker.
+			gaps := buildCoverageGaps(
+				[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}},
+				config.Config{Exclude: scope.MergeExclusions(tc.exclude)}, root)
+			if gotGap := decision.HasCoverageGap(gaps, toolGoPackages); gotGap != tc.want {
+				t.Errorf("go/packages gap = %v, want %v (gaps: %+v)", gotGap, tc.want, gaps)
+			}
+		})
+	}
 }
 
 // TestBuildConfigWarnings verifies the config-warnings block: lint warnings and

@@ -107,8 +107,21 @@ type Coverage struct {
 	// examined — the denominator that makes Unresolved a ratio. Only
 	// specifier-granular extractors (dependency-cruiser) set it; 0 means
 	// "not tracked", never "no specifiers".
-	SpecifiersSeen int    `json:"specifiers_seen,omitempty"`
-	Status         string `json:"status"`
+	SpecifiersSeen int `json:"specifiers_seen,omitempty"`
+	// UnresolvedInputsMissing and UnresolvedPrecisionOnly split Unresolved by what
+	// the incompleteness COST, for the extractors that can tell the two apart
+	// (only go/packages does today; 0 means "not tracked", never "none" — exactly
+	// the SpecifiersSeen convention). One counter for both meanings is unreadable
+	// by a consumer: a comparison can rest on a run whose inputs were all present,
+	// and cannot rest on one that never saw part of the tree.
+	//
+	//   - UnresolvedInputsMissing — inputs that never entered the graph. Edges they
+	//     would have carried are absent, so a finding can hide behind them.
+	//   - UnresolvedPrecisionOnly — inputs that are all present, with only per-edge
+	//     precision degraded (go/types strength unavailable for those packages).
+	UnresolvedInputsMissing int    `json:"unresolved_inputs_missing,omitempty"`
+	UnresolvedPrecisionOnly int    `json:"unresolved_precision_only,omitempty"`
+	Status                  string `json:"status"`
 	// Reason explains why a headline metric is absent or partial — a missing
 	// tool, an opt-in-off setting, or an uninstalled dependency — and how to
 	// enable it (the actionable next step). Empty when status is ok. A static,
@@ -329,7 +342,7 @@ type RuntimeAsyncEdge struct {
 // in a manifest file. Report-only evidence — never consumed by verdict or gate
 // logic, never alters the dependency graph or any metric.
 // Ceiling: cargo yanked and live-version EOL require external registry queries
-// and are routed to the LLM path (archfit analyze --llm / enrich), not this detector.
+// and are routed to the LLM path (archfit analyze --ai-summary / config enrich), not this detector.
 type DeprecatedDep struct {
 	File    string `json:"file"`           // repo-relative manifest file path
 	Kind    string `json:"kind"`           // "retract" | "deprecated"
@@ -411,6 +424,55 @@ type DeltaReport struct {
 	// TouchedByDelta holds pre-existing findings on a file this change touched —
 	// debt a reviewer is well-placed to clear while already in the file.
 	TouchedByDelta []string `json:"touched_by_delta,omitempty"`
+}
+
+// Git-origin comparison statuses for GitFindingDelta.ComparisonStatus.
+const (
+	// GitComparisonComparable means every current repair task was placed in a
+	// definite origin bucket (introduced or pre_existing).
+	GitComparisonComparable = "comparable"
+	// GitComparisonUnknown means at least one repair task could not be placed,
+	// so the delta must not be read as a complete list of new work.
+	GitComparisonUnknown = "unknown"
+)
+
+// GitFindingDelta records where each of the current run's repair tasks came
+// from relative to a git base ref (`--base`). It answers one question for a
+// coding agent: "which of these tasks did my change introduce?" — without
+// re-deriving anything from the base tree.
+//
+// It is report-only: the verdict, the exit code, and every non-JSON renderer
+// are unchanged by this block. The classification is deliberately conservative
+// — a task lands in IntroducedFindingIDs only when the base run's
+// finding-producing analyzers covered the same ground as the current run.
+// Missing, partial, or asymmetric analyzer evidence moves the task to
+// UnknownOriginFindingIDs instead of inventing a "new" task.
+//
+// Only finding IDs, coverage, and the config hash cross over from the base
+// sub-run. Base paths, locations, and validation commands never do: the base
+// side is scored inside a temporary worktree that is deleted before this block
+// is read.
+type GitFindingDelta struct {
+	// BaseRef is the git ref the current run was compared against.
+	BaseRef string `json:"base_ref"`
+	// ComparisonStatus is GitComparisonComparable when every task has a definite
+	// origin, GitComparisonUnknown when at least one does not.
+	ComparisonStatus string `json:"comparison_status"`
+	// IntroducedFindingIDs are current repair tasks with no matching base
+	// finding, established against comparable analyzer evidence on both sides.
+	IntroducedFindingIDs []string `json:"introduced_finding_ids"`
+	// PreExistingFindingIDs are current repair tasks whose finding ID was also
+	// observed on the base ref (lifecycle labels and gate/advisory promotion are
+	// ignored — only the stable ID matters).
+	PreExistingFindingIDs []string `json:"pre_existing_finding_ids"`
+	// UnknownOriginFindingIDs are current repair tasks whose origin could not be
+	// established: incomplete analyzer evidence, a config-hash mismatch, or a
+	// synthetic per-run task that has no stable base counterpart.
+	UnknownOriginFindingIDs []string `json:"unknown_origin_finding_ids"`
+	// ComparisonReasons names each analyzer family whose evidence was not
+	// comparable, one sorted entry per family. Empty when nothing blocked the
+	// comparison.
+	ComparisonReasons []string `json:"comparison_reasons"`
 }
 
 // DistanceContext explains how distance evidence should be read for this run.
@@ -734,7 +796,7 @@ type Diagnostic struct {
 	// marker block. Evidence only — never consumed by verdict or gate logic, never
 	// alters the dependency graph or any metric. Omitted when no markers were found.
 	// Ceiling: cargo yanked and live-version EOL require external registry queries
-	// and are routed to the LLM path (archfit analyze --llm / enrich), not here.
+	// and are routed to the LLM path (archfit analyze --ai-summary / config enrich), not here.
 	DeprecatedDeps []DeprecatedDep `json:"deprecated_deps,omitempty"`
 	// SemanticStrengthOverlay reports SCIP semantic-strength overlay coverage by
 	// language. Report-only visibility for the refinement layer; never consumed by
@@ -790,6 +852,11 @@ type Diagnostic struct {
 	// consumed by verdict or gate logic; omitted when no module has a
 	// same-module edge.
 	LocalCoupling []LocalCouplingModule `json:"local_coupling,omitempty"`
+	// GitFindingDelta classifies the current repair tasks by git origin
+	// (introduced / pre-existing / unknown) against `--base <ref>`. Nil
+	// (omitted) unless --base was set; report-only — never changes the verdict
+	// or the exit code.
+	GitFindingDelta *GitFindingDelta `json:"git_finding_delta,omitempty"`
 	// Delta groups findings by lifecycle bucket (new/existing/resolved/
 	// severity_changed/touched_by_delta) for a delta run. Nil (omitted) outside
 	// delta mode and when the run produced no findings to bucket.

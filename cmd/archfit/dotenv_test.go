@@ -6,8 +6,21 @@ import (
 	"testing"
 )
 
-func TestEnvSearchDirs(t *testing.T) {
-	t.Parallel()
+// TestDotEnv covers the startup .env autoload: which directories are probed for
+// a .env file, how lines are parsed, and the precedence rules against the real
+// environment.
+//
+// One exported test function by design — cmd/archfit sits at its public_api_max
+// ceiling, so new coverage arrives as subtests, never as new exported names.
+// The parent must NOT be parallel: t.Setenv panics when any ancestor is.
+func TestDotEnv(t *testing.T) {
+	t.Run("search_dirs", testEnvSearchDirs)
+	t.Run("load", testLoadDotEnv)
+	t.Run("empty_env_var_wins", testLoadDotEnvEmptyEnvVarWins)
+	t.Run("missing_file_is_noop", testLoadDotEnvMissingFileIsNoop)
+}
+
+func testEnvSearchDirs(t *testing.T) {
 	const repo = "/repo"
 	cases := []struct {
 		name string
@@ -24,7 +37,6 @@ func TestEnvSearchDirs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			got := envSearchDirs(tc.args)
 			if len(got) != len(tc.want) {
 				t.Fatalf("args %v: got %v, want %v", tc.args, got, tc.want)
@@ -38,7 +50,7 @@ func TestEnvSearchDirs(t *testing.T) {
 	}
 }
 
-func TestLoadDotEnv(t *testing.T) {
+func testLoadDotEnv(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
 	content := "# a comment\n\nexport ARCHFIT_TEST_A=plain\nARCHFIT_TEST_B=\"quoted value\"\nARCHFIT_TEST_C='single'\nARCHFIT_TEST_EQ=val=with=equals\nmalformed-no-equals\nARCHFIT_TEST_PRESET=from_file\n"
@@ -79,11 +91,11 @@ func TestLoadDotEnv(t *testing.T) {
 	}
 }
 
-// TestLoadDotEnv_EmptyEnvVarWins verifies the LookupEnv fix: a key explicitly
+// testLoadDotEnvEmptyEnvVarWins verifies the LookupEnv fix: a key explicitly
 // set to "" in the environment must be treated as "present" and never overwritten
 // by the file value. The old os.Getenv(key) != "" check incorrectly treated ""
 // as unset and would have clobbered it.
-func TestLoadDotEnv_EmptyEnvVarWins(t *testing.T) {
+func testLoadDotEnvEmptyEnvVarWins(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
 	if err := os.WriteFile(path, []byte("ARCHFIT_TEST_EMPTY=from_file\n"), 0o600); err != nil {
@@ -99,8 +111,7 @@ func TestLoadDotEnv_EmptyEnvVarWins(t *testing.T) {
 	}
 }
 
-func TestLoadDotEnv_MissingFileIsNoop(t *testing.T) {
-	t.Parallel()
+func testLoadDotEnvMissingFileIsNoop(t *testing.T) {
 	// Must not panic or error on an absent file.
 	loadDotEnv(filepath.Join(t.TempDir(), "does-not-exist.env"))
 }

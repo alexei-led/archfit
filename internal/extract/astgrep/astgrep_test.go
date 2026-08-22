@@ -21,7 +21,11 @@ const (
 	patternUnsafe  = "unsafe-pointer-cast"
 	patternReflect = "reflect-use"
 	toolAstGrep    = "ast-grep"
-	dupFile        = "pkg/dup/dup.go"
+	// toolAstGrepSyntax is the syntax pass's own coverage name — deliberately
+	// distinct from the pattern pass's, so tool_coverage carries one row per
+	// analyzer instead of an unpairable duplicate.
+	toolAstGrepSyntax = "ast-grep/syntax"
+	dupFile           = "pkg/dup/dup.go"
 )
 
 // fixtureBytes reads testdata/astgrep/sg_output.json relative to the repo root.
