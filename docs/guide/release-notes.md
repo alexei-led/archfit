@@ -38,7 +38,7 @@ Baseline file:
   without the field are read as rubric version `1`; the file changes on the next
   `archfit baseline` run.
 
-## v2.0 CLI redesign
+## v1.6.0 CLI redesign
 
 Breaking changes:
 

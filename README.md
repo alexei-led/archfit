@@ -189,9 +189,9 @@ boundary linters (dependency-cruiser, import-linter, ArchUnit): they supply
 facts for one ecosystem; archfit turns facts across languages into one verdict,
 a Balanced-Coupling risk read, score movement, and agent repair tasks.
 
-## Upgrading from v1.x
+## Upgrading from before v1.6.0
 
-The CLI was redesigned in v2.0. These commands and flags changed:
+The CLI was redesigned in v1.6.0. These commands and flags changed:
 
 | Old                             | New              | Notes                                                              |
 | ------------------------------- | ---------------- | ------------------------------------------------------------------ |
