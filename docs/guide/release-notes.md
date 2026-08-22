@@ -1,6 +1,6 @@
 # Release notes
 
-## v2.1 configuration confidence
+## v1.7.0 configuration confidence
 
 Breaking changes:
 
