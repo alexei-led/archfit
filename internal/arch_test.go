@@ -79,6 +79,7 @@ var modelPkgs = []string{
 	modulePrefix + "internal/model/finding",
 	modulePrefix + "internal/model/coupling",
 	modulePrefix + "internal/model/diagnostic",
+	modulePrefix + "internal/model/report",
 	modulePrefix + "internal/model/fileclass",
 	modulePrefix + "internal/model/symbol",
 	modulePrefix + "internal/model/clone",

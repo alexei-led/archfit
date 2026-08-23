@@ -1,29 +1,21 @@
 version: 1
 # --- Design rationale (Balanced Coupling, Khononov) --------------------------
-# archfit is a SOLE-OWNER, single-binary modular monolith. Every module declares
-# `owner: alexei-led`, making the owner map degenerate (all same owner). The BC
-# distance classifier falls through to code-structure distance (Step 4), and
-# archfit's modules are all hierarchical (nested paths), so siblings and
-# parent-child pairs resolve to `cross_module_same_owner` — book ordinal 4, the
-# LOWEST cross-module distance. There is no lower cross-module band to claim;
-# same-owner IS the floor. Analyze exposes this as
-# distance_context.owner_model=single_owner_degenerate plus distance_basis counts.
-# Flat single-segment names also resolve to cross_module_same_owner in the
-# degenerate-owner path (P1 fix).
+# archfit is a sole-owner, single-binary modular monolith. Module definitions
+# below represent cohesive product capabilities, not one stanza per Go package.
+# Package paths remain explicit public contracts, while scoring happens at the
+# capability boundary where coordinated change is meaningful.
 #
-# Volatility is essential/domain-based (Ch9), never churn. Policy decision
-# (arch-rebalance): `internal/model` is ONE shared-kernel module and a FROZEN
-# published contract — pure value types (layer rank 0, zero outbound deps),
-# `subdomain: generic`, `volatility: low`. Breaking its exported surface requires
-# a deliberate version bump, enforced by the model compat gate (see arch_test.go).
-# Genuine core logic (classify, rules, metrics, score, engine) stays
-# core/high-volatility.
+# DDD classification is about business role, not stability or directory shape.
+# Archfit's policy language, evaluation model, and fact-to-decision logic are the
+# core domain and therefore high-volatility. Evidence vocabulary, pipeline
+# contracts, orchestration, persistence, and tool integrations are supporting.
+# Provider-specific LLM integration and composition roots are generic adapters.
 #
-# How to read coupling_balance: the book formula is `max(|S-D|, 10-V)+1`. High
-# fan-in into `internal/model` is expected shared-kernel shape; its edges balance
-# because the kernel is stable (V=low), not because the metric was re-weighted.
-# The frozen book ordinals are adopted verbatim and must not be tuned to flatter
-# this repo's own score.
+# All modules have one owner, so ownership distance is intentionally degenerate;
+# code structure and deploy-unit evidence determine distance. The book formula
+# is `max(|S-D|, 10-V)+1`. Scores are consequences of this declared design, not
+# targets to tune: a lower score that exposes a real seam is better than a green
+# score produced by package-granular or catch-all modules.
 # -----------------------------------------------------------------------------
 # Balanced-Coupling advisory tuning.
 coupling:
@@ -50,513 +42,266 @@ layers:
   - adapter # rank 4: baseline, toolrun, extractors, renderers, git
   - cmd # rank 5: composition root
 modules:
-  # Shared kernel: one cohesive module of pure value types (graph, finding,
-  # coupling, diagnostic, fileclass, clone, pattern, signal, symbol, module).
-  # Frozen published contract: generic subdomain, low volatility, enforced by
-  # the model compat gate. Intra-kernel imports are internal cohesion, not
-  # cross-boundary coupling.
-  internal/model:
+  # Supporting evidence vocabulary. These types describe source facts, not
+  # Archfit's policy decisions.
+  evidence-model:
     owner: alexei-led
+    role: shared_model
     paths:
-      - internal/model/**
+      - internal/model/graph/**
+      - internal/model/symbol/**
+      - internal/model/fileclass/**
+      - internal/model/clone/**
+      - internal/model/pattern/**
     public:
-      - internal/model
       - internal/model/graph
-      - internal/model/finding
-      - internal/model/coupling
-      - internal/model/diagnostic
+      - internal/model/symbol
       - internal/model/fileclass
       - internal/model/clone
       - internal/model/pattern
+    layer: model
+    subdomain: supporting
+    volatility: medium
+
+  # Core domain vocabulary: coupling, findings, diagnostics, signals, and
+  # architectural module semantics.
+  evaluation-model:
+    owner: alexei-led
+    role: shared_model
+    paths:
+      - internal/model/coupling/**
+      - internal/model/finding/**
+      - internal/model/diagnostic/**
+      - internal/model/report/**
+      - internal/model/signal/**
+      - internal/model/module/**
+    public:
+      - internal/model/coupling
+      - internal/model/finding
+      - internal/model/diagnostic
+      - internal/model/report
       - internal/model/signal
-      - internal/model/symbol
       - internal/model/module
     layer: model
-    subdomain: generic
+    subdomain: core
+    volatility: high
+
+  # Stable data-only projections consumed by pipeline stages.
+  stage-views:
+    owner: alexei-led
+    role: shared_model
+    paths:
+      - internal/view/**
+    public:
+      - internal/view
+    layer: model
+    subdomain: supporting
     volatility: low
-  internal/config:
+
+  # Archfit's architecture policy language and validation semantics.
+  policy-language:
     owner: alexei-led
     paths:
       - internal/config/**
     public:
       - internal/config
     layer: support
-    subdomain: supporting
-    volatility: medium
-  # Stage-contract views: data-only projections each pipeline stage consumes
-  # instead of importing the volatile config decode/validate logic.
-  internal/view:
+    subdomain: core
+    volatility: high
+
+  # Stable process/analyzer contracts and the analysis-scope value boundary.
+  pipeline-contracts:
     owner: alexei-led
+    role: shared_model
     paths:
-      - internal/view/**
+      - internal/ports/**
+      - internal/scope/**
+      - internal/syntax/**
     public:
-      - internal/view
-    layer: model
-    subdomain: generic
-    volatility: low
-  internal/configschema:
-    owner: alexei-led
-    paths:
-      - internal/configschema/**
-    public:
-      - internal/configschema
-    # Build-time JSON Schema generator over config structs. It imports the
-    # config support view plus a schema library, so it is adapter tooling, not
-    # part of the gate decision core.
-    layer: adapter
+      - internal/ports
+      - internal/scope
+      - internal/syntax
+    layer: support
     subdomain: supporting
     volatility: low
-  internal/baseline:
+
+  # Core fact-to-decision capability. Package boundaries remain useful for code
+  # organization, but they belong to one cohesive domain module.
+  evaluation-core:
     owner: alexei-led
-    paths:
-      - internal/baseline/**
-    public:
-      - internal/baseline
-    # Persistence (reads/writes the baseline file) — adapter, not support.
-    # status consumes it through the status.AcceptedSet interface.
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  internal/classify:
-    owner: alexei-led
+    role: core
     paths:
       - internal/classify/**
+      - internal/rules/**
+      - internal/metrics/**
+      - internal/facts/**
+      - internal/status/**
+      - internal/staleness/**
+      - internal/score/**
+      - internal/decision/**
+      - internal/agenttask/**
     public:
       - internal/classify
-    layer: core
-    subdomain: core
-    volatility: medium
-  internal/rules:
-    owner: alexei-led
-    paths:
-      - internal/rules/**
-    public:
       - internal/rules
-    layer: core
-    subdomain: core
-    volatility: medium
-  internal/metrics:
-    owner: alexei-led
-    paths:
-      - internal/metrics/**
-    public:
       - internal/metrics
-      - internal/metrics/boundary
-      - internal/metrics/intramodule
-      - internal/metrics/modularity
-      - internal/metrics/risk
-      - internal/metrics/metricstest
-      - internal/metrics/internal/modgraph
-      - internal/metrics/internal/result
+      - internal/facts
+      - internal/status
+      - internal/staleness
+      - internal/score
+      - internal/decision
+      - internal/agenttask
     layer: core
     subdomain: core
-    volatility: medium
-  internal/status:
+    volatility: high
+
+  # Application orchestration only: sequence stages through stable contracts.
+  pipeline-engine:
     owner: alexei-led
-    paths:
-      - internal/status/**
-    public:
-      - internal/status
-    layer: core
-    # AcceptedSet / AcceptedItem: stable infrastructure tracking baseline
-    # exceptions, not domain logic. Supporting subdomain; low volatility
-    # (stable since the decoupling refactor). Book anchor: supporting→V=3.
-    subdomain: supporting
-    volatility: low
-  internal/engine:
-    owner: alexei-led
+    role: core
     paths:
       - internal/engine/**
     public:
       - internal/engine
     layer: engine
-    subdomain: core
-    volatility: medium
-  internal/scope:
-    owner: alexei-led
-    paths:
-      - internal/scope/**
-    public:
-      - internal/scope
-    # Value type + resolution over an injected Resolver; the concrete git
-    # calls live in cmd. Support-tier since the decoupling refactor.
-    layer: support
-    subdomain: supporting
-    volatility: low
-  internal/syntax:
-    owner: alexei-led
-    paths:
-      - internal/syntax/**
-    public:
-      - internal/syntax
-    # Pure file-class/test-file classifier over already-gathered source bytes.
-    # It is in the core-ring import-hygiene test, but layer-wise it is support:
-    # config projects FileClassDef into syntax.FileClassConfig.
-    layer: support
-    subdomain: supporting
-    volatility: low
-  internal/ports:
-    owner: alexei-led
-    paths:
-      - internal/ports/**
-    public:
-      - internal/ports
-    # Neutral port contracts imported by engine and adapters.
-    layer: support
     subdomain: supporting
     volatility: medium
-  internal/labels:
+
+  # Source-fact acquisition and external-tool adapters. Per-language packages
+  # remain separate implementations but form one architectural capability.
+  fact-adapters:
+    owner: alexei-led
+    role: adapter
+    paths:
+      - internal/extract/**
+      - internal/toolrun/**
+      - internal/factcache/**
+      - internal/history/**
+      - internal/ownership/**
+    public:
+      - internal/extract/golang
+      - internal/extract/ts
+      - internal/extract/py
+      - internal/extract/rust
+      - internal/extract/scip
+      - internal/extract/astgrep
+      - internal/extract/deployunit
+      - internal/extract/runtime
+      - internal/extract/dynimports
+      - internal/extract/clones
+      - internal/extract/loc
+      - internal/extract/manifest
+      - internal/toolrun
+      - internal/factcache
+      - internal/history/git
+      - internal/ownership
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+
+  # Policy-file lifecycle: discovery, update, and schema generation.
+  config-lifecycle:
+    owner: alexei-led
+    role: adapter
+    paths:
+      - internal/initcfg/**
+      - internal/configschema/**
+    public:
+      - internal/initcfg
+      - internal/configschema
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+
+  baseline-store:
+    owner: alexei-led
+    role: adapter
+    paths:
+      - internal/baseline/**
+    public:
+      - internal/baseline
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+
+  labels-policy:
     owner: alexei-led
     paths:
-      - internal/labels/**
+      - internal/labels
+      - internal/labels/*.go
     public:
       - internal/labels
-    # Pure label-domain logic: approval, hashes, and strength filtering. The
-    # YAML loader lives in internal/labels/labelsio so the I/O adapter stays
-    # out of the engine's import closure.
     layer: support
     subdomain: supporting
-    volatility: low
-  internal/labels/labelsio:
+    volatility: medium
+
+  labels-store:
     owner: alexei-led
+    role: adapter
     paths:
       - internal/labels/labelsio/**
     public:
       - internal/labels/labelsio
-    # Disk/YAML adapter for .archfit-labels.yaml. Adapter layer so the os +
-    # YAML dependency remains off the decision path.
-    role: adapter
     layer: adapter
     subdomain: supporting
     volatility: low
-  # archfit: removed module "arch_tests" — verify before deleting (not found in discovery)
-  # arch_tests:
-  # paths:
-  # - internal
-  # public:
-  # - internal
-  # # Root internal package contains repository-level architecture tests.
-  # layer: core
-  # subdomain: supporting
-  # volatility: low
 
-  internal/agenttask:
+  rendering:
     owner: alexei-led
-    paths:
-      - internal/agenttask/**
-    public:
-      - internal/agenttask
-    layer: support
-    subdomain: supporting
-    volatility: low
-  internal/facts:
-    owner: alexei-led
-    paths:
-      - internal/facts/**
-    public:
-      - internal/facts
-    layer: core
-    subdomain: supporting
-    volatility: medium
-  internal/staleness:
-    owner: alexei-led
-    paths:
-      - internal/staleness/**
-    public:
-      - internal/staleness
-    layer: core
-    subdomain: supporting
-    volatility: low
-  internal/toolrun:
-    owner: alexei-led
-    paths:
-      - internal/toolrun/**
-    public:
-      - internal/toolrun
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  internal/factcache:
-    owner: alexei-led
-    paths:
-      - internal/factcache/**
-    public:
-      - internal/factcache
-    # Extractor-fact cache adapter (os I/O decorating toolrun.Runner) — see
-    # docs/design/fact-cache.md. Never on the decision path: stores facts,
-    # not scores.
     role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  internal/extract/golang:
-    owner: alexei-led
-    paths:
-      - internal/extract/golang/**
-    public:
-      - internal/extract/golang
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  internal/extract/ts:
-    owner: alexei-led
-    paths:
-      - internal/extract/ts/**
-    public:
-      - internal/extract/ts
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  internal/extract/py:
-    owner: alexei-led
-    paths:
-      - internal/extract/py/**
-    public:
-      - internal/extract/py
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  internal/extract/rust:
-    owner: alexei-led
-    paths:
-      - internal/extract/rust/**
-    public:
-      - internal/extract/rust
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  internal/extract/scip:
-    owner: alexei-led
-    paths:
-      - internal/extract/scip/**
-    public:
-      - internal/extract/scip
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  internal/extract/astgrep:
-    owner: alexei-led
-    paths:
-      - internal/extract/astgrep/**
-    public:
-      - internal/extract/astgrep
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  internal/extract/deployunit:
-    owner: alexei-led
-    paths:
-      - internal/extract/deployunit/**
-    public:
-      - internal/extract/deployunit
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  internal/extract/runtime:
-    owner: alexei-led
-    paths:
-      - internal/extract/runtime/**
-    public:
-      - internal/extract/runtime
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  internal/extract/dynimports:
-    owner: alexei-led
-    paths:
-      - internal/extract/dynimports/**
-    public:
-      - internal/extract/dynimports
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  internal/extract/clones:
-    owner: alexei-led
-    paths:
-      - internal/extract/clones/**
-    public:
-      - internal/extract/clones
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  internal/extract/loc:
-    owner: alexei-led
-    paths:
-      - internal/extract/loc/**
-    public:
-      - internal/extract/loc
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  internal/extract/manifest:
-    owner: alexei-led
-    paths:
-      - internal/extract/manifest/**
-    public:
-      - internal/extract/manifest
-    # Manifest-marker reader (go.mod retract, package.json deprecated, cargo
-    # yanked). Out-of-process file read; adapter tier like the other extractors.
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  internal/output:
-    owner: alexei-led
     paths:
       - internal/output/**
     public:
-      - internal/output/jsonout
       - internal/output/console
+      - internal/output/jsonout
       - internal/output/markdown
       - internal/output/sarif
       - internal/output/scorecard
     layer: adapter
     subdomain: supporting
     volatility: medium
-  internal/initcfg:
+
+  llm-adapter:
     owner: alexei-led
-    paths:
-      - internal/initcfg/**
-    public:
-      - internal/initcfg
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  internal/ownership:
-    owner: alexei-led
-    paths:
-      - internal/ownership/**
-    public:
-      - internal/ownership
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  internal/llm:
-    owner: alexei-led
+    role: adapter
     paths:
       - internal/llm/**
     public:
       - internal/llm
-    # Off-gate provider adapters; check path is guarded by TestArchImports.
     layer: adapter
     subdomain: generic
-    volatility: low
-  internal/calibrate:
-    owner: alexei-led
-    paths:
-      - internal/calibrate/**
-    public:
-      - internal/calibrate
-    # Pure scorer-comparison utility: no I/O, no os/exec, no YAML.
-    # cmd imports it for the calibrate subcommand.
-    layer: core
-    subdomain: supporting
-    volatility: low
-  internal:
-    owner: alexei-led
-    paths:
-      - internal/**
-    public:
-      - internal
-    # Catch-all stanza. With most-specific module resolution (config.ModuleMap.
-    # ModuleFor picks the longest-prefix glob, not first-match), every specific
-    # stanza above wins for its own subtree, so `internal/**` here resolves ONLY
-    # paths nothing more specific matches: root-level internal/arch_test.go plus
-    # testdata and helper fixtures (internal/extract/astgrep/testdata/**,
-    # internal/extract/py helper scripts). Verified: zero production graph nodes
-    # resolve to this module. Any unsafe/panic/lazy-import facts reported under
-    # module "internal" therefore come from FIXTURES, not production code.
-    layer: support
-    subdomain: generic
-    volatility: low
-  internal/history:
-    owner: alexei-led
-    paths:
-      - internal/history/**
-    public:
-      - internal/history
-      - internal/history/git
-    # Git log/blame reader: out-of-process I/O, belongs in adapter tier.
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  internal/score:
-    owner: alexei-led
-    paths:
-      - internal/score/**
-    public:
-      - internal/score
-    # Pure decision over already-computed Diagnostic facts — core ring.
-    layer: core
-    subdomain: core
     volatility: medium
-  internal/decision:
+
+  archfit-cli:
     owner: alexei-led
-    paths:
-      - internal/decision/**
-    public:
-      - internal/decision
-    # Synthesises the human-decision view-model (band, recommendations) from an
-    # already-computed Diagnostic + Scorecard — core ring, depends on score.
-    layer: core
-    subdomain: core
-    volatility: medium
-  internal/extract:
-    owner: alexei-led
-    paths:
-      - internal/extract/**
-    public:
-      - internal/extract
-    # Broad stanza for catch-all coverage; subpackages have explicit stanzas above.
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: high
-  cmd/archfit:
-    owner: alexei-led
+    role: composition_root
     paths:
       - cmd/archfit/**
     public:
       - cmd/archfit
-    # Wiring-only composition root: imports everything to wire the pipeline.
-    # Fan-out from here is cohesion, not high-distance coupling.
-    role: composition_root
     layer: cmd
     subdomain: generic
     volatility: medium
-  cmd/calibrate:
+
+  development-tools:
     owner: alexei-led
+    role: composition_root
     paths:
       - cmd/calibrate/**
+      - internal/calibrate/**
+      - scripts/eval/**
     public:
       - cmd/calibrate
-    # Dev-only scorer-calibration binary. It is a composition root over
-    # internal/calibrate plus extract/classify plumbing, not shipped user path.
-    role: composition_root
+      - internal/calibrate
+      - scripts/eval
     layer: cmd
     subdomain: generic
     volatility: low
-  scripts/eval/coverage:
+
+  architecture-tests:
     owner: alexei-led
+    role: test
     paths:
-      - scripts/eval/coverage/**
-    public:
-      - scripts/eval/coverage
-    # Standalone gap-closure coverage-table generator (package main, no internal
-    # imports). Eval tooling, not shipped architecture; tracked so map_review
-    # covers it and it does not surface as an uncovered-path advisory.
+      - internal
     layer: cmd
     subdomain: generic
     volatility: low
@@ -641,9 +386,9 @@ rules:
     from: internal/view/**
     to: internal/config
     gate: fail
-  # Config split (arch-rebalance): stages consume internal/view contracts, not
-  # the volatile config decode/validate package. Only composition roots, the
-  # engine orchestrator, and the schema generator may import internal/config.
+  # Policy-language boundary: runtime stages consume internal/view contracts,
+  # not the volatile config decoder/model. Only composition roots and the
+  # config-lifecycle adapters may import internal/config.
   - id: classify_no_config
     type: forbidden_dependency
     from: internal/classify/**
@@ -673,6 +418,99 @@ rules:
     type: forbidden_dependency
     from: internal/scope/**
     to: internal/config
+    gate: fail
+  - id: engine_no_config
+    type: forbidden_dependency
+    from: internal/engine/**
+    to: internal/config
+    gate: fail
+  - id: facts_no_config
+    type: forbidden_dependency
+    from: internal/facts/**
+    to: internal/config
+    gate: fail
+  - id: status_no_config
+    type: forbidden_dependency
+    from: internal/status/**
+    to: internal/config
+    gate: fail
+  - id: syntax_no_config
+    type: forbidden_dependency
+    from: internal/syntax/**
+    to: internal/config
+    gate: fail
+  - id: score_no_config
+    type: forbidden_dependency
+    from: internal/score/**
+    to: internal/config
+    gate: fail
+  - id: decision_no_config
+    type: forbidden_dependency
+    from: internal/decision/**
+    to: internal/config
+    gate: fail
+  - id: agenttask_no_config
+    type: forbidden_dependency
+    from: internal/agenttask/**
+    to: internal/config
+    gate: fail
+  - id: ports_no_config
+    type: forbidden_dependency
+    from: internal/ports/**
+    to: internal/config
+    gate: fail
+  - id: baseline_no_config
+    type: forbidden_dependency
+    from: internal/baseline/**
+    to: internal/config
+    gate: fail
+  - id: output_no_config
+    type: forbidden_dependency
+    from: internal/output/**
+    to: internal/config
+    gate: fail
+  - id: labels_no_config
+    type: forbidden_dependency
+    from: internal/labels/**
+    to: internal/config
+    gate: fail
+  - id: toolrun_no_config
+    type: forbidden_dependency
+    from: internal/toolrun/**
+    to: internal/config
+    gate: fail
+  - id: factcache_no_config
+    type: forbidden_dependency
+    from: internal/factcache/**
+    to: internal/config
+    gate: fail
+  - id: history_no_config
+    type: forbidden_dependency
+    from: internal/history/**
+    to: internal/config
+    gate: fail
+  - id: ownership_no_config
+    type: forbidden_dependency
+    from: internal/ownership/**
+    to: internal/config
+    gate: fail
+  # Stable-contract boundaries: persistence and rendering must not bind to
+  # volatile evaluation implementations. Current violations are intentional
+  # findings until the code exposes stable snapshot/report contracts.
+  - id: baseline_no_score
+    type: forbidden_dependency
+    from: internal/baseline/**
+    to: internal/score/**
+    gate: fail
+  - id: output_no_score
+    type: forbidden_dependency
+    from: internal/output/**
+    to: internal/score/**
+    gate: fail
+  - id: output_no_decision
+    type: forbidden_dependency
+    from: internal/output/**
+    to: internal/decision/**
     gate: fail
   # Hexagonal boundary: internal packages depend on ports, not the orchestrator.
   # Only cmd imports internal/engine.
@@ -719,10 +557,13 @@ analyzers:
   # analyze/agent_tasks output. Off-gate by itself; gate rules below.
   syntax:
     enabled: true
+    gate: fail
   scip:
     enabled: true
+    gate: fail
   clones:
     enabled: true
+    gate: fail
 ai:
   provider: anthropic
   model: claude-opus-4-8

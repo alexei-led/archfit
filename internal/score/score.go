@@ -7,74 +7,39 @@ import (
 	"strconv"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
-// RubricVersion is the architect scorecard rubric this synthesis targets. Two
-// scorecards are comparable only when their rubric versions match (scorecard.yaml).
-const RubricVersion = 1
+// RubricVersion is the scorecard contract version.
+const RubricVersion = report.RubricVersion
 
-// Band is a qualitative label for a 0-100 dimension value (scorecard.yaml bands).
-type Band string
+// Band is the scorecard band type.
+type Band = report.ScoreBand
 
-// Band constants — edges inclusive, matching scorecard.yaml.
+// Confidence is the scorecard confidence type.
+type Confidence = report.Confidence
+
+// Dimension is one scorecard dimension.
+type Dimension = report.Dimension
+
+// Scorecard is the scorecard contract.
+type Scorecard = report.Scorecard
+
+// BandCritical through BandNA are scorecard band values.
 const (
-	BandCritical    Band = "critical"    // 0-20
-	BandPoor        Band = "poor"        // 21-40
-	BandMixed       Band = "mixed"       // 41-60
-	BandServiceable Band = "serviceable" // 61-80
-	BandStrong      Band = "strong"      // 81-100
-	// BandNA marks a dimension that could not be measured (no scored evidence) —
-	// e.g. zero scored cross-boundary edges or a degenerate graph. It is NOT a
-	// 0-100 value: the tool abstains rather than fabricating a mid-band number.
-	BandNA Band = "n/a"
+	BandCritical    = report.ScoreBandCritical
+	BandPoor        = report.ScoreBandPoor
+	BandMixed       = report.ScoreBandMixed
+	BandServiceable = report.ScoreBandServiceable
+	BandStrong      = report.ScoreBandStrong
+	BandNA          = report.ScoreBandNA
+
+	ConfidenceLow    = report.ConfidenceLow
+	ConfidenceMedium = report.ConfidenceMedium
+	ConfidenceHigh   = report.ConfidenceHigh
+
+	DimCouplingBalance = report.DimCouplingBalance
 )
-
-// Unmeasured reports whether b is the n/a band (coupling could not be measured).
-func (b Band) Unmeasured() bool { return b == BandNA }
-
-// Confidence describes how trustworthy a dimension assessment is, independent of
-// the value itself (scorecard.yaml confidence_levels).
-type Confidence string
-
-// Confidence constants.
-const (
-	ConfidenceLow    Confidence = "low"
-	ConfidenceMedium Confidence = "medium"
-	ConfidenceHigh   Confidence = "high"
-)
-
-// Dimension names (scorecard.yaml dimensions).
-const (
-	DimCouplingBalance = "coupling_balance"
-)
-
-// Dimension is one scored axis of the architecture.
-type Dimension struct {
-	Name string `json:"name"`
-	// Value is the 0-100 quality score; higher is healthier.
-	Value int `json:"value"`
-	// Band is the qualitative label for Value (always consistent with Value).
-	Band Band `json:"band"`
-	// Confidence is the trust level for this assessment.
-	Confidence Confidence `json:"confidence"`
-	// Evidence cites the metrics/findings/counts the value rests on. Never empty
-	// for a non-meta dimension (score_requires_evidence).
-	Evidence []string `json:"evidence"`
-	// Summary is a one-line, Balanced-Coupling-aware explanation.
-	Summary string `json:"summary"`
-	// Meta marks a meta-dimension that scores the review process, not the architecture,
-	// and is exempt from the evidence requirement.
-	Meta bool `json:"meta,omitempty"`
-}
-
-// Scorecard is the synthesised banded assessment across all dimensions.
-type Scorecard struct {
-	RubricVersion int `json:"rubric_version"`
-	// Overall is the coupling_balance value.
-	Overall     int         `json:"overall"`
-	OverallBand Band        `json:"overall_band"`
-	Dimensions  []Dimension `json:"dimensions"`
-}
 
 // Synthesize derives the scorecard from a computed Diagnostic.
 // coupling_balance is measured from d.ClassifiedEdges, which the engine

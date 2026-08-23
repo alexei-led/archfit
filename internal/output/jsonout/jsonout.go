@@ -6,7 +6,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // JSONRenderer marshals a Diagnostic plus its synthesised scorecard to JSON.
@@ -29,13 +29,13 @@ func (r *JSONRenderer) Format() string {
 // the 0-100 score, its driver, or any delta; only text/markdown carried them (F5).
 type envelope struct {
 	diagnostic.Diagnostic
-	Score score.Scorecard `json:"score"`
+	Score report.Scorecard `json:"score"`
 	// ScoreVersion pins the BC score formula version (ordinals, severity
 	// mapping). Consumers key on it: scores are not comparable across
 	// versions. Always present — per-finding matched_by.score_version only
 	// appears when a run produces BC advisories.
-	ScoreVersion    string           `json:"score_version"`
-	CouplingBalance *score.Dimension `json:"coupling_balance,omitempty"`
+	ScoreVersion    string            `json:"score_version"`
+	CouplingBalance *report.Dimension `json:"coupling_balance,omitempty"`
 	// ScoreDelta is the scorecard delta vs --base. Named distinctly from the
 	// embedded Diagnostic's `delta` (findings lifecycle) to avoid a key collision.
 	ScoreDelta *scoreDelta `json:"score_delta,omitempty"`
@@ -58,12 +58,12 @@ type dimensionDelta struct {
 
 // Render writes d plus its scorecard (and an optional delta vs base) as JSON.
 // schema_version is part of the embedded Diagnostic and is always present.
-func (r *JSONRenderer) Render(d diagnostic.Diagnostic, sc score.Scorecard, base *score.Scorecard, w io.Writer) error {
+func (r *JSONRenderer) Render(d diagnostic.Diagnostic, sc report.Scorecard, base *report.Scorecard, w io.Writer) error {
 	env := envelope{
 		Diagnostic:      d,
 		Score:           sc,
 		ScoreVersion:    coupling.ScoreVersion,
-		CouplingBalance: dimensionByName(sc, score.DimCouplingBalance),
+		CouplingBalance: dimensionByName(sc, report.DimCouplingBalance),
 	}
 	if base != nil {
 		env.ScoreDelta = buildDelta(sc, *base)
@@ -72,7 +72,7 @@ func (r *JSONRenderer) Render(d diagnostic.Diagnostic, sc score.Scorecard, base 
 }
 
 // dimensionByName returns a copy of the named dimension, or nil when absent.
-func dimensionByName(sc score.Scorecard, name string) *score.Dimension {
+func dimensionByName(sc report.Scorecard, name string) *report.Dimension {
 	for i := range sc.Dimensions {
 		if sc.Dimensions[i].Name == name {
 			d := sc.Dimensions[i]
@@ -83,8 +83,8 @@ func dimensionByName(sc score.Scorecard, name string) *score.Dimension {
 }
 
 // buildDelta pairs head and base dimensions by name and computes value deltas.
-func buildDelta(head, base score.Scorecard) *scoreDelta {
-	baseDim := make(map[string]score.Dimension, len(base.Dimensions))
+func buildDelta(head, base report.Scorecard) *scoreDelta {
+	baseDim := make(map[string]report.Dimension, len(base.Dimensions))
 	for _, d := range base.Dimensions {
 		baseDim[d.Name] = d
 	}

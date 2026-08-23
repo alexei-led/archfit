@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/decision"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // RenderReport writes a concise, decision-led Markdown summary for the
@@ -14,7 +14,7 @@ import (
 // categorized recommendations, per-dimension "why low / what moves it", and an
 // optional delta. It is meant to lead the detailed audit that Render produces;
 // callers write this first, then the full Render(diag) detail.
-func RenderReport(r decision.Report, w io.Writer) error {
+func RenderReport(r report.Report, w io.Writer) error {
 	var b strings.Builder
 
 	b.WriteString("# archfit — decision\n\n")
@@ -42,20 +42,20 @@ func RenderReport(r decision.Report, w io.Writer) error {
 	return err
 }
 
-func decisionPhrase(band decision.Band) string {
+func decisionPhrase(band report.DecisionBand) string {
 	switch band {
-	case decision.BandFail:
+	case report.DecisionBandFail:
 		return "FAIL"
-	case decision.BandNeedsAttention:
+	case report.DecisionBandNeedsAttention:
 		return "NEEDS ATTENTION"
-	case decision.BandHealthy:
+	case report.DecisionBandHealthy:
 		return "HEALTHY"
 	default:
 		return "ACCEPTABLE WITH WATCH ITEMS"
 	}
 }
 
-func writeRecs(b *strings.Builder, recs decision.Recommendations) {
+func writeRecs(b *strings.Builder, recs report.Recommendations) {
 	b.WriteString("\n## Recommendations\n")
 	writeRecGroup(b, "Must fix", recs.MustFix)
 	writeRecGroup(b, "Should fix", recs.ShouldFix)
@@ -68,7 +68,7 @@ func writeRecs(b *strings.Builder, recs decision.Recommendations) {
 	}
 }
 
-func writeRecGroup(b *strings.Builder, label string, recs []decision.Rec) {
+func writeRecGroup(b *strings.Builder, label string, recs []report.Rec) {
 	fmt.Fprintf(b, "\n### %s\n", label)
 	if len(recs) == 0 {
 		b.WriteString("- none\n")
@@ -87,8 +87,8 @@ func writeRecGroup(b *strings.Builder, label string, recs []decision.Rec) {
 	}
 }
 
-func writeLowDims(b *strings.Builder, dims []decision.DimReport) {
-	var low []decision.DimReport
+func writeLowDims(b *strings.Builder, dims []report.DimReport) {
+	var low []report.DimReport
 	for _, d := range dims {
 		if !d.Meta && d.Value <= 60 {
 			low = append(low, d)
@@ -110,7 +110,7 @@ func writeLowDims(b *strings.Builder, dims []decision.DimReport) {
 	}
 }
 
-func writeReportDelta(b *strings.Builder, d *decision.Delta) {
+func writeReportDelta(b *strings.Builder, d *report.Delta) {
 	if d == nil {
 		return
 	}

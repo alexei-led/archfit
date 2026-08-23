@@ -2,11 +2,13 @@ package scorecard
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/score"
 )
 
 // Test literal constants (deduplicated for goconst).
@@ -49,6 +51,10 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 	return d
 }
 
+func render(d diagnostic.Diagnostic, w io.Writer) error {
+	return New().Render(d, score.Synthesize(d), w)
+}
+
 const golden = `# archfit scorecard
 
 **Rubric version:** 1
@@ -66,7 +72,7 @@ coupling carries elevated maintenance effort but no distributed-monolith edges
 // TestRenderer_Golden asserts the exact rendered scorecard for a fixed Diagnostic.
 func TestRenderer_Golden(t *testing.T) {
 	var buf bytes.Buffer
-	if err := New().Render(goldenDiagnostic(), &buf); err != nil {
+	if err := render(goldenDiagnostic(), &buf); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	if got := buf.String(); got != golden {
@@ -79,10 +85,10 @@ func TestRenderer_Golden(t *testing.T) {
 func TestRenderer_DoubleRun(t *testing.T) {
 	d := goldenDiagnostic()
 	var a, b bytes.Buffer
-	if err := New().Render(d, &a); err != nil {
+	if err := render(d, &a); err != nil {
 		t.Fatalf("Render a: %v", err)
 	}
-	if err := New().Render(d, &b); err != nil {
+	if err := render(d, &b); err != nil {
 		t.Fatalf("Render b: %v", err)
 	}
 	if !bytes.Equal(a.Bytes(), b.Bytes()) {
@@ -106,7 +112,7 @@ func TestRenderer_RequiredToolsMissing(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := New().Render(d, &buf); err != nil {
+	if err := render(d, &buf); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	out := buf.String()
@@ -131,7 +137,7 @@ func TestRenderer_Delta(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := New().Render(d, &buf); err != nil {
+	if err := render(d, &buf); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	out := buf.String()
@@ -151,7 +157,7 @@ func TestRenderer_Delta(t *testing.T) {
 
 	// Absent when no delta.
 	var plain bytes.Buffer
-	if err := New().Render(goldenDiagnostic(), &plain); err != nil {
+	if err := render(goldenDiagnostic(), &plain); err != nil {
 		t.Fatalf("Render plain: %v", err)
 	}
 	if strings.Contains(plain.String(), "## Delta") {
@@ -163,7 +169,7 @@ func TestRenderer_Delta(t *testing.T) {
 // when every required tool ran (no coverage gap).
 func TestRenderer_RequiredToolsMissingAbsentWhenEmpty(t *testing.T) {
 	var buf bytes.Buffer
-	if err := New().Render(goldenDiagnostic(), &buf); err != nil {
+	if err := render(goldenDiagnostic(), &buf); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	if strings.Contains(buf.String(), "Required tools missing") {
@@ -175,7 +181,7 @@ func TestRenderer_RequiredToolsMissingAbsentWhenEmpty(t *testing.T) {
 // Diagnostic and still emits the coupling_balance dimension header.
 func TestRenderer_EmptyDiagnostic(t *testing.T) {
 	var buf bytes.Buffer
-	if err := New().Render(diagnostic.New(), &buf); err != nil {
+	if err := render(diagnostic.New(), &buf); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	out := buf.String()

@@ -1,8 +1,6 @@
 // Package scorecard renders a Diagnostic as the architect skill's seven-dimension
 // banded scorecard: an overall 0-100 value plus one block per dimension with its
 // value, band, confidence, evidence references, and a one-line summary. The
-// synthesis is delegated to internal/score; this package only formats it. Output
-// is deterministic and reads well both as raw text and rendered Markdown.
 package scorecard
 
 import (
@@ -11,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // Renderer formats a Diagnostic as a banded scorecard. Satisfies engine.Renderer.
@@ -23,10 +21,8 @@ func New() *Renderer { return &Renderer{} }
 // Format returns "scorecard".
 func (r *Renderer) Format() string { return "scorecard" }
 
-// Render synthesises and writes the banded scorecard for d to w.
-func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
-	sc := score.Synthesize(d)
-
+// Render writes the supplied scorecard and diagnostic details.
+func (r *Renderer) Render(d diagnostic.Diagnostic, sc report.Scorecard, w io.Writer) error {
 	var b strings.Builder
 	b.WriteString("# archfit scorecard\n\n")
 	fmt.Fprintf(&b, "**Rubric version:** %d\n", sc.RubricVersion)

@@ -11,94 +11,38 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/score"
 )
 
-// Band is the human-decision outcome label for a Report. Distinct from
-// score.Band (which labels 0-100 dimension values); this is the top-level gate
-// verdict for the overall run.
-type Band string
+// Band is the top-level decision band.
+type Band = report.DecisionBand
+
+// Report is the decision report.
+type Report = report.Report
+
+// DimReport is a report dimension.
+type DimReport = report.DimReport
+
+// Rec is a recommendation.
+type Rec = report.Rec
+
+// Recommendations groups report recommendations.
+type Recommendations = report.Recommendations
+
+// Delta is a score delta.
+type Delta = report.Delta
+
+// DimDelta is a dimension delta.
+type DimDelta = report.DimDelta
 
 // Band constants for the decision outcome.
 const (
-	BandFail           Band = "FAIL"
-	BandNeedsAttention Band = "NEEDS_ATTENTION"
-	BandHealthy        Band = "HEALTHY"
-	BandAcceptable     Band = "ACCEPTABLE_WITH_WATCH_ITEMS"
+	BandFail           = report.DecisionBandFail
+	BandNeedsAttention = report.DecisionBandNeedsAttention
+	BandHealthy        = report.DecisionBandHealthy
+	BandAcceptable     = report.DecisionBandAcceptable
 )
-
-// Report is the human-decision view-model produced by Build. Renderers format
-// this into text, markdown, JSON, or other output — they do not call score.Synthesize.
-type Report struct {
-	// Band is the top-level decision outcome for the run.
-	Band Band
-	// Headline is a short (≤ 10 words) human summary keyed by Band.
-	Headline string
-	// Blocking is the count of active gate findings (diag.Summary.GateFindings).
-	Blocking int
-	// Advisory is the count of advisory findings (diag.Summary.Warnings).
-	Advisory int
-	// Overall is the coupling_balance value (0-100).
-	Overall int
-	// OverallBand is the qualitative label for Overall.
-	OverallBand score.Band
-	// Dimensions holds a DimReport for each Scorecard dimension.
-	Dimensions []DimReport
-	// Recommendations groups findings into actionable buckets.
-	Recommendations Recommendations
-	// Delta is non-nil when a base scorecard was provided, holding signed deltas.
-	Delta *Delta
-}
-
-// DimReport is the per-dimension slice of Report.
-type DimReport struct {
-	Name       string
-	Value      int
-	Band       score.Band
-	Confidence score.Confidence
-	// Meta marks a meta-dimension that scores the review process, not the architecture.
-	Meta bool
-	// Why combines Dimension.Summary with condensed Evidence references.
-	Why string
-	// WhatMoves is a static per-dimension remediation hint. Empty for meta dims.
-	WhatMoves string
-}
-
-// Rec is one actionable recommendation item.
-type Rec struct {
-	Title  string
-	Detail string
-	RuleID string
-}
-
-// Recommendations groups findings by urgency tier.
-type Recommendations struct {
-	// MustFix: active gate findings (new or expired_waiver), grouped by RuleID.
-	MustFix []Rec
-	// ShouldFix: advisory findings with critical or high severity, grouped by RuleID.
-	ShouldFix []Rec
-	// Watch: advisory findings with medium or low severity, grouped by RuleID.
-	Watch []Rec
-	// Calibrate and Ignore are intentionally empty; filled later by an LLM layer.
-	Calibrate []Rec
-	Ignore    []Rec
-}
-
-// Delta holds signed dimension deltas between a base and current scorecard.
-type Delta struct {
-	// Overall is the signed change (After − Before) in overall score.
-	Overall int
-	// Dimensions holds a delta entry for each dimension that exists in both scorecards.
-	Dimensions []DimDelta
-}
-
-// DimDelta is the before/after/change triple for one dimension.
-type DimDelta struct {
-	Name   string
-	Before int
-	After  int
-	Change int // After − Before
-}
 
 // Build converts an already-computed Diagnostic and Scorecard into a Report.
 // base is nil unless a delta is requested (then it's the base-ref scorecard).

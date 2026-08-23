@@ -30,6 +30,16 @@ const (
 	ModeOff  ToolMode = "off"
 )
 
+// GateMode controls how a missing tool or regressed metric affects the verdict.
+type GateMode string
+
+// GateOff, GateWarn, and GateFail define gate behavior.
+const (
+	GateOff  GateMode = "off"
+	GateWarn GateMode = "warn"
+	GateFail GateMode = "fail"
+)
+
 // MetricEntry holds the settings for a single metric inside the metrics map.
 // Gate sets what a baseline regression does to the verdict: off skips the
 // check, warn caps at WARN, fail/unset blocks — the rule-gate convention.
@@ -215,6 +225,12 @@ type OutputConfig struct {
 	JSON     bool
 	Markdown bool
 	SARIF    bool
+}
+
+// SyntaxConfig is the view passed to the syntax-facts provider.
+type SyntaxConfig struct {
+	Enabled   bool
+	Languages []string
 }
 
 // PatternDef defines a single structural pattern rule for ast-grep.

@@ -198,22 +198,9 @@ func (c Config) ForPatterns() view.PatternConfig {
 	return out
 }
 
-// SyntaxConfig is the view passed to the syntax-facts provider.
-// Enabled reflects analyzers.syntax.enabled: true (opt-in only).
-// Languages is the list of language keys whose extractor is not explicitly
-// off — derived from languages: so the engine need not re-read config.
-// An empty Languages slice means "all four known languages" (the provider falls
-// back to its built-in set when Languages is empty).
-type SyntaxConfig struct {
-	Enabled   bool
-	Languages []string
-}
-
-// ForSyntax returns the SyntaxConfig view.
-// Languages is derived from the four known language keys (go, typescript, python,
-// rust): a language is included when its extractor mode is not explicitly off.
-// An unset (empty) mode is not off, so it is included.
-func (c Config) ForSyntax() SyntaxConfig {
+// ForSyntax returns the syntax-stage view. Languages are derived from the four
+// known language keys; an unset mode is enabled.
+func (c Config) ForSyntax() view.SyntaxConfig {
 	enabled := c.SyntaxEnabled()
 	var langs []string
 	for _, lang := range []string{LangGo, LangTypeScript, LangPython, LangRust} {
@@ -222,7 +209,7 @@ func (c Config) ForSyntax() SyntaxConfig {
 		}
 		langs = append(langs, lang)
 	}
-	return SyntaxConfig{
+	return view.SyntaxConfig{
 		Enabled:   enabled,
 		Languages: langs,
 	}

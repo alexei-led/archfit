@@ -1,31 +1,5 @@
 {
   "schema_version": "archfit.baseline.v1",
   "accepted": [],
-  "metrics": {
-    "blast_radius": {
-      "value": 6,
-      "version": "blast_radius.v1"
-    },
-    "coverage": {
-      "value": 1,
-      "version": "coverage.v1"
-    },
-    "cycle": {
-      "value": 0,
-      "version": "cycle.v1"
-    },
-    "encapsulation": {
-      "value": 0,
-      "version": "encapsulation.v1"
-    },
-    "unbalanced_edge": {
-      "value": 0,
-      "version": "unbalanced_edge.v2"
-    }
-  },
-  "score": {
-    "coupling_balance": 71,
-    "band": "serviceable",
-    "score_version": "bc_score.v6"
-  }
+  "metrics": {}
 }

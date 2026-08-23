@@ -12,7 +12,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/status"
 )
 
@@ -62,7 +62,7 @@ type ScoreSnapshot struct {
 	// max_drop on a mismatched snapshot. Empty in baselines written before
 	// version tracking — treated as stale (re-baseline to re-anchor).
 	ScoreVersion string `json:"score_version,omitempty"`
-	// RubricVersion is the scorecard rubric (score.RubricVersion) the snapshot
+	// RubricVersion is the scorecard rubric the snapshot
 	// was banded under. A rubric change re-cuts the band edges, so the stored
 	// value is no longer the same measurement. Absent in baselines written
 	// before rubric tracking — read as rubric 1, the only rubric shipped so far,
@@ -115,7 +115,7 @@ func (b Baseline) ScoreSnapshotMismatches() []string {
 	if b.Score.ScoreVersion != coupling.ScoreVersion {
 		out = append(out, InputScoreVersion)
 	}
-	if b.Score.EffectiveRubricVersion() != score.RubricVersion {
+	if b.Score.EffectiveRubricVersion() != report.RubricVersion {
 		out = append(out, InputRubricVersion)
 	}
 	return out

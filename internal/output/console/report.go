@@ -7,8 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/decision"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // labelFail is the gate/verdict fail label, shared with the legacy verdict
@@ -20,7 +19,7 @@ const labelFail = "FAIL"
 // "why low / what moves it" sections. No Markdown, no wide tables, no color —
 // scannable in a terminal and safe to pipe (timing/progress live on stderr, not
 // here). This is the default human output for `archfit analyze`.
-func RenderReport(r decision.Report, w io.Writer) error {
+func RenderReport(r report.Report, w io.Writer) error {
 	var b strings.Builder
 
 	b.WriteString("ARCHFIT RESULT\n\n")
@@ -47,7 +46,7 @@ func RenderReport(r decision.Report, w io.Writer) error {
 // resultKeyWidth aligns the header key column ("Decision", "Warnings", …).
 const resultKeyWidth = 10
 
-func writeResultHeader(b *strings.Builder, r decision.Report) {
+func writeResultHeader(b *strings.Builder, r report.Report) {
 	gate := "PASS"
 	if r.Blocking > 0 {
 		gate = labelFail
@@ -68,13 +67,13 @@ func rkv(b *strings.Builder, k, v string) {
 }
 
 // decisionLabel renders the decision band as a human-readable phrase.
-func decisionLabel(band decision.Band) string {
+func decisionLabel(band report.DecisionBand) string {
 	switch band {
-	case decision.BandFail:
+	case report.DecisionBandFail:
 		return labelFail
-	case decision.BandNeedsAttention:
+	case report.DecisionBandNeedsAttention:
 		return "NEEDS ATTENTION"
-	case decision.BandHealthy:
+	case report.DecisionBandHealthy:
 		return "HEALTHY"
 	default: // BandAcceptable
 		return "ACCEPTABLE WITH WATCH ITEMS"
@@ -85,7 +84,7 @@ func decisionLabel(band decision.Band) string {
 // "+N more" pointer; the full set is always in --json.
 const recCap = 8
 
-func writeRecommendations(b *strings.Builder, recs decision.Recommendations) {
+func writeRecommendations(b *strings.Builder, recs report.Recommendations) {
 	b.WriteString("\nRECOMMENDATIONS\n")
 	writeRecCategory(b, "MUST FIX", recs.MustFix)
 	writeRecCategory(b, "SHOULD FIX", recs.ShouldFix)
@@ -99,7 +98,7 @@ func writeRecommendations(b *strings.Builder, recs decision.Recommendations) {
 	}
 }
 
-func writeRecCategory(b *strings.Builder, label string, recs []decision.Rec) {
+func writeRecCategory(b *strings.Builder, label string, recs []report.Rec) {
 	fmt.Fprintf(b, "\n  %s\n", label)
 	if len(recs) == 0 {
 		b.WriteString("    none\n")
@@ -129,8 +128,8 @@ const lowBandCeiling = 60
 
 // lowDimensions returns the non-meta dimensions at or below the low-band ceiling,
 // sorted by value ascending (worst first).
-func lowDimensions(dims []decision.DimReport) []decision.DimReport {
-	var out []decision.DimReport
+func lowDimensions(dims []report.DimReport) []report.DimReport {
+	var out []report.DimReport
 	for _, d := range dims {
 		if d.Meta || d.Value > lowBandCeiling {
 			continue
@@ -141,7 +140,7 @@ func lowDimensions(dims []decision.DimReport) []decision.DimReport {
 	return out
 }
 
-func writeLowDimensions(b *strings.Builder, dims []decision.DimReport) {
+func writeLowDimensions(b *strings.Builder, dims []report.DimReport) {
 	low := lowDimensions(dims)
 	if len(low) == 0 {
 		return
@@ -164,7 +163,7 @@ func writeLowDimensions(b *strings.Builder, dims []decision.DimReport) {
 	}
 }
 
-func writeDelta(b *strings.Builder, d decision.Delta) {
+func writeDelta(b *strings.Builder, d report.Delta) {
 	fmt.Fprintf(b, "\nCHANGE VS BASE\n\n")
 	fmt.Fprintf(b, "  overall  %s\n", signedChange(d.Overall))
 	for _, dim := range d.Dimensions {
@@ -175,7 +174,7 @@ func writeDelta(b *strings.Builder, d decision.Delta) {
 	}
 }
 
-func writeTargets(b *strings.Builder, r decision.Report) {
+func writeTargets(b *strings.Builder, r report.Report) {
 	b.WriteString("\nTARGETS\n")
 	rkvIndent(b, "Current", fmt.Sprintf("%d  %s", r.Overall, r.OverallBand))
 	if label, rng := nextBand(r.OverallBand); label != "" {
@@ -192,16 +191,16 @@ func rkvIndent(b *strings.Builder, k, v string) {
 
 // nextBand returns the next-healthier band label and its 0-100 range, or "" when
 // already at the top band.
-func nextBand(b score.Band) (label, rng string) {
+func nextBand(b report.ScoreBand) (label, rng string) {
 	switch b {
-	case score.BandCritical:
-		return string(score.BandPoor), "21-40"
-	case score.BandPoor:
-		return string(score.BandMixed), "41-60"
-	case score.BandMixed:
-		return string(score.BandServiceable), "61-80"
-	case score.BandServiceable:
-		return string(score.BandStrong), "81-100"
+	case report.ScoreBandCritical:
+		return string(report.ScoreBandPoor), "21-40"
+	case report.ScoreBandPoor:
+		return string(report.ScoreBandMixed), "41-60"
+	case report.ScoreBandMixed:
+		return string(report.ScoreBandServiceable), "61-80"
+	case report.ScoreBandServiceable:
+		return string(report.ScoreBandStrong), "81-100"
 	default: // strong or unknown
 		return "", ""
 	}

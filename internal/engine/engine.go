@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/facts"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/metrics"
@@ -48,7 +47,7 @@ type RunInput struct {
 	PatternCfg  view.PatternConfig
 	Resolver    ports.SymbolResolver
 	Syntax      ports.SyntaxProvider // syntactic declaration/route provider; nil = Nop
-	SyntaxCfg   config.SyntaxConfig  // derived from ForSyntax(); Enabled gates the call
+	SyntaxCfg   view.SyntaxConfig
 	Rules       []rules.Rule
 	Metrics     []metrics.Metric
 	Accepted    status.AcceptedSet
@@ -524,7 +523,7 @@ func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult
 			continue
 		}
 		mc := gates[m.Name]
-		if mc.Gate == string(config.GateOff) {
+		if mc.Gate == string(view.GateOff) {
 			continue
 		}
 		var minDelta float64
@@ -542,7 +541,7 @@ func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult
 		if !breached {
 			continue
 		}
-		if mc.Gate == string(config.GateWarn) {
+		if mc.Gate == string(view.GateWarn) {
 			verdict = diagnostic.VerdictWarn
 			continue
 		}

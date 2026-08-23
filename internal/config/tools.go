@@ -259,23 +259,14 @@ func (c *Config) SetToolMode(id string, mode view.ToolMode) {
 	}
 }
 
-// GateMode is the coverage-gate posture for one tool: how its absence affects the
-// install prompt and exit code. Distinct from ToolMode (which controls whether a
-// tool runs).
-//   - off  — suppress the coverage gap entirely.
-//   - warn — (default, empty) report the gap, exit 0.
-//   - fail — a missing tool fails the build (opt-in hard gate).
-//
-// Empty means "use the default (warn)". The exit decision lives in cmd/; the core
-// ring never reads it. See also --require-tools, which raises every gap to fail.
-type GateMode string
+// GateMode controls how a missing tool affects the gate.
+type GateMode = view.GateMode
 
-// GateMode constants for the gate: field. Values match the rule/metric gate
-// vocabulary (off|warn|fail) so the whole config speaks one gate language.
+// GateOff, GateWarn, and GateFail define gate behavior.
 const (
-	GateOff  GateMode = "off"
-	GateWarn GateMode = "warn"
-	GateFail GateMode = "fail"
+	GateOff  = view.GateOff
+	GateWarn = view.GateWarn
+	GateFail = view.GateFail
 )
 
 // GoModuleFilter restricts Go workspace analysis to a subset of go.work members

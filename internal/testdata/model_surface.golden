@@ -225,6 +225,34 @@ package internal/model/module
   func internal/model/module.ValidRole(r internal/model/module.Role) bool
 package internal/model/pattern
   type internal/model/pattern.Match struct{File string; Pattern string; Text string; Node string; Line int; Column int}
+package internal/model/report
+  type internal/model/report.Confidence string
+  const internal/model/report.ConfidenceHigh internal/model/report.Confidence
+  const internal/model/report.ConfidenceLow internal/model/report.Confidence
+  const internal/model/report.ConfidenceMedium internal/model/report.Confidence
+  type internal/model/report.DecisionBand string
+  const internal/model/report.DecisionBandAcceptable internal/model/report.DecisionBand
+  const internal/model/report.DecisionBandFail internal/model/report.DecisionBand
+  const internal/model/report.DecisionBandHealthy internal/model/report.DecisionBand
+  const internal/model/report.DecisionBandNeedsAttention internal/model/report.DecisionBand
+  type internal/model/report.Delta struct{Overall int; Dimensions []internal/model/report.DimDelta}
+  const internal/model/report.DimCouplingBalance untyped string
+  type internal/model/report.DimDelta struct{Name string; Before int; After int; Change int}
+  type internal/model/report.DimReport struct{Name string; Value int; Band internal/model/report.ScoreBand; Confidence internal/model/report.Confidence; Meta bool; Why string; WhatMoves string}
+  type internal/model/report.Dimension struct{Name string "json:\"name\""; Value int "json:\"value\""; Band internal/model/report.ScoreBand "json:\"band\""; Confidence internal/model/report.Confidence "json:\"confidence\""; Evidence []string "json:\"evidence\""; Summary string "json:\"summary\""; Meta bool "json:\"meta,omitempty\""}
+  type internal/model/report.Rec struct{Title string; Detail string; RuleID string}
+  type internal/model/report.Recommendations struct{MustFix []internal/model/report.Rec; ShouldFix []internal/model/report.Rec; Watch []internal/model/report.Rec; Calibrate []internal/model/report.Rec; Ignore []internal/model/report.Rec}
+  type internal/model/report.Report struct{Band internal/model/report.DecisionBand; Headline string; Blocking int; Advisory int; Overall int; OverallBand internal/model/report.ScoreBand; Dimensions []internal/model/report.DimReport; Recommendations internal/model/report.Recommendations; Delta *internal/model/report.Delta}
+  const internal/model/report.RubricVersion untyped int
+  type internal/model/report.ScoreBand string
+  func (internal/model/report.ScoreBand).Unmeasured() bool
+  const internal/model/report.ScoreBandCritical internal/model/report.ScoreBand
+  const internal/model/report.ScoreBandMixed internal/model/report.ScoreBand
+  const internal/model/report.ScoreBandNA internal/model/report.ScoreBand
+  const internal/model/report.ScoreBandPoor internal/model/report.ScoreBand
+  const internal/model/report.ScoreBandServiceable internal/model/report.ScoreBand
+  const internal/model/report.ScoreBandStrong internal/model/report.ScoreBand
+  type internal/model/report.Scorecard struct{RubricVersion int "json:\"rubric_version\""; Overall int "json:\"overall\""; OverallBand internal/model/report.ScoreBand "json:\"overall_band\""; Dimensions []internal/model/report.Dimension "json:\"dimensions\""}
 package internal/model/signal
   type internal/model/signal.CollectedSignals struct{Common internal/model/signal.CommonInput; Symbol internal/model/signal.SymbolSignals; Size internal/model/signal.SizeSignals; Duplication internal/model/signal.DuplicationSignals}
   func (internal/model/signal.CollectedSignals).AsCommon() internal/model/signal.CommonInput
@@ -246,6 +274,10 @@ package internal/view
   type internal/view.ExternalSystemDef struct{Targets []string "yaml:\"targets\""; Volatility string "yaml:\"volatility,omitempty\""}
   type internal/view.ExtractConfig struct{Src string; Paths []string; Exclusions []string; Internal []string; Mode internal/view.ToolMode; BuildFlags []string; GoModuleInclude []string; GoModuleExclude []string; TSConfig string; PyPackage string; ProjectRoot string; CargoManifest string; CargoFeatures []string; IncludeDevDeps bool; ModuleGraph bool}
   type internal/view.FileClassDef struct{GeneratedGlobs []string "yaml:\"generated_globs,omitempty\""; TestGlobs []string "yaml:\"test_globs,omitempty\""; MockFrameworks []string "yaml:\"mock_frameworks,omitempty\""}
+  const internal/view.GateFail internal/view.GateMode
+  type internal/view.GateMode string
+  const internal/view.GateOff internal/view.GateMode
+  const internal/view.GateWarn internal/view.GateMode
   type internal/view.MetricConfig = internal/view.MetricEntry
   type internal/view.MetricEntry struct{Enabled *bool "yaml:\"enabled\""; Gate string "yaml:\"gate\""; MinDelta *float64 "yaml:\"min_delta\""; MaxNew *int "yaml:\"max_new\""}
   const internal/view.ModeAuto internal/view.ToolMode
@@ -259,6 +291,7 @@ package internal/view
   type internal/view.RuleDef struct{ID string "yaml:\"id\""; Type string "yaml:\"type\""; Gate string "yaml:\"gate\""; From string "yaml:\"from\""; To string "yaml:\"to\""; Max *int "yaml:\"max,omitempty\""; Threshold *int "yaml:\"threshold,omitempty\""; Patterns []internal/view.PatternDef "yaml:\"patterns,omitempty\""}
   type internal/view.ScopeConfig struct{Root string; Base string; Full bool; Exclusions []string; WorkDir string}
   type internal/view.StalenessConfig struct{Enabled bool; Threshold time.Duration; Modules map[string]internal/model/module.ModuleDef}
+  type internal/view.SyntaxConfig struct{Enabled bool; Languages []string}
   type internal/view.ToolMode string
   func (*internal/view.ToolMode).UnmarshalYAML(unmarshal func(any) error) error
   type internal/view.WaiverDef struct{Rule string "yaml:\"rule\""; From string "yaml:\"from\""; To string "yaml:\"to\""; Reason string "yaml:\"reason\""; ApprovedBy string "yaml:\"approved_by\""; Expires string "yaml:\"expires\""}

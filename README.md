@@ -162,8 +162,9 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
 
 archfit separates **facts**, **gates**, and **narration**. Language adapters
 collect dependency facts; a deterministic, LLM-free core classifies them, runs
-the gates, computes metrics, and synthesizes the decision; optional LLM features
-sit strictly off to the side.
+the gates, and computes metrics. The CLI composition root builds the scorecard
+and decision once, then passes a data-only report contract to each renderer.
+Optional LLM features sit strictly off to the side.
 
 ```mermaid
 flowchart TB
@@ -174,9 +175,12 @@ flowchart TB
     subgraph core["archfit core — deterministic, no LLM"]
         direction LR
         CL[classify] --> RU[gates]
-        CL --> ME[metrics] --> SC[score] --> DE[decision]
+        CL --> ME[metrics]
+        ME --> SC[scorecard]
+        SC --> DE[decision]
+        DE --> RC[report contract]
     end
-    core --> OUT["text · JSON · SARIF · Markdown<br/>agent_tasks · scorecard"]
+    RC --> OUT["text · JSON · SARIF · Markdown<br/>agent_tasks · scorecard"]
     OUT -. off-gate · advisory only .-> LLM["analyze --ai-summary · config enrich · config init --ai-classify"]
     classDef side fill:#f3f0ff,stroke:#7048e8,color:#000;
     class LLM side;

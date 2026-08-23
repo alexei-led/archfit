@@ -345,7 +345,7 @@ func analyzeRender(deps *appDeps, diag diagnostic.Diagnostic, sc score.Scorecard
 		case formatSarif:
 			renderErr = sarif.New().Render(diag, deps.Stdout)
 		case formatScorecard:
-			renderErr = scorecard.New().Render(diag, deps.Stdout)
+			renderErr = scorecard.New().Render(diag, sc, deps.Stdout)
 		}
 		if renderErr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
