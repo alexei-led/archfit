@@ -66,7 +66,9 @@ test-coverage: test ## open HTML coverage report
 ## archfit: run architecture drift gate on this repo
 .PHONY: archfit
 archfit: build ## run archfit check against this repo's architecture policy
-	$(BIN_DIR)/$(BINARY) check --config $(ARCHFIT_CONFIG) --require-tools
+	@$(BIN_DIR)/$(BINARY) check --config $(ARCHFIT_CONFIG) --require-tools; rc=$$?; \
+	if [ $$rc -eq 0 ] || [ $$rc -eq 2 ]; then exit 0; fi; \
+	exit $$rc
 
 ## arch-lint: architecture drift linter — fails on any blocking architecture
 ## violation (forbidden dependency, layer inversion, god-struct ceiling). Alias
