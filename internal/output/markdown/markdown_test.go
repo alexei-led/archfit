@@ -6,12 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
+	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
 )
 
 const (
@@ -136,7 +137,7 @@ func TestRenderer_Render_Delta(t *testing.T) {
 	}
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictWarn
-	d.Findings = []finding.Finding{newF, resolvedF}
+	d.Findings = reporttest.Findings(newF, resolvedF)
 	d.Delta = &diagnostic.DeltaReport{
 		New:      []string{newF.ID},
 		Resolved: []string{resolvedF.ID},
@@ -651,10 +652,10 @@ func TestRenderer_Render_GateFindings(t *testing.T) {
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictFail
 	d.Summary.GateFindings = 2
-	d.Findings = []finding.Finding{
+	d.Findings = reporttest.Findings(
 		makeGateFinding("forbidden_dep", finding.SeverityHigh, finding.StatusNew),
 		makeGateFinding("cycle", finding.SeverityCritical, finding.StatusNew),
-	}
+	)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -680,10 +681,10 @@ func TestRenderer_Render_AdvisoryFindings(t *testing.T) {
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.Summary.Warnings = 2
-	d.Findings = []finding.Finding{
+	d.Findings = reporttest.Findings(
 		makeAdvisoryFinding("bc/imbalanced_coupling"),
 		makeAdvisoryFinding("bc/imbalanced_coupling"),
-	}
+	)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -711,9 +712,9 @@ func TestRenderer_Render_AdvisoryAbsentWhenNoAdvisory(t *testing.T) {
 	r := markdown.New()
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
-	d.Findings = []finding.Finding{
+	d.Findings = reporttest.Findings(
 		makeGateFinding("forbidden_dep", finding.SeverityLow, finding.StatusNew),
-	}
+	)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -731,10 +732,10 @@ func TestRenderer_Render_StalenessSection(t *testing.T) {
 	r := markdown.New()
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
-	d.Findings = []finding.Finding{
+	d.Findings = reporttest.Findings(
 		makeAdvisoryFinding("map/uncovered_path"),
 		makeAdvisoryFinding("map/dead_rule"),
-	}
+	)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -757,7 +758,7 @@ func TestRenderer_Render_ExceptionInventory(t *testing.T) {
 	d.Verdict = diagnostic.VerdictPass
 	d.Summary.WaiversUsed = 1
 	waived := makeGateFinding("forbidden_dep", finding.SeverityLow, finding.StatusWaived)
-	d.Findings = []finding.Finding{waived}
+	d.Findings = reporttest.Findings(waived)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -781,7 +782,7 @@ func TestRenderer_Render_Top10GateTruncation(t *testing.T) {
 		f := makeGateFinding("rule", finding.SeverityLow, finding.StatusNew)
 		// Make each unique by varying path.
 		f.Edge.From.Path = "pkg/" + string(rune('a'+i))
-		d.Findings = append(d.Findings, f)
+		d.Findings = append(d.Findings, reporttest.Findings(f)...)
 	}
 	d.Summary.GateFindings = 15
 
@@ -997,8 +998,8 @@ func TestRenderer_Render_AdvisoryTasks(t *testing.T) {
 	d.AdvisoryTasks = []diagnostic.AdvisoryTask{{
 		FindingID:    "abcdef1234567890",
 		RuleID:       "bc/imbalanced_coupling",
-		Status:       finding.StatusNew,
-		Severity:     finding.SeverityHigh,
+		Status:       string(finding.StatusNew),
+		Severity:     string(finding.SeverityHigh),
 		GroupCount:   3,
 		GroupMembers: []string{"id1", "id2"},
 		Goal:         "Review grouped advisories.",
@@ -1040,8 +1041,8 @@ func TestRenderer_Render_AdvisoryTasksCapsAtTop25(t *testing.T) {
 		d.AdvisoryTasks = append(d.AdvisoryTasks, diagnostic.AdvisoryTask{
 			FindingID:  fmt.Sprintf("%016d", i),
 			RuleID:     fmt.Sprintf("rule-%02d", i),
-			Status:     finding.StatusNew,
-			Severity:   finding.SeverityHigh,
+			Status:     string(finding.StatusNew),
+			Severity:   string(finding.SeverityHigh),
 			GroupCount: 1,
 			Goal:       fmt.Sprintf("Review advisory %02d.", i),
 		})
@@ -1091,7 +1092,7 @@ func TestRenderer_Render_BCLintMessage(t *testing.T) {
 		"score":         "intrusive(+8) cross_deploy(+5) vol_high(-0) = 13->10",
 		"cheapest_move": "lower strength intrusive->contract (-5)",
 	}
-	d.Findings = []finding.Finding{f}
+	d.Findings = reporttest.Findings(f)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -1136,7 +1137,7 @@ func TestRenderer_Render_BCLintMessage_NumericScore(t *testing.T) {
 		"score_value": "10",
 		"score_band":  "critical",
 	}
-	d.Findings = []finding.Finding{f}
+	d.Findings = reporttest.Findings(f)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -1168,7 +1169,7 @@ func TestRenderer_Render_BCRollup(t *testing.T) {
 		"group_count":   "42",
 		"group_members": "id1,id2,id3",
 	}
-	d.Findings = []finding.Finding{f}
+	d.Findings = reporttest.Findings(f)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -1203,7 +1204,7 @@ func TestRenderer_Render_BCNoRollupLineWhenSingle(t *testing.T) {
 		mbVolatility:  "unknown",
 		"group_count": "1",
 	}
-	d.Findings = []finding.Finding{f}
+	d.Findings = reporttest.Findings(f)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {

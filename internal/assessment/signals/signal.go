@@ -9,14 +9,14 @@
 package signal
 
 import (
+	"github.com/alexei-led/archfit/internal/assessment/finding"
+	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/model/clone"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/model/symbol"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
 // SymbolSignals carries the SCIP symbol graph. Empty when SCIP is off.
@@ -96,7 +96,7 @@ type CommonInput struct {
 	Graph           *graph.Graph
 	Classifications coupling.Index
 	Findings        []finding.Finding
-	Baseline        report.MetricSnapshot
+	Baseline        assessmentresult.MetricSnapshot
 	ToolCoverage    []evidence.Coverage
 	ChangedFiles    []string
 	// SyntaxFacts carries the ast-grep syntax facts produced by the syntax provider.

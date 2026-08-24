@@ -30,11 +30,11 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/assessment/decision"
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/finding"
-	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // evidenceStatus is one coverage row normalised for comparability.
@@ -133,8 +133,8 @@ type gitDeltaInput struct {
 // not_applicable — the one status that pairs with ok, because project markers
 // prove that side had nothing of that language to find.
 func analyzerFamilies(cfg config.Config) []analyzerFamily {
-	fams := make([]analyzerFamily, 0, len(languageRegistry)+5)
-	for _, lang := range languageRegistry {
+	fams := make([]analyzerFamily, 0, len(registry.All())+5)
+	for _, lang := range registry.All() {
 		fams = append(fams, analyzerFamily{name: lang.PrimaryTool, primary: true})
 	}
 	// The pattern pass and the syntax pass are two analyzers with two coverage
@@ -178,7 +178,7 @@ func baseFindingIDs(findings []finding.Finding) []string {
 // buildGitFindingDelta places every current repair task in an origin bucket.
 // Never returns nil — the caller only invokes it when --base is set, and the
 // block must be present (with empty, non-null lists) even for a clean run.
-func buildGitFindingDelta(in gitDeltaInput) *report.GitFindingDelta {
+func buildGitFindingDelta(in gitDeltaInput) *result.GitFindingDelta {
 	comparable, reasons := compareAnalyzerEvidence(in.Families, in.Head, in.Base)
 	// A config-hash mismatch means the two sides did not measure the same
 	// intent, so nothing unmatched can be attributed to the code change.
@@ -214,14 +214,14 @@ func buildGitFindingDelta(in gitDeltaInput) *report.GitFindingDelta {
 	sort.Strings(preExisting)
 	sort.Strings(unknown)
 
-	status := report.GitComparisonComparable
+	status := result.GitComparisonComparable
 	if len(unknown) > 0 {
-		status = report.GitComparisonUnknown
+		status = result.GitComparisonUnknown
 	}
 	if reasons == nil {
 		reasons = []string{}
 	}
-	return &report.GitFindingDelta{
+	return &result.GitFindingDelta{
 		BaseRef:                 in.BaseRef,
 		ComparisonStatus:        status,
 		IntroducedFindingIDs:    introduced,

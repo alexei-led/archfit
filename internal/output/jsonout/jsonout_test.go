@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
 )
 
 const (
@@ -30,7 +32,7 @@ const (
 func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
-	d.Findings = []finding.Finding{{
+	d.Findings = reporttest.Findings(finding.Finding{
 		ID:     "adv1",
 		Kind:   "advisory",
 		RuleID: "bc/imbalanced_coupling",
@@ -39,7 +41,7 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 			"score_value": "7",
 			"score_band":  jsonHigh,
 		},
-	}}
+	})
 
 	var buf bytes.Buffer
 	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
@@ -68,8 +70,8 @@ func TestJSONRenderer_AdvisoryTasks(t *testing.T) {
 	d.AdvisoryTasks = []diagnostic.AdvisoryTask{{
 		FindingID:    "rollup-1",
 		RuleID:       "bc/imbalanced_coupling",
-		Status:       finding.StatusNew,
-		Severity:     finding.SeverityHigh,
+		Status:       string(finding.StatusNew),
+		Severity:     string(finding.SeverityHigh),
 		GroupCount:   3,
 		GroupMembers: []string{"id1", "id2"},
 		Goal:         "Review grouped advisories.",
@@ -115,8 +117,8 @@ func TestJSONRenderer_ScoreVersion(t *testing.T) {
 	if got != "bc_score.v6" {
 		t.Errorf("score_version = %q, want %q", got, "bc_score.v6")
 	}
-	if got != coupling.ScoreVersion {
-		t.Errorf("score_version = %q, out of sync with coupling.ScoreVersion %q", got, coupling.ScoreVersion)
+	if got != report.ScoreVersion {
+		t.Errorf("score_version = %q, out of sync with report.ScoreVersion %q", got, report.ScoreVersion)
 	}
 }
 

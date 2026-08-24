@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -61,7 +60,7 @@ func (r *JSONRenderer) Render(d report.Document, sc report.Scorecard, base *repo
 	env := envelope{
 		Document:        d,
 		Score:           sc,
-		ScoreVersion:    coupling.ScoreVersion,
+		ScoreVersion:    report.ScoreVersion,
 		CouplingBalance: dimensionByName(sc, report.DimCouplingBalance),
 	}
 	if base != nil {

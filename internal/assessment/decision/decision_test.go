@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/decision"
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/model/finding"
 )
 
 // ---------------------------------------------------------------------------

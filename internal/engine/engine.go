@@ -6,22 +6,22 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/metrics"
 	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/rules"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/assessment/status"
-	"github.com/alexei-led/archfit/internal/facts"
-	"github.com/alexei-led/archfit/internal/labels"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
-	"github.com/alexei-led/archfit/internal/rules"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship/facts"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/view"
 )
@@ -172,22 +172,38 @@ func classifyRelationships(ex extractResult, in RunInput) relationshipStage {
 	}
 }
 
-func calculateMetrics(in RunInput, ex extractResult, couplingIdx coupling.Index, taggedFindings []finding.Finding, syntaxFacts []evidence.SyntaxFact) []report.MetricResult {
+func assessmentMetricSnapshot(in report.MetricSnapshot) result.MetricSnapshot {
+	if in == nil {
+		return nil
+	}
+	out := make(result.MetricSnapshot, len(in))
+	for name, snapshot := range in {
+		out[name] = snapshot
+	}
+	return out
+}
+
+func calculateMetrics(in RunInput, ex extractResult, couplingIdx coupling.Index, taggedFindings []finding.Finding, syntaxFacts []evidence.SyntaxFact) []result.MetricResult {
 	collected := signal.CollectedSignals{
 		Common: signal.CommonInput{
 			Graph: ex.g, Classifications: couplingIdx, Findings: taggedFindings,
-			Baseline: in.BaseMetrics, ToolCoverage: ex.coverages,
+			Baseline: assessmentMetricSnapshot(in.BaseMetrics), ToolCoverage: ex.coverages,
 			ChangedFiles: in.Scope.Changed, SyntaxFacts: syntaxFacts,
 			DeprecatedDeps: in.Signals.DeprecatedDeps,
 		},
 		Symbol: signal.SymbolSignals{Graph: ex.scipSymbols},
 		Size:   in.Signals.Size, Duplication: in.Signals.Duplication,
 	}
-	results := make([]report.MetricResult, 0, len(in.Metrics))
+	results := make([]result.MetricResult, 0, len(in.Metrics))
 	for _, metric := range in.Metrics {
 		results = append(results, metric.Calculate(collected))
 	}
 	return results
+}
+
+// BuildRules builds policy evaluators without exposing their package to the CLI.
+func BuildRules(cfg view.RuleConfig) ([]rules.Rule, error) {
+	return rules.New(cfg)
 }
 
 // Run executes the full archfit pipeline and returns the assembled Diagnostic.
@@ -313,7 +329,7 @@ func Run(ctx context.Context, in RunInput) (result.Result, error) {
 		resolvedFindings = []finding.Finding{}
 	}
 	if metricResults == nil {
-		metricResults = []report.MetricResult{}
+		metricResults = []result.MetricResult{}
 	}
 	if ex.coverages == nil {
 		ex.coverages = []evidence.Coverage{}
@@ -348,14 +364,16 @@ func Run(ctx context.Context, in RunInput) (result.Result, error) {
 	// inherited / cascade / undeclared) so coupling_balance can say whether a
 	// uniform-volatility repo is measured or uniform-by-inheritance. in.Classify
 	// still holds the PRE-augmentation module map (Augment* are copy-on-write).
-	classifiedEdges.VolatilityProvenance = classify.ComputeVolatilityProvenance(ex.g, in.Classify.Modules, classifyCfg)
+	if vp := classify.ComputeVolatilityProvenance(ex.g, in.Classify.Modules, classifyCfg); vp != nil {
+		classifiedEdges.VolatilityProvenance = &result.VolatilityProvenance{Declared: vp.Declared, Inherited: vp.Inherited, Cascade: vp.Cascade, Undeclared: vp.Undeclared}
+	}
 
 	// Local complexity (book Ch10): per-module rollup of scored same-module
 	// edges. Report-only — never enters coupling_balance or the verdict.
 	localCoupling := buildLocalCoupling(ex.g, couplingIdx, classifyCfg.ModuleMap)
 
 	d := result.Result{
-		SchemaVersion:             report.SchemaVersion,
+		SchemaVersion:             result.SchemaVersion,
 		Verdict:                   verdict,
 		Base:                      in.Mode.Base,
 		Head:                      in.Mode.Head,
@@ -379,7 +397,7 @@ func Run(ctx context.Context, in RunInput) (result.Result, error) {
 		DistanceConfigCandidates:  distanceConfigCandidates,
 		LocalCoupling:             localCoupling,
 		Delta:                     delta,
-		Summary: report.Summary{
+		Summary: result.Summary{
 			GateFindings: gateNew,
 			Warnings:     warnings,
 			WaiversUsed:  waiversUsed,
@@ -532,13 +550,13 @@ func resolveEvidence(
 //
 // Coupling advisories are intentionally excluded from activeRuleAdvisories — they
 // must not flip the verdict.
-func computeVerdict(gateFindings []finding.Finding, ms []report.MetricResult, gates map[string]view.MetricConfig, activeRuleAdvisories int) report.Verdict {
+func computeVerdict(gateFindings []finding.Finding, ms []result.MetricResult, gates map[string]view.MetricConfig, activeRuleAdvisories int) result.Verdict {
 	for _, f := range gateFindings {
 		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
-			return report.VerdictFail
+			return result.VerdictFail
 		}
 	}
-	verdict := report.VerdictPass
+	verdict := result.VerdictPass
 	for _, m := range ms {
 		if m.Delta == nil {
 			continue
@@ -552,7 +570,7 @@ func computeVerdict(gateFindings []finding.Finding, ms []report.MetricResult, ga
 			minDelta = *mc.MinDelta
 		}
 		breached := *m.Delta < -minDelta
-		if m.Direction == report.DirectionHigherIsWorse {
+		if m.Direction == result.DirectionHigherIsWorse {
 			var maxNew int
 			if mc.MaxNew != nil {
 				maxNew = *mc.MaxNew
@@ -563,13 +581,13 @@ func computeVerdict(gateFindings []finding.Finding, ms []report.MetricResult, ga
 			continue
 		}
 		if mc.Gate == string(view.GateWarn) {
-			verdict = report.VerdictWarn
+			verdict = result.VerdictWarn
 			continue
 		}
-		return report.VerdictFail
+		return result.VerdictFail
 	}
-	if verdict == report.VerdictPass && activeRuleAdvisories > 0 {
-		return report.VerdictWarn
+	if verdict == result.VerdictPass && activeRuleAdvisories > 0 {
+		return result.VerdictWarn
 	}
 	return verdict
 }

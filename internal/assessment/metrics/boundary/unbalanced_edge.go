@@ -3,12 +3,13 @@ package boundary
 import (
 	"fmt"
 
+	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
+
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
 // ---------------------------------------------------------------------------
@@ -48,7 +49,7 @@ func (m UnbalancedEdgeMetric) Name() string { return "unbalanced_edge" }
 func (m UnbalancedEdgeMetric) Version() string { return "unbalanced_edge.v2" }
 
 // Calculate counts high-risk unbalanced edges and cross-references findings for status.
-func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) report.MetricResult {
+func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) assessmentresult.MetricResult {
 	// Build an edge-key → finding status index keyed by (from-path, to-path).
 	// finding.EdgeEvidence carries stripped paths (kind prefix removed);
 	// coupling.Index keys use full node IDs. We strip the kind prefix when
@@ -126,7 +127,7 @@ func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) report.MetricResu
 	display := fmt.Sprintf("%d new high-risk unbalanced edges", newHigh)
 	delta := result.ComputeDelta(value, in.Baseline, m.Name(), m.Version())
 
-	return report.MetricResult{
+	return assessmentresult.MetricResult{
 		Name:       m.Name(),
 		Value:      value,
 		Display:    display,
@@ -136,15 +137,15 @@ func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) report.MetricResu
 		Mode:       result.ModeCount,
 		Definition: "intrusive edges with cross-module ownership and high volatility",
 		Delta:      delta,
-		Direction:  report.DirectionHigherIsWorse,
+		Direction:  assessmentresult.DirectionHigherIsWorse,
 	}
 }
 
 // naResult reports unbalanced_edge as indeterminate: intrusive cross-module
 // candidate edges exist, but none has a known volatility, so whether any is
 // unbalanced cannot be decided. Band is result.BandNA (not strong), Delta nil.
-func (m UnbalancedEdgeMetric) naResult() report.MetricResult {
-	return report.MetricResult{
+func (m UnbalancedEdgeMetric) naResult() assessmentresult.MetricResult {
+	return assessmentresult.MetricResult{
 		Name:       m.Name(),
 		Value:      0,
 		Display:    result.BandNA,
@@ -154,7 +155,7 @@ func (m UnbalancedEdgeMetric) naResult() report.MetricResult {
 		Mode:       result.ModeCount,
 		Definition: "intrusive edges with cross-module ownership and high volatility",
 		Delta:      nil,
-		Direction:  report.DirectionHigherIsWorse,
+		Direction:  assessmentresult.DirectionHigherIsWorse,
 	}
 }
 

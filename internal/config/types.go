@@ -1,6 +1,40 @@
 package config
 
-import "github.com/alexei-led/archfit/internal/view"
+import (
+	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
+)
+
+// ToolMode is the public config lifecycle view of a tool enable state.
+type ToolMode = view.ToolMode
+
+// Tool enable modes.
+const (
+	ModeAuto = view.ModeAuto
+	ModeOn   = view.ModeOn
+	ModeOff  = view.ModeOff
+)
+
+// ModuleDef is the policy-facing architectural module definition.
+type ModuleDef = module.ModuleDef
+
+// ModuleMap is the policy-facing module lookup contract.
+type ModuleMap = module.Map
+
+// Module role values exposed through the policy contract.
+const (
+	RoleCompositionRoot = module.RoleCompositionRoot
+	RoleAdapter         = module.RoleAdapter
+	RoleCore            = module.RoleCore
+	RoleSharedModel     = module.RoleSharedModel
+	RoleGenerated       = module.RoleGenerated
+	RoleTest            = module.RoleTest
+)
+
+// ModuleRootDirs returns the configured source roots for each module.
+func ModuleRootDirs(modules map[string]ModuleDef) map[string]string {
+	return module.RootDirs(modules)
+}
 
 // MetricsConfig holds settings for all metrics, keyed by metric name.
 type MetricsConfig map[string]view.MetricEntry

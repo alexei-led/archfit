@@ -13,7 +13,6 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // InitCmd discovers project structure and writes a starter archfit.yaml.
@@ -224,8 +223,8 @@ var (
 	validSubdomains   = map[string]bool{subdomainCore: true, subdomainSupporting: true, subdomainGeneric: true}
 	validVolatilities = map[string]bool{volatilityLow: true, volatilityMedium: true, volatilityHigh: true}
 	validRoles        = map[string]bool{
-		string(module.RoleCompositionRoot): true, string(module.RoleAdapter): true, string(module.RoleCore): true,
-		string(module.RoleSharedModel): true, string(module.RoleGenerated): true, string(module.RoleTest): true,
+		string(config.RoleCompositionRoot): true, string(config.RoleAdapter): true, string(config.RoleCore): true,
+		string(config.RoleSharedModel): true, string(config.RoleGenerated): true, string(config.RoleTest): true,
 	}
 )
 

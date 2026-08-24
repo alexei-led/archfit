@@ -1,4 +1,4 @@
-package coupling
+package scoring
 
 // AdditiveScorer implements Scorer using additive integer math:
 //

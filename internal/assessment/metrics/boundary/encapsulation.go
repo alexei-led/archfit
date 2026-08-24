@@ -7,11 +7,12 @@ package boundary
 import (
 	"fmt"
 
+	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
+
 	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
 // ---------------------------------------------------------------------------
@@ -50,7 +51,7 @@ func (m EncapsulationMetric) Version() string { return "encapsulation.v1" }
 // an exported API). Reporting 10/10 there is the over-score this avoids; the
 // discriminating modularity signal lives in change-amplification, hidden-coupling,
 // and cycles instead.
-func (m EncapsulationMetric) Calculate(in signal.CommonInput) report.MetricResult {
+func (m EncapsulationMetric) Calculate(in signal.CommonInput) assessmentresult.MetricResult {
 	// A nil graph is absent evidence, not an encapsulated codebase — report n/a,
 	// never a false-green 1.0 (matches this package's "absent inputs yield n/a"
 	// contract).
@@ -159,7 +160,7 @@ func classificationConfidence(classified, all int) string {
 	}
 }
 
-func (m EncapsulationMetric) encResult(value float64, confidence string, baseline report.MetricSnapshot, contractCross, intrusiveCross int) report.MetricResult {
+func (m EncapsulationMetric) encResult(value float64, confidence string, baseline assessmentresult.MetricSnapshot, contractCross, intrusiveCross int) assessmentresult.MetricResult {
 	score := value * 10.0
 	band := result.ApplyConfidenceCap(result.BandScore(score), confidence)
 	delta := result.ComputeDelta(value, baseline, m.Name(), m.Version())
@@ -179,7 +180,7 @@ func (m EncapsulationMetric) encResult(value float64, confidence string, baselin
 		definition += fmt.Sprintf("; 0 contract / %d intrusive here is a real measurement on the evidence available, "+
 			"not necessarily a config gap", intrusiveCross)
 	}
-	return report.MetricResult{
+	return assessmentresult.MetricResult{
 		Name:       m.Name(),
 		Value:      value,
 		Display:    fmt.Sprintf("%.1f/10", score),
@@ -189,7 +190,7 @@ func (m EncapsulationMetric) encResult(value float64, confidence string, baselin
 		Mode:       result.ModeRatio,
 		Definition: definition,
 		Delta:      delta,
-		Direction:  report.DirectionHigherIsBetter,
+		Direction:  assessmentresult.DirectionHigherIsBetter,
 	}
 }
 
@@ -197,8 +198,8 @@ func (m EncapsulationMetric) encResult(value float64, confidence string, baselin
 // coupling exists but no edge strength could be classified, so there is no honest
 // score. Band is result.BandNA (not critical), and Delta is nil so the verdict logic does
 // not treat an absent score as a regression.
-func (m EncapsulationMetric) naResult(_ report.MetricSnapshot) report.MetricResult {
-	return report.MetricResult{
+func (m EncapsulationMetric) naResult(_ assessmentresult.MetricSnapshot) assessmentresult.MetricResult {
+	return assessmentresult.MetricResult{
 		Name:       m.Name(),
 		Value:      0,
 		Display:    result.BandNA,
@@ -208,6 +209,6 @@ func (m EncapsulationMetric) naResult(_ report.MetricSnapshot) report.MetricResu
 		Mode:       result.ModeRatio,
 		Definition: "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
 		Delta:      nil,
-		Direction:  report.DirectionHigherIsBetter,
+		Direction:  assessmentresult.DirectionHigherIsBetter,
 	}
 }

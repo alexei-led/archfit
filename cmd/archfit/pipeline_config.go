@@ -12,14 +12,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/report"
 
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/ownership"
-	"github.com/alexei-led/archfit/internal/rules"
-	"github.com/alexei-led/archfit/internal/view"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
 
 // buildConfigWarnings assembles the advisory ConfigWarnings block: under-specified
@@ -182,7 +182,7 @@ func loadConfig(ctx context.Context, path string) (config.Config, error) {
 // rules — so without this check `doctor` and the init/update revalidation
 // would pass a config that later hard-fails at analyze time.
 func validateConfigRules(cfg config.Config) error {
-	_, err := rules.New(cfg.ForRules())
+	_, err := engine.BuildRules(cfg.ForRules())
 	return err
 }
 
@@ -193,11 +193,11 @@ func applyFlagOverrides(cfg *config.Config, severity string, lang []string) erro
 		cfg.Coupling.MinSeverity = severity
 	}
 	for _, key := range lang {
-		canonical := languageByAlias(key)
+		canonical := registry.ByAlias(key)
 		if canonical == "" {
 			return fmt.Errorf("--lang: unknown analyzer %q; see %s", key, languagesDocsURL)
 		}
-		cfg.SetToolMode(canonical, view.ModeOn)
+		cfg.SetToolMode(canonical, config.ModeOn)
 	}
 	return nil
 }
@@ -224,11 +224,11 @@ func computeConfigHash(path string) string {
 }
 
 // verdictToError maps a diagnostic verdict to an exit error (nil = exit 0).
-func verdictToError(v report.Verdict) error {
+func verdictToError(v result.Verdict) error {
 	switch v {
-	case report.VerdictFail:
+	case result.VerdictFail:
 		return &exitError{code: 1}
-	case report.VerdictWarn:
+	case result.VerdictWarn:
 		return &exitError{code: 2}
 	default:
 		return nil

@@ -39,7 +39,6 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/history/git"
-	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -102,7 +101,7 @@ type baseEvidence struct {
 // run mutates the shared map. Everything else in Config is read-only during a
 // run and is safe to share.
 func withIndependentModules(cfg config.Config) config.Config {
-	modules := make(map[string]module.ModuleDef, len(cfg.Modules))
+	modules := make(map[string]config.ModuleDef, len(cfg.Modules))
 	maps.Copy(modules, cfg.Modules)
 	cfg.Modules = modules
 	return cfg

@@ -1,9 +1,6 @@
 package report
 
-import (
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/finding"
-)
+import "github.com/alexei-led/archfit/internal/model/evidence"
 
 // SchemaVersion identifies the external report document contract.
 const SchemaVersion = "archfit.diagnostic.v2"
@@ -19,20 +16,78 @@ type AgentTask struct {
 	Declarations []evidence.SyntaxFact `json:"declarations,omitempty"`
 }
 
+// FindingStatus values describe the lifecycle state of a report finding.
+const (
+	FindingStatusNew           = "new"
+	FindingStatusBaseline      = "baseline"
+	FindingStatusWaived        = "waived"
+	FindingStatusExpiredWaiver = "expired_waiver"
+	FindingStatusFixed         = "fixed"
+)
+
+// FindingKind values classify blocking gates and non-blocking advisories.
+const (
+	FindingKindGate     = "gate"
+	FindingKindAdvisory = "advisory"
+)
+
+// FindingSeverity values describe report finding severity.
+const (
+	FindingSeverityCritical = "critical"
+	FindingSeverityHigh     = "high"
+	FindingSeverityMedium   = "medium"
+	FindingSeverityLow      = "low"
+)
+
+// FindingEndpoint identifies one side of a report finding edge.
+type FindingEndpoint struct {
+	Module string `json:"module"`
+	Path   string `json:"path"`
+}
+
+// FindingEdge is the report representation of an assessed edge.
+type FindingEdge struct {
+	From FindingEndpoint `json:"from"`
+	To   FindingEndpoint `json:"to"`
+	Kind string          `json:"kind"`
+}
+
+// Finding is the stable report view of an assessment finding.
+type Finding struct {
+	ID           string            `json:"id"`
+	Kind         string            `json:"kind"`
+	RuleID       string            `json:"rule_id"`
+	Status       string            `json:"status"`
+	Severity     string            `json:"severity"`
+	Confidence   string            `json:"confidence"`
+	Edge         FindingEdge       `json:"edge"`
+	MatchedBy    map[string]string `json:"matched_by"`
+	Locations    []Location        `json:"locations"`
+	Why          string            `json:"why"`
+	Constraint   string            `json:"constraint"`
+	Alternatives []string          `json:"allowed_alternatives,omitempty"`
+}
+
+// Location identifies a source location in a report finding.
+type Location struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
+}
+
 // AdvisoryTask is a report-only remediation prompt for grouped advisories.
 type AdvisoryTask struct {
-	FindingID    string           `json:"finding_id"`
-	RuleID       string           `json:"rule_id"`
-	Status       finding.Status   `json:"status"`
-	Severity     finding.Severity `json:"severity"`
-	GroupCount   int              `json:"group_count"`
-	GroupMembers []string         `json:"group_members,omitempty"`
-	Goal         string           `json:"goal"`
-	CheapestMove string           `json:"cheapest_move,omitempty"`
-	ScoreValue   int              `json:"score_value,omitempty"`
-	TopFiles     []string         `json:"top_files"`
-	Constraints  []string         `json:"constraints"`
-	Validation   []string         `json:"validation"`
+	FindingID    string   `json:"finding_id"`
+	RuleID       string   `json:"rule_id"`
+	Status       string   `json:"status"`
+	Severity     string   `json:"severity"`
+	GroupCount   int      `json:"group_count"`
+	GroupMembers []string `json:"group_members,omitempty"`
+	Goal         string   `json:"goal"`
+	CheapestMove string   `json:"cheapest_move,omitempty"`
+	ScoreValue   int      `json:"score_value,omitempty"`
+	TopFiles     []string `json:"top_files"`
+	Constraints  []string `json:"constraints"`
+	Validation   []string `json:"validation"`
 }
 
 // Document is the versioned output contract consumed by report adapters.
@@ -43,7 +98,7 @@ type Document struct {
 	Head                      string                              `json:"head"`
 	ConfigHash                string                              `json:"config_hash,omitempty"`
 	Metrics                   []MetricResult                      `json:"metrics"`
-	Findings                  []finding.Finding                   `json:"findings"`
+	Findings                  []Finding                           `json:"findings"`
 	FileFacts                 []evidence.FileFact                 `json:"file_facts"`
 	DynamicImports            []evidence.DynamicImport            `json:"dynamic_imports"`
 	Connascence               *evidence.ConnascenceReport         `json:"connascence,omitempty"`
@@ -82,7 +137,7 @@ func NewDocument() Document {
 	return Document{
 		SchemaVersion:  SchemaVersion,
 		Metrics:        []MetricResult{},
-		Findings:       []finding.Finding{},
+		Findings:       []Finding{},
 		FileFacts:      []evidence.FileFact{},
 		DynamicImports: []evidence.DynamicImport{},
 		AgentTasks:     []AgentTask{},

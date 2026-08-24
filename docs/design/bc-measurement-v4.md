@@ -94,8 +94,8 @@ Severity bands derived from balance:
 | 7–8     | `low`      |
 | 9–10    | `none`     |
 
-Implemented in `internal/model/coupling/scorer_book.go` as `BookScorer`.
-`ScoreVersion` is defined in `internal/model/coupling/scorer.go`.
+Implemented in `internal/relationship/scoring/scorer_book.go` as `BookScorer`.
+`ScoreVersion` is defined in `internal/relationship/coupling/coupling.go`.
 
 ---
 

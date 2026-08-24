@@ -189,6 +189,12 @@ flowchart TB
     style core fill:#e7f5ff,stroke:#1971c2,color:#000;
 ```
 
+The codebase dogfoods these boundaries with import-ring, projection, compatibility,
+and fan-out ratchets. The current Horizon 3 review is deliberately not greenwashed:
+the configured gate has zero blockers, but `coupling_balance` remains mixed and the
+CLI/application/engine responsibility split is still incomplete. See the
+[architecture review](docs/reports/20260824-archfit-horizon3-architecture-review.md).
+
 archfit doesn't replace architecture review — it makes repeatable evidence cheap
 to collect and safe to run in CI. It sits one level above single-language
 boundary linters (dependency-cruiser, import-linter, ArchUnit): they supply

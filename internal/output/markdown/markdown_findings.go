@@ -5,14 +5,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // writeBCAdvisories renders coupling advisories in BC lint-message format.
 // BC advisories (bc/imbalanced_coupling) get the structured lint-message block.
 // All other advisories (staleness, map/*, labels/*) render as plain list items.
-func writeBCAdvisories(b *strings.Builder, advisories []finding.Finding) {
-	var bcFindings, otherFindings []finding.Finding
+func writeBCAdvisories(b *strings.Builder, advisories []report.Finding) {
+	var bcFindings, otherFindings []report.Finding
 	for _, f := range advisories {
 		if f.RuleID == "bc/imbalanced_coupling" {
 			bcFindings = append(bcFindings, f)
@@ -58,7 +58,7 @@ func writeBCAdvisories(b *strings.Builder, advisories []finding.Finding) {
 //	  score: <value>/10 (<band>) [<scorer>]
 //	  why: <why>
 //	  cheapest move: <move>
-func writeBCLintMessage(b *strings.Builder, f finding.Finding) {
+func writeBCLintMessage(b *strings.Builder, f report.Finding) {
 	from := f.Edge.From.Path
 	to := f.Edge.To.Path
 	if from == "" {
@@ -68,7 +68,7 @@ func writeBCLintMessage(b *strings.Builder, f finding.Finding) {
 		to = f.Edge.To.Module
 	}
 
-	sev := strings.ToUpper(string(f.Severity))
+	sev := strings.ToUpper(f.Severity)
 	idShort := f.ID
 	if len(idShort) > 8 {
 		idShort = idShort[:8]
@@ -118,7 +118,7 @@ func writeBCLintMessage(b *strings.Builder, f finding.Finding) {
 
 // rollupCount returns the number of edges a BC advisory represents: the value of
 // MatchedBy["group_count"] when the advisory is a rollup, else 1.
-func rollupCount(f finding.Finding) int {
+func rollupCount(f report.Finding) int {
 	if n, err := strconv.Atoi(f.MatchedBy["group_count"]); err == nil && n > 0 {
 		return n
 	}
@@ -126,7 +126,7 @@ func rollupCount(f finding.Finding) int {
 }
 
 // writeGateFinding prints one gate or non-BC advisory finding as a Markdown list item.
-func writeGateFinding(b *strings.Builder, f finding.Finding) {
+func writeGateFinding(b *strings.Builder, f report.Finding) {
 	edge := ""
 	if f.Edge.From.Path != "" || f.Edge.To.Path != "" {
 		edge = fmt.Sprintf(" — %s → %s", f.Edge.From.Path, f.Edge.To.Path)

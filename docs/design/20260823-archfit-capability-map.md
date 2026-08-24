@@ -1,14 +1,15 @@
 # Archfit target architecture
 
 Date: 2026-08-24
-Status: APPROVED FOR IMPLEMENTATION
+Status: IMPLEMENTED THROUGH HORIZON 3; FINAL TARGET NO-GO
 
 ## Overview
 
 This is a review-driven redesign of Archfit as one Go modular monolith. It
 replaces the provisional type-centric module map with domain-driven boundaries.
-The goal is local change, explicit contracts, and balanced coupling. A higher
-Archfit score is not a design goal.
+The goal is local change, explicit contracts, and balanced coupling. The Archfit
+score is an acceptance signal, but never a reason to relabel volatility/distance,
+add waivers, or create boundaries that do not exist in source.
 
 Source inputs:
 
@@ -30,18 +31,16 @@ Constraints:
 
 ## Source inputs and drift notes
 
-The current design is intent, not implementation truth. Observed drift:
+The current design is intent, not implementation truth. Horizon 3 observed state:
 
-- The renderer port now accepts `report.Document`.
-- Output packages no longer depend on `internal/model/scan`.
-- Production imports of the diagnostic compatibility facade are zero.
-- `evaluation-core` combines several change vectors.
-- `cmd/archfit` and `internal/engine` remain change and fan-out hubs.
-- The existing design declares `pipeline-state` twice.
-- The model-purity test now discovers model packages automatically; scan/result
-  compatibility removal is still in progress.
-- The declared score of 54 is configuration-sensitive. With plausible core and
-  inherited volatility labels, the current source scores 41-50.
+- Relationship semantics now live under `internal/relationship/{coupling,scoring,classify,facts,labels}`.
+- Findings, rule evaluation, metrics, status, score, and repair behavior live under `internal/assessment/**`.
+- `report.Document` owns renderer DTOs; report/output production code does not import assessment findings.
+- Production imports of both diagnostic and scan compatibility facades are zero.
+- Fact-adapter acquisition and language construction sit behind `internal/extract/{acquire,registry}`.
+- CLI direct module fan-out is ratcheted at 14; engine fan-out is ratcheted at 9 and currently measures 8.
+- All tests and configured gates pass with zero blockers/cycles, but the deterministic coupling dimension is 46/mixed with 57 critical local edges.
+- The final review remains NO-GO: CLI use-case ownership, engine domain behavior, assessment/report aliases, and incomplete semantic gates still drift from this target. See `docs/reports/20260824-archfit-horizon3-architecture-review.md`.
 
 ## Domain model
 
@@ -101,7 +100,7 @@ Rejected target labels and modules:
   context.
 - `coupling-model: medium`: coupling semantics are core/high.
 - `architecture-model: supporting`: module and policy semantics are core/high.
-- `finding-model: medium`: findings inherit assessment volatility.
+- A separate `finding-model`: findings belong to Assessment and Repair and inherit its volatility.
 - A generic shared `pipeline-state` module: stage state belongs to the
   application stage that owns it.
 
@@ -131,11 +130,11 @@ not team or service distance.
 | Current location or construct | Target owner | Decision |
 | --- | --- | --- |
 | `internal/model/module` and pure module/rule/gate values in `internal/config` | Architecture Policy | Move semantics out of YAML/config lifecycle code |
-| `internal/rules` rule definitions | Architecture Policy | Policy describes what must hold |
-| `internal/rules` evaluators | Assessment and Repair | Evaluation produces findings |
-| `internal/model/coupling`, `internal/relationship/classify`, relationship-derived `internal/facts` | Relationship Analysis | Keep pure coupling vocabulary as a temporary contract; move scorer behavior with the next context slice |
+| `internal/assessment/rules` rule definitions | Architecture Policy | Policy describes what must hold |
+| `internal/assessment/rules` evaluators | Assessment and Repair | Evaluation produces findings |
+| `internal/relationship/coupling`, `internal/relationship/scoring`, `internal/relationship/classify`, relationship-derived `internal/relationship/facts` | Relationship Analysis | Coupling values are a data-only context contract; scorer and classification behavior are private relationship-analysis packages |
 | Strength-label approval and merge behavior | Relationship Analysis | Label storage remains an adapter |
-| `internal/model/finding`, `internal/assessment/{metrics,score,status,staleness,decision,agenttask}` | Assessment and Repair | One owner for judgment and action |
+| `internal/assessment/{finding,metrics,score,status,staleness,decision,agenttask}` | Assessment and Repair | One owner for judgment and action; the transitional finding-model module is removed |
 | `internal/model/graph`, symbol, fileclass, clone, pattern | Evidence Contracts | Neutral facts only |
 | Raw `Coverage`, `SyntaxFact`, `DynamicImport`, `RuntimeAsync*`, `DeprecatedDep` | Evidence Contracts | Produced by adapters, no verdict semantics |
 | `DistanceContext`, `LocalCoupling*`, `ConnascenceReport`, classified volatility evidence | Relationship Analysis | These are derived relationship knowledge, not raw evidence |

@@ -5,7 +5,8 @@
 package calibrate
 
 import (
-	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship/scoring"
 )
 
 // EdgeAgreement records one edge's scores from both scorers.
@@ -43,7 +44,7 @@ func (r Report) BandAgreementRate() float64 {
 //
 // Only cross-boundary edges are included — same_module and unknown distance
 // edges are skipped, matching what classify.Run scores.
-func Compare(repoPath string, idx coupling.Index, scorerA, scorerB coupling.Scorer) Report {
+func Compare(repoPath string, idx coupling.Index, scorerA, scorerB scoring.Scorer) Report {
 	edges := make([]EdgeAgreement, 0, len(idx))
 	agreeCount := 0
 

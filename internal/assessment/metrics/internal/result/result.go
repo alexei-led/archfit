@@ -7,7 +7,7 @@ package result
 import (
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/report"
+	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 )
 
 // Band name constants (spec §10.1).
@@ -127,7 +127,7 @@ func ApplyConfidenceCap(band, confidence string) string {
 
 // ComputeDelta returns the delta between current and baseline for the given
 // metric name and version. Returns nil if no matching baseline entry exists.
-func ComputeDelta(current float64, baseline report.MetricSnapshot, name, version string) *float64 {
+func ComputeDelta(current float64, baseline assessmentresult.MetricSnapshot, name, version string) *float64 {
 	if baseline == nil {
 		return nil
 	}
@@ -140,8 +140,8 @@ func ComputeDelta(current float64, baseline report.MetricSnapshot, name, version
 }
 
 // NACount is the indeterminate result for a count-mode informational metric.
-func NACount(name, version, def string) report.MetricResult {
-	return report.MetricResult{
+func NACount(name, version, def string) assessmentresult.MetricResult {
+	return assessmentresult.MetricResult{
 		Name: name, Value: 0, Display: BandNA, Band: BandNA,
 		Confidence: ConfidenceLow, Version: version, Mode: ModeCount, Definition: def,
 	}

@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // valueBatchSize bounds how many modules go into one LLM draft request.
@@ -32,7 +32,7 @@ type valueSpec struct {
 	name           string                        // "owner" | "volatility"
 	draftPath      string                        // defaultOwnersPath | defaultVolatilityPath
 	field          initcfg.ModuleField           // FieldOwner | FieldVolatility
-	current        func(module.ModuleDef) string // current live value for the field
+	current        func(config.ModuleDef) string // current live value for the field
 	valid          func(string) bool             // nil = any non-empty value accepted
 	systemPrompt   string
 	withCodeowners bool // owner: include CODEOWNERS content in the prompt
@@ -42,7 +42,7 @@ var ownerSpec = valueSpec{
 	name:           "owner",
 	draftPath:      defaultOwnersPath,
 	field:          initcfg.FieldOwner,
-	current:        func(m module.ModuleDef) string { return m.Owner },
+	current:        func(m config.ModuleDef) string { return m.Owner },
 	valid:          nil,
 	withCodeowners: true,
 	systemPrompt: `You are assigning a single responsible owner (a team handle or area name) to each software module.
@@ -57,7 +57,7 @@ var volatilitySpec = valueSpec{
 	name:      "volatility",
 	draftPath: defaultVolatilityPath,
 	field:     initcfg.FieldVolatility,
-	current:   func(m module.ModuleDef) string { return m.Volatility },
+	current:   func(m config.ModuleDef) string { return m.Volatility },
 	valid:     func(s string) bool { return validVolatilities[s] },
 	systemPrompt: `You are assessing how frequently each module's interface evolves (Balanced Coupling volatility).
 For each module pick one of:

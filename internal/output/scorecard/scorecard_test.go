@@ -2,14 +2,16 @@ package scorecard
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
+	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
 )
 
 // Test literal constants (deduplicated for goconst).
@@ -32,8 +34,8 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 		{Name: "cycle", Value: 0, Display: "0", Band: bandStrong, Confidence: confHigh},
 		{Name: "blast_radius", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
 	}
-	d.Findings = []finding.Finding{
-		{
+	d.Findings = reporttest.Findings(
+		finding.Finding{
 			ID: "a->b", RuleID: "bc/imbalanced_coupling", Kind: "advisory",
 			Status: finding.StatusNew, Severity: sevMedium,
 			Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: "a"}, To: finding.Endpoint{Module: "b"}},
@@ -42,7 +44,7 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 				"volatility": sevMedium, "score_value": "5", "score_band": sevMedium, "group_count": "2",
 			},
 		},
-	}
+	)
 	d.ToolCoverage = []diagnostic.Coverage{
 		{Tool: "go/packages", Status: "ok"},
 		{Tool: "scip", Status: "ok"},
@@ -52,16 +54,25 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 	return d
 }
 
+func reportFindings(d diagnostic.Diagnostic) []finding.Finding {
+	out := make([]finding.Finding, 0, len(d.Findings))
+	for _, f := range d.Findings {
+		out = append(out, reporttest.Finding(f))
+	}
+	return out
+}
+
 func render(d diagnostic.Diagnostic, w io.Writer) error {
-	return New().Render(d, score.Synthesize(result.Result{
-		SchemaVersion:   d.SchemaVersion,
-		Verdict:         d.Verdict,
-		Metrics:         d.Metrics,
-		Findings:        d.Findings,
-		ToolCoverage:    d.ToolCoverage,
-		ClassifiedEdges: d.ClassifiedEdges,
-		Summary:         d.Summary,
-	}), w)
+	var assessment result.Result
+	encoded, err := json.Marshal(d)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(encoded, &assessment); err != nil {
+		return err
+	}
+	assessment.Findings = reportFindings(d)
+	return New().Render(d, score.Synthesize(assessment), w)
 }
 
 const golden = `# archfit scorecard

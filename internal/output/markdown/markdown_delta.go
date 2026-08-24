@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -78,7 +77,7 @@ func writeDelta(b *strings.Builder, d report.Document) {
 	if d.Delta == nil {
 		return
 	}
-	byID := make(map[string]finding.Finding, len(d.Findings))
+	byID := make(map[string]report.Finding, len(d.Findings))
 	for _, f := range d.Findings {
 		byID[f.ID] = f
 	}
@@ -101,7 +100,7 @@ func writeDelta(b *strings.Builder, d report.Document) {
 			continue
 		}
 		fmt.Fprintf(b, "\n### %s (%d)\n\n", s.title, len(s.ids))
-		fs := make([]finding.Finding, 0, len(s.ids))
+		fs := make([]report.Finding, 0, len(s.ids))
 		for _, id := range s.ids {
 			if f, ok := byID[id]; ok {
 				fs = append(fs, f)
@@ -117,7 +116,7 @@ func writeDelta(b *strings.Builder, d report.Document) {
 // writeDeltaFinding renders one finding as a compact delta-bucket line. The
 // bucket already conveys lifecycle status, so the status is omitted here; the
 // severity and edge are shown when present (fixed findings carry neither).
-func writeDeltaFinding(b *strings.Builder, f finding.Finding) {
+func writeDeltaFinding(b *strings.Builder, f report.Finding) {
 	sev := ""
 	if f.Severity != "" {
 		sev = fmt.Sprintf(" [%s]", f.Severity)

@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
 // ExplainCmd re-runs the engine and prints the details of a single finding.

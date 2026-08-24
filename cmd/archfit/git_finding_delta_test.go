@@ -9,9 +9,10 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/decision"
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/view"
 )
@@ -700,7 +701,7 @@ func testGitDeltaActiveFamilies(t *testing.T) {
 		return out
 	}
 	primaries := names(analyzerFamilies(config.Config{}))
-	if len(primaries) != len(languageRegistry) {
+	if len(primaries) != len(registry.All()) {
 		t.Fatalf("a bare config must activate only the per-language primaries, got %v", primaries)
 	}
 

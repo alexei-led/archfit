@@ -412,7 +412,8 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 ## Coupling classification reference
 
 Every cross-boundary edge is classified on the four lenses below
-(`internal/model/coupling/coupling.go`). These power the
+(`internal/relationship/coupling/coupling.go`). Scoring behavior lives in
+`internal/relationship/scoring`. These power the
 `bc/imbalanced_coupling` advisories and feed `encapsulation` and
 `unbalanced_edge`.
 

@@ -3,10 +3,11 @@ package engine
 import (
 	"sort"
 
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship/scoring"
 )
 
 // localCouplingOffenderCap bounds WorstOffenders per module — enough for an
@@ -59,7 +60,7 @@ func buildLocalCoupling(g *graph.Graph, idx coupling.Index, mm module.Map) []evi
 		}
 		a.scored++
 		a.balanceSum += cl.Score.Balance
-		if coupling.LocalComplexity(cl) {
+		if scoring.LocalComplexity(cl) {
 			a.complexity++
 		}
 		if cl.Score.Band != coupling.SeverityNone {

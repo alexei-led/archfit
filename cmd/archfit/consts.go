@@ -1,5 +1,7 @@
 package main
 
+import "github.com/alexei-led/archfit/internal/extract/registry"
+
 // LLM provider name constants shared across init, enrich, doctor, and explain.
 const (
 	providerAnthropic = "anthropic"
@@ -56,11 +58,11 @@ const (
 // ToolCoverage). Their absence drops the structural metrics to n/a; shared by the
 // coverage-gap table and its config-key map.
 const (
-	toolGoPackages   = "go/packages"
-	toolDepCruiser   = "dependency-cruiser"
-	toolGrimp        = "grimp"
-	toolCargo        = "cargo"
-	toolCargoModules = "cargo-modules" // opt-in intra-crate module graph; mirrors config.ToolCargoModules
+	toolGoPackages   = registry.ToolGoPackages
+	toolDepCruiser   = registry.ToolDepCruiser
+	toolGrimp        = registry.ToolGrimp
+	toolCargo        = registry.ToolCargo
+	toolCargoModules = registry.ToolCargoModules // opt-in intra-crate module graph; mirrors config.ToolCargoModules
 )
 
 // Reported metric names shared across cmd coverage/output helpers.
@@ -68,15 +70,6 @@ const (
 	metricCycle         = "cycle"
 	metricBlastRadius   = "blast_radius"
 	metricEncapsulation = "encapsulation"
-)
-
-// SCIP indexer binary names shared by the language registry (DoctorTools) and
-// the doctor command.
-const (
-	scipGo         = "scip-go"
-	scipTypeScript = "scip-typescript"
-	scipPython     = "scip-python"
-	scipRust       = "rust-analyzer"
 )
 
 // Project-marker filenames used by the language registry and test fixtures.

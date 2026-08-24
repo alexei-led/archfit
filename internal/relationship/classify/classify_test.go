@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/labels"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
 	"github.com/alexei-led/archfit/internal/view"
 )
 

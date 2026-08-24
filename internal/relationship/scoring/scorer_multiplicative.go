@@ -1,4 +1,4 @@
-package coupling
+package scoring
 
 import "math"
 

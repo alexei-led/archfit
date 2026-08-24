@@ -6,10 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/output/sarif"
+	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
 )
 
 const (
@@ -23,8 +24,8 @@ func sampleDiagnostic() diagnostic.Diagnostic {
 	d.Base = "main"
 	d.Head = "HEAD"
 	d.Metrics = []diagnostic.MetricResult{{Name: "cycle", Value: 0, Band: "green"}}
-	d.Findings = []finding.Finding{
-		{
+	d.Findings = reporttest.Findings(
+		finding.Finding{
 			ID: "f-gate", Kind: "gate", RuleID: ruleInternal,
 			Status: finding.StatusNew, Severity: finding.SeverityHigh,
 			Edge: finding.EdgeEvidence{
@@ -34,17 +35,17 @@ func sampleDiagnostic() diagnostic.Diagnostic {
 			Locations: []graph.Location{{File: fileA, Line: 5}},
 			Why:       "a uses b internals",
 		},
-		{
+		finding.Finding{
 			ID: "f-adv", Kind: "advisory", RuleID: "bc/imbalanced_coupling",
 			Status: finding.StatusNew, Severity: finding.SeverityMedium,
 			Edge: finding.EdgeEvidence{From: finding.Endpoint{Path: "pkg/c/c.go"}},
 		},
-		{
+		finding.Finding{
 			ID: "f-base", Kind: "gate", RuleID: ruleInternal,
 			Status: finding.StatusBaseline,
 			Edge:   finding.EdgeEvidence{From: finding.Endpoint{Path: "pkg/d/d.go"}},
 		},
-	}
+	)
 	return d
 }
 

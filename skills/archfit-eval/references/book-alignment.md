@@ -55,7 +55,8 @@ Start with:
 - `CLAUDE.md`
 - `.archfit.yaml`
 - `cmd/archfit/`
-- `internal/model/coupling/`
+- `internal/relationship/coupling/`
+- `internal/relationship/scoring/`
 - `internal/classify/`
 - `internal/score/`
 - `internal/metrics/`

@@ -1,4 +1,4 @@
-package coupling
+package scoring
 
 // BookScorer implements Vlad Khononov's published formula from
 // _Balancing Coupling in Software Design_ Ch10.

@@ -2,13 +2,12 @@
 package result
 
 import (
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/finding"
-	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // SchemaVersion identifies the current output-compatible result schema.
-const SchemaVersion = report.SchemaVersion
+const SchemaVersion = "archfit.diagnostic.v2"
 
 // AgentTask is the assessment repair task before report projection.
 type AgentTask struct {
@@ -82,35 +81,8 @@ type VolatilityCorroboration = evidence.VolatilityCorroboration
 // VolatilityTouch is retained as an assessment result compatibility alias.
 type VolatilityTouch = evidence.VolatilityTouch
 
-// MetricResult is retained as an assessment result compatibility alias.
-type MetricResult = report.MetricResult
-
-// MetricSnapshot is retained as an assessment result compatibility alias.
-type MetricSnapshot = report.MetricSnapshot
-
-// Verdict is retained as an assessment result compatibility alias.
-type Verdict = report.Verdict
-
-// Direction is retained as an assessment result compatibility alias.
-type Direction = report.Direction
-
-// ClassifiedEdgeSummary is retained as an assessment result compatibility alias.
-type ClassifiedEdgeSummary = report.ClassifiedEdgeSummary
-
-// CouplingTailRiskSummary is retained as an assessment result compatibility alias.
-type CouplingTailRiskSummary = report.CouplingTailRiskSummary
-
-// VolatilityProvenance is retained as an assessment result compatibility alias.
-type VolatilityProvenance = report.VolatilityProvenance
-
-// Summary is retained as an assessment result compatibility alias.
-type Summary = report.Summary
-
 // Diagnostic is retained as an assessment result compatibility alias.
 type Diagnostic = Result
-
-// GitFindingDelta is retained as an assessment result compatibility alias.
-type GitFindingDelta = report.GitFindingDelta
 
 // Compatibility constants keep migrated callers source-compatible.
 const (
@@ -119,24 +91,17 @@ const (
 	StatusAbsent               = evidence.StatusAbsent
 	StatusDisabled             = evidence.StatusDisabled
 	StatusTimedOut             = evidence.StatusTimedOut
-	VerdictPass                = report.VerdictPass
-	VerdictFail                = report.VerdictFail
-	VerdictWarn                = report.VerdictWarn
-	DirectionHigherIsBetter    = report.DirectionHigherIsBetter
-	DirectionHigherIsWorse     = report.DirectionHigherIsWorse
 	DynamicImportKindImportlib = evidence.DynamicImportKindImportlib
-	GitComparisonComparable    = report.GitComparisonComparable
-	GitComparisonUnknown       = report.GitComparisonUnknown
 )
 
 // Result is the assessment result before report projection.
 type Result struct {
 	SchemaVersion             string                              `json:"schema_version"`
-	Verdict                   report.Verdict                      `json:"verdict"`
+	Verdict                   Verdict                             `json:"verdict"`
 	Base                      string                              `json:"base"`
 	Head                      string                              `json:"head"`
 	ConfigHash                string                              `json:"config_hash,omitempty"`
-	Metrics                   []report.MetricResult               `json:"metrics"`
+	Metrics                   []MetricResult                      `json:"metrics"`
 	Findings                  []finding.Finding                   `json:"findings"`
 	FileFacts                 []evidence.FileFact                 `json:"file_facts"`
 	DynamicImports            []evidence.DynamicImport            `json:"dynamic_imports"`
@@ -154,21 +119,21 @@ type Result struct {
 	OwnerSource               string                              `json:"owner_source,omitempty"`
 	PrimaryExtractorTools     []string                            `json:"primary_extractor_tools,omitempty"`
 	ConfigWarnings            []string                            `json:"config_warnings,omitempty"`
-	ClassifiedEdges           *report.ClassifiedEdgeSummary       `json:"classified_edges,omitempty"`
+	ClassifiedEdges           *ClassifiedEdgeSummary              `json:"classified_edges,omitempty"`
 	DistanceContext           *evidence.DistanceContext           `json:"distance_context,omitempty"`
 	DistanceConfigCandidates  []evidence.DistanceConfigCandidate  `json:"distance_config_candidates,omitempty"`
 	VolatilityCorroboration   *evidence.VolatilityCorroboration   `json:"volatility_corroboration,omitempty"`
 	LocalCoupling             []evidence.LocalCouplingModule      `json:"local_coupling,omitempty"`
-	GitFindingDelta           *report.GitFindingDelta             `json:"git_finding_delta,omitempty"`
-	Delta                     *report.DeltaReport                 `json:"delta,omitempty"`
-	Summary                   report.Summary                      `json:"summary"`
+	GitFindingDelta           *GitFindingDelta                    `json:"git_finding_delta,omitempty"`
+	Delta                     *DeltaReport                        `json:"delta,omitempty"`
+	Summary                   Summary                             `json:"summary"`
 }
 
 // New returns an empty assessment result with deterministic collections.
 func New() Result {
 	return Result{
 		SchemaVersion:  SchemaVersion,
-		Metrics:        []report.MetricResult{},
+		Metrics:        []MetricResult{},
 		Findings:       []finding.Finding{},
 		FileFacts:      []evidence.FileFact{},
 		DynamicImports: []evidence.DynamicImport{},

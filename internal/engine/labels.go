@@ -4,12 +4,12 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/alexei-led/archfit/internal/labels"
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
 	"github.com/alexei-led/archfit/internal/syntax"
 	"github.com/alexei-led/archfit/internal/view"
 )

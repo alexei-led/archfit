@@ -11,8 +11,8 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/baseline"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // Shared test fingerprints (goconst).
@@ -267,17 +267,17 @@ func TestCouplingScore(t *testing.T) {
 			// Pre-rubric-tracking snapshot: rubric_version absent reads as 1, the
 			// only rubric shipped so far, so it must keep anchoring.
 			name: "snapshot without rubric_version anchors under rubric 1",
-			b:    baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: coupling.ScoreVersion}},
+			b:    baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: report.ScoreVersion}},
 			want: func() *int { v := 42; return &v }(),
 		},
 		{
 			name: "current scorer and rubric anchors",
-			b:    baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: coupling.ScoreVersion, RubricVersion: score.RubricVersion}},
+			b:    baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: report.ScoreVersion, RubricVersion: score.RubricVersion}},
 			want: func() *int { v := 42; return &v }(),
 		},
 		{
 			name:          "snapshot from a different rubric version is stale",
-			b:             baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: coupling.ScoreVersion, RubricVersion: score.RubricVersion + 1}},
+			b:             baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: report.ScoreVersion, RubricVersion: score.RubricVersion + 1}},
 			wantMismatchs: []string{baseline.InputRubricVersion},
 		},
 		{

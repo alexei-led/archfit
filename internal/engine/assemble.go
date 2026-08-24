@@ -4,14 +4,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/status"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/view"
 )
@@ -19,7 +19,7 @@ import (
 // deltaReport builds the delta-bucket block for a run. It returns nil outside
 // delta mode and when no finding lands in any bucket, so the field is omitted
 // from non-delta output (and the golden full-mode fixtures stay byte-identical).
-func deltaReport(mode scope.ScopeMode, findings []finding.Finding, accepted status.AcceptedSet, changed []string) *report.DeltaReport {
+func deltaReport(mode scope.ScopeMode, findings []finding.Finding, accepted status.AcceptedSet, changed []string) *result.DeltaReport {
 	if mode != scope.ModeDelta {
 		return nil
 	}
@@ -27,7 +27,7 @@ func deltaReport(mode scope.ScopeMode, findings []finding.Finding, accepted stat
 	if r.Empty() {
 		return nil
 	}
-	return &report.DeltaReport{
+	return &result.DeltaReport{
 		New:             r.New,
 		Existing:        r.Existing,
 		Resolved:        r.Resolved,
@@ -701,11 +701,11 @@ func pathDir(p string) string {
 // ClassifiedEdgeSummary for coupling_balance scoring. It counts every graph edge
 // (including same_module), separates cross-boundary scored vs abstained edges,
 // and computes the arithmetic mean book balance over scored edges.
-func buildClassifiedEdgeSummary(idx coupling.Index) *report.ClassifiedEdgeSummary {
+func buildClassifiedEdgeSummary(idx coupling.Index) *result.ClassifiedEdgeSummary {
 	return buildClassifiedEdgeSummaryWithCloneOnly(idx, nil, view.DuplicatedKnowledgePolicyAdvisory)
 }
 
-func buildClassifiedEdgeSummaryForRun(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy view.DuplicatedKnowledgePolicy, mm module.Map) *report.ClassifiedEdgeSummary {
+func buildClassifiedEdgeSummaryForRun(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy view.DuplicatedKnowledgePolicy, mm module.Map) *result.ClassifiedEdgeSummary {
 	return buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx, cloneOnly, policy, mm)
 }
 
@@ -731,12 +731,12 @@ func buildClassifiedEdgeSummaryForRun(idx coupling.Index, cloneOnly []classify.C
 //
 // The summary uses string keys (not coupling package constants) so it stays
 // usable from diagnostic (stdlib-only) and score packages.
-func buildClassifiedEdgeSummaryWithCloneOnly(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy view.DuplicatedKnowledgePolicy) *report.ClassifiedEdgeSummary {
+func buildClassifiedEdgeSummaryWithCloneOnly(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy view.DuplicatedKnowledgePolicy) *result.ClassifiedEdgeSummary {
 	return buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx, cloneOnly, policy, module.Map{})
 }
 
-func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy view.DuplicatedKnowledgePolicy, mm module.Map) *report.ClassifiedEdgeSummary {
-	s := &report.ClassifiedEdgeSummary{
+func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy view.DuplicatedKnowledgePolicy, mm module.Map) *result.ClassifiedEdgeSummary {
+	s := &result.ClassifiedEdgeSummary{
 		ByStrength:          make(map[string]int),
 		ByDistance:          make(map[string]int),
 		ByDistanceBasis:     make(map[string]int),
@@ -825,7 +825,7 @@ func (a *couplingTailRiskAccumulator) add(cl coupling.Classification, cloneOnly 
 	}
 }
 
-func (a couplingTailRiskAccumulator) summary(totalScored int) *report.CouplingTailRiskSummary {
+func (a couplingTailRiskAccumulator) summary(totalScored int) *result.CouplingTailRiskSummary {
 	if len(a.balances) == 0 {
 		return nil
 	}
@@ -835,7 +835,7 @@ func (a couplingTailRiskAccumulator) summary(totalScored int) *report.CouplingTa
 	if totalScored > 0 {
 		sharePct = a.highOrWorseEdges * 100 / totalScored
 	}
-	return &report.CouplingTailRiskSummary{
+	return &result.CouplingTailRiskSummary{
 		WorstBalance:              a.balances[0],
 		LowerDecileBalance:        a.balances[lowerDecileRank-1],
 		HighOrWorseEdges:          a.highOrWorseEdges,
@@ -848,9 +848,9 @@ func (a couplingTailRiskAccumulator) summary(totalScored int) *report.CouplingTa
 	}
 }
 
-func buildDistanceCompressionSummary() *report.DistanceCompressionSummary {
+func buildDistanceCompressionSummary() *result.DistanceCompressionSummary {
 	ev := classify.DistanceCompression()
-	return &report.DistanceCompressionSummary{
+	return &result.DistanceCompressionSummary{
 		CompressedMiddleRungs: ev.CompressedMiddleRungs,
 		ImplementedRungs:      append([]int(nil), ev.ImplementedRungs...),
 		OmittedRungs:          append([]int(nil), ev.OmittedRungs...),
@@ -897,7 +897,7 @@ func (a *distanceCompressionAccumulator) addModules(fromMod, toMod string, cl co
 	a.ancestorCounts[span.SharedAncestor]++
 }
 
-func (a *distanceCompressionAccumulator) apply(dst *report.DistanceCompressionSummary) {
+func (a *distanceCompressionAccumulator) apply(dst *result.DistanceCompressionSummary) {
 	if dst == nil {
 		return
 	}
@@ -905,7 +905,7 @@ func (a *distanceCompressionAccumulator) apply(dst *report.DistanceCompressionSu
 	dst.CodeStructureAncestorDepths = sortedDistanceCounts(a.ancestorCounts)
 }
 
-func sortedDistanceCounts(in map[int]int) []report.DistanceCount {
+func sortedDistanceCounts(in map[int]int) []result.DistanceCount {
 	if len(in) == 0 {
 		return nil
 	}
@@ -914,20 +914,20 @@ func sortedDistanceCounts(in map[int]int) []report.DistanceCount {
 		keys = append(keys, k)
 	}
 	sort.Ints(keys)
-	out := make([]report.DistanceCount, 0, len(keys))
+	out := make([]result.DistanceCount, 0, len(keys))
 	for _, k := range keys {
-		out = append(out, report.DistanceCount{Value: k, Count: in[k]})
+		out = append(out, result.DistanceCount{Value: k, Count: in[k]})
 	}
 	return out
 }
 
-func copyDistanceOmittedRungReasons(in []classify.DistanceOmittedRungReason) []report.DistanceOmittedRungReason {
+func copyDistanceOmittedRungReasons(in []classify.DistanceOmittedRungReason) []result.DistanceOmittedRungReason {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make([]report.DistanceOmittedRungReason, len(in))
+	out := make([]result.DistanceOmittedRungReason, len(in))
 	for i, r := range in {
-		out[i] = report.DistanceOmittedRungReason{Rung: r.Rung, Reason: r.Reason}
+		out[i] = result.DistanceOmittedRungReason{Rung: r.Rung, Reason: r.Reason}
 	}
 	return out
 }
@@ -966,7 +966,7 @@ func indexKeyEndpoints(key string) (string, string, bool) {
 	return from, to, true
 }
 
-func addClassificationToSummary(s *report.ClassifiedEdgeSummary, cl coupling.Classification) int {
+func addClassificationToSummary(s *result.ClassifiedEdgeSummary, cl coupling.Classification) int {
 	s.Total++
 	if cl.Distance == coupling.DistanceSameModule {
 		s.SameModule++
@@ -1020,7 +1020,7 @@ const (
 	balanceDriverTie              = "tie"
 )
 
-func addBalanceDistribution(s *report.ClassifiedEdgeSummary, key string, cl coupling.Classification, mm module.Map) {
+func addBalanceDistribution(s *result.ClassifiedEdgeSummary, key string, cl coupling.Classification, mm module.Map) {
 	if !cl.Score.Scored || cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown {
 		return
 	}
@@ -1043,7 +1043,7 @@ func addBalanceDistribution(s *report.ClassifiedEdgeSummary, key string, cl coup
 	}
 }
 
-func addBalanceDistributionForPair(s *report.ClassifiedEdgeSummary, fromModule, toModule string, cl coupling.Classification) {
+func addBalanceDistributionForPair(s *result.ClassifiedEdgeSummary, fromModule, toModule string, cl coupling.Classification) {
 	if !cl.Score.Scored {
 		return
 	}

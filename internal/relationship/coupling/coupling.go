@@ -131,14 +131,28 @@ const (
 	DistanceBasisExternal   DistanceBasis = "declared_external" // target matched an external_systems entry
 )
 
+// EdgeScore is the pure score result carried by a classified relationship.
+type EdgeScore struct {
+	Scored       bool
+	Balance      int
+	Value        int
+	Band         Severity
+	Reason       string
+	Breakdown    ScoreBreakdown
+	CheapestMove string
+}
+
+// ScoreBreakdown records the raw ordinals used by a relationship scorer.
+type ScoreBreakdown struct {
+	StrengthVal   int
+	DistanceVal   int
+	VolatilityVal int
+	Modularity    int
+	VolDiscount   int
+}
+
 // Classification holds the Balanced Coupling assessment for one graph edge.
-// Strength and Distance are populated with high confidence;
-// Volatility and Explicitness are derived from config subdomain/public globs.
-// Severity is set by classify.Run for cross-boundary edges from cl.Score.Band.
-// ContractRecommended is set when the target is a generic subdomain reached via
-// non-contract strength — BC's anti-corruption-layer advisory signal.
-// Score holds the continuous numeric risk score when a Scorer has been applied;
-// zero-value when no scorer is configured (e.g. same-module or unknown-distance edges).
+// It carries evidence and a score but no scoring behavior.
 type Classification struct {
 	Strength            Strength
 	Distance            Distance

@@ -17,7 +17,6 @@ import (
 	"io"
 	"sort"
 
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -149,7 +148,7 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 }
 
 // toResult maps one finding to a SARIF result.
-func toResult(f finding.Finding, ruleIdx int) result {
+func toResult(f report.Finding, ruleIdx int) result {
 	text := f.Why
 	if text == "" {
 		text = f.RuleID + " violation: " + f.Edge.From.Path + " -> " + f.Edge.To.Path
@@ -189,11 +188,11 @@ func toResult(f finding.Finding, ruleIdx int) result {
 
 // levelFor maps finding kind+status to a SARIF level: active gate findings are
 // errors, advisories are warnings, everything resolved/accepted is a note.
-func levelFor(f finding.Finding) string {
-	if f.Kind == finding.KindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver) {
+func levelFor(f report.Finding) string {
+	if f.Kind == report.FindingKindGate && (f.Status == report.FindingStatusNew || f.Status == report.FindingStatusExpiredWaiver) {
 		return "error"
 	}
-	if f.Kind == finding.KindAdvisory && f.Status == finding.StatusNew {
+	if f.Kind == report.FindingKindAdvisory && f.Status == report.FindingStatusNew {
 		return "warning"
 	}
 	return "note"

@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
-	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // coupledModulesCfg declares two modules with different owners and no rules, so
@@ -197,7 +197,7 @@ func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 	}{
 		{
 			name:       "stored score anchors the drop",
-			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: coupling.ScoreVersion, RubricVersion: score.RubricVersion},
+			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: report.ScoreVersion, RubricVersion: score.RubricVersion},
 			wantCode:   1,
 			wantStderr: []string{tripFragment},
 		},
@@ -206,7 +206,7 @@ func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 		// re-baseline.
 		{
 			name:         "legacy snapshot without a rubric version still anchors",
-			score:        &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: coupling.ScoreVersion},
+			score:        &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: report.ScoreVersion},
 			wantCode:     1,
 			wantStderr:   []string{tripFragment},
 			wantNoStderr: []string{skipFragment},
@@ -229,7 +229,7 @@ func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 		// the same measurement either.
 		{
 			name:       "incompatible rubric version skips the check and names the input",
-			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: coupling.ScoreVersion, RubricVersion: score.RubricVersion + 1},
+			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: string(score.BandStrong), ScoreVersion: report.ScoreVersion, RubricVersion: score.RubricVersion + 1},
 			wantCode:   0,
 			wantStderr: []string{skipFragment, "rubric_version"},
 		},
@@ -286,8 +286,8 @@ func TestRun_Baseline_WritesScoreSnapshot(t *testing.T) {
 	if b.Score.Band == "" || b.Score.Band == "n/a" {
 		t.Fatalf("baseline score band = %q, want a measured band", b.Score.Band)
 	}
-	if b.Score.ScoreVersion != coupling.ScoreVersion {
-		t.Fatalf("baseline score_version = %q, want %q", b.Score.ScoreVersion, coupling.ScoreVersion)
+	if b.Score.ScoreVersion != report.ScoreVersion {
+		t.Fatalf("baseline score_version = %q, want %q", b.Score.ScoreVersion, report.ScoreVersion)
 	}
 	if b.Score.RubricVersion != score.RubricVersion {
 		t.Fatalf("baseline rubric_version = %d, want %d", b.Score.RubricVersion, score.RubricVersion)

@@ -6,8 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship/scoring"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -45,10 +46,7 @@ func CloneOnlyPairs(g *graph.Graph, c view.ClassifyConfig) []CloneOnlyPair {
 		return nil
 	}
 	mi := buildModuleIndex(c.Modules)
-	scorer := c.Scorer
-	if scorer == nil {
-		scorer = coupling.DefaultScorer()
-	}
+	scorer := scoring.DefaultScorer()
 
 	// Owner-degeneracy precomputes — same invariants as Run.
 	degenerateExplicit, degenerateOwners := ownerDegeneracy(c)

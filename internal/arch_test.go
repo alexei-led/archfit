@@ -7,6 +7,7 @@
 package arch_test
 
 import (
+	"context"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -15,6 +16,8 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages"
+
+	"github.com/alexei-led/archfit/internal/config"
 )
 
 const (
@@ -27,7 +30,7 @@ const (
 // or adapter packages.
 var coreRingPkgs = []string{
 	modulePrefix + "internal/relationship/classify",
-	modulePrefix + "internal/rules",
+	modulePrefix + "internal/assessment/rules",
 	modulePrefix + "internal/assessment/metrics",
 	// metrics is split into family sub-packages; assert they all load.
 	modulePrefix + "internal/assessment/metrics/boundary",
@@ -35,7 +38,7 @@ var coreRingPkgs = []string{
 	modulePrefix + "internal/assessment/metrics/internal/result",
 	modulePrefix + "internal/assessment/status",
 	modulePrefix + "internal/assessment/staleness",
-	modulePrefix + "internal/facts",
+	modulePrefix + "internal/relationship/facts",
 	// score synthesises the banded scorecard from an already-computed
 	// Diagnostic — a pure decision over collected facts, no tools or I/O.
 	modulePrefix + "internal/assessment/score",
@@ -58,11 +61,11 @@ var coreRingPkgs = []string{
 // editing this list.
 var coreRingPrefixes = []string{
 	modulePrefix + "internal/relationship",
-	modulePrefix + "internal/rules",
+	modulePrefix + "internal/assessment/rules",
 	modulePrefix + "internal/assessment/metrics",
 	modulePrefix + "internal/assessment/status",
 	modulePrefix + "internal/assessment/staleness",
-	modulePrefix + "internal/facts",
+	modulePrefix + "internal/relationship/facts",
 	modulePrefix + "internal/assessment/score",
 	modulePrefix + "internal/scope",
 	modulePrefix + "internal/syntax",
@@ -100,6 +103,42 @@ var adapterPrefixes = []string{
 	modulePrefix + "internal/factcache",       // extractor-fact cache adapter (os I/O)
 }
 
+func TestCompositionFanoutRatchet(t *testing.T) {
+	cfg, err := config.Load(context.Background(), "../.archfit.yaml")
+	if err != nil {
+		t.Fatalf("load self config: %v", err)
+	}
+	moduleMap := cfg.ModuleMapView()
+	for _, tc := range []struct {
+		pkg string
+		max int
+	}{{modulePrefix + "cmd/archfit", 14}, {modulePrefix + "internal/engine", 9}} {
+		t.Run(tc.pkg, func(t *testing.T) {
+			loaded, loadErr := packages.Load(&packages.Config{Mode: packages.NeedImports, Dir: ".."}, tc.pkg)
+			if loadErr != nil || len(loaded) != 1 {
+				t.Fatalf("load %s: packages=%d err=%v", tc.pkg, len(loaded), loadErr)
+			}
+			modules := map[string]struct{}{}
+			for imp := range loaded[0].Imports {
+				if !strings.HasPrefix(imp, modulePrefix+"internal/") {
+					continue
+				}
+				path := strings.TrimPrefix(imp, modulePrefix)
+				name, ok := moduleMap.ModuleFor(path + "/package.go")
+				if !ok {
+					name, ok = moduleMap.ModuleFor(path)
+				}
+				if ok {
+					modules[name] = struct{}{}
+				}
+			}
+			if len(modules) > tc.max {
+				t.Errorf("%s direct module fan-out = %d, want <= %d: %v", tc.pkg, len(modules), tc.max, modules)
+			}
+		})
+	}
+}
+
 func TestDiagnosticProductionImportRatchet(t *testing.T) {
 	files := diagnosticProductionImportFiles(t)
 	if len(files) > maxDiagnosticProductionImportFileCount {
@@ -113,6 +152,19 @@ func TestScanProductionImportRatchet(t *testing.T) {
 	if len(files) > maxScanProductionImportFileCount {
 		t.Errorf("production files importing internal/model/scan = %d, want at most %d:\n%s",
 			len(files), maxScanProductionImportFileCount, strings.Join(files, "\n"))
+	}
+}
+
+func TestAssessmentResultDoesNotImportReport(t *testing.T) {
+	files := productionImportFiles(t, modulePrefix+"internal/model/report")
+	var assessmentFiles []string
+	for _, file := range files {
+		if strings.HasPrefix(file, "internal/assessment/result/") {
+			assessmentFiles = append(assessmentFiles, file)
+		}
+	}
+	if len(assessmentFiles) > 0 {
+		t.Errorf("assessment result must not import report contract:\n%s", strings.Join(assessmentFiles, "\n"))
 	}
 }
 
@@ -264,6 +316,22 @@ func TestArchImports(t *testing.T) {
 		}
 	})
 
+	t.Run("report_adapters_no_domain_imports", func(t *testing.T) {
+		assertReportAdaptersNoDomainImports(t, loaded)
+	})
+
+	t.Run("report_contract_no_finding_import", func(t *testing.T) {
+		const reportPkg = modulePrefix + "internal/model/report"
+		const findingPkg = modulePrefix + "internal/assessment/finding"
+		if pkg, ok := loaded[reportPkg]; ok {
+			if _, imports := pkg.Imports[findingPkg]; imports {
+				t.Errorf("report contract %s must not import finding domain %s", reportPkg, findingPkg)
+			}
+		} else {
+			t.Errorf("report contract package %s was not loaded", reportPkg)
+		}
+	})
+
 	t.Run("labelsio_unreachable_from_internal", func(t *testing.T) {
 		// The labels I/O adapter (os + YAML) must be reachable only from cmd. No
 		// internal package — the engine, the core ring, anything — may import it:
@@ -275,7 +343,7 @@ func TestArchImports(t *testing.T) {
 				continue
 			}
 			if _, imports := pkg.Imports[labelsioPkg]; imports {
-				t.Errorf("package %s must not import %s: only cmd may load label files; internal code uses the pure internal/labels", pkgPath, labelsioPkg)
+				t.Errorf("package %s must not import %s: only cmd may load label files; internal code uses the pure internal/relationship/labels", pkgPath, labelsioPkg)
 			}
 		}
 	})
@@ -326,9 +394,9 @@ func checkViewKernelOnly(t *testing.T, loaded map[string]*packages.Package) {
 	}
 }
 
-func TestCouplingModelDoesNotImportGraph(t *testing.T) {
+func TestCouplingContractDoesNotImportGraph(t *testing.T) {
 	cfg := &packages.Config{Mode: packages.NeedImports, Dir: "."}
-	pkgs, err := packages.Load(cfg, modulePrefix+"internal/model/coupling")
+	pkgs, err := packages.Load(cfg, modulePrefix+"internal/relationship/coupling")
 	if err != nil {
 		t.Fatalf("packages.Load: %v", err)
 	}
@@ -337,7 +405,23 @@ func TestCouplingModelDoesNotImportGraph(t *testing.T) {
 	}
 	const graphPkg = modulePrefix + "internal/model/graph"
 	if _, imports := pkgs[0].Imports[graphPkg]; imports {
-		t.Fatalf("internal/model/coupling must not import %s; keep clone evidence on coupling's narrow Location DTO", graphPkg)
+		t.Fatalf("internal/relationship/coupling must not import %s; keep clone evidence on coupling's narrow Location DTO", graphPkg)
+	}
+}
+
+func assertReportAdaptersNoDomainImports(t *testing.T, loaded map[string]*packages.Package) {
+	t.Helper()
+	for pkgPath, pkg := range loaded {
+		if !strings.HasPrefix(pkgPath, modulePrefix+"internal/output/") {
+			continue
+		}
+		for imp := range pkg.Imports {
+			if strings.HasPrefix(imp, modulePrefix+"internal/assessment/") ||
+				strings.HasPrefix(imp, modulePrefix+"internal/relationship/") ||
+				strings.HasPrefix(imp, modulePrefix+"internal/engine") {
+				t.Errorf("report adapter %s must not import domain package %s", pkgPath, imp)
+			}
+		}
 	}
 }
 

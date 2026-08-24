@@ -3,10 +3,10 @@ package classify_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/view"
 )
 

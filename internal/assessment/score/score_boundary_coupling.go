@@ -6,9 +6,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/finding"
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+
+	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
 const (
@@ -35,7 +36,7 @@ const (
 //
 // When summary is nil (backward compat), the function falls back to the legacy
 // advisory-edge path using the edges []bcEdge slice.
-func couplingBalance(edges []bcEdge, mi metricIndex, summary *report.ClassifiedEdgeSummary) Dimension {
+func couplingBalance(edges []bcEdge, mi metricIndex, summary *result.ClassifiedEdgeSummary) Dimension {
 	dim := Dimension{Name: DimCouplingBalance}
 
 	// Degenerate import graph: <2 modules joined by dependency edges. That is
@@ -205,7 +206,7 @@ func confidenceFromScoredPct(scoredPct int) Confidence {
 	}
 }
 
-func summaryConfidenceCapReasons(summary *report.ClassifiedEdgeSummary, conf Confidence) []string {
+func summaryConfidenceCapReasons(summary *result.ClassifiedEdgeSummary, conf Confidence) []string {
 	if conf != ConfidenceHigh {
 		return nil
 	}
@@ -223,7 +224,7 @@ func summaryConfidenceCapReasons(summary *report.ClassifiedEdgeSummary, conf Con
 	return reasons
 }
 
-func appendTailRiskEvidence(evidence []string, summary *report.ClassifiedEdgeSummary) []string {
+func appendTailRiskEvidence(evidence []string, summary *result.ClassifiedEdgeSummary) []string {
 	tr := summary.TailRisk
 	if tr == nil {
 		return evidence
@@ -245,7 +246,7 @@ func appendTailRiskEvidence(evidence []string, summary *report.ClassifiedEdgeSum
 // applied) and the labeled_llm edge bucket, which attributes the
 // scored-fraction increase to the semantic layer — edges whose strength exists
 // only because an approved llm label filled an otherwise-abstained cell.
-func appendLLMLabelEvidence(evidence []string, summary *report.ClassifiedEdgeSummary, llmConfLowered bool) []string {
+func appendLLMLabelEvidence(evidence []string, summary *result.ClassifiedEdgeSummary, llmConfLowered bool) []string {
 	if llmConfLowered {
 		evidence = append(evidence,
 			fmt.Sprintf("llm-provenance labels in effect: %d (confidence lowered)", summary.LLMApproved))
@@ -260,7 +261,7 @@ func appendLLMLabelEvidence(evidence []string, summary *report.ClassifiedEdgeSum
 	return evidence
 }
 
-func appendCouplingEvidence(evidence []string, summary *report.ClassifiedEdgeSummary, scoredPct, criticalCount, distributedMonolith int, capApplied string, rawValue int, capReasons []string, llmConfLowered bool) []string {
+func appendCouplingEvidence(evidence []string, summary *result.ClassifiedEdgeSummary, scoredPct, criticalCount, distributedMonolith int, capApplied string, rawValue int, capReasons []string, llmConfLowered bool) []string {
 	if len(summary.ByStrength) > 0 {
 		evidence = append(evidence, fmt.Sprintf("strength distribution: %s; distance distribution: %s; volatility distribution: %s", formatCounts(summary.ByStrength), formatCounts(summary.ByDistance), formatCounts(summary.ByVolatility)))
 	}

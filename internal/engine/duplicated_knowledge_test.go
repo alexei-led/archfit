@@ -5,12 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/baseline"
-	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -102,8 +103,8 @@ func TestDuplicatedKnowledgeAdvisory(t *testing.T) {
 	if got := f.MatchedBy["score_value"]; got != "6" {
 		t.Errorf("matched_by.score_value = %q, want 6", got)
 	}
-	if got := f.MatchedBy["score_version"]; got != coupling.ScoreVersion {
-		t.Errorf("matched_by.score_version = %q, want %s", got, coupling.ScoreVersion)
+	if got := f.MatchedBy["score_version"]; got != report.ScoreVersion {
+		t.Errorf("matched_by.score_version = %q, want %s", got, report.ScoreVersion)
 	}
 	if got := f.MatchedBy["score_policy"]; got != string(view.DuplicatedKnowledgePolicyScore) {
 		t.Errorf("matched_by.score_policy = %q, want %q", got, view.DuplicatedKnowledgePolicyScore)

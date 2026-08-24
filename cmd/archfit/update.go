@@ -16,16 +16,14 @@ import (
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
 	"github.com/alexei-led/archfit/internal/extract/dynimports"
+	"github.com/alexei-led/archfit/internal/extract/registry"
 	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
-	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // ruleTypeForbiddenLayerDirection is the rule type whose presence makes a
@@ -119,7 +117,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	// deep-analysis defaults that make a single-crate graph measurable.
 	// `config init` keeps the root-only check — it has no existing config to read
 	// a manifest from.
-	if needsRustDeepAnalysisConfig(cfg, rustProjectPresent(root, cfg)) {
+	if needsRustDeepAnalysisConfig(cfg, registry.ProjectPresent(config.LangRust, root, cfg.ForExtract(config.LangRust))) {
 		report.Settings = append(report.Settings, initcfg.RustDeepAnalysisSetting())
 	}
 	hasSettingEdits := len(report.Settings) > 0
@@ -298,14 +296,13 @@ func (c *UpdateCmd) withRustSyntheticSuggestions(
 	deps *appDeps,
 ) (initcfg.UpdateReport, error) {
 	extractCfg := cfg.ForExtract(config.LangRust)
-	if extractCfg.Mode == view.ModeOff || !extractCfg.ModuleGraph {
+	if extractCfg.Mode == config.ModeOff || !extractCfg.ModuleGraph {
 		return report, nil
 	}
 
 	facts := factcache.NewStore(factsCacheDir(filepath.Dir(c.Config)))
 	facts.RefreshMode = c.Refresh
-	ex := rust.New(deps.Runner, extractCfg)
-	ex.Cache = facts
+	ex := registry.New(config.LangRust, deps.Runner, cfg.ForExtract(config.LangRust), facts)
 	rustFacts, _, err := ex.Extract(ctx, scope.Scope{Root: root})
 	if err != nil {
 		return report, &exitError{code: 3, msg: fmt.Sprintf("error: discovering Rust synthetic modules: %v", err)}
@@ -413,13 +410,13 @@ func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredCo
 		configNameFor[d.DiscoveredName] = d.ConfigName
 	}
 	out := cfg
-	out.Modules = make(map[string]module.ModuleDef, len(discovered.Modules))
+	out.Modules = make(map[string]config.ModuleDef, len(discovered.Modules))
 	for _, mod := range discovered.Modules {
 		name := mod.Name
 		if configName, drifted := configNameFor[name]; drifted {
 			name = configName
 		}
-		def := module.ModuleDef{
+		def := config.ModuleDef{
 			Paths:    append([]string(nil), mod.Paths...),
 			Public:   append([]string(nil), mod.Public...),
 			Internal: append([]string(nil), mod.Internal...),
@@ -496,7 +493,7 @@ func staticExternalDistanceConfigCandidatesFromGraph(g *graph.Graph, cfg config.
 }
 
 func buildUpdateCandidateGraph(ctx context.Context, root string, cfg config.Config, deps *appDeps) *graph.Graph {
-	extractors := buildExtractors(deps.Runner, cfg, nil)
+	extractors := registry.Build(deps.Runner, extractConfigs(cfg), nil)
 	allFacts := make([]graph.Facts, 0, len(extractors))
 	for _, ex := range extractors {
 		facts, _, err := ex.Extract(ctx, scope.Scope{Root: root})
@@ -659,7 +656,7 @@ func collectUpdateRepoEvidence(root string) []string {
 }
 
 // configToExisting projects config.Modules into []initcfg.ExistingModule.
-func configToExisting(modules map[string]module.ModuleDef) []initcfg.ExistingModule {
+func configToExisting(modules map[string]config.ModuleDef) []initcfg.ExistingModule {
 	out := make([]initcfg.ExistingModule, 0, len(modules))
 	for name, def := range modules {
 		out = append(out, initcfg.ExistingModule{

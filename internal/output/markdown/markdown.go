@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -148,9 +147,9 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 	return err
 }
 
-func splitFindings(fs []finding.Finding) (gate, advisories []finding.Finding) {
+func splitFindings(fs []report.Finding) (gate, advisories []report.Finding) {
 	for _, f := range fs {
-		if f.Kind == finding.KindGate {
+		if f.Kind == report.FindingKindGate {
 			gate = append(gate, f)
 		} else {
 			advisories = append(advisories, f)
@@ -167,7 +166,7 @@ func splitFindings(fs []finding.Finding) (gate, advisories []finding.Finding) {
 // stable tie-break chain (rule id, status, from path, to path, edge kind, id).
 // id is a unique fingerprint, so the order is total — equal-severity findings
 // no longer depend on input order.
-func findingLess(a, b finding.Finding) bool {
+func findingLess(a, b report.Finding) bool {
 	if ra, rb := severityRank(a.Severity), severityRank(b.Severity); ra != rb {
 		return ra > rb
 	}
@@ -189,7 +188,7 @@ func findingLess(a, b finding.Finding) bool {
 	return a.ID < b.ID
 }
 
-func severityRank(s finding.Severity) int {
+func severityRank(s string) int {
 	switch s {
 	case "critical":
 		return 4

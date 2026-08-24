@@ -9,8 +9,8 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/metrics/metricstest"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
 // Node path constants used across boundary metric tests.

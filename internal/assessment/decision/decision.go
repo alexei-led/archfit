@@ -10,9 +10,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -78,7 +78,7 @@ func Build(diag result.Result, sc score.Scorecard, base *score.Scorecard, hardGa
 // score.BandRank (the canonical source) so decision and score never diverge.
 func decideBand(diag result.Result, sc score.Scorecard, hardGate bool) Band {
 	// 1. FAIL: hard gate tripped OR verdict is fail.
-	if hardGate || diag.Verdict == report.VerdictFail {
+	if hardGate || diag.Verdict == result.VerdictFail {
 		return BandFail
 	}
 	// 2. NEEDS_ATTENTION: the OVERALL band is poor or critical. A single low
@@ -95,7 +95,7 @@ func decideBand(diag result.Result, sc score.Scorecard, hardGate bool) Band {
 	// 3. HEALTHY: overall is serviceable or strong AND no advisory warnings AND verdict is not warn.
 	if score.BandRank(sc.OverallBand) >= score.BandRank(score.BandServiceable) &&
 		diag.Summary.Warnings == 0 &&
-		diag.Verdict != report.VerdictWarn {
+		diag.Verdict != result.VerdictWarn {
 		return BandHealthy
 	}
 	// 4. Default arm — covers mixed overall, warnings present, warn verdict, etc.

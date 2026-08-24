@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/agenttask"
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
 

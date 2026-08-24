@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/report"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
@@ -42,7 +41,7 @@ func emitHealthWarnings(deps *appDeps, diag result.Result, cfg config.Config, ro
 	}
 }
 
-func pythonAllEdgesExternal(cov []evidence.Coverage, edges *report.ClassifiedEdgeSummary) bool {
+func pythonAllEdgesExternal(cov []evidence.Coverage, edges *result.ClassifiedEdgeSummary) bool {
 	if edges == nil || edges.External == 0 || edges.Scored != 0 {
 		return false
 	}

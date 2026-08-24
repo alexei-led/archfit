@@ -21,11 +21,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/finding"
-	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // CoverageComparability grades how far two runs' analyzer evidence can be
@@ -566,7 +565,7 @@ func compareScore(current, candidate score.Scorecard) *int {
 // the cross-boundary edges the scorer considered, so it is compared as a
 // fraction. External edges are excluded from that denominator entirely, so their
 // growth is only visible as an absolute count.
-func measurementWarnings(current, candidate *report.ClassifiedEdgeSummary) []ConfigCompareWarning {
+func measurementWarnings(current, candidate *result.ClassifiedEdgeSummary) []ConfigCompareWarning {
 	curScored, curAbstained, curExternal := edgeCounts(current)
 	candScored, candAbstained, candExternal := edgeCounts(candidate)
 
@@ -612,7 +611,7 @@ func scoredShareFell(curScored, curDen, candScored, candDen int) bool {
 
 // edgeCounts reads the three measurement counters, treating an absent summary
 // (classification did not run) as zero.
-func edgeCounts(s *report.ClassifiedEdgeSummary) (scored, abstained, external int) {
+func edgeCounts(s *result.ClassifiedEdgeSummary) (scored, abstained, external int) {
 	if s == nil {
 		return 0, 0, 0
 	}

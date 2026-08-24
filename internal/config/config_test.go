@@ -180,7 +180,7 @@ func TestModuleFor_PythonDottedGlobs(t *testing.T) {
 // (internal/classify/classify.go, via pathFromID) resolve a Python edge
 // endpoint's DOTTED node ID through ModuleFor — that entry point is
 // unchanged. File-path-based consumers (internal/ownership CODEOWNERS
-// resolution, internal/rules public_api_* attribution, internal/engine
+// resolution, internal/assessment/rules public_api_* attribution, internal/engine
 // clone-pairing) resolve the SAME underlying source file's real
 // repo-relative path through ModuleForFile, which normalizes the file into
 // the language's node-key form (dotted for Python) before delegating to
@@ -1095,24 +1095,16 @@ func TestSelfConfig_CapabilityModuleMap(t *testing.T) {
 			wantPaths: []string{"internal/relationship/**"},
 		},
 		{
-			name: "coupling-model", layer: layerModel, role: module.RoleSharedModel,
-			wantPaths: []string{"internal/model/coupling/**"},
-		},
-		{
-			name: "evaluation-core", layer: layerCore, role: module.RoleCore,
-			wantPaths: []string{"internal/rules/**", "internal/facts/**"},
-		},
-		{
 			name: "assessment-repair", layer: layerCore, role: module.RoleCore,
 			wantPaths: []string{"internal/assessment/**"},
 		},
 		{
-			name: "architecture-model", layer: layerModel, role: module.RoleSharedModel,
-			wantPaths: []string{"internal/model/module/**"},
+			name: "analysis-application", layer: layerEngine,
+			wantPaths: []string{"internal/application/**"},
 		},
 		{
-			name: "finding-model", layer: layerModel, role: module.RoleSharedModel,
-			wantPaths: []string{"internal/model/finding/**"},
+			name: "architecture-model", layer: layerModel, role: module.RoleSharedModel,
+			wantPaths: []string{"internal/model/module/**"},
 		},
 		{
 			name: "report-contract", layer: layerModel, role: module.RoleSharedModel,
@@ -1656,6 +1648,7 @@ const (
 	// Layer name constants used in self-config conformance tests.
 	layerAdapter = "adapter"
 	layerCore    = "core"
+	layerEngine  = "engine"
 	layerModel   = "model"
 
 	// langTypeScript and yamlV1 appear in many tests; kept as constants to

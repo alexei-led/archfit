@@ -11,22 +11,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/metrics"
 	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/rules"
 	archscore "github.com/alexei-led/archfit/internal/assessment/score"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
-	"github.com/alexei-led/archfit/internal/labels"
-	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/pattern"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/ports"
-	"github.com/alexei-led/archfit/internal/rules"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
+	"github.com/alexei-led/archfit/internal/relationship/scoring"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/view"
 )
@@ -782,15 +784,15 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	}
 
 	// score_band must equal the band derived from the value (consistency).
-	wantBand := string(coupling.ScoreBand(value))
+	wantBand := string(scoring.ScoreBand(value))
 	if got := adv.MatchedBy["score_band"]; got != wantBand {
 		t.Errorf("MatchedBy[score_band]=%q, want %q (band for value %d)", got, wantBand, value)
 	}
 
 	// score_version pins the BC score formula version so a deliberate ordinal/
 	// formula change is observable in output.
-	if got := adv.MatchedBy["score_version"]; got != coupling.ScoreVersion {
-		t.Errorf("MatchedBy[score_version]=%q, want %q", got, coupling.ScoreVersion)
+	if got := adv.MatchedBy["score_version"]; got != report.ScoreVersion {
+		t.Errorf("MatchedBy[score_version]=%q, want %q", got, report.ScoreVersion)
 	}
 
 	// cheapest_move: the edge lands in module b's Internal glob, so classify

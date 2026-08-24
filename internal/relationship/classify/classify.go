@@ -9,9 +9,10 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship/scoring"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -46,17 +47,14 @@ const (
 //     (core→high, supporting→low, generic→low, ""/"unknown"→unknown).
 //   - Explicitness: explicit when strength=contract; implicit when strength=intrusive;
 //     unknown otherwise.
-//   - Score: continuous EdgeScore from the configured Scorer (default: BookScorer).
+//   - Score: continuous EdgeScore from the production BookScorer.
 //     Applied to every known-distance edge; unknown-distance edges are zero.
 //     Same-module edges are scored (local_coupling report block) but keep
 //     SeverityNone — the advisory pipeline stays cross-boundary.
 func Run(g *graph.Graph, c view.ClassifyConfig) coupling.Index {
 	mm := buildModuleIndex(c.Modules)
 	idx := make(coupling.Index)
-	scorer := c.Scorer
-	if scorer == nil {
-		scorer = coupling.DefaultScorer()
-	}
+	scorer := scoring.DefaultScorer()
 
 	// Pre-compute per-run invariants so classifyDistance does not rebuild maps on
 	// every edge. Both results depend only on config (loaded once before Run).

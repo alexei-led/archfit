@@ -3,7 +3,7 @@ package labels_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/labels"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
 
 // TestLabel_ConfidenceProvenance_Fields verifies round-trip of new fields via

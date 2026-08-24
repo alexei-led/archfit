@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/decision"
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/extract/ts"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/view"
 )
 

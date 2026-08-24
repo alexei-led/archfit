@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/ports"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
 const (

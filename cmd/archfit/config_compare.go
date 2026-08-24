@@ -33,11 +33,11 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/assessment/decision"
+	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
-	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // configCompareSchemaVersion versions the `config compare --json` document.
@@ -167,7 +167,7 @@ type configCompareSideDoc struct {
 	ConfigHash string          `json:"config_hash"`
 	Scorecard  score.Scorecard `json:"scorecard"`
 	// ClassifiedEdges is null when classification produced no summary at all.
-	ClassifiedEdges *report.ClassifiedEdgeSummary `json:"classified_edges"`
+	ClassifiedEdges *assessmentresult.ClassifiedEdgeSummary `json:"classified_edges"`
 	// FindingCount is the number of DISTINCT observed finding IDs on this side,
 	// with fixed entries excluded — the same population the ID buckets split, so
 	// the two can never disagree. It is not len(findings).
@@ -340,16 +340,16 @@ func configCompareDiffLines(current, candidate decision.ConfigCompareSide, res d
 // The list is the complete set of classification histograms the diagnostic
 // carries, so the identity line's claim covers the whole mix rather than a
 // chosen subset of it.
-func classificationMixLines(current, candidate *report.ClassifiedEdgeSummary) []string {
+func classificationMixLines(current, candidate *assessmentresult.ClassifiedEdgeSummary) []string {
 	mixes := []struct {
 		label string
-		pick  func(*report.ClassifiedEdgeSummary) map[string]int
+		pick  func(*assessmentresult.ClassifiedEdgeSummary) map[string]int
 	}{
-		{"strength mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByStrength }},
-		{"distance mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByDistance }},
-		{"distance basis mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByDistanceBasis }},
-		{"volatility mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByVolatility }},
-		{"severity mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.BySeverity }},
+		{"strength mix", func(s *assessmentresult.ClassifiedEdgeSummary) map[string]int { return s.ByStrength }},
+		{"distance mix", func(s *assessmentresult.ClassifiedEdgeSummary) map[string]int { return s.ByDistance }},
+		{"distance basis mix", func(s *assessmentresult.ClassifiedEdgeSummary) map[string]int { return s.ByDistanceBasis }},
+		{"volatility mix", func(s *assessmentresult.ClassifiedEdgeSummary) map[string]int { return s.ByVolatility }},
+		{"severity mix", func(s *assessmentresult.ClassifiedEdgeSummary) map[string]int { return s.BySeverity }},
 		{"volatility provenance (modules)", volatilityProvenanceCounts},
 	}
 	var lines []string
@@ -364,8 +364,8 @@ func classificationMixLines(current, candidate *report.ClassifiedEdgeSummary) []
 // pickHistogram reads one histogram from a side, treating a side that never
 // classified anything as an empty one.
 func pickHistogram(
-	s *report.ClassifiedEdgeSummary,
-	pick func(*report.ClassifiedEdgeSummary) map[string]int,
+	s *assessmentresult.ClassifiedEdgeSummary,
+	pick func(*assessmentresult.ClassifiedEdgeSummary) map[string]int,
 ) map[string]int {
 	if s == nil {
 		return nil
@@ -376,7 +376,7 @@ func pickHistogram(
 // volatilityProvenanceCounts flattens the provenance struct to the same
 // bucket-count shape as the other histograms. These count MODULES, not edges —
 // hence the label.
-func volatilityProvenanceCounts(s *report.ClassifiedEdgeSummary) map[string]int {
+func volatilityProvenanceCounts(s *assessmentresult.ClassifiedEdgeSummary) map[string]int {
 	p := s.VolatilityProvenance
 	if p == nil {
 		return nil
@@ -424,7 +424,7 @@ func histogramCompareLine(label string, cur, cand map[string]int) (string, bool)
 // a candidate that scores the same edges differently, or measures more of the
 // tree, is still a changed measurement, and the identity line must not claim
 // otherwise.
-func edgeCompareLine(current, candidate *report.ClassifiedEdgeSummary) (string, bool) {
+func edgeCompareLine(current, candidate *assessmentresult.ClassifiedEdgeSummary) (string, bool) {
 	if current == nil && candidate == nil {
 		return "", false
 	}
@@ -435,7 +435,7 @@ func edgeCompareLine(current, candidate *report.ClassifiedEdgeSummary) (string, 
 	return fmt.Sprintf("classified edges: %s → %s", cur, cand), true
 }
 
-func edgeCountsText(s *report.ClassifiedEdgeSummary) string {
+func edgeCountsText(s *assessmentresult.ClassifiedEdgeSummary) string {
 	if s == nil {
 		return scoreUnmeasured
 	}

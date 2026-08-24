@@ -7,10 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/report"
-
 	"github.com/alexei-led/archfit/internal/assessment/agenttask"
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/metrics"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
@@ -18,41 +16,15 @@ import (
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
-	"github.com/alexei-led/archfit/internal/extract/astgrep"
-	"github.com/alexei-led/archfit/internal/extract/clones"
-	"github.com/alexei-led/archfit/internal/extract/deployunit"
-	"github.com/alexei-led/archfit/internal/extract/dynimports"
-	"github.com/alexei-led/archfit/internal/extract/loc"
-	"github.com/alexei-led/archfit/internal/extract/manifest"
-	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
-	"github.com/alexei-led/archfit/internal/extract/scip"
+	"github.com/alexei-led/archfit/internal/extract/acquire"
+	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
-	"github.com/alexei-led/archfit/internal/model/finding"
-	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/ownership"
-	"github.com/alexei-led/archfit/internal/ports"
-	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
-
-// cloneTestGenGlobs are coarse jscpd --ignore patterns that skip test and
-// generated files at scan time. These are additive speed hints; correctness
-// is enforced by the clone post-filter in the classify stage.
-var cloneTestGenGlobs = []string{
-	"**/*_test.go",
-	"**/*_test.ts",
-	"**/*_test.py",
-	"**/mock_*.go",
-	"**/*_mock.go",
-	"**/*_moq.go",
-	"**/*.pb.go",
-	"**/*_gen.go",
-	"**/mocks/**",
-	"**/__mocks__/**",
-}
 
 // gitResolver adapts internal/history/git to scope.Resolver. The concrete
 // git dependency lives here in the composition root — scope itself stays
@@ -191,9 +163,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	facts := factcache.NewStore(factsCacheDir(rc.BundleDir))
 	facts.RefreshMode = deps.refresh
 
-	extractors := buildExtractors(deps.Runner, cfg, facts)
+	extractors := registry.Build(deps.Runner, extractConfigs(cfg), facts)
 
-	rs, err := rules.New(cfg.ForRules())
+	rs, err := engine.BuildRules(cfg.ForRules())
 	if err != nil {
 		return result.Result{}, score.Scorecard{}, err
 	}
@@ -228,43 +200,20 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	}
 
 	deps.reportPhase("Collecting facts")
-	change := signal.RunSignals{}
-
-	// LOC walk — repo-relative path→line-count map + coverage record.
-	// ExtraCoverage order: loc, clones.
-	var locCov evidence.Coverage
-	var toolErr error
-	fileCfg := cfg.ForFileClass()
-	change.Size.FileLOC, change.Size.FileClassIndex, locCov, toolErr = loc.RunWithConfig(s.Root, fileCfg)
-	noteToolErr("loc", toolErr)
-	change.ExtraCoverage = append(change.ExtraCoverage, locCov)
-
-	// Dynamic/lazy import detection (deterministic FS scan; always runs): Python
-	// non-top-level imports + importlib/__import__, TS require()/dynamic import().
-	// Report-only — surfaced as evidence, never modifies the graph, metrics, or gate.
-	change.DynamicImports.Sites = dynimports.Detect(s.Root)
-
-	// Manifest deprecation markers (go.mod retract, package.json deprecated).
-	// Report-only — never modifies the graph, metric verdict, or gate.
-	// Ceiling: cargo yanked and live EOL are not locally declarable — use archfit analyze --ai-summary / config enrich.
-	change.DeprecatedDeps = manifest.Scan(s.Root)
-
-	// Runtime async-bridge detection (deterministic FS scan + optional ast-grep).
-	// Detects message-queue, event-bus, async-task integration patterns per language.
-	// Report-only evidence — never annotates graph edges, never affects distance/score or the gate verdict.
-	{
-		r := runtimedetect.Detect(ctx, s.Root, deps.Runner)
-		for _, sig := range r.Signals {
-			change.RuntimeAsync.Sites = append(change.RuntimeAsync.Sites, evidence.RuntimeAsyncSite{
-				File:            sig.File,
-				Line:            sig.Line,
-				Library:         sig.Library,
-				IntegrationKind: string(sig.IntegrationKind),
-				Language:        sig.Language,
-			})
-		}
-		change.RuntimeAsync.Confidence = r.Confidence
+	acquired := acquire.Collect(ctx, s.Root, acquisitionOptions(cfg), deps.Runner, facts)
+	change := signal.RunSignals{
+		Size: signal.SizeSignals{
+			FileLOC: acquired.FileLOC, FileClassIndex: acquired.FileClassIndex,
+		},
+		Duplication:    signal.DuplicationSignals{Clusters: acquired.DuplicationClusters},
+		ExtraCoverage:  acquired.ExtraCoverage,
+		DynamicImports: signal.DynamicImportSignals{Sites: acquired.DynamicImports},
+		RuntimeAsync: signal.RuntimeAsyncSignals{
+			Sites: acquired.RuntimeAsyncSites, Confidence: acquired.RuntimeConfidence,
+		},
+		DeprecatedDeps: acquired.DeprecatedDeps,
 	}
+	noteToolErr("loc", acquired.LOCError)
 
 	// Ownership resolution: fills module owner gaps from CODEOWNERS or git-author
 	// history. Explicit config owner always wins; resolver only fills empty slots.
@@ -296,31 +245,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	// remaps those to module names, which is what FillMissingDeployUnits expects
 	// (without it, auto-detected units are dropped unless a module's map key
 	// equals the path). Config-authored deploy_unit always wins.
-	duModules := cfg.ModuleMapView()
-	deployUnitsByPath := deployunit.Detect(ctx, s.Root, duModules, deps.Runner)
-	deployUnitsByModule := deployunit.KeyByModule(deployUnitsByPath, duModules)
+	deployUnitsByModule := acquired.DeployUnitsByModule
 	cfg.FillMissingDeployUnits(deployUnitsByModule)
-	change.ExtraCoverage = append(change.ExtraCoverage, evidence.Coverage{
-		Tool:      toolDeployUnit,
-		FilesSeen: len(deployUnitsByPath),
-		// Deploy-unit detection is auxiliary distance evidence, not file-scope
-		// extractor coverage. Keep the row visible but non-contributing.
-		FilesApplicable: 0,
-		Status:          evidence.StatusOK,
-	})
-
-	// Clone detection — opt-in (analyzers.clones.enabled: true). Run returns empty+absent
-	// when disabled or the tool is missing; the metric reports n/a in that case.
-	// Append coarse test/generated globs to the exclusions so jscpd skips those
-	// files at scan time (speed); correctness is enforced by the clone post-filter
-	// in the classify stage. These globs are additive to cfg.Exclude.
-	clonesExcl := make([]string, len(cfg.Exclude), len(cfg.Exclude)+len(cloneTestGenGlobs))
-	copy(clonesExcl, cfg.Exclude)
-	clonesExcl = append(clonesExcl, cloneTestGenGlobs...)
-	var clonesCov evidence.Coverage
-	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), clonesExcl, facts)
-	noteToolErr("jscpd", toolErr)
-	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
+	noteToolErr("jscpd", acquired.CloneError)
 
 	// Pinned coupling labels (.archfit-labels.yaml): the human-reviewed output of
 	// `archfit enrich`. Optional; a malformed file fails loudly — a half-read
@@ -330,47 +257,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 		return result.Result{}, score.Scorecard{}, err
 	}
 
-	// SCIP symbol-level strength is opt-in (analyzers.scip.enabled: true): the indexer is
-	// whole-repo and slow, so it must not run on the default check path, and the
-	// decision must live in config (not PATH presence) to keep metrics deterministic.
-	// When skipped, append an explicit disabled coverage row so tool_coverage reads
-	// "disabled" (not absent/missing) and no spurious install-gap is raised.
-	var resolver ports.SymbolResolver = ports.NopSymbolResolver{}
-	if cfg.ScipEnabled() {
-		scipAdapter := scip.New(deps.Runner, cfg.ToolTimeout(config.ToolScip))
-		scipAdapter.Cache = facts
-		// scip-go is a Go-toolchain process, so it must honour the same go.work
-		// decision the in-process Go loader makes — otherwise it walks up to an
-		// out-of-scope go.work, indexes one synthetic package, and writes an empty
-		// index. Asking discovery is a handful of stats; deriving it separately
-		// here would be a second implementation of the same decision.
-		scipAdapter.GoWorkOff = goWorkOff(s.Root, cfg)
-		resolver = scipAdapter
-	} else {
-		change.ExtraCoverage = append(change.ExtraCoverage, evidence.Coverage{
-			Tool:   toolScip,
-			Status: evidence.StatusDisabled,
-			Reason: reasonScipDisabled,
-		})
-	}
-
-	// Syntax facts (ast-grep syntax rules) are opt-in (analyzers.syntax.enabled: true):
-	// language-specific rules add overhead and the result is report-only.
-	// When skipped, append an explicit disabled coverage row for the same reason.
 	syntaxCfg := cfg.ForSyntax()
-	var syntaxProvider ports.SyntaxProvider = ports.NopSyntaxProvider{}
-	if syntaxCfg.Enabled {
-		syntaxAdapter := astgrep.New(deps.Runner)
-		syntaxAdapter.Cache = facts
-		syntaxProvider = syntaxAdapter
-	} else {
-		change.ExtraCoverage = append(change.ExtraCoverage, evidence.Coverage{
-			Tool:   toolAstGrepSyntax,
-			Status: evidence.StatusDisabled,
-			Reason: reasonSyntaxDisabled,
-		})
-	}
-
 	configHash := effectiveConfigHash(rc.ConfigSource)
 	// One evaluation instant for waiver expiry and staleness. A --base run
 	// hands the same value to both sides so head and base age findings against
@@ -378,8 +265,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	now := rc.evaluatedAt()
 
 	patternCfg := cfg.ForPatterns()
-	patternProvider := astgrep.New(deps.Runner)
-	patternProvider.Cache = facts
 	deps.reportPhase("Analyzing dependencies")
 	diag, err := engine.Run(ctx, engine.RunInput{
 		Mode:        mode,
@@ -388,9 +273,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 		Staleness:   cfg.ForStaleness(),
 		Waivers:     cfg.ForWaivers(),
 		Extractors:  extractors,
-		Patterns:    patternProvider,
-		Resolver:    resolver,
-		Syntax:      syntaxProvider,
+		Patterns:    acquired.Patterns,
+		Resolver:    acquired.Resolver,
+		Syntax:      acquired.Syntax,
 		SyntaxCfg:   syntaxCfg,
 		PatternCfg:  patternCfg,
 		Rules:       rs,
@@ -407,7 +292,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 		ConfigHash:  configHash,
 		// Primary dependency-graph analyzer coverage names, in registry order, so
 		// score synthesis names them without the core ring hardcoding tool strings.
-		PrimaryExtractorTools: primaryExtractorTools(),
+		PrimaryExtractorTools: registry.PrimaryTools(),
 	})
 	if err != nil {
 		return diag, score.Scorecard{}, err
@@ -433,7 +318,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	// above) and caches the coverage record. Append it here — BEFORE the scorecard
 	// synthesis, which reads ToolCoverage for the partial-module-graph confidence cap —
 	// so it appears in ToolCoverage and the CoverageGap block (mirrors the clones pattern).
-	if rustEx := rustExtractor(extractors); rustEx != nil {
+	if rustEx := registry.RustExtractor(extractors); rustEx != nil {
 		diag.ToolCoverage = append(diag.ToolCoverage, rustEx.LastModuleGraphCoverage())
 	}
 
@@ -472,7 +357,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 		}
 	}
 	crateRootDirs := map[string]string{}
-	if rustEx := rustExtractor(extractors); rustEx != nil {
+	if rustEx := registry.RustExtractor(extractors); rustEx != nil {
 		for _, cr := range rustEx.LastCrateRoots() {
 			crateRootDirs[cr.Name] = cr.Dir
 		}
@@ -480,7 +365,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	// onDisk backstops the LOC-walk index: its walk skips dirs (mocks/,
 	// target/, venv/) that extractor exclusions do not, so a real edge
 	// endpoint there is index-invisible yet must survive resolution.
-	pathResolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, module.RootDirs(cfg.Modules), onDiskWithin(s.Root))
+	pathResolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, config.ModuleRootDirs(cfg.Modules), onDiskWithin(s.Root))
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts, pathResolver)
 	diag.AdvisoryTasks = engine.BuildAdvisoryTasks(diag.Findings, []string{validate})
 
@@ -597,7 +482,7 @@ func applyCouplingGate(diag *result.Result, card score.Scorecard, gate score.Cou
 	if !trip.Tripped {
 		return
 	}
-	diag.Verdict = report.VerdictFail
+	diag.Verdict = result.VerdictFail
 	promoted := 0
 	for i := range diag.Findings {
 		f := &diag.Findings[i]

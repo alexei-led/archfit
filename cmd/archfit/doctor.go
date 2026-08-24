@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -33,14 +34,14 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	// Cross-language tools stay literal here; per-language tools (compilers,
 	// scip indexers) come from the language registry so adding a language adds
 	// its doctor probes in one place.
-	tools := []doctorTool{
-		{"git", "git", "https://git-scm.com/downloads"},
-		{"uv", "uv", "https://docs.astral.sh/uv/getting-started/installation"},
-		{"sg (ast-grep)", "sg", "cargo install ast-grep / brew install ast-grep"},
+	tools := []registry.Tool{
+		{Name: "git", Command: "git", InstallHint: "https://git-scm.com/downloads"},
+		{Name: "uv", Command: "uv", InstallHint: "https://docs.astral.sh/uv/getting-started/installation"},
+		{Name: "sg (ast-grep)", Command: "sg", InstallHint: "cargo install ast-grep / brew install ast-grep"},
 		// Optional semantic depth tools — their absence degrades coupling_balance precision.
-		{toolJscpd, toolJscpd, "npm install -g jscpd"},
+		{Name: toolJscpd, Command: toolJscpd, InstallHint: "npm install -g jscpd"},
 	}
-	for _, lang := range languageRegistry {
+	for _, lang := range registry.All() {
 		tools = append(tools, lang.DoctorTools...)
 	}
 
@@ -48,10 +49,10 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	_, _ = fmt.Fprintf(deps.Stdout, "%s\n", strings.Repeat("-", 60))
 
 	for _, t := range tools {
-		if info, ok := deps.Runner.Detect(ctx, t.cmd); ok {
-			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.name, "ok", info.Path)
+		if info, ok := deps.Runner.Detect(ctx, t.Command); ok {
+			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.Name, "ok", info.Path)
 		} else {
-			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.name, "missing", t.install)
+			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.Name, "missing", t.InstallHint)
 		}
 	}
 
@@ -103,7 +104,7 @@ func (c *DoctorCmd) runFix(ctx context.Context, deps *appDeps) error {
 	}
 	_, _ = fmt.Fprintln(deps.Stdout, "\ninstalling analyzer toolchains:")
 	for _, lang := range langs {
-		switch languageByAlias(lang) {
+		switch registry.ByAlias(lang) {
 		case config.LangPython:
 			if err := c.installPy(ctx, deps); err != nil {
 				return err

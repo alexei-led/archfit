@@ -10,13 +10,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/staleness"
 	"github.com/alexei-led/archfit/internal/assessment/status"
-	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -80,7 +81,7 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg v
 			matched["score"] = cl.Score.Reason
 			matched["score_value"] = strconv.Itoa(cl.Score.Value)
 			matched["score_band"] = string(cl.Score.Band)
-			matched["score_version"] = coupling.ScoreVersion
+			matched["score_version"] = report.ScoreVersion
 		}
 		if cl.Score.CheapestMove != "" {
 			matched["cheapest_move"] = cl.Score.CheapestMove
@@ -577,7 +578,7 @@ func duplicatedKnowledgeAdvisories(g *graph.Graph, classifyCfg view.ClassifyConf
 			matched["score"] = cl.Score.Reason
 			matched["score_value"] = strconv.Itoa(cl.Score.Value)
 			matched["score_band"] = string(cl.Score.Band)
-			matched["score_version"] = coupling.ScoreVersion
+			matched["score_version"] = report.ScoreVersion
 		}
 		if cl.Score.CheapestMove != "" {
 			matched["cheapest_move"] = cl.Score.CheapestMove

@@ -4,15 +4,10 @@ import (
 	"sort"
 
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/report"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/extract/golang"
-	"github.com/alexei-led/archfit/internal/extract/py"
-	"github.com/alexei-led/archfit/internal/extract/rust"
-	"github.com/alexei-led/archfit/internal/extract/ts"
-	"github.com/alexei-led/archfit/internal/view"
+	"github.com/alexei-led/archfit/internal/extract/registry"
 )
 
 // gateWarn / gateFail are the coverage-gap gate strings stamped on each gap.
@@ -38,7 +33,7 @@ func buildCoverageToolConfigKey() map[string]string {
 		toolJscpd:        config.ToolClones,
 		toolCargoModules: config.ToolCargoModules,
 	}
-	for _, lang := range languageRegistry {
+	for _, lang := range registry.All() {
 		m[lang.PrimaryTool] = lang.ID
 	}
 	return m
@@ -68,7 +63,7 @@ func buildToolAffectedMetrics() map[string]affectedMetrics {
 		toolJscpd:        {"npm install -g jscpd", []string{"coupling_balance"}},
 		toolCargoModules: {"cargo install cargo-modules (analyzers.cargo_modules.enabled: true)", []string{metricCycle, metricBlastRadius, metricEncapsulation}},
 	}
-	for _, lang := range languageRegistry {
+	for _, lang := range registry.All() {
 		m[lang.PrimaryTool] = affectedMetrics{lang.InstallHint, primaryGraphMetrics}
 	}
 	return m
@@ -80,8 +75,8 @@ func buildToolAffectedMetrics() map[string]affectedMetrics {
 var primaryToolLanguage = buildPrimaryToolLanguage()
 
 func buildPrimaryToolLanguage() map[string]string {
-	m := make(map[string]string, len(languageRegistry))
-	for _, lang := range languageRegistry {
+	m := make(map[string]string, len(registry.All()))
+	for _, lang := range registry.All() {
 		m[lang.PrimaryTool] = lang.ID
 	}
 	return m
@@ -94,9 +89,12 @@ func buildPrimaryToolLanguage() map[string]string {
 var primaryToolProjectProbe = buildPrimaryToolProjectProbe()
 
 func buildPrimaryToolProjectProbe() map[string]func(root string, cfg config.Config) bool {
-	m := make(map[string]func(root string, cfg config.Config) bool, len(languageRegistry))
-	for _, lang := range languageRegistry {
-		m[lang.PrimaryTool] = lang.ProjectPresent
+	m := make(map[string]func(root string, cfg config.Config) bool, len(registry.All()))
+	for _, lang := range registry.All() {
+		id, probe := lang.ID, lang.ProjectPresent
+		m[lang.PrimaryTool] = func(root string, cfg config.Config) bool {
+			return probe(root, cfg.ForExtract(id))
+		}
 	}
 	return m
 }
@@ -113,54 +111,6 @@ func primaryProjectPresent(tool, root string, cfg config.Config) bool {
 		return true
 	}
 	return probe(root, cfg)
-}
-
-// goProjectPresent reports whether the Go extractor would find anything to load
-// under root, by running the extractor's OWN member selection: go.work members
-// where a workspace governs the scan root, else the root go.mod, else a walk —
-// then the languages.go.modules include/exclude filter.
-//
-// Walking for go.mod instead (the previous shape) disagreed with the extractor
-// in both directions: it ignored go.work, so a workspace naming members the
-// module filter then removes reported a coverage gap over a deliberately empty
-// scope, and a workspace member the walk cannot reach (a `use` directive into a
-// dot-directory) read as "there is no Go here".
-//
-// cfg.Exclude — projected here through the same ForExtract view the extractor
-// consumes — is ALREADY the run's effective exclusion set: runPipeline merges
-// the defaults in once, at setup. Never re-merge it. scope.MergeExclusions is
-// not idempotent: it CONSUMES `!` re-includes, so a second pass re-seeds the
-// very defaults the user removed (pinned by scope.TestMergeExclusions) and the
-// probe then skips trees the extractors analysed.
-//
-// A discovery error (unreadable or unparseable go.work) is not evidence of
-// absence — the extractor fails the run over it, so the probe discloses.
-func goProjectPresent(root string, cfg config.Config) bool {
-	ec := cfg.ForExtract(config.LangGo)
-	members, err := golang.AnalysableMembers(root, ec.Exclusions, ec.GoModuleInclude, ec.GoModuleExclude)
-	return err != nil || len(members.Dirs) > 0
-}
-
-// tsProjectPresent defers to the TypeScript extractor's own applicability test:
-// a package.json in the scan root. A tsconfig.json alone is not a TypeScript
-// project as far as dependency-cruiser is concerned.
-func tsProjectPresent(root string, _ config.Config) bool {
-	return ts.Applicable(root)
-}
-
-// pyProjectPresent defers to the Python extractor's own applicability test:
-// pyproject.toml, setup.py, or the configured languages.python.package
-// directory. setup.cfg is not one of them.
-func pyProjectPresent(root string, cfg config.Config) bool {
-	return py.Applicable(root, cfg.ForExtract(config.LangPython).PyPackage)
-}
-
-// rustProjectPresent defers to the Rust extractor's own applicability test: a
-// configured languages.rust.manifest resolved against root exactly like cargo's
-// --manifest-path, else the root Cargo.toml. Exclusions play no part — the
-// extractor stats the manifest directly.
-func rustProjectPresent(root string, cfg config.Config) bool {
-	return rust.Applicable(root, cfg.ForExtract(config.LangRust).CargoManifest)
 }
 
 // buildCoverageGaps derives the CoverageGaps block from the absent tool-coverage
@@ -223,7 +173,7 @@ func buildCoverageGaps(cov []evidence.Coverage, cfg config.Config, root string) 
 				// the Rust extractor and behind the SAME applicability marker, so it
 				// reads the marker through rustProjectPresent — a configured
 				// languages.rust.manifest points both at the sub-crate manifest.
-				if !rustProjectPresent(root, cfg) {
+				if !registry.ProjectPresent(config.LangRust, root, cfg.ForExtract(config.LangRust)) {
 					continue
 				}
 			default:
@@ -278,7 +228,7 @@ func toolGateDemands(cfg config.Config, tool string) bool {
 // predicate would let the row and the gap disagree.
 func primaryDisabledByConfig(cfg config.Config, tool string) bool {
 	lang, isPrimary := primaryToolLanguage[tool]
-	return isPrimary && cfg.ToolMode(lang) == view.ModeOff && cfg.ToolGate(lang) == ""
+	return isPrimary && cfg.ToolMode(lang) == config.ModeOff && cfg.ToolGate(lang) == ""
 }
 
 // markDisabledPrimaries rewrites the coverage row of every language primary
@@ -386,7 +336,7 @@ func applyToolGate(diag *result.Result, requireTools bool) bool {
 		}
 	}
 	if failed {
-		diag.Verdict = report.VerdictFail
+		diag.Verdict = result.VerdictFail
 	}
 	return failed
 }

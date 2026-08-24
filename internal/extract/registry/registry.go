@@ -1,9 +1,9 @@
-package main
+// Package registry owns the concrete language-extractor registry and construction facade.
+package registry
 
 import (
 	"slices"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/extract/rust"
@@ -14,20 +14,23 @@ import (
 	"github.com/alexei-led/archfit/internal/view"
 )
 
-// doctorTool names one external binary archfit can probe, with a one-line
+// Tool names one external binary archfit can probe, with a one-line
 // install hint shown when it is missing. Cross-language (shared) tools stay
 // literal in doctor.go; language-specific ones are sourced from the registry.
-type doctorTool struct {
-	name    string
-	cmd     string
-	install string
+type Tool struct {
+	Name        string
+	Command     string
+	InstallHint string
 }
 
-// LanguageDescriptor is one row of the language registry: everything cmd needs
+// Configs maps canonical language IDs to projected extractor configuration.
+type Configs map[string]view.ExtractConfig
+
+// Descriptor is one row of the language registry: everything cmd needs
 // to wire a language into the pipeline, doctor, and install commands. Adding a
 // language becomes one row here plus an internal/extract/<lang> package — no
 // edits scattered across pipeline.go/doctor.go/install.go.
-type LanguageDescriptor struct {
+type Descriptor struct {
 	// ID is the canonical config language name (config.LangGo etc.) passed to
 	// cfg.ForExtract and used as the Tools-map gate key.
 	ID string
@@ -47,7 +50,7 @@ type LanguageDescriptor struct {
 	// the module filter removes) fabricates presence, and a marker it accepts but
 	// the list omits (a configured python package dir, a sub-crate Cargo.toml, a
 	// go.work member) fabricates absence.
-	ProjectPresent func(root string, cfg config.Config) bool
+	ProjectPresent func(root string, cfg view.ExtractConfig) bool
 	// NewExtractor builds the language's ports.Extractor from the shared runner,
 	// the language's projected ExtractConfig view, and the fact-cache store.
 	// Store.RefreshMode lets a caller force fresh extraction while still writing
@@ -60,16 +63,30 @@ type LanguageDescriptor struct {
 	// coverage-gap block when the analyzer is absent.
 	InstallHint string
 	// DoctorTools are the language-specific binaries `archfit doctor` probes.
-	DoctorTools []doctorTool
+	DoctorTools []Tool
 }
 
-// languageRegistry is the single ordered source of truth for supported
+// languages is the single ordered source of truth for supported
 // languages. Extractor build order (go → ts → py → rust) is load-bearing: the
 // graph merge dedups by NodeConvention priority but ties resolve by insertion
 // order, and the engine golden test pins it. Append new languages; never reorder.
-var languageRegistry = []LanguageDescriptor{
+// Primary analyzer and optional Rust tool names.
+const (
+	ToolGoPackages   = "go/packages"
+	ToolDepCruiser   = "dependency-cruiser"
+	ToolGrimp        = "grimp"
+	ToolCargo        = "cargo"
+	ToolCargoModules = "cargo-modules"
+
+	SCIPGo         = "scip-go"
+	SCIPTypeScript = "scip-typescript"
+	SCIPPython     = "scip-python"
+	SCIPRust       = "rust-analyzer"
+)
+
+var languages = []Descriptor{
 	{
-		ID:             config.LangGo,
+		ID:             "go",
 		ProjectPresent: goProjectPresent,
 		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
 			ex := golang.New(cfg)
@@ -77,15 +94,15 @@ var languageRegistry = []LanguageDescriptor{
 			ex.Cache = fc
 			return ex
 		},
-		PrimaryTool: toolGoPackages,
+		PrimaryTool: ToolGoPackages,
 		InstallHint: "https://go.dev/dl (bundled with the Go toolchain)",
-		DoctorTools: []doctorTool{
+		DoctorTools: []Tool{
 			{"go", "go", "https://go.dev/dl"},
-			{scipGo, scipGo, "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest"},
+			{SCIPGo, SCIPGo, "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest"},
 		},
 	},
 	{
-		ID:             config.LangTypeScript,
+		ID:             "typescript",
 		Aliases:        []string{"ts"},
 		ProjectPresent: tsProjectPresent,
 		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
@@ -93,17 +110,17 @@ var languageRegistry = []LanguageDescriptor{
 			ex.Cache = fc
 			return ex
 		},
-		PrimaryTool: toolDepCruiser,
+		PrimaryTool: ToolDepCruiser,
 		InstallHint: "npm install -g dependency-cruiser",
-		DoctorTools: []doctorTool{
+		DoctorTools: []Tool{
 			{"node", "node", "https://nodejs.org"},
 			{"bunx", "bunx", "https://bun.sh"},
 			{"npx", "npx", "ships with node"},
-			{scipTypeScript, scipTypeScript, "npm install -g @sourcegraph/scip-typescript"},
+			{SCIPTypeScript, SCIPTypeScript, "npm install -g @sourcegraph/scip-typescript"},
 		},
 	},
 	{
-		ID:             config.LangPython,
+		ID:             "python",
 		Aliases:        []string{"py"},
 		ProjectPresent: pyProjectPresent,
 		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
@@ -111,15 +128,15 @@ var languageRegistry = []LanguageDescriptor{
 			ex.Cache = fc
 			return ex
 		},
-		PrimaryTool: toolGrimp,
+		PrimaryTool: ToolGrimp,
 		InstallHint: "uv tool install grimp / pip install grimp",
-		DoctorTools: []doctorTool{
+		DoctorTools: []Tool{
 			{"python3", "python3", "https://www.python.org/downloads"},
-			{scipPython, scipPython, "npm install -g @sourcegraph/scip-python"},
+			{SCIPPython, SCIPPython, "npm install -g @sourcegraph/scip-python"},
 		},
 	},
 	{
-		ID:             config.LangRust,
+		ID:             "rust",
 		Aliases:        []string{"rs"},
 		ProjectPresent: rustProjectPresent,
 		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
@@ -127,17 +144,39 @@ var languageRegistry = []LanguageDescriptor{
 			ex.Cache = fc
 			return ex
 		},
-		PrimaryTool: toolCargo,
+		PrimaryTool: ToolCargo,
 		InstallHint: "https://rustup.rs (rustup installs cargo)",
-		DoctorTools: []doctorTool{
-			{toolCargo, toolCargo, "https://rustup.rs"},
-			{scipRust, scipRust, "rustup component add rust-analyzer"},
-			{toolCargoModules, toolCargoModules, "cargo install cargo-modules (opt-in: analyzers.cargo_modules.enabled: true)"},
+		DoctorTools: []Tool{
+			{ToolCargo, ToolCargo, "https://rustup.rs"},
+			{SCIPRust, SCIPRust, "rustup component add rust-analyzer"},
+			{ToolCargoModules, ToolCargoModules, "cargo install cargo-modules (opt-in: analyzers.cargo_modules.enabled: true)"},
 		},
 	},
 }
 
-// goWorkOff reports whether the Go toolchain must be told to ignore the go.work
+// All returns the ordered language descriptors.
+func All() []Descriptor {
+	return slices.Clone(languages)
+}
+
+func goProjectPresent(root string, cfg view.ExtractConfig) bool {
+	members, err := golang.AnalysableMembers(root, cfg.Exclusions, cfg.GoModuleInclude, cfg.GoModuleExclude)
+	return err != nil || len(members.Dirs) > 0
+}
+
+func tsProjectPresent(root string, _ view.ExtractConfig) bool {
+	return ts.Applicable(root)
+}
+
+func pyProjectPresent(root string, cfg view.ExtractConfig) bool {
+	return py.Applicable(root, cfg.PyPackage)
+}
+
+func rustProjectPresent(root string, cfg view.ExtractConfig) bool {
+	return rust.Applicable(root, cfg.CargoManifest)
+}
+
+// GoWorkOff reports whether the Go toolchain must be told to ignore the go.work
 // governing scanRoot, by asking the SAME discovery the Go extractor runs. It is
 // a whole-run fact, not a Go-extractor detail: any Go-toolchain subprocess the
 // run starts (today scip-go) sees the same workspace and must reach the same
@@ -145,26 +184,46 @@ var languageRegistry = []LanguageDescriptor{
 //
 // False whenever discovery is unavailable or errors — never disable a workspace
 // on a guess.
-func goWorkOff(scanRoot string, cfg config.Config) bool {
-	m, err := golang.DiscoverMembers(scanRoot, cfg.ForExtract(config.LangGo).Exclusions)
+func GoWorkOff(scanRoot string, cfg view.ExtractConfig) bool {
+	m, err := golang.DiscoverMembers(scanRoot, cfg.Exclusions)
 	return err == nil && m.GoWorkOff
 }
 
-// buildExtractors instantiates the per-language extractors in registry order,
+// New constructs the registered extractor for one canonical language ID.
+func New(id string, runner toolrun.Runner, cfg view.ExtractConfig, facts *factcache.Store) ports.Extractor {
+	for _, lang := range languages {
+		if lang.ID == id {
+			return lang.NewExtractor(runner, cfg, facts)
+		}
+	}
+	return nil
+}
+
+// Build instantiates the per-language extractors in registry order,
 // each fed its projected ExtractConfig view. The slice order is the graph-merge
 // order the engine golden test pins — registry order is go → ts → py.
-func buildExtractors(runner toolrun.Runner, cfg config.Config, facts *factcache.Store) []ports.Extractor {
-	exs := make([]ports.Extractor, 0, len(languageRegistry))
-	for _, lang := range languageRegistry {
-		exs = append(exs, lang.NewExtractor(runner, cfg.ForExtract(lang.ID), facts))
+func Build(runner toolrun.Runner, configs Configs, facts *factcache.Store) []ports.Extractor {
+	exs := make([]ports.Extractor, 0, len(languages))
+	for _, lang := range languages {
+		exs = append(exs, lang.NewExtractor(runner, configs[lang.ID], facts))
 	}
 	return exs
 }
 
-// languageByAlias resolves a --lang / install key (canonical ID or any alias)
+// ProjectPresent reports whether the registered language applies under root.
+func ProjectPresent(id, root string, cfg view.ExtractConfig) bool {
+	for _, lang := range languages {
+		if lang.ID == id {
+			return lang.ProjectPresent(root, cfg)
+		}
+	}
+	return false
+}
+
+// ByAlias resolves a --lang / install key (canonical ID or any alias)
 // to the canonical language ID. Returns "" for an unknown key.
-func languageByAlias(key string) string {
-	for _, lang := range languageRegistry {
+func ByAlias(key string) string {
+	for _, lang := range languages {
 		if key == lang.ID || slices.Contains(lang.Aliases, key) {
 			return lang.ID
 		}
@@ -172,10 +231,10 @@ func languageByAlias(key string) string {
 	return ""
 }
 
-// rustExtractor returns the *rust.Extractor from the extractor slice, or nil if
+// RustExtractor returns the *rust.Extractor from the extractor slice, or nil if
 // the Rust extractor is not present. Used by the pipeline to collect the opt-in
 // cargo-modules module-graph coverage record after engine.Run.
-func rustExtractor(exs []ports.Extractor) *rust.Extractor {
+func RustExtractor(exs []ports.Extractor) *rust.Extractor {
 	for _, ex := range exs {
 		if re, ok := ex.(*rust.Extractor); ok {
 			return re
@@ -184,12 +243,12 @@ func rustExtractor(exs []ports.Extractor) *rust.Extractor {
 	return nil
 }
 
-// primaryExtractorTools returns the dependency-graph analyzer coverage names in
+// PrimaryTools returns the dependency-graph analyzer coverage names in
 // registry order. Injected into engine.RunInput so score synthesis names the
 // primary extractors without the core ring hardcoding tool strings.
-func primaryExtractorTools() []string {
-	tools := make([]string, 0, len(languageRegistry))
-	for _, lang := range languageRegistry {
+func PrimaryTools() []string {
+	tools := make([]string, 0, len(languages))
+	for _, lang := range languages {
 		tools = append(tools, lang.PrimaryTool)
 	}
 	return tools

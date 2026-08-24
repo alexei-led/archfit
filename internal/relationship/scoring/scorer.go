@@ -1,11 +1,59 @@
-package coupling
+package scoring
 
-// Scorer computes a numeric risk score for a classified coupling edge.
-// Implementations are deterministic and pure — no I/O, no global state.
-// Score() is the single source of severity via ScoreBand(Balance) → cl.Score.Band.
+import "github.com/alexei-led/archfit/internal/relationship/coupling"
+
+// Scorer computes a score for one classified relationship.
 type Scorer interface {
-	Score(c Classification) EdgeScore
+	Score(coupling.Classification) coupling.EdgeScore
 }
+
+// Classification is the neutral relationship value consumed by scorers.
+type Classification = coupling.Classification
+
+// EdgeScore is the neutral score value returned by scorers.
+type EdgeScore = coupling.EdgeScore
+
+// Severity is the score band value.
+type Severity = coupling.Severity
+
+// Strength is the integration-strength value.
+type Strength = coupling.Strength
+
+// Distance is the socio-technical distance value.
+type Distance = coupling.Distance
+
+// Volatility is the target-volatility value.
+type Volatility = coupling.Volatility
+
+// ScoreBreakdown is the raw scorer-ordinal record.
+type ScoreBreakdown = coupling.ScoreBreakdown
+
+// Coupling values are re-exported for scorer implementations and calibration tests.
+const (
+	StrengthContract             = coupling.StrengthContract
+	StrengthModel                = coupling.StrengthModel
+	StrengthUnknown              = coupling.StrengthUnknown
+	StrengthFunctional           = coupling.StrengthFunctional
+	StrengthIntrusive            = coupling.StrengthIntrusive
+	StrengthSymmetric            = coupling.StrengthSymmetric
+	DistanceSameModule           = coupling.DistanceSameModule
+	DistanceCrossModuleSameOwner = coupling.DistanceCrossModuleSameOwner
+	DistanceUnknown              = coupling.DistanceUnknown
+	DistanceCrossModuleDiffOwner = coupling.DistanceCrossModuleDiffOwner
+	DistanceCrossDeployUnit      = coupling.DistanceCrossDeployUnit
+	DistanceExternal             = coupling.DistanceExternal
+	VolatilityLow                = coupling.VolatilityLow
+	VolatilityMedium             = coupling.VolatilityMedium
+	VolatilityHigh               = coupling.VolatilityHigh
+	VolatilityUndeclared         = coupling.VolatilityUndeclared
+	VolatilityUnknown            = coupling.VolatilityUnknown
+	VolatilityFrozen             = coupling.VolatilityFrozen
+	SeverityNone                 = coupling.SeverityNone
+	SeverityLow                  = coupling.SeverityLow
+	SeverityMedium               = coupling.SeverityMedium
+	SeverityHigh                 = coupling.SeverityHigh
+	SeverityCritical             = coupling.SeverityCritical
+)
 
 // ScoreDefinition is the canonical, user-facing definition of archfit's numeric
 // BC score. Implements Vlad Khononov's published formula from _Balancing Coupling
@@ -16,56 +64,6 @@ type Scorer interface {
 const ScoreDefinition = "book balance score — balance = max(|S−D|, 10−V) + 1 " +
 	"(Khononov, _Balancing Coupling in Software Design_, Ch10); " +
 	"range 1 (distributed monolith) to 10 (frozen/contract); higher = better balanced"
-
-// ScoreVersion versions the BC score: its ordinals, normalisation, and the
-// severity mapping derived from them. Bump it when any of those change so the
-// delta baseline treats the score as a new measurement.
-// v3: book-verbatim formula (Khononov Ch10) — balance = max(|S-D|, 10-V)+1,
-// new ScoreBand mapping (1-2 critical → 9-10 none), BookScorer as default.
-// v4: three classification fixes feeding the unchanged formula (see
-// docs/archived/design/20260702-bc-score-v4.md): Go const/var reads score Model (3)
-// not Functional (8); pure-data DTOs across a declared public boundary reach
-// Contract (1); declared external systems enter scoring at DistanceExternal
-// (10). Scores are NOT comparable across versions.
-// v5: clone-only duplicated-knowledge pairs (cross-module clones with no import
-// edge) enter coupling_balance by default via coupling.duplicated_knowledge:
-// score. The formula and ordinals are unchanged, but the headline denominator
-// now includes the book Ch7 hidden-coupling case.
-// v6: inferred volatility propagation runs to a deterministic fixpoint instead
-// of stopping at one hop. The formula and ordinals are unchanged, but edges that
-// depend through a strong-coupling chain to high-volatility modules may now carry
-// higher effective volatility.
-const ScoreVersion = "bc_score.v6"
-
-// EdgeScore is the result produced by a Scorer for one graph edge.
-//
-// Scored is false when the scorer abstained (strength or distance unknown).
-// Balance is the book balance value 1..10 (higher = better balanced); 0 when !Scored.
-// Value equals Balance for BookScorer; legacy scorers set it to their 0..10 risk integer.
-// Band is the severity band derived from Balance (or Value for legacy scorers).
-// Reason is a short human-readable label identifying the scorer variant.
-// Breakdown holds the per-dimension contribution for diagnostics.
-// CheapestMove is the single dimension change that drops the band the most;
-// empty when already at band none or when no move exists.
-type EdgeScore struct {
-	Scored       bool // false when strength or distance is unknown → edge abstained
-	Balance      int  // book balance 1..10 (0 when !Scored)
-	Value        int
-	Band         Severity
-	Reason       string
-	Breakdown    ScoreBreakdown
-	CheapestMove string
-}
-
-// ScoreBreakdown records the per-dimension ordinal values used in scoring.
-// All fields are the raw ordinal integers before final combination.
-type ScoreBreakdown struct {
-	StrengthVal   int // S ordinal (book Ch10)
-	DistanceVal   int // D ordinal (book Ch8)
-	VolatilityVal int // V ordinal (book Ch9); 0 for legacy scorers
-	Modularity    int // |S-D|; 0 for legacy scorers
-	VolDiscount   int // legacy additive/multiplicative only; 0 for BookScorer
-}
 
 // ---------------------------------------------------------------------------
 // Legacy calibration ordinals.

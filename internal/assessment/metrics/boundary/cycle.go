@@ -3,10 +3,11 @@ package boundary
 import (
 	"fmt"
 
+	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
+
 	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // ---------------------------------------------------------------------------
@@ -24,7 +25,7 @@ func (m CycleMetric) Name() string { return "cycle" }
 func (m CycleMetric) Version() string { return "cycle.v1" }
 
 // Calculate counts strongly-connected components of size > 1 in the dependency graph.
-func (m CycleMetric) Calculate(in signal.CommonInput) report.MetricResult {
+func (m CycleMetric) Calculate(in signal.CommonInput) assessmentresult.MetricResult {
 	cycles := 0
 	if in.Graph != nil {
 		cycles = countCycles(in.Graph)
@@ -62,7 +63,7 @@ func (m CycleMetric) Calculate(in signal.CommonInput) report.MetricResult {
 	}
 	delta := result.ComputeDelta(value, in.Baseline, m.Name(), m.Version())
 
-	return report.MetricResult{
+	return assessmentresult.MetricResult{
 		Name:       m.Name(),
 		Value:      value,
 		Display:    display,
@@ -72,7 +73,7 @@ func (m CycleMetric) Calculate(in signal.CommonInput) report.MetricResult {
 		Mode:       result.ModeCount,
 		Definition: "number of import cycles",
 		Delta:      delta,
-		Direction:  report.DirectionHigherIsWorse,
+		Direction:  assessmentresult.DirectionHigherIsWorse,
 	}
 }
 

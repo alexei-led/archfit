@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/engine"
-	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -84,7 +83,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 		newBase.Score = &baseline.ScoreSnapshot{
 			CouplingBalance: sc.Overall,
 			Band:            string(sc.OverallBand),
-			ScoreVersion:    coupling.ScoreVersion,
+			ScoreVersion:    report.ScoreVersion,
 			RubricVersion:   sc.RubricVersion,
 		}
 	}
@@ -107,7 +106,7 @@ func scoreSnapshotMismatchDetails(b baseline.Baseline, mismatches []string) []st
 	for _, input := range mismatches {
 		switch input {
 		case baseline.InputScoreVersion:
-			out = append(out, fmt.Sprintf("%s %q, current %q", input, b.Score.ScoreVersion, coupling.ScoreVersion))
+			out = append(out, fmt.Sprintf("%s %q, current %q", input, b.Score.ScoreVersion, report.ScoreVersion))
 		case baseline.InputRubricVersion:
 			out = append(out, fmt.Sprintf("%s %d, current %d", input, b.Score.EffectiveRubricVersion(), score.RubricVersion))
 		default:

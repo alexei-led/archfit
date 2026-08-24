@@ -13,7 +13,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/alexei-led/archfit/internal/labels"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
 
 // Load reads and strictly validates a labels file. A missing file is not an

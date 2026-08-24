@@ -1,6 +1,10 @@
-package coupling
+package scoring
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+)
 
 // TestScoreBand_Severity verifies the book-formula severity bands.
 // Severity is now derived entirely from ScoreBand(BookScorer.Score().Balance).
@@ -225,7 +229,7 @@ func TestDistanceIsHigh(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.d), func(t *testing.T) {
-			if got := DistanceIsHigh(tt.d); got != tt.want {
+			if got := coupling.DistanceIsHigh(tt.d); got != tt.want {
 				t.Errorf("DistanceIsHigh(%q) = %v, want %v", tt.d, got, tt.want)
 			}
 		})

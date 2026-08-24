@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 )
@@ -166,9 +165,6 @@ type ClassifyConfig struct {
 	// keyed the same way. Missing or non-"high" values are treated as uncertain
 	// when an LLM label actually fills an edge.
 	LLMLabelConfidence map[string]string
-	// Scorer is the coupling scorer applied to each cross-boundary edge.
-	// When nil, classify.Run uses coupling.DefaultScorer() (MultiplicativeScorer, locked Task 16).
-	Scorer coupling.Scorer
 	// CrossModuleClonePairs is the set of canonical module-pair keys
 	// ("[a]\x00[b]" with a≤b) that share duplicated code blocks, derived
 	// from the clone-detection signal. Consumed by the Symmetric-strength

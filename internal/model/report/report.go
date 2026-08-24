@@ -6,6 +6,10 @@ package report
 // Scorecards are comparable only when their rubric versions match.
 const RubricVersion = 1
 
+// ScoreVersion identifies the published Balanced Coupling measurement contract.
+// Bump it when scorer ordinals, normalization, or severity mapping changes.
+const ScoreVersion = "bc_score.v6"
+
 // ScoreBand is a qualitative label for a 0-100 dimension value.
 type ScoreBand string
 

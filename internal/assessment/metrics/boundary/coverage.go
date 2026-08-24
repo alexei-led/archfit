@@ -3,10 +3,11 @@ package boundary
 import (
 	"fmt"
 
+	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
+
 	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // ---------------------------------------------------------------------------
@@ -24,7 +25,7 @@ func (m CoverageMetric) Name() string { return "coverage" }
 func (m CoverageMetric) Version() string { return "coverage.v1" }
 
 // Calculate computes the coverage ratio and applies confidence-based band capping.
-func (m CoverageMetric) Calculate(in signal.CommonInput) report.MetricResult {
+func (m CoverageMetric) Calculate(in signal.CommonInput) assessmentresult.MetricResult {
 	var totalApplicable, totalExtracted, totalUnresolved int
 	for _, c := range in.ToolCoverage {
 		// An "absent" record means the extractor did not run or found nothing of
@@ -53,7 +54,7 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) report.MetricResult {
 	// this gate exists to prevent, not evidence of full coverage.
 	if totalApplicable == 0 {
 		res := result.NACount(m.Name(), m.Version(), "extracted_files / applicable_files")
-		res.Direction = report.DirectionHigherIsBetter
+		res.Direction = assessmentresult.DirectionHigherIsBetter
 		return res
 	}
 
@@ -67,7 +68,7 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) report.MetricResult {
 	display := fmt.Sprintf("%.0f%% coverage", value*100)
 	delta := result.ComputeDelta(value, in.Baseline, m.Name(), m.Version())
 
-	return report.MetricResult{
+	return assessmentresult.MetricResult{
 		Name:       m.Name(),
 		Value:      value,
 		Display:    display,
@@ -77,7 +78,7 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) report.MetricResult {
 		Mode:       result.ModeRatio,
 		Definition: "extracted_files / applicable_files",
 		Delta:      delta,
-		Direction:  report.DirectionHigherIsBetter,
+		Direction:  assessmentresult.DirectionHigherIsBetter,
 	}
 }
 

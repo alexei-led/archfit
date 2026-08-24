@@ -127,9 +127,9 @@ func applyMediumConfidenceCap(dim *Dimension, reason string) {
 }
 
 // metricIndex is metric results keyed by name for O(1) lookup.
-type metricIndex map[string]report.MetricResult
+type metricIndex map[string]result.MetricResult
 
-func indexMetrics(ms []report.MetricResult) metricIndex {
+func indexMetrics(ms []result.MetricResult) metricIndex {
 	mi := make(metricIndex, len(ms))
 	for _, m := range ms {
 		mi[m.Name] = m

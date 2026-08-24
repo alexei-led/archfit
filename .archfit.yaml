@@ -73,19 +73,10 @@ modules:
       - internal/relationship/**
     public:
       - internal/relationship
+      - internal/relationship/coupling
+      - internal/relationship/facts
+      - internal/relationship/labels
     layer: core
-    subdomain: core
-    volatility: high
-
-  # Pure coupling vocabulary and scorer used by relationship analysis.
-  coupling-model:
-    owner: alexei-led
-    role: shared_model
-    paths:
-      - internal/model/coupling/**
-    public:
-      - internal/model/coupling
-    layer: model
     subdomain: core
     volatility: high
 
@@ -100,18 +91,6 @@ modules:
       - internal/model/module
     layer: model
     subdomain: supporting
-    volatility: medium
-
-  # Finding contracts consumed by policy and verdict stages.
-  finding-model:
-    owner: alexei-led
-    role: shared_model
-    paths:
-      - internal/model/finding/**
-    public:
-      - internal/model/finding
-    layer: model
-    subdomain: core
     volatility: medium
 
   # Stable score, decision, persistence, and output contracts.
@@ -180,21 +159,6 @@ modules:
     subdomain: supporting
     volatility: low
 
-  # Core fact-to-decision capability. Package boundaries remain useful for code
-  # organization, but they belong to one cohesive domain module.
-  evaluation-core:
-    owner: alexei-led
-    role: core
-    paths:
-      - internal/rules/**
-      - internal/facts/**
-    public:
-      - internal/rules
-      - internal/facts
-    layer: core
-    subdomain: core
-    volatility: high
-
   # Assessment and repair: metrics, findings, status, verdict, and tasks.
   assessment-repair:
     owner: alexei-led
@@ -203,9 +167,22 @@ modules:
       - internal/assessment/**
     public:
       - internal/assessment
+      - internal/assessment/finding
+      - internal/assessment/rules
     layer: core
     subdomain: core
     volatility: high
+
+  # Use-case request validation and dispatch, independent of concrete adapters.
+  analysis-application:
+    owner: alexei-led
+    paths:
+      - internal/application/**
+    public:
+      - internal/application
+    layer: engine
+    subdomain: supporting
+    volatility: medium
 
   # Application orchestration only: sequence stages through stable contracts.
   pipeline-engine:
@@ -231,6 +208,8 @@ modules:
       - internal/history/**
       - internal/ownership/**
     public:
+      - internal/extract/acquire
+      - internal/extract/registry
       - internal/extract/golang
       - internal/extract/ts
       - internal/extract/py
@@ -275,17 +254,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
-
-  labels-policy:
-    owner: alexei-led
-    paths:
-      - internal/labels
-      - internal/labels/*.go
-    public:
-      - internal/labels
-    layer: support
-    subdomain: supporting
-    volatility: medium
 
   labels-store:
     owner: alexei-led
@@ -367,7 +335,7 @@ rules:
     gate: fail
   - id: rules_no_toolrun
     type: forbidden_dependency
-    from: internal/rules/**
+    from: internal/assessment/rules/**
     to: internal/toolrun
     gate: fail
   - id: metrics_no_toolrun
@@ -387,7 +355,7 @@ rules:
     gate: fail
   - id: rules_no_extract
     type: forbidden_dependency
-    from: internal/rules/**
+    from: internal/assessment/rules/**
     to: internal/extract/**
     gate: fail
   # Ring gate 2: engine must not import adapters directly (uses ports/interfaces only)
@@ -449,7 +417,7 @@ rules:
     gate: fail
   - id: rules_no_config
     type: forbidden_dependency
-    from: internal/rules/**
+    from: internal/assessment/rules/**
     to: internal/config
     gate: fail
   - id: metrics_no_config
@@ -479,7 +447,7 @@ rules:
     gate: fail
   - id: facts_no_config
     type: forbidden_dependency
-    from: internal/facts/**
+    from: internal/relationship/facts/**
     to: internal/config
     gate: fail
   - id: status_no_config
@@ -524,7 +492,12 @@ rules:
     gate: fail
   - id: labels_no_config
     type: forbidden_dependency
-    from: internal/labels/**
+    from: internal/relationship/labels/**
+    to: internal/config
+    gate: fail
+  - id: labels_store_no_config
+    type: forbidden_dependency
+    from: internal/labels/labelsio/**
     to: internal/config
     gate: fail
   - id: toolrun_no_config

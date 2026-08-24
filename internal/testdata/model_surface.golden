@@ -2,74 +2,6 @@ package internal/model/clone
   type internal/model/clone.Cluster struct{Files []string; Lines int; Locations []internal/model/clone.LineRange}
   type internal/model/clone.LineRange struct{StartLine int; EndLine int}
   func internal/model/clone.ModulePairs(clusters []internal/model/clone.Cluster, key func(string) string) [][2]string
-package internal/model/coupling
-  type internal/model/coupling.AdditiveScorer struct{}
-  func (internal/model/coupling.AdditiveScorer).Score(c internal/model/coupling.Classification) internal/model/coupling.EdgeScore
-  type internal/model/coupling.BookScorer struct{}
-  func (internal/model/coupling.BookScorer).Score(c internal/model/coupling.Classification) internal/model/coupling.EdgeScore
-  type internal/model/coupling.Classification struct{Strength internal/model/coupling.Strength; Distance internal/model/coupling.Distance; Volatility internal/model/coupling.Volatility; Explicitness internal/model/coupling.Explicitness; Severity internal/model/coupling.Severity; ContractRecommended bool; Score internal/model/coupling.EdgeScore; DistanceBasis internal/model/coupling.DistanceBasis "json:\"distance_basis,omitempty\""; CloneLocations []internal/model/coupling.Location "json:\"clone_locations,omitempty\""; StrengthFromLLM bool "json:\"strength_from_llm,omitempty\""; StrengthFromNonHighLLM bool "json:\"strength_from_non_high_llm,omitempty\""; StrengthFromConnascence bool "json:\"strength_from_connascence,omitempty\""; Connascence []internal/model/coupling.ConnascenceEvidence "json:\"connascence,omitempty\""}
-  const internal/model/coupling.ConnascenceAlgorithm internal/model/coupling.ConnascenceKind
-  type internal/model/coupling.ConnascenceEvidence struct{Kind internal/model/coupling.ConnascenceKind "json:\"kind\""; Source string "json:\"source\""; Detail string "json:\"detail,omitempty\""}
-  const internal/model/coupling.ConnascenceExecution internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascenceIdentity internal/model/coupling.ConnascenceKind
-  type internal/model/coupling.ConnascenceKind string
-  const internal/model/coupling.ConnascenceMeaning internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascenceName internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascencePosition internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascenceTiming internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascenceType internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascenceValue internal/model/coupling.ConnascenceKind
-  func internal/model/coupling.DefaultScorer() internal/model/coupling.Scorer
-  type internal/model/coupling.Distance string
-  type internal/model/coupling.DistanceBasis string
-  const internal/model/coupling.DistanceBasisDeployUnit internal/model/coupling.DistanceBasis
-  const internal/model/coupling.DistanceBasisExternal internal/model/coupling.DistanceBasis
-  const internal/model/coupling.DistanceBasisOwnership internal/model/coupling.DistanceBasis
-  const internal/model/coupling.DistanceBasisStructure internal/model/coupling.DistanceBasis
-  const internal/model/coupling.DistanceBasisUnknown internal/model/coupling.DistanceBasis
-  const internal/model/coupling.DistanceCrossDeployUnit internal/model/coupling.Distance
-  const internal/model/coupling.DistanceCrossModuleDiffOwner internal/model/coupling.Distance
-  const internal/model/coupling.DistanceCrossModuleSameOwner internal/model/coupling.Distance
-  const internal/model/coupling.DistanceExternal internal/model/coupling.Distance
-  func internal/model/coupling.DistanceIsHigh(d internal/model/coupling.Distance) bool
-  const internal/model/coupling.DistanceSameModule internal/model/coupling.Distance
-  const internal/model/coupling.DistanceUnknown internal/model/coupling.Distance
-  type internal/model/coupling.EdgeScore struct{Scored bool; Balance int; Value int; Band internal/model/coupling.Severity; Reason string; Breakdown internal/model/coupling.ScoreBreakdown; CheapestMove string}
-  type internal/model/coupling.Explicitness string
-  const internal/model/coupling.ExplicitnessExplicit internal/model/coupling.Explicitness
-  const internal/model/coupling.ExplicitnessImplicit internal/model/coupling.Explicitness
-  const internal/model/coupling.ExplicitnessUnknown internal/model/coupling.Explicitness
-  type internal/model/coupling.Index map[string]internal/model/coupling.Classification
-  func internal/model/coupling.LocalComplexity(cl internal/model/coupling.Classification) bool
-  type internal/model/coupling.Location struct{File string "json:\"file\""; Line int "json:\"line,omitempty\""}
-  type internal/model/coupling.MultiplicativeScorer struct{}
-  func (internal/model/coupling.MultiplicativeScorer).Score(c internal/model/coupling.Classification) internal/model/coupling.EdgeScore
-  func internal/model/coupling.ScoreBand(balance int) internal/model/coupling.Severity
-  type internal/model/coupling.ScoreBreakdown struct{StrengthVal int; DistanceVal int; VolatilityVal int; Modularity int; VolDiscount int}
-  const internal/model/coupling.ScoreDefinition untyped string
-  const internal/model/coupling.ScoreVersion untyped string
-  type internal/model/coupling.Scorer interface{Score(c internal/model/coupling.Classification) internal/model/coupling.EdgeScore}
-  type internal/model/coupling.Severity string
-  const internal/model/coupling.SeverityCritical internal/model/coupling.Severity
-  const internal/model/coupling.SeverityHigh internal/model/coupling.Severity
-  const internal/model/coupling.SeverityLow internal/model/coupling.Severity
-  const internal/model/coupling.SeverityMedium internal/model/coupling.Severity
-  const internal/model/coupling.SeverityNone internal/model/coupling.Severity
-  type internal/model/coupling.Strength string
-  const internal/model/coupling.StrengthContract internal/model/coupling.Strength
-  const internal/model/coupling.StrengthFunctional internal/model/coupling.Strength
-  const internal/model/coupling.StrengthIntrusive internal/model/coupling.Strength
-  const internal/model/coupling.StrengthModel internal/model/coupling.Strength
-  const internal/model/coupling.StrengthSymmetric internal/model/coupling.Strength
-  const internal/model/coupling.StrengthUnknown internal/model/coupling.Strength
-  type internal/model/coupling.Volatility string
-  const internal/model/coupling.VolatilityFrozen internal/model/coupling.Volatility
-  const internal/model/coupling.VolatilityHigh internal/model/coupling.Volatility
-  const internal/model/coupling.VolatilityLow internal/model/coupling.Volatility
-  const internal/model/coupling.VolatilityMedium internal/model/coupling.Volatility
-  func internal/model/coupling.VolatilityResolved(v internal/model/coupling.Volatility) bool
-  const internal/model/coupling.VolatilityUndeclared internal/model/coupling.Volatility
-  const internal/model/coupling.VolatilityUnknown internal/model/coupling.Volatility
 package internal/model/diagnostic
   type internal/model/diagnostic.AdvisoryTask = internal/model/report.AdvisoryTask
   type internal/model/diagnostic.AgentTask = internal/model/report.AgentTask
@@ -172,24 +104,6 @@ package internal/model/fileclass
   const internal/model/fileclass.Production internal/model/fileclass.FileClass
   const internal/model/fileclass.Test internal/model/fileclass.FileClass
   const internal/model/fileclass.Vendor internal/model/fileclass.FileClass
-package internal/model/finding
-  type internal/model/finding.EdgeEvidence struct{From internal/model/finding.Endpoint "json:\"from\""; To internal/model/finding.Endpoint "json:\"to\""; Kind string "json:\"kind\""}
-  type internal/model/finding.Endpoint struct{Module string "json:\"module\""; Path string "json:\"path\""}
-  type internal/model/finding.Finding struct{ID string "json:\"id\""; Kind string "json:\"kind\""; RuleID string "json:\"rule_id\""; Status internal/model/finding.Status "json:\"status\""; Severity internal/model/finding.Severity "json:\"severity\""; Confidence string "json:\"confidence\""; Edge internal/model/finding.EdgeEvidence "json:\"edge\""; MatchedBy map[string]string "json:\"matched_by\""; Locations []internal/model/graph.Location "json:\"locations\""; Why string "json:\"why\""; Constraint string "json:\"constraint\""; Alternatives []string "json:\"allowed_alternatives,omitempty\""}
-  const internal/model/finding.KindAdvisory untyped string
-  const internal/model/finding.KindGate untyped string
-  func internal/model/finding.New(ruleID string, e internal/model/graph.Edge, locs []internal/model/graph.Location) internal/model/finding.Finding
-  type internal/model/finding.Severity string
-  const internal/model/finding.SeverityCritical internal/model/finding.Severity
-  const internal/model/finding.SeverityHigh internal/model/finding.Severity
-  const internal/model/finding.SeverityLow internal/model/finding.Severity
-  const internal/model/finding.SeverityMedium internal/model/finding.Severity
-  type internal/model/finding.Status string
-  const internal/model/finding.StatusBaseline internal/model/finding.Status
-  const internal/model/finding.StatusExpiredWaiver internal/model/finding.Status
-  const internal/model/finding.StatusFixed internal/model/finding.Status
-  const internal/model/finding.StatusNew internal/model/finding.Status
-  const internal/model/finding.StatusWaived internal/model/finding.Status
 package internal/model/graph
   func internal/model/graph.Build(facts []internal/model/graph.Facts) *internal/model/graph.Graph
   var internal/model/graph.BuiltinConventions internal/model/graph.ConventionRegistry
@@ -261,7 +175,7 @@ package internal/model/module
 package internal/model/pattern
   type internal/model/pattern.Match struct{File string; Pattern string; Text string; Node string; Line int; Column int}
 package internal/model/report
-  type internal/model/report.AdvisoryTask struct{FindingID string "json:\"finding_id\""; RuleID string "json:\"rule_id\""; Status internal/model/finding.Status "json:\"status\""; Severity internal/model/finding.Severity "json:\"severity\""; GroupCount int "json:\"group_count\""; GroupMembers []string "json:\"group_members,omitempty\""; Goal string "json:\"goal\""; CheapestMove string "json:\"cheapest_move,omitempty\""; ScoreValue int "json:\"score_value,omitempty\""; TopFiles []string "json:\"top_files\""; Constraints []string "json:\"constraints\""; Validation []string "json:\"validation\""}
+  type internal/model/report.AdvisoryTask struct{FindingID string "json:\"finding_id\""; RuleID string "json:\"rule_id\""; Status string "json:\"status\""; Severity string "json:\"severity\""; GroupCount int "json:\"group_count\""; GroupMembers []string "json:\"group_members,omitempty\""; Goal string "json:\"goal\""; CheapestMove string "json:\"cheapest_move,omitempty\""; ScoreValue int "json:\"score_value,omitempty\""; TopFiles []string "json:\"top_files\""; Constraints []string "json:\"constraints\""; Validation []string "json:\"validation\""}
   type internal/model/report.AgentTask struct{FindingID string "json:\"finding_id\""; RuleID string "json:\"rule_id\""; Goal string "json:\"goal\""; Constraints []string "json:\"constraints\""; Files []string "json:\"files\""; Validation []string "json:\"validation\""; Declarations []internal/model/evidence.SyntaxFact "json:\"declarations,omitempty\""}
   type internal/model/report.ClassifiedEdgeSummary struct{Total int "json:\"total\""; Scored int "json:\"scored\""; Abstained int "json:\"abstained\""; SameModule int "json:\"same_module\""; MeanBalance float64 "json:\"mean_balance\""; TailRisk *internal/model/report.CouplingTailRiskSummary "json:\"tail_risk,omitempty\""; ByStrength map[string]int "json:\"by_strength,omitempty\""; ByDistance map[string]int "json:\"by_distance,omitempty\""; ByDistanceBasis map[string]int "json:\"by_distance_basis,omitempty\""; ByVolatility map[string]int "json:\"by_volatility,omitempty\""; BySeverity map[string]int "json:\"by_severity,omitempty\""; ByBalanceDriver map[string]int "json:\"by_balance_driver,omitempty\""; ByCriticalDriver map[string]int "json:\"by_critical_driver,omitempty\""; ByModulePair map[string]int "json:\"by_module_pair,omitempty\""; DistributedMonolith int "json:\"distributed_monolith,omitempty\""; External int "json:\"external,omitempty\""; DeclaredExternal int "json:\"declared_external,omitempty\""; ConnectedModules int "json:\"connected_modules,omitempty\""; CloneOnlyScored int "json:\"clone_only_scored,omitempty\""; CloneOnlyAdvisory int "json:\"clone_only_advisory,omitempty\""; LLMApproved int "json:\"llm_approved,omitempty\""; LabeledLLM int "json:\"labeled_llm,omitempty\""; LLMLowConfidenceEdges int "json:\"-\""; VolatilityProvenance *internal/model/report.VolatilityProvenance "json:\"volatility_provenance,omitempty\""; DistanceCompression *internal/model/report.DistanceCompressionSummary "json:\"distance_compression,omitempty\""}
   type internal/model/report.Confidence string
@@ -286,10 +200,25 @@ package internal/model/report
   type internal/model/report.DistanceCompressionSummary struct{CompressedMiddleRungs bool "json:\"compressed_middle_rungs\""; ImplementedRungs []int "json:\"implemented_rungs,omitempty\""; OmittedRungs []int "json:\"omitted_rungs,omitempty\""; OmittedRungReasons []internal/model/report.DistanceOmittedRungReason "json:\"omitted_rung_reasons,omitempty\""; DeterministicSplits []string "json:\"deterministic_splits,omitempty\""; CodeStructureBoundaryCounts []internal/model/report.DistanceCount "json:\"code_structure_boundary_counts,omitempty\""; CodeStructureAncestorDepths []internal/model/report.DistanceCount "json:\"code_structure_ancestor_depths,omitempty\""; Rationale string "json:\"rationale,omitempty\""}
   type internal/model/report.DistanceCount struct{Value int "json:\"value\""; Count int "json:\"count\""}
   type internal/model/report.DistanceOmittedRungReason struct{Rung int "json:\"rung\""; Reason string "json:\"reason\""}
-  type internal/model/report.Document struct{SchemaVersion string "json:\"schema_version\""; Verdict internal/model/report.Verdict "json:\"verdict\""; Base string "json:\"base\""; Head string "json:\"head\""; ConfigHash string "json:\"config_hash,omitempty\""; Metrics []internal/model/report.MetricResult "json:\"metrics\""; Findings []internal/model/finding.Finding "json:\"findings\""; FileFacts []internal/model/evidence.FileFact "json:\"file_facts\""; DynamicImports []internal/model/evidence.DynamicImport "json:\"dynamic_imports\""; Connascence *internal/model/evidence.ConnascenceReport "json:\"connascence,omitempty\""; DynamicConnascenceSignals *internal/model/evidence.DynamicConnascenceSignals "json:\"dynamic_connascence_signals,omitempty\""; RuntimeAsync []internal/model/evidence.RuntimeAsyncModule "json:\"runtime_async,omitempty\""; RuntimeAsyncEdges []internal/model/evidence.RuntimeAsyncEdge "json:\"runtime_async_edges,omitempty\""; DeprecatedDeps []internal/model/evidence.DeprecatedDep "json:\"deprecated_deps,omitempty\""; SemanticStrengthOverlay *internal/model/evidence.SemanticStrengthOverlay "json:\"semantic_strength_overlay,omitempty\""; SyntaxFacts []internal/model/evidence.SyntaxFact "json:\"syntax_facts,omitempty\""; AgentTasks []internal/model/report.AgentTask "json:\"agent_tasks\""; AdvisoryTasks []internal/model/report.AdvisoryTask "json:\"advisory_tasks\""; ToolCoverage []internal/model/evidence.Coverage "json:\"tool_coverage\""; CoverageGaps []internal/model/evidence.CoverageGap "json:\"coverage_gaps,omitempty\""; OwnerSource string "json:\"owner_source,omitempty\""; PrimaryExtractorTools []string "json:\"primary_extractor_tools,omitempty\""; ConfigWarnings []string "json:\"config_warnings,omitempty\""; ClassifiedEdges *internal/model/report.ClassifiedEdgeSummary "json:\"classified_edges,omitempty\""; DistanceContext *internal/model/evidence.DistanceContext "json:\"distance_context,omitempty\""; DistanceConfigCandidates []internal/model/evidence.DistanceConfigCandidate "json:\"distance_config_candidates,omitempty\""; VolatilityCorroboration *internal/model/evidence.VolatilityCorroboration "json:\"volatility_corroboration,omitempty\""; LocalCoupling []internal/model/evidence.LocalCouplingModule "json:\"local_coupling,omitempty\""; GitFindingDelta *internal/model/report.GitFindingDelta "json:\"git_finding_delta,omitempty\""; Delta *internal/model/report.DeltaReport "json:\"delta,omitempty\""; Summary internal/model/report.Summary "json:\"summary\""}
+  type internal/model/report.Document struct{SchemaVersion string "json:\"schema_version\""; Verdict internal/model/report.Verdict "json:\"verdict\""; Base string "json:\"base\""; Head string "json:\"head\""; ConfigHash string "json:\"config_hash,omitempty\""; Metrics []internal/model/report.MetricResult "json:\"metrics\""; Findings []internal/model/report.Finding "json:\"findings\""; FileFacts []internal/model/evidence.FileFact "json:\"file_facts\""; DynamicImports []internal/model/evidence.DynamicImport "json:\"dynamic_imports\""; Connascence *internal/model/evidence.ConnascenceReport "json:\"connascence,omitempty\""; DynamicConnascenceSignals *internal/model/evidence.DynamicConnascenceSignals "json:\"dynamic_connascence_signals,omitempty\""; RuntimeAsync []internal/model/evidence.RuntimeAsyncModule "json:\"runtime_async,omitempty\""; RuntimeAsyncEdges []internal/model/evidence.RuntimeAsyncEdge "json:\"runtime_async_edges,omitempty\""; DeprecatedDeps []internal/model/evidence.DeprecatedDep "json:\"deprecated_deps,omitempty\""; SemanticStrengthOverlay *internal/model/evidence.SemanticStrengthOverlay "json:\"semantic_strength_overlay,omitempty\""; SyntaxFacts []internal/model/evidence.SyntaxFact "json:\"syntax_facts,omitempty\""; AgentTasks []internal/model/report.AgentTask "json:\"agent_tasks\""; AdvisoryTasks []internal/model/report.AdvisoryTask "json:\"advisory_tasks\""; ToolCoverage []internal/model/evidence.Coverage "json:\"tool_coverage\""; CoverageGaps []internal/model/evidence.CoverageGap "json:\"coverage_gaps,omitempty\""; OwnerSource string "json:\"owner_source,omitempty\""; PrimaryExtractorTools []string "json:\"primary_extractor_tools,omitempty\""; ConfigWarnings []string "json:\"config_warnings,omitempty\""; ClassifiedEdges *internal/model/report.ClassifiedEdgeSummary "json:\"classified_edges,omitempty\""; DistanceContext *internal/model/evidence.DistanceContext "json:\"distance_context,omitempty\""; DistanceConfigCandidates []internal/model/evidence.DistanceConfigCandidate "json:\"distance_config_candidates,omitempty\""; VolatilityCorroboration *internal/model/evidence.VolatilityCorroboration "json:\"volatility_corroboration,omitempty\""; LocalCoupling []internal/model/evidence.LocalCouplingModule "json:\"local_coupling,omitempty\""; GitFindingDelta *internal/model/report.GitFindingDelta "json:\"git_finding_delta,omitempty\""; Delta *internal/model/report.DeltaReport "json:\"delta,omitempty\""; Summary internal/model/report.Summary "json:\"summary\""}
+  type internal/model/report.Finding struct{ID string "json:\"id\""; Kind string "json:\"kind\""; RuleID string "json:\"rule_id\""; Status string "json:\"status\""; Severity string "json:\"severity\""; Confidence string "json:\"confidence\""; Edge internal/model/report.FindingEdge "json:\"edge\""; MatchedBy map[string]string "json:\"matched_by\""; Locations []internal/model/report.Location "json:\"locations\""; Why string "json:\"why\""; Constraint string "json:\"constraint\""; Alternatives []string "json:\"allowed_alternatives,omitempty\""}
+  type internal/model/report.FindingEdge struct{From internal/model/report.FindingEndpoint "json:\"from\""; To internal/model/report.FindingEndpoint "json:\"to\""; Kind string "json:\"kind\""}
+  type internal/model/report.FindingEndpoint struct{Module string "json:\"module\""; Path string "json:\"path\""}
+  const internal/model/report.FindingKindAdvisory untyped string
+  const internal/model/report.FindingKindGate untyped string
+  const internal/model/report.FindingSeverityCritical untyped string
+  const internal/model/report.FindingSeverityHigh untyped string
+  const internal/model/report.FindingSeverityLow untyped string
+  const internal/model/report.FindingSeverityMedium untyped string
+  const internal/model/report.FindingStatusBaseline untyped string
+  const internal/model/report.FindingStatusExpiredWaiver untyped string
+  const internal/model/report.FindingStatusFixed untyped string
+  const internal/model/report.FindingStatusNew untyped string
+  const internal/model/report.FindingStatusWaived untyped string
   const internal/model/report.GitComparisonComparable untyped string
   const internal/model/report.GitComparisonUnknown untyped string
   type internal/model/report.GitFindingDelta struct{BaseRef string "json:\"base_ref\""; ComparisonStatus string "json:\"comparison_status\""; IntroducedFindingIDs []string "json:\"introduced_finding_ids\""; PreExistingFindingIDs []string "json:\"pre_existing_finding_ids\""; UnknownOriginFindingIDs []string "json:\"unknown_origin_finding_ids\""; ComparisonReasons []string "json:\"comparison_reasons\""}
+  type internal/model/report.Location struct{File string "json:\"file\""; Line int "json:\"line\""}
   type internal/model/report.MetricResult struct{Name string "json:\"name\""; Value float64 "json:\"value\""; Display string "json:\"display\""; Band string "json:\"band\""; Confidence string "json:\"confidence\""; Version string "json:\"metric_version\""; Mode string "json:\"mode\""; Definition string "json:\"definition\""; Delta *float64 "json:\"delta,omitempty\""; Direction internal/model/report.Direction "json:\"direction,omitempty\""}
   type internal/model/report.MetricSnapshot map[string]struct{Value float64 "json:\"value\""; Version string "json:\"version\""}
   func internal/model/report.NewDocument() internal/model/report.Document
@@ -306,6 +235,7 @@ package internal/model/report
   const internal/model/report.ScoreBandPoor internal/model/report.ScoreBand
   const internal/model/report.ScoreBandServiceable internal/model/report.ScoreBand
   const internal/model/report.ScoreBandStrong internal/model/report.ScoreBand
+  const internal/model/report.ScoreVersion untyped string
   type internal/model/report.Scorecard struct{RubricVersion int "json:\"rubric_version\""; Overall int "json:\"overall\""; OverallBand internal/model/report.ScoreBand "json:\"overall_band\""; Dimensions []internal/model/report.Dimension "json:\"dimensions\""}
   type internal/model/report.Summary struct{GateFindings int "json:\"gate_findings\""; Warnings int "json:\"warnings\""; WaiversUsed int "json:\"waivers_used\""}
   type internal/model/report.Verdict string
@@ -323,7 +253,7 @@ package internal/model/symbol
   type internal/model/symbol.Graph struct{Module map[string]string; Path map[string]string; FanIn map[string]int; Refs map[string]map[string]struct{}; IntraRefs map[string]map[string]struct{}}
   func (internal/model/symbol.Graph).Empty() bool
 package internal/view
-  type internal/view.ClassifyConfig struct{Modules map[string]internal/model/module.ModuleDef; Layers []string; ModuleMap internal/model/module.Map; BCAdvisoryMinSeverity string; ApprovedLabels map[string]string; LLMLabels map[string]string; LLMLabelConfidence map[string]string; Scorer internal/model/coupling.Scorer; CrossModuleClonePairs map[string]struct{}; CloneEvidence map[string][]internal/model/graph.Location; ExplicitOwners map[string]bool; VolatilityCascadeEnabled bool; ExternalSystems map[string]internal/view.ExternalSystemDef; DuplicatedKnowledgePolicy internal/view.DuplicatedKnowledgePolicy}
+  type internal/view.ClassifyConfig struct{Modules map[string]internal/model/module.ModuleDef; Layers []string; ModuleMap internal/model/module.Map; BCAdvisoryMinSeverity string; ApprovedLabels map[string]string; LLMLabels map[string]string; LLMLabelConfidence map[string]string; CrossModuleClonePairs map[string]struct{}; CloneEvidence map[string][]internal/model/graph.Location; ExplicitOwners map[string]bool; VolatilityCascadeEnabled bool; ExternalSystems map[string]internal/view.ExternalSystemDef; DuplicatedKnowledgePolicy internal/view.DuplicatedKnowledgePolicy}
   type internal/view.DuplicatedKnowledgePolicy string
   const internal/view.DuplicatedKnowledgePolicyAdvisory internal/view.DuplicatedKnowledgePolicy
   const internal/view.DuplicatedKnowledgePolicyScore internal/view.DuplicatedKnowledgePolicy

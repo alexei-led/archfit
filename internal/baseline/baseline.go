@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 
 	"github.com/alexei-led/archfit/internal/assessment/status"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -55,7 +54,7 @@ type ScoreSnapshot struct {
 	// Band is disclosure-only, for humans reading the baseline JSON — no code
 	// path reads it back (min_band gates on the current run's band).
 	Band string `json:"band"`
-	// ScoreVersion is the scorer formula version (coupling.ScoreVersion) the
+	// ScoreVersion is the scorer formula version (report.ScoreVersion) the
 	// snapshot was computed under. Ordinal reassignment makes scores
 	// incomparable across versions, so CouplingScore refuses to anchor
 	// max_drop on a mismatched snapshot. Empty in baselines written before
@@ -111,7 +110,7 @@ func (b Baseline) ScoreSnapshotMismatches() []string {
 		return nil
 	}
 	var out []string
-	if b.Score.ScoreVersion != coupling.ScoreVersion {
+	if b.Score.ScoreVersion != report.ScoreVersion {
 		out = append(out, InputScoreVersion)
 	}
 	if b.Score.EffectiveRubricVersion() != report.RubricVersion {

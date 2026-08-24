@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/facts"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/symbol"
+	"github.com/alexei-led/archfit/internal/relationship/facts"
 )
 
 // Repeated fixture strings extracted as constants to satisfy goconst.
