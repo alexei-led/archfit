@@ -73,6 +73,13 @@ type RunInput struct {
 	ConfigHash string
 }
 
+// ClassifyGraph augments module boundaries and runs relationship classification
+// as one engine-owned stage for review-only CLI flows.
+func ClassifyGraph(g *graph.Graph, cfg view.ClassifyConfig) (view.ClassifyConfig, coupling.Index) {
+	cfg = AugmentClassifyConfig(g, cfg)
+	return cfg, classify.Run(g, cfg)
+}
+
 // AugmentClassifyConfig returns cfg with the same synthetic-module augmentation
 // and ModuleMap rebuild that Run applies before label freshness, classification,
 // advisories, and diagnostics.

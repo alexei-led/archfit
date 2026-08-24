@@ -25,6 +25,8 @@ const (
 	layerCore = "core"
 )
 
+const distanceBasisCodeStructure = "code_structure"
+
 // Volatility enum values used in classify validation and tests.
 const (
 	volatilityLow        = "low"

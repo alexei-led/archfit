@@ -40,7 +40,7 @@ func TestBuildExplainPrompt_IncludesDistanceBasis(t *testing.T) {
 }
 
 // TestBuildExplainPrompt_DegenerateOwnerQualifier verifies that a finding whose
-// distance_basis is "code_structure" (single-owner fallback) gets the
+// distance_basis is distanceBasisCodeStructure (single-owner fallback) gets the
 // "(degenerate_owner_map)" qualifier appended to the distance label so the LLM
 // does not frame it as a cross-team boundary.
 func TestBuildExplainPrompt_DegenerateOwnerQualifier(t *testing.T) {
@@ -59,7 +59,7 @@ func TestBuildExplainPrompt_DegenerateOwnerQualifier(t *testing.T) {
 		MatchedBy: map[string]string{
 			matchedByStrength: "functional",
 			"distance":        "internal_remote",
-			"distance_basis":  "code_structure",
+			"distance_basis":  distanceBasisCodeStructure,
 		},
 	}
 	prompt := buildExplainPrompt(f, result.Diagnostic{})

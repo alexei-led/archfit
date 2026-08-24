@@ -18,7 +18,7 @@ const (
 func TestBuildDistanceContext_SingleOwnerDegenerate(t *testing.T) {
 	d := result.New()
 	d.ClassifiedEdges = &result.ClassifiedEdgeSummary{
-		ByDistanceBasis: map[string]int{"code_structure": 3, "deploy_unit": 1},
+		ByDistanceBasis: map[string]int{distanceBasisCodeStructure: 3, "deploy_unit": 1},
 	}
 	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		"a": {Paths: []string{globA}, Owner: "team"},
@@ -29,7 +29,7 @@ func TestBuildDistanceContext_SingleOwnerDegenerate(t *testing.T) {
 	if got.OwnerModel != ownerModelSingleOwnerDegenerate {
 		t.Fatalf("owner_model = %q, want %q", got.OwnerModel, ownerModelSingleOwnerDegenerate)
 	}
-	if got.DistanceBasis["code_structure"] != 3 || got.DistanceBasis["deploy_unit"] != 1 {
+	if got.DistanceBasis[distanceBasisCodeStructure] != 3 || got.DistanceBasis["deploy_unit"] != 1 {
 		t.Fatalf("distance_basis = %+v", got.DistanceBasis)
 	}
 	if got.DeployUnitDetectedModules != 1 {

@@ -12,7 +12,6 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
 // ExplainCmd re-runs the engine and prints the details of a single finding.
@@ -122,7 +121,7 @@ func buildExplainPrompt(f finding.Finding, diag result.Result) string {
 	if strength, ok := f.MatchedBy["strength"]; ok {
 		distanceBasis := f.MatchedBy["distance_basis"]
 		distanceLabel := f.MatchedBy["distance"]
-		if distanceBasis == string(coupling.DistanceBasisStructure) {
+		if distanceBasis == distanceBasisCodeStructure {
 			distanceLabel += " (degenerate_owner_map)"
 		}
 		fmt.Fprintf(&b, "  strength: %s  distance: %s  distance_basis: %s\n", strength, distanceLabel, distanceBasis)

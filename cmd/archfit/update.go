@@ -22,7 +22,6 @@ import (
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
@@ -309,7 +308,8 @@ func (c *UpdateCmd) withRustSyntheticSuggestions(
 	}
 
 	g := graph.Build([]graph.Facts{rustFacts})
-	augmented := classify.AugmentModulesFromGraph(g, cfg.ForClassify().Modules)
+	augmentedCfg, _ := engine.ClassifyGraph(g, cfg.ForClassify())
+	augmented := augmentedCfg.Modules
 	if len(augmented) == len(cfg.Modules) {
 		return report, nil
 	}
@@ -487,8 +487,7 @@ func staticExternalDistanceConfigCandidates(ctx context.Context, root string, cf
 }
 
 func staticExternalDistanceConfigCandidatesFromGraph(g *graph.Graph, cfg config.Config) []evidence.DistanceConfigCandidate {
-	classifyCfg := engine.AugmentClassifyConfig(g, cfg.ForClassify())
-	idx := classify.Run(g, classifyCfg)
+	classifyCfg, idx := engine.ClassifyGraph(g, cfg.ForClassify())
 	return engine.BuildStaticExternalDistanceCandidates(g, idx, classifyCfg.ModuleMap)
 }
 

@@ -88,8 +88,14 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	mm := enrichModuleMap(cfg, captured.Graph)
-	labelEvidence := currentLabelEvidence(captured.Graph, mm, existing)
+	mm := engine.AugmentClassifyConfig(captured.Graph, cfg.ForClassify()).ModuleMap
+	wanted := make(map[string]struct{}, len(existing))
+	for _, label := range existing {
+		if label.Status == labels.StatusApproved {
+			wanted[labels.Key(label.From, label.To)] = struct{}{}
+		}
+	}
+	labelEvidence := engine.PairEvidence(captured.Graph, mm, wanted)
 	pairs, total := selectAbstainedPairs(captured.Graph, captured.Classifications, mm, existing, labelEvidence)
 	if len(pairs) == 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "enrich abstained: no abstained cross-module edges — nothing to label")
@@ -119,11 +125,11 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 	}
 
 	// Stamp drafts with the evidence hash the engine will verify later.
-	wanted := make(map[string]struct{}, len(drafts))
+	draftWanted := make(map[string]struct{}, len(drafts))
 	for _, d := range drafts {
-		wanted[labels.Key(d.From, d.To)] = struct{}{}
+		draftWanted[labels.Key(d.From, d.To)] = struct{}{}
 	}
-	evidence := engine.PairEvidence(captured.Graph, mm, wanted)
+	evidence := engine.PairEvidence(captured.Graph, mm, draftWanted)
 	for i := range drafts {
 		drafts[i].EvidenceHash = evidence[labels.Key(drafts[i].From, drafts[i].To)]
 	}

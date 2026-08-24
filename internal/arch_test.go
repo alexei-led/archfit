@@ -155,6 +155,14 @@ func TestScanProductionImportRatchet(t *testing.T) {
 	}
 }
 
+func TestCommandDoesNotImportRelationshipClassify(t *testing.T) {
+	for _, file := range productionImportFiles(t, modulePrefix+"internal/relationship/classify") {
+		if strings.HasPrefix(file, "cmd/archfit/") {
+			t.Errorf("command composition must use engine classification stages: %s", file)
+		}
+	}
+}
+
 func TestAssessmentResultDoesNotImportReport(t *testing.T) {
 	files := productionImportFiles(t, modulePrefix+"internal/model/report")
 	var assessmentFiles []string

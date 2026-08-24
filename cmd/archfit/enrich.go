@@ -22,8 +22,6 @@ import (
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 
 	"github.com/goccy/go-yaml"
@@ -158,9 +156,15 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	mm := enrichModuleMap(cfg, captured.Graph)
-	labelEvidence := currentLabelEvidence(captured.Graph, mm, existing)
-	pairs := selectRefinablePairs(captured.Graph, captured.Classifications, mm, existing, labelEvidence)
+	mm := engine.AugmentClassifyConfig(captured.Graph, cfg.ForClassify()).ModuleMap
+	wanted := make(map[string]struct{}, len(existing))
+	for _, label := range existing {
+		if label.Status == labels.StatusApproved {
+			wanted[labels.Key(label.From, label.To)] = struct{}{}
+		}
+	}
+	labelEvidence := engine.PairEvidence(captured.Graph, mm, wanted)
+	pairs := engine.SelectRefinablePairs(captured.Graph, captured.Classifications, mm, effectiveApprovedPairs(existing, labelEvidence))
 	if len(pairs) == 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "enrich: no refinable module pairs (no heuristic functional/model cross-module edges, or all pairs already approved)")
 		return nil
@@ -174,11 +178,11 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	}
 
 	// Stamp drafts with the evidence hash the engine will verify later.
-	wanted := make(map[string]struct{}, len(drafts))
+	draftWanted := make(map[string]struct{}, len(drafts))
 	for _, d := range drafts {
-		wanted[labels.Key(d.From, d.To)] = struct{}{}
+		draftWanted[labels.Key(d.From, d.To)] = struct{}{}
 	}
-	evidence := engine.PairEvidence(captured.Graph, mm, wanted)
+	evidence := engine.PairEvidence(captured.Graph, mm, draftWanted)
 	for i := range drafts {
 		drafts[i].EvidenceHash = evidence[labels.Key(drafts[i].From, drafts[i].To)]
 	}
@@ -409,84 +413,8 @@ func baseWorktreesDir(baseDir string) string {
 	return filepath.Join(baseDir, ".archfit-cache", "worktrees")
 }
 
-// refinablePair is one candidate module pair with its evidence summary.
-type refinablePair struct {
-	From, To    string
-	Strength    string // current heuristic strength (functional or model)
-	EdgeCount   int
-	SamplePaths []string // up to 5 "fromPath -> toPath" examples
-}
-
-// selectRefinablePairs picks cross-module pairs that benefit from LLM judgment:
-//   - functional or model strength (heuristic blanket-labelled call edges), or
-//   - unknown strength (no heuristic available — LLM judgment needed most here).
-//
-// Contract and intrusive strengths are already decided (glob or SCIP); they are
-// excluded. Fresh approved pairs are skipped; stale approved pairs can be
-// redrafted. Deterministic order (From, To).
-func selectRefinablePairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMap, existing []labels.Label, evidence map[string]string) []refinablePair {
-	if g == nil {
-		return nil
-	}
-	approved := effectiveApprovedPairs(existing, evidence)
-
-	type agg struct {
-		strength string
-		count    int
-		samples  []string
-	}
-	pairs := map[string]*agg{}
-	for _, e := range g.Edges() {
-		cl, ok := idx[e.From+"\x00"+e.To+"\x00"+string(e.Kind)]
-		if !ok {
-			continue
-		}
-		// Include functional/model (heuristic) and unknown (no heuristic — needs judgment).
-		// Contract and intrusive are already decided; skip them.
-		if cl.Strength != coupling.StrengthFunctional &&
-			cl.Strength != coupling.StrengthModel &&
-			cl.Strength != coupling.StrengthUnknown {
-			continue
-		}
-		if cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown || cl.Distance == "" {
-			continue
-		}
-		fromPath := graph.NodePath(e.From)
-		toPath := graph.NodePath(e.To)
-		fromMod, okF := mm.ModuleFor(fromPath)
-		toMod, okT := mm.ModuleFor(toPath)
-		if !okF || !okT || fromMod == toMod {
-			continue
-		}
-		key := labels.Key(fromMod, toMod)
-		if _, isApproved := approved[key]; isApproved {
-			continue
-		}
-		a := pairs[key]
-		if a == nil {
-			a = &agg{strength: string(cl.Strength)}
-			pairs[key] = a
-		}
-		a.count++
-		if len(a.samples) < 5 {
-			a.samples = append(a.samples, fromPath+" -> "+toPath)
-		}
-	}
-
-	out := make([]refinablePair, 0, len(pairs))
-	for key, a := range pairs {
-		from, to, _ := strings.Cut(key, "\x00")
-		sort.Strings(a.samples)
-		out = append(out, refinablePair{From: from, To: to, Strength: a.strength, EdgeCount: a.count, SamplePaths: a.samples})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].From != out[j].From {
-			return out[i].From < out[j].From
-		}
-		return out[i].To < out[j].To
-	})
-	return out
-}
+// refinablePair remains a local alias for prompt and parser helpers.
+type refinablePair = engine.RefinablePair
 
 // enrichSystemPrompt frames the Balanced Coupling refinement task.
 const enrichSystemPrompt = `You are an architecture reviewer applying Vlad Khononov's Balanced Coupling model.
@@ -658,20 +586,6 @@ func mergeDrafts(existing, drafts []labels.Label, evidence map[string]string) []
 		return out[i].To < out[j].To
 	})
 	return out
-}
-
-func currentLabelEvidence(g *graph.Graph, mm config.ModuleMap, existing []labels.Label) map[string]string {
-	wanted := make(map[string]struct{}, len(existing))
-	for _, l := range existing {
-		if l.Status == labels.StatusApproved {
-			wanted[labels.Key(l.From, l.To)] = struct{}{}
-		}
-	}
-	return engine.PairEvidence(g, mm, wanted)
-}
-
-func enrichModuleMap(cfg config.Config, g *graph.Graph) config.ModuleMap {
-	return engine.AugmentClassifyConfig(g, cfg.ForClassify()).ModuleMap
 }
 
 func effectiveApprovedPairs(existing []labels.Label, evidence map[string]string) map[string]struct{} {
