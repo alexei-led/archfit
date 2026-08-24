@@ -11,7 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
-	"github.com/alexei-led/archfit/internal/model/scan"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/view"
@@ -160,11 +160,11 @@ func (NopSymbolResolver) Symbols(_ context.Context, _ scope.Scope) (symbol.Graph
 }
 
 // Renderer is the port that output adapters satisfy.
-// Each adapter formats and writes a completed Diagnostic to a writer.
+// Each adapter formats and writes a completed report document to a writer.
 type Renderer interface {
 	// Format returns the format name (e.g. "json", "console").
 	Format() string
 
 	// Render writes d to w in the adapter's format.
-	Render(d scan.Diagnostic, w io.Writer) error
+	Render(d report.Document, w io.Writer) error
 }

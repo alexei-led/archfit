@@ -3,7 +3,6 @@ package diagnostic
 import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // Coverage is retained as a compatibility alias for evidence.Coverage.
@@ -120,20 +119,20 @@ type VolatilityProvenance = report.VolatilityProvenance
 // GitFindingDelta is retained as a compatibility alias.
 type GitFindingDelta = report.GitFindingDelta
 
-// AgentTask is retained as a compatibility alias for scan.AgentTask.
-type AgentTask = scan.AgentTask
+// AgentTask is retained as a compatibility alias for report.AgentTask.
+type AgentTask = report.AgentTask
 
-// AdvisoryTask is retained as a compatibility alias for scan.AdvisoryTask.
-type AdvisoryTask = scan.AdvisoryTask
+// AdvisoryTask is retained as a compatibility alias for report.AdvisoryTask.
+type AdvisoryTask = report.AdvisoryTask
 
-// Diagnostic is retained as a compatibility alias for scan.Diagnostic.
-type Diagnostic = scan.Diagnostic
+// Diagnostic is retained as a compatibility alias for the report document.
+type Diagnostic = report.Document
 
 // SchemaVersion preserves the old diagnostic package entry point.
-const SchemaVersion = scan.SchemaVersion
+const SchemaVersion = report.SchemaVersion
 
 // New preserves the old diagnostic package entry point.
-func New() Diagnostic { return scan.New() }
+func New() Diagnostic { return report.NewDocument() }
 
 // Verdict and direction constants preserve the old package vocabulary.
 const (
@@ -158,12 +157,8 @@ const (
 	DynamicImportKindDynamicImport = evidence.DynamicImportKindDynamicImport
 )
 
-// Git-origin comparison statuses for GitFindingDelta.ComparisonStatus.
+// Git-origin comparison statuses preserve the old package vocabulary.
 const (
-	// GitComparisonComparable means every current repair task was placed in a
-	// definite origin bucket (introduced or pre_existing).
-	GitComparisonComparable = "comparable"
-	// GitComparisonUnknown means at least one repair task could not be placed,
-	// so the delta must not be read as a complete list of new work.
-	GitComparisonUnknown = "unknown"
+	GitComparisonComparable = report.GitComparisonComparable
+	GitComparisonUnknown    = report.GitComparisonUnknown
 )

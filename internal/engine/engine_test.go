@@ -11,23 +11,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/assessment/metrics"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	archscore "github.com/alexei-led/archfit/internal/assessment/score"
+	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/labels"
-	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/pattern"
-	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
-	archscore "github.com/alexei-led/archfit/internal/score"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -186,8 +186,8 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return facts, diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return facts, result.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
 		},
 	}
 
@@ -218,8 +218,8 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if d.Verdict != diagnostic.VerdictFail {
-		t.Errorf("verdict=%q, want %q", d.Verdict, diagnostic.VerdictFail)
+	if d.Verdict != result.VerdictFail {
+		t.Errorf("verdict=%q, want %q", d.Verdict, result.VerdictFail)
 	}
 
 	// There should be exactly one gate finding for the public_api_only rule.
@@ -263,8 +263,8 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return facts, diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return facts, result.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
 		},
 	}
 
@@ -295,8 +295,8 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if d.Verdict != diagnostic.VerdictPass {
-		t.Errorf("verdict=%q, want %q", d.Verdict, diagnostic.VerdictPass)
+	if d.Verdict != result.VerdictPass {
+		t.Errorf("verdict=%q, want %q", d.Verdict, result.VerdictPass)
 	}
 
 	// No new gate findings.
@@ -322,7 +322,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 // produce output for the surviving extractor (here: the public_api_only
 // gate finding derived from the Go extractor's facts), with the failed
 // extractor only producing a coverage gap — not a total abort. RED today:
-// Run returns the raw extractor error and an empty diagnostic.Diagnostic{},
+// Run returns the raw extractor error and an empty result.Diagnostic{},
 // discarding the Go extractor's already-extracted facts.
 func TestRun_PerExtractorFailureIsolation(t *testing.T) {
 	ctx := context.Background()
@@ -337,14 +337,14 @@ func TestRun_PerExtractorFailureIsolation(t *testing.T) {
 	failingEx := &ports.ExtractorMock{
 		NameFunc:         func() string { return failedLang },
 		CoverageToolFunc: func() string { return failedTool },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return graph.Facts{}, diagnostic.Coverage{}, extractErr
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return graph.Facts{}, result.Coverage{}, extractErr
 		},
 	}
 	healthyEx := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return facts, diagnostic.Coverage{Tool: "go", Status: diagnostic.StatusOK, FilesSeen: 2, FilesApplicable: 2}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return facts, result.Coverage{Tool: "go", Status: result.StatusOK, FilesSeen: 2, FilesApplicable: 2}, nil
 		},
 	}
 
@@ -394,7 +394,7 @@ func TestRun_PerExtractorFailureIsolation(t *testing.T) {
 	// The failed extractor must surface as a coverage gap, not silent
 	// disappearance: a tool_coverage entry for it must exist and must not
 	// report ok.
-	var failedCov *diagnostic.Coverage
+	var failedCov *result.Coverage
 	for i := range d.ToolCoverage {
 		if d.ToolCoverage[i].Tool == failedTool {
 			failedCov = &d.ToolCoverage[i]
@@ -403,7 +403,7 @@ func TestRun_PerExtractorFailureIsolation(t *testing.T) {
 	}
 	if failedCov == nil {
 		t.Errorf("no tool_coverage entry for failed extractor %q — failure must surface, not vanish silently", failedTool)
-	} else if failedCov.Status == diagnostic.StatusOK {
+	} else if failedCov.Status == result.StatusOK {
 		t.Errorf("tool_coverage for %q reports status=ok, want a non-ok coverage gap", failedTool)
 	}
 
@@ -435,15 +435,15 @@ func TestRun_AllExtractorsFail_StillFatal(t *testing.T) {
 	failingA := &ports.ExtractorMock{
 		NameFunc:         func() string { return "python" },
 		CoverageToolFunc: func() string { return "grimp" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return graph.Facts{}, diagnostic.Coverage{}, errors.New("python extractor: ast-grep exited with status 1")
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return graph.Facts{}, result.Coverage{}, errors.New("python extractor: ast-grep exited with status 1")
 		},
 	}
 	failingB := &ports.ExtractorMock{
 		NameFunc:         func() string { return "go" },
 		CoverageToolFunc: func() string { return "go/packages" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return graph.Facts{}, diagnostic.Coverage{}, errors.New("go extractor: go list exited with status 1")
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return graph.Facts{}, result.Coverage{}, errors.New("go extractor: go list exited with status 1")
 		},
 	}
 
@@ -480,8 +480,8 @@ func TestRun_DiagnosticShape(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return graph.Facts{Language: "go"}, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return graph.Facts{Language: "go"}, result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -512,8 +512,8 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if d.SchemaVersion != diagnostic.SchemaVersion {
-		t.Errorf("schema_version=%q, want %q", d.SchemaVersion, diagnostic.SchemaVersion)
+	if d.SchemaVersion != result.SchemaVersion {
+		t.Errorf("schema_version=%q, want %q", d.SchemaVersion, result.SchemaVersion)
 	}
 	if d.Base != "main" {
 		t.Errorf("base=%q, want %q", d.Base, "main")
@@ -553,8 +553,8 @@ func TestRun_PrimaryExtractorTools_Forwarded(t *testing.T) {
 	ctx := context.Background()
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return graph.Facts{Language: "go"}, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return graph.Facts{Language: "go"}, result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 	classifyCfg, rs := cannedConfig()
@@ -605,8 +605,8 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 	ctx := context.Background()
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return violationFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return violationFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -656,8 +656,8 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 	// (cross_module_diff_owner, no owners set in cannedConfig) → SeverityMedium advisory.
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return advisoryFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return advisoryFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -689,7 +689,7 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 	}
 
 	// Verdict must be pass — advisory findings never gate.
-	if d.Verdict != diagnostic.VerdictPass {
+	if d.Verdict != result.VerdictPass {
 		t.Errorf("verdict=%q, want pass with advisory findings present", d.Verdict)
 	}
 
@@ -720,8 +720,8 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	ctx := context.Background()
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return advisoryFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return advisoryFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -810,8 +810,8 @@ func TestRun_Advisory_DistanceBasisInMatchedBy(t *testing.T) {
 	ctx := context.Background()
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return advisoryFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return advisoryFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -894,8 +894,8 @@ func TestRun_Advisory_GroupedRollups(t *testing.T) {
 	const edges = 5
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return bcFloodFacts(edges), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return bcFloodFacts(edges), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 	classifyCfg, rs := cannedConfig()
@@ -903,7 +903,7 @@ func TestRun_Advisory_GroupedRollups(t *testing.T) {
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
-	run := func() diagnostic.Diagnostic {
+	run := func() result.Diagnostic {
 		t.Helper()
 		d, err := engine.Run(ctx, engine.RunInput{
 			Mode:        engine.Mode{Head: headRef, Advisory: true},
@@ -987,8 +987,8 @@ func TestRun_Advisory_GroupedRollup_EdgePathHonesty(t *testing.T) {
 	const edges = 5
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return bcFloodFacts(edges), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return bcFloodFacts(edges), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 	classifyCfg, rs := cannedConfig()
@@ -1068,8 +1068,8 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 	ctx := context.Background()
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return violationFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return violationFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -1101,7 +1101,7 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 	}
 
 	// Gate violation must still fail.
-	if d.Verdict != diagnostic.VerdictFail {
+	if d.Verdict != result.VerdictFail {
 		t.Errorf("verdict=%q, want fail (gate violation present)", d.Verdict)
 	}
 
@@ -1130,8 +1130,8 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return cleanFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -1139,11 +1139,11 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 	findCalled := false
 	pp := &ports.PatternProviderMock{
 		NameFunc: func() string { return toolNameAstgrep },
-		FindFunc: func(_ context.Context, _ scope.Scope, _ view.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
+		FindFunc: func(_ context.Context, _ scope.Scope, _ view.PatternConfig) ([]pattern.Match, result.Coverage, error) {
 			findCalled = true
 			return []pattern.Match{
 				{File: pathFileA, Pattern: "unsafe-cast", Text: "unsafe.Pointer(x)", Line: 10, Column: 0},
-			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 1}, nil
+			}, result.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 1}, nil
 		},
 	}
 
@@ -1199,19 +1199,19 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return cleanFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
 	// PatternProvider returns matches — but no rule uses them to produce gate findings.
 	pp := &ports.PatternProviderMock{
 		NameFunc: func() string { return toolNameAstgrep },
-		FindFunc: func(_ context.Context, _ scope.Scope, _ view.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
+		FindFunc: func(_ context.Context, _ scope.Scope, _ view.PatternConfig) ([]pattern.Match, result.Coverage, error) {
 			return []pattern.Match{
 				{File: pathFileA, Pattern: "reflect-unexported", Text: "reflect.ValueOf(x).Field(0)", Line: 5, Column: 4},
 				{File: pathFileBAPIService, Pattern: "reflect-unexported", Text: "reflect.ValueOf(y).Field(1)", Line: 12, Column: 0},
-			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 2}, nil
+			}, result.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 2}, nil
 		},
 	}
 
@@ -1243,7 +1243,7 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 	}
 
 	// Verdict must remain pass — pattern matches alone must not gate.
-	if d.Verdict != diagnostic.VerdictPass {
+	if d.Verdict != result.VerdictPass {
 		t.Errorf("verdict=%q, want pass; pattern matches must not affect verdict", d.Verdict)
 	}
 	if d.Summary.GateFindings != 0 {
@@ -1262,9 +1262,9 @@ type spyMetric struct {
 
 func (s *spyMetric) Name() string    { return "spy" }
 func (s *spyMetric) Version() string { return "spy.v1" }
-func (s *spyMetric) Calculate(in signal.CollectedSignals) diagnostic.MetricResult {
+func (s *spyMetric) Calculate(in signal.CollectedSignals) result.MetricResult {
 	*s.captured = in
-	return diagnostic.MetricResult{Name: s.Name(), Version: s.Version(), Band: "n/a"}
+	return result.MetricResult{Name: s.Name(), Version: s.Version(), Band: "n/a"}
 }
 
 // TestRun_SymbolGraph_ForwardedToMetricInput verifies that a populated symbol.Graph
@@ -1283,18 +1283,18 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		ResolveFunc: func(_ context.Context, _, toPath string) (string, string) {
 			return toPath, confidenceHigh
 		},
-		StrengthsFunc: func(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
-			return nil, diagnostic.Coverage{Tool: toolNameScip, Status: "absent"}, nil
+		StrengthsFunc: func(_ context.Context, _ scope.Scope) (map[string]string, result.Coverage, error) {
+			return nil, result.Coverage{Tool: toolNameScip, Status: "absent"}, nil
 		},
-		SymbolsFunc: func(_ context.Context, _ scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
-			return wantGraph, diagnostic.Coverage{Tool: toolNameScip, Status: "ok", FilesSeen: 1, FilesApplicable: 1}, nil
+		SymbolsFunc: func(_ context.Context, _ scope.Scope) (symbol.Graph, result.Coverage, error) {
+			return wantGraph, result.Coverage{Tool: toolNameScip, Status: "ok", FilesSeen: 1, FilesApplicable: 1}, nil
 		},
 	}
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return cleanFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -1344,8 +1344,8 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return cleanFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -1399,18 +1399,18 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 		ResolveFunc: func(_ context.Context, _, toPath string) (string, string) {
 			return toPath, confidenceHigh
 		},
-		StrengthsFunc: func(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
-			return nil, diagnostic.Coverage{Tool: toolNameScip, Status: "absent"}, nil
+		StrengthsFunc: func(_ context.Context, _ scope.Scope) (map[string]string, result.Coverage, error) {
+			return nil, result.Coverage{Tool: toolNameScip, Status: "absent"}, nil
 		},
-		SymbolsFunc: func(_ context.Context, _ scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
-			return symGraph, diagnostic.Coverage{Tool: toolNameScip, Status: "ok"}, nil
+		SymbolsFunc: func(_ context.Context, _ scope.Scope) (symbol.Graph, result.Coverage, error) {
+			return symGraph, result.Coverage{Tool: toolNameScip, Status: "ok"}, nil
 		},
 	}
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return cleanFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -1462,8 +1462,8 @@ func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return cleanFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -1524,13 +1524,13 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return cleanFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 	now := time.Date(2026, 6, 11, 0, 0, 0, 0, time.UTC)
 
-	run := func(base baseline.Baseline) diagnostic.Diagnostic {
+	run := func(base baseline.Baseline) result.Diagnostic {
 		t.Helper()
 		d, err := engine.Run(ctx, engine.RunInput{
 			Mode:        engine.Mode{Head: headRef},
@@ -1558,7 +1558,7 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 
 	// Without a baseline: the cross-module edge is a new gate finding → fail.
 	noBase := run(baseline.Baseline{})
-	if noBase.Verdict != diagnostic.VerdictFail {
+	if noBase.Verdict != result.VerdictFail {
 		t.Fatalf("no baseline: verdict = %q, want fail", noBase.Verdict)
 	}
 	var fp string
@@ -1577,7 +1577,7 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 	based := run(baseline.Baseline{Accepted: []baseline.AcceptedFinding{
 		{Fingerprint: fp, RuleID: crossModRuleID, Kind: kindGate},
 	}})
-	if based.Verdict != diagnostic.VerdictPass {
+	if based.Verdict != result.VerdictPass {
 		t.Errorf("baselined: verdict = %q, want pass", based.Verdict)
 	}
 	found := false
@@ -1611,8 +1611,8 @@ func TestRun_PinnedLabels(t *testing.T) {
 	}
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return cleanFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 	now := time.Date(2026, 6, 11, 0, 0, 0, 0, time.UTC)
@@ -1624,7 +1624,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 		t.Fatalf("rules.New: %v", err)
 	}
 
-	run := func(lbls []labels.Label) (diagnostic.Diagnostic, signal.CollectedSignals) {
+	run := func(lbls []labels.Label) (result.Diagnostic, signal.CollectedSignals) {
 		t.Helper()
 		var captured signal.CollectedSignals
 		spy := &spyMetric{captured: &captured}
@@ -1726,8 +1726,8 @@ func TestRun_LLMLabels_FillDeterminismAndBucket(t *testing.T) {
 	}
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return cleanFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 	rs, err := rules.New(cfg.ForRules())
@@ -1737,7 +1737,7 @@ func TestRun_LLMLabels_FillDeterminismAndBucket(t *testing.T) {
 	now := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
 	freshHash := labels.HashItems([]string{pathFileA + "\x00" + pathFileBAPIService + "\x00imports"})
 
-	run := func(lbls []labels.Label) (diagnostic.Diagnostic, []byte) {
+	run := func(lbls []labels.Label) (result.Diagnostic, []byte) {
 		t.Helper()
 		d, runErr := engine.Run(ctx, engine.RunInput{
 			Mode:        engine.Mode{Full: true, Advisory: true},
@@ -1828,13 +1828,13 @@ const (
 // dynImportRun executes the engine over cleanFacts with the given dynamic-import
 // sites and returns the assembled Diagnostic. The graph is identical regardless
 // of the sites — the sites only feed the report-only DynamicImports block.
-func dynImportRun(t *testing.T, sites []diagnostic.DynamicImportSite) diagnostic.Diagnostic {
+func dynImportRun(t *testing.T, sites []result.DynamicImportSite) result.Diagnostic {
 	t.Helper()
 	classifyCfg, rs := cannedConfig() // pkg/a/** -> "a", pkg/b/** -> "b"
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return cleanFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 	base := baseline.Baseline{}
@@ -1858,13 +1858,13 @@ func dynImportRun(t *testing.T, sites []diagnostic.DynamicImportSite) diagnostic
 // sites are rolled up per module (module-map key, or file directory when unmapped),
 // counted in full, and sampled with the cap applied — deterministically.
 func TestRun_DynamicImports_GroupedPerModule(t *testing.T) {
-	var sites []diagnostic.DynamicImportSite
+	var sites []result.DynamicImportSite
 	for i := 1; i <= 7; i++ { // 7 sites in module "a" -> count 7, sample capped at 5
-		sites = append(sites, diagnostic.DynamicImportSite{File: pathPyA, Line: i, Kind: kindLazy, Language: langPyTest})
+		sites = append(sites, result.DynamicImportSite{File: pathPyA, Line: i, Kind: kindLazy, Language: langPyTest})
 	}
 	sites = append(sites,
-		diagnostic.DynamicImportSite{File: "pkg/b/y.ts", Line: 2, Kind: "require", Language: "typescript"},
-		diagnostic.DynamicImportSite{File: "scripts/tool.py", Line: 9, Kind: "importlib", Language: langPyTest},
+		result.DynamicImportSite{File: "pkg/b/y.ts", Line: 2, Kind: "require", Language: "typescript"},
+		result.DynamicImportSite{File: "scripts/tool.py", Line: 9, Kind: "importlib", Language: langPyTest},
 	)
 
 	d := dynImportRun(t, sites)
@@ -1901,7 +1901,7 @@ func TestRun_DynamicImports_GroupedPerModule(t *testing.T) {
 // diagnostic once the DynamicImports block is removed. Nothing graph-, metric-, or
 // verdict-derived may change.
 func TestRun_DynamicImports_StaticGraphUnchanged(t *testing.T) {
-	withSites := dynImportRun(t, []diagnostic.DynamicImportSite{
+	withSites := dynImportRun(t, []result.DynamicImportSite{
 		{File: pathPyA, Line: 4, Kind: kindLazy, Language: langPyTest},
 	})
 	withoutSites := dynImportRun(t, nil)
@@ -1935,7 +1935,7 @@ func TestRun_DynamicImports_StaticGraphUnchanged(t *testing.T) {
 // TestRun_DynamicImports_Deterministic asserts a double run with identical sites
 // yields byte-identical diagnostics (no map-order leakage in the rollup).
 func TestRun_DynamicImports_Deterministic(t *testing.T) {
-	sites := []diagnostic.DynamicImportSite{
+	sites := []result.DynamicImportSite{
 		{File: "pkg/b/y.ts", Line: 1, Kind: "dynamic_import", Language: "typescript"},
 		{File: pathPyA, Line: 2, Kind: kindLazy, Language: langPyTest},
 		{File: "scripts/z.py", Line: 3, Kind: "importlib", Language: langPyTest},
@@ -1995,8 +1995,8 @@ func TestRun_GoWorkspace_ModuleMapRebuild(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return workspaceFacts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return workspaceFacts, result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 	base := baseline.Baseline{}
@@ -2008,7 +2008,7 @@ func TestRun_GoWorkspace_ModuleMapRebuild(t *testing.T) {
 		Accepted: base, BaseMetrics: base.Metrics,
 		Signals: signal.RunSignals{
 			DynamicImports: signal.DynamicImportSignals{
-				Sites: []diagnostic.DynamicImportSite{
+				Sites: []result.DynamicImportSite{
 					{File: fileSvc, Line: 1, Kind: kindLazy, Language: langPyTest},
 				},
 			},
@@ -2056,8 +2056,8 @@ func TestRun_GoWorkspace_StalePinnedLabelUsesAugmentedModuleMap(t *testing.T) {
 	}
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return workspaceFacts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return workspaceFacts, result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 	cfg := config.Config{Version: 1}
@@ -2110,13 +2110,13 @@ func TestRun_GoWorkspace_StalePinnedLabelUsesAugmentedModuleMap(t *testing.T) {
 // the sites — the sites only feed the report-only RuntimeAsync and
 // RuntimeAsyncEdges blocks; they do not annotate graph edges or affect classify,
 // score, or verdict.
-func runtimeAsyncRun(t *testing.T, sites []diagnostic.RuntimeAsyncSite, confidence string) diagnostic.Diagnostic {
+func runtimeAsyncRun(t *testing.T, sites []result.RuntimeAsyncSite, confidence string) result.Diagnostic {
 	t.Helper()
 	classifyCfg, rs := cannedConfig()
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return cleanFacts(), result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 	base := baseline.Baseline{}
@@ -2139,7 +2139,7 @@ func runtimeAsyncRun(t *testing.T, sites []diagnostic.RuntimeAsyncSite, confiden
 // TestRun_RuntimeAsync_GroupedPerModule asserts async sites are rolled up per module
 // (module-map key, or file directory when unmapped), counted, and sorted.
 func TestRun_RuntimeAsync_GroupedPerModule(t *testing.T) {
-	sites := []diagnostic.RuntimeAsyncSite{
+	sites := []result.RuntimeAsyncSite{
 		{File: pathFileA, Line: 1, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"},
 		{File: pathFileA, Line: 2, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"},
 		{File: "pkg/b/b.go", Line: 5, Library: libKafka, IntegrationKind: kindEventBus, Language: "go"},
@@ -2221,7 +2221,7 @@ func TestRun_RuntimeAsync_EmptySites(t *testing.T) {
 // diagnostic once the RuntimeAsync block is nulled out. Verdict, metrics, findings
 // must be unchanged — this is report-only signal.
 func TestRun_RuntimeAsync_StaticGraphUnchanged(t *testing.T) {
-	withSites := runtimeAsyncRun(t, []diagnostic.RuntimeAsyncSite{
+	withSites := runtimeAsyncRun(t, []result.RuntimeAsyncSite{
 		{File: pathFileA, Line: 1, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"},
 	}, confMedium)
 	withoutSites := runtimeAsyncRun(t, nil, "low")
@@ -2282,12 +2282,12 @@ func TestRun_ReportOnlyLocalRuntimeAndStaticExternalFactsDoNotChangeScoreOrVerdi
 		StrengthHint: string(coupling.StrengthFunctional),
 		Locations:    []graph.Location{{File: "pkg/a/a.go", Line: 20}},
 	}
-	run := func(facts graph.Facts, signals signal.RunSignals) diagnostic.Diagnostic {
+	run := func(facts graph.Facts, signals signal.RunSignals) result.Diagnostic {
 		t.Helper()
 		ex := &ports.ExtractorMock{
 			NameFunc: func() string { return "go" },
-			ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-				return facts, diagnostic.Coverage{Tool: "go", Status: diagnostic.StatusOK}, nil
+			ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+				return facts, result.Coverage{Tool: "go", Status: result.StatusOK}, nil
 			},
 		}
 		base := baseline.Baseline{}
@@ -2315,10 +2315,10 @@ func TestRun_ReportOnlyLocalRuntimeAndStaticExternalFactsDoNotChangeScoreOrVerdi
 	withReportOnly := run(
 		graph.Facts{Language: graph.LangGo, Edges: []graph.Edge{cross, local, external}},
 		signal.RunSignals{
-			DynamicImports: signal.DynamicImportSignals{Sites: []diagnostic.DynamicImportSite{{File: "pkg/a/plugin.py", Line: 7, Kind: diagnostic.DynamicImportKindImportlib, Language: graph.LangPython}}},
+			DynamicImports: signal.DynamicImportSignals{Sites: []result.DynamicImportSite{{File: "pkg/a/plugin.py", Line: 7, Kind: result.DynamicImportKindImportlib, Language: graph.LangPython}}},
 			RuntimeAsync: signal.RuntimeAsyncSignals{
 				Confidence: confMedium,
-				Sites:      []diagnostic.RuntimeAsyncSite{{File: "pkg/a/a.go", Line: 12, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"}},
+				Sites:      []result.RuntimeAsyncSite{{File: "pkg/a/a.go", Line: 12, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"}},
 			},
 		},
 	)
@@ -2380,7 +2380,7 @@ func TestRun_ReportOnlyLocalRuntimeAndStaticExternalFactsDoNotChangeScoreOrVerdi
 // TestRun_RuntimeAsync_Deterministic asserts a double run with identical sites
 // yields byte-identical diagnostics (no map-order leakage in the rollup).
 func TestRun_RuntimeAsync_Deterministic(t *testing.T) {
-	sites := []diagnostic.RuntimeAsyncSite{
+	sites := []result.RuntimeAsyncSite{
 		{File: "pkg/b/b.go", Line: 1, Library: libKafka, IntegrationKind: kindEventBus, Language: "go"},
 		{File: pathFileA, Line: 2, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"},
 		{File: "scripts/z.py", Line: 3, Library: libCelery, IntegrationKind: kindAsyncTask, Language: langPyTest},
@@ -2388,15 +2388,15 @@ func TestRun_RuntimeAsync_Deterministic(t *testing.T) {
 	firstDiag := runtimeAsyncRun(t, sites, confMedium)
 	secondDiag := runtimeAsyncRun(t, sites, confMedium)
 	first, err := json.Marshal(struct {
-		Modules []diagnostic.RuntimeAsyncModule
-		Edges   []diagnostic.RuntimeAsyncEdge
+		Modules []result.RuntimeAsyncModule
+		Edges   []result.RuntimeAsyncEdge
 	}{firstDiag.RuntimeAsync, firstDiag.RuntimeAsyncEdges})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	second, err := json.Marshal(struct {
-		Modules []diagnostic.RuntimeAsyncModule
-		Edges   []diagnostic.RuntimeAsyncEdge
+		Modules []result.RuntimeAsyncModule
+		Edges   []result.RuntimeAsyncEdge
 	}{secondDiag.RuntimeAsync, secondDiag.RuntimeAsyncEdges})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -2597,8 +2597,8 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 
 			ex := &ports.ExtractorMock{
 				NameFunc: func() string { return "go" },
-				ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-					return facts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+				ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+					return facts, result.Coverage{Tool: "go", Status: "ok"}, nil
 				},
 			}
 
@@ -2674,17 +2674,17 @@ func TestRun_SyntaxFacts_Populated(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return facts, diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return facts, result.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
 		},
 	}
 
 	synMock := &ports.SyntaxProviderMock{
 		NameFunc: func() string { return toolNameAstgrep },
-		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
-			return []diagnostic.SyntaxFact{
+		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]result.SyntaxFact, result.Coverage, error) {
+			return []result.SyntaxFact{
 				{File: pathFileA, Language: "go", Kind: kindFuncDecl, Name: "FooHandler", StartLine: 10},
-			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 1, FilesApplicable: 1}, nil
+			}, result.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 1, FilesApplicable: 1}, nil
 		},
 	}
 
@@ -2732,7 +2732,7 @@ func TestRun_SyntaxFacts_Populated(t *testing.T) {
 		t.Error("syntax coverage not found in ToolCoverage")
 	}
 	// Facts are off-gate — verdict stays pass.
-	if d.Verdict != diagnostic.VerdictPass {
+	if d.Verdict != result.VerdictPass {
 		t.Errorf("verdict = %v, want pass", d.Verdict)
 	}
 	if len(synMock.SyntaxCalls()) == 0 {
@@ -2750,8 +2750,8 @@ func TestRun_SyntaxFacts_ModuleBackfill(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return facts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return facts, result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 
@@ -2760,11 +2760,11 @@ func TestRun_SyntaxFacts_ModuleBackfill(t *testing.T) {
 	const outsideFile = "scripts/gen.go"
 	synMock := &ports.SyntaxProviderMock{
 		NameFunc: func() string { return toolNameAstgrep },
-		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
-			return []diagnostic.SyntaxFact{
+		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]result.SyntaxFact, result.Coverage, error) {
+			return []result.SyntaxFact{
 				{File: pathFileA, Language: "go", Kind: kindFuncDecl, Name: "Handler", StartLine: 1},
 				{File: outsideFile, Language: "go", Kind: kindFuncDecl, Name: "Gen", StartLine: 1},
-			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok"}, nil
+			}, result.Coverage{Tool: toolNameAstgrep, Status: "ok"}, nil
 		},
 	}
 
@@ -2820,8 +2820,8 @@ func TestRun_SyntaxEnabled_NilProvider_ReturnsError(t *testing.T) {
 	facts := cleanFacts()
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return facts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return facts, result.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 	classifyCfg, rs := cannedConfig()
@@ -2854,15 +2854,15 @@ func TestRun_SyntaxFacts_DisabledNoCallNoCoverage(t *testing.T) {
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return facts, diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return facts, result.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
 		},
 	}
 
 	synMock := &ports.SyntaxProviderMock{
 		NameFunc: func() string { return "ast-grep" },
-		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
-			return nil, diagnostic.Coverage{}, nil
+		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]result.SyntaxFact, result.Coverage, error) {
+			return nil, result.Coverage{}, nil
 		},
 	}
 
@@ -2946,8 +2946,8 @@ func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
 	makeEx := func() ports.Extractor {
 		return &ports.ExtractorMock{
 			NameFunc: func() string { return "go" },
-			ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-				return violationFacts(), diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
+			ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+				return violationFacts(), result.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
 			},
 		}
 	}
@@ -2956,7 +2956,7 @@ func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
 
-	runWith := func(advisory bool) diagnostic.Diagnostic {
+	runWith := func(advisory bool) result.Diagnostic {
 		t.Helper()
 		d, runErr := engine.Run(ctx, engine.RunInput{
 			Mode:        engine.Mode{Head: headRef, Advisory: advisory},
@@ -2985,8 +2985,8 @@ func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
 	// Advisory mode OFF: verdict must be warn; no gate findings.
 	d := runWith(false)
 
-	if d.Verdict != diagnostic.VerdictWarn {
-		t.Errorf("verdict=%q, want %q", d.Verdict, diagnostic.VerdictWarn)
+	if d.Verdict != result.VerdictWarn {
+		t.Errorf("verdict=%q, want %q", d.Verdict, result.VerdictWarn)
 	}
 	for _, f := range d.Findings {
 		if f.Kind == kindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver) {
@@ -3033,8 +3033,8 @@ func TestRun_ReportsSemanticStrengthOverlay(t *testing.T) {
 	}
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return graph.LangTypeScript },
-		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return facts, diagnostic.Coverage{Tool: graph.LangTypeScript, Status: diagnostic.StatusOK}, nil
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, result.Coverage, error) {
+			return facts, result.Coverage{Tool: graph.LangTypeScript, Status: result.StatusOK}, nil
 		},
 	}
 	resolver := &ports.SymbolResolverMock{
@@ -3042,13 +3042,13 @@ func TestRun_ReportsSemanticStrengthOverlay(t *testing.T) {
 		ResolveFunc: func(_ context.Context, _ string, toPath string) (string, string) {
 			return toPath, confidenceHigh
 		},
-		StrengthsFunc: func(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
+		StrengthsFunc: func(_ context.Context, _ scope.Scope) (map[string]string, result.Coverage, error) {
 			return map[string]string{
 				"src/a.ts\x00src/b.ts": strengthModel,
-			}, diagnostic.Coverage{Tool: toolNameScip, Status: diagnostic.StatusOK}, nil
+			}, result.Coverage{Tool: toolNameScip, Status: result.StatusOK}, nil
 		},
-		SymbolsFunc: func(_ context.Context, _ scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
-			return symbol.Graph{}, diagnostic.Coverage{}, nil
+		SymbolsFunc: func(_ context.Context, _ scope.Scope) (symbol.Graph, result.Coverage, error) {
+			return symbol.Graph{}, result.Coverage{}, nil
 		},
 	}
 

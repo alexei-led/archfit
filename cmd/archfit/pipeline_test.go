@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/decision"
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/decision"
 	"github.com/alexei-led/archfit/internal/labels"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -33,28 +33,28 @@ func TestBuildCoverageGaps(t *testing.T) {
 
 	cases := []struct {
 		name      string
-		cov       []diagnostic.Coverage
+		cov       []result.Coverage
 		cfg       config.Config
 		wantTools []string // tool names in expected gap output (empty = no gaps)
 		wantGate  string   // gate for first gap (when wantTools non-empty)
 	}{
 		{
 			name:      "absent known tool produces gap",
-			cov:       []diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}},
+			cov:       []result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}},
 			cfg:       cfgWarn,
 			wantTools: []string{toolGoPackages},
 			wantGate:  gateWarn,
 		},
 		{
 			name:      "absent tool with configured fail gate",
-			cov:       []diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}},
+			cov:       []result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}},
 			cfg:       cfgFailGo,
 			wantTools: []string{toolGoPackages},
 			wantGate:  gateFail,
 		},
 		{
 			name:      "present tool produces no gap",
-			cov:       []diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusOK}},
+			cov:       []result.Coverage{{Tool: toolGoPackages, Status: result.StatusOK}},
 			cfg:       cfgWarn,
 			wantTools: nil,
 		},
@@ -65,23 +65,23 @@ func TestBuildCoverageGaps(t *testing.T) {
 			// "empty root disables suppression" case below pins. The gap keeps
 			// Gate: off, which applyToolGate never escalates.
 			name:      "absent tool with configured off gate is disclosed, gated off",
-			cov:       []diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}},
+			cov:       []result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}},
 			cfg:       cfgOffGo,
 			wantTools: []string{toolGoPackages},
 			wantGate:  gateOff,
 		},
 		{
 			name:      "unknown tool produces no gap",
-			cov:       []diagnostic.Coverage{{Tool: "unknown-tool", Status: diagnostic.StatusAbsent}},
+			cov:       []result.Coverage{{Tool: "unknown-tool", Status: result.StatusAbsent}},
 			cfg:       cfgWarn,
 			wantTools: nil,
 		},
 		{
 			name: "multiple absent tools sorted by name",
-			cov: []diagnostic.Coverage{
-				{Tool: toolGrimp, Status: diagnostic.StatusAbsent},
-				{Tool: toolGoPackages, Status: diagnostic.StatusAbsent},
-				{Tool: toolJscpd, Status: diagnostic.StatusAbsent},
+			cov: []result.Coverage{
+				{Tool: toolGrimp, Status: result.StatusAbsent},
+				{Tool: toolGoPackages, Status: result.StatusAbsent},
+				{Tool: toolJscpd, Status: result.StatusAbsent},
 			},
 			cfg:       cfgWarn,
 			wantTools: []string{toolGoPackages, toolGrimp, toolJscpd},
@@ -90,14 +90,14 @@ func TestBuildCoverageGaps(t *testing.T) {
 			// A tool disabled by config (StatusDisabled) must NOT produce a coverage
 			// gap — the user deliberately opted out; telling them to "install" is wrong.
 			name:      "disabled-by-config tool produces no gap",
-			cov:       []diagnostic.Coverage{{Tool: toolJscpd, Status: diagnostic.StatusDisabled}},
+			cov:       []result.Coverage{{Tool: toolJscpd, Status: result.StatusDisabled}},
 			cfg:       cfgWarn,
 			wantTools: nil,
 		},
 		{
 			// Partial coverage is informational, not an install prompt.
 			name:      "partial tool produces no gap",
-			cov:       []diagnostic.Coverage{{Tool: toolJscpd, Status: diagnostic.StatusPartial}},
+			cov:       []result.Coverage{{Tool: toolJscpd, Status: result.StatusPartial}},
 			cfg:       cfgWarn,
 			wantTools: nil,
 		},
@@ -149,9 +149,9 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 		CargoModules: config.Analyzer{Gate: config.GateFail},
 	}}
 
-	allRustAbsent := []diagnostic.Coverage{
-		{Tool: toolCargo, Status: diagnostic.StatusAbsent},
-		{Tool: toolCargoModules, Status: diagnostic.StatusAbsent},
+	allRustAbsent := []result.Coverage{
+		{Tool: toolCargo, Status: result.StatusAbsent},
+		{Tool: toolCargoModules, Status: result.StatusAbsent},
 	}
 
 	t.Run("pure-Go repo: no cargo or cargo-modules gap", func(t *testing.T) {
@@ -204,8 +204,8 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 
 	t.Run("explicit gate on rust overrides marker suppression", func(t *testing.T) {
 		t.Parallel()
-		gaps := buildCoverageGaps([]diagnostic.Coverage{
-			{Tool: toolCargo, Status: diagnostic.StatusAbsent},
+		gaps := buildCoverageGaps([]result.Coverage{
+			{Tool: toolCargo, Status: result.StatusAbsent},
 		}, cfgRustGate, goOnlyDir)
 		found := false
 		for _, g := range gaps {
@@ -220,8 +220,8 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 
 	t.Run("explicit gate on cargo-modules overrides marker suppression", func(t *testing.T) {
 		t.Parallel()
-		gaps := buildCoverageGaps([]diagnostic.Coverage{
-			{Tool: toolCargoModules, Status: diagnostic.StatusAbsent},
+		gaps := buildCoverageGaps([]result.Coverage{
+			{Tool: toolCargoModules, Status: result.StatusAbsent},
 		}, cfgCargoModulesGate, goOnlyDir)
 		found := false
 		for _, g := range gaps {
@@ -282,8 +282,8 @@ func testGateOffGapDisclosure(t *testing.T) {
 	cfgCargoModulesOff := config.Config{Analyzers: config.AnalyzersConfig{
 		CargoModules: config.Analyzer{Gate: config.GateOff},
 	}}
-	goAbsent := []diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}
-	cargoModulesAbsent := []diagnostic.Coverage{{Tool: toolCargoModules, Status: diagnostic.StatusAbsent}}
+	goAbsent := []result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}}
+	cargoModulesAbsent := []result.Coverage{{Tool: toolCargoModules, Status: result.StatusAbsent}}
 
 	t.Run("language present keeps the gap", func(t *testing.T) {
 		t.Parallel()
@@ -304,11 +304,11 @@ func testGateOffGapDisclosure(t *testing.T) {
 
 	t.Run("disclosed gap never gates, even under --require-tools", func(t *testing.T) {
 		t.Parallel()
-		diag := diagnostic.Diagnostic{CoverageGaps: buildCoverageGaps(goAbsent, cfgGoOff, goOnlyDir)}
+		diag := result.Diagnostic{CoverageGaps: buildCoverageGaps(goAbsent, cfgGoOff, goOnlyDir)}
 		if applyToolGate(&diag, true) {
 			t.Error("--require-tools must not escalate a gate: off gap")
 		}
-		if diag.Verdict == diagnostic.VerdictFail {
+		if diag.Verdict == result.VerdictFail {
 			t.Errorf("verdict = %q, want it untouched by a gate: off gap", diag.Verdict)
 		}
 		if diag.CoverageGaps[0].Gate != gateOff {
@@ -355,7 +355,7 @@ func testGoWorkspaceMarkerGaps(t *testing.T) {
 			}},
 		}
 		gaps := buildCoverageGaps(
-			[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, cfg, root)
+			[]result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}}, cfg, root)
 		if decision.HasCoverageGap(gaps, toolGoPackages) {
 			t.Errorf("gap raised over a member set go.work never named: %+v", gaps)
 		}
@@ -376,7 +376,7 @@ func testGoWorkspaceMarkerGaps(t *testing.T) {
 			}},
 		}
 		gaps := buildCoverageGaps(
-			[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, cfg, root)
+			[]result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}}, cfg, root)
 		if !decision.HasCoverageGap(gaps, toolGoPackages) {
 			t.Errorf("no gap for a workspace member the extractor loads: %+v", gaps)
 		}
@@ -393,7 +393,7 @@ func testGoWorkspaceMarkerGaps(t *testing.T) {
 		writeFileAt(t, root, filepath.Join(".tools", "gen", markerGoMod), "module example/gen\n")
 		cfg := config.Config{Exclude: scope.MergeExclusions(nil)}
 		gaps := buildCoverageGaps(
-			[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, cfg, root)
+			[]result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}}, cfg, root)
 		if !decision.HasCoverageGap(gaps, toolGoPackages) {
 			t.Errorf("no gap for a go.work member the extractor loads: %+v", gaps)
 		}
@@ -408,8 +408,8 @@ func testGoWorkspaceMarkerGaps(t *testing.T) {
 // over it was disclosed as a switched-off language that was never there.
 func testTSProjectMarkerGaps(t *testing.T) {
 	t.Parallel()
-	tsAbsent := func() []diagnostic.Coverage {
-		return []diagnostic.Coverage{{Tool: toolDepCruiser, Status: diagnostic.StatusAbsent}}
+	tsAbsent := func() []result.Coverage {
+		return []result.Coverage{{Tool: toolDepCruiser, Status: result.StatusAbsent}}
 	}
 	cfg := config.Config{Exclude: scope.MergeExclusions(nil)}
 
@@ -439,8 +439,8 @@ func testTSProjectMarkerGaps(t *testing.T) {
 			TypeScript: config.TypeScriptLanguage{Enabled: view.ModeOff},
 		}}
 		cov := markDisabledPrimaries(tsAbsent(), off, root)
-		if cov[0].Status != diagnostic.StatusAbsent {
-			t.Errorf("status = %q, want %q (no package.json — nothing was switched off)", cov[0].Status, diagnostic.StatusAbsent)
+		if cov[0].Status != result.StatusAbsent {
+			t.Errorf("status = %q, want %q (no package.json — nothing was switched off)", cov[0].Status, result.StatusAbsent)
 		}
 	})
 }
@@ -452,8 +452,8 @@ func testTSProjectMarkerGaps(t *testing.T) {
 // its own.
 func testPyProjectMarkerGaps(t *testing.T) {
 	t.Parallel()
-	pyAbsent := func() []diagnostic.Coverage {
-		return []diagnostic.Coverage{{Tool: toolGrimp, Status: diagnostic.StatusAbsent}}
+	pyAbsent := func() []result.Coverage {
+		return []result.Coverage{{Tool: toolGrimp, Status: result.StatusAbsent}}
 	}
 	plain := config.Config{Exclude: scope.MergeExclusions(nil)}
 
@@ -552,7 +552,7 @@ func testGoModuleFilterGaps(t *testing.T) {
 				}},
 			}
 			gaps := buildCoverageGaps(
-				[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, cfg, root)
+				[]result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}}, cfg, root)
 			if gotGap := decision.HasCoverageGap(gaps, toolGoPackages); gotGap != tc.want {
 				t.Errorf("go/packages gap = %v, want %v (gaps: %+v)", gotGap, tc.want, gaps)
 			}
@@ -583,9 +583,9 @@ func testRustManifestMarkerGaps(t *testing.T) {
 			Languages: config.LanguagesConfig{Rust: config.RustLanguage{Manifest: manifest}},
 		}
 	}
-	rustAbsent := []diagnostic.Coverage{
-		{Tool: toolCargo, Status: diagnostic.StatusAbsent},
-		{Tool: toolCargoModules, Status: diagnostic.StatusAbsent},
+	rustAbsent := []result.Coverage{
+		{Tool: toolCargo, Status: result.StatusAbsent},
+		{Tool: toolCargoModules, Status: result.StatusAbsent},
 	}
 
 	t.Run("configured sub-crate manifest keeps the cargo gap", func(t *testing.T) {
@@ -644,15 +644,15 @@ func testMarkDisabledPrimaries(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(goOnly, markerGoMod), []byte("module example\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	absent := func() []diagnostic.Coverage {
-		return []diagnostic.Coverage{{Tool: toolDepCruiser, Status: diagnostic.StatusAbsent}}
+	absent := func() []result.Coverage {
+		return []result.Coverage{{Tool: toolDepCruiser, Status: result.StatusAbsent}}
 	}
 
 	t.Run("disabled language primary becomes a disabled row", func(t *testing.T) {
 		t.Parallel()
 		cov := markDisabledPrimaries(absent(), off, tsDir)
-		if cov[0].Status != diagnostic.StatusDisabled {
-			t.Fatalf("status = %q, want %q", cov[0].Status, diagnostic.StatusDisabled)
+		if cov[0].Status != result.StatusDisabled {
+			t.Fatalf("status = %q, want %q", cov[0].Status, result.StatusDisabled)
 		}
 		if !strings.Contains(cov[0].Reason, "languages.typescript.enabled") {
 			t.Errorf("reason %q does not name the config key that switched it off", cov[0].Reason)
@@ -666,8 +666,8 @@ func testMarkDisabledPrimaries(t *testing.T) {
 	t.Run("a language that is not in the tree stays absent", func(t *testing.T) {
 		t.Parallel()
 		cov := markDisabledPrimaries(absent(), off, goOnly)
-		if cov[0].Status != diagnostic.StatusAbsent {
-			t.Fatalf("status = %q, want %q (no package.json — nothing was switched off)", cov[0].Status, diagnostic.StatusAbsent)
+		if cov[0].Status != result.StatusAbsent {
+			t.Fatalf("status = %q, want %q (no package.json — nothing was switched off)", cov[0].Status, result.StatusAbsent)
 		}
 		if cov[0].Reason != "" {
 			t.Errorf("reason = %q, want none", cov[0].Reason)
@@ -677,8 +677,8 @@ func testMarkDisabledPrimaries(t *testing.T) {
 	t.Run("explicit gate keeps the row absent so the gap survives", func(t *testing.T) {
 		t.Parallel()
 		cov := markDisabledPrimaries(absent(), offGated, tsDir)
-		if cov[0].Status != diagnostic.StatusAbsent {
-			t.Fatalf("status = %q, want %q (an explicit gate opts back into the gap)", cov[0].Status, diagnostic.StatusAbsent)
+		if cov[0].Status != result.StatusAbsent {
+			t.Fatalf("status = %q, want %q (an explicit gate opts back into the gap)", cov[0].Status, result.StatusAbsent)
 		}
 		if !decision.HasCoverageGap(buildCoverageGaps(cov, offGated, ""), toolDepCruiser) {
 			t.Error("explicit gate on a disabled language must still raise a coverage gap")
@@ -687,12 +687,12 @@ func testMarkDisabledPrimaries(t *testing.T) {
 
 	t.Run("non-primary and non-absent rows are untouched", func(t *testing.T) {
 		t.Parallel()
-		in := []diagnostic.Coverage{
-			{Tool: toolJscpd, Status: diagnostic.StatusAbsent},
-			{Tool: toolDepCruiser, Status: diagnostic.StatusOK},
+		in := []result.Coverage{
+			{Tool: toolJscpd, Status: result.StatusAbsent},
+			{Tool: toolDepCruiser, Status: result.StatusOK},
 		}
 		cov := markDisabledPrimaries(in, off, tsDir)
-		if cov[0].Status != diagnostic.StatusAbsent || cov[1].Status != diagnostic.StatusOK {
+		if cov[0].Status != result.StatusAbsent || cov[1].Status != result.StatusOK {
 			t.Errorf("rewrote rows it must not touch: %+v", cov)
 		}
 	})
@@ -710,8 +710,8 @@ func testMarkDisabledPrimaries(t *testing.T) {
 	t.Run("an empty root discloses the opt-out", func(t *testing.T) {
 		t.Parallel()
 		cov := markDisabledPrimaries(absent(), off, "")
-		if cov[0].Status != diagnostic.StatusDisabled {
-			t.Errorf("status = %q, want %q", cov[0].Status, diagnostic.StatusDisabled)
+		if cov[0].Status != result.StatusDisabled {
+			t.Errorf("status = %q, want %q", cov[0].Status, result.StatusDisabled)
 		}
 	})
 }
@@ -783,7 +783,7 @@ func testGoProjectMarkerGaps(t *testing.T) {
 			// raw config globs would make the `!testdata` row pass vacuously: with
 			// no defaults present there is nothing left to exclude the marker.
 			gaps := buildCoverageGaps(
-				[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}},
+				[]result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}},
 				config.Config{Exclude: scope.MergeExclusions(tc.exclude)}, root)
 			if gotGap := decision.HasCoverageGap(gaps, toolGoPackages); gotGap != tc.want {
 				t.Errorf("go/packages gap = %v, want %v (gaps: %+v)", gotGap, tc.want, gaps)
@@ -899,9 +899,9 @@ func TestApplyToolGate(t *testing.T) {
 	t.Parallel()
 	t.Run("require-tools raises all gaps to fail", func(t *testing.T) {
 		t.Parallel()
-		diag := diagnostic.Diagnostic{
-			Verdict: diagnostic.VerdictPass,
-			CoverageGaps: []diagnostic.CoverageGap{
+		diag := result.Diagnostic{
+			Verdict: result.VerdictPass,
+			CoverageGaps: []result.CoverageGap{
 				{Tool: toolGrimp, Gate: gateWarn},
 				{Tool: toolJscpd, Gate: gateWarn},
 			},
@@ -909,7 +909,7 @@ func TestApplyToolGate(t *testing.T) {
 		if !applyToolGate(&diag, true) {
 			t.Fatal("applyToolGate(require=true) = false, want true (hard gate)")
 		}
-		if diag.Verdict != diagnostic.VerdictFail {
+		if diag.Verdict != result.VerdictFail {
 			t.Errorf("verdict = %q, want fail", diag.Verdict)
 		}
 		for _, g := range diag.CoverageGaps {
@@ -921,9 +921,9 @@ func TestApplyToolGate(t *testing.T) {
 
 	t.Run("explicit fail gate trips without the flag", func(t *testing.T) {
 		t.Parallel()
-		diag := diagnostic.Diagnostic{
-			Verdict: diagnostic.VerdictPass,
-			CoverageGaps: []diagnostic.CoverageGap{
+		diag := result.Diagnostic{
+			Verdict: result.VerdictPass,
+			CoverageGaps: []result.CoverageGap{
 				{Tool: toolGrimp, Gate: gateWarn},
 				{Tool: toolGoPackages, Gate: gateFail},
 			},
@@ -931,7 +931,7 @@ func TestApplyToolGate(t *testing.T) {
 		if !applyToolGate(&diag, false) {
 			t.Fatal("applyToolGate with a fail gap = false, want true")
 		}
-		if diag.Verdict != diagnostic.VerdictFail {
+		if diag.Verdict != result.VerdictFail {
 			t.Errorf("verdict = %q, want fail", diag.Verdict)
 		}
 		if diag.CoverageGaps[0].Gate != gateWarn {
@@ -941,16 +941,16 @@ func TestApplyToolGate(t *testing.T) {
 
 	t.Run("all warn, no flag, does not trip", func(t *testing.T) {
 		t.Parallel()
-		diag := diagnostic.Diagnostic{
-			Verdict: diagnostic.VerdictPass,
-			CoverageGaps: []diagnostic.CoverageGap{
+		diag := result.Diagnostic{
+			Verdict: result.VerdictPass,
+			CoverageGaps: []result.CoverageGap{
 				{Tool: toolGrimp, Gate: gateWarn},
 			},
 		}
 		if applyToolGate(&diag, false) {
 			t.Fatal("applyToolGate(all warn, require=false) = true, want false")
 		}
-		if diag.Verdict != diagnostic.VerdictPass {
+		if diag.Verdict != result.VerdictPass {
 			t.Errorf("verdict = %q, want pass (unchanged)", diag.Verdict)
 		}
 	})
@@ -1153,34 +1153,34 @@ func TestTSUnresolvedWarning(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
-		cov  []diagnostic.Coverage
+		cov  []result.Coverage
 		want bool
 	}{
 		{
 			name: "partial with reason warns",
-			cov: []diagnostic.Coverage{
-				{Tool: toolDepCruiser, Status: diagnostic.StatusPartial, Reason: "12 of 40 import specifiers unresolved (30%)"},
+			cov: []result.Coverage{
+				{Tool: toolDepCruiser, Status: result.StatusPartial, Reason: "12 of 40 import specifiers unresolved (30%)"},
 			},
 			want: true,
 		},
 		{
 			name: "ok status stays silent",
-			cov: []diagnostic.Coverage{
-				{Tool: toolDepCruiser, Status: diagnostic.StatusOK},
+			cov: []result.Coverage{
+				{Tool: toolDepCruiser, Status: result.StatusOK},
 			},
 			want: false,
 		},
 		{
 			name: "partial with no reason stays silent",
-			cov: []diagnostic.Coverage{
-				{Tool: toolDepCruiser, Status: diagnostic.StatusPartial},
+			cov: []result.Coverage{
+				{Tool: toolDepCruiser, Status: result.StatusPartial},
 			},
 			want: false,
 		},
 		{
 			name: "other tool's partial coverage is not this warning's concern",
-			cov: []diagnostic.Coverage{
-				{Tool: toolCargoModules, Status: diagnostic.StatusPartial, Reason: "some crates failed"},
+			cov: []result.Coverage{
+				{Tool: toolCargoModules, Status: result.StatusPartial, Reason: "some crates failed"},
 			},
 			want: false,
 		},
@@ -1208,34 +1208,34 @@ func TestPyUnresolvedWarning(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
-		cov  []diagnostic.Coverage
+		cov  []result.Coverage
 		want bool
 	}{
 		{
 			name: "grimp unresolved warns",
-			cov: []diagnostic.Coverage{
-				{Tool: toolGrimp, Status: diagnostic.StatusPartial, Unresolved: 228},
+			cov: []result.Coverage{
+				{Tool: toolGrimp, Status: result.StatusPartial, Unresolved: 228},
 			},
 			want: true,
 		},
 		{
 			name: "grimp unresolved includes top roots from reason",
-			cov: []diagnostic.Coverage{
-				{Tool: toolGrimp, Status: diagnostic.StatusPartial, Unresolved: 228, Reason: "228 imports unresolved (top: prefect_aws 100, httpx 4) — check languages.python.package and src layout"},
+			cov: []result.Coverage{
+				{Tool: toolGrimp, Status: result.StatusPartial, Unresolved: 228, Reason: "228 imports unresolved (top: prefect_aws 100, httpx 4) — check languages.python.package and src layout"},
 			},
 			want: true,
 		},
 		{
 			name: "zero unresolved stays silent",
-			cov: []diagnostic.Coverage{
-				{Tool: toolGrimp, Status: diagnostic.StatusOK},
+			cov: []result.Coverage{
+				{Tool: toolGrimp, Status: result.StatusOK},
 			},
 			want: false,
 		},
 		{
 			name: "other tool unresolved is not this warning's concern",
-			cov: []diagnostic.Coverage{
-				{Tool: toolGoPackages, Status: diagnostic.StatusPartial, Unresolved: 2},
+			cov: []result.Coverage{
+				{Tool: toolGoPackages, Status: result.StatusPartial, Unresolved: 2},
 			},
 			want: false,
 		},
@@ -1272,7 +1272,7 @@ func TestPyUnresolvedWarning(t *testing.T) {
 // the regression for P12: the skipped pass was silently absent from the output.
 func TestSkippedPassCoverageRows_ScipDisabled(t *testing.T) {
 	t.Parallel()
-	cov := diagnostic.Coverage{Tool: toolScip, Status: diagnostic.StatusDisabled, Reason: reasonScipDisabled}
+	cov := result.Coverage{Tool: toolScip, Status: result.StatusDisabled, Reason: reasonScipDisabled}
 	if cov.Tool != "scip" {
 		t.Fatalf("disabled SCIP coverage tool = %q, want scip", cov.Tool)
 	}
@@ -1281,7 +1281,7 @@ func TestSkippedPassCoverageRows_ScipDisabled(t *testing.T) {
 	}
 
 	// StatusDisabled must not produce a gap (deliberate opt-out, not a missing tool).
-	gaps := buildCoverageGaps([]diagnostic.Coverage{cov}, config.Config{}, "")
+	gaps := buildCoverageGaps([]result.Coverage{cov}, config.Config{}, "")
 	if len(gaps) != 0 {
 		t.Errorf("StatusDisabled scip must not produce a gap; got %+v", gaps)
 	}
@@ -1291,8 +1291,8 @@ func TestSkippedPassCoverageRows_ScipDisabled(t *testing.T) {
 // enabled the pipeline injects an explicit StatusDisabled row for "ast-grep/syntax".
 func TestSkippedPassCoverageRows_SyntaxDisabled(t *testing.T) {
 	t.Parallel()
-	cov := []diagnostic.Coverage{
-		{Tool: toolAstGrepSyntax, Status: diagnostic.StatusDisabled, Reason: reasonSyntaxDisabled},
+	cov := []result.Coverage{
+		{Tool: toolAstGrepSyntax, Status: result.StatusDisabled, Reason: reasonSyntaxDisabled},
 	}
 	gaps := buildCoverageGaps(cov, config.Config{}, "")
 	if len(gaps) != 0 {
@@ -1334,8 +1334,8 @@ func TestEmitHealthWarnings(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		deps := &appDeps{Stdout: &stdout, Stderr: &stderr, scanRoot: filepath.Dir(cfgPath)}
 
-		emitHealthWarnings(deps, diagnostic.Diagnostic{
-			CoverageGaps: []diagnostic.CoverageGap{{Tool: toolGrimp}},
+		emitHealthWarnings(deps, result.Diagnostic{
+			CoverageGaps: []result.CoverageGap{{Tool: toolGrimp}},
 		}, config.Config{}, deps.scanRoot, cfgPath)
 
 		if stdout.Len() != 0 {
@@ -1352,8 +1352,8 @@ func TestEmitHealthWarnings(t *testing.T) {
 		var stderr bytes.Buffer
 		deps := &appDeps{Stderr: &stderr, scanRoot: filepath.Dir(cfgPath)}
 
-		emitHealthWarnings(deps, diagnostic.Diagnostic{
-			ClassifiedEdges: &diagnostic.ClassifiedEdgeSummary{Total: 4, Scored: 0, Abstained: 4},
+		emitHealthWarnings(deps, result.Diagnostic{
+			ClassifiedEdges: &result.ClassifiedEdgeSummary{Total: 4, Scored: 0, Abstained: 4},
 		}, config.Config{}, deps.scanRoot, cfgPath)
 
 		got := stderr.String()
@@ -1374,9 +1374,9 @@ func TestEmitHealthWarnings(t *testing.T) {
 		var stderr bytes.Buffer
 		deps := &appDeps{Stderr: &stderr, scanRoot: filepath.Dir(cfgPath)}
 
-		emitHealthWarnings(deps, diagnostic.Diagnostic{
-			ToolCoverage:    []diagnostic.Coverage{{Tool: toolGrimp, Status: diagnostic.StatusOK}},
-			ClassifiedEdges: &diagnostic.ClassifiedEdgeSummary{Total: 5, SameModule: 2, External: 3},
+		emitHealthWarnings(deps, result.Diagnostic{
+			ToolCoverage:    []result.Coverage{{Tool: toolGrimp, Status: result.StatusOK}},
+			ClassifiedEdges: &result.ClassifiedEdgeSummary{Total: 5, SameModule: 2, External: 3},
 		}, config.Config{}, deps.scanRoot, cfgPath)
 
 		got := stderr.String()
@@ -1407,7 +1407,7 @@ func TestEmitHealthWarnings(t *testing.T) {
 		var stderr bytes.Buffer
 		deps := &appDeps{Stderr: &stderr, scanRoot: dir}
 		// Empty FileFacts signals no files matched the declared module paths.
-		emitHealthWarnings(deps, diagnostic.Diagnostic{}, cfg, deps.scanRoot, cfgPath)
+		emitHealthWarnings(deps, result.Diagnostic{}, cfg, deps.scanRoot, cfgPath)
 
 		got := stderr.String()
 		if !strings.Contains(got, "warning: no source files matched declared module paths") {

@@ -7,7 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/agenttask"
+	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/report"
+
+	"github.com/alexei-led/archfit/internal/assessment/agenttask"
+	"github.com/alexei-led/archfit/internal/assessment/metrics"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/score"
+	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
@@ -22,17 +29,12 @@ import (
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
-	"github.com/alexei-led/archfit/internal/metrics"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/model/scan"
-	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/score"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -158,7 +160,7 @@ func (rc runContext) scanDir() string {
 // promoted findings are visible to agenttask.Build below and to every renderer
 // — then the agent_tasks repair block is attached from the active gate
 // findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runContext, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (scan.Diagnostic, score.Scorecard, error) {
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runContext, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (result.Result, score.Scorecard, error) {
 	scanDir := rc.scanDir()
 	// Merge the built-in artifact/cache excludes into the config exclusions
 	// (additive — see scope.MergeExclusions) before projecting any view, so every
@@ -179,7 +181,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	deps.reportPhase("Discovering project")
 	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: scanDir, runner: deps.Runner})
 	if err != nil {
-		return scan.Diagnostic{}, score.Scorecard{}, err
+		return result.Result{}, score.Scorecard{}, err
 	}
 
 	// Extractor fact cache (fact-cache.md D1/D2): facts/ beside the AI cache
@@ -193,7 +195,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 
 	rs, err := rules.New(cfg.ForRules())
 	if err != nil {
-		return scan.Diagnostic{}, score.Scorecard{}, err
+		return result.Result{}, score.Scorecard{}, err
 	}
 	ms := append(metrics.New(cfg.Metrics), extraMetrics...)
 
@@ -230,7 +232,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 
 	// LOC walk — repo-relative path→line-count map + coverage record.
 	// ExtraCoverage order: loc, clones.
-	var locCov diagnostic.Coverage
+	var locCov evidence.Coverage
 	var toolErr error
 	fileCfg := cfg.ForFileClass()
 	change.Size.FileLOC, change.Size.FileClassIndex, locCov, toolErr = loc.RunWithConfig(s.Root, fileCfg)
@@ -253,7 +255,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	{
 		r := runtimedetect.Detect(ctx, s.Root, deps.Runner)
 		for _, sig := range r.Signals {
-			change.RuntimeAsync.Sites = append(change.RuntimeAsync.Sites, diagnostic.RuntimeAsyncSite{
+			change.RuntimeAsync.Sites = append(change.RuntimeAsync.Sites, evidence.RuntimeAsyncSite{
 				File:            sig.File,
 				Line:            sig.Line,
 				Library:         sig.Library,
@@ -298,13 +300,13 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	deployUnitsByPath := deployunit.Detect(ctx, s.Root, duModules, deps.Runner)
 	deployUnitsByModule := deployunit.KeyByModule(deployUnitsByPath, duModules)
 	cfg.FillMissingDeployUnits(deployUnitsByModule)
-	change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
+	change.ExtraCoverage = append(change.ExtraCoverage, evidence.Coverage{
 		Tool:      toolDeployUnit,
 		FilesSeen: len(deployUnitsByPath),
 		// Deploy-unit detection is auxiliary distance evidence, not file-scope
 		// extractor coverage. Keep the row visible but non-contributing.
 		FilesApplicable: 0,
-		Status:          diagnostic.StatusOK,
+		Status:          evidence.StatusOK,
 	})
 
 	// Clone detection — opt-in (analyzers.clones.enabled: true). Run returns empty+absent
@@ -315,7 +317,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	clonesExcl := make([]string, len(cfg.Exclude), len(cfg.Exclude)+len(cloneTestGenGlobs))
 	copy(clonesExcl, cfg.Exclude)
 	clonesExcl = append(clonesExcl, cloneTestGenGlobs...)
-	var clonesCov diagnostic.Coverage
+	var clonesCov evidence.Coverage
 	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), clonesExcl, facts)
 	noteToolErr("jscpd", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
@@ -325,7 +327,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	// labels file must never silently alter the gate.
 	lbls, err := labelsio.Load(filepath.Join(rc.BundleDir, defaultLabelsPath))
 	if err != nil {
-		return scan.Diagnostic{}, score.Scorecard{}, err
+		return result.Result{}, score.Scorecard{}, err
 	}
 
 	// SCIP symbol-level strength is opt-in (analyzers.scip.enabled: true): the indexer is
@@ -345,9 +347,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 		scipAdapter.GoWorkOff = goWorkOff(s.Root, cfg)
 		resolver = scipAdapter
 	} else {
-		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
+		change.ExtraCoverage = append(change.ExtraCoverage, evidence.Coverage{
 			Tool:   toolScip,
-			Status: diagnostic.StatusDisabled,
+			Status: evidence.StatusDisabled,
 			Reason: reasonScipDisabled,
 		})
 	}
@@ -362,9 +364,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 		syntaxAdapter.Cache = facts
 		syntaxProvider = syntaxAdapter
 	} else {
-		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
+		change.ExtraCoverage = append(change.ExtraCoverage, evidence.Coverage{
 			Tool:   toolAstGrepSyntax,
-			Status: diagnostic.StatusDisabled,
+			Status: evidence.StatusDisabled,
 			Reason: reasonSyntaxDisabled,
 		})
 	}
@@ -590,12 +592,12 @@ func couplingGateView(cfg config.Config) score.CouplingGate {
 // consistent with the verdict. `archfit baseline` never persists it — the
 // trip is per-run state, and a stored fingerprint the engine never
 // regenerates would surface as a phantom "fixed" finding.
-func applyCouplingGate(diag *scan.Diagnostic, card score.Scorecard, gate score.CouplingGate, base baseline.Baseline) {
+func applyCouplingGate(diag *result.Result, card score.Scorecard, gate score.CouplingGate, base baseline.Baseline) {
 	trip := score.EvaluateCouplingGate(card, gate, base.CouplingScore())
 	if !trip.Tripped {
 		return
 	}
-	diag.Verdict = diagnostic.VerdictFail
+	diag.Verdict = report.VerdictFail
 	promoted := 0
 	for i := range diag.Findings {
 		f := &diag.Findings[i]

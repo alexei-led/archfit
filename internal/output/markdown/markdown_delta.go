@@ -5,15 +5,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
-	"github.com/alexei-led/archfit/internal/model/scan"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // writeAgentTasks prints the structured repair-task block: one entry per
 // active gate finding, with goal, involved files, constraints, and the exact
 // validation command. Omitted when there are no active gate findings.
-func writeAgentTasks(b *strings.Builder, tasks []diagnostic.AgentTask) {
+func writeAgentTasks(b *strings.Builder, tasks []report.AgentTask) {
 	if len(tasks) == 0 {
 		return
 	}
@@ -36,7 +35,7 @@ const advisoryTaskMarkdownLimit = 25
 
 // writeAdvisoryTasks prints report-only grouped advisory work items. These are
 // separate from agent_tasks[] so advisory noise never masquerades as a gate repair.
-func writeAdvisoryTasks(b *strings.Builder, tasks []diagnostic.AdvisoryTask) {
+func writeAdvisoryTasks(b *strings.Builder, tasks []report.AdvisoryTask) {
 	if len(tasks) == 0 {
 		return
 	}
@@ -75,7 +74,7 @@ func writeAdvisoryTasks(b *strings.Builder, tasks []diagnostic.AdvisoryTask) {
 // change / pre-existing / resolved), so a reviewer can tell what the change
 // introduced from what was already there. Omitted outside delta mode (d.Delta
 // nil). Each bucket holds finding IDs that join back to d.Findings.
-func writeDelta(b *strings.Builder, d scan.Diagnostic) {
+func writeDelta(b *strings.Builder, d report.Document) {
 	if d.Delta == nil {
 		return
 	}

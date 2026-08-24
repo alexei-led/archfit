@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
 // Status values for each finding in the coverage table.
@@ -189,7 +189,7 @@ var inventory = []Finding{
 		Title:     "polling_coordinator lazy-import cycle",
 		Repo:      repoCcgram,
 		Category:  "Dynamic/Lazy Import",
-		ProbeKind: diagnostic.DynamicImportKindLazyImport,
+		ProbeKind: evidence.DynamicImportKindLazyImport,
 	},
 	{
 		ID:         "10.1",

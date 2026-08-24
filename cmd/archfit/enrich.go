@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
@@ -22,10 +23,9 @@ import (
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/model/signal"
+	"github.com/alexei-led/archfit/internal/model/report"
 
 	"github.com/goccy/go-yaml"
 )
@@ -116,9 +116,9 @@ type captureMetric struct{ in *signal.CommonInput }
 
 func (m *captureMetric) Name() string    { return "enrich_capture" }
 func (m *captureMetric) Version() string { return "enrich_capture.v0" }
-func (m *captureMetric) Calculate(in signal.CollectedSignals) diagnostic.MetricResult {
+func (m *captureMetric) Calculate(in signal.CollectedSignals) report.MetricResult {
 	*m.in = in.Common
-	return diagnostic.MetricResult{Name: m.Name(), Band: "info", Display: "internal capture"}
+	return report.MetricResult{Name: m.Name(), Band: "info", Display: "internal capture"}
 }
 
 // runLabelEnrich is the original coupling-strength label draft workflow.

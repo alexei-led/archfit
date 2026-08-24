@@ -32,13 +32,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/model/evidence"
+
+	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/history/git"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/score"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -88,8 +89,8 @@ type baseEvidence struct {
 	// entries removed.
 	FindingIDs []string
 	// Coverage and CoverageGaps are the base run's analyzer coverage evidence.
-	Coverage     []diagnostic.Coverage
-	CoverageGaps []diagnostic.CoverageGap
+	Coverage     []evidence.Coverage
+	CoverageGaps []evidence.CoverageGap
 	// ConfigHash is the base run's effective config hash.
 	ConfigHash string
 }

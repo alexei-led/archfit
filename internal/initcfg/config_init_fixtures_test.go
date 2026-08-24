@@ -9,17 +9,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/assessment/metrics"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/initcfg"
-	"github.com/alexei-led/archfit/internal/metrics"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -333,7 +333,7 @@ func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
 // analyze pipeline (rules + metrics) over root's Go sources. Mode.Advisory is
 // always on so gate:warn rule findings (Kind=advisory) surface in
 // diag.Findings, mirroring how `archfit analyze` renders warn-gated rules.
-func runRenderedAnalyze(t *testing.T, root, rendered string) diagnostic.Diagnostic {
+func runRenderedAnalyze(t *testing.T, root, rendered string) result.Diagnostic {
 	t.Helper()
 	cfg := loadRendered(t, rendered)
 
@@ -433,8 +433,8 @@ func TestConfigInit_GoFixture_LayerRuleBackEdge_PromotedToFail(t *testing.T) {
 	}
 
 	diag := runRenderedAnalyze(t, root, promoted)
-	if diag.Verdict != diagnostic.VerdictFail {
-		t.Errorf("verdict = %q, want %q (back-edge under gate: fail): %+v", diag.Verdict, diagnostic.VerdictFail, diag.Findings)
+	if diag.Verdict != result.VerdictFail {
+		t.Errorf("verdict = %q, want %q (back-edge under gate: fail): %+v", diag.Verdict, result.VerdictFail, diag.Findings)
 	}
 }
 
@@ -471,8 +471,8 @@ func Run() string { return model.Describe() }
 	rendered := initcfg.Render(discovered, nil, false)
 
 	diag := runRenderedAnalyze(t, root, rendered)
-	if diag.Verdict != diagnostic.VerdictPass {
-		t.Errorf("verdict = %q, want %q (no back-edge): %+v", diag.Verdict, diagnostic.VerdictPass, diag.Findings)
+	if diag.Verdict != result.VerdictPass {
+		t.Errorf("verdict = %q, want %q (no back-edge): %+v", diag.Verdict, result.VerdictPass, diag.Findings)
 	}
 	for _, f := range diag.Findings {
 		if strings.HasPrefix(f.RuleID, "no-") {

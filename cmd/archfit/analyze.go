@@ -9,18 +9,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/application"
+	"github.com/alexei-led/archfit/internal/assessment/decision"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/decision"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/scan"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
 	"github.com/alexei-led/archfit/internal/output/sarif"
 	"github.com/alexei-led/archfit/internal/output/scorecard"
-	"github.com/alexei-led/archfit/internal/score"
 )
 
 // AnalyzeCmd is the local, report-only analysis command. It runs the same scan
@@ -127,50 +128,48 @@ type scanRequest struct {
 	providerOverride llm.Provider
 }
 
-// resolveScanFormats merges the shorthand flags (--json/--markdown/--sarif)
-// with the repeatable --format flag. Returns an error when multiple
-// shorthands are set or shorthand and --format are mixed. Falls back to
-// ["text"] when nothing is specified.
-func resolveScanFormats(jsonFlag, markdownFlag, sarifFlag bool, formats []string) ([]string, error) {
-	shorthands := 0
-	if jsonFlag {
-		shorthands++
-	}
-	if markdownFlag {
-		shorthands++
-	}
-	if sarifFlag {
-		shorthands++
-	}
-	if shorthands > 1 {
-		return nil, &exitError{code: 3, msg: "error: --json, --markdown, and --sarif are mutually exclusive; use at most one"}
-	}
-	if shorthands > 0 && len(formats) > 0 {
-		return nil, &exitError{code: 3, msg: "error: --json/--markdown/--sarif and --format are mutually exclusive"}
-	}
-	switch {
-	case jsonFlag:
-		return []string{formatJSON}, nil
-	case markdownFlag:
-		return []string{formatMarkdown}, nil
-	case sarifFlag:
-		return []string{formatSarif}, nil
-	case len(formats) > 0:
-		return formats, nil
-	default:
-		return []string{formatText}, nil
-	}
+// runScan dispatches the Analyze/Check use case through the application layer.
+func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
+	return application.Service{Runner: scanRunner{deps: deps, providerOverride: req.providerOverride}}.Execute(ctx, application.Request{
+		ConfigPath:   req.configPath,
+		Root:         req.root,
+		BaseRef:      req.baseRef,
+		JSON:         req.json,
+		Markdown:     req.markdown,
+		SARIF:        req.sarif,
+		Formats:      req.formats,
+		NoAdvisories: req.noAdvisories,
+		MinSeverity:  req.minSeverity,
+		Lang:         req.lang,
+		RequireTools: req.requireTools,
+		Progress:     req.progress,
+		Quiet:        req.quiet,
+		Refresh:      req.refresh,
+		AISummary:    req.aiSummary,
+		ReportOnly:   req.reportOnly,
+	})
 }
 
-// runScan runs the shared analysis pipeline for both `archfit analyze` and
-// `archfit check`. reportOnly=true keeps the run local/reporting-only: exit 0 on
-// success. reportOnly=false applies CI gate exit codes: 0 clean, 1 violations,
-// 2 warnings, 3 config/tool error.
-func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
-	formats, err := resolveScanFormats(req.json, req.markdown, req.sarif, req.formats)
-	if err != nil {
-		return err
-	}
+type scanRunner struct {
+	deps             *appDeps
+	providerOverride llm.Provider
+}
+
+func (r scanRunner) Run(ctx context.Context, req application.Request) error {
+	return runScanInternal(ctx, r.deps, scanRequest{
+		configPath: req.ConfigPath, root: req.Root, baseRef: req.BaseRef,
+		json: req.JSON, markdown: req.Markdown, sarif: req.SARIF, formats: req.Formats,
+		noAdvisories: req.NoAdvisories, minSeverity: req.MinSeverity, lang: req.Lang,
+		requireTools: req.RequireTools, progress: req.Progress, quiet: req.Quiet,
+		refresh: req.Refresh, aiSummary: req.AISummary, reportOnly: req.ReportOnly,
+		providerOverride: r.providerOverride,
+	})
+}
+
+// runScanInternal contains the existing pipeline until task #27 moves its
+// orchestration behind application-owned stage contracts.
+func runScanInternal(ctx context.Context, deps *appDeps, req scanRequest) error {
+	formats := req.formats
 
 	rep := newProgressReporter(deps.stderr(), analyzePhaseTotal(req.aiSummary, req.baseRef != ""), req.progress, req.quiet, time.Now())
 	rep.banner("Archfit analyzing " + analyzeTarget(req.configPath, req.root))
@@ -328,24 +327,25 @@ func configLoadError(err error) error {
 // console.RenderReport); JSON/SARIF/markdown/scorecard keep their existing
 // machine/artifact renderers (unchanged contract). hardGate feeds the decision
 // band so a tripped tool-gate reads as FAIL even in report-only mode.
-func analyzeRender(deps *appDeps, diag scan.Diagnostic, sc score.Scorecard, base *score.Scorecard, formats []string, hardGate bool) error {
+func analyzeRender(deps *appDeps, diag result.Result, sc score.Scorecard, base *score.Scorecard, formats []string, hardGate bool) error {
+	doc := application.ProjectReport(diag)
 	for _, format := range formats {
 		var renderErr error
 		switch format {
 		case formatJSON:
-			renderErr = jsonout.New().Render(diag, sc, base, deps.Stdout)
+			renderErr = jsonout.New().Render(doc, sc, base, deps.Stdout)
 		case formatText:
 			renderErr = console.RenderReport(decision.Build(diag, sc, base, hardGate), deps.Stdout)
 		case formatMD, formatMarkdown:
 			if rerr := markdown.RenderReport(decision.Build(diag, sc, base, hardGate), deps.Stdout); rerr != nil {
 				renderErr = rerr
 			} else {
-				renderErr = markdown.New().Render(diag, deps.Stdout)
+				renderErr = markdown.New().Render(doc, deps.Stdout)
 			}
 		case formatSarif:
-			renderErr = sarif.New().Render(diag, deps.Stdout)
+			renderErr = sarif.New().Render(doc, deps.Stdout)
 		case formatScorecard:
-			renderErr = scorecard.New().Render(diag, sc, deps.Stdout)
+			renderErr = scorecard.New().Render(doc, sc, deps.Stdout)
 		}
 		if renderErr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
@@ -357,7 +357,7 @@ func analyzeRender(deps *appDeps, diag scan.Diagnostic, sc score.Scorecard, base
 // appendAISummary emits the off-gate AI narrative after the deterministic
 // report. Text/Markdown runs append to stdout; machine-only formats route the
 // review to stderr so stdout remains parseable JSON/SARIF/scorecard output.
-func appendAISummary(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag scan.Diagnostic, sc score.Scorecard, formats []string) error {
+func appendAISummary(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag result.Result, sc score.Scorecard, formats []string) error {
 	reviewDeps := deps
 	if !llmReviewCanUseStdout(formats) {
 		copyDeps := *deps

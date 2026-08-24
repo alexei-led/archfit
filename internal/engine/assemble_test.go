@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/classify"
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/ports"
+	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -203,7 +203,7 @@ func TestBuildConnascenceReport(t *testing.T) {
 
 func TestBuildDynamicConnascenceSignals_FiltersStaticKinds(t *testing.T) {
 	signals := buildDynamicConnascenceSignals(
-		[]diagnostic.DynamicImport{{Module: "plugins", Count: 1}},
+		[]result.DynamicImport{{Module: "plugins", Count: 1}},
 		nil,
 		[]string{string(coupling.ConnascencePosition), string(coupling.ConnascenceExecution), string(coupling.ConnascenceTiming), string(coupling.ConnascenceValue), string(coupling.ConnascenceIdentity)},
 	)
@@ -226,8 +226,8 @@ func TestBuildDynamicConnascenceSignals_FiltersStaticKinds(t *testing.T) {
 	}
 }
 
-func connascenceRoadmapByKind(items []diagnostic.ConnascenceRoadmapItem) map[string]diagnostic.ConnascenceRoadmapItem {
-	out := make(map[string]diagnostic.ConnascenceRoadmapItem, len(items))
+func connascenceRoadmapByKind(items []result.ConnascenceRoadmapItem) map[string]result.ConnascenceRoadmapItem {
+	out := make(map[string]result.ConnascenceRoadmapItem, len(items))
 	for _, item := range items {
 		out[item.Kind] = item
 	}

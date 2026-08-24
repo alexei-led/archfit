@@ -1091,16 +1091,20 @@ func TestSelfConfig_CapabilityModuleMap(t *testing.T) {
 			wantPaths: []string{"internal/extract/**", "internal/toolrun/**", "internal/factcache/**", "internal/history/**", "internal/ownership/**"},
 		},
 		{
-			name: "evaluation-core", layer: layerCore, role: module.RoleCore,
-			wantPaths: []string{"internal/classify/**", "internal/rules/**", "internal/metrics/**", "internal/score/**", "internal/decision/**"},
+			name: "relationship-analysis", layer: layerCore, role: module.RoleCore,
+			wantPaths: []string{"internal/relationship/**"},
 		},
 		{
 			name: "coupling-model", layer: layerModel, role: module.RoleSharedModel,
 			wantPaths: []string{"internal/model/coupling/**"},
 		},
 		{
-			name: "pipeline-state", layer: layerModel, role: module.RoleSharedModel,
-			wantPaths: []string{"internal/model/signal/**"},
+			name: "evaluation-core", layer: layerCore, role: module.RoleCore,
+			wantPaths: []string{"internal/rules/**", "internal/facts/**"},
+		},
+		{
+			name: "assessment-repair", layer: layerCore, role: module.RoleCore,
+			wantPaths: []string{"internal/assessment/**"},
 		},
 		{
 			name: "architecture-model", layer: layerModel, role: module.RoleSharedModel,

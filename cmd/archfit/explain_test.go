@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
 
@@ -29,7 +29,7 @@ func TestBuildExplainPrompt_IncludesDistanceBasis(t *testing.T) {
 			"distance_basis":  "ownership",
 		},
 	}
-	prompt := buildExplainPrompt(f, diagnostic.Diagnostic{})
+	prompt := buildExplainPrompt(f, result.Diagnostic{})
 	if !strings.Contains(prompt, "distance_basis: ownership") {
 		t.Errorf("prompt missing distance_basis:\n%s", prompt)
 	}
@@ -62,7 +62,7 @@ func TestBuildExplainPrompt_DegenerateOwnerQualifier(t *testing.T) {
 			"distance_basis":  "code_structure",
 		},
 	}
-	prompt := buildExplainPrompt(f, diagnostic.Diagnostic{})
+	prompt := buildExplainPrompt(f, result.Diagnostic{})
 	if !strings.Contains(prompt, "distance_basis: code_structure") {
 		t.Errorf("prompt missing distance_basis:\n%s", prompt)
 	}

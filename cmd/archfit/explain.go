@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/finding"
-	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // ExplainCmd re-runs the engine and prints the details of a single finding.
@@ -85,7 +85,7 @@ Plain prose, no headings, no lists, no code fences.`
 // explainNarrative appends an off-gate LLM narrative for one finding. The
 // deterministic explain output above it is already printed; this only adds
 // judgment on top — failures here never affect any verdict.
-func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, refresh bool, f finding.Finding, diag scan.Diagnostic) error {
+func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, refresh bool, f finding.Finding, diag result.Result) error {
 	llmCfg, configured := cfg.LLM()
 	if !configured {
 		return &exitError{code: 3, msg: "error: --ai-summary needs ai configured (provider + model); see docs/guide/llm-enrich.md"}
@@ -114,7 +114,7 @@ func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, con
 // ownership boundaries or the code-structure fallback (single-owner repos).
 // When the fallback was used, a (degenerate_owner_map) qualifier is appended
 // to prevent cross-team framing on single-owner codebases.
-func buildExplainPrompt(f finding.Finding, diag scan.Diagnostic) string {
+func buildExplainPrompt(f finding.Finding, diag result.Result) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Finding:\n  rule: %s\n  severity: %s\n  status: %s\n  edge: %s -> %s (%s)\n  modules: %s -> %s\n  why: %s\n  constraint: %s\n",
 		f.RuleID, f.Severity, f.Status, f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind,
@@ -134,7 +134,7 @@ func buildExplainPrompt(f finding.Finding, diag scan.Diagnostic) string {
 }
 
 // moduleFactLine renders the structural facts of one module when present.
-func moduleFactLine(diag scan.Diagnostic, module string) string {
+func moduleFactLine(diag result.Result, module string) string {
 	if module == "" {
 		return ""
 	}

@@ -6,10 +6,9 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
-// JSONRenderer marshals a Diagnostic plus its synthesised scorecard to JSON.
+// JSONRenderer marshals a report document plus its synthesised scorecard to JSON.
 type JSONRenderer struct{}
 
 // New returns a new JSONRenderer.
@@ -22,13 +21,13 @@ func (r *JSONRenderer) Format() string {
 	return "json"
 }
 
-// envelope flattens the Diagnostic at the top level (preserving the existing
+// envelope flattens the report document at the top level (preserving the existing
 // schema) and adds the synthesised scorecard, the hoisted coupling_balance
 // dimension (the score's main driver), and — when a base scorecard is supplied —
 // a version delta. Before this, an agent/CI consumer reading --json could not see
 // the 0-100 score, its driver, or any delta; only text/markdown carried them (F5).
 type envelope struct {
-	scan.Diagnostic
+	report.Document
 	Score report.Scorecard `json:"score"`
 	// ScoreVersion pins the BC score formula version (ordinals, severity
 	// mapping). Consumers key on it: scores are not comparable across
@@ -57,10 +56,10 @@ type dimensionDelta struct {
 }
 
 // Render writes d plus its scorecard (and an optional delta vs base) as JSON.
-// schema_version is part of the embedded Diagnostic and is always present.
-func (r *JSONRenderer) Render(d scan.Diagnostic, sc report.Scorecard, base *report.Scorecard, w io.Writer) error {
+// schema_version is part of the embedded report document and is always present.
+func (r *JSONRenderer) Render(d report.Document, sc report.Scorecard, base *report.Scorecard, w io.Writer) error {
 	env := envelope{
-		Diagnostic:      d,
+		Document:        d,
 		Score:           sc,
 		ScoreVersion:    coupling.ScoreVersion,
 		CouplingBalance: dimensionByName(sc, report.DimCouplingBalance),

@@ -13,15 +13,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/scan"
-	"github.com/alexei-led/archfit/internal/score"
 )
 
 const (
@@ -60,7 +60,7 @@ func persistRawReview(cacheDir, text string) {
 // providerOverride is a test seam: pass a non-nil fake to skip the real provider
 // construction through AnalyzeCmd.providerOverride. Pass nil in production to
 // build the provider from cfg.LLM().
-func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag scan.Diagnostic, sc score.Scorecard) error {
+func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag result.Result, sc score.Scorecard) error {
 	llmCfg, configured := cfg.LLM()
 	if !configured {
 		return &exitError{code: 3, msg: "error: --ai-summary requires ai configured (provider + model); see docs/guide/llm-enrich.md"}
@@ -295,14 +295,14 @@ type reviewCitationSet struct {
 	Modules      map[string]struct{}
 }
 
-func reviewEvidenceDiagnostics(diag scan.Diagnostic, sc score.Scorecard) []initcfg.EvidenceDiagnostic {
+func reviewEvidenceDiagnostics(diag result.Result, sc score.Scorecard) []initcfg.EvidenceDiagnostic {
 	return []initcfg.EvidenceDiagnostic{{
 		Source:  "llm-review",
 		Summary: fmt.Sprintf("verdict=%s findings=%d metrics=%d score=%d band=%s", diag.Verdict, len(diag.Findings), len(diag.Metrics), sc.Overall, sc.OverallBand),
 	}}
 }
 
-func buildReviewCitationSet(diag scan.Diagnostic, sc score.Scorecard, evidenceLines []string) reviewCitationSet {
+func buildReviewCitationSet(diag result.Result, sc score.Scorecard, evidenceLines []string) reviewCitationSet {
 	set := reviewCitationSet{
 		FindingIDs:   make(map[string]struct{}),
 		MetricIDs:    make(map[string]struct{}),
@@ -340,7 +340,7 @@ func buildReviewCitationSet(diag scan.Diagnostic, sc score.Scorecard, evidenceLi
 	return set
 }
 
-func defaultReviewCitationSet(diag scan.Diagnostic) reviewCitationSet {
+func defaultReviewCitationSet(diag result.Result) reviewCitationSet {
 	return buildReviewCitationSet(diag, score.Scorecard{}, nil)
 }
 
@@ -362,7 +362,7 @@ var strengthWords = map[string]*regexp.Regexp{
 // When a suggestion's SuggestedSubdomain conflicts with the configured value, the
 // suggestion is kept but its Rationale is annotated with a conflict note so the
 // reader knows the LLM disagrees with the explicit config.
-func postVerify(rev reviewResponse, diag scan.Diagnostic, configSubdomains map[string]string, citationSets ...reviewCitationSet) (reviewResponse, int) {
+func postVerify(rev reviewResponse, diag result.Result, configSubdomains map[string]string, citationSets ...reviewCitationSet) (reviewResponse, int) {
 	validModules := buildValidModules(diag)
 	presentStrengths := buildPresentStrengths(diag)
 	citations := defaultReviewCitationSet(diag)
@@ -427,7 +427,7 @@ func postVerify(rev reviewResponse, diag scan.Diagnostic, configSubdomains map[s
 
 // buildValidModules returns the set of module names attested by findings, file
 // facts, or dynamic imports in diag.
-func buildValidModules(diag scan.Diagnostic) map[string]struct{} {
+func buildValidModules(diag result.Result) map[string]struct{} {
 	validModules := make(map[string]struct{})
 	for _, ff := range diag.FileFacts {
 		if ff.Module != "" {
@@ -455,7 +455,7 @@ func buildValidModules(diag scan.Diagnostic) map[string]struct{} {
 // buildPresentStrengths returns the set of strength labels attested in diag:
 // the union of MatchedBy["strength"] values from advisory findings AND the
 // intrusive label implied by any uses_internal edge kind.
-func buildPresentStrengths(diag scan.Diagnostic) map[string]struct{} {
+func buildPresentStrengths(diag result.Result) map[string]struct{} {
 	present := make(map[string]struct{})
 	for _, f := range diag.Findings {
 		if s, ok := f.MatchedBy["strength"]; ok && s != "" {
@@ -727,8 +727,8 @@ func reviewSeverityRank(s finding.Severity) int {
 	}
 }
 
-func rankedReviewFileFacts(facts []diagnostic.FileFact, limit int) []diagnostic.FileFact {
-	ordered := append([]diagnostic.FileFact(nil), facts...)
+func rankedReviewFileFacts(facts []evidence.FileFact, limit int) []evidence.FileFact {
+	ordered := append([]evidence.FileFact(nil), facts...)
 	sort.SliceStable(ordered, func(i, j int) bool {
 		a := reviewFileFactWeight(ordered[i])
 		b := reviewFileFactWeight(ordered[j])
@@ -743,7 +743,7 @@ func rankedReviewFileFacts(facts []diagnostic.FileFact, limit int) []diagnostic.
 	return ordered
 }
 
-func reviewFileFactWeight(ff diagnostic.FileFact) int {
+func reviewFileFactWeight(ff evidence.FileFact) int {
 	return ff.InboundModuleFanIn*10_000 + ff.OutboundDestinations*1_000 + ff.LOC
 }
 
@@ -756,7 +756,7 @@ func minInt(a, b int) int {
 
 // buildReviewPrompt serialises the Diagnostic, Scorecard, and repository
 // evidence pack as the user turn.
-func buildReviewPrompt(diag scan.Diagnostic, sc score.Scorecard, evidencePacks ...[]string) string {
+func buildReviewPrompt(diag result.Result, sc score.Scorecard, evidencePacks ...[]string) string {
 	var b strings.Builder
 	evidenceLines := optionalEvidence(evidencePacks)
 	if len(evidenceLines) > 0 {

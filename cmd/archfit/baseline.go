@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // BaselineCmd runs the engine and saves findings as the new baseline.
@@ -73,7 +73,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 			Severity:    string(f.Severity),
 		})
 	}
-	newBase.Metrics = make(diagnostic.MetricSnapshot)
+	newBase.Metrics = make(report.MetricSnapshot)
 	for _, m := range diag.Metrics {
 		newBase.Metrics[m.Name] = struct {
 			Value   float64 `json:"value"`

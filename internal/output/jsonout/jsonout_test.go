@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
-	"github.com/alexei-led/archfit/internal/score"
 )
 
 const (

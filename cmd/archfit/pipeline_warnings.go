@@ -3,16 +3,18 @@ package main
 import (
 	"fmt"
 
+	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/report"
+
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // emitHealthWarnings writes actionable hints to stderr when the pipeline
 // result looks suspicious. Each warning includes a next-command suggestion.
 // cfg must be the same config used for the analysis run (already loaded; no
 // second disk read). root and configPath are used only in the command hints.
-func emitHealthWarnings(deps *appDeps, diag scan.Diagnostic, cfg config.Config, root, configPath string) {
+func emitHealthWarnings(deps *appDeps, diag result.Result, cfg config.Config, root, configPath string) {
 	if deps == nil {
 		return
 	}
@@ -40,18 +42,18 @@ func emitHealthWarnings(deps *appDeps, diag scan.Diagnostic, cfg config.Config, 
 	}
 }
 
-func pythonAllEdgesExternal(cov []diagnostic.Coverage, edges *diagnostic.ClassifiedEdgeSummary) bool {
+func pythonAllEdgesExternal(cov []evidence.Coverage, edges *report.ClassifiedEdgeSummary) bool {
 	if edges == nil || edges.External == 0 || edges.Scored != 0 {
 		return false
 	}
-	if !coverageStatusIs(cov, toolGrimp, diagnostic.StatusOK) {
+	if !coverageStatusIs(cov, toolGrimp, evidence.StatusOK) {
 		return false
 	}
 	crossModule := edges.Total - edges.SameModule
 	return crossModule == edges.External
 }
 
-func coverageStatusIs(cov []diagnostic.Coverage, tool, status string) bool {
+func coverageStatusIs(cov []evidence.Coverage, tool, status string) bool {
 	for _, c := range cov {
 		if c.Tool == tool && c.Status == status {
 			return true

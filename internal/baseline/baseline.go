@@ -10,9 +10,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/status"
 )
 
 // SchemaVersion is the fixed schema_version value for baseline files.

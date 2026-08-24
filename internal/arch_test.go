@@ -7,33 +7,41 @@
 package arch_test
 
 import (
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
 )
 
-const modulePrefix = "github.com/alexei-led/archfit/"
+const (
+	modulePrefix                           = "github.com/alexei-led/archfit/"
+	maxDiagnosticProductionImportFileCount = 0
+	maxScanProductionImportFileCount       = 12
+)
 
 // coreRingPkgs are the packages that must not import os, os/exec, YAML libs,
 // or adapter packages.
 var coreRingPkgs = []string{
-	modulePrefix + "internal/classify",
+	modulePrefix + "internal/relationship/classify",
 	modulePrefix + "internal/rules",
-	modulePrefix + "internal/metrics",
+	modulePrefix + "internal/assessment/metrics",
 	// metrics is split into family sub-packages; assert they all load.
-	modulePrefix + "internal/metrics/boundary",
-	modulePrefix + "internal/metrics/modularity",
-	modulePrefix + "internal/metrics/internal/result",
-	modulePrefix + "internal/status",
-	modulePrefix + "internal/staleness",
+	modulePrefix + "internal/assessment/metrics/boundary",
+	modulePrefix + "internal/assessment/metrics/modularity",
+	modulePrefix + "internal/assessment/metrics/internal/result",
+	modulePrefix + "internal/assessment/status",
+	modulePrefix + "internal/assessment/staleness",
 	modulePrefix + "internal/facts",
 	// score synthesises the banded scorecard from an already-computed
 	// Diagnostic — a pure decision over collected facts, no tools or I/O.
-	modulePrefix + "internal/score",
+	modulePrefix + "internal/assessment/score",
 	// decision converts a Diagnostic + Scorecard into a human-decision view-model —
 	// pure synthesis, no I/O, no subprocess, no YAML.
-	modulePrefix + "internal/decision",
+	modulePrefix + "internal/assessment/decision",
 	// scope resolves the analysis boundary from config + git; it uses os.Stat
 	// and filepath.EvalSymlinks for path canonicalization (justified I/O — no
 	// subprocess, no YAML, no adapter). Excluded from the os-forbidden check.
@@ -49,16 +57,16 @@ var coreRingPkgs = []string{
 // so a prefix match keeps every current and future sub-package covered without
 // editing this list.
 var coreRingPrefixes = []string{
-	modulePrefix + "internal/classify",
+	modulePrefix + "internal/relationship",
 	modulePrefix + "internal/rules",
-	modulePrefix + "internal/metrics",
-	modulePrefix + "internal/status",
-	modulePrefix + "internal/staleness",
+	modulePrefix + "internal/assessment/metrics",
+	modulePrefix + "internal/assessment/status",
+	modulePrefix + "internal/assessment/staleness",
 	modulePrefix + "internal/facts",
-	modulePrefix + "internal/score",
+	modulePrefix + "internal/assessment/score",
 	modulePrefix + "internal/scope",
 	modulePrefix + "internal/syntax",
-	modulePrefix + "internal/decision",
+	modulePrefix + "internal/assessment/decision",
 }
 
 // inCoreRing reports whether pkgPath is a core-ring package: an exact prefix
@@ -70,22 +78,6 @@ func inCoreRing(pkgPath string) bool {
 		}
 	}
 	return false
-}
-
-// modelPkgs must not import anything outside the standard library (or each
-// other, which is stdlib-only by this rule applied transitively).
-var modelPkgs = []string{
-	modulePrefix + "internal/model/graph",
-	modulePrefix + "internal/model/finding",
-	modulePrefix + "internal/model/coupling",
-	modulePrefix + "internal/model/diagnostic",
-	modulePrefix + "internal/model/report",
-	modulePrefix + "internal/model/fileclass",
-	modulePrefix + "internal/model/symbol",
-	modulePrefix + "internal/model/clone",
-	modulePrefix + "internal/model/pattern",
-	modulePrefix + "internal/model/signal",
-	modulePrefix + "internal/model/module",
 }
 
 // modelThirdPartyAllowed lists vetted, pure third-party imports allowed for a
@@ -106,6 +98,63 @@ var adapterPrefixes = []string{
 	modulePrefix + "internal/output/",
 	modulePrefix + "internal/labels/labelsio", // labels file I/O adapter (os + YAML)
 	modulePrefix + "internal/factcache",       // extractor-fact cache adapter (os I/O)
+}
+
+func TestDiagnosticProductionImportRatchet(t *testing.T) {
+	files := diagnosticProductionImportFiles(t)
+	if len(files) > maxDiagnosticProductionImportFileCount {
+		t.Errorf("production files importing internal/model/diagnostic = %d, want at most %d:\n%s",
+			len(files), maxDiagnosticProductionImportFileCount, strings.Join(files, "\n"))
+	}
+}
+
+func TestScanProductionImportRatchet(t *testing.T) {
+	files := productionImportFiles(t, modulePrefix+"internal/model/scan")
+	if len(files) > maxScanProductionImportFileCount {
+		t.Errorf("production files importing internal/model/scan = %d, want at most %d:\n%s",
+			len(files), maxScanProductionImportFileCount, strings.Join(files, "\n"))
+	}
+}
+
+func diagnosticProductionImportFiles(t *testing.T) []string {
+	return productionImportFiles(t, modulePrefix+"internal/model/diagnostic")
+}
+
+func productionImportFiles(t *testing.T, importPath string) []string {
+	t.Helper()
+
+	var files []string
+	err := filepath.WalkDir("..", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", ".archfit-cache", "testdata", "vendor":
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, imp := range file.Imports {
+			if strings.Trim(imp.Path.Value, "\"") == importPath {
+				files = append(files, filepath.ToSlash(strings.TrimPrefix(path, "../")))
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan production imports: %v", err)
+	}
+	return files
 }
 
 // TestArchImports verifies the import ring rules for core and model packages.
@@ -139,14 +188,6 @@ func TestArchImports(t *testing.T) {
 		for _, want := range coreRingPkgs {
 			if _, ok := loaded[want]; !ok {
 				t.Errorf("expected core ring package not loaded: %s", want)
-			}
-		}
-	})
-
-	t.Run("model_packages_present", func(t *testing.T) {
-		for _, want := range modelPkgs {
-			if _, ok := loaded[want]; !ok {
-				t.Errorf("expected model package not loaded: %s", want)
 			}
 		}
 	})
@@ -211,6 +252,18 @@ func TestArchImports(t *testing.T) {
 		}
 	})
 
+	t.Run("report_adapters_no_scan_import", func(t *testing.T) {
+		const scanPkg = modulePrefix + "internal/model/scan"
+		for pkgPath, pkg := range loaded {
+			if pkgPath != modulePrefix+"internal/ports" && !strings.HasPrefix(pkgPath, modulePrefix+"internal/output/") {
+				continue
+			}
+			if _, imports := pkg.Imports[scanPkg]; imports {
+				t.Errorf("report boundary package %s must not import %s: use internal/model/report", pkgPath, scanPkg)
+			}
+		}
+	})
+
 	t.Run("labelsio_unreachable_from_internal", func(t *testing.T) {
 		// The labels I/O adapter (os + YAML) must be reachable only from cmd. No
 		// internal package — the engine, the core ring, anything — may import it:
@@ -239,16 +292,20 @@ func TestArchImports(t *testing.T) {
 // dependency (modelThirdPartyAllowed).
 func checkModelStdlibOnly(t *testing.T, loaded map[string]*packages.Package) {
 	t.Helper()
-	for _, pkgPath := range modelPkgs {
-		pkg, ok := loaded[pkgPath]
-		if !ok {
-			continue // already reported in presence check
+	found := false
+	for pkgPath, pkg := range loaded {
+		if !isModelPkg(pkgPath) {
+			continue
 		}
+		found = true
 		for imp := range pkg.Imports {
 			if !isStdlib(imp) && !isModelPkg(imp) && !modelThirdPartyAllowed[pkgPath][imp] {
 				t.Errorf("model package %s must not import non-stdlib %q", pkgPath, imp)
 			}
 		}
+	}
+	if !found {
+		t.Fatal("no internal/model packages loaded")
 	}
 }
 
@@ -342,17 +399,17 @@ func isModelPkg(imp string) bool {
 }
 
 // TestInCoreRing verifies the prefix matcher covers metrics family sub-packages
-// without over-matching a same-prefix sibling (e.g. "internal/metricsx").
+// without over-matching a same-prefix sibling (e.g. "internal/assessment/metricsx").
 func TestInCoreRing(t *testing.T) {
 	cases := map[string]bool{
-		modulePrefix + "internal/metrics":                 true,
-		modulePrefix + "internal/metrics/boundary":        true,
-		modulePrefix + "internal/metrics/internal/result": true,
-		modulePrefix + "internal/metrics/metricstest":     true,
-		modulePrefix + "internal/scope":                   true,
-		modulePrefix + "internal/engine":                  false,
-		modulePrefix + "internal/output/markdown":         false,
-		modulePrefix + "internal/metricsx":                false, // must not over-match the prefix
+		modulePrefix + "internal/assessment/metrics":                 true,
+		modulePrefix + "internal/assessment/metrics/boundary":        true,
+		modulePrefix + "internal/assessment/metrics/internal/result": true,
+		modulePrefix + "internal/assessment/metrics/metricstest":     true,
+		modulePrefix + "internal/scope":                              true,
+		modulePrefix + "internal/engine":                             false,
+		modulePrefix + "internal/output/markdown":                    false,
+		modulePrefix + "internal/assessment/metricsx":                false, // must not over-match the prefix
 	}
 	for path, want := range cases {
 		if got := inCoreRing(path); got != want {
@@ -382,7 +439,7 @@ func TestIsForbiddenForCore(t *testing.T) {
 	allowed := []string{
 		"fmt", "strings", "sort",
 		modulePrefix + "internal/model/diagnostic",
-		modulePrefix + "internal/metrics/internal/result",
+		modulePrefix + "internal/assessment/metrics/internal/result",
 		modulePrefix + "internal/config",
 	}
 	for _, imp := range allowed {

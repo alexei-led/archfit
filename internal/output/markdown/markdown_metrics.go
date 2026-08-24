@@ -7,7 +7,6 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // writeBeyondBCMetrics renders the "Supporting structural metrics (beyond Balanced
@@ -29,7 +28,7 @@ func writeBeyondBCMetrics(b *strings.Builder, metrics []report.MetricResult) {
 // how the distance dimension was resolved for this run.
 // code_structure is always-on; ownership and deploy_unit come from tool coverage.
 // Unresolved modules are counted from extractor coverage records.
-func writeDistanceConfidence(b *strings.Builder, d scan.Diagnostic) {
+func writeDistanceConfidence(b *strings.Builder, d report.Document) {
 	// owner_source is a first-class diagnostic field (config|codeowners|git|none).
 	ownerSrc := d.OwnerSource
 	// Collect remaining distance-signal sources from tool coverage entries.

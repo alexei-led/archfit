@@ -6,9 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
-	"github.com/alexei-led/archfit/internal/score"
 )
 
 // Test literal constants (deduplicated for goconst).
@@ -52,7 +53,15 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 }
 
 func render(d diagnostic.Diagnostic, w io.Writer) error {
-	return New().Render(d, score.Synthesize(d), w)
+	return New().Render(d, score.Synthesize(result.Result{
+		SchemaVersion:   d.SchemaVersion,
+		Verdict:         d.Verdict,
+		Metrics:         d.Metrics,
+		Findings:        d.Findings,
+		ToolCoverage:    d.ToolCoverage,
+		ClassifiedEdges: d.ClassifiedEdges,
+		Summary:         d.Summary,
+	}), w)
 }
 
 const golden = `# archfit scorecard

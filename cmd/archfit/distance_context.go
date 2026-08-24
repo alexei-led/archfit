@@ -3,9 +3,9 @@ package main
 import (
 	"maps"
 
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/scan"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
 const runtimeDistanceInterpretation = "async runtime bridges reduce lifecycle coupling and therefore increase perceived distance (book Ch8), but remain report-only because archfit does not yet measure synchronous first-party runtime peers deterministically"
@@ -16,8 +16,8 @@ const (
 	ownerModelMultiOwner            = "multi_owner"
 )
 
-func buildDistanceContext(d scan.Diagnostic, cfg config.Config, deployUnitDetectedModules int) *diagnostic.DistanceContext {
-	ctx := &diagnostic.DistanceContext{
+func buildDistanceContext(d result.Result, cfg config.Config, deployUnitDetectedModules int) *evidence.DistanceContext {
+	ctx := &evidence.DistanceContext{
 		OwnerModel:                ownerModel(cfg),
 		DeployUnitDetectedModules: deployUnitDetectedModules,
 		DeclaredExternalSystems:   len(cfg.ExternalSystems),
@@ -52,7 +52,7 @@ func ownerModel(cfg config.Config) string {
 	}
 }
 
-func countRuntimeAsyncKinds(edges []diagnostic.RuntimeAsyncEdge) map[string]int {
+func countRuntimeAsyncKinds(edges []evidence.RuntimeAsyncEdge) map[string]int {
 	kinds := make(map[string]int)
 	for _, edge := range edges {
 		if edge.IntegrationKind == "" {

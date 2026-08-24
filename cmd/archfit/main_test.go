@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -184,7 +184,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
 			t.Fatalf("invalid JSON: %v", err)
 		}
-		if d.Verdict != string(diagnostic.VerdictFail) {
+		if d.Verdict != string(result.VerdictFail) {
 			t.Errorf("verdict = %q, want fail", d.Verdict)
 		}
 		for _, g := range d.CoverageGaps {
@@ -800,8 +800,8 @@ func TestRun_Analyze_ScipDisabledCoverageRow(t *testing.T) {
 	for _, c := range out.ToolCoverage {
 		if c.Tool == toolScip {
 			found = true
-			if c.Status != string(diagnostic.StatusDisabled) {
-				t.Errorf("scip coverage status = %q, want %q", c.Status, diagnostic.StatusDisabled)
+			if c.Status != string(result.StatusDisabled) {
+				t.Errorf("scip coverage status = %q, want %q", c.Status, result.StatusDisabled)
 			}
 			break
 		}
@@ -877,8 +877,8 @@ modules:
 	for _, c := range out.ToolCoverage {
 		if c.Tool == toolDeployUnit {
 			deployCoverageFound = true
-			if c.Status != string(diagnostic.StatusOK) {
-				t.Errorf("deploy-unit coverage status = %q, want %q", c.Status, diagnostic.StatusOK)
+			if c.Status != string(result.StatusOK) {
+				t.Errorf("deploy-unit coverage status = %q, want %q", c.Status, result.StatusOK)
 			}
 			if c.FilesSeen == 0 {
 				t.Errorf("deploy-unit files_seen = 0, want detected evidence")
@@ -951,7 +951,7 @@ file_class:
 	for _, c := range out.ToolCoverage {
 		if c.Tool == toolLoc {
 			found = true
-			if c.Status != string(diagnostic.StatusOK) {
+			if c.Status != string(result.StatusOK) {
 				t.Errorf("loc coverage status = %q, want ok", c.Status)
 			}
 			break

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/view"
 )
@@ -16,8 +16,8 @@ const (
 )
 
 func TestBuildDistanceContext_SingleOwnerDegenerate(t *testing.T) {
-	d := diagnostic.New()
-	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+	d := result.New()
+	d.ClassifiedEdges = &result.ClassifiedEdgeSummary{
 		ByDistanceBasis: map[string]int{"code_structure": 3, "deploy_unit": 1},
 	}
 	cfg := config.Config{Modules: map[string]module.ModuleDef{
@@ -46,7 +46,7 @@ func TestBuildDistanceContext_NoOwnerSignal(t *testing.T) {
 		"b": {Paths: []string{globB}},
 	}}
 
-	got := buildDistanceContext(diagnostic.New(), cfg, 0)
+	got := buildDistanceContext(result.New(), cfg, 0)
 	if got.OwnerModel != ownerModelNoOwner {
 		t.Fatalf("owner_model = %q, want %q", got.OwnerModel, ownerModelNoOwner)
 	}
@@ -65,7 +65,7 @@ func TestBuildDistanceContext_NoOwnerWithExternalEvidence(t *testing.T) {
 		ExternalSystems: map[string]view.ExternalSystemDef{"stripe": {Targets: []string{"stripe.**"}}},
 	}
 
-	got := buildDistanceContext(diagnostic.New(), cfg, 0)
+	got := buildDistanceContext(result.New(), cfg, 0)
 	if got.OwnerModel != ownerModelNoOwner {
 		t.Fatalf("owner_model = %q, want %q", got.OwnerModel, ownerModelNoOwner)
 	}
@@ -79,8 +79,8 @@ func TestBuildDistanceContext_NoOwnerWithExternalEvidence(t *testing.T) {
 }
 
 func TestBuildDistanceContext_RuntimeAsyncEvidence(t *testing.T) {
-	d := diagnostic.New()
-	d.RuntimeAsyncEdges = []diagnostic.RuntimeAsyncEdge{
+	d := result.New()
+	d.RuntimeAsyncEdges = []result.RuntimeAsyncEdge{
 		{FromModule: "a", Target: "rabbitmq", IntegrationKind: "message_queue", Count: 2},
 		{FromModule: "b", Target: "pubsub", IntegrationKind: "event_bus", Count: 1},
 		{FromModule: "c", Target: "celery", IntegrationKind: "async_task", Count: 1},
@@ -113,7 +113,7 @@ func TestBuildDistanceContext_MultiOwner(t *testing.T) {
 		"b": {Paths: []string{globB}, Owner: ownerTeamB},
 	}}
 
-	got := buildDistanceContext(diagnostic.New(), cfg, 0)
+	got := buildDistanceContext(result.New(), cfg, 0)
 	if got.OwnerModel != ownerModelMultiOwner {
 		t.Fatalf("owner_model = %q, want %q", got.OwnerModel, ownerModelMultiOwner)
 	}

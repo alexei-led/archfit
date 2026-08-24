@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
-	"github.com/alexei-led/archfit/internal/score"
 )
 
 // coupledModulesCfg declares two modules with different owners and no rules, so
@@ -95,14 +95,14 @@ func TestRun_Analyze_CouplingGate_MinBandTrips(t *testing.T) {
 		t.Errorf("stderr carries no coupling-gate trip reason:\n%s", errBuf.String())
 	}
 
-	var diag diagnostic.Diagnostic
+	var diag result.Diagnostic
 	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
 		t.Fatalf("unmarshal JSON output: %v", err)
 	}
-	if diag.Verdict != diagnostic.VerdictFail {
+	if diag.Verdict != result.VerdictFail {
 		t.Fatalf("verdict = %q, want fail", diag.Verdict)
 	}
-	var bcTask *diagnostic.AgentTask
+	var bcTask *result.AgentTask
 	for i := range diag.AgentTasks {
 		if diag.AgentTasks[i].RuleID == engine.RuleIDBCImbalanced {
 			bcTask = &diag.AgentTasks[i]
@@ -150,7 +150,7 @@ func TestRun_Analyze_CouplingGate_OffByDefault(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("check without coupling.gate: exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
-	var diag diagnostic.Diagnostic
+	var diag result.Diagnostic
 	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
 		t.Fatalf("unmarshal JSON output: %v", err)
 	}
@@ -306,15 +306,15 @@ func TestRun_Baseline_WritesScoreSnapshot(t *testing.T) {
 // counters move with the promoted findings.
 func TestApplyCouplingGate_PromotionScope(t *testing.T) {
 	t.Parallel()
-	newDiag := func() diagnostic.Diagnostic {
-		return diagnostic.Diagnostic{
-			Verdict: diagnostic.VerdictPass,
+	newDiag := func() result.Diagnostic {
+		return result.Diagnostic{
+			Verdict: result.VerdictPass,
 			Findings: []finding.Finding{
 				{ID: "bc-active", RuleID: engine.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusNew},
 				{ID: "bc-baselined", RuleID: engine.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusBaseline},
 				{ID: "rule-gate", RuleID: "no-cycles", Kind: finding.KindGate, Status: finding.StatusNew},
 			},
-			Summary: diagnostic.Summary{GateFindings: 1, Warnings: 2},
+			Summary: result.Summary{GateFindings: 1, Warnings: 2},
 		}
 	}
 	card := score.Scorecard{Overall: 25, OverallBand: score.BandPoor}
@@ -323,7 +323,7 @@ func TestApplyCouplingGate_PromotionScope(t *testing.T) {
 		t.Parallel()
 		diag := newDiag()
 		applyCouplingGate(&diag, card, score.CouplingGate{Enabled: true, MinBand: score.BandMixed}, baseline.Baseline{})
-		if diag.Verdict != diagnostic.VerdictFail {
+		if diag.Verdict != result.VerdictFail {
 			t.Errorf("verdict = %q, want fail", diag.Verdict)
 		}
 		if got := diag.Findings[0].Kind; got != finding.KindGate {
@@ -344,9 +344,9 @@ func TestApplyCouplingGate_PromotionScope(t *testing.T) {
 		t.Parallel()
 		diag := newDiag()
 		applyCouplingGate(&diag, card, score.CouplingGate{}, baseline.Baseline{})
-		if diag.Verdict != diagnostic.VerdictPass ||
+		if diag.Verdict != result.VerdictPass ||
 			diag.Findings[0].Kind != finding.KindAdvisory ||
-			diag.Summary != (diagnostic.Summary{GateFindings: 1, Warnings: 2}) {
+			diag.Summary != (result.Summary{GateFindings: 1, Warnings: 2}) {
 			t.Errorf("disabled gate mutated the diagnostic: verdict=%q findings[0].Kind=%q summary=%+v",
 				diag.Verdict, diag.Findings[0].Kind, diag.Summary)
 		}
@@ -357,14 +357,14 @@ func TestApplyCouplingGate_PromotionScope(t *testing.T) {
 		// Advisory output off (or coupling.min_severity filtered everything):
 		// the score still trips — it is computed from ClassifiedEdges, not from
 		// the advisory findings — so the fail verdict must carry its own evidence.
-		diag := diagnostic.Diagnostic{
-			Verdict: diagnostic.VerdictPass,
+		diag := result.Diagnostic{
+			Verdict: result.VerdictPass,
 			Findings: []finding.Finding{
 				{ID: "bc-baselined", RuleID: engine.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusBaseline},
 			},
 		}
 		applyCouplingGate(&diag, card, score.CouplingGate{Enabled: true, MinBand: score.BandMixed}, baseline.Baseline{})
-		if diag.Verdict != diagnostic.VerdictFail {
+		if diag.Verdict != result.VerdictFail {
 			t.Errorf("verdict = %q, want fail", diag.Verdict)
 		}
 		if len(diag.Findings) != 2 {
@@ -402,11 +402,11 @@ func TestRun_Analyze_CouplingGate_TripWithoutAdvisories(t *testing.T) {
 		t.Fatalf("check --no-advisories with tripped coupling gate: exit = %d, want 1\noutput:\n%s", code, buf.String())
 	}
 
-	var diag diagnostic.Diagnostic
+	var diag result.Diagnostic
 	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
 		t.Fatalf("unmarshal JSON output: %v", err)
 	}
-	if diag.Verdict != diagnostic.VerdictFail {
+	if diag.Verdict != result.VerdictFail {
 		t.Fatalf("verdict = %q, want fail", diag.Verdict)
 	}
 	var syn *finding.Finding
@@ -487,7 +487,7 @@ func TestRun_Baseline_SkipsSyntheticCouplingGateFinding(t *testing.T) {
 	if code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh, flagNoAdvisories}, &checkBuf); code != 1 {
 		t.Fatalf("check --no-advisories: exit = %d, want 1 (tripped coupling gate)\noutput:\n%s", code, checkBuf.String())
 	}
-	var diag diagnostic.Diagnostic
+	var diag result.Diagnostic
 	if err := json.Unmarshal(checkBuf.Bytes(), &diag); err != nil {
 		t.Fatalf("unmarshal check JSON: %v", err)
 	}

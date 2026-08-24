@@ -13,7 +13,6 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // confidenceHigh is the confidence value that needs no qualification in output.
@@ -46,7 +45,7 @@ func (r *Renderer) Format() string { return "markdown" }
 //  4. Supporting structural metrics (beyond Balanced Coupling)
 //  5. Distance confidence
 //  6. Agent tasks
-func (r *Renderer) Render(d scan.Diagnostic, w io.Writer) error {
+func (r *Renderer) Render(d report.Document, w io.Writer) error {
 	var b strings.Builder
 	verdict, exitCode := verdictLabel(d.Verdict)
 

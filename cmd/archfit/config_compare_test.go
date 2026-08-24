@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/decision"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/assessment/decision"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/score"
 )
 
 // TestConfigCompare covers `archfit config compare`: the identity result, a
@@ -46,45 +46,45 @@ func TestConfigCompare(t *testing.T) {
 // target, so neither the four edge counters nor the rounded score moves.
 func testCompareClassificationMix(t *testing.T) {
 	t.Parallel()
-	summary := func(mutate func(*diagnostic.ClassifiedEdgeSummary)) *diagnostic.ClassifiedEdgeSummary {
-		s := &diagnostic.ClassifiedEdgeSummary{
+	summary := func(mutate func(*result.ClassifiedEdgeSummary)) *result.ClassifiedEdgeSummary {
+		s := &result.ClassifiedEdgeSummary{
 			Total: 1, Scored: 1,
 			ByStrength:      map[string]int{enrichFunctional: 1},
 			ByDistance:      map[string]int{"cross_module_different_owner": 1},
 			ByDistanceBasis: map[string]int{"ownership": 1},
 			ByVolatility:    map[string]int{volatilityLow: 1},
-			VolatilityProvenance: &diagnostic.VolatilityProvenance{
+			VolatilityProvenance: &result.VolatilityProvenance{
 				Declared: 2, Undeclared: 0,
 			},
 		}
 		mutate(s)
 		return s
 	}
-	unchanged := func(*diagnostic.ClassifiedEdgeSummary) {}
+	unchanged := func(*result.ClassifiedEdgeSummary) {}
 
 	tests := []struct {
 		name       string
-		mutate     func(*diagnostic.ClassifiedEdgeSummary)
+		mutate     func(*result.ClassifiedEdgeSummary)
 		wantSubstr string
 	}{
 		{name: "identical mix reports nothing", mutate: unchanged},
 		{
 			name: "owner edit moves the distance rung",
-			mutate: func(s *diagnostic.ClassifiedEdgeSummary) {
+			mutate: func(s *result.ClassifiedEdgeSummary) {
 				s.ByDistance = map[string]int{"cross_module_same_owner": 1}
 			},
 			wantSubstr: "distance mix: cross_module_different_owner 1 → 0, cross_module_same_owner 0 → 1",
 		},
 		{
 			name: "volatility provenance moves",
-			mutate: func(s *diagnostic.ClassifiedEdgeSummary) {
-				s.VolatilityProvenance = &diagnostic.VolatilityProvenance{Declared: 1, Undeclared: 1}
+			mutate: func(s *result.ClassifiedEdgeSummary) {
+				s.VolatilityProvenance = &result.VolatilityProvenance{Declared: 1, Undeclared: 1}
 			},
 			wantSubstr: "volatility provenance (modules): declared 2 → 1, undeclared 0 → 1",
 		},
 		{
 			name: "strength mix moves",
-			mutate: func(s *diagnostic.ClassifiedEdgeSummary) {
+			mutate: func(s *result.ClassifiedEdgeSummary) {
 				s.ByStrength = map[string]int{"contract": 1}
 			},
 			wantSubstr: "strength mix: contract 0 → 1, functional 1 → 0",

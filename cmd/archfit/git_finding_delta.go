@@ -29,10 +29,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/decision"
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/decision"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // evidenceStatus is one coverage row normalised for comparability.
@@ -104,8 +106,8 @@ type analyzerFamily struct {
 // analyzerEvidence is one side's analyzer coverage plus the config hash that
 // produced it.
 type analyzerEvidence struct {
-	Coverage []diagnostic.Coverage
-	Gaps     []diagnostic.CoverageGap
+	Coverage []evidence.Coverage
+	Gaps     []evidence.CoverageGap
 	Hash     string
 }
 
@@ -113,7 +115,7 @@ type analyzerEvidence struct {
 type gitDeltaInput struct {
 	BaseRef string
 	// Tasks are the CURRENT run's agent_tasks[] — the repair work being placed.
-	Tasks []diagnostic.AgentTask
+	Tasks []result.AgentTask
 	// BaseFindingIDs are the base run's observed finding IDs (fixed excluded).
 	BaseFindingIDs []string
 	Head           analyzerEvidence
@@ -176,7 +178,7 @@ func baseFindingIDs(findings []finding.Finding) []string {
 // buildGitFindingDelta places every current repair task in an origin bucket.
 // Never returns nil — the caller only invokes it when --base is set, and the
 // block must be present (with empty, non-null lists) even for a clean run.
-func buildGitFindingDelta(in gitDeltaInput) *diagnostic.GitFindingDelta {
+func buildGitFindingDelta(in gitDeltaInput) *report.GitFindingDelta {
 	comparable, reasons := compareAnalyzerEvidence(in.Families, in.Head, in.Base)
 	// A config-hash mismatch means the two sides did not measure the same
 	// intent, so nothing unmatched can be attributed to the code change.
@@ -212,14 +214,14 @@ func buildGitFindingDelta(in gitDeltaInput) *diagnostic.GitFindingDelta {
 	sort.Strings(preExisting)
 	sort.Strings(unknown)
 
-	status := diagnostic.GitComparisonComparable
+	status := report.GitComparisonComparable
 	if len(unknown) > 0 {
-		status = diagnostic.GitComparisonUnknown
+		status = report.GitComparisonUnknown
 	}
 	if reasons == nil {
 		reasons = []string{}
 	}
-	return &diagnostic.GitFindingDelta{
+	return &report.GitFindingDelta{
 		BaseRef:                 in.BaseRef,
 		ComparisonStatus:        status,
 		IntroducedFindingIDs:    introduced,
@@ -355,7 +357,7 @@ func summariseFamily(f analyzerFamily, side analyzerEvidence) familySummary {
 // predicates gate the number as gate the pairing, and each labels its own
 // condition, so a go/packages partial never renders a count that reads as
 // unresolved import specifiers.
-func rawCoverageStatus(c diagnostic.Coverage) string {
+func rawCoverageStatus(c evidence.Coverage) string {
 	switch {
 	case decision.PartialFromUnresolvedSpecifiers(c):
 		return fmt.Sprintf("%s (%s)", c.Status, decision.UnresolvedMagnitude(c))
@@ -367,13 +369,13 @@ func rawCoverageStatus(c diagnostic.Coverage) string {
 }
 
 // normalizeCoverage maps one coverage row to its comparability status.
-func normalizeCoverage(f analyzerFamily, c diagnostic.Coverage, gaps []diagnostic.CoverageGap) evidenceStatus {
+func normalizeCoverage(f analyzerFamily, c evidence.Coverage, gaps []evidence.CoverageGap) evidenceStatus {
 	switch c.Status {
-	case diagnostic.StatusOK:
+	case evidence.StatusOK:
 		return evidenceOK
-	case diagnostic.StatusDisabled:
+	case evidence.StatusDisabled:
 		return evidenceDisabled
-	case diagnostic.StatusAbsent:
+	case evidence.StatusAbsent:
 		// The gapless carve-out belongs to PRIMARY families only. There a missing
 		// gap is a positive finding about the TREE: buildCoverageGaps suppressed
 		// it because the language's project markers are absent, so that side
@@ -392,7 +394,7 @@ func normalizeCoverage(f analyzerFamily, c diagnostic.Coverage, gaps []diagnosti
 			return evidenceNotApplicable
 		}
 		return evidenceAbsent
-	case diagnostic.StatusPartial:
+	case evidence.StatusPartial:
 		// Both predicates are shared with `config compare` so the two paths cannot
 		// grade one row differently. Note that Unresolved > 0 is NOT the
 		// discriminator on its own: go/packages also sets it, counting packages

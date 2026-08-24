@@ -8,11 +8,11 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/score"
-	"github.com/alexei-led/archfit/internal/status"
 )
 
 // Shared test fingerprints (goconst).

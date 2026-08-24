@@ -10,7 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/classify"
+	"github.com/alexei-led/archfit/internal/model/evidence"
+
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
@@ -20,9 +21,9 @@ import (
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/view"
 )
@@ -445,9 +446,9 @@ func distanceConfigCandidates(ctx context.Context, root string, cfg config.Confi
 	mm := cfg.ModuleMapView()
 	dynamicImports := engine.BuildDynamicImports(dynimports.Detect(root), mm)
 	runtimeResult := runtimedetect.Detect(ctx, root, deps.Runner)
-	runtimeSites := make([]diagnostic.RuntimeAsyncSite, 0, len(runtimeResult.Signals))
+	runtimeSites := make([]evidence.RuntimeAsyncSite, 0, len(runtimeResult.Signals))
 	for _, sig := range runtimeResult.Signals {
-		runtimeSites = append(runtimeSites, diagnostic.RuntimeAsyncSite{
+		runtimeSites = append(runtimeSites, evidence.RuntimeAsyncSite{
 			File:            sig.File,
 			Line:            sig.Line,
 			Library:         sig.Library,
@@ -480,7 +481,7 @@ func distanceConfigCandidates(ctx context.Context, root string, cfg config.Confi
 	return out
 }
 
-func staticExternalDistanceConfigCandidates(ctx context.Context, root string, cfg config.Config, deps *appDeps) []diagnostic.DistanceConfigCandidate {
+func staticExternalDistanceConfigCandidates(ctx context.Context, root string, cfg config.Config, deps *appDeps) []evidence.DistanceConfigCandidate {
 	g := buildUpdateCandidateGraph(ctx, root, cfg, deps)
 	if g == nil {
 		return nil
@@ -488,7 +489,7 @@ func staticExternalDistanceConfigCandidates(ctx context.Context, root string, cf
 	return staticExternalDistanceConfigCandidatesFromGraph(g, cfg)
 }
 
-func staticExternalDistanceConfigCandidatesFromGraph(g *graph.Graph, cfg config.Config) []diagnostic.DistanceConfigCandidate {
+func staticExternalDistanceConfigCandidatesFromGraph(g *graph.Graph, cfg config.Config) []evidence.DistanceConfigCandidate {
 	classifyCfg := engine.AugmentClassifyConfig(g, cfg.ForClassify())
 	idx := classify.Run(g, classifyCfg)
 	return engine.BuildStaticExternalDistanceCandidates(g, idx, classifyCfg.ModuleMap)
@@ -513,7 +514,7 @@ func buildUpdateCandidateGraph(ctx context.Context, root string, cfg config.Conf
 	return graph.Build(allFacts)
 }
 
-func toInitcfgDistanceConfigCandidate(c diagnostic.DistanceConfigCandidate) initcfg.DistanceConfigCandidate {
+func toInitcfgDistanceConfigCandidate(c evidence.DistanceConfigCandidate) initcfg.DistanceConfigCandidate {
 	return initcfg.DistanceConfigCandidate{
 		SourceBlock:           c.SourceBlock,
 		Module:                c.Module,
@@ -525,7 +526,7 @@ func toInitcfgDistanceConfigCandidate(c diagnostic.DistanceConfigCandidate) init
 	}
 }
 
-func distanceConfigEvidenceRefs(sites []diagnostic.DistanceConfigEvidenceSite) []string {
+func distanceConfigEvidenceRefs(sites []evidence.DistanceConfigEvidenceSite) []string {
 	refs := make([]string, 0, len(sites))
 	for _, s := range sites {
 		if s.File == "" {

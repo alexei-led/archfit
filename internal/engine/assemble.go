@@ -4,15 +4,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/classify"
+	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/status"
 	"github.com/alexei-led/archfit/internal/view"
 )
 

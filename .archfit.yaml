@@ -65,7 +65,19 @@ modules:
     subdomain: supporting
     volatility: medium
 
-  # Stable coupling vocabulary and book scorer.
+  # Core relationship classification and distance analysis.
+  relationship-analysis:
+    owner: alexei-led
+    role: core
+    paths:
+      - internal/relationship/**
+    public:
+      - internal/relationship
+    layer: core
+    subdomain: core
+    volatility: high
+
+  # Pure coupling vocabulary and scorer used by relationship analysis.
   coupling-model:
     owner: alexei-led
     role: shared_model
@@ -74,22 +86,11 @@ modules:
     public:
       - internal/model/coupling
     layer: model
-    subdomain: coupling
-    volatility: medium
+    subdomain: core
+    volatility: high
 
-  # Signals assembled between extraction and metric stages.
-  pipeline-state:
-    owner: alexei-led
-    role: shared_model
-    paths:
-      - internal/model/signal/**
-    public:
-      - internal/model/signal
-    layer: model
-    subdomain: supporting
-    volatility: medium
-
-  # Architectural module and ownership value types.
+  # Architectural module and ownership value types. Policy semantics remain
+  # core; this value package is transitional until policy owns its behavior.
   architecture-model:
     owner: alexei-led
     role: shared_model
@@ -123,10 +124,10 @@ modules:
       - internal/model/report
     layer: model
     subdomain: supporting
-    volatility: low
+    volatility: medium
 
-  # Stable top-level scan contract. The compatibility diagnostic package is
-  # retained for older Go callers; new pipeline code uses this package.
+  # Migration-only scan compatibility contract. The aggregate is not a target
+  # bounded context and will dissolve into application stage results.
   scan-contract:
     owner: alexei-led
     role: shared_model
@@ -138,7 +139,7 @@ modules:
       - internal/model/diagnostic
     layer: model
     subdomain: supporting
-    volatility: low
+    volatility: medium
 
   # Stable data-only projections consumed by pipeline stages.
   stage-views:
@@ -185,25 +186,23 @@ modules:
     owner: alexei-led
     role: core
     paths:
-      - internal/classify/**
       - internal/rules/**
-      - internal/metrics/**
       - internal/facts/**
-      - internal/status/**
-      - internal/staleness/**
-      - internal/score/**
-      - internal/decision/**
-      - internal/agenttask/**
     public:
-      - internal/classify
       - internal/rules
-      - internal/metrics
       - internal/facts
-      - internal/status
-      - internal/staleness
-      - internal/score
-      - internal/decision
-      - internal/agenttask
+    layer: core
+    subdomain: core
+    volatility: high
+
+  # Assessment and repair: metrics, findings, status, verdict, and tasks.
+  assessment-repair:
+    owner: alexei-led
+    role: core
+    paths:
+      - internal/assessment/**
+    public:
+      - internal/assessment
     layer: core
     subdomain: core
     volatility: high
@@ -363,7 +362,7 @@ rules:
   # Ring gate 1: core must not directly import the process boundary or extractors
   - id: core_no_toolrun
     type: forbidden_dependency
-    from: internal/classify/**
+    from: internal/relationship/**
     to: internal/toolrun
     gate: fail
   - id: rules_no_toolrun
@@ -373,17 +372,17 @@ rules:
     gate: fail
   - id: metrics_no_toolrun
     type: forbidden_dependency
-    from: internal/metrics/**
+    from: internal/assessment/metrics/**
     to: internal/toolrun
     gate: fail
   - id: status_no_toolrun
     type: forbidden_dependency
-    from: internal/status/**
+    from: internal/assessment/status/**
     to: internal/toolrun
     gate: fail
   - id: core_no_extract
     type: forbidden_dependency
-    from: internal/classify/**
+    from: internal/relationship/**
     to: internal/extract/**
     gate: fail
   - id: rules_no_extract
@@ -445,7 +444,7 @@ rules:
   # config-lifecycle adapters may import internal/config.
   - id: classify_no_config
     type: forbidden_dependency
-    from: internal/classify/**
+    from: internal/relationship/**
     to: internal/config
     gate: fail
   - id: rules_no_config
@@ -455,7 +454,7 @@ rules:
     gate: fail
   - id: metrics_no_config
     type: forbidden_dependency
-    from: internal/metrics/**
+    from: internal/assessment/metrics/**
     to: internal/config
     gate: fail
   - id: extract_no_config
@@ -465,7 +464,7 @@ rules:
     gate: fail
   - id: staleness_no_config
     type: forbidden_dependency
-    from: internal/staleness/**
+    from: internal/assessment/staleness/**
     to: internal/config
     gate: fail
   - id: scope_no_config
@@ -485,7 +484,7 @@ rules:
     gate: fail
   - id: status_no_config
     type: forbidden_dependency
-    from: internal/status/**
+    from: internal/assessment/status/**
     to: internal/config
     gate: fail
   - id: syntax_no_config
@@ -495,17 +494,17 @@ rules:
     gate: fail
   - id: score_no_config
     type: forbidden_dependency
-    from: internal/score/**
+    from: internal/assessment/score/**
     to: internal/config
     gate: fail
   - id: decision_no_config
     type: forbidden_dependency
-    from: internal/decision/**
+    from: internal/assessment/decision/**
     to: internal/config
     gate: fail
   - id: agenttask_no_config
     type: forbidden_dependency
-    from: internal/agenttask/**
+    from: internal/assessment/agenttask/**
     to: internal/config
     gate: fail
   - id: ports_no_config
@@ -554,17 +553,17 @@ rules:
   - id: baseline_no_score
     type: forbidden_dependency
     from: internal/baseline/**
-    to: internal/score/**
+    to: internal/assessment/score/**
     gate: fail
   - id: output_no_score
     type: forbidden_dependency
     from: internal/output/**
-    to: internal/score/**
+    to: internal/assessment/score/**
     gate: fail
   - id: output_no_decision
     type: forbidden_dependency
     from: internal/output/**
-    to: internal/decision/**
+    to: internal/assessment/decision/**
     gate: fail
   # Hexagonal boundary: internal packages depend on ports, not the orchestrator.
   # Only cmd imports internal/engine.

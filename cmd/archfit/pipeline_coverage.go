@@ -3,13 +3,15 @@ package main
 import (
 	"sort"
 
+	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/report"
+
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/extract/ts"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/scan"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -187,12 +189,12 @@ func rustProjectPresent(root string, cfg config.Config) bool {
 // that carries the difference, so it has to be emitted; applyToolGate is where
 // gate: off keeps its meaning, by refusing to escalate even under
 // --require-tools.
-func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string) []diagnostic.CoverageGap {
-	var gaps []diagnostic.CoverageGap
+func buildCoverageGaps(cov []evidence.Coverage, cfg config.Config, root string) []evidence.CoverageGap {
+	var gaps []evidence.CoverageGap
 	for _, c := range cov {
 		// Only truly absent tools produce a gap. Disabled-by-config tools are an
 		// intentional opt-out; partial coverage is informational (not actionable).
-		if c.Status != diagnostic.StatusAbsent {
+		if c.Status != evidence.StatusAbsent {
 			continue
 		}
 		// A disabled language's primary tool is not a gap the user needs to close —
@@ -236,7 +238,7 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 		if !ok {
 			continue
 		}
-		gaps = append(gaps, diagnostic.CoverageGap{
+		gaps = append(gaps, evidence.CoverageGap{
 			Tool:            c.Tool,
 			InstallCmd:      info.install,
 			AffectedMetrics: info.metrics,
@@ -307,15 +309,15 @@ func primaryDisabledByConfig(cfg config.Config, tool string) bool {
 // Deliberately narrow: rows with an explicit gate keep StatusAbsent so they
 // still raise a gap and still fail --require-tools. Non-primary analyzers are
 // untouched; their absence is never read as a statement about the tree.
-func markDisabledPrimaries(cov []diagnostic.Coverage, cfg config.Config, root string) []diagnostic.Coverage {
+func markDisabledPrimaries(cov []evidence.Coverage, cfg config.Config, root string) []evidence.Coverage {
 	for i, c := range cov {
-		if c.Status != diagnostic.StatusAbsent || !primaryDisabledByConfig(cfg, c.Tool) {
+		if c.Status != evidence.StatusAbsent || !primaryDisabledByConfig(cfg, c.Tool) {
 			continue
 		}
 		if !primaryLanguagePresent(cfg, c.Tool, root) {
 			continue
 		}
-		cov[i].Status = diagnostic.StatusDisabled
+		cov[i].Status = evidence.StatusDisabled
 		cov[i].Reason = languageDisabledReason(primaryToolLanguage[c.Tool])
 	}
 	return cov
@@ -365,7 +367,7 @@ func configToolGate(cfg config.Config, tool string) string {
 // language is not in this tree". The policy decision lives here in cmd/ (the layering invariant) — the
 // core ring never sees tool names or gate config. Idempotent and render-order safe:
 // callers invoke it before rendering so the output shows the effective gate.
-func applyToolGate(diag *scan.Diagnostic, requireTools bool) bool {
+func applyToolGate(diag *result.Result, requireTools bool) bool {
 	failed := false
 	for i := range diag.CoverageGaps {
 		// gate: off is the user's explicit statement that this analyzer must not
@@ -384,7 +386,7 @@ func applyToolGate(diag *scan.Diagnostic, requireTools bool) bool {
 		}
 	}
 	if failed {
-		diag.Verdict = diagnostic.VerdictFail
+		diag.Verdict = report.VerdictFail
 	}
 	return failed
 }

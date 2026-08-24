@@ -4,9 +4,10 @@ import (
 	"context"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/model/evidence"
+
 	"github.com/alexei-led/archfit/internal/config"
 	historygit "github.com/alexei-led/archfit/internal/history/git"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -17,7 +18,7 @@ const (
 	volatilityCorroborationNote = "Supporting evidence only. Git history can reflect both essential and accidental volatility and never changes scoring or gate verdicts."
 )
 
-func buildVolatilityCorroboration(ctx context.Context, gitRoot, subtreePrefix string, cfg config.Config, runner toolrun.Runner) *diagnostic.VolatilityCorroboration {
+func buildVolatilityCorroboration(ctx context.Context, gitRoot, subtreePrefix string, cfg config.Config, runner toolrun.Runner) *evidence.VolatilityCorroboration {
 	if gitRoot == "" || len(cfg.Modules) == 0 {
 		return nil
 	}
@@ -26,7 +27,7 @@ func buildVolatilityCorroboration(ctx context.Context, gitRoot, subtreePrefix st
 	if touches.Status == historygit.ModuleTouchStatusUnavailable {
 		return nil
 	}
-	out := &diagnostic.VolatilityCorroboration{
+	out := &evidence.VolatilityCorroboration{
 		Source:         volatilityCorroborationSrc,
 		Status:         string(touches.Status),
 		CommitWindow:   touches.CommitWindow,
@@ -39,7 +40,7 @@ func buildVolatilityCorroboration(ctx context.Context, gitRoot, subtreePrefix st
 		if i == volatilityCorroborationTopN {
 			break
 		}
-		out.TopTouched = append(out.TopTouched, diagnostic.VolatilityTouch{
+		out.TopTouched = append(out.TopTouched, evidence.VolatilityTouch{
 			Module:             mod,
 			TouchCommits:       touches.TouchedByModule[mod],
 			DeclaredVolatility: declaredVolatilityLabel(cfg.Modules[mod]),

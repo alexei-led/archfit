@@ -10,7 +10,6 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // Renderer formats a Diagnostic as a banded scorecard. Satisfies engine.Renderer.
@@ -23,7 +22,7 @@ func New() *Renderer { return &Renderer{} }
 func (r *Renderer) Format() string { return "scorecard" }
 
 // Render writes the supplied scorecard and diagnostic details.
-func (r *Renderer) Render(d scan.Diagnostic, sc report.Scorecard, w io.Writer) error {
+func (r *Renderer) Render(d report.Document, sc report.Scorecard, w io.Writer) error {
 	var b strings.Builder
 	b.WriteString("# archfit scorecard\n\n")
 	fmt.Fprintf(&b, "**Rubric version:** %d\n", sc.RubricVersion)

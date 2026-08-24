@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/decision"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/assessment/decision"
+	"github.com/alexei-led/archfit/internal/assessment/score"
 )
 
 func TestRenderReport_DecisionSummary(t *testing.T) {

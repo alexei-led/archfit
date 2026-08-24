@@ -3,8 +3,8 @@ package engine
 import (
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/view"
@@ -39,25 +39,25 @@ func TestComputeVerdict(t *testing.T) {
 	tests := []struct {
 		name             string
 		gateFindings     []finding.Finding
-		metrics          []diagnostic.MetricResult
+		metrics          []result.MetricResult
 		gates            map[string]view.MetricConfig
 		activeAdvisories int
-		want             diagnostic.Verdict
+		want             result.Verdict
 	}{
 		{
 			name:         "new gate finding fails",
 			gateFindings: []finding.Finding{newTestFinding(finding.StatusNew)},
-			want:         diagnostic.VerdictFail,
+			want:         result.VerdictFail,
 		},
 		{
 			name:         "expired waiver fails",
 			gateFindings: []finding.Finding{newTestFinding(finding.StatusExpiredWaiver)},
-			want:         diagnostic.VerdictFail,
+			want:         result.VerdictFail,
 		},
 		{
 			name:         "fixed gate finding alone passes",
 			gateFindings: []finding.Finding{newTestFinding(finding.StatusFixed)},
-			want:         diagnostic.VerdictPass,
+			want:         result.VerdictPass,
 		},
 		{
 			// Waived findings reach computeVerdict unfiltered in production
@@ -65,14 +65,14 @@ func TestComputeVerdict(t *testing.T) {
 			// loop must not treat a waived finding as a breach.
 			name:         "waived gate finding alone passes",
 			gateFindings: []finding.Finding{newTestFinding(finding.StatusWaived)},
-			want:         diagnostic.VerdictPass,
+			want:         result.VerdictPass,
 		},
 		{
 			// Baseline findings likewise reach computeVerdict unfiltered — an
 			// accepted pre-existing finding must not flip the verdict.
 			name:         "baseline gate finding alone passes",
 			gateFindings: []finding.Finding{newTestFinding(finding.StatusBaseline)},
-			want:         diagnostic.VerdictPass,
+			want:         result.VerdictPass,
 		},
 		{
 			// A new cycle is a count-metric regression (more cycles is worse)
@@ -81,10 +81,10 @@ func TestComputeVerdict(t *testing.T) {
 			// ignored. With no metrics.cycle config the gate is unset, and
 			// unset = blocking (rule-gate convention).
 			name: "new cycle (count metric, Delta=+1, unset gate) fails",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricCycle, Delta: new(1.0), Direction: diagnostic.DirectionHigherIsWorse},
+			metrics: []result.MetricResult{
+				{Name: metricCycle, Delta: new(1.0), Direction: result.DirectionHigherIsWorse},
 			},
-			want: diagnostic.VerdictFail,
+			want: result.VerdictFail,
 		},
 		{
 			// Fixing a cycle (fewer cycles, Delta=-1) is an improvement and
@@ -92,181 +92,181 @@ func TestComputeVerdict(t *testing.T) {
 			// negative delta as a regression regardless of metric direction,
 			// producing a false WARN.
 			name: "fixed cycle (count metric, Delta=-1) passes",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricCycle, Delta: new(-1.0), Direction: diagnostic.DirectionHigherIsWorse},
+			metrics: []result.MetricResult{
+				{Name: metricCycle, Delta: new(-1.0), Direction: result.DirectionHigherIsWorse},
 			},
-			want: diagnostic.VerdictPass,
+			want: result.VerdictPass,
 		},
 		{
 			name: "encapsulation drop (ratio metric, Delta=-0.1, unset gate) fails",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricEncapsulation, Delta: new(-0.1), Direction: diagnostic.DirectionHigherIsBetter},
+			metrics: []result.MetricResult{
+				{Name: metricEncapsulation, Delta: new(-0.1), Direction: result.DirectionHigherIsBetter},
 			},
-			want: diagnostic.VerdictFail,
+			want: result.VerdictFail,
 		},
 		{
 			name: "encapsulation rise (ratio metric, Delta=+0.1) passes",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricEncapsulation, Delta: new(0.1), Direction: diagnostic.DirectionHigherIsBetter},
+			metrics: []result.MetricResult{
+				{Name: metricEncapsulation, Delta: new(0.1), Direction: result.DirectionHigherIsBetter},
 			},
-			want: diagnostic.VerdictPass,
+			want: result.VerdictPass,
 		},
 		{
 			// Direction unset (zero value) must still behave as ratio
 			// semantics (breach on negative delta) — the safe default for
 			// any MetricResult that predates or omits Direction.
 			name: "unset Direction defaults to ratio semantics (Delta=-0.1) fails",
-			metrics: []diagnostic.MetricResult{
+			metrics: []result.MetricResult{
 				{Name: metricEncapsulation, Delta: new(-0.1)},
 			},
-			want: diagnostic.VerdictFail,
+			want: result.VerdictFail,
 		},
 		{
 			name: "unchanged metrics pass",
-			metrics: []diagnostic.MetricResult{
+			metrics: []result.MetricResult{
 				{Name: metricCycle, Delta: new(0.0)},
 				{Name: metricEncapsulation, Delta: new(0.0)},
 			},
-			want: diagnostic.VerdictPass,
+			want: result.VerdictPass,
 		},
 		{
 			name: "metric absent on either side (nil delta) contributes no verdict flip",
-			metrics: []diagnostic.MetricResult{
+			metrics: []result.MetricResult{
 				{Name: metricCycle, Delta: nil},
 				{Name: metricEncapsulation, Delta: nil},
 			},
-			want: diagnostic.VerdictPass,
+			want: result.VerdictPass,
 		},
 		{
 			name: "gate off skips count breach",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricCycle, Delta: new(3.0), Direction: diagnostic.DirectionHigherIsWorse},
+			metrics: []result.MetricResult{
+				{Name: metricCycle, Delta: new(3.0), Direction: result.DirectionHigherIsWorse},
 			},
 			gates: map[string]view.MetricConfig{
 				metricCycle: {Gate: string(config.GateOff)},
 			},
-			want: diagnostic.VerdictPass,
+			want: result.VerdictPass,
 		},
 		{
 			name: "gate off skips ratio breach",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricEncapsulation, Delta: new(-0.5), Direction: diagnostic.DirectionHigherIsBetter},
+			metrics: []result.MetricResult{
+				{Name: metricEncapsulation, Delta: new(-0.5), Direction: result.DirectionHigherIsBetter},
 			},
 			gates: map[string]view.MetricConfig{
 				metricEncapsulation: {Gate: string(config.GateOff)},
 			},
-			want: diagnostic.VerdictPass,
+			want: result.VerdictPass,
 		},
 		{
 			name: "gate warn caps count breach at warn",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricCycle, Delta: new(1.0), Direction: diagnostic.DirectionHigherIsWorse},
+			metrics: []result.MetricResult{
+				{Name: metricCycle, Delta: new(1.0), Direction: result.DirectionHigherIsWorse},
 			},
 			gates: map[string]view.MetricConfig{
 				metricCycle: {Gate: string(config.GateWarn)},
 			},
-			want: diagnostic.VerdictWarn,
+			want: result.VerdictWarn,
 		},
 		{
 			name: "gate warn caps ratio breach at warn",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricEncapsulation, Delta: new(-0.1), Direction: diagnostic.DirectionHigherIsBetter},
+			metrics: []result.MetricResult{
+				{Name: metricEncapsulation, Delta: new(-0.1), Direction: result.DirectionHigherIsBetter},
 			},
 			gates: map[string]view.MetricConfig{
 				metricEncapsulation: {Gate: string(config.GateWarn)},
 			},
-			want: diagnostic.VerdictWarn,
+			want: result.VerdictWarn,
 		},
 		{
 			name: "gate fail on count breach fails",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricCycle, Delta: new(1.0), Direction: diagnostic.DirectionHigherIsWorse},
+			metrics: []result.MetricResult{
+				{Name: metricCycle, Delta: new(1.0), Direction: result.DirectionHigherIsWorse},
 			},
 			gates: map[string]view.MetricConfig{
 				metricCycle: {Gate: string(config.GateFail)},
 			},
-			want: diagnostic.VerdictFail,
+			want: result.VerdictFail,
 		},
 		{
 			name: "max_new tolerates increase up to threshold",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricCycle, Delta: new(2.0), Direction: diagnostic.DirectionHigherIsWorse},
+			metrics: []result.MetricResult{
+				{Name: metricCycle, Delta: new(2.0), Direction: result.DirectionHigherIsWorse},
 			},
 			gates: map[string]view.MetricConfig{
 				metricCycle: {Gate: string(config.GateFail), MaxNew: new(2)},
 			},
-			want: diagnostic.VerdictPass,
+			want: result.VerdictPass,
 		},
 		{
 			name: "max_new trips above threshold",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricCycle, Delta: new(3.0), Direction: diagnostic.DirectionHigherIsWorse},
+			metrics: []result.MetricResult{
+				{Name: metricCycle, Delta: new(3.0), Direction: result.DirectionHigherIsWorse},
 			},
 			gates: map[string]view.MetricConfig{
 				metricCycle: {Gate: string(config.GateWarn), MaxNew: new(2)},
 			},
-			want: diagnostic.VerdictWarn,
+			want: result.VerdictWarn,
 		},
 		{
 			name: "min_delta tolerates drop up to threshold",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricEncapsulation, Delta: new(-0.05), Direction: diagnostic.DirectionHigherIsBetter},
+			metrics: []result.MetricResult{
+				{Name: metricEncapsulation, Delta: new(-0.05), Direction: result.DirectionHigherIsBetter},
 			},
 			gates: map[string]view.MetricConfig{
 				metricEncapsulation: {Gate: string(config.GateFail), MinDelta: new(0.05)},
 			},
-			want: diagnostic.VerdictPass,
+			want: result.VerdictPass,
 		},
 		{
 			name: "min_delta trips below threshold",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricEncapsulation, Delta: new(-0.06), Direction: diagnostic.DirectionHigherIsBetter},
+			metrics: []result.MetricResult{
+				{Name: metricEncapsulation, Delta: new(-0.06), Direction: result.DirectionHigherIsBetter},
 			},
 			gates: map[string]view.MetricConfig{
 				metricEncapsulation: {MinDelta: new(0.05)},
 			},
-			want: diagnostic.VerdictFail,
+			want: result.VerdictFail,
 		},
 		{
 			// A warn-gated breach must not mask a later fail-gated breach.
 			name: "fail-gated breach outranks earlier warn-gated breach",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricEncapsulation, Delta: new(-0.1), Direction: diagnostic.DirectionHigherIsBetter},
-				{Name: metricCycle, Delta: new(1.0), Direction: diagnostic.DirectionHigherIsWorse},
+			metrics: []result.MetricResult{
+				{Name: metricEncapsulation, Delta: new(-0.1), Direction: result.DirectionHigherIsBetter},
+				{Name: metricCycle, Delta: new(1.0), Direction: result.DirectionHigherIsWorse},
 			},
 			gates: map[string]view.MetricConfig{
 				metricEncapsulation: {Gate: string(config.GateWarn)},
 				metricCycle:         {Gate: string(config.GateFail)},
 			},
-			want: diagnostic.VerdictFail,
+			want: result.VerdictFail,
 		},
 		{
 			name:             "active rule advisory warns",
 			activeAdvisories: 1,
-			want:             diagnostic.VerdictWarn,
+			want:             result.VerdictWarn,
 		},
 		{
 			name: "warn-gated breach and advisories stay warn",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricEncapsulation, Delta: new(-0.1), Direction: diagnostic.DirectionHigherIsBetter},
+			metrics: []result.MetricResult{
+				{Name: metricEncapsulation, Delta: new(-0.1), Direction: result.DirectionHigherIsBetter},
 			},
 			gates: map[string]view.MetricConfig{
 				metricEncapsulation: {Gate: string(config.GateWarn)},
 			},
 			activeAdvisories: 1,
-			want:             diagnostic.VerdictWarn,
+			want:             result.VerdictWarn,
 		},
 		{
 			name:         "gate fail outranks metric warn and advisories",
 			gateFindings: []finding.Finding{newTestFinding(finding.StatusNew)},
-			metrics: []diagnostic.MetricResult{
+			metrics: []result.MetricResult{
 				{Name: metricEncapsulation, Delta: new(-0.1)},
 			},
 			gates: map[string]view.MetricConfig{
 				metricEncapsulation: {Gate: string(config.GateWarn)},
 			},
 			activeAdvisories: 1,
-			want:             diagnostic.VerdictFail,
+			want:             result.VerdictFail,
 		},
 	}
 

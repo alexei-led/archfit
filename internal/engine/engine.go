@@ -6,24 +6,23 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/classify"
+	"github.com/alexei-led/archfit/internal/assessment/metrics"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	signal "github.com/alexei-led/archfit/internal/assessment/signals"
+	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/facts"
 	"github.com/alexei-led/archfit/internal/labels"
-	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/model/scan"
-	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/ports"
+	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/status"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -64,7 +63,7 @@ type RunInput struct {
 	Signals     signal.RunSignals
 	Now         time.Time
 	// PrimaryExtractorTools names the per-language file extractors whose coverage
-	// the scorecard treats as load-bearing (see scan.Diagnostic). Supplied by
+	// the scorecard treats as load-bearing (see result.Result). Supplied by
 	// the composition root from the language registry; attached to the Diagnostic so
 	// the score package needs no hardcoded tool list. Empty = score's default set.
 	PrimaryExtractorTools []string
@@ -114,6 +113,83 @@ type evidenceResult struct {
 	resolvedFindings []finding.Finding
 }
 
+// ruleEvidence is the output of the pattern and syntax acquisition stage.
+type ruleEvidence struct {
+	evidence rules.Evidence
+	coverage []evidence.Coverage
+}
+
+func collectRuleEvidence(ctx context.Context, in RunInput) (ruleEvidence, error) {
+	patternMatches, patternCoverage, err := in.Patterns.Find(ctx, in.Scope, in.PatternCfg)
+	if err != nil {
+		return ruleEvidence{}, err
+	}
+	result := ruleEvidence{
+		evidence: rules.Evidence{PatternMatches: patternMatches},
+		coverage: []evidence.Coverage{patternCoverage},
+	}
+	if !in.SyntaxCfg.Enabled {
+		return result, nil
+	}
+	if in.Syntax == nil {
+		return ruleEvidence{}, errors.New("engine: SyntaxCfg.Enabled=true but no Syntax provider")
+	}
+	syntaxFacts, syntaxCoverage, err := in.Syntax.Syntax(ctx, in.Scope, in.SyntaxCfg.Languages)
+	if err != nil {
+		return ruleEvidence{}, err
+	}
+	for i := range syntaxFacts {
+		syntaxFacts[i].Module, _ = in.Classify.ModuleMap.ModuleForFile(syntaxFacts[i].File)
+	}
+	result.evidence.SyntaxFacts = syntaxFacts
+	result.coverage = append(result.coverage, syntaxCoverage)
+	return result, nil
+}
+
+type relationshipStage struct {
+	classifyCfg        view.ClassifyConfig
+	staleLabelFindings []finding.Finding
+	llmApprovedCount   int
+	runtimeAsync       []evidence.RuntimeAsyncModule
+	runtimeAsyncEdges  []evidence.RuntimeAsyncEdge
+	couplingIdx        coupling.Index
+	cloneOnlyPairs     []classify.CloneOnlyPair
+}
+
+func classifyRelationships(ex extractResult, in RunInput) relationshipStage {
+	classifyCfg := AugmentClassifyConfig(ex.g, in.Classify)
+	staleLabelFindings, llmApprovedCount := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
+	if len(in.Signals.Duplication.Clusters) > 0 {
+		classifyCfg.CrossModuleClonePairs, classifyCfg.CloneEvidence = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap, in.Signals.Size.FileClassIndex)
+	}
+	runtimeAsync := buildRuntimeAsync(in.Signals.RuntimeAsync.Sites, in.Signals.RuntimeAsync.Confidence, classifyCfg.ModuleMap)
+	runtimeAsyncEdges := buildRuntimeAsyncEdges(in.Signals.RuntimeAsync.Sites, in.Signals.RuntimeAsync.Confidence, classifyCfg.ModuleMap)
+	return relationshipStage{
+		classifyCfg: classifyCfg, staleLabelFindings: staleLabelFindings,
+		llmApprovedCount: llmApprovedCount, runtimeAsync: runtimeAsync,
+		runtimeAsyncEdges: runtimeAsyncEdges, couplingIdx: classify.Run(ex.g, classifyCfg),
+		cloneOnlyPairs: classify.CloneOnlyPairs(ex.g, classifyCfg),
+	}
+}
+
+func calculateMetrics(in RunInput, ex extractResult, couplingIdx coupling.Index, taggedFindings []finding.Finding, syntaxFacts []evidence.SyntaxFact) []report.MetricResult {
+	collected := signal.CollectedSignals{
+		Common: signal.CommonInput{
+			Graph: ex.g, Classifications: couplingIdx, Findings: taggedFindings,
+			Baseline: in.BaseMetrics, ToolCoverage: ex.coverages,
+			ChangedFiles: in.Scope.Changed, SyntaxFacts: syntaxFacts,
+			DeprecatedDeps: in.Signals.DeprecatedDeps,
+		},
+		Symbol: signal.SymbolSignals{Graph: ex.scipSymbols},
+		Size:   in.Signals.Size, Duplication: in.Signals.Duplication,
+	}
+	results := make([]report.MetricResult, 0, len(in.Metrics))
+	for _, metric := range in.Metrics {
+		results = append(results, metric.Calculate(collected))
+	}
+	return results
+}
+
 // Run executes the full archfit pipeline and returns the assembled Diagnostic.
 //
 // Pipeline stages:
@@ -130,103 +206,45 @@ type evidenceResult struct {
 //     Return (Diagnostic, nil) on success; (Diagnostic, error) on hard error.
 //
 // Rendering is the caller's responsibility (cmd renders to deps.Stdout).
-func Run(ctx context.Context, in RunInput) (scan.Diagnostic, error) {
+func Run(ctx context.Context, in RunInput) (result.Result, error) {
 	// --- Stage 1: Extract ---
 	// Run each extractor; apply symbol resolution and SCIP strength to edges before merging.
 	ex, err := extract(ctx, in)
 	if err != nil {
-		return scan.New(), err
+		return result.New(), err
 	}
 
-	// --- Stage 2: Pattern matching ---
-	// Gather structural matches from the PatternProvider and build a per-file evidence index.
-	// Matches are keyed by file path so rules can filter by the edge's from-file.
-	patternMatches, ppCov, ppErr := in.Patterns.Find(ctx, in.Scope, in.PatternCfg)
-	if ppErr != nil {
-		return scan.New(), ppErr
+	// --- Stage 2: Acquire rule evidence ---
+	ruleEv, err := collectRuleEvidence(ctx, in)
+	if err != nil {
+		return result.New(), err
 	}
-	ex.coverages = append(ex.coverages, ppCov)
+	ex.coverages = append(ex.coverages, ruleEv.coverage...)
+	syntaxFacts := ruleEv.evidence.SyntaxFacts
 
-	// --- Stage 2b: Syntax facts ---
-	// Collect syntactic declarations and route registrations (ast-grep rules)
-	// before the rules stage. Off-gate: facts populate the report (consumed by
-	// public_api_*) but never affect the verdict.
-	var syntaxFacts []evidence.SyntaxFact
-	if in.SyntaxCfg.Enabled {
-		if in.Syntax == nil {
-			return scan.New(), errors.New("engine: SyntaxCfg.Enabled=true but no Syntax provider")
-		}
-		sf, synCov, synErr := in.Syntax.Syntax(ctx, in.Scope, in.SyntaxCfg.Languages)
-		if synErr != nil {
-			return scan.New(), synErr
-		}
-		syntaxFacts = sf
-		// Backfill Module from ModuleMap — uniform across all languages,
-		// no per-language branching. Files outside declared modules get an
-		// empty Module (legitimate: a script in the repo root, for example).
-		for i := range syntaxFacts {
-			syntaxFacts[i].Module, _ = in.Classify.ModuleMap.ModuleForFile(syntaxFacts[i].File)
-		}
-		ex.coverages = append(ex.coverages, synCov)
-	}
-
-	// --- Stage 3: Classify ---
-	classifyCfg := AugmentClassifyConfig(ex.g, in.Classify)
-
-	// Pinned coupling labels refine strength classification (human/tool: config
-	// globs > approved labels > extractor hint; llm: fills only cells all static
-	// sources left unknown). Freshness must use the augmented ModuleMap above, or
-	// labels for synthetic Go/Rust module pairs bypass the stale-evidence check.
-	staleLabelFindings, llmApprovedCount := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
-
-	// Thread clone pairs for the clone-driven classify paths: Symmetric-strength
-	// upgrade, volatility-cascade exclusion, duplicated-knowledge pairing.
-	// Placed after the ModuleMap rebuild so auto-registered members participate
-	// in cross-module clone-pair detection.
-	if len(in.Signals.Duplication.Clusters) > 0 {
-		classifyCfg.CrossModuleClonePairs, classifyCfg.CloneEvidence = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap, in.Signals.Size.FileClassIndex)
-	}
-
-	// Runtime async evidence: build per-module and relationship-level rollups for
-	// the diagnostic. Report-only — never changes the graph, score, or verdict.
-	runtimeAsync := buildRuntimeAsync(in.Signals.RuntimeAsync.Sites, in.Signals.RuntimeAsync.Confidence, classifyCfg.ModuleMap)
-	runtimeAsyncEdges := buildRuntimeAsyncEdges(in.Signals.RuntimeAsync.Sites, in.Signals.RuntimeAsync.Confidence, classifyCfg.ModuleMap)
-
-	couplingIdx := classify.Run(ex.g, classifyCfg)
-	cloneOnlyPairs := classify.CloneOnlyPairs(ex.g, classifyCfg)
+	// --- Stage 3: Relationship analysis ---
+	relationships := classifyRelationships(ex, in)
+	classifyCfg := relationships.classifyCfg
+	staleLabelFindings := relationships.staleLabelFindings
+	llmApprovedCount := relationships.llmApprovedCount
+	runtimeAsync := relationships.runtimeAsync
+	runtimeAsyncEdges := relationships.runtimeAsyncEdges
+	couplingIdx := relationships.couplingIdx
+	cloneOnlyPairs := relationships.cloneOnlyPairs
 
 	// --- Stage 4: Rules ---
 	// Call each rule once with the full evidence set. Rules iterate edges internally;
 	// the Evidence carries all pattern matches so each rule can filter by edge's from-file.
 	var rawFindings []finding.Finding
-	allPatternMatches := rules.Evidence{PatternMatches: patternMatches, SyntaxFacts: syntaxFacts}
 	for _, r := range in.Rules {
-		rawFindings = append(rawFindings, r.Check(ex.g, allPatternMatches)...)
+		rawFindings = append(rawFindings, r.Check(ex.g, ruleEv.evidence)...)
 	}
 
 	// --- Stage 5: Status ---
 	taggedFindings := status.Assign(rawFindings, in.Accepted, in.Waivers, in.Now, finding.KindGate)
 
 	// --- Stage 6: Metrics ---
-	collected := signal.CollectedSignals{
-		Common: signal.CommonInput{
-			Graph:           ex.g,
-			Classifications: couplingIdx,
-			Findings:        taggedFindings,
-			Baseline:        in.BaseMetrics,
-			ToolCoverage:    ex.coverages,
-			ChangedFiles:    in.Scope.Changed,
-			SyntaxFacts:     syntaxFacts,
-			DeprecatedDeps:  in.Signals.DeprecatedDeps,
-		},
-		Symbol:      signal.SymbolSignals{Graph: ex.scipSymbols},
-		Size:        in.Signals.Size,
-		Duplication: in.Signals.Duplication,
-	}
-	metricResults := make([]report.MetricResult, 0, len(in.Metrics))
-	for _, m := range in.Metrics {
-		metricResults = append(metricResults, m.Calculate(collected))
-	}
+	metricResults := calculateMetrics(in, ex, couplingIdx, taggedFindings, syntaxFacts)
 
 	// --- Stage 7: Resolve evidence — module labels + severity join ---
 	ev := resolveEvidence(ex.g, couplingIdx, classifyCfg, taggedFindings)
@@ -336,8 +354,8 @@ func Run(ctx context.Context, in RunInput) (scan.Diagnostic, error) {
 	// edges. Report-only — never enters coupling_balance or the verdict.
 	localCoupling := buildLocalCoupling(ex.g, couplingIdx, classifyCfg.ModuleMap)
 
-	d := scan.Diagnostic{
-		SchemaVersion:             diagnostic.SchemaVersion,
+	d := result.Result{
+		SchemaVersion:             report.SchemaVersion,
 		Verdict:                   verdict,
 		Base:                      in.Mode.Base,
 		Head:                      in.Mode.Head,
@@ -354,8 +372,8 @@ func Run(ctx context.Context, in RunInput) (scan.Diagnostic, error) {
 		RuntimeAsyncEdges:         runtimeAsyncEdges,
 		DeprecatedDeps:            in.Signals.DeprecatedDeps,
 		SemanticStrengthOverlay:   ex.semanticStrengthOverlay,
-		AgentTasks:                []diagnostic.AgentTask{},
-		AdvisoryTasks:             []diagnostic.AdvisoryTask{},
+		AgentTasks:                []result.AgentTask{},
+		AdvisoryTasks:             []result.AdvisoryTask{},
 		ToolCoverage:              ex.coverages,
 		ClassifiedEdges:           classifiedEdges,
 		DistanceConfigCandidates:  distanceConfigCandidates,

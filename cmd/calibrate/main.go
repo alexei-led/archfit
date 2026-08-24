@@ -18,11 +18,11 @@ import (
 	"path/filepath"
 
 	"github.com/alexei-led/archfit/internal/calibrate"
-	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/scope"
 )
 

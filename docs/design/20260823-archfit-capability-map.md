@@ -1,116 +1,621 @@
-# Archfit capability map
+# Archfit target architecture
 
-Date: 2026-08-23
-Status: IMPLEMENTED IN WORKTREE
+Date: 2026-08-24
+Status: APPROVED FOR IMPLEMENTATION
 
-This map is based on package imports, recent co-change history, public-surface
-size, and the current architecture report. It is not a score-optimization plan.
-The map is implemented in the current worktree. The score change is a
-measurement of the resulting boundaries, not the acceptance criterion by itself.
+## Overview
 
-## Evidence
+This is a review-driven redesign of Archfit as one Go modular monolith. It
+replaces the provisional type-centric module map with domain-driven boundaries.
+The goal is local change, explicit contracts, and balanced coupling. A higher
+Archfit score is not a design goal.
 
-The current run reports:
+Source inputs:
 
-- 102 modules in the source graph.
-- 429 scored cross-boundary edges; 0 abstained.
-- Mean book balance: 5.86/10; normalized `coupling_balance`: 54/100.
-- Balance drivers: `strength_distance=79`, `tie=92`, `volatility=258`.
-- Critical edges fell from 123 to 14.
-- All scored edges use `cross_module_same_owner` distance.
-- Largest scored module pairs are now `archfit-cli -> fact-adapters=34`,
-  `fact-adapters -> evidence-model=27`, and
-  `evaluation-core -> evidence-model=23`.
-- `evaluation-core` has 331 exported declarations in the current configuration.
+- `docs/reports/20260824-archfit-pr33-architecture-review.md`, findings F1-F5
+  and evidence E1-E17.
+- `README.md` and `docs/guide/concepts.md` for product intent.
+- `.archfit.yaml` for current declared modules and gates.
+- Current Go imports, CodeGraph, `go list`, architecture tests, and recent git
+  co-change evidence.
+- The current implementation on PR #33.
 
-`go list` reports the largest package-level module edges:
+Constraints:
 
-| From | To | Import edges |
-| --- | --- | ---: |
-| evaluation-core | evidence-model | 23 |
-| fact-adapters | evidence-model | 27 |
-| fact-adapters | pipeline-contracts | 14 |
-| pipeline-contracts | evidence-model | 13 |
-| pipeline-engine | evidence-model | 13 |
-| evaluation-core | report-contract | 12 |
-| evaluation-core | stage-views | 11 |
-| evaluation-core | finding-model | 10 |
-| archfit-cli | scan-contract | 20 |
+- One owner, one CLI process, one deployable.
+- No services, queues, or network boundaries inside Archfit.
+- Deterministic analysis and exit codes remain stable.
+- Source changes and configuration-only score changes are reported separately.
+- Domain labels are fixed before source experiments. Scores do not set labels.
 
-Recent history also shows distinct change vectors inside `evaluation-core`:
+## Source inputs and drift notes
 
-| Package | Commits touched in the last 180 days |
-| --- | ---: |
-| `metrics` | 69 |
-| `classify` | 62 |
-| `score` | 41 |
-| `rules` | 24 |
-| `agenttask` | 15 |
-| `status` | 10 |
-| `facts` | 6 |
-| `decision` | 4 |
-| `staleness` | 4 |
+The current design is intent, not implementation truth. Observed drift:
 
-The source refactor moved extractor-facing facts into `internal/model/evidence`,
-score/report contracts into `internal/model/report`, and the aggregate into
-`internal/model/scan`. `internal/model/diagnostic` now provides compatibility
-aliases only. The module map assigns coupling, signal, architecture, and finding
-contracts to separate capability modules with medium volatility.
+- The renderer port now accepts `report.Document`.
+- Output packages no longer depend on `internal/model/scan`.
+- Production imports of the diagnostic compatibility facade are zero.
+- `evaluation-core` combines several change vectors.
+- `cmd/archfit` and `internal/engine` remain change and fan-out hubs.
+- The existing design declares `pipeline-state` twice.
+- The model-purity test now discovers model packages automatically; scan/result
+  compatibility removal is still in progress.
+- The declared score of 54 is configuration-sensitive. With plausible core and
+  inherited volatility labels, the current source scores 41-50.
 
-The strongest package co-change pairs are `classify-score` (18),
-`metrics-score` (13), `classify-metrics` (12), `metrics-rules` (12), and
-`classify-rules` (10). `decision` and `staleness` have much lower co-change
-with the evaluation cluster. This supports a split between fact/policy
-calculation and verdict/report projection. It does not support splitting
-`classify`, `metrics`, and `score` only because the headline score is low.
+## Domain model
 
-## Target map
+DDD terms in this design:
 
-The target keeps stable package seams where they already match the change
-vector. New module names describe ownership. They do not require one package
-per module.
+- **Core**: differentiating architecture-analysis knowledge. It is expected to
+  change as Archfit improves.
+- **Supporting**: necessary workflow or integration capability that does not
+  define Archfit's differentiation.
+- **Generic**: framework or provider wiring that can be replaced without
+  changing architecture-analysis semantics.
 
-| Capability | Initial package ownership | Responsibility | Allowed inward dependencies |
+### Bounded contexts
+
+| Bounded context | Classification | Volatility | Responsibility |
 | --- | --- | --- | --- |
-| `evidence-model` | `internal/model/graph`, `symbol`, `fileclass`, `clone`, `pattern` | Source facts and extractor-neutral evidence types | Standard library |
-| `coupling-model` | `internal/model/coupling` | Strength, distance, volatility, classification, and book scoring types | Evidence model only when required by a fact type |
-| `pipeline-state` | `internal/model/signal` | Signal carriers between extraction and metrics | Evidence, coupling, finding, and report contracts |
-| `architecture-model` | `internal/model/module` | Module-map and ownership values | Evidence and pipeline contracts |
-| `finding-model` | `internal/model/finding` | Finding lifecycle and repair contracts | Coupling and report contracts |
-| `report-contract` | `internal/model/report` | Stable scorecard, decision, persistence, and output view models | Data-only; no engine, extractor, or renderer imports |
-| `scan-contract` | `internal/model/scan`, compatibility `diagnostic` | Stable top-level scan aggregate and legacy facade | Evidence, finding, and report contracts |
-| `pipeline-contracts` | `internal/ports`, `internal/scope`, `internal/syntax` | Extractor, resolver, syntax, and scope ports | Evidence and stage views; not output adapters |
-| `stage-views` | `internal/view` | Stable stage configuration and policy views | Data-only model packages |
-| `fact-derivation` | `internal/classify`, `internal/facts` | Convert extracted facts into classified coupling and derived evidence | Evidence model, coupling model, pipeline contracts, stage views |
-| `policy-evaluation` | `internal/rules`, `internal/metrics`, `internal/score` | Apply architecture rules and compute metric results | Evaluation model, coupling model, policy language, stage views |
-| `verdict` | `internal/status`, `internal/decision`, `internal/agenttask` | Join findings and metrics into verdicts and repair tasks | Report contract, finding model, policy language |
-| `pipeline-state` | extracted state types from `internal/engine` | Stage results and assembly state; no policy decisions | Evidence model, evaluation model, report contract, stage views |
-| `pipeline-engine` | `internal/engine` orchestration | Sequence extraction, derivation, policy evaluation, and report assembly | Ports, fact derivation, policy evaluation, verdict, adapters through ports only |
-| `fact-adapters` | `internal/extract`, `toolrun`, `factcache`, `history`, `ownership` | External tools and source-control facts | Pipeline contracts, evidence model, stage views |
-| `rendering` | `internal/output` | Human and machine projections of `report-contract` | Report contract only for completed reports |
-| `archfit-cli` | `cmd/archfit` | Composition roots and command UX | Pipeline engine, config lifecycle, rendering, stores, adapters |
+| Architecture Policy | Core | High | Desired modules, boundaries, ownership, deploy topology, rules, waivers, gates, and approved labels |
+| Architecture Analysis | Core | High | Relationship classification, Balanced Coupling, metrics, findings, score, verdict, and repair guidance |
+| Evidence Acquisition | Supporting | Medium | Neutral source facts, coverage, history, ownership observations, and language/tool adapters |
+| Analysis Application | Supporting | Medium | Analyze, Check, Explain, and Enrich use cases; ordering, cancellation, and stage lifecycle |
+| Report Projection | Supporting | Medium | Stable external report document and projection from internal results |
+| Persistence | Supporting | Low | Baseline and approved-label persistence formats after compatibility is proven |
+| Provider Integration | Generic | Medium | External analyzers, LLM providers, processes, and filesystem integrations |
+| CLI Composition | Generic | Medium | Flags, command registration, concrete dependency wiring, and exit translation |
 
-## Boundary decisions
+Architecture Analysis contains two cohesive modules:
 
-1. `report-contract` is the stable output boundary. Renderers must not consume
-   `diagnostic.Diagnostic` after the migration. Diagnostic assembly stays inside
-   the pipeline until the report projection is complete.
-2. `scan-contract` is not the report boundary. The scan aggregate carries
-   extraction and gate input; `report-contract` carries the stable output view.
-3. `fact-derivation` and `policy-evaluation` are separate capabilities even
-   when one run calls them in sequence. The former derives facts; the latter
-   applies rules and metrics.
-4. `verdict` owns decision wording and repair-task projection. It must not own
-   extractor or renderer details.
-5. `pipeline-engine` owns ordering and cancellation only. Stage data moves to
-   `pipeline-state` so the orchestrator does not become a second domain model.
-6. `cmd/archfit` remains a composition root. Command-specific lifecycle code
-   moves behind existing config, store, adapter, or engine seams instead of
-   adding more policy to the CLI package.
+- **Relationship Analysis** owns relationship semantics and classification.
+- **Assessment and Repair** owns policy application and decisions.
+
+Their integration is functional and volatile. They remain close inside one
+bounded context instead of becoming distant services or generic shared models.
+
+### Approved deterministic labels
+
+These labels are approved as the target. They apply only after code has moved to
+the corresponding boundary.
+
+| Target module | Subdomain | Volatility | Deploy unit | Approval |
+| --- | --- | --- | --- | --- |
+| `architecture-policy` | core | high | `archfit-cli` | approved |
+| `relationship-analysis` | core | high | `archfit-cli` | approved |
+| `assessment-repair` | core | high | `archfit-cli` | approved |
+| `evidence-contracts` | supporting | medium | `archfit-cli` | approved |
+| `evidence-adapters` | supporting | medium | `archfit-cli` | approved |
+| `policy-config-adapter` | supporting | medium | `archfit-cli` | approved |
+| `analysis-application` | supporting | medium | `archfit-cli` | approved |
+| `report-contract` | supporting | medium | `archfit-cli` | approved |
+| `report-adapters` | supporting | medium | `archfit-cli` | approved |
+| `persistence-adapters` | supporting | low | `archfit-cli` | approved after compatibility tests pass |
+| `provider-adapters` | generic | medium | `archfit-cli` | approved |
+| `cli-composition` | generic | medium | `archfit-cli` | approved |
+
+Rejected target labels and modules:
+
+- `scan-contract` is migration-only and medium; it is not a target bounded
+  context.
+- `coupling-model: medium`: coupling semantics are core/high.
+- `architecture-model: supporting`: module and policy semantics are core/high.
+- `finding-model: medium`: findings inherit assessment volatility.
+- A generic shared `pipeline-state` module: stage state belongs to the
+  application stage that owns it.
+
+## Target module map
+
+| Module | Responsibility | Owned knowledge | Public interface | Private internals | Expected local changes |
+| --- | --- | --- | --- | --- | --- |
+| `architecture-policy` | Define valid intended architecture | Modules, ownership, deploy units, boundary rules, gates, waivers, approved volatility and labels | `PolicySnapshot`, validation errors, narrow `TopologyPolicy` and `GatePolicy` views | YAML representation, defaults, migration helpers | Policy schema, rule language, topology semantics |
+| `relationship-analysis` | Convert evidence into classified relationships | Strength, distance, volatility, explicitness, connascence, relationship provenance, book scoring | `AnalyzeRelationships`, `RelationshipSet`, `AnalysisEvidence` | Classification heuristics, label merge, distance derivation | Coupling formula inputs, classification rules, provenance |
+| `assessment-repair` | Judge analyzed architecture and produce action | Findings, metrics, scorecard, status, verdict, deltas, recommendations, repair tasks | `Assess`, `AssessmentResult`, `BaselineSnapshot` | Rule evaluators, cap logic, remediation wording | Metrics, findings, verdict, repair semantics |
+| `evidence-contracts` | Represent neutral source observations | Graph, symbols, files, clones, patterns, syntax, tool coverage, raw runtime/history/ownership observations | `EvidenceSnapshot`, `SourceCoverage`, immutable fact types | Fact normalization only | New evidence families and compatibility of neutral facts |
+| `evidence-adapters` | Acquire evidence from repositories and tools | Extractor implementations, tool commands, fact cache, source history and ownership readers | Context-specific acquisition ports | SCIP, ast-grep, language parsers, process details | New languages, tool versions, provider behavior |
+| `policy-config-adapter` | Load, validate, initialize, and migrate policy files | YAML/schema representation and config lifecycle | Policy loader port returning `PolicySnapshot` | YAML DTOs, defaults, migrations, init/update helpers | Config format and migration behavior |
+| `analysis-application` | Execute user use cases | Analyze/Check/Explain/Enrich requests, ordering, cancellation, stage-local results | Use-case services and request/result contracts | Pipeline stage state, concurrency, orchestration | Workflow and error-handling changes |
+| `report-contract` | Define the versioned external report | `ReportDocument`, report section DTOs, schema version, stable JSON names | Immutable data-only report types | None | Deliberate output-schema changes |
+| `report-adapters` | Render reports | Console, JSON, Markdown, SARIF, scorecard formatting | Renderer ports implemented over `ReportDocument` | Templates and format-specific helpers | Output layout and formatting |
+| `persistence-adapters` | Persist comparison inputs | Baseline snapshots, approved labels, deterministic file formats | `BaselineStore`, `LabelStore` ports owned by assessment/relationship contexts | Filesystem encoding and locking | Storage compatibility and atomicity |
+| `provider-adapters` | Integrate optional generic providers | LLM client and reusable process/filesystem providers | Ports owned by the calling context | Provider DTOs, retries, executable lookup | Provider changes; language analyzers remain evidence adapters |
+| `cli-composition` | Expose the executable | Flags, command UX, dependency registry, exit codes | CLI commands | Concrete construction and flag translation | CLI UX and distribution wiring |
+| `architecture-tests` | Enforce target dependency direction | Import rules, public surfaces, byte-identical fixtures | Test commands | Test helpers | Boundary evolution only with approved design |
+
+All modules have one owner and one deploy unit. Distance is code/package distance,
+not team or service distance.
+
+## Type and code ownership migration
+
+| Current location or construct | Target owner | Decision |
+| --- | --- | --- |
+| `internal/model/module` and pure module/rule/gate values in `internal/config` | Architecture Policy | Move semantics out of YAML/config lifecycle code |
+| `internal/rules` rule definitions | Architecture Policy | Policy describes what must hold |
+| `internal/rules` evaluators | Assessment and Repair | Evaluation produces findings |
+| `internal/model/coupling`, `internal/relationship/classify`, relationship-derived `internal/facts` | Relationship Analysis | Keep pure coupling vocabulary as a temporary contract; move scorer behavior with the next context slice |
+| Strength-label approval and merge behavior | Relationship Analysis | Label storage remains an adapter |
+| `internal/model/finding`, `internal/assessment/{metrics,score,status,staleness,decision,agenttask}` | Assessment and Repair | One owner for judgment and action |
+| `internal/model/graph`, symbol, fileclass, clone, pattern | Evidence Contracts | Neutral facts only |
+| Raw `Coverage`, `SyntaxFact`, `DynamicImport`, `RuntimeAsync*`, `DeprecatedDep` | Evidence Contracts | Produced by adapters, no verdict semantics |
+| `DistanceContext`, `LocalCoupling*`, `ConnascenceReport`, classified volatility evidence | Relationship Analysis | These are derived relationship knowledge, not raw evidence |
+| `MetricResult`, `Scorecard`, `Verdict`, `Decision`, `Recommendation`, task and delta domain values | Assessment and Repair | Remove domain values from the external report package |
+| JSON-tagged external views and schema version | Report Contract | Projection DTOs only |
+| `internal/assessment/signals` | Assessment and Repair | Stage-local metric inputs; no shared pipeline-state module |
+| `internal/assessment/result.Result` | Assessment and Repair | Internal assessment result; project to `report.Document` at the output edge |
+| `internal/model/scan.Diagnostic` | No target module | Compatibility alias only; production imports are zero |
+| `internal/model/diagnostic` | No target module | Remove after production imports reach zero; compatibility tests may temporarily retain it |
+| `internal/engine` orchestration | Analysis Application | Ordering and cancellation only |
+| `cmd/archfit` use-case logic | Analysis Application | Keep only composition and command UX in `cmd` |
+| `internal/output` | Report Adapters | Consume `ReportDocument` only |
+| `internal/application/report.go` | Report Projection | Map `assessment.Result` to `report.Document` |
+
+## Dependency direction
+
+```text
+CLI Composition
+  -> Analysis Application
+       -> Architecture Policy
+       -> Evidence Acquisition ports
+       -> Relationship Analysis
+       -> Assessment and Repair
+       -> Report Projection
+
+Evidence Adapters -> Evidence Acquisition ports/contracts
+Policy Config Adapter -> Architecture Policy
+Relationship Analysis -> Evidence Contracts + narrow Policy views
+Assessment and Repair -> RelationshipSet + narrow Policy views
+Report Projection -> AssessmentResult + selected evidence appendix
+Report Adapters -> ReportDocument
+Persistence Adapters -> BaselineSnapshot or ApprovedLabelSet
+Provider Adapters -> context-owned ports
+```
+
+Forbidden directions:
+
+- Core contexts must not import CLI, renderer, store, process, LLM, or extractor
+  implementations.
+- Relationship Analysis must not import findings, verdicts, report DTOs, or
+  output adapters.
+- Assessment and Repair must not import extractors or renderers.
+- Report Adapters must not import scan, evidence internals, relationship
+  internals, assessment internals, or diagnostic compatibility aliases.
+- CLI may construct adapters but must not interpret policy, classification, or
+  assessment internals.
+- No production package may import `internal/model/diagnostic` after migration.
+
+## Integration contracts
+
+### CLI Composition -> Analysis Application
+
+- Strength: contract. CLI shares request, result, and exit-status vocabulary.
+- Distance: separate packages, same owner/process/deploy.
+- Volatility: CLI generic/medium; application supporting/medium.
+- Balanced: yes when commands translate flags and delegate one use case.
+- Contract: `Analyze`, `Check`, `Explain`, and `Enrich` services with typed
+  request/result values.
+- Private knowledge: pipeline stages, domain rules, report projection, and
+  provider details stay out of command handlers.
+- Failure modes: context cancellation, invalid request, unavailable optional
+  tool, gate result, and internal failure remain distinct.
+
+### Analysis Application -> Evidence Acquisition
+
+- Strength: contract.
+- Distance: separate modules in one process and owner.
+- Volatility: supporting/medium on both sides.
+- Balanced: yes; acquisition varies behind a stable evidence contract.
+- Contract: acquisition port returns `EvidenceSnapshot` and `SourceCoverage`.
+- Private knowledge: tool commands, parsers, cache, and provider DTOs remain in
+  adapters.
+- Failure modes: absent, disabled, partial, timed out, and invalid evidence are
+  explicit data, not hidden logs.
+
+### Relationship Analysis -> Evidence Contracts
+
+- Strength: model. Relationship analysis consumes neutral facts.
+- Distance: adjacent modules in one bounded workflow.
+- Volatility: core/high relationship semantics; supporting/medium evidence.
+- Balanced: acceptable only if the evidence contract stays neutral and narrow.
+- Contract: immutable `EvidenceSnapshot` views scoped to required facts.
+- Balancing move: lower strength by translating raw evidence before policy and
+  assessment. Do not pass the whole evidence aggregate onward.
+
+### Relationship Analysis -> Architecture Policy
+
+- Strength: contract/model through topology and approved labels.
+- Distance: separate core contexts, same owner/deploy.
+- Volatility: both core/high.
+- Balanced: only through narrow views.
+- Contract: `TopologyPolicy`, `VolatilityPolicy`, and approved relationship-label
+  values. Relationship analysis cannot depend on YAML config structures.
+- Balancing move: lower strength; do not merge the contexts because desired
+  architecture and observed relationships have distinct language and changes.
+
+### Relationship Analysis -> Assessment and Repair
+
+- Strength: functional. Assessment semantics depend on classified relationship
+  meaning.
+- Distance: adjacent modules inside the Architecture Analysis bounded context.
+- Volatility: core/high on both sides.
+- Balanced: yes because high-strength collaboration remains close.
+- Contract: immutable `RelationshipSet` with provenance and scorer breakdown.
+- Private knowledge: classification heuristics stay in Relationship Analysis;
+  finding/rule semantics stay in Assessment.
+- Failure modes: abstained and low-confidence relationships remain explicit.
+
+### Assessment and Repair -> Report Projection
+
+- Strength: contract/model.
+- Distance: core to supporting adapter boundary, same process.
+- Volatility: assessment high; report schema medium and compatibility-controlled.
+- Balanced: yes when projection translates domain results into stable DTOs.
+- Contract: `AssessmentResult`, selected evidence appendix, and pure
+  `ProjectReport` function returning `ReportDocument`.
+- Private knowledge: cap logic, rule evaluators, and remediation templates do
+  not cross into renderers.
+
+### Report Projection -> Report Adapters
+
+- Strength: contract.
+- Distance: adapter boundary in one process.
+- Volatility: supporting/medium; schema version controls change.
+- Balanced: yes.
+- Contract: immutable `ReportDocument` only.
+- Failure modes: unsupported schema version and write failure. Rendering cannot
+  alter verdicts or scores.
+
+### Core contexts -> Persistence and Provider Adapters
+
+- Strength: contract.
+- Distance: ports-and-adapters boundary, same owner/deploy.
+- Volatility: core high, adapters low or provider-medium.
+- Balanced: yes when ports use context-owned values.
+- Contracts: `BaselineStore`, `LabelStore`, tool/process runner, and optional LLM
+  advisory port.
+- Private knowledge: file layout and provider DTOs remain outside core.
+
+## Key flows
+
+### Analyze
+
+1. CLI translates flags into `AnalyzeRequest`.
+2. Application loads `PolicySnapshot` through the policy config adapter.
+3. Application acquires `EvidenceSnapshot` through acquisition ports.
+4. Relationship Analysis produces `RelationshipSet` and analysis evidence.
+5. Assessment produces `AssessmentResult` and optional comparison result.
+6. Report Projection creates `ReportDocument`.
+7. A report adapter renders the document.
+8. CLI translates the result into the documented exit code.
+
+Local-change expectation:
+
+- New language support stays in evidence adapters and contracts.
+- New coupling semantics stay in Relationship Analysis.
+- New rule, metric, verdict, or repair behavior stays in Assessment and Policy.
+- New output layout stays in Report Projection and adapters.
+
+### Check
+
+Check reuses Analyze through Assessment. The application selects gate behavior
+and exit translation; it does not duplicate analysis. Renderers cannot influence
+gate results.
+
+### Explain
+
+Explain loads or produces an `AssessmentResult`, selects one finding and its
+relationship evidence, and projects a stable explanation view. Optional LLM
+narration is advisory and consumes a context-owned input contract.
+
+### Baseline comparison
+
+Assessment owns `BaselineSnapshot` semantics. A persistence adapter reads and
+writes the file. Comparison produces assessment deltas before report projection.
+The baseline file does not store renderer-specific DTOs.
+
+## Module test specifications
+
+### Architecture Policy
+
+Behavior tests:
+
+- Valid policy input produces an immutable `PolicySnapshot` with resolved module,
+  rule, gate, waiver, ownership, deploy, and label semantics.
+- Invalid topology, unknown module references, overlapping paths, and invalid
+  labels fail with deterministic validation errors.
+
+Contract tests:
+
+- YAML loading and config migrations map to the same policy snapshot across
+  supported config versions.
+- Policy views expose only the topology or gate data required by a consumer.
+
+Boundary tests:
+
+- Policy code imports no extractor, renderer, process, LLM, or filesystem
+  implementation.
+- Core policy types contain no YAML-library or CLI types.
+
+### Relationship Analysis
+
+Behavior tests:
+
+- Table-driven strength, distance, volatility, explicitness, connascence, and
+  book-score cases cover valid, unknown, and abstained relationships.
+- Approved labels override heuristics only under documented provenance rules.
+- Same input and policy produce byte-identical relationship sets.
+
+Contract tests:
+
+- `EvidenceSnapshot` and narrow policy views map to `RelationshipSet` without
+  findings, verdicts, or output DTOs.
+- Provenance and score breakdown survive projection to assessment inputs.
+
+Boundary tests:
+
+- Relationship Analysis imports no assessment, report, renderer, store, CLI, or
+  concrete tool adapter.
+
+### Assessment and Repair
+
+Behavior tests:
+
+- Rule, metric, cap, status, verdict, delta, recommendation, and repair-task
+  matrices cover pass, warn, fail, unknown, and partial-coverage paths.
+- Existing score formula and cap disclosure regressions remain table-driven.
+- Findings and tasks are deterministic for identical relationship and policy
+  inputs.
+
+Contract tests:
+
+- `RelationshipSet` plus policy views produce `AssessmentResult` without raw
+  extractor or renderer knowledge.
+- `BaselineSnapshot` round-trips through the baseline-store port.
+
+Boundary tests:
+
+- Assessment imports no extractor, process, LLM implementation, report adapter,
+  or CLI package.
+
+### Evidence Acquisition
+
+Behavior tests:
+
+- Each language adapter produces neutral facts and explicit coverage states for
+  ok, partial, absent, disabled, and timed-out runs.
+- Tool failure, cancellation, malformed output, and cache hit/miss behavior are
+  characterized at adapter boundaries.
+
+Contract tests:
+
+- All adapters satisfy the acquisition port and fixture corpus.
+- Evidence contracts remain independent of findings, scorecards, verdicts, and
+  render DTOs.
+
+Boundary tests:
+
+- Provider DTOs and command-line details do not escape adapters.
+
+### Analysis Application
+
+Behavior tests:
+
+- Analyze, Check, Explain, and Enrich execute stages in the approved order.
+- Cancellation and stage errors stop downstream work and preserve documented
+  exit semantics.
+- Check reuses Analyze/Assessment rather than duplicating policy behavior.
+
+Contract tests:
+
+- Command handlers translate flags into use-case requests and results into exit
+  codes without inspecting domain internals.
+- Test fakes implement ports at actual system boundaries only.
+
+Boundary tests:
+
+- Application imports context ports and contracts, not concrete extractors,
+  renderers, stores, or provider clients.
+
+### Report Projection and Adapters
+
+Behavior tests:
+
+- Projection produces a complete, versioned `ReportDocument` from assessment
+  result and selected evidence appendix.
+- Console, JSON, Markdown, SARIF, and scorecard outputs remain byte-identical for
+  current fixtures unless a schema change is explicitly approved.
+
+Contract tests:
+
+- Every renderer accepts `ReportDocument` only.
+- Unsupported report schema versions and write failures are explicit.
+- Rendering cannot change score, verdict, findings, or exit status.
+
+Boundary tests:
+
+- Report adapters import no scan, diagnostic, evidence internals, relationship
+  internals, assessment internals, engine, or CLI package.
+
+### Persistence and Provider Adapters
+
+Behavior tests:
+
+- Baseline and approved-label writes are atomic and deterministic.
+- Optional provider failure remains advisory unless the calling context declares
+  it required.
+
+Contract tests:
+
+- Stores accept context-owned snapshots or label sets, never report documents or
+  provider DTOs.
+- Provider adapters map external errors into context-owned error categories.
+
+## Architecture-fitness checks
+
+Add these checks with the migration that makes each one pass:
+
+1. Discover all `internal/model/**` or successor domain packages automatically;
+   no hardcoded incomplete purity list.
+2. `internal/output/**` and renderer ports may import only `report-contract` and
+   format-local helpers for completed reports.
+3. No production package imports `internal/model/diagnostic`.
+4. Core policy, relationship, and assessment modules cannot import adapters,
+   CLI, engine implementation, renderers, stores, process runners, or LLM
+   implementations.
+5. Relationship Analysis cannot import Assessment and Repair. Assessment may
+   import the immutable relationship contract only.
+6. Application orchestration cannot import concrete adapters. Concrete wiring
+   stays in CLI composition.
+7. CLI composition may import concrete adapters but cannot import internal rule,
+   metric, classifier, score, or decision implementation packages.
+8. Module and package dependency graphs remain acyclic.
+9. Public surface snapshots cover the approved contracts, not temporary aliases.
+10. Byte-identical output fixtures protect all supported formats and exit codes.
+11. Archfit dogfooding records fixed-config source delta separately from module
+    map, volatility, or distance changes.
+12. `.archfit.yaml` labels change only after the corresponding physical module
+    boundary exists and the design ledger is updated.
+
+Required whole-design checks:
+
+```sh
+make lint
+make test
+make build
+make all
+go vet ./...
+git diff --check
+# Use the branch-built binary, not an older installed release.
+/tmp/archfit-pr33 check --config .archfit.yaml --root "$PWD" --format json
+/tmp/archfit-pr33 analyze --config .archfit.yaml --root "$PWD" --base main --format json
+codegraph status .
+```
+
+A refreshed GitNexus run is optional until its index matches the implementation
+commit. Direct git history is the fallback and its coverage gap must be recorded.
+
+## Design decisions and trade-offs
+
+### D1: Keep a modular monolith
+
+- Chosen because: one owner, one deployable, and close runtime collaboration.
+- Rejected: services or process boundaries.
+- Trade-off: module discipline must be enforced in tests rather than by network
+  boundaries.
+- Revisit when: independent ownership and deployment are real requirements.
+
+### D2: Organize core behavior by bounded context, not data shape
+
+- Chosen because: model and behavior share invariants and change vectors.
+- Rejected: one module per DTO category.
+- Trade-off: some packages move and context translation becomes explicit.
+- Revisit when: history shows a proposed context has two independent change
+  vectors after implementation.
+
+### D3: Dissolve scan and pipeline-state as stable domain modules
+
+- Chosen because: they are transport aggregates with no independent business
+  rules.
+- Rejected: preserving them as global shared kernels.
+- Trade-off: application stage results and report projection need explicit
+  mappings.
+- Revisit when: an externally versioned scan API becomes a product requirement.
+
+### D4: Separate assessment from report projection
+
+- Chosen because: domain verdicts and output compatibility change for different
+  reasons.
+- Rejected: renderers consuming the whole scan or assessment aggregate.
+- Trade-off: one deterministic projection layer and additional golden tests.
+- Revisit when: only one output format remains and the external schema is
+  intentionally identical to the assessment model.
+
+### D5: Fix volatility labels before measuring source changes
+
+- Chosen because: score sensitivity can mask or invent improvement.
+- Rule: each experiment records fixed-config source delta separately from module
+  map or label delta.
+- Trade-off: an honest score can fall while architecture improves.
 
 ## Non-goals
 
-- Do not split a package only to change the coupling score.
-- Do not add labels or baselines to hide current findings.
-- Do not change distance or volatility values as part of this refactor.
-- Do not make `coupling_balance` an overall architecture score.
+- No package split solely to change `coupling_balance`.
+- No new baseline or waiver to hide findings.
+- No services, plugin framework, event bus, or generic interface layer.
+- No requirement that every target module maps to one Go package.
+- No promise that the raw Archfit score increases in every implementation step.
+
+## Self-review
+
+| Issue | Severity | Rationale | Resolution |
+| --- | --- | --- | --- |
+| A broad `EvidenceSnapshot` could become another shared-kernel hub | High | Relationship, assessment, reporting, and CLI could all depend on neutral raw facts | Only Relationship Analysis consumes the full snapshot. Other contexts receive narrow relationship, assessment, or appendix views. Add an import/contract fitness check. |
+| Report DTOs could duplicate domain models and drift | Medium | Projection deliberately separates compatibility from core semantics | Keep one pure projector, byte-identical golden tests, and explicit schema versioning. Do not copy domain behavior into DTOs. |
+| Context boundaries could create an interface framework | Medium | Ports-and-adapters can add indirection without reducing knowledge sharing | Add ports only at I/O/provider boundaries or between approved contexts. Internal functions inside a context remain concrete. |
+| Policy config lifecycle was absent from the first target table | Medium | YAML/schema migration changes for different reasons than policy semantics | Added `policy-config-adapter`; it maps external representation to `PolicySnapshot`. |
+| Relationship and assessment are strongly coupled | High | Both are core/high and co-change, so separating them too far would be unbalanced | Keep them as adjacent modules inside the Architecture Analysis bounded context with one immutable `RelationshipSet` contract. Never split them into services. |
+| The migration can become a big-bang rewrite | High | CLI, engine, scan, report, and evaluation currently meet in one flow | Use two execution horizons with a mandatory re-review after report/compatibility repair. Every task remains independently committable and behavior-preserving. |
+| Fixed domain labels can lower the displayed score | Low | Current score benefits from disputed low/medium volatility labels | Accept the lower score. Source, module-map, and label deltas are reported independently. |
+| Compatibility aliases may survive indefinitely | Medium | Golden surfaces can accidentally preserve migration debt | Add a non-increasing import ratchet, then a zero-production-import fitness rule and delete the facade when the ratchet reaches zero. |
+
+No critical design issue remains unresolved. High risks have explicit sequencing or
+fitness controls.
+
+## Open risks
+
+- Exact Go package names can change during implementation, but context ownership
+  and dependency direction require a design update before they change.
+- Baseline and approved-label file compatibility must be characterized before
+  persistence ports move.
+- Output schema compatibility must be proven across JSON, Markdown, SARIF,
+  console, and scorecard formats.
+- GitNexus is stale for this branch. Refresh it before relying on historical
+  graph evidence; direct git history remains the fallback.
+- The evidence/relationship translation may expose missing provenance fields.
+  Extend the explicit contract rather than leaking raw extractor types onward.
+
+## Handoff
+
+Recommended next skill: `architecture-plan`.
+
+Implementation uses the existing two-horizon backlog:
+
+- Horizon 1: tasks #22-#25 characterize output behavior, complete the report
+  boundary, retire diagnostic production imports, and run a scoped re-review.
+- Horizon 2: tasks #26-#30 extract application services and stage contracts,
+  establish relationship and assessment modules, align the module map and
+  fitness checks, and run the final review.
+
+Implementation rules:
+
+- An engineer or mutator executes the plan; the architecture-design task edits
+  no production source.
+- Each task is independently committable and behavior-preserving unless it
+  carries an explicitly approved schema change.
+- Horizon 2 cannot start until task #25 approves the Horizon 1 implementation.
+- `.archfit.yaml` target labels are applied only after the matching physical
+  source boundary exists.
+- Use the branch-built Archfit binary for fixed-configuration comparisons.
+- GitNexus impact evidence is required only after its index matches the working
+  commit. Until then use CodeGraph plus `git diff --name-only` and direct history.
+
+Acceptance signals:
+
+- Production diagnostic imports: 19 to 0.
+- Renderer and renderer-port imports of scan: nonzero to 0.
+- CLI module fan-out: 18 to at most 14, or composition-only exceptions are
+  documented.
+- Engine fan-out: 11 to at most 9.
+- Package and module cycles remain 0.
+- All output fixtures and exit-code contracts pass.
+- Core modules import no adapters.
+- The final review reports source, module-map, and label score effects separately.
+- Boundary-integrity and cohesion scores improve from the review baseline; a raw
+  Archfit score increase is not required.
+
+Rollback:
+
+- Revert one horizon task at a time; no data migration is irreversible.
+- Keep old file-format readers until byte-identical compatibility tests pass.
+- Do not keep both old and new domain paths beyond the task that migrates all
+  production callers; temporary aliases are migration-only.

@@ -10,13 +10,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/classify"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/staleness"
+	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/staleness"
-	"github.com/alexei-led/archfit/internal/status"
+	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -140,8 +140,8 @@ const advisoryTaskFileCap = 8
 // deterministic report-only work queue. It only reads advisory findings that
 // already carry group_count > 1; single edges stay as findings only, and gate
 // findings stay in agent_tasks[].
-func BuildAdvisoryTasks(findings []finding.Finding, validation []string) []diagnostic.AdvisoryTask {
-	tasks := make([]diagnostic.AdvisoryTask, 0)
+func BuildAdvisoryTasks(findings []finding.Finding, validation []string) []result.AdvisoryTask {
+	tasks := make([]result.AdvisoryTask, 0)
 	for _, f := range findings {
 		if f.Kind != finding.KindAdvisory || f.RuleID != RuleIDBCImbalanced {
 			continue
@@ -150,7 +150,7 @@ func BuildAdvisoryTasks(findings []finding.Finding, validation []string) []diagn
 		if err != nil || groupCount <= 1 {
 			continue
 		}
-		tasks = append(tasks, diagnostic.AdvisoryTask{
+		tasks = append(tasks, result.AdvisoryTask{
 			FindingID:    f.ID,
 			RuleID:       f.RuleID,
 			Status:       f.Status,

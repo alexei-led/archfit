@@ -12,9 +12,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/report"
+
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/labels"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/view"
@@ -130,9 +132,9 @@ func ownerDegradationWarning(src ownership.Source) string {
 // in the external bucket, excluded from coupling_balance's denominator, so the
 // gap must not be stderr-silent (mirrors ownerDegradationWarning). Returns ""
 // when no such coverage record is present.
-func tsUnresolvedWarning(cov []diagnostic.Coverage) string {
+func tsUnresolvedWarning(cov []evidence.Coverage) string {
 	for _, c := range cov {
-		if c.Tool == toolDepCruiser && c.Status == diagnostic.StatusPartial && c.Reason != "" {
+		if c.Tool == toolDepCruiser && c.Status == evidence.StatusPartial && c.Reason != "" {
 			return toolDepCruiser + ": " + c.Reason
 		}
 	}
@@ -142,7 +144,7 @@ func tsUnresolvedWarning(cov []diagnostic.Coverage) string {
 // pyUnresolvedWarning returns a disclosure message when grimp reported
 // unresolved Python imports. Those imports are emitted as low-confidence
 // external edges, so partial coverage should not be stderr-silent.
-func pyUnresolvedWarning(cov []diagnostic.Coverage) string {
+func pyUnresolvedWarning(cov []evidence.Coverage) string {
 	for _, c := range cov {
 		if c.Tool == toolGrimp && c.Unresolved > 0 {
 			if strings.Contains(c.Reason, "imports unresolved") {
@@ -222,11 +224,11 @@ func computeConfigHash(path string) string {
 }
 
 // verdictToError maps a diagnostic verdict to an exit error (nil = exit 0).
-func verdictToError(v diagnostic.Verdict) error {
+func verdictToError(v report.Verdict) error {
 	switch v {
-	case diagnostic.VerdictFail:
+	case report.VerdictFail:
 		return &exitError{code: 1}
-	case diagnostic.VerdictWarn:
+	case report.VerdictWarn:
 		return &exitError{code: 2}
 	default:
 		return nil

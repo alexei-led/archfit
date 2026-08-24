@@ -13,7 +13,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -336,7 +335,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		}
 	}
 
-	diagnostic.SortSyntaxFacts(facts)
+	evidence.SortSyntaxFacts(facts)
 
 	// Count distinct files that produced at least one fact.
 	// FilesSeen=0 is reserved for "ran but nothing matched" — callers use it to
