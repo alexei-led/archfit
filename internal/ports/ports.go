@@ -8,9 +8,10 @@ import (
 	"context"
 	"io"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
+	"github.com/alexei-led/archfit/internal/model/scan"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/view"
@@ -30,7 +31,7 @@ type Extractor interface {
 	Name() string
 
 	// CoverageTool returns the name this extractor stamps on its
-	// diagnostic.Coverage row (e.g. "go/packages", "dependency-cruiser"). It is
+	// evidence.Coverage row (e.g. "go/packages", "dependency-cruiser"). It is
 	// NOT Name(): a failed Extract returns a zero Coverage, and the engine has to
 	// file that failure under the row name every coverage consumer keys off.
 	CoverageTool() string
@@ -38,7 +39,7 @@ type Extractor interface {
 	// Extract runs the extractor for the given scope and returns raw graph facts,
 	// a coverage record, and any hard error. A missing toolchain must not return
 	// an error — it returns an empty Facts and a coverage record with status="unavailable".
-	Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error)
+	Extract(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error)
 }
 
 // PatternProvider is the port for structural pattern search (Phase 3: ast-grep).
@@ -52,7 +53,7 @@ type PatternProvider interface {
 	// Find runs all patterns in c against the given scope and returns matches,
 	// a coverage record, and any hard error. A missing tool must not return an
 	// error — it returns empty matches and a coverage record with status="absent".
-	Find(ctx context.Context, s scope.Scope, c view.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error)
+	Find(ctx context.Context, s scope.Scope, c view.PatternConfig) ([]pattern.Match, evidence.Coverage, error)
 }
 
 // SymbolResolver is the port for barrel-file / re-export resolution (Phase 3: SCIP).
@@ -73,7 +74,7 @@ type SymbolResolver interface {
 	// the same dotted/slash form as graph node paths, kind prefix stripped). Values
 	// are coupling strengths ("contract"/"model"/"functional"/"intrusive"). A missing
 	// tool returns an empty map and status="absent" coverage — never an error.
-	Strengths(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error)
+	Strengths(ctx context.Context, s scope.Scope) (map[string]string, evidence.Coverage, error)
 
 	// Symbols returns per-symbol module ownership, fan-in, and cross-module
 	// reference edges from a SCIP index. A missing tool or any non-fatal failure
@@ -81,7 +82,7 @@ type SymbolResolver interface {
 	//
 	// TODO(perf): Strengths and Symbols each run the indexer separately. Merge into
 	// a single indexer+reader pass so enabling scip does not double the index time.
-	Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error)
+	Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, evidence.Coverage, error)
 }
 
 // SyntaxProvider is the port for syntactic declaration and route extraction
@@ -99,7 +100,7 @@ type SyntaxProvider interface {
 	// given scope and returns extracted syntax facts, a coverage record, and any
 	// hard error. A missing tool must not return an error — it returns empty facts
 	// and a coverage record with status="absent".
-	Syntax(ctx context.Context, s scope.Scope, langs []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error)
+	Syntax(ctx context.Context, s scope.Scope, langs []string) ([]evidence.SyntaxFact, evidence.Coverage, error)
 }
 
 // NopSyntaxProvider is a no-op SyntaxProvider used when analyzers.syntax is off or
@@ -114,8 +115,8 @@ func (NopSyntaxProvider) Name() string { return "nop-syntax" }
 // Syntax returns empty facts and a zero coverage record. The pipeline appends
 // an explicit StatusDisabled row when syntax is off (opt-in: analyzers.syntax.enabled),
 // so the Nop must not also emit an absent row — that would double-count.
-func (NopSyntaxProvider) Syntax(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
-	return nil, diagnostic.Coverage{}, nil
+func (NopSyntaxProvider) Syntax(_ context.Context, _ scope.Scope, _ []string) ([]evidence.SyntaxFact, evidence.Coverage, error) {
+	return nil, evidence.Coverage{}, nil
 }
 
 // NopPatternProvider is a no-op PatternProvider used when no Phase 3 tools are
@@ -128,8 +129,8 @@ var _ PatternProvider = NopPatternProvider{}
 func (NopPatternProvider) Name() string { return "nop-pattern" }
 
 // Find returns empty matches and an absent coverage record.
-func (NopPatternProvider) Find(_ context.Context, _ scope.Scope, _ view.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
-	return nil, diagnostic.Coverage{Tool: "ast-grep", Status: diagnostic.StatusAbsent}, nil
+func (NopPatternProvider) Find(_ context.Context, _ scope.Scope, _ view.PatternConfig) ([]pattern.Match, evidence.Coverage, error) {
+	return nil, evidence.Coverage{Tool: "ast-grep", Status: evidence.StatusAbsent}, nil
 }
 
 // NopSymbolResolver is a no-op SymbolResolver used when no Phase 3 tools are
@@ -149,13 +150,13 @@ func (NopSymbolResolver) Resolve(_ context.Context, _, toPath string) (string, s
 // Strengths returns an empty map and a zero coverage record. The pipeline
 // appends an explicit StatusDisabled row when SCIP is off (opt-in:
 // analyzers.scip.enabled), so the Nop must not also emit an absent row.
-func (NopSymbolResolver) Strengths(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
-	return nil, diagnostic.Coverage{}, nil
+func (NopSymbolResolver) Strengths(_ context.Context, _ scope.Scope) (map[string]string, evidence.Coverage, error) {
+	return nil, evidence.Coverage{}, nil
 }
 
 // Symbols returns an empty Graph and a zero coverage record (same reason as Strengths).
-func (NopSymbolResolver) Symbols(_ context.Context, _ scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
-	return symbol.Graph{}, diagnostic.Coverage{}, nil
+func (NopSymbolResolver) Symbols(_ context.Context, _ scope.Scope) (symbol.Graph, evidence.Coverage, error) {
+	return symbol.Graph{}, evidence.Coverage{}, nil
 }
 
 // Renderer is the port that output adapters satisfy.
@@ -165,5 +166,5 @@ type Renderer interface {
 	Format() string
 
 	// Render writes d to w in the adapter's format.
-	Render(d diagnostic.Diagnostic, w io.Writer) error
+	Render(d scan.Diagnostic, w io.Writer) error
 }

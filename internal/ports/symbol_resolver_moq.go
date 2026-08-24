@@ -7,7 +7,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -28,10 +28,10 @@ var _ SymbolResolver = &SymbolResolverMock{}
 //			ResolveFunc: func(ctx context.Context, fromFile string, toPath string) (string, string) {
 //				panic("mock out the Resolve method")
 //			},
-//			StrengthsFunc: func(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error) {
+//			StrengthsFunc: func(ctx context.Context, s scope.Scope) (map[string]string, evidence.Coverage, error) {
 //				panic("mock out the Strengths method")
 //			},
-//			SymbolsFunc: func(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
+//			SymbolsFunc: func(ctx context.Context, s scope.Scope) (symbol.Graph, evidence.Coverage, error) {
 //				panic("mock out the Symbols method")
 //			},
 //		}
@@ -48,10 +48,10 @@ type SymbolResolverMock struct {
 	ResolveFunc func(ctx context.Context, fromFile string, toPath string) (string, string)
 
 	// StrengthsFunc mocks the Strengths method.
-	StrengthsFunc func(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error)
+	StrengthsFunc func(ctx context.Context, s scope.Scope) (map[string]string, evidence.Coverage, error)
 
 	// SymbolsFunc mocks the Symbols method.
-	SymbolsFunc func(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error)
+	SymbolsFunc func(ctx context.Context, s scope.Scope) (symbol.Graph, evidence.Coverage, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -156,7 +156,7 @@ func (mock *SymbolResolverMock) ResolveCalls() []struct {
 }
 
 // Strengths calls StrengthsFunc.
-func (mock *SymbolResolverMock) Strengths(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error) {
+func (mock *SymbolResolverMock) Strengths(ctx context.Context, s scope.Scope) (map[string]string, evidence.Coverage, error) {
 	if mock.StrengthsFunc == nil {
 		panic("SymbolResolverMock.StrengthsFunc: method is nil but SymbolResolver.Strengths was just called")
 	}
@@ -192,7 +192,7 @@ func (mock *SymbolResolverMock) StrengthsCalls() []struct {
 }
 
 // Symbols calls SymbolsFunc.
-func (mock *SymbolResolverMock) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
+func (mock *SymbolResolverMock) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, evidence.Coverage, error) {
 	if mock.SymbolsFunc == nil {
 		panic("SymbolResolverMock.SymbolsFunc: method is nil but SymbolResolver.Symbols was just called")
 	}

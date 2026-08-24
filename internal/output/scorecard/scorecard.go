@@ -8,8 +8,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // Renderer formats a Diagnostic as a banded scorecard. Satisfies engine.Renderer.
@@ -22,7 +23,7 @@ func New() *Renderer { return &Renderer{} }
 func (r *Renderer) Format() string { return "scorecard" }
 
 // Render writes the supplied scorecard and diagnostic details.
-func (r *Renderer) Render(d diagnostic.Diagnostic, sc report.Scorecard, w io.Writer) error {
+func (r *Renderer) Render(d scan.Diagnostic, sc report.Scorecard, w io.Writer) error {
 	var b strings.Builder
 	b.WriteString("# archfit scorecard\n\n")
 	fmt.Fprintf(&b, "**Rubric version:** %d\n", sc.RubricVersion)
@@ -68,7 +69,7 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, sc report.Scorecard, w io.Wri
 // scorecard reader sees how many findings this change introduced, resolved, or
 // merely touched versus pre-existing debt. Counts only — the per-finding lists
 // live in the markdown/json output. Omitted outside delta mode (delta nil).
-func writeDelta(b *strings.Builder, delta *diagnostic.DeltaReport) {
+func writeDelta(b *strings.Builder, delta *report.DeltaReport) {
 	if delta == nil {
 		return
 	}
@@ -92,7 +93,7 @@ func writeDelta(b *strings.Builder, delta *diagnostic.DeltaReport) {
 // reader sees why dimensions are n/a rather than mistaking absent evidence for a
 // strong result. One line per missing analyzer with the dimensions it unlocks
 // and an install hint. Omitted when no tool is missing.
-func writeRequiredToolsMissing(b *strings.Builder, gaps []diagnostic.CoverageGap) {
+func writeRequiredToolsMissing(b *strings.Builder, gaps []evidence.CoverageGap) {
 	if len(gaps) == 0 {
 		return
 	}

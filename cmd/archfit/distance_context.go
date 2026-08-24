@@ -5,6 +5,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 const runtimeDistanceInterpretation = "async runtime bridges reduce lifecycle coupling and therefore increase perceived distance (book Ch8), but remain report-only because archfit does not yet measure synchronous first-party runtime peers deterministically"
@@ -15,7 +16,7 @@ const (
 	ownerModelMultiOwner            = "multi_owner"
 )
 
-func buildDistanceContext(d diagnostic.Diagnostic, cfg config.Config, deployUnitDetectedModules int) *diagnostic.DistanceContext {
+func buildDistanceContext(d scan.Diagnostic, cfg config.Config, deployUnitDetectedModules int) *diagnostic.DistanceContext {
 	ctx := &diagnostic.DistanceContext{
 		OwnerModel:                ownerModel(cfg),
 		DeployUnitDetectedModules: deployUnitDetectedModules,

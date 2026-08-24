@@ -3,7 +3,7 @@ package metrics
 import (
 	"github.com/alexei-led/archfit/internal/metrics/boundary"
 	"github.com/alexei-led/archfit/internal/metrics/modularity"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/view"
 )
@@ -15,7 +15,7 @@ import (
 type Metric interface {
 	Name() string
 	Version() string
-	Calculate(signal.CollectedSignals) diagnostic.MetricResult
+	Calculate(signal.CollectedSignals) report.MetricResult
 }
 
 // Calculator is a metric that computes from a narrow per-family input In. Each
@@ -24,7 +24,7 @@ type Metric interface {
 type Calculator[In any] interface {
 	Name() string
 	Version() string
-	Calculate(In) diagnostic.MetricResult
+	Calculate(In) report.MetricResult
 }
 
 // wrapped adapts a typed Calculator[In] to the uniform Metric by projecting the
@@ -36,7 +36,7 @@ type wrapped[In any] struct {
 
 func (w wrapped[In]) Name() string    { return w.c.Name() }
 func (w wrapped[In]) Version() string { return w.c.Version() }
-func (w wrapped[In]) Calculate(s signal.CollectedSignals) diagnostic.MetricResult {
+func (w wrapped[In]) Calculate(s signal.CollectedSignals) report.MetricResult {
 	return w.c.Calculate(w.project(s))
 }
 

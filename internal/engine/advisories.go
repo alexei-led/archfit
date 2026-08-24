@@ -482,12 +482,12 @@ func bcAdvisoryWhy(cl coupling.Classification) string {
 
 // bcRiskClause names the Balanced Coupling risk for an edge in Vlad Khononov's
 // vocabulary. A critical edge is "distributed-monolith risk" ONLY at high distance
-// (different owner / deploy unit — the book's high strength × high distance × high
-// volatility worst case). A critical edge at low distance (cross_module_same_owner)
-// is local coupling to a volatile target: its cascade is cheap (one owner, one
-// binary), so it is named as such, NOT as a distributed monolith — recommending
-// "introduce a contract" there would be cargo-cult. High severity splits on the
-// same distance test: only a genuinely high-distance edge is "across a boundary";
+// (different owner / deploy unit). A critical edge at low distance
+// (cross_module_same_owner) is local coupling: its cascade is contained to one
+// owner and binary, so it is named as such, NOT as a distributed monolith —
+// recommending "introduce a contract" there would be cargo-cult. High severity
+// splits on the same distance test: only a genuinely high-distance edge is
+// "across a boundary";
 // a low-distance one names its cascade as contained. Cohesion (high strength + low
 // distance, balanced) never reaches here — the book formula scores it SeverityNone.
 //

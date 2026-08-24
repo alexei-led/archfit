@@ -12,9 +12,12 @@ import (
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/model/scan"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/ports"
@@ -51,7 +54,7 @@ type RunInput struct {
 	Rules       []rules.Rule
 	Metrics     []metrics.Metric
 	Accepted    status.AcceptedSet
-	BaseMetrics diagnostic.MetricSnapshot // baseline metric snapshot; nil = no baseline
+	BaseMetrics report.MetricSnapshot // baseline metric snapshot; nil = no baseline
 	// MetricGates maps metric name → its metrics.<name> config entry (gate
 	// posture off|warn|fail plus max_new/min_delta thresholds); the caller
 	// passes cfg.Metrics. nil/missing entries mean the defaults: blocking
@@ -61,7 +64,7 @@ type RunInput struct {
 	Signals     signal.RunSignals
 	Now         time.Time
 	// PrimaryExtractorTools names the per-language file extractors whose coverage
-	// the scorecard treats as load-bearing (see diagnostic.Diagnostic). Supplied by
+	// the scorecard treats as load-bearing (see scan.Diagnostic). Supplied by
 	// the composition root from the language registry; attached to the Diagnostic so
 	// the score package needs no hardcoded tool list. Empty = score's default set.
 	PrimaryExtractorTools []string
@@ -101,9 +104,9 @@ func AugmentClassifyConfig(g *graph.Graph, cfg view.ClassifyConfig) view.Classif
 // extractResult holds the outputs of the extract stage.
 type extractResult struct {
 	g                       *graph.Graph
-	coverages               []diagnostic.Coverage
+	coverages               []evidence.Coverage
 	scipSymbols             symbol.Graph
-	semanticStrengthOverlay *diagnostic.SemanticStrengthOverlay
+	semanticStrengthOverlay *evidence.SemanticStrengthOverlay
 }
 
 // evidenceResult holds the outputs of the resolveEvidence stage.
@@ -127,12 +130,12 @@ type evidenceResult struct {
 //     Return (Diagnostic, nil) on success; (Diagnostic, error) on hard error.
 //
 // Rendering is the caller's responsibility (cmd renders to deps.Stdout).
-func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
+func Run(ctx context.Context, in RunInput) (scan.Diagnostic, error) {
 	// --- Stage 1: Extract ---
 	// Run each extractor; apply symbol resolution and SCIP strength to edges before merging.
 	ex, err := extract(ctx, in)
 	if err != nil {
-		return diagnostic.New(), err
+		return scan.New(), err
 	}
 
 	// --- Stage 2: Pattern matching ---
@@ -140,7 +143,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Matches are keyed by file path so rules can filter by the edge's from-file.
 	patternMatches, ppCov, ppErr := in.Patterns.Find(ctx, in.Scope, in.PatternCfg)
 	if ppErr != nil {
-		return diagnostic.New(), ppErr
+		return scan.New(), ppErr
 	}
 	ex.coverages = append(ex.coverages, ppCov)
 
@@ -148,14 +151,14 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Collect syntactic declarations and route registrations (ast-grep rules)
 	// before the rules stage. Off-gate: facts populate the report (consumed by
 	// public_api_*) but never affect the verdict.
-	var syntaxFacts []diagnostic.SyntaxFact
+	var syntaxFacts []evidence.SyntaxFact
 	if in.SyntaxCfg.Enabled {
 		if in.Syntax == nil {
-			return diagnostic.New(), errors.New("engine: SyntaxCfg.Enabled=true but no Syntax provider")
+			return scan.New(), errors.New("engine: SyntaxCfg.Enabled=true but no Syntax provider")
 		}
 		sf, synCov, synErr := in.Syntax.Syntax(ctx, in.Scope, in.SyntaxCfg.Languages)
 		if synErr != nil {
-			return diagnostic.New(), synErr
+			return scan.New(), synErr
 		}
 		syntaxFacts = sf
 		// Backfill Module from ModuleMap — uniform across all languages,
@@ -220,7 +223,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		Size:        in.Signals.Size,
 		Duplication: in.Signals.Duplication,
 	}
-	metricResults := make([]diagnostic.MetricResult, 0, len(in.Metrics))
+	metricResults := make([]report.MetricResult, 0, len(in.Metrics))
 	for _, m := range in.Metrics {
 		metricResults = append(metricResults, m.Calculate(collected))
 	}
@@ -292,10 +295,10 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		resolvedFindings = []finding.Finding{}
 	}
 	if metricResults == nil {
-		metricResults = []diagnostic.MetricResult{}
+		metricResults = []report.MetricResult{}
 	}
 	if ex.coverages == nil {
-		ex.coverages = []diagnostic.Coverage{}
+		ex.coverages = []evidence.Coverage{}
 	}
 
 	// Neutral structural-facts block (Tranche 1.5): assembled from the symbol
@@ -333,7 +336,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// edges. Report-only — never enters coupling_balance or the verdict.
 	localCoupling := buildLocalCoupling(ex.g, couplingIdx, classifyCfg.ModuleMap)
 
-	d := diagnostic.Diagnostic{
+	d := scan.Diagnostic{
 		SchemaVersion:             diagnostic.SchemaVersion,
 		Verdict:                   verdict,
 		Base:                      in.Mode.Base,
@@ -358,7 +361,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		DistanceConfigCandidates:  distanceConfigCandidates,
 		LocalCoupling:             localCoupling,
 		Delta:                     delta,
-		Summary: diagnostic.Summary{
+		Summary: report.Summary{
 			GateFindings: gateNew,
 			Warnings:     warnings,
 			WaiversUsed:  waiversUsed,
@@ -369,13 +372,13 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 }
 
 type connascenceResolver interface {
-	Connascence(context.Context, scope.Scope) (map[string][]graph.ConnascenceHint, diagnostic.Coverage, error)
+	Connascence(context.Context, scope.Scope) (map[string][]graph.ConnascenceHint, evidence.Coverage, error)
 }
 
 // extract runs stage 1: symbol resolution, extractor loop, graph build.
 // Returns the import graph, all coverage records, and the SCIP symbol graph.
 func extract(ctx context.Context, in RunInput) (extractResult, error) {
-	var coverages []diagnostic.Coverage
+	var coverages []evidence.Coverage
 
 	// Symbol-level integration strength (SCIP), keyed by "fromPath\x00toPath".
 	// Best-effort: an empty map when no indexer is available leaves edges to the
@@ -419,9 +422,9 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 			// extractor's own successful runs use, so a failure row filed under the
 			// language name ("go") would be an unpairable phantom analyzer next to
 			// the real family ("go/packages").
-			coverages = append(coverages, diagnostic.Coverage{
+			coverages = append(coverages, evidence.Coverage{
 				Tool:   ex.CoverageTool(),
-				Status: diagnostic.StatusPartial,
+				Status: evidence.StatusPartial,
 				Reason: err.Error(),
 			})
 			extractErrs = append(extractErrs, err)
@@ -511,13 +514,13 @@ func resolveEvidence(
 //
 // Coupling advisories are intentionally excluded from activeRuleAdvisories — they
 // must not flip the verdict.
-func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult, gates map[string]view.MetricConfig, activeRuleAdvisories int) diagnostic.Verdict {
+func computeVerdict(gateFindings []finding.Finding, ms []report.MetricResult, gates map[string]view.MetricConfig, activeRuleAdvisories int) report.Verdict {
 	for _, f := range gateFindings {
 		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
-			return diagnostic.VerdictFail
+			return report.VerdictFail
 		}
 	}
-	verdict := diagnostic.VerdictPass
+	verdict := report.VerdictPass
 	for _, m := range ms {
 		if m.Delta == nil {
 			continue
@@ -531,7 +534,7 @@ func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult
 			minDelta = *mc.MinDelta
 		}
 		breached := *m.Delta < -minDelta
-		if m.Direction == diagnostic.DirectionHigherIsWorse {
+		if m.Direction == report.DirectionHigherIsWorse {
 			var maxNew int
 			if mc.MaxNew != nil {
 				maxNew = *mc.MaxNew
@@ -542,13 +545,13 @@ func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult
 			continue
 		}
 		if mc.Gate == string(view.GateWarn) {
-			verdict = diagnostic.VerdictWarn
+			verdict = report.VerdictWarn
 			continue
 		}
-		return diagnostic.VerdictFail
+		return report.VerdictFail
 	}
-	if verdict == diagnostic.VerdictPass && activeRuleAdvisories > 0 {
-		return diagnostic.VerdictWarn
+	if verdict == report.VerdictPass && activeRuleAdvisories > 0 {
+		return report.VerdictWarn
 	}
 	return verdict
 }

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -38,8 +38,8 @@ const (
 type Extractor struct {
 	runner             toolrun.Runner
 	cfg                view.ExtractConfig
-	lastModuleGraphCov diagnostic.Coverage // cargo-modules coverage from most recent Extract call
-	lastCrateRoots     []graph.CrateRoot   // crate roots from most recent Extract call
+	lastModuleGraphCov evidence.Coverage // cargo-modules coverage from most recent Extract call
+	lastCrateRoots     []graph.CrateRoot // crate roots from most recent Extract call
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
 	Cache *factcache.Store
 }
@@ -56,7 +56,7 @@ func New(runner toolrun.Runner, cfg view.ExtractConfig) *Extractor {
 	return &Extractor{
 		runner:             runner,
 		cfg:                cfg,
-		lastModuleGraphCov: diagnostic.Coverage{Tool: toolCargoModules, Status: statusAbsent},
+		lastModuleGraphCov: evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent},
 	}
 }
 
@@ -98,18 +98,18 @@ func Applicable(root, manifest string) bool {
 }
 
 // Extract detects cargo, runs `cargo metadata` against the project root, parses
-// the JSON output, and returns a graph.Facts + diagnostic.Coverage.
+// the JSON output, and returns a graph.Facts + evidence.Coverage.
 //
 // If mode is off, Extract returns empty Facts and an "absent" Coverage immediately.
 // If mode is auto and cargo is absent or the project has no Cargo.toml, Extract
 // returns empty Facts and an "absent" Coverage record — never an error.
 // If mode is on and the marker or binary is missing, Extract returns an error.
-func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error) {
 	// Default the module-graph coverage to a valid absent record so EVERY early
 	// return (disabled, not-applicable, cargo errors) leaves the pipeline a
 	// well-formed row instead of a zero-value Coverage{} (empty Tool/Status). The
 	// cfg.ModuleGraph branch below overwrites it when the graph actually runs.
-	e.lastModuleGraphCov = diagnostic.Coverage{Tool: toolCargoModules, Status: statusAbsent}
+	e.lastModuleGraphCov = evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
 	if e.cfg.Mode == view.ModeOff {
 		return graph.Facts{}, absentCoverage(""), nil
 	}
@@ -125,7 +125,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		// n/a coverage record (warn-loud), never exit 3, even when rust is enabled
 		// — a multi-language repo or a manifest-less subtree must not fail the run (E3).
 		if e.cfg.Mode == view.ModeOn && e.cfg.CargoManifest != "" {
-			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: configured rust_manifest %s not found", marker)
+			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/rust: configured rust_manifest %s not found", marker)
 		}
 		return graph.Facts{}, absentCoverage(""), nil
 	}
@@ -133,7 +133,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// Detect cargo.
 	if _, ok := e.runner.Detect(ctx, toolCargo); !ok {
 		if e.cfg.Mode == view.ModeOn {
-			return graph.Facts{}, diagnostic.Coverage{}, errors.New("extract/rust: cargo not found; install Rust via https://rustup.rs")
+			return graph.Facts{}, evidence.Coverage{}, errors.New("extract/rust: cargo not found; install Rust via https://rustup.rs")
 		}
 		return graph.Facts{}, absentCoverage(""), nil
 	}
@@ -158,7 +158,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		Timeout: runTimeout,
 	})
 	if err != nil {
-		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: run cargo metadata: %w", err)
+		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/rust: run cargo metadata: %w", err)
 	}
 	if out.ExitCode != 0 {
 		// cargo metadata exited non-zero — e.g. a malformed manifest or an
@@ -167,14 +167,14 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		// required analyzer (ModeOn) hard-errors.
 		reason := fmt.Sprintf("cargo metadata exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 		if e.cfg.Mode == view.ModeOn {
-			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: %s", reason)
+			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/rust: %s", reason)
 		}
-		return graph.Facts{}, diagnostic.Coverage{Tool: toolCargo, Version: version, Status: statusPartial, Reason: reason}, nil
+		return graph.Facts{}, evidence.Coverage{Tool: toolCargo, Version: version, Status: statusPartial, Reason: reason}, nil
 	}
 
 	facts, members, cov, err := e.parseAndNormalize(out.Stdout, version)
 	if err != nil {
-		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: parse output: %w", err)
+		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/rust: parse output: %w", err)
 	}
 
 	// Carry crate roots (repo-relative src dir + crate name) so the filesystem-free
@@ -196,7 +196,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		facts.Edges = append(facts.Edges, modEdges...)
 		e.lastModuleGraphCov = modCov
 	} else {
-		e.lastModuleGraphCov = diagnostic.Coverage{Tool: toolCargoModules, Status: statusAbsent}
+		e.lastModuleGraphCov = evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
 	}
 
 	return facts, cov, nil
@@ -206,7 +206,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 // recent Extract call. The pipeline appends this to change.ExtraCoverage so it
 // appears in the diagnostic's ToolCoverage block alongside the cargo row.
 // Returns absent coverage when ModuleGraph is disabled or Extract has not been called.
-func (e *Extractor) LastModuleGraphCoverage() diagnostic.Coverage {
+func (e *Extractor) LastModuleGraphCoverage() evidence.Coverage {
 	return e.lastModuleGraphCov
 }
 
@@ -348,10 +348,10 @@ func (d cargoDependency) included(includeDev bool) bool {
 // Every kept dependency yields a depends_on edge located at Cargo.toml.
 // The resolved members slice is returned so ModuleGraph can reuse it without
 // re-running cargo metadata.
-func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts, []cargoPackage, diagnostic.Coverage, error) {
+func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts, []cargoPackage, evidence.Coverage, error) {
 	var meta cargoMetadata
 	if err := json.Unmarshal(data, &meta); err != nil {
-		return graph.Facts{}, nil, diagnostic.Coverage{}, fmt.Errorf("unmarshal: %w", err)
+		return graph.Facts{}, nil, evidence.Coverage{}, fmt.Errorf("unmarshal: %w", err)
 	}
 
 	// First-party set: packages whose ID is listed in workspace_members. With
@@ -429,7 +429,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		}
 	}
 
-	cov := diagnostic.Coverage{
+	cov := evidence.Coverage{
 		Tool:            toolCargo,
 		Version:         version,
 		FilesSeen:       len(members),
@@ -478,8 +478,8 @@ func crateRoots(root string, members []cargoPackage) []graph.CrateRoot {
 }
 
 // absentCoverage returns a Coverage record indicating cargo was not found.
-func absentCoverage(version string) diagnostic.Coverage {
-	return diagnostic.Coverage{
+func absentCoverage(version string) evidence.Coverage {
+	return evidence.Coverage{
 		Tool:    toolCargo,
 		Version: version,
 		Status:  statusAbsent,

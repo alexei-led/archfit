@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
@@ -24,7 +24,7 @@ func (m CycleMetric) Name() string { return "cycle" }
 func (m CycleMetric) Version() string { return "cycle.v1" }
 
 // Calculate counts strongly-connected components of size > 1 in the dependency graph.
-func (m CycleMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
+func (m CycleMetric) Calculate(in signal.CommonInput) report.MetricResult {
 	cycles := 0
 	if in.Graph != nil {
 		cycles = countCycles(in.Graph)
@@ -62,7 +62,7 @@ func (m CycleMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	}
 	delta := result.ComputeDelta(value, in.Baseline, m.Name(), m.Version())
 
-	return diagnostic.MetricResult{
+	return report.MetricResult{
 		Name:       m.Name(),
 		Value:      value,
 		Display:    display,
@@ -72,7 +72,7 @@ func (m CycleMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 		Mode:       result.ModeCount,
 		Definition: "number of import cycles",
 		Delta:      delta,
-		Direction:  diagnostic.DirectionHigherIsWorse,
+		Direction:  report.DirectionHigherIsWorse,
 	}
 }
 

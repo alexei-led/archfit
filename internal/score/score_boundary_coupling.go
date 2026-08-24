@@ -3,10 +3,12 @@ package score
 import (
 	"fmt"
 	"math"
+	"sort"
+	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 const (
@@ -33,7 +35,7 @@ const (
 //
 // When summary is nil (backward compat), the function falls back to the legacy
 // advisory-edge path using the edges []bcEdge slice.
-func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.ClassifiedEdgeSummary) Dimension {
+func couplingBalance(edges []bcEdge, mi metricIndex, summary *report.ClassifiedEdgeSummary) Dimension {
 	dim := Dimension{Name: DimCouplingBalance}
 
 	// Degenerate import graph: <2 modules joined by dependency edges. That is
@@ -90,7 +92,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		}
 
 		// value = round(100 × (MeanBalance − 1) / 9): linear rescale of book's 1–10.
-		value := int(math.Round(100 * (summary.MeanBalance - 1) / 9))
+		rawValue := int(math.Round(100 * (summary.MeanBalance - 1) / 9))
 
 		// Confidence from internal-only scored fraction (external edges do not count).
 		scoredPct := 100 * summary.Scored / crossBoundary
@@ -99,18 +101,11 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 
 		// Advisory cap. A genuine distributed monolith is the critical band AND high
 		// distance (different owner / deploy unit); pervasive DM caps the value hard.
-		// Critical edges at low distance (cross_module_same_owner) are local
-		// high-strength/high-volatility coupling — still poor balance (cap at 60), but
-		// the cascade is cheap (one owner, one binary) and it is NOT a distributed
-		// monolith, so it must not trigger the pervasive-DM cap or label.
+		// Only critical edges at high distance are distributed-monolith edges. A
+		// critical edge at low distance needs its strength and volatility explained.
 		criticalCount := summary.BySeverity[string(coupling.SeverityCritical)]
 		dmCount := summary.DistributedMonolith
-		switch {
-		case crossBoundary > 0 && dmCount*100/crossBoundary >= 5:
-			value = capInt(value, 40) // pervasive distributed-monolith risk
-		case criticalCount > 0:
-			value = capInt(value, 60) // critical-band coupling present (poor balance)
-		}
+		value, capApplied := applyCouplingCap(rawValue, crossBoundary, criticalCount, dmCount)
 
 		// LLM-provenance labels lower confidence by one band when a non-high-confidence
 		// LLM label actually filled at least one scored edge. Count applied edges, not
@@ -123,46 +118,18 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		conf = applySummaryConfidenceCap(conf, capReasons)
 
 		dim.Value = value
+		dim.RawValue = rawValue
+		dim.CapApplied = capApplied
 		dim.Confidence = conf
-		dim.Evidence = []string{
+		dim.Evidence = appendCouplingEvidence([]string{
 			fmt.Sprintf("%d scored internal cross-boundary edges; mean book balance %.1f/10 → value %d",
 				summary.Scored, summary.MeanBalance, value),
-			fmt.Sprintf("scored fraction: %d%% (%d scored, %d abstained, internal only)",
-				scoredPct, summary.Scored, summary.Abstained),
-			fmt.Sprintf("critical-band edges: %d (%d distributed-monolith: critical at high distance)",
-				criticalCount, dmCount),
-		}
-		dim.Evidence = appendTailRiskEvidence(dim.Evidence, summary)
-		dim.Evidence = append(dim.Evidence, capReasons...)
-		if summary.DeclaredExternal > 0 {
-			dim.Evidence = append(dim.Evidence,
-				fmt.Sprintf("%d declared external-system edges scored at D=10 (external_systems)", summary.DeclaredExternal))
-		}
-		if summary.CloneOnlyScored > 0 || summary.CloneOnlyAdvisory > 0 {
-			dim.Evidence = append(dim.Evidence,
-				fmt.Sprintf("clone-only duplicated-knowledge pairs: %d scored, %d advisory-only",
-					summary.CloneOnlyScored, summary.CloneOnlyAdvisory))
-		}
-		if summary.External > 0 {
-			dim.Evidence = append(dim.Evidence,
-				fmt.Sprintf("%d external/library edges excluded (external deps are not internal coupling seams)", summary.External))
-		}
-		// Volatility triage disclosure: module counts by volatility source, so a
-		// uniform-volatility repo reads as uniform-by-inheritance, not measured.
-		if vp := summary.VolatilityProvenance; vp != nil {
-			line := fmt.Sprintf("volatility provenance (modules): declared: %d, inherited: %d, cascade: %d",
-				vp.Declared, vp.Inherited, vp.Cascade)
-			if vp.Undeclared > 0 {
-				line += fmt.Sprintf(", undeclared: %d", vp.Undeclared)
-			}
-			dim.Evidence = append(dim.Evidence, line)
-		}
-		dim.Evidence = appendLLMLabelEvidence(dim.Evidence, summary, llmConfLowered)
+		}, summary, scoredPct, criticalCount, dmCount, capApplied, rawValue, capReasons, llmConfLowered)
 		switch {
 		case dmCount > 0:
-			dim.Summary = "unbalanced coupling: distributed-monolith edges (high strength × high distance × high volatility) present"
+			dim.Summary = "distributed-monolith edges present; inspect the reported strength, distance, and volatility drivers"
 		case criticalCount > 0:
-			dim.Summary = "critical-band coupling at low distance — local high-strength/high-volatility coupling (cheap cascade), not a distributed monolith"
+			dim.Summary = "critical-band coupling present; inspect the reported strength, distance, and volatility drivers"
 		default:
 			dim.Summary = fmt.Sprintf("mean book balance %.1f/10 across %d scored internal cross-boundary edges",
 				summary.MeanBalance, summary.Scored)
@@ -238,7 +205,7 @@ func confidenceFromScoredPct(scoredPct int) Confidence {
 	}
 }
 
-func summaryConfidenceCapReasons(summary *diagnostic.ClassifiedEdgeSummary, conf Confidence) []string {
+func summaryConfidenceCapReasons(summary *report.ClassifiedEdgeSummary, conf Confidence) []string {
 	if conf != ConfidenceHigh {
 		return nil
 	}
@@ -256,7 +223,7 @@ func summaryConfidenceCapReasons(summary *diagnostic.ClassifiedEdgeSummary, conf
 	return reasons
 }
 
-func appendTailRiskEvidence(evidence []string, summary *diagnostic.ClassifiedEdgeSummary) []string {
+func appendTailRiskEvidence(evidence []string, summary *report.ClassifiedEdgeSummary) []string {
 	tr := summary.TailRisk
 	if tr == nil {
 		return evidence
@@ -278,7 +245,7 @@ func appendTailRiskEvidence(evidence []string, summary *diagnostic.ClassifiedEdg
 // applied) and the labeled_llm edge bucket, which attributes the
 // scored-fraction increase to the semantic layer — edges whose strength exists
 // only because an approved llm label filled an otherwise-abstained cell.
-func appendLLMLabelEvidence(evidence []string, summary *diagnostic.ClassifiedEdgeSummary, llmConfLowered bool) []string {
+func appendLLMLabelEvidence(evidence []string, summary *report.ClassifiedEdgeSummary, llmConfLowered bool) []string {
 	if llmConfLowered {
 		evidence = append(evidence,
 			fmt.Sprintf("llm-provenance labels in effect: %d (confidence lowered)", summary.LLMApproved))
@@ -291,6 +258,98 @@ func appendLLMLabelEvidence(evidence []string, summary *diagnostic.ClassifiedEdg
 			fmt.Sprintf("llm-labeled edges: %d (strength from approved llm-provenance labels)", summary.LabeledLLM))
 	}
 	return evidence
+}
+
+func appendCouplingEvidence(evidence []string, summary *report.ClassifiedEdgeSummary, scoredPct, criticalCount, distributedMonolith int, capApplied string, rawValue int, capReasons []string, llmConfLowered bool) []string {
+	if len(summary.ByStrength) > 0 {
+		evidence = append(evidence, fmt.Sprintf("strength distribution: %s; distance distribution: %s; volatility distribution: %s", formatCounts(summary.ByStrength), formatCounts(summary.ByDistance), formatCounts(summary.ByVolatility)))
+	}
+	if len(summary.ByBalanceDriver) > 0 {
+		evidence = append(evidence, fmt.Sprintf("balance drivers: %s; critical drivers: %s", formatCounts(summary.ByBalanceDriver), formatCounts(summary.ByCriticalDriver)))
+	}
+	if len(summary.ByModulePair) > 0 {
+		evidence = append(evidence, "top module pairs: "+formatTopCounts(summary.ByModulePair, 5))
+	}
+	evidence = append(evidence,
+		fmt.Sprintf("scored fraction: %d%% (%d scored, %d abstained, internal only)", scoredPct, summary.Scored, summary.Abstained),
+		fmt.Sprintf("critical-band edges: %d (%d distributed-monolith: critical at high distance)", criticalCount, distributedMonolith),
+	)
+	evidence = appendTailRiskEvidence(evidence, summary)
+	if capApplied != "" {
+		evidence = append(evidence, fmt.Sprintf("cap applied: %s (raw value %d)", capApplied, rawValue))
+	}
+	evidence = append(evidence, capReasons...)
+	if summary.DeclaredExternal > 0 {
+		evidence = append(evidence, fmt.Sprintf("%d declared external-system edges scored at D=10 (external_systems)", summary.DeclaredExternal))
+	}
+	if summary.CloneOnlyScored > 0 || summary.CloneOnlyAdvisory > 0 {
+		evidence = append(evidence, fmt.Sprintf("clone-only duplicated-knowledge pairs: %d scored, %d advisory-only", summary.CloneOnlyScored, summary.CloneOnlyAdvisory))
+	}
+	if summary.External > 0 {
+		evidence = append(evidence, fmt.Sprintf("%d external/library edges excluded (external deps are not internal coupling seams)", summary.External))
+	}
+	if vp := summary.VolatilityProvenance; vp != nil {
+		line := fmt.Sprintf("volatility provenance (modules): declared: %d, inherited: %d, cascade: %d", vp.Declared, vp.Inherited, vp.Cascade)
+		if vp.Undeclared > 0 {
+			line += fmt.Sprintf(", undeclared: %d", vp.Undeclared)
+		}
+		evidence = append(evidence, line)
+	}
+	return appendLLMLabelEvidence(evidence, summary, llmConfLowered)
+}
+
+func applyCouplingCap(rawValue, crossBoundary, criticalCount, distributedMonolith int) (int, string) {
+	switch {
+	case crossBoundary > 0 && distributedMonolith*100/crossBoundary >= 5:
+		value := capInt(rawValue, 40)
+		if value < rawValue {
+			return value, "distributed_monolith"
+		}
+	case criticalCount > 0:
+		value := capInt(rawValue, 60)
+		if value < rawValue {
+			return value, "critical_edge"
+		}
+	}
+	return rawValue, ""
+}
+
+func formatCounts(counts map[string]int) string {
+	keys := make([]string, 0, len(counts))
+	for key := range counts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", key, counts[key]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatTopCounts(counts map[string]int, limit int) string {
+	type item struct {
+		key   string
+		count int
+	}
+	items := make([]item, 0, len(counts))
+	for key, count := range counts {
+		items = append(items, item{key: key, count: count})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].count != items[j].count {
+			return items[i].count > items[j].count
+		}
+		return items[i].key < items[j].key
+	})
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		parts = append(parts, fmt.Sprintf("%s=%d", item.key, item.count))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // bcEdge is a parsed Balanced-Coupling advisory edge (a rollup of count

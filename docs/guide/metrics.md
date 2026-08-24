@@ -57,7 +57,10 @@ error. `archfit analyze` is report-only and exits `0` on any verdict; use
 
 ## Scoring model
 
-The scorecard dimension produces a 0–100 value, a band, and a confidence.
+Each scorecard dimension produces a 0–100 value, a band, and a confidence.
+A band applies only to that dimension. `coupling_balance: poor` is not an
+overall architecture-quality verdict; use the gate findings and the evidence
+blocks to judge the design.
 
 ### Bands
 
@@ -162,9 +165,14 @@ inherited: M, cascade: K` (plus `undeclared: U` when nonzero; JSON:
   missing ownership. `distance_context.distance_basis` and
   `classified_edges.by_distance_basis` show which deterministic signal selected
   each rung, which middle Ch8 rungs remain compressed, and whether the mean hides
-  a lower-tail hot spot. Tail risk reports worst balance, lower-decile balance,
-  high-or-worse share, critical and distributed-monolith counts, plus clone-only
-  subcounts when scored clone-only duplicated knowledge contributes to the tail.
+  a lower-tail hot spot. `classified_edges.by_balance_driver` and
+  `classified_edges.by_critical_driver` show whether `|S-D|` or `10-V` drove the
+  result. `classified_edges.by_module_pair` shows concentration by boundary.
+  The score dimension also reports `raw_value` and `cap_applied` when a cap
+  changes the normalized mean. Tail risk reports worst balance, lower-decile
+  balance, high-or-worse share, critical and distributed-monolith counts, plus
+  clone-only subcounts when scored clone-only duplicated knowledge contributes
+  to the tail.
 
 ### `unbalanced_edge`
 

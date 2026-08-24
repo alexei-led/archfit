@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/scan"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -364,7 +365,7 @@ func configToolGate(cfg config.Config, tool string) string {
 // language is not in this tree". The policy decision lives here in cmd/ (the layering invariant) — the
 // core ring never sees tool names or gate config. Idempotent and render-order safe:
 // callers invoke it before rendering so the output shows the effective gate.
-func applyToolGate(diag *diagnostic.Diagnostic, requireTools bool) bool {
+func applyToolGate(diag *scan.Diagnostic, requireTools bool) bool {
 	failed := false
 	for i := range diag.CoverageGaps {
 		// gate: off is the user's explicit statement that this analyzer must not

@@ -617,6 +617,48 @@ func TestBuildClassifiedEdgeSummary(t *testing.T) {
 	})
 }
 
+func TestBuildClassifiedEdgeSummary_BalanceDrivers(t *testing.T) {
+	key := func(from, to string) string { return from + "\x00" + to + "\x00import" }
+	idx := coupling.Index{
+		key("a", "b"): {
+			Distance:   coupling.DistanceCrossModuleSameOwner,
+			Strength:   coupling.StrengthModel,
+			Volatility: coupling.VolatilityHigh,
+			Score: coupling.EdgeScore{
+				Scored: true,
+				Band:   coupling.SeverityCritical,
+				Breakdown: coupling.ScoreBreakdown{
+					Modularity:    1,
+					VolatilityVal: 6,
+				},
+			},
+		},
+		key("b", "c"): {
+			Distance:   coupling.DistanceCrossModuleSameOwner,
+			Strength:   coupling.StrengthFunctional,
+			Volatility: coupling.VolatilityMedium,
+			Score: coupling.EdgeScore{
+				Scored: true,
+				Band:   coupling.SeverityMedium,
+				Breakdown: coupling.ScoreBreakdown{
+					Modularity:    4,
+					VolatilityVal: 6,
+				},
+			},
+		},
+	}
+	s := buildClassifiedEdgeSummary(idx)
+	if s.ByBalanceDriver[balanceDriverVolatility] != 1 {
+		t.Fatalf("volatility driver = %d, want 1", s.ByBalanceDriver[balanceDriverVolatility])
+	}
+	if s.ByBalanceDriver[balanceDriverTie] != 1 {
+		t.Fatalf("tie driver = %d, want 1", s.ByBalanceDriver[balanceDriverTie])
+	}
+	if s.ByCriticalDriver[balanceDriverVolatility] != 1 {
+		t.Fatalf("critical volatility driver = %d, want 1", s.ByCriticalDriver[balanceDriverVolatility])
+	}
+}
+
 func TestBuildClassifiedEdgeSummary_TailRiskIncludesCloneOnlyContribution(t *testing.T) {
 	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
 	idx := coupling.Index{

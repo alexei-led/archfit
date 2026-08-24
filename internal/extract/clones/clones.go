@@ -24,7 +24,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/clone"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -83,16 +83,16 @@ func effectiveTimeout(configured, fallback time.Duration) time.Duration {
 // temp file, not stdout, so the seam is store-direct: the cached fact is the
 // PARSED result (clusters + files-scanned). Only StatusOK results are cached —
 // a timed-out or failed run must re-run next time (fact-cache.md D3).
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, timeout time.Duration, exclusions []string, cache *factcache.Store) ([]clone.Cluster, diagnostic.Coverage, error) {
+func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, timeout time.Duration, exclusions []string, cache *factcache.Store) ([]clone.Cluster, evidence.Coverage, error) {
 	if !enabled {
 		// Disabled by config — tool may or may not be installed. Report as
 		// disabled (not absent) so the pipeline does not generate an "install"
 		// coverage gap for a deliberate opt-out.
-		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusDisabled, Reason: reasonDisabled}, nil
+		return nil, evidence.Coverage{Tool: toolName, Status: evidence.StatusDisabled, Reason: reasonDisabled}, nil
 	}
 
 	if _, found := runner.Detect(ctx, toolName); !found {
-		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusAbsent, Reason: reasonNotInstalled}, nil
+		return nil, evidence.Coverage{Tool: toolName, Status: evidence.StatusAbsent, Reason: reasonNotInstalled}, nil
 	}
 
 	key := cacheKey(ctx, runner, root, exclusions, cache)
@@ -113,11 +113,11 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 
 	tmp, err := os.MkdirTemp("", "archfit-clones-")
 	if err != nil {
-		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusAbsent, Reason: reasonRunFailed}, nil
+		return nil, evidence.Coverage{Tool: toolName, Status: evidence.StatusAbsent, Reason: reasonRunFailed}, nil
 	}
 	defer os.RemoveAll(tmp) //nolint:errcheck
 
-	partial := diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusPartial, Reason: reasonRunFailed}
+	partial := evidence.Coverage{Tool: toolName, Status: evidence.StatusPartial, Reason: reasonRunFailed}
 
 	// Build jscpd args: --reporters json --output <tmp> [--ignore "<globs>"] <root>
 	// --ignore accepts a comma-separated list of glob patterns. Only added when
@@ -138,7 +138,7 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 	// (ctx.Err()). When the inner timeout fires, runner.Run returns
 	// context.DeadlineExceeded as err but ctx.Err() is nil.
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil
+		return nil, evidence.Coverage{Tool: toolName, Status: evidence.StatusTimedOut, Reason: reasonTimedOut}, nil
 	}
 	// jscpd (npm ≤3.x) exits 1 when it finds duplicates — a non-zero exit is NOT
 	// a fatal failure. Always try to read the report from disk; only treat as
@@ -172,12 +172,12 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 // FilesSeen/FilesApplicable are the source files jscpd scanned (its
 // statistics.total.sources), not the clone-pair count — a repo with 200
 // files and 4 clone pairs covered 200 files, not 4.
-func okCoverage(filesScanned int) diagnostic.Coverage {
-	return diagnostic.Coverage{
+func okCoverage(filesScanned int) evidence.Coverage {
+	return evidence.Coverage{
 		Tool:            toolName,
 		FilesSeen:       filesScanned,
 		FilesApplicable: filesScanned,
-		Status:          diagnostic.StatusOK,
+		Status:          evidence.StatusOK,
 	}
 }
 

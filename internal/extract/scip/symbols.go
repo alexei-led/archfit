@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -14,7 +14,7 @@ import (
 // reference edges. A missing toolchain (no indexer, no uv) or any non-fatal
 // failure yields an empty symbol.Graph with an absent/partial coverage record,
 // never an error — symbol-graph enrichment is best-effort.
-func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
+func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, evidence.Coverage, error) {
 	empty := symbol.Graph{}
 	ro, partial, ok := a.runSCIPPipeline(ctx, s.Root, toolNameSymbols)
 	if !ok {
@@ -29,19 +29,19 @@ func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, dia
 		// used against a Python version it does not yet support (e.g. 3.14).
 		// Return StatusPartial so coverage.go does not count this as "0/0 ok"
 		// and callers can surface an actionable note.
-		return empty, diagnostic.Coverage{
+		return empty, evidence.Coverage{
 			Tool:    toolNameSymbols,
 			Version: ro.indexer,
-			Status:  diagnostic.StatusPartial,
+			Status:  evidence.StatusPartial,
 			Reason:  "scip indexer produced an empty symbol index — if this is a Python project, scip-python may not support the current Python version; try Python 3.12 or 3.13",
 		}, nil
 	}
-	return g, diagnostic.Coverage{
+	return g, evidence.Coverage{
 		Tool:            toolNameSymbols,
 		Version:         ro.indexer,
 		FilesSeen:       len(g.Module),
 		FilesApplicable: len(g.Module),
-		Status:          diagnostic.StatusOK,
+		Status:          evidence.StatusOK,
 	}, nil
 }
 

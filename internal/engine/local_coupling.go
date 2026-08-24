@@ -4,7 +4,7 @@ import (
 	"sort"
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 )
@@ -26,10 +26,10 @@ const localCouplingOffenderCap = 5
 // endpoint when the source does not resolve); edges resolving to no module are
 // skipped — a same-module classification without module coverage carries no
 // actionable module key.
-func buildLocalCoupling(g *graph.Graph, idx coupling.Index, mm module.Map) []diagnostic.LocalCouplingModule {
+func buildLocalCoupling(g *graph.Graph, idx coupling.Index, mm module.Map) []evidence.LocalCouplingModule {
 	type agg struct {
 		scored, abstained, complexity, balanceSum int
-		offenders                                 []diagnostic.LocalCouplingEdge
+		offenders                                 []evidence.LocalCouplingEdge
 	}
 	byModule := make(map[string]*agg)
 
@@ -63,7 +63,7 @@ func buildLocalCoupling(g *graph.Graph, idx coupling.Index, mm module.Map) []dia
 			a.complexity++
 		}
 		if cl.Score.Band != coupling.SeverityNone {
-			off := diagnostic.LocalCouplingEdge{
+			off := evidence.LocalCouplingEdge{
 				From:     fromPath,
 				To:       toPath,
 				Strength: string(cl.Strength),
@@ -84,10 +84,10 @@ func buildLocalCoupling(g *graph.Graph, idx coupling.Index, mm module.Map) []dia
 	}
 	sort.Strings(names)
 
-	out := make([]diagnostic.LocalCouplingModule, 0, len(names))
+	out := make([]evidence.LocalCouplingModule, 0, len(names))
 	for _, name := range names {
 		a := byModule[name]
-		m := diagnostic.LocalCouplingModule{
+		m := evidence.LocalCouplingModule{
 			Module:          name,
 			ScoredEdges:     a.scored,
 			AbstainedEdges:  a.abstained,

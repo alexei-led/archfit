@@ -7,7 +7,7 @@ package rules
 import (
 	"fmt"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
@@ -34,7 +34,7 @@ const matchedByFile = "file"
 // rules run, by status.Assign against the baseline.
 type Evidence struct {
 	PatternMatches []pattern.Match
-	SyntaxFacts    []diagnostic.SyntaxFact // nil/empty when syntax is off; consumed by public_api_max
+	SyntaxFacts    []evidence.SyntaxFact // nil/empty when syntax is off; consumed by public_api_max
 }
 
 // Rule is the interface implemented by every built-in and user-defined rule.

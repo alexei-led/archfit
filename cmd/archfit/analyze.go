@@ -14,7 +14,7 @@ import (
 	"github.com/alexei-led/archfit/internal/decision"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/scan"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
@@ -328,7 +328,7 @@ func configLoadError(err error) error {
 // console.RenderReport); JSON/SARIF/markdown/scorecard keep their existing
 // machine/artifact renderers (unchanged contract). hardGate feeds the decision
 // band so a tripped tool-gate reads as FAIL even in report-only mode.
-func analyzeRender(deps *appDeps, diag diagnostic.Diagnostic, sc score.Scorecard, base *score.Scorecard, formats []string, hardGate bool) error {
+func analyzeRender(deps *appDeps, diag scan.Diagnostic, sc score.Scorecard, base *score.Scorecard, formats []string, hardGate bool) error {
 	for _, format := range formats {
 		var renderErr error
 		switch format {
@@ -357,7 +357,7 @@ func analyzeRender(deps *appDeps, diag diagnostic.Diagnostic, sc score.Scorecard
 // appendAISummary emits the off-gate AI narrative after the deterministic
 // report. Text/Markdown runs append to stdout; machine-only formats route the
 // review to stderr so stdout remains parseable JSON/SARIF/scorecard output.
-func appendAISummary(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag diagnostic.Diagnostic, sc score.Scorecard, formats []string) error {
+func appendAISummary(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag scan.Diagnostic, sc score.Scorecard, formats []string) error {
 	reviewDeps := deps
 	if !llmReviewCanUseStdout(formats) {
 		copyDeps := *deps

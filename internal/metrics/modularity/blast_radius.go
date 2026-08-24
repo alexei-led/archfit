@@ -7,7 +7,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/metrics/internal/modgraph"
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
@@ -33,7 +33,7 @@ type hubInfo struct {
 // Calculate computes per-module blast radius and reports the hubs above the
 // threshold. Indeterminate (n/a) for graphs too small to have meaningful
 // concentration.
-func (m BlastRadiusMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
+func (m BlastRadiusMetric) Calculate(in signal.CommonInput) report.MetricResult {
 	if in.Graph == nil {
 		return m.naResult()
 	}
@@ -61,7 +61,7 @@ func (m BlastRadiusMetric) Calculate(in signal.CommonInput) diagnostic.MetricRes
 	if n < result.ModularitySmallN {
 		confidence = result.ConfidenceLow
 	}
-	return diagnostic.MetricResult{
+	return report.MetricResult{
 		Name:       m.Name(),
 		Value:      float64(len(hubs)),
 		Display:    blastDisplay(hubs, n),
@@ -71,16 +71,16 @@ func (m BlastRadiusMetric) Calculate(in signal.CommonInput) diagnostic.MetricRes
 		Mode:       result.ModeCount,
 		Definition: "modules whose transitive reverse-dependencies exceed " +
 			fmt.Sprintf("%.0f%%", hubBlastThreshold*100) + " of the codebase (change-impact hubs)",
-		Direction: diagnostic.DirectionHigherIsWorse,
+		Direction: report.DirectionHigherIsWorse,
 	}
 }
 
-func (m BlastRadiusMetric) naResult() diagnostic.MetricResult {
-	return diagnostic.MetricResult{
+func (m BlastRadiusMetric) naResult() report.MetricResult {
+	return report.MetricResult{
 		Name: m.Name(), Value: 0, Display: result.BandNA, Band: result.BandNA,
 		Confidence: result.ConfidenceLow, Version: m.Version(), Mode: result.ModeCount,
 		Definition: "modules whose transitive reverse-dependencies are a large fraction of the codebase",
-		Direction:  diagnostic.DirectionHigherIsWorse,
+		Direction:  report.DirectionHigherIsWorse,
 	}
 }
 

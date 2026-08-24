@@ -26,6 +26,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/model/scan"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/ports"
@@ -157,7 +158,7 @@ func (rc runContext) scanDir() string {
 // promoted findings are visible to agenttask.Build below and to every renderer
 // — then the agent_tasks repair block is attached from the active gate
 // findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runContext, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, score.Scorecard, error) {
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runContext, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (scan.Diagnostic, score.Scorecard, error) {
 	scanDir := rc.scanDir()
 	// Merge the built-in artifact/cache excludes into the config exclusions
 	// (additive — see scope.MergeExclusions) before projecting any view, so every
@@ -178,7 +179,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	deps.reportPhase("Discovering project")
 	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: scanDir, runner: deps.Runner})
 	if err != nil {
-		return diagnostic.Diagnostic{}, score.Scorecard{}, err
+		return scan.Diagnostic{}, score.Scorecard{}, err
 	}
 
 	// Extractor fact cache (fact-cache.md D1/D2): facts/ beside the AI cache
@@ -192,7 +193,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 
 	rs, err := rules.New(cfg.ForRules())
 	if err != nil {
-		return diagnostic.Diagnostic{}, score.Scorecard{}, err
+		return scan.Diagnostic{}, score.Scorecard{}, err
 	}
 	ms := append(metrics.New(cfg.Metrics), extraMetrics...)
 
@@ -324,7 +325,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	// labels file must never silently alter the gate.
 	lbls, err := labelsio.Load(filepath.Join(rc.BundleDir, defaultLabelsPath))
 	if err != nil {
-		return diagnostic.Diagnostic{}, score.Scorecard{}, err
+		return scan.Diagnostic{}, score.Scorecard{}, err
 	}
 
 	// SCIP symbol-level strength is opt-in (analyzers.scip.enabled: true): the indexer is
@@ -589,7 +590,7 @@ func couplingGateView(cfg config.Config) score.CouplingGate {
 // consistent with the verdict. `archfit baseline` never persists it — the
 // trip is per-run state, and a stored fingerprint the engine never
 // regenerates would surface as a phantom "fixed" finding.
-func applyCouplingGate(diag *diagnostic.Diagnostic, card score.Scorecard, gate score.CouplingGate, base baseline.Baseline) {
+func applyCouplingGate(diag *scan.Diagnostic, card score.Scorecard, gate score.CouplingGate, base baseline.Baseline) {
 	trip := score.EvaluateCouplingGate(card, gate, base.CouplingScore())
 	if !trip.Tripped {
 		return

@@ -21,8 +21,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/model/scan"
 	"github.com/alexei-led/archfit/internal/score"
 )
 
@@ -70,7 +72,7 @@ const (
 // point of the command.
 type ConfigCompareSide struct {
 	// Diag is the completed diagnostic for this side.
-	Diag diagnostic.Diagnostic
+	Diag scan.Diagnostic
 	// Score is the scorecard synthesised from Diag.
 	Score score.Scorecard
 }
@@ -239,7 +241,7 @@ const (
 
 // partialBothReason states the shared unresolved-specifier degradation with the
 // counts each side earned it with.
-func partialBothReason(cur, cand diagnostic.Coverage) string {
+func partialBothReason(cur, cand evidence.Coverage) string {
 	return fmt.Sprintf("%s (current %s, candidate %s)",
 		reasonPartialBoth, UnresolvedMagnitude(cur), UnresolvedMagnitude(cand))
 }
@@ -247,13 +249,13 @@ func partialBothReason(cur, cand diagnostic.Coverage) string {
 // degradedBothReason states the shared complete-inputs/degraded-precision
 // partial with each side's count, for the same reason partialBothReason carries
 // its numbers: the pairing rule is magnitude-blind.
-func degradedBothReason(cur, cand diagnostic.Coverage) string {
+func degradedBothReason(cur, cand evidence.Coverage) string {
 	return fmt.Sprintf("%s (current %s, candidate %s)",
 		reasonDegradedBoth, DegradedMagnitude(cur), DegradedMagnitude(cand))
 }
 
 // compareCoverage grades the union of analyzer names across both sides.
-func compareCoverage(current, candidate diagnostic.Diagnostic) ConfigCompareCoverage {
+func compareCoverage(current, candidate scan.Diagnostic) ConfigCompareCoverage {
 	curRows := rowsByTool(current.ToolCoverage)
 	candRows := rowsByTool(candidate.ToolCoverage)
 	primary := primaryTools(current, candidate)
@@ -288,9 +290,9 @@ func compareCoverage(current, candidate diagnostic.Diagnostic) ConfigCompareCove
 // analyzer that drops out of the comparison entirely.
 func gradeTool(
 	tool string,
-	cur, cand []diagnostic.Coverage,
+	cur, cand []evidence.Coverage,
 	primary map[string]struct{},
-	curGaps, candGaps []diagnostic.CoverageGap,
+	curGaps, candGaps []evidence.CoverageGap,
 ) (grade CoverageComparability, reason string, ignored bool) {
 	// A side without exactly one row cannot be paired: nothing to compare
 	// against, or no way to know which duplicate pairs with which.
@@ -305,9 +307,9 @@ func gradeTool(
 		return CoverageNotComparable, reasonStatusMoved, false
 	}
 	switch c.Status {
-	case diagnostic.StatusOK:
+	case evidence.StatusOK:
 		return CoverageComparable, "", false
-	case diagnostic.StatusPartial:
+	case evidence.StatusPartial:
 		// Both sides survived unstableStatus, so both are one of the two partials
 		// that nothing can hide behind: a completed run with unresolved import
 		// specifiers, or a run whose inputs were all present with only per-edge
@@ -321,7 +323,7 @@ func gradeTool(
 			return CoverageComparableWithGaps, degradedBothReason(c, d), false
 		}
 		return CoverageComparableWithGaps, partialBothReason(c, d), false
-	case diagnostic.StatusAbsent:
+	case evidence.StatusAbsent:
 		// Gap presence discriminates for PRIMARY analyzers only, and it is read
 		// there as a statement about the TREE: a per-language graph analyzer
 		// absent WITHOUT a gap was suppressed because that language's project
@@ -358,7 +360,7 @@ func gradeTool(
 			}
 		}
 		return CoverageComparableWithGaps, reasonAbsentBoth, false
-	case diagnostic.StatusDisabled:
+	case evidence.StatusDisabled:
 		return CoverageComparableWithGaps, reasonDisabled, false
 	default:
 		// An equal but unrecognised status is not provably comparable. Abstain
@@ -394,8 +396,8 @@ const (
 //
 // `analyze --base` reads this same function (cmd/archfit/git_finding_delta.go)
 // so the two comparison paths cannot grade one coverage row differently.
-func PartialFromUnresolvedSpecifiers(c diagnostic.Coverage) bool {
-	if c.Status != diagnostic.StatusPartial || c.Unresolved <= 0 {
+func PartialFromUnresolvedSpecifiers(c evidence.Coverage) bool {
+	if c.Status != evidence.StatusPartial || c.Unresolved <= 0 {
 		return false
 	}
 	return c.Tool == toolDepCruiser || c.Tool == toolGrimp
@@ -417,8 +419,8 @@ func PartialFromUnresolvedSpecifiers(c diagnostic.Coverage) bool {
 //
 // `analyze --base` reads this same function (cmd/archfit/git_finding_delta.go),
 // for the same reason PartialFromUnresolvedSpecifiers is shared.
-func PartialFromDegradedPrecision(c diagnostic.Coverage) bool {
-	if c.Status != diagnostic.StatusPartial {
+func PartialFromDegradedPrecision(c evidence.Coverage) bool {
+	if c.Status != evidence.StatusPartial {
 		return false
 	}
 	return c.UnresolvedInputsMissing == 0 && c.UnresolvedPrecisionOnly > 0
@@ -427,11 +429,11 @@ func PartialFromDegradedPrecision(c diagnostic.Coverage) bool {
 // unstableStatus reports whether a coverage row means the analyzer could have
 // produced findings and did not finish doing so. Every partial that is not a
 // completed unresolved-specifier run counts, plus every timeout.
-func unstableStatus(c diagnostic.Coverage) bool {
-	if c.Status == diagnostic.StatusPartial {
+func unstableStatus(c evidence.Coverage) bool {
+	if c.Status == evidence.StatusPartial {
 		return !PartialFromUnresolvedSpecifiers(c) && !PartialFromDegradedPrecision(c)
 	}
-	return c.Status == diagnostic.StatusTimedOut
+	return c.Status == evidence.StatusTimedOut
 }
 
 // UnresolvedMagnitude renders one coverage row's unresolved count for a human
@@ -440,7 +442,7 @@ func unstableStatus(c diagnostic.Coverage) bool {
 // unresolved" would be indistinguishable in the output that discloses the
 // degradation. Shared with the --base path for the same reason as
 // PartialFromUnresolvedSpecifiers.
-func UnresolvedMagnitude(c diagnostic.Coverage) string {
+func UnresolvedMagnitude(c evidence.Coverage) string {
 	if c.SpecifiersSeen > 0 {
 		return fmt.Sprintf("%d/%d unresolved", c.Unresolved, c.SpecifiersSeen)
 	}
@@ -451,14 +453,14 @@ func UnresolvedMagnitude(c diagnostic.Coverage) string {
 // Separate from UnresolvedMagnitude because "unresolved" names the other
 // condition — the one where inputs are MISSING — and one word for both is what
 // this split exists to undo.
-func DegradedMagnitude(c diagnostic.Coverage) string {
+func DegradedMagnitude(c evidence.Coverage) string {
 	return fmt.Sprintf("%d degraded", c.UnresolvedPrecisionOnly)
 }
 
 // rowsByTool groups coverage rows by analyzer name, sorted by status within each
 // tool so a duplicate pair renders deterministically.
-func rowsByTool(rows []diagnostic.Coverage) map[string][]diagnostic.Coverage {
-	out := make(map[string][]diagnostic.Coverage, len(rows))
+func rowsByTool(rows []evidence.Coverage) map[string][]evidence.Coverage {
+	out := make(map[string][]evidence.Coverage, len(rows))
 	for _, c := range rows {
 		out[c.Tool] = append(out[c.Tool], c)
 	}
@@ -469,7 +471,7 @@ func rowsByTool(rows []diagnostic.Coverage) map[string][]diagnostic.Coverage {
 }
 
 // unionTools returns every analyzer name seen on either side, sorted.
-func unionTools(a, b map[string][]diagnostic.Coverage) []string {
+func unionTools(a, b map[string][]evidence.Coverage) []string {
 	seen := make(map[string]struct{}, len(a)+len(b))
 	for tool := range a {
 		seen[tool] = struct{}{}
@@ -488,7 +490,7 @@ func unionTools(a, b map[string][]diagnostic.Coverage) []string {
 // primaryTools is the union of both sides' declared per-language graph
 // analyzers. Empty when neither diagnostic declares any, which conservatively
 // makes every absent row a reported gap instead of an ignored one.
-func primaryTools(a, b diagnostic.Diagnostic) map[string]struct{} {
+func primaryTools(a, b scan.Diagnostic) map[string]struct{} {
 	out := make(map[string]struct{}, len(a.PrimaryExtractorTools)+len(b.PrimaryExtractorTools))
 	for _, t := range a.PrimaryExtractorTools {
 		out[t] = struct{}{}
@@ -503,7 +505,7 @@ func primaryTools(a, b diagnostic.Diagnostic) map[string]struct{} {
 // Exported because `analyze --base` (cmd/archfit/git_finding_delta.go) reads gap
 // presence under the SAME rule this file applies, and a second copy of the loop
 // is a second place for that rule to drift.
-func HasCoverageGap(gaps []diagnostic.CoverageGap, tool string) bool {
+func HasCoverageGap(gaps []evidence.CoverageGap, tool string) bool {
 	for _, g := range gaps {
 		if g.Tool == tool {
 			return true
@@ -513,7 +515,7 @@ func HasCoverageGap(gaps []diagnostic.CoverageGap, tool string) bool {
 }
 
 // renderRows renders one side's coverage statuses for a detail entry.
-func renderRows(rows []diagnostic.Coverage) string {
+func renderRows(rows []evidence.Coverage) string {
 	if len(rows) == 0 {
 		return CoverageRowMissing
 	}
@@ -564,7 +566,7 @@ func compareScore(current, candidate score.Scorecard) *int {
 // the cross-boundary edges the scorer considered, so it is compared as a
 // fraction. External edges are excluded from that denominator entirely, so their
 // growth is only visible as an absolute count.
-func measurementWarnings(current, candidate *diagnostic.ClassifiedEdgeSummary) []ConfigCompareWarning {
+func measurementWarnings(current, candidate *report.ClassifiedEdgeSummary) []ConfigCompareWarning {
 	curScored, curAbstained, curExternal := edgeCounts(current)
 	candScored, candAbstained, candExternal := edgeCounts(candidate)
 
@@ -610,7 +612,7 @@ func scoredShareFell(curScored, curDen, candScored, candDen int) bool {
 
 // edgeCounts reads the three measurement counters, treating an absent summary
 // (classification did not run) as zero.
-func edgeCounts(s *diagnostic.ClassifiedEdgeSummary) (scored, abstained, external int) {
+func edgeCounts(s *report.ClassifiedEdgeSummary) (scored, abstained, external int) {
 	if s == nil {
 		return 0, 0, 0
 	}

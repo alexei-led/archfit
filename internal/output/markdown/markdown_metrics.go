@@ -5,12 +5,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // writeBeyondBCMetrics renders the "Supporting structural metrics (beyond Balanced
 // Coupling)" section. These are report-only and never gate.
-func writeBeyondBCMetrics(b *strings.Builder, metrics []diagnostic.MetricResult) {
+func writeBeyondBCMetrics(b *strings.Builder, metrics []report.MetricResult) {
 	b.WriteString("\n## Supporting structural metrics (beyond Balanced Coupling)\n\n")
 	b.WriteString("Report-only. These metrics support Balanced Coupling reasoning but never gate.\n\n")
 
@@ -27,7 +29,7 @@ func writeBeyondBCMetrics(b *strings.Builder, metrics []diagnostic.MetricResult)
 // how the distance dimension was resolved for this run.
 // code_structure is always-on; ownership and deploy_unit come from tool coverage.
 // Unresolved modules are counted from extractor coverage records.
-func writeDistanceConfidence(b *strings.Builder, d diagnostic.Diagnostic) {
+func writeDistanceConfidence(b *strings.Builder, d scan.Diagnostic) {
 	// owner_source is a first-class diagnostic field (config|codeowners|git|none).
 	ownerSrc := d.OwnerSource
 	// Collect remaining distance-signal sources from tool coverage entries.
@@ -132,7 +134,7 @@ func formatInts(values []int) string {
 	return strings.Join(parts, ", ")
 }
 
-func formatDistanceCounts(values []diagnostic.DistanceCount) string {
+func formatDistanceCounts(values []report.DistanceCount) string {
 	if len(values) == 0 {
 		return "-"
 	}
@@ -150,7 +152,7 @@ const fileFactsTopN = 5
 // each axis (inbound module fan-in, outbound destinations, LOC). Numbers only —
 // no risk labels or ranking verdicts; the full per-module list is in the JSON
 // output. Omitted entirely when no facts were collected (SCIP off/absent).
-func writeFileFacts(b *strings.Builder, facts []diagnostic.FileFact) {
+func writeFileFacts(b *strings.Builder, facts []evidence.FileFact) {
 	if len(facts) == 0 {
 		return
 	}
@@ -159,14 +161,14 @@ func writeFileFacts(b *strings.Builder, facts []diagnostic.FileFact) {
 
 	axes := []struct {
 		label string
-		value func(diagnostic.FileFact) int
+		value func(evidence.FileFact) int
 	}{
-		{"inbound module fan-in", func(f diagnostic.FileFact) int { return f.InboundModuleFanIn }},
-		{"outbound destinations", func(f diagnostic.FileFact) int { return f.OutboundDestinations }},
-		{"LOC", func(f diagnostic.FileFact) int { return f.LOC }},
+		{"inbound module fan-in", func(f evidence.FileFact) int { return f.InboundModuleFanIn }},
+		{"outbound destinations", func(f evidence.FileFact) int { return f.OutboundDestinations }},
+		{"LOC", func(f evidence.FileFact) int { return f.LOC }},
 	}
 	for _, axis := range axes {
-		ranked := make([]diagnostic.FileFact, len(facts))
+		ranked := make([]evidence.FileFact, len(facts))
 		copy(ranked, facts)
 		sort.SliceStable(ranked, func(i, j int) bool {
 			if v1, v2 := axis.value(ranked[i]), axis.value(ranked[j]); v1 != v2 {
@@ -196,7 +198,7 @@ const syntaxSurfaceExportedTopN = 20
 // counts by kind, the public API (exported declarations) grouped by file, and
 // detected architectural roles/routes. Omitted entirely when SyntaxFacts is
 // empty (syntax disabled or sg absent) — no false signal, no empty section.
-func writeSyntaxSurface(b *strings.Builder, facts []diagnostic.SyntaxFact) {
+func writeSyntaxSurface(b *strings.Builder, facts []evidence.SyntaxFact) {
 	if len(facts) == 0 {
 		return
 	}
@@ -248,7 +250,7 @@ func writeSyntaxSurface(b *strings.Builder, facts []diagnostic.SyntaxFact) {
 	}
 
 	// Public API list (exported declarations), grouped by file, capped.
-	var exported []diagnostic.SyntaxFact
+	var exported []evidence.SyntaxFact
 	for _, f := range facts {
 		if f.Exported {
 			exported = append(exported, f)
@@ -297,7 +299,7 @@ func writeSyntaxSurface(b *strings.Builder, facts []diagnostic.SyntaxFact) {
 // writeConnascenceSummary prints the report-only deterministic connascence block.
 // It is deliberately compact: counts by kind/source plus explicit unmeasured
 // categories, with no score language.
-func writeConnascenceSummary(b *strings.Builder, r *diagnostic.ConnascenceReport) {
+func writeConnascenceSummary(b *strings.Builder, r *evidence.ConnascenceReport) {
 	if r == nil {
 		return
 	}
@@ -323,7 +325,7 @@ func writeConnascenceSummary(b *strings.Builder, r *diagnostic.ConnascenceReport
 	}
 }
 
-func formatConnascenceRoadmap(items []diagnostic.ConnascenceRoadmapItem) string {
+func formatConnascenceRoadmap(items []evidence.ConnascenceRoadmapItem) string {
 	parts := make([]string, 0, len(items))
 	for _, item := range items {
 		part := item.Kind + "=" + item.CurrentStatus
@@ -335,7 +337,7 @@ func formatConnascenceRoadmap(items []diagnostic.ConnascenceRoadmapItem) string 
 	return strings.Join(parts, ", ")
 }
 
-func writeDynamicConnascenceSignals(b *strings.Builder, block *diagnostic.DynamicConnascenceSignals) {
+func writeDynamicConnascenceSignals(b *strings.Builder, block *evidence.DynamicConnascenceSignals) {
 	if block == nil || len(block.Signals) == 0 {
 		return
 	}
@@ -353,7 +355,7 @@ func writeDynamicConnascenceSignals(b *strings.Builder, block *diagnostic.Dynami
 		fmt.Fprintf(b, "- reason: %s\n", block.ReportOnlyReason)
 	}
 
-	ranked := make([]diagnostic.DynamicConnascenceSignal, len(block.Signals))
+	ranked := make([]evidence.DynamicConnascenceSignal, len(block.Signals))
 	copy(ranked, block.Signals)
 	sort.SliceStable(ranked, func(i, j int) bool {
 		if ranked[i].Count != ranked[j].Count {
@@ -384,7 +386,7 @@ func writeDynamicConnascenceSignals(b *strings.Builder, block *diagnostic.Dynami
 	}
 }
 
-func dynamicConnascenceSites(sites []diagnostic.DynamicConnascenceSite) string {
+func dynamicConnascenceSites(sites []evidence.DynamicConnascenceSite) string {
 	parts := make([]string, 0, runtimeAsyncSampleN)
 	for i, s := range sites {
 		if i == runtimeAsyncSampleN {
@@ -408,7 +410,7 @@ func formatCounts(counts map[string]int) string {
 	return strings.Join(parts, ", ")
 }
 
-func writeSemanticStrengthOverlay(b *strings.Builder, overlay *diagnostic.SemanticStrengthOverlay) {
+func writeSemanticStrengthOverlay(b *strings.Builder, overlay *evidence.SemanticStrengthOverlay) {
 	if overlay == nil || len(overlay.ByLanguage) == 0 {
 		return
 	}
@@ -443,7 +445,7 @@ const dynamicImportSampleN = 3
 // which are invisible to the static dependency graph and can hide cycles or
 // undercount coupling. Counts + sample sites only — no risk verdict; the full
 // list is in `--format json`. Omitted when none were found.
-func writeDynamicImports(b *strings.Builder, dyn []diagnostic.DynamicImport) {
+func writeDynamicImports(b *strings.Builder, dyn []evidence.DynamicImport) {
 	if len(dyn) == 0 {
 		return
 	}
@@ -456,7 +458,7 @@ func writeDynamicImports(b *strings.Builder, dyn []diagnostic.DynamicImport) {
 	b.WriteString("graph, so they can hide cycles and undercount coupling.\n\n")
 	fmt.Fprintf(b, "%d sites across %d modules (full list in `--format json`):\n\n", total, len(dyn))
 
-	ranked := make([]diagnostic.DynamicImport, len(dyn))
+	ranked := make([]evidence.DynamicImport, len(dyn))
 	copy(ranked, dyn)
 	sort.SliceStable(ranked, func(i, j int) bool {
 		if ranked[i].Count != ranked[j].Count {
@@ -484,7 +486,7 @@ const runtimeAsyncSampleN = 3
 // module rollup preserves the historical view; the relationship-level edges add
 // a concrete source-module → runtime-target fact set for future runtime-distance
 // review without changing today's score.
-func writeRuntimeAsync(b *strings.Builder, modules []diagnostic.RuntimeAsyncModule, edges []diagnostic.RuntimeAsyncEdge) {
+func writeRuntimeAsync(b *strings.Builder, modules []evidence.RuntimeAsyncModule, edges []evidence.RuntimeAsyncEdge) {
 	if len(modules) == 0 && len(edges) == 0 {
 		return
 	}
@@ -501,7 +503,7 @@ func writeRuntimeAsync(b *strings.Builder, modules []diagnostic.RuntimeAsyncModu
 	}
 	b.WriteString(". Full list in `--format json`.\n\n")
 
-	ranked := make([]diagnostic.RuntimeAsyncEdge, len(edges))
+	ranked := make([]evidence.RuntimeAsyncEdge, len(edges))
 	copy(ranked, edges)
 	sort.SliceStable(ranked, func(i, j int) bool {
 		if ranked[i].Count != ranked[j].Count {
@@ -524,7 +526,7 @@ func writeRuntimeAsync(b *strings.Builder, modules []diagnostic.RuntimeAsyncModu
 	}
 }
 
-func runtimeAsyncSites(sites []diagnostic.RuntimeAsyncSite) string {
+func runtimeAsyncSites(sites []evidence.RuntimeAsyncSite) string {
 	parts := make([]string, 0, runtimeAsyncSampleN)
 	for i, s := range sites {
 		if i == runtimeAsyncSampleN {
@@ -535,7 +537,7 @@ func runtimeAsyncSites(sites []diagnostic.RuntimeAsyncSite) string {
 	return strings.Join(parts, ", ")
 }
 
-func writeDistanceConfigCandidates(b *strings.Builder, candidates []diagnostic.DistanceConfigCandidate) {
+func writeDistanceConfigCandidates(b *strings.Builder, candidates []evidence.DistanceConfigCandidate) {
 	if len(candidates) == 0 {
 		return
 	}
@@ -547,7 +549,7 @@ func writeDistanceConfigCandidates(b *strings.Builder, candidates []diagnostic.D
 	b.WriteString("Report-only. Static external, runtime, and dynamic evidence can suggest `external_systems` or `deploy_unit` review, but these candidates never change distance, score, or gate verdicts.\n\n")
 	fmt.Fprintf(b, "%d signal(s) across %d candidate(s):\n\n", total, len(candidates))
 
-	ranked := make([]diagnostic.DistanceConfigCandidate, len(candidates))
+	ranked := make([]evidence.DistanceConfigCandidate, len(candidates))
 	copy(ranked, candidates)
 	sort.SliceStable(ranked, func(i, j int) bool {
 		if ranked[i].Count != ranked[j].Count {
@@ -577,7 +579,7 @@ func writeDistanceConfigCandidates(b *strings.Builder, candidates []diagnostic.D
 	}
 }
 
-func distanceCandidateSites(sites []diagnostic.DistanceConfigEvidenceSite) string {
+func distanceCandidateSites(sites []evidence.DistanceConfigEvidenceSite) string {
 	parts := make([]string, 0, runtimeAsyncSampleN)
 	for i, s := range sites {
 		if i == runtimeAsyncSampleN {
@@ -588,7 +590,7 @@ func distanceCandidateSites(sites []diagnostic.DistanceConfigEvidenceSite) strin
 	return strings.Join(parts, ", ")
 }
 
-func writeVolatilityCorroboration(b *strings.Builder, block *diagnostic.VolatilityCorroboration) {
+func writeVolatilityCorroboration(b *strings.Builder, block *evidence.VolatilityCorroboration) {
 	if block == nil {
 		return
 	}
@@ -637,7 +639,7 @@ func mdTableCell(s string) string {
 // retraction marker block: go.mod retract directives and package.json
 // "deprecated" fields. Omitted when none were found.
 // Never gates — evidence only.
-func writeDeprecatedDeps(b *strings.Builder, deps []diagnostic.DeprecatedDep) {
+func writeDeprecatedDeps(b *strings.Builder, deps []evidence.DeprecatedDep) {
 	if len(deps) == 0 {
 		return
 	}
@@ -660,7 +662,7 @@ func writeDeprecatedDeps(b *strings.Builder, deps []diagnostic.DeprecatedDep) {
 // to install it. This is what turns archfit's silent degradation into a visible,
 // actionable list — a missing tool is reported, never scored as good architecture.
 // Omitted when no gap was recorded.
-func writeCoverageGaps(b *strings.Builder, gaps []diagnostic.CoverageGap) {
+func writeCoverageGaps(b *strings.Builder, gaps []evidence.CoverageGap) {
 	if len(gaps) == 0 {
 		return
 	}
@@ -747,7 +749,7 @@ func quoteJoin(values []string) string {
 }
 
 // sampleSites renders up to dynamicImportSampleN sites as "file:line[kind]".
-func sampleSites(sites []diagnostic.DynamicImportSite) string {
+func sampleSites(sites []evidence.DynamicImportSite) string {
 	parts := make([]string, 0, dynamicImportSampleN)
 	for i, s := range sites {
 		if i == dynamicImportSampleN {

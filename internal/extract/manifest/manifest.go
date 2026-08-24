@@ -22,7 +22,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
 // Scan walks root looking for go.mod and package.json files and returns any
@@ -31,8 +31,8 @@ import (
 //
 // Ceiling: cargo yanked and live-version EOL require external registry queries
 // and are not detected here — they are routed to the LLM review path.
-func Scan(root string) []diagnostic.DeprecatedDep {
-	var deps []diagnostic.DeprecatedDep
+func Scan(root string) []evidence.DeprecatedDep {
+	var deps []evidence.DeprecatedDep
 	_ = filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -75,13 +75,13 @@ func Scan(root string) []diagnostic.DeprecatedDep {
 //	    v1.0.0 // comment
 //	    [v1.0.0, v1.0.5]
 //	)
-func scanGoMod(root, path string) []diagnostic.DeprecatedDep {
+func scanGoMod(root, path string) []evidence.DeprecatedDep {
 	data, err := os.ReadFile(path) //nolint:gosec // path from Walk under repo root
 	if err != nil {
 		return nil
 	}
 	rel := relPath(root, path)
-	var deps []diagnostic.DeprecatedDep
+	var deps []evidence.DeprecatedDep
 	lines := strings.Split(string(data), "\n")
 	inBlock := false
 	for _, raw := range lines {
@@ -118,18 +118,18 @@ func scanGoMod(root, path string) []diagnostic.DeprecatedDep {
 
 // parseRetractLine parses one retract version/range line (with optional comment).
 // Returns (dep, true) on success.
-func parseRetractLine(file, s string) (diagnostic.DeprecatedDep, bool) {
+func parseRetractLine(file, s string) (evidence.DeprecatedDep, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return diagnostic.DeprecatedDep{}, false
+		return evidence.DeprecatedDep{}, false
 	}
 	// Split off trailing "// comment".
 	subject, note := splitComment(s)
 	subject = strings.TrimSpace(subject)
 	if subject == "" {
-		return diagnostic.DeprecatedDep{}, false
+		return evidence.DeprecatedDep{}, false
 	}
-	return diagnostic.DeprecatedDep{
+	return evidence.DeprecatedDep{
 		File:    file,
 		Kind:    "retract",
 		Subject: subject,
@@ -149,7 +149,7 @@ func splitComment(s string) (string, string) {
 
 // scanPackageJSON reads a package.json and returns a DeprecatedDep when the
 // top-level "deprecated" field is a non-empty string.
-func scanPackageJSON(root, path string) []diagnostic.DeprecatedDep {
+func scanPackageJSON(root, path string) []evidence.DeprecatedDep {
 	data, err := os.ReadFile(path) //nolint:gosec // path from Walk under repo root
 	if err != nil {
 		return nil
@@ -178,7 +178,7 @@ func scanPackageJSON(root, path string) []diagnostic.DeprecatedDep {
 		}
 	}
 
-	return []diagnostic.DeprecatedDep{
+	return []evidence.DeprecatedDep{
 		{
 			File:    rel,
 			Kind:    "deprecated",

@@ -136,10 +136,12 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
   layer direction, cycles, and configured thresholds. Same input → byte-identical
   JSON, safe for CI.
 - **`agent_tasks` repair blocks** so an AI agent gets the fix, not just the error.
-- **A banded `coupling_balance` scorecard** built on
+- **A banded `coupling_balance` dimension** built on
   [Balanced Coupling](docs/guide/concepts.md) (integration strength × distance ×
-  volatility), reported as a 0–100 score — optionally gates the build via
-  `coupling.gate` (band floor / max score drop).
+  volatility). It is an edge-weighted coupling signal, not an overall
+  architecture-quality grade. JSON and Markdown show the strength, distance,
+  volatility, balance-driver, module-pair, and cap evidence. It can gate the
+  build via `coupling.gate` (band floor / max score drop).
 - **Visible evidence quality** — SCIP strength overlays, Rust deep-analysis
   coverage, distance-basis context, and dynamic connascence signals are reported
   separately so missing or report-only evidence is not mistaken for score input.

@@ -64,13 +64,13 @@ type UpdateReport struct {
 }
 
 // DistanceConfigCandidate is one review-only config hint derived from runtime or
-// dynamic evidence. It is a display copy of diagnostic.DistanceConfigCandidate;
+// dynamic evidence. It is a display copy of evidence.DistanceConfigCandidate;
 // config update never applies it automatically.
 //
 // The json tags are not decoration: this struct is serialized inside the
 // archfit.config-review.v1 document, whose every other key is snake_case, and
 // analyze --json already prints the same logical object under these names. The
-// one deliberate divergence from diagnostic.DistanceConfigCandidate is
+// one deliberate divergence from evidence.DistanceConfigCandidate is
 // evidence_refs — flattened "file:line" strings here, structured evidence_sites
 // there — so the key names the shape it actually carries.
 type DistanceConfigCandidate struct {

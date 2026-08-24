@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/syntax"
@@ -77,7 +77,7 @@ var skipDirs = map[string]bool{
 // The walk is best-effort: unreadable files contribute nothing.
 // FilesSeen and FilesApplicable equal the locMap length; status is always ok
 // because the walk is a pure filesystem operation with no external tool.
-func Run(root string) (locMap map[string]int, classes map[string]fileclass.FileClass, cov diagnostic.Coverage, err error) {
+func Run(root string) (locMap map[string]int, classes map[string]fileclass.FileClass, cov evidence.Coverage, err error) {
 	return RunWithConfig(root, syntax.FileClassConfig{})
 }
 
@@ -85,7 +85,7 @@ func Run(root string) (locMap map[string]int, classes map[string]fileclass.FileC
 // pattern overrides (custom mock frameworks, project-specific generated globs).
 // The pipeline calls this variant; Run is a convenience wrapper for callers
 // that have no config (tests, doctor, etc.).
-func RunWithConfig(root string, cfg syntax.FileClassConfig) (map[string]int, map[string]fileclass.FileClass, diagnostic.Coverage, error) {
+func RunWithConfig(root string, cfg syntax.FileClassConfig) (map[string]int, map[string]fileclass.FileClass, evidence.Coverage, error) {
 	locMap := make(map[string]int)
 	classes := make(map[string]fileclass.FileClass)
 
@@ -130,11 +130,11 @@ func RunWithConfig(root string, cfg syntax.FileClassConfig) (map[string]int, map
 		return nil
 	})
 
-	cov := diagnostic.Coverage{
+	cov := evidence.Coverage{
 		Tool:            toolName,
 		FilesSeen:       len(locMap),
 		FilesApplicable: len(locMap),
-		Status:          diagnostic.StatusOK,
+		Status:          evidence.StatusOK,
 	}
 	return locMap, classes, cov, nil
 }

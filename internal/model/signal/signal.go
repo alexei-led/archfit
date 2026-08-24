@@ -11,10 +11,11 @@ package signal
 import (
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 )
 
@@ -47,7 +48,7 @@ type RunSignals struct {
 	// ExtraCoverage carries tool-coverage records for opt-in tools that run in cmd
 	// (loc, clones) rather than through the engine extractor loop.
 	// The engine appends these to the diagnostic ToolCoverage slice.
-	ExtraCoverage []diagnostic.Coverage
+	ExtraCoverage []evidence.Coverage
 	// DynamicImports carries the report-only dynamic/lazy-import sites detected by
 	// the dynimports adapter. Like ExtraCoverage, the engine reads it straight into
 	// the diagnostic (rolled up per module) — no metric ever sees it, and it never
@@ -61,21 +62,21 @@ type RunSignals struct {
 	// DeprecatedDeps carries the locally-declared deprecation/retraction markers
 	// detected by the manifest adapter. Report-only — never reaches a metric or
 	// the dependency graph.
-	DeprecatedDeps []diagnostic.DeprecatedDep
+	DeprecatedDeps []evidence.DeprecatedDep
 }
 
 // DynamicImportSignals carries the dynamic/lazy-import sites detected by the
 // dynimports adapter. Empty when none were found. Report-only — never reaches a
 // metric or the dependency graph.
 type DynamicImportSignals struct {
-	Sites []diagnostic.DynamicImportSite
+	Sites []evidence.DynamicImportSite
 }
 
 // RuntimeAsyncSignals carries the async-bridge sites detected by the runtime
 // adapter. Empty when none were found. Evidence-only — never annotates graph
 // edges, never consumed by classify or score, never alters the verdict.
 type RuntimeAsyncSignals struct {
-	Sites      []diagnostic.RuntimeAsyncSite
+	Sites      []evidence.RuntimeAsyncSite
 	Confidence string // "low" | "medium"
 }
 
@@ -95,17 +96,17 @@ type CommonInput struct {
 	Graph           *graph.Graph
 	Classifications coupling.Index
 	Findings        []finding.Finding
-	Baseline        diagnostic.MetricSnapshot
-	ToolCoverage    []diagnostic.Coverage
+	Baseline        report.MetricSnapshot
+	ToolCoverage    []evidence.Coverage
 	ChangedFiles    []string
 	// SyntaxFacts carries the ast-grep syntax facts produced by the syntax provider.
 	// Empty when syntax is disabled or sg is absent. The syntax surface renderer
 	// and coverage metrics consume this to produce informational counts.
-	SyntaxFacts []diagnostic.SyntaxFact
+	SyntaxFacts []evidence.SyntaxFact
 	// DeprecatedDeps carries the locally-declared deprecation/retraction markers
 	// detected by the manifest adapter. Empty when none were found. The deprecated-
 	// deps renderer consumes this to produce informational counts.
-	DeprecatedDeps []diagnostic.DeprecatedDep
+	DeprecatedDeps []evidence.DeprecatedDep
 }
 
 // CollectedSignals is the engine's producer-side bag of everything gathered for

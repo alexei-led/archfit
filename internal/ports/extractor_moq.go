@@ -7,7 +7,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -25,7 +25,7 @@ var _ Extractor = &ExtractorMock{}
 //			CoverageToolFunc: func() string {
 //				panic("mock out the CoverageTool method")
 //			},
-//			ExtractFunc: func(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+//			ExtractFunc: func(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error) {
 //				panic("mock out the Extract method")
 //			},
 //			NameFunc: func() string {
@@ -42,7 +42,7 @@ type ExtractorMock struct {
 	CoverageToolFunc func() string
 
 	// ExtractFunc mocks the Extract method.
-	ExtractFunc func(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error)
+	ExtractFunc func(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error)
 
 	// NameFunc mocks the Name method.
 	NameFunc func() string
@@ -96,7 +96,7 @@ func (mock *ExtractorMock) CoverageToolCalls() []struct {
 }
 
 // Extract calls ExtractFunc.
-func (mock *ExtractorMock) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+func (mock *ExtractorMock) Extract(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error) {
 	if mock.ExtractFunc == nil {
 		panic("ExtractorMock.ExtractFunc: method is nil but Extractor.Extract was just called")
 	}

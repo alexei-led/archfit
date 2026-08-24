@@ -11,8 +11,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // confidenceHigh is the confidence value that needs no qualification in output.
@@ -45,7 +46,7 @@ func (r *Renderer) Format() string { return "markdown" }
 //  4. Supporting structural metrics (beyond Balanced Coupling)
 //  5. Distance confidence
 //  6. Agent tasks
-func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
+func (r *Renderer) Render(d scan.Diagnostic, w io.Writer) error {
 	var b strings.Builder
 	verdict, exitCode := verdictLabel(d.Verdict)
 
@@ -63,7 +64,7 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 	writeDelta(&b, d)
 
 	// Split metrics: BC-primary vs beyond-BC.
-	var primaryMetrics, beyondMetrics []diagnostic.MetricResult
+	var primaryMetrics, beyondMetrics []report.MetricResult
 	for _, m := range d.Metrics {
 		if beyondBCMetrics[m.Name] {
 			beyondMetrics = append(beyondMetrics, m)
@@ -204,11 +205,11 @@ func severityRank(s finding.Severity) int {
 	}
 }
 
-func verdictLabel(v diagnostic.Verdict) (string, int) {
+func verdictLabel(v report.Verdict) (string, int) {
 	switch v {
-	case diagnostic.VerdictFail:
+	case report.VerdictFail:
 		return "fail", 1
-	case diagnostic.VerdictWarn:
+	case report.VerdictWarn:
 		return "warn", 2
 	default:
 		return "pass", 0

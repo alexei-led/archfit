@@ -1,18 +1,18 @@
 package engine
 
 import (
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
 const unknownStrength = "unknown"
 
 type semanticStrengthOverlay struct {
-	byLanguage map[string]diagnostic.SemanticStrengthOverlayStats
+	byLanguage map[string]evidence.SemanticStrengthOverlayStats
 }
 
 func newSemanticStrengthOverlay() *semanticStrengthOverlay {
-	return &semanticStrengthOverlay{byLanguage: make(map[string]diagnostic.SemanticStrengthOverlayStats)}
+	return &semanticStrengthOverlay{byLanguage: make(map[string]evidence.SemanticStrengthOverlayStats)}
 }
 
 func (s *semanticStrengthOverlay) addCandidate(language, before string) {
@@ -48,13 +48,13 @@ func (s *semanticStrengthOverlay) merge(other *semanticStrengthOverlay) {
 	}
 }
 
-func (s *semanticStrengthOverlay) report() *diagnostic.SemanticStrengthOverlay {
+func (s *semanticStrengthOverlay) report() *evidence.SemanticStrengthOverlay {
 	if s == nil || len(s.byLanguage) == 0 {
 		return nil
 	}
-	byLanguage := make(map[string]diagnostic.SemanticStrengthOverlayStats, len(s.byLanguage))
+	byLanguage := make(map[string]evidence.SemanticStrengthOverlayStats, len(s.byLanguage))
 	for language, stats := range s.byLanguage {
-		byLanguage[language] = diagnostic.SemanticStrengthOverlayStats{
+		byLanguage[language] = evidence.SemanticStrengthOverlayStats{
 			CandidateEdges: stats.CandidateEdges,
 			Applied:        stats.Applied,
 			Missed:         stats.Missed,
@@ -62,10 +62,10 @@ func (s *semanticStrengthOverlay) report() *diagnostic.SemanticStrengthOverlay {
 			After:          copyCountMap(stats.After),
 		}
 	}
-	return &diagnostic.SemanticStrengthOverlay{ByLanguage: byLanguage}
+	return &evidence.SemanticStrengthOverlay{ByLanguage: byLanguage}
 }
 
-func (s *semanticStrengthOverlay) statsFor(language string) diagnostic.SemanticStrengthOverlayStats {
+func (s *semanticStrengthOverlay) statsFor(language string) evidence.SemanticStrengthOverlayStats {
 	stats := s.byLanguage[language]
 	if stats.Before == nil {
 		stats.Before = make(map[string]int)
@@ -100,9 +100,9 @@ func strengthBucket(strength string) string {
 	return strength
 }
 
-func tracksSemanticStrengthOverlay(cov diagnostic.Coverage) bool {
+func tracksSemanticStrengthOverlay(cov evidence.Coverage) bool {
 	switch cov.Status {
-	case diagnostic.StatusOK, diagnostic.StatusPartial:
+	case evidence.StatusOK, evidence.StatusPartial:
 		return true
 	default:
 		return false

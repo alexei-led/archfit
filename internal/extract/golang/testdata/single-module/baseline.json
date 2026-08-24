@@ -20,11 +20,17 @@
   "base": "",
   "classified_edges": {
     "abstained": 0,
+    "by_balance_driver": {
+      "volatility": 1
+    },
     "by_distance": {
       "cross_module_different_owner": 1
     },
     "by_distance_basis": {
       "ownership": 1
+    },
+    "by_module_pair": {
+      "a -\u003e b": 1
     },
     "by_severity": {
       "low": 1
@@ -205,6 +211,9 @@
     "confidence": "medium",
     "evidence": [
       "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
+      "strength distribution: functional=1; distance distribution: cross_module_different_owner=1; volatility distribution: low=1",
+      "balance drivers: volatility=1; critical drivers: ",
+      "top module pairs: a -\u003e b=1",
       "scored fraction: 100% (1 scored, 0 abstained, internal only)",
       "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
       "tail risk: worst balance 8/10, lower-decile balance 8/10, high-or-worse edges 0/1 (0%), critical 0, distributed-monolith 0",
@@ -213,6 +222,7 @@
       "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
     ],
     "name": "coupling_balance",
+    "raw_value": 78,
     "summary": "mean book balance 8.0/10 across 1 scored internal cross-boundary edges",
     "value": 78
   },
@@ -370,6 +380,9 @@
         "confidence": "medium",
         "evidence": [
           "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
+          "strength distribution: functional=1; distance distribution: cross_module_different_owner=1; volatility distribution: low=1",
+          "balance drivers: volatility=1; critical drivers: ",
+          "top module pairs: a -\u003e b=1",
           "scored fraction: 100% (1 scored, 0 abstained, internal only)",
           "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
           "tail risk: worst balance 8/10, lower-decile balance 8/10, high-or-worse edges 0/1 (0%), critical 0, distributed-monolith 0",
@@ -378,6 +391,7 @@
           "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
         ],
         "name": "coupling_balance",
+        "raw_value": 78,
         "summary": "mean book balance 8.0/10 across 1 scored internal cross-boundary edges",
         "value": 78
       }

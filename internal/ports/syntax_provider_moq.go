@@ -7,7 +7,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
@@ -24,7 +24,7 @@ var _ SyntaxProvider = &SyntaxProviderMock{}
 //			NameFunc: func() string {
 //				panic("mock out the Name method")
 //			},
-//			SyntaxFunc: func(ctx context.Context, s scope.Scope, langs []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
+//			SyntaxFunc: func(ctx context.Context, s scope.Scope, langs []string) ([]evidence.SyntaxFact, evidence.Coverage, error) {
 //				panic("mock out the Syntax method")
 //			},
 //		}
@@ -38,7 +38,7 @@ type SyntaxProviderMock struct {
 	NameFunc func() string
 
 	// SyntaxFunc mocks the Syntax method.
-	SyntaxFunc func(ctx context.Context, s scope.Scope, langs []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error)
+	SyntaxFunc func(ctx context.Context, s scope.Scope, langs []string) ([]evidence.SyntaxFact, evidence.Coverage, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -87,7 +87,7 @@ func (mock *SyntaxProviderMock) NameCalls() []struct {
 }
 
 // Syntax calls SyntaxFunc.
-func (mock *SyntaxProviderMock) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
+func (mock *SyntaxProviderMock) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]evidence.SyntaxFact, evidence.Coverage, error) {
 	if mock.SyntaxFunc == nil {
 		panic("SyntaxProviderMock.SyntaxFunc: method is nil but SyntaxProvider.Syntax was just called")
 	}

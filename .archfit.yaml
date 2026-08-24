@@ -48,12 +48,14 @@ modules:
     owner: alexei-led
     role: shared_model
     paths:
+      - internal/model/evidence/**
       - internal/model/graph/**
       - internal/model/symbol/**
       - internal/model/fileclass/**
       - internal/model/clone/**
       - internal/model/pattern/**
     public:
+      - internal/model/evidence
       - internal/model/graph
       - internal/model/symbol
       - internal/model/fileclass
@@ -63,28 +65,80 @@ modules:
     subdomain: supporting
     volatility: medium
 
-  # Core domain vocabulary: coupling, findings, diagnostics, signals, and
-  # architectural module semantics.
-  evaluation-model:
+  # Stable coupling vocabulary and book scorer.
+  coupling-model:
     owner: alexei-led
     role: shared_model
     paths:
       - internal/model/coupling/**
-      - internal/model/finding/**
-      - internal/model/diagnostic/**
-      - internal/model/report/**
-      - internal/model/signal/**
-      - internal/model/module/**
     public:
       - internal/model/coupling
-      - internal/model/finding
-      - internal/model/diagnostic
-      - internal/model/report
+    layer: model
+    subdomain: coupling
+    volatility: medium
+
+  # Signals assembled between extraction and metric stages.
+  pipeline-state:
+    owner: alexei-led
+    role: shared_model
+    paths:
+      - internal/model/signal/**
+    public:
       - internal/model/signal
+    layer: model
+    subdomain: supporting
+    volatility: medium
+
+  # Architectural module and ownership value types.
+  architecture-model:
+    owner: alexei-led
+    role: shared_model
+    paths:
+      - internal/model/module/**
+    public:
       - internal/model/module
     layer: model
+    subdomain: supporting
+    volatility: medium
+
+  # Finding contracts consumed by policy and verdict stages.
+  finding-model:
+    owner: alexei-led
+    role: shared_model
+    paths:
+      - internal/model/finding/**
+    public:
+      - internal/model/finding
+    layer: model
     subdomain: core
-    volatility: high
+    volatility: medium
+
+  # Stable score, decision, persistence, and output contracts.
+  report-contract:
+    owner: alexei-led
+    role: shared_model
+    paths:
+      - internal/model/report/**
+    public:
+      - internal/model/report
+    layer: model
+    subdomain: supporting
+    volatility: low
+
+  # Stable top-level scan contract. The compatibility diagnostic package is
+  # retained for older Go callers; new pipeline code uses this package.
+  scan-contract:
+    owner: alexei-led
+    role: shared_model
+    paths:
+      - internal/model/scan/**
+      - internal/model/diagnostic/**
+    public:
+      - internal/model/scan
+      - internal/model/diagnostic
+    layer: model
+    subdomain: supporting
+    volatility: low
 
   # Stable data-only projections consumed by pipeline stages.
   stage-views:

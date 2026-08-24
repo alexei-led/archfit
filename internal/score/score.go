@@ -6,8 +6,9 @@ package score
 import (
 	"strconv"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // RubricVersion is the scorecard contract version.
@@ -48,7 +49,7 @@ const (
 // findings still supply the worst-case edge count quoted in the evidence of an
 // unmeasured (n/a) dimension, and they are the only input on the legacy
 // nil-ClassifiedEdges path used by calibration suites.
-func Synthesize(d diagnostic.Diagnostic) Scorecard {
+func Synthesize(d scan.Diagnostic) Scorecard {
 	mi := indexMetrics(d.Metrics)
 	edges := bcEdges(d.Findings)
 
@@ -126,9 +127,9 @@ func applyMediumConfidenceCap(dim *Dimension, reason string) {
 }
 
 // metricIndex is metric results keyed by name for O(1) lookup.
-type metricIndex map[string]diagnostic.MetricResult
+type metricIndex map[string]report.MetricResult
 
-func indexMetrics(ms []diagnostic.MetricResult) metricIndex {
+func indexMetrics(ms []report.MetricResult) metricIndex {
 	mi := make(metricIndex, len(ms))
 	for _, m := range ms {
 		mi[m.Name] = m
@@ -139,10 +140,10 @@ func indexMetrics(ms []diagnostic.MetricResult) metricIndex {
 // cargoModulesPartial reports whether the Rust module-graph tool ran but only
 // covered some crates (status "partial") — the structural dimensions are then built
 // over an incomplete graph.
-func cargoModulesPartial(d diagnostic.Diagnostic) bool {
+func cargoModulesPartial(d scan.Diagnostic) bool {
 	for _, c := range d.ToolCoverage {
 		if c.Tool == "cargo-modules" {
-			return c.Status == diagnostic.StatusPartial
+			return c.Status == evidence.StatusPartial
 		}
 	}
 	return false
@@ -168,9 +169,9 @@ const toolDepCruiser = "dependency-cruiser"
 // coupling_balance excludes from its denominator entirely. SpecifiersSeen 0
 // (an extractor that does not track specifier totals) abstains rather than
 // divide by a proxy denominator.
-func tsUnresolvedPartial(d diagnostic.Diagnostic) bool {
+func tsUnresolvedPartial(d scan.Diagnostic) bool {
 	for _, c := range d.ToolCoverage {
-		if c.Tool != toolDepCruiser || c.Status != diagnostic.StatusPartial || c.SpecifiersSeen == 0 {
+		if c.Tool != toolDepCruiser || c.Status != evidence.StatusPartial || c.SpecifiersSeen == 0 {
 			continue
 		}
 		if float64(c.Unresolved)/float64(c.SpecifiersSeen) > tsUnresolvedRatioCeiling {

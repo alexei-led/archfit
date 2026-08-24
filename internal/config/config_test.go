@@ -1095,6 +1095,30 @@ func TestSelfConfig_CapabilityModuleMap(t *testing.T) {
 			wantPaths: []string{"internal/classify/**", "internal/rules/**", "internal/metrics/**", "internal/score/**", "internal/decision/**"},
 		},
 		{
+			name: "coupling-model", layer: layerModel, role: module.RoleSharedModel,
+			wantPaths: []string{"internal/model/coupling/**"},
+		},
+		{
+			name: "pipeline-state", layer: layerModel, role: module.RoleSharedModel,
+			wantPaths: []string{"internal/model/signal/**"},
+		},
+		{
+			name: "architecture-model", layer: layerModel, role: module.RoleSharedModel,
+			wantPaths: []string{"internal/model/module/**"},
+		},
+		{
+			name: "finding-model", layer: layerModel, role: module.RoleSharedModel,
+			wantPaths: []string{"internal/model/finding/**"},
+		},
+		{
+			name: "report-contract", layer: layerModel, role: module.RoleSharedModel,
+			wantPaths: []string{"internal/model/report/**"},
+		},
+		{
+			name: "scan-contract", layer: layerModel, role: module.RoleSharedModel,
+			wantPaths: []string{"internal/model/scan/**", "internal/model/diagnostic/**"},
+		},
+		{
 			name: "pipeline-engine", layer: "engine", role: module.RoleCore,
 			wantPaths: []string{"internal/engine/**"},
 		},
@@ -1628,6 +1652,7 @@ const (
 	// Layer name constants used in self-config conformance tests.
 	layerAdapter = "adapter"
 	layerCore    = "core"
+	layerModel   = "model"
 
 	// langTypeScript and yamlV1 appear in many tests; kept as constants to
 	// satisfy the goconst linter.

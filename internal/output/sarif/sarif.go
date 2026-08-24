@@ -17,8 +17,8 @@ import (
 	"io"
 	"sort"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // Renderer formats a Diagnostic as SARIF 2.1.0. Satisfies engine.Renderer.
@@ -101,7 +101,7 @@ type region struct {
 }
 
 // Render writes d to w as a SARIF 2.1.0 log.
-func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
+func (r *Renderer) Render(d scan.Diagnostic, w io.Writer) error {
 	// Distinct rule IDs, sorted, with index lookup.
 	ruleIDs := map[string]struct{}{}
 	for _, f := range d.Findings {

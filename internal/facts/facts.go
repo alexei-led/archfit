@@ -8,11 +8,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 )
 
-// Build assembles one diagnostic.FileFact per distinct module in g.
+// Build assembles one evidence.FileFact per distinct module in g.
 //
 // Inbound module fan-in and outbound distinct-destination counts come from
 // g.Refs + g.Module. File attribution (Files, LOC) joins exactly through
@@ -25,9 +25,9 @@ import (
 func Build(
 	g symbol.Graph,
 	fileLOC map[string]int,
-) []diagnostic.FileFact {
+) []evidence.FileFact {
 	if g.Empty() {
-		return []diagnostic.FileFact{}
+		return []evidence.FileFact{}
 	}
 
 	// Distinct module keys and per-module defining-file sets.
@@ -50,7 +50,7 @@ func Build(
 		}
 	}
 	if len(moduleSet) == 0 {
-		return []diagnostic.FileFact{}
+		return []evidence.FileFact{}
 	}
 
 	// Inbound fan-in and outbound destinations in one pass over Refs.
@@ -91,9 +91,9 @@ func Build(
 	}
 
 	// Assemble one FileFact per module key.
-	out := make([]diagnostic.FileFact, 0, len(moduleSet))
+	out := make([]evidence.FileFact, 0, len(moduleSet))
 	for mod := range moduleSet {
-		ff := diagnostic.FileFact{
+		ff := evidence.FileFact{
 			Module:               mod,
 			Files:                sortedKeys(moduleFiles[mod]),
 			InboundModuleFanIn:   len(inboundSources[mod]),

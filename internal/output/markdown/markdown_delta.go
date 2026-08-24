@@ -7,6 +7,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // writeAgentTasks prints the structured repair-task block: one entry per
@@ -74,7 +75,7 @@ func writeAdvisoryTasks(b *strings.Builder, tasks []diagnostic.AdvisoryTask) {
 // change / pre-existing / resolved), so a reviewer can tell what the change
 // introduced from what was already there. Omitted outside delta mode (d.Delta
 // nil). Each bucket holds finding IDs that join back to d.Findings.
-func writeDelta(b *strings.Builder, d diagnostic.Diagnostic) {
+func writeDelta(b *strings.Builder, d scan.Diagnostic) {
 	if d.Delta == nil {
 		return
 	}

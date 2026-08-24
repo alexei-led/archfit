@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -34,14 +34,14 @@ const (
 // has many such nodes, so the guard no longer trips.
 // runner is the (possibly fact-cache-decorated) runner for the per-crate
 // invocations; Detect passes through the decorator to the real runner.
-func (e *Extractor) runModuleGraph(ctx context.Context, runner toolrun.Runner, members []cargoPackage) ([]graph.Node, []graph.Edge, diagnostic.Coverage) {
+func (e *Extractor) runModuleGraph(ctx context.Context, runner toolrun.Runner, members []cargoPackage) ([]graph.Node, []graph.Edge, evidence.Coverage) {
 	if len(members) == 0 {
-		return nil, nil, diagnostic.Coverage{Tool: toolCargoModules, Status: statusAbsent}
+		return nil, nil, evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
 	}
 
 	// Detect cargo-modules binary.
 	if _, ok := runner.Detect(ctx, toolCargoModules); !ok {
-		return nil, nil, diagnostic.Coverage{Tool: toolCargoModules, Status: statusAbsent}
+		return nil, nil, evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
 	}
 
 	var allNodes []graph.Node
@@ -88,7 +88,7 @@ func (e *Extractor) runModuleGraph(ctx context.Context, runner toolrun.Runner, m
 		status = statusPartial
 	}
 
-	cov := diagnostic.Coverage{
+	cov := evidence.Coverage{
 		Tool:            toolCargoModules,
 		FilesSeen:       len(members),
 		FilesApplicable: len(members) - len(failed),

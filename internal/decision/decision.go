@@ -6,12 +6,13 @@
 package decision
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/model/scan"
 	"github.com/alexei-led/archfit/internal/score"
 )
 
@@ -48,7 +49,7 @@ const (
 // base is nil unless a delta is requested (then it's the base-ref scorecard).
 // hardGate forces FAIL even when the verdict is not fail (e.g. a tripped opt-in
 // tool gate).
-func Build(diag diagnostic.Diagnostic, sc score.Scorecard, base *score.Scorecard, hardGate bool) Report {
+func Build(diag scan.Diagnostic, sc score.Scorecard, base *score.Scorecard, hardGate bool) Report {
 	band := decideBand(diag, sc, hardGate)
 	dims := buildDims(sc.Dimensions)
 	recs := buildRecommendations(diag.Findings)
@@ -75,9 +76,9 @@ func Build(diag diagnostic.Diagnostic, sc score.Scorecard, base *score.Scorecard
 
 // decideBand applies the band-logic total order. Band ordering comes from
 // score.BandRank (the canonical source) so decision and score never diverge.
-func decideBand(diag diagnostic.Diagnostic, sc score.Scorecard, hardGate bool) Band {
+func decideBand(diag scan.Diagnostic, sc score.Scorecard, hardGate bool) Band {
 	// 1. FAIL: hard gate tripped OR verdict is fail.
-	if hardGate || diag.Verdict == diagnostic.VerdictFail {
+	if hardGate || diag.Verdict == report.VerdictFail {
 		return BandFail
 	}
 	// 2. NEEDS_ATTENTION: the OVERALL band is poor or critical. A single low
@@ -94,7 +95,7 @@ func decideBand(diag diagnostic.Diagnostic, sc score.Scorecard, hardGate bool) B
 	// 3. HEALTHY: overall is serviceable or strong AND no advisory warnings AND verdict is not warn.
 	if score.BandRank(sc.OverallBand) >= score.BandRank(score.BandServiceable) &&
 		diag.Summary.Warnings == 0 &&
-		diag.Verdict != diagnostic.VerdictWarn {
+		diag.Verdict != report.VerdictWarn {
 		return BandHealthy
 	}
 	// 4. Default arm — covers mixed overall, warnings present, warn verdict, etc.
@@ -125,7 +126,7 @@ var whatMovesTable = map[string]string{
 }
 
 // evidenceCap is the maximum number of evidence strings joined into Why.
-const evidenceCap = 3
+const evidenceCap = 5
 
 // buildDims converts Scorecard dimensions into DimReport entries.
 func buildDims(dims []score.Dimension) []DimReport {
@@ -136,6 +137,8 @@ func buildDims(dims []score.Dimension) []DimReport {
 			Value:      d.Value,
 			Band:       d.Band,
 			Confidence: d.Confidence,
+			RawValue:   d.RawValue,
+			CapApplied: d.CapApplied,
 			Meta:       d.Meta,
 			Why:        buildWhy(d),
 			WhatMoves:  whatMovesTable[d.Name], // empty string for meta dim
@@ -159,6 +162,9 @@ func buildWhy(d score.Dimension) string {
 			ev = ev[:evidenceCap]
 		}
 		parts = append(parts, strings.Join(ev, "; "))
+	}
+	if d.CapApplied != "" {
+		parts = append(parts, fmt.Sprintf("cap applied: %s (raw value %d)", d.CapApplied, d.RawValue))
 	}
 	return strings.Join(parts, " — ")
 }

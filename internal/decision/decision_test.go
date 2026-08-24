@@ -1,6 +1,7 @@
 package decision_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/decision"
@@ -273,6 +274,22 @@ func TestBuild_DimReportWhy(t *testing.T) {
 		if dr.Why == "" {
 			t.Errorf("DimReport.Why must not be empty for dim %q", dr.Name)
 		}
+	}
+}
+
+func TestBuild_DimReportCapDisclosure(t *testing.T) {
+	dims := []score.Dimension{{
+		Name:       score.DimCouplingBalance,
+		Value:      40,
+		RawValue:   67,
+		CapApplied: "distributed_monolith",
+		Band:       score.BandPoor,
+		Confidence: score.ConfidenceHigh,
+		Summary:    "distributed-monolith edges present",
+	}}
+	r := decision.Build(makeDiag(diagnostic.VerdictWarn, 0, 0), makeScorecard(40, dims), nil, false)
+	if len(r.Dimensions) != 1 || !strings.Contains(r.Dimensions[0].Why, "cap applied: distributed_monolith (raw value 67)") {
+		t.Fatalf("cap disclosure missing: %+v", r.Dimensions)
 	}
 }
 

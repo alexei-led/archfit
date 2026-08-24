@@ -26,7 +26,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/syntax"
 )
@@ -34,10 +34,10 @@ import (
 // Dynamic-import kind labels. These are coverage/evidence terms, not Balanced
 // Coupling vocabulary — the signal is a supporting risk hint, not a BC verdict.
 const (
-	kindLazyImport    = diagnostic.DynamicImportKindLazyImport    // python non-top-level import / from-import
-	kindImportlib     = diagnostic.DynamicImportKindImportlib     // python importlib.import_module / __import__
-	kindRequire       = diagnostic.DynamicImportKindRequire       // ts/js require(...)
-	kindDynamicImport = diagnostic.DynamicImportKindDynamicImport // ts/js dynamic import(...)
+	kindLazyImport    = evidence.DynamicImportKindLazyImport    // python non-top-level import / from-import
+	kindImportlib     = evidence.DynamicImportKindImportlib     // python importlib.import_module / __import__
+	kindRequire       = evidence.DynamicImportKindRequire       // ts/js require(...)
+	kindDynamicImport = evidence.DynamicImportKindDynamicImport // ts/js dynamic import(...)
 
 	langPython     = "python"
 	langTypeScript = "typescript"
@@ -63,8 +63,8 @@ var pyImportlib = regexp.MustCompile(`\b(?:importlib\.import_module|__import__)\
 // Detect walks root and returns every dynamic/lazy import site, sorted by
 // (file, line, kind) for determinism. Unreadable files are skipped (best-effort
 // evidence) — Detect never returns an error.
-func Detect(root string) []diagnostic.DynamicImportSite {
-	var sites []diagnostic.DynamicImportSite
+func Detect(root string) []evidence.DynamicImportSite {
+	var sites []evidence.DynamicImportSite
 	_ = filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -113,13 +113,13 @@ func tsSourceExt(ext string) bool {
 // function body) plus importlib/__import__ calls anywhere. A def-indentation
 // stack tracks whether the current line is inside a function: non-top-level
 // imports are the ones the static graph misses.
-func scanPython(root, path string) []diagnostic.DynamicImportSite {
+func scanPython(root, path string) []evidence.DynamicImportSite {
 	data, err := os.ReadFile(path) //nolint:gosec // path from Walk under repo root
 	if err != nil {
 		return nil
 	}
 	rel := relPath(root, path)
-	var sites []diagnostic.DynamicImportSite
+	var sites []evidence.DynamicImportSite
 	var defStack []int // indentation columns of currently-open def/async-def blocks
 	for i, raw := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimLeft(raw, " \t")
@@ -134,9 +134,9 @@ func scanPython(root, path string) []diagnostic.DynamicImportSite {
 		inFunc := len(defStack) > 0
 		switch {
 		case pyImportlib.MatchString(trimmed):
-			sites = append(sites, diagnostic.DynamicImportSite{File: rel, Line: i + 1, Kind: kindImportlib, Language: langPython})
+			sites = append(sites, evidence.DynamicImportSite{File: rel, Line: i + 1, Kind: kindImportlib, Language: langPython})
 		case inFunc && isPyImport(trimmed):
-			sites = append(sites, diagnostic.DynamicImportSite{File: rel, Line: i + 1, Kind: kindLazyImport, Language: langPython})
+			sites = append(sites, evidence.DynamicImportSite{File: rel, Line: i + 1, Kind: kindLazyImport, Language: langPython})
 		}
 		// Push after this line's checks so the `def` line itself is not "in func".
 		if strings.HasPrefix(trimmed, "def ") || strings.HasPrefix(trimmed, "async def ") {
@@ -150,13 +150,13 @@ func scanPython(root, path string) []diagnostic.DynamicImportSite {
 // / `export` statements never match (both regexes require a `(` after the
 // keyword). Comment lines — including multi-line `/* ... */` blocks — are skipped
 // so a commented-out require()/import() does not inflate the count.
-func scanTS(root, path string) []diagnostic.DynamicImportSite {
+func scanTS(root, path string) []evidence.DynamicImportSite {
 	data, err := os.ReadFile(path) //nolint:gosec // path from Walk under repo root
 	if err != nil {
 		return nil
 	}
 	rel := relPath(root, path)
-	var sites []diagnostic.DynamicImportSite
+	var sites []evidence.DynamicImportSite
 	inBlock := false
 	for i, raw := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(raw)
@@ -179,10 +179,10 @@ func scanTS(root, path string) []diagnostic.DynamicImportSite {
 			continue
 		}
 		if tsRequire.MatchString(trimmed) {
-			sites = append(sites, diagnostic.DynamicImportSite{File: rel, Line: i + 1, Kind: kindRequire, Language: langTypeScript})
+			sites = append(sites, evidence.DynamicImportSite{File: rel, Line: i + 1, Kind: kindRequire, Language: langTypeScript})
 		}
 		if tsDynImport.MatchString(trimmed) {
-			sites = append(sites, diagnostic.DynamicImportSite{File: rel, Line: i + 1, Kind: kindDynamicImport, Language: langTypeScript})
+			sites = append(sites, evidence.DynamicImportSite{File: rel, Line: i + 1, Kind: kindDynamicImport, Language: langTypeScript})
 		}
 	}
 	return sites

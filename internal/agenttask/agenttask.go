@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
@@ -188,13 +189,13 @@ func Build(
 	ruleTypes map[string]string,
 	modulePublic map[string][]string,
 	validation []string,
-	syntaxFacts []diagnostic.SyntaxFact,
+	syntaxFacts []evidence.SyntaxFact,
 	resolver PathResolver,
 ) []diagnostic.AgentTask {
 	// Build a file→facts index once so the per-task lookup is O(1).
-	var factsByFile map[string][]diagnostic.SyntaxFact
+	var factsByFile map[string][]evidence.SyntaxFact
 	if len(syntaxFacts) > 0 {
-		factsByFile = make(map[string][]diagnostic.SyntaxFact, len(syntaxFacts))
+		factsByFile = make(map[string][]evidence.SyntaxFact, len(syntaxFacts))
 		for _, sf := range syntaxFacts {
 			factsByFile[sf.File] = append(factsByFile[sf.File], sf)
 		}
@@ -272,8 +273,8 @@ func constraintsFor(f finding.Finding, modulePublic map[string][]string) []strin
 // declarationsFor returns the SyntaxFacts for the given files, in file + start-line
 // order. Returns nil (not an empty slice) when no facts match any file, so the
 // AgentTask.Declarations field stays absent from JSON output (omitempty).
-func declarationsFor(files []string, factsByFile map[string][]diagnostic.SyntaxFact) []diagnostic.SyntaxFact {
-	var out []diagnostic.SyntaxFact
+func declarationsFor(files []string, factsByFile map[string][]evidence.SyntaxFact) []evidence.SyntaxFact {
+	var out []evidence.SyntaxFact
 	for _, f := range files { // files is already sorted
 		out = append(out, factsByFile[f]...)
 	}

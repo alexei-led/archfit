@@ -5,8 +5,8 @@ import (
 	"io"
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // JSONRenderer marshals a Diagnostic plus its synthesised scorecard to JSON.
@@ -28,7 +28,7 @@ func (r *JSONRenderer) Format() string {
 // a version delta. Before this, an agent/CI consumer reading --json could not see
 // the 0-100 score, its driver, or any delta; only text/markdown carried them (F5).
 type envelope struct {
-	diagnostic.Diagnostic
+	scan.Diagnostic
 	Score report.Scorecard `json:"score"`
 	// ScoreVersion pins the BC score formula version (ordinals, severity
 	// mapping). Consumers key on it: scores are not comparable across
@@ -58,7 +58,7 @@ type dimensionDelta struct {
 
 // Render writes d plus its scorecard (and an optional delta vs base) as JSON.
 // schema_version is part of the embedded Diagnostic and is always present.
-func (r *JSONRenderer) Render(d diagnostic.Diagnostic, sc report.Scorecard, base *report.Scorecard, w io.Writer) error {
+func (r *JSONRenderer) Render(d scan.Diagnostic, sc report.Scorecard, base *report.Scorecard, w io.Writer) error {
 	env := envelope{
 		Diagnostic:      d,
 		Score:           sc,

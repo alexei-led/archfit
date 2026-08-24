@@ -383,6 +383,46 @@ func TestCouplingBalance_Distribution(t *testing.T) {
 	}
 }
 
+func TestCouplingBalance_ExplainsCapAndCriticalWording(t *testing.T) {
+	nonDegen := nonDegenMetricIndex()
+	capped := &diagnostic.ClassifiedEdgeSummary{
+		Scored:      10,
+		MeanBalance: 7,
+		BySeverity:  map[string]int{sevCritical: 1},
+	}
+	got := couplingBalance(nil, nonDegen, capped)
+	if got.RawValue != 67 || got.Value != 60 || got.CapApplied != "critical_edge" {
+		t.Fatalf("raw=%d value=%d cap=%q, want raw=67 value=60 cap=critical_edge", got.RawValue, got.Value, got.CapApplied)
+	}
+
+	uncapped := &diagnostic.ClassifiedEdgeSummary{
+		Scored:      400,
+		MeanBalance: 4.61,
+		BySeverity:  map[string]int{sevCritical: 123},
+	}
+	got = couplingBalance(nil, nonDegen, uncapped)
+	if got.RawValue != 40 || got.Value != 40 || got.CapApplied != "" {
+		t.Fatalf("raw=%d value=%d cap=%q, want raw=40 value=40 cap=none", got.RawValue, got.Value, got.CapApplied)
+	}
+	if strings.Contains(got.Summary, "high-strength") {
+		t.Fatalf("summary contains unsupported strength claim: %q", got.Summary)
+	}
+
+	distributed := &diagnostic.ClassifiedEdgeSummary{
+		Scored:              10,
+		MeanBalance:         7,
+		BySeverity:          map[string]int{sevCritical: 1},
+		DistributedMonolith: 1,
+	}
+	got = couplingBalance(nil, nonDegen, distributed)
+	if got.RawValue != 67 || got.Value != 40 || got.CapApplied != "distributed_monolith" {
+		t.Fatalf("raw=%d value=%d cap=%q, want raw=67 value=40 cap=distributed_monolith", got.RawValue, got.Value, got.CapApplied)
+	}
+	if strings.Contains(got.Summary, "high strength") {
+		t.Fatalf("distributed-monolith summary contains unsupported strength claim: %q", got.Summary)
+	}
+}
+
 func TestCouplingBalance_TinyFullyScoredGraphCapsConfidence(t *testing.T) {
 	cases := []struct {
 		name             string

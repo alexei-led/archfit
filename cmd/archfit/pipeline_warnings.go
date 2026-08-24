@@ -5,13 +5,14 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/scan"
 )
 
 // emitHealthWarnings writes actionable hints to stderr when the pipeline
 // result looks suspicious. Each warning includes a next-command suggestion.
 // cfg must be the same config used for the analysis run (already loaded; no
 // second disk read). root and configPath are used only in the command hints.
-func emitHealthWarnings(deps *appDeps, diag diagnostic.Diagnostic, cfg config.Config, root, configPath string) {
+func emitHealthWarnings(deps *appDeps, diag scan.Diagnostic, cfg config.Config, root, configPath string) {
 	if deps == nil {
 		return
 	}

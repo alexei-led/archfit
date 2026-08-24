@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -50,7 +51,7 @@ const (
 	kindEnum       = "enum"
 	kindAnnotation = "annotation"
 	kindTypeLeak   = "type_leak"
-	kindLazyImport = diagnostic.DynamicImportKindLazyImport
+	kindLazyImport = evidence.DynamicImportKindLazyImport
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.
@@ -236,13 +237,13 @@ var goTypeAliasNameRe = regexp.MustCompile(`^type\s+(\w+)`)
 // defined, collects SyntaxFacts, and returns them sorted by (File, StartLine,
 // Kind, Name). A missing "sg" binary returns empty facts with status "absent" —
 // never an error. Languages with no embedded rules are silently skipped.
-func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
+func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]evidence.SyntaxFact, evidence.Coverage, error) {
 	_, ok := a.runner.Detect(ctx, "sg")
 	if !ok {
-		return nil, diagnostic.Coverage{Tool: syntaxToolName, Status: diagnostic.StatusAbsent}, nil
+		return nil, evidence.Coverage{Tool: syntaxToolName, Status: evidence.StatusAbsent}, nil
 	}
 
-	var facts []diagnostic.SyntaxFact
+	var facts []evidence.SyntaxFact
 
 	runner := a.cachedRunner(ctx, s.Root)
 	for _, lang := range langs {
@@ -268,14 +269,14 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 			return decErr
 		})
 		if err != nil {
-			return nil, diagnostic.Coverage{}, err
+			return nil, evidence.Coverage{}, err
 		}
 		// sg present but exited non-zero with zero matches → rule file was rejected
 		// (e.g. YAML parse error). Silently continuing would produce zero facts and
 		// report status=ok — a false green. Surface it as a partial/degraded result.
 		if out.ExitCode != 0 && len(raw) == 0 {
 			reason := fmt.Sprintf("sg rejected rule file for %q (exit %d): %s", lang, out.ExitCode, strings.TrimSpace(string(out.Stderr)))
-			return nil, diagnostic.Coverage{Tool: syntaxToolName, Status: diagnostic.StatusPartial, Reason: reason}, nil
+			return nil, evidence.Coverage{Tool: syntaxToolName, Status: evidence.StatusPartial, Reason: reason}, nil
 		}
 		if len(raw) == 0 {
 			continue
@@ -321,7 +322,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 
 			exported := isExported(lang, m.RuleID, name)
 
-			facts = append(facts, diagnostic.SyntaxFact{
+			facts = append(facts, evidence.SyntaxFact{
 				Language:           lang,
 				File:               m.File,
 				Kind:               ki.Kind,
@@ -344,7 +345,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 	for i := range facts {
 		seen[facts[i].File] = struct{}{}
 	}
-	cov := diagnostic.Coverage{Tool: syntaxToolName, Status: diagnostic.StatusOK, FilesSeen: len(seen)}
+	cov := evidence.Coverage{Tool: syntaxToolName, Status: evidence.StatusOK, FilesSeen: len(seen)}
 	return facts, cov, nil
 }
 

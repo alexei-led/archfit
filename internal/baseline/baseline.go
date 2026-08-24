@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/status"
 )
@@ -83,9 +82,9 @@ func (s ScoreSnapshot) EffectiveRubricVersion() int {
 
 // Baseline is the on-disk baseline file structure.
 type Baseline struct {
-	SchemaVersion string                    `json:"schema_version"`
-	Accepted      []AcceptedFinding         `json:"accepted"`
-	Metrics       diagnostic.MetricSnapshot `json:"metrics"`
+	SchemaVersion string                `json:"schema_version"`
+	Accepted      []AcceptedFinding     `json:"accepted"`
+	Metrics       report.MetricSnapshot `json:"metrics"`
 	// Score is the coupling_balance snapshot; omitted in baselines written
 	// before score tracking or while the score was unmeasured.
 	Score *ScoreSnapshot `json:"score,omitempty"`
@@ -183,7 +182,7 @@ func Save(_ context.Context, path string, b Baseline) error {
 		b.Accepted = []AcceptedFinding{}
 	}
 	if b.Metrics == nil {
-		b.Metrics = diagnostic.MetricSnapshot{}
+		b.Metrics = report.MetricSnapshot{}
 	}
 
 	data, err := json.MarshalIndent(b, "", "  ")

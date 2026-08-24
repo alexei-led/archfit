@@ -4,7 +4,8 @@ import (
 	"fmt"
 
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
@@ -23,13 +24,13 @@ func (m CoverageMetric) Name() string { return "coverage" }
 func (m CoverageMetric) Version() string { return "coverage.v1" }
 
 // Calculate computes the coverage ratio and applies confidence-based band capping.
-func (m CoverageMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
+func (m CoverageMetric) Calculate(in signal.CommonInput) report.MetricResult {
 	var totalApplicable, totalExtracted, totalUnresolved int
 	for _, c := range in.ToolCoverage {
 		// An "absent" record means the extractor did not run or found nothing of
 		// its language (e.g. go/packages on a non-Go repo). It is not evidence of
 		// coverage, so it must not count toward the totals.
-		if c.Status == diagnostic.StatusAbsent {
+		if c.Status == evidence.StatusAbsent {
 			continue
 		}
 		// Auxiliary tools (e.g. ast-grep syntax pass) report FilesSeen > 0 but
@@ -52,7 +53,7 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult
 	// this gate exists to prevent, not evidence of full coverage.
 	if totalApplicable == 0 {
 		res := result.NACount(m.Name(), m.Version(), "extracted_files / applicable_files")
-		res.Direction = diagnostic.DirectionHigherIsBetter
+		res.Direction = report.DirectionHigherIsBetter
 		return res
 	}
 
@@ -66,7 +67,7 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult
 	display := fmt.Sprintf("%.0f%% coverage", value*100)
 	delta := result.ComputeDelta(value, in.Baseline, m.Name(), m.Version())
 
-	return diagnostic.MetricResult{
+	return report.MetricResult{
 		Name:       m.Name(),
 		Value:      value,
 		Display:    display,
@@ -76,7 +77,7 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult
 		Mode:       result.ModeRatio,
 		Definition: "extracted_files / applicable_files",
 		Delta:      delta,
-		Direction:  diagnostic.DirectionHigherIsBetter,
+		Direction:  report.DirectionHigherIsBetter,
 	}
 }
 
