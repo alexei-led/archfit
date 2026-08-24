@@ -20,8 +20,6 @@ import (
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
 const (
@@ -31,6 +29,13 @@ const (
 	reviewMaxModuleFacts  = 80
 	reviewMaxMetrics      = 40
 	reviewMaxDynamicFacts = 50
+
+	llmStrengthIntrusive  = "intrusive"
+	llmStrengthContract   = "contract"
+	llmStrengthModel      = "model"
+	llmStrengthFunctional = "functional"
+	llmStrengthSymmetric  = "symmetric"
+	llmEdgeUsesInternal   = "uses_internal"
 
 	// rawReviewFile is the debug dump of the last raw LLM review response,
 	// written under the cache dir before parsing so truncation/parse failures
@@ -348,11 +353,11 @@ func defaultReviewCitationSet(diag result.Result) reviewCitationSet {
 // top_risk narratives and titles. Used by postVerify to cross-check claims
 // against actual evidence so fabricated strength labels are never rendered.
 var strengthWords = map[string]*regexp.Regexp{
-	string(coupling.StrengthIntrusive):  regexp.MustCompile(`(?i)\bintrusive\b`),
-	string(coupling.StrengthContract):   regexp.MustCompile(`(?i)\bcontract\b`),
-	string(coupling.StrengthModel):      regexp.MustCompile(`(?i)\bmodel\b`),
-	string(coupling.StrengthFunctional): regexp.MustCompile(`(?i)\bfunctional\b`),
-	string(coupling.StrengthSymmetric):  regexp.MustCompile(`(?i)\bsymmetric\b`),
+	llmStrengthIntrusive:  regexp.MustCompile(`(?i)\bintrusive\b`),
+	llmStrengthContract:   regexp.MustCompile(`(?i)\bcontract\b`),
+	llmStrengthModel:      regexp.MustCompile(`(?i)\bmodel\b`),
+	llmStrengthFunctional: regexp.MustCompile(`(?i)\bfunctional\b`),
+	llmStrengthSymmetric:  regexp.MustCompile(`(?i)\bsymmetric\b`),
 }
 
 // postVerify drops LLM claims that cite entities not present in the evidence.
@@ -461,8 +466,8 @@ func buildPresentStrengths(diag result.Result) map[string]struct{} {
 		if s, ok := f.MatchedBy["strength"]; ok && s != "" {
 			present[s] = struct{}{}
 		}
-		if f.Edge.Kind == string(graph.EdgeKindUsesInternal) {
-			present[string(coupling.StrengthIntrusive)] = struct{}{}
+		if f.Edge.Kind == llmEdgeUsesInternal {
+			present[llmStrengthIntrusive] = struct{}{}
 		}
 	}
 	return present
