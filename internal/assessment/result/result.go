@@ -44,56 +44,22 @@ type Coverage = evidence.Coverage
 // CoverageGap is retained as an assessment result compatibility alias.
 type CoverageGap = evidence.CoverageGap
 
-// FileFact is retained as an assessment result compatibility alias.
-type FileFact = evidence.FileFact
-
 // SyntaxFact is retained as an assessment result compatibility alias.
 type SyntaxFact = evidence.SyntaxFact
 
-// DynamicImport is retained as an assessment result compatibility alias.
-type DynamicImport = evidence.DynamicImport
-
-// DynamicImportSite is retained as an assessment result compatibility alias.
-type DynamicImportSite = evidence.DynamicImportSite
-
-// ConnascenceRoadmapItem is retained as an assessment result compatibility alias.
-type ConnascenceRoadmapItem = evidence.ConnascenceRoadmapItem
-
-// RuntimeAsyncSite is retained as an assessment result compatibility alias.
-type RuntimeAsyncSite = evidence.RuntimeAsyncSite
-
-// RuntimeAsyncModule is retained as an assessment result compatibility alias.
-type RuntimeAsyncModule = evidence.RuntimeAsyncModule
-
 // RuntimeAsyncEdge is retained as an assessment result compatibility alias.
 type RuntimeAsyncEdge = evidence.RuntimeAsyncEdge
-
-// DistanceContext is retained as an assessment result compatibility alias.
-type DistanceContext = evidence.DistanceContext
-
-// DistanceConfigCandidate is retained as an assessment result compatibility alias.
-type DistanceConfigCandidate = evidence.DistanceConfigCandidate
-
-// DistanceConfigEvidenceSite is retained as an assessment result compatibility alias.
-type DistanceConfigEvidenceSite = evidence.DistanceConfigEvidenceSite
-
-// VolatilityCorroboration is retained as an assessment result compatibility alias.
-type VolatilityCorroboration = evidence.VolatilityCorroboration
-
-// VolatilityTouch is retained as an assessment result compatibility alias.
-type VolatilityTouch = evidence.VolatilityTouch
 
 // Diagnostic is retained as an assessment result compatibility alias.
 type Diagnostic = Result
 
 // Compatibility constants keep migrated callers source-compatible.
 const (
-	StatusOK                   = evidence.StatusOK
-	StatusPartial              = evidence.StatusPartial
-	StatusAbsent               = evidence.StatusAbsent
-	StatusDisabled             = evidence.StatusDisabled
-	StatusTimedOut             = evidence.StatusTimedOut
-	DynamicImportKindImportlib = evidence.DynamicImportKindImportlib
+	StatusOK       = evidence.StatusOK
+	StatusPartial  = evidence.StatusPartial
+	StatusAbsent   = evidence.StatusAbsent
+	StatusDisabled = evidence.StatusDisabled
+	StatusTimedOut = evidence.StatusTimedOut
 )
 
 // Result is the assessment result before report projection.

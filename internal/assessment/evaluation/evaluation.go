@@ -75,7 +75,6 @@ func evaluate(in Input) Result {
 	var captured relationship.Set
 	if in.CaptureRelationships {
 		captured = collected.Common.Relationships
-		calculated = append(calculated, capturedMetricResult())
 	}
 	gates := make([]finding.Finding, 0, len(tagged))
 	advisories := 0
@@ -98,9 +97,22 @@ func evaluate(in Input) Result {
 		}
 	}
 	adv = groupBCAdvisories(adv)
-	tagged = resolveEvidence(in.Relationships, tagged)
-	gateNew, waiversUsed := 0, 0
+	tagged = resolveEvidence(in.Relationships, in.Policy.Topology.ModuleMap, tagged)
+	// Split the rule pass: gatedRule stamps KindAdvisory on findings from a
+	// `gate: warn` rule. Those are advisories, not gate findings — they are
+	// hidden with --no-advisories and counted in summary.warnings, exactly like
+	// the coupling/staleness advisories collected above.
+	base := make([]finding.Finding, 0, len(tagged))
+	ruleAdv := make([]finding.Finding, 0)
 	for _, f := range tagged {
+		if f.Kind == finding.KindAdvisory {
+			ruleAdv = append(ruleAdv, f)
+			continue
+		}
+		base = append(base, f)
+	}
+	gateNew, waiversUsed := 0, 0
+	for _, f := range base {
 		if f.Status == finding.StatusWaived {
 			waiversUsed++
 		}
@@ -108,15 +120,11 @@ func evaluate(in Input) Result {
 			gateNew++
 		}
 	}
-	visible := tagged
+	visible := base
 	warnings := 0
 	if in.IncludeAdvisories {
-		visible = append(append([]finding.Finding(nil), tagged...), adv...)
-		for _, f := range adv {
-			if f.Status != finding.StatusFixed {
-				warnings++
-			}
-		}
+		visible = append(append(append([]finding.Finding(nil), base...), adv...), ruleAdv...)
+		warnings = countActive(adv) + countActive(ruleAdv)
 	}
 	var delta *result.DeltaReport
 	if in.Delta {
@@ -126,6 +134,16 @@ func evaluate(in Input) Result {
 		}
 	}
 	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, calculated, in.Gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed, Delta: delta, Captured: captured}
+}
+
+func countActive(in []finding.Finding) int {
+	n := 0
+	for _, f := range in {
+		if f.Status != finding.StatusFixed {
+			n++
+		}
+	}
+	return n
 }
 
 func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[string]policy.MetricConfig, advisories int) result.Verdict {

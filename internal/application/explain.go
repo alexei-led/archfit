@@ -37,7 +37,7 @@ func (s ExplainService) Execute(ctx context.Context, req ExplainRequest) (Explai
 	if strings.TrimSpace(req.Fingerprint) == "" {
 		return ExplainResponse{}, errors.New("finding fingerprint prefix is required")
 	}
-	out, err := s.Stages.Execute(ctx, AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root})
+	out, err := s.Stages.Execute(ctx, AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root, SuppressGateReasons: true})
 	if err != nil {
 		return ExplainResponse{}, fmt.Errorf("explain analysis: %w", err)
 	}

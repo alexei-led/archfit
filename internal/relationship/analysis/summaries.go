@@ -20,7 +20,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 	sum := 0
 	span := spanAccumulator{}
 	for _, e := range set.Edges {
-		sum += addSummary(s, e.Classified, e.Strength, e.Distance, e.Volatility)
+		sum += addSummary(s, e.Classified, e.Strength, e.Distance, e.Volatility, e.Provenance)
 		addDriver(s, e.Classified, e.FromModule, e.ToModule)
 		tail.add(e.Classified, e.Distance, false)
 		if e.Distance != relationship.DistanceSameModule && e.Distance != relationship.DistanceUnknown {
@@ -32,7 +32,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 	if policy.NormalizeDuplicatedKnowledgePolicy(duplicated) == policy.DuplicatedKnowledgePolicyScore {
 		for _, p := range clones {
 			s.CloneOnlyScored++
-			sum += addSummary(s, p.Classified, p.Strength, p.Distance, p.Volatility)
+			sum += addSummary(s, p.Classified, p.Strength, p.Distance, p.Volatility, relationship.Provenance{})
 			addDriver(s, p.Classified, p.FromModule, p.ToModule)
 			tail.add(p.Classified, p.Distance, true)
 			connected[p.FromModule] = struct{}{}
@@ -54,7 +54,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 	span.apply(s.DistanceCompression)
 	return s
 }
-func addSummary(s *relationship.ClassifiedEdgeSummary, c relationship.Classification, strength relationship.Strength, distance relationship.Distance, volatility relationship.Volatility) int {
+func addSummary(s *relationship.ClassifiedEdgeSummary, c relationship.Classification, strength relationship.Strength, distance relationship.Distance, volatility relationship.Volatility, prov relationship.Provenance) int {
 	s.Total++
 	if distance == relationship.DistanceSameModule {
 		s.SameModule++
@@ -73,6 +73,16 @@ func addSummary(s *relationship.ClassifiedEdgeSummary, c relationship.Classifica
 	s.ByStrength[string(strength)]++
 	s.ByDistance[string(distance)]++
 	s.ByVolatility[string(volatility)]++
+	// Label provenance is per-edge, so it is counted here — on cross-boundary
+	// edges only, after the same-module/unknown early-outs. LabeledLLM feeds the
+	// coupling_balance evidence line and LLMLowConfidenceEdges lowers its
+	// confidence band by one.
+	if prov.StrengthFromLLM {
+		s.LabeledLLM++
+	}
+	if prov.StrengthFromNonHighLLM {
+		s.LLMLowConfidenceEdges++
+	}
 	if c.Score.Scored {
 		s.Scored++
 		s.BySeverity[string(c.Score.Band)]++
@@ -111,8 +121,14 @@ type tailAccumulator struct {
 	high, critical, distributed, cloneScored, cloneHigh, cloneWorst int
 }
 
+// add records one scored CROSS-BOUNDARY edge. Same-module and unknown-distance
+// edges are excluded: the tail-risk share is reported against s.Scored, which
+// counts cross-boundary edges only, so admitting them here would put a
+// 505-edge numerator over a 362-edge denominator. Band "none" (balance 9-10) is
+// a well-balanced cross-boundary edge and belongs in the balance distribution —
+// it is what makes WorstBalance and LowerDecileBalance honest.
 func (a *tailAccumulator) add(c relationship.Classification, distance relationship.Distance, clone bool) {
-	if !c.Score.Scored || c.Score.Band == relationship.SeverityNone || c.Score.Balance <= 0 {
+	if !c.Score.Scored || distance == relationship.DistanceSameModule || distance == relationship.DistanceUnknown || c.Score.Balance <= 0 {
 		return
 	}
 	a.balances = append(a.balances, c.Score.Balance)

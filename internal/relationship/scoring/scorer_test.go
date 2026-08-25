@@ -1,24 +1,28 @@
 package scoring
 
-import "testing"
+import (
+	"testing"
 
-// TestScoreBand verifies the book balance 1..10 → Severity band mapping.
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+)
+
+// TestScoreBand verifies the book balance 1..10 → coupling.Severity band mapping.
 // Higher balance = better balanced = lower severity.
 func TestScoreBand(t *testing.T) {
 	tests := []struct {
 		score int
-		want  Severity
+		want  coupling.Severity
 	}{
-		{1, SeverityCritical},
-		{2, SeverityCritical},
-		{3, SeverityHigh},
-		{4, SeverityHigh},
-		{5, SeverityMedium},
-		{6, SeverityMedium},
-		{7, SeverityLow},
-		{8, SeverityLow},
-		{9, SeverityNone},
-		{10, SeverityNone},
+		{1, coupling.SeverityCritical},
+		{2, coupling.SeverityCritical},
+		{3, coupling.SeverityHigh},
+		{4, coupling.SeverityHigh},
+		{5, coupling.SeverityMedium},
+		{6, coupling.SeverityMedium},
+		{7, coupling.SeverityLow},
+		{8, coupling.SeverityLow},
+		{9, coupling.SeverityNone},
+		{10, coupling.SeverityNone},
 	}
 	for _, tt := range tests {
 		if got := ScoreBand(tt.score); got != tt.want {
@@ -34,107 +38,107 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 	s := AdditiveScorer{}
 	tests := []struct {
 		name      string
-		c         Classification
-		wantBand  Severity
+		c         coupling.Classification
+		wantBand  coupling.Severity
 		wantValue int
 	}{
 		// XOR cohesive (functional+same_owner, low_vol): raw=5+1-2=4 → low.
 		{
 			name: "XOR cohesive functional+same_owner low_vol",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityLow,
 			},
-			wantBand:  SeverityLow,
+			wantBand:  coupling.SeverityLow,
 			wantValue: 4,
 		},
 		// XOR loose (contract+cross_deploy, low_vol): raw=0+5-2=3 → low.
 		{
 			name: "XOR loose contract+cross_deploy low_vol",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityLow,
 			},
-			wantBand:  SeverityLow,
+			wantBand:  coupling.SeverityLow,
 			wantValue: 3,
 		},
 		// Symmetric bad: intrusive+cross_deploy+high_vol → raw=8+5-0=13→clamp→10 (critical).
 		{
 			name: "intrusive+cross_deploy+high_vol → critical (clamped)",
-			c: Classification{
-				Strength:   StrengthIntrusive,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthIntrusive,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityHigh,
 			},
-			wantBand:  SeverityCritical,
+			wantBand:  coupling.SeverityCritical,
 			wantValue: 10,
 		},
 		// Symmetric good: contract+same_owner+low_vol → raw=0+1-2=clamp(0)→0 (none).
 		{
 			name: "contract+same_owner+low_vol → none (floor 0)",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityLow,
 			},
-			wantBand:  SeverityNone,
+			wantBand:  coupling.SeverityNone,
 			wantValue: 0,
 		},
 		// functional+cross_deploy+high_vol → raw=5+5-0=10 (critical).
 		{
 			name: "functional+cross_deploy+high_vol → critical",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityHigh,
 			},
-			wantBand:  SeverityCritical,
+			wantBand:  coupling.SeverityCritical,
 			wantValue: 10,
 		},
 		// model+cross_module_diff_owner+medium_vol → raw=2+3-1=4 (low).
 		{
 			name: "model+cross_diff_owner+medium_vol → low",
-			c: Classification{
-				Strength:   StrengthModel,
-				Distance:   DistanceCrossModuleDiffOwner,
-				Volatility: VolatilityMedium,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthModel,
+				Distance:   coupling.DistanceCrossModuleDiffOwner,
+				Volatility: coupling.VolatilityMedium,
 			},
-			wantBand:  SeverityLow,
+			wantBand:  coupling.SeverityLow,
 			wantValue: 4,
 		},
 		// unknown strength + unknown distance + unknown vol → raw=3+2-0=5 (medium).
 		{
 			name: "unknown+unknown+unknown → medium",
-			c: Classification{
-				Strength:   StrengthUnknown,
-				Distance:   DistanceUnknown,
-				Volatility: VolatilityUnknown,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthUnknown,
+				Distance:   coupling.DistanceUnknown,
+				Volatility: coupling.VolatilityUnknown,
 			},
-			wantBand:  SeverityMedium,
+			wantBand:  coupling.SeverityMedium,
 			wantValue: 5,
 		},
 		// Vendor lock: intrusive+external+high_vol → raw=8+6-0=14→clamp→10 (critical).
 		{
 			name: "intrusive+external+high_vol → critical (clamped)",
-			c: Classification{
-				Strength:   StrengthIntrusive,
-				Distance:   DistanceExternal,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthIntrusive,
+				Distance:   coupling.DistanceExternal,
+				Volatility: coupling.VolatilityHigh,
 			},
-			wantBand:  SeverityCritical,
+			wantBand:  coupling.SeverityCritical,
 			wantValue: 10,
 		},
 		// Declared external behind a contract: contract+external+low_vol → raw=0+6-2=4 (low).
 		{
 			name: "contract+external+low_vol → low",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceExternal,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceExternal,
+				Volatility: coupling.VolatilityLow,
 			},
-			wantBand:  SeverityLow,
+			wantBand:  coupling.SeverityLow,
 			wantValue: 4,
 		},
 	}
@@ -162,56 +166,56 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 	s := MultiplicativeScorer{}
 	tests := []struct {
 		name      string
-		c         Classification
-		wantBand  Severity
+		c         coupling.Classification
+		wantBand  coupling.Severity
 		wantValue int
 	}{
 		// XOR cohesive: functional(5/8=0.625) + same_owner(1/5=0.2), high_vol(1.0).
 		// R_mod=1-|0.625-0.2|=0.575; R_edge=0.575*1.0=0.575; score=round(5.75)=6→medium.
 		{
 			name: "XOR cohesive functional+same_owner+high_vol",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityHigh,
 			},
-			wantBand:  SeverityMedium,
+			wantBand:  coupling.SeverityMedium,
 			wantValue: 6,
 		},
 		// XOR loose: contract(0/8=0.0) + cross_deploy(5/5=1.0), high_vol(1.0).
 		// R_mod=1-|0-1|=0; R_edge=0*1.0=0; score=0 → none.
 		{
 			name: "XOR loose contract+cross_deploy+high_vol → none",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityHigh,
 			},
-			wantBand:  SeverityNone,
+			wantBand:  coupling.SeverityNone,
 			wantValue: 0,
 		},
 		// XOR loose low_vol: contract+cross_deploy+low_vol(0.2).
 		// R_mod=0; R_edge=0*0.2=0; score=0 → none.
 		{
 			name: "XOR loose contract+cross_deploy+low_vol → none",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityLow,
 			},
-			wantBand:  SeverityNone,
+			wantBand:  coupling.SeverityNone,
 			wantValue: 0,
 		},
 		// Tight + volatile: intrusive(8/8=1.0)+cross_deploy(5/5=1.0)+high_vol(1.0).
 		// R_mod=1-|1-1|=1; R_edge=1*1=1; score=round(10)=10 → critical.
 		{
 			name: "intrusive+cross_deploy+high_vol → critical",
-			c: Classification{
-				Strength:   StrengthIntrusive,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthIntrusive,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityHigh,
 			},
-			wantBand:  SeverityCritical,
+			wantBand:  coupling.SeverityCritical,
 			wantValue: 10,
 		},
 		// Intrusive floor: intrusive+same_owner+low_vol.
@@ -219,12 +223,12 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 		// R_mod=1-|1.0-0.2|=0.2; R_edge=0.2*0.2=0.04; score=round(0.4)=0 → floor=3(low).
 		{
 			name: "intrusive floor: intrusive+same_owner+low_vol → at least low",
-			c: Classification{
-				Strength:   StrengthIntrusive,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthIntrusive,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityLow,
 			},
-			wantBand:  SeverityLow,
+			wantBand:  coupling.SeverityLow,
 			wantValue: 3,
 		},
 		// Stable balanced: contract+same_owner+low_vol.
@@ -232,12 +236,12 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 		// R_mod=1-|0-0.2|=0.8; R_edge=0.8*0.2=0.16; score=round(1.6)=2→none.
 		{
 			name: "contract+same_owner+low_vol → none",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityLow,
 			},
-			wantBand:  SeverityNone,
+			wantBand:  coupling.SeverityNone,
 			wantValue: 2,
 		},
 		// Vendor lock: intrusive(1.0)+external(min(6/5,1)=1.0)+high_vol(1.0).
@@ -245,24 +249,24 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 		// Locks the clamp: an unclamped 6/5=1.2 would give R_mod=0.8 → 8 (high).
 		{
 			name: "intrusive+external+high_vol → critical (D_norm clamped)",
-			c: Classification{
-				Strength:   StrengthIntrusive,
-				Distance:   DistanceExternal,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthIntrusive,
+				Distance:   coupling.DistanceExternal,
+				Volatility: coupling.VolatilityHigh,
 			},
-			wantBand:  SeverityCritical,
+			wantBand:  coupling.SeverityCritical,
 			wantValue: 10,
 		},
 		// XOR loose external: functional(0.625)+external(1.0)+high_vol(1.0).
 		// R_mod=1-|0.625-1.0|=0.625; score=round(6.25)=6 → medium (unclamped would be 4).
 		{
 			name: "functional+external+high_vol → medium (D_norm clamped)",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceExternal,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceExternal,
+				Volatility: coupling.VolatilityHigh,
 			},
-			wantBand:  SeverityMedium,
+			wantBand:  coupling.SeverityMedium,
 			wantValue: 6,
 		},
 	}
@@ -289,17 +293,17 @@ func TestAdditiveScorer_CheapestMove(t *testing.T) {
 	s := AdditiveScorer{}
 	tests := []struct {
 		name      string
-		c         Classification
+		c         coupling.Classification
 		wantEmpty bool   // expect no cheapest move (already none)
 		wantLabel string // expected label when not empty
 	}{
 		// Already none: no move needed.
 		{
 			name: "already none → empty",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityLow,
 			},
 			wantEmpty: true,
 		},
@@ -310,10 +314,10 @@ func TestAdditiveScorer_CheapestMove(t *testing.T) {
 		//  model, so functional is the clearer reduce_strength demonstration.)
 		{
 			name: "functional+cross_deploy+high_vol → reduce_strength",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityHigh,
 			},
 			wantLabel: moveReduceStrength,
 		},
@@ -321,10 +325,10 @@ func TestAdditiveScorer_CheapestMove(t *testing.T) {
 		// lower_volatility(unk→low): 5+5-2=8(high) → drop 1; reduce_strength: 3+5-0=8 → drop 1; tie→prefer strength.
 		{
 			name: "functional+cross_deploy+unknown → reduce_strength (tie-break over lower_vol)",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityUnknown,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityUnknown,
 			},
 			wantLabel: moveReduceStrength,
 		},
@@ -350,22 +354,22 @@ func TestAdditiveScorer_CheapestMove(t *testing.T) {
 // distance and volatility combinations.
 func TestMultiplicativeScorer_IntrusiveFloor(t *testing.T) {
 	s := MultiplicativeScorer{}
-	distances := []Distance{
-		DistanceSameModule,
-		DistanceCrossModuleSameOwner,
-		DistanceCrossModuleDiffOwner,
-		DistanceCrossDeployUnit,
-		DistanceUnknown,
+	distances := []coupling.Distance{
+		coupling.DistanceSameModule,
+		coupling.DistanceCrossModuleSameOwner,
+		coupling.DistanceCrossModuleDiffOwner,
+		coupling.DistanceCrossDeployUnit,
+		coupling.DistanceUnknown,
 	}
-	vols := []Volatility{VolatilityLow, VolatilityMedium, VolatilityHigh, VolatilityUnknown}
+	vols := []coupling.Volatility{coupling.VolatilityLow, coupling.VolatilityMedium, coupling.VolatilityHigh, coupling.VolatilityUnknown}
 
 	for _, d := range distances {
 		for _, v := range vols {
-			c := Classification{Strength: StrengthIntrusive, Distance: d, Volatility: v}
+			c := coupling.Classification{Strength: coupling.StrengthIntrusive, Distance: d, Volatility: v}
 			got := s.Score(c)
 			// Same-module edges are not cross-boundary coupling → guarded to 0;
 			// the intrusive floor applies only to cross-boundary edges.
-			if d == DistanceSameModule {
+			if d == coupling.DistanceSameModule {
 				if got.Value != 0 {
 					t.Errorf("same-module should score 0: d=%s v=%s value=%d", d, v, got.Value)
 				}
@@ -385,10 +389,10 @@ func TestMultiplicativeScorer_IntrusiveFloor(t *testing.T) {
 // TestScorer_ScoreRange_CrossDeployMax verifies that values stay in range across
 // all three scorers for a high-risk edge.
 func TestScorer_ScoreRange_CrossDeployMax(t *testing.T) {
-	atMax := Classification{
-		Strength:   StrengthFunctional,
-		Distance:   DistanceCrossDeployUnit,
-		Volatility: VolatilityHigh,
+	atMax := coupling.Classification{
+		Strength:   coupling.StrengthFunctional,
+		Distance:   coupling.DistanceCrossDeployUnit,
+		Volatility: coupling.VolatilityHigh,
 	}
 	for _, s := range []Scorer{AdditiveScorer{}, MultiplicativeScorer{}, BookScorer{}} {
 		got := s.Score(atMax)
@@ -409,10 +413,10 @@ func TestScorer_ScoreRange_CrossDeployMax(t *testing.T) {
 // (→ "lower_volatility"). Both scorers route their volatility move through this
 // helper, so the label replacement (Task 10) holds for either.
 func TestVolatilityMoveLabel(t *testing.T) {
-	if got := volatilityMoveLabel(VolatilityUndeclared); got != moveDeclareVolatility {
+	if got := volatilityMoveLabel(coupling.VolatilityUndeclared); got != moveDeclareVolatility {
 		t.Errorf("undeclared → %q, want %q", got, moveDeclareVolatility)
 	}
-	for _, v := range []Volatility{VolatilityHigh, VolatilityMedium, VolatilityLow, VolatilityUnknown} {
+	for _, v := range []coupling.Volatility{coupling.VolatilityHigh, coupling.VolatilityMedium, coupling.VolatilityLow, coupling.VolatilityUnknown} {
 		if got := volatilityMoveLabel(v); got != moveLowerVolatility {
 			t.Errorf("%s → %q, want %q", v, got, moveLowerVolatility)
 		}
@@ -424,20 +428,20 @@ func TestVolatilityMoveLabel(t *testing.T) {
 // guidance, never the number.
 func TestVolatilityUndeclaredScoresLikeUnknown(t *testing.T) {
 	combos := []struct {
-		s Strength
-		d Distance
+		s coupling.Strength
+		d coupling.Distance
 	}{
-		{StrengthFunctional, DistanceCrossModuleDiffOwner},
-		{StrengthIntrusive, DistanceCrossDeployUnit},
-		{StrengthContract, DistanceCrossDeployUnit},
-		{StrengthModel, DistanceCrossModuleSameOwner},
-		// StrengthUnknown/DistanceUnknown: BookScorer abstains for both — still equal.
-		{StrengthUnknown, DistanceUnknown},
+		{coupling.StrengthFunctional, coupling.DistanceCrossModuleDiffOwner},
+		{coupling.StrengthIntrusive, coupling.DistanceCrossDeployUnit},
+		{coupling.StrengthContract, coupling.DistanceCrossDeployUnit},
+		{coupling.StrengthModel, coupling.DistanceCrossModuleSameOwner},
+		// coupling.StrengthUnknown/coupling.DistanceUnknown: BookScorer abstains for both — still equal.
+		{coupling.StrengthUnknown, coupling.DistanceUnknown},
 	}
 	for _, scorer := range []Scorer{AdditiveScorer{}, MultiplicativeScorer{}, BookScorer{}} {
 		for _, cc := range combos {
-			undeclared := scorer.Score(Classification{Strength: cc.s, Distance: cc.d, Volatility: VolatilityUndeclared})
-			unknown := scorer.Score(Classification{Strength: cc.s, Distance: cc.d, Volatility: VolatilityUnknown})
+			undeclared := scorer.Score(coupling.Classification{Strength: cc.s, Distance: cc.d, Volatility: coupling.VolatilityUndeclared})
+			unknown := scorer.Score(coupling.Classification{Strength: cc.s, Distance: cc.d, Volatility: coupling.VolatilityUnknown})
 			if undeclared.Value != unknown.Value || undeclared.Band != unknown.Band {
 				t.Errorf("%T %s/%s: undeclared=(%d,%s) unknown=(%d,%s) — must match",
 					scorer, cc.s, cc.d, undeclared.Value, undeclared.Band, unknown.Value, unknown.Band)
@@ -455,16 +459,16 @@ func TestMultiplicativeScorer_CheapestMove_DeclareVsLower(t *testing.T) {
 	// functional(0.625) + cross_module_diff_owner(0.6): R_mod≈0.975, so declaring/
 	// lowering volatility to low (norm 0.2) drops two bands — the strict winner over
 	// the single-band strength/distance reductions.
-	base := Classification{Strength: StrengthFunctional, Distance: DistanceCrossModuleDiffOwner}
+	base := coupling.Classification{Strength: coupling.StrengthFunctional, Distance: coupling.DistanceCrossModuleDiffOwner}
 
 	undeclared := base
-	undeclared.Volatility = VolatilityUndeclared
+	undeclared.Volatility = coupling.VolatilityUndeclared
 	if got := s.Score(undeclared).CheapestMove; got != moveDeclareVolatility {
 		t.Errorf("undeclared edge cheapest move = %q, want %q", got, moveDeclareVolatility)
 	}
 
 	declared := base
-	declared.Volatility = VolatilityMedium
+	declared.Volatility = coupling.VolatilityMedium
 	if got := s.Score(declared).CheapestMove; got != moveLowerVolatility {
 		t.Errorf("declared (medium) edge cheapest move = %q, want %q", got, moveLowerVolatility)
 	}
@@ -476,10 +480,10 @@ func TestDefaultScorer(t *testing.T) {
 	if s == nil {
 		t.Fatal("DefaultScorer() returned nil")
 	}
-	got := s.Score(Classification{
-		Strength:   StrengthFunctional,
-		Distance:   DistanceCrossDeployUnit,
-		Volatility: VolatilityHigh,
+	got := s.Score(coupling.Classification{
+		Strength:   coupling.StrengthFunctional,
+		Distance:   coupling.DistanceCrossDeployUnit,
+		Volatility: coupling.VolatilityHigh,
 	})
 	// DefaultScorer is BookScorer as of bc_score.v3.
 	if got.Reason != reasonBook {

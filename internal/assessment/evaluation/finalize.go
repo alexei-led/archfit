@@ -15,12 +15,6 @@ import (
 // never ships with zero gate findings.
 const FindingIDCouplingGate = "coupling-gate"
 
-const captureMetricName = "application_enrichment_capture"
-
-func capturedMetricResult() result.MetricResult {
-	return result.MetricResult{Name: captureMetricName, Version: captureMetricName + ".v1", Band: "info", Display: "internal capture"}
-}
-
 // BaselineAnchor is the assessment-relevant projection of a persisted baseline.
 // The stage adapter reads the baseline file; assessment only decides whether
 // the stored anchor is comparable with this binary's scoring.

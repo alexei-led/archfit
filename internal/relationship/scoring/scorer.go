@@ -7,59 +7,11 @@ type Scorer interface {
 	Score(coupling.Classification) coupling.EdgeScore
 }
 
-// Classification is the neutral relationship value consumed by scorers.
-type Classification = coupling.Classification
-
-// EdgeScore is the neutral score value returned by scorers.
-type EdgeScore = coupling.EdgeScore
-
-// Severity is the score band value.
-type Severity = coupling.Severity
-
-// Strength is the integration-strength value.
-type Strength = coupling.Strength
-
-// Distance is the socio-technical distance value.
-type Distance = coupling.Distance
-
-// Volatility is the target-volatility value.
-type Volatility = coupling.Volatility
-
-// ScoreBreakdown is the raw scorer-ordinal record.
-type ScoreBreakdown = coupling.ScoreBreakdown
-
-// Coupling values are re-exported for scorer implementations and calibration tests.
-const (
-	StrengthContract             = coupling.StrengthContract
-	StrengthModel                = coupling.StrengthModel
-	StrengthUnknown              = coupling.StrengthUnknown
-	StrengthFunctional           = coupling.StrengthFunctional
-	StrengthIntrusive            = coupling.StrengthIntrusive
-	StrengthSymmetric            = coupling.StrengthSymmetric
-	DistanceSameModule           = coupling.DistanceSameModule
-	DistanceCrossModuleSameOwner = coupling.DistanceCrossModuleSameOwner
-	DistanceUnknown              = coupling.DistanceUnknown
-	DistanceCrossModuleDiffOwner = coupling.DistanceCrossModuleDiffOwner
-	DistanceCrossDeployUnit      = coupling.DistanceCrossDeployUnit
-	DistanceExternal             = coupling.DistanceExternal
-	VolatilityLow                = coupling.VolatilityLow
-	VolatilityMedium             = coupling.VolatilityMedium
-	VolatilityHigh               = coupling.VolatilityHigh
-	VolatilityUndeclared         = coupling.VolatilityUndeclared
-	VolatilityUnknown            = coupling.VolatilityUnknown
-	VolatilityFrozen             = coupling.VolatilityFrozen
-	SeverityNone                 = coupling.SeverityNone
-	SeverityLow                  = coupling.SeverityLow
-	SeverityMedium               = coupling.SeverityMedium
-	SeverityHigh                 = coupling.SeverityHigh
-	SeverityCritical             = coupling.SeverityCritical
-)
-
 // ScoreDefinition is the canonical, user-facing definition of archfit's numeric
 // BC score. Implements Vlad Khononov's published formula from _Balancing Coupling
 // in Software Design_ Ch10 verbatim: balance = max(|S−D|, 10−V) + 1.
 // Range 1 (distributed monolith / ball-of-mud) to 10 (frozen/contract); higher
-// is better balanced. Strength, distance, and volatility ordinals are fixed per
+// is better balanced. coupling.Strength, distance, and volatility ordinals are fixed per
 // the book (Ch8–Ch10); changing any is a breaking metric change (bump ScoreVersion).
 const ScoreDefinition = "book balance score — balance = max(|S−D|, 10−V) + 1 " +
 	"(Khononov, _Balancing Coupling in Software Design_, Ch10); " +
@@ -99,81 +51,81 @@ const (
 	volatilityDiscountUnknown    = 0
 )
 
-// strengthOrdinal maps Strength to its risk ordinal (values frozen — see consts above).
+// strengthOrdinal maps coupling.Strength to its risk ordinal (values frozen — see consts above).
 // contract=0: declared interface, lowest coupling risk.
 // model=2: concrete type import, low risk.
 // unknown=3: unresolved; default to moderate risk.
 // functional=5: implementation-level call.
 // intrusive=8: internal/private access, highest coupling intensity.
-var strengthOrdinal = map[Strength]int{
-	StrengthContract:   strengthOrdinalContract,
-	StrengthModel:      strengthOrdinalModel,
-	StrengthUnknown:    strengthOrdinalUnknown,
-	StrengthFunctional: strengthOrdinalFunctional,
-	StrengthIntrusive:  strengthOrdinalIntrusive,
+var strengthOrdinal = map[coupling.Strength]int{
+	coupling.StrengthContract:   strengthOrdinalContract,
+	coupling.StrengthModel:      strengthOrdinalModel,
+	coupling.StrengthUnknown:    strengthOrdinalUnknown,
+	coupling.StrengthFunctional: strengthOrdinalFunctional,
+	coupling.StrengthIntrusive:  strengthOrdinalIntrusive,
 }
 
-// distanceOrdinal maps Distance to its risk ordinal (values frozen — see consts above).
+// distanceOrdinal maps coupling.Distance to its risk ordinal (values frozen — see consts above).
 // same_module=0: co-located, no boundary crossed.
 // cross_module_same_owner=1: nearby boundary, shared accountability.
 // unknown=2: unresolved; default to cross-module risk.
 // cross_module_diff_owner=3: separate accountability boundaries.
 // cross_deploy_unit=5: highest deployment boundary.
-var distanceOrdinal = map[Distance]int{
-	DistanceSameModule:           distanceOrdinalSameModule,
-	DistanceCrossModuleSameOwner: distanceOrdinalCrossModuleSameOwner,
-	DistanceUnknown:              distanceOrdinalUnknown,
-	DistanceCrossModuleDiffOwner: distanceOrdinalCrossModuleDiffOwner,
-	DistanceCrossDeployUnit:      distanceOrdinalCrossDeployUnit,
-	DistanceExternal:             distanceOrdinalExternal,
+var distanceOrdinal = map[coupling.Distance]int{
+	coupling.DistanceSameModule:           distanceOrdinalSameModule,
+	coupling.DistanceCrossModuleSameOwner: distanceOrdinalCrossModuleSameOwner,
+	coupling.DistanceUnknown:              distanceOrdinalUnknown,
+	coupling.DistanceCrossModuleDiffOwner: distanceOrdinalCrossModuleDiffOwner,
+	coupling.DistanceCrossDeployUnit:      distanceOrdinalCrossDeployUnit,
+	coupling.DistanceExternal:             distanceOrdinalExternal,
 }
 
-// volatilityDiscount maps Volatility to a discount subtracted from the raw score
+// volatilityDiscount maps coupling.Volatility to a discount subtracted from the raw score
 // (values frozen — see consts above).
 // Low volatility = higher discount (stable target reduces coupling risk).
 // Unknown = no discount (conservative; treat as potentially volatile).
-var volatilityDiscount = map[Volatility]int{
-	VolatilityLow:        volatilityDiscountLow,
-	VolatilityMedium:     volatilityDiscountMedium,
-	VolatilityHigh:       volatilityDiscountHigh,
-	VolatilityUndeclared: volatilityDiscountUndeclared,
-	VolatilityUnknown:    volatilityDiscountUnknown,
+var volatilityDiscount = map[coupling.Volatility]int{
+	coupling.VolatilityLow:        volatilityDiscountLow,
+	coupling.VolatilityMedium:     volatilityDiscountMedium,
+	coupling.VolatilityHigh:       volatilityDiscountHigh,
+	coupling.VolatilityUndeclared: volatilityDiscountUndeclared,
+	coupling.VolatilityUnknown:    volatilityDiscountUnknown,
 }
 
-// ScoreBand maps a book balance value 1..10 to a Severity band.
+// ScoreBand maps a book balance value 1..10 to a coupling.Severity band.
 // Higher balance = better balanced coupling = lower (or no) finding.
 // Bands: 1–2 critical · 3–4 high · 5–6 medium · 7–8 low · 9–10 none.
-func ScoreBand(balance int) Severity {
+func ScoreBand(balance int) coupling.Severity {
 	switch {
 	case balance <= 2:
-		return SeverityCritical
+		return coupling.SeverityCritical
 	case balance <= 4:
-		return SeverityHigh
+		return coupling.SeverityHigh
 	case balance <= 6:
-		return SeverityMedium
+		return coupling.SeverityMedium
 	case balance <= 8:
-		return SeverityLow
+		return coupling.SeverityLow
 	default:
-		return SeverityNone
+		return coupling.SeverityNone
 	}
 }
 
-// legacyScoreBand maps a legacy risk score [0,10] to a Severity band.
+// legacyScoreBand maps a legacy risk score [0,10] to a coupling.Severity band.
 // Used only by AdditiveScorer and MultiplicativeScorer (kept for calibration).
 // Lower score = lower risk = lower/no finding.
 // Bands: 0–2 none · 3–4 low · 5–6 medium · 7–8 high · 9–10 critical.
-func legacyScoreBand(score int) Severity {
+func legacyScoreBand(score int) coupling.Severity {
 	switch {
 	case score <= 2:
-		return SeverityNone
+		return coupling.SeverityNone
 	case score <= 4:
-		return SeverityLow
+		return coupling.SeverityLow
 	case score <= 6:
-		return SeverityMedium
+		return coupling.SeverityMedium
 	case score <= 8:
-		return SeverityHigh
+		return coupling.SeverityHigh
 	default:
-		return SeverityCritical
+		return coupling.SeverityCritical
 	}
 }
 
@@ -219,25 +171,25 @@ const (
 // volatilityMoveLabel returns the cheapest-move label for a volatility change.
 // An undeclared target yields moveDeclareVolatility — NOT moveLowerVolatility,
 // which would imply "lower" a value the user never set.
-func volatilityMoveLabel(v Volatility) string {
-	if v == VolatilityUndeclared {
+func volatilityMoveLabel(v coupling.Volatility) string {
+	if v == coupling.VolatilityUndeclared {
 		return moveDeclareVolatility
 	}
 	return moveLowerVolatility
 }
 
-// bandRank returns the numeric rank of a Severity band (higher = worse).
-func bandRank(s Severity) int {
+// bandRank returns the numeric rank of a coupling.Severity band (higher = worse).
+func bandRank(s coupling.Severity) int {
 	switch s {
-	case SeverityNone:
+	case coupling.SeverityNone:
 		return 0
-	case SeverityLow:
+	case coupling.SeverityLow:
 		return 1
-	case SeverityMedium:
+	case coupling.SeverityMedium:
 		return 2
-	case SeverityHigh:
+	case coupling.SeverityHigh:
 		return 3
-	case SeverityCritical:
+	case coupling.SeverityCritical:
 		return 4
 	default:
 		return 0

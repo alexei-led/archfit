@@ -120,6 +120,37 @@ func TestRun_Baseline_NoTripReasonOnStderr(t *testing.T) {
 	}
 }
 
+// TestRun_NonAnalyzeCommands_NoTripReasonOnStderr extends the analyze-only
+// stderr contract to every other command that shares the stage executor. All of
+// them measure the same tree with the same tripped coupling gate; none of them
+// consumes the gate as an exit code, so the reason line is noise there.
+// `config compare` would print it twice, unlabelled, once per side. `config
+// enrich` shares the same request builder; it needs an AI provider to reach the
+// stage, so its half of the contract is pinned in
+// application.TestEnrichSuppressesCouplingGateReasons.
+func TestRun_NonAnalyzeCommands_NoTripReasonOnStderr(t *testing.T) {
+	t.Parallel()
+	cfgBody := coupledModulesCfg + "coupling:\n  gate:\n    min_band: strong\n"
+
+	tests := []struct {
+		name string
+		args func(cfgPath string) []string
+	}{
+		{"explain", func(c string) []string { return []string{cmdExplain, "0", "-c", c, flagRefresh} }},
+		{"config compare", func(c string) []string { return []string{cmdConfig, cmdCompare, c, "-c", c} }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			cfgPath := writeCoupledRepo(t, cfgBody)
+			_, _, stderr := runArchfit(t, test.args(cfgPath)...)
+			if strings.Contains(stderr, "coupling gate: ") {
+				t.Errorf("%s echoed coupling-gate trip reasons to stderr (analyze-only contract):\n%s", test.name, stderr)
+			}
+		})
+	}
+}
+
 // TestRun_Analyze_CouplingGate_OffByDefault verifies backward compatibility:
 // without a coupling.gate block the same unbalanced repo passes the gate —
 // coupling stays advisory-only.

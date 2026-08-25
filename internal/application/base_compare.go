@@ -87,7 +87,7 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 	sub := StageExecutor{Preparer: s.Preparer, Evidence: s.NewBaseEvidence(baseRoot), Stderr: s.Stderr}
 	baseReq := AnalysisRequest{
 		ConfigSource: runCtx.ConfigSource, BundleDir: bundleDir, Root: baseRoot,
-		EvaluatedAt: runCtx.Now, EmptyBaseline: true, ReportOnly: true,
+		EvaluatedAt: runCtx.Now, EmptyBaseline: true,
 		NoAdvisories: req.NoAdvisories, SuppressGateReasons: true, WarnLabel: baseWarnLabel,
 	}
 	acquired, err := sub.Evidence.Acquire(ctx, baseReq)

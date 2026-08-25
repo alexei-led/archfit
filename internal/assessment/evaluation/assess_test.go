@@ -162,10 +162,36 @@ func TestScoreRequireToolsEscalatesAGap(t *testing.T) {
 	scored := evaluation.Score(&diag, evaluation.ScoreInput{
 		Policy: in.Policy, Facts: in.Facts, ConfigSource: assessCfgPath, ScanRoot: assessRoot,
 		Root: assessRoot, MarkedCoverage: in.MarkedCoverage, CoverageGaps: in.CoverageGaps,
-		RequireTools: true,
+		RequireTools: true, ApplyToolGate: true,
 	})
 	if !scored.HardGate || diag.Verdict != result.VerdictFail {
 		t.Fatalf("hardGate = %t verdict = %q, want a required-analyzer failure", scored.HardGate, diag.Verdict)
+	}
+}
+
+// TestScoreWithoutApplyToolGateLeavesTheVerdictAlone pins that only analyze and
+// check may turn a coverage gap into a failure. baseline, explain, enrich,
+// config compare, and the --base sub-run render a verdict nothing consumes as
+// an exit code, so rewriting it there is a report regression, not a gate.
+func TestScoreWithoutApplyToolGateLeavesTheVerdictAlone(t *testing.T) {
+	t.Parallel()
+	in := assessInput()
+	assessed, err := evaluation.Assess(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diag := assessed.Diagnostic
+	before := diag.Verdict
+	scored := evaluation.Score(&diag, evaluation.ScoreInput{
+		Policy: in.Policy, Facts: in.Facts, ConfigSource: assessCfgPath, ScanRoot: assessRoot,
+		Root: assessRoot, MarkedCoverage: in.MarkedCoverage, CoverageGaps: in.CoverageGaps,
+		RequireTools: true,
+	})
+	if scored.HardGate {
+		t.Error("hardGate = true, want no hard gate outside analyze/check")
+	}
+	if diag.Verdict != before {
+		t.Errorf("verdict = %q, want it unchanged at %q", diag.Verdict, before)
 	}
 }
 

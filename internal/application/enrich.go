@@ -153,7 +153,7 @@ type EnrichService struct {
 // diagnostic never leaves this method: enrichment reviews coupling evidence,
 // not findings.
 func (s EnrichService) capture(ctx context.Context, req EnrichmentRequest) (EnrichmentResult, error) {
-	analysisReq := AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root, CaptureRelationships: true}
+	analysisReq := AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root, CaptureRelationships: true, SuppressGateReasons: true}
 	acquired, err := s.Stages.Evidence.Acquire(ctx, analysisReq)
 	if err != nil {
 		return EnrichmentResult{}, err
@@ -214,8 +214,6 @@ func mergeEnrichmentLabels(existing, drafts []EnrichmentLabel, evidence map[stri
 // Execute captures evidence, loads labels, selects candidates, obtains judgments,
 // stamps current evidence, merges, and saves the review file in that order.
 // Execute runs the complete enrichment workflow.
-//
-//nolint:gocyclo // the ordered use-case stages are kept explicit at this boundary.
 func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (EnrichmentResult, error) {
 	if s.Stages.Evidence == nil {
 		return EnrichmentResult{}, errors.New("enrichment stage is required")
@@ -223,18 +221,7 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 	if req.ConfigPath == "" {
 		return EnrichmentResult{}, errors.New("enrichment config path is required")
 	}
-	// Keep the capture-only form as a small compatibility seam for callers that
-	// only need technical evidence. Those callers own preparation of their
-	// analyzer; the full workflow requires every port and prepares exactly once
-	// below.
 	store := s.Labels
-	if store == nil && s.Judge == nil {
-		out, err := s.capture(ctx, req)
-		if err != nil {
-			return EnrichmentResult{}, fmt.Errorf("enrichment analysis: %w", err)
-		}
-		return out, nil
-	}
 	if store == nil || s.Judge == nil {
 		return EnrichmentResult{}, errors.New("enrichment workflow is not fully configured")
 	}

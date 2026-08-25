@@ -112,15 +112,20 @@ func AbstainedPairs(set relationship.Set, approved map[string]struct{}, edgeCap,
 }
 
 // PairEvidence computes the current evidence hash per module pair (keyed by
-// labels.Key): a hash over "fromPath\x00toPath\x00kind" for every dependency
-// edge whose endpoints resolve to that ordered pair. Only pairs in wanted are
-// hashed, so enrich stamps drafts with exactly the hash analysis later verifies.
+// labels.Key): a hash over "fromPath\x00toPath\x00kind" for EVERY edge whose
+// endpoints resolve to that ordered pair. Only pairs in wanted are hashed, so
+// enrich stamps drafts with exactly the hash analysis later verifies.
+//
+// The edge set must stay identical to the one pairEvidence hashes during
+// analysis. Narrowing either side (to dependency kinds, say) gives a pair
+// carrying a `belongs_to` edge two different hashes, and every label approved
+// for it then reads permanently stale.
 func PairEvidence(set relationship.Set, wanted map[string]struct{}) map[string]string {
 	if len(wanted) == 0 {
 		return nil
 	}
 	items := map[string][]string{}
-	for _, edge := range set.DependencyEdges() {
+	for _, edge := range set.Edges {
 		if edge.FromModule == "" || edge.ToModule == "" || edge.FromModule == edge.ToModule {
 			continue
 		}

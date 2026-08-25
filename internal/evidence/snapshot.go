@@ -32,6 +32,3 @@ type Facts struct {
 	DeprecatedDeps          []modevidence.DeprecatedDep
 	SemanticStrengthOverlay *modevidence.SemanticStrengthOverlay
 }
-
-// Coverage is retained as a discoverable alias for model evidence coverage.
-type Coverage = modevidence.Coverage

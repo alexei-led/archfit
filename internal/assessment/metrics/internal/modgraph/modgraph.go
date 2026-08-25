@@ -39,7 +39,9 @@ func BlastRadius(set relationship.Set) (map[string]int, int) {
 	for m := range firstParty {
 		adj[m] = make(map[string]struct{})
 	}
-	for _, e := range set.DependencyEdges() {
+	// Every edge, not just the dependency kinds: blast radius answers "what can
+	// this change reach", and a containment edge (Rust `belongs_to`) reaches too.
+	for _, e := range set.Edges {
 		from, to := relationship.ModuleKey(e.FromID), relationship.ModuleKey(e.ToID)
 		if from == to {
 			continue

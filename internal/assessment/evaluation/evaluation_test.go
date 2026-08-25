@@ -30,6 +30,11 @@ const (
 	pathB          = "b/b.go"
 	kindImports    = "imports"
 	keyStrength    = "strength"
+	keyDistance    = "distance"
+	keyVolatility  = "volatility"
+	strFunctional  = "functional"
+	distSameOwner  = "cross_module_same_owner"
+	volLow         = "low"
 )
 
 var evaluatedAt = time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
@@ -295,7 +300,7 @@ func TestEvaluateAdvisoryVisibilityAndWarnVerdict(t *testing.T) {
 	candidate := relationship.AdvisoryCandidate{
 		ID: "adv1", RuleID: ruleBC, Kind: finding.KindAdvisory, Severity: relationship.SeverityMedium,
 		From: pathA, To: pathB, FromModule: "a", ToModule: "b", EdgeKind: kindImports,
-		Why: "unbalanced", MatchedBy: map[string]string{keyStrength: "functional"},
+		Why: "unbalanced", MatchedBy: map[string]string{keyStrength: strFunctional},
 	}
 	tests := []struct {
 		name              string
@@ -399,11 +404,11 @@ func TestEvaluateRollsUpBCAdvisoriesByModulePairAndClassification(t *testing.T) 
 			ID: id, RuleID: ruleBC, Severity: relationship.SeverityHigh,
 			From: from, To: to, FromModule: "a", ToModule: "b", EdgeKind: kindImports,
 			Locations: []relationship.Location{{File: from, Line: 1}},
-			MatchedBy: map[string]string{keyStrength: "functional", "distance": "cross_module_same_owner", "volatility": "low"},
+			MatchedBy: map[string]string{keyStrength: strFunctional, keyDistance: distSameOwner, keyVolatility: volLow},
 		}
 	}
 	differing := same("adv-other", "a/c.go", "b/c.go")
-	differing.MatchedBy = map[string]string{keyStrength: "intrusive", "distance": "cross_module_same_owner", "volatility": "low"}
+	differing.MatchedBy = map[string]string{keyStrength: "intrusive", keyDistance: distSameOwner, keyVolatility: volLow}
 	other := relationship.AdvisoryCandidate{
 		ID: "adv-dup", RuleID: "bc/duplicated_knowledge", Severity: relationship.SeverityLow,
 		From: pathA, To: pathB, FromModule: "a", ToModule: "b", EdgeKind: "clone",

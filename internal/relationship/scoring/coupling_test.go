@@ -7,195 +7,195 @@ import (
 )
 
 // TestScoreBand_Severity verifies the book-formula severity bands.
-// Severity is now derived entirely from ScoreBand(BookScorer.Score().Balance).
+// coupling.Severity is now derived entirely from ScoreBand(BookScorer.Score().Balance).
 // Cases are annotated with (S ordinal, D ordinal, V ordinal) → balance → expected band.
 func TestScoreBand_Severity(t *testing.T) {
-	scoreClassification := func(c Classification) Severity {
+	scoreClassification := func(c coupling.Classification) coupling.Severity {
 		s := BookScorer{}.Score(c)
 		if !s.Scored {
-			return SeverityNone
+			return coupling.SeverityNone
 		}
 		return s.Band
 	}
 
 	tests := []struct {
 		name     string
-		c        Classification
-		expected Severity
+		c        coupling.Classification
+		expected coupling.Severity
 	}{
 		// --- Symmetric balanced quadrant (low strength + low distance) ---
 		{
 			// S=1,D=4,V=3 → |1-4|=3, 10-3=7 → max(3,7)+1=8 → low
 			name: "contract cross-module-same-owner low_vol returns low",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityLow,
 			},
-			expected: SeverityLow,
+			expected: coupling.SeverityLow,
 		},
 		{
 			// S=1,D=4,V=10 → |1-4|=3, 10-10=0 → max(3,0)+1=4 → high
 			name: "contract cross-module-same-owner high_vol returns high",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityHigh,
 			},
-			expected: SeverityHigh,
+			expected: coupling.SeverityHigh,
 		},
 
 		// --- XOR modular quadrants ---
 		{
 			// S=1,D=9,V=3 → |1-9|=8, 10-3=7 → max(8,7)+1=9 → none
 			name: "contract cross-deploy low_vol returns none (loose quadrant)",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityLow,
 			},
-			expected: SeverityNone,
+			expected: coupling.SeverityNone,
 		},
 		{
 			// S=1,D=9,V=10 → |1-9|=8, 10-10=0 → max(8,0)+1=9 → none
 			name: "contract cross-deploy high_vol returns none (loose quadrant)",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityHigh,
 			},
-			expected: SeverityNone,
+			expected: coupling.SeverityNone,
 		},
 		{
 			// S=8,D=4,V=10 → |8-4|=4, 10-10=0 → max(4,0)+1=5 → medium
 			name: "functional cross-module-same-owner high_vol returns medium (cohesive)",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityHigh,
 			},
-			expected: SeverityMedium,
+			expected: coupling.SeverityMedium,
 		},
 		{
 			// S=8,D=4,V=3 → |8-4|=4, 10-3=7 → max(4,7)+1=8 → low
 			name: "functional cross-module-same-owner low_vol returns low",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityLow,
 			},
-			expected: SeverityLow,
+			expected: coupling.SeverityLow,
 		},
 
 		// --- Symmetric unbalanced quadrant (high strength + high distance) ---
 		{
 			// S=8,D=9,V=3 → |8-9|=1, 10-3=7 → max(1,7)+1=8 → low
 			name: "functional cross-deploy low_vol returns low",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityLow,
 			},
-			expected: SeverityLow,
+			expected: coupling.SeverityLow,
 		},
 		{
 			// S=8,D=9,V=10 → |8-9|=1, 10-10=0 → max(1,0)+1=2 → critical
 			name: "functional cross-deploy high_vol returns critical",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityHigh,
 			},
-			expected: SeverityCritical,
+			expected: coupling.SeverityCritical,
 		},
 		{
 			// S=8,D=9,V=10 undeclared → |8-9|=1, 10-10=0 → max(1,0)+1=2 → critical
 			name: "functional cross-deploy undeclared returns critical (conservative)",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityUndeclared,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityUndeclared,
 			},
-			expected: SeverityCritical,
+			expected: coupling.SeverityCritical,
 		},
 
-		// --- P3 divergence Case A: StrengthSymmetric + SameOwner (was None, now Medium) ---
+		// --- P3 divergence Case A: coupling.StrengthSymmetric + SameOwner (was None, now Medium) ---
 		// S=9,D=4,V=10 → |9-4|=5, 10-10=0 → max(5,0)+1=6 → medium
 		// BalanceResult returned None (XOR cohesive quadrant). Book formula: Medium.
 		{
 			name: "symmetric same-owner high_vol returns medium (P3 case A fix)",
-			c: Classification{
-				Strength:   StrengthSymmetric,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthSymmetric,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityHigh,
 			},
-			expected: SeverityMedium,
+			expected: coupling.SeverityMedium,
 		},
 
-		// --- P3 divergence Case B: StrengthSymmetric + DiffOwner (was Critical, now High) ---
+		// --- P3 divergence Case B: coupling.StrengthSymmetric + DiffOwner (was Critical, now High) ---
 		// S=9,D=7,V=10 → |9-7|=2, 10-10=0 → max(2,0)+1=3 → high
 		// BalanceResult returned Critical. Book formula: High.
 		{
 			name: "symmetric diff-owner high_vol returns high (P3 case B fix)",
-			c: Classification{
-				Strength:   StrengthSymmetric,
-				Distance:   DistanceCrossModuleDiffOwner,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthSymmetric,
+				Distance:   coupling.DistanceCrossModuleDiffOwner,
+				Volatility: coupling.VolatilityHigh,
 			},
-			expected: SeverityHigh,
+			expected: coupling.SeverityHigh,
 		},
 
 		// --- Intrusive paths ---
 		{
 			// S=10,D=7,V=3 → |10-7|=3, 10-3=7 → max(3,7)+1=8 → low
 			name: "intrusive cross-module-diff-owner low_vol returns low",
-			c: Classification{
-				Strength:   StrengthIntrusive,
-				Distance:   DistanceCrossModuleDiffOwner,
-				Volatility: VolatilityLow,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthIntrusive,
+				Distance:   coupling.DistanceCrossModuleDiffOwner,
+				Volatility: coupling.VolatilityLow,
 			},
-			expected: SeverityLow,
+			expected: coupling.SeverityLow,
 		},
 		{
 			// S=10,D=7,V=10 → |10-7|=3, 10-10=0 → max(3,0)+1=4 → high
 			name: "intrusive cross-module-diff-owner high_vol returns high",
-			c: Classification{
-				Strength:   StrengthIntrusive,
-				Distance:   DistanceCrossModuleDiffOwner,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthIntrusive,
+				Distance:   coupling.DistanceCrossModuleDiffOwner,
+				Volatility: coupling.VolatilityHigh,
 			},
-			expected: SeverityHigh,
+			expected: coupling.SeverityHigh,
 		},
 		{
 			// S=10,D=9,V=10 → |10-9|=1, 10-10=0 → max(1,0)+1=2 → critical
 			name: "intrusive cross-deploy high_vol returns critical",
-			c: Classification{
-				Strength:   StrengthIntrusive,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthIntrusive,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityHigh,
 			},
-			expected: SeverityCritical,
+			expected: coupling.SeverityCritical,
 		},
 		{
 			// S=10,D=4,V=10 → |10-4|=6, 10-10=0 → max(6,0)+1=7 → low
 			name: "intrusive same-owner high_vol returns low",
-			c: Classification{
-				Strength:   StrengthIntrusive,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthIntrusive,
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Volatility: coupling.VolatilityHigh,
 			},
-			expected: SeverityLow,
+			expected: coupling.SeverityLow,
 		},
 
-		// --- Abstention: unknown strength/distance → SeverityNone ---
+		// --- Abstention: unknown strength/distance → coupling.SeverityNone ---
 		{
 			name: "unknown strength abstains → none",
-			c: Classification{
-				Strength:   StrengthUnknown,
-				Distance:   DistanceCrossModuleDiffOwner,
-				Volatility: VolatilityHigh,
+			c: coupling.Classification{
+				Strength:   coupling.StrengthUnknown,
+				Distance:   coupling.DistanceCrossModuleDiffOwner,
+				Volatility: coupling.VolatilityHigh,
 			},
-			expected: SeverityNone,
+			expected: coupling.SeverityNone,
 		},
 	}
 
@@ -211,21 +211,21 @@ func TestScoreBand_Severity(t *testing.T) {
 	}
 }
 
-// TestDistanceIsHigh covers every Distance value: only a different owner, a
+// TestDistanceIsHigh covers every coupling.Distance value: only a different owner, a
 // separate deployment unit, or a declared external system represent the
 // large socio-technical gap DistanceIsHigh names — same_module,
 // cross_module_same_owner, and unknown do not.
 func TestDistanceIsHigh(t *testing.T) {
 	tests := []struct {
-		d    Distance
+		d    coupling.Distance
 		want bool
 	}{
-		{DistanceSameModule, false},
-		{DistanceCrossModuleSameOwner, false},
-		{DistanceCrossModuleDiffOwner, true},
-		{DistanceCrossDeployUnit, true},
-		{DistanceExternal, true},
-		{DistanceUnknown, false},
+		{coupling.DistanceSameModule, false},
+		{coupling.DistanceCrossModuleSameOwner, false},
+		{coupling.DistanceCrossModuleDiffOwner, true},
+		{coupling.DistanceCrossDeployUnit, true},
+		{coupling.DistanceExternal, true},
+		{coupling.DistanceUnknown, false},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.d), func(t *testing.T) {

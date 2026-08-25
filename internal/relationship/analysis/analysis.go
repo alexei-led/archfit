@@ -50,11 +50,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 		// fabricate: an empty graph and a missing one are the same conclusion.
 		in.Graph = graph.Build(nil)
 	}
-	cfg := classify.ConfigFrom(in.Policy)
-	cfg.Modules = classify.AugmentModulesFromGraph(in.Graph, cfg.Modules)
-	cfg.Modules = classify.AugmentGoWorkspaceModules(in.Graph, cfg.Modules)
-	cfg.Modules = classify.AugmentCargoCrateNodes(in.Graph, cfg.Modules)
-	cfg.ModuleMap = policy.BuildModuleMap(cfg.Modules)
+	cfg := augmentConfig(in.Graph, classify.ConfigFrom(in.Policy))
 
 	evidenceHashes := pairEvidence(in.Graph, cfg.ModuleMap, in.Labels, in.Mode)
 	approved, llm, stale := labels.Approved(in.Labels, evidenceHashes)

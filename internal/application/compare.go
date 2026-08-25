@@ -69,11 +69,11 @@ func (s CompareService) Execute(ctx context.Context, req CompareRequest) (Compar
 		return CompareResult{}, errors.New("comparison stages are required")
 	}
 	bundleDir := filepath.Dir(req.CurrentConfig)
-	cur, err := s.Current.Execute(ctx, AnalysisRequest{ConfigSource: req.CurrentConfig, BundleDir: bundleDir, Root: req.Root, EvaluatedAt: req.EvaluatedAt, EmptyBaseline: true, ReportOnly: true, WarnLabel: "[current] "})
+	cur, err := s.Current.Execute(ctx, AnalysisRequest{ConfigSource: req.CurrentConfig, BundleDir: bundleDir, Root: req.Root, EvaluatedAt: req.EvaluatedAt, EmptyBaseline: true, SuppressGateReasons: true, WarnLabel: "[current] "})
 	if err != nil {
 		return CompareResult{}, fmt.Errorf("measure current config: %w", err)
 	}
-	cand, err := s.Candidate.Execute(ctx, AnalysisRequest{ConfigSource: req.CandidateConfig, BundleDir: bundleDir, Root: req.Root, EvaluatedAt: req.EvaluatedAt, EmptyBaseline: true, ReportOnly: true, WarnLabel: "[candidate] "})
+	cand, err := s.Candidate.Execute(ctx, AnalysisRequest{ConfigSource: req.CandidateConfig, BundleDir: bundleDir, Root: req.Root, EvaluatedAt: req.EvaluatedAt, EmptyBaseline: true, SuppressGateReasons: true, WarnLabel: "[candidate] "})
 	if err != nil {
 		return CompareResult{}, fmt.Errorf("measure candidate config: %w", err)
 	}

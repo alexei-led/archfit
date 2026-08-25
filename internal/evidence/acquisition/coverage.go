@@ -89,7 +89,12 @@ func buildPrimaryToolProjectProbe() map[string]func(root string, cfg CoverageOpt
 	m := make(map[string]func(root string, cfg CoverageOptions) bool, len(registry.All()))
 	for _, lang := range registry.All() {
 		m[lang.PrimaryTool] = func(root string, cfg CoverageOptions) bool {
-			return cfg.ProjectPresent[lang.PrimaryTool](root)
+			probe, ok := cfg.ProjectPresent[lang.PrimaryTool]
+			if !ok || probe == nil {
+				// No probe projected: absence cannot be established, so disclose.
+				return true
+			}
+			return probe(root)
 		}
 	}
 	return m

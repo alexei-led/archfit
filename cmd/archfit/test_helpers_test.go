@@ -24,7 +24,7 @@ const (
 func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string) (result.Result, score.Scorecard, error) {
 	stages := newAnalysisStages(configPath, root, cfg, deps)
 	out, err := stages.Execute(ctx, application.AnalysisRequest{
-		ConfigSource: configPath, Root: root, EmptyBaseline: true, ReportOnly: true,
+		ConfigSource: configPath, Root: root, EmptyBaseline: true, ApplyToolGate: true,
 	})
 	if err != nil {
 		return result.Result{}, score.Scorecard{}, err

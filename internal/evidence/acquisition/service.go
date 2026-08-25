@@ -174,7 +174,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 
 	return application.Acquired{
 		Facts: evidencecontract.Facts{
-			Graph: graphResult.Graph, Coverage: marked,
+			Graph: graphResult.Graph, Coverage: coverage,
 			Symbols: graphResult.SCIPSymbols, PatternMatches: patternMatches,
 			SyntaxFacts: syntaxFacts, FileLOC: collected.FileLOC,
 			FileClassIndex: collected.FileClassIndex,

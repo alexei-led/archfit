@@ -164,8 +164,9 @@ func TestServiceOutcomeFromVerdictAndHardGate(t *testing.T) {
 	}
 }
 
-// The resolved formats and request flags reach the stage; a stage failure is
-// reported as a controlled use-case error, not a raw stage error.
+// The stage-bound request flags reach the stage, the resolved formats stay on
+// the response (no stage reads them), and a stage failure is reported as a
+// controlled use-case error, not a raw stage error.
 func TestServiceForwardsRequestAndWrapsStageFailure(t *testing.T) {
 	t.Run("forwards resolved request", func(t *testing.T) {
 		var got AnalysisRequest
@@ -175,11 +176,16 @@ func TestServiceForwardsRequestAndWrapsStageFailure(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !got.NoAdvisories || !got.RequireTools || !got.ReportOnly {
+		if !got.NoAdvisories || !got.RequireTools {
 			t.Errorf("stage request = %+v, want the user intent forwarded", got)
 		}
-		if len(got.Formats) != 1 || got.Formats[0] != FormatJSON {
-			t.Errorf("stage formats = %v, want the resolved json format", got.Formats)
+		// Analyze/check are the only use cases that may hard-gate on a missing
+		// required analyzer; baseline/explain/enrich/compare must not.
+		if !got.ApplyToolGate {
+			t.Errorf("stage request = %+v, want the tool gate enabled for analyze/check", got)
+		}
+		if got.SuppressGateReasons {
+			t.Errorf("stage request = %+v, want analyze to disclose coupling-gate reasons", got)
 		}
 		if len(resp.Formats) != 1 || resp.Formats[0] != FormatJSON {
 			t.Errorf("response formats = %v, want the resolved json format", resp.Formats)

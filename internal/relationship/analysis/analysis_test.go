@@ -31,6 +31,9 @@ const (
 	ruleClone   = "bc/duplicated_knowledge"
 	kindImports = "imports"
 	volHigh     = "high"
+	volLow      = "low"
+	globA       = "a/**"
+	globB       = "b/**"
 	libNATS     = "nats"
 	kindQueue   = "queue"
 )
@@ -39,8 +42,8 @@ const (
 // module b owned by team-b, so an a→b edge is a cross-owner relationship.
 func twoModules() map[string]policy.ModuleDef {
 	return map[string]policy.ModuleDef{
-		moduleA: {Paths: []string{"a/**"}, Owner: teamA, DeployUnit: moduleA, Subdomain: "core", Volatility: volHigh},
-		moduleB: {Paths: []string{"b/**"}, Owner: teamB, DeployUnit: moduleB, Subdomain: "supporting", Volatility: volHigh},
+		moduleA: {Paths: []string{globA}, Owner: teamA, DeployUnit: moduleA, Subdomain: "core", Volatility: volHigh},
+		moduleB: {Paths: []string{globB}, Owner: teamB, DeployUnit: moduleB, Subdomain: "supporting", Volatility: volHigh},
 	}
 }
 
@@ -467,7 +470,7 @@ func TestAnalyzeSummariesAreProduced(t *testing.T) {
 // relationship advisory.
 func TestAnalyzeSameModuleEdgesAreLocalCouplingOnly(t *testing.T) {
 	modules := map[string]policy.ModuleDef{
-		moduleA: {Paths: []string{"a/**"}, Owner: teamA, DeployUnit: moduleA, Volatility: volHigh},
+		moduleA: {Paths: []string{globA}, Owner: teamA, DeployUnit: moduleA, Volatility: volHigh},
 	}
 	g := graph.Build([]graph.Facts{{
 		Nodes: []graph.Node{

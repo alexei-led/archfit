@@ -1,5 +1,9 @@
 package scoring
 
+import (
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+)
+
 // BookScorer implements Vlad Khononov's published formula from
 // _Balancing Coupling in Software Design_ Ch10.
 //
@@ -18,7 +22,7 @@ type BookScorer struct{}
 // Book ordinals — verbatim from Khononov Ch8–Ch10.
 // Changing these values is a BREAKING metric change; bump ScoreVersion.
 
-// Strength ordinals (Ch10): lower = weaker/safer coupling.
+// coupling.Strength ordinals (Ch10): lower = weaker/safer coupling.
 const (
 	bookStrengthContract   = 1
 	bookStrengthModel      = 3
@@ -27,7 +31,7 @@ const (
 	bookStrengthIntrusive  = 10
 )
 
-// Distance ordinals (Ch8): lower = closer/safer.
+// coupling.Distance ordinals (Ch8): lower = closer/safer.
 // bookDistanceExternal is the ladder's far end (book Ch10 Example 1,
 // cross-vendor integration) — reserved for config-declared external systems.
 const (
@@ -38,7 +42,7 @@ const (
 	bookDistanceExternal             = 10
 )
 
-// Volatility ordinals (Ch9): lower = more stable = safer.
+// coupling.Volatility ordinals (Ch9): lower = more stable = safer.
 // Undeclared and unknown are conservative worst-case (10).
 const (
 	bookVolatilityLow        = 3  // low / supporting / generic
@@ -48,37 +52,37 @@ const (
 	bookVolatilityUnknown    = 10 // cannot confirm stability → worst case
 )
 
-// bookStrengthOrdinal maps Strength to its book Ch10 ordinal.
-// StrengthUnknown is absent — unknown strength causes abstention.
-var bookStrengthOrdinal = map[Strength]int{
-	StrengthContract:   bookStrengthContract,
-	StrengthModel:      bookStrengthModel,
-	StrengthFunctional: bookStrengthFunctional,
-	StrengthSymmetric:  bookStrengthSymmetric,
-	StrengthIntrusive:  bookStrengthIntrusive,
+// bookStrengthOrdinal maps coupling.Strength to its book Ch10 ordinal.
+// coupling.StrengthUnknown is absent — unknown strength causes abstention.
+var bookStrengthOrdinal = map[coupling.Strength]int{
+	coupling.StrengthContract:   bookStrengthContract,
+	coupling.StrengthModel:      bookStrengthModel,
+	coupling.StrengthFunctional: bookStrengthFunctional,
+	coupling.StrengthSymmetric:  bookStrengthSymmetric,
+	coupling.StrengthIntrusive:  bookStrengthIntrusive,
 }
 
-// bookDistanceOrdinal maps Distance to its book Ch8 ordinal.
-// DistanceUnknown is absent — unknown distance causes abstention.
-var bookDistanceOrdinal = map[Distance]int{
-	DistanceSameModule:           bookDistanceSameModule,
-	DistanceCrossModuleSameOwner: bookDistanceCrossModuleSameOwner,
-	DistanceCrossModuleDiffOwner: bookDistanceCrossModuleDiffOwner,
-	DistanceCrossDeployUnit:      bookDistanceCrossDeployUnit,
-	DistanceExternal:             bookDistanceExternal,
+// bookDistanceOrdinal maps coupling.Distance to its book Ch8 ordinal.
+// coupling.DistanceUnknown is absent — unknown distance causes abstention.
+var bookDistanceOrdinal = map[coupling.Distance]int{
+	coupling.DistanceSameModule:           bookDistanceSameModule,
+	coupling.DistanceCrossModuleSameOwner: bookDistanceCrossModuleSameOwner,
+	coupling.DistanceCrossModuleDiffOwner: bookDistanceCrossModuleDiffOwner,
+	coupling.DistanceCrossDeployUnit:      bookDistanceCrossDeployUnit,
+	coupling.DistanceExternal:             bookDistanceExternal,
 }
 
 // bookVolatilityFrozen is V=1 for frozen/legacy systems (most stable).
 const bookVolatilityFrozen = 1
 
-// bookVolatilityOrdinal maps Volatility to its book Ch9 ordinal.
-var bookVolatilityOrdinal = map[Volatility]int{
-	VolatilityFrozen:     bookVolatilityFrozen,
-	VolatilityLow:        bookVolatilityLow,
-	VolatilityMedium:     bookVolatilityMedium,
-	VolatilityHigh:       bookVolatilityHigh,
-	VolatilityUndeclared: bookVolatilityUndeclared,
-	VolatilityUnknown:    bookVolatilityUnknown,
+// bookVolatilityOrdinal maps coupling.Volatility to its book Ch9 ordinal.
+var bookVolatilityOrdinal = map[coupling.Volatility]int{
+	coupling.VolatilityFrozen:     bookVolatilityFrozen,
+	coupling.VolatilityLow:        bookVolatilityLow,
+	coupling.VolatilityMedium:     bookVolatilityMedium,
+	coupling.VolatilityHigh:       bookVolatilityHigh,
+	coupling.VolatilityUndeclared: bookVolatilityUndeclared,
+	coupling.VolatilityUnknown:    bookVolatilityUnknown,
 }
 
 const reasonBook = "book"
@@ -89,18 +93,18 @@ const reasonBook = "book"
 // meaning but live together — low cohesion, the "big ball of mud" corner.
 // Consumed by the local_coupling report block only; never by advisories,
 // coupling_balance, or the gate.
-func LocalComplexity(cl Classification) bool {
-	return cl.Distance == DistanceSameModule &&
-		(cl.Strength == StrengthContract || cl.Strength == StrengthModel)
+func LocalComplexity(cl coupling.Classification) bool {
+	return cl.Distance == coupling.DistanceSameModule &&
+		(cl.Strength == coupling.StrengthContract || cl.Strength == coupling.StrengthModel)
 }
 
 // Score computes the book balance score for c.
-func (BookScorer) Score(c Classification) EdgeScore {
+func (BookScorer) Score(c coupling.Classification) coupling.EdgeScore {
 	// Abstain when strength or distance is unknown — no book ordinal exists.
 	s, sOK := bookStrengthOrdinal[c.Strength]
 	d, dOK := bookDistanceOrdinal[c.Distance]
 	if !sOK || !dOK {
-		return EdgeScore{Scored: false, Reason: reasonBook}
+		return coupling.EdgeScore{Scored: false, Reason: reasonBook}
 	}
 
 	// Volatility: undeclared/unknown → worst-case 10 (conservative).
@@ -117,13 +121,13 @@ func (BookScorer) Score(c Classification) EdgeScore {
 
 	band := ScoreBand(balance)
 
-	return EdgeScore{
+	return coupling.EdgeScore{
 		Scored:  true,
 		Balance: balance,
 		Value:   balance,
 		Band:    band,
 		Reason:  reasonBook,
-		Breakdown: ScoreBreakdown{
+		Breakdown: coupling.ScoreBreakdown{
 			StrengthVal:   s,
 			DistanceVal:   d,
 			VolatilityVal: v,
@@ -136,19 +140,19 @@ func (BookScorer) Score(c Classification) EdgeScore {
 // bookCheapestMove returns the single dimension change that raises balance the
 // most (i.e. drops the severity band the most). Tie-break: strength > distance.
 //
-// Volatility is never offered as a move: strength and distance are design
+// coupling.Volatility is never offered as a move: strength and distance are design
 // properties an engineer can change, but volatility comes from the domain
 // (Ch9) — Ch11's remediation levers are reducing strength or distance only.
 // When neither single-rung move drops the band, no move is offered.
-func bookCheapestMove(c Classification, currentBand Severity) string {
-	if currentBand == SeverityNone {
+func bookCheapestMove(c coupling.Classification, currentBand coupling.Severity) string {
+	if currentBand == coupling.SeverityNone {
 		return ""
 	}
 
 	bestDrop := 0
 	bestLabel := ""
 
-	tryMove := func(label string, modified Classification) {
+	tryMove := func(label string, modified coupling.Classification) {
 		got := BookScorer{}.Score(modified)
 		if !got.Scored {
 			return
@@ -174,41 +178,41 @@ func bookCheapestMove(c Classification, currentBand Severity) string {
 	return bestLabel
 }
 
-// bookLowerStrength is like lowerStrength but skips StrengthUnknown.
-// StrengthUnknown causes BookScorer to abstain, so tryMove would silently drop
+// bookLowerStrength is like lowerStrength but skips coupling.StrengthUnknown.
+// coupling.StrengthUnknown causes BookScorer to abstain, so tryMove would silently drop
 // the suggestion; this ladder jumps directly from Functional to Model.
-func bookLowerStrength(s Strength) (Strength, bool) {
+func bookLowerStrength(s coupling.Strength) (coupling.Strength, bool) {
 	switch s {
-	case StrengthIntrusive:
-		return StrengthSymmetric, true
-	case StrengthSymmetric:
-		return StrengthFunctional, true
-	case StrengthFunctional:
-		return StrengthModel, true // skip StrengthUnknown
-	case StrengthModel:
-		return StrengthContract, true
+	case coupling.StrengthIntrusive:
+		return coupling.StrengthSymmetric, true
+	case coupling.StrengthSymmetric:
+		return coupling.StrengthFunctional, true
+	case coupling.StrengthFunctional:
+		return coupling.StrengthModel, true // skip coupling.StrengthUnknown
+	case coupling.StrengthModel:
+		return coupling.StrengthContract, true
 	default:
 		return s, false
 	}
 }
 
-// bookLowerDistance is like lowerDistance but skips DistanceUnknown.
-// DistanceUnknown causes BookScorer to abstain, so tryMove would silently drop
+// bookLowerDistance is like lowerDistance but skips coupling.DistanceUnknown.
+// coupling.DistanceUnknown causes BookScorer to abstain, so tryMove would silently drop
 // the suggestion; this ladder jumps directly from CrossModuleDiffOwner to CrossModuleSameOwner.
-// DistanceCrossModuleSameOwner is the terminal rung: the next step down is
-// DistanceSameModule, which is not a distance reduction but a module merge — a
+// coupling.DistanceCrossModuleSameOwner is the terminal rung: the next step down is
+// coupling.DistanceSameModule, which is not a distance reduction but a module merge — a
 // design change that moves the edge out of cross-module coupling entirely (its
 // score would report in local_coupling, not coupling_balance), so it is not
 // offered as a "reduce_distance" remediation.
-func bookLowerDistance(d Distance) (Distance, bool) {
+func bookLowerDistance(d coupling.Distance) (coupling.Distance, bool) {
 	switch d {
-	case DistanceExternal:
-		return DistanceCrossDeployUnit, true // bring the seam in-house
-	case DistanceCrossDeployUnit:
-		return DistanceCrossModuleDiffOwner, true
-	case DistanceCrossModuleDiffOwner:
-		return DistanceCrossModuleSameOwner, true // skip DistanceUnknown
-	// DistanceCrossModuleSameOwner is terminal — further reduction collapses to cohesion
+	case coupling.DistanceExternal:
+		return coupling.DistanceCrossDeployUnit, true // bring the seam in-house
+	case coupling.DistanceCrossDeployUnit:
+		return coupling.DistanceCrossModuleDiffOwner, true
+	case coupling.DistanceCrossModuleDiffOwner:
+		return coupling.DistanceCrossModuleSameOwner, true // skip coupling.DistanceUnknown
+	// coupling.DistanceCrossModuleSameOwner is terminal — further reduction collapses to cohesion
 	default:
 		return d, false
 	}

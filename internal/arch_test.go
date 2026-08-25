@@ -345,7 +345,7 @@ func TestTransitionalContractSurfaceRatchet(t *testing.T) {
 		max int
 	}{
 		{modulePrefix + "internal/relationship", 55},
-		{modulePrefix + "internal/assessment/result", 47},
+		{modulePrefix + "internal/assessment/result", 35},
 		{modulePrefix + "internal/evidence", 8},
 		// Task 2 deleted internal/view (29 exported) and internal/model/module
 		// (11 exported), moving their contracts to their owners — most of them

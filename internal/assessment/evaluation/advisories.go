@@ -4,11 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
 
@@ -37,14 +39,51 @@ func staleLabelFindings(keys []string) []finding.Finding {
 	return out
 }
 
-func resolveEvidence(s relationship.Set, findings []finding.Finding) []finding.Finding {
+// resolveEvidence stamps configured module labels on every finding endpoint and
+// joins coupling severity where the finding names a real classified edge.
+//
+// The two lookups are deliberately independent. Module resolution is a plain
+// path -> module answer that must hold for findings that are NOT edges: the
+// cycle rule reports two lexicographically sorted SCC members that need not be
+// directly connected, and public_api_* findings carry a module name as the path
+// with an empty edge kind. Gating the label on an edge match left those
+// findings with empty modules, which also drops the "public surface of module"
+// constraint from their repair tasks.
+func resolveEvidence(s relationship.Set, mm policy.ModuleMap, findings []finding.Finding) []finding.Finding {
+	modules := moduleByPath(s)
+	resolve := func(path string) string {
+		if mod, ok := modules[path]; ok {
+			return mod
+		}
+		mod, _ := mm.ModuleFor(path)
+		return mod
+	}
 	out := make([]finding.Finding, 0, len(findings))
 	for _, f := range findings {
+		f.Edge.From.Module = resolve(f.Edge.From.Path)
+		f.Edge.To.Module = resolve(f.Edge.To.Path)
 		if edge, ok := s.FindByFindingEdge(f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind); ok {
-			f.Edge.From.Module, f.Edge.To.Module = edge.FromModule, edge.ToModule
 			f.Severity = severityFor(edge.Strength, edge.Distance)
 		}
 		out = append(out, f)
+	}
+	return out
+}
+
+// moduleByPath indexes the classified relationship set by endpoint path. Its
+// edges carry the AUGMENTED module map's answer (synthetic Rust/Go-workspace
+// members included), which the configured policy map alone cannot reproduce —
+// so it is consulted first and the configured map only backstops paths no edge
+// touches.
+func moduleByPath(s relationship.Set) map[string]string {
+	out := make(map[string]string, len(s.Edges)*2)
+	for _, e := range s.Edges {
+		if e.FromModule != "" {
+			out[e.FromPath] = e.FromModule
+		}
+		if e.ToModule != "" {
+			out[e.ToPath] = e.ToModule
+		}
 	}
 	return out
 }
@@ -125,19 +164,27 @@ func rollup(members []finding.Finding) finding.Finding {
 		return locs[i].Line < locs[j].Line
 	})
 	rep.Locations = locs
+	rep.Edge.From.Path, rep.Edge.To.Path = groupEdgePaths(members, locs)
+	return rep
+}
+
+// groupEdgePaths returns honest from/to paths for a rolled-up finding: the pair
+// belonging to whichever member owns the FIRST merged location, so the reported
+// paths and locations[0] name the same member edge. members arrive sorted by ID
+// (rollup sorts), so members[0] is the representative used when no location
+// determines an owner — its pair is still a real member edge, and wiping it
+// would strip the finding's only path evidence.
+func groupEdgePaths(members []finding.Finding, locs []relationship.Location) (fromPath, toPath string) {
 	if len(locs) > 0 {
 		for _, m := range members {
-			for _, l := range m.Locations {
-				if l == locs[0] {
-					rep.Edge.From.Path = m.Edge.From.Path
-					rep.Edge.To.Path = m.Edge.To.Path
-					break
-				}
+			if slices.Contains(m.Locations, locs[0]) {
+				return m.Edge.From.Path, m.Edge.To.Path
 			}
 		}
 	}
-	return rep
+	return members[0].Edge.From.Path, members[0].Edge.To.Path
 }
+
 func staleLabelID(from, to string) string { return fingerprint("labels/stale", from+"\x00"+to) }
 func fingerprint(rule, subject string) string {
 	h := sha256.Sum256([]byte(rule + "\x00" + subject))

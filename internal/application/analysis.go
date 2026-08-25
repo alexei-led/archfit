@@ -55,10 +55,13 @@ type Request struct {
 // validation and sequencing; the stage owns evidence collection and scoring.
 type AnalysisRequest struct {
 	BaseRef      string
-	Formats      []string
 	NoAdvisories bool
 	RequireTools bool
-	ReportOnly   bool
+	// ApplyToolGate lets a missing required analyzer stamp the verdict fail and
+	// hard-gate the run. Only analyze/check set it: baseline, explain, enrich,
+	// config compare, and the --base sub-run render a verdict but consume no
+	// exit code from it, so a coverage gap must not rewrite what they report.
+	ApplyToolGate bool
 	// Comparison and use-case stages may override the technical context while
 	// keeping the analyzer implementation shared.
 	ConfigSource         string
@@ -276,7 +279,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		Root:          runCtx.Scope.Root,
 		CrateRootDirs: runCtx.CrateRootDirs, RequireTools: req.RequireTools,
 		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
-		CoverageGaps: runCtx.CoverageGaps,
+		CoverageGaps: runCtx.CoverageGaps, ApplyToolGate: req.ApplyToolGate,
 	})
 	if !req.SuppressGateReasons {
 		s.discloseGate(scored, base)
@@ -425,8 +428,8 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 		return Response{}, errors.New("analysis stages are required")
 	}
 	out, err := s.Stages.Execute(ctx, AnalysisRequest{
-		BaseRef: req.BaseRef, Formats: formats, NoAdvisories: req.NoAdvisories,
-		RequireTools: req.RequireTools, ReportOnly: req.ReportOnly,
+		BaseRef: req.BaseRef, NoAdvisories: req.NoAdvisories,
+		RequireTools: req.RequireTools, ApplyToolGate: true,
 	})
 	if err != nil {
 		return Response{}, &ExecutionError{Message: fmt.Sprintf("error: %v", err)}

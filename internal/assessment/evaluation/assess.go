@@ -115,6 +115,10 @@ type ScoreInput struct {
 	Root          string
 	CrateRootDirs map[string]string
 	RequireTools  bool
+	// ApplyToolGate enables the coverage-gap hard gate. Only the analyze/check
+	// use case sets it: every other stage renders a verdict nothing consumes as
+	// an exit code, so a required-analyzer gap must not rewrite it there.
+	ApplyToolGate bool
 
 	ConfigWarnings []string
 	MarkedCoverage []modevidence.Coverage
@@ -164,7 +168,7 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	return Scored{
 		Score: finalized.Score, GateReasons: finalized.GateReasons,
 		AnchorStale: couplingGateAnchorStale(gate, in.Anchor),
-		HardGate:    applyToolGate(diag, in.RequireTools),
+		HardGate:    in.ApplyToolGate && applyToolGate(diag, in.RequireTools),
 	}
 }
 

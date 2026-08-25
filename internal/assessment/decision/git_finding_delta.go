@@ -49,7 +49,7 @@ const (
 	// neither side ran it, so neither side has a finding the other could hide —
 	// so it pairs, in DEGRADED form, which discloses the shared blindness.
 	//
-	// Whether a CoverageGap was raised is NOT part of this  A gap is
+	// Whether a CoverageGap was raised is NOT part of this decision. A gap is
 	// only emitted for analyzers listed in toolAffectedMetrics (the install-hint
 	// table), so scip, scip-symbols and ast-grep never raise one however loudly
 	// the config asked for them. Keying comparability on gap presence made a

@@ -1,10 +1,14 @@
 package scoring
 
-import "math"
+import (
+	"math"
+
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+)
 
 // MultiplicativeScorer implements archfit's numeric BC score: a deterministic
 // implementation of Vlad Khononov's qualitative maintenance-effort heuristic
-// (Effort ∝ Strength × Distance × Volatility), NOT a literal equation he
+// (Effort ∝ coupling.Strength × coupling.Distance × coupling.Volatility), NOT a literal equation he
 // publishes — see ScoreDefinition. It encodes the balance rule: low volatility
 // neutralises (V_norm down-weights), and cohesion (high strength + low distance)
 // scores low because the continuous-XOR R_mod term is small when one dimension
@@ -46,28 +50,28 @@ const maxDistanceOrdinal = 5.0
 // intrusiveFloor is the minimum score for any intrusive-strength edge (band low).
 const intrusiveFloor = 3
 
-// volatilityNorm maps Volatility to its [0,1] weight for the BC-pure formula
+// volatilityNorm maps coupling.Volatility to its [0,1] weight for the BC-pure formula
 // (values frozen — see consts above).
 // Low volatility suppresses the coupling risk (stable target), high amplifies it.
-var volatilityNorm = map[Volatility]float64{
-	VolatilityLow:        volatilityNormLow,
-	VolatilityMedium:     volatilityNormMedium,
-	VolatilityHigh:       volatilityNormHigh,
-	VolatilityUndeclared: volatilityNormUndeclared,
-	VolatilityUnknown:    volatilityNormUnknown,
+var volatilityNorm = map[coupling.Volatility]float64{
+	coupling.VolatilityLow:        volatilityNormLow,
+	coupling.VolatilityMedium:     volatilityNormMedium,
+	coupling.VolatilityHigh:       volatilityNormHigh,
+	coupling.VolatilityUndeclared: volatilityNormUndeclared,
+	coupling.VolatilityUnknown:    volatilityNormUnknown,
 }
 
 // reasonMultiplicative labels EdgeScores produced by the multiplicative scorer.
 const reasonMultiplicative = "multiplicative"
 
 // Score computes the multiplicative BC score for c.
-func (MultiplicativeScorer) Score(c Classification) EdgeScore {
+func (MultiplicativeScorer) Score(c coupling.Classification) coupling.EdgeScore {
 	// Same-module edges are not cross-boundary coupling and carry no BC risk.
 	// classify.Run already filters them, but guard the scorer so it is correct in
 	// isolation: without this, (low-strength, same_module, high_vol) would score
 	// critical via rMod = 1 - |0 - 0| = 1.0.
-	if c.Distance == DistanceSameModule {
-		return EdgeScore{Value: 0, Band: ScoreBand(0), Reason: reasonMultiplicative}
+	if c.Distance == coupling.DistanceSameModule {
+		return coupling.EdgeScore{Value: 0, Band: ScoreBand(0), Reason: reasonMultiplicative}
 	}
 	sv := strengthOrdinal[c.Strength]
 	dv := distanceOrdinal[c.Distance]
@@ -83,17 +87,17 @@ func (MultiplicativeScorer) Score(c Classification) EdgeScore {
 	raw = clamp(raw, 0, 10)
 
 	// Intrusive floor: intrusive strength always triggers at least band low.
-	if c.Strength == StrengthIntrusive && raw < intrusiveFloor {
+	if c.Strength == coupling.StrengthIntrusive && raw < intrusiveFloor {
 		raw = intrusiveFloor
 	}
 
 	band := legacyScoreBand(raw)
 
-	return EdgeScore{
+	return coupling.EdgeScore{
 		Value:  raw,
 		Band:   band,
 		Reason: reasonMultiplicative,
-		Breakdown: ScoreBreakdown{
+		Breakdown: coupling.ScoreBreakdown{
 			StrengthVal: sv,
 			DistanceVal: dv,
 			VolDiscount: vd,
@@ -105,15 +109,15 @@ func (MultiplicativeScorer) Score(c Classification) EdgeScore {
 // multiplicativeCheapestMove returns the single dimension change that drops the
 // band the most. Returns "" when already at none or no move improves the band.
 // Tie-break: strength reduction > distance reduction > volatility change.
-func multiplicativeCheapestMove(c Classification, currentBand Severity) string {
-	if currentBand == SeverityNone {
+func multiplicativeCheapestMove(c coupling.Classification, currentBand coupling.Severity) string {
+	if currentBand == coupling.SeverityNone {
 		return ""
 	}
 
 	bestDrop := 0
 	bestLabel := ""
 
-	tryMove := func(label string, modified Classification) {
+	tryMove := func(label string, modified coupling.Classification) {
 		s := MultiplicativeScorer{}.Score(modified)
 		drop := bandRank(currentBand) - bandRank(s.Band)
 		if drop > bestDrop {
