@@ -15,11 +15,16 @@ const toolGrimp = "grimp"
 // healthWarnings returns actionable hints, in emission order, when the assessed
 // result looks suspicious. Each warning includes a next-command suggestion. They
 // are disclosure only: no warning here moves a metric, a finding, or the verdict.
-// root and configPath are used only in the command hints.
-func healthWarnings(diag result.Result, modules map[string]policy.ModuleDef, root, configPath string) []string {
+// scanRoot and configPath are used only in the command hints, and scanRoot is the
+// caller's --root form so a copy-pasted hint reproduces the run.
+//
+// gaps is passed explicitly rather than read off diag: Score stamps
+// diag.CoverageGaps AFTER Assess computes these warnings, so reading the field
+// here would silently disable the coverage-gap hint.
+func healthWarnings(diag result.Result, gaps []evidence.CoverageGap, modules map[string]policy.ModuleDef, scanRoot, configPath string) []string {
 	var out []string
 	warn := func(msg string) { out = append(out, msg) }
-	if len(diag.CoverageGaps) > 0 {
+	if len(gaps) > 0 {
 		warn("analyzer coverage gap — some edges may be unscored\n  → run: archfit doctor --fix")
 	}
 
@@ -39,7 +44,7 @@ func healthWarnings(diag result.Result, modules map[string]policy.ModuleDef, roo
 	// re-walking the source tree. Empty FileFacts with declared module paths
 	// means no source files matched any module glob.
 	if len(diag.FileFacts) == 0 && declaresModulePaths(modules) {
-		warn(fmt.Sprintf("no source files matched declared module paths — check --root and module globs\n  → run: archfit check --root %q -c %q", root, configPath))
+		warn(fmt.Sprintf("no source files matched declared module paths — check --root and module globs\n  → run: archfit check --root %q -c %q", scanRoot, configPath))
 	}
 	return out
 }

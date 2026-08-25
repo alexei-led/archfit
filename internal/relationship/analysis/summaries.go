@@ -86,7 +86,7 @@ func addSummary(s *relationship.ClassifiedEdgeSummary, c relationship.Classifica
 	if c.Score.Scored {
 		s.Scored++
 		s.BySeverity[string(c.Score.Band)]++
-		if c.Score.Band == relationship.SeverityCritical && (distance == relationship.DistanceCrossModuleDiffOwner || distance == relationship.DistanceCrossDeployUnit) {
+		if c.Score.Band == relationship.SeverityCritical && coupling.DistanceIsHigh(distance) {
 			s.DistributedMonolith++
 		}
 		return c.Score.Balance
@@ -146,7 +146,7 @@ func (a *tailAccumulator) add(c relationship.Classification, distance relationsh
 	}
 	if c.Score.Band == relationship.SeverityCritical {
 		a.critical++
-		if distance == relationship.DistanceCrossModuleDiffOwner || distance == relationship.DistanceCrossDeployUnit {
+		if coupling.DistanceIsHigh(distance) {
 			a.distributed++
 		}
 	}

@@ -206,16 +206,8 @@ func cloneEvidence(clusters []clone.Cluster, mm policy.ModuleMap, index map[stri
 					x, y = y, x
 				}
 				k := x + "\x00" + y
-				line := 0
-				if i < len(c.Locations) {
-					line = c.Locations[i].StartLine
-				}
-				out[k] = append(out[k], graph.Location{File: f, Line: line})
-				line = 0
-				if j < len(c.Locations) {
-					line = c.Locations[j].StartLine
-				}
-				out[k] = append(out[k], graph.Location{File: c.Files[j], Line: line})
+				out[k] = appendUniqueLocation(out[k], f, cloneStartLine(c, i))
+				out[k] = appendUniqueLocation(out[k], c.Files[j], cloneStartLine(c, j))
 			}
 		}
 	}
@@ -230,18 +222,55 @@ func cloneEvidence(clusters []clone.Cluster, mm policy.ModuleMap, index map[stri
 	}
 	return out
 }
+
+// cloneStartLine returns the start line jscpd reported for Files[i] in c, or 0
+// when the cluster carries no per-file location data.
+func cloneStartLine(c clone.Cluster, i int) int {
+	if i < len(c.Locations) {
+		return c.Locations[i].StartLine
+	}
+	return 0
+}
+
+// appendUniqueLocation appends loc to locs unless an identical entry is already
+// present. One cluster can pair the same two modules through several file
+// combinations, so without this the same file:line ships repeatedly in a
+// bc/duplicated_knowledge finding's locations[] and inflates the clone counts.
+func appendUniqueLocation(locs []graph.Location, file string, line int) []graph.Location {
+	loc := graph.Location{File: file, Line: line}
+	for _, l := range locs {
+		if l == loc {
+			return locs
+		}
+	}
+	return append(locs, loc)
+}
+
+// cloneLanguage maps a file extension to the language tag LookupFileClass expects
+// for built-in test/generated detection. The TS/JS family all routes through the
+// TypeScript classifier because IsTestFile handles .test./.spec. and __tests__
+// there for both TS and JS extensions. An extension outside the supported set
+// abstains with "": defaulting it to TypeScript would apply TS test-path
+// heuristics to unrelated languages and silently drop those clusters.
 func cloneLanguage(path string) string {
-	switch filepath.Ext(path) {
+	ext := filepath.Ext(path)
+	switch ext {
 	case ".go":
 		return graph.LangGo
 	case ".py":
 		return graph.LangPython
 	case ".rs":
 		return graph.LangRust
-	default:
-		return graph.LangTypeScript
 	}
+	for _, tsExt := range cloneTypeScriptSourceExts {
+		if ext == tsExt {
+			return graph.LangTypeScript
+		}
+	}
+	return ""
 }
+
+var cloneTypeScriptSourceExts = graph.TypeScriptSourceExtensions()
 
 func buildSet(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap) relationship.Set {
 	if g == nil {

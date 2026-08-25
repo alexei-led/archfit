@@ -15,9 +15,9 @@ const (
 )
 
 // TestMergeEnrichmentLabelsKeepsFreshApprovals pins the merge rule: a draft may
-// never clobber an approval whose evidence still matches the code, but it does
-// replace an existing draft and adds new pairs. Output is sorted so a re-run
-// rewrites the file byte-identically.
+// never clobber an approval the gate still honours, but it does replace an
+// existing draft and adds new pairs. Output is sorted so a re-run rewrites the
+// file byte-identically.
 func TestMergeEnrichmentLabelsKeepsFreshApprovals(t *testing.T) {
 	t.Parallel()
 	existing := []EnrichmentLabel{
@@ -30,8 +30,8 @@ func TestMergeEnrichmentLabelsKeepsFreshApprovals(t *testing.T) {
 		{From: mergeModC, To: mergeModA, Strength: mergeContract, Status: EnrichmentLabelStatusDraft},
 	}
 
-	// An approval with no evidence hash is not "fresh": nil evidence means the
-	// pair was never hashed, so the draft wins.
+	// Nil evidence is a delta run over a partial graph: nothing was hashed, so
+	// no approval can be shown stale and every approval survives.
 	merged := mergeEnrichmentLabels(existing, drafts, nil)
 	if len(merged) != 3 {
 		t.Fatalf("merged = %+v, want 3", merged)
@@ -40,11 +40,39 @@ func TestMergeEnrichmentLabelsKeepsFreshApprovals(t *testing.T) {
 	for _, l := range merged {
 		byKey[EnrichmentPairKey(l.From, l.To)] = l
 	}
+	if got := byKey[EnrichmentPairKey(mergeModA, mergeModB)]; got.Status != EnrichmentLabelStatusApproved || got.Strength != mergeModel {
+		t.Errorf("unhashed approval was clobbered: %+v", got)
+	}
 	if got := byKey[EnrichmentPairKey(mergeModB, mergeModA)]; got.Strength != mergeModel {
 		t.Errorf("existing draft not replaced: %+v", got)
 	}
 	if merged[0].From > merged[1].From || merged[1].From > merged[2].From {
 		t.Errorf("not sorted: %+v", merged)
+	}
+}
+
+// TestMergeEnrichmentLabelsKeepsHandAuthoredApproval covers the case the gate
+// supports and enrich must not undo: an approval a human wrote by hand carries
+// no evidence_hash, yet the pair IS measured this run. labels.isEffective
+// treats an empty hash as effective, so the LLM draft must not overwrite it.
+func TestMergeEnrichmentLabelsKeepsHandAuthoredApproval(t *testing.T) {
+	t.Parallel()
+	key := EnrichmentPairKey(mergeModA, mergeModB)
+	existing := []EnrichmentLabel{{
+		From: mergeModA, To: mergeModB, Strength: mergeContract,
+		Status: EnrichmentLabelStatusApproved, Provenance: EnrichmentLabelProvenanceHuman,
+	}}
+	drafts := []EnrichmentLabel{{
+		From: mergeModA, To: mergeModB, Strength: mergeIntrusive,
+		EvidenceHash: currentEvidence, Status: EnrichmentLabelStatusDraft,
+	}}
+
+	merged := mergeEnrichmentLabels(existing, drafts, map[string]string{key: currentEvidence})
+	if len(merged) != 1 {
+		t.Fatalf("merged = %+v, want one entry", merged)
+	}
+	if merged[0].Status != EnrichmentLabelStatusApproved || merged[0].Strength != mergeContract {
+		t.Fatalf("hand-authored approval was overwritten by a draft: %+v", merged[0])
 	}
 }
 

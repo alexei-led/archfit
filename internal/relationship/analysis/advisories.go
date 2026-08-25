@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
 const relationshipScoreVersion = "bc_score.v6"
@@ -114,12 +115,12 @@ func bcRiskClause(edge relationship.Edge) string {
 	volatility := volatilityClause(edge.Volatility)
 	switch edge.Severity {
 	case relationship.SeverityCritical:
-		if edge.Distance == relationship.DistanceCrossModuleDiffOwner || edge.Distance == relationship.DistanceCrossDeployUnit {
+		if coupling.DistanceIsHigh(edge.Distance) {
 			return strength + " across a high-distance boundary to " + volatility + " → distributed-monolith risk"
 		}
 		return strength + " to " + volatility + " at low distance → local cascade (cheap to change; not a distributed monolith)"
 	case relationship.SeverityHigh:
-		if edge.Distance == relationship.DistanceCrossModuleDiffOwner || edge.Distance == relationship.DistanceCrossDeployUnit {
+		if coupling.DistanceIsHigh(edge.Distance) {
 			return strength + " across a boundary to " + volatility + " → likely cascading changes"
 		}
 		return strength + " to " + volatility + " at low distance → cascading changes contained to one owner"

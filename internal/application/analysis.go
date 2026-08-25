@@ -62,14 +62,23 @@ type AnalysisRequest struct {
 	// config compare, and the --base sub-run render a verdict but consume no
 	// exit code from it, so a coverage gap must not rewrite what they report.
 	ApplyToolGate bool
+	// DiscloseHealthWarnings prints the assessment's health hints to stderr. Only
+	// analyze/check set it. Every other caller either renders a tree the user
+	// cannot act on — the --base sub-run scores a temp worktree that is deleted
+	// before control returns, so its hints name paths that no longer exist — or
+	// is a report-only stage that never disclosed them.
+	DiscloseHealthWarnings bool
 	// Comparison and use-case stages may override the technical context while
 	// keeping the analyzer implementation shared.
-	ConfigSource         string
-	BundleDir            string
-	Root                 string
-	EvaluatedAt          time.Time
-	EmptyBaseline        bool
-	SuppressGateReasons  bool
+	ConfigSource        string
+	BundleDir           string
+	Root                string
+	EvaluatedAt         time.Time
+	EmptyBaseline       bool
+	SuppressGateReasons bool
+	// WarnLabel prefixes the ACQUISITION stage's stderr warnings, so a sub-run's
+	// degradation is not misread as the head run's. Health warnings do not use
+	// it: they are analyze/check-only (see DiscloseHealthWarnings).
 	WarnLabel            string
 	CaptureRelationships bool
 }
@@ -258,7 +267,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		Accepted: base.Accepted, BaseMetrics: result.MetricSnapshot(base.Metrics),
 		Scope: runCtx.Scope, Now: runCtx.Now, BaseRef: req.BaseRef,
 		Advisory: !req.NoAdvisories, CaptureRelationships: req.CaptureRelationships,
-		ConfigSource: runCtx.ConfigSource, ConfigHash: runCtx.ConfigHash,
+		ConfigSource: runCtx.ConfigSource, ScanRoot: runCtx.ScanRoot, ConfigHash: runCtx.ConfigHash,
 		PrimaryExtractorTools: runCtx.PrimaryExtractorTools, OwnerSource: runCtx.OwnerSource,
 		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
 		CoverageGaps: runCtx.CoverageGaps, VolatilityCorroboration: runCtx.VolatilityCorroboration,
@@ -267,8 +276,10 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		return AnalysisResult{}, err
 	}
 	diag := assessed.Diagnostic
-	for _, warning := range assessed.Warnings {
-		s.warn(req.WarnLabel, warning)
+	if req.DiscloseHealthWarnings {
+		for _, warning := range assessed.Warnings {
+			s.warn(warning)
+		}
 	}
 	s.reportPhase("Scoring architecture")
 	scored := evaluation.Score(&diag, evaluation.ScoreInput{
@@ -339,8 +350,8 @@ func (s StageExecutor) stderr() io.Writer {
 	return os.Stderr
 }
 
-func (s StageExecutor) warn(label, msg string) {
-	_, _ = fmt.Fprintln(s.stderr(), "warning: "+label+msg)
+func (s StageExecutor) warn(msg string) {
+	_, _ = fmt.Fprintln(s.stderr(), "warning: "+msg)
 }
 
 func (s StageExecutor) reportPhase(stage string) {
@@ -429,7 +440,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 	}
 	out, err := s.Stages.Execute(ctx, AnalysisRequest{
 		BaseRef: req.BaseRef, NoAdvisories: req.NoAdvisories,
-		RequireTools: req.RequireTools, ApplyToolGate: true,
+		RequireTools: req.RequireTools, ApplyToolGate: true, DiscloseHealthWarnings: true,
 	})
 	if err != nil {
 		return Response{}, &ExecutionError{Message: fmt.Sprintf("error: %v", err)}

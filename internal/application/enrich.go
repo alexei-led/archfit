@@ -100,7 +100,15 @@ const (
 
 // EnrichmentRequest requests one technical enrichment capture and review.
 type EnrichmentRequest struct {
-	ConfigPath, Root   string
+	ConfigPath, Root string
+	// SnippetRoot is the base directory source snippets are read from. It is
+	// SEPARATE from Root on purpose: Root is the analysis boundary and an empty
+	// Root means "the whole repository", while snippet reading needs a concrete
+	// directory and defaults to the config's own. Folding the two together made
+	// `config enrich abstained -c sub/.archfit.yaml` analyse only sub/, whose
+	// node paths and module resolution differ from the full tree — every
+	// evidence hash it stamped then read permanently stale to the gate.
+	SnippetRoot        string
 	Refresh            bool
 	LabelsPath         string
 	Abstained          bool
@@ -172,14 +180,34 @@ func (s EnrichService) capture(ctx context.Context, req EnrichmentRequest) (Enri
 	return EnrichmentResult{Evidence: *out.EnrichmentEvidence}, nil
 }
 
+// snippetRoot returns the directory source snippets are read from, falling back
+// to the analysis root when the caller set none.
+func (r EnrichmentRequest) snippetRoot() string {
+	if r.SnippetRoot != "" {
+		return r.SnippetRoot
+	}
+	return r.Root
+}
+
 // EnrichmentPairKey is the stable ordered module-pair key used by the workflow.
 func EnrichmentPairKey(from, to string) string { return from + "\x00" + to }
 
+// effectiveApprovedLabels returns the pairs whose approved label the gate still
+// honours, so enrich never re-drafts over one. It must mirror the gate's own
+// freshness rule (labels.isEffective): a label goes stale ONLY when a stored
+// hash disagrees with the current evidence. An empty EvidenceHash
+// (hand-authored) and a pair with no current evidence (edges gone) both stay
+// effective — requiring a non-empty match instead would let the LLM overwrite a
+// reviewer's hand-pinned strength that the gate is still applying.
 func effectiveApprovedLabels(existing []EnrichmentLabel, evidence map[string]string) map[string]struct{} {
 	approved := make(map[string]struct{})
 	for _, label := range existing {
+		if label.Status != EnrichmentLabelStatusApproved {
+			continue
+		}
 		key := EnrichmentPairKey(label.From, label.To)
-		if label.Status == EnrichmentLabelStatusApproved && label.EvidenceHash != "" && label.EvidenceHash == evidence[key] {
+		hash, measured := evidence[key]
+		if !measured || label.EvidenceHash == "" || label.EvidenceHash == hash {
 			approved[key] = struct{}{}
 		}
 	}
@@ -271,7 +299,7 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 			for j := range abstained[i].Samples {
 				sample := &abstained[i].Samples[j]
 				if sample.Snippet == "" && sample.File != "" {
-					sample.Snippet = s.Snippets.Snippet(req.Root, sample.File, sample.Line)
+					sample.Snippet = s.Snippets.Snippet(req.snippetRoot(), sample.File, sample.Line)
 				}
 			}
 		}

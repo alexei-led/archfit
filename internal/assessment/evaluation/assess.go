@@ -58,7 +58,10 @@ type AssessInput struct {
 	Advisory             bool
 	CaptureRelationships bool
 
-	ConfigSource          string
+	ConfigSource string
+	// ScanRoot is the analysis boundary as the CALLER gave it. Warning hints echo
+	// it verbatim; Scope.Root is its canonical form and would not copy-paste back.
+	ScanRoot              string
 	ConfigHash            string
 	PrimaryExtractorTools []string
 	OwnerSource           string
@@ -100,7 +103,7 @@ func Assess(in AssessInput) (Assessed, error) {
 	return Assessed{
 		Diagnostic: diag,
 		Captured:   captured,
-		Warnings:   healthWarnings(diag, in.Policy.Topology.Modules, in.Scope.Root, in.ConfigSource),
+		Warnings:   healthWarnings(diag, in.CoverageGaps, in.Policy.Topology.Modules, in.ScanRoot, in.ConfigSource),
 	}, nil
 }
 

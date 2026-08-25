@@ -66,16 +66,16 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 
 	labelsPath := filepath.Join(configDir, defaultLabelsPath)
 	deps.refresh = c.Refresh
-	root := c.Root
-	if root == "" {
-		root = configDir
+	snippetRoot := c.Root
+	if snippetRoot == "" {
+		snippetRoot = configDir
 	}
 	service := application.EnrichService{
 		Stages: newAnalysisStages(c.Config, c.Root, cfg, deps), Labels: enrichmentLabelStore(),
 		Judge:    abstainedJudgeAdapter{provider: provider, cfg: cfg, configPath: c.Config, root: scanRootForEvidence(configDir, c.Root)},
 		Snippets: filesystemSnippetAdapter{},
 	}
-	out, err := service.Execute(ctx, application.EnrichmentRequest{ConfigPath: c.Config, Root: root, Refresh: c.Refresh, LabelsPath: labelsPath, Abstained: true, EdgeCap: abstainedEdgeCap, SampleCap: abstainedSampleLocs})
+	out, err := service.Execute(ctx, application.EnrichmentRequest{ConfigPath: c.Config, Root: c.Root, SnippetRoot: snippetRoot, Refresh: c.Refresh, LabelsPath: labelsPath, Abstained: true, EdgeCap: abstainedEdgeCap, SampleCap: abstainedSampleLocs})
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

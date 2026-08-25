@@ -26,11 +26,13 @@ const (
 	assessRoot    = "/repo"
 	assessHash    = "cfg-hash"
 	assessOwner   = "codeowners"
+	assessCore    = "core"
+	assessGrimp   = "grimp"
 )
 
 func assessPolicy() policy.PolicySnapshot {
 	modules := map[string]policy.ModuleDef{
-		assessModA: {Paths: []string{"a/**"}, Subdomain: "core"},
+		assessModA: {Paths: []string{"a/**"}, Subdomain: assessCore},
 		assessModB: {Paths: []string{"b/**"}, Subdomain: "supporting"},
 	}
 	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
@@ -73,7 +75,7 @@ func assessInput() evaluation.AssessInput {
 		ConfigHash:    assessHash,
 		OwnerSource:   assessOwner,
 		MarkedCoverage: []modevidence.Coverage{
-			{Tool: "grimp", Status: modevidence.StatusDisabled, Reason: "language analysis disabled by config"},
+			{Tool: assessGrimp, Status: modevidence.StatusDisabled, Reason: "language analysis disabled by config"},
 		},
 		CoverageGaps:            []modevidence.CoverageGap{{Tool: "cargo", Gate: "warn"}},
 		ConfigWarnings:          []string{"decision needed: module a has no volatility"},
