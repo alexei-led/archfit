@@ -118,7 +118,7 @@ func identifierUses(t *testing.T) map[string][]string {
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case ".git", ".archfit-cache", ".bin", "docs", "vendor":
+			case dirGit, dirFactCache, ".bin", "docs", dirVendor:
 				return fs.SkipDir
 			}
 			return nil

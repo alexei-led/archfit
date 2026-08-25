@@ -7,9 +7,9 @@ version: 1
 #
 # DDD classification is about business role, not stability or directory shape.
 # Archfit's policy language, evaluation model, and fact-to-decision logic are the
-# core domain and therefore high-volatility. Evidence vocabulary, pipeline
-# contracts, orchestration, persistence, and tool integrations are supporting.
-# Provider-specific LLM integration and composition roots are generic adapters.
+# core domain and therefore high-volatility. Evidence vocabulary, use-case
+# sequencing, persistence, and tool integrations are supporting. Provider-specific
+# LLM integration and composition roots are generic adapters.
 #
 # All modules have one owner, so ownership distance is intentionally degenerate;
 # code structure and deploy-unit evidence determine distance. The book formula
@@ -35,15 +35,19 @@ coupling:
 # Architecture layers — innermost to outermost.
 # forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
 layers:
-  - model # rank 0: pure value types, stdlib only
-  - support # rank 1: supporting process contracts
-  - core # rank 2: classify, rules, metrics, status
-  - application # rank 3: use-case contracts
-  - adapter # rank 4: baseline, toolrun, extractors, renderers, git, stage services
-  - cmd # rank 5: composition root
+  - model # rank 0: value types and neutral contracts; no higher-rank imports
+  - support # rank 1: supporting process contracts (scope resolution)
+  - core # rank 2: policy, relationship analysis, assessment and repair
+  - application # rank 3: use-case sequencing and report projection
+  - adapter # rank 4: config, extractors, toolrun, persistence, providers, renderers
+  - cmd # rank 5: composition roots
 modules:
-  # Pure source evidence and stage contracts. These types carry facts and
-  # boundaries; policy and report decisions live in their owning capabilities.
+  # The neutral evidence vocabulary: per-fact value types plus the immutable
+  # `evidence.Facts` bundle acquisition hands downstream. These types carry
+  # observations only — policy, assessment, and report decisions live in their
+  # owning capabilities, and the `evidence_no_policy`/`evidence_no_config` rules
+  # below keep it that way. Run context (scope, instant, config identity, bundle
+  # paths) is owned by the application, not by this contract.
   evidence-contracts:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -55,6 +59,8 @@ modules:
       - internal/model/fileclass/**
       - internal/model/clone/**
       - internal/model/pattern/**
+      - internal/evidence
+      - internal/evidence/*.go
     public:
       - internal/model/evidence
       - internal/model/graph
@@ -62,21 +68,8 @@ modules:
       - internal/model/fileclass
       - internal/model/clone
       - internal/model/pattern
+      - internal/evidence
     layer: model
-    subdomain: supporting
-    volatility: medium
-  # Runtime stage snapshots carry neutral facts plus cross-stage context. They
-  # are core contracts, not pure model values or concrete adapters.
-  evidence-stage-contracts:
-    owner: alexei-led
-    deploy_unit: archfit-cli
-    role: core
-    paths:
-      - internal/evidence
-      - internal/evidence/*.go
-    public:
-      - internal/evidence
-    layer: core
     subdomain: supporting
     volatility: medium
   # Scope resolution is a supporting boundary over an injected VCS resolver.
@@ -103,8 +96,10 @@ modules:
     layer: core
     subdomain: supporting
     volatility: low
-  # Graph and extractor-fact acquisition is an evidence-analysis stage. It is
-  # adapter-layer because its ports carry scope and extractor process inputs.
+  # The concrete acquisition service: it walks the tree, runs the extractors,
+  # and resolves the run's coverage and policy snapshot. Adapter-layer because
+  # its ports carry scope and extractor process inputs; it observes and never
+  # judges (see `acquisition_no_assessment_judgment` below).
   evidence-acquisition:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -194,7 +189,6 @@ modules:
       - internal/extract/loc
       - internal/extract/manifest
       - internal/toolrun
-      - internal/evidence
       - internal/evidence/ports
     layer: adapter
     subdomain: supporting
@@ -251,12 +245,14 @@ modules:
     paths:
       - internal/assessment/**
     public:
-      - internal/assessment
       - internal/assessment/finding
       - internal/assessment/rules
     layer: core
     subdomain: core
     volatility: high
+  # Use-case sequencing and report projection. None of the six declarable roles
+  # (core, adapter, shared_model, composition_root, generated, test) describes an
+  # application service, so the role stays unset rather than being mislabelled.
   analysis-application:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -301,7 +297,7 @@ modules:
     public:
       - cmd/calibrate
       - internal/calibrate
-      - scripts/eval
+      - scripts/eval/coverage
     layer: cmd
     subdomain: generic
     volatility: low
@@ -575,9 +571,9 @@ rules:
     from: internal/ownership/**
     to: internal/config
     gate: fail
-  # Stable-contract boundaries: persistence and rendering must not bind to
-  # volatile evaluation implementations. Current violations are intentional
-  # findings until the code exposes stable snapshot/report contracts.
+  # Stable-contract boundaries: persistence and rendering bind to the stable
+  # snapshot and report contracts, never to a volatile evaluation implementation.
+  # These rules pass on current source; they exist to keep it that way.
   - id: baseline_no_score
     type: forbidden_dependency
     from: internal/baseline/**
@@ -649,7 +645,7 @@ rules:
   # owned by the capability that decides it, and the application sequences them.
   - id: no_analysispipeline
     type: forbidden_dependency
-    from: "**"
+    from: '**'
     to: internal/analysispipeline/**
     gate: fail
   # Composition-root direction. The library never reaches back into the CLI, so
@@ -678,13 +674,18 @@ rules:
     type: forbidden_layer_direction
     gate: fail
   # --- Syntax-facts lint rule (gate: warn = advisory, non-blocking) ---
-  # public_api_max is global (no per-module scoping); keep the ceiling above the
-  # largest measured exported surface. The evidence adapter capability is the
-  # current largest surface at 352 declarations after the ledger split; 380
-  # leaves bounded headroom without hiding a new dumping ground.
+  # public_api_max is global (no per-module scoping) and counts EVERY exported
+  # declaration ast-grep sees in the module, test files included — for
+  # `evidence-adapters` 252 of the 397 counted declarations are `TestXxx`
+  # functions and moq fakes, so the number tracks module size, not published API
+  # surface. Read it as a growth ratchet, not an API budget. Keep the ceiling
+  # just above the largest measured module (evidence-adapters, 397 as of the
+  # capability migration); 430 leaves bounded headroom without hiding a new
+  # dumping ground. The published surface itself is gated structurally by the
+  # forbidden_dependency rules above and by TestModelSurfaceNoDrift.
   - id: syntax_api_size_ceiling
     type: public_api_max
-    max: 380
+    max: 430
     gate: warn
   # Public-API framework-type-leak — advisory dogfooding. Fires when an exported
   # field or function return type names an external (non-first-party) package.

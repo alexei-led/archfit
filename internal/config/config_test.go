@@ -1076,11 +1076,7 @@ func TestSelfConfig_CapabilityModuleMap(t *testing.T) {
 	}{
 		{
 			name: "evidence-contracts", layer: layerModel, role: policy.RoleSharedModel,
-			wantPaths: []string{"internal/model/evidence/**"},
-		},
-		{
-			name: "evidence-stage-contracts", layer: layerCore, role: policy.RoleCore,
-			wantPaths: []string{"internal/evidence", "internal/evidence/*.go"},
+			wantPaths: []string{"internal/model/evidence/**", "internal/evidence", "internal/evidence/*.go"},
 		},
 		{
 			name: "analysis-scope", layer: layerSupport, role: policy.RoleSharedModel,
@@ -1182,8 +1178,8 @@ func TestSelfConfig_RoleLayerConformance(t *testing.T) {
 				t.Errorf("module %q: role=%s but layer=%q (want cmd)", name, def.Role, def.Layer)
 			}
 		case policy.RoleCore:
-			if def.Layer != layerCore && def.Layer != "engine" {
-				t.Errorf("module %q: role=core but layer=%q (want core or engine)", name, def.Layer)
+			if def.Layer != layerCore {
+				t.Errorf("module %q: role=core but layer=%q (want core)", name, def.Layer)
 			}
 		case policy.RoleSharedModel:
 			if def.Layer != "model" && def.Layer != "support" {

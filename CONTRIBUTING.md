@@ -67,8 +67,11 @@ make build
 Useful targeted checks:
 
 ```sh
-go test ./internal/ -run TestArchImports
-go test ./internal/application/ -run TestGolden
+go test ./internal/ -run TestArchImports        # import ring
+go test ./internal/ -run TestSelfModel          # .archfit.yaml describes real source
+go test ./internal/ -run TestModelSurfaceNoDrift # published model contract
+go test ./internal/application/ -run TestGolden # output fixtures
+make archfit                                    # dogfood the configured gate
 pre-commit run --all-files
 ```
 
@@ -89,6 +92,27 @@ go run ./cmd/archfit doctor --fix --lang go --lang ts --lang py --dry-run
 For deterministic CI, prefer explicit setup in the workflow over implicit local
 installation. See [docs/guide/install.md](docs/guide/install.md) and
 [docs/guide/languages.md](docs/guide/languages.md).
+
+## Architecture boundaries
+
+archfit gates its own architecture. Before moving a package or adding a
+capability, read
+[docs/design/architecture-baseline.md](docs/design/architecture-baseline.md) —
+it records the layer ranks, the measured module dependency map, which check
+enforces which invariant, and the change recipes for adding a metric, language,
+output format, or CLI command.
+
+Two rules to internalise:
+
+- The layer direction is `model → support → core → application → adapter → cmd`.
+  Inner never imports outer; `forbidden_layer_direction` gates it at `fail`.
+- Moving a package means updating the owning module's `paths:` in
+  `.archfit.yaml` in the same commit. `go test ./internal/ -run TestSelfModel`
+  fails on an unowned package and on the glob you left behind.
+
+Do not weaken a gate, add a waiver, relabel volatility, or re-baseline to make a
+check pass. Fix the boundary or record the accepted risk with a written
+rationale.
 
 ## Tests and docs
 

@@ -25,6 +25,12 @@ import (
 const (
 	modulePrefix = "github.com/alexei-led/archfit/"
 	goSourceExt  = ".go"
+
+	// Directories every repo walk in this package skips: not first-party source.
+	dirGit       = ".git"
+	dirFactCache = ".archfit-cache"
+	dirVendor    = "vendor"
+	dirTestdata  = "testdata"
 )
 
 // coreRingPkgs are the packages that must not import os, os/exec, YAML libs,
@@ -400,7 +406,7 @@ func productionImportFiles(t *testing.T, importPath string) []string {
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case ".git", ".archfit-cache", "testdata", "vendor":
+			case dirGit, dirFactCache, dirTestdata, dirVendor:
 				return fs.SkipDir
 			}
 			return nil

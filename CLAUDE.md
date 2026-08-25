@@ -43,11 +43,13 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   exposes `LookupFileClass`/`IsTestFile` used by the LOC walk and by metrics that
   filter on Production files.
 - `internal/model/*` imports stdlib only (exception: `model/module` may use the
-  pure doublestar glob matcher). The kernel plus `internal/view` is a frozen
-  published contract: its exported surface is pinned by
-  `TestModelSurfaceNoDrift` (golden: `internal/testdata/model_surface.golden`);
-  regenerate deliberately with `ARCHFIT_UPDATE_SURFACE=1` and call the contract
-  change out in review.
+  pure doublestar glob matcher). The model kernel is a frozen published contract:
+  its exported surface is pinned by `TestModelSurfaceNoDrift` (golden:
+  `internal/testdata/model_surface.golden`); regenerate deliberately with
+  `ARCHFIT_UPDATE_SURFACE=1` and call the contract change out in review.
+  `internal/view` is gone — its stage DTOs were returned to the capabilities that
+  own them, and the `no_stage_view` rule in `.archfit.yaml` blocks a new shared
+  stage-view package.
 - **Stages receive projected views, never `internal/config`.** `internal/config`
   owns the YAML lifecycle and projects itself into each consumer's own contract
   (`Config.PolicySnapshot()`, `Config.RunOptions()`, `Config.CoverageOptions()`,
@@ -177,7 +179,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   failed to load (`collectNodesEdges`, synthetic-error packages), which is the
   "did not finish" meaning and must never grade comparable — so `Unresolved > 0`
   is not a completion marker and never was. Every remaining partial producer (a
-  failed extractor in `engine.extract`, a rejected ast-grep rule file, an empty
+  failed extractor in `acquisition.Collect`, a rejected ast-grep rule file, an empty
   SCIP index, a failed jscpd run) leaves `Unresolved` at zero. A SYMMETRIC
   unresolved-specifier partial pairs (`comparable_with_gaps` in
   `decision.gradeTool`, `familyPairedDegradedUnresolved` in `pairFamily`) and
@@ -188,8 +190,8 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   specifier-granular extractor, add its coverage name to
   `PartialFromUnresolvedSpecifiers`.
 - **Extractor-failure coverage rows use `CoverageTool()`, not `Name()`**
-  (`ports.Extractor`, `engine.extract`). A failed `Extract` returns a zero
-  Coverage, so the engine stamps the row itself; filing it under the language
+  (`ports.Extractor`, `acquisition.Collect`). A failed `Extract` returns a zero
+  Coverage, so acquisition stamps the row itself; filing it under the language
   name ("go") instead of the coverage name ("go/packages") created a phantom
   analyzer next to the real family and left the family with zero rows.
 - **Applicability is decided by the extractor, never by a marker list**
@@ -409,7 +411,17 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   (`score.go` `finalize`/`Synthesize`, `score_boundary_coupling.go`). `finalize` early-returns
   for `BandNA` (skips clamp/cap/`bandFor`); delta builders and `decideBand` treat an n/a side
   as unknown (no phantom delta, not NEEDS_ATTENTION). The legacy nil-summary path keeps the
-  non-penalising 60 (calibration-only, unreachable from engine.go).
+  non-penalising 60 (calibration-only, unreachable from the analysis stages).
+- **The self-model is executable** (`internal/selfmodel_test.go`, run with
+  `go test ./internal/ -run TestSelfModel`). `.archfit.yaml` must describe the
+  physical tree: no dead path glob, no Go package without an owning module, no
+  equal-specificity ownership tie (the catch-all shadowing bug), no rule aimed at
+  a path that does not exist, no `public:` entry outside its own module or
+  without Go source, and no declared layer without a module. Two rules match
+  nothing ON PURPOSE and are allowlisted in `guardRules`: `no_stage_view` and
+  `no_analysispipeline` block the dissolved packages from returning — the test
+  fails if either guard is deleted, and also if either starts matching real
+  source. Moving a package means updating the owning `paths:` in the same commit.
 - Parse config once into typed views; pass a package its view, not the whole config.
 - LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `config enrich`,
   `config init --ai-classify`, `config update --ai-classify`, `analyze --ai-summary`, and `explain --ai-summary`
@@ -534,8 +546,8 @@ e.g. a single crate) at `mixed` — it never scores `strong` on a one-node graph
 adds an **intra-crate module graph** (`<crate>::<mod>` nodes + aggregated `uses`
 edges), so single-crate projects get real cycle/blast-radius/cohesion signal.
 Opt-in `analyzers.scip.enabled` runs rust-analyzer SCIP, which produces a correct
-`<crate>::<mod>` strength map and attaches `StrengthHint` to those module edges. The
-engine then registers auto-discovered module nodes as modules
+`<crate>::<mod>` strength map and attaches `StrengthHint` to those module edges.
+Relationship analysis then registers auto-discovered module nodes as modules
 (`classify.AugmentModulesFromGraph`, gated on the `::` separator so Go/TS/Python are
 untouched) so distance/volatility classify and the strength is consumed — verified on
 herdr: `coupling_balance` measures (was n/a). `encapsulation`
@@ -565,8 +577,15 @@ wired to any metric.
 ## Layout
 
 `cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/design`
-(current decisions — 5 files) · `docs/guide` (user docs) · `docs/spec` (spec) ·
+(current decisions) · `docs/guide` (user docs) · `docs/spec` (spec) ·
 `docs/plans` (open plans only; shipped plans move to `docs/plans/completed/`).
+
+**Architecture reference:** `docs/design/architecture-baseline.md` — the shipped
+capability map, layer ranks, measured module dependencies, which check enforces
+which invariant, accepted coupling, and change recipes. Read it before moving a
+package, adding a metric/language/output format, or touching `.archfit.yaml`.
+`docs/design/20260823-archfit-capability-map.md` is the design rationale behind
+it.
 
 **Skip `docs/archived/`** — superseded design docs, completed plans, plan notes,
 research artifacts, and analysis notes. Only read when explicitly debugging
@@ -575,7 +594,7 @@ history or looking up a completed plan by name.
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **archfit** (10700 symbols, 34893 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **archfit** (11045 symbols, 35545 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

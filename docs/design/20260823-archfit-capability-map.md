@@ -1,7 +1,12 @@
-# Archfit target architecture
+# Archfit capability architecture
 
-Date: 2026-08-24
-Status: IMPLEMENTED THROUGH HORIZON 3; FINAL TARGET NO-GO
+Date: 2026-08-24 (design), 2026-08-26 (implementation record)
+Status: IMPLEMENTED. `internal/engine`, `internal/analysispipeline`, and
+`internal/view` are deleted; every context below has a physical owner in source.
+The shipped module map, dependency measurements, accepted coupling, and change
+recipes are recorded in [architecture-baseline.md](architecture-baseline.md).
+This document remains the design rationale and the approved target it was
+measured against.
 
 ## Overview
 
@@ -31,7 +36,8 @@ Constraints:
 
 ## Source inputs and drift notes
 
-The current design is intent, not implementation truth. Horizon 3 observed state:
+Horizon 3 observed state, recorded when this design was written and kept as the
+before-picture the migration was measured against:
 
 - Relationship semantics now live under `internal/relationship/{coupling,scoring,classify,facts,labels}`.
 - Findings, rule evaluation, metrics, status, score, and repair behavior live under `internal/assessment/**`.
@@ -40,7 +46,16 @@ The current design is intent, not implementation truth. Horizon 3 observed state
 - Fact-adapter acquisition and language construction sit behind `internal/extract/{acquire,registry}`.
 - CLI direct module fan-out is ratcheted at 14; engine fan-out is ratcheted at 9 and currently measures 8.
 - All tests and configured gates pass with zero blockers/cycles, but the deterministic coupling dimension is 46/mixed with 57 critical local edges.
-- The final review remains NO-GO: CLI use-case ownership, engine domain behavior, assessment/report aliases, and incomplete semantic gates still drift from this target. See `docs/reports/20260824-archfit-horizon3-architecture-review.md`.
+- The Horizon 3 review was NO-GO: CLI use-case ownership, engine domain behavior, assessment/report aliases, and incomplete semantic gates drifted from this target. See `docs/reports/20260824-archfit-horizon3-architecture-review.md`.
+
+Final state after the capability migration (2026-08-26): `internal/engine`,
+`internal/analysispipeline`, and `internal/view` are deleted;
+`application.StageExecutor` owns the stage order; the CLI holds composition and
+exit translation only. `coupling_balance` is 41/`mixed` over 362 scored
+cross-boundary edges — the number moved because the module map now describes
+capabilities rather than the transitional engine split, not because coupling
+worsened. See [architecture-baseline.md](architecture-baseline.md) for the
+measured map and the balanced-coupling rationale.
 
 ## Domain model
 
@@ -104,7 +119,7 @@ Rejected target labels and modules:
 - A generic shared `pipeline-state` module: stage state belongs to the
   application stage that owns it.
 
-## Target module map
+## Approved module map
 
 | Module | Responsibility | Owned knowledge | Public interface | Private internals | Expected local changes |
 | --- | --- | --- | --- | --- | --- |
@@ -124,6 +139,21 @@ Rejected target labels and modules:
 
 All modules have one owner and one deploy unit. Distance is code/package distance,
 not team or service distance.
+
+**As implemented**, `.archfit.yaml` declares five modules the approved table did
+not name separately, each because a real package boundary exists:
+`analysis-scope` (`internal/scope`, support layer), `evidence-analysis`
+(`internal/syntax`), `evidence-acquisition` (`internal/evidence/acquisition`,
+the concrete stage service split from the neutral contract),
+`config-lifecycle` (`internal/initcfg`, `internal/configschema`), and
+`development-tools` (`cmd/calibrate`, `internal/calibrate`, `scripts/eval`).
+The transitional `evidence-stage-contracts` module was merged back into
+`evidence-contracts`: after the migration `internal/evidence` holds one
+immutable `Facts` value importing only `internal/model/*`, so a separate
+core-layer stanza for one pure value package would have been package mirroring.
+`internal/model/report` was kept, not removed: it is the versioned external
+report contract, and `assessment_no_report_dtos` / `relationship_no_report_dtos`
+keep domain packages out of it.
 
 ## Type and code ownership migration
 
@@ -435,7 +465,7 @@ Contract tests:
 Boundary tests:
 
 - Report adapters import no scan, diagnostic, evidence internals, relationship
-  internals, assessment internals, engine, or CLI package.
+  internals, assessment internals, or CLI package.
 
 ### Persistence and Provider Adapters
 
@@ -453,29 +483,47 @@ Contract tests:
 
 ## Architecture-fitness checks
 
-Add these checks with the migration that makes each one pass:
+All twelve are implemented and green on the final source. Each entry names the
+check that enforces it; the full invariant-to-check table is in
+[architecture-baseline.md](architecture-baseline.md).
 
 1. Discover all `internal/model/**` or successor domain packages automatically;
-   no hardcoded incomplete purity list.
+   no hardcoded incomplete purity list. — `checkModelPurity` walks every loaded
+   `internal/model` package (`TestArchImports`).
 2. `internal/output/**` and renderer ports may import only `report-contract` and
-   format-local helpers for completed reports.
-3. No production package imports `internal/model/report`.
+   format-local helpers for completed reports. — `renderer_no_assessment`,
+   `renderer_no_relationship`, `renderer_no_evidence`, `output_no_config`,
+   `output_no_score`, `output_no_decision`, `report_adapters_no_application`.
+3. No DOMAIN package imports `internal/model/report`. — `assessment_no_report_dtos`,
+   `relationship_no_report_dtos`, `TestDomainPackagesDoNotImportReportDTOs`.
+   Revised from the original wording: `internal/model/report` was kept as the
+   versioned external contract, so the rule is that only the application
+   projector and the renderers may touch it, not that nothing may.
 4. Core policy, relationship, and assessment modules cannot import adapters,
-   CLI, engine implementation, renderers, stores, process runners, or LLM
-   implementations.
+   CLI, renderers, stores, process runners, or LLM implementations. —
+   `TestArchImports`, `core_no_toolrun`, `core_no_extract`, `internal_no_llm`,
+   `internal_no_labelsio`, `core_no_cmd`, the `*_no_config` family.
 5. Relationship Analysis cannot import Assessment and Repair. Assessment may
-   import the immutable relationship contract only.
-6. Application orchestration cannot import concrete adapters. Concrete wiring
-   stays in CLI composition.
+   import the immutable relationship contract only. — `relationship_no_assessment`,
+   `assessment_no_relationship_internals`,
+   `TestAssessmentConsumesOnlyThePublicRelationshipContract`.
+6. Application orchestration cannot import concrete adapters. — nine
+   `application_no_*` rules, `TestApplicationImportsNoConcreteAdapters`.
 7. CLI composition may import concrete adapters but cannot import internal rule,
-   metric, classifier, score, or decision implementation packages.
-8. Module and package dependency graphs remain acyclic.
+   metric, classifier, score, or decision implementation packages. —
+   `cli_no_domain_implementation`, `TestCLIImportsNoDomainImplementation`.
+8. Module and package dependency graphs remain acyclic. — `cycle` metric = 0.
 9. Public surface snapshots cover the approved contracts, not temporary aliases.
+   — `TestModelSurfaceNoDrift`, `TestTransitionalContractSurfaceRatchet`.
 10. Byte-identical output fixtures protect all supported formats and exit codes.
+    — `TestGolden`, `scripts/tests/cli_exit_contract_test.sh`.
 11. Archfit dogfooding records fixed-config source delta separately from module
-    map, volatility, or distance changes.
+    map, volatility, or distance changes. — recorded in the migration plan's
+    final-evidence section.
 12. `.archfit.yaml` labels change only after the corresponding physical module
-    boundary exists and the design ledger is updated.
+    boundary exists and the design ledger is updated. — `.archfit-labels.yaml`
+    is empty with a written abstain rationale; the self-model is gated by
+    `TestSelfModel*` (`internal/selfmodel_test.go`).
 
 Required whole-design checks:
 
@@ -564,20 +612,30 @@ fitness controls.
 
 ## Open risks
 
-- Exact Go package names can change during implementation, but context ownership
-  and dependency direction require a design update before they change.
-- Baseline and approved-label file compatibility must be characterized before
-  persistence ports move.
-- Output schema compatibility must be proven across JSON, Markdown, SARIF,
-  console, and scorecard formats.
-- GitNexus is stale for this branch. Refresh it before relying on historical
-  graph evidence; direct git history remains the fallback.
-- The evidence/relationship translation may expose missing provenance fields.
-  Extend the explicit contract rather than leaking raw extractor types onward.
+Resolved during implementation:
+
+- Baseline and approved-label file compatibility — characterized before the
+  persistence ports moved; both formats are unchanged.
+- Output schema compatibility — proven across JSON, Markdown, SARIF, console,
+  and scorecard by the golden and exit-contract suites.
+- GitNexus staleness — the index was refreshed against the final commit.
+- Evidence/relationship provenance — carried on `relationship.Provenance`; no
+  raw extractor type crosses the seam.
+
+Still open, tracked as accepted risks in
+[architecture-baseline.md](architecture-baseline.md):
+
+- Context ownership and dependency direction still require a design update
+  before Go package names move.
+- `internal/extract/{ts,py}` bind to the `relationship/coupling` strength
+  constants for the hints they emit. Shared vocabulary, not a decision; the
+  upgrade trigger is recorded.
 
 ## Handoff
 
-Recommended next skill: `architecture-plan`.
+COMPLETE. The plan this design handed off to
+(`docs/plans/complete-capability-architecture-migration.md`) finished all five
+tasks. The record below is kept as the migration's acceptance ledger.
 
 Implementation uses the existing two-horizon backlog:
 
@@ -606,8 +664,8 @@ Acceptance signals:
 - Renderer and renderer-port imports of scan: nonzero to 0.
 - CLI module fan-out: 18 to at most 14, or composition-only exceptions are
   documented.
-- Engine fan-out: 11 to at most 9.
-- Package and module cycles remain 0.
+- `internal/engine`, `internal/analysispipeline`, and `internal/view`: deleted.
+- Package and module cycles remain 0. — measured 0.
 - All output fixtures and exit-code contracts pass.
 - Core modules import no adapters.
 - The final review reports source, module-map, and label score effects separately.

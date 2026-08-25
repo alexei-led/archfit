@@ -164,9 +164,11 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
 
 archfit separates **facts**, **gates**, and **narration**. Language adapters
 collect dependency facts; a deterministic, LLM-free core classifies them, runs
-the gates, and computes metrics. The CLI composition root builds the scorecard
-and decision once, then passes a data-only report contract to each renderer.
-Optional LLM features sit strictly off to the side.
+the gates, and computes metrics. The application sequences
+`Prepare → Acquire → Relate → Assess → Project` and builds the scorecard and
+decision once, then hands a data-only report contract to each renderer; the CLI
+only picks concrete adapters and translates exit codes. Optional LLM features sit
+strictly off to the side.
 
 ```mermaid
 flowchart TB
@@ -189,11 +191,12 @@ flowchart TB
     style core fill:#e7f5ff,stroke:#1971c2,color:#000;
 ```
 
-The codebase dogfoods these boundaries with import-ring, projection, compatibility,
-and fan-out ratchets. The current Horizon 3 review is deliberately not greenwashed:
-the configured gate has zero blockers, but `coupling_balance` remains mixed and the
-CLI/application/engine responsibility split is still incomplete. See the
-[architecture review](docs/reports/20260824-archfit-horizon3-architecture-review.md).
+The codebase dogfoods these boundaries with import-ring, projection, self-model,
+and fan-out ratchets. The capability migration is complete — there is no `engine`,
+pipeline hub, or shared stage-view package — and the results are deliberately not
+greenwashed: the configured gate has zero blockers, but `coupling_balance` remains
+mixed because the core capabilities are genuinely model-coupled at close distance.
+See the [architecture baseline](docs/design/architecture-baseline.md).
 
 archfit doesn't replace architecture review — it makes repeatable evidence cheap
 to collect and safe to run in CI. It sits one level above single-language
