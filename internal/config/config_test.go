@@ -1091,12 +1091,20 @@ func TestSelfConfig_CapabilityModuleMap(t *testing.T) {
 			wantPaths: []string{"internal/model/evidence/**"},
 		},
 		{
+			name: "evidence-stage-contracts", layer: layerCore, role: module.RoleCore,
+			wantPaths: []string{"internal/evidence", "internal/evidence/*.go"},
+		},
+		{
+			name: "analysis-scope", layer: layerSupport, role: module.RoleSharedModel,
+			wantPaths: []string{"internal/scope/**"},
+		},
+		{
 			name: "evidence-analysis", layer: layerCore, role: module.RoleCore,
 			wantPaths: []string{"internal/syntax/**"},
 		},
 		{
 			name: "evidence-adapters", layer: layerAdapter, role: module.RoleAdapter,
-			wantPaths: []string{"internal/extract/**", "internal/toolrun/**", "internal/evidence/ports/**", "internal/scope/**"},
+			wantPaths: []string{"internal/extract/**", "internal/toolrun/**", "internal/evidence/ports/**"},
 		},
 		{
 			name: "persistence-adapters", layer: layerAdapter, role: module.RoleAdapter,
@@ -1670,6 +1678,7 @@ const (
 	layerCore    = "core"
 	layerEngine  = "engine"
 	layerModel   = "model"
+	layerSupport = "support"
 
 	// langTypeScript and yamlV1 appear in many tests; kept as constants to
 	// satisfy the goconst linter.
