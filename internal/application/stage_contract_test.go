@@ -32,13 +32,12 @@ func (f *explicitStageFake) Assess(_ context.Context, req AnalysisRequest, view 
 }
 
 func TestStageExecutorPassesExplicitStageValues(t *testing.T) {
-	const baseRef = "main"
 	fake := &explicitStageFake{}
-	_, err := (StageExecutor{Preparer: fake, Evidence: fake, Relationship: fake, Assessment: fake}).Execute(t.Context(), AnalysisRequest{BaseRef: baseRef})
+	_, err := (StageExecutor{Preparer: fake, Evidence: fake, Relationship: fake, Assessment: fake}).Execute(t.Context(), AnalysisRequest{BaseRef: lifecycleBaseRef})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !fake.prepared || fake.gotReq.BaseRef != baseRef || fake.gotRel.Relationships.Nodes[0].ID != "passed" {
+	if !fake.prepared || fake.gotReq.BaseRef != lifecycleBaseRef || fake.gotRel.Relationships.Nodes[0].ID != "passed" {
 		t.Fatalf("stage values were not passed: prepared=%v req=%+v rel=%+v", fake.prepared, fake.gotReq, fake.gotRel)
 	}
 }

@@ -162,6 +162,81 @@ func TestAssessmentProductionDoesNotImportRawGraphOrCoupling(t *testing.T) {
 	}
 }
 
+// TestTransitionalImportRatchet caps how many production files may depend on a
+// package the capability migration is dissolving. The migration only ever
+// deletes these imports, so the caps are upper bounds: a task that pushes a
+// count up has widened the seam it was supposed to narrow. Lower a cap in the
+// same commit that removes the imports.
+func TestTransitionalImportRatchet(t *testing.T) {
+	for _, tc := range []struct {
+		importPath string
+		max        int
+		why        string
+	}{
+		{modulePrefix + "internal/view", 33, "internal/view is deleted in Task 2; policy owns these contracts"},
+		{modulePrefix + "internal/analysispipeline", 9, "internal/analysispipeline is deleted in Task 4"},
+		{modulePrefix + "internal/evidence", 3, "only relationship analysis may receive the full evidence snapshot"},
+	} {
+		t.Run(strings.TrimPrefix(tc.importPath, modulePrefix), func(t *testing.T) {
+			files := productionImportFiles(t, tc.importPath)
+			if len(files) > tc.max {
+				t.Errorf("production importers of %s = %d, want <= %d (%s): %v",
+					tc.importPath, len(files), tc.max, tc.why, files)
+			}
+		})
+	}
+}
+
+// TestTransitionalContractSurfaceRatchet caps the exported surface of the
+// packages the migration reshapes. Task 2-4 move declarations to their owning
+// capability and privatize the rest, so every cap is an upper bound that must
+// fall, never rise. It complements TestModelSurfaceNoDrift, which pins the
+// frozen kernel exactly; these packages are still moving, so a count is the
+// tightest honest assertion.
+func TestTransitionalContractSurfaceRatchet(t *testing.T) {
+	targets := []struct {
+		pkg string
+		max int
+	}{
+		{modulePrefix + "internal/analysispipeline", 88},
+		{modulePrefix + "internal/relationship", 55},
+		{modulePrefix + "internal/assessment/result", 47},
+		{modulePrefix + "internal/view", 29},
+		{modulePrefix + "internal/evidence", 8},
+		{modulePrefix + "internal/policy", 8},
+	}
+	paths := make([]string, 0, len(targets))
+	for _, tc := range targets {
+		paths = append(paths, tc.pkg)
+	}
+	loaded, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedTypes, Dir: ".."}, paths...)
+	if err != nil {
+		t.Fatalf("load transitional contract packages: %v", err)
+	}
+	counts := make(map[string]int, len(loaded))
+	for _, pkg := range loaded {
+		if pkg.Types == nil {
+			t.Fatalf("no type information for %s", pkg.PkgPath)
+		}
+		scope := pkg.Types.Scope()
+		for _, name := range scope.Names() {
+			if scope.Lookup(name).Exported() {
+				counts[pkg.PkgPath]++
+			}
+		}
+	}
+	for _, tc := range targets {
+		got, ok := counts[tc.pkg]
+		if !ok {
+			continue // package already deleted by a later migration task
+		}
+		if got > tc.max {
+			t.Errorf("%s exported surface = %d, want <= %d: the migration narrows these contracts, it never widens them",
+				tc.pkg, got, tc.max)
+		}
+	}
+}
+
 func TestDomainPackagesDoNotImportReportDTOs(t *testing.T) {
 	const reportPackage = modulePrefix + "internal/model/report"
 	for _, domain := range []string{"internal/assessment/", "internal/relationship/"} {

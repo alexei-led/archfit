@@ -296,15 +296,88 @@ Manual checks:
   compatibility correction.
 - Confirm coverage increases through meaningful branches, not line-only tests.
 
-- [ ] Record the current GitNexus source commit, import counts, exported surface,
+- [x] Record the current GitNexus source commit, import counts, exported surface,
       direct coverage, and golden hashes in the task result.
-- [ ] Add table-driven Relationship Analysis tests for valid, boundary, failure,
+- [x] Add table-driven Relationship Analysis tests for valid, boundary, failure,
       abstention, and label-precedence cases.
-- [ ] Add table-driven Assessment evaluation tests for valid, boundary, failure,
+- [x] Add table-driven Assessment evaluation tests for valid, boundary, failure,
       waiver, gate, advisory, delta, verdict, and repair cases.
-- [ ] Strengthen Application sequencing and CLI/output characterization tests.
-- [ ] Add non-increasing transitional-import and contract-surface ratchets.
-- [ ] Run the task verification commands and commit one safety-net change.
+- [x] Strengthen Application sequencing and CLI/output characterization tests.
+- [x] Add non-increasing transitional-import and contract-surface ratchets.
+- [x] Run the task verification commands and commit one safety-net change.
+
+#### Task 1 result: measured pre-migration evidence
+
+Measured at `d8ef114` on `refactor/capability-contract-boundaries`.
+
+GitNexus index source commit is `509d50b`; the two commits between it and
+`d8ef114` touch only `docs/` and `CLAUDE.md`/`AGENTS.md`, so the index is
+current for source and no re-index is required before Task 2.
+
+Transitional production imports (AST-matched by
+`TestTransitionalImportRatchet`, the same instrument that now caps them):
+
+| Import path | Production importers | Ratchet cap |
+| --- | --- | --- |
+| `internal/view` | 33 | 33 |
+| `internal/analysispipeline` | 9 | 9 |
+| `internal/evidence` | 3 | 3 |
+
+Exported contract surface (top-level exported objects, counted by
+`TestTransitionalContractSurfaceRatchet`):
+
+| Package | Exported declarations | Ratchet cap |
+| --- | --- | --- |
+| `internal/analysispipeline` | 88 | 88 |
+| `internal/relationship` | 55 | 55 |
+| `internal/assessment/result` | 47 | 47 |
+| `internal/view` | 29 | 29 |
+| `internal/evidence` | 8 | 8 |
+| `internal/policy` | 8 | 8 |
+
+Direct statement coverage at the owner seams:
+
+| Package | Before | After |
+| --- | --- | --- |
+| `internal/assessment/evaluation` | 0.0% | 94.7% |
+| `internal/relationship/analysis` | 33.3% | 83.2% |
+| `internal/application` | 72.1% | 72.9% |
+
+Golden and byte-identical fixture hashes (sha256), unchanged by this task:
+
+| Artifact | Hash |
+| --- | --- |
+| `internal/testdata/model_surface.golden` | `4438a2d333259a594b1c421798edc19e6868b41a6c87b6f602870fc343f93dc5` |
+| `internal/analysispipeline/golden_test.go` | `a6afa748a64a1a5c1dc48671aa5bc32687ad9642f35118593ed4f235ca81951c` |
+| `internal/extract/golang/testdata/single-module/baseline.json` | `609be564a6e27c6dbf012d7165d83be592f3204d9fe68f749b76125627544862` |
+| `internal/extract/golang/testdata/one-member-workspace/baseline.json` | `609be564a6e27c6dbf012d7165d83be592f3204d9fe68f749b76125627544862` |
+
+Gate state: `make archfit` exits 0; `.bin/archfit check --config .archfit.yaml`
+exits 2 (warn) both at `d8ef114` and with this task applied — unchanged.
+
+Corrections to this task's Files list, carried forward:
+
+- `internal/testdata/golden.json` does not exist. The golden output is an inline
+  fixture in `internal/analysispipeline/golden_test.go`; the byte-identical CLI
+  baselines live under `internal/extract/golang/testdata/*/baseline.json`.
+- `cmd/archfit/pipeline_equivalence_test.go` does not exist. The equivalent
+  safety net is `cmd/archfit/byteidentical_test.go`.
+- Repair-task behavior is covered in `internal/assessment/agenttask`, not in
+  `Evaluate`: `evaluation.Result` carries no repair tasks, so no repair
+  assertion was forced into `evaluation_test.go`.
+
+Characterized behavior worth flagging for later tasks (asserted as-is, not
+fixed here — Task 1 changes no production code):
+
+- `analysis.Analyze` panics on a nil `Graph`: `classify.Run` dereferences it
+  before `buildSet`'s `g == nil` guard is reached. Acquisition always supplies a
+  built graph, so the guard is unreachable dead defence.
+- `pairEvidence` hashes endpoint *paths*, not node IDs, while
+  `buildSet` keys the classifier index on node IDs. Label evidence hashes and
+  classification keys are therefore built from different identifiers.
+- A same-module edge is scored and reported under `local_coupling` but is never
+  an advisory candidate, and runtime/connascence evidence never moves an edge's
+  distance or severity. Both are pinned by direct tests now.
 
 ### Task 2: Establish authoritative Policy and neutral Evidence contracts
 
