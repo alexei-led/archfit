@@ -44,7 +44,10 @@ func healthWarnings(diag result.Result, gaps []evidence.CoverageGap, modules map
 	// re-walking the source tree. Empty FileFacts with declared module paths
 	// means no source files matched any module glob.
 	if len(diag.FileFacts) == 0 && declaresModulePaths(modules) {
-		warn(fmt.Sprintf("no source files matched declared module paths — check --root and module globs\n  → run: archfit check --root %q -c %q", scanRoot, configPath))
+		// Reuse the repair-task command builder: it omits --root when the caller
+		// gave none (empty ScanRoot means "the whole repository"), so the hint
+		// never suggests `--root ""`.
+		warn("no source files matched declared module paths — check --root and module globs\n  → run: " + validationCommand(configPath, scanRoot))
 	}
 	return out
 }
