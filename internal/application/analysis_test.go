@@ -5,9 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/alexei-led/archfit/internal/evidence"
-	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 func TestResolveFormats(t *testing.T) {
@@ -30,7 +27,7 @@ func TestResolveFormats(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := ResolveFormats(test.json, test.markdown, test.sarif, test.formats)
+			got, err := resolveFormats(test.json, test.markdown, test.sarif, test.formats)
 			if test.wantErr {
 				if err == nil {
 					t.Fatal("ResolveFormats error = nil")
@@ -75,38 +72,32 @@ type orderedAnalysisStage struct {
 }
 
 func (s *orderedAnalysisStage) Prepare(context.Context) error {
-	s.calls = append(s.calls, "prepare")
+	s.calls = append(s.calls, prepareCall)
 	return nil
 }
 
 func (s *orderedAnalysisStage) Acquire(context.Context, AnalysisRequest) (Acquired, error) {
-	s.calls = append(s.calls, "acquire")
+	s.calls = append(s.calls, acquireStageCall)
 	return Acquired{}, nil
 }
-func (s *orderedAnalysisStage) Relate(context.Context, Acquired) (relationship.AnalysisResult, error) {
-	s.calls = append(s.calls, "relate")
-	return relationship.AnalysisResult{}, nil
-}
-func (s *orderedAnalysisStage) Assess(context.Context, AnalysisRequest, evidence.AssessmentFacts, AnalysisContext, relationship.AnalysisResult) (AnalysisResult, error) {
-	s.calls = append(s.calls, "assess")
-	return AnalysisResult{}, nil
-}
 
-const (
-	acquireStageCall = "acquire"
-	relateStageCall  = "relate"
-	assessStageCall  = "assess"
-)
+const acquireStageCall = "acquire"
 
+// TestStageExecutorStopsAfterEachFailedStage pins the short-circuit: a failed
+// stage stops the sequence and the error names the stage that failed, so a
+// caller never sees a partially measured result reported as a real one.
 func TestStageExecutorStopsAfterEachFailedStage(t *testing.T) {
-	for _, failed := range []string{prepareCall, acquireStageCall, relateStageCall, assessStageCall} {
+	for _, failed := range []string{prepareCall, acquireStageCall} {
 		t.Run(failed, func(t *testing.T) {
 			stage := &failureAnalysisStage{failed: failed}
-			_, err := (StageExecutor{Preparer: stage, Evidence: stage, Relationship: stage, Assessment: stage}).Execute(t.Context(), AnalysisRequest{})
+			_, err := (StageExecutor{Preparer: stage, Evidence: stage}).Execute(t.Context(), AnalysisRequest{})
 			if err == nil {
 				t.Fatal("Execute error = nil")
 			}
-			want := map[string][]string{prepareCall: {prepareCall}, acquireStageCall: {prepareCall, acquireStageCall}, relateStageCall: {prepareCall, acquireStageCall, relateStageCall}, assessStageCall: {prepareCall, acquireStageCall, relateStageCall, assessStageCall}}[failed]
+			want := map[string][]string{
+				prepareCall:      {prepareCall},
+				acquireStageCall: {prepareCall, acquireStageCall},
+			}[failed]
 			if got := strings.Join(stage.calls, ","); got != strings.Join(want, ",") {
 				t.Fatalf("calls = %q, want %q", got, strings.Join(want, ","))
 			}
@@ -120,40 +111,27 @@ type failureAnalysisStage struct {
 }
 
 func (s *failureAnalysisStage) Prepare(context.Context) error {
-	s.calls = append(s.calls, "prepare")
-	if s.failed == "prepare" {
+	s.calls = append(s.calls, prepareCall)
+	if s.failed == prepareCall {
 		return errors.New("prepare failed")
 	}
 	return nil
 }
+
 func (s *failureAnalysisStage) Acquire(context.Context, AnalysisRequest) (Acquired, error) {
-	s.calls = append(s.calls, "acquire")
-	if s.failed == "acquire" {
+	s.calls = append(s.calls, acquireStageCall)
+	if s.failed == acquireStageCall {
 		return Acquired{}, errors.New("acquire failed")
 	}
-	return Acquired{}, nil
-}
-func (s *failureAnalysisStage) Relate(context.Context, Acquired) (relationship.AnalysisResult, error) {
-	s.calls = append(s.calls, "relate")
-	if s.failed == "relate" {
-		return relationship.AnalysisResult{}, errors.New("relate failed")
-	}
-	return relationship.AnalysisResult{}, nil
-}
-func (s *failureAnalysisStage) Assess(context.Context, AnalysisRequest, evidence.AssessmentFacts, AnalysisContext, relationship.AnalysisResult) (AnalysisResult, error) {
-	s.calls = append(s.calls, "assess")
-	if s.failed == "assess" {
-		return AnalysisResult{}, errors.New("assess failed")
-	}
-	return AnalysisResult{}, nil
+	return Acquired{}, errors.New("stop after acquire")
 }
 
 func TestServicePreparesPolicyBeforeAnalysis(t *testing.T) {
 	stage := &orderedAnalysisStage{}
-	if _, err := (Service{Preparer: stage, Evidence: stage, Relationship: stage, Assessment: stage}).Execute(t.Context(), Request{}); err != nil {
+	if _, err := (Service{Stages: StageExecutor{Preparer: stage, Evidence: stage}}).Execute(t.Context(), Request{}); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := stage.calls, []string{"prepare", "acquire", "relate", "assess"}; len(got) != len(want) || strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("stage calls = %v, want %v", got, want)
+	if got, want := strings.Join(stage.calls, ","), prepareCall+","+acquireStageCall; got != want {
+		t.Fatalf("stage calls = %q, want %q", got, want)
 	}
 }

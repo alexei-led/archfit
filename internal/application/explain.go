@@ -25,22 +25,19 @@ type ExplainResponse struct {
 
 // ExplainService owns the explain use case.
 type ExplainService struct {
-	Preparer     PolicyPreparer
-	Evidence     EvidenceStage
-	Relationship RelationshipStage
-	Assessment   AssessmentStage
+	Stages StageExecutor
 }
 
 // Execute reruns the same technical measurement as the gate and resolves a
 // fingerprint prefix deterministically. Multiple matches are ordered by ID.
 func (s ExplainService) Execute(ctx context.Context, req ExplainRequest) (ExplainResponse, error) {
-	if s.Preparer == nil || s.Evidence == nil || s.Relationship == nil || s.Assessment == nil {
+	if s.Stages.Preparer == nil || s.Stages.Evidence == nil {
 		return ExplainResponse{}, errors.New("explain stages are required")
 	}
 	if strings.TrimSpace(req.Fingerprint) == "" {
 		return ExplainResponse{}, errors.New("finding fingerprint prefix is required")
 	}
-	out, err := StageExecutor(s).Execute(ctx, AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root})
+	out, err := s.Stages.Execute(ctx, AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root})
 	if err != nil {
 		return ExplainResponse{}, fmt.Errorf("explain analysis: %w", err)
 	}

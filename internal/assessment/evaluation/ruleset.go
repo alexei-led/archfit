@@ -17,7 +17,7 @@ type RuleEvidence struct {
 }
 
 // Ruleset is the compiled policy rule set. Stage adapters build one and hand it
-// back to Evaluate; the rule implementations stay inside assessment.
+// back to evaluate; the rule implementations stay inside assessment.
 type Ruleset struct{ rules []rules.Rule }
 
 // NewRuleset compiles the declared policy rules and reports the first
@@ -37,8 +37,8 @@ func (r Ruleset) Len() int { return len(r.rules) }
 // evaluates. It hides the metric implementations from stage adapters.
 type Metricset struct{ metrics []metrics.Metric }
 
-// NewMetricset builds the enabled metrics declared by policy.
-func NewMetricset(cfg map[string]policy.MetricConfig) Metricset {
+// newMetricset builds the enabled metrics declared by policy.
+func newMetricset(cfg map[string]policy.MetricConfig) Metricset {
 	return Metricset{metrics: metrics.New(cfg)}
 }
 

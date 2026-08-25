@@ -59,7 +59,7 @@ func installEnumTag(t *testing.T) []string {
 // reports the canonical language name.
 func TestBuildExtractorsOrder(t *testing.T) {
 	t.Parallel()
-	exs := registry.Build(&toolrun.RunnerMock{}, extractConfigs(config.Default()), nil)
+	exs := registry.Build(&toolrun.RunnerMock{}, config.Default().ExtractConfigs(), nil)
 	want := []string{config.LangGo, config.LangTypeScript, config.LangPython, config.LangRust}
 	if len(exs) != len(want) {
 		t.Fatalf("registry.Build returned %d extractors, want %d", len(exs), len(want))

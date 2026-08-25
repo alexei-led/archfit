@@ -36,8 +36,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	}
 	deps.refresh = c.Refresh
 	bPath := filepath.Join(filepath.Dir(c.Config), defaultBaselinePath)
-	analyzer := newUseCaseAnalyzer(c.Config, c.Root, cfg, deps)
-	service := application.BaselineService{Preparer: analyzer, Evidence: analyzer, Relationship: analyzer, Assessment: analyzer, Writer: baselineWriterAdapter{}}
+	service := application.BaselineService{Stages: newAnalysisStages(c.Config, c.Root, cfg, deps), Writer: baselineWriterAdapter{}}
 	if _, err := service.Execute(ctx, application.BaselineRequest{ConfigPath: c.Config, Root: c.Root, Path: bPath, NoAdvisories: c.NoAdvisories}); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

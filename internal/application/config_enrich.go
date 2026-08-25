@@ -21,6 +21,13 @@ const (
 	ConfigEnrichVolatility ConfigEnrichKind = "volatility"
 )
 
+// Subdomain vocabulary the enrichment review validates against.
+const (
+	subdomainCore       = "core"
+	subdomainSupporting = "supporting"
+	subdomainGeneric    = "generic"
+)
+
 // ConfigEnrichAction tells the command which user-facing result to render.
 type ConfigEnrichAction string
 
@@ -357,7 +364,7 @@ func validConfigEnrichDrafts(targets []ConfigEnrichModule, drafts []ConfigEnrich
 }
 
 func validConfigEnrichSubdomain(value string) bool {
-	return value == "core" || value == "supporting" || value == "generic"
+	return value == subdomainCore || value == subdomainSupporting || value == subdomainGeneric
 }
 
 func validConfigEnrichVolatility(value string) bool {

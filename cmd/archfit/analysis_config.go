@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 
-	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/config"
 )
 
@@ -20,7 +19,7 @@ func loadConfig(ctx context.Context, path string) (config.Config, error) {
 		}
 		return config.Config{}, err
 	}
-	if err := apppipeline.ValidateConfigRules(cfg); err != nil {
+	if err := config.ValidateRules(cfg); err != nil {
 		return config.Config{}, err
 	}
 	return cfg, nil
@@ -36,7 +35,7 @@ func loadAnalysisConfig(ctx context.Context, path string) (config.Config, error)
 		}
 		return config.Config{}, err
 	}
-	if err := apppipeline.ValidateConfigRules(cfg); err != nil {
+	if err := config.ValidateRules(cfg); err != nil {
 		return config.Config{}, err
 	}
 	return cfg, nil

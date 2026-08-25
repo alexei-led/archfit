@@ -177,7 +177,7 @@ func TestConfigEnrichApplyPinsOnlyUnsetValuesWithReviewedDefaults(t *testing.T) 
 func TestConfigEnrichApplyApprovedButAlreadySetIsNoop(t *testing.T) {
 	f := &configEnrichFake{
 		draftFile: ConfigEnrichDraftFile{Drafts: []ConfigEnrichDraft{{Module: "a", Subdomain: configWorkflowCore, Status: ConfigEnrichDraftStatusApproved}}},
-		config:    ConfigEnrichConfig{Modules: map[string]ConfigEnrichModule{"a": {Subdomain: "supporting"}}},
+		config:    ConfigEnrichConfig{Modules: map[string]ConfigEnrichModule{"a": {Subdomain: subdomainSupporting}}},
 		source:    []byte("same"),
 	}
 	out, err := configEnrichServiceWith(f).Execute(context.Background(), ConfigEnrichRequest{ConfigPath: workflowConfig, DraftPath: "subdomains", Kind: ConfigEnrichSubdomain, Apply: true, ReviewedBy: "alice"})

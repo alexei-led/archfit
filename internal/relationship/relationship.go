@@ -173,34 +173,6 @@ type Edge struct {
 	Classified Classification
 }
 
-// RuntimeSignal is a relationship-owned rollup of runtime relationship evidence.
-type RuntimeSignal struct {
-	Module          string
-	IntegrationKind string
-	Count           int
-	Confidence      string
-}
-
-// RuntimeRelationship is one relationship-level runtime signal with a capped
-// source sample. Count remains the total detected signal count.
-type RuntimeRelationship struct {
-	FromModule      string
-	Target          string
-	IntegrationKind string
-	Count           int
-	Confidence      string
-	Sites           []RuntimeSite
-}
-
-// RuntimeSite identifies one sampled runtime relationship location.
-type RuntimeSite struct {
-	File            string
-	Line            int
-	Library         string
-	IntegrationKind string
-	Language        string
-}
-
 // CloneOnlyPair is relationship-owned duplicated-knowledge provenance.
 type CloneOnlyPair struct {
 	FromModule string

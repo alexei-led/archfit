@@ -13,12 +13,10 @@ import (
 	"strings"
 	"testing"
 
-	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -114,10 +112,7 @@ func runLLMReviewForTest(t *testing.T, cfgPath string, provider llm.Provider) (s
 	if err != nil {
 		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	configDir := filepath.Dir(cfgPath)
-	base, _ := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
-	diag, sc, err := runPipeline(ctx, deps, cfg, newRunContext(cfgPath, ""),
-		apppipeline.Mode{Full: true, Advisory: true, ReportOnly: true}, base)
+	diag, sc, err := runPipeline(ctx, deps, cfg, cfgPath, "")
 	if err != nil {
 		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

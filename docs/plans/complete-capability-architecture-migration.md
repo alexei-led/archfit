@@ -714,18 +714,18 @@ Manual checks:
 - Confirm no new `common`, `shared`, `manager`, `engine`, or `pipeline` domain
   package replaced the deleted hub.
 
-- [ ] Run and report HIGH/CRITICAL impact for Analyzer, stage execution, scan, and
+- [x] Run and report HIGH/CRITICAL impact for Analyzer, stage execution, scan, and
       pipeline flows before editing.
-- [ ] Move each remaining analysispipeline responsibility to its approved owner.
-- [ ] Reduce Application ports and exported DTOs to approved context boundaries;
+- [x] Move each remaining analysispipeline responsibility to its approved owner.
+- [x] Reduce Application ports and exported DTOs to approved context boundaries;
       remove migration aliases and single-use internal interfaces.
-- [ ] Make owner stage implementations explicit and per-run-state safe.
-- [ ] Reduce command files to flags, construction, renderer selection, and exit
+- [x] Make owner stage implementations explicit and per-run-state safe.
+- [x] Reduce command files to flags, construction, renderer selection, and exit
       translation; document any composition-only fan-out exception.
-- [ ] Delete `internal/analysispipeline` and every production/test/CI reference.
-- [ ] Update CI golden paths and fix the external `scip-go` installer path.
-- [ ] Add and pass final application/composition/import/surface gates.
-- [ ] Run task verification, confirm byte-identical outputs, and commit the
+- [x] Delete `internal/analysispipeline` and every production/test/CI reference.
+- [x] Update CI golden paths and fix the external `scip-go` installer path.
+- [x] Add and pass final application/composition/import/surface gates.
+- [x] Run task verification, confirm byte-identical outputs, and commit the
       independently complete orchestration migration.
 
 ### Task 5: Finalize Archfit model, labels, tests, docs, and baseline

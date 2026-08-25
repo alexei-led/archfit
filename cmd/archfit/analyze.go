@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/llm"
@@ -142,11 +141,10 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	if err != nil {
 		return configLoadError(err)
 	}
-	if err := apppipeline.ApplyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
+	if err := config.ApplyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	analyzer := newUseCaseAnalyzer(req.configPath, req.root, cfg, deps)
-	resp, err := application.Service{Preparer: analyzer, Evidence: analyzer, Relationship: analyzer, Assessment: analyzer}.Execute(ctx, application.Request{
+	resp, err := application.Service{Stages: newAnalysisStages(req.configPath, req.root, cfg, deps)}.Execute(ctx, application.Request{
 		BaseRef:      req.baseRef,
 		JSON:         req.json,
 		Markdown:     req.markdown,

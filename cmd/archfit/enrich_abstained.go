@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/llm"
@@ -67,14 +66,13 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 
 	labelsPath := filepath.Join(configDir, defaultLabelsPath)
 	deps.refresh = c.Refresh
-	analyzer := newUseCaseAnalyzer(c.Config, c.Root, cfg, deps)
 	root := c.Root
 	if root == "" {
 		root = configDir
 	}
 	service := application.EnrichService{
-		Preparer: analyzer, Analyzer: analyzer, Labels: enrichmentLabelStore(),
-		Policy: apppipeline.EnrichmentPolicy{}, Judge: abstainedJudgeAdapter{provider: provider, cfg: cfg, configPath: c.Config, root: scanRootForEvidence(configDir, c.Root)},
+		Stages: newAnalysisStages(c.Config, c.Root, cfg, deps), Labels: enrichmentLabelStore(),
+		Judge:    abstainedJudgeAdapter{provider: provider, cfg: cfg, configPath: c.Config, root: scanRootForEvidence(configDir, c.Root)},
 		Snippets: filesystemSnippetAdapter{},
 	}
 	out, err := service.Execute(ctx, application.EnrichmentRequest{ConfigPath: c.Config, Root: root, Refresh: c.Refresh, LabelsPath: labelsPath, Abstained: true, EdgeCap: abstainedEdgeCap, SampleCap: abstainedSampleLocs})

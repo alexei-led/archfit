@@ -52,9 +52,9 @@ type Finalized struct {
 	GateReasons []string
 }
 
-// Finalize synthesises the scorecard, applies the coupling gate, and attaches
+// finalize synthesises the scorecard, applies the coupling gate, and attaches
 // repair tasks to diag. It is pure: every input is an already-resolved value.
-func Finalize(diag *result.Result, in FinalizeInput) Finalized {
+func finalize(diag *result.Result, in FinalizeInput) Finalized {
 	card := score.Synthesize(*diag)
 	gate := couplingGateFor(in.Gate)
 	applyCouplingGate(diag, card, gate, in.Baseline.CouplingScore)
@@ -64,9 +64,9 @@ func Finalize(diag *result.Result, in FinalizeInput) Finalized {
 	return Finalized{Score: card, GateReasons: score.EvaluateCouplingGate(card, gate, in.Baseline.CouplingScore).Reasons}
 }
 
-// CouplingGateAnchorStale reports whether max_drop was skipped because the
+// couplingGateAnchorStale reports whether max_drop was skipped because the
 // stored score snapshot is incompatible with this binary.
-func CouplingGateAnchorStale(gate policy.CouplingGate, anchor BaselineAnchor) bool {
+func couplingGateAnchorStale(gate policy.CouplingGate, anchor BaselineAnchor) bool {
 	return gate.Enabled && gate.MaxDrop != nil && len(anchor.SnapshotMismatches) > 0
 }
 

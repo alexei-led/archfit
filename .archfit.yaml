@@ -39,9 +39,8 @@ layers:
   - support # rank 1: supporting process contracts
   - core # rank 2: classify, rules, metrics, status
   - application # rank 3: use-case contracts
-  - adapter # rank 4: baseline, toolrun, extractors, renderers, git
-  - engine # rank 5: orchestration pipeline
-  - cmd # rank 6: composition root
+  - adapter # rank 4: baseline, toolrun, extractors, renderers, git, stage services
+  - cmd # rank 5: composition root
 modules:
   # Pure source evidence and stage contracts. These types carry facts and
   # boundaries; policy and report decisions live in their owning capabilities.
@@ -268,19 +267,6 @@ modules:
     layer: application
     subdomain: supporting
     volatility: medium
-  # Technical sequencing only. Domain stages live in evidence-analysis,
-  # relationship-analysis, and assessment-repair.
-  pipeline-engine:
-    owner: alexei-led
-    deploy_unit: archfit-cli
-    role: core
-    paths:
-      - internal/analysispipeline/**
-    public:
-      - internal/analysispipeline
-    layer: engine
-    subdomain: supporting
-    volatility: medium
   config-lifecycle:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -404,27 +390,13 @@ rules:
     from: internal/assessment/**
     to: internal/relationship/{classify,scoring,coupling,facts,labels,analysis}/**
     gate: fail
-  # The pipeline is a technical adapter only. Assessment lifecycle, judgment,
-  # and repair ownership stays behind evaluation's result port.
-  - id: analysispipeline_no_assessment_judgment
+  # Evidence acquisition observes; it never judges. Rule, metric, status,
+  # staleness, finding, decision, and repair-task ownership stays behind the
+  # evaluation port, so acquisition cannot become a second assessment owner.
+  - id: acquisition_no_assessment_judgment
     type: forbidden_dependency
-    from: internal/analysispipeline/**
-    to: internal/assessment/{status,staleness,finding,rules,metrics,score,decision,agenttask}/**
-    gate: fail
-  - id: analysispipeline_projection_no_status
-    type: forbidden_dependency
-    from: internal/analysispipeline/report_projection.go
-    to: internal/assessment/status/**
-    gate: fail
-  - id: analysispipeline_projection_no_staleness
-    type: forbidden_dependency
-    from: internal/analysispipeline/report_projection.go
-    to: internal/assessment/staleness/**
-    gate: fail
-  - id: analysispipeline_projection_no_findings
-    type: forbidden_dependency
-    from: internal/analysispipeline/report_projection.go
-    to: internal/assessment/finding/**
+    from: internal/evidence/**
+    to: internal/assessment/{status,staleness,finding,rules,metrics,decision,agenttask}/**
     gate: fail
   # Application is the explicit projection boundary: it may consume domain
   # values and construct report DTOs, while report adapters consume only DTOs.
@@ -476,9 +448,13 @@ rules:
     gate: fail
   # Evidence reports observations. A policy decision inside an acquisition
   # contract means the tool boundary has started deciding architecture.
+  # The neutral evidence CONTRACT carries facts, never decisions: it must not
+  # know what a module, a layer, or an owner is. Scoped to the contract package
+  # itself — internal/evidence/acquisition is the concrete stage service, and it
+  # necessarily resolves the run's policy snapshot before handing it downstream.
   - id: evidence_no_policy
     type: forbidden_dependency
-    from: internal/evidence/**
+    from: internal/evidence/*.go
     to: internal/policy/**
     gate: fail
   - id: evidence_no_config
@@ -619,10 +595,10 @@ rules:
     gate: fail
   # Application consumes narrow stage contracts. Concrete execution adapters
   # are composed outside the capability and must not leak into its package.
-  - id: application_no_analysispipeline
+  - id: application_no_concrete_adapters
     type: forbidden_dependency
     from: internal/application/**
-    to: internal/analysispipeline/**
+    to: internal/{extract,toolrun,output}/**
     gate: fail
   - id: application_no_evidence_acquisition
     type: forbidden_dependency
@@ -668,6 +644,33 @@ rules:
     type: forbidden_dependency
     from: internal/application/**
     to: cmd/archfit/**
+    gate: fail
+  # The orchestration hub is gone. Nothing may reintroduce it: every stage is
+  # owned by the capability that decides it, and the application sequences them.
+  - id: no_analysispipeline
+    type: forbidden_dependency
+    from: "**"
+    to: internal/analysispipeline/**
+    gate: fail
+  # Composition-root direction. The library never reaches back into the CLI, so
+  # every command stays replaceable and no domain decision can hide in cmd.
+  - id: core_no_cmd
+    type: forbidden_dependency
+    from: internal/{policy,relationship,assessment,evidence,model,scope,syntax}/**
+    to: cmd/**
+    gate: fail
+  - id: adapter_no_cli
+    type: forbidden_dependency
+    from: internal/{extract,toolrun,history,output,baseline,labels,factcache,ownership,config}/**
+    to: cmd/**
+    gate: fail
+  # The CLI selects concrete implementations and translates exit codes. A rule,
+  # metric, scorer, status, decision, finding, or classifier import there would
+  # be a second place where the verdict is decided.
+  - id: cli_no_domain_implementation
+    type: forbidden_dependency
+    from: cmd/archfit/**
+    to: internal/{assessment/rules,assessment/metrics,assessment/score,assessment/status,assessment/decision,assessment/finding,relationship/classify,relationship/scoring,relationship/coupling}/**
     gate: fail
   # Layer direction guard. The historical engine→scope inversion was
   # resolved by decoupling scope from git and reclassifying it as support.

@@ -23,7 +23,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 ## Structural gates (CI runs these explicitly — keep green)
 
 - Import ring: `go test ./internal/ -run TestArchImports`
-- Golden output: `go test ./internal/analysispipeline/ -run TestGolden` — regenerate
+- Golden output: `go test ./internal/application/ -run TestGolden` — regenerate
   deliberately and inspect the diff; output changes are never automatic.
 - Dogfood gate: `make archfit` — CI runs the same target after tests/goldens. Also
   runs locally pre-push via the `arch-lint` hook in `.pre-commit-config.yaml`. The
@@ -48,11 +48,12 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   `TestModelSurfaceNoDrift` (golden: `internal/testdata/model_surface.golden`);
   regenerate deliberately with `ARCHFIT_UPDATE_SURFACE=1` and call the contract
   change out in review.
-- `internal/view` holds the data-only stage contracts (ClassifyConfig,
-  ExtractConfig, RuleDef, …). Stages import `view`, never `internal/config`;
-  only composition roots (`cmd/*`), `internal/analysispipeline`, and
-  `internal/configschema` may import `internal/config` (enforced by
-  `*_no_config` rules in `.archfit.yaml`).
+- **Stages receive projected views, never `internal/config`.** `internal/config`
+  owns the YAML lifecycle and projects itself into each consumer's own contract
+  (`Config.PolicySnapshot()`, `Config.RunOptions()`, `Config.CoverageOptions()`,
+  `Config.AnalyzerFamilies()`, `Config.ForFileClass()`). Only composition roots
+  (`cmd/*`), `internal/config` itself, and `internal/configschema` may import
+  `internal/config` (enforced by `*_no_config` rules in `.archfit.yaml`).
 - Every subprocess call goes through `toolrun.Runner` (interface in
   `internal/toolrun/toolrun.go`); extractors in `internal/extract/{go,ts,py,rust}`
   are out-of-process adapters. No `exec.Command` in core code — fake the `Runner`
@@ -79,15 +80,16 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   it; the book formula (`ScoreVersion = "bc_score.v6"`) is the single severity source.
 - **Coupling gate** (`coupling.gate: {min_band, max_drop}`). The synthesised
   coupling_balance score can fail the verdict: `score.Synthesize` +
-  `applyCouplingGate` run INSIDE `Run` (`internal/analysispipeline/pipeline_run.go`),
-  before `agenttask.Build`, so a tripped gate escalates `diag.Verdict` and
+  `applyCouplingGate` run INSIDE `evaluation.Score`
+  (`internal/assessment/evaluation/assess.go`), before `agenttask.Build`, so a tripped gate escalates `diag.Verdict` and
   promotes the active BC advisories to `Kind: "gate"` (they flow into
   `agent_tasks[]` through the unchanged agenttask filter). `min_band` is a band
   floor; `max_drop` compares against the score snapshot `archfit baseline`
   stores (`baseline.ScoreSnapshot`, omitted when unmeasured). BandNA never
   gates (abstain ≠ fail). Trip reasons print to stderr from `analyze` ONLY
   (re-evaluated there via the pure `score.EvaluateCouplingGate`) — never from
-  baseline/enrich/explain/`--base` scoring, which share `Run`. A separate
+  baseline/enrich/explain/`--base` scoring, which share the stage executor
+  (`AnalysisRequest.SuppressGateReasons`). A separate
   stale-baseline notice can also print from `analyze` when `max_drop` is skipped
   because the stored score snapshot is incompatible with this binary —
   `baseline.ScoreSnapshotMismatches` names the offending input
@@ -110,7 +112,10 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   filter on Production files use this index and report the excluded count.
   Config override: top-level `file_class:` key (`FileClassDef`), projected via
   `Config.ForFileClass()` → `syntax.FileClassConfig`.
-- **`archfit analyze --base <ref>`** flag (`internal/analysispipeline/worktree.go`). Creates a
+- **`archfit analyze --base <ref>`** flag. The application coordinates it
+  (`StageExecutor.attachBaseComparison`, `internal/application/base_compare.go`);
+  the worktree mechanics are a VCS adapter (`git.Worktree.Checkout`,
+  `internal/history/git/worktree.go`). Creates a
   clean detached temp worktree at `<ref>`, scores both sides with the full advisory
   pipeline, and emits a dimension-by-dimension delta table. Off-gate, report-only
   (exit 0 on success, exit 3 on git/config error). Both sides use the current
@@ -118,10 +123,13 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   The base sub-run receives the caller's EFFECTIVE head config (after `--lang` /
   `--min-severity`) and never reparses the file. `analyze.go` hands it a copy
   with an independent `Modules` map (`WithIndependentModules`) — `config.Config`
-  is a value but its map is shared, and `Run`'s owner/deploy-unit
+  is a value but its map is shared, and the run's owner/deploy-unit
   backfill writes through it, so without the copy the base side would inherit
-  head-tree owners and skip its own resolution.
-- **`git_finding_delta`** (`internal/analysispipeline/git_finding_delta.go`) — report-only JSON
+  head-tree owners and skip its own resolution. The base sub-run is a SECOND
+  acquisition service (`StageExecutor.NewBaseEvidence`), not a second call on
+  the head one: no per-run state can leak between the two trees.
+- **`git_finding_delta`** (`internal/assessment/decision`, attached by
+  `evaluation.AttachGitOrigin`) — report-only JSON
   block emitted only with `--base`, classifying the CURRENT `agent_tasks[]` as
   `introduced` / `pre_existing` / `unknown` origin. Pointer + `omitempty`, so a
   run without `--base` stays byte-identical; never changes the verdict, the exit
@@ -139,9 +147,9 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   produced findings), asymmetric absence is not. A timeout, a missing row, and a
   duplicate row are all unavailable evidence.
   Isolation: only base finding IDs, coverage rows/gaps, and the config hash
-  cross over — `runScoreSide` projects the base Diagnostic to `baseEvidence` at
-  the source, because base agent tasks carry paths and a validation command
-  rooted in a temp worktree that is deleted on return.
+  cross over — `scoreBaseTree` projects the base Diagnostic to
+  `application.BaseEvidence` at the source, because base agent tasks carry paths
+  and a validation command rooted in a temp worktree that is deleted on return.
   `comparison_status: comparable` can still ship with non-empty
   `comparison_reasons`: the status reports task placement, the reasons report
   evidence.
@@ -186,7 +194,8 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   analyzer next to the real family and left the family with zero rows.
 - **Applicability is decided by the extractor, never by a marker list**
   (`LanguageDescriptor.ProjectPresent`, `cmd/archfit/registry.go` — the row's doc
-  comment is the contract; probes are wired in `internal/analysispipeline/pipeline_coverage.go`).
+  comment is the contract; probes are projected by `Config.CoverageOptions()` and
+  read in `internal/evidence/acquisition/coverage.go`).
   Every language answers "is this language present under root?" by calling its OWN
   exported applicability function — `golang.AnalysableMembers`, `ts.Applicable`,
   `py.Applicable`, `rust.Applicable` — and that same function is what the
@@ -208,7 +217,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   consumes `!` re-includes), so a second merge re-seeds defaults the user removed
   and the probe then skips trees the extractors analysed.
 - **A language switched off over a language that IS PRESENT reports `disabled`,
-  never `absent`** (`markDisabledPrimaries`, `internal/analysispipeline/pipeline_coverage.go`,
+  never `absent`** (`markDisabledPrimaries`, `internal/evidence/acquisition/coverage.go`,
   applied to `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode
   `ModeOff` as `StatusAbsent`, which both pairing paths read as "this language is
   not in the tree" and drop from the comparison — so two configs that BOTH
@@ -281,17 +290,38 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   same helpers `RenderUpdateReport` uses. Gating on `HasReviewSuggestions` there
   hid module gaps, name drift, unmatched and pathless stanzas exactly when apply
   had an edit to make.
-- **`runContext`** (`internal/analysispipeline/pipeline_run.go`) replaces `Run`'s
-  positional path arguments. Each field selects one thing, and a caller that
-  leaves one zero silently gets head-tree state on a base or candidate run:
-  `ConfigSource` → config hash + validation command; `BundleDir` → pinned labels
-  - fact-cache location; `ScanRoot` → scope + on-disk path resolution;
-    `EvaluatedAt` → the single instant waiver expiry and staleness age against
-    (zero samples `time.Now()` on read). Per-run values: normal analysis = current
-    path / current config dir / current tree / persisted baseline; git base =
-    same, with the base worktree as ScanRoot and an empty baseline; compare
-    current and compare candidate = the common tree, the current config dir, one
-    shared `EvaluatedAt`, empty baselines, and only `ConfigSource` differing.
+- **`AnalysisRequest` + `AnalysisContext`** (`internal/application/analysis.go`)
+  carry the per-run path and time inputs. `AnalysisRequest` is what the caller
+  asks for; `AnalysisContext` is what acquisition resolved, and every later stage
+  reads it instead of re-deriving anything. A caller that leaves a request field
+  zero silently gets the service default, which is head-tree state on a base or
+  candidate run: `ConfigSource` → config hash + validation command; `BundleDir` →
+  pinned labels + fact-cache location; `Root` → scope + on-disk path resolution;
+  `EvaluatedAt` → the single instant waiver expiry and staleness age are measured
+  against (zero samples `time.Now()` once, in `Acquire`). Per-run values: normal
+  analysis = current path / current config dir / current tree / persisted
+  baseline; git base = same, with the base worktree as Root and
+  `EmptyBaseline: true`; compare current and compare candidate = the common tree,
+  the current config dir, one shared `EvaluatedAt`, empty baselines, and only
+  `ConfigSource` differing.
+- **The stage sequence has one owner.** `application.StageExecutor.Execute` runs
+  Prepare → Acquire → Relate → Assess → Score → (optional) base comparison, in
+  that order, for analyze, check, baseline, explain, enrich, and config compare.
+  Only Prepare and Acquire are ports (`config.Preparer`,
+  `acquisition.Service`): they validate policy, walk the tree, and run external
+  tools. Relationship analysis (`analysis.Analyze`) and assessment
+  (`evaluation.Assess`/`Score`) are pure decisions the application calls
+  directly — a port for either would only hide the call site. Persistence
+  crosses as ports: `BaselineLoader`, `BaselineWriter`, `EnrichmentLabelStore`,
+  `WorktreeProvider`.
+- **Only relationship analysis sees the graph.** `evidence.Facts` carries it to
+  `Relate`; assessment receives `evaluation.Observations`, which has no graph and
+  no classifier index, so it cannot re-derive a relationship even by accident
+  (`application.observationsOf`). Coverage marking, coverage gaps, config
+  warnings, and git-history volatility corroboration are resolved ONCE in
+  `Acquire` and ride `AnalysisContext`; assessment attaches them. Rule and metric
+  evaluation deliberately reads the RAW coverage rows, not the marked copy, so a
+  config opt-out can never move a measured metric.
 - **Owner inheritance for auto-registered synthetic submodules**
   (`classify.AugmentModulesFromGraph`, `AugmentGoWorkspaceModules`): propagates
   `owner` from the nearest config-declared ancestor module to each synthetic module.

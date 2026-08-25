@@ -33,8 +33,6 @@ import (
 	"strings"
 	"time"
 
-	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
-
 	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/report"
@@ -78,11 +76,13 @@ func (c *CompareCmd) Run(deps *appDeps) error {
 	}
 	deps.refresh = false
 	evaluatedAt := time.Now()
-	currentAnalyzer := newUseCaseAnalyzer(c.Config, c.Root, curCfg, deps)
-	candidateAnalyzer := newUseCaseAnalyzer(c.Candidate, c.Root, candCfg, deps)
+	// Both sides share the CURRENT config's bundle directory (pinned labels,
+	// fact cache) and run against an EMPTY accepted baseline: it records
+	// findings accepted under the current config, so applying it would silence
+	// the candidate's findings by the current config's history.
 	service := application.CompareService{
-		Current:   application.StageExecutor{Preparer: currentAnalyzer, Evidence: currentAnalyzer, Relationship: currentAnalyzer, Assessment: currentAnalyzer},
-		Candidate: application.StageExecutor{Preparer: candidateAnalyzer, Evidence: candidateAnalyzer, Relationship: candidateAnalyzer, Assessment: candidateAnalyzer},
+		Current:   newReportOnlyStages(c.Config, c.Root, curCfg, deps),
+		Candidate: newReportOnlyStages(c.Candidate, c.Root, candCfg, deps),
 	}
 	cmp, err := service.Execute(ctx, application.CompareRequest{CurrentConfig: c.Config, CandidateConfig: c.Candidate, Root: c.Root, EvaluatedAt: evaluatedAt})
 	if err != nil {
@@ -103,7 +103,7 @@ func loadCandidateConfig(ctx context.Context, path string) (config.Config, error
 	if err != nil {
 		return config.Config{}, fmt.Errorf("candidate config %s: %w", path, err)
 	}
-	if err := apppipeline.ValidateConfigRules(cfg); err != nil {
+	if err := config.ValidateRules(cfg); err != nil {
 		return config.Config{}, fmt.Errorf("candidate config %s: %w", path, err)
 	}
 	return cfg, nil

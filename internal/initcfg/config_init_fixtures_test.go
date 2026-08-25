@@ -9,21 +9,20 @@ import (
 	"testing"
 	"time"
 
-	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/rules"
-	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/evidence/acquisition"
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
+	relationshipanalysis "github.com/alexei-led/archfit/internal/relationship/analysis"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -354,39 +353,38 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Diagnostic {
 	cfg := loadRendered(t, rendered)
 
 	classifyCfg := cfg.ForClassify()
-	rs, err := evaluation.NewRuleset(cfg.ForRules())
-	if err != nil {
+	if _, err := evaluation.NewRuleset(cfg.ForRules()); err != nil {
 		t.Fatalf("evaluation.NewRuleset: %v", err)
 	}
-	ms := evaluation.NewMetricset(cfg.Metrics)
 
 	extractor := goextract.New(evidenceports.ExtractConfig{})
 	base := baseline.Baseline{SchemaVersion: baseline.SchemaVersion}
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	s := scope.Scope{Root: root, Mode: scope.ModeFull}
 
-	diag, err := apppipeline.RunStages(context.Background(), apppipeline.StageInput{
-		Mode:  apppipeline.Mode{Full: true, Advisory: true},
-		Scope: s,
-		Policy: policy.New(
-			policy.TopologyView{Modules: classifyCfg.Modules, Layers: classifyCfg.Layers, ModuleMap: classifyCfg.ModuleMap, ExternalSystems: classifyCfg.ExternalSystems, ExplicitOwners: classifyCfg.ExplicitOwners},
-			policy.RelationshipPolicy{MinimumSeverity: classifyCfg.BCAdvisoryMinSeverity, VolatilityCascadeEnabled: classifyCfg.VolatilityCascadeEnabled, DuplicatedKnowledge: classifyCfg.DuplicatedKnowledgePolicy},
-			policy.AssessmentPolicy{}, policy.GatePolicy{}, nil, nil),
-		Extractors:  []evidenceports.Extractor{extractor},
-		Patterns:    evidenceports.NopPatternProvider{},
-		Resolver:    evidenceports.NopSymbolResolver{},
-		PatternCfg:  pattern.Config{},
-		Rules:       rs,
-		Metrics:     ms,
-		Accepted:    base,
-		BaseMetrics: base.Metrics,
-		Signals:     signal.RunSignals{},
-		Now:         now,
+	runPolicy := policy.New(
+		policy.TopologyView{Modules: classifyCfg.Modules, Layers: classifyCfg.Layers, ModuleMap: classifyCfg.ModuleMap, ExternalSystems: classifyCfg.ExternalSystems, ExplicitOwners: classifyCfg.ExplicitOwners},
+		policy.RelationshipPolicy{MinimumSeverity: classifyCfg.BCAdvisoryMinSeverity, VolatilityCascadeEnabled: classifyCfg.VolatilityCascadeEnabled, DuplicatedKnowledge: classifyCfg.DuplicatedKnowledgePolicy},
+		policy.AssessmentPolicy{}, policy.GatePolicy{Rules: cfg.ForRules(), Metrics: cfg.Metrics}, nil, nil)
+
+	collected, err := acquisition.Collect(context.Background(), acquisition.Input{
+		Scope: s, Extractors: []evidenceports.Extractor{extractor}, Resolver: evidenceports.NopSymbolResolver{},
 	})
 	if err != nil {
-		t.Fatalf("apppipeline.RunStages: %v", err)
+		t.Fatalf("acquisition.Collect: %v", err)
 	}
-	return diag
+	assessed, err := evaluation.Assess(evaluation.AssessInput{
+		Facts: evaluation.Observations{Coverage: collected.Coverages, Symbols: collected.SCIPSymbols},
+		Relationships: relationshipanalysis.Analyze(relationshipanalysis.Input{
+			Graph: collected.Graph, Policy: runPolicy.Relationship, Mode: relationshipanalysis.Mode{Full: true},
+		}),
+		Policy: runPolicy, Accepted: base, BaseMetrics: result.MetricSnapshot(base.Metrics),
+		Scope: s, Now: now, Advisory: true,
+	})
+	if err != nil {
+		t.Fatalf("evaluation.Assess: %v", err)
+	}
+	return assessed.Diagnostic
 }
 
 // TestConfigInit_GoFixture_LayerRuleBackEdge runs the full analyze gate over

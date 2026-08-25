@@ -12,6 +12,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,6 +24,7 @@ import (
 
 const (
 	modulePrefix = "github.com/alexei-led/archfit/"
+	goSourceExt  = ".go"
 )
 
 // coreRingPkgs are the packages that must not import os, os/exec, YAML libs,
@@ -89,11 +91,11 @@ var contractThirdPartyAllowed = map[string]map[string]bool{
 	modulePrefix + "internal/policy": {"github.com/bmatcuk/doublestar/v4": true},
 }
 
-// adapterPrefixes are packages the core ring must never import — adapters AND
-// the orchestrator. Adapters depend on internal/evidence/ports (or the
-// internal/report/ports rendering port), never the orchestrator.
+// adapterPrefixes are the packages the core ring must never import. Adapters
+// depend on internal/evidence/ports (or the internal/report/ports rendering
+// port); the core ring decides over already-gathered facts.
 var adapterPrefixes = []string{
-	modulePrefix + "internal/analysispipeline",
+	modulePrefix + "internal/evidence/acquisition",
 	modulePrefix + "internal/baseline",
 	modulePrefix + "internal/toolrun",
 	modulePrefix + "internal/extract/",
@@ -112,7 +114,7 @@ func TestCompositionFanoutRatchet(t *testing.T) {
 	for _, tc := range []struct {
 		pkg string
 		max int
-	}{{modulePrefix + "cmd/archfit", 14}, {modulePrefix + "internal/analysispipeline", 14}} {
+	}{{modulePrefix + "cmd/archfit", 14}} {
 		t.Run(tc.pkg, func(t *testing.T) {
 			loaded, loadErr := packages.Load(&packages.Config{Mode: packages.NeedImports, Dir: ".."}, tc.pkg)
 			if loadErr != nil || len(loaded) != 1 {
@@ -139,10 +141,54 @@ func TestCompositionFanoutRatchet(t *testing.T) {
 	}
 }
 
-func TestCommandDoesNotImportRelationshipClassify(t *testing.T) {
-	for _, file := range productionImportFiles(t, modulePrefix+"internal/relationship/classify") {
-		if strings.HasPrefix(file, "cmd/archfit/") {
-			t.Errorf("command composition must use engine classification stages: %s", file)
+// TestCLIImportsNoDomainImplementation is the cli_no_domain_implementation gate:
+// the CLI selects concrete implementations and translates exit codes. A rule,
+// metric, scorer, status, decision, finding, or classifier import in a
+// production command file would be a second place where the verdict is decided.
+//
+// Test files are exempt on purpose: the CLI characterization tests assert the
+// published contract in the domain's own vocabulary, which is the point of them.
+func TestCLIImportsNoDomainImplementation(t *testing.T) {
+	for _, pkg := range []string{
+		"internal/assessment/rules", "internal/assessment/metrics", "internal/assessment/score",
+		"internal/assessment/status", "internal/assessment/decision", "internal/assessment/finding",
+		"internal/relationship/classify", "internal/relationship/scoring", "internal/relationship/coupling",
+	} {
+		for _, file := range productionImportFiles(t, modulePrefix+pkg) {
+			if strings.HasPrefix(file, "cmd/archfit/") {
+				t.Errorf("%s imports %s: the CLI composes implementations, it never decides with them", file, pkg)
+			}
+		}
+	}
+}
+
+// TestApplicationImportsNoConcreteAdapters is the
+// application_no_concrete_adapters gate: the use-case layer states its needs as
+// ports and lets the composition root satisfy them. A process, filesystem,
+// persistence, or rendering adapter here would pin one implementation into the
+// lifecycle.
+func TestApplicationImportsNoConcreteAdapters(t *testing.T) {
+	for _, pkg := range []string{
+		"internal/evidence/acquisition", "internal/extract", "internal/toolrun", "internal/output",
+		"internal/factcache", "internal/history", "internal/ownership", "internal/baseline",
+		"internal/labels/labelsio", "internal/llm", "internal/config",
+	} {
+		for _, file := range productionImportFiles(t, modulePrefix+pkg) {
+			if strings.HasPrefix(file, "internal/application/") {
+				t.Errorf("%s imports the concrete adapter %s: application owns ports, cmd owns wiring", file, pkg)
+			}
+		}
+	}
+}
+
+// TestNoAnalysisPipelinePackage is the no_analysispipeline gate. The
+// orchestration hub was dissolved into the capabilities that own each decision;
+// reintroducing it under any name would restore the second sequencer this
+// migration removed.
+func TestNoAnalysisPipelinePackage(t *testing.T) {
+	for _, dir := range []string{"analysispipeline", "engine", "pipeline", "manager", "common", "shared"} {
+		if _, err := os.Stat(filepath.Join("..", "internal", dir)); err == nil {
+			t.Errorf("internal/%s exists: the application sequences stages, no hub package may own that again", dir)
 		}
 	}
 }
@@ -179,18 +225,45 @@ func TestAssessmentConsumesOnlyThePublicRelationshipContract(t *testing.T) {
 	}
 }
 
-// TestPipelineDelegatesAssessmentJudgment pins that the stage adapter owns
-// wiring, not judgment: rule, metric, status, staleness, finding, score,
-// decision, and repair-task behavior reaches it only through the evaluation
-// port. A second call site for any of them would make the pipeline a second
-// owner of the assessment lifecycle.
-func TestPipelineDelegatesAssessmentJudgment(t *testing.T) {
+// TestAcquisitionDelegatesAssessmentJudgment pins that evidence acquisition
+// observes but never judges: rule, metric, status, staleness, finding, score,
+// decision, and repair-task behavior reaches the run only through the
+// evaluation port. A call site here would make acquisition a second owner of
+// the assessment lifecycle.
+func TestAcquisitionDelegatesAssessmentJudgment(t *testing.T) {
 	for _, pkg := range []string{"status", "staleness", "finding", "rules", "metrics", "score", "decision", "agenttask"} {
 		for _, file := range productionImportFiles(t, modulePrefix+"internal/assessment/"+pkg) {
-			if strings.HasPrefix(file, "internal/analysispipeline/") {
-				t.Errorf("analysispipeline must reach assessment through evaluation, not assessment/%s: %s", pkg, file)
+			if strings.HasPrefix(file, "internal/evidence/") {
+				t.Errorf("evidence acquisition must reach assessment through evaluation, not assessment/%s: %s", pkg, file)
 			}
 		}
+	}
+}
+
+// TestInternalDoesNotImportCmd is the core_no_cmd / adapter_no_cli gate: the
+// library never reaches back into the composition root, so every command stays
+// replaceable and no domain decision can hide behind a CLI type.
+func TestInternalDoesNotImportCmd(t *testing.T) {
+	err := filepath.WalkDir(filepath.Join("..", "internal"), func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(path) != goSourceExt {
+			return nil
+		}
+		tree, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if parseErr != nil {
+			return parseErr
+		}
+		for _, imp := range tree.Imports {
+			if strings.HasPrefix(strings.Trim(imp.Path.Value, `"`), modulePrefix+"cmd/") {
+				t.Errorf("%s imports the composition root: dependencies point inward", path)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -242,7 +315,6 @@ func TestTransitionalImportRatchet(t *testing.T) {
 		max        int
 		why        string
 	}{
-		{modulePrefix + "internal/analysispipeline", 9, "internal/analysispipeline is deleted in Task 4"},
 		{modulePrefix + "internal/evidence", 3, "only relationship analysis may receive the full evidence snapshot"},
 	} {
 		t.Run(strings.TrimPrefix(tc.importPath, modulePrefix), func(t *testing.T) {
@@ -266,7 +338,6 @@ func TestTransitionalContractSurfaceRatchet(t *testing.T) {
 		pkg string
 		max int
 	}{
-		{modulePrefix + "internal/analysispipeline", 88},
 		{modulePrefix + "internal/relationship", 55},
 		{modulePrefix + "internal/assessment/result", 47},
 		{modulePrefix + "internal/evidence", 8},
@@ -334,7 +405,7 @@ func productionImportFiles(t *testing.T, importPath string) []string {
 			}
 			return nil
 		}
-		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+		if filepath.Ext(path) != goSourceExt || strings.HasSuffix(path, "_test"+goSourceExt) {
 			return nil
 		}
 
@@ -430,10 +501,6 @@ func TestArchImports(t *testing.T) {
 				t.Errorf("package %s must not import %s: the check gate is LLM-free; only cmd may use the LLM layer", pkgPath, llmPkg)
 			}
 		}
-	})
-
-	t.Run("adapters_no_engine_import", func(t *testing.T) {
-		assertAdaptersNoEngineImport(t, loaded)
 	})
 
 	t.Run("adapters_no_assessment_application_import", func(t *testing.T) {
@@ -555,24 +622,6 @@ func isAdapterPackage(pkgPath string) bool {
 	return false
 }
 
-func assertAdaptersNoEngineImport(t *testing.T, loaded map[string]*packages.Package) {
-	t.Helper()
-	// Adapters (toolrun, extract/*, history/*, output/*) must depend on
-	// internal/evidence/ports (or the internal/report/ports rendering port),
-	// never on the orchestrator (internal/analysispipeline). This ensures the hexagonal
-	// boundary: ports live in neutral owner packages that both adapters and the
-	// orchestrator can import without creating a cycle.
-	const enginePkg = modulePrefix + "internal/analysispipeline"
-	for pkgPath, pkg := range loaded {
-		if !isAdapterPackage(pkgPath) {
-			continue
-		}
-		if _, imports := pkg.Imports[enginePkg]; imports {
-			t.Errorf("adapter package %s must not import %s: use internal/evidence/ports instead", pkgPath, enginePkg)
-		}
-	}
-}
-
 func assertAdaptersNoAssessmentApplicationImport(t *testing.T, loaded map[string]*packages.Package) {
 	t.Helper()
 	// Adapters (toolrun, extract/*, history/*, output/*) must depend on stable
@@ -614,7 +663,7 @@ func TestNamedCommandStagesDoNotImportDomainInternals(t *testing.T) {
 				modulePrefix + "internal/initcfg",
 			} {
 				if strings.HasPrefix(importPath, forbidden) {
-					t.Errorf("cmd/archfit/%s must use application/pipeline adapters, not %s", name, importPath)
+					t.Errorf("cmd/archfit/%s must use the application use case and its adapters, not %s", name, importPath)
 				}
 			}
 		}

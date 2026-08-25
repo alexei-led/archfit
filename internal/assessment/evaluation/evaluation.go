@@ -57,8 +57,8 @@ type Result struct {
 	Captured relationship.Set
 }
 
-// Evaluate applies rules, statuses, and metrics in their domain order.
-func Evaluate(in Input) Result {
+// evaluate applies rules, statuses, and metrics in their domain order.
+func evaluate(in Input) Result {
 	raw := make([]finding.Finding, 0, in.Rules.Len())
 	for _, rule := range in.Rules.rules {
 		raw = append(raw, rule.Check(in.Relationships, rules.Evidence{PatternMatches: in.Evidence.PatternMatches, SyntaxFacts: in.Evidence.SyntaxFacts})...)

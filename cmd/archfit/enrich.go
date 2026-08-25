@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/llm"
@@ -122,11 +121,10 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	labelsPath := filepath.Join(configDir, defaultLabelsPath)
 
 	deps.refresh = c.Refresh
-	analyzer := newUseCaseAnalyzer(c.Config, c.Root, cfg, deps)
 	root := scanRootForEvidence(configDir, c.Root)
 	service := application.EnrichService{
-		Preparer: analyzer, Analyzer: analyzer, Labels: enrichmentLabelStore(),
-		Policy: apppipeline.EnrichmentPolicy{}, Judge: labelJudgeAdapter{provider: provider, cfg: cfg, configPath: c.Config, root: root},
+		Stages: newAnalysisStages(c.Config, c.Root, cfg, deps), Labels: enrichmentLabelStore(),
+		Judge: labelJudgeAdapter{provider: provider, cfg: cfg, configPath: c.Config, root: root},
 	}
 	out, err := service.Execute(ctx, application.EnrichmentRequest{ConfigPath: c.Config, Root: c.Root, Refresh: c.Refresh, LabelsPath: labelsPath})
 	if err != nil {

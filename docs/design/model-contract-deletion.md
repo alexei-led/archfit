@@ -16,4 +16,4 @@ The model-surface golden was regenerated for the resulting published model
 surface. The report schema identifier remains `archfit.diagnostic.v2` for
 wire compatibility; package ownership is the contract change.
 
-The former `cmd/archfit/technical_compat.go` façade was also deleted. Pipeline configuration, coverage, worktree, delta, distance, volatility, and coupling behavior now lives in `internal/analysispipeline`; command files retain only composition and exit/output wiring.
+The former `cmd/archfit/technical_compat.go` façade was also deleted. Configuration projection now lives in `internal/config`, coverage and volatility evidence in `internal/evidence/acquisition`, distance and coupling behavior in `internal/assessment/evaluation`, worktree mechanics in `internal/history/git`, and delta coordination in `internal/application`; command files retain only composition and exit/output wiring.

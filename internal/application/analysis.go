@@ -5,14 +5,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/evidence"
+	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/internal/relationship/analysis"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -73,8 +80,9 @@ type AnalysisResult struct {
 	EnrichmentEvidence *EnrichmentEvidence
 }
 
-// PolicyPreparer is the consumer port for the policy/config preparation stage.
-// Application invokes it before technical analysis stages.
+// PolicyPreparer validates decoded policy and emits config-quality diagnostics
+// before any technical stage runs. It is a real boundary: validation reads the
+// policy language the config adapter owns.
 type PolicyPreparer interface {
 	Prepare(context.Context) error
 }
@@ -86,13 +94,18 @@ type PolicyPreparer interface {
 // once during preparation and every later stage reads the same immutable
 // snapshot rather than re-deriving it.
 type AnalysisContext struct {
-	Scope                 scope.Scope
-	BaseRef               string
-	Full                  bool
-	Now                   time.Time
-	ConfigHash            string
-	ConfigSource          string
-	BundleDir             string
+	Scope        scope.Scope
+	BaseRef      string
+	Full         bool
+	Now          time.Time
+	ConfigHash   string
+	ConfigSource string
+	BundleDir    string
+	// ScanRoot is the analysis boundary AS THE CALLER GAVE IT (empty means "the
+	// whole repository"). Scope.Root is its resolved, canonical form. The repair
+	// tasks' validation command must echo the caller's form, not the resolved
+	// one, or a copy-pasted command would not reproduce the run.
+	ScanRoot              string
 	PrimaryExtractorTools []string
 	PinnedLabels          []labels.Label
 	Policy                policy.PolicySnapshot
@@ -101,6 +114,24 @@ type AnalysisContext struct {
 	// produced by the single resolution pass so assessment never repeats it.
 	OwnerSource   string
 	OwnerWarnings []string
+	// ConfigWarnings is the advisory config-quality block acquisition assembled
+	// from config lint plus every degradation it disclosed on stderr, in
+	// emission order. Assessment attaches it; it never re-derives it.
+	ConfigWarnings []string
+	// MarkedCoverage and CoverageGaps are the analyzer-coverage evidence after
+	// acquisition rewrote the rows of primaries the config switched off over a
+	// language that IS present. They are resolved here because both depend on
+	// analyzer applicability probes and the source tree, which only acquisition
+	// may touch. Rule and metric evaluation deliberately reads the RAW coverage
+	// on Facts, so a config opt-out cannot move a measured metric.
+	MarkedCoverage []modevidence.Coverage
+	CoverageGaps   []modevidence.CoverageGap
+	// CrateRootDirs maps a Rust crate name to its repo-relative source dir, for
+	// resolving crate-scoped repair-task paths.
+	CrateRootDirs map[string]string
+	// VolatilityCorroboration is report-only git-history evidence. It never
+	// changes a score, a finding, or a verdict.
+	VolatilityCorroboration *modevidence.VolatilityCorroboration
 }
 
 // Acquired pairs the neutral evidence of one run with the context it was
@@ -110,36 +141,53 @@ type Acquired struct {
 	Context AnalysisContext
 }
 
-// EvidenceStage acquires scope-bound facts before relationship analysis.
+// EvidenceStage acquires scope-bound facts before relationship analysis. It is
+// a real boundary: acquisition walks the source tree, runs external tools, and
+// resolves repository ownership. Relationship analysis and assessment are pure
+// decisions this package calls directly — a port for either would only hide the
+// call.
 type EvidenceStage interface {
 	Acquire(context.Context, AnalysisRequest) (Acquired, error)
 }
 
-// RelationshipStage classifies acquired evidence into relationship-owned facts.
-type RelationshipStage interface {
-	Relate(context.Context, Acquired) (relationship.AnalysisResult, error)
+// AnalyzerFamilies records which optional analyzer families the config
+// activated. The git-origin delta needs it to decide whether two runs compared
+// like with like.
+type AnalyzerFamilies struct {
+	Patterns, Syntax, SCIP, Clones, CargoModules bool
 }
 
-// AssessmentStage evaluates relationship facts and returns the application
-// analysis result. Report projection remains in application.
-type AssessmentStage interface {
-	Assess(context.Context, AnalysisRequest, evidence.AssessmentFacts, AnalysisContext, relationship.AnalysisResult) (AnalysisResult, error)
+// WorktreeProvider materialises a base ref in a clean detached worktree and
+// returns the scan root mirroring headRoot inside it. cleanup always runs.
+type WorktreeProvider interface {
+	Checkout(ctx context.Context, baseRef, anchorDir, headRoot string) (root string, cleanup func(), err error)
 }
 
-// StageExecutor is the shared application sequencing helper. All analysis
-// use cases use these explicit ports so stage order cannot diverge between
-// analyze, baseline, explain, and compare.
+// StageExecutor sequences one analysis run. It owns the stage order, the single
+// baseline read, the scoring boundary, and the base-tree comparison, so analyze,
+// check, baseline, explain, and compare cannot diverge.
 type StageExecutor struct {
-	Preparer     PolicyPreparer
-	Evidence     EvidenceStage
-	Relationship RelationshipStage
-	Assessment   AssessmentStage
+	Preparer PolicyPreparer
+	Evidence EvidenceStage
+	// Baseline is optional: a nil loader, or a request with EmptyBaseline, runs
+	// against an empty accepted set.
+	Baseline BaselineLoader
+	Stderr   io.Writer
+	Progress func(stage string)
+
+	// Worktree and NewBaseEvidence enable `--base`. NewBaseEvidence builds the
+	// evidence stage for the base tree; it is a constructor, not a port, because
+	// only the composition root knows how to build one.
+	Worktree        WorktreeProvider
+	NewBaseEvidence func(baseRoot string) EvidenceStage
+	Analyzers       AnalyzerFamilies
 }
 
-// Execute prepares policy, then acquires evidence, classifies relationships,
-// assesses the result, and returns the application-owned outcome.
+// Execute prepares policy, acquires evidence, classifies relationships, assesses
+// the result, scores it, and — when the request names a base ref — attaches the
+// base comparison.
 func (s StageExecutor) Execute(ctx context.Context, req AnalysisRequest) (AnalysisResult, error) {
-	if s.Preparer == nil || s.Evidence == nil || s.Relationship == nil || s.Assessment == nil {
+	if s.Preparer == nil || s.Evidence == nil {
 		return AnalysisResult{}, errors.New("analysis stages are required")
 	}
 	if err := s.Preparer.Prepare(ctx); err != nil {
@@ -149,15 +197,153 @@ func (s StageExecutor) Execute(ctx context.Context, req AnalysisRequest) (Analys
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("evidence acquisition: %w", err)
 	}
-	relationshipResult, err := s.Relationship.Relate(ctx, acquired)
+	base, err := s.loadBaseline(ctx, req, acquired.Context)
 	if err != nil {
-		return AnalysisResult{}, fmt.Errorf("relationship analysis: %w", err)
+		return AnalysisResult{}, fmt.Errorf("baseline: %w", err)
 	}
-	out, err := s.Assessment.Assess(ctx, req, acquired.Facts.ForAssessment(), acquired.Context, relationshipResult)
+	assessed, err := s.assess(ctx, req, acquired, base)
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("assessment: %w", err)
 	}
+	return assessed, nil
+}
+
+// observationsOf narrows the neutral acquisition snapshot to the observations
+// assessment is allowed to decide over. The dependency graph stops here: only
+// relationship analysis receives it, and assessment reads its conclusions.
+func observationsOf(f evidence.Facts) evaluation.Observations {
+	return evaluation.Observations{
+		Coverage: f.Coverage, Symbols: f.Symbols, PatternMatches: f.PatternMatches,
+		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
+		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
+		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,
+		DeprecatedDeps: f.DeprecatedDeps, SemanticStrengthOverlay: f.SemanticStrengthOverlay,
+	}
+}
+
+// relate runs the relationship stage. It is a pure decision over the acquired
+// facts and the run policy resolved during acquisition.
+func relate(acquired Acquired) relationship.AnalysisResult {
+	facts, runCtx := acquired.Facts, acquired.Context
+	return analysis.Analyze(analysis.Input{
+		Graph: facts.Graph, Policy: runCtx.Policy.Relationship,
+		Mode: analysis.Mode{Base: runCtx.BaseRef, Full: runCtx.Full}, Labels: runCtx.PinnedLabels,
+		CloneClusters: facts.Clones, FileClassIndex: facts.FileClassIndex,
+		RuntimeSites: facts.RuntimeAsyncSites, RuntimeConfidence: facts.RuntimeConfidence,
+		DynamicImportSites: facts.DynamicImports,
+	})
+}
+
+func (s StageExecutor) loadBaseline(ctx context.Context, req AnalysisRequest, runCtx AnalysisContext) (Baseline, error) {
+	if req.EmptyBaseline || s.Baseline == nil {
+		return Baseline{}, nil
+	}
+	bundleDir := runCtx.BundleDir
+	if bundleDir == "" {
+		bundleDir = filepath.Dir(runCtx.ConfigSource)
+	}
+	return s.Baseline.Load(ctx, bundleDir)
+}
+
+// assess runs relationship analysis, assessment, scoring, and the base-tree
+// comparison in the one order every use case shares.
+func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired Acquired, base Baseline) (AnalysisResult, error) {
+	runCtx := acquired.Context
+	facts := observationsOf(acquired.Facts)
+	assessed, err := evaluation.Assess(evaluation.AssessInput{
+		Facts: facts, Relationships: relate(acquired), Policy: runCtx.Policy,
+		Accepted: base.Accepted, BaseMetrics: result.MetricSnapshot(base.Metrics),
+		Scope: runCtx.Scope, Now: runCtx.Now, BaseRef: req.BaseRef,
+		Advisory: !req.NoAdvisories, CaptureRelationships: req.CaptureRelationships,
+		ConfigSource: runCtx.ConfigSource, ConfigHash: runCtx.ConfigHash,
+		PrimaryExtractorTools: runCtx.PrimaryExtractorTools, OwnerSource: runCtx.OwnerSource,
+		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
+		CoverageGaps: runCtx.CoverageGaps, VolatilityCorroboration: runCtx.VolatilityCorroboration,
+	})
+	if err != nil {
+		return AnalysisResult{}, err
+	}
+	diag := assessed.Diagnostic
+	for _, warning := range assessed.Warnings {
+		s.warn(req.WarnLabel, warning)
+	}
+	s.reportPhase("Scoring architecture")
+	scored := evaluation.Score(&diag, evaluation.ScoreInput{
+		Policy: runCtx.Policy, Facts: facts,
+		Anchor:        evaluation.BaselineAnchor{CouplingScore: base.CouplingScore, SnapshotMismatches: base.SnapshotMismatches},
+		ConfigSource:  runCtx.ConfigSource,
+		ScanRoot:      runCtx.ScanRoot,
+		Root:          runCtx.Scope.Root,
+		CrateRootDirs: runCtx.CrateRootDirs, RequireTools: req.RequireTools,
+		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
+		CoverageGaps: runCtx.CoverageGaps,
+	})
+	if !req.SuppressGateReasons {
+		s.discloseGate(scored, base)
+	}
+	out := AnalysisResult{Score: scored.Score, HardGate: scored.HardGate}
+	if req.BaseRef != "" {
+		baseScore, err := s.attachBaseComparison(ctx, req, runCtx, &diag)
+		if err != nil {
+			return AnalysisResult{}, err
+		}
+		out.BaseScore = baseScore
+	}
+	out.Diagnostic = diag
+	if req.CaptureRelationships {
+		out.EnrichmentEvidence = projectEnrichmentEvidence(assessed.Captured)
+	}
 	return out, nil
+}
+
+func (s StageExecutor) discloseGate(scored evaluation.Scored, base Baseline) {
+	for _, reason := range scored.GateReasons {
+		_, _ = fmt.Fprintln(s.stderr(), "coupling gate: "+reason)
+	}
+	if scored.AnchorStale {
+		_, _ = fmt.Fprintf(s.stderr(), "coupling gate: max_drop skipped — baseline score snapshot is incompatible (%s); run `archfit baseline` to re-anchor\n",
+			strings.Join(snapshotMismatchDetails(base), ", "))
+	}
+}
+
+// snapshotMismatchDetails names each incompatible score-snapshot input with the
+// stored and current value, so the notice says what actually changed.
+func snapshotMismatchDetails(base Baseline) []string {
+	out := make([]string, 0, len(base.SnapshotMismatches))
+	for _, input := range base.SnapshotMismatches {
+		switch input {
+		case baselineInputScoreVersion:
+			out = append(out, fmt.Sprintf("%s %q, current %q", input, base.ScoreVersion, report.ScoreVersion))
+		case baselineInputRubricVersion:
+			out = append(out, fmt.Sprintf("%s %d, current %d", input, base.RubricVersion, report.RubricVersion))
+		default:
+			out = append(out, input)
+		}
+	}
+	return out
+}
+
+// Score-snapshot input names shared with the baseline persistence adapter.
+const (
+	baselineInputScoreVersion  = "score_version"
+	baselineInputRubricVersion = "rubric_version"
+)
+
+func (s StageExecutor) stderr() io.Writer {
+	if s.Stderr != nil {
+		return s.Stderr
+	}
+	return os.Stderr
+}
+
+func (s StageExecutor) warn(label, msg string) {
+	_, _ = fmt.Fprintln(s.stderr(), "warning: "+label+msg)
+}
+
+func (s StageExecutor) reportPhase(stage string) {
+	if s.Progress != nil {
+		s.Progress(stage)
+	}
 }
 
 // Response contains the completed use-case state for cmd-owned rendering.
@@ -190,8 +376,8 @@ type ExecutionError struct{ Message string }
 
 func (e *ExecutionError) Error() string { return e.Message }
 
-// ResolveFormats validates shorthand and repeatable output format flags.
-func ResolveFormats(jsonFlag, markdownFlag, sarifFlag bool, formats []string) ([]string, error) {
+// resolveFormats validates shorthand and repeatable output format flags.
+func resolveFormats(jsonFlag, markdownFlag, sarifFlag bool, formats []string) ([]string, error) {
 	shorthands := 0
 	if jsonFlag {
 		shorthands++
@@ -225,23 +411,20 @@ func ResolveFormats(jsonFlag, markdownFlag, sarifFlag bool, formats []string) ([
 // Service owns the Analyze/Check use case. Cmd supplies the four explicit
 // staged ports and renders the returned document.
 type Service struct {
-	Preparer     PolicyPreparer
-	Evidence     EvidenceStage
-	Relationship RelationshipStage
-	Assessment   AssessmentStage
+	Stages StageExecutor
 }
 
 // Execute validates the request, invokes the technical stage, projects the
 // report, and assigns outcome semantics.
 func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
-	formats, err := ResolveFormats(req.JSON, req.Markdown, req.SARIF, req.Formats)
+	formats, err := resolveFormats(req.JSON, req.Markdown, req.SARIF, req.Formats)
 	if err != nil {
 		return Response{}, err
 	}
-	if s.Preparer == nil || s.Evidence == nil || s.Relationship == nil || s.Assessment == nil {
+	if s.Stages.Preparer == nil || s.Stages.Evidence == nil {
 		return Response{}, errors.New("analysis stages are required")
 	}
-	out, err := StageExecutor(s).Execute(ctx, AnalysisRequest{
+	out, err := s.Stages.Execute(ctx, AnalysisRequest{
 		BaseRef: req.BaseRef, Formats: formats, NoAdvisories: req.NoAdvisories,
 		RequireTools: req.RequireTools, ReportOnly: req.ReportOnly,
 	})
@@ -249,18 +432,23 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 		return Response{}, &ExecutionError{Message: fmt.Sprintf("error: %v", err)}
 	}
 
-	outcome := OutcomePass
-	switch {
-	case out.HardGate:
-		outcome = OutcomeFail
-	case out.Diagnostic.Verdict == result.VerdictFail:
-		outcome = OutcomeFail
-	case out.Diagnostic.Verdict == result.VerdictWarn:
-		outcome = OutcomeWarn
-	}
 	return Response{
 		Document: ProjectReport(out.Diagnostic, out.Score, out.BaseScore, out.HardGate),
 		Formats:  formats,
-		Outcome:  outcome,
+		Outcome:  outcomeFor(out),
 	}, nil
+}
+
+// outcomeFor maps the analysis verdict and the hard analyzer gate onto the
+// use-case outcome. A hard gate outranks the verdict: a required analyzer that
+// did not run means the run never measured what the policy asked for.
+func outcomeFor(out AnalysisResult) Outcome {
+	switch {
+	case out.HardGate, out.Diagnostic.Verdict == result.VerdictFail:
+		return OutcomeFail
+	case out.Diagnostic.Verdict == result.VerdictWarn:
+		return OutcomeWarn
+	default:
+		return OutcomePass
+	}
 }

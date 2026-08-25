@@ -1127,8 +1127,8 @@ func TestSelfConfig_CapabilityModuleMap(t *testing.T) {
 			wantPaths: []string{"internal/model/report/**"},
 		},
 		{
-			name: "pipeline-engine", layer: "engine", role: policy.RoleCore,
-			wantPaths: []string{"internal/analysispipeline/**"},
+			name: "evidence-acquisition", layer: layerAdapter, role: policy.RoleAdapter,
+			wantPaths: []string{"internal/evidence/acquisition/**"},
 		},
 		{
 			name: "cli-composition", layer: "cmd", role: policy.RoleCompositionRoot,

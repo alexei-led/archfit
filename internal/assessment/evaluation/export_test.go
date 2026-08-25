@@ -21,3 +21,17 @@ func RulesetOf(rs ...rules.Rule) Ruleset { return Ruleset{rules: rs} }
 
 // MetricsetOf builds a Metricset from explicit metric implementations.
 func MetricsetOf(ms ...metrics.Metric) Metricset { return Metricset{metrics: ms} }
+
+// Test-only aliases for the evaluation internals. Assess and Score are their
+// only production callers; the behavior tests address them directly so a
+// disclosure, gate, or projection rule can be pinned in isolation.
+var (
+	Evaluate                = evaluate
+	Finalize                = finalize
+	NewMetricset            = newMetricset
+	CouplingGateAnchorStale = couplingGateAnchorStale
+	BuildDistanceContext    = buildDistanceContext
+	HealthWarnings          = healthWarnings
+	ValidationCommand       = validationCommand
+	ApplyToolGate           = applyToolGate
+)

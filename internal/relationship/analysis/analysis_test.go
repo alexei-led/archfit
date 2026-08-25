@@ -404,30 +404,30 @@ func TestAnalyzeRuntimeSignalRollup(t *testing.T) {
 		RuntimeSites: sites, RuntimeConfidence: confidence,
 	})
 
-	if len(got.Evidence.RuntimeSignals) != 2 {
-		t.Fatalf("runtime signals = %+v, want one per module", got.Evidence.RuntimeSignals)
+	if len(got.Evidence.RuntimeModules) != 2 {
+		t.Fatalf("runtime signals = %+v, want one per module", got.Evidence.RuntimeModules)
 	}
-	if got.Evidence.RuntimeSignals[0].Module != moduleA || got.Evidence.RuntimeSignals[1].Module != moduleB {
-		t.Errorf("runtime signals = %+v, want modules sorted", got.Evidence.RuntimeSignals)
+	if got.Evidence.RuntimeModules[0].Module != moduleA || got.Evidence.RuntimeModules[1].Module != moduleB {
+		t.Errorf("runtime signals = %+v, want modules sorted", got.Evidence.RuntimeModules)
 	}
-	if got.Evidence.RuntimeSignals[0].Count != 2 || got.Evidence.RuntimeSignals[0].IntegrationKind != kindQueue {
-		t.Errorf("module a signal = %+v, want 2 queue sites", got.Evidence.RuntimeSignals[0])
+	if got.Evidence.RuntimeModules[0].Count != 2 || got.Evidence.RuntimeModules[0].IntegrationKind != kindQueue {
+		t.Errorf("module a signal = %+v, want 2 queue sites", got.Evidence.RuntimeModules[0])
 	}
-	if got.Evidence.RuntimeSignals[0].Confidence != confidence {
-		t.Errorf("confidence = %q, want %q carried through", got.Evidence.RuntimeSignals[0].Confidence, confidence)
+	if got.Evidence.RuntimeModules[0].Confidence != confidence {
+		t.Errorf("confidence = %q, want %q carried through", got.Evidence.RuntimeModules[0].Confidence, confidence)
 	}
-	if len(got.Evidence.RuntimeRelations) != 2 {
-		t.Fatalf("runtime relations = %+v, want one per (module, target, kind)", got.Evidence.RuntimeRelations)
+	if len(got.Evidence.RuntimeEdges) != 2 {
+		t.Fatalf("runtime relations = %+v, want one per (module, target, kind)", got.Evidence.RuntimeEdges)
 	}
-	if got.Evidence.RuntimeRelations[0].Target != libNATS {
-		t.Errorf("relation target = %q, want the library name", got.Evidence.RuntimeRelations[0].Target)
+	if got.Evidence.RuntimeEdges[0].Target != libNATS {
+		t.Errorf("relation target = %q, want the library name", got.Evidence.RuntimeEdges[0].Target)
 	}
 	// A site with no library falls back to the integration kind as its target.
-	if got.Evidence.RuntimeRelations[1].Target != "event" {
-		t.Errorf("libraryless relation target = %q, want the integration kind", got.Evidence.RuntimeRelations[1].Target)
+	if got.Evidence.RuntimeEdges[1].Target != "event" {
+		t.Errorf("libraryless relation target = %q, want the integration kind", got.Evidence.RuntimeEdges[1].Target)
 	}
-	if len(got.Evidence.RuntimeRelations[0].Sites) != 2 {
-		t.Errorf("relation sites = %+v, want the sampled sites", got.Evidence.RuntimeRelations[0].Sites)
+	if len(got.Evidence.RuntimeEdges[0].Sites) != 2 {
+		t.Errorf("relation sites = %+v, want the sampled sites", got.Evidence.RuntimeEdges[0].Sites)
 	}
 }
 

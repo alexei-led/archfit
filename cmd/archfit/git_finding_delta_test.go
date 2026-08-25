@@ -7,7 +7,6 @@ import (
 	"slices"
 	"testing"
 
-	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/policy"
@@ -37,7 +36,7 @@ func testGitDeltaEffectiveConfig(t *testing.T) {
 		original := config.Config{Modules: map[string]policy.ModuleDef{
 			"a": {Paths: []string{"pkg/a/**"}},
 		}}
-		snapshot := apppipeline.WithIndependentModules(original)
+		snapshot := original.WithIndependentModules()
 		// Stand in for the pipeline's owner backfill, which writes through the map.
 		original.FillMissingOwners(map[string]string{"a": "head-tree-owner"})
 		if def := snapshot.Modules["a"]; def.Owner != "" {

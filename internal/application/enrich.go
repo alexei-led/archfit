@@ -117,22 +117,10 @@ type EnrichmentResult struct {
 	NoCandidates                                                bool
 }
 
-// EnrichmentAnalyzer captures technical relationship evidence.
-type EnrichmentAnalyzer interface {
-	AnalyzeEnrichment(context.Context, EnrichmentRequest) (EnrichmentResult, error)
-}
-
 // EnrichmentLabelStore is the persistence port for review labels.
 type EnrichmentLabelStore interface {
 	Load(context.Context, string) ([]EnrichmentLabel, error)
 	Save(context.Context, string, []EnrichmentLabel) error
-}
-
-// EnrichmentSelectionPolicy owns technical candidate selection and evidence hashing.
-type EnrichmentSelectionPolicy interface {
-	PairEvidence(EnrichmentEvidence, map[string]struct{}) map[string]string
-	SelectCandidates(EnrichmentEvidence, map[string]struct{}) []EnrichmentCandidatePair
-	SelectAbstained(EnrichmentEvidence, map[string]struct{}, int, int) ([]EnrichmentAbstainedPair, int)
 }
 
 // EnrichmentJudgmentRequest is intentionally narrower than the provider API.
@@ -154,14 +142,34 @@ type EnrichmentSnippetSource interface {
 
 // EnrichService owns the complete label enrichment workflow.
 type EnrichService struct {
-	Preparer  PolicyPreparer
-	Analyzer  EnrichmentAnalyzer
-	Labels    EnrichmentLabelStore
-	Store     EnrichmentLabelStore
-	Policy    EnrichmentSelectionPolicy
-	Selection EnrichmentSelectionPolicy
-	Judge     EnrichmentJudge
-	Snippets  EnrichmentSnippetSource
+	Stages   StageExecutor
+	Labels   EnrichmentLabelStore
+	Judge    EnrichmentJudge
+	Snippets EnrichmentSnippetSource
+}
+
+// capture runs the analysis stages far enough to record the classified
+// relationship set, then narrows it to the enrichment contract. The full
+// diagnostic never leaves this method: enrichment reviews coupling evidence,
+// not findings.
+func (s EnrichService) capture(ctx context.Context, req EnrichmentRequest) (EnrichmentResult, error) {
+	analysisReq := AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root, CaptureRelationships: true}
+	acquired, err := s.Stages.Evidence.Acquire(ctx, analysisReq)
+	if err != nil {
+		return EnrichmentResult{}, err
+	}
+	base, err := s.Stages.loadBaseline(ctx, analysisReq, acquired.Context)
+	if err != nil {
+		return EnrichmentResult{}, err
+	}
+	out, err := s.Stages.assess(ctx, analysisReq, acquired, base)
+	if err != nil {
+		return EnrichmentResult{}, err
+	}
+	if out.EnrichmentEvidence == nil {
+		return EnrichmentResult{}, nil
+	}
+	return EnrichmentResult{Evidence: *out.EnrichmentEvidence}, nil
 }
 
 // EnrichmentPairKey is the stable ordered module-pair key used by the workflow.
@@ -209,7 +217,7 @@ func mergeEnrichmentLabels(existing, drafts []EnrichmentLabel, evidence map[stri
 //
 //nolint:gocyclo // the ordered use-case stages are kept explicit at this boundary.
 func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (EnrichmentResult, error) {
-	if s.Analyzer == nil {
+	if s.Stages.Evidence == nil {
 		return EnrichmentResult{}, errors.New("enrichment stage is required")
 	}
 	if req.ConfigPath == "" {
@@ -220,21 +228,14 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 	// analyzer; the full workflow requires every port and prepares exactly once
 	// below.
 	store := s.Labels
-	if store == nil {
-		store = s.Store
-	}
-	policy := s.Policy
-	if policy == nil {
-		policy = s.Selection
-	}
-	if store == nil && policy == nil && s.Judge == nil {
-		out, err := s.Analyzer.AnalyzeEnrichment(ctx, req)
+	if store == nil && s.Judge == nil {
+		out, err := s.capture(ctx, req)
 		if err != nil {
 			return EnrichmentResult{}, fmt.Errorf("enrichment analysis: %w", err)
 		}
 		return out, nil
 	}
-	if store == nil || policy == nil || s.Judge == nil {
+	if store == nil || s.Judge == nil {
 		return EnrichmentResult{}, errors.New("enrichment workflow is not fully configured")
 	}
 	if req.LabelsPath == "" {
@@ -243,12 +244,12 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 	// Enrichment uses the same explicit preparer boundary as Analyze/Check,
 	// once per full workflow. AnalyzeEnrichment then delegates to the prepared
 	// analyzer and does not prepare a second time.
-	if s.Preparer != nil {
-		if err := s.Preparer.Prepare(ctx); err != nil {
+	if s.Stages.Preparer != nil {
+		if err := s.Stages.Preparer.Prepare(ctx); err != nil {
 			return EnrichmentResult{}, fmt.Errorf("enrichment preparation: %w", err)
 		}
 	}
-	captured, err := s.Analyzer.AnalyzeEnrichment(ctx, req)
+	captured, err := s.capture(ctx, req)
 	if err != nil {
 		return EnrichmentResult{}, fmt.Errorf("enrichment analysis: %w", err)
 	}
@@ -260,15 +261,15 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 	for _, label := range existing {
 		wanted[EnrichmentPairKey(label.From, label.To)] = struct{}{}
 	}
-	evidence := policy.PairEvidence(captured.Evidence, wanted)
+	evidence := pairEvidence(captured.Evidence, wanted)
 	approved := effectiveApprovedLabels(existing, evidence)
 	var candidates []EnrichmentCandidatePair
 	var abstained []EnrichmentAbstainedPair
 	total := 0
 	if req.Abstained {
-		abstained, total = policy.SelectAbstained(captured.Evidence, approved, req.EdgeCap, req.SampleCap)
+		abstained, total = selectAbstained(captured.Evidence, approved, req.EdgeCap, req.SampleCap)
 	} else {
-		candidates = policy.SelectCandidates(captured.Evidence, approved)
+		candidates = selectCandidates(captured.Evidence, approved)
 	}
 	selectedEdges := len(candidates)
 	for _, pair := range abstained {
@@ -296,7 +297,7 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 	for _, draft := range drafts {
 		draftWanted[EnrichmentPairKey(draft.From, draft.To)] = struct{}{}
 	}
-	draftEvidence := policy.PairEvidence(captured.Evidence, draftWanted)
+	draftEvidence := pairEvidence(captured.Evidence, draftWanted)
 	for i := range drafts {
 		drafts[i].EvidenceHash = draftEvidence[EnrichmentPairKey(drafts[i].From, drafts[i].To)]
 	}

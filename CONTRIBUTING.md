@@ -68,7 +68,7 @@ Useful targeted checks:
 
 ```sh
 go test ./internal/ -run TestArchImports
-go test ./internal/analysispipeline/ -run TestGolden
+go test ./internal/application/ -run TestGolden
 pre-commit run --all-files
 ```
 

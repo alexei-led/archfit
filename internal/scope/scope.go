@@ -332,3 +332,16 @@ func caseInsensitiveSubtreePrefix(gitRoot, scanRoot string) string {
 	}
 	return filepath.ToSlash(filepath.Join(segments...))
 }
+
+// OnDiskWithin returns the repair-task path resolver's onDisk callback and
+// rejects paths that escape the analyzed root before touching the filesystem.
+func OnDiskWithin(root string) func(string) bool {
+	return func(rel string) bool {
+		osRel := filepath.FromSlash(rel)
+		if !filepath.IsLocal(osRel) {
+			return false
+		}
+		_, err := os.Stat(filepath.Join(root, osRel))
+		return err == nil
+	}
+}

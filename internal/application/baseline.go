@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -32,6 +33,24 @@ type BaselineSnapshot struct {
 	Score    *BaselineScore
 }
 
+// BaselineLoader reads the accepted-findings baseline for a bundle. Persistence
+// is an adapter concern; the application decides only whether to consult it.
+type BaselineLoader interface {
+	Load(ctx context.Context, bundleDir string) (Baseline, error)
+}
+
+// Baseline is the application-owned view of a persisted baseline: the accepted
+// set lifecycle status assigns against, the metric anchor, and the score anchor
+// the coupling gate compares to.
+type Baseline struct {
+	Accepted           status.AcceptedSet
+	Metrics            report.MetricSnapshot
+	CouplingScore      *int
+	SnapshotMismatches []string
+	ScoreVersion       string
+	RubricVersion      int
+}
+
 // BaselineWriter persists an application baseline snapshot.
 type BaselineWriter interface {
 	Save(context.Context, string, BaselineSnapshot) error
@@ -52,23 +71,20 @@ type BaselineResponse struct {
 
 // BaselineService owns the baseline use case.
 type BaselineService struct {
-	Preparer     PolicyPreparer
-	Evidence     EvidenceStage
-	Relationship RelationshipStage
-	Assessment   AssessmentStage
-	Writer       BaselineWriter
+	Stages StageExecutor
+	Writer BaselineWriter
 }
 
 // Execute measures the configured tree, then persists the native finding kind
 // and score snapshot used by later gate checks.
 func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (BaselineResponse, error) {
-	if s.Preparer == nil || s.Evidence == nil || s.Relationship == nil || s.Assessment == nil || s.Writer == nil {
+	if s.Stages.Preparer == nil || s.Stages.Evidence == nil || s.Writer == nil {
 		return BaselineResponse{}, errors.New("baseline stages are required")
 	}
 	if req.Path == "" {
 		return BaselineResponse{}, errors.New("baseline path is required")
 	}
-	out, err := (StageExecutor{Preparer: s.Preparer, Evidence: s.Evidence, Relationship: s.Relationship, Assessment: s.Assessment}).Execute(ctx, AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root, NoAdvisories: req.NoAdvisories, SuppressGateReasons: true})
+	out, err := s.Stages.Execute(ctx, AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root, NoAdvisories: req.NoAdvisories, SuppressGateReasons: true})
 	if err != nil {
 		return BaselineResponse{}, fmt.Errorf("baseline analysis: %w", err)
 	}

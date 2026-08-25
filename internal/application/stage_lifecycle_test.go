@@ -6,12 +6,13 @@ package application
 import (
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/evidence"
-	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 // lifecycleStage counts stage invocations and records the context each stage
@@ -21,7 +22,7 @@ type lifecycleStage struct {
 	ctxErrs  map[string]error
 	failStep string
 	failErr  error
-	out      AnalysisResult
+	policy   policy.PolicySnapshot
 }
 
 func newLifecycleStage() *lifecycleStage {
@@ -39,22 +40,14 @@ func (s *lifecycleStage) record(ctx context.Context, step string) error {
 
 func (s *lifecycleStage) Prepare(ctx context.Context) error { return s.record(ctx, prepareCall) }
 func (s *lifecycleStage) Acquire(ctx context.Context, _ AnalysisRequest) (Acquired, error) {
-	return Acquired{}, s.record(ctx, acquireStageCall)
-}
-func (s *lifecycleStage) Relate(ctx context.Context, _ Acquired) (relationship.AnalysisResult, error) {
-	return relationship.AnalysisResult{}, s.record(ctx, relateStageCall)
-}
-func (s *lifecycleStage) Assess(ctx context.Context, _ AnalysisRequest, _ evidence.AssessmentFacts, _ AnalysisContext, _ relationship.AnalysisResult) (AnalysisResult, error) {
-	return s.out, s.record(ctx, assessStageCall)
+	return Acquired{Context: AnalysisContext{Policy: s.policy}}, s.record(ctx, acquireStageCall)
 }
 
 func executor(s *lifecycleStage) StageExecutor {
-	return StageExecutor{Preparer: s, Evidence: s, Relationship: s, Assessment: s}
+	return StageExecutor{Preparer: s, Evidence: s, Stderr: io.Discard}
 }
 
-var stageOrder = []string{prepareCall, acquireStageCall, relateStageCall, assessStageCall}
-
-const lifecycleBaseRef = "main"
+var stageOrder = []string{prepareCall, acquireStageCall}
 
 func TestStageExecutorRunsEachStageExactlyOnce(t *testing.T) {
 	stage := newLifecycleStage()
@@ -69,7 +62,7 @@ func TestStageExecutorRunsEachStageExactlyOnce(t *testing.T) {
 }
 
 // The caller's context reaches every stage, so a cancellation the CLI issues is
-// observable inside acquisition and assessment, not just at the top.
+// observable inside acquisition, not just at the top.
 func TestStageExecutorPropagatesCallerContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -89,16 +82,13 @@ func TestStageExecutorPropagatesCallerContext(t *testing.T) {
 // so callers can inspect the cause.
 func TestStageExecutorWrapsStageErrorsWithStageName(t *testing.T) {
 	sentinel := errors.New("boom")
-	tests := []struct {
+	for _, test := range []struct {
 		step       string
 		wantPrefix string
 	}{
 		{step: prepareCall, wantPrefix: "policy preparation: "},
 		{step: acquireStageCall, wantPrefix: "evidence acquisition: "},
-		{step: relateStageCall, wantPrefix: "relationship analysis: "},
-		{step: assessStageCall, wantPrefix: "assessment: "},
-	}
-	for _, test := range tests {
+	} {
 		t.Run(test.step, func(t *testing.T) {
 			stage := newLifecycleStage()
 			stage.failStep, stage.failErr = test.step, sentinel
@@ -116,19 +106,27 @@ func TestStageExecutorWrapsStageErrorsWithStageName(t *testing.T) {
 	}
 }
 
+// An invalid rule definition surfaces from the assessment stage, named as such.
+func TestStageExecutorWrapsAssessmentErrors(t *testing.T) {
+	stage := newLifecycleStage()
+	stage.policy = policy.New(policy.TopologyView{}, policy.RelationshipPolicy{}, policy.AssessmentPolicy{},
+		policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{{ID: "bad", Type: "bogus_type"}}}}, nil, nil)
+	_, err := executor(stage).Execute(t.Context(), AnalysisRequest{})
+	if err == nil || !strings.HasPrefix(err.Error(), "assessment: ") {
+		t.Fatalf("Execute error = %v, want an assessment-stage error", err)
+	}
+}
+
 func TestStageExecutorRequiresEveryStage(t *testing.T) {
 	stage := newLifecycleStage()
-	tests := []struct {
+	for _, test := range []struct {
 		name string
 		exec StageExecutor
 	}{
 		{name: "no stages", exec: StageExecutor{}},
-		{name: "missing preparer", exec: StageExecutor{Evidence: stage, Relationship: stage, Assessment: stage}},
-		{name: "missing evidence", exec: StageExecutor{Preparer: stage, Relationship: stage, Assessment: stage}},
-		{name: "missing relationship", exec: StageExecutor{Preparer: stage, Evidence: stage, Assessment: stage}},
-		{name: "missing assessment", exec: StageExecutor{Preparer: stage, Evidence: stage, Relationship: stage}},
-	}
-	for _, test := range tests {
+		{name: "missing preparer", exec: StageExecutor{Evidence: stage}},
+		{name: "missing evidence", exec: StageExecutor{Preparer: stage}},
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := test.exec.Execute(t.Context(), AnalysisRequest{})
 			if err == nil || err.Error() != "analysis stages are required" {
@@ -141,36 +139,26 @@ func TestStageExecutorRequiresEveryStage(t *testing.T) {
 // The verdict and the hard coupling gate map onto the use-case outcome; the CLI
 // owns the exit code, not this layer.
 func TestServiceOutcomeFromVerdictAndHardGate(t *testing.T) {
-	tests := []struct {
+	for _, test := range []struct {
 		name     string
 		verdict  result.Verdict
 		hardGate bool
 		want     Outcome
 	}{
 		{name: "pass", verdict: result.VerdictPass, want: OutcomePass},
-		{name: "warn", verdict: result.VerdictWarn, want: OutcomeWarn},
+		{name: string(OutcomeWarn), verdict: result.VerdictWarn, want: OutcomeWarn},
 		{name: "fail", verdict: result.VerdictFail, want: OutcomeFail},
 		{name: "hard gate over a pass verdict", verdict: result.VerdictPass, hardGate: true, want: OutcomeFail},
 		{name: "hard gate over a warn verdict", verdict: result.VerdictWarn, hardGate: true, want: OutcomeFail},
-	}
-	for _, test := range tests {
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			stage := newLifecycleStage()
-			stage.out = AnalysisResult{
+			got := outcomeFor(AnalysisResult{
 				Diagnostic: result.Result{Verdict: test.verdict},
 				Score:      score.Scorecard{},
 				HardGate:   test.hardGate,
-			}
-			got, err := (Service{Preparer: stage, Evidence: stage, Relationship: stage, Assessment: stage}).
-				Execute(t.Context(), Request{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got.Outcome != test.want {
-				t.Errorf("Outcome = %q, want %q", got.Outcome, test.want)
-			}
-			if len(got.Formats) != 1 || got.Formats[0] != FormatText {
-				t.Errorf("Formats = %v, want the default text format", got.Formats)
+			})
+			if got != test.want {
+				t.Errorf("Outcome = %q, want %q", got, test.want)
 			}
 		})
 	}
@@ -182,22 +170,26 @@ func TestServiceForwardsRequestAndWrapsStageFailure(t *testing.T) {
 	t.Run("forwards resolved request", func(t *testing.T) {
 		var got AnalysisRequest
 		stage := &requestCaptureStage{lifecycleStage: newLifecycleStage(), captured: &got}
-		if _, err := (Service{Preparer: stage, Evidence: stage, Relationship: stage, Assessment: stage}).
-			Execute(t.Context(), Request{BaseRef: lifecycleBaseRef, JSON: true, NoAdvisories: true, RequireTools: true, ReportOnly: true}); err != nil {
+		resp, err := (Service{Stages: StageExecutor{Preparer: stage, Evidence: stage, Stderr: io.Discard}}).
+			Execute(t.Context(), Request{JSON: true, NoAdvisories: true, RequireTools: true, ReportOnly: true})
+		if err != nil {
 			t.Fatal(err)
 		}
-		if got.BaseRef != lifecycleBaseRef || !got.NoAdvisories || !got.RequireTools || !got.ReportOnly {
+		if !got.NoAdvisories || !got.RequireTools || !got.ReportOnly {
 			t.Errorf("stage request = %+v, want the user intent forwarded", got)
 		}
 		if len(got.Formats) != 1 || got.Formats[0] != FormatJSON {
 			t.Errorf("stage formats = %v, want the resolved json format", got.Formats)
+		}
+		if len(resp.Formats) != 1 || resp.Formats[0] != FormatJSON {
+			t.Errorf("response formats = %v, want the resolved json format", resp.Formats)
 		}
 	})
 
 	t.Run("wraps stage failure as an execution error", func(t *testing.T) {
 		stage := newLifecycleStage()
 		stage.failStep, stage.failErr = acquireStageCall, errors.New("no tools")
-		_, err := (Service{Preparer: stage, Evidence: stage, Relationship: stage, Assessment: stage}).
+		_, err := (Service{Stages: StageExecutor{Preparer: stage, Evidence: stage, Stderr: io.Discard}}).
 			Execute(t.Context(), Request{})
 		var exec *ExecutionError
 		if !errors.As(err, &exec) {

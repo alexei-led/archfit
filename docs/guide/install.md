@@ -180,7 +180,7 @@ when you enable the matching key in `.archfit.yaml` (`analyzers.*` or
   `uv` for the embedded SCIP reader:
 
   ```sh
-  go install github.com/sourcegraph/scip-go/cmd/scip-go@v0.2.7
+  go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7
   npm install -g @sourcegraph/scip-typescript@0.4.0
   npm install -g @sourcegraph/scip-python@0.6.6
   rustup component add rust-analyzer

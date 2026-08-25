@@ -37,10 +37,19 @@ type Input struct {
 	FileClassIndex    map[string]fileclass.FileClass
 	RuntimeSites      []evidence.RuntimeAsyncSite
 	RuntimeConfidence string
+	// DynamicImportSites are acquired dynamic/lazy import sites. Analyze rolls
+	// them up against the same augmented module map it classified with, so no
+	// downstream consumer has to rebuild that map to key them.
+	DynamicImportSites []evidence.DynamicImportSite
 }
 
 // Analyze classifies acquired graph evidence exactly once.
 func Analyze(in Input) relationship.AnalysisResult {
+	if in.Graph == nil {
+		// A run that acquired nothing classifies nothing. Abstain rather than
+		// fabricate: an empty graph and a missing one are the same conclusion.
+		in.Graph = graph.Build(nil)
+	}
 	cfg := classify.ConfigFrom(in.Policy)
 	cfg.Modules = classify.AugmentModulesFromGraph(in.Graph, cfg.Modules)
 	cfg.Modules = classify.AugmentGoWorkspaceModules(in.Graph, cfg.Modules)
@@ -59,19 +68,35 @@ func Analyze(in Input) relationship.AnalysisResult {
 	idx := classify.Run(in.Graph, cfg)
 	set := buildSet(in.Graph, idx, cfg.ModuleMap)
 	clones := cloneOnlyPairs(in.Graph, cfg)
+	runtimeAsyncEdges := runtimeEdges(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap)
+	// Dynamic/lazy imports are invisible to the static graph, so they hide cycles
+	// and undercount coupling. Rolled up here as report-only evidence: never read
+	// by a verdict, a gate, or a metric.
+	dynamicImports := buildDynamicImports(in.DynamicImportSites, cfg.ModuleMap)
+	connascence := buildConnascenceSummary(set)
+	var unmeasuredConnascence []string
+	if connascence != nil {
+		unmeasuredConnascence = connascence.Unmeasured
+	}
+	dynamicConnascence := buildDynamicConnascenceSignals(dynamicImports, runtimeAsyncEdges, unmeasuredConnascence)
+	distanceCandidates := append(buildStaticDistanceCandidates(in.Graph, idx, cfg.ModuleMap),
+		BuildDistanceConfigCandidates(dynamicImports, runtimeAsyncEdges, dynamicConnascence)...)
+	sortDistanceConfigCandidates(distanceCandidates)
 	out := relationship.AnalysisResult{
 		Relationships: set,
 		Assessment:    relationship.AssessmentSignals{AdvisoryCandidates: advisoryCandidates(set, clones, cfg)},
 		Evidence: relationship.AnalysisEvidence{
-			LLMApprovedCount:         labels.LLMApprovedCount(in.Labels, evidenceHashes),
-			RuntimeSignals:           runtimeModules(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
-			RuntimeRelations:         runtimeEdges(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
-			CloneOnly:                clones,
-			ClassifiedEdges:          buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy),
-			Connascence:              buildConnascenceSummary(set),
-			DistanceConfigCandidates: buildStaticDistanceCandidates(in.Graph, idx, cfg.ModuleMap),
-			LocalCoupling:            buildLocalCouplingSummary(set),
-			VolatilityProvenance:     classify.ComputeVolatilityProvenance(in.Graph, in.Policy.Topology.Modules, cfg),
+			LLMApprovedCount:          labels.LLMApprovedCount(in.Labels, evidenceHashes),
+			RuntimeModules:            runtimeModules(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
+			RuntimeEdges:              runtimeAsyncEdges,
+			DynamicImports:            dynamicImports,
+			DynamicConnascenceSignals: dynamicConnascence,
+			CloneOnly:                 clones,
+			ClassifiedEdges:           buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy),
+			Connascence:               connascence,
+			DistanceConfigCandidates:  distanceCandidates,
+			LocalCoupling:             buildLocalCouplingSummary(set),
+			VolatilityProvenance:      classify.ComputeVolatilityProvenance(in.Graph, in.Policy.Topology.Modules, cfg),
 		},
 	}
 	for _, l := range stale {
@@ -280,7 +305,7 @@ func locations(in []graph.Location) []relationship.Location {
 	return out
 }
 
-func runtimeModules(sites []evidence.RuntimeAsyncSite, confidence string, mm policy.ModuleMap) []relationship.RuntimeSignal {
+func runtimeModules(sites []evidence.RuntimeAsyncSite, confidence string, mm policy.ModuleMap) []evidence.RuntimeAsyncModule {
 	byModule := map[string][]evidence.RuntimeAsyncSite{}
 	for _, s := range sites {
 		m, ok := mm.ModuleForFile(s.File)
@@ -294,10 +319,10 @@ func runtimeModules(sites []evidence.RuntimeAsyncSite, confidence string, mm pol
 		mods = append(mods, m)
 	}
 	sort.Strings(mods)
-	out := make([]relationship.RuntimeSignal, 0, len(mods))
+	out := make([]evidence.RuntimeAsyncModule, 0, len(mods))
 	for _, m := range mods {
 		ss := byModule[m]
-		out = append(out, relationship.RuntimeSignal{Module: m, IntegrationKind: dominantKind(ss), Count: len(ss), Confidence: confidence})
+		out = append(out, evidence.RuntimeAsyncModule{Module: m, IntegrationKind: dominantKind(ss), Count: len(ss), Confidence: confidence})
 	}
 	return out
 }
@@ -314,7 +339,7 @@ func dominantKind(sites []evidence.RuntimeAsyncSite) string {
 	}
 	return best
 }
-func runtimeEdges(sites []evidence.RuntimeAsyncSite, confidence string, mm policy.ModuleMap) []relationship.RuntimeRelationship {
+func runtimeEdges(sites []evidence.RuntimeAsyncSite, confidence string, mm policy.ModuleMap) []evidence.RuntimeAsyncEdge {
 	type key struct{ from, target, kind string }
 	grouped := map[key][]evidence.RuntimeAsyncSite{}
 	for _, s := range sites {
@@ -342,18 +367,16 @@ func runtimeEdges(sites []evidence.RuntimeAsyncSite, confidence string, mm polic
 		}
 		return keys[i].kind < keys[j].kind
 	})
-	out := make([]relationship.RuntimeRelationship, 0, len(keys))
+	out := make([]evidence.RuntimeAsyncEdge, 0, len(keys))
 	for _, k := range keys {
 		ss := grouped[k]
 		sample := ss
 		if len(sample) > 5 {
 			sample = sample[:5]
 		}
-		sites := make([]relationship.RuntimeSite, 0, len(sample))
-		for _, site := range sample {
-			sites = append(sites, relationship.RuntimeSite{File: site.File, Line: site.Line, Library: site.Library, IntegrationKind: site.IntegrationKind, Language: site.Language})
-		}
-		out = append(out, relationship.RuntimeRelationship{FromModule: k.from, Target: k.target, IntegrationKind: k.kind, Count: len(ss), Confidence: confidence, Sites: sites})
+		sites := make([]evidence.RuntimeAsyncSite, 0, len(sample))
+		sites = append(sites, sample...)
+		out = append(out, evidence.RuntimeAsyncEdge{FromModule: k.from, Target: k.target, IntegrationKind: k.kind, Count: len(ss), Confidence: confidence, Sites: sites})
 	}
 	return out
 }

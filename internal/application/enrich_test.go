@@ -2,17 +2,15 @@ package application
 
 import (
 	"context"
+	"io"
 	"testing"
 )
 
-type enrichmentAnalyzerStub struct{}
-
-func (enrichmentAnalyzerStub) AnalyzeEnrichment(context.Context, EnrichmentRequest) (EnrichmentResult, error) {
-	return EnrichmentResult{Evidence: EnrichmentEvidence{Edges: []EnrichmentEdge{{FromModule: "a", ToModule: "b", Strength: "unknown"}}}}, nil
-}
-
 func TestEnrichServiceValidatesAndPreservesApplicationDTO(t *testing.T) {
-	service := EnrichService{Analyzer: enrichmentAnalyzerStub{}}
+	order := []string{}
+	service := EnrichService{Stages: StageExecutor{
+		Preparer: noopPrepare{}, Evidence: workflowEvidence{order: &order}, Stderr: io.Discard,
+	}}
 	if _, err := service.Execute(context.Background(), EnrichmentRequest{}); err == nil {
 		t.Fatal("missing config path accepted")
 	}
@@ -20,11 +18,11 @@ func TestEnrichServiceValidatesAndPreservesApplicationDTO(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Evidence.Edges) != 1 || got.Evidence.Edges[0].Strength != "unknown" {
+	if len(got.Evidence.Edges) != 2 || got.Evidence.Edges[0].Strength != "unknown" {
 		t.Fatalf("evidence = %+v", got.Evidence)
 	}
-	service.Analyzer = nil
+	service.Stages.Evidence = nil
 	if _, err := service.Execute(context.Background(), EnrichmentRequest{ConfigPath: ".archfit.yaml"}); err == nil {
-		t.Fatal("nil analyzer accepted")
+		t.Fatal("nil evidence stage accepted")
 	}
 }

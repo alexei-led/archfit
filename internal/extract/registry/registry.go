@@ -97,7 +97,7 @@ var languages = []Descriptor{
 		InstallHint: "https://go.dev/dl (bundled with the Go toolchain)",
 		DoctorTools: []Tool{
 			{"go", "go", "https://go.dev/dl"},
-			{SCIPGo, SCIPGo, "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest"},
+			{SCIPGo, SCIPGo, "go install github.com/scip-code/scip-go/cmd/scip-go@latest"},
 		},
 	},
 	{

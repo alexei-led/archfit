@@ -29,7 +29,7 @@ func TestProjectReportPreservesAssessmentAndScorecardContracts(t *testing.T) {
 	wantDecision := decision.Build(diagnostic, scorecard, nil, false)
 
 	document := ProjectReport(diagnostic, scorecard, nil, false)
-	if document.Verdict != "warn" || document.Base != "main" || document.Head != "HEAD" {
+	if string(document.Verdict) != string(OutcomeWarn) || document.Base != "main" || document.Head != "HEAD" {
 		t.Fatalf("assessment identity projection lost data: %+v", document)
 	}
 	if document.Summary.Warnings != 2 || document.Summary.WaiversUsed != 1 {

@@ -96,15 +96,23 @@ type AssessmentSignals struct {
 // AnalysisEvidence is report-only relationship provenance. Assessment never
 // reads it; the application projects it into the external report contract.
 type AnalysisEvidence struct {
-	LLMApprovedCount         int
-	RuntimeSignals           []RuntimeSignal
-	RuntimeRelations         []RuntimeRelationship
-	CloneOnly                []CloneOnlyPair
-	ClassifiedEdges          *ClassifiedEdgeSummary
-	Connascence              *evidence.ConnascenceReport
-	DistanceConfigCandidates []evidence.DistanceConfigCandidate
-	LocalCoupling            []evidence.LocalCouplingModule
-	VolatilityProvenance     *VolatilityProvenance
+	LLMApprovedCount int
+	// RuntimeModules and RuntimeEdges are the async-bridge rollups keyed by the
+	// module map classification actually used. Report-only: they never annotate
+	// an edge, never move distance, and never gate.
+	RuntimeModules []evidence.RuntimeAsyncModule
+	RuntimeEdges   []evidence.RuntimeAsyncEdge
+	// DynamicImports and DynamicConnascenceSignals roll up acquired dynamic and
+	// lazy import sites against the same module map. They are report-only and
+	// keyed here so no consumer has to re-derive the augmented module map.
+	DynamicImports            []evidence.DynamicImport
+	DynamicConnascenceSignals *evidence.DynamicConnascenceSignals
+	CloneOnly                 []CloneOnlyPair
+	ClassifiedEdges           *ClassifiedEdgeSummary
+	Connascence               *evidence.ConnascenceReport
+	DistanceConfigCandidates  []evidence.DistanceConfigCandidate
+	LocalCoupling             []evidence.LocalCouplingModule
+	VolatilityProvenance      *VolatilityProvenance
 }
 
 // AnalysisResult is the relationship stage output. The three members are

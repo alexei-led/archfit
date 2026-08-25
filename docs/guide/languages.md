@@ -379,7 +379,7 @@ run never fails.
 
 Notes that bite most often:
 
-- **SCIP indexers are language-specific.** Use `go install github.com/sourcegraph/scip-go/cmd/scip-go@v0.2.7`,
+- **SCIP indexers are language-specific.** Use `go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7`,
   `npm install -g @sourcegraph/scip-typescript@0.4.0`,
   `npm install -g @sourcegraph/scip-python@0.6.6`, or
   `rustup component add rust-analyzer`, plus `uv` for archfit's embedded SCIP reader.

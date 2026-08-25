@@ -24,42 +24,13 @@ type Facts struct {
 	SyntaxFacts             []modevidence.SyntaxFact
 	FileLOC                 map[string]int
 	FileClassIndex          map[string]fileclass.FileClass
+	FileFacts               []modevidence.FileFact
 	Clones                  []modelclone.Cluster
 	DynamicImports          []modevidence.DynamicImportSite
 	RuntimeAsyncSites       []modevidence.RuntimeAsyncSite
 	RuntimeConfidence       string
 	DeprecatedDeps          []modevidence.DeprecatedDep
 	SemanticStrengthOverlay *modevidence.SemanticStrengthOverlay
-}
-
-// AssessmentFacts is the narrow observation projection consumed by assessment.
-// It drops the raw pattern/graph acquisition detail assessment never reads back
-// through, and carries no run context.
-type AssessmentFacts struct {
-	Graph                   *graph.Graph
-	Coverage                []modevidence.Coverage
-	Symbols                 symbol.Graph
-	FileLOC                 map[string]int
-	FileClassIndex          map[string]fileclass.FileClass
-	Clones                  []modelclone.Cluster
-	PatternMatches          []pattern.Match
-	SyntaxFacts             []modevidence.SyntaxFact
-	DynamicImports          []modevidence.DynamicImportSite
-	RuntimeAsyncSites       []modevidence.RuntimeAsyncSite
-	RuntimeConfidence       string
-	DeprecatedDeps          []modevidence.DeprecatedDep
-	SemanticStrengthOverlay *modevidence.SemanticStrengthOverlay
-}
-
-// ForAssessment returns the assessment-only projection of f.
-func (f Facts) ForAssessment() AssessmentFacts {
-	return AssessmentFacts{
-		Graph: f.Graph, Coverage: f.Coverage, Symbols: f.Symbols,
-		FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex, Clones: f.Clones,
-		PatternMatches: f.PatternMatches, SyntaxFacts: f.SyntaxFacts, DynamicImports: f.DynamicImports,
-		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence, DeprecatedDeps: f.DeprecatedDeps,
-		SemanticStrengthOverlay: f.SemanticStrengthOverlay,
-	}
 }
 
 // Coverage is retained as a discoverable alias for model evidence coverage.

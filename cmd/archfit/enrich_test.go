@@ -139,59 +139,6 @@ func TestParseEnrichResponse(t *testing.T) {
 	}
 }
 
-func TestMergeDrafts(t *testing.T) {
-	t.Parallel()
-	existing := []labels.Label{
-		{From: modA, To: modB, Strength: enrichModel, Status: labels.StatusApproved},
-		{From: modB, To: modA, Strength: enrichFunctional, Status: labels.StatusDraft},
-	}
-	drafts := []labels.Label{
-		{From: modA, To: modB, Strength: enrichIntrusive, Status: labels.StatusDraft},    // must NOT clobber approved
-		{From: modB, To: modA, Strength: enrichModel, Status: labels.StatusDraft},        // replaces old draft
-		{From: "c", To: modA, Strength: llmStrengthContract, Status: labels.StatusDraft}, // new
-	}
-
-	merged := mergeDrafts(existing, drafts, nil)
-	if len(merged) != 3 {
-		t.Fatalf("merged = %+v, want 3", merged)
-	}
-	byKey := map[string]labels.Label{}
-	for _, l := range merged {
-		byKey[labels.Key(l.From, l.To)] = l
-	}
-	if got := byKey[labels.Key(modA, modB)]; got.Status != labels.StatusApproved || got.Strength != enrichModel {
-		t.Errorf("approved entry clobbered: %+v", got)
-	}
-	if got := byKey[labels.Key(modB, modA)]; got.Strength != enrichModel {
-		t.Errorf("draft not replaced: %+v", got)
-	}
-	// Deterministic order.
-	if merged[0].From > merged[1].From || merged[1].From > merged[2].From {
-		t.Errorf("not sorted: %+v", merged)
-	}
-}
-
-func TestMergeDrafts_ReplacesStaleApproved(t *testing.T) {
-	t.Parallel()
-	key := labels.Key(modA, modB)
-	existing := []labels.Label{{
-		From: modA, To: modB, Strength: enrichModel,
-		EvidenceHash: staleEvidence, Status: labels.StatusApproved,
-	}}
-	drafts := []labels.Label{{
-		From: modA, To: modB, Strength: enrichIntrusive,
-		EvidenceHash: currentEvidence, Status: labels.StatusDraft,
-	}}
-
-	merged := mergeDrafts(existing, drafts, map[string]string{key: currentEvidence})
-	if len(merged) != 1 {
-		t.Fatalf("merged = %+v, want one replacement", merged)
-	}
-	if merged[0].Status != labels.StatusDraft || merged[0].Strength != enrichIntrusive {
-		t.Fatalf("stale approved label was not replaced: %+v", merged[0])
-	}
-}
-
 // scriptedProvider returns canned responses per call.
 type scriptedProvider struct {
 	responses []string

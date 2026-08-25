@@ -1,0 +1,87 @@
+package application
+
+import "testing"
+
+const (
+	mergeModA       = "a"
+	mergeModB       = "b"
+	mergeModC       = "c"
+	mergeContract   = "contract"
+	mergeModel      = "model"
+	mergeFunctional = "functional"
+	mergeIntrusive  = "intrusive"
+	staleEvidence   = "stale"
+	currentEvidence = "current"
+)
+
+// TestMergeEnrichmentLabelsKeepsFreshApprovals pins the merge rule: a draft may
+// never clobber an approval whose evidence still matches the code, but it does
+// replace an existing draft and adds new pairs. Output is sorted so a re-run
+// rewrites the file byte-identically.
+func TestMergeEnrichmentLabelsKeepsFreshApprovals(t *testing.T) {
+	t.Parallel()
+	existing := []EnrichmentLabel{
+		{From: mergeModA, To: mergeModB, Strength: mergeModel, Status: EnrichmentLabelStatusApproved},
+		{From: mergeModB, To: mergeModA, Strength: mergeFunctional, Status: EnrichmentLabelStatusDraft},
+	}
+	drafts := []EnrichmentLabel{
+		{From: mergeModA, To: mergeModB, Strength: mergeIntrusive, Status: EnrichmentLabelStatusDraft},
+		{From: mergeModB, To: mergeModA, Strength: mergeModel, Status: EnrichmentLabelStatusDraft},
+		{From: mergeModC, To: mergeModA, Strength: mergeContract, Status: EnrichmentLabelStatusDraft},
+	}
+
+	// An approval with no evidence hash is not "fresh": nil evidence means the
+	// pair was never hashed, so the draft wins.
+	merged := mergeEnrichmentLabels(existing, drafts, nil)
+	if len(merged) != 3 {
+		t.Fatalf("merged = %+v, want 3", merged)
+	}
+	byKey := map[string]EnrichmentLabel{}
+	for _, l := range merged {
+		byKey[EnrichmentPairKey(l.From, l.To)] = l
+	}
+	if got := byKey[EnrichmentPairKey(mergeModB, mergeModA)]; got.Strength != mergeModel {
+		t.Errorf("existing draft not replaced: %+v", got)
+	}
+	if merged[0].From > merged[1].From || merged[1].From > merged[2].From {
+		t.Errorf("not sorted: %+v", merged)
+	}
+}
+
+func TestMergeEnrichmentLabelsReplacesStaleApproved(t *testing.T) {
+	t.Parallel()
+	key := EnrichmentPairKey(mergeModA, mergeModB)
+	existing := []EnrichmentLabel{{
+		From: mergeModA, To: mergeModB, Strength: mergeModel,
+		EvidenceHash: staleEvidence, Status: EnrichmentLabelStatusApproved,
+	}}
+	drafts := []EnrichmentLabel{{
+		From: mergeModA, To: mergeModB, Strength: mergeIntrusive,
+		EvidenceHash: currentEvidence, Status: EnrichmentLabelStatusDraft,
+	}}
+
+	merged := mergeEnrichmentLabels(existing, drafts, map[string]string{key: currentEvidence})
+	if len(merged) != 1 {
+		t.Fatalf("merged = %+v, want one replacement", merged)
+	}
+	if merged[0].Status != EnrichmentLabelStatusDraft || merged[0].Strength != mergeIntrusive {
+		t.Fatalf("stale approved label was not replaced: %+v", merged[0])
+	}
+}
+
+// TestMergeEnrichmentLabelsKeepsApprovalWhenEvidenceMatches is the other half of
+// the rule: the same pair, but the stored hash still matches the code.
+func TestMergeEnrichmentLabelsKeepsApprovalWhenEvidenceMatches(t *testing.T) {
+	t.Parallel()
+	key := EnrichmentPairKey(mergeModA, mergeModB)
+	existing := []EnrichmentLabel{{
+		From: mergeModA, To: mergeModB, Strength: mergeModel,
+		EvidenceHash: currentEvidence, Status: EnrichmentLabelStatusApproved,
+	}}
+	drafts := []EnrichmentLabel{{From: mergeModA, To: mergeModB, Strength: mergeIntrusive, Status: EnrichmentLabelStatusDraft}}
+
+	merged := mergeEnrichmentLabels(existing, drafts, map[string]string{key: currentEvidence})
+	if len(merged) != 1 || merged[0].Strength != mergeModel || merged[0].Status != EnrichmentLabelStatusApproved {
+		t.Fatalf("a fresh approval was clobbered: %+v", merged)
+	}
+}

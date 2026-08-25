@@ -13,7 +13,6 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/evidence"
 
-	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
@@ -353,7 +352,7 @@ func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredCo
 
 func distanceConfigCandidates(ctx context.Context, root string, cfg config.Config, deps *appDeps) []initcfg.DistanceConfigCandidate {
 	mm := cfg.ModuleMapView()
-	dynamicImports := apppipeline.BuildDynamicImports(dynimports.Detect(root), mm)
+	dynamicImports := relationshipanalysis.BuildDynamicImports(dynimports.Detect(root), mm)
 	runtimeResult := runtimedetect.Detect(ctx, root, deps.Runner)
 	runtimeSites := make([]evidence.RuntimeAsyncSite, 0, len(runtimeResult.Signals))
 	for _, sig := range runtimeResult.Signals {
@@ -365,11 +364,11 @@ func distanceConfigCandidates(ctx context.Context, root string, cfg config.Confi
 			Language:        sig.Language,
 		})
 	}
-	runtimeEdges := apppipeline.BuildRuntimeAsyncEdges(runtimeSites, runtimeResult.Confidence, mm)
-	dynamicSignals := apppipeline.BuildDynamicConnascenceSignals(dynamicImports, runtimeEdges, nil)
+	runtimeEdges := relationshipanalysis.BuildRuntimeAsyncEdges(runtimeSites, runtimeResult.Confidence, mm)
+	dynamicSignals := relationshipanalysis.BuildDynamicConnascenceSignals(dynamicImports, runtimeEdges, nil)
 	candidates := append(
 		staticExternalDistanceConfigCandidates(ctx, root, cfg, deps),
-		apppipeline.BuildDistanceConfigCandidates(dynamicImports, runtimeEdges, dynamicSignals)...,
+		relationshipanalysis.BuildDistanceConfigCandidates(dynamicImports, runtimeEdges, dynamicSignals)...,
 	)
 	out := make([]initcfg.DistanceConfigCandidate, 0, len(candidates))
 	for _, c := range candidates {
@@ -404,7 +403,7 @@ func staticExternalDistanceConfigCandidatesFromGraph(g *graph.Graph, cfg config.
 }
 
 func buildUpdateCandidateGraph(ctx context.Context, root string, cfg config.Config, deps *appDeps) *graph.Graph {
-	extractors := registry.Build(deps.Runner, extractConfigs(cfg), nil)
+	extractors := registry.Build(deps.Runner, cfg.ExtractConfigs(), nil)
 	allFacts := make([]graph.Facts, 0, len(extractors))
 	for _, ex := range extractors {
 		facts, _, err := ex.Extract(ctx, scope.Scope{Root: root})

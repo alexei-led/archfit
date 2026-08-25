@@ -33,6 +33,16 @@ type AcceptedSet interface {
 	Entries() []AcceptedEntry
 }
 
+// Empty is the accepted set of a run with no persisted baseline: nothing was
+// ever accepted, so every finding is new and nothing can be reported fixed.
+type Empty struct{}
+
+// HasFingerprint always reports false.
+func (Empty) HasFingerprint(string) bool { return false }
+
+// Entries returns no accepted findings.
+func (Empty) Entries() []AcceptedEntry { return nil }
+
 // Assign labels each finding with its lifecycle status by comparing against the
 // accepted set and exception set. It also emits a finding per accepted
 // fingerprint that is no longer present in the current run (status=fixed).

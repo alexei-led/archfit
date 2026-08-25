@@ -8,10 +8,10 @@ import (
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
-// AugmentConfig returns cfg with the synthetic-module augmentation and
+// augmentConfig returns cfg with the synthetic-module augmentation and
 // ModuleMap rebuild Analyze applies before label freshness, classification,
 // advisories, and diagnostics.
-func AugmentConfig(g *graph.Graph, cfg classify.Config) classify.Config {
+func augmentConfig(g *graph.Graph, cfg classify.Config) classify.Config {
 	// Register auto-discovered module-graph nodes (Rust "<crate>::<mod>") as modules so
 	// classify can resolve their distance/volatility; otherwise their edges are
 	// distance-unknown and coupling_balance/encapsulation never see them. No-op for
@@ -39,7 +39,7 @@ func AugmentConfig(g *graph.Graph, cfg classify.Config) classify.Config {
 // review-only flows. Staged analysis uses Analyze, which owns the same steps
 // plus label freshness, advisories, and report evidence.
 func Classify(g *graph.Graph, cfg classify.Config) (classify.Config, coupling.Index) {
-	cfg = AugmentConfig(g, cfg)
+	cfg = augmentConfig(g, cfg)
 	return cfg, classify.Run(g, cfg)
 }
 

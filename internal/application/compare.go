@@ -64,8 +64,8 @@ type CompareService struct {
 // evaluation instant, then projects the pure comparison into application-owned
 // report DTOs.
 func (s CompareService) Execute(ctx context.Context, req CompareRequest) (CompareResult, error) {
-	if s.Current.Preparer == nil || s.Current.Evidence == nil || s.Current.Relationship == nil || s.Current.Assessment == nil ||
-		s.Candidate.Preparer == nil || s.Candidate.Evidence == nil || s.Candidate.Relationship == nil || s.Candidate.Assessment == nil {
+	if s.Current.Preparer == nil || s.Current.Evidence == nil ||
+		s.Candidate.Preparer == nil || s.Candidate.Evidence == nil {
 		return CompareResult{}, errors.New("comparison stages are required")
 	}
 	bundleDir := filepath.Dir(req.CurrentConfig)

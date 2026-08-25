@@ -29,8 +29,7 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 		return configLoadError(err)
 	}
 	deps.refresh = c.Refresh
-	analyzer := newUseCaseAnalyzer(c.Config, c.Root, cfg, deps)
-	service := application.ExplainService{Preparer: analyzer, Evidence: analyzer, Relationship: analyzer, Assessment: analyzer}
+	service := application.ExplainService{Stages: newAnalysisStages(c.Config, c.Root, cfg, deps)}
 	resp, err := service.Execute(ctx, application.ExplainRequest{ConfigPath: c.Config, Root: c.Root, Fingerprint: c.Fingerprint})
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
