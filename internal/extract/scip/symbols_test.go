@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	reportmodel "github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -158,8 +158,8 @@ func TestAdapter_Symbols_AbsentTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusAbsent {
-		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusAbsent)
+	if cov.Status != reportmodel.StatusAbsent {
+		t.Errorf("coverage status = %q, want %q", cov.Status, reportmodel.StatusAbsent)
 	}
 	if len(graph.Module) != 0 || len(graph.FanIn) != 0 || len(graph.Refs) != 0 {
 		t.Error("expected empty graph for absent tool")
@@ -174,8 +174,8 @@ func TestAdapter_Symbols_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusOK {
-		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusOK)
+	if cov.Status != reportmodel.StatusOK {
+		t.Errorf("coverage status = %q, want %q", cov.Status, reportmodel.StatusOK)
 	}
 	if len(graph.Module) != 2 {
 		t.Errorf("Module len = %d, want 2", len(graph.Module))
@@ -206,8 +206,8 @@ func TestAdapter_Symbols_EmptyIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusPartial {
-		t.Errorf("cov.Status = %q, want %q (empty index must be partial, not ok)", cov.Status, diagnostic.StatusPartial)
+	if cov.Status != reportmodel.StatusPartial {
+		t.Errorf("cov.Status = %q, want %q (empty index must be partial, not ok)", cov.Status, reportmodel.StatusPartial)
 	}
 	if cov.Reason == "" {
 		t.Error("cov.Reason is empty, want an actionable message")
@@ -225,8 +225,8 @@ func TestAdapter_Symbols_MalformedOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusPartial {
-		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusPartial)
+	if cov.Status != reportmodel.StatusPartial {
+		t.Errorf("coverage status = %q, want %q", cov.Status, reportmodel.StatusPartial)
 	}
 	if len(graph.Module) != 0 {
 		t.Error("expected empty graph for malformed output")
@@ -248,7 +248,7 @@ func TestAdapter_SinglePass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Symbols: %v", err)
 	}
-	if cov.Status != diagnostic.StatusOK || cov.Tool != "scip-symbols" {
+	if cov.Status != reportmodel.StatusOK || cov.Tool != "scip-symbols" {
 		t.Errorf("Symbols coverage = %+v, want ok/scip-symbols", cov)
 	}
 	if len(g.Module) != 2 {

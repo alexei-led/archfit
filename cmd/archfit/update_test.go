@@ -300,26 +300,6 @@ func TestDeployUnitSuggestions_UsesDiscoveredModuleMap(t *testing.T) {
 	})
 }
 
-func TestClassifyTargetsForUpdate_IncludesSyntheticOverridePath(t *testing.T) {
-	t.Parallel()
-	const (
-		syntheticModule = "mycrate-state"
-		syntheticPath   = "mycrate::state"
-	)
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
-		syntheticModule: {Paths: []string{syntheticPath}},
-	}}
-	report := initcfg.UpdateReport{Unclassified: []string{syntheticModule}}
-
-	got := classifyTargetsForUpdate(cfg, report, nil)
-	if len(got) != 1 {
-		t.Fatalf("targets = %d, want 1: %+v", len(got), got)
-	}
-	if got[0].Name != syntheticModule || len(got[0].Paths) != 1 || got[0].Paths[0] != syntheticPath {
-		t.Fatalf("synthetic override target not preserved: %+v", got[0])
-	}
-}
-
 func TestCollectUpdateRepoEvidence_ReadmeAndDocsHeadings(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

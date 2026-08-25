@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/metrics/boundary"
-	"github.com/alexei-led/archfit/internal/assessment/metrics/metricstest"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/testutil/metricstest"
 )
 
 func TestCycle_NoCycles(t *testing.T) {
@@ -22,7 +22,7 @@ func TestCycle_NoCycles(t *testing.T) {
 	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB, nodeC}, edges)
 
 	m := boundary.CycleMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, nil)})
 
 	if result.Value != 0 {
 		t.Errorf("expected 0 cycles got %v", result.Value)
@@ -43,7 +43,7 @@ func TestCycle_WithCycle(t *testing.T) {
 	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, edges)
 
 	m := boundary.CycleMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, nil)})
 
 	if result.Value <= 0 {
 		t.Errorf("expected cycle count > 0 got %v", result.Value)
@@ -68,7 +68,7 @@ func TestCycle_RustModuleCycleIsPoor(t *testing.T) {
 		{From: b.ID(), To: a.ID(), Kind: graph.EdgeKindDependsOn, Language: graph.LangRust},
 	}
 	g := metricstest.BuildGraph([]graph.Node{a, b}, edges)
-	res := boundary.CycleMetric{}.Calculate(signal.CommonInput{Graph: g})
+	res := boundary.CycleMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, nil)})
 	if res.Value <= 0 {
 		t.Fatalf("expected a cycle, got %v", res.Value)
 	}
@@ -97,7 +97,7 @@ func TestCycle_PolyglotGoCycleStaysCritical(t *testing.T) {
 		{From: r3.ID(), To: ext.ID(), Kind: graph.EdgeKindDependsOn, Language: graph.LangRust},
 	}
 	g := metricstest.BuildGraph([]graph.Node{ga, gb, r1, r2, r3, ext}, edges)
-	res := boundary.CycleMetric{}.Calculate(signal.CommonInput{Graph: g})
+	res := boundary.CycleMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, nil)})
 	if res.Value <= 0 {
 		t.Fatalf("expected the Go cycle to be counted, got %v", res.Value)
 	}

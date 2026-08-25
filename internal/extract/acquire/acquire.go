@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
 	"github.com/alexei-led/archfit/internal/extract/clones"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
@@ -19,7 +20,6 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/syntax"
 	"github.com/alexei-led/archfit/internal/toolrun"
 	"github.com/alexei-led/archfit/internal/view"
@@ -61,9 +61,9 @@ type Result struct {
 	DeployUnitsByModule map[string]string
 	DuplicationClusters []clone.Cluster
 	ExtraCoverage       []evidence.Coverage
-	Resolver            ports.SymbolResolver
-	Syntax              ports.SyntaxProvider
-	Patterns            ports.PatternProvider
+	Resolver            evidenceports.SymbolResolver
+	Syntax              evidenceports.SyntaxProvider
+	Patterns            evidenceports.PatternProvider
 	LOCError            error
 	CloneError          error
 }
@@ -100,7 +100,7 @@ func Collect(ctx context.Context, root string, opts Options, runner toolrun.Runn
 	)
 	out.ExtraCoverage = append(out.ExtraCoverage, cloneCoverage)
 
-	out.Resolver = ports.NopSymbolResolver{}
+	out.Resolver = evidenceports.NopSymbolResolver{}
 	if opts.SCIPEnabled {
 		adapter := scip.New(runner, opts.SCIPTimeout)
 		adapter.Cache = facts
@@ -112,7 +112,7 @@ func Collect(ctx context.Context, root string, opts Options, runner toolrun.Runn
 		})
 	}
 
-	out.Syntax = ports.NopSyntaxProvider{}
+	out.Syntax = evidenceports.NopSyntaxProvider{}
 	if opts.Syntax.Enabled {
 		adapter := astgrep.New(runner)
 		adapter.Cache = facts

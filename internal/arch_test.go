@@ -21,14 +21,13 @@ import (
 )
 
 const (
-	modulePrefix                           = "github.com/alexei-led/archfit/"
-	maxDiagnosticProductionImportFileCount = 0
-	maxScanProductionImportFileCount       = 12
+	modulePrefix = "github.com/alexei-led/archfit/"
 )
 
 // coreRingPkgs are the packages that must not import os, os/exec, YAML libs,
 // or adapter packages.
 var coreRingPkgs = []string{
+	modulePrefix + "internal/relationship",
 	modulePrefix + "internal/relationship/classify",
 	modulePrefix + "internal/assessment/rules",
 	modulePrefix + "internal/assessment/metrics",
@@ -55,10 +54,9 @@ var coreRingPkgs = []string{
 }
 
 // coreRingPrefixes are path prefixes whose packages — and ALL their
-// sub-packages — must obey the core-ring import rules. internal/metrics is split
-// into family sub-packages (boundary, modularity, internal/result, metricstest),
-// so a prefix match keeps every current and future sub-package covered without
-// editing this list.
+// sub-packages — must obey the core-ring import rules. Metrics is split into
+// family sub-packages (boundary, modularity, internal/result), so a prefix match
+// keeps every current and future sub-package covered without editing this list.
 var coreRingPrefixes = []string{
 	modulePrefix + "internal/relationship",
 	modulePrefix + "internal/assessment/rules",
@@ -91,9 +89,10 @@ var modelThirdPartyAllowed = map[string]map[string]bool{
 }
 
 // adapterPrefixes are packages the core ring must never import — adapters AND
-// the orchestrator. Adapters depend on internal/ports, never the orchestrator.
+// the orchestrator. Adapters depend on internal/evidence/ports (or the
+// internal/report/ports rendering port), never the orchestrator.
 var adapterPrefixes = []string{
-	modulePrefix + "internal/engine",
+	modulePrefix + "internal/analysispipeline",
 	modulePrefix + "internal/baseline",
 	modulePrefix + "internal/toolrun",
 	modulePrefix + "internal/extract/",
@@ -112,7 +111,7 @@ func TestCompositionFanoutRatchet(t *testing.T) {
 	for _, tc := range []struct {
 		pkg string
 		max int
-	}{{modulePrefix + "cmd/archfit", 14}, {modulePrefix + "internal/engine", 9}} {
+	}{{modulePrefix + "cmd/archfit", 14}, {modulePrefix + "internal/analysispipeline", 14}} {
 		t.Run(tc.pkg, func(t *testing.T) {
 			loaded, loadErr := packages.Load(&packages.Config{Mode: packages.NeedImports, Dir: ".."}, tc.pkg)
 			if loadErr != nil || len(loaded) != 1 {
@@ -139,22 +138,6 @@ func TestCompositionFanoutRatchet(t *testing.T) {
 	}
 }
 
-func TestDiagnosticProductionImportRatchet(t *testing.T) {
-	files := diagnosticProductionImportFiles(t)
-	if len(files) > maxDiagnosticProductionImportFileCount {
-		t.Errorf("production files importing internal/model/diagnostic = %d, want at most %d:\n%s",
-			len(files), maxDiagnosticProductionImportFileCount, strings.Join(files, "\n"))
-	}
-}
-
-func TestScanProductionImportRatchet(t *testing.T) {
-	files := productionImportFiles(t, modulePrefix+"internal/model/scan")
-	if len(files) > maxScanProductionImportFileCount {
-		t.Errorf("production files importing internal/model/scan = %d, want at most %d:\n%s",
-			len(files), maxScanProductionImportFileCount, strings.Join(files, "\n"))
-	}
-}
-
 func TestCommandDoesNotImportRelationshipClassify(t *testing.T) {
 	for _, file := range productionImportFiles(t, modulePrefix+"internal/relationship/classify") {
 		if strings.HasPrefix(file, "cmd/archfit/") {
@@ -163,21 +146,31 @@ func TestCommandDoesNotImportRelationshipClassify(t *testing.T) {
 	}
 }
 
-func TestAssessmentResultDoesNotImportReport(t *testing.T) {
-	files := productionImportFiles(t, modulePrefix+"internal/model/report")
-	var assessmentFiles []string
-	for _, file := range files {
-		if strings.HasPrefix(file, "internal/assessment/result/") {
-			assessmentFiles = append(assessmentFiles, file)
+func TestAssessmentProductionDoesNotImportRawGraphOrCoupling(t *testing.T) {
+	for _, tc := range []struct {
+		importPath string
+		label      string
+	}{
+		{modulePrefix + "internal/model/graph", "raw graph"},
+		{modulePrefix + "internal/relationship/coupling", "classification internals"},
+	} {
+		for _, file := range productionImportFiles(t, tc.importPath) {
+			if strings.HasPrefix(file, "internal/assessment/") {
+				t.Errorf("assessment production package must consume relationship.Set, not %s: %s", tc.label, file)
+			}
 		}
-	}
-	if len(assessmentFiles) > 0 {
-		t.Errorf("assessment result must not import report contract:\n%s", strings.Join(assessmentFiles, "\n"))
 	}
 }
 
-func diagnosticProductionImportFiles(t *testing.T) []string {
-	return productionImportFiles(t, modulePrefix+"internal/model/diagnostic")
+func TestDomainPackagesDoNotImportReportDTOs(t *testing.T) {
+	const reportPackage = modulePrefix + "internal/model/report"
+	for _, domain := range []string{"internal/assessment/", "internal/relationship/"} {
+		for _, file := range productionImportFiles(t, reportPackage) {
+			if strings.HasPrefix(file, domain) {
+				t.Errorf("%s must not import report DTOs: %s", domain, file)
+			}
+		}
+	}
 }
 
 func productionImportFiles(t *testing.T, importPath string) []string {
@@ -218,6 +211,16 @@ func productionImportFiles(t *testing.T, importPath string) []string {
 }
 
 // TestArchImports verifies the import ring rules for core and model packages.
+func TestPolicyDoesNotImportConfig(t *testing.T) {
+	pkgs, err := packages.Load(&packages.Config{Mode: packages.NeedImports, Dir: ".."}, modulePrefix+"internal/policy")
+	if err != nil || len(pkgs) != 1 {
+		t.Fatalf("packages.Load policy: packages=%d err=%v", len(pkgs), err)
+	}
+	if _, ok := pkgs[0].Imports[modulePrefix+"internal/config"]; ok {
+		t.Fatal("policy must be a domain context; YAML config is an adapter")
+	}
+}
+
 func TestArchImports(t *testing.T) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedImports,
@@ -284,44 +287,11 @@ func TestArchImports(t *testing.T) {
 	})
 
 	t.Run("adapters_no_engine_import", func(t *testing.T) {
-		// Adapters (toolrun, extract/*, history/*, output/*) must depend on
-		// internal/ports, never on the orchestrator (internal/engine). This
-		// ensures the hexagonal boundary: ports live in a neutral package that
-		// both adapters and the orchestrator can import without creating a cycle.
-		const enginePkg = modulePrefix + "internal/engine"
-		adapterPkgPrefixes := []string{
-			modulePrefix + "internal/toolrun",
-			modulePrefix + "internal/extract/",
-			modulePrefix + "internal/history/",
-			modulePrefix + "internal/output/",
-		}
-		for pkgPath, pkg := range loaded {
-			isAdapter := false
-			for _, prefix := range adapterPkgPrefixes {
-				if strings.HasPrefix(pkgPath, prefix) {
-					isAdapter = true
-					break
-				}
-			}
-			if !isAdapter {
-				continue
-			}
-			if _, imports := pkg.Imports[enginePkg]; imports {
-				t.Errorf("adapter package %s must not import %s: use internal/ports instead", pkgPath, enginePkg)
-			}
-		}
+		assertAdaptersNoEngineImport(t, loaded)
 	})
 
-	t.Run("report_adapters_no_scan_import", func(t *testing.T) {
-		const scanPkg = modulePrefix + "internal/model/scan"
-		for pkgPath, pkg := range loaded {
-			if pkgPath != modulePrefix+"internal/ports" && !strings.HasPrefix(pkgPath, modulePrefix+"internal/output/") {
-				continue
-			}
-			if _, imports := pkg.Imports[scanPkg]; imports {
-				t.Errorf("report boundary package %s must not import %s: use internal/model/report", pkgPath, scanPkg)
-			}
-		}
+	t.Run("adapters_no_assessment_application_import", func(t *testing.T) {
+		assertAdaptersNoAssessmentApplicationImport(t, loaded)
 	})
 
 	t.Run("report_adapters_no_domain_imports", func(t *testing.T) {
@@ -417,17 +387,128 @@ func TestCouplingContractDoesNotImportGraph(t *testing.T) {
 	}
 }
 
-func assertReportAdaptersNoDomainImports(t *testing.T, loaded map[string]*packages.Package) {
+// adapterPackagePrefixes are the adapter rings whose import closure the
+// hexagonal-boundary checks constrain.
+var adapterPackagePrefixes = []string{
+	modulePrefix + "internal/toolrun",
+	modulePrefix + "internal/extract/",
+	modulePrefix + "internal/history/",
+	modulePrefix + "internal/output/",
+}
+
+// isAdapterPackage reports whether pkgPath belongs to the adapter ring.
+func isAdapterPackage(pkgPath string) bool {
+	for _, prefix := range adapterPackagePrefixes {
+		if strings.HasPrefix(pkgPath, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func assertAdaptersNoEngineImport(t *testing.T, loaded map[string]*packages.Package) {
 	t.Helper()
+	// Adapters (toolrun, extract/*, history/*, output/*) must depend on
+	// internal/evidence/ports (or the internal/report/ports rendering port),
+	// never on the orchestrator (internal/analysispipeline). This ensures the hexagonal
+	// boundary: ports live in neutral owner packages that both adapters and the
+	// orchestrator can import without creating a cycle.
+	const enginePkg = modulePrefix + "internal/analysispipeline"
 	for pkgPath, pkg := range loaded {
-		if !strings.HasPrefix(pkgPath, modulePrefix+"internal/output/") {
+		if !isAdapterPackage(pkgPath) {
+			continue
+		}
+		if _, imports := pkg.Imports[enginePkg]; imports {
+			t.Errorf("adapter package %s must not import %s: use internal/evidence/ports instead", pkgPath, enginePkg)
+		}
+	}
+}
+
+func assertAdaptersNoAssessmentApplicationImport(t *testing.T, loaded map[string]*packages.Package) {
+	t.Helper()
+	// Adapters (toolrun, extract/*, history/*, output/*) must depend on stable
+	// ports/contracts, never on the assessment or application core rings. This
+	// keeps adapters swappable and prevents process-boundary code from dragging
+	// evaluation/use-case logic in.
+	for pkgPath, pkg := range loaded {
+		if !isAdapterPackage(pkgPath) {
 			continue
 		}
 		for imp := range pkg.Imports {
 			if strings.HasPrefix(imp, modulePrefix+"internal/assessment/") ||
-				strings.HasPrefix(imp, modulePrefix+"internal/relationship/") ||
-				strings.HasPrefix(imp, modulePrefix+"internal/engine") {
-				t.Errorf("report adapter %s must not import domain package %s", pkgPath, imp)
+				strings.HasPrefix(imp, modulePrefix+"internal/application/") {
+				t.Errorf("adapter package %s must not import domain core %s", pkgPath, imp)
+			}
+		}
+	}
+}
+
+func TestNamedCommandStagesDoNotImportDomainInternals(t *testing.T) {
+	named := []string{
+		"analyze.go", "baseline.go", "config_compare.go", "explain.go",
+		"enrich.go", "enrich_abstained.go", "enrich_values.go", "update.go",
+	}
+	for _, name := range named {
+		path := filepath.Join("..", "cmd", "archfit", name)
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		for _, imp := range file.Imports {
+			importPath := strings.Trim(imp.Path.Value, "\\\"")
+			for _, forbidden := range []string{
+				modulePrefix + "internal/assessment/",
+				modulePrefix + "internal/relationship/",
+				modulePrefix + "internal/model/graph",
+				modulePrefix + "internal/model/evidence",
+				modulePrefix + "internal/labels/labelsio",
+				modulePrefix + "internal/initcfg",
+			} {
+				if strings.HasPrefix(importPath, forbidden) {
+					t.Errorf("cmd/archfit/%s must use application/pipeline adapters, not %s", name, importPath)
+				}
+			}
+		}
+	}
+}
+
+func TestAnalyzeCheckSourceFilesDoNotImportDomainInternals(t *testing.T) {
+	for _, name := range []string{"analyze.go", "check.go"} {
+		path := filepath.Join("..", "cmd", "archfit", name)
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		for _, imp := range file.Imports {
+			path := strings.Trim(imp.Path.Value, "\"")
+			for _, forbidden := range []string{
+				modulePrefix + "internal/assessment/",
+				modulePrefix + "internal/relationship/",
+				modulePrefix + "internal/model/graph",
+				modulePrefix + "internal/model/evidence",
+			} {
+				if strings.HasPrefix(path, forbidden) {
+					t.Errorf("cmd/archfit/%s must use Application and report adapters, not %s", name, path)
+				}
+			}
+		}
+	}
+}
+
+func assertReportAdaptersNoDomainImports(t *testing.T, loaded map[string]*packages.Package) {
+	t.Helper()
+	for pkgPath, pkg := range loaded {
+		isRenderer := strings.HasPrefix(pkgPath, modulePrefix+"internal/output/") ||
+			pkgPath == modulePrefix+"internal/report/ports"
+		if !isRenderer {
+			continue
+		}
+		for imp := range pkg.Imports {
+			if !strings.HasPrefix(imp, modulePrefix+"internal/") {
+				continue
+			}
+			if imp != modulePrefix+"internal/model/report" && imp != modulePrefix+"internal/report/ports" {
+				t.Errorf("report adapter %s may import only report contracts, not %s", pkgPath, imp)
 			}
 		}
 	}
@@ -497,9 +578,7 @@ func TestInCoreRing(t *testing.T) {
 		modulePrefix + "internal/assessment/metrics":                 true,
 		modulePrefix + "internal/assessment/metrics/boundary":        true,
 		modulePrefix + "internal/assessment/metrics/internal/result": true,
-		modulePrefix + "internal/assessment/metrics/metricstest":     true,
 		modulePrefix + "internal/scope":                              true,
-		modulePrefix + "internal/engine":                             false,
 		modulePrefix + "internal/output/markdown":                    false,
 		modulePrefix + "internal/assessment/metricsx":                false, // must not over-match the prefix
 	}
@@ -518,7 +597,6 @@ func TestIsForbiddenForCore(t *testing.T) {
 		"os", "os/exec",
 		"github.com/goccy/go-yaml",
 		"gopkg.in/yaml.v3",
-		modulePrefix + "internal/engine",
 		modulePrefix + "internal/output/markdown",
 		modulePrefix + "internal/toolrun",
 		modulePrefix + "internal/factcache",
@@ -530,7 +608,6 @@ func TestIsForbiddenForCore(t *testing.T) {
 	}
 	allowed := []string{
 		"fmt", "strings", "sort",
-		modulePrefix + "internal/model/diagnostic",
 		modulePrefix + "internal/assessment/metrics/internal/result",
 		modulePrefix + "internal/config",
 	}

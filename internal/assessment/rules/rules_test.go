@@ -7,9 +7,10 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/rules"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	reportmodel "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -83,7 +84,9 @@ const (
 // helpers
 // ---------------------------------------------------------------------------
 
-func makeGraph(edges []graph.Edge) *graph.Graph {
+// makeGraph builds a relationship.Set from graph.Edge fixtures. It is a
+// test-only adapter: rules consume relationship.Set, not the raw graph.
+func makeGraph(edges []graph.Edge) relationship.Set {
 	var nodes []graph.Node
 	seen := make(map[string]bool)
 	for _, e := range edges {
@@ -95,7 +98,43 @@ func makeGraph(edges []graph.Edge) *graph.Graph {
 			}
 		}
 	}
-	return graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+	return graphToSet(graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}}))
+}
+
+// graphToSet projects a raw graph fixture into the relationship contract the
+// rules consume. Test-only adapter — production rules must not import graph.
+func graphToSet(g *graph.Graph) relationship.Set {
+	set := relationship.Set{
+		Nodes: make([]relationship.Node, 0, len(g.Nodes())),
+		Edges: make([]relationship.Edge, 0, len(g.Edges())),
+	}
+	for _, n := range g.Nodes() {
+		id := n.ID()
+		set.Nodes = append(set.Nodes, relationship.Node{
+			ID: id, Path: n.Path, Kind: string(n.Kind), Language: n.Language,
+			Module: relationship.ModuleKey(id),
+		})
+	}
+	for _, e := range g.Edges() {
+		set.Edges = append(set.Edges, relationship.Edge{
+			FromID: e.From, ToID: e.To,
+			FromPath: graph.NodePath(e.From), ToPath: graph.NodePath(e.To),
+			Kind: string(e.Kind), Language: e.Language,
+			Locations: relationshipTestLocations(e.Locations),
+		})
+	}
+	return set
+}
+
+func relationshipTestLocations(in []graph.Location) []relationship.Location {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]relationship.Location, 0, len(in))
+	for _, loc := range in {
+		out = append(out, relationship.Location{File: loc.File, Line: loc.Line})
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -942,7 +981,7 @@ func makePublicAPIMaxConfig(ceiling int, gate string) view.RuleConfig {
 // order — agent_tasks files[] trusts finding.Locations, so a rule that only
 // ever sets Edge.From/To.Path to the bare module name must populate real
 // Locations instead.
-func assertLocationFiles(t *testing.T, locs []graph.Location, wantFiles ...string) {
+func assertLocationFiles(t *testing.T, locs []relationship.Location, wantFiles ...string) {
 	t.Helper()
 	if len(locs) != len(wantFiles) {
 		t.Fatalf("locations = %+v, want files %v", locs, wantFiles)
@@ -956,17 +995,17 @@ func assertLocationFiles(t *testing.T, locs []graph.Location, wantFiles ...strin
 
 func TestPublicAPIMax(t *testing.T) {
 	// SyntaxFacts used across subtests: domain has 3 exported, infra has 1 exported.
-	allFacts := make([]diagnostic.SyntaxFact, 0, 5)
+	allFacts := make([]reportmodel.SyntaxFact, 0, 5)
 	allFacts = append(allFacts,
-		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
-		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "FuncB", Exported: true},
-		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
-		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
-		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileInfraRepo, Kind: kindStruct, Name: nameRepo, Exported: true},
+		reportmodel.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+		reportmodel.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "FuncB", Exported: true},
+		reportmodel.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
+		reportmodel.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
+		reportmodel.SyntaxFact{Language: graph.LangGo, File: fileInfraRepo, Kind: kindStruct, Name: nameRepo, Exported: true},
 	)
 
 	emptyGraph := makeGraph(nil)
-	ev := func(facts []diagnostic.SyntaxFact) rules.Evidence {
+	ev := func(facts []reportmodel.SyntaxFact) rules.Evidence {
 		return rules.Evidence{SyntaxFacts: facts}
 	}
 
@@ -1063,7 +1102,7 @@ func TestPublicAPIMax(t *testing.T) {
 
 	t.Run("unexported_decls_not_counted", func(t *testing.T) {
 		// Only unexported facts → no exported count → no findings.
-		onlyUnexported := []diagnostic.SyntaxFact{
+		onlyUnexported := []reportmodel.SyntaxFact{
 			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameInternal, Exported: false},
 			{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: "helper", Exported: false},
 		}
@@ -1079,7 +1118,7 @@ func TestPublicAPIMax(t *testing.T) {
 
 	t.Run("file_not_in_any_module_skipped", func(t *testing.T) {
 		// File outside declared modules → not counted.
-		outsideFacts := []diagnostic.SyntaxFact{
+		outsideFacts := []reportmodel.SyntaxFact{
 			{Language: graph.LangGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true},
 		}
 		rc := makePublicAPIMaxConfig(0, "")
@@ -1194,7 +1233,7 @@ func makePublicAPIChangeConfig(gate string) view.RuleConfig {
 
 func TestPublicAPIChange(t *testing.T) {
 	// Facts: domain has 2 exported + 1 unexported; infra has 1 exported; one file outside modules.
-	exportedFacts := []diagnostic.SyntaxFact{
+	exportedFacts := []reportmodel.SyntaxFact{
 		{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
 		{Language: graph.LangGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
 		{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
@@ -1203,7 +1242,7 @@ func TestPublicAPIChange(t *testing.T) {
 	}
 
 	emptyGraph := makeGraph(nil)
-	ev := func(facts []diagnostic.SyntaxFact) rules.Evidence {
+	ev := func(facts []reportmodel.SyntaxFact) rules.Evidence {
 		return rules.Evidence{SyntaxFacts: facts}
 	}
 
@@ -1230,7 +1269,7 @@ func TestPublicAPIChange(t *testing.T) {
 	})
 
 	t.Run("unexported_decls_not_emitted", func(t *testing.T) {
-		onlyUnexported := []diagnostic.SyntaxFact{
+		onlyUnexported := []reportmodel.SyntaxFact{
 			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "helper", Exported: false},
 		}
 		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
@@ -1243,7 +1282,7 @@ func TestPublicAPIChange(t *testing.T) {
 	})
 
 	t.Run("file_outside_modules_skipped", func(t *testing.T) {
-		outsideFacts := []diagnostic.SyntaxFact{
+		outsideFacts := []reportmodel.SyntaxFact{
 			{Language: graph.LangGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true},
 		}
 		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
@@ -1257,7 +1296,7 @@ func TestPublicAPIChange(t *testing.T) {
 
 	t.Run("duplicate_name_in_module_deduped", func(t *testing.T) {
 		// Two facts with same (module, name) → only one finding.
-		dupFacts := []diagnostic.SyntaxFact{
+		dupFacts := []reportmodel.SyntaxFact{
 			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "Start", Exported: true},
 			{Language: graph.LangGo, File: fileDomainB, Kind: "method", Name: "Start", Exported: true},
 		}
@@ -1272,7 +1311,7 @@ func TestPublicAPIChange(t *testing.T) {
 	})
 
 	t.Run("finding_matchedby_has_module_name_kind_file", func(t *testing.T) {
-		oneFact := []diagnostic.SyntaxFact{
+		oneFact := []reportmodel.SyntaxFact{
 			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
 		}
 		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
@@ -1301,7 +1340,7 @@ func TestPublicAPIChange(t *testing.T) {
 
 	t.Run("stable_fingerprint_across_runs", func(t *testing.T) {
 		// Same fact → same ID on repeated calls.
-		oneFact := []diagnostic.SyntaxFact{
+		oneFact := []reportmodel.SyntaxFact{
 			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
 		}
 		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
@@ -1316,7 +1355,7 @@ func TestPublicAPIChange(t *testing.T) {
 	})
 
 	t.Run("gate_semantics", func(t *testing.T) {
-		oneFact := []diagnostic.SyntaxFact{
+		oneFact := []reportmodel.SyntaxFact{
 			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
 		}
 
@@ -1369,13 +1408,13 @@ const (
 	typeCliContext        = "cli.Context"
 )
 
-// makeTypeLeakGraph builds a graph with the given package nodes (no edges needed).
-func makeTypeLeakGraph(pkgPaths []string) *graph.Graph {
+// makeTypeLeakGraph builds a relationship.Set with the given package nodes (no edges needed).
+func makeTypeLeakGraph(pkgPaths []string) relationship.Set {
 	nodes := make([]graph.Node, len(pkgPaths))
 	for i, p := range pkgPaths {
 		nodes[i] = graph.Node{Kind: graph.NodeKindPackage, Path: p}
 	}
-	return graph.Build([]graph.Facts{{Nodes: nodes, Language: "go"}})
+	return graphToSet(graph.Build([]graph.Facts{{Nodes: nodes, Language: "go"}}))
 }
 
 func TestPublicAPITypeLeak(t *testing.T) {
@@ -1405,7 +1444,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 	t.Run("external_type_leak_fires", func(t *testing.T) {
 		g := makeTypeLeakGraph([]string{externalCliPkg})
 		ev := rules.Evidence{
-			SyntaxFacts: []diagnostic.SyntaxFact{
+			SyntaxFacts: []reportmodel.SyntaxFact{
 				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
 			},
 		}
@@ -1436,7 +1475,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 		// "internal" has no dot — not a fully-qualified external path.
 		g := makeTypeLeakGraph([]string{"internal/service"})
 		ev := rules.Evidence{
-			SyntaxFacts: []diagnostic.SyntaxFact{
+			SyntaxFacts: []reportmodel.SyntaxFact{
 				{Kind: typeLeakKind, Name: "internal.Service", File: fileDomain, Language: "go"},
 			},
 		}
@@ -1458,7 +1497,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 	t.Run("dedup_same_module_and_type", func(t *testing.T) {
 		g := makeTypeLeakGraph([]string{externalCliPkg})
 		ev := rules.Evidence{
-			SyntaxFacts: []diagnostic.SyntaxFact{
+			SyntaxFacts: []reportmodel.SyntaxFact{
 				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
 				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
 			},
@@ -1473,7 +1512,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 		// gatedRule wraps with gate="warn" → Kind=advisory.
 		g := makeTypeLeakGraph([]string{externalCliPkg})
 		ev := rules.Evidence{
-			SyntaxFacts: []diagnostic.SyntaxFact{
+			SyntaxFacts: []reportmodel.SyntaxFact{
 				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
 			},
 		}
@@ -1491,7 +1530,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 		// of type_leak facts. Documents the Go-only graph limitation.
 		g := makeTypeLeakGraph(nil)
 		ev := rules.Evidence{
-			SyntaxFacts: []diagnostic.SyntaxFact{
+			SyntaxFacts: []reportmodel.SyntaxFact{
 				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
 			},
 		}
@@ -1511,7 +1550,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 		// is acceptable for this report-only/default-warn candidate surfacer.
 		g := makeTypeLeakGraph([]string{externalCliPkg, "cli"})
 		ev := rules.Evidence{
-			SyntaxFacts: []diagnostic.SyntaxFact{
+			SyntaxFacts: []reportmodel.SyntaxFact{
 				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
 			},
 		}
@@ -1533,9 +1572,9 @@ func TestPublicAPITypeLeak(t *testing.T) {
 			Language:   "go",
 			Confidence: "high",
 		}
-		g := graph.Build([]graph.Facts{{Nodes: []graph.Node{fileNode}, Edges: []graph.Edge{edge}, Language: "go"}})
+		g := graphToSet(graph.Build([]graph.Facts{{Nodes: []graph.Node{fileNode}, Edges: []graph.Edge{edge}, Language: "go"}}))
 		ev := rules.Evidence{
-			SyntaxFacts: []diagnostic.SyntaxFact{
+			SyntaxFacts: []reportmodel.SyntaxFact{
 				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
 			},
 		}
@@ -1559,13 +1598,13 @@ func TestPublicAPITypeLeak(t *testing.T) {
 			Language:   "go",
 			Confidence: "high",
 		}
-		g := graph.Build([]graph.Facts{{
+		g := graphToSet(graph.Build([]graph.Facts{{
 			Nodes:    []graph.Node{fileNode, firstPartyNode},
 			Edges:    []graph.Edge{edge},
 			Language: "go",
-		}})
+		}}))
 		ev := rules.Evidence{
-			SyntaxFacts: []diagnostic.SyntaxFact{
+			SyntaxFacts: []reportmodel.SyntaxFact{
 				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
 			},
 		}

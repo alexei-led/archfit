@@ -13,37 +13,77 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // Band is the top-level decision band.
-type Band = report.DecisionBand
+type Band string
 
-// Report is the decision report.
-type Report = report.Report
+const (
+	// BandFail means blocking work remains.
+	BandFail Band = "FAIL"
+	// BandNeedsAttention means the overall score is poor or critical.
+	BandNeedsAttention Band = "NEEDS_ATTENTION"
+	// BandHealthy means the score is serviceable or strong without warnings.
+	BandHealthy Band = "HEALTHY"
+	// BandAcceptable means the run has watch items but no blocker.
+	BandAcceptable Band = "ACCEPTABLE_WITH_WATCH_ITEMS"
+)
 
-// DimReport is a report dimension.
-type DimReport = report.DimReport
+// Report is the decision value before application projection.
+type Report struct {
+	Band            Band
+	Headline        string
+	Blocking        int
+	Advisory        int
+	Overall         int
+	OverallBand     score.Band
+	Dimensions      []DimReport
+	Recommendations Recommendations
+	Delta           *Delta
+}
 
-// Rec is a recommendation.
-type Rec = report.Rec
+// DimReport is a decision dimension.
+type DimReport struct {
+	Name       string
+	Value      int
+	Band       score.Band
+	Confidence score.Confidence
+	RawValue   int
+	CapApplied string
+	Meta       bool
+	Why        string
+	WhatMoves  string
+}
+
+// Rec is one actionable recommendation.
+type Rec struct {
+	Title  string
+	Detail string
+	RuleID string
+}
 
 // Recommendations groups report recommendations.
-type Recommendations = report.Recommendations
+type Recommendations struct {
+	MustFix   []Rec
+	ShouldFix []Rec
+	Watch     []Rec
+	Calibrate []Rec
+	Ignore    []Rec
+}
 
 // Delta is a score delta.
-type Delta = report.Delta
+type Delta struct {
+	Overall    int
+	Dimensions []DimDelta
+}
 
-// DimDelta is a dimension delta.
-type DimDelta = report.DimDelta
-
-// Band constants for the decision outcome.
-const (
-	BandFail           = report.DecisionBandFail
-	BandNeedsAttention = report.DecisionBandNeedsAttention
-	BandHealthy        = report.DecisionBandHealthy
-	BandAcceptable     = report.DecisionBandAcceptable
-)
+// DimDelta is the before, after, and signed change for one dimension.
+type DimDelta struct {
+	Name   string
+	Before int
+	After  int
+	Change int
+}
 
 // Build converts an already-computed Diagnostic and Scorecard into a Report.
 // base is nil unless a delta is requested (then it's the base-ref scorecard).

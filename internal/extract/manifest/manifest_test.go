@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/extract/manifest"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	reportmodel "github.com/alexei-led/archfit/internal/model/evidence"
 )
 
 const (
@@ -48,7 +48,7 @@ go 1.21
 retract v1.0.0 // accidental publish
 `)
 	got := manifest.Scan(root)
-	want := []diagnostic.DeprecatedDep{
+	want := []reportmodel.DeprecatedDep{
 		{File: fileGoMod, Kind: kindRetract, Subject: "v1.0.0", Note: "accidental publish"},
 	}
 	assertDeps(t, got, want)
@@ -63,7 +63,7 @@ go 1.21
 retract [v1.0.0, v1.0.5]
 `)
 	got := manifest.Scan(root)
-	want := []diagnostic.DeprecatedDep{
+	want := []reportmodel.DeprecatedDep{
 		{File: fileGoMod, Kind: kindRetract, Subject: "[v1.0.0, v1.0.5]", Note: ""},
 	}
 	assertDeps(t, got, want)
@@ -82,7 +82,7 @@ retract (
 )
 `)
 	got := manifest.Scan(root)
-	want := []diagnostic.DeprecatedDep{
+	want := []reportmodel.DeprecatedDep{
 		{File: fileGoMod, Kind: kindRetract, Subject: "[v1.1.0, v1.1.3]", Note: ""},
 		{File: fileGoMod, Kind: kindRetract, Subject: "v1.0.0", Note: "broken release"},
 		{File: fileGoMod, Kind: kindRetract, Subject: "v1.2.0", Note: ""},
@@ -113,7 +113,7 @@ func TestScan_PackageJSON_Deprecated(t *testing.T) {
   "deprecated": "use new-pkg instead"
 }`)
 	got := manifest.Scan(root)
-	want := []diagnostic.DeprecatedDep{
+	want := []reportmodel.DeprecatedDep{
 		{File: filePkgJSON, Kind: kindDeprecated, Subject: "my-pkg", Note: "use new-pkg instead"},
 	}
 	assertDeps(t, got, want)
@@ -222,7 +222,7 @@ retract v1.0.0 // bad
 
 // assertDeps checks that got matches want exactly (same length and fields).
 // Both slices must already be sorted (Scan sorts by File+Kind+Subject).
-func assertDeps(t *testing.T, got, want []diagnostic.DeprecatedDep) {
+func assertDeps(t *testing.T, got, want []reportmodel.DeprecatedDep) {
 	t.Helper()
 	if len(got) != len(want) {
 		t.Fatalf("len: got %d, want %d\ngot:  %v\nwant: %v", len(got), len(want), got, want)

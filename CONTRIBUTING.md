@@ -68,11 +68,11 @@ Useful targeted checks:
 
 ```sh
 go test ./internal/ -run TestArchImports
-go test ./internal/engine/ -run TestGolden
+go test ./internal/analysispipeline/ -run TestGolden
 pre-commit run --all-files
 ```
 
-Regenerate mocks after changing interfaces under `internal/ports`:
+Regenerate mocks after changing interfaces under `internal/evidence/ports`:
 
 ```sh
 make mock

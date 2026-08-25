@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/metrics/boundary"
-	"github.com/alexei-led/archfit/internal/assessment/metrics/metricstest"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
+	"github.com/alexei-led/archfit/internal/testutil/metricstest"
 )
 
 const coverageToolGoPackages = "go/packages"
@@ -15,7 +15,7 @@ func TestCoverage_Ratio(t *testing.T) {
 	// FilesSeen=8, FilesApplicable=10 → value 0.8
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
-		ToolCoverage: []assessmentresult.Coverage{
+		Coverage: signal.CoverageView{
 			{FilesSeen: 8, FilesApplicable: 10},
 		},
 	})
@@ -58,7 +58,7 @@ func TestCoverage_ZeroApplicable(t *testing.T) {
 	// negative-case acceptance run surfaced it as a residual false-green).
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
-		ToolCoverage: []assessmentresult.Coverage{
+		Coverage: signal.CoverageView{
 			{FilesSeen: 0, FilesApplicable: 0, Status: assessmentresult.StatusOK},
 		},
 	})
@@ -76,7 +76,7 @@ func TestCoverage_AllAbsent(t *testing.T) {
 	// a false-green 100% over an empty file set.
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
-		ToolCoverage: []assessmentresult.Coverage{
+		Coverage: signal.CoverageView{
 			{Tool: coverageToolGoPackages, Status: assessmentresult.StatusAbsent},
 			{Tool: "dependency-cruiser", Status: assessmentresult.StatusAbsent},
 		},
@@ -94,7 +94,7 @@ func TestCoverage_AbsentRecordSkipped(t *testing.T) {
 	// contributing extractor (8/10) counts.
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
-		ToolCoverage: []assessmentresult.Coverage{
+		Coverage: signal.CoverageView{
 			{Tool: coverageToolGoPackages, FilesSeen: 8, FilesApplicable: 10, Status: assessmentresult.StatusOK},
 			{Tool: "grimp", Status: assessmentresult.StatusAbsent},
 		},
@@ -112,7 +112,7 @@ func TestCoverage_AuxiliaryToolSkipped(t *testing.T) {
 	// The fix: skip tools with FilesApplicable == 0.
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
-		ToolCoverage: []assessmentresult.Coverage{
+		Coverage: signal.CoverageView{
 			{Tool: "dependency-cruiser", FilesSeen: 118, FilesApplicable: 118, Status: assessmentresult.StatusOK},
 			{Tool: "loc", FilesSeen: 131, FilesApplicable: 131, Status: assessmentresult.StatusOK},
 			// ast-grep aux: seen=136 but applicable=0 — must not inflate ratio
@@ -131,7 +131,7 @@ func TestCoverage_AuxiliaryToolSkipped(t *testing.T) {
 func TestCoverage_DeployUnitAuxiliarySkipped(t *testing.T) {
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
-		ToolCoverage: []assessmentresult.Coverage{
+		Coverage: signal.CoverageView{
 			{Tool: coverageToolGoPackages, FilesSeen: 10, FilesApplicable: 10, Status: assessmentresult.StatusOK},
 			{Tool: "deploy-unit", FilesSeen: 1, FilesApplicable: 0, Status: assessmentresult.StatusOK},
 		},
@@ -149,7 +149,7 @@ func TestBandModel_LowConfidenceCap(t *testing.T) {
 	// value = 10/10 = 1.0 → score 10 → band would be "strong" → capped to "mixed"
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
-		ToolCoverage: []assessmentresult.Coverage{
+		Coverage: signal.CoverageView{
 			{FilesSeen: 10, FilesApplicable: 10, Unresolved: 9},
 		},
 	})

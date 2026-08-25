@@ -8,8 +8,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 // ---------------------------------------------------------------------------
@@ -18,15 +17,15 @@ import (
 
 // distanceRank maps a Distance to a numeric rank for >= comparisons.
 // Higher rank = greater distance. Unknown returns -1.
-func distanceRank(d coupling.Distance) int {
+func distanceRank(d relationship.Distance) int {
 	switch d {
-	case coupling.DistanceSameModule:
+	case relationship.DistanceSameModule:
 		return 0
-	case coupling.DistanceCrossModuleSameOwner:
+	case relationship.DistanceCrossModuleSameOwner:
 		return 1
-	case coupling.DistanceCrossModuleDiffOwner:
+	case relationship.DistanceCrossModuleDiffOwner:
 		return 2
-	case coupling.DistanceCrossDeployUnit:
+	case relationship.DistanceCrossDeployUnit:
 		return 3
 	default: // DistanceUnknown, DistanceExternal (declared seams stay out of this frozen v2 metric)
 		return -1
@@ -66,24 +65,14 @@ func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) assessmentresult.
 	}
 
 	var newHigh, candidates, candidatesKnownVol int
-	crossModuleDiffOwnerRank := distanceRank(coupling.DistanceCrossModuleDiffOwner)
+	crossModuleDiffOwnerRank := distanceRank(relationship.DistanceCrossModuleDiffOwner)
 
-	for _, e := range in.Graph.Edges() {
-		if e.Kind != graph.EdgeKindImports &&
-			e.Kind != graph.EdgeKindDependsOn &&
-			e.Kind != graph.EdgeKindUsesInternal {
-			continue
-		}
-		key := e.From + "\x00" + e.To + "\x00" + string(e.Kind)
-		cl, ok := in.Classifications[key]
-		if !ok {
-			continue
-		}
+	for _, e := range in.Relationships.DependencyEdges() {
 		// High-risk: intrusive AND distance>=cross_module_different_owner AND high volatility.
-		if cl.Strength != coupling.StrengthIntrusive {
+		if e.Strength != relationship.StrengthIntrusive {
 			continue
 		}
-		if distanceRank(cl.Distance) < crossModuleDiffOwnerRank {
+		if distanceRank(e.Distance) < crossModuleDiffOwnerRank {
 			continue
 		}
 		// This edge is a candidate (intrusive + far). Whether it is *unbalanced*
@@ -91,15 +80,15 @@ func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) assessmentresult.
 		// Both unknown (unresolvable) and undeclared (config gap) count as
 		// unassessable here.
 		candidates++
-		if coupling.VolatilityResolved(cl.Volatility) {
+		if relationship.VolatilityResolved(e.Volatility) {
 			candidatesKnownVol++
 		}
-		if cl.Volatility != coupling.VolatilityHigh {
+		if e.Volatility != relationship.VolatilityHigh {
 			continue
 		}
 
 		// Determine status via finding index.
-		pp := pathPair{from: graph.NodePath(e.From), to: graph.NodePath(e.To)}
+		pp := pathPair{from: e.FromPath, to: e.ToPath}
 		st := findingStatus[pp] // zero value "" means no matching finding → treat as new
 		if st == finding.StatusNew || st == "" {
 			newHigh++

@@ -4,12 +4,12 @@ package registry
 import (
 	"slices"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/toolrun"
 	"github.com/alexei-led/archfit/internal/view"
 )
@@ -51,11 +51,11 @@ type Descriptor struct {
 	// the list omits (a configured python package dir, a sub-crate Cargo.toml, a
 	// go.work member) fabricates absence.
 	ProjectPresent func(root string, cfg view.ExtractConfig) bool
-	// NewExtractor builds the language's ports.Extractor from the shared runner,
+	// NewExtractor builds the language's evidenceports.Extractor from the shared runner,
 	// the language's projected ExtractConfig view, and the fact-cache store.
 	// Store.RefreshMode lets a caller force fresh extraction while still writing
 	// the refreshed fact back to disk.
-	NewExtractor func(toolrun.Runner, view.ExtractConfig, *factcache.Store) ports.Extractor
+	NewExtractor func(toolrun.Runner, view.ExtractConfig, *factcache.Store) evidenceports.Extractor
 	// PrimaryTool is the coverage name of the dependency-graph analyzer this
 	// language unlocks (as it appears in ToolCoverage, e.g. "go/packages").
 	PrimaryTool string
@@ -88,7 +88,7 @@ var languages = []Descriptor{
 	{
 		ID:             "go",
 		ProjectPresent: goProjectPresent,
-		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
 			ex := golang.New(cfg)
 			ex.Runner = r // go-toolchain version probe for the fact-cache key
 			ex.Cache = fc
@@ -105,7 +105,7 @@ var languages = []Descriptor{
 		ID:             "typescript",
 		Aliases:        []string{"ts"},
 		ProjectPresent: tsProjectPresent,
-		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
 			ex := ts.New(r, cfg)
 			ex.Cache = fc
 			return ex
@@ -123,7 +123,7 @@ var languages = []Descriptor{
 		ID:             "python",
 		Aliases:        []string{"py"},
 		ProjectPresent: pyProjectPresent,
-		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
 			ex := py.New(r, cfg)
 			ex.Cache = fc
 			return ex
@@ -139,7 +139,7 @@ var languages = []Descriptor{
 		ID:             "rust",
 		Aliases:        []string{"rs"},
 		ProjectPresent: rustProjectPresent,
-		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
 			ex := rust.New(r, cfg)
 			ex.Cache = fc
 			return ex
@@ -190,7 +190,7 @@ func GoWorkOff(scanRoot string, cfg view.ExtractConfig) bool {
 }
 
 // New constructs the registered extractor for one canonical language ID.
-func New(id string, runner toolrun.Runner, cfg view.ExtractConfig, facts *factcache.Store) ports.Extractor {
+func New(id string, runner toolrun.Runner, cfg view.ExtractConfig, facts *factcache.Store) evidenceports.Extractor {
 	for _, lang := range languages {
 		if lang.ID == id {
 			return lang.NewExtractor(runner, cfg, facts)
@@ -202,8 +202,8 @@ func New(id string, runner toolrun.Runner, cfg view.ExtractConfig, facts *factca
 // Build instantiates the per-language extractors in registry order,
 // each fed its projected ExtractConfig view. The slice order is the graph-merge
 // order the engine golden test pins — registry order is go → ts → py.
-func Build(runner toolrun.Runner, configs Configs, facts *factcache.Store) []ports.Extractor {
-	exs := make([]ports.Extractor, 0, len(languages))
+func Build(runner toolrun.Runner, configs Configs, facts *factcache.Store) []evidenceports.Extractor {
+	exs := make([]evidenceports.Extractor, 0, len(languages))
 	for _, lang := range languages {
 		exs = append(exs, lang.NewExtractor(runner, configs[lang.ID], facts))
 	}
@@ -234,7 +234,7 @@ func ByAlias(key string) string {
 // RustExtractor returns the *rust.Extractor from the extractor slice, or nil if
 // the Rust extractor is not present. Used by the pipeline to collect the opt-in
 // cargo-modules module-graph coverage record after engine.Run.
-func RustExtractor(exs []ports.Extractor) *rust.Extractor {
+func RustExtractor(exs []evidenceports.Extractor) *rust.Extractor {
 	for _, ex := range exs {
 		if re, ok := ex.(*rust.Extractor); ok {
 			return re

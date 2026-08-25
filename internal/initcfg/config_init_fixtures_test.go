@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/metrics"
 	"github.com/alexei-led/archfit/internal/assessment/result"
@@ -16,12 +17,13 @@ import (
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/engine"
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/ports"
+	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 	"github.com/alexei-led/archfit/internal/view"
@@ -146,9 +148,9 @@ func pathIn(glob string) string {
 	return base + sep + "x"
 }
 
-// fixtureGraph builds a two-node module graph with a single uses_internal
-// edge from "module:"+from to "module:"+to.
-func fixtureGraph(from, to string) *graph.Graph {
+// fixtureGraph builds a two-node relationship.Set with a single uses_internal
+// edge from "module:"+from to "module:"+to (test-only adapter).
+func fixtureGraph(from, to string) relationship.Set {
 	nodes := []graph.Node{
 		{Kind: graph.NodeKindModule, Path: from},
 		{Kind: graph.NodeKindModule, Path: to},
@@ -156,7 +158,22 @@ func fixtureGraph(from, to string) *graph.Graph {
 	edges := []graph.Edge{
 		{From: "module:" + from, To: "module:" + to, Kind: graph.EdgeKindUsesInternal},
 	}
-	return graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+	g := graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+	set := relationship.Set{
+		Nodes: make([]relationship.Node, 0, len(g.Nodes())),
+		Edges: make([]relationship.Edge, 0, len(g.Edges())),
+	}
+	for _, n := range g.Nodes() {
+		set.Nodes = append(set.Nodes, relationship.Node{ID: n.ID(), Path: n.Path, Kind: string(n.Kind), Language: n.Language})
+	}
+	for _, e := range g.Edges() {
+		set.Edges = append(set.Edges, relationship.Edge{
+			FromID: e.From, ToID: e.To,
+			FromPath: graph.NodePath(e.From), ToPath: graph.NodePath(e.To),
+			Kind: string(e.Kind), Language: e.Language,
+		})
+	}
+	return set
 }
 
 // TestPublicAPIOnly_Task1Fixtures documents public_api_only's (V5) behavior on
@@ -349,26 +366,26 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Diagnostic {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	s := scope.Scope{Root: root, Mode: scope.ModeFull}
 
-	diag, err := engine.Run(context.Background(), engine.RunInput{
-		Mode:        engine.Mode{Full: true, Advisory: true},
-		Scope:       s,
-		Classify:    classifyCfg,
-		Staleness:   view.StalenessConfig{},
-		Waivers:     view.WaiverSet{},
-		Extractors:  []ports.Extractor{extractor},
-		Patterns:    ports.NopPatternProvider{},
-		Resolver:    ports.NopSymbolResolver{},
+	diag, err := apppipeline.RunStages(context.Background(), apppipeline.StageInput{
+		Mode:  apppipeline.Mode{Full: true, Advisory: true},
+		Scope: s,
+		Policy: policy.New(
+			policy.TopologyView{Modules: classifyCfg.Modules, Layers: classifyCfg.Layers, ModuleMap: classifyCfg.ModuleMap, ExternalSystems: classifyCfg.ExternalSystems, ExplicitOwners: classifyCfg.ExplicitOwners},
+			policy.RelationshipPolicy{MinimumSeverity: classifyCfg.BCAdvisoryMinSeverity, VolatilityCascadeEnabled: classifyCfg.VolatilityCascadeEnabled, DuplicatedKnowledge: classifyCfg.DuplicatedKnowledgePolicy},
+			policy.AssessmentPolicy{}, policy.GatePolicy{}, nil, nil),
+		Extractors:  []evidenceports.Extractor{extractor},
+		Patterns:    evidenceports.NopPatternProvider{},
+		Resolver:    evidenceports.NopSymbolResolver{},
 		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
-		Labels:      nil,
 		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
-		t.Fatalf("engine.Run: %v", err)
+		t.Fatalf("apppipeline.RunStages: %v", err)
 	}
 	return diag
 }

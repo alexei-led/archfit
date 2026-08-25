@@ -3,8 +3,8 @@ package reporttest
 
 import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 // Findings converts assessment findings into the stable report view for renderer tests.
@@ -29,9 +29,9 @@ func Findings(in ...finding.Finding) []report.Finding {
 
 // Finding converts one report finding back to the assessment view for scorecard tests.
 func Finding(in report.Finding) finding.Finding {
-	locations := make([]graph.Location, 0, len(in.Locations))
+	locations := make([]relationship.Location, 0, len(in.Locations))
 	for _, loc := range in.Locations {
-		locations = append(locations, graph.Location{File: loc.File, Line: loc.Line})
+		locations = append(locations, relationship.Location{File: loc.File, Line: loc.Line})
 	}
 	return finding.Finding{
 		ID: in.ID, Kind: in.Kind, RuleID: in.RuleID, Status: finding.Status(in.Status), Severity: finding.Severity(in.Severity), Confidence: in.Confidence,

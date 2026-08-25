@@ -1,4 +1,4 @@
-// Package sarif renders a Diagnostic as a SARIF 2.1.0 log (spec §12) so CI
+// Package sarif renders a report document as a SARIF 2.1.0 log (spec §12) so CI
 // systems (GitHub code scanning et al.) can surface findings inline on PRs —
 // the agent/CI half of the feedback loop.
 //
@@ -18,10 +18,13 @@ import (
 	"sort"
 
 	"github.com/alexei-led/archfit/internal/model/report"
+	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
-// Renderer formats a Diagnostic as SARIF 2.1.0. Satisfies engine.Renderer.
+// Renderer formats a report document as SARIF 2.1.0.
 type Renderer struct{}
+
+var _ reportports.Renderer = (*Renderer)(nil)
 
 // New returns a Renderer.
 func New() *Renderer { return &Renderer{} }

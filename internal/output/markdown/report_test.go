@@ -4,30 +4,29 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/decision"
-	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 func TestRenderReport_DecisionSummary(t *testing.T) {
-	r := decision.Report{
-		Band:        decision.BandAcceptable,
+	r := report.Report{
+		Band:        report.DecisionBandAcceptable,
 		Headline:    "Acceptable with watch items. Monitor flagged areas.",
 		Blocking:    0,
 		Advisory:    12,
 		Overall:     58,
-		OverallBand: score.BandMixed,
-		Dimensions: []decision.DimReport{
-			{Name: "coupling_balance", Value: 36, Band: score.BandPoor, Why: "375 unbalanced edges", WhatMoves: "Add stable contracts."},
-			{Name: "encapsulation", Value: 90, Band: score.BandStrong},
+		OverallBand: report.ScoreBandMixed,
+		Dimensions: []report.DimReport{
+			{Name: "coupling_balance", Value: 36, Band: report.ScoreBandPoor, Why: "375 unbalanced edges", WhatMoves: "Add stable contracts."},
+			{Name: "encapsulation", Value: 90, Band: report.ScoreBandStrong},
 		},
-		Recommendations: decision.Recommendations{
-			MustFix:   []decision.Rec{},
-			ShouldFix: []decision.Rec{{RuleID: "coupling_seam", Detail: "high fan-in"}},
-			Watch:     []decision.Rec{},
+		Recommendations: report.Recommendations{
+			MustFix:   []report.Rec{},
+			ShouldFix: []report.Rec{{RuleID: "coupling_seam", Detail: "high fan-in"}},
+			Watch:     []report.Rec{},
 		},
-		Delta: &decision.Delta{
+		Delta: &report.Delta{
 			Overall:    -3,
-			Dimensions: []decision.DimDelta{{Name: "coupling_balance", Before: 39, After: 36, Change: -3}},
+			Dimensions: []report.DimDelta{{Name: "coupling_balance", Before: 39, After: 36, Change: -3}},
 		},
 	}
 	var b strings.Builder

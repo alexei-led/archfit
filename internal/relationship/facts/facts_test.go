@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	reportmodel "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/relationship/facts"
 )
@@ -182,7 +182,7 @@ func TestBuild_NeutralNoLabels(t *testing.T) {
 		"Module": {}, "Files": {}, "InboundModuleFanIn": {},
 		"OutboundDestinations": {}, "LOC": {},
 	}
-	for field := range reflect.TypeFor[diagnostic.FileFact]().Fields() {
+	for field := range reflect.TypeFor[reportmodel.FileFact]().Fields() {
 		if _, ok := allowed[field.Name]; !ok {
 			t.Errorf("unexpected FileFact field %q — facts must stay neutral", field.Name)
 		}
@@ -233,7 +233,7 @@ func TestBuild_InboundFanIn_ExcludesTestModules(t *testing.T) {
 }
 
 // findFact returns the FileFact with the given module key, or fails the test.
-func findFact(t *testing.T, all []diagnostic.FileFact, module string) diagnostic.FileFact {
+func findFact(t *testing.T, all []reportmodel.FileFact, module string) reportmodel.FileFact {
 	t.Helper()
 	for _, f := range all {
 		if f.Module == module {
@@ -241,11 +241,11 @@ func findFact(t *testing.T, all []diagnostic.FileFact, module string) diagnostic
 		}
 	}
 	t.Fatalf("no FileFact found for module=%q; got %v", module, moduleNames(all))
-	return diagnostic.FileFact{}
+	return reportmodel.FileFact{}
 }
 
 // moduleNames extracts the Module field from each FileFact for error messages.
-func moduleNames(fs []diagnostic.FileFact) []string {
+func moduleNames(fs []reportmodel.FileFact) []string {
 	names := make([]string, len(fs))
 	for i, f := range fs {
 		names[i] = f.Module

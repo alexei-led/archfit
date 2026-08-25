@@ -1,0 +1,83 @@
+package pipeline
+
+import (
+	"maps"
+
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/policy"
+)
+
+const runtimeDistanceInterpretation = "async runtime bridges reduce lifecycle coupling and therefore increase perceived distance (book Ch8), but remain report-only because archfit does not yet measure synchronous first-party runtime peers deterministically"
+
+const (
+	ownerModelNoOwner               = "no_owner_signal"
+	ownerModelSingleOwnerDegenerate = "single_owner_degenerate"
+	ownerModelMultiOwner            = "multi_owner"
+)
+
+// BuildDistanceContext projects diagnostic and config evidence into distance context.
+func BuildDistanceContext(d result.Result, p policy.PolicySnapshot, deployUnitDetectedModules int) *evidence.DistanceContext {
+	ctx := &evidence.DistanceContext{
+		OwnerModel:                ownerModel(p),
+		DeployUnitDetectedModules: deployUnitDetectedModules,
+		DeclaredExternalSystems:   len(p.Topology.ExternalSystems),
+	}
+	if d.ClassifiedEdges != nil && len(d.ClassifiedEdges.ByDistanceBasis) > 0 {
+		ctx.DistanceBasis = maps.Clone(d.ClassifiedEdges.ByDistanceBasis)
+	}
+	if len(d.RuntimeAsyncEdges) > 0 {
+		ctx.RuntimeAsyncRelations = len(d.RuntimeAsyncEdges)
+		ctx.RuntimeAsyncKinds = countRuntimeAsyncKinds(d.RuntimeAsyncEdges)
+		ctx.RuntimeInterpretation = runtimeDistanceInterpretation
+	}
+	ctx.Interpretation = distanceInterpretation(ctx.OwnerModel, deployUnitDetectedModules, len(p.Topology.ExternalSystems))
+	return ctx
+}
+
+func ownerModel(p policy.PolicySnapshot) string {
+	owners := make(map[string]struct{})
+	for _, def := range p.Topology.Modules {
+		if def.Owner == "" {
+			continue
+		}
+		owners[def.Owner] = struct{}{}
+	}
+	switch len(owners) {
+	case 0:
+		return ownerModelNoOwner
+	case 1:
+		return ownerModelSingleOwnerDegenerate
+	default:
+		return ownerModelMultiOwner
+	}
+}
+
+func countRuntimeAsyncKinds(edges []evidence.RuntimeAsyncEdge) map[string]int {
+	kinds := make(map[string]int)
+	for _, edge := range edges {
+		if edge.IntegrationKind == "" {
+			continue
+		}
+		kinds[edge.IntegrationKind]++
+	}
+	if len(kinds) == 0 {
+		return nil
+	}
+	return kinds
+}
+
+func distanceInterpretation(model string, deployUnitDetectedModules, declaredExternalSystems int) string {
+	suffix := ""
+	if deployUnitDetectedModules > 0 || declaredExternalSystems > 0 {
+		suffix = "; deploy_unit and declared external_systems evidence can still raise distance when configured/detected"
+	}
+	switch model {
+	case ownerModelSingleOwnerDegenerate:
+		return "same-owner is the lowest cross-module distance; this is a low socio-technical distance signal, not missing ownership" + suffix
+	case ownerModelMultiOwner:
+		return "ownership has multiple distinct owners, so owner distance can distinguish same-owner and different-owner module edges" + suffix
+	default:
+		return "ownership is absent or unresolved, so distance uses code structure plus deterministic deploy_unit and declared external_systems evidence" + suffix
+	}
+}

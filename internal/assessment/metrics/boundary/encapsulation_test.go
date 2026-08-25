@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/metrics/boundary"
-	"github.com/alexei-led/archfit/internal/assessment/metrics/metricstest"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/testutil/metricstest"
 )
 
 // Node path constants used across boundary metric tests.
@@ -49,7 +49,7 @@ func TestEncapsulation_NoCrossBoundaryIsNA(t *testing.T) {
 		},
 	}
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, idx)})
 	if result.Band != "n/a" {
 		t.Errorf("expected n/a band, got %q (value %v)", result.Band, result.Value)
 	}
@@ -66,7 +66,7 @@ func TestEncapsulation_EmptyGraphIsNA(t *testing.T) {
 		nil,
 	)
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, nil)})
 	if result.Band != bandNAStr {
 		t.Errorf("expected band %q for empty graph, got %q", bandNAStr, result.Band)
 	}
@@ -78,7 +78,7 @@ func TestEncapsulation_EmptyGraphIsNA(t *testing.T) {
 func TestEncapsulation_NilGraph(t *testing.T) {
 	// A nil graph is absent evidence — n/a, not a false-green 1.0.
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: nil})
+	result := m.Calculate(signal.CommonInput{})
 	if result.Band != bandNAStr {
 		t.Errorf("expected band %q for nil graph, got %q", bandNAStr, result.Band)
 	}
@@ -110,7 +110,7 @@ func TestEncapsulation_KnownRatio(t *testing.T) {
 	}
 
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, idx)})
 
 	if !metricstest.ApproxEqual(result.Value, 0.5) {
 		t.Errorf("expected value 0.5 got %v", result.Value)
@@ -147,7 +147,7 @@ func TestEncapsulation_ZeroContractIsRealNotNA(t *testing.T) {
 	}
 
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, idx)})
 
 	if result.Band == bandNAStr {
 		t.Fatalf("expected a real numeric band, got n/a — real intrusive evidence must not be suppressed")
@@ -207,9 +207,8 @@ func TestEncapsulation_DeltaComputed(t *testing.T) {
 
 	m := boundary.EncapsulationMetric{}
 	result := m.Calculate(signal.CommonInput{
-		Graph:           g,
-		Classifications: idx,
-		Baseline:        baseline,
+		Relationships: metricstest.BuildRelationshipsFromGraph(g, idx),
+		Baseline:      baseline,
 	})
 
 	if !metricstest.ApproxEqual(result.Value, 0.6) {
@@ -249,7 +248,7 @@ func TestEncapsulation_AllUnknownIsNA(t *testing.T) {
 	}
 
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, idx)})
 
 	if result.Band != bandNAStr {
 		t.Errorf("expected band n/a got %q", result.Band)
@@ -292,7 +291,7 @@ func TestEncapsulation_UnknownExcludedFromDenominator(t *testing.T) {
 	}
 
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, idx)})
 
 	if !metricstest.ApproxEqual(result.Value, 0.5) {
 		t.Errorf("expected value 0.5 (unknown excluded) got %v", result.Value)
@@ -333,7 +332,7 @@ func TestEncapsulation_DeclaredExternalExcludedFromDenominator(t *testing.T) {
 	}
 
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, idx)})
 
 	if !metricstest.ApproxEqual(result.Value, 0.5) {
 		t.Errorf("expected value 0.5 (declared-external excluded) got %v", result.Value)
@@ -374,7 +373,7 @@ func TestEncapsulation_FunctionalAndModelExcluded(t *testing.T) {
 	}
 
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, idx)})
 
 	if !metricstest.ApproxEqual(result.Value, 0.5) {
 		t.Errorf("expected value 0.5 (functional/model excluded) got %v", result.Value)
@@ -413,7 +412,7 @@ func TestEncapsulation_LowCoverageCapsGoodBand(t *testing.T) {
 	}
 
 	g := metricstest.BuildGraph(nodes, edges)
-	result := boundary.EncapsulationMetric{}.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := boundary.EncapsulationMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, idx)})
 
 	if !metricstest.ApproxEqual(result.Value, 0.75) {
 		t.Errorf("expected value 0.75 got %v", result.Value)
@@ -444,7 +443,7 @@ func TestEncapsulation_NoIntrusiveIsNA(t *testing.T) {
 		metricstest.ImportKey(nodeA.ID(), nodeC.ID()): {Strength: coupling.StrengthContract, Distance: cross},
 	}
 
-	result := boundary.EncapsulationMetric{}.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := boundary.EncapsulationMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, idx)})
 	if result.Band != bandNAStr {
 		t.Errorf("expected band n/a (no intrusive to contrast) got %q", result.Band)
 	}

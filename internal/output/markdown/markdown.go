@@ -1,4 +1,4 @@
-// Package markdown renders a Diagnostic as Balanced-Coupling-aligned Markdown:
+// Package markdown renders a report document as Balanced-Coupling-aligned Markdown:
 // lint-message advisory format, BC vocabulary throughout, clearly-labeled
 // "Supporting structural metrics (beyond Balanced Coupling)" and
 // "Distance confidence" sections. Reads well both as raw text and rendered
@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/report"
+	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
 // confidenceHigh is the confidence value that needs no qualification in output.
@@ -27,8 +28,10 @@ var beyondBCMetrics = map[string]bool{
 	"coverage":     true,
 }
 
-// Renderer formats a Diagnostic as BC-aligned Markdown. Satisfies engine.Renderer.
+// Renderer formats a report document as BC-aligned Markdown.
 type Renderer struct{}
+
+var _ reportports.Renderer = (*Renderer)(nil)
 
 // New returns a Renderer.
 func New() *Renderer { return &Renderer{} }
@@ -36,7 +39,19 @@ func New() *Renderer { return &Renderer{} }
 // Format returns "markdown".
 func (r *Renderer) Format() string { return "markdown" }
 
-// Render writes the BC-aligned Markdown report for d to w.
+// Render writes the BC-aligned Markdown report for d to w. When the document
+// carries a projected decision, the decision-led summary is written first,
+// followed by the detailed audit.
+func (r *Renderer) Render(d report.Document, w io.Writer) error {
+	if d.Decision.Band != "" {
+		if err := RenderReport(d.Decision, w); err != nil {
+			return err
+		}
+	}
+	return r.renderAudit(d, w)
+}
+
+// renderAudit writes the detailed BC-aligned Markdown audit for d to w.
 // Sections follow design §8:
 //  1. Verdict + config_hash + tool/coverage
 //  2. Gate violations (rules)
@@ -44,7 +59,7 @@ func (r *Renderer) Format() string { return "markdown" }
 //  4. Supporting structural metrics (beyond Balanced Coupling)
 //  5. Distance confidence
 //  6. Agent tasks
-func (r *Renderer) Render(d report.Document, w io.Writer) error {
+func (r *Renderer) renderAudit(d report.Document, w io.Writer) error {
 	var b strings.Builder
 	verdict, exitCode := verdictLabel(d.Verdict)
 

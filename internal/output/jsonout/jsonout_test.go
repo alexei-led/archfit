@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
@@ -30,8 +28,8 @@ const (
 // TestJSONRenderer_AdvisoryScoreFields asserts the numeric BC score fields
 // (score_value + score_band) on an advisory's matched_by survive JSON encoding.
 func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := report.NewDocument()
+	d.Verdict = report.VerdictPass
 	d.Findings = reporttest.Findings(finding.Finding{
 		ID:     "adv1",
 		Kind:   "advisory",
@@ -44,11 +42,11 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	var got diagnostic.Diagnostic
+	var got report.Document
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("cannot unmarshal: %v", err)
 	}
@@ -66,8 +64,8 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 // consumers key on it to detect breaking metric changes, and a version bump
 // must be a deliberate, test-visible act.
 func TestJSONRenderer_AdvisoryTasks(t *testing.T) {
-	d := diagnostic.New()
-	d.AdvisoryTasks = []diagnostic.AdvisoryTask{{
+	d := report.NewDocument()
+	d.AdvisoryTasks = []report.AdvisoryTask{{
 		FindingID:    "rollup-1",
 		RuleID:       "bc/imbalanced_coupling",
 		Status:       string(finding.StatusNew),
@@ -83,11 +81,11 @@ func TestJSONRenderer_AdvisoryTasks(t *testing.T) {
 	}}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	var got diagnostic.Diagnostic
+	var got report.Document
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("cannot unmarshal: %v", err)
 	}
@@ -102,7 +100,7 @@ func TestJSONRenderer_AdvisoryTasks(t *testing.T) {
 
 func TestJSONRenderer_ScoreVersion(t *testing.T) {
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(diagnostic.New(), score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(report.NewDocument(), &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
@@ -122,9 +120,52 @@ func TestJSONRenderer_ScoreVersion(t *testing.T) {
 	}
 }
 
+func TestJSONRenderer_ScorecardProjectionAndComparableDelta(t *testing.T) {
+	const mixedBand = "mixed"
+	d := report.NewDocument()
+	d.Score = report.Scorecard{
+		Overall: 46, OverallBand: mixedBand,
+		Dimensions: []report.Dimension{{Name: "coupling_balance", Value: 46, Band: mixedBand}},
+	}
+	d.BaseScore = &report.Scorecard{
+		Overall: 40, OverallBand: mixedBand,
+		Dimensions: []report.Dimension{{Name: "modularity", Value: 55, Band: mixedBand}},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	var raw struct {
+		Score struct {
+			Overall int `json:"overall"`
+		} `json:"score"`
+		CouplingBalance *struct {
+			Name  string `json:"name"`
+			Value int    `json:"value"`
+		} `json:"coupling_balance"`
+		ScoreDelta struct {
+			OverallDelta int               `json:"overall_delta"`
+			Dimensions   []json.RawMessage `json:"dimensions"`
+		} `json:"score_delta"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("decode scorecard JSON: %v", err)
+	}
+	if raw.Score.Overall != 46 || raw.CouplingBalance == nil || raw.CouplingBalance.Name != "coupling_balance" || raw.CouplingBalance.Value != 46 {
+		t.Fatalf("score projection lost data: %+v", raw)
+	}
+	if raw.ScoreDelta.OverallDelta != 6 {
+		t.Fatalf("overall delta = %d, want 6", raw.ScoreDelta.OverallDelta)
+	}
+	if len(raw.ScoreDelta.Dimensions) != 0 {
+		t.Fatalf("head-only dimension must not be compared against an invented zero base: %s", raw.ScoreDelta.Dimensions)
+	}
+}
+
 func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
-	d := diagnostic.New()
-	d.DistanceContext = &diagnostic.DistanceContext{
+	d := report.NewDocument()
+	d.DistanceContext = &report.DistanceContext{
 		OwnerModel:                "single_owner_degenerate",
 		DistanceBasis:             map[string]int{"code_structure": 2, "ownership": 1},
 		DeployUnitDetectedModules: 1,
@@ -134,11 +175,11 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 		Interpretation:            "same-owner is the lowest cross-module distance",
 		RuntimeInterpretation:     "async runtime bridges reduce lifecycle coupling and therefore increase perceived distance",
 	}
-	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+	d.ClassifiedEdges = &report.ClassifiedEdgeSummary{
 		Scored:           3,
 		ConnectedModules: 2,
 		ByDistanceBasis:  map[string]int{"code_structure": 2, "ownership": 1},
-		TailRisk: &diagnostic.CouplingTailRiskSummary{
+		TailRisk: &report.CouplingTailRiskSummary{
 			WorstBalance:          2,
 			LowerDecileBalance:    2,
 			HighOrWorseEdges:      1,
@@ -147,13 +188,13 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 			CloneOnlyScored:       1,
 			CloneOnlyWorstBalance: 4,
 		},
-		DistanceCompression: &diagnostic.DistanceCompressionSummary{
+		DistanceCompression: &report.DistanceCompressionSummary{
 			CompressedMiddleRungs:       true,
 			ImplementedRungs:            []int{2, 4, 7, 9, 10},
 			OmittedRungs:                []int{3, 5, 6, 8},
-			CodeStructureBoundaryCounts: []diagnostic.DistanceCount{{Value: 2, Count: 3}, {Value: 5, Count: 1}},
-			CodeStructureAncestorDepths: []diagnostic.DistanceCount{{Value: 0, Count: 1}, {Value: 1, Count: 3}},
-			OmittedRungReasons: []diagnostic.DistanceOmittedRungReason{
+			CodeStructureBoundaryCounts: []report.DistanceCount{{Value: 2, Count: 3}, {Value: 5, Count: 1}},
+			CodeStructureAncestorDepths: []report.DistanceCount{{Value: 0, Count: 1}, {Value: 1, Count: 3}},
+			OmittedRungReasons: []report.DistanceOmittedRungReason{
 				{Rung: 8, Reason: "declared external_systems use D=10"},
 			},
 			Rationale: "D=3/D=5/D=6/D=8 remain compressed",
@@ -161,11 +202,11 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	var got diagnostic.Diagnostic
+	var got report.Document
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
@@ -211,14 +252,14 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 }
 
 func TestJSONRenderer_VolatilityCorroboration(t *testing.T) {
-	d := diagnostic.New()
-	d.VolatilityCorroboration = &diagnostic.VolatilityCorroboration{
+	d := report.NewDocument()
+	d.VolatilityCorroboration = &report.VolatilityCorroboration{
 		Source:         "git_history",
 		Status:         "ok",
 		CommitWindow:   500,
 		CommitsScanned: 42,
 		ModulesTouched: 2,
-		TopTouched: []diagnostic.VolatilityTouch{
+		TopTouched: []report.VolatilityTouch{
 			{Module: "cmd/archfit", TouchCommits: 12, DeclaredVolatility: jsonHigh},
 			{Module: "internal/output", TouchCommits: 5, DeclaredVolatility: jsonLow},
 		},
@@ -226,11 +267,11 @@ func TestJSONRenderer_VolatilityCorroboration(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	var got diagnostic.Diagnostic
+	var got report.Document
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
@@ -246,8 +287,8 @@ func TestJSONRenderer_VolatilityCorroboration(t *testing.T) {
 }
 
 func TestJSONRenderer_ConnascenceStrengthInferred(t *testing.T) {
-	d := diagnostic.New()
-	d.Connascence = &diagnostic.ConnascenceReport{
+	d := report.NewDocument()
+	d.Connascence = &report.ConnascenceReport{
 		EdgesWithEvidence:     2,
 		AbstainedEdges:        1,
 		TotalEvidence:         3,
@@ -260,11 +301,11 @@ func TestJSONRenderer_ConnascenceStrengthInferred(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	var got diagnostic.Diagnostic
+	var got report.Document
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
@@ -274,21 +315,21 @@ func TestJSONRenderer_ConnascenceStrengthInferred(t *testing.T) {
 }
 
 func TestJSONRenderer_SemanticStrengthOverlay(t *testing.T) {
-	d := diagnostic.New()
-	d.SemanticStrengthOverlay = &diagnostic.SemanticStrengthOverlay{
-		ByLanguage: map[string]diagnostic.SemanticStrengthOverlayStats{
+	d := report.NewDocument()
+	d.SemanticStrengthOverlay = &report.SemanticStrengthOverlay{
+		ByLanguage: map[string]report.SemanticStrengthOverlayStats{
 			"python": {CandidateEdges: 3, Applied: 2, Missed: 1, Before: map[string]int{semanticUnknownJSON: 3}, After: map[string]int{"intrusive": 2, semanticUnknownJSON: 1}},
 			"rust":   {CandidateEdges: 2, Applied: 0, Missed: 2, Before: map[string]int{semanticUnknownJSON: 2}, After: map[string]int{semanticUnknownJSON: 2}},
 		},
 	}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
 	var raw struct {
-		SemanticStrengthOverlay diagnostic.SemanticStrengthOverlay `json:"semantic_strength_overlay"`
+		SemanticStrengthOverlay report.SemanticStrengthOverlay `json:"semantic_strength_overlay"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
@@ -307,27 +348,27 @@ func TestJSONRenderer_SemanticStrengthOverlay(t *testing.T) {
 }
 
 func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
-	d := diagnostic.New()
-	d.Connascence = &diagnostic.ConnascenceReport{
+	d := report.NewDocument()
+	d.Connascence = &report.ConnascenceReport{
 		EdgesWithEvidence: 1,
 		AbstainedEdges:    2,
 		TotalEvidence:     2,
 		ByKind:            map[string]int{"name": 1, "type": 1},
 		BySource:          map[string]int{"go/types": 2},
 		Unmeasured:        []string{"position", connascenceExecutionTest},
-		Roadmap: []diagnostic.ConnascenceRoadmapItem{
+		Roadmap: []report.ConnascenceRoadmapItem{
 			{Kind: "name", CurrentStatus: "deterministic_static", Sources: []string{"go/types"}},
 			{Kind: connascenceExecutionTest, CurrentStatus: "unmeasured_dynamic", RelatedSignals: []string{distanceCandidateRuntimeEdges}, UpgradeTrigger: "deterministic runtime ordering"},
 		},
 	}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
 	var raw struct {
-		Connascence diagnostic.ConnascenceReport `json:"connascence"`
+		Connascence report.ConnascenceReport `json:"connascence"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
@@ -347,11 +388,11 @@ func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
 }
 
 func TestJSONRenderer_DynamicConnascenceSignals(t *testing.T) {
-	d := diagnostic.New()
-	d.DynamicConnascenceSignals = &diagnostic.DynamicConnascenceSignals{
+	d := report.NewDocument()
+	d.DynamicConnascenceSignals = &report.DynamicConnascenceSignals{
 		ReportOnlyReason: "runtime trace evidence is absent",
 		Unmeasured:       []string{connascenceExecutionTest, string(coupling.ConnascenceTiming)},
-		Signals: []diagnostic.DynamicConnascenceSignal{{
+		Signals: []report.DynamicConnascenceSignal{{
 			Kind:               "runtime_async",
 			RelatedConnascence: []string{connascenceExecutionTest, string(coupling.ConnascenceTiming)},
 			Measured:           false,
@@ -360,19 +401,19 @@ func TestJSONRenderer_DynamicConnascenceSignals(t *testing.T) {
 			Target:             dynamicTargetRabbitMQ,
 			IntegrationKind:    distanceCandidateKindMessageQ,
 			Count:              2,
-			Sites: []diagnostic.DynamicConnascenceSite{{
+			Sites: []report.DynamicConnascenceSite{{
 				File: distanceCandidatePublisherFile, Line: 12, Kind: distanceCandidateKindMessageQ, Language: "go", Target: dynamicTargetRabbitMQ,
 			}},
 		}},
 	}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
 	var raw struct {
-		Dynamic diagnostic.DynamicConnascenceSignals `json:"dynamic_connascence_signals"`
+		Dynamic report.DynamicConnascenceSignals `json:"dynamic_connascence_signals"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
@@ -393,26 +434,26 @@ func TestJSONRenderer_DynamicConnascenceSignals(t *testing.T) {
 }
 
 func TestJSONRenderer_DistanceConfigCandidates(t *testing.T) {
-	d := diagnostic.New()
-	d.DistanceConfigCandidates = []diagnostic.DistanceConfigCandidate{{
+	d := report.NewDocument()
+	d.DistanceConfigCandidates = []report.DistanceConfigCandidate{{
 		SourceBlock:           distanceCandidateRuntimeEdges,
 		Module:                distanceCandidateModuleApp,
 		Target:                dynamicTargetRabbitMQ,
 		IntegrationKind:       distanceCandidateKindMessageQ,
 		Count:                 2,
 		SuggestedReviewAction: distanceCandidateExternalAction,
-		EvidenceSites: []diagnostic.DistanceConfigEvidenceSite{{
+		EvidenceSites: []report.DistanceConfigEvidenceSite{{
 			File: distanceCandidatePublisherFile, Line: 12, Kind: distanceCandidateKindMessageQ, Language: "go", Target: dynamicTargetRabbitMQ,
 		}},
 	}}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
 	var raw struct {
-		Candidates []diagnostic.DistanceConfigCandidate `json:"distance_config_candidates"`
+		Candidates []report.DistanceConfigCandidate `json:"distance_config_candidates"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
@@ -432,15 +473,15 @@ func TestJSONRenderer_DistanceConfigCandidates(t *testing.T) {
 // TestJSONRenderer_Delta verifies the delta block round-trips with snake_case
 // bucket keys, omits empty buckets, and is omitted entirely when nil.
 func TestJSONRenderer_Delta(t *testing.T) {
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictWarn
-	d.Delta = &diagnostic.DeltaReport{
+	d := report.NewDocument()
+	d.Verdict = report.VerdictWarn
+	d.Delta = &report.DeltaReport{
 		New:      []string{"n1"},
 		Resolved: []string{"r1"},
 	}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
@@ -463,7 +504,7 @@ func TestJSONRenderer_Delta(t *testing.T) {
 		t.Error("delta.existing should be omitted when empty")
 	}
 
-	var got diagnostic.Diagnostic
+	var got report.Document
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("cannot unmarshal back into Diagnostic: %v", err)
 	}
@@ -472,9 +513,9 @@ func TestJSONRenderer_Delta(t *testing.T) {
 	}
 
 	// Omitted entirely when nil.
-	plain := diagnostic.New()
+	plain := report.NewDocument()
 	var pbuf bytes.Buffer
-	if err := jsonout.New().Render(plain, score.Scorecard{}, nil, &pbuf); err != nil {
+	if err := jsonout.New().Render(plain, &pbuf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 	if bytes.Contains(pbuf.Bytes(), []byte("\"delta\"")) {
@@ -483,13 +524,13 @@ func TestJSONRenderer_Delta(t *testing.T) {
 }
 
 // TestJSONRenderer_GitFindingDelta pins the --base git-origin block: it rides
-// the embedded Diagnostic (no envelope field of its own), keeps every ID list a
+// the embedded report document (no envelope field of its own), keeps every ID list a
 // non-null array, and is omitted entirely on a run without --base.
 func TestJSONRenderer_GitFindingDelta(t *testing.T) {
-	d := diagnostic.New()
-	d.GitFindingDelta = &diagnostic.GitFindingDelta{
+	d := report.NewDocument()
+	d.GitFindingDelta = &report.GitFindingDelta{
 		BaseRef:                 "main",
-		ComparisonStatus:        diagnostic.GitComparisonUnknown,
+		ComparisonStatus:        report.GitComparisonUnknown,
 		IntroducedFindingIDs:    []string{},
 		PreExistingFindingIDs:   []string{"f1"},
 		UnknownOriginFindingIDs: []string{"f2"},
@@ -497,7 +538,7 @@ func TestJSONRenderer_GitFindingDelta(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 	var envelope struct {
@@ -510,14 +551,14 @@ func TestJSONRenderer_GitFindingDelta(t *testing.T) {
 		t.Errorf("git_finding_delta lists must never render as null: %s", envelope.GitFindingDelta)
 	}
 
-	var got diagnostic.Diagnostic
+	var got report.Document
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("cannot unmarshal back into Diagnostic: %v", err)
 	}
 	if got.GitFindingDelta == nil {
 		t.Fatalf("git_finding_delta missing from JSON output: %s", buf.String())
 	}
-	if got.GitFindingDelta.BaseRef != "main" || got.GitFindingDelta.ComparisonStatus != diagnostic.GitComparisonUnknown {
+	if got.GitFindingDelta.BaseRef != "main" || got.GitFindingDelta.ComparisonStatus != report.GitComparisonUnknown {
 		t.Errorf("round-trip git_finding_delta = %+v", got.GitFindingDelta)
 	}
 	if len(got.GitFindingDelta.PreExistingFindingIDs) != 1 || got.GitFindingDelta.PreExistingFindingIDs[0] != "f1" {
@@ -525,7 +566,7 @@ func TestJSONRenderer_GitFindingDelta(t *testing.T) {
 	}
 
 	var pbuf bytes.Buffer
-	if err := jsonout.New().Render(diagnostic.New(), score.Scorecard{}, nil, &pbuf); err != nil {
+	if err := jsonout.New().Render(report.NewDocument(), &pbuf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 	if bytes.Contains(pbuf.Bytes(), []byte("\"git_finding_delta\"")) {
@@ -543,23 +584,35 @@ func TestJSONRenderer_Format(t *testing.T) {
 func TestJSONRenderer_Render(t *testing.T) {
 	tests := []struct {
 		name    string
-		diag    diagnostic.Diagnostic
-		verdict diagnostic.Verdict
+		diag    report.Document
+		verdict report.Verdict
 	}{
 		{
-			name:    "pass verdict",
-			diag:    func() diagnostic.Diagnostic { d := diagnostic.New(); d.Verdict = diagnostic.VerdictPass; return d }(),
-			verdict: diagnostic.VerdictPass,
+			name: "pass verdict",
+			diag: func() report.Document {
+				d := report.NewDocument()
+				d.Verdict = report.VerdictPass
+				return d
+			}(),
+			verdict: report.VerdictPass,
 		},
 		{
-			name:    "fail verdict",
-			diag:    func() diagnostic.Diagnostic { d := diagnostic.New(); d.Verdict = diagnostic.VerdictFail; return d }(),
-			verdict: diagnostic.VerdictFail,
+			name: "fail verdict",
+			diag: func() report.Document {
+				d := report.NewDocument()
+				d.Verdict = report.VerdictFail
+				return d
+			}(),
+			verdict: report.VerdictFail,
 		},
 		{
-			name:    "warn verdict",
-			diag:    func() diagnostic.Diagnostic { d := diagnostic.New(); d.Verdict = diagnostic.VerdictWarn; return d }(),
-			verdict: diagnostic.VerdictWarn,
+			name: "warn verdict",
+			diag: func() report.Document {
+				d := report.NewDocument()
+				d.Verdict = report.VerdictWarn
+				return d
+			}(),
+			verdict: report.VerdictWarn,
 		},
 	}
 
@@ -568,7 +621,7 @@ func TestJSONRenderer_Render(t *testing.T) {
 			r := jsonout.New()
 			var buf bytes.Buffer
 
-			if err := r.Render(tt.diag, score.Scorecard{}, nil, &buf); err != nil {
+			if err := r.Render(tt.diag, &buf); err != nil {
 				t.Fatalf("Render() error = %v", err)
 			}
 
@@ -583,20 +636,20 @@ func TestJSONRenderer_Render(t *testing.T) {
 			if !ok {
 				t.Fatal("schema_version field missing from JSON output")
 			}
-			if sv != diagnostic.SchemaVersion {
-				t.Errorf("schema_version = %q, want %q", sv, diagnostic.SchemaVersion)
+			if sv != report.SchemaVersion {
+				t.Errorf("schema_version = %q, want %q", sv, report.SchemaVersion)
 			}
 
 			// Verify round-trip: unmarshal back into Diagnostic.
-			var got diagnostic.Diagnostic
+			var got report.Document
 			if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 				t.Fatalf("cannot unmarshal back into Diagnostic: %v", err)
 			}
 			if got.Verdict != tt.verdict {
 				t.Errorf("verdict = %q, want %q", got.Verdict, tt.verdict)
 			}
-			if got.SchemaVersion != diagnostic.SchemaVersion {
-				t.Errorf("SchemaVersion = %q, want %q", got.SchemaVersion, diagnostic.SchemaVersion)
+			if got.SchemaVersion != report.SchemaVersion {
+				t.Errorf("SchemaVersion = %q, want %q", got.SchemaVersion, report.SchemaVersion)
 			}
 
 			// agent_tasks must serialize as [] not null.
@@ -627,8 +680,8 @@ func TestJSONRenderer_Render(t *testing.T) {
 // TestJSONRenderer_Render_FileFacts verifies the full facts block round-trips
 // through JSON with snake_case keys.
 func TestJSONRenderer_Render_FileFacts(t *testing.T) {
-	d := diagnostic.New()
-	d.FileFacts = []diagnostic.FileFact{
+	d := report.NewDocument()
+	d.FileFacts = []report.FileFact{
 		{
 			Module:               "tui.polling_state",
 			Files:                []string{"src/tui/polling_state.py"},
@@ -643,7 +696,7 @@ func TestJSONRenderer_Render_FileFacts(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+	if err := jsonout.New().Render(d, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
@@ -665,7 +718,7 @@ func TestJSONRenderer_Render_FileFacts(t *testing.T) {
 		t.Errorf("inbound_module_fanin = %v, want 23", first["inbound_module_fanin"])
 	}
 
-	var got diagnostic.Diagnostic
+	var got report.Document
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("cannot unmarshal back into Diagnostic: %v", err)
 	}

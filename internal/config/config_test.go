@@ -332,10 +332,10 @@ func TestModuleFor_MostSpecific(t *testing.T) {
 		path string
 		want string
 	}{
-		{"internal/model/diagnostic/x.go", "internal/model"}, // specific beats catch-all
-		{"internal/engine/run.go", "internal/engine"},        // specific beats catch-all
-		{"internal/arch_test.go", catchAll},                  // only the catch-all matches
-		{"internal/scope/scope.go", catchAll},                // no specific stanza → catch-all
+		{"internal/model/evidence/evidence.go", "internal/model"}, // specific beats catch-all
+		{"internal/engine/run.go", "internal/engine"},             // specific beats catch-all
+		{"internal/arch_test.go", catchAll},                       // only the catch-all matches
+		{"internal/scope/scope.go", catchAll},                     // no specific stanza → catch-all
 	}
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
@@ -1087,39 +1087,59 @@ func TestSelfConfig_CapabilityModuleMap(t *testing.T) {
 		wantPaths []string
 	}{
 		{
-			name: "fact-adapters", layer: layerAdapter, role: module.RoleAdapter,
-			wantPaths: []string{"internal/extract/**", "internal/toolrun/**", "internal/factcache/**", "internal/history/**", "internal/ownership/**"},
+			name: "evidence-contracts", layer: layerModel, role: module.RoleSharedModel,
+			wantPaths: []string{"internal/model/evidence/**"},
+		},
+		{
+			name: "evidence-analysis", layer: layerCore, role: module.RoleCore,
+			wantPaths: []string{"internal/syntax/**"},
+		},
+		{
+			name: "evidence-adapters", layer: layerAdapter, role: module.RoleAdapter,
+			wantPaths: []string{"internal/extract/**", "internal/toolrun/**", "internal/evidence/ports/**", "internal/scope/**"},
+		},
+		{
+			name: "persistence-adapters", layer: layerAdapter, role: module.RoleAdapter,
+			wantPaths: []string{"internal/factcache/**", "internal/history/**", "internal/ownership/**", "internal/baseline/**", "internal/labels/**"},
+		},
+		{
+			name: "provider-adapters", layer: layerAdapter, role: module.RoleAdapter,
+			wantPaths: []string{"internal/llm/**"},
+		},
+		{
+			name: "report-adapters", layer: layerAdapter, role: module.RoleAdapter,
+			wantPaths: []string{"internal/output/**"},
+		},
+		{
+			name: "architecture-policy", layer: layerCore, role: module.RoleCore,
+			wantPaths: []string{"internal/policy/**"},
 		},
 		{
 			name: "relationship-analysis", layer: layerCore, role: module.RoleCore,
 			wantPaths: []string{"internal/relationship/**"},
 		},
 		{
+			name: "architecture-model", layer: layerModel, role: module.RoleSharedModel,
+			wantPaths: []string{"internal/model/module/**"},
+		},
+		{
 			name: "assessment-repair", layer: layerCore, role: module.RoleCore,
 			wantPaths: []string{"internal/assessment/**"},
 		},
 		{
-			name: "analysis-application", layer: layerEngine,
+			name: "analysis-application", layer: "application",
 			wantPaths: []string{"internal/application/**"},
-		},
-		{
-			name: "architecture-model", layer: layerModel, role: module.RoleSharedModel,
-			wantPaths: []string{"internal/model/module/**"},
 		},
 		{
 			name: "report-contract", layer: layerModel, role: module.RoleSharedModel,
 			wantPaths: []string{"internal/model/report/**"},
 		},
 		{
-			name: "scan-contract", layer: layerModel, role: module.RoleSharedModel,
-			wantPaths: []string{"internal/model/scan/**", "internal/model/diagnostic/**"},
-		},
-		{
 			name: "pipeline-engine", layer: "engine", role: module.RoleCore,
-			wantPaths: []string{"internal/engine/**"},
+			wantPaths: []string{"internal/analysispipeline/**"},
 		},
 		{
-			name: "archfit-cli", layer: "cmd", role: module.RoleCompositionRoot,
+			name: "cli-composition", layer: "cmd", role: module.RoleCompositionRoot,
 			wantPaths: []string{"cmd/archfit/**"},
 		},
 	}

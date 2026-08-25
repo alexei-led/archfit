@@ -10,7 +10,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	reportmodel "github.com/alexei-led/archfit/internal/model/report"
 	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
 )
 
@@ -25,10 +25,10 @@ const (
 // goldenDiagnostic is a fixed, fully-measured Diagnostic whose rendered scorecard
 // is asserted byte-for-byte below. Regenerate the golden deliberately and inspect
 // the diff if the output format changes.
-func goldenDiagnostic() diagnostic.Diagnostic {
-	d := diagnostic.New()
+func goldenDiagnostic() reportmodel.Document {
+	d := reportmodel.NewDocument()
 	d.ConfigHash = "abc123"
-	d.Metrics = []diagnostic.MetricResult{
+	d.Metrics = []reportmodel.MetricResult{
 		{Name: "encapsulation", Value: 1.0, Display: "1.00", Band: bandStrong, Confidence: confHigh},
 		{Name: "coverage", Value: 1.0, Display: "1.00", Band: bandStrong, Confidence: confHigh},
 		{Name: "cycle", Value: 0, Display: "0", Band: bandStrong, Confidence: confHigh},
@@ -45,7 +45,7 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 			},
 		},
 	)
-	d.ToolCoverage = []diagnostic.Coverage{
+	d.ToolCoverage = []reportmodel.Coverage{
 		{Tool: "go/packages", Status: "ok"},
 		{Tool: "scip", Status: "ok"},
 		{Tool: "ast-grep", Status: "ok"},
@@ -54,7 +54,7 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 	return d
 }
 
-func reportFindings(d diagnostic.Diagnostic) []finding.Finding {
+func reportFindings(d reportmodel.Document) []finding.Finding {
 	out := make([]finding.Finding, 0, len(d.Findings))
 	for _, f := range d.Findings {
 		out = append(out, reporttest.Finding(f))
@@ -62,7 +62,7 @@ func reportFindings(d diagnostic.Diagnostic) []finding.Finding {
 	return out
 }
 
-func render(d diagnostic.Diagnostic, w io.Writer) error {
+func render(d reportmodel.Document, w io.Writer) error {
 	var assessment result.Result
 	encoded, err := json.Marshal(d)
 	if err != nil {
@@ -72,7 +72,16 @@ func render(d diagnostic.Diagnostic, w io.Writer) error {
 		return err
 	}
 	assessment.Findings = reportFindings(d)
-	return New().Render(d, score.Synthesize(assessment), w)
+	d.Score = projectScorecard(score.Synthesize(assessment))
+	return New().Render(d, w)
+}
+
+func projectScorecard(in score.Scorecard) reportmodel.Scorecard {
+	out := reportmodel.Scorecard{RubricVersion: in.RubricVersion, Overall: in.Overall, OverallBand: reportmodel.ScoreBand(in.OverallBand), Dimensions: make([]reportmodel.Dimension, len(in.Dimensions))}
+	for i, dim := range in.Dimensions {
+		out.Dimensions[i] = reportmodel.Dimension{Name: dim.Name, Value: dim.Value, Band: reportmodel.ScoreBand(dim.Band), Confidence: reportmodel.Confidence(dim.Confidence), Evidence: dim.Evidence, Summary: dim.Summary, RawValue: dim.RawValue, CapApplied: dim.CapApplied, Meta: dim.Meta}
+	}
+	return out
 }
 
 const golden = `# archfit scorecard
@@ -127,7 +136,7 @@ func TestRenderer_Format(t *testing.T) {
 // the dimensions so absent evidence is never mistaken for a strong result.
 func TestRenderer_RequiredToolsMissing(t *testing.T) {
 	d := goldenDiagnostic()
-	d.CoverageGaps = []diagnostic.CoverageGap{
+	d.CoverageGaps = []reportmodel.CoverageGap{
 		{Tool: "go/packages", InstallCmd: "https://go.dev/dl", AffectedMetrics: []string{"coverage", "coupling_balance"}, Gate: "warn"},
 	}
 
@@ -149,7 +158,7 @@ func TestRenderer_RequiredToolsMissing(t *testing.T) {
 // run and is omitted when there is no delta.
 func TestRenderer_Delta(t *testing.T) {
 	d := goldenDiagnostic()
-	d.Delta = &diagnostic.DeltaReport{
+	d.Delta = &reportmodel.DeltaReport{
 		New:             []string{"n1", "n2"},
 		SeverityChanged: []string{"s1"},
 		TouchedByDelta:  []string{"t1"},
@@ -201,7 +210,7 @@ func TestRenderer_RequiredToolsMissingAbsentWhenEmpty(t *testing.T) {
 // Diagnostic and still emits the coupling_balance dimension header.
 func TestRenderer_EmptyDiagnostic(t *testing.T) {
 	var buf bytes.Buffer
-	if err := render(diagnostic.New(), &buf); err != nil {
+	if err := render(reportmodel.NewDocument(), &buf); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	out := buf.String()

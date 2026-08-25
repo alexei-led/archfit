@@ -7,6 +7,8 @@ import (
 )
 
 // SchemaVersion identifies the current output-compatible result schema.
+// It is duplicated at the application/report boundary so assessment does not
+// depend on the external report DTO package.
 const SchemaVersion = "archfit.diagnostic.v2"
 
 // AgentTask is the assessment repair task before report projection.

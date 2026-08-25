@@ -3,7 +3,7 @@ package classify
 import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/view"
 )
@@ -24,11 +24,11 @@ import (
 // modules it raised — an overlay, not a fourth base bucket.
 //
 // Returns nil when c.Modules is empty: nothing resolved, nothing to disclose.
-func ComputeVolatilityProvenance(g *graph.Graph, declared map[string]module.ModuleDef, c view.ClassifyConfig) *report.VolatilityProvenance {
+func ComputeVolatilityProvenance(g *graph.Graph, declared map[string]module.ModuleDef, c view.ClassifyConfig) *relationship.VolatilityProvenance {
 	if len(c.Modules) == 0 {
 		return nil
 	}
-	vp := &report.VolatilityProvenance{}
+	vp := &relationship.VolatilityProvenance{}
 	for name, def := range c.Modules {
 		base := volatilityFromDef(def)
 		_, isDeclared := declared[name]

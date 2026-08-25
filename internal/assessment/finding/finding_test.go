@@ -4,22 +4,23 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 const (
-	nodeFromFile = "file:pkg/a/a.go"
-	nodeToFile   = "file:pkg/b/internal/impl.go"
-	pathFrom     = "pkg/a/a.go"
+	nodeFromFile     = "file:pkg/a/a.go"
+	nodeToFile       = "file:pkg/b/internal/impl.go"
+	pathFrom         = "pkg/a/a.go"
+	testUsesInternal = "uses_internal"
 )
 
 func TestNew_StableID(t *testing.T) {
-	edge := graph.Edge{
-		From: nodeFromFile,
-		To:   nodeToFile,
-		Kind: graph.EdgeKindUsesInternal,
+	edge := relationship.Edge{
+		FromID: nodeFromFile,
+		ToID:   nodeToFile,
+		Kind:   testUsesInternal,
 	}
-	locs := []graph.Location{{File: pathFrom, Line: 5}}
+	locs := []relationship.Location{{File: pathFrom, Line: 5}}
 
 	f1 := finding.New("public_api_only", edge, locs)
 	f2 := finding.New("public_api_only", edge, locs)
@@ -30,10 +31,10 @@ func TestNew_StableID(t *testing.T) {
 }
 
 func TestNew_IDLength(t *testing.T) {
-	edge := graph.Edge{
-		From: nodeFromFile,
-		To:   nodeToFile,
-		Kind: graph.EdgeKindUsesInternal,
+	edge := relationship.Edge{
+		FromID: nodeFromFile,
+		ToID:   nodeToFile,
+		Kind:   testUsesInternal,
 	}
 	f := finding.New("public_api_only", edge, nil)
 
@@ -43,14 +44,14 @@ func TestNew_IDLength(t *testing.T) {
 }
 
 func TestNew_LineNumbersDoNotAffectID(t *testing.T) {
-	edge := graph.Edge{
-		From: nodeFromFile,
-		To:   nodeToFile,
-		Kind: graph.EdgeKindUsesInternal,
+	edge := relationship.Edge{
+		FromID: nodeFromFile,
+		ToID:   nodeToFile,
+		Kind:   testUsesInternal,
 	}
 
-	locsA := []graph.Location{{File: pathFrom, Line: 5}}
-	locsB := []graph.Location{{File: pathFrom, Line: 99}}
+	locsA := []relationship.Location{{File: pathFrom, Line: 5}}
+	locsB := []relationship.Location{{File: pathFrom, Line: 99}}
 
 	fA := finding.New("public_api_only", edge, locsA)
 	fB := finding.New("public_api_only", edge, locsB)
@@ -61,10 +62,10 @@ func TestNew_LineNumbersDoNotAffectID(t *testing.T) {
 }
 
 func TestNew_DifferentRuleProducesDifferentID(t *testing.T) {
-	edge := graph.Edge{
-		From: nodeFromFile,
-		To:   nodeToFile,
-		Kind: graph.EdgeKindUsesInternal,
+	edge := relationship.Edge{
+		FromID: nodeFromFile,
+		ToID:   nodeToFile,
+		Kind:   testUsesInternal,
 	}
 
 	f1 := finding.New("public_api_only", edge, nil)
@@ -76,8 +77,8 @@ func TestNew_DifferentRuleProducesDifferentID(t *testing.T) {
 }
 
 func TestNew_DifferentEdgeProducesDifferentID(t *testing.T) {
-	e1 := graph.Edge{From: nodeFromFile, To: "file:pkg/b/b.go", Kind: graph.EdgeKindImports}
-	e2 := graph.Edge{From: nodeFromFile, To: "file:pkg/c/c.go", Kind: graph.EdgeKindImports}
+	e1 := relationship.Edge{FromID: nodeFromFile, ToID: "file:pkg/b/b.go", Kind: "imports"}
+	e2 := relationship.Edge{FromID: nodeFromFile, ToID: "file:pkg/c/c.go", Kind: "imports"}
 
 	f1 := finding.New("forbidden_dependency", e1, nil)
 	f2 := finding.New("forbidden_dependency", e2, nil)
@@ -88,10 +89,10 @@ func TestNew_DifferentEdgeProducesDifferentID(t *testing.T) {
 }
 
 func TestNew_Defaults(t *testing.T) {
-	edge := graph.Edge{
-		From: "module:svc/a",
-		To:   "module:svc/b",
-		Kind: graph.EdgeKindDependsOn,
+	edge := relationship.Edge{
+		FromID: "module:svc/a",
+		ToID:   "module:svc/b",
+		Kind:   "depends_on",
 	}
 	f := finding.New("forbidden_dependency", edge, nil)
 
@@ -107,10 +108,10 @@ func TestNew_Defaults(t *testing.T) {
 }
 
 func TestNew_EdgeEvidencePaths(t *testing.T) {
-	edge := graph.Edge{
-		From: nodeFromFile,
-		To:   "package:pkg/b/internal",
-		Kind: graph.EdgeKindUsesInternal,
+	edge := relationship.Edge{
+		FromID: nodeFromFile,
+		ToID:   "package:pkg/b/internal",
+		Kind:   testUsesInternal,
 	}
 	f := finding.New("public_api_only", edge, nil)
 
@@ -120,8 +121,8 @@ func TestNew_EdgeEvidencePaths(t *testing.T) {
 	if f.Edge.To.Path != "pkg/b/internal" {
 		t.Errorf("Edge.To.Path: got %q, want %q", f.Edge.To.Path, "pkg/b/internal")
 	}
-	if f.Edge.Kind != string(graph.EdgeKindUsesInternal) {
-		t.Errorf("Edge.Kind: got %q, want %q", f.Edge.Kind, string(graph.EdgeKindUsesInternal))
+	if f.Edge.Kind != testUsesInternal {
+		t.Errorf("Edge.Kind: got %q, want %q", f.Edge.Kind, testUsesInternal)
 	}
 	// Module labels are empty until engine assembly
 	if f.Edge.From.Module != "" {
@@ -134,10 +135,10 @@ func TestNew_EdgeEvidencePaths(t *testing.T) {
 
 func TestNew_GoldenID(t *testing.T) {
 	// Pin a known-good ID so any formula change is immediately visible.
-	edge := graph.Edge{
-		From: nodeFromFile,
-		To:   nodeToFile,
-		Kind: graph.EdgeKindUsesInternal,
+	edge := relationship.Edge{
+		FromID: nodeFromFile,
+		ToID:   nodeToFile,
+		Kind:   testUsesInternal,
 	}
 	f := finding.New("public_api_only", edge, nil)
 

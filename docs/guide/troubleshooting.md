@@ -24,7 +24,7 @@ with parser errors like these:
 | `archfit analyze --gate` | `archfit: unknown flag --gate, did you mean "--base"?` | `archfit check`                                                              |
 | `--full`                 | `archfit: unknown flag --full`                         | Remove it. Full scan is now the default.                                     |
 | `--advisory`             | `archfit: unknown flag --advisory`                     | Remove it. Advisories are on by default. Use `--no-advisories` to hide them. |
-| `--no-cache`             | `archfit: unknown flag --no-cache`                     | `--refresh`                                                                  |
+| `--no-cache`             | (current flag)                                          | Use `--no-cache` to bypass cache reads and writes; use `--refresh` to refresh entries. |
 | `archfit analyze --llm`  | `archfit: unknown flag --llm`                          | `archfit analyze --ai-summary`                                               |
 | `--severity`             | `archfit: unknown flag --severity`                     | `--min-severity`                                                             |
 | `--no-config`            | `archfit: unknown flag --no-config`                    | Initialize config first: `archfit config init --root .`                      |

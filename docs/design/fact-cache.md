@@ -106,7 +106,7 @@ output embeds absolute paths (cargo metadata's `manifest_path`, Go member
 facts), so a random temp worktree would miss every run. `scoreBaseRef` now
 checks the base ref out at the deterministic path
 `<configDir>/.archfit-cache/worktrees/<sha>` (`baseWorktreeParent`,
-`cmd/archfit/worktree.go`): same ref ⇒ same SHA ⇒ same absolute root ⇒ the
+`internal/analysispipeline/worktree.go`): same ref ⇒ same SHA ⇒ same absolute root ⇒ the
 existing content keys hit, and the second `--base <same-ref>` run does zero
 base-side subprocess work. The checkout is removed after each run (only fact
 blobs persist); `--no-cache`, an unresolvable ref, or a cleanup/mkdir failure

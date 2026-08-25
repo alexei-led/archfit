@@ -7,14 +7,69 @@
 package labelsio
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
+
+// Loader is the concrete filesystem adapter used by the technical pipeline.
+type Loader struct{}
+
+// ApplicationStore adapts the labels file to application review DTOs.
+type ApplicationStore struct{}
+
+// Load reads application label DTOs from disk.
+func (ApplicationStore) Load(_ context.Context, path string) ([]application.EnrichmentLabel, error) {
+	in, err := Load(path)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]application.EnrichmentLabel, len(in))
+	for i, l := range in {
+		out[i] = application.EnrichmentLabel{From: l.From, To: l.To, Strength: l.Strength, Rationale: l.Rationale, EvidenceRefs: append([]string(nil), l.EvidenceRefs...), Basis: l.Basis, EvidenceHash: l.EvidenceHash, Status: l.Status, Confidence: l.Confidence, Provenance: l.Provenance}
+	}
+	return out, nil
+}
+
+// Save writes application label DTOs to disk.
+func (ApplicationStore) Save(_ context.Context, path string, in []application.EnrichmentLabel) error {
+	out := make([]labels.Label, len(in))
+	for i, l := range in {
+		out[i] = labels.Label{From: l.From, To: l.To, Strength: l.Strength, Rationale: l.Rationale, EvidenceRefs: append([]string(nil), l.EvidenceRefs...), Basis: l.Basis, EvidenceHash: l.EvidenceHash, Status: l.Status, Confidence: l.Confidence, Provenance: l.Provenance}
+	}
+	return Write(path, out)
+}
+
+// Load reads labels from path.
+func (Loader) Load(path string) ([]labels.Label, error) { return Load(path) }
+
+// Write atomically writes the labels file using the established YAML schema.
+func Write(path string, in []labels.Label) error {
+	data, err := yaml.Marshal(labels.File{Version: 1, Labels: in})
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".labels-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) //nolint:errcheck // best-effort cleanup on error paths
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
 
 // Load reads and strictly validates a labels file. A missing file is not an
 // error — it returns (nil, nil): labels are optional. Any malformed entry is

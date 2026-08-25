@@ -4,42 +4,20 @@
 // under internal/ so only the metrics subtree can import it.
 package modgraph
 
-import (
-	"strings"
-
-	"github.com/alexei-led/archfit/internal/model/graph"
-)
+import "github.com/alexei-led/archfit/internal/relationship"
 
 // FirstPartyModules returns the set of module keys for the nodes archfit actually
-// parsed, excluding external nodes (NodeKindExternal: unresolved npm packages,
-// uninstalled third-party deps, node builtins an extractor could not tag as core).
-// External dependencies must never be treated as owned modules, or the
-// blast-radius metric flags them as first-party.
-func FirstPartyModules(g *graph.Graph) map[string]struct{} {
+// parsed, excluding external nodes. External dependencies must never be treated as
+// owned modules, or the blast-radius metric flags them as first-party.
+func FirstPartyModules(set relationship.Set) map[string]struct{} {
 	fp := make(map[string]struct{})
-	for _, n := range g.Nodes() {
-		if n.Kind == graph.NodeKindExternal {
+	for _, n := range set.Nodes {
+		if !n.FirstParty {
 			continue
 		}
-		fp[ModuleKey(n.ID())] = struct{}{}
+		fp[n.Module] = struct{}{}
 	}
 	return fp
-}
-
-// ModuleKey collapses a graph node id ("kind:path") to its package/module unit so
-// blast radius is computed at the granularity the metric reports: Go file nodes
-// collapse to their package directory; module/package/TS-file nodes pass through.
-func ModuleKey(nodeID string) string {
-	path := nodeID
-	if _, after, ok := strings.Cut(nodeID, ":"); ok {
-		path = after
-	}
-	if strings.HasSuffix(path, ".go") {
-		if j := strings.LastIndexByte(path, '/'); j >= 0 {
-			return path[:j] // package = directory
-		}
-	}
-	return path
 }
 
 // BlastRadius returns, per first-party module, the number of other first-party
@@ -49,20 +27,20 @@ func ModuleKey(nodeID string) string {
 // archfit never parses its source), and SCC-condensed so import cycles do not
 // inflate the count (Martin's metrics and blast radius assume a DAG). Returns the
 // per-module blast and the count of first-party modules.
-func BlastRadius(g *graph.Graph) (map[string]int, int) {
-	// First-party = the nodes archfit actually parsed (g.Nodes()), minus external
-	// nodes. Most external dependencies appear only as edge targets, never as
-	// nodes; the TS extractor additionally emits unresolved targets as explicit
-	// NodeKindExternal nodes, which FirstPartyModules filters out. This excludes
-	// stdlib/third-party packages without dropping pure-leaf internal modules.
-	firstParty := FirstPartyModules(g)
+func BlastRadius(set relationship.Set) (map[string]int, int) {
+	// First-party = the nodes archfit actually parsed, minus external nodes. Most
+	// external dependencies appear only as edge targets, never as nodes; the TS
+	// extractor additionally emits unresolved targets as explicit external nodes,
+	// which FirstPartyModules filters out. This excludes stdlib/third-party packages
+	// without dropping pure-leaf internal modules.
+	firstParty := FirstPartyModules(set)
 	// Collapsed module adjacency over first-party modules only.
 	adj := make(map[string]map[string]struct{})
 	for m := range firstParty {
 		adj[m] = make(map[string]struct{})
 	}
-	for _, e := range g.Edges() {
-		from, to := ModuleKey(e.From), ModuleKey(e.To)
+	for _, e := range set.DependencyEdges() {
+		from, to := relationship.ModuleKey(e.FromID), relationship.ModuleKey(e.ToID)
 		if from == to {
 			continue
 		}

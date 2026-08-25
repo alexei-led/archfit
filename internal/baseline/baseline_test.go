@@ -11,7 +11,6 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/baseline"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -81,7 +80,7 @@ func TestRoundTrip(t *testing.T) {
 			{Fingerprint: "abc123", RuleID: "forbidden_dependency"},
 			{Fingerprint: "def456", RuleID: "public_api_only"},
 		},
-		Metrics: diagnostic.MetricSnapshot{
+		Metrics: report.MetricSnapshot{
 			"encapsulation": {Value: 8.5, Version: "encapsulation.v1"},
 		},
 	}

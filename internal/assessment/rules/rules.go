@@ -9,8 +9,8 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
+	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -40,7 +40,7 @@ type Evidence struct {
 // Rule is the interface implemented by every built-in and user-defined rule.
 type Rule interface {
 	ID() string
-	Check(g *graph.Graph, ev Evidence) []finding.Finding
+	Check(s relationship.Set, ev Evidence) []finding.Finding
 }
 
 // New constructs the slice of Rule values declared in cfg.
@@ -132,8 +132,8 @@ type gatedRule struct {
 
 func (r *gatedRule) ID() string { return r.inner.ID() }
 
-func (r *gatedRule) Check(g *graph.Graph, ev Evidence) []finding.Finding {
-	raw := r.inner.Check(g, ev)
+func (r *gatedRule) Check(s relationship.Set, ev Evidence) []finding.Finding {
+	raw := r.inner.Check(s, ev)
 	switch r.gate {
 	case "off":
 		return nil

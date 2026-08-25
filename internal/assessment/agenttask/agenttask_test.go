@@ -9,7 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/agenttask"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 const (
@@ -32,7 +32,7 @@ func gateFinding(id, ruleID string, status finding.Status) finding.Finding {
 			To:   finding.Endpoint{Path: fileTo, Module: "b"},
 			Kind: "uses_internal",
 		},
-		Locations:    []graph.Location{{File: fileFrom, Line: 5}},
+		Locations:    []relationship.Location{{File: fileFrom, Line: 5}},
 		Why:          "a uses b internals",
 		Constraint:   "Use only the public API of module b",
 		Alternatives: []string{"pkg/b/api"},

@@ -7,7 +7,6 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
 // ---------------------------------------------------------------------------
@@ -27,11 +26,11 @@ func (m CoverageMetric) Version() string { return "coverage.v1" }
 // Calculate computes the coverage ratio and applies confidence-based band capping.
 func (m CoverageMetric) Calculate(in signal.CommonInput) assessmentresult.MetricResult {
 	var totalApplicable, totalExtracted, totalUnresolved int
-	for _, c := range in.ToolCoverage {
+	for _, c := range in.Coverage {
 		// An "absent" record means the extractor did not run or found nothing of
 		// its language (e.g. go/packages on a non-Go repo). It is not evidence of
 		// coverage, so it must not count toward the totals.
-		if c.Status == evidence.StatusAbsent {
+		if c.Status == "absent" {
 			continue
 		}
 		// Auxiliary tools (e.g. ast-grep syntax pass) report FilesSeen > 0 but

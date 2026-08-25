@@ -4,8 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/decision"
-	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 const (
@@ -16,24 +15,24 @@ const (
 
 // acceptableReport is a representative report: passing gate, advisory warnings,
 // a mixed overall score, one low dimension, and recommendations.
-func acceptableReport() decision.Report {
-	return decision.Report{
-		Band:        decision.BandAcceptable,
+func acceptableReport() report.Report {
+	return report.Report{
+		Band:        report.DecisionBandAcceptable,
 		Headline:    "Acceptable with watch items. Monitor flagged areas.",
 		Blocking:    0,
 		Advisory:    55,
 		Overall:     43,
-		OverallBand: score.BandMixed,
-		Dimensions: []decision.DimReport{
-			{Name: dimCouplingBalance, Value: 40, Band: score.BandPoor, Confidence: score.ConfidenceMedium,
+		OverallBand: report.ScoreBandMixed,
+		Dimensions: []report.DimReport{
+			{Name: dimCouplingBalance, Value: 40, Band: report.ScoreBandPoor, Confidence: report.ConfidenceMedium,
 				Why: "304 warning edges, mostly functional + high volatility.", WhatMoves: "Reduce high-fan-in functional edges."},
 		},
-		Recommendations: decision.Recommendations{
-			MustFix:   []decision.Rec{},
-			ShouldFix: []decision.Rec{{Title: recCouplingSeam, RuleID: recCouplingSeam, Detail: "high fan-in into session state"}},
-			Watch:     []decision.Rec{{Title: recLazyCycle, RuleID: recLazyCycle, Detail: "lazy import SCC"}},
-			Calibrate: []decision.Rec{},
-			Ignore:    []decision.Rec{},
+		Recommendations: report.Recommendations{
+			MustFix:   []report.Rec{},
+			ShouldFix: []report.Rec{{Title: recCouplingSeam, RuleID: recCouplingSeam, Detail: "high fan-in into session state"}},
+			Watch:     []report.Rec{{Title: recLazyCycle, RuleID: recLazyCycle, Detail: "lazy import SCC"}},
+			Calibrate: []report.Rec{},
+			Ignore:    []report.Rec{},
 		},
 	}
 }
@@ -83,18 +82,18 @@ func TestRenderReport_Acceptable(t *testing.T) {
 }
 
 func TestRenderReport_Fail(t *testing.T) {
-	r := decision.Report{
-		Band:        decision.BandFail,
+	r := report.Report{
+		Band:        report.DecisionBandFail,
 		Headline:    "Gate violations. Fix before merge.",
 		Blocking:    2,
 		Advisory:    3,
 		Overall:     30,
-		OverallBand: score.BandPoor,
+		OverallBand: report.ScoreBandPoor,
 		Dimensions:  nil,
-		Recommendations: decision.Recommendations{
-			MustFix:   []decision.Rec{{Title: "forbidden_dependency", RuleID: "forbidden_dependency", Detail: "a -> b"}},
-			ShouldFix: []decision.Rec{},
-			Watch:     []decision.Rec{},
+		Recommendations: report.Recommendations{
+			MustFix:   []report.Rec{{Title: "forbidden_dependency", RuleID: "forbidden_dependency", Detail: "a -> b"}},
+			ShouldFix: []report.Rec{},
+			Watch:     []report.Rec{},
 		},
 	}
 	var b strings.Builder
@@ -118,20 +117,20 @@ func TestRenderReport_Fail(t *testing.T) {
 }
 
 func TestRenderReport_DeltaAndHealthy(t *testing.T) {
-	r := decision.Report{
-		Band:        decision.BandHealthy,
+	r := report.Report{
+		Band:        report.DecisionBandHealthy,
 		Headline:    "Architecture is healthy. No action required.",
 		Blocking:    0,
 		Advisory:    0,
 		Overall:     85,
-		OverallBand: score.BandStrong,
-		Dimensions: []decision.DimReport{
-			{Name: dimCouplingBalance, Value: 88, Band: score.BandStrong, Confidence: score.ConfidenceHigh},
+		OverallBand: report.ScoreBandStrong,
+		Dimensions: []report.DimReport{
+			{Name: dimCouplingBalance, Value: 88, Band: report.ScoreBandStrong, Confidence: report.ConfidenceHigh},
 		},
-		Recommendations: decision.Recommendations{MustFix: []decision.Rec{}, ShouldFix: []decision.Rec{}, Watch: []decision.Rec{}},
-		Delta: &decision.Delta{
+		Recommendations: report.Recommendations{MustFix: []report.Rec{}, ShouldFix: []report.Rec{}, Watch: []report.Rec{}},
+		Delta: &report.Delta{
 			Overall: 5,
-			Dimensions: []decision.DimDelta{
+			Dimensions: []report.DimDelta{
 				{Name: dimCouplingBalance, Before: 83, After: 88, Change: 5},
 			},
 		},

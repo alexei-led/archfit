@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/config"
 )
 
@@ -50,7 +51,7 @@ func safeWriteConfig(ctx context.Context, deps *appDeps, path string, edited, or
 	if err != nil {
 		return fmt.Errorf("safeWriteConfig: validation failed: %w", err)
 	}
-	if err := validateConfigRules(cfg); err != nil {
+	if err := apppipeline.ValidateConfigRules(cfg); err != nil {
 		return fmt.Errorf("safeWriteConfig: validation failed: %w", err)
 	}
 

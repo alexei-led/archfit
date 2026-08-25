@@ -34,7 +34,7 @@ const (
 )
 
 // Extractor is the Rust dependency extractor using `cargo metadata`.
-// It satisfies the ports.Extractor interface structurally.
+// It satisfies the evidenceports.Extractor interface structurally.
 type Extractor struct {
 	runner             toolrun.Runner
 	cfg                view.ExtractConfig

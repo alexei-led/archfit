@@ -13,7 +13,6 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
 // matchedByModuleKey mirrors internal/rules' unexported matchedByModule
@@ -115,8 +114,8 @@ func (r PathResolver) exists(p string) bool {
 // resolve turns a candidate path/key into one that exists on disk, or reports
 // false when it cannot be resolved. Resolution order: literal file or
 // directory (index first, then disk), Rust "crate::mod" (module file under
-// the crate's src/, then the crate dir), Python dotted module (the shared
-// graph.BuiltinConventions candidate list, then the dots-to-slashes
+// the crate's src/, then the crate dir), Python dotted module (the local
+// pythonModuleFileCandidates candidate list, then the dots-to-slashes
 // directory). Disabled (knownFiles nil) trusts every non-empty, non-escaping
 // candidate, matching pre-resolver behavior. Candidates that escape the scan
 // root (absolute, or cleaning to a ".."-prefixed path — e.g. a module Paths
@@ -157,7 +156,7 @@ func (r PathResolver) resolve(candidate string) (string, bool) {
 		}
 	}
 	if strings.Contains(candidate, ".") && !strings.Contains(candidate, "/") {
-		for _, cand := range graph.BuiltinConventions.Lookup(graph.LangPython).ModuleFileCandidates(candidate) {
+		for _, cand := range pythonModuleFileCandidates(candidate) {
 			if r.exists(cand) {
 				return cand, true
 			}
@@ -167,6 +166,18 @@ func (r PathResolver) resolve(candidate string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// pythonModuleFileCandidates maps a dotted Python module path to its candidate
+// source files (mirrors the module-node convention used by the graph extractor).
+// Includes both flat-layout and "src/"-layout candidates. Kept inline here so
+// the assessment agenttask package need not import the raw graph convention.
+func pythonModuleFileCandidates(modulePath string) []string {
+	slashed := strings.ReplaceAll(modulePath, ".", "/")
+	return []string{
+		slashed + ".py", slashed + ".pyi", slashed + "/__init__.py",
+		"src/" + slashed + ".py", "src/" + slashed + ".pyi", "src/" + slashed + "/__init__.py",
+	}
 }
 
 // Build returns one AgentTask per active gate finding (status new or

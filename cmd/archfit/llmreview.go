@@ -13,13 +13,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 const (
@@ -59,13 +56,13 @@ func persistRawReview(cacheDir, text string) {
 }
 
 // runLLMReview is the reusable LLM narrative review helper. It receives an
-// already-loaded config, config path/root, and pre-computed diagnostic + scorecard so
-// it does NOT call loadConfig or runPipeline — those are the caller's job.
+// already-loaded config, config path/root, and the pre-computed report document so
+// it does NOT load config or run the analysis pipeline — those are the caller's job.
 //
 // providerOverride is a test seam: pass a non-nil fake to skip the real provider
 // construction through AnalyzeCmd.providerOverride. Pass nil in production to
 // build the provider from cfg.LLM().
-func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag result.Result, sc score.Scorecard) error {
+func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, doc report.Document) error {
 	llmCfg, configured := cfg.LLM()
 	if !configured {
 		return &exitError{code: 3, msg: "error: --ai-summary requires ai configured (provider + model); see docs/guide/llm-enrich.md"}
@@ -79,8 +76,8 @@ func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configP
 	}
 
 	scanRoot := scanRootForEvidence(configDir, root)
-	evidenceLines := architectureEvidenceLines(scanRoot, configModulesForEvidence(cfg), configPath, reviewEvidenceDiagnostics(diag, sc))
-	userPrompt := buildReviewPrompt(diag, sc, evidenceLines)
+	evidenceLines := architectureEvidenceLines(scanRoot, configModulesForEvidence(cfg), configPath, reviewEvidenceDiagnostics(doc))
+	userPrompt := buildReviewPrompt(doc, evidenceLines)
 	resp, err := provider.Complete(ctx, llm.Request{
 		System:    reviewSystemPrompt,
 		User:      userPrompt,
@@ -108,11 +105,11 @@ func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configP
 		}
 	}
 
-	citations := buildReviewCitationSet(diag, sc, evidenceLines)
+	citations := buildReviewCitationSet(doc, evidenceLines)
 	for name := range cfg.Modules {
 		citations.Modules[name] = struct{}{}
 	}
-	rev, dropped := postVerify(rev, diag, configSubdomains, citations)
+	rev, dropped := postVerify(rev, doc, configSubdomains, citations)
 	if dropped > 0 {
 		_, _ = fmt.Fprintf(deps.stderr(), "review: post-verification dropped %d unsupported claim(s)\n", dropped)
 	}
@@ -273,17 +270,17 @@ type reviewSubdomainSuggest struct {
 
 // validDimNames is the set of known scorecard dimension names.
 var validDimNames = map[string]struct{}{
-	score.DimCouplingBalance: {},
+	report.DimCouplingBalance: {},
 }
 
 // validBands is the scorecard band vocabulary the review must use (scorecard.yaml).
 // validSubdomains (the DDD subdomain vocabulary) is shared with init.go.
 var validBands = map[string]struct{}{
-	string(score.BandCritical):    {},
-	string(score.BandPoor):        {},
-	string(score.BandMixed):       {},
-	string(score.BandServiceable): {},
-	string(score.BandStrong):      {},
+	string(report.ScoreBandCritical):    {},
+	string(report.ScoreBandPoor):        {},
+	string(report.ScoreBandMixed):       {},
+	string(report.ScoreBandServiceable): {},
+	string(report.ScoreBandStrong):      {},
 }
 
 var validClaimTypes = map[string]struct{}{
@@ -300,26 +297,26 @@ type reviewCitationSet struct {
 	Modules      map[string]struct{}
 }
 
-func reviewEvidenceDiagnostics(diag result.Result, sc score.Scorecard) []initcfg.EvidenceDiagnostic {
+func reviewEvidenceDiagnostics(doc report.Document) []initcfg.EvidenceDiagnostic {
 	return []initcfg.EvidenceDiagnostic{{
 		Source:  "llm-review",
-		Summary: fmt.Sprintf("verdict=%s findings=%d metrics=%d score=%d band=%s", diag.Verdict, len(diag.Findings), len(diag.Metrics), sc.Overall, sc.OverallBand),
+		Summary: fmt.Sprintf("verdict=%s findings=%d metrics=%d score=%d band=%s", doc.Verdict, len(doc.Findings), len(doc.Metrics), doc.Score.Overall, doc.Score.OverallBand),
 	}}
 }
 
-func buildReviewCitationSet(diag result.Result, sc score.Scorecard, evidenceLines []string) reviewCitationSet {
+func buildReviewCitationSet(doc report.Document, evidenceLines []string) reviewCitationSet {
 	set := reviewCitationSet{
 		FindingIDs:   make(map[string]struct{}),
 		MetricIDs:    make(map[string]struct{}),
 		EvidenceRefs: make(map[string]struct{}),
 		Modules:      make(map[string]struct{}),
 	}
-	for _, f := range diag.Findings {
+	for _, f := range doc.Findings {
 		if f.ID != "" {
 			set.FindingIDs[f.ID] = struct{}{}
 		}
 	}
-	for _, m := range diag.Metrics {
+	for _, m := range doc.Metrics {
 		if m.Name != "" {
 			set.MetricIDs[m.Name] = struct{}{}
 		}
@@ -327,7 +324,7 @@ func buildReviewCitationSet(diag result.Result, sc score.Scorecard, evidenceLine
 	for name := range validDimNames {
 		set.MetricIDs[name] = struct{}{}
 	}
-	for _, d := range sc.Dimensions {
+	for _, d := range doc.Score.Dimensions {
 		if d.Name != "" {
 			set.MetricIDs[d.Name] = struct{}{}
 		}
@@ -345,8 +342,8 @@ func buildReviewCitationSet(diag result.Result, sc score.Scorecard, evidenceLine
 	return set
 }
 
-func defaultReviewCitationSet(diag result.Result) reviewCitationSet {
-	return buildReviewCitationSet(diag, score.Scorecard{}, nil)
+func defaultReviewCitationSet(doc report.Document) reviewCitationSet {
+	return buildReviewCitationSet(doc, nil)
 }
 
 // strengthWords is the set of coupling-strength words the LLM may assert in
@@ -367,10 +364,10 @@ var strengthWords = map[string]*regexp.Regexp{
 // When a suggestion's SuggestedSubdomain conflicts with the configured value, the
 // suggestion is kept but its Rationale is annotated with a conflict note so the
 // reader knows the LLM disagrees with the explicit config.
-func postVerify(rev reviewResponse, diag result.Result, configSubdomains map[string]string, citationSets ...reviewCitationSet) (reviewResponse, int) {
-	validModules := buildValidModules(diag)
-	presentStrengths := buildPresentStrengths(diag)
-	citations := defaultReviewCitationSet(diag)
+func postVerify(rev reviewResponse, doc report.Document, configSubdomains map[string]string, citationSets ...reviewCitationSet) (reviewResponse, int) {
+	validModules := buildValidModules(doc)
+	presentStrengths := buildPresentStrengths(doc)
+	citations := defaultReviewCitationSet(doc)
 	if len(citationSets) > 0 {
 		citations = citationSets[0]
 	}
@@ -431,15 +428,15 @@ func postVerify(rev reviewResponse, diag result.Result, configSubdomains map[str
 }
 
 // buildValidModules returns the set of module names attested by findings, file
-// facts, or dynamic imports in diag.
-func buildValidModules(diag result.Result) map[string]struct{} {
+// facts, or dynamic imports in doc.
+func buildValidModules(doc report.Document) map[string]struct{} {
 	validModules := make(map[string]struct{})
-	for _, ff := range diag.FileFacts {
+	for _, ff := range doc.FileFacts {
 		if ff.Module != "" {
 			validModules[ff.Module] = struct{}{}
 		}
 	}
-	for _, f := range diag.Findings {
+	for _, f := range doc.Findings {
 		if f.Edge.From.Module != "" {
 			validModules[f.Edge.From.Module] = struct{}{}
 		}
@@ -449,7 +446,7 @@ func buildValidModules(diag result.Result) map[string]struct{} {
 	}
 	// Dynamic/lazy-import modules are valid evidence the review may cite even
 	// when they carry no static finding or file fact.
-	for _, di := range diag.DynamicImports {
+	for _, di := range doc.DynamicImports {
 		if di.Module != "" {
 			validModules[di.Module] = struct{}{}
 		}
@@ -457,12 +454,12 @@ func buildValidModules(diag result.Result) map[string]struct{} {
 	return validModules
 }
 
-// buildPresentStrengths returns the set of strength labels attested in diag:
+// buildPresentStrengths returns the set of strength labels attested in doc:
 // the union of MatchedBy["strength"] values from advisory findings AND the
 // intrusive label implied by any uses_internal edge kind.
-func buildPresentStrengths(diag result.Result) map[string]struct{} {
+func buildPresentStrengths(doc report.Document) map[string]struct{} {
 	present := make(map[string]struct{})
-	for _, f := range diag.Findings {
+	for _, f := range doc.Findings {
 		if s, ok := f.MatchedBy["strength"]; ok && s != "" {
 			present[s] = struct{}{}
 		}
@@ -665,7 +662,7 @@ func reviewCitationLabels(findingIDs, metricIDs, evidenceRefs []string) []string
 	return labels
 }
 
-func writeFindingGroups(b *strings.Builder, findings []finding.Finding) {
+func writeFindingGroups(b *strings.Builder, findings []report.Finding) {
 	if len(findings) == 0 {
 		return
 	}
@@ -689,11 +686,11 @@ func writeFindingGroups(b *strings.Builder, findings []finding.Finding) {
 	}
 }
 
-func writeFindingExamples(b *strings.Builder, findings []finding.Finding) {
+func writeFindingExamples(b *strings.Builder, findings []report.Finding) {
 	if len(findings) == 0 {
 		return
 	}
-	ordered := append([]finding.Finding(nil), findings...)
+	ordered := append([]report.Finding(nil), findings...)
 	sort.SliceStable(ordered, func(i, j int) bool {
 		return reviewFindingSortKey(ordered[i]) < reviewFindingSortKey(ordered[j])
 	})
@@ -708,32 +705,32 @@ func writeFindingExamples(b *strings.Builder, findings []finding.Finding) {
 	}
 }
 
-func reviewFindingSortKey(f finding.Finding) string {
+func reviewFindingSortKey(f report.Finding) string {
 	kindRank := "1"
-	if f.Kind == finding.KindGate {
+	if f.Kind == report.FindingKindGate {
 		kindRank = "0"
 	}
 	severityRank := 9 - reviewSeverityRank(f.Severity)
 	return fmt.Sprintf("%s:%d:%s:%s:%s:%s", kindRank, severityRank, f.RuleID, f.Edge.From.Module, f.Edge.To.Module, f.ID)
 }
 
-func reviewSeverityRank(s finding.Severity) int {
+func reviewSeverityRank(s string) int {
 	switch s {
-	case finding.SeverityCritical:
+	case report.FindingSeverityCritical:
 		return 4
-	case finding.SeverityHigh:
+	case report.FindingSeverityHigh:
 		return 3
-	case finding.SeverityMedium:
+	case report.FindingSeverityMedium:
 		return 2
-	case finding.SeverityLow:
+	case report.FindingSeverityLow:
 		return 1
 	default:
 		return 0
 	}
 }
 
-func rankedReviewFileFacts(facts []evidence.FileFact, limit int) []evidence.FileFact {
-	ordered := append([]evidence.FileFact(nil), facts...)
+func rankedReviewFileFacts(facts []report.FileFact, limit int) []report.FileFact {
+	ordered := append([]report.FileFact(nil), facts...)
 	sort.SliceStable(ordered, func(i, j int) bool {
 		a := reviewFileFactWeight(ordered[i])
 		b := reviewFileFactWeight(ordered[j])
@@ -748,7 +745,7 @@ func rankedReviewFileFacts(facts []evidence.FileFact, limit int) []evidence.File
 	return ordered
 }
 
-func reviewFileFactWeight(ff evidence.FileFact) int {
+func reviewFileFactWeight(ff report.FileFact) int {
 	return ff.InboundModuleFanIn*10_000 + ff.OutboundDestinations*1_000 + ff.LOC
 }
 
@@ -759,9 +756,9 @@ func minInt(a, b int) int {
 	return b
 }
 
-// buildReviewPrompt serialises the Diagnostic, Scorecard, and repository
-// evidence pack as the user turn.
-func buildReviewPrompt(diag result.Result, sc score.Scorecard, evidencePacks ...[]string) string {
+// buildReviewPrompt serialises the report document (and repository evidence
+// pack) as the user turn.
+func buildReviewPrompt(doc report.Document, evidencePacks ...[]string) string {
 	var b strings.Builder
 	evidenceLines := optionalEvidence(evidencePacks)
 	if len(evidenceLines) > 0 {
@@ -773,8 +770,8 @@ func buildReviewPrompt(diag result.Result, sc score.Scorecard, evidencePacks ...
 	}
 
 	// Scorecard summary.
-	fmt.Fprintf(&b, "## Scorecard (overall %d, band %s)\n", sc.Overall, sc.OverallBand)
-	for _, d := range sc.Dimensions {
+	fmt.Fprintf(&b, "## Scorecard (overall %d, band %s)\n", doc.Score.Overall, doc.Score.OverallBand)
+	for _, d := range doc.Score.Dimensions {
 		fmt.Fprintf(&b, "- metric_id=%s value=%d band=%s confidence=%s\n  summary: %s\n",
 			d.Name, d.Value, d.Band, d.Confidence, d.Summary)
 		for _, ev := range d.Evidence {
@@ -785,21 +782,21 @@ func buildReviewPrompt(diag result.Result, sc score.Scorecard, evidencePacks ...
 	// Gate findings. Summarise all findings and cap examples so large repos do not
 	// push the model into long, truncated JSON responses.
 	var gateFindings, advisories int
-	for _, f := range diag.Findings {
-		if f.Kind == finding.KindGate {
+	for _, f := range doc.Findings {
+		if f.Kind == report.FindingKindGate {
 			gateFindings++
 		} else {
 			advisories++
 		}
 	}
 	fmt.Fprintf(&b, "\n## Findings summary: %d gate violations, %d advisories\n", gateFindings, advisories)
-	writeFindingGroups(&b, diag.Findings)
-	writeFindingExamples(&b, diag.Findings)
+	writeFindingGroups(&b, doc.Findings)
+	writeFindingExamples(&b, doc.Findings)
 
 	// Module facts.
-	if len(diag.FileFacts) > 0 {
-		facts := rankedReviewFileFacts(diag.FileFacts, reviewMaxModuleFacts)
-		fmt.Fprintf(&b, "\n## Module facts (top %d of %d by fan-in/out/LOC)\n", len(facts), len(diag.FileFacts))
+	if len(doc.FileFacts) > 0 {
+		facts := rankedReviewFileFacts(doc.FileFacts, reviewMaxModuleFacts)
+		fmt.Fprintf(&b, "\n## Module facts (top %d of %d by fan-in/out/LOC)\n", len(facts), len(doc.FileFacts))
 		for _, ff := range facts {
 			fmt.Fprintf(&b, "- %s: inbound_fanin=%d outbound=%d loc=%d\n",
 				ff.Module, ff.InboundModuleFanIn, ff.OutboundDestinations, ff.LOC)
@@ -809,7 +806,7 @@ func buildReviewPrompt(diag result.Result, sc score.Scorecard, evidencePacks ...
 	// Metrics.
 	fmt.Fprintf(&b, "\n## Metrics (capped)\n")
 	writtenMetrics := 0
-	for _, m := range diag.Metrics {
+	for _, m := range doc.Metrics {
 		if m.Band == "info" || m.Band == "" {
 			continue
 		}
@@ -823,11 +820,11 @@ func buildReviewPrompt(diag result.Result, sc score.Scorecard, evidencePacks ...
 	// Dynamic / lazy imports (report-only): invisible to the static dependency
 	// graph, so they hide cycles and undercount coupling. Surfaced here so the
 	// review can narrate the lazy-import hidden-coupling risk the metrics miss.
-	if len(diag.DynamicImports) > 0 {
+	if len(doc.DynamicImports) > 0 {
 		fmt.Fprintf(&b, "\n## Dynamic / lazy imports (hidden-coupling risk, report-only; capped)\n")
-		for i, di := range diag.DynamicImports {
+		for i, di := range doc.DynamicImports {
 			if i >= reviewMaxDynamicFacts {
-				fmt.Fprintf(&b, "- ... %d more module(s) omitted\n", len(diag.DynamicImports)-i)
+				fmt.Fprintf(&b, "- ... %d more module(s) omitted\n", len(doc.DynamicImports)-i)
 				break
 			}
 			fmt.Fprintf(&b, "- %s: %d site(s)\n", di.Module, di.Count)

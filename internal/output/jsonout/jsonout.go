@@ -5,10 +5,13 @@ import (
 	"io"
 
 	"github.com/alexei-led/archfit/internal/model/report"
+	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
-// JSONRenderer marshals a report document plus its synthesised scorecard to JSON.
+// JSONRenderer marshals a report document plus its projected scorecard to JSON.
 type JSONRenderer struct{}
+
+var _ reportports.Renderer = (*JSONRenderer)(nil)
 
 // New returns a new JSONRenderer.
 func New() *JSONRenderer {
@@ -35,7 +38,7 @@ type envelope struct {
 	ScoreVersion    string            `json:"score_version"`
 	CouplingBalance *report.Dimension `json:"coupling_balance,omitempty"`
 	// ScoreDelta is the scorecard delta vs --base. Named distinctly from the
-	// embedded Diagnostic's `delta` (findings lifecycle) to avoid a key collision.
+	// embedded report document's `delta` (findings lifecycle) to avoid a key collision.
 	ScoreDelta *scoreDelta `json:"score_delta,omitempty"`
 }
 
@@ -54,17 +57,17 @@ type dimensionDelta struct {
 	Delta int    `json:"delta"`
 }
 
-// Render writes d plus its scorecard (and an optional delta vs base) as JSON.
+// Render writes d plus its projected scorecard (and an optional delta vs base) as JSON.
 // schema_version is part of the embedded report document and is always present.
-func (r *JSONRenderer) Render(d report.Document, sc report.Scorecard, base *report.Scorecard, w io.Writer) error {
+func (r *JSONRenderer) Render(d report.Document, w io.Writer) error {
 	env := envelope{
 		Document:        d,
-		Score:           sc,
+		Score:           d.Score,
 		ScoreVersion:    report.ScoreVersion,
-		CouplingBalance: dimensionByName(sc, report.DimCouplingBalance),
+		CouplingBalance: dimensionByName(d.Score, report.DimCouplingBalance),
 	}
-	if base != nil {
-		env.ScoreDelta = buildDelta(sc, *base)
+	if d.BaseScore != nil {
+		env.ScoreDelta = buildDelta(d.Score, *d.BaseScore)
 	}
 	return json.NewEncoder(w).Encode(env)
 }
@@ -88,7 +91,10 @@ func buildDelta(head, base report.Scorecard) *scoreDelta {
 	}
 	dims := make([]dimensionDelta, 0, len(head.Dimensions))
 	for _, d := range head.Dimensions {
-		b := baseDim[d.Name]
+		b, ok := baseDim[d.Name]
+		if !ok {
+			continue
+		}
 		delta := d.Value - b.Value
 		// An n/a side (coupling unmeasured) has no real value — suppress the numeric
 		// delta so a measurement-status change is not reported as a score regression.

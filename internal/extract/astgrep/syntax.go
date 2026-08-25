@@ -1,4 +1,4 @@
-// Package astgrep implements ports.PatternProvider and ports.SyntaxProvider
+// Package astgrep implements evidenceports.PatternProvider and evidenceports.SyntaxProvider
 // using the "sg" (ast-grep) binary. Syntax() runs embedded per-language rules
 // and maps ruleId→Kind+Framework into SyntaxFacts sorted by (File, StartLine, Kind, Name).
 package astgrep
@@ -13,8 +13,8 @@ import (
 	"regexp"
 	"strings"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -483,4 +483,4 @@ func isExported(lang, ruleID, name string) bool {
 }
 
 // Compile-time interface check.
-var _ ports.SyntaxProvider = (*Adapter)(nil)
+var _ evidenceports.SyntaxProvider = (*Adapter)(nil)

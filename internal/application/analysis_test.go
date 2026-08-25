@@ -2,12 +2,13 @@ package application
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
+
+	"github.com/alexei-led/archfit/internal/evidence"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
-
-type runnerFunc func(context.Context, Request) error
-
-func (f runnerFunc) Run(ctx context.Context, req Request) error { return f(ctx, req) }
 
 func TestResolveFormats(t *testing.T) {
 	tests := []struct {
@@ -51,30 +52,108 @@ func TestResolveFormats(t *testing.T) {
 	}
 }
 
-func TestServiceExecuteValidatesBeforeRunner(t *testing.T) {
-	called := false
-	service := Service{Runner: runnerFunc(func(_ context.Context, _ Request) error {
-		called = true
-		return nil
-	})}
-	if err := service.Execute(context.Background(), Request{JSON: true, SARIF: true}); err == nil {
+func TestServiceExecuteValidatesFormatsBeforeRunner(t *testing.T) {
+	_, err := (Service{}).Execute(t.Context(), Request{JSON: true, SARIF: true})
+	if err == nil {
 		t.Fatal("Execute error = nil")
 	}
-	if called {
-		t.Fatal("runner called for invalid request")
+	var invalid *InvalidFormatsError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("Execute error = %T, want *InvalidFormatsError", err)
 	}
 }
 
-func TestServiceExecutePassesResolvedFormats(t *testing.T) {
-	var got Request
-	service := Service{Runner: runnerFunc(func(_ context.Context, req Request) error {
-		got = req
-		return nil
-	})}
-	if err := service.Execute(context.Background(), Request{Formats: []string{FormatJSON}}); err != nil {
-		t.Fatalf("Execute: %v", err)
+func TestServiceExecuteRequiresAnalysisStageAfterValidation(t *testing.T) {
+	_, err := (Service{}).Execute(t.Context(), Request{})
+	if err == nil || err.Error() != "analysis stages are required" {
+		t.Fatalf("Execute error = %v, want analysis stages are required", err)
 	}
-	if len(got.Formats) != 1 || got.Formats[0] != FormatJSON {
-		t.Fatalf("formats = %v, want [%s]", got.Formats, FormatJSON)
+}
+
+type orderedAnalysisStage struct {
+	calls []string
+}
+
+func (s *orderedAnalysisStage) Prepare(context.Context) error {
+	s.calls = append(s.calls, "prepare")
+	return nil
+}
+
+func (s *orderedAnalysisStage) Acquire(context.Context, AnalysisRequest) (evidence.Snapshot, error) {
+	s.calls = append(s.calls, "acquire")
+	return evidence.Snapshot{}, nil
+}
+func (s *orderedAnalysisStage) Relate(context.Context, evidence.Snapshot) (relationship.AnalysisResult, error) {
+	s.calls = append(s.calls, "relate")
+	return relationship.AnalysisResult{}, nil
+}
+func (s *orderedAnalysisStage) Assess(context.Context, AnalysisRequest, evidence.AssessmentView, relationship.AnalysisResult) (AnalysisResult, error) {
+	s.calls = append(s.calls, "assess")
+	return AnalysisResult{}, nil
+}
+
+const (
+	acquireStageCall = "acquire"
+	relateStageCall  = "relate"
+	assessStageCall  = "assess"
+)
+
+func TestStageExecutorStopsAfterEachFailedStage(t *testing.T) {
+	for _, failed := range []string{prepareCall, acquireStageCall, relateStageCall, assessStageCall} {
+		t.Run(failed, func(t *testing.T) {
+			stage := &failureAnalysisStage{failed: failed}
+			_, err := (StageExecutor{Preparer: stage, Evidence: stage, Relationship: stage, Assessment: stage}).Execute(t.Context(), AnalysisRequest{})
+			if err == nil {
+				t.Fatal("Execute error = nil")
+			}
+			want := map[string][]string{prepareCall: {prepareCall}, acquireStageCall: {prepareCall, acquireStageCall}, relateStageCall: {prepareCall, acquireStageCall, relateStageCall}, assessStageCall: {prepareCall, acquireStageCall, relateStageCall, assessStageCall}}[failed]
+			if got := strings.Join(stage.calls, ","); got != strings.Join(want, ",") {
+				t.Fatalf("calls = %q, want %q", got, strings.Join(want, ","))
+			}
+		})
+	}
+}
+
+type failureAnalysisStage struct {
+	calls  []string
+	failed string
+}
+
+func (s *failureAnalysisStage) Prepare(context.Context) error {
+	s.calls = append(s.calls, "prepare")
+	if s.failed == "prepare" {
+		return errors.New("prepare failed")
+	}
+	return nil
+}
+func (s *failureAnalysisStage) Acquire(context.Context, AnalysisRequest) (evidence.Snapshot, error) {
+	s.calls = append(s.calls, "acquire")
+	if s.failed == "acquire" {
+		return evidence.Snapshot{}, errors.New("acquire failed")
+	}
+	return evidence.Snapshot{}, nil
+}
+func (s *failureAnalysisStage) Relate(context.Context, evidence.Snapshot) (relationship.AnalysisResult, error) {
+	s.calls = append(s.calls, "relate")
+	if s.failed == "relate" {
+		return relationship.AnalysisResult{}, errors.New("relate failed")
+	}
+	return relationship.AnalysisResult{}, nil
+}
+func (s *failureAnalysisStage) Assess(context.Context, AnalysisRequest, evidence.AssessmentView, relationship.AnalysisResult) (AnalysisResult, error) {
+	s.calls = append(s.calls, "assess")
+	if s.failed == "assess" {
+		return AnalysisResult{}, errors.New("assess failed")
+	}
+	return AnalysisResult{}, nil
+}
+
+func TestServicePreparesPolicyBeforeAnalysis(t *testing.T) {
+	stage := &orderedAnalysisStage{}
+	if _, err := (Service{Preparer: stage, Evidence: stage, Relationship: stage, Assessment: stage}).Execute(t.Context(), Request{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := stage.calls, []string{"prepare", "acquire", "relate", "assess"}; len(got) != len(want) || strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("stage calls = %v, want %v", got, want)
 	}
 }

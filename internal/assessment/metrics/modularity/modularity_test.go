@@ -4,11 +4,11 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
-	"github.com/alexei-led/archfit/internal/assessment/metrics/metricstest"
 	"github.com/alexei-led/archfit/internal/assessment/metrics/modularity"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/testutil/metricstest"
 )
 
 // Chain A -> B -> C (A imports B, B imports C). Reverse-deps: C has {A,B}=2,
@@ -23,7 +23,7 @@ func TestBlastRadius_TransitiveReverseDeps(t *testing.T) {
 	}
 	g := metricstest.BuildGraph([]graph.Node{a, b, c}, edges)
 
-	res := modularity.BlastRadiusMetric{}.Calculate(signal.CommonInput{Graph: g})
+	res := modularity.BlastRadiusMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, nil)})
 	if res.Name != "blast_radius" {
 		t.Fatalf("name = %q", res.Name)
 	}
@@ -46,7 +46,7 @@ func TestBlastRadius_TransitiveReverseDeps(t *testing.T) {
 // must stamp Direction like the measured path does — an unset Direction
 // silently falls into computeVerdict's default branch.
 func TestBlastRadius_NAResult(t *testing.T) {
-	res := modularity.BlastRadiusMetric{}.Calculate(signal.CommonInput{Graph: nil})
+	res := modularity.BlastRadiusMetric{}.Calculate(signal.CommonInput{})
 	if res.Band != result.BandNA {
 		t.Errorf("expected band %q for nil graph, got %q", result.BandNA, res.Band)
 	}

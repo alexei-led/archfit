@@ -8,11 +8,28 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/report"
+	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
 // labelFail is the gate/verdict fail label, shared with the legacy verdict
 // renderer so the literal is defined once.
 const labelFail = "FAIL"
+
+// Renderer writes a report document's projected decision as terminal text.
+type Renderer struct{}
+
+var _ reportports.Renderer = (*Renderer)(nil)
+
+// New returns a Renderer.
+func New() *Renderer { return &Renderer{} }
+
+// Format returns "console".
+func (r *Renderer) Format() string { return "console" }
+
+// Render writes the document's projected decision as terminal text.
+func (r *Renderer) Render(d report.Document, w io.Writer) error {
+	return RenderReport(d.Decision, w)
+}
 
 // RenderReport writes a decision.Report as terminal-native plain text: a
 // decision-led summary block, categorized recommendations, and per-dimension

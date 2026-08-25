@@ -270,9 +270,9 @@ func TestMergeDrafts(t *testing.T) {
 		{From: modB, To: modA, Strength: enrichFunctional, Status: labels.StatusDraft},
 	}
 	drafts := []labels.Label{
-		{From: modA, To: modB, Strength: enrichIntrusive, Status: labels.StatusDraft}, // must NOT clobber approved
-		{From: modB, To: modA, Strength: enrichModel, Status: labels.StatusDraft},     // replaces old draft
-		{From: "c", To: modA, Strength: "contract", Status: labels.StatusDraft},       // new
+		{From: modA, To: modB, Strength: enrichIntrusive, Status: labels.StatusDraft},    // must NOT clobber approved
+		{From: modB, To: modA, Strength: enrichModel, Status: labels.StatusDraft},        // replaces old draft
+		{From: "c", To: modA, Strength: llmStrengthContract, Status: labels.StatusDraft}, // new
 	}
 
 	merged := mergeDrafts(existing, drafts, nil)

@@ -7,7 +7,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/status"
-	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -35,17 +35,17 @@ func (f fakeAccepted) HasFingerprint(fp string) bool {
 
 func (f fakeAccepted) Entries() []status.AcceptedEntry { return f }
 
-// makeEdge returns a graph.Edge with the standard test from/to node IDs and uses_internal kind.
-func makeEdge() graph.Edge {
-	return graph.Edge{
-		From: "file:" + testFrom,
-		To:   "file:" + testTo,
-		Kind: graph.EdgeKindUsesInternal,
+// makeEdge returns a relationship.Edge with the standard test from/to node IDs and uses_internal kind.
+func makeEdge() relationship.Edge {
+	return relationship.Edge{
+		FromID: "file:" + testFrom,
+		ToID:   "file:" + testTo,
+		Kind:   "uses_internal",
 	}
 }
 
 // makeFindings creates a Finding via finding.New for the standard test edge.
-func makeFindings(e graph.Edge) finding.Finding {
+func makeFindings(e relationship.Edge) finding.Finding {
 	return finding.New(testRuleID, e, nil)
 }
 
@@ -373,12 +373,12 @@ func TestDeltaBuckets_ModuleKeyEndpointNotPathEvidence(t *testing.T) {
 	const locFile = "src/domain/api.go"
 	tests := []struct {
 		name    string
-		locs    []graph.Location
+		locs    []relationship.Location
 		changed []string
 		touched bool
 	}{
-		{"module key colliding with unrelated changed path", []graph.Location{{File: locFile}}, []string{"docs/readme.md"}, false},
-		{"changed location file", []graph.Location{{File: locFile}}, []string{locFile}, true},
+		{"module key colliding with unrelated changed path", []relationship.Location{{File: locFile}}, []string{"docs/readme.md"}, false},
+		{"changed location file", []relationship.Location{{File: locFile}}, []string{locFile}, true},
 		{"no locations keeps endpoint fallback", nil, []string{"docs/readme.md"}, true},
 	}
 	for _, tc := range tests {
@@ -404,7 +404,7 @@ func TestDeltaBuckets_ModuleKeyEndpointNotPathEvidence(t *testing.T) {
 		f := mkDeltaFinding("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", finding.StatusBaseline, finding.SeverityMedium,
 			"internal/realmodule/thing.go", "docs")
 		f.MatchedBy = map[string]string{"module": "docs"}
-		f.Locations = []graph.Location{{File: "src/unrelated/file.go"}}
+		f.Locations = []relationship.Location{{File: "src/unrelated/file.go"}}
 		accepted := fakeAccepted{{Fingerprint: f.ID, RuleID: testRuleID, Kind: kindGate, Severity: string(finding.SeverityMedium)}}
 
 		changed := []string{"internal/realmodule/thing.go"}

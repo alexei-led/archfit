@@ -1,19 +1,17 @@
 package report
 
-import "github.com/alexei-led/archfit/internal/model/evidence"
-
 // SchemaVersion identifies the external report document contract.
 const SchemaVersion = "archfit.diagnostic.v2"
 
 // AgentTask is the structured repair task for an active gate finding.
 type AgentTask struct {
-	FindingID    string                `json:"finding_id"`
-	RuleID       string                `json:"rule_id"`
-	Goal         string                `json:"goal"`
-	Constraints  []string              `json:"constraints"`
-	Files        []string              `json:"files"`
-	Validation   []string              `json:"validation"`
-	Declarations []evidence.SyntaxFact `json:"declarations,omitempty"`
+	FindingID    string       `json:"finding_id"`
+	RuleID       string       `json:"rule_id"`
+	Goal         string       `json:"goal"`
+	Constraints  []string     `json:"constraints"`
+	Files        []string     `json:"files"`
+	Validation   []string     `json:"validation"`
+	Declarations []SyntaxFact `json:"declarations,omitempty"`
 }
 
 // FindingStatus values describe the lifecycle state of a report finding.
@@ -92,37 +90,47 @@ type AdvisoryTask struct {
 
 // Document is the versioned output contract consumed by report adapters.
 type Document struct {
-	SchemaVersion             string                              `json:"schema_version"`
-	Verdict                   Verdict                             `json:"verdict"`
-	Base                      string                              `json:"base"`
-	Head                      string                              `json:"head"`
-	ConfigHash                string                              `json:"config_hash,omitempty"`
-	Metrics                   []MetricResult                      `json:"metrics"`
-	Findings                  []Finding                           `json:"findings"`
-	FileFacts                 []evidence.FileFact                 `json:"file_facts"`
-	DynamicImports            []evidence.DynamicImport            `json:"dynamic_imports"`
-	Connascence               *evidence.ConnascenceReport         `json:"connascence,omitempty"`
-	DynamicConnascenceSignals *evidence.DynamicConnascenceSignals `json:"dynamic_connascence_signals,omitempty"`
-	RuntimeAsync              []evidence.RuntimeAsyncModule       `json:"runtime_async,omitempty"`
-	RuntimeAsyncEdges         []evidence.RuntimeAsyncEdge         `json:"runtime_async_edges,omitempty"`
-	DeprecatedDeps            []evidence.DeprecatedDep            `json:"deprecated_deps,omitempty"`
-	SemanticStrengthOverlay   *evidence.SemanticStrengthOverlay   `json:"semantic_strength_overlay,omitempty"`
-	SyntaxFacts               []evidence.SyntaxFact               `json:"syntax_facts,omitempty"`
-	AgentTasks                []AgentTask                         `json:"agent_tasks"`
-	AdvisoryTasks             []AdvisoryTask                      `json:"advisory_tasks"`
-	ToolCoverage              []evidence.Coverage                 `json:"tool_coverage"`
-	CoverageGaps              []evidence.CoverageGap              `json:"coverage_gaps,omitempty"`
-	OwnerSource               string                              `json:"owner_source,omitempty"`
-	PrimaryExtractorTools     []string                            `json:"primary_extractor_tools,omitempty"`
-	ConfigWarnings            []string                            `json:"config_warnings,omitempty"`
-	ClassifiedEdges           *ClassifiedEdgeSummary              `json:"classified_edges,omitempty"`
-	DistanceContext           *evidence.DistanceContext           `json:"distance_context,omitempty"`
-	DistanceConfigCandidates  []evidence.DistanceConfigCandidate  `json:"distance_config_candidates,omitempty"`
-	VolatilityCorroboration   *evidence.VolatilityCorroboration   `json:"volatility_corroboration,omitempty"`
-	LocalCoupling             []evidence.LocalCouplingModule      `json:"local_coupling,omitempty"`
-	GitFindingDelta           *GitFindingDelta                    `json:"git_finding_delta,omitempty"`
-	Delta                     *DeltaReport                        `json:"delta,omitempty"`
-	Summary                   Summary                             `json:"summary"`
+	SchemaVersion             string                     `json:"schema_version"`
+	Verdict                   Verdict                    `json:"verdict"`
+	Base                      string                     `json:"base"`
+	Head                      string                     `json:"head"`
+	ConfigHash                string                     `json:"config_hash,omitempty"`
+	Metrics                   []MetricResult             `json:"metrics"`
+	Findings                  []Finding                  `json:"findings"`
+	FileFacts                 []FileFact                 `json:"file_facts"`
+	DynamicImports            []DynamicImport            `json:"dynamic_imports"`
+	Connascence               *ConnascenceReport         `json:"connascence,omitempty"`
+	DynamicConnascenceSignals *DynamicConnascenceSignals `json:"dynamic_connascence_signals,omitempty"`
+	RuntimeAsync              []RuntimeAsyncModule       `json:"runtime_async,omitempty"`
+	RuntimeAsyncEdges         []RuntimeAsyncEdge         `json:"runtime_async_edges,omitempty"`
+	DeprecatedDeps            []DeprecatedDep            `json:"deprecated_deps,omitempty"`
+	SemanticStrengthOverlay   *SemanticStrengthOverlay   `json:"semantic_strength_overlay,omitempty"`
+	SyntaxFacts               []SyntaxFact               `json:"syntax_facts,omitempty"`
+	AgentTasks                []AgentTask                `json:"agent_tasks"`
+	AdvisoryTasks             []AdvisoryTask             `json:"advisory_tasks"`
+	ToolCoverage              []Coverage                 `json:"tool_coverage"`
+	CoverageGaps              []CoverageGap              `json:"coverage_gaps,omitempty"`
+	OwnerSource               string                     `json:"owner_source,omitempty"`
+	PrimaryExtractorTools     []string                   `json:"primary_extractor_tools,omitempty"`
+	ConfigWarnings            []string                   `json:"config_warnings,omitempty"`
+	ClassifiedEdges           *ClassifiedEdgeSummary     `json:"classified_edges,omitempty"`
+	DistanceContext           *DistanceContext           `json:"distance_context,omitempty"`
+	DistanceConfigCandidates  []DistanceConfigCandidate  `json:"distance_config_candidates,omitempty"`
+	VolatilityCorroboration   *VolatilityCorroboration   `json:"volatility_corroboration,omitempty"`
+	LocalCoupling             []LocalCouplingModule      `json:"local_coupling,omitempty"`
+	GitFindingDelta           *GitFindingDelta           `json:"git_finding_delta,omitempty"`
+	Delta                     *DeltaReport               `json:"delta,omitempty"`
+	Summary                   Summary                    `json:"summary"`
+
+	// Score is the projected scorecard, consumed by renderers. It is not part of
+	// the raw JSON diagnostic envelope (jsonout re-emits it under its own "score"
+	// key), so it is tagged json:"-".
+	Score Scorecard `json:"-"`
+	// BaseScore is the optional --base scorecard used to compute the score delta.
+	BaseScore *Scorecard `json:"-"`
+	// Decision is the projected human-decision view model consumed by the console
+	// and markdown decision renderers. It is not part of the raw JSON envelope.
+	Decision Report `json:"-"`
 }
 
 // Git comparison statuses describe whether every current repair task has a
@@ -138,10 +146,10 @@ func NewDocument() Document {
 		SchemaVersion:  SchemaVersion,
 		Metrics:        []MetricResult{},
 		Findings:       []Finding{},
-		FileFacts:      []evidence.FileFact{},
-		DynamicImports: []evidence.DynamicImport{},
+		FileFacts:      []FileFact{},
+		DynamicImports: []DynamicImport{},
 		AgentTasks:     []AgentTask{},
 		AdvisoryTasks:  []AdvisoryTask{},
-		ToolCoverage:   []evidence.Coverage{},
+		ToolCoverage:   []Coverage{},
 	}
 }

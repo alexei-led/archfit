@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
-	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 	"github.com/alexei-led/archfit/internal/view"
@@ -286,4 +286,4 @@ func TestAdapter_Name(t *testing.T) {
 }
 
 // Compile-time interface check.
-var _ ports.PatternProvider = (*astgrep.Adapter)(nil)
+var _ evidenceports.PatternProvider = (*astgrep.Adapter)(nil)

@@ -1,25 +1,31 @@
 package coupling
 
+import "github.com/alexei-led/archfit/internal/relationship"
+
 // Strength classifies how a dependency is expressed at the API boundary.
-type Strength string
+// It is an alias of relationship.Strength so the coupling classification model
+// shares one canonical integration-strength vocabulary with assessment.
+type Strength = relationship.Strength
 
 // Strength constants (spec §18).
 // contract and intrusive are decided deterministically (config globs,
 // visibility); model and functional come from SCIP symbol-kind heuristics —
 // the Tranche-2 enrich workflow refines those labels under human review.
 const (
-	StrengthContract   Strength = "contract"
-	StrengthIntrusive  Strength = "intrusive"
-	StrengthModel      Strength = "model"
-	StrengthFunctional Strength = "functional"
+	StrengthContract   = relationship.StrengthContract
+	StrengthIntrusive  = relationship.StrengthIntrusive
+	StrengthModel      = relationship.StrengthModel
+	StrengthFunctional = relationship.StrengthFunctional
 	// StrengthSymmetric is bidirectional coupling at implementation level —
 	// book ordinal 9, between functional (8) and intrusive (10).
-	StrengthSymmetric Strength = "symmetric"
-	StrengthUnknown   Strength = "unknown"
+	StrengthSymmetric = relationship.StrengthSymmetric
+	StrengthUnknown   = relationship.StrengthUnknown
 )
 
 // Distance measures how far apart two modules are in the ownership hierarchy.
-type Distance string
+// It is an alias of relationship.Distance so the coupling classification model
+// shares one canonical distance vocabulary with assessment.
+type Distance = relationship.Distance
 
 // Distance constants (spec §18).
 // DistanceExternal is a config-declared external integration seam
@@ -29,18 +35,19 @@ type Distance string
 // coupling_balance (scoring every library import at D=10 would flood the
 // metric with vendor noise).
 const (
-	DistanceSameModule           Distance = "same_module"
-	DistanceCrossModuleSameOwner Distance = "cross_module_same_owner"
-	DistanceCrossModuleDiffOwner Distance = "cross_module_different_owner"
-	DistanceCrossDeployUnit      Distance = "cross_deploy_unit"
-	DistanceExternal             Distance = "declared_external"
-	DistanceUnknown              Distance = "unknown"
+	DistanceSameModule           = relationship.DistanceSameModule
+	DistanceCrossModuleSameOwner = relationship.DistanceCrossModuleSameOwner
+	DistanceCrossModuleDiffOwner = relationship.DistanceCrossModuleDiffOwner
+	DistanceCrossDeployUnit      = relationship.DistanceCrossDeployUnit
+	DistanceExternal             = relationship.DistanceExternal
+	DistanceUnknown              = relationship.DistanceUnknown
 )
 
 // Volatility classifies how likely a module's API is to change.
 // Per Khononov, volatility is derived from the DDD subdomain (core→high,
 // supporting→low, generic→low) with an explicit per-module override.
-type Volatility string
+// It is an alias of relationship.Volatility.
+type Volatility = relationship.Volatility
 
 // Volatility constants derived from subdomain classification.
 //
@@ -55,12 +62,12 @@ type Volatility string
 // Both are scored conservatively (treated as potentially volatile); they differ
 // only in the guidance surfaced to the user.
 const (
-	VolatilityFrozen     Volatility = "frozen" // frozen/legacy systems; V=1 (most stable)
-	VolatilityLow        Volatility = "low"
-	VolatilityMedium     Volatility = "medium"
-	VolatilityHigh       Volatility = "high"
-	VolatilityUndeclared Volatility = "undeclared"
-	VolatilityUnknown    Volatility = "unknown"
+	VolatilityFrozen     = relationship.VolatilityFrozen // frozen/legacy systems; V=1 (most stable)
+	VolatilityLow        = relationship.VolatilityLow
+	VolatilityMedium     = relationship.VolatilityMedium
+	VolatilityHigh       = relationship.VolatilityHigh
+	VolatilityUndeclared = relationship.VolatilityUndeclared
+	VolatilityUnknown    = relationship.VolatilityUnknown
 )
 
 // VolatilityResolved reports whether v is a concrete level the tool can act on
@@ -68,7 +75,7 @@ const (
 // (unresolvable). Callers that need "do we actually have a volatility?" should
 // use this rather than comparing against VolatilityUnknown alone.
 func VolatilityResolved(v Volatility) bool {
-	return v == VolatilityFrozen || v == VolatilityLow || v == VolatilityMedium || v == VolatilityHigh
+	return relationship.VolatilityResolved(v)
 }
 
 // ConnascenceKind names a book Ch6 connascence category. Static evidence may
@@ -197,16 +204,16 @@ type Classification struct {
 type Index map[string]Classification
 
 // Severity expresses the risk level of an imbalanced or intrusive coupling edge.
-// Empty string means no finding (balanced).
-type Severity string
+// Empty string means no finding (balanced). It is an alias of relationship.Severity.
+type Severity = relationship.Severity
 
 // Severity constants ordered from no finding to highest risk.
 const (
-	SeverityNone     Severity = ""
-	SeverityLow      Severity = "low"
-	SeverityMedium   Severity = "medium"
-	SeverityHigh     Severity = "high"
-	SeverityCritical Severity = "critical"
+	SeverityNone     = relationship.SeverityNone
+	SeverityLow      = relationship.SeverityLow
+	SeverityMedium   = relationship.SeverityMedium
+	SeverityHigh     = relationship.SeverityHigh
+	SeverityCritical = relationship.SeverityCritical
 )
 
 // DistanceIsHigh returns true for distances that represent a large socio-technical

@@ -131,7 +131,7 @@ func writeNonGoRepo(t *testing.T, cfgBody string) string {
 func writeGapRepo(t *testing.T, extraCfg string) string {
 	t.Helper()
 	// An explicit languages.go.gate bypasses the "no go.mod → suppress gap" logic
-	// in buildCoverageGaps, making the go/packages absence a deterministic gap.
+	// in coverage-gap derivation, making the go/packages absence a deterministic gap.
 	cfg := "version: 1\nlanguages:\n  go:\n    gate: warn\n" + extraCfg
 	return writeNonGoRepo(t, cfg)
 }

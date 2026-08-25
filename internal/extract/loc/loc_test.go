@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
+	reportmodel "github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/syntax"
 )
 
@@ -69,8 +69,8 @@ func TestRun_CountsSourceFiles(t *testing.T) {
 	if cov.FilesApplicable != len(out) {
 		t.Errorf("FilesApplicable = %d, want %d", cov.FilesApplicable, len(out))
 	}
-	if cov.Status != diagnostic.StatusOK {
-		t.Errorf("Status = %q, want %q", cov.Status, diagnostic.StatusOK)
+	if cov.Status != reportmodel.StatusOK {
+		t.Errorf("Status = %q, want %q", cov.Status, reportmodel.StatusOK)
 	}
 }
 
@@ -197,7 +197,7 @@ func TestRun_EmptyRoot(t *testing.T) {
 	if len(out) != 0 {
 		t.Errorf("expected empty map for empty root, got %v", out)
 	}
-	if cov.Status != diagnostic.StatusOK {
+	if cov.Status != reportmodel.StatusOK {
 		t.Errorf("Status = %q, want ok for empty root", cov.Status)
 	}
 	if cov.FilesSeen != 0 {

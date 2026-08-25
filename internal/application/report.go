@@ -1,27 +1,221 @@
 package application
 
 import (
+	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
-// ProjectReport converts an assessment result into the stable external report contract.
-func ProjectReport(r result.Result) report.Document {
-	return report.Document{
+// ProjectReport converts an assessment result plus its synthesised scorecard into
+// the single stable external report contract renderers consume. baseScore is nil
+// unless a --base delta was requested; hardGate forces a FAIL decision band even
+// when the verdict itself is not fail (a tripped opt-in tool gate).
+func ProjectReport(r result.Result, sc score.Scorecard, baseScore *score.Scorecard, hardGate bool) report.Document {
+	doc := report.Document{
 		SchemaVersion: r.SchemaVersion, Verdict: report.Verdict(r.Verdict), Base: r.Base, Head: r.Head,
 		ConfigHash: r.ConfigHash, Metrics: projectMetrics(r.Metrics), Findings: projectFindings(r.Findings),
-		FileFacts: r.FileFacts, DynamicImports: r.DynamicImports, Connascence: r.Connascence,
-		DynamicConnascenceSignals: r.DynamicConnascenceSignals, RuntimeAsync: r.RuntimeAsync,
-		RuntimeAsyncEdges: r.RuntimeAsyncEdges, DeprecatedDeps: r.DeprecatedDeps,
-		SemanticStrengthOverlay: r.SemanticStrengthOverlay, SyntaxFacts: r.SyntaxFacts,
+		FileFacts: projectFileFacts(r.FileFacts), DynamicImports: projectDynamicImports(r.DynamicImports), Connascence: projectConnascence(r.Connascence),
+		DynamicConnascenceSignals: projectDynamicConnascenceSignals(r.DynamicConnascenceSignals), RuntimeAsync: projectRuntimeAsyncModules(r.RuntimeAsync),
+		RuntimeAsyncEdges: projectRuntimeAsyncEdges(r.RuntimeAsyncEdges), DeprecatedDeps: projectDeprecatedDeps(r.DeprecatedDeps),
+		SemanticStrengthOverlay: projectSemanticStrengthOverlay(r.SemanticStrengthOverlay), SyntaxFacts: projectSyntaxFacts(r.SyntaxFacts),
 		AgentTasks: projectAgentTasks(r.AgentTasks), AdvisoryTasks: projectAdvisoryTasks(r.AdvisoryTasks),
-		ToolCoverage: r.ToolCoverage, CoverageGaps: r.CoverageGaps, OwnerSource: r.OwnerSource,
+		ToolCoverage: projectCoverage(r.ToolCoverage), CoverageGaps: projectCoverageGaps(r.CoverageGaps), OwnerSource: r.OwnerSource,
 		PrimaryExtractorTools: r.PrimaryExtractorTools, ConfigWarnings: r.ConfigWarnings,
-		ClassifiedEdges: projectClassifiedEdges(r.ClassifiedEdges), DistanceContext: r.DistanceContext,
-		DistanceConfigCandidates: r.DistanceConfigCandidates, VolatilityCorroboration: r.VolatilityCorroboration,
-		LocalCoupling: r.LocalCoupling, GitFindingDelta: projectGitFindingDelta(r.GitFindingDelta), Delta: projectDelta(r.Delta), Summary: report.Summary(r.Summary),
+		ClassifiedEdges: projectClassifiedEdges(r.ClassifiedEdges), DistanceContext: projectDistanceContext(r.DistanceContext),
+		DistanceConfigCandidates: projectDistanceConfigCandidates(r.DistanceConfigCandidates), VolatilityCorroboration: projectVolatilityCorroboration(r.VolatilityCorroboration),
+		LocalCoupling: projectLocalCoupling(r.LocalCoupling), GitFindingDelta: projectGitFindingDelta(r.GitFindingDelta), Delta: projectDelta(r.Delta), Summary: report.Summary(r.Summary),
 	}
+	doc.Score = projectScorecard(sc)
+	if baseScore != nil {
+		b := projectScorecard(*baseScore)
+		doc.BaseScore = &b
+	}
+	doc.Decision = projectDecision(decision.Build(r, sc, baseScore, hardGate))
+	return doc
+}
+
+func projectScorecard(in score.Scorecard) report.Scorecard {
+	out := report.Scorecard{RubricVersion: in.RubricVersion, Overall: in.Overall, OverallBand: report.ScoreBand(in.OverallBand), Dimensions: make([]report.Dimension, len(in.Dimensions))}
+	for i, d := range in.Dimensions {
+		out.Dimensions[i] = report.Dimension{Name: d.Name, Value: d.Value, Band: report.ScoreBand(d.Band), Confidence: report.Confidence(d.Confidence), Evidence: d.Evidence, Summary: d.Summary, RawValue: d.RawValue, CapApplied: d.CapApplied, Meta: d.Meta}
+	}
+	return out
+}
+
+func projectDecision(in decision.Report) report.Report {
+	out := report.Report{Band: report.DecisionBand(in.Band), Headline: in.Headline, Blocking: in.Blocking, Advisory: in.Advisory, Overall: in.Overall, OverallBand: report.ScoreBand(in.OverallBand), Dimensions: make([]report.DimReport, len(in.Dimensions)), Recommendations: report.Recommendations{MustFix: projectRecs(in.Recommendations.MustFix), ShouldFix: projectRecs(in.Recommendations.ShouldFix), Watch: projectRecs(in.Recommendations.Watch), Calibrate: projectRecs(in.Recommendations.Calibrate), Ignore: projectRecs(in.Recommendations.Ignore)}}
+	for i, d := range in.Dimensions {
+		out.Dimensions[i] = report.DimReport{Name: d.Name, Value: d.Value, Band: report.ScoreBand(d.Band), Confidence: report.Confidence(d.Confidence), RawValue: d.RawValue, CapApplied: d.CapApplied, Meta: d.Meta, Why: d.Why, WhatMoves: d.WhatMoves}
+	}
+	if in.Delta != nil {
+		out.Delta = &report.Delta{Overall: in.Delta.Overall, Dimensions: make([]report.DimDelta, len(in.Delta.Dimensions))}
+		for i, d := range in.Delta.Dimensions {
+			out.Delta.Dimensions[i] = report.DimDelta{Name: d.Name, Before: d.Before, After: d.After, Change: d.Change}
+		}
+	}
+	return out
+}
+
+func projectRecs(in []decision.Rec) []report.Rec {
+	out := make([]report.Rec, len(in))
+	for i, r := range in {
+		out[i] = report.Rec{Title: r.Title, Detail: r.Detail, RuleID: r.RuleID}
+	}
+	return out
+}
+
+func projectCoverage(in []evidence.Coverage) []report.Coverage {
+	out := make([]report.Coverage, len(in))
+	for i, v := range in {
+		out[i] = report.Coverage{Tool: v.Tool, Version: v.Version, FilesSeen: v.FilesSeen, FilesApplicable: v.FilesApplicable, Unresolved: v.Unresolved, SpecifiersSeen: v.SpecifiersSeen, UnresolvedInputsMissing: v.UnresolvedInputsMissing, UnresolvedPrecisionOnly: v.UnresolvedPrecisionOnly, Status: v.Status, Reason: v.Reason}
+	}
+	return out
+}
+
+func projectCoverageGaps(in []evidence.CoverageGap) []report.CoverageGap {
+	out := make([]report.CoverageGap, len(in))
+	for i, v := range in {
+		out[i] = report.CoverageGap{Tool: v.Tool, InstallCmd: v.InstallCmd, AffectedMetrics: v.AffectedMetrics, Gate: v.Gate}
+	}
+	return out
+}
+
+func projectFileFacts(in []evidence.FileFact) []report.FileFact {
+	out := make([]report.FileFact, len(in))
+	for i, v := range in {
+		out[i] = report.FileFact{Module: v.Module, Files: v.Files, InboundModuleFanIn: v.InboundModuleFanIn, OutboundDestinations: v.OutboundDestinations, LOC: v.LOC}
+	}
+	return out
+}
+
+func projectDynamicImports(in []evidence.DynamicImport) []report.DynamicImport {
+	out := make([]report.DynamicImport, len(in))
+	for i, v := range in {
+		sites := make([]report.DynamicImportSite, len(v.Sites))
+		for j, s := range v.Sites {
+			sites[j] = report.DynamicImportSite{File: s.File, Line: s.Line, Kind: s.Kind, Language: s.Language}
+		}
+		out[i] = report.DynamicImport{Module: v.Module, Count: v.Count, Sites: sites}
+	}
+	return out
+}
+
+func projectSyntaxFacts(in []evidence.SyntaxFact) []report.SyntaxFact {
+	out := make([]report.SyntaxFact, len(in))
+	for i, v := range in {
+		out[i] = report.SyntaxFact{Language: v.Language, File: v.File, Module: v.Module, Kind: v.Kind, Name: v.Name, Exported: v.Exported, StartLine: v.StartLine, EndLine: v.EndLine, Count: v.Count, Framework: v.Framework, FrameworkConfirmed: v.FrameworkConfirmed}
+	}
+	return out
+}
+
+func projectDeprecatedDeps(in []evidence.DeprecatedDep) []report.DeprecatedDep {
+	out := make([]report.DeprecatedDep, len(in))
+	for i, v := range in {
+		out[i] = report.DeprecatedDep{File: v.File, Kind: v.Kind, Subject: v.Subject, Note: v.Note}
+	}
+	return out
+}
+
+func projectSemanticStrengthOverlay(in *evidence.SemanticStrengthOverlay) *report.SemanticStrengthOverlay {
+	if in == nil {
+		return nil
+	}
+	out := &report.SemanticStrengthOverlay{ByLanguage: make(map[string]report.SemanticStrengthOverlayStats, len(in.ByLanguage))}
+	for lang, v := range in.ByLanguage {
+		out.ByLanguage[lang] = report.SemanticStrengthOverlayStats{CandidateEdges: v.CandidateEdges, Applied: v.Applied, Missed: v.Missed, Before: v.Before, After: v.After}
+	}
+	return out
+}
+
+func projectDynamicConnascenceSignals(in *evidence.DynamicConnascenceSignals) *report.DynamicConnascenceSignals {
+	if in == nil {
+		return nil
+	}
+	out := &report.DynamicConnascenceSignals{Unmeasured: in.Unmeasured, ReportOnlyReason: in.ReportOnlyReason, Signals: make([]report.DynamicConnascenceSignal, len(in.Signals))}
+	for i, v := range in.Signals {
+		sites := make([]report.DynamicConnascenceSite, len(v.Sites))
+		for j, s := range v.Sites {
+			sites[j] = report.DynamicConnascenceSite{File: s.File, Line: s.Line, Kind: s.Kind, Language: s.Language, Target: s.Target}
+		}
+		out.Signals[i] = report.DynamicConnascenceSignal{Kind: v.Kind, RelatedConnascence: v.RelatedConnascence, Measured: v.Measured, ReportOnlyReason: v.ReportOnlyReason, Module: v.Module, Target: v.Target, IntegrationKind: v.IntegrationKind, Count: v.Count, Sites: sites}
+	}
+	return out
+}
+
+func projectRuntimeAsyncModules(in []evidence.RuntimeAsyncModule) []report.RuntimeAsyncModule {
+	out := make([]report.RuntimeAsyncModule, len(in))
+	for i, v := range in {
+		out[i] = report.RuntimeAsyncModule{Module: v.Module, IntegrationKind: v.IntegrationKind, Count: v.Count, Confidence: v.Confidence}
+	}
+	return out
+}
+
+func projectRuntimeAsyncEdges(in []evidence.RuntimeAsyncEdge) []report.RuntimeAsyncEdge {
+	out := make([]report.RuntimeAsyncEdge, len(in))
+	for i, v := range in {
+		sites := make([]report.RuntimeAsyncSite, len(v.Sites))
+		for j, s := range v.Sites {
+			sites[j] = report.RuntimeAsyncSite{File: s.File, Line: s.Line, Library: s.Library, IntegrationKind: s.IntegrationKind, Language: s.Language}
+		}
+		out[i] = report.RuntimeAsyncEdge{FromModule: v.FromModule, Target: v.Target, IntegrationKind: v.IntegrationKind, Count: v.Count, Confidence: v.Confidence, Sites: sites}
+	}
+	return out
+}
+
+func projectConnascence(in *evidence.ConnascenceReport) *report.ConnascenceReport {
+	if in == nil {
+		return nil
+	}
+	out := &report.ConnascenceReport{EdgesWithEvidence: in.EdgesWithEvidence, AbstainedEdges: in.AbstainedEdges, TotalEvidence: in.TotalEvidence, StrengthInferredEdges: in.StrengthInferredEdges, ByKind: in.ByKind, BySource: in.BySource, Unmeasured: in.Unmeasured, Roadmap: make([]report.ConnascenceRoadmapItem, len(in.Roadmap))}
+	for i, v := range in.Roadmap {
+		out.Roadmap[i] = report.ConnascenceRoadmapItem{Kind: v.Kind, CurrentStatus: v.CurrentStatus, Sources: v.Sources, RelatedSignals: v.RelatedSignals, UpgradeTrigger: v.UpgradeTrigger}
+	}
+	return out
+}
+
+func projectDistanceContext(in *evidence.DistanceContext) *report.DistanceContext {
+	if in == nil {
+		return nil
+	}
+	return &report.DistanceContext{OwnerModel: in.OwnerModel, DistanceBasis: in.DistanceBasis, DeployUnitDetectedModules: in.DeployUnitDetectedModules, DeclaredExternalSystems: in.DeclaredExternalSystems, RuntimeAsyncRelations: in.RuntimeAsyncRelations, RuntimeAsyncKinds: in.RuntimeAsyncKinds, Interpretation: in.Interpretation, RuntimeInterpretation: in.RuntimeInterpretation}
+}
+
+func projectDistanceConfigCandidates(in []evidence.DistanceConfigCandidate) []report.DistanceConfigCandidate {
+	out := make([]report.DistanceConfigCandidate, len(in))
+	for i, v := range in {
+		sites := make([]report.DistanceConfigEvidenceSite, len(v.EvidenceSites))
+		for j, s := range v.EvidenceSites {
+			sites[j] = report.DistanceConfigEvidenceSite{File: s.File, Line: s.Line, Kind: s.Kind, Language: s.Language, Target: s.Target}
+		}
+		out[i] = report.DistanceConfigCandidate{SourceBlock: v.SourceBlock, Module: v.Module, Target: v.Target, IntegrationKind: v.IntegrationKind, Count: v.Count, EvidenceSites: sites, SuggestedReviewAction: v.SuggestedReviewAction}
+	}
+	return out
+}
+
+func projectVolatilityCorroboration(in *evidence.VolatilityCorroboration) *report.VolatilityCorroboration {
+	if in == nil {
+		return nil
+	}
+	out := &report.VolatilityCorroboration{Source: in.Source, Status: in.Status, CommitWindow: in.CommitWindow, FullHistory: in.FullHistory, CommitsScanned: in.CommitsScanned, ModulesTouched: in.ModulesTouched, Caveat: in.Caveat, TopTouched: make([]report.VolatilityTouch, len(in.TopTouched))}
+	for i, v := range in.TopTouched {
+		out.TopTouched[i] = report.VolatilityTouch{Module: v.Module, TouchCommits: v.TouchCommits, DeclaredVolatility: v.DeclaredVolatility}
+	}
+	return out
+}
+
+func projectLocalCoupling(in []evidence.LocalCouplingModule) []report.LocalCouplingModule {
+	out := make([]report.LocalCouplingModule, len(in))
+	for i, v := range in {
+		edges := make([]report.LocalCouplingEdge, len(v.WorstOffenders))
+		for j, e := range v.WorstOffenders {
+			edges[j] = report.LocalCouplingEdge{From: e.From, To: e.To, Strength: e.Strength, Balance: e.Balance, Band: e.Band, File: e.File, Line: e.Line}
+		}
+		out[i] = report.LocalCouplingModule{Module: v.Module, ScoredEdges: v.ScoredEdges, AbstainedEdges: v.AbstainedEdges, ComplexityEdges: v.ComplexityEdges, ComplexitySharePct: v.ComplexitySharePct, MeanBalance: v.MeanBalance, WorstOffenders: edges}
+	}
+	return out
 }
 
 func projectMetrics(in []result.MetricResult) []report.MetricResult {
@@ -113,7 +307,7 @@ func projectFindings(in []finding.Finding) []report.Finding {
 func projectAgentTasks(in []result.AgentTask) []report.AgentTask {
 	out := make([]report.AgentTask, 0, len(in))
 	for _, t := range in {
-		out = append(out, report.AgentTask{FindingID: t.FindingID, RuleID: t.RuleID, Goal: t.Goal, Constraints: t.Constraints, Files: t.Files, Validation: t.Validation, Declarations: t.Declarations})
+		out = append(out, report.AgentTask{FindingID: t.FindingID, RuleID: t.RuleID, Goal: t.Goal, Constraints: t.Constraints, Files: t.Files, Validation: t.Validation, Declarations: projectSyntaxFacts(t.Declarations)})
 	}
 	return out
 }

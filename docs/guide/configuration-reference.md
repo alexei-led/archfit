@@ -1084,8 +1084,8 @@ rejected before a draft is written. See [llm-enrich.md](llm-enrich.md).
 Each label entry in `.archfit-labels.yaml` may carry two optional fields:
 
 ```yaml
-- from: internal/engine
-  to: internal/classify
+- from: internal/analysispipeline
+  to: internal/relationship
   strength: functional
   status: approved
   confidence: medium # high | medium | low

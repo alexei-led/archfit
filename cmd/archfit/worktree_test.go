@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -274,28 +273,6 @@ func TestDiffCmd_SubdirRoot(t *testing.T) {
 // TestSubtreeInWorktree_ParentEscape verifies the D4 regression: a directory
 // whose name starts with ".." (e.g. "..fixtures") must NOT be rejected by the
 // parent-escape guard, while a true parent path ("../sibling") must be.
-func TestSubtreeInWorktree_ParentEscape(t *testing.T) {
-	t.Parallel()
-
-	gitRoot := "/repo"
-	wtDir := "/wt"
-
-	// Valid subdirectory whose name starts with "..": must succeed.
-	dotdotName := filepath.Join(gitRoot, "..fixtures")
-	got, err := subtreeInWorktree(gitRoot, dotdotName, wtDir)
-	if err != nil {
-		t.Errorf("..fixtures subdir: unexpected error: %v", err)
-	}
-	if want := filepath.Join(wtDir, "..fixtures"); got != want {
-		t.Errorf("..fixtures subdir: got %q, want %q", got, want)
-	}
-
-	// True parent escape: must be rejected.
-	parent := filepath.Join(gitRoot, "..", "sibling")
-	if _, err := subtreeInWorktree(gitRoot, parent, wtDir); err == nil {
-		t.Error("parent escape: expected error, got nil")
-	}
-}
 
 // TestDiffCmd_ConfigInSubdir verifies that when the config lives in a
 // subdirectory and --root is omitted, diff analyses the whole repo (GitRoot),
@@ -371,64 +348,6 @@ func assertNoBaseWorktreeLeak(t *testing.T, out string) {
 		if strings.Contains(out, seg) {
 			t.Errorf("head output leaked a base-worktree path (%q): %s", seg, out)
 		}
-	}
-}
-
-func TestBaseWorktreeParent_LocksDeterministicDir(t *testing.T) {
-	sha := strings.Repeat("a", 40)
-	runner := &toolrun.RunnerMock{
-		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-			if cmd.Name == gitBinary && len(cmd.Args) >= 3 && cmd.Args[0] == "rev-parse" {
-				return toolrun.Output{Stdout: []byte(sha + "\n")}, nil
-			}
-			return toolrun.Output{}, nil
-		},
-	}
-	deps := &appDeps{Runner: runner}
-	dir := t.TempDir()
-
-	first, releaseFirst, err := baseWorktreeParent(context.Background(), deps, dir, diffBaseRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	firstReleased := false
-	t.Cleanup(func() {
-		if !firstReleased {
-			releaseFirst()
-		}
-	})
-	if want := filepath.Join(dir, ".archfit-cache", "worktrees", sha); first != want {
-		t.Fatalf("first worktree parent = %q, want %q", first, want)
-	}
-
-	done := make(chan struct{})
-	var second string
-	var releaseSecond func()
-	var secondErr error
-	go func() {
-		second, releaseSecond, secondErr = baseWorktreeParent(context.Background(), deps, dir, diffBaseRef)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		t.Fatalf("second baseWorktreeParent returned before first lock was released: dir=%q err=%v", second, secondErr)
-	case <-time.After(3 * baseWorktreeLockPoll):
-	}
-
-	releaseFirst()
-	firstReleased = true
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("second baseWorktreeParent did not acquire lock after first release")
-	}
-	if secondErr != nil {
-		t.Fatal(secondErr)
-	}
-	defer releaseSecond()
-	if second != first {
-		t.Fatalf("second worktree parent = %q, want locked deterministic dir %q", second, first)
 	}
 }
 

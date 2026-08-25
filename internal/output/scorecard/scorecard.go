@@ -1,6 +1,6 @@
-// Package scorecard renders a Diagnostic as the architect skill's seven-dimension
-// banded scorecard: an overall 0-100 value plus one block per dimension with its
-// value, band, confidence, evidence references, and a one-line summary. The
+// Package scorecard renders a report document's projected scorecard: an overall
+// 0-100 value plus one block per dimension with its value, band, confidence,
+// evidence references, and a one-line summary.
 package scorecard
 
 import (
@@ -8,12 +8,14 @@ import (
 	"io"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
+	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
-// Renderer formats a Diagnostic as a banded scorecard. Satisfies engine.Renderer.
+// Renderer formats a report document's projected scorecard.
 type Renderer struct{}
+
+var _ reportports.Renderer = (*Renderer)(nil)
 
 // New returns a Renderer.
 func New() *Renderer { return &Renderer{} }
@@ -21,8 +23,9 @@ func New() *Renderer { return &Renderer{} }
 // Format returns "scorecard".
 func (r *Renderer) Format() string { return "scorecard" }
 
-// Render writes the supplied scorecard and diagnostic details.
-func (r *Renderer) Render(d report.Document, sc report.Scorecard, w io.Writer) error {
+// Render writes the projected scorecard and diagnostic details.
+func (r *Renderer) Render(d report.Document, w io.Writer) error {
+	sc := d.Score
 	var b strings.Builder
 	b.WriteString("# archfit scorecard\n\n")
 	fmt.Fprintf(&b, "**Rubric version:** %d\n", sc.RubricVersion)
@@ -92,7 +95,7 @@ func writeDelta(b *strings.Builder, delta *report.DeltaReport) {
 // reader sees why dimensions are n/a rather than mistaking absent evidence for a
 // strong result. One line per missing analyzer with the dimensions it unlocks
 // and an install hint. Omitted when no tool is missing.
-func writeRequiredToolsMissing(b *strings.Builder, gaps []evidence.CoverageGap) {
+func writeRequiredToolsMissing(b *strings.Builder, gaps []report.CoverageGap) {
 	if len(gaps) == 0 {
 		return
 	}

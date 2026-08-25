@@ -12,7 +12,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // TestConfigCompare covers `archfit config compare`: the identity result, a
@@ -85,7 +85,7 @@ func testCompareClassificationMix(t *testing.T) {
 		{
 			name: "strength mix moves",
 			mutate: func(s *result.ClassifiedEdgeSummary) {
-				s.ByStrength = map[string]int{"contract": 1}
+				s.ByStrength = map[string]int{llmStrengthContract: 1}
 			},
 			wantSubstr: "strength mix: contract 0 → 1, functional 1 → 0",
 		},
@@ -615,16 +615,16 @@ func testCompareExitCodes(t *testing.T) {
 // a difference, unmeasured on exactly one side is.
 func testCompareScoreLine(t *testing.T) {
 	t.Parallel()
-	measured := func(v int) score.Scorecard {
-		return score.Scorecard{Overall: v, OverallBand: score.BandMixed}
+	measured := func(v int) report.Scorecard {
+		return report.Scorecard{Overall: v, OverallBand: report.ScoreBandMixed}
 	}
-	unmeasured := score.Scorecard{OverallBand: score.BandNA}
+	unmeasured := report.Scorecard{OverallBand: report.ScoreBandNA}
 	delta := func(v int) *int { return &v }
 
 	tests := []struct {
 		name        string
-		current     score.Scorecard
-		candidate   score.Scorecard
+		current     report.Scorecard
+		candidate   report.Scorecard
 		delta       *int
 		wantChanged bool
 		wantSubstr  string

@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/graph"
+	reportmodel "github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/output/sarif"
+	"github.com/alexei-led/archfit/internal/relationship"
 	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
 )
 
@@ -18,12 +18,12 @@ const (
 	fileA        = "pkg/a/a.go"
 )
 
-func sampleDiagnostic() diagnostic.Diagnostic {
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictFail
+func sampleDiagnostic() reportmodel.Document {
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictFail
 	d.Base = "main"
 	d.Head = "HEAD"
-	d.Metrics = []diagnostic.MetricResult{{Name: "cycle", Value: 0, Band: "green"}}
+	d.Metrics = []reportmodel.MetricResult{{Name: "cycle", Value: 0, Band: "green"}}
 	d.Findings = reporttest.Findings(
 		finding.Finding{
 			ID: "f-gate", Kind: "gate", RuleID: ruleInternal,
@@ -32,7 +32,7 @@ func sampleDiagnostic() diagnostic.Diagnostic {
 				From: finding.Endpoint{Path: fileA},
 				To:   finding.Endpoint{Path: "pkg/b/internal/impl.go"},
 			},
-			Locations: []graph.Location{{File: fileA, Line: 5}},
+			Locations: []relationship.Location{{File: fileA, Line: 5}},
 			Why:       "a uses b internals",
 		},
 		finding.Finding{
@@ -49,7 +49,7 @@ func sampleDiagnostic() diagnostic.Diagnostic {
 	return d
 }
 
-func render(t *testing.T, d diagnostic.Diagnostic) (string, map[string]any) {
+func render(t *testing.T, d reportmodel.Document) (string, map[string]any) {
 	t.Helper()
 	var buf bytes.Buffer
 	if err := sarif.New().Render(d, &buf); err != nil {
@@ -150,8 +150,8 @@ func TestRender_Deterministic(t *testing.T) {
 }
 
 func TestRender_EmptyDiagnostic(t *testing.T) {
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 	_, doc := render(t, d)
 	run := doc["runs"].([]any)[0].(map[string]any)
 	if results := run["results"].([]any); len(results) != 0 {

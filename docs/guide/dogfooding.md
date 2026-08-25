@@ -52,7 +52,7 @@ From the project `.archfit.yaml` and the structural gates in `CLAUDE.md`:
   never the deterministic gate path.
 - **Forbidden dependencies and layer direction** declared as `rules` in the
   config (e.g. the historical engine→scope inversion guard, gated `warn`).
-- **Golden output** (`go test ./internal/engine/ -run TestGolden`) — emitted
+- **Golden output** (`go test ./internal/analysispipeline/ -run TestGolden`) — emitted
   output is byte-stable; a change is regenerated deliberately after inspecting
   the diff, never automatically.
 

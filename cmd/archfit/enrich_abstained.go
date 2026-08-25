@@ -14,18 +14,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 
-	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/baseline"
+	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
+	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/engine"
-	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
-	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
 
 const (
@@ -72,80 +66,32 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 	}
 
 	labelsPath := filepath.Join(configDir, defaultLabelsPath)
-	existing, err := labelsio.Load(labelsPath)
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
-	// Run the standard pipeline once, capturing the evidence the metrics saw.
-	var captured signal.CommonInput
-	base, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
 	deps.refresh = c.Refresh
-	if _, _, err := runPipeline(ctx, deps, cfg, newRunContext(c.Config, c.Root), engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
-	mm := engine.AugmentClassifyConfig(captured.Graph, cfg.ForClassify()).ModuleMap
-	wanted := make(map[string]struct{}, len(existing))
-	for _, label := range existing {
-		if label.Status == labels.StatusApproved {
-			wanted[labels.Key(label.From, label.To)] = struct{}{}
-		}
-	}
-	labelEvidence := engine.PairEvidence(captured.Graph, mm, wanted)
-	pairs, total := selectAbstainedPairs(captured.Graph, captured.Classifications, mm, existing, labelEvidence)
-	if len(pairs) == 0 {
-		_, _ = fmt.Fprintln(deps.Stdout, "enrich abstained: no abstained cross-module edges — nothing to label")
-		return nil
-	}
-	included := 0
-	for _, p := range pairs {
-		included += p.EdgeCount
-	}
-	if total > included {
-		_, _ = fmt.Fprintf(deps.Stdout, "enrich abstained: %d abstained edge(s) found; labeling the first %d (cap %d) — re-run after review to cover the rest\n", total, included, abstainedEdgeCap)
-	} else {
-		_, _ = fmt.Fprintf(deps.Stdout, "enrich abstained: %d abstained edge(s) across %d module pair(s)\n", total, len(pairs))
-	}
-
+	analyzer := newUseCaseAnalyzer(c.Config, c.Root, cfg, deps)
 	root := c.Root
 	if root == "" {
 		root = configDir
 	}
-	attachSnippets(root, pairs)
-
-	rootForEvidence := scanRootForEvidence(configDir, c.Root)
-	repoEvidence := architectureEvidenceLines(rootForEvidence, configModulesForEvidence(cfg), c.Config, enrichEvidenceDiagnostics("enrich-abstained", len(pairs)))
-	drafts, err := draftAbstainedLabels(ctx, provider, cfg, pairs, repoEvidence)
+	service := application.EnrichService{
+		Preparer: analyzer, Analyzer: analyzer, Labels: enrichmentLabelStore(),
+		Policy: apppipeline.EnrichmentPolicy{}, Judge: abstainedJudgeAdapter{provider: provider, cfg: cfg, configPath: c.Config, root: scanRootForEvidence(configDir, c.Root)},
+		Snippets: filesystemSnippetAdapter{},
+	}
+	out, err := service.Execute(ctx, application.EnrichmentRequest{ConfigPath: c.Config, Root: root, Refresh: c.Refresh, LabelsPath: labelsPath, Abstained: true, EdgeCap: abstainedEdgeCap, SampleCap: abstainedSampleLocs})
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-
-	// Stamp drafts with the evidence hash the engine will verify later.
-	draftWanted := make(map[string]struct{}, len(drafts))
-	for _, d := range drafts {
-		draftWanted[labels.Key(d.From, d.To)] = struct{}{}
+	if out.NoCandidates {
+		_, _ = fmt.Fprintln(deps.Stdout, "enrich abstained: no abstained cross-module edges — nothing to label")
+		return nil
 	}
-	evidence := engine.PairEvidence(captured.Graph, mm, draftWanted)
-	for i := range drafts {
-		drafts[i].EvidenceHash = evidence[labels.Key(drafts[i].From, drafts[i].To)]
+	included := out.SelectedEdges
+	if out.TotalEdges > included {
+		_, _ = fmt.Fprintf(deps.Stdout, "enrich abstained: %d abstained edge(s) found; labeling the first %d (cap %d) — re-run after review to cover the rest\n", out.TotalEdges, included, abstainedEdgeCap)
+	} else {
+		_, _ = fmt.Fprintf(deps.Stdout, "enrich abstained: %d abstained edge(s) across %d module pair(s)\n", out.TotalEdges, out.Candidates)
 	}
-
-	merged := mergeDrafts(existing, drafts, evidence)
-	if err := writeLabels(labelsPath, merged); err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
-	approvedKept := 0
-	for _, l := range merged {
-		if l.Status == labels.StatusApproved {
-			approvedKept++
-		}
-	}
-	_, _ = fmt.Fprintf(deps.Stdout, "enrich abstained: %d draft label(s) written to %s (%d approved entries kept)\n", len(drafts), labelsPath, approvedKept)
+	_, _ = fmt.Fprintf(deps.Stdout, "enrich abstained: %d draft label(s) written to %s (%d approved entries kept)\n", out.Drafts, labelsPath, out.ApprovedKept)
 	_, _ = fmt.Fprintln(deps.Stdout, "review each draft, set status: approved to pin it, delete to reject — the gate consumes approved labels only")
 	return nil
 }
@@ -155,7 +101,7 @@ type abstainedSample struct {
 	FromPath, ToPath string // edge endpoints (node paths)
 	File             string // repo-relative location file; "" when the edge has no location
 	Line             int
-	Snippet          string // numbered source lines around Line; "" until attachSnippets / when unreadable
+	Snippet          string // numbered source lines around Line; "" when unreadable
 }
 
 // abstainedPair aggregates the abstained edges between one ordered module pair.
@@ -163,92 +109,6 @@ type abstainedPair struct {
 	From, To  string
 	EdgeCount int // edges included this run (capped)
 	Samples   []abstainedSample
-}
-
-// selectAbstainedPairs picks the edges the scorer abstained on: unknown
-// strength with a known cross-module distance. Edges with any static strength
-// signal (heuristic, type info, glob, SCIP) are NOT abstained and are excluded
-// — the LLM only fills cells that are unknown after every static source.
-// External/library edges (unknown distance) are missing facts, not ambiguous
-// facts: excluded. Fresh approved pairs are skipped; stale approved pairs can
-// be redrafted.
-//
-// At most abstainedEdgeCap edges are included per run (deterministic: the
-// graph's edge order is sorted); total counts every eligible edge so the
-// caller can disclose the cap.
-func selectAbstainedPairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMap, existing []labels.Label, evidence map[string]string) (pairs []abstainedPair, total int) {
-	if g == nil {
-		return nil, 0
-	}
-	approved := effectiveApprovedPairs(existing, evidence)
-
-	byKey := map[string]*abstainedPair{}
-	included := 0
-	for _, e := range g.Edges() {
-		cl, ok := idx[e.From+"\x00"+e.To+"\x00"+string(e.Kind)]
-		if !ok || cl.Strength != coupling.StrengthUnknown {
-			continue
-		}
-		if cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown || cl.Distance == "" {
-			continue
-		}
-		fromPath := graph.NodePath(e.From)
-		toPath := graph.NodePath(e.To)
-		fromMod, okF := mm.ModuleFor(fromPath)
-		toMod, okT := mm.ModuleFor(toPath)
-		if !okF || !okT || fromMod == toMod {
-			continue
-		}
-		key := labels.Key(fromMod, toMod)
-		if _, isApproved := approved[key]; isApproved {
-			continue
-		}
-		total++
-		if included >= abstainedEdgeCap {
-			continue // keep counting for the disclosure line
-		}
-		included++
-		p := byKey[key]
-		if p == nil {
-			p = &abstainedPair{From: fromMod, To: toMod}
-			byKey[key] = p
-		}
-		p.EdgeCount++
-		if len(p.Samples) < abstainedSampleLocs {
-			s := abstainedSample{FromPath: fromPath, ToPath: toPath}
-			if len(e.Locations) > 0 {
-				s.File = e.Locations[0].File
-				s.Line = e.Locations[0].Line
-			}
-			p.Samples = append(p.Samples, s)
-		}
-	}
-
-	pairs = make([]abstainedPair, 0, len(byKey))
-	for _, p := range byKey {
-		pairs = append(pairs, *p)
-	}
-	sort.Slice(pairs, func(i, j int) bool {
-		if pairs[i].From != pairs[j].From {
-			return pairs[i].From < pairs[j].From
-		}
-		return pairs[i].To < pairs[j].To
-	})
-	return pairs, total
-}
-
-// attachSnippets fills each located sample with the source lines around it.
-// A missing or unreadable file degrades to a location-only sample — never an error.
-func attachSnippets(root string, pairs []abstainedPair) {
-	for pi := range pairs {
-		for si := range pairs[pi].Samples {
-			s := &pairs[pi].Samples[si]
-			if s.File == "" {
-				continue
-			}
-			s.Snippet = loadSnippet(root, s.File, s.Line)
-		}
-	}
 }
 
 // loadSnippet returns numbered source lines within abstainedSnippetRadius of
@@ -349,29 +209,15 @@ func abstainedUserPrompt(cfg config.Config, batch []abstainedPair, repoEvidence 
 	return b.String()
 }
 
-// abstainedResponse mirrors one element of the model's JSON answer.
-type abstainedResponse struct {
-	From         string   `json:"from"`
-	To           string   `json:"to"`
-	Strength     string   `json:"strength"`
-	Confidence   string   `json:"confidence"`
-	Rationale    string   `json:"rationale"`
-	EvidenceRefs []string `json:"evidence_refs"`
-	Basis        string   `json:"basis"`
-}
-
 // abstainedStrengths are the four book levels this pass may propose. Symmetric
 // is deliberately absent — it comes from clone evidence only, never judgment.
 var abstainedStrengths = map[string]struct{}{
-	string(coupling.StrengthContract):   {},
-	string(coupling.StrengthModel):      {},
-	string(coupling.StrengthFunctional): {},
-	string(coupling.StrengthIntrusive):  {},
+	llmStrengthContract: {}, "model": {}, "functional": {}, "intrusive": {},
 }
 
 // abstainedConfidences are the self-reported confidence values carried into drafts.
 var abstainedConfidences = map[string]struct{}{
-	labels.ConfidenceHigh: {}, labels.ConfidenceMedium: {}, labels.ConfidenceLow: {},
+	application.EnrichmentLabelConfidenceHigh: {}, application.EnrichmentLabelConfidenceMedium: {}, application.EnrichmentLabelConfidenceLow: {},
 }
 
 // parseAbstainedResponse validates the model's JSON against the required
@@ -380,24 +226,24 @@ var abstainedConfidences = map[string]struct{}{
 // retries the batch once with the violation quoted back. Entries for pairs
 // that were never requested are hallucinations and are dropped without error,
 // but every requested pair must appear exactly once.
-func parseAbstainedResponse(text string, batch []abstainedPair, allowedRefs ...map[string]struct{}) ([]labels.Label, error) {
+func parseAbstainedResponse(text string, batch []abstainedPair, allowedRefs ...map[string]struct{}) ([]application.EnrichmentLabel, error) {
 	text = trimJSONFences(text)
 
-	var entries []abstainedResponse
+	var entries []application.EnrichmentLabelResponse
 	if err := json.Unmarshal([]byte(text), &entries); err != nil {
 		return nil, fmt.Errorf("response is not the required JSON array: %w", err)
 	}
 
 	requested := make(map[string]struct{}, len(batch))
 	for _, p := range batch {
-		requested[labels.Key(p.From, p.To)] = struct{}{}
+		requested[application.EnrichmentPairKey(p.From, p.To)] = struct{}{}
 	}
 
 	seen := make(map[string]struct{}, len(batch))
-	out := make([]labels.Label, 0, len(entries))
+	out := make([]application.EnrichmentLabel, 0, len(entries))
 	knownRefs := firstAllowedEvidenceRefs(allowedRefs)
 	for _, e := range entries {
-		key := labels.Key(e.From, e.To)
+		key := application.EnrichmentPairKey(e.From, e.To)
 		if _, ok := requested[key]; !ok {
 			continue
 		}
@@ -418,20 +264,20 @@ func parseAbstainedResponse(text string, batch []abstainedPair, allowedRefs ...m
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, labels.Label{
+		out = append(out, application.EnrichmentLabel{
 			From:         e.From,
 			To:           e.To,
 			Strength:     e.Strength,
 			Rationale:    e.Rationale,
 			EvidenceRefs: refs,
 			Basis:        basis,
-			Status:       labels.StatusDraft,
-			Provenance:   labels.ProvenanceLLM,
+			Status:       application.EnrichmentLabelStatusDraft,
+			Provenance:   application.EnrichmentLabelProvenanceLLM,
 			Confidence:   e.Confidence,
 		})
 	}
 	for _, p := range batch {
-		if _, ok := seen[labels.Key(p.From, p.To)]; !ok {
+		if _, ok := seen[application.EnrichmentPairKey(p.From, p.To)]; !ok {
 			return nil, fmt.Errorf("missing response for requested pair %s->%s", p.From, p.To)
 		}
 	}
@@ -442,9 +288,9 @@ func parseAbstainedResponse(text string, batch []abstainedPair, allowedRefs ...m
 // pairs. A response that fails schema validation is retried once with the
 // violation quoted back; a second failure fails the run — a half-understood
 // draft file is never written.
-func draftAbstainedLabels(ctx context.Context, p llm.Provider, cfg config.Config, pairs []abstainedPair, repoEvidence ...[]string) ([]labels.Label, error) {
+func draftAbstainedLabels(ctx context.Context, p llm.Provider, cfg config.Config, pairs []abstainedPair, repoEvidence ...[]string) ([]application.EnrichmentLabel, error) {
 	evidence := optionalEvidence(repoEvidence)
-	var out []labels.Label
+	var out []application.EnrichmentLabel
 	for start := 0; start < len(pairs); start += abstainedBatchSize {
 		batch := pairs[start:min(start+abstainedBatchSize, len(pairs))]
 		drafts, err := requestAbstainedBatch(ctx, p, abstainedUserPrompt(cfg, batch, evidence), batch, evidenceRefSet(evidence))
@@ -458,7 +304,7 @@ func draftAbstainedLabels(ctx context.Context, p llm.Provider, cfg config.Config
 
 // requestAbstainedBatch executes one batch request with a single
 // schema-validation retry.
-func requestAbstainedBatch(ctx context.Context, p llm.Provider, user string, batch []abstainedPair, allowedRefs ...map[string]struct{}) ([]labels.Label, error) {
+func requestAbstainedBatch(ctx context.Context, p llm.Provider, user string, batch []abstainedPair, allowedRefs ...map[string]struct{}) ([]application.EnrichmentLabel, error) {
 	resp, err := p.Complete(ctx, llm.Request{System: abstainedSystemPrompt, User: user})
 	if err != nil {
 		return nil, err

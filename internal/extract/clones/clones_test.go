@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/model/clone"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	reportmodel "github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -119,8 +119,8 @@ func TestRun_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusOK {
-		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusOK)
+	if cov.Status != reportmodel.StatusOK {
+		t.Errorf("coverage status = %q, want %q", cov.Status, reportmodel.StatusOK)
 	}
 	if cov.FilesSeen != 12 || cov.FilesApplicable != 12 {
 		t.Errorf("coverage files = %d/%d, want 12/12 (scanned files, not clone pairs)", cov.FilesSeen, cov.FilesApplicable)
@@ -153,8 +153,8 @@ func TestRun_AbsentTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusAbsent {
-		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusAbsent)
+	if cov.Status != reportmodel.StatusAbsent {
+		t.Errorf("coverage status = %q, want %q", cov.Status, reportmodel.StatusAbsent)
 	}
 	if len(clusters) != 0 {
 		t.Errorf("expected empty clusters, got %d", len(clusters))
@@ -168,8 +168,8 @@ func TestRun_Disabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusDisabled {
-		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusDisabled)
+	if cov.Status != reportmodel.StatusDisabled {
+		t.Errorf("coverage status = %q, want %q", cov.Status, reportmodel.StatusDisabled)
 	}
 	if len(clusters) != 0 {
 		t.Errorf("expected empty clusters for disabled tool, got %d", len(clusters))
@@ -182,16 +182,16 @@ func TestRun_Disabled(t *testing.T) {
 // not installed but enabled → StatusAbsent (show "install" prompt).
 func TestRun_StatusDistinction(t *testing.T) {
 	_, covDisabled, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, 0, nil, nil)
-	if covDisabled.Status != diagnostic.StatusDisabled {
-		t.Errorf("disabled status = %q, want %q", covDisabled.Status, diagnostic.StatusDisabled)
+	if covDisabled.Status != reportmodel.StatusDisabled {
+		t.Errorf("disabled status = %q, want %q", covDisabled.Status, reportmodel.StatusDisabled)
 	}
 	if covDisabled.Reason != reasonDisabled {
 		t.Errorf("disabled reason = %q, want %q", covDisabled.Reason, reasonDisabled)
 	}
 
 	_, covAbsent, _ := Run(context.Background(), absentRunner(), t.TempDir(), true, 0, nil, nil)
-	if covAbsent.Status != diagnostic.StatusAbsent {
-		t.Errorf("absent status = %q, want %q", covAbsent.Status, diagnostic.StatusAbsent)
+	if covAbsent.Status != reportmodel.StatusAbsent {
+		t.Errorf("absent status = %q, want %q", covAbsent.Status, reportmodel.StatusAbsent)
 	}
 	if covAbsent.Reason != reasonNotInstalled {
 		t.Errorf("absent reason = %q, want %q", covAbsent.Reason, reasonNotInstalled)
@@ -203,8 +203,8 @@ func TestRun_MalformedOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusPartial {
-		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusPartial)
+	if cov.Status != reportmodel.StatusPartial {
+		t.Errorf("coverage status = %q, want %q", cov.Status, reportmodel.StatusPartial)
 	}
 	if len(clusters) != 0 {
 		t.Errorf("expected empty clusters for malformed output, got %d", len(clusters))
@@ -216,8 +216,8 @@ func TestRun_ToolFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusPartial {
-		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusPartial)
+	if cov.Status != reportmodel.StatusPartial {
+		t.Errorf("coverage status = %q, want %q", cov.Status, reportmodel.StatusPartial)
 	}
 	if len(clusters) != 0 {
 		t.Errorf("expected empty clusters for tool failure, got %d", len(clusters))
@@ -249,8 +249,8 @@ func TestRun_Timeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusTimedOut {
-		t.Errorf("status = %q, want %q", cov.Status, diagnostic.StatusTimedOut)
+	if cov.Status != reportmodel.StatusTimedOut {
+		t.Errorf("status = %q, want %q", cov.Status, reportmodel.StatusTimedOut)
 	}
 	if cov.Reason != reasonTimedOut {
 		t.Errorf("reason = %q, want %q", cov.Reason, reasonTimedOut)
@@ -505,8 +505,8 @@ func TestRun_NonZeroExitWithValidReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusOK {
-		t.Errorf("coverage status = %q, want %q (report on disk must not be discarded on exit 1)", cov.Status, diagnostic.StatusOK)
+	if cov.Status != reportmodel.StatusOK {
+		t.Errorf("coverage status = %q, want %q (report on disk must not be discarded on exit 1)", cov.Status, reportmodel.StatusOK)
 	}
 	if len(clusters) != 1 {
 		t.Fatalf("clusters len = %d, want 1 (exit 1 + valid report should yield clusters)", len(clusters))
@@ -562,11 +562,11 @@ func TestRun_RealTool_RustClones(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status == diagnostic.StatusAbsent {
+	if cov.Status == reportmodel.StatusAbsent {
 		t.Skip("jscpd not installed — skipping real-tool test")
 	}
-	if cov.Status != diagnostic.StatusOK {
-		t.Fatalf("coverage status = %q (reason: %s), want %q", cov.Status, cov.Reason, diagnostic.StatusOK)
+	if cov.Status != reportmodel.StatusOK {
+		t.Fatalf("coverage status = %q (reason: %s), want %q", cov.Status, cov.Reason, reportmodel.StatusOK)
 	}
 	if len(clusters) == 0 {
 		t.Error("expected at least one clone cluster for identical Rust blocks, got 0")

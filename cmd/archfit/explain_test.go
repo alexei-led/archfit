@@ -57,7 +57,7 @@ func TestBuildExplainPrompt_DegenerateOwnerQualifier(t *testing.T) {
 		Why:        "structural distance mismatch",
 		Constraint: "lower strength",
 		MatchedBy: map[string]string{
-			matchedByStrength: "functional",
+			matchedByStrength: llmStrengthFunctional,
 			"distance":        "internal_remote",
 			"distance_basis":  distanceBasisCodeStructure,
 		},

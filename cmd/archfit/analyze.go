@@ -2,26 +2,21 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
+	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/assessment/decision"
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
 	"github.com/alexei-led/archfit/internal/output/sarif"
 	"github.com/alexei-led/archfit/internal/output/scorecard"
+	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
 // AnalyzeCmd is the local, report-only analysis command. It runs the same scan
@@ -128,157 +123,50 @@ type scanRequest struct {
 	providerOverride llm.Provider
 }
 
-// runScan dispatches the Analyze/Check use case through the application layer.
+// runScan invokes the application-owned Analyze/Check use case, then renders
+// the returned report document and maps the application exit decision to the
+// CLI error contract.
 func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
-	return application.Service{Runner: scanRunner{deps: deps, providerOverride: req.providerOverride}}.Execute(ctx, application.Request{
-		ConfigPath:   req.configPath,
-		Root:         req.root,
-		BaseRef:      req.baseRef,
-		JSON:         req.json,
-		Markdown:     req.markdown,
-		SARIF:        req.sarif,
-		Formats:      req.formats,
-		NoAdvisories: req.noAdvisories,
-		MinSeverity:  req.minSeverity,
-		Lang:         req.lang,
-		RequireTools: req.requireTools,
-		Progress:     req.progress,
-		Quiet:        req.quiet,
-		Refresh:      req.refresh,
-		AISummary:    req.aiSummary,
-		ReportOnly:   req.reportOnly,
-	})
-}
-
-type scanRunner struct {
-	deps             *appDeps
-	providerOverride llm.Provider
-}
-
-func (r scanRunner) Run(ctx context.Context, req application.Request) error {
-	return runScanInternal(ctx, r.deps, scanRequest{
-		configPath: req.ConfigPath, root: req.Root, baseRef: req.BaseRef,
-		json: req.JSON, markdown: req.Markdown, sarif: req.SARIF, formats: req.Formats,
-		noAdvisories: req.NoAdvisories, minSeverity: req.MinSeverity, lang: req.Lang,
-		requireTools: req.RequireTools, progress: req.Progress, quiet: req.Quiet,
-		refresh: req.Refresh, aiSummary: req.AISummary, reportOnly: req.ReportOnly,
-		providerOverride: r.providerOverride,
-	})
-}
-
-// runScanInternal contains the existing pipeline until task #27 moves its
-// orchestration behind application-owned stage contracts.
-func runScanInternal(ctx context.Context, deps *appDeps, req scanRequest) error {
-	formats := req.formats
-
 	rep := newProgressReporter(deps.stderr(), analyzePhaseTotal(req.aiSummary, req.baseRef != ""), req.progress, req.quiet, time.Now())
 	rep.banner("Archfit analyzing " + analyzeTarget(req.configPath, req.root))
-	deps.progress = rep.advance
-	deps.refresh = req.refresh
 	defer rep.finish()
+
+	// Runtime flags and stage progress belong to this invocation. Wire them
+	// before config preparation so the technical stage cannot silently fall
+	// back to cache reads or a nil progress callback.
+	deps.refresh = req.refresh
+	deps.progress = rep.advance
 
 	rep.advance("Loading config")
 	cfg, err := loadAnalysisConfig(ctx, req.configPath)
 	if err != nil {
 		return configLoadError(err)
 	}
-	if err := applyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
+	if err := apppipeline.ApplyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	printConfigLint(deps.stderr(), cfg.Lint())
-
-	// Snapshot the EFFECTIVE config for the --base sub-run before the head
-	// pipeline touches it. runPipeline's owner and deploy-unit backfill
-	// (FillMissingOwners / FillMissingDeployUnits) writes through the shared
-	// cfg.Modules map, so without an independent map the base side would inherit
-	// head-tree owners, skip its own resolution, and classify distance against
-	// evidence its own tree never produced.
-	baseCfg := cfg
-	if req.baseRef != "" {
-		baseCfg = withIndependentModules(cfg)
-	}
-
-	configDir := filepath.Dir(req.configPath)
-	deps.scanRoot = req.root
-	if deps.scanRoot == "" {
-		deps.scanRoot = configDir
-	}
-	defer func() { deps.scanRoot = "" }()
-
-	base, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
+	analyzer := newUseCaseAnalyzer(req.configPath, req.root, cfg, deps)
+	resp, err := application.Service{Preparer: analyzer, Evidence: analyzer, Relationship: analyzer, Assessment: analyzer}.Execute(ctx, application.Request{
+		BaseRef:      req.baseRef,
+		JSON:         req.json,
+		Markdown:     req.markdown,
+		SARIF:        req.sarif,
+		Formats:      req.formats,
+		NoAdvisories: req.noAdvisories,
+		RequireTools: req.requireTools,
+		ReportOnly:   req.reportOnly,
+	})
 	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+		return err
 	}
 
-	// --no-advisories has one meaning for every requested format: the scorecard
-	// value is synthesised from ClassifiedEdges (before advisory filtering), so
-	// suppressing advisory findings never moves the score and the format no
-	// longer needs to force them back on.
-	advisory := !req.noAdvisories
-
-	mode := engine.Mode{
-		Base:       req.baseRef,
-		Full:       true,
-		Advisory:   advisory,
-		ReportOnly: req.reportOnly,
-		Formats:    formats,
-	}
-
-	// One run context for the whole comparison: the head run and the --base
-	// sub-run share the config source, the config bundle directory, and one
-	// sampled evaluation instant. Only the scan root differs (the base side
-	// swaps in its worktree), so a finding never ages differently between the
-	// two sides just because the second pipeline started later.
-	rc := newRunContext(req.configPath, req.root)
-	rc.EvaluatedAt = time.Now()
-
-	diag, sc, err := runPipeline(ctx, deps, cfg, rc, mode, base)
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-	emitHealthWarnings(deps, diag, cfg, deps.scanRoot, req.configPath)
-
-	gateView := couplingGateView(cfg)
-	for _, reason := range score.EvaluateCouplingGate(sc, gateView, base.CouplingScore()).Reasons {
-		_, _ = fmt.Fprintln(deps.stderr(), "coupling gate: "+reason)
-	}
-	if gateView.Enabled && gateView.MaxDrop != nil {
-		if mismatches := base.ScoreSnapshotMismatches(); len(mismatches) > 0 {
-			_, _ = fmt.Fprintf(deps.stderr(),
-				"coupling gate: max_drop skipped — baseline score snapshot is incompatible (%s); run `archfit baseline` to re-anchor\n",
-				strings.Join(scoreSnapshotMismatchDetails(base, mismatches), ", "))
-		}
-	}
-
-	hardGate := applyToolGate(&diag, req.requireTools)
-
-	var baseSC *score.Scorecard
-	if req.baseRef != "" {
-		rep.advance("Comparing against base")
-		bsc, bev, berr := scoreBaseRef(ctx, deps, req.baseRef, rc, baseCfg, advisory)
-		if berr != nil {
-			return berr
-		}
-		baseSC = &bsc
-		// Report-only: the origin block is attached after the verdict and the
-		// tool gate are final, so it can never change either.
-		diag.GitFindingDelta = buildGitFindingDelta(gitDeltaInput{
-			BaseRef:        req.baseRef,
-			Tasks:          diag.AgentTasks,
-			BaseFindingIDs: bev.FindingIDs,
-			Head:           analyzerEvidence{Coverage: diag.ToolCoverage, Gaps: diag.CoverageGaps, Hash: diag.ConfigHash},
-			Base:           analyzerEvidence{Coverage: bev.Coverage, Gaps: bev.CoverageGaps, Hash: bev.ConfigHash},
-			Families:       analyzerFamilies(cfg),
-		})
-	}
-
-	if err := analyzeRender(deps, diag, sc, baseSC, formats, hardGate); err != nil {
+	if err := analyzeRender(deps, resp); err != nil {
 		return err
 	}
 
 	if req.aiSummary {
 		rep.advance("Asking AI for interpretation")
-		if err := appendAISummary(ctx, deps, cfg, req.configPath, req.root, req.refresh, req.providerOverride, diag, sc, formats); err != nil {
+		if err := appendAISummary(ctx, deps, cfg, req.configPath, req.root, req.refresh, req.providerOverride, resp.Document, resp.Formats); err != nil {
 			_, _ = fmt.Fprintf(deps.stderr(), "archfit: AI narrative unavailable (off-gate, ignored): %v\n", err)
 		}
 	}
@@ -286,69 +174,42 @@ func runScanInternal(ctx context.Context, deps *appDeps, req scanRequest) error 
 	if req.reportOnly {
 		return nil
 	}
-	if hardGate {
-		return &exitError{code: 1}
+	if code := outcomeExitCode(resp.Outcome); code != 0 {
+		return &exitError{code: code}
 	}
-	return verdictToError(diag.Verdict)
+	return nil
 }
 
-// loadAnalysisConfig loads the config for analyze/check. Config is always
-// required: unlike loadConfig, it does NOT fall back to config.Default() when
-// .archfit.yaml is absent. Call loadConfig directly only for commands that
-// tolerate a missing config (doctor, explain).
-func loadAnalysisConfig(ctx context.Context, path string) (config.Config, error) {
-	cfg, err := config.Load(ctx, path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return config.Config{}, &exitError{code: 3, msg: fmt.Sprintf("error: config not found: %s\n\u2192 run: archfit config init --root .", path)}
+func outcomeExitCode(outcome application.Outcome) int {
+	switch outcome {
+	case application.OutcomeFail:
+		return 1
+	case application.OutcomeWarn:
+		return 2
+	default:
+		return 0
+	}
+}
+
+// analyzeRender writes the document to deps.Stdout in each requested format.
+// Every adapter implements the report rendering port (Document + io.Writer);
+// cmd only selects the adapter for the resolved format name.
+func analyzeRender(deps *appDeps, resp application.Response) error {
+	renderers := map[string]reportports.Renderer{
+		formatJSON:      jsonout.New(),
+		formatText:      console.New(),
+		formatMarkdown:  markdown.New(),
+		formatMD:        markdown.New(),
+		formatSarif:     sarif.New(),
+		formatScorecard: scorecard.New(),
+	}
+	for _, format := range resp.Formats {
+		r, ok := renderers[format]
+		if !ok {
+			return &exitError{code: 3, msg: fmt.Sprintf("render %s: unknown format", format)}
 		}
-		return config.Config{}, err
-	}
-	if err := validateConfigRules(cfg); err != nil {
-		return config.Config{}, err
-	}
-	return cfg, nil
-}
-
-// configLoadError normalises a config-load failure into an exit-3 error.
-// loadAnalysisConfig already returns an *exitError for the missing-config case,
-// and that message carries its own "error: " prefix plus a next-step hint —
-// wrapping it a second time prints the prefix twice.
-func configLoadError(err error) error {
-	var already *exitError
-	if errors.As(err, &already) {
-		return already
-	}
-	return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-}
-
-// analyzeRender writes the diagnostic to deps.Stdout in each requested format.
-// The text format is the terminal-native decision report (decision.Build →
-// console.RenderReport); JSON/SARIF/markdown/scorecard keep their existing
-// machine/artifact renderers (unchanged contract). hardGate feeds the decision
-// band so a tripped tool-gate reads as FAIL even in report-only mode.
-func analyzeRender(deps *appDeps, diag result.Result, sc score.Scorecard, base *score.Scorecard, formats []string, hardGate bool) error {
-	doc := application.ProjectReport(diag)
-	for _, format := range formats {
-		var renderErr error
-		switch format {
-		case formatJSON:
-			renderErr = jsonout.New().Render(doc, sc, base, deps.Stdout)
-		case formatText:
-			renderErr = console.RenderReport(decision.Build(diag, sc, base, hardGate), deps.Stdout)
-		case formatMD, formatMarkdown:
-			if rerr := markdown.RenderReport(decision.Build(diag, sc, base, hardGate), deps.Stdout); rerr != nil {
-				renderErr = rerr
-			} else {
-				renderErr = markdown.New().Render(doc, deps.Stdout)
-			}
-		case formatSarif:
-			renderErr = sarif.New().Render(doc, deps.Stdout)
-		case formatScorecard:
-			renderErr = scorecard.New().Render(doc, sc, deps.Stdout)
-		}
-		if renderErr != nil {
-			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
+		if err := r.Render(resp.Document, deps.Stdout); err != nil {
+			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, err)}
 		}
 	}
 	return nil
@@ -357,14 +218,14 @@ func analyzeRender(deps *appDeps, diag result.Result, sc score.Scorecard, base *
 // appendAISummary emits the off-gate AI narrative after the deterministic
 // report. Text/Markdown runs append to stdout; machine-only formats route the
 // review to stderr so stdout remains parseable JSON/SARIF/scorecard output.
-func appendAISummary(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag result.Result, sc score.Scorecard, formats []string) error {
+func appendAISummary(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, doc report.Document, formats []string) error {
 	reviewDeps := deps
 	if !llmReviewCanUseStdout(formats) {
 		copyDeps := *deps
 		copyDeps.Stdout = deps.stderr()
 		reviewDeps = &copyDeps
 	}
-	return runLLMReview(ctx, reviewDeps, cfg, configPath, root, refresh, providerOverride, diag, sc)
+	return runLLMReview(ctx, reviewDeps, cfg, configPath, root, refresh, providerOverride, doc)
 }
 
 func llmReviewCanUseStdout(formats []string) bool {

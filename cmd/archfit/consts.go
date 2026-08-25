@@ -48,14 +48,6 @@ const (
 	toolJscpd         = "jscpd"
 )
 
-// Disabled-coverage reasons: stamped on the explicit StatusDisabled rows injected
-// by the pipeline when an opt-in pass is skipped. Three occurrences each (pipeline_run.go
-// + pipeline_test.go x2) so goconst requires constants.
-const (
-	reasonScipDisabled   = "opt-in: analyzers.scip.enabled"
-	reasonSyntaxDisabled = "opt-in: analyzers.syntax.enabled"
-)
-
 // Primary dependency-graph analyzer coverage names (as they appear in
 // ToolCoverage). Their absence drops the structural metrics to n/a; shared by the
 // coverage-gap table and its config-key map.
@@ -65,13 +57,6 @@ const (
 	toolGrimp        = registry.ToolGrimp
 	toolCargo        = registry.ToolCargo
 	toolCargoModules = registry.ToolCargoModules // opt-in intra-crate module graph; mirrors config.ToolCargoModules
-)
-
-// Reported metric names shared across cmd coverage/output helpers.
-const (
-	metricCycle         = "cycle"
-	metricBlastRadius   = "blast_radius"
-	metricEncapsulation = "encapsulation"
 )
 
 // Project-marker filenames used by the language registry and test fixtures.

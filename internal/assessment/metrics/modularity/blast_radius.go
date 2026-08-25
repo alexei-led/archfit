@@ -35,10 +35,10 @@ type hubInfo struct {
 // threshold. Indeterminate (n/a) for graphs too small to have meaningful
 // concentration.
 func (m BlastRadiusMetric) Calculate(in signal.CommonInput) assessmentresult.MetricResult {
-	if in.Graph == nil {
+	if in.Relationships.Empty() {
 		return m.naResult()
 	}
-	blast, n := modgraph.BlastRadius(in.Graph)
+	blast, n := modgraph.BlastRadius(in.Relationships)
 	if n < 2 {
 		return m.naResult()
 	}

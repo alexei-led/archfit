@@ -8,6 +8,8 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/staleness"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -19,12 +21,24 @@ const (
 	modAuth      = "auth"
 )
 
-// buildGraph is a test helper that builds a Graph from a slice of nodes.
-func buildGraph(nodes []graph.Node) *graph.Graph {
-	return graph.Build([]graph.Facts{{Nodes: nodes}})
+// buildGraph is a test helper that builds a relationship.Set from a slice of
+// nodes (test-only adapter: staleness consumes relationship.Set, not the raw graph).
+func buildGraph(nodes []graph.Node) relationship.Set {
+	g := graph.Build([]graph.Facts{{Nodes: nodes}})
+	set := relationship.Set{Nodes: make([]relationship.Node, 0, len(g.Nodes()))}
+	for _, n := range g.Nodes() {
+		set.Nodes = append(set.Nodes, relationship.Node{
+			ID: n.ID(), Path: n.Path, Kind: string(n.Kind), Language: n.Language,
+		})
+	}
+	return set
 }
 
 // byRule returns all findings with the given RuleID.
+func assessmentPolicy(cfg view.StalenessConfig) policy.AssessmentPolicy {
+	return policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: cfg.Modules}, Staleness: policy.StalenessPolicy{Enabled: cfg.Enabled, Threshold: cfg.Threshold}}
+}
+
 func byRule(findings []finding.Finding, ruleID string) []finding.Finding {
 	var out []finding.Finding
 	for _, f := range findings {
@@ -45,7 +59,7 @@ func TestCheck_DisabledReturnsNil(t *testing.T) {
 			"foo": {Paths: []string{globBarAll}},
 		},
 	}
-	got := staleness.Check(g, cfg, time.Now())
+	got := staleness.Check(g, assessmentPolicy(cfg), time.Now())
 	if got != nil {
 		t.Errorf("disabled: expected nil, got %v", got)
 	}
@@ -65,7 +79,7 @@ func TestCheck_UncoveredPath(t *testing.T) {
 			"bar": {Paths: []string{globBarAll}},
 		},
 	}
-	findings := staleness.Check(g, cfg, time.Now())
+	findings := staleness.Check(g, assessmentPolicy(cfg), time.Now())
 
 	uncovered := byRule(findings, "map/uncovered_path")
 	dead := byRule(findings, "map/dead_rule")
@@ -91,7 +105,7 @@ func TestCheck_DeadRule(t *testing.T) {
 			"ghost": {Paths: []string{globGhostAll}}, // matches nothing
 		},
 	}
-	findings := staleness.Check(g, cfg, time.Now())
+	findings := staleness.Check(g, assessmentPolicy(cfg), time.Now())
 
 	dead := byRule(findings, "map/dead_rule")
 	uncovered := byRule(findings, "map/uncovered_path")
@@ -123,7 +137,7 @@ func TestCheck_StaleReview_Triggers(t *testing.T) {
 			},
 		},
 	}
-	findings := staleness.Check(g, cfg, now)
+	findings := staleness.Check(g, assessmentPolicy(cfg), now)
 
 	stale := byRule(findings, "map/stale_review")
 	if len(stale) != 1 || stale[0].MatchedBy["subject"] != modAuth {
@@ -149,7 +163,7 @@ func TestCheck_StaleReview_DoesNotTrigger(t *testing.T) {
 			},
 		},
 	}
-	findings := staleness.Check(g, cfg, now)
+	findings := staleness.Check(g, assessmentPolicy(cfg), now)
 
 	for _, f := range findings {
 		if f.RuleID == "map/stale_review" {
@@ -175,7 +189,7 @@ func TestCheck_StaleReview_ZeroReviewedAt_NoFinding(t *testing.T) {
 			},
 		},
 	}
-	findings := staleness.Check(g, cfg, now)
+	findings := staleness.Check(g, assessmentPolicy(cfg), now)
 
 	for _, f := range findings {
 		if f.RuleID == "map/stale_review" {
@@ -202,7 +216,7 @@ func TestCheck_DefaultThreshold(t *testing.T) {
 			},
 		},
 	}
-	findings := staleness.Check(g, cfg, now)
+	findings := staleness.Check(g, assessmentPolicy(cfg), now)
 
 	stale := byRule(findings, "map/stale_review")
 	if len(stale) != 1 || stale[0].MatchedBy["subject"] != "api" {
@@ -221,7 +235,7 @@ func TestCheck_NonPackageNodesNotUncovered(t *testing.T) {
 		Enabled: true,
 		Modules: map[string]module.ModuleDef{},
 	}
-	findings := staleness.Check(g, cfg, time.Now())
+	findings := staleness.Check(g, assessmentPolicy(cfg), time.Now())
 
 	for _, f := range findings {
 		if f.RuleID == "map/uncovered_path" {
@@ -253,7 +267,7 @@ func TestCheck_AllFindingsAreAdvisory(t *testing.T) {
 			// internal/uncovered/b.go not claimed → uncovered_path
 		},
 	}
-	findings := staleness.Check(g, cfg, now)
+	findings := staleness.Check(g, assessmentPolicy(cfg), now)
 
 	if len(findings) == 0 {
 		t.Fatal("expected at least one finding; got none")
@@ -274,7 +288,7 @@ func TestCheck_EmptyGraph_NoUncovered(t *testing.T) {
 			"foo": {Paths: []string{"internal/foo/**"}},
 		},
 	}
-	findings := staleness.Check(g, cfg, time.Now())
+	findings := staleness.Check(g, assessmentPolicy(cfg), time.Now())
 
 	uncovered := byRule(findings, "map/uncovered_path")
 	dead := byRule(findings, "map/dead_rule")

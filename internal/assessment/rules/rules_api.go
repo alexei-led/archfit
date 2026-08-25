@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -43,7 +43,7 @@ type publicAPIMax struct {
 
 func (r *publicAPIMax) ID() string { return r.def.ID }
 
-func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
+func (r *publicAPIMax) Check(_ relationship.Set, ev Evidence) []finding.Finding {
 	if len(ev.SyntaxFacts) == 0 {
 		return nil
 	}
@@ -85,9 +85,9 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 		if count <= r.max {
 			continue
 		}
-		locs := make([]graph.Location, 0, len(filesByModule[mod]))
+		locs := make([]relationship.Location, 0, len(filesByModule[mod]))
 		for file := range filesByModule[mod] {
-			locs = append(locs, graph.Location{File: file})
+			locs = append(locs, relationship.Location{File: file})
 		}
 		sort.Slice(locs, func(i, j int) bool { return locs[i].File < locs[j].File })
 
@@ -139,7 +139,7 @@ type publicAPIChange struct {
 
 func (r *publicAPIChange) ID() string { return r.def.ID }
 
-func (r *publicAPIChange) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
+func (r *publicAPIChange) Check(_ relationship.Set, ev Evidence) []finding.Finding {
 	if len(ev.SyntaxFacts) == 0 {
 		return nil
 	}
@@ -180,7 +180,7 @@ func (r *publicAPIChange) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 				"kind":          f.Kind,
 				matchedByFile:   f.File,
 			},
-			Locations:  []graph.Location{{File: f.File, Line: f.StartLine}},
+			Locations:  []relationship.Location{{File: f.File, Line: f.StartLine}},
 			Why:        fmt.Sprintf("Exported declaration %q added to module %q (%s in %s)", f.Name, mod, f.Kind, f.File),
 			Constraint: "Review new public API additions; baseline when intentional",
 		}
@@ -196,12 +196,22 @@ func (r *publicAPIChange) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 // versionSegmentRe matches trailing versioned path segments like "v2", "v3".
 var versionSegmentRe = regexp.MustCompile(`^v\d+$`)
 
+// Relationship node/edge kind literals used by the type-leak rule. The rule
+// consumes the narrow relationship contract, whose Kind fields are strings
+// rather than the graph package's typed kind constants.
+const (
+	relNodeKindPackage  = "package"
+	relNodeKindExternal = "external"
+	relEdgeKindImports  = "imports"
+	relEdgeKindUsesInt  = "uses_internal"
+)
+
 // externalPackageSegments builds a set of last meaningful path segments for
-// every NodeKindPackage node whose path looks like a fully-qualified import
-// path (contains a "."), every NodeKindExternal node, and the targets of
-// EdgeKindImports/EdgeKindUsesInternal edges. The edge-target scan is required
-// because the Go extractor emits external packages only as edge targets — never
-// as nodes — so without it the set is always empty on real Go graphs.
+// every package node whose path looks like a fully-qualified import path
+// (contains a "."), every external node, and the targets of imports/uses_internal
+// edges. The edge-target scan is required because the Go extractor emits
+// external packages only as edge targets — never as nodes — so without it the
+// set is always empty on real Go graphs.
 // Versioned suffixes (/v2, /v3, …) are skipped so that
 // "github.com/urfave/cli/v2" maps to "cli", not "v2".
 //
@@ -214,7 +224,7 @@ var versionSegmentRe = regexp.MustCompile(`^v\d+$`)
 // error for a candidate surfacer (report-only, default gate: warn). The guard is
 // removed: a false positive (flagging a first-party-type reference as a leak) is
 // acceptable; a false negative (silently missing a real external leak) is not.
-func externalPackageSegments(g *graph.Graph) map[string]struct{} {
+func externalPackageSegments(s relationship.Set) map[string]struct{} {
 	// addExternal extracts and registers the last non-version segment of a dotted
 	// import path. No first-party-collision guard — bias to surface, not suppress.
 	set := make(map[string]struct{})
@@ -231,32 +241,31 @@ func externalPackageSegments(g *graph.Graph) map[string]struct{} {
 		}
 	}
 
-	// Scan NodeKindPackage nodes (any extractor that emits package nodes).
-	for _, n := range g.Nodes() {
-		if n.Kind == graph.NodeKindPackage {
+	// Scan package nodes (any extractor that emits package nodes).
+	for _, n := range s.Nodes {
+		if n.Kind == relNodeKindPackage {
 			addExternal(n.Path)
 		}
 	}
 
-	// Scan NodeKindExternal nodes (Rust/TS extractors).
-	for _, n := range g.Nodes() {
-		if n.Kind == graph.NodeKindExternal {
+	// Scan external nodes (Rust/TS extractors).
+	for _, n := range s.Nodes {
+		if n.Kind == relNodeKindExternal {
 			addExternal(n.Path)
 		}
 	}
 
 	// Scan edge targets: Go emits external packages only as edge targets, never
 	// as nodes. Parse the kind:path ID to recover the import path.
-	for _, e := range g.Edges() {
-		if e.Kind != graph.EdgeKindImports && e.Kind != graph.EdgeKindUsesInternal {
+	for _, e := range s.Edges {
+		if e.Kind != relEdgeKindImports && e.Kind != relEdgeKindUsesInt {
 			continue
 		}
-		before, importPath, ok := strings.Cut(e.To, ":")
+		before, importPath, ok := strings.Cut(e.ToID, ":")
 		if !ok {
 			continue
 		}
-		nodeKind := graph.NodeKind(before)
-		if nodeKind != graph.NodeKindPackage && nodeKind != graph.NodeKindExternal {
+		if before != relNodeKindPackage && before != relNodeKindExternal {
 			continue
 		}
 		addExternal(importPath)
@@ -277,12 +286,12 @@ type publicAPITypeLeak struct {
 
 func (r *publicAPITypeLeak) ID() string { return r.def.ID }
 
-func (r *publicAPITypeLeak) Check(g *graph.Graph, ev Evidence) []finding.Finding {
+func (r *publicAPITypeLeak) Check(s relationship.Set, ev Evidence) []finding.Finding {
 	if len(ev.SyntaxFacts) == 0 {
 		return nil
 	}
 
-	extPkgs := externalPackageSegments(g)
+	extPkgs := externalPackageSegments(s)
 	// Ceiling: extPkgs is built from dotted-package external nodes (Go-style).
 	// For Rust/TS/Python repos with no such nodes, type_leak facts are present
 	// but cannot be matched — this check fires only when the graph has Go-style
@@ -333,7 +342,7 @@ func (r *publicAPITypeLeak) Check(g *graph.Graph, ev Evidence) []finding.Finding
 				"type":          f.Name,
 				matchedByFile:   f.File,
 			},
-			Locations:  []graph.Location{{File: f.File, Line: f.StartLine}},
+			Locations:  []relationship.Location{{File: f.File, Line: f.StartLine}},
 			Why:        fmt.Sprintf("Module %q leaks external type %q in its public API (file: %s)", mod, f.Name, f.File),
 			Constraint: "Replace the external type with an internal abstraction or alias at the module boundary",
 		}

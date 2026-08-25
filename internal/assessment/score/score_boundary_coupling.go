@@ -9,7 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/result"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 const (
@@ -104,7 +104,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *result.ClassifiedE
 		// distance (different owner / deploy unit); pervasive DM caps the value hard.
 		// Only critical edges at high distance are distributed-monolith edges. A
 		// critical edge at low distance needs its strength and volatility explained.
-		criticalCount := summary.BySeverity[string(coupling.SeverityCritical)]
+		criticalCount := summary.BySeverity[string(relationship.SeverityCritical)]
 		dmCount := summary.DistributedMonolith
 		value, capApplied := applyCouplingCap(rawValue, crossBoundary, criticalCount, dmCount)
 
@@ -367,7 +367,7 @@ type bcEdge struct {
 // integration strength × high distance × high volatility — which the classifier
 // scores as the critical band (a distributed-monolith risk).
 func (e bcEdge) worstCase() bool {
-	return e.severity == string(coupling.SeverityCritical) || e.band == string(coupling.SeverityCritical)
+	return e.severity == string(relationship.SeverityCritical) || e.band == string(relationship.SeverityCritical)
 }
 
 // bcEdges extracts the active Balanced-Coupling advisory edges from the findings,
@@ -414,13 +414,13 @@ func IsActiveGateFinding(f finding.Finding) bool {
 // with no scorer value, from its severity band.
 func effortFromSeverity(sev string) int {
 	switch sev {
-	case string(coupling.SeverityCritical):
+	case string(relationship.SeverityCritical):
 		return 9
-	case string(coupling.SeverityHigh):
+	case string(relationship.SeverityHigh):
 		return 7
-	case string(coupling.SeverityMedium):
+	case string(relationship.SeverityMedium):
 		return 5
-	case string(coupling.SeverityLow):
+	case string(relationship.SeverityLow):
 		return 3
 	default:
 		return 5

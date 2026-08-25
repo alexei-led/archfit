@@ -5,11 +5,11 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/metrics/boundary"
-	"github.com/alexei-led/archfit/internal/assessment/metrics/metricstest"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/testutil/metricstest"
 )
 
 func TestUnbalancedEdge_Count(t *testing.T) {
@@ -17,7 +17,6 @@ func TestUnbalancedEdge_Count(t *testing.T) {
 	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
 	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
 	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
-	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, []graph.Edge{e})
 
 	idx := coupling.Index{
 		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
@@ -28,7 +27,7 @@ func TestUnbalancedEdge_Count(t *testing.T) {
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx)})
 
 	if result.Value != 1 {
 		t.Errorf("expected value 1 got %v", result.Value)
@@ -48,7 +47,6 @@ func TestUnbalancedEdge_ZeroCount(t *testing.T) {
 	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
 	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
 	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
-	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, []graph.Edge{e})
 
 	idx := coupling.Index{
 		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
@@ -59,7 +57,7 @@ func TestUnbalancedEdge_ZeroCount(t *testing.T) {
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx)})
 
 	if result.Value != 0 {
 		t.Errorf("expected value 0 got %v", result.Value)
@@ -77,7 +75,6 @@ func TestUnbalancedEdge_DeclaredExternalNotCounted(t *testing.T) {
 	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
 	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
 	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
-	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, []graph.Edge{e})
 
 	idx := coupling.Index{
 		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
@@ -88,7 +85,7 @@ func TestUnbalancedEdge_DeclaredExternalNotCounted(t *testing.T) {
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx)})
 
 	if result.Value != 0 {
 		t.Errorf("expected value 0 (declared_external excluded, not counted as unbalanced) got %v", result.Value)
@@ -103,7 +100,6 @@ func TestUnbalancedEdge_UnknownVolatilityIsNA(t *testing.T) {
 	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
 	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
 	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
-	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, []graph.Edge{e})
 
 	idx := coupling.Index{
 		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
@@ -114,7 +110,7 @@ func TestUnbalancedEdge_UnknownVolatilityIsNA(t *testing.T) {
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx)})
 
 	if result.Band != bandNAStr {
 		t.Errorf("expected band n/a got %q", result.Band)
@@ -135,7 +131,6 @@ func TestUnbalancedEdge_BaselinedFindingSuppressesCount(t *testing.T) {
 	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
 	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
 	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
-	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, []graph.Edge{e})
 
 	idx := coupling.Index{
 		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
@@ -152,7 +147,7 @@ func TestUnbalancedEdge_BaselinedFindingSuppressesCount(t *testing.T) {
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx, Findings: findings})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx), Findings: findings})
 
 	if result.Value != 0 {
 		t.Errorf("expected value 0 (baselined edge must not count as new_high) got %v", result.Value)
@@ -171,7 +166,6 @@ func TestUnbalancedEdge_HigherPriorityStatusWins(t *testing.T) {
 	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
 	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
 	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
-	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, []graph.Edge{e})
 
 	idx := coupling.Index{
 		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
@@ -187,7 +181,7 @@ func TestUnbalancedEdge_HigherPriorityStatusWins(t *testing.T) {
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx, Findings: findings})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx), Findings: findings})
 
 	if result.Value != 1 {
 		t.Errorf("expected value 1 (higher-priority StatusNew must win over StatusBaseline) got %v", result.Value)

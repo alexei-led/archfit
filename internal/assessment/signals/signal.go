@@ -1,22 +1,14 @@
-// Package signal defines the carrier types that flow between signal producers
-// and the metrics layer: the per-family metric input (CommonInput), the
-// CollectedSignals bag the engine assembles and projects per family, and the
-// RunSignals bundle the cmd layer produces.
-//
-// Keeping these types here — rather than in internal/metrics — means adding a
-// new signal only churns the new producer package and this package. The package
-// joins the model ring: stdlib + internal/model/* imports only.
+// Package signal defines the narrow assessment inputs projected from neutral
+// evidence facts for each metric family.
 package signal
 
 import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/model/clone"
+	neutral "github.com/alexei-led/archfit/internal/evidence"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/fileclass"
-	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/symbol"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 // SymbolSignals carries the SCIP symbol graph. Empty when SCIP is off.
@@ -24,61 +16,20 @@ type SymbolSignals struct {
 	Graph symbol.Graph
 }
 
-// SizeSignals carries per-file line counts (tests excluded) and the full
-// file-class index covering ALL visited source files (including test and
-// generated). Empty when absent.
-type SizeSignals struct {
-	FileLOC        map[string]int
-	FileClassIndex map[string]fileclass.FileClass // repo-relative slash path → FileClass; nil when loc walk did not run
-}
+// SizeSignals aliases neutral source-size evidence for metric compatibility.
+type SizeSignals = neutral.SizeSignals
 
-// DuplicationSignals carries duplicated-code clusters from the external clone
-// detector. Empty when the tool is off/absent.
-type DuplicationSignals struct {
-	Clusters []clone.Cluster
-}
+// DuplicationSignals aliases neutral clone evidence for metric compatibility.
+type DuplicationSignals = neutral.DuplicationSignals
 
-// RunSignals is the producer-side bundle the cmd layer gathers and hands to the
-// engine. The engine folds it (plus its own extract outputs) into a
-// CollectedSignals for the metrics — no metric ever sees this type. Each group
-// is empty when its source is unavailable.
-type RunSignals struct {
-	Size        SizeSignals
-	Duplication DuplicationSignals
-	// ExtraCoverage carries tool-coverage records for opt-in tools that run in cmd
-	// (loc, clones) rather than through the engine extractor loop.
-	// The engine appends these to the diagnostic ToolCoverage slice.
-	ExtraCoverage []evidence.Coverage
-	// DynamicImports carries the report-only dynamic/lazy-import sites detected by
-	// the dynimports adapter. Like ExtraCoverage, the engine reads it straight into
-	// the diagnostic (rolled up per module) — no metric ever sees it, and it never
-	// touches the dependency graph or the verdict.
-	DynamicImports DynamicImportSignals
-	// RuntimeAsync carries the async-bridge signals detected by the runtime adapter.
-	// The engine rolls the sites up per module and writes them into the diagnostic.
-	// Evidence-only — never annotates graph edges, never consumed by classify or
-	// score, never changes the gate verdict.
-	RuntimeAsync RuntimeAsyncSignals
-	// DeprecatedDeps carries the locally-declared deprecation/retraction markers
-	// detected by the manifest adapter. Report-only — never reaches a metric or
-	// the dependency graph.
-	DeprecatedDeps []evidence.DeprecatedDep
-}
+// RunSignals aliases the neutral evidence bundle for metric compatibility.
+type RunSignals = neutral.RunSignals
 
-// DynamicImportSignals carries the dynamic/lazy-import sites detected by the
-// dynimports adapter. Empty when none were found. Report-only — never reaches a
-// metric or the dependency graph.
-type DynamicImportSignals struct {
-	Sites []evidence.DynamicImportSite
-}
+// DynamicImportSignals aliases neutral dynamic-import evidence.
+type DynamicImportSignals = neutral.DynamicImportSignals
 
-// RuntimeAsyncSignals carries the async-bridge sites detected by the runtime
-// adapter. Empty when none were found. Evidence-only — never annotates graph
-// edges, never consumed by classify or score, never alters the verdict.
-type RuntimeAsyncSignals struct {
-	Sites      []evidence.RuntimeAsyncSite
-	Confidence string // "low" | "medium"
-}
+// RuntimeAsyncSignals aliases neutral runtime-async evidence.
+type RuntimeAsyncSignals = neutral.RuntimeAsyncSignals
 
 // ---------------------------------------------------------------------------
 // Per-family metric inputs (the narrow replacement for the former god input).
@@ -90,23 +41,47 @@ type RuntimeAsyncSignals struct {
 // "report n/a when the signal is absent" behaviour.
 // ---------------------------------------------------------------------------
 
-// CommonInput is the core set every metric can rely on (always populated by the
-// pipeline). ChangedFiles is delta-scope, not git history, so it lives here.
+// CoverageView is the coverage fact subset metrics need. It narrows the raw
+// evidence.Coverage model to assessment-owned values before metric calculation.
+type CoverageView []CoverageRecord
+
+// CoverageRecord is one tool coverage row for assessment metrics.
+type CoverageRecord struct {
+	Tool            string
+	Status          string
+	FilesSeen       int
+	FilesApplicable int
+	Unresolved      int
+	SpecifiersSeen  int
+}
+
+// NewCoverageView projects raw evidence coverage records into the assessment
+// metric contract.
+func NewCoverageView(rows []evidence.Coverage) CoverageView {
+	out := make(CoverageView, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, CoverageRecord{
+			Tool:            row.Tool,
+			Status:          row.Status,
+			FilesSeen:       row.FilesSeen,
+			FilesApplicable: row.FilesApplicable,
+			Unresolved:      row.Unresolved,
+			SpecifiersSeen:  row.SpecifiersSeen,
+		})
+	}
+	return out
+}
+
+// CommonInput is the narrow assessment metric contract every metric can rely on.
+// It carries relationship-owned classified facts, a coverage view, changed files,
+// symbol input, statuses, and baselines — not the raw extractor graph.
 type CommonInput struct {
-	Graph           *graph.Graph
-	Classifications coupling.Index
-	Findings        []finding.Finding
-	Baseline        assessmentresult.MetricSnapshot
-	ToolCoverage    []evidence.Coverage
-	ChangedFiles    []string
-	// SyntaxFacts carries the ast-grep syntax facts produced by the syntax provider.
-	// Empty when syntax is disabled or sg is absent. The syntax surface renderer
-	// and coverage metrics consume this to produce informational counts.
-	SyntaxFacts []evidence.SyntaxFact
-	// DeprecatedDeps carries the locally-declared deprecation/retraction markers
-	// detected by the manifest adapter. Empty when none were found. The deprecated-
-	// deps renderer consumes this to produce informational counts.
-	DeprecatedDeps []evidence.DeprecatedDep
+	Relationships relationship.Set
+	Findings      []finding.Finding
+	Baseline      assessmentresult.MetricSnapshot
+	Coverage      CoverageView
+	ChangedFiles  []string
+	Symbols       SymbolSignals
 }
 
 // CollectedSignals is the engine's producer-side bag of everything gathered for

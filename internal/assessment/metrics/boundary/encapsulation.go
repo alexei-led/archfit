@@ -11,8 +11,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 // ---------------------------------------------------------------------------
@@ -55,39 +54,27 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) assessmentresult.M
 	// A nil graph is absent evidence, not an encapsulated codebase — report n/a,
 	// never a false-green 1.0 (matches this package's "absent inputs yield n/a"
 	// contract).
-	if in.Graph == nil {
+	if in.Relationships.Empty() {
 		return m.naResult(in.Baseline)
 	}
 
 	var depEdges, allCross, classifiedCross, contractCross, intrusiveCross int
-	for _, e := range in.Graph.Edges() {
-		// Only dependency-type edges contribute to encapsulation measurement.
-		if e.Kind != graph.EdgeKindImports &&
-			e.Kind != graph.EdgeKindDependsOn &&
-			e.Kind != graph.EdgeKindUsesInternal {
-			continue
-		}
+	for _, e := range in.Relationships.DependencyEdges() {
 		depEdges++
-		key := e.From + "\x00" + e.To + "\x00" + string(e.Kind)
-		cl, ok := in.Classifications[key]
-		if !ok {
-			continue
-		}
 		// Cross-boundary: any distance that is not same_module. Declared external
 		// systems are skipped too — encapsulation measures whether access to YOUR
 		// modules goes through their public surface; a vendor seam has no
 		// public/internal glob boundary to honor.
-		if cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown ||
-			cl.Distance == coupling.DistanceExternal {
+		if !e.CrossBoundary() {
 			continue
 		}
 		allCross++
-		if isClassifiedStrength(cl.Strength) {
+		if isClassifiedStrength(e.Strength) {
 			classifiedCross++
-			switch cl.Strength {
-			case coupling.StrengthContract:
+			switch e.Strength {
+			case relationship.StrengthContract:
 				contractCross++
-			case coupling.StrengthIntrusive:
+			case relationship.StrengthIntrusive:
 				intrusiveCross++
 			}
 		}
@@ -136,9 +123,9 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) assessmentresult.M
 // nor a leak — so, like unknown, they are excluded from the denominator rather than
 // counted against the score. Including them would crush the ratio for any codebase
 // that mostly calls public functions (the common case) and produce a false critical.
-func isClassifiedStrength(s coupling.Strength) bool {
+func isClassifiedStrength(s relationship.Strength) bool {
 	switch s {
-	case coupling.StrengthContract, coupling.StrengthIntrusive:
+	case relationship.StrengthContract, relationship.StrengthIntrusive:
 		return true
 	default:
 		return false

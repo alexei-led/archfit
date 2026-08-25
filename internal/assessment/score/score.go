@@ -8,39 +8,67 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // RubricVersion is the scorecard contract version.
-const RubricVersion = report.RubricVersion
+const RubricVersion = 1
 
-// Band is the scorecard band type.
-type Band = report.ScoreBand
+// Band is a qualitative scorecard band.
+type Band string
 
-// Confidence is the scorecard confidence type.
-type Confidence = report.Confidence
-
-// Dimension is one scorecard dimension.
-type Dimension = report.Dimension
-
-// Scorecard is the scorecard contract.
-type Scorecard = report.Scorecard
-
-// BandCritical through BandNA are scorecard band values.
 const (
-	BandCritical    = report.ScoreBandCritical
-	BandPoor        = report.ScoreBandPoor
-	BandMixed       = report.ScoreBandMixed
-	BandServiceable = report.ScoreBandServiceable
-	BandStrong      = report.ScoreBandStrong
-	BandNA          = report.ScoreBandNA
-
-	ConfidenceLow    = report.ConfidenceLow
-	ConfidenceMedium = report.ConfidenceMedium
-	ConfidenceHigh   = report.ConfidenceHigh
-
-	DimCouplingBalance = report.DimCouplingBalance
+	// BandCritical marks the lowest score band.
+	BandCritical Band = "critical"
+	// BandPoor marks a poor score band.
+	BandPoor Band = "poor"
+	// BandMixed marks a mixed score band.
+	BandMixed Band = "mixed"
+	// BandServiceable marks a serviceable score band.
+	BandServiceable Band = "serviceable"
+	// BandStrong marks the highest score band.
+	BandStrong Band = "strong"
+	// BandNA marks an unmeasured score.
+	BandNA Band = "n/a"
 )
+
+// Unmeasured reports whether the scorecard dimension has no measurement.
+func (b Band) Unmeasured() bool { return b == BandNA }
+
+// Confidence describes how trustworthy a scorecard dimension is.
+type Confidence string
+
+const (
+	// ConfidenceLow marks thin evidence.
+	ConfidenceLow Confidence = "low"
+	// ConfidenceMedium marks moderate evidence.
+	ConfidenceMedium Confidence = "medium"
+	// ConfidenceHigh marks strong evidence.
+	ConfidenceHigh Confidence = "high"
+)
+
+// Dimension is one scored axis of the architecture.
+type Dimension struct {
+	Name       string     `json:"name"`
+	Value      int        `json:"value"`
+	Band       Band       `json:"band"`
+	Confidence Confidence `json:"confidence"`
+	Evidence   []string   `json:"evidence"`
+	Summary    string     `json:"summary"`
+	RawValue   int        `json:"raw_value,omitempty"`
+	CapApplied string     `json:"cap_applied,omitempty"`
+	Meta       bool       `json:"meta,omitempty"`
+}
+
+// Scorecard is the synthesised banded assessment across all dimensions.
+type Scorecard struct {
+	RubricVersion int         `json:"rubric_version"`
+	Overall       int         `json:"overall"`
+	OverallBand   Band        `json:"overall_band"`
+	Dimensions    []Dimension `json:"dimensions"`
+}
+
+// DimCouplingBalance names the coupling score dimension.
+const DimCouplingBalance = "coupling_balance"
 
 // Synthesize derives the scorecard from a computed Diagnostic.
 // coupling_balance is measured from d.ClassifiedEdges, which the engine

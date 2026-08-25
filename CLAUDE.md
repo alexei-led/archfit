@@ -23,7 +23,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 ## Structural gates (CI runs these explicitly — keep green)
 
 - Import ring: `go test ./internal/ -run TestArchImports`
-- Golden output: `go test ./internal/engine/ -run TestGolden` — regenerate
+- Golden output: `go test ./internal/analysispipeline/ -run TestGolden` — regenerate
   deliberately and inspect the diff; output changes are never automatic.
 - Dogfood gate: `make archfit` — CI runs the same target after tests/goldens. Also
   runs locally pre-push via the `arch-lint` hook in `.pre-commit-config.yaml`. The
@@ -50,7 +50,7 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   change out in review.
 - `internal/view` holds the data-only stage contracts (ClassifyConfig,
   ExtractConfig, RuleDef, …). Stages import `view`, never `internal/config`;
-  only composition roots (`cmd/*`), `internal/engine`, and
+  only composition roots (`cmd/*`), `internal/analysispipeline`, and
   `internal/configschema` may import `internal/config` (enforced by
   `*_no_config` rules in `.archfit.yaml`).
 - Every subprocess call goes through `toolrun.Runner` (interface in
@@ -79,7 +79,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   it; the book formula (`ScoreVersion = "bc_score.v6"`) is the single severity source.
 - **Coupling gate** (`coupling.gate: {min_band, max_drop}`). The synthesised
   coupling_balance score can fail the verdict: `score.Synthesize` +
-  `applyCouplingGate` run INSIDE `runPipeline` (`cmd/archfit/pipeline_run.go`),
+  `applyCouplingGate` run INSIDE `Run` (`internal/analysispipeline/pipeline_run.go`),
   before `agenttask.Build`, so a tripped gate escalates `diag.Verdict` and
   promotes the active BC advisories to `Kind: "gate"` (they flow into
   `agent_tasks[]` through the unchanged agenttask filter). `min_band` is a band
@@ -87,7 +87,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   stores (`baseline.ScoreSnapshot`, omitted when unmeasured). BandNA never
   gates (abstain ≠ fail). Trip reasons print to stderr from `analyze` ONLY
   (re-evaluated there via the pure `score.EvaluateCouplingGate`) — never from
-  baseline/enrich/explain/`--base` scoring, which share `runPipeline`. A separate
+  baseline/enrich/explain/`--base` scoring, which share `Run`. A separate
   stale-baseline notice can also print from `analyze` when `max_drop` is skipped
   because the stored score snapshot is incompatible with this binary —
   `baseline.ScoreSnapshotMismatches` names the offending input
@@ -110,18 +110,18 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   filter on Production files use this index and report the excluded count.
   Config override: top-level `file_class:` key (`FileClassDef`), projected via
   `Config.ForFileClass()` → `syntax.FileClassConfig`.
-- **`archfit analyze --base <ref>`** flag (`cmd/archfit/worktree.go`). Creates a
+- **`archfit analyze --base <ref>`** flag (`internal/analysispipeline/worktree.go`). Creates a
   clean detached temp worktree at `<ref>`, scores both sides with the full advisory
   pipeline, and emits a dimension-by-dimension delta table. Off-gate, report-only
   (exit 0 on success, exit 3 on git/config error). Both sides use the current
   `--config`. Formats: `text` (default), `json`, `markdown`.
   The base sub-run receives the caller's EFFECTIVE head config (after `--lang` /
   `--min-severity`) and never reparses the file. `analyze.go` hands it a copy
-  with an independent `Modules` map (`withIndependentModules`) — `config.Config`
-  is a value but its map is shared, and `runPipeline`'s owner/deploy-unit
+  with an independent `Modules` map (`WithIndependentModules`) — `config.Config`
+  is a value but its map is shared, and `Run`'s owner/deploy-unit
   backfill writes through it, so without the copy the base side would inherit
   head-tree owners and skip its own resolution.
-- **`git_finding_delta`** (`cmd/archfit/git_finding_delta.go`) — report-only JSON
+- **`git_finding_delta`** (`internal/analysispipeline/git_finding_delta.go`) — report-only JSON
   block emitted only with `--base`, classifying the CURRENT `agent_tasks[]` as
   `introduced` / `pre_existing` / `unknown` origin. Pointer + `omitempty`, so a
   run without `--base` stays byte-identical; never changes the verdict, the exit
@@ -186,7 +186,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   analyzer next to the real family and left the family with zero rows.
 - **Applicability is decided by the extractor, never by a marker list**
   (`LanguageDescriptor.ProjectPresent`, `cmd/archfit/registry.go` — the row's doc
-  comment is the contract; probes are wired in `cmd/archfit/pipeline_coverage.go`).
+  comment is the contract; probes are wired in `internal/analysispipeline/pipeline_coverage.go`).
   Every language answers "is this language present under root?" by calling its OWN
   exported applicability function — `golang.AnalysableMembers`, `ts.Applicable`,
   `py.Applicable`, `rust.Applicable` — and that same function is what the
@@ -203,12 +203,12 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `go.mod` the `languages.go.modules` filter removes) fabricates presence; a
   marker it accepts but a list omits (`languages.python.package`, a sub-crate
   `languages.rust.manifest`, a `go.work` member a walk cannot reach) fabricates
-  absence. `buildCoverageGaps` reads `cfg.Exclude` AS GIVEN — `runPipeline`
+  absence. `buildCoverageGaps` reads `cfg.Exclude` AS GIVEN — `Run`
   merges it once at setup and `scope.MergeExclusions` is NOT idempotent (it
   consumes `!` re-includes), so a second merge re-seeds defaults the user removed
   and the probe then skips trees the extractors analysed.
 - **A language switched off over a language that IS PRESENT reports `disabled`,
-  never `absent`** (`markDisabledPrimaries`, `cmd/archfit/pipeline_coverage.go`,
+  never `absent`** (`markDisabledPrimaries`, `internal/analysispipeline/pipeline_coverage.go`,
   applied to `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode
   `ModeOff` as `StatusAbsent`, which both pairing paths read as "this language is
   not in the tree" and drop from the comparison — so two configs that BOTH
@@ -267,7 +267,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   own config commented out all 44 modules and added 31 bare stanzas, and the
   status read `action_required` with 0 real issues.
   Two consequences of that name-only matching:
-  (1) `candidateConfigForUpdate` (`cmd/archfit/update.go`) — the "config after
+  (1) `candidateConfigForUpdate` (`cmd/archfit/config_update_adapters.go`) — the "config after
   `--apply`" projection the deploy-unit and distance suggestion builders read —
   resolves each discovered module through the drift pairs FIRST, so a drifted
   module enters under its CONFIG name carrying the config's metadata. Keying on
@@ -281,7 +281,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   same helpers `RenderUpdateReport` uses. Gating on `HasReviewSuggestions` there
   hid module gaps, name drift, unmatched and pathless stanzas exactly when apply
   had an edit to make.
-- **`runContext`** (`cmd/archfit/pipeline_run.go`) replaces `runPipeline`'s
+- **`runContext`** (`internal/analysispipeline/pipeline_run.go`) replaces `Run`'s
   positional path arguments. Each field selects one thing, and a caller that
   leaves one zero silently gets head-tree state on a base or candidate run:
   `ConfigSource` → config hash + validation command; `BundleDir` → pinned labels
@@ -466,7 +466,7 @@ evidence per module. The runtime/dynamic evidence detectors skip test files and
 annotates graph edges, never affects distance or balance score, never gates. This
 is a deliberate design decision — do not wire async detection into distance.
 
-**SCIP semantic overlay is report-only** (`internal/engine/semantic_overlay.go`,
+**SCIP semantic overlay is report-only** (`internal/evidence/acquisition/semantic_overlay.go`,
 `enrichEdges`). `semantic_strength_overlay.by_language` counts, per language,
 how many heuristic extractor edges SCIP strength actually refined
 (`candidate_edges`/`applied`/`missed` + before/after buckets). Only TS/Python/Rust
@@ -545,7 +545,7 @@ history or looking up a completed plan by name.
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **archfit** (9242 symbols, 33431 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **archfit** (10077 symbols, 33606 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

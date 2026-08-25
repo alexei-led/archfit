@@ -34,7 +34,7 @@ See [Concepts → How archfit operationalizes the model](concepts.md#how-archfit
 ## The verdict
 
 After all metrics run, the run gets one verdict
-(`internal/engine/engine.go`, `computeVerdict`):
+(`internal/assessment/evaluation/evaluation.go`, `computeVerdict`):
 
 ```text
 fail  → any gate finding with status "new" or "expired_waiver", or any metric
@@ -84,7 +84,7 @@ evidence is a false alarm the tool refuses to raise.
 Confidence (`high` / `medium` / `low`) reflects how much of the needed evidence
 was actually available (coverage, classified fraction, sample size). It can only
 _lower_ the reported band, never raise it
-(`internal/metrics/internal/result`, `ApplyConfidenceCap`):
+(`internal/assessment/metrics/internal/result`, `ApplyConfidenceCap`):
 
 ```text
 high   → band may reach "strong"
@@ -104,7 +104,7 @@ internal cross-boundary facts, then applies evidence caps:
 - fewer than **3** connected modules in the scored/abstained coupling sample ⇒
   high confidence is disallowed;
 - `dependency-cruiser` `partial` with unresolved-specifier ratio above **10%**
-  (`tsUnresolvedRatioCeiling`, `internal/score/score.go`) ⇒ high confidence is
+  (`tsUnresolvedRatioCeiling`, `internal/assessment/score/score.go`) ⇒ high confidence is
   disallowed, because unresolved specifiers land in the `external` bucket,
   outside `coupling_balance`'s denominator;
 - `cargo-modules` `partial` on Rust ⇒ high confidence is disallowed.

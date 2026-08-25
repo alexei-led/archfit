@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -132,10 +133,13 @@ func (c Config) ForExtract(lang string) view.ExtractConfig {
 	return ec
 }
 
-// ForClassify returns the ClassifyConfig view. Classification sees only
-// hand-authored module definitions — explicit volatility and subdomain fields
-// only. Git-churn-derived volatility is intentionally excluded: Balanced Coupling
-// forbids commit-history volatility on the gate path.
+// ExplicitOwnersView exposes the ownership provenance needed by policy
+// projections without exposing Config's mutable bookkeeping map.
+func (c Config) ExplicitOwnersView() map[string]bool { return maps.Clone(c.explicitOwners) }
+
+// ForClassify returns the legacy ClassifyConfig adapter. New relationship
+// consumers use the application boundary's policy.PolicySnapshot conversion;
+// this remains for transitional callers.
 func (c Config) ForClassify() view.ClassifyConfig {
 	return view.ClassifyConfig{
 		Modules:                   c.Modules,

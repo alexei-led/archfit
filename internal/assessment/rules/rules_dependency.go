@@ -10,8 +10,8 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/view"
 )
 
@@ -48,11 +48,11 @@ type forbiddenDependency struct {
 
 func (r *forbiddenDependency) ID() string { return r.def.ID }
 
-func (r *forbiddenDependency) Check(g *graph.Graph, _ Evidence) []finding.Finding {
+func (r *forbiddenDependency) Check(s relationship.Set, _ Evidence) []finding.Finding {
 	var out []finding.Finding
-	for _, e := range g.Edges() {
-		fromPath := graph.NodePath(e.From)
-		toPath := graph.NodePath(e.To)
+	for _, e := range s.Edges {
+		fromPath := e.FromPath
+		toPath := e.ToPath
 
 		fromMatch, _ := doublestar.Match(r.def.From, fromPath)
 		toMatch, _ := doublestar.Match(r.def.To, toPath)
@@ -96,14 +96,14 @@ type publicAPIOnly struct {
 
 func (r *publicAPIOnly) ID() string { return r.def.ID }
 
-func (r *publicAPIOnly) Check(g *graph.Graph, _ Evidence) []finding.Finding {
+func (r *publicAPIOnly) Check(s relationship.Set, _ Evidence) []finding.Finding {
 	var out []finding.Finding
-	for _, e := range g.Edges() {
-		if e.Kind != graph.EdgeKindUsesInternal {
+	for _, e := range s.Edges {
+		if e.Kind != relEdgeKindUsesInt {
 			continue
 		}
-		fromPath := graph.NodePath(e.From)
-		toPath := graph.NodePath(e.To)
+		fromPath := e.FromPath
+		toPath := e.ToPath
 
 		// Apply From/To scope globs when set; empty glob means match-all.
 		if r.def.From != "" {
@@ -124,7 +124,7 @@ func (r *publicAPIOnly) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 		f := finding.New(r.def.ID, e, e.Locations)
 		f.Severity = finding.SeverityHigh
 		f.MatchedBy = map[string]string{
-			"edge_kind": string(e.Kind),
+			"edge_kind": e.Kind,
 			"to_path":   toPath,
 		}
 		why := "Access to internal path " + toPath
@@ -152,11 +152,11 @@ type forbiddenLayerDirection struct {
 
 func (r *forbiddenLayerDirection) ID() string { return r.def.ID }
 
-func (r *forbiddenLayerDirection) Check(g *graph.Graph, _ Evidence) []finding.Finding {
+func (r *forbiddenLayerDirection) Check(s relationship.Set, _ Evidence) []finding.Finding {
 	var out []finding.Finding
-	for _, e := range g.Edges() {
-		fromPath := graph.NodePath(e.From)
-		toPath := graph.NodePath(e.To)
+	for _, e := range s.Edges {
+		fromPath := e.FromPath
+		toPath := e.ToPath
 
 		fromLayer, ok := r.mm.LayerFor(fromPath)
 		if !ok {
@@ -212,14 +212,14 @@ type internalAPIAccess struct {
 
 func (r *internalAPIAccess) ID() string { return r.def.ID }
 
-func (r *internalAPIAccess) Check(g *graph.Graph, _ Evidence) []finding.Finding {
+func (r *internalAPIAccess) Check(s relationship.Set, _ Evidence) []finding.Finding {
 	var out []finding.Finding
-	for _, e := range g.Edges() {
-		if e.Kind != graph.EdgeKindUsesInternal {
+	for _, e := range s.Edges {
+		if e.Kind != relEdgeKindUsesInt {
 			continue
 		}
-		fromPath := graph.NodePath(e.From)
-		toPath := graph.NodePath(e.To)
+		fromPath := e.FromPath
+		toPath := e.ToPath
 
 		if r.def.From != "" {
 			if matched, _ := doublestar.Match(r.def.From, fromPath); !matched {
@@ -239,7 +239,7 @@ func (r *internalAPIAccess) Check(g *graph.Graph, _ Evidence) []finding.Finding 
 		f := finding.New(r.def.ID, e, e.Locations)
 		f.Severity = finding.SeverityHigh
 		f.MatchedBy = map[string]string{
-			"edge_kind": string(e.Kind),
+			"edge_kind": e.Kind,
 			"from_path": fromPath,
 			"to_path":   toPath,
 		}
@@ -272,11 +272,11 @@ type newCrossModuleDependency struct {
 
 func (r *newCrossModuleDependency) ID() string { return r.def.ID }
 
-func (r *newCrossModuleDependency) Check(g *graph.Graph, _ Evidence) []finding.Finding {
+func (r *newCrossModuleDependency) Check(s relationship.Set, _ Evidence) []finding.Finding {
 	var out []finding.Finding
-	for _, e := range g.Edges() {
-		fromPath := graph.NodePath(e.From)
-		toPath := graph.NodePath(e.To)
+	for _, e := range s.Edges {
+		fromPath := e.FromPath
+		toPath := e.ToPath
 
 		fromModule, fromOK := r.mm.ModuleFor(fromPath)
 		toModule, toOK := r.mm.ModuleFor(toPath)
@@ -303,8 +303,8 @@ func (r *newCrossModuleDependency) Check(g *graph.Graph, _ Evidence) []finding.F
 // CycleRule
 // ---------------------------------------------------------------------------
 
-// cycleRule detects import cycles using Graph.Cycles() (shared Tarjan SCC).
-// It emits one finding per strongly-connected component of size > 1.
+// cycleRule detects import cycles using relationship.Set.Cycles() (shared Tarjan
+// SCC). It emits one finding per strongly-connected component of size > 1.
 // The finding ID is derived from the sorted SCC members for stability.
 type cycleRule struct {
 	def view.RuleDef
@@ -312,8 +312,8 @@ type cycleRule struct {
 
 func (r *cycleRule) ID() string { return r.def.ID }
 
-func (r *cycleRule) Check(g *graph.Graph, _ Evidence) []finding.Finding {
-	sccs := g.Cycles()
+func (r *cycleRule) Check(s relationship.Set, _ Evidence) []finding.Finding {
+	sccs := s.Cycles()
 	if len(sccs) == 0 {
 		return nil
 	}
@@ -322,8 +322,8 @@ func (r *cycleRule) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 	for _, scc := range sccs {
 		id := cycleFingerprintID(r.def.ID, scc)
 		// Use the first two members of the SCC as representative from/to for the edge evidence.
-		fromPath := graph.NodePath(scc[0])
-		toPath := graph.NodePath(scc[1%len(scc)])
+		fromPath := relationship.NodePath(scc[0])
+		toPath := relationship.NodePath(scc[1%len(scc)])
 		f := finding.Finding{
 			ID:       id,
 			Kind:     kindGate,
@@ -333,7 +333,7 @@ func (r *cycleRule) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 			Edge: finding.EdgeEvidence{
 				From: finding.Endpoint{Path: fromPath},
 				To:   finding.Endpoint{Path: toPath},
-				Kind: string(graph.EdgeKindImports),
+				Kind: relEdgeKindImports,
 			},
 			MatchedBy: map[string]string{
 				"cycle_members": strings.Join(scc, ", "),

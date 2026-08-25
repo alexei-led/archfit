@@ -1,0 +1,359 @@
+// Package analysis owns relationship classification. It accepts acquired graph
+// evidence and relationship policy, and returns relationship facts plus the
+// report-only inputs needed by the assessment stage. It does not know findings,
+// rules, metrics, or report schemas.
+package analysis
+
+import (
+	"path/filepath"
+	"sort"
+
+	"github.com/alexei-led/archfit/internal/model/clone"
+	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
+	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/internal/relationship/classify"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
+	"github.com/alexei-led/archfit/internal/syntax"
+	"github.com/alexei-led/archfit/internal/view"
+)
+
+// Mode contains only relationship-relevant run posture.
+type Mode struct {
+	Base string
+	Full bool
+}
+
+// Input is the relationship stage boundary. Graph and runtime signals are
+// acquired facts; policy is the sole source of classification declarations.
+type Input struct {
+	Graph             *graph.Graph
+	Policy            policy.RelationshipPolicy
+	Mode              Mode
+	Labels            []labels.Label
+	CloneClusters     []clone.Cluster
+	FileClassIndex    map[string]fileclass.FileClass
+	RuntimeSites      []evidence.RuntimeAsyncSite
+	RuntimeConfidence string
+}
+
+// Analyze classifies acquired graph evidence exactly once.
+func Analyze(in Input) relationship.AnalysisResult {
+	cfg := in.Policy.ClassifyConfig()
+	cfg.Modules = classify.AugmentModulesFromGraph(in.Graph, cfg.Modules)
+	cfg.Modules = classify.AugmentGoWorkspaceModules(in.Graph, cfg.Modules)
+	cfg.Modules = classify.AugmentCargoCrateNodes(in.Graph, cfg.Modules)
+	cfg.ModuleMap = module.BuildMap(cfg.Modules)
+
+	evidenceHashes := pairEvidence(in.Graph, cfg.ModuleMap, in.Labels, in.Mode)
+	approved, llm, stale := labels.Approved(in.Labels, evidenceHashes)
+	cfg.ApprovedLabels = approved
+	cfg.LLMLabels = llm
+	cfg.LLMLabelConfidence = labels.LLMConfidenceByKey(in.Labels, evidenceHashes)
+
+	if len(in.CloneClusters) > 0 {
+		cfg.CrossModuleClonePairs, cfg.CloneEvidence = clonePairs(in.CloneClusters, cfg.ModuleMap, in.FileClassIndex)
+	}
+	idx := classify.Run(in.Graph, cfg)
+	set := buildSet(in.Graph, idx, cfg.ModuleMap)
+	clones := cloneOnlyPairs(in.Graph, cfg)
+	out := relationship.AnalysisResult{
+		Relationships:            set,
+		LLMApprovedCount:         labels.LLMApprovedCount(in.Labels, evidenceHashes),
+		RuntimeSignals:           runtimeModules(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
+		RuntimeRelations:         runtimeEdges(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
+		CloneOnly:                clones,
+		AdvisoryCandidates:       advisoryCandidates(set, clones, cfg),
+		ClassifiedEdges:          buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy),
+		Connascence:              buildConnascenceSummary(set),
+		DistanceConfigCandidates: buildStaticDistanceCandidates(in.Graph, idx, cfg.ModuleMap),
+		LocalCoupling:            buildLocalCouplingSummary(set),
+		VolatilityProvenance:     classify.ComputeVolatilityProvenance(in.Graph, in.Policy.Topology.Modules, cfg),
+	}
+	for _, l := range stale {
+		out.StaleLabelKeys = append(out.StaleLabelKeys, labels.Key(l.From, l.To))
+	}
+	return out
+}
+
+func cloneOnlyPairs(g *graph.Graph, cfg view.ClassifyConfig) []relationship.CloneOnlyPair {
+	pairs := classify.CloneOnlyPairs(g, cfg)
+	out := make([]relationship.CloneOnlyPair, 0, len(pairs))
+	for _, p := range pairs {
+		locs := locations(p.Locations)
+		out = append(out, relationship.CloneOnlyPair{FromModule: p.FromModule, ToModule: p.ToModule, FromPath: p.FromPath, ToPath: p.ToPath, Strength: p.Classification.Strength, Distance: p.Classification.Distance, Volatility: p.Classification.Volatility, Severity: p.Classification.Severity, Locations: locs, Classified: classification(p.Classification)})
+	}
+	return out
+}
+
+func pairEvidence(g *graph.Graph, mm module.Map, lbls []labels.Label, mode Mode) map[string]string {
+	if (!mode.Full && mode.Base != "") || len(lbls) == 0 || g == nil {
+		return nil
+	}
+	wanted := make(map[string]struct{}, len(lbls))
+	for _, l := range lbls {
+		wanted[labels.Key(l.From, l.To)] = struct{}{}
+	}
+	items := map[string][]string{}
+	for _, e := range g.Edges() {
+		from, to := relationship.NodePath(e.From), relationship.NodePath(e.To)
+		fm, okf := mm.ModuleFor(from)
+		tm, okt := mm.ModuleFor(to)
+		if !okf || !okt || fm == tm {
+			continue
+		}
+		key := labels.Key(fm, tm)
+		if _, ok := wanted[key]; !ok {
+			continue
+		}
+		items[key] = append(items[key], from+"\x00"+to+"\x00"+string(e.Kind))
+	}
+	out := make(map[string]string, len(items))
+	for k, v := range items {
+		out[k] = labels.HashItems(v)
+	}
+	return out
+}
+
+func clonePairs(clusters []clone.Cluster, mm module.Map, index map[string]fileclass.FileClass) (map[string]struct{}, map[string][]graph.Location) {
+	filtered := make([]clone.Cluster, 0, len(clusters))
+	cfg := syntax.FileClassConfig{}
+	for _, c := range clusters {
+		bad := false
+		for _, f := range c.Files {
+			if !fileclass.IsProduction(syntax.LookupFileClass(f, index, cloneLanguage(f), cfg)) {
+				bad = true
+				break
+			}
+		}
+		if !bad {
+			filtered = append(filtered, c)
+		}
+	}
+	moduleFor := func(f string) string {
+		m, ok := mm.ModuleForFile(f)
+		if ok {
+			return m
+		}
+		return ""
+	}
+	pairs := clone.ModulePairs(filtered, moduleFor)
+	set := make(map[string]struct{}, len(pairs))
+	for _, p := range pairs {
+		set[p[0]+"\x00"+p[1]] = struct{}{}
+	}
+	return set, cloneEvidence(clusters, mm, index)
+}
+
+func cloneEvidence(clusters []clone.Cluster, mm module.Map, index map[string]fileclass.FileClass) map[string][]graph.Location {
+	out := map[string][]graph.Location{}
+	cfg := syntax.FileClassConfig{}
+	moduleFor := func(f string) string {
+		m, ok := mm.ModuleForFile(f)
+		if ok {
+			return m
+		}
+		return ""
+	}
+	for _, c := range clusters {
+		bad := false
+		for _, f := range c.Files {
+			if !fileclass.IsProduction(syntax.LookupFileClass(f, index, cloneLanguage(f), cfg)) {
+				bad = true
+				break
+			}
+		}
+		if bad {
+			continue
+		}
+		for i, f := range c.Files {
+			a := moduleFor(f)
+			if a == "" {
+				continue
+			}
+			for j := i + 1; j < len(c.Files); j++ {
+				b := moduleFor(c.Files[j])
+				if b == "" || a == b {
+					continue
+				}
+				x, y := a, b
+				if x > y {
+					x, y = y, x
+				}
+				k := x + "\x00" + y
+				line := 0
+				if i < len(c.Locations) {
+					line = c.Locations[i].StartLine
+				}
+				out[k] = append(out[k], graph.Location{File: f, Line: line})
+				line = 0
+				if j < len(c.Locations) {
+					line = c.Locations[j].StartLine
+				}
+				out[k] = append(out[k], graph.Location{File: c.Files[j], Line: line})
+			}
+		}
+	}
+	for k, locs := range out {
+		sort.Slice(locs, func(i, j int) bool {
+			if locs[i].File != locs[j].File {
+				return locs[i].File < locs[j].File
+			}
+			return locs[i].Line < locs[j].Line
+		})
+		out[k] = locs
+	}
+	return out
+}
+func cloneLanguage(path string) string {
+	switch filepath.Ext(path) {
+	case ".go":
+		return graph.LangGo
+	case ".py":
+		return graph.LangPython
+	case ".rs":
+		return graph.LangRust
+	default:
+		return graph.LangTypeScript
+	}
+}
+
+func buildSet(g *graph.Graph, idx coupling.Index, mm module.Map) relationship.Set {
+	if g == nil {
+		return relationship.Set{}
+	}
+	set := relationship.Set{Nodes: make([]relationship.Node, 0, len(g.Nodes())), Edges: make([]relationship.Edge, 0, len(g.Edges()))}
+	for _, n := range g.Nodes() {
+		id := n.ID()
+		set.Nodes = append(set.Nodes, relationship.Node{ID: id, Path: n.Path, Kind: string(n.Kind), Language: n.Language, Module: relationship.ModuleKey(id), FirstParty: n.Kind != graph.NodeKindExternal})
+	}
+	for _, e := range g.Edges() {
+		key := e.From + "\x00" + e.To + "\x00" + string(e.Kind)
+		cl, ok := idx[key]
+		if !ok {
+			continue
+		}
+		fp, tp := relationship.NodePath(e.From), relationship.NodePath(e.To)
+		fm, _ := mm.ModuleFor(fp)
+		tm, _ := mm.ModuleFor(tp)
+		set.Edges = append(set.Edges, relationship.Edge{FromID: e.From, ToID: e.To, FromPath: fp, ToPath: tp, FromModule: fm, ToModule: tm, Kind: string(e.Kind), Language: e.Language, Strength: cl.Strength, Distance: cl.Distance, Volatility: cl.Volatility, Severity: cl.Severity, Locations: locations(e.Locations), Provenance: relationship.Provenance{ClassificationKey: key, DistanceBasis: string(cl.DistanceBasis), StrengthFromLLM: cl.StrengthFromLLM, StrengthFromNonHighLLM: cl.StrengthFromNonHighLLM, StrengthFromConnascence: cl.StrengthFromConnascence, ConnascenceKinds: connascenceKinds(cl.Connascence), CloneLocationCount: len(cl.CloneLocations)}, Classified: classification(cl)})
+	}
+	return set
+}
+func classification(in coupling.Classification) relationship.Classification {
+	return relationship.Classification{Explicitness: relationship.Explicitness(in.Explicitness), ContractRecommended: in.ContractRecommended, Score: relationship.Score{Scored: in.Score.Scored, Balance: in.Score.Balance, Value: in.Score.Value, Band: in.Score.Band, Reason: in.Score.Reason, CheapestMove: in.Score.CheapestMove, Breakdown: relationship.ScoreBreakdown{StrengthValue: in.Score.Breakdown.StrengthVal, DistanceValue: in.Score.Breakdown.DistanceVal, VolatilityValue: in.Score.Breakdown.VolatilityVal, Modularity: in.Score.Breakdown.Modularity, VolDiscount: in.Score.Breakdown.VolDiscount}}, DistanceBasis: string(in.DistanceBasis), CloneLocations: locationsFromCoupling(in.CloneLocations), Connascence: connascence(in.Connascence)}
+}
+
+func connascence(in []coupling.ConnascenceEvidence) []relationship.ConnascenceEvidence {
+	out := make([]relationship.ConnascenceEvidence, 0, len(in))
+	for _, v := range in {
+		out = append(out, relationship.ConnascenceEvidence{Kind: string(v.Kind), Source: v.Source, Detail: v.Detail})
+	}
+	return out
+}
+
+func connascenceKinds(in []coupling.ConnascenceEvidence) []string {
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		out = append(out, string(v.Kind))
+	}
+	return out
+}
+
+func locationsFromCoupling(in []coupling.Location) []relationship.Location {
+	out := make([]relationship.Location, 0, len(in))
+	for _, v := range in {
+		out = append(out, relationship.Location{File: v.File, Line: v.Line})
+	}
+	return out
+}
+
+func locations(in []graph.Location) []relationship.Location {
+	out := make([]relationship.Location, 0, len(in))
+	for _, l := range in {
+		out = append(out, relationship.Location{File: l.File, Line: l.Line})
+	}
+	return out
+}
+
+func runtimeModules(sites []evidence.RuntimeAsyncSite, confidence string, mm module.Map) []relationship.RuntimeSignal {
+	byModule := map[string][]evidence.RuntimeAsyncSite{}
+	for _, s := range sites {
+		m, ok := mm.ModuleForFile(s.File)
+		if !ok || m == "" {
+			m = filepath.Dir(s.File)
+		}
+		byModule[m] = append(byModule[m], s)
+	}
+	mods := make([]string, 0, len(byModule))
+	for m := range byModule {
+		mods = append(mods, m)
+	}
+	sort.Strings(mods)
+	out := make([]relationship.RuntimeSignal, 0, len(mods))
+	for _, m := range mods {
+		ss := byModule[m]
+		out = append(out, relationship.RuntimeSignal{Module: m, IntegrationKind: dominantKind(ss), Count: len(ss), Confidence: confidence})
+	}
+	return out
+}
+func dominantKind(sites []evidence.RuntimeAsyncSite) string {
+	counts := map[string]int{}
+	best := ""
+	n := 0
+	for _, s := range sites {
+		counts[s.IntegrationKind]++
+		if counts[s.IntegrationKind] > n || (counts[s.IntegrationKind] == n && s.IntegrationKind < best) {
+			best = s.IntegrationKind
+			n = counts[s.IntegrationKind]
+		}
+	}
+	return best
+}
+func runtimeEdges(sites []evidence.RuntimeAsyncSite, confidence string, mm module.Map) []relationship.RuntimeRelationship {
+	type key struct{ from, target, kind string }
+	grouped := map[key][]evidence.RuntimeAsyncSite{}
+	for _, s := range sites {
+		m, ok := mm.ModuleForFile(s.File)
+		if !ok || m == "" {
+			m = filepath.Dir(s.File)
+		}
+		target := s.Library
+		if target == "" {
+			target = s.IntegrationKind
+		}
+		k := key{m, target, s.IntegrationKind}
+		grouped[k] = append(grouped[k], s)
+	}
+	keys := make([]key, 0, len(grouped))
+	for k := range grouped {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].from != keys[j].from {
+			return keys[i].from < keys[j].from
+		}
+		if keys[i].target != keys[j].target {
+			return keys[i].target < keys[j].target
+		}
+		return keys[i].kind < keys[j].kind
+	})
+	out := make([]relationship.RuntimeRelationship, 0, len(keys))
+	for _, k := range keys {
+		ss := grouped[k]
+		sample := ss
+		if len(sample) > 5 {
+			sample = sample[:5]
+		}
+		sites := make([]relationship.RuntimeSite, 0, len(sample))
+		for _, site := range sample {
+			sites = append(sites, relationship.RuntimeSite{File: site.File, Line: site.Line, Library: site.Library, IntegrationKind: site.IntegrationKind, Language: site.Language})
+		}
+		out = append(out, relationship.RuntimeRelationship{FromModule: k.from, Target: k.target, IntegrationKind: k.kind, Count: len(ss), Confidence: confidence, Sites: sites})
+	}
+	return out
+}

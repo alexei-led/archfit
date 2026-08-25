@@ -142,9 +142,11 @@ not team or service distance.
 | JSON-tagged external views and schema version | Report Contract | Projection DTOs only |
 | `internal/assessment/signals` | Assessment and Repair | Stage-local metric inputs; no shared pipeline-state module |
 | `internal/assessment/result.Result` | Assessment and Repair | Internal assessment result; project to `report.Document` at the output edge |
-| `internal/model/scan.Diagnostic` | No target module | Compatibility alias only; production imports are zero |
-| `internal/model/diagnostic` | No target module | Remove after production imports reach zero; compatibility tests may temporarily retain it |
-| `internal/engine` orchestration | Analysis Application | Ordering and cancellation only |
+| `internal/model/report.Diagnostic` | No target module | Compatibility alias only; production imports are zero |
+| `internal/model/report` | No target module | Remove after production imports reach zero; compatibility tests may temporarily retain it |
+| `internal/analysispipeline` orchestration | Analysis Application | Ordering and cancellation only |
+| `internal/application/config_enrich.go`, `config_update.go` | Analysis Application | Own config target selection, review merge, and draft/review/apply sequencing behind ports |
+| `cmd/archfit/config_enrich_adapters.go`, `config_update_adapters.go` | CLI Composition | Keep concrete config/initcfg, LLM, filesystem, prompt, and render adapters at the edge |
 | `cmd/archfit` use-case logic | Analysis Application | Keep only composition and command UX in `cmd` |
 | `internal/output` | Report Adapters | Consume `ReportDocument` only |
 | `internal/application/report.go` | Report Projection | Map `assessment.Result` to `report.Document` |
@@ -181,7 +183,7 @@ Forbidden directions:
   internals, assessment internals, or diagnostic compatibility aliases.
 - CLI may construct adapters but must not interpret policy, classification, or
   assessment internals.
-- No production package may import `internal/model/diagnostic` after migration.
+- No production package may import `internal/model/report` after migration.
 
 ## Integration contracts
 
@@ -457,7 +459,7 @@ Add these checks with the migration that makes each one pass:
    no hardcoded incomplete purity list.
 2. `internal/output/**` and renderer ports may import only `report-contract` and
    format-local helpers for completed reports.
-3. No production package imports `internal/model/diagnostic`.
+3. No production package imports `internal/model/report`.
 4. Core policy, relationship, and assessment modules cannot import adapters,
    CLI, engine implementation, renderers, stores, process runners, or LLM
    implementations.

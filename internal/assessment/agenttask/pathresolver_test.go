@@ -8,7 +8,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/agenttask"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 const rulePublicAPIMax = "public_api_max"
@@ -140,7 +140,7 @@ func TestNewPathResolver_SharedDirectoryAncestorDedup(t *testing.T) {
 		Kind:      finding.KindGate,
 		RuleID:    ruleTypeForbidden,
 		Status:    finding.StatusNew,
-		Locations: []graph.Location{{File: fixturePkgAGo}, {File: fixturePkgBGo}, {File: fixturePkgDir}},
+		Locations: []relationship.Location{{File: fixturePkgAGo}, {File: fixturePkgBGo}, {File: fixturePkgDir}},
 	}
 	tasks := agenttask.Build(
 		[]finding.Finding{f},
@@ -535,7 +535,7 @@ func TestFilesFor_ModuleKeyCollisionSkipped(t *testing.T) {
 		knownFiles := buildKnownFiles(t, root)
 
 		f := gateFindingWithModuleEdge("docs")
-		f.Locations = []graph.Location{{File: "src/domain/api.go"}}
+		f.Locations = []relationship.Location{{File: "src/domain/api.go"}}
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
 		tasks := agenttask.Build(
 			[]finding.Finding{f},
@@ -558,7 +558,7 @@ func TestFilesFor_ModuleKeyCollisionSkipped(t *testing.T) {
 		knownFiles := buildKnownFiles(t, root)
 
 		f := gateFindingWithModuleEdge("widget")
-		f.Locations = []graph.Location{{File: "ghost/nope.go"}}
+		f.Locations = []relationship.Location{{File: "ghost/nope.go"}}
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
 		tasks := agenttask.Build(
 			[]finding.Finding{f},

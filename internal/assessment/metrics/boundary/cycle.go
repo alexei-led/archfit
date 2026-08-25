@@ -7,7 +7,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 // ---------------------------------------------------------------------------
@@ -26,17 +26,14 @@ func (m CycleMetric) Version() string { return "cycle.v1" }
 
 // Calculate counts strongly-connected components of size > 1 in the dependency graph.
 func (m CycleMetric) Calculate(in signal.CommonInput) assessmentresult.MetricResult {
-	cycles := 0
-	if in.Graph != nil {
-		cycles = countCycles(in.Graph)
-	}
+	cycles := countCycles(in.Relationships)
 
 	value := float64(cycles)
 	confidence := result.ConfidenceHigh
 	// allRust: every cycle is built solely from Rust edges → intra-crate module
 	// cycles (cargo forbids crate cycles), language-permitted. Computed once and
 	// reused for the band and the display.
-	allRust := cycles > 0 && cyclesAllRust(in.Graph)
+	allRust := cycles > 0 && cyclesAllRust(in.Relationships)
 	var band string
 	switch {
 	case cycles == 0:
@@ -77,10 +74,9 @@ func (m CycleMetric) Calculate(in signal.CommonInput) assessmentresult.MetricRes
 	}
 }
 
-// countCycles counts strongly-connected components of size > 1 using
-// the shared Tarjan SCC detection in graph.Graph.Cycles.
-func countCycles(g *graph.Graph) int {
-	return len(g.Cycles())
+// countCycles counts strongly-connected components of size > 1 over dependency edges.
+func countCycles(set relationship.Set) int {
+	return len(set.Cycles())
 }
 
 // cyclesAllRust reports whether every detected cycle is built solely from Rust edges
@@ -89,11 +85,8 @@ func countCycles(g *graph.Graph) int {
 // not the global edge-language majority: a polyglot repo whose Rust crate-dep edges
 // outnumber a single Go import cycle must still flag that Go cycle as critical. Returns
 // false when there are no cycles or any cycle includes a non-Rust edge.
-func cyclesAllRust(g *graph.Graph) bool {
-	if g == nil {
-		return false
-	}
-	sccs := g.Cycles() // SCCs of size > 1, as node-ID slices
+func cyclesAllRust(set relationship.Set) bool {
+	sccs := set.Cycles()
 	if len(sccs) == 0 {
 		return false
 	}
@@ -103,16 +96,10 @@ func cyclesAllRust(g *graph.Graph) bool {
 			sccOf[id] = i
 		}
 	}
-	for _, e := range g.Edges() {
-		// Only the dependency edges that g.Cycles() considers can form a cycle.
-		switch e.Kind {
-		case graph.EdgeKindImports, graph.EdgeKindDependsOn, graph.EdgeKindUsesInternal:
-		default:
-			continue
-		}
+	for _, e := range set.DependencyEdges() {
 		// An edge is part of a cycle iff both endpoints sit in the same SCC.
-		if fi, ok := sccOf[e.From]; ok {
-			if ti, ok2 := sccOf[e.To]; ok2 && fi == ti && e.Language != graph.LangRust {
+		if fi, ok := sccOf[e.FromID]; ok {
+			if ti, ok2 := sccOf[e.ToID]; ok2 && fi == ti && e.Language != "rust" {
 				return false
 			}
 		}

@@ -5,11 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/baseline"
-	"github.com/alexei-led/archfit/internal/engine"
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/application"
 )
 
 // BaselineCmd runs the engine and saves findings as the new baseline.
@@ -34,84 +30,17 @@ Typical calibration:
 func (c *BaselineCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
 
-	cfg, err := loadConfig(ctx, c.Config)
+	cfg, err := loadAnalysisConfig(ctx, c.Config)
 	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+		return configLoadError(err)
 	}
-
-	configDir := filepath.Dir(c.Config)
-	existingBase, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
-	advisory := !c.NoAdvisories
-	mode := engine.Mode{Full: true, Advisory: advisory}
 	deps.refresh = c.Refresh
-	diag, sc, err := runPipeline(ctx, deps, cfg, newRunContext(c.Config, c.Root), mode, existingBase)
-	if err != nil {
+	bPath := filepath.Join(filepath.Dir(c.Config), defaultBaselinePath)
+	analyzer := newUseCaseAnalyzer(c.Config, c.Root, cfg, deps)
+	service := application.BaselineService{Preparer: analyzer, Evidence: analyzer, Relationship: analyzer, Assessment: analyzer, Writer: baselineWriterAdapter{}}
+	if _, err := service.Execute(ctx, application.BaselineRequest{ConfigPath: c.Config, Root: c.Root, Path: bPath, NoAdvisories: c.NoAdvisories}); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-
-	newBase := baseline.Baseline{}
-	for _, f := range diag.Findings {
-		if f.Status == finding.StatusFixed {
-			continue
-		}
-		if f.RuleID == ruleIDBCCouplingGate {
-			continue
-		}
-		kind := f.Kind
-		if f.RuleID == engine.RuleIDBCImbalanced {
-			kind = finding.KindAdvisory
-		}
-		newBase.Accepted = append(newBase.Accepted, baseline.AcceptedFinding{
-			Fingerprint: f.ID,
-			RuleID:      f.RuleID,
-			Kind:        kind,
-			Severity:    string(f.Severity),
-		})
-	}
-	newBase.Metrics = make(report.MetricSnapshot)
-	for _, m := range diag.Metrics {
-		newBase.Metrics[m.Name] = struct {
-			Value   float64 `json:"value"`
-			Version string  `json:"version"`
-		}{Value: m.Value, Version: m.Version}
-	}
-	if !sc.OverallBand.Unmeasured() {
-		newBase.Score = &baseline.ScoreSnapshot{
-			CouplingBalance: sc.Overall,
-			Band:            string(sc.OverallBand),
-			ScoreVersion:    report.ScoreVersion,
-			RubricVersion:   sc.RubricVersion,
-		}
-	}
-
-	bPath := filepath.Join(configDir, defaultBaselinePath)
-	if err := baseline.Save(ctx, bPath, newBase); err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
 	_, _ = fmt.Fprintf(deps.Stdout, "baseline saved: %s\n", bPath)
 	return nil
-}
-
-// scoreSnapshotMismatchDetails renders one "stored vs current" phrase per
-// incompatible score-snapshot input, so the max_drop skip disclosure names what
-// changed instead of just saying the snapshot is stale. Formatting lives here,
-// not in the persistence layer: baseline reports input names, cmd renders them.
-func scoreSnapshotMismatchDetails(b baseline.Baseline, mismatches []string) []string {
-	out := make([]string, 0, len(mismatches))
-	for _, input := range mismatches {
-		switch input {
-		case baseline.InputScoreVersion:
-			out = append(out, fmt.Sprintf("%s %q, current %q", input, b.Score.ScoreVersion, report.ScoreVersion))
-		case baseline.InputRubricVersion:
-			out = append(out, fmt.Sprintf("%s %d, current %d", input, b.Score.EffectiveRubricVersion(), score.RubricVersion))
-		default:
-			out = append(out, input)
-		}
-	}
-	return out
 }

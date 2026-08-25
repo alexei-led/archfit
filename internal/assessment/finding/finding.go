@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
-	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 // Status represents the lifecycle state of a finding.
@@ -53,18 +53,18 @@ type EdgeEvidence struct {
 
 // Finding represents one rule violation detected in the dependency graph (spec §9/§12).
 type Finding struct {
-	ID           string            `json:"id"`
-	Kind         string            `json:"kind"`
-	RuleID       string            `json:"rule_id"`
-	Status       Status            `json:"status"`
-	Severity     Severity          `json:"severity"`
-	Confidence   string            `json:"confidence"`
-	Edge         EdgeEvidence      `json:"edge"`
-	MatchedBy    map[string]string `json:"matched_by"`
-	Locations    []graph.Location  `json:"locations"`
-	Why          string            `json:"why"`
-	Constraint   string            `json:"constraint"`
-	Alternatives []string          `json:"allowed_alternatives,omitempty"`
+	ID           string                  `json:"id"`
+	Kind         string                  `json:"kind"`
+	RuleID       string                  `json:"rule_id"`
+	Status       Status                  `json:"status"`
+	Severity     Severity                `json:"severity"`
+	Confidence   string                  `json:"confidence"`
+	Edge         EdgeEvidence            `json:"edge"`
+	MatchedBy    map[string]string       `json:"matched_by"`
+	Locations    []relationship.Location `json:"locations"`
+	Why          string                  `json:"why"`
+	Constraint   string                  `json:"constraint"`
+	Alternatives []string                `json:"allowed_alternatives,omitempty"`
 }
 
 // New creates a Finding with a stable fingerprint ID derived from (ruleID, from, to, kind).
@@ -77,17 +77,17 @@ type Finding struct {
 // Edge.From.Path and Edge.To.Path are set to the bare repo-relative path (kind: prefix stripped).
 // Edge.From.Module, Edge.To.Module, Severity, and MatchedBy are left zero — filled later
 // by the rule and diagnostic assembly stage (engine Task 16).
-func New(ruleID string, e graph.Edge, locs []graph.Location) Finding {
-	id := fingerprint(ruleID, e.From, e.To, string(e.Kind))
+func New(ruleID string, e relationship.Edge, locs []relationship.Location) Finding {
+	id := fingerprint(ruleID, e.FromID, e.ToID, e.Kind)
 	return Finding{
 		ID:     id,
 		Kind:   KindGate,
 		RuleID: ruleID,
 		Status: StatusNew,
 		Edge: EdgeEvidence{
-			From: Endpoint{Path: graph.NodePath(e.From)},
-			To:   Endpoint{Path: graph.NodePath(e.To)},
-			Kind: string(e.Kind),
+			From: Endpoint{Path: relationship.NodePath(e.FromID)},
+			To:   Endpoint{Path: relationship.NodePath(e.ToID)},
+			Kind: e.Kind,
 		},
 		Locations: locs,
 	}

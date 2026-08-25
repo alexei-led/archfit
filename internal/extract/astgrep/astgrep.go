@@ -1,4 +1,4 @@
-// Package astgrep implements the ports.PatternProvider port for ast-grep.
+// Package astgrep implements the evidenceports.PatternProvider port for ast-grep.
 // It shells out to the "sg" binary and parses its JSON output.
 // If "sg" is absent and mode is ModeAuto, Find returns empty matches with
 // coverage status "absent" — it never returns an error for a missing tool.
@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/pattern"
-	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 	"github.com/alexei-led/archfit/internal/view"
@@ -24,7 +24,7 @@ import (
 // toolName is the coverage/name identifier for this adapter.
 const toolName = "ast-grep"
 
-// Adapter satisfies ports.PatternProvider using the "sg" (ast-grep) binary.
+// Adapter satisfies evidenceports.PatternProvider using the "sg" (ast-grep) binary.
 type Adapter struct {
 	runner toolrun.Runner
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
@@ -177,4 +177,4 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c view.PatternConfig)
 }
 
 // Compile-time interface check.
-var _ ports.PatternProvider = (*Adapter)(nil)
+var _ evidenceports.PatternProvider = (*Adapter)(nil)

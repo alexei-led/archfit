@@ -14,35 +14,29 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/view"
+	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 // defaultThreshold is the staleness threshold used when cfg.Threshold is zero.
 const defaultThreshold = 90 * 24 * time.Hour
 
-// Check inspects the graph against the module map and returns advisory findings
-// for any of the three staleness conditions:
-//
-//   - "map/uncovered_path": a package or file node has no matching module paths glob.
-//   - "map/dead_rule": a module paths glob matches zero graph nodes.
-//   - "map/stale_review": a module's reviewed_at is set and older than threshold.
-//
-// Returns nil when cfg.Enabled is false.
-func Check(g *graph.Graph, cfg view.StalenessConfig, now time.Time) []finding.Finding {
-	if !cfg.Enabled {
+// Check inspects the relationship set against the assessment policy and returns
+// advisory findings for any of the three staleness conditions.
+func Check(s relationship.Set, cfg policy.AssessmentPolicy, now time.Time) []finding.Finding {
+	modules, enabled, threshold := cfg.Topology.Modules, cfg.Staleness.Enabled, cfg.Staleness.Threshold
+	if !enabled {
 		return nil
 	}
 
-	threshold := cfg.Threshold
 	if threshold == 0 {
 		threshold = defaultThreshold
 	}
 
-	uncovered := uncoveredPaths(g, cfg.Modules)
-	dead := deadRules(g, cfg.Modules)
-	stale := staleReviews(cfg.Modules, threshold, now)
+	uncovered := uncoveredPaths(s, modules)
+	dead := deadRules(s, modules)
+	stale := staleReviews(modules, threshold, now)
 	findings := make([]finding.Finding, 0, len(uncovered)+len(dead)+len(stale))
 	findings = append(findings, uncovered...)
 	findings = append(findings, dead...)
@@ -52,10 +46,10 @@ func Check(g *graph.Graph, cfg view.StalenessConfig, now time.Time) []finding.Fi
 
 // uncoveredPaths returns one advisory finding per package or file node that
 // is not claimed by any module's paths globs.
-func uncoveredPaths(g *graph.Graph, modules map[string]module.ModuleDef) []finding.Finding {
+func uncoveredPaths(s relationship.Set, modules map[string]module.ModuleDef) []finding.Finding {
 	var findings []finding.Finding
-	for _, n := range g.Nodes() {
-		if n.Kind != graph.NodeKindPackage && n.Kind != graph.NodeKindFile {
+	for _, n := range s.Nodes {
+		if n.Kind != "package" && n.Kind != "file" {
 			continue
 		}
 		if !claimedByAnyModule(n.Path, modules) {
@@ -71,9 +65,9 @@ func uncoveredPaths(g *graph.Graph, modules map[string]module.ModuleDef) []findi
 }
 
 // deadRules returns one advisory finding per module paths glob that matches
-// zero nodes in the graph.
-func deadRules(g *graph.Graph, modules map[string]module.ModuleDef) []finding.Finding {
-	nodes := g.Nodes()
+// zero nodes in the relationship set.
+func deadRules(s relationship.Set, modules map[string]module.ModuleDef) []finding.Finding {
+	nodes := s.Nodes
 	names := make([]string, 0, len(modules))
 	for name := range modules {
 		names = append(names, name)
@@ -143,7 +137,7 @@ func claimedByAnyModule(path string, modules map[string]module.ModuleDef) bool {
 
 // patternMatchesAnyNode reports whether pattern matches the path of at least
 // one node in nodes.
-func patternMatchesAnyNode(pattern string, nodes []graph.Node) bool {
+func patternMatchesAnyNode(pattern string, nodes []relationship.Node) bool {
 	for _, n := range nodes {
 		if matched, _ := doublestar.Match(pattern, n.Path); matched {
 			return true

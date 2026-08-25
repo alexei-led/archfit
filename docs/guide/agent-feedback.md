@@ -64,7 +64,7 @@ isn't resolvable, `files` is legitimately empty — never a fabricated string
 `locations[0]` — never an arbitrary hash-ordered representative. When no
 member owns `locations[0]` (TypeScript edges carry no locations), the paths
 fall back to the representative member's own edge
-(`internal/engine/advisories.go`, `groupEdgePaths`). Either way the pair
+(`internal/analysispipeline/advisories.go`, `groupEdgePaths`). Either way the pair
 names one genuine member edge of the group. The path form is the graph
 node's: a repo-relative file for Go and TypeScript, a dotted module ID for
 Python (`myapp.domain`), a crate or `crate::mod` name for Rust — the
@@ -128,28 +128,15 @@ comparable instead:
 - Both sides `partial` from unresolved import specifiers — the normal steady
   state for dependency-cruiser and grimp, so treating it as unusable disabled
   the feature on every TypeScript and Python repo.
-- Both sides `partial` with every input covered and only edge precision
-  degraded — go/packages reports this when some packages fail to type-check.
-  Their imports are all in the graph, only the `go/types` strength hints are
-  missing, so nothing can hide behind them; one such package anywhere used to
-  disable the feature on an ordinary Go repo.
 - Both sides `absent` for an analyzer the config activated — typically its tool
   is not installed on this host (archfit's own runtime image ships no Rust
   toolchain and no SCIP indexer).
 
 The safety argument is symmetry: neither side ran what the other could hide
 behind. None is ever paired silently — each always emits a `comparison_reasons`
-entry, and the two partial cases carry each side's count, so `3 unresolved` and
-`5000/6000 unresolved` are distinguishable, as are `2 degraded` and `900
-degraded`. An **asymmetric** absence or partial is still unavailable evidence,
-and the two partial shapes never pair with each other: complete-but-imprecise is
-not the same evidence as incomplete.
-
-A go/packages `partial` earned by packages that failed to LOAD is the incomplete
-kind — their imports never reached the graph — and it pairs with nothing. The
-common cause is a gitignored generated Go package, which is absent from the
-tracked-files-only base checkout; see the known ceiling in
-[ci.md](ci.md#2-github-actions-recipe).
+entry, and the unresolved-specifier partial case carries each side's count, so
+`3 unresolved` and `5000/6000 unresolved` are distinguishable. An **asymmetric**
+absence or partial is still unavailable evidence.
 
 Matching uses stable finding IDs only: lifecycle labels (`new`, `waived`,
 `baseline`) and gate-vs-advisory promotion do not affect it, and a base entry
