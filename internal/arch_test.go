@@ -8,6 +8,7 @@ package arch_test
 
 import (
 	"context"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -159,6 +160,74 @@ func TestAssessmentProductionDoesNotImportRawGraphOrCoupling(t *testing.T) {
 				t.Errorf("assessment production package must consume relationship.Set, not %s: %s", tc.label, file)
 			}
 		}
+	}
+}
+
+// TestAssessmentConsumesOnlyThePublicRelationshipContract pins the
+// Relationship-to-Assessment seam: assessment decides over relationship.Set,
+// relationship.AdvisoryCandidate, and its own values. Reaching into a
+// relationship implementation package would let the evaluator re-derive
+// classification facts the relationship stage already owns, so the two
+// capabilities would drift apart silently.
+func TestAssessmentConsumesOnlyThePublicRelationshipContract(t *testing.T) {
+	for _, pkg := range []string{"classify", "scoring", "coupling", "facts", "labels", "analysis"} {
+		for _, file := range productionImportFiles(t, modulePrefix+"internal/relationship/"+pkg) {
+			if strings.HasPrefix(file, "internal/assessment/") {
+				t.Errorf("assessment must consume the public relationship contract, not relationship/%s: %s", pkg, file)
+			}
+		}
+	}
+}
+
+// TestPipelineDelegatesAssessmentJudgment pins that the stage adapter owns
+// wiring, not judgment: rule, metric, status, staleness, finding, score,
+// decision, and repair-task behavior reaches it only through the evaluation
+// port. A second call site for any of them would make the pipeline a second
+// owner of the assessment lifecycle.
+func TestPipelineDelegatesAssessmentJudgment(t *testing.T) {
+	for _, pkg := range []string{"status", "staleness", "finding", "rules", "metrics", "score", "decision", "agenttask"} {
+		for _, file := range productionImportFiles(t, modulePrefix+"internal/assessment/"+pkg) {
+			if strings.HasPrefix(file, "internal/analysispipeline/") {
+				t.Errorf("analysispipeline must reach assessment through evaluation, not assessment/%s: %s", pkg, file)
+			}
+		}
+	}
+}
+
+// TestReportProjectionHasOneOwner pins that report DTOs are BUILT in exactly
+// one place. Other application files may hold a report.Document — that is the
+// use-case result they return — and baseline may read one back for persistence.
+// What must not spread is construction: a second file assembling report values
+// from domain values is a second projector, and the two drift.
+func TestReportProjectionHasOneOwner(t *testing.T) {
+	const projector = "report.go"
+	files, err := filepath.Glob(filepath.Join("application", "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		name := filepath.Base(file)
+		if name == projector || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		tree, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(tree, func(n ast.Node) bool {
+			lit, ok := n.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			sel, ok := lit.Type.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "report" {
+				t.Errorf("%s constructs report.%s: only application/%s may project domain values into report DTOs", name, sel.Sel.Name, projector)
+			}
+			return true
+		})
 	}
 }
 

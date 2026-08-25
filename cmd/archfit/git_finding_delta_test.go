@@ -283,7 +283,7 @@ func testGitDeltaCheckBaseJSON(t *testing.T) {
 			if tc.wantUnknownGate {
 				synthetic := ""
 				for _, task := range got.AgentTasks {
-					if task.RuleID == apppipeline.RuleIDBCCouplingGate {
+					if task.RuleID == ruleIDCouplingGate {
 						synthetic = task.FindingID
 					}
 				}

@@ -380,7 +380,7 @@ func (e bcEdge) worstCase() bool {
 func bcEdges(fs []finding.Finding) []bcEdge {
 	var out []bcEdge
 	for _, f := range fs {
-		if f.RuleID != "bc/imbalanced_coupling" {
+		if f.RuleID != finding.RuleIDBCImbalanced {
 			continue
 		}
 		if !IsActiveGateFinding(f) {

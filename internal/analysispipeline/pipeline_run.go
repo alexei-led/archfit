@@ -7,12 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/history/git"
-	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -111,46 +106,4 @@ func shellQuoteArg(arg string) string {
 		return arg
 	}
 	return "'" + strings.ReplaceAll(arg, "'", "'\"'\"'") + "'"
-}
-
-const ruleIDBCCouplingGate = "bc/coupling_gate"
-
-// RuleIDBCCouplingGate is the synthetic coupling-gate summary rule ID.
-const RuleIDBCCouplingGate = ruleIDBCCouplingGate
-const findingIDCouplingGate = "coupling-gate"
-
-// FindingIDCouplingGate is the fixed synthetic coupling-gate finding ID.
-const FindingIDCouplingGate = findingIDCouplingGate
-
-// PolicyCouplingGateView adapts policy declarations to score inputs.
-func PolicyCouplingGateView(snapshot policy.PolicySnapshot) score.CouplingGate {
-	g := snapshot.Gates.Coupling
-	return score.CouplingGate{Enabled: g.Enabled, MinBand: score.Band(g.MinBand), MaxDrop: g.MaxDrop}
-}
-
-// ApplyCouplingGate escalates a measured coupling score and promotes active
-// coupling advisories into gate findings. It is a pure assessment finalizer.
-func ApplyCouplingGate(diag *result.Result, card score.Scorecard, gate score.CouplingGate, base baseline.Baseline) {
-	trip := score.EvaluateCouplingGate(card, gate, base.CouplingScore())
-	if !trip.Tripped {
-		return
-	}
-	diag.Verdict = result.VerdictFail
-	promoted := 0
-	for i := range diag.Findings {
-		f := &diag.Findings[i]
-		if f.RuleID != RuleIDBCImbalanced || f.Kind != finding.KindAdvisory || !score.IsActiveGateFinding(*f) {
-			continue
-		}
-		f.Kind = finding.KindGate
-		promoted++
-	}
-	diag.Summary.GateFindings += promoted
-	diag.Summary.Warnings = max(0, diag.Summary.Warnings-promoted)
-	if promoted == 0 {
-		diag.Findings = append(diag.Findings, finding.Finding{ID: findingIDCouplingGate, Kind: finding.KindGate,
-			RuleID: ruleIDBCCouplingGate, Status: finding.StatusNew, Severity: finding.SeverityHigh,
-			Why: strings.Join(trip.Reasons, "; ")})
-		diag.Summary.GateFindings++
-	}
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/rules"
 	"github.com/alexei-led/archfit/internal/config"
 	reportmodel "github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
@@ -83,57 +82,60 @@ const (
 // helpers
 // ---------------------------------------------------------------------------
 
-// makeGraph builds a relationship.Set from graph.Edge fixtures. It is a
-// test-only adapter: rules consume relationship.Set, not the raw graph.
-func makeGraph(edges []graph.Edge) relationship.Set {
-	var nodes []graph.Node
+// Edge kinds and the Go language tag the relationship contract carries,
+// restated locally: rules consume relationship.Set and never see the extractor
+// graph that names them.
+const (
+	edgeKindImports      = "imports"
+	edgeKindDependsOn    = "depends_on"
+	edgeKindUsesInternal = "uses_internal"
+	langGo               = "go"
+
+	nodeKindPackage = "package"
+	nodeKindFile    = "file"
+)
+
+// nodeID builds a relationship node ID in the contract's "kind:path" form.
+func nodeID(kind, path string) string { return kind + ":" + path }
+
+// testEdge is one fixture relationship, addressed by the contract's "kind:path"
+// node IDs.
+type testEdge struct {
+	From, To  string
+	Kind      string
+	Language  string
+	Locations []relationship.Location
+}
+
+// makeGraph builds a relationship.Set fixture from edge declarations, deriving
+// the participating nodes from the edge endpoints.
+func makeGraph(edges []testEdge) relationship.Set {
+	set := relationship.Set{}
 	seen := make(map[string]bool)
 	for _, e := range edges {
 		for _, id := range []string{e.From, e.To} {
-			if !seen[id] {
-				seen[id] = true
-				kind, path, _ := strings.Cut(id, ":")
-				nodes = append(nodes, graph.Node{Kind: graph.NodeKind(kind), Path: path})
+			if seen[id] {
+				continue
 			}
+			seen[id] = true
+			kind, path, _ := strings.Cut(id, ":")
+			set.Nodes = append(set.Nodes, relationship.Node{
+				ID: id, Path: path, Kind: kind, Language: langGo, Module: relationship.ModuleKey(id),
+			})
 		}
 	}
-	return graphToSet(graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}}))
-}
-
-// graphToSet projects a raw graph fixture into the relationship contract the
-// rules consume. Test-only adapter — production rules must not import graph.
-func graphToSet(g *graph.Graph) relationship.Set {
-	set := relationship.Set{
-		Nodes: make([]relationship.Node, 0, len(g.Nodes())),
-		Edges: make([]relationship.Edge, 0, len(g.Edges())),
-	}
-	for _, n := range g.Nodes() {
-		id := n.ID()
-		set.Nodes = append(set.Nodes, relationship.Node{
-			ID: id, Path: n.Path, Kind: string(n.Kind), Language: n.Language,
-			Module: relationship.ModuleKey(id),
-		})
-	}
-	for _, e := range g.Edges() {
+	for _, e := range edges {
+		lang := e.Language
+		if lang == "" {
+			lang = langGo
+		}
 		set.Edges = append(set.Edges, relationship.Edge{
 			FromID: e.From, ToID: e.To,
-			FromPath: graph.NodePath(e.From), ToPath: graph.NodePath(e.To),
-			Kind: string(e.Kind), Language: e.Language,
-			Locations: relationshipTestLocations(e.Locations),
+			FromPath: relationship.NodePath(e.From), ToPath: relationship.NodePath(e.To),
+			Kind: e.Kind, Language: lang, Locations: e.Locations,
 		})
 	}
 	return set
-}
-
-func relationshipTestLocations(in []graph.Location) []relationship.Location {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]relationship.Location, 0, len(in))
-	for _, loc := range in {
-		out = append(out, relationship.Location{File: loc.File, Line: loc.Line})
-	}
-	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -157,35 +159,35 @@ func TestForbiddenDependency(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		edges     []graph.Edge
+		edges     []testEdge
 		wantCount int
 	}{
 		{
 			name: "matching_edge_produces_finding",
-			edges: []graph.Edge{
-				{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports},
+			edges: []testEdge{
+				{From: nodeAFoo, To: nodeBBar, Kind: edgeKindImports},
 			},
 			wantCount: 1,
 		},
 		{
 			name: "non_matching_from_no_finding",
-			edges: []graph.Edge{
-				{From: nodeCFoo, To: nodeBBar, Kind: graph.EdgeKindImports},
+			edges: []testEdge{
+				{From: nodeCFoo, To: nodeBBar, Kind: edgeKindImports},
 			},
 			wantCount: 0,
 		},
 		{
 			name: "non_matching_to_no_finding",
-			edges: []graph.Edge{
-				{From: nodeAFoo, To: nodeCFoo2, Kind: graph.EdgeKindImports},
+			edges: []testEdge{
+				{From: nodeAFoo, To: nodeCFoo2, Kind: edgeKindImports},
 			},
 			wantCount: 0,
 		},
 		{
 			name: "multiple_matching_edges",
-			edges: []graph.Edge{
-				{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports},
-				{From: nodeABaz, To: nodeBQux, Kind: graph.EdgeKindImports},
+			edges: []testEdge{
+				{From: nodeAFoo, To: nodeBBar, Kind: edgeKindImports},
+				{From: nodeABaz, To: nodeBQux, Kind: edgeKindImports},
 			},
 			wantCount: 2,
 		},
@@ -247,35 +249,35 @@ func TestPublicAPIOnly(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		edges     []graph.Edge
+		edges     []testEdge
 		wantCount int
 	}{
 		{
 			name: "uses_internal_edge_produces_finding",
-			edges: []graph.Edge{
-				{From: nodeAFoo, To: nodeBIntBar, Kind: graph.EdgeKindUsesInternal},
+			edges: []testEdge{
+				{From: nodeAFoo, To: nodeBIntBar, Kind: edgeKindUsesInternal},
 			},
 			wantCount: 1,
 		},
 		{
 			name: "imports_edge_no_finding",
-			edges: []graph.Edge{
-				{From: nodeAFoo, To: nodeBAPI, Kind: graph.EdgeKindImports},
+			edges: []testEdge{
+				{From: nodeAFoo, To: nodeBAPI, Kind: edgeKindImports},
 			},
 			wantCount: 0,
 		},
 		{
 			name: "depends_on_edge_no_finding",
-			edges: []graph.Edge{
-				{From: nodeAFoo, To: nodeBAPI, Kind: graph.EdgeKindDependsOn},
+			edges: []testEdge{
+				{From: nodeAFoo, To: nodeBAPI, Kind: edgeKindDependsOn},
 			},
 			wantCount: 0,
 		},
 		{
 			name: "multiple_uses_internal",
-			edges: []graph.Edge{
-				{From: nodeAFoo, To: nodeBIntBar, Kind: graph.EdgeKindUsesInternal},
-				{From: nodeCFoo, To: nodeDIntY, Kind: graph.EdgeKindUsesInternal},
+			edges: []testEdge{
+				{From: nodeAFoo, To: nodeBIntBar, Kind: edgeKindUsesInternal},
+				{From: nodeCFoo, To: nodeDIntY, Kind: edgeKindUsesInternal},
 			},
 			wantCount: 2,
 		},
@@ -339,8 +341,8 @@ func TestPublicAPIOnly_ModuleMap(t *testing.T) {
 	ev := rules.Evidence{}
 
 	t.Run("same_module_self_access_no_finding", func(t *testing.T) {
-		g := makeGraph([]graph.Edge{
-			{From: nodeDomainFoo, To: "file:domain/internal/helper.go", Kind: graph.EdgeKindUsesInternal},
+		g := makeGraph([]testEdge{
+			{From: nodeDomainFoo, To: "file:domain/internal/helper.go", Kind: edgeKindUsesInternal},
 		})
 		findings := r.Check(g, ev)
 		if len(findings) != 0 {
@@ -349,8 +351,8 @@ func TestPublicAPIOnly_ModuleMap(t *testing.T) {
 	})
 
 	t.Run("cross_module_internal_access_still_fires", func(t *testing.T) {
-		g := makeGraph([]graph.Edge{
-			{From: nodeAFoo, To: nodeBIntBar, Kind: graph.EdgeKindUsesInternal},
+		g := makeGraph([]testEdge{
+			{From: nodeAFoo, To: nodeBIntBar, Kind: edgeKindUsesInternal},
 		})
 		findings := r.Check(g, ev)
 		if len(findings) != 1 {
@@ -369,8 +371,8 @@ func TestPublicAPIOnly_ModuleMap(t *testing.T) {
 		// Neither endpoint is covered by the module map — the rule can't tell
 		// same-module from cross-module, so it fires (module-blind fallback) but
 		// must not falsely claim "Cross-module" it cannot substantiate.
-		g := makeGraph([]graph.Edge{
-			{From: nodeCFoo, To: nodeDIntY, Kind: graph.EdgeKindUsesInternal},
+		g := makeGraph([]testEdge{
+			{From: nodeCFoo, To: nodeDIntY, Kind: edgeKindUsesInternal},
 		})
 		findings := r.Check(g, ev)
 		if len(findings) != 1 {
@@ -385,8 +387,8 @@ func TestPublicAPIOnly_ModuleMap(t *testing.T) {
 		// fromPath resolves to "domain" but toPath is outside any configured
 		// module — sameModule requires BOTH endpoints resolved, so this must
 		// not be treated as same-module and must still fire.
-		g := makeGraph([]graph.Edge{
-			{From: nodeDomainFoo, To: "file:services/x/internal/other.go", Kind: graph.EdgeKindUsesInternal},
+		g := makeGraph([]testEdge{
+			{From: nodeDomainFoo, To: "file:services/x/internal/other.go", Kind: edgeKindUsesInternal},
 		})
 		findings := r.Check(g, ev)
 		if len(findings) != 1 {
@@ -420,22 +422,22 @@ func TestInternalAPIAccess_ModuleMap(t *testing.T) {
 
 	tests := []struct {
 		name string
-		edge graph.Edge
+		edge testEdge
 		want int
 	}{
 		{
 			name: "same_module_self_access_no_finding",
-			edge: graph.Edge{From: nodeDomainFoo, To: "file:domain/internal/helper.go", Kind: graph.EdgeKindUsesInternal},
+			edge: testEdge{From: nodeDomainFoo, To: "file:domain/internal/helper.go", Kind: edgeKindUsesInternal},
 			want: 0,
 		},
 		{
 			name: "cross_module_internal_access_fires",
-			edge: graph.Edge{From: nodeAFoo, To: nodeBIntBar, Kind: graph.EdgeKindUsesInternal},
+			edge: testEdge{From: nodeAFoo, To: nodeBIntBar, Kind: edgeKindUsesInternal},
 			want: 1,
 		},
 		{
 			name: "unresolved_endpoints_module_blind_fallback_fires",
-			edge: graph.Edge{From: nodeCFoo, To: nodeDIntY, Kind: graph.EdgeKindUsesInternal},
+			edge: testEdge{From: nodeCFoo, To: nodeDIntY, Kind: edgeKindUsesInternal},
 			want: 1,
 		},
 		{
@@ -443,13 +445,13 @@ func TestInternalAPIAccess_ModuleMap(t *testing.T) {
 			// configured module — sameModule requires BOTH endpoints
 			// resolved, so this must still fire.
 			name: "mixed_resolution_one_endpoint_unresolved_fires",
-			edge: graph.Edge{From: nodeDomainFoo, To: "file:services/x/internal/other.go", Kind: graph.EdgeKindUsesInternal},
+			edge: testEdge{From: nodeDomainFoo, To: "file:services/x/internal/other.go", Kind: edgeKindUsesInternal},
 			want: 1,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			findings := r.Check(makeGraph([]graph.Edge{tc.edge}), ev)
+			findings := r.Check(makeGraph([]testEdge{tc.edge}), ev)
 			if len(findings) != tc.want {
 				t.Fatalf("got %d findings, want %d: %+v", len(findings), tc.want, findings)
 			}
@@ -461,7 +463,7 @@ func TestInternalAPIAccess_ModuleMap(t *testing.T) {
 // only: Check never reads Edge.Language, so all three subtests below assert
 // the exact same thing — a plain EdgeKindImports edge produces no finding —
 // regardless of the language label attached to the edge. Per-language
-// differences in WHEN graph.EdgeKindUsesInternal actually gets assigned (Go
+// differences in WHEN edgeKindUsesInternal actually gets assigned (Go
 // extractor: lexically, on any "/internal/" import path; TS/Python
 // extractors: only when a module declares an `internal:` glob
 // (matchesInternal); Rust extractor: never) live in the extractors, not in
@@ -491,8 +493,8 @@ func TestPublicAPIOnly_PerLanguage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Plain import edge, as extractors emit when no internal: glob
 			// matches (TS/Python) or unconditionally (Rust never sets uses_internal).
-			g := makeGraph([]graph.Edge{
-				{From: nodeAFoo, To: nodeBIntBar, Kind: graph.EdgeKindImports, Language: tc.language},
+			g := makeGraph([]testEdge{
+				{From: nodeAFoo, To: nodeBIntBar, Kind: edgeKindImports, Language: tc.language},
 			})
 			findings := r.Check(g, ev)
 			if len(findings) != 0 {
@@ -525,9 +527,9 @@ func newCycleRule(t *testing.T, gate string) rules.Rule {
 func TestCycleRule(t *testing.T) {
 	ev := rules.Evidence{}
 	// A -> B -> A: a 2-node strongly-connected component.
-	cyclicEdges := []graph.Edge{
-		{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports},
-		{From: nodeBBar, To: nodeAFoo, Kind: graph.EdgeKindImports},
+	cyclicEdges := []testEdge{
+		{From: nodeAFoo, To: nodeBBar, Kind: edgeKindImports},
+		{From: nodeBBar, To: nodeAFoo, Kind: edgeKindImports},
 	}
 
 	t.Run("cycle_fires_one_finding", func(t *testing.T) {
@@ -550,7 +552,7 @@ func TestCycleRule(t *testing.T) {
 
 	t.Run("no_cycle_no_finding", func(t *testing.T) {
 		r := newCycleRule(t, "")
-		g := makeGraph([]graph.Edge{{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports}})
+		g := makeGraph([]testEdge{{From: nodeAFoo, To: nodeBBar, Kind: edgeKindImports}})
 		findings := r.Check(g, ev)
 		if len(findings) != 0 {
 			t.Fatalf("acyclic graph: got %d findings, want 0: %+v", len(findings), findings)
@@ -634,7 +636,7 @@ func TestCrossModuleDependency(t *testing.T) {
 	ev := rules.Evidence{}
 
 	t.Run("cross_module_edge_fires", func(t *testing.T) {
-		g := makeGraph([]graph.Edge{{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports}})
+		g := makeGraph([]testEdge{{From: nodeAFoo, To: nodeBBar, Kind: edgeKindImports}})
 		findings := r.Check(g, ev)
 		if len(findings) != 1 {
 			t.Fatalf("got %d findings, want 1: %+v", len(findings), findings)
@@ -649,7 +651,7 @@ func TestCrossModuleDependency(t *testing.T) {
 	})
 
 	t.Run("same_module_edge_does_not_fire", func(t *testing.T) {
-		g := makeGraph([]graph.Edge{{From: nodeAFoo, To: nodeABaz, Kind: graph.EdgeKindImports}})
+		g := makeGraph([]testEdge{{From: nodeAFoo, To: nodeABaz, Kind: edgeKindImports}})
 		findings := r.Check(g, ev)
 		if len(findings) != 0 {
 			t.Fatalf("same-module edge: got %d findings, want 0: %+v", len(findings), findings)
@@ -661,7 +663,7 @@ func TestCrossModuleDependency(t *testing.T) {
 		// module-blind fallback (which fires when it can't confirm same-module),
 		// newCrossModuleDependency requires BOTH endpoints resolved and skips
 		// the edge entirely when either is unowned.
-		g := makeGraph([]graph.Edge{{From: nodeCFoo, To: nodeDIntY, Kind: graph.EdgeKindImports}})
+		g := makeGraph([]testEdge{{From: nodeCFoo, To: nodeDIntY, Kind: edgeKindImports}})
 		findings := r.Check(g, ev)
 		if len(findings) != 0 {
 			t.Fatalf("unresolved endpoint: got %d findings, want 0 (skipped, not module-blind fallback): %+v", len(findings), findings)
@@ -700,52 +702,52 @@ func TestForbiddenLayerDirection(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		edges     []graph.Edge
+		edges     []testEdge
 		wantCount int
 	}{
 		{
 			// infra(rank=2) → domain(rank=0): fromRank > toRank → allowed
 			name: "infra_to_domain_allowed",
-			edges: []graph.Edge{
-				{From: nodeInfraRep, To: nodeDomMod, Kind: graph.EdgeKindImports},
+			edges: []testEdge{
+				{From: nodeInfraRep, To: nodeDomMod, Kind: edgeKindImports},
 			},
 			wantCount: 0,
 		},
 		{
 			// domain(rank=0) → infra(rank=2): fromRank < toRank → violation
 			name: "domain_to_infra_is_violation",
-			edges: []graph.Edge{
-				{From: nodeDomMod, To: nodeInfraRep, Kind: graph.EdgeKindImports},
+			edges: []testEdge{
+				{From: nodeDomMod, To: nodeInfraRep, Kind: edgeKindImports},
 			},
 			wantCount: 1,
 		},
 		{
 			// app(rank=1) → domain(rank=0): fromRank > toRank → allowed
 			name: "app_to_domain_allowed",
-			edges: []graph.Edge{
-				{From: nodeAppHnd, To: nodeDomMod, Kind: graph.EdgeKindImports},
+			edges: []testEdge{
+				{From: nodeAppHnd, To: nodeDomMod, Kind: edgeKindImports},
 			},
 			wantCount: 0,
 		},
 		{
 			// domain(rank=0) → app(rank=1): fromRank < toRank → violation
 			name: "domain_to_app_is_violation",
-			edges: []graph.Edge{
-				{From: nodeDomMod, To: nodeAppSvc, Kind: graph.EdgeKindImports},
+			edges: []testEdge{
+				{From: nodeDomMod, To: nodeAppSvc, Kind: edgeKindImports},
 			},
 			wantCount: 1,
 		},
 		{
 			name: "same_layer_no_violation",
-			edges: []graph.Edge{
-				{From: nodeDomA, To: nodeDomB, Kind: graph.EdgeKindImports},
+			edges: []testEdge{
+				{From: nodeDomA, To: nodeDomB, Kind: edgeKindImports},
 			},
 			wantCount: 0,
 		},
 		{
 			name: "unknown_module_skipped",
-			edges: []graph.Edge{
-				{From: nodeExtFoo, To: nodeDomMod, Kind: graph.EdgeKindImports},
+			edges: []testEdge{
+				{From: nodeExtFoo, To: nodeDomMod, Kind: edgeKindImports},
 			},
 			wantCount: 0,
 		},
@@ -865,7 +867,7 @@ func TestNew_EmptyRules(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGateSemantics(t *testing.T) {
-	edge := graph.Edge{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports}
+	edge := testEdge{From: nodeAFoo, To: nodeBBar, Kind: edgeKindImports}
 	ev := rules.Evidence{}
 
 	t.Run("off_skips_finding", func(t *testing.T) {
@@ -878,7 +880,7 @@ func TestGateSemantics(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		findings := rs[0].Check(makeGraph([]graph.Edge{edge}), ev)
+		findings := rs[0].Check(makeGraph([]testEdge{edge}), ev)
 		if len(findings) != 0 {
 			t.Fatalf("gate:off: got %d findings, want 0", len(findings))
 		}
@@ -894,7 +896,7 @@ func TestGateSemantics(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		findings := rs[0].Check(makeGraph([]graph.Edge{edge}), ev)
+		findings := rs[0].Check(makeGraph([]testEdge{edge}), ev)
 		if len(findings) != 1 {
 			t.Fatalf("gate:warn: got %d findings, want 1", len(findings))
 		}
@@ -913,7 +915,7 @@ func TestGateSemantics(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		findings := rs[0].Check(makeGraph([]graph.Edge{edge}), ev)
+		findings := rs[0].Check(makeGraph([]testEdge{edge}), ev)
 		if len(findings) != 1 {
 			t.Fatalf("gate:fail: got %d findings, want 1", len(findings))
 		}
@@ -932,7 +934,7 @@ func TestGateSemantics(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		findings := rs[0].Check(makeGraph([]graph.Edge{edge}), ev)
+		findings := rs[0].Check(makeGraph([]testEdge{edge}), ev)
 		if len(findings) != 1 {
 			t.Fatalf("gate unset: got %d findings, want 1", len(findings))
 		}
@@ -996,11 +998,11 @@ func TestPublicAPIMax(t *testing.T) {
 	// SyntaxFacts used across subtests: domain has 3 exported, infra has 1 exported.
 	allFacts := make([]reportmodel.SyntaxFact, 0, 5)
 	allFacts = append(allFacts,
-		reportmodel.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
-		reportmodel.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "FuncB", Exported: true},
-		reportmodel.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
-		reportmodel.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
-		reportmodel.SyntaxFact{Language: graph.LangGo, File: fileInfraRepo, Kind: kindStruct, Name: nameRepo, Exported: true},
+		reportmodel.SyntaxFact{Language: langGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+		reportmodel.SyntaxFact{Language: langGo, File: fileDomainA, Kind: kindFunction, Name: "FuncB", Exported: true},
+		reportmodel.SyntaxFact{Language: langGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
+		reportmodel.SyntaxFact{Language: langGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
+		reportmodel.SyntaxFact{Language: langGo, File: fileInfraRepo, Kind: kindStruct, Name: nameRepo, Exported: true},
 	)
 
 	emptyGraph := makeGraph(nil)
@@ -1102,8 +1104,8 @@ func TestPublicAPIMax(t *testing.T) {
 	t.Run("unexported_decls_not_counted", func(t *testing.T) {
 		// Only unexported facts → no exported count → no findings.
 		onlyUnexported := []reportmodel.SyntaxFact{
-			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameInternal, Exported: false},
-			{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: "helper", Exported: false},
+			{Language: langGo, File: fileDomainA, Kind: kindFunction, Name: nameInternal, Exported: false},
+			{Language: langGo, File: fileDomainB, Kind: kindFunction, Name: "helper", Exported: false},
 		}
 		rc := makePublicAPIMaxConfig(0, "")
 		rs, err := rules.New(rc)
@@ -1118,7 +1120,7 @@ func TestPublicAPIMax(t *testing.T) {
 	t.Run("file_not_in_any_module_skipped", func(t *testing.T) {
 		// File outside declared modules → not counted.
 		outsideFacts := []reportmodel.SyntaxFact{
-			{Language: graph.LangGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true},
+			{Language: langGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true},
 		}
 		rc := makePublicAPIMaxConfig(0, "")
 		rs, err := rules.New(rc)
@@ -1233,11 +1235,11 @@ func makePublicAPIChangeConfig(gate string) policy.RuleConfig {
 func TestPublicAPIChange(t *testing.T) {
 	// Facts: domain has 2 exported + 1 unexported; infra has 1 exported; one file outside modules.
 	exportedFacts := []reportmodel.SyntaxFact{
-		{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
-		{Language: graph.LangGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
-		{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
-		{Language: graph.LangGo, File: fileInfraRepo, Kind: kindStruct, Name: nameRepo, Exported: true},
-		{Language: graph.LangGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true}, // outside any module
+		{Language: langGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+		{Language: langGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
+		{Language: langGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
+		{Language: langGo, File: fileInfraRepo, Kind: kindStruct, Name: nameRepo, Exported: true},
+		{Language: langGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true}, // outside any module
 	}
 
 	emptyGraph := makeGraph(nil)
@@ -1269,7 +1271,7 @@ func TestPublicAPIChange(t *testing.T) {
 
 	t.Run("unexported_decls_not_emitted", func(t *testing.T) {
 		onlyUnexported := []reportmodel.SyntaxFact{
-			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "helper", Exported: false},
+			{Language: langGo, File: fileDomainA, Kind: kindFunction, Name: "helper", Exported: false},
 		}
 		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
 		if err != nil {
@@ -1282,7 +1284,7 @@ func TestPublicAPIChange(t *testing.T) {
 
 	t.Run("file_outside_modules_skipped", func(t *testing.T) {
 		outsideFacts := []reportmodel.SyntaxFact{
-			{Language: graph.LangGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true},
+			{Language: langGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true},
 		}
 		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
 		if err != nil {
@@ -1296,8 +1298,8 @@ func TestPublicAPIChange(t *testing.T) {
 	t.Run("duplicate_name_in_module_deduped", func(t *testing.T) {
 		// Two facts with same (module, name) → only one finding.
 		dupFacts := []reportmodel.SyntaxFact{
-			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "Start", Exported: true},
-			{Language: graph.LangGo, File: fileDomainB, Kind: "method", Name: "Start", Exported: true},
+			{Language: langGo, File: fileDomainA, Kind: kindFunction, Name: "Start", Exported: true},
+			{Language: langGo, File: fileDomainB, Kind: "method", Name: "Start", Exported: true},
 		}
 		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
 		if err != nil {
@@ -1311,7 +1313,7 @@ func TestPublicAPIChange(t *testing.T) {
 
 	t.Run("finding_matchedby_has_module_name_kind_file", func(t *testing.T) {
 		oneFact := []reportmodel.SyntaxFact{
-			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+			{Language: langGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
 		}
 		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
 		if err != nil {
@@ -1340,7 +1342,7 @@ func TestPublicAPIChange(t *testing.T) {
 	t.Run("stable_fingerprint_across_runs", func(t *testing.T) {
 		// Same fact → same ID on repeated calls.
 		oneFact := []reportmodel.SyntaxFact{
-			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+			{Language: langGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
 		}
 		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
 		if err != nil {
@@ -1355,7 +1357,7 @@ func TestPublicAPIChange(t *testing.T) {
 
 	t.Run("gate_semantics", func(t *testing.T) {
 		oneFact := []reportmodel.SyntaxFact{
-			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+			{Language: langGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
 		}
 
 		t.Run("off_skips_finding", func(t *testing.T) {
@@ -1409,11 +1411,26 @@ const (
 
 // makeTypeLeakGraph builds a relationship.Set with the given package nodes (no edges needed).
 func makeTypeLeakGraph(pkgPaths []string) relationship.Set {
-	nodes := make([]graph.Node, len(pkgPaths))
+	set := relationship.Set{Nodes: make([]relationship.Node, len(pkgPaths))}
 	for i, p := range pkgPaths {
-		nodes[i] = graph.Node{Kind: graph.NodeKindPackage, Path: p}
+		id := nodeID(nodeKindPackage, p)
+		set.Nodes[i] = relationship.Node{ID: id, Path: p, Kind: nodeKindPackage, Language: langGo, Module: relationship.ModuleKey(id)}
 	}
-	return graphToSet(graph.Build([]graph.Facts{{Nodes: nodes, Language: "go"}}))
+	return set
+}
+
+// makeEdgeTargetGraph mirrors how the Go extractor shapes a graph: the external
+// package exists only as an edge target, never as its own node.
+func makeEdgeTargetGraph(fileNodePath, externalPkg string, firstParty []string) relationship.Set {
+	set := makeTypeLeakGraph(firstParty)
+	id := nodeID(nodeKindFile, fileNodePath)
+	set.Nodes = append(set.Nodes, relationship.Node{ID: id, Path: fileNodePath, Kind: nodeKindFile, Language: langGo, Module: relationship.ModuleKey(id)})
+	to := nodeID(nodeKindPackage, externalPkg)
+	set.Edges = append(set.Edges, relationship.Edge{
+		FromID: id, ToID: to, FromPath: fileNodePath, ToPath: externalPkg,
+		Kind: edgeKindImports, Language: langGo,
+	})
+	return set
 }
 
 func TestPublicAPITypeLeak(t *testing.T) {
@@ -1562,16 +1579,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 	t.Run("external_type_leak_fires_edge_target_graph", func(t *testing.T) {
 		// Build a graph shaped like the Go extractor: external package as edge target only,
 		// no NodeKindPackage node for it. This is how Go graphs actually look.
-		fileNode := graph.Node{Kind: graph.NodeKindFile, Path: fileDomain}
-		extPkgID := graph.Node{Kind: graph.NodeKindPackage, Path: externalCliPkg}.ID()
-		edge := graph.Edge{
-			From:       fileNode.ID(),
-			To:         extPkgID,
-			Kind:       graph.EdgeKindImports,
-			Language:   "go",
-			Confidence: "high",
-		}
-		g := graphToSet(graph.Build([]graph.Facts{{Nodes: []graph.Node{fileNode}, Edges: []graph.Edge{edge}, Language: "go"}}))
+		g := makeEdgeTargetGraph(fileDomain, externalCliPkg, nil)
 		ev := rules.Evidence{
 			SyntaxFacts: []reportmodel.SyntaxFact{
 				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
@@ -1587,21 +1595,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 		// Edge-target external path whose basename collides with a first-party undotted
 		// package node. The collision guard was removed — see first_party_basename_collision_fires
 		// for rationale. External leak MUST fire; the first-party node does not suppress it.
-		fileNode := graph.Node{Kind: graph.NodeKindFile, Path: fileDomain}
-		firstPartyNode := graph.Node{Kind: graph.NodeKindPackage, Path: "cli"} // undotted first-party
-		extPkgID := graph.Node{Kind: graph.NodeKindPackage, Path: externalCliPkg}.ID()
-		edge := graph.Edge{
-			From:       fileNode.ID(),
-			To:         extPkgID,
-			Kind:       graph.EdgeKindImports,
-			Language:   "go",
-			Confidence: "high",
-		}
-		g := graphToSet(graph.Build([]graph.Facts{{
-			Nodes:    []graph.Node{fileNode, firstPartyNode},
-			Edges:    []graph.Edge{edge},
-			Language: "go",
-		}}))
+		g := makeEdgeTargetGraph(fileDomain, externalCliPkg, []string{"cli"})
 		ev := rules.Evidence{
 			SyntaxFacts: []reportmodel.SyntaxFact{
 				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},

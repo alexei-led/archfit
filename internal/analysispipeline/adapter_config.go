@@ -5,7 +5,7 @@ import (
 	"io"
 	"maps"
 
-	"github.com/alexei-led/archfit/internal/assessment/rules"
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/config"
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/extract/acquire"
@@ -90,7 +90,7 @@ type RunOptions struct {
 
 // ValidateConfigRules validates decoded rule definitions at the adapter boundary.
 func ValidateConfigRules(cfg config.Config) error {
-	_, err := rules.New(cfg.ForRules())
+	_, err := evaluation.NewRuleset(cfg.ForRules())
 	return err
 }
 
@@ -128,7 +128,12 @@ func WithIndependentModules(cfg config.Config) config.Config {
 	return cfg
 }
 
-// AnalyzerSettings projects analyzer activation into a narrow comparison input.
+// AnalyzerOptions records which optional analyzer families a config activated.
+type AnalyzerOptions struct {
+	Patterns, Syntax, SCIP, Clones, CargoModules bool
+}
+
+// AnalyzerSettings projects config into the activated analyzer families.
 func AnalyzerSettings(cfg config.Config) AnalyzerOptions {
 	return AnalyzerOptions{Patterns: len(cfg.ForPatterns()) > 0, Syntax: cfg.ForSyntax().Enabled, SCIP: cfg.ScipEnabled(), Clones: cfg.ClonesEnabled(), CargoModules: cfg.CargoModulesEnabled()}
 }

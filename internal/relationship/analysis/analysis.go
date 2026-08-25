@@ -60,20 +60,22 @@ func Analyze(in Input) relationship.AnalysisResult {
 	set := buildSet(in.Graph, idx, cfg.ModuleMap)
 	clones := cloneOnlyPairs(in.Graph, cfg)
 	out := relationship.AnalysisResult{
-		Relationships:            set,
-		LLMApprovedCount:         labels.LLMApprovedCount(in.Labels, evidenceHashes),
-		RuntimeSignals:           runtimeModules(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
-		RuntimeRelations:         runtimeEdges(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
-		CloneOnly:                clones,
-		AdvisoryCandidates:       advisoryCandidates(set, clones, cfg),
-		ClassifiedEdges:          buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy),
-		Connascence:              buildConnascenceSummary(set),
-		DistanceConfigCandidates: buildStaticDistanceCandidates(in.Graph, idx, cfg.ModuleMap),
-		LocalCoupling:            buildLocalCouplingSummary(set),
-		VolatilityProvenance:     classify.ComputeVolatilityProvenance(in.Graph, in.Policy.Topology.Modules, cfg),
+		Relationships: set,
+		Assessment:    relationship.AssessmentSignals{AdvisoryCandidates: advisoryCandidates(set, clones, cfg)},
+		Evidence: relationship.AnalysisEvidence{
+			LLMApprovedCount:         labels.LLMApprovedCount(in.Labels, evidenceHashes),
+			RuntimeSignals:           runtimeModules(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
+			RuntimeRelations:         runtimeEdges(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
+			CloneOnly:                clones,
+			ClassifiedEdges:          buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy),
+			Connascence:              buildConnascenceSummary(set),
+			DistanceConfigCandidates: buildStaticDistanceCandidates(in.Graph, idx, cfg.ModuleMap),
+			LocalCoupling:            buildLocalCouplingSummary(set),
+			VolatilityProvenance:     classify.ComputeVolatilityProvenance(in.Graph, in.Policy.Topology.Modules, cfg),
+		},
 	}
 	for _, l := range stale {
-		out.StaleLabelKeys = append(out.StaleLabelKeys, labels.Key(l.From, l.To))
+		out.Assessment.StaleLabelKeys = append(out.Assessment.StaleLabelKeys, labels.Key(l.From, l.To))
 	}
 	return out
 }

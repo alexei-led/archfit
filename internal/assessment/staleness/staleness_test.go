@@ -6,7 +6,6 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/staleness"
-	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
@@ -19,15 +18,22 @@ const (
 	modAuth      = "auth"
 )
 
-// buildGraph is a test helper that builds a relationship.Set from a slice of
-// nodes (test-only adapter: staleness consumes relationship.Set, not the raw graph).
-func buildGraph(nodes []graph.Node) relationship.Set {
-	g := graph.Build([]graph.Facts{{Nodes: nodes}})
-	set := relationship.Set{Nodes: make([]relationship.Node, 0, len(g.Nodes()))}
-	for _, n := range g.Nodes() {
-		set.Nodes = append(set.Nodes, relationship.Node{
-			ID: n.ID(), Path: n.Path, Kind: string(n.Kind), Language: n.Language,
-		})
+// Node kinds the relationship contract carries, restated locally: staleness
+// consumes relationship.Set and never sees the extractor graph that names them.
+const (
+	nodeKindRepo     = "repo"
+	nodeKindModule   = "module"
+	nodeKindPackage  = "package"
+	nodeKindExternal = "external"
+)
+
+// buildGraph builds a relationship.Set fixture. Node IDs follow the contract's
+// "kind:path" form, which is what NodePath and ModuleKey read.
+func buildGraph(nodes []relationship.Node) relationship.Set {
+	set := relationship.Set{Nodes: make([]relationship.Node, 0, len(nodes))}
+	for _, n := range nodes {
+		n.ID = n.Kind + ":" + n.Path
+		set.Nodes = append(set.Nodes, n)
 	}
 	return set
 }
@@ -55,8 +61,8 @@ func byRule(findings []finding.Finding, ruleID string) []finding.Finding {
 }
 
 func TestCheck_DisabledReturnsNil(t *testing.T) {
-	g := buildGraph([]graph.Node{
-		{Kind: graph.NodeKindPackage, Path: "internal/foo"},
+	g := buildGraph([]relationship.Node{
+		{Kind: nodeKindPackage, Path: "internal/foo"},
 	})
 	cfg := stalenessCase{
 		Enabled: false,
@@ -73,9 +79,9 @@ func TestCheck_DisabledReturnsNil(t *testing.T) {
 func TestCheck_UncoveredPath(t *testing.T) {
 	// Package node with no matching module glob → uncovered_path.
 	// A second node that IS claimed → no uncovered_path for it.
-	g := buildGraph([]graph.Node{
-		{Kind: graph.NodeKindPackage, Path: "internal/foo/foo.go"},
-		{Kind: graph.NodeKindPackage, Path: "internal/bar/bar.go"},
+	g := buildGraph([]relationship.Node{
+		{Kind: nodeKindPackage, Path: "internal/foo/foo.go"},
+		{Kind: nodeKindPackage, Path: "internal/bar/bar.go"},
 	})
 	cfg := stalenessCase{
 		Enabled: true,
@@ -100,8 +106,8 @@ func TestCheck_UncoveredPath(t *testing.T) {
 
 func TestCheck_DeadRule(t *testing.T) {
 	// Module whose paths glob matches no graph node → dead_rule finding.
-	g := buildGraph([]graph.Node{
-		{Kind: graph.NodeKindPackage, Path: "internal/bar/bar.go"},
+	g := buildGraph([]relationship.Node{
+		{Kind: nodeKindPackage, Path: "internal/bar/bar.go"},
 	})
 	cfg := stalenessCase{
 		Enabled: true,
@@ -129,8 +135,8 @@ func TestCheck_StaleReview_Triggers(t *testing.T) {
 	now := time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)
 	reviewedAt := now.Add(-100 * 24 * time.Hour)
 
-	g := buildGraph([]graph.Node{
-		{Kind: graph.NodeKindPackage, Path: pathAuthGo},
+	g := buildGraph([]relationship.Node{
+		{Kind: nodeKindPackage, Path: pathAuthGo},
 	})
 	cfg := stalenessCase{
 		Enabled:   true,
@@ -155,8 +161,8 @@ func TestCheck_StaleReview_DoesNotTrigger(t *testing.T) {
 	now := time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)
 	reviewedAt := now.Add(-10 * 24 * time.Hour)
 
-	g := buildGraph([]graph.Node{
-		{Kind: graph.NodeKindPackage, Path: pathAuthGo},
+	g := buildGraph([]relationship.Node{
+		{Kind: nodeKindPackage, Path: pathAuthGo},
 	})
 	cfg := stalenessCase{
 		Enabled:   true,
@@ -181,8 +187,8 @@ func TestCheck_StaleReview_ZeroReviewedAt_NoFinding(t *testing.T) {
 	// ReviewedAt zero (unset) → no stale_review regardless of threshold.
 	now := time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)
 
-	g := buildGraph([]graph.Node{
-		{Kind: graph.NodeKindPackage, Path: pathAuthGo},
+	g := buildGraph([]relationship.Node{
+		{Kind: nodeKindPackage, Path: pathAuthGo},
 	})
 	cfg := stalenessCase{
 		Enabled:   true,
@@ -208,8 +214,8 @@ func TestCheck_DefaultThreshold(t *testing.T) {
 	now := time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)
 	reviewedAt := now.Add(-91 * 24 * time.Hour)
 
-	g := buildGraph([]graph.Node{
-		{Kind: graph.NodeKindPackage, Path: "pkg/api/api.go"},
+	g := buildGraph([]relationship.Node{
+		{Kind: nodeKindPackage, Path: "pkg/api/api.go"},
 	})
 	cfg := stalenessCase{
 		Enabled:   true,
@@ -231,10 +237,10 @@ func TestCheck_DefaultThreshold(t *testing.T) {
 
 func TestCheck_NonPackageNodesNotUncovered(t *testing.T) {
 	// Repo/module/external nodes are not candidates for uncovered_path.
-	g := buildGraph([]graph.Node{
-		{Kind: graph.NodeKindRepo, Path: "."},
-		{Kind: graph.NodeKindModule, Path: "internal/auth"},
-		{Kind: graph.NodeKindExternal, Path: "github.com/some/lib"},
+	g := buildGraph([]relationship.Node{
+		{Kind: nodeKindRepo, Path: "."},
+		{Kind: nodeKindModule, Path: "internal/auth"},
+		{Kind: nodeKindExternal, Path: "github.com/some/lib"},
 	})
 	cfg := stalenessCase{
 		Enabled: true,
@@ -254,9 +260,9 @@ func TestCheck_AllFindingsAreAdvisory(t *testing.T) {
 	now := time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)
 	oldReview := now.Add(-200 * 24 * time.Hour)
 
-	g := buildGraph([]graph.Node{
-		{Kind: graph.NodeKindPackage, Path: "internal/covered/a.go"},
-		{Kind: graph.NodeKindPackage, Path: "internal/uncovered/b.go"},
+	g := buildGraph([]relationship.Node{
+		{Kind: nodeKindPackage, Path: "internal/covered/a.go"},
+		{Kind: nodeKindPackage, Path: "internal/uncovered/b.go"},
 	})
 	cfg := stalenessCase{
 		Enabled:   true,

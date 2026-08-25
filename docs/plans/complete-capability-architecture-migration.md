@@ -576,21 +576,54 @@ Manual checks:
 - AssessmentResult contains domain decisions, not JSON/YAML/rendering concerns.
 - Any remaining exported type has a named owning context and real consumer.
 
-- [ ] Run and report impact analysis for relationship, assessment, report, and
-      advisory symbols; stop for unreviewed HIGH/CRITICAL scope.
-- [ ] Split RelationshipSet from AnalysisEvidence and migrate consumers.
-- [ ] Move all relationship semantics and advisories from analysispipeline to
+- [x] Run and report impact analysis for relationship, assessment, report, and
+      advisory symbols; stop for unreviewed HIGH/CRITICAL scope. (GitNexus MCP
+      tools are unavailable in this environment; substituted a static
+      consumer/blast-radius inventory — see "Task 3 impact inventory" below.)
+- [x] Split RelationshipSet from AnalysisEvidence and migrate consumers.
+- [x] Move all relationship semantics and advisories from analysispipeline to
       Relationship Analysis.
-- [ ] Move all status, staleness, findings, scoring, verdict, recommendation, and
+- [x] Move all status, staleness, findings, scoring, verdict, recommendation, and
       repair semantics to Assessment/Repair.
-- [ ] Privatize implementation packages and remove report/domain aliases without
+- [x] Privatize implementation packages and remove report/domain aliases without
       adding shared/common packages.
-- [ ] Make Application report projection the single domain-to-report conversion.
-- [ ] Add direct table-driven tests until decision branches and failure paths are
+- [x] Make Application report projection the single domain-to-report conversion.
+- [x] Add direct table-driven tests until decision branches and failure paths are
       locally protected; record coverage and uncovered risk.
-- [ ] Add and pass relationship/assessment/report architecture gates.
-- [ ] Run task verification, confirm output and baseline compatibility, and commit
+- [x] Add and pass relationship/assessment/report architecture gates.
+- [x] Run task verification, confirm output and baseline compatibility, and commit
       the independently complete domain-model migration.
+
+#### Task 3 impact inventory
+
+GitNexus MCP tools are not reachable from this environment, so blast radius was
+measured statically instead.
+
+- `relationship.AnalysisResult` — 5 production consumers (relationship/analysis,
+  analysispipeline report projection + stages + analyzer, application stage
+  port). Split into `Relationships` / `Assessment` / `Evidence`; all consumers
+  migrated, no behavior change.
+- `evaluation.Evaluate` — 1 production caller (analysispipeline report
+  projection). Grew `Ruleset`/`Metricset`/`RuleEvidence` inputs and a
+  `Captured` output; the fake capture metric was deleted.
+- `report.Document` — built in exactly one production file
+  (`internal/application/report.go`), now pinned by
+  `TestReportProjectionHasOneOwner`.
+- `collectAdvisories` equivalent (`analysis.advisoryCandidates`) — unchanged;
+  advisory construction already lived in relationship analysis.
+- `internal/analysispipeline` — imported by cmd and tests only (21 files, all
+  under `cmd/archfit/` plus 6 test files). No `internal/*` production package
+  imports it, so the moves below could not ripple into the core ring.
+- Moved with their public names preserved where cmd consumed them
+  (`AnalyzerFamilies`, `AnalyzerSettings`); the five symbols cmd consumed that
+  did move (`ApplyCouplingGate`, `PolicyCouplingGateView`, `RuleIDBCImbalanced`,
+  `RuleIDBCCouplingGate`, `ClassifyGraph`,
+  `BuildStaticExternalDistanceCandidates`) were re-routed at every call site.
+
+Measured coverage after the task: relationship 90.6% (target 75%), assessment
+83.3%, assessment/evaluation 90.9% (target 80%), relationship/analysis 84.1%.
+Remaining uncovered risk is concentrated in the analysispipeline stage adapter,
+which Task 4 dissolves.
 
 ### Task 4: Dissolve analysispipeline and simplify Application/composition
 

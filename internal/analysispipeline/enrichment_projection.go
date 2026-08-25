@@ -5,6 +5,9 @@ import (
 	"github.com/alexei-led/archfit/internal/relationship"
 )
 
+// enrichmentSet projects captured enrichment evidence back into the
+// relationship contract the selection rules read. It is the one adapter between
+// the application DTO and the relationship domain.
 func enrichmentSet(in application.EnrichmentEvidence) relationship.Set {
 	set := relationship.Set{Edges: make([]relationship.Edge, 0, len(in.Edges))}
 	for _, e := range in.Edges {
@@ -15,14 +18,4 @@ func enrichmentSet(in application.EnrichmentEvidence) relationship.Set {
 		set.Edges = append(set.Edges, x)
 	}
 	return set
-}
-
-// PairEvidenceFromEnrichment computes evidence hashes from application DTOs.
-func PairEvidenceFromEnrichment(in application.EnrichmentEvidence, wanted map[string]struct{}) map[string]string {
-	return PairEvidenceFromRelationships(enrichmentSet(in), wanted)
-}
-
-// SelectRefinableEnrichmentPairs selects prompt-ready review candidates.
-func SelectRefinableEnrichmentPairs(in application.EnrichmentEvidence, approved map[string]struct{}) []RefinablePair {
-	return SelectRefinableRelationshipPairs(enrichmentSet(in), approved)
 }

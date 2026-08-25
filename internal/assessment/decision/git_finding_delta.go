@@ -1,4 +1,4 @@
-// Package pipeline owns git-origin classification for `analyze/check --base <ref>`.
+// Package decision owns git-origin classification for `analyze/check --base <ref>`.
 //
 // The base sub-run already produces a full diagnostic; this file turns the two
 // sides into the report-only git_finding_delta block: which of the CURRENT
@@ -22,17 +22,15 @@
 // Isolation: the only base-side inputs are finding IDs, coverage rows/gaps, and
 // the config hash (see baseEvidence in worktree.go). Base paths, locations, and
 // validation commands name a temporary worktree that is already deleted.
-package pipeline
+package decision
 
 import (
 	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
@@ -51,7 +49,7 @@ const (
 	// neither side ran it, so neither side has a finding the other could hide —
 	// so it pairs, in DEGRADED form, which discloses the shared blindness.
 	//
-	// Whether a CoverageGap was raised is NOT part of this decision. A gap is
+	// Whether a CoverageGap was raised is NOT part of this  A gap is
 	// only emitted for analyzers listed in toolAffectedMetrics (the install-hint
 	// table), so scip, scip-symbols and ast-grep never raise one however loudly
 	// the config asked for them. Keying comparability on gap presence made a
@@ -82,7 +80,7 @@ const (
 	// "introduced".
 	evidencePartialDegraded
 	// evidenceUnavailable — timed out, or partial from a run that did not finish
-	// (see decision.PartialFromUnresolvedSpecifiers): the analyzer could have
+	// (see PartialFromUnresolvedSpecifiers): the analyzer could have
 	// produced findings and did not finish doing so, and unlike an uninstalled
 	// tool the failure is flaky rather than structural, so symmetry proves
 	// nothing. It pairs with nothing, including itself.
@@ -134,40 +132,6 @@ type GitDeltaInput struct {
 	Families       []AnalyzerFamily
 }
 
-// AnalyzerOptions controls which analyzer families participate in comparison.
-type AnalyzerOptions struct {
-	Patterns, Syntax, SCIP, Clones, CargoModules bool
-}
-
-// AnalyzerFamilies returns the finding-producing analyzer families to compare.
-func AnalyzerFamilies(cfg AnalyzerOptions) []AnalyzerFamily {
-	fams := make([]AnalyzerFamily, 0, len(registry.All())+5)
-	for _, lang := range registry.All() {
-		fams = append(fams, AnalyzerFamily{name: lang.PrimaryTool, primary: true})
-	}
-	// The pattern pass and the syntax pass are two analyzers with two coverage
-	// names and two independent activation switches, so they compare separately.
-	if cfg.Patterns {
-		fams = append(fams, AnalyzerFamily{name: toolAstGrep})
-	}
-	if cfg.Syntax {
-		fams = append(fams, AnalyzerFamily{name: toolAstGrepSyntax})
-	}
-	if cfg.SCIP {
-		fams = append(fams,
-			AnalyzerFamily{name: toolScip},
-			AnalyzerFamily{name: toolScipSymbols},
-		)
-	}
-	if cfg.Clones {
-		fams = append(fams, AnalyzerFamily{name: toolJscpd})
-	}
-	if cfg.CargoModules {
-		fams = append(fams, AnalyzerFamily{name: toolCargoModules})
-	}
-	return fams
-}
-
 // BaseFindingIDs projects the base diagnostic's observed findings to their
 // stable IDs. Fixed entries are dropped: a finding the base run reports as fixed
 // was not observed there, so it cannot make a current task pre-existing.
@@ -212,7 +176,7 @@ func BuildGitFindingDelta(in GitDeltaInput) *result.GitFindingDelta {
 		// The synthetic coupling-gate task is per-run trip state with no stable
 		// base counterpart — decided before ID matching so it can never be
 		// mistaken for a repaired or introduced seam.
-		case t.RuleID == ruleIDBCCouplingGate:
+		case t.RuleID == finding.RuleIDCouplingGate:
 			unknown = append(unknown, t.FindingID)
 		case inBase:
 			preExisting = append(preExisting, t.FindingID)
@@ -314,11 +278,11 @@ type familySummary struct {
 func (s familySummary) rows() int { return len(s.statuses) }
 
 // raw renders the side's coverage statuses for a comparison reason. The
-// no-row placeholder is decision.CoverageRowMissing, the same string
+// no-row placeholder is CoverageRowMissing, the same string
 // `config compare` renders for the same shape.
 func (s familySummary) raw() string {
 	if len(s.rawStatuses) == 0 {
-		return decision.CoverageRowMissing
+		return CoverageRowMissing
 	}
 	return strings.Join(s.rawStatuses, "+")
 }
@@ -375,10 +339,10 @@ func summariseFamily(f AnalyzerFamily, side AnalyzerEvidence) familySummary {
 // unresolved import specifiers.
 func rawCoverageStatus(c evidence.Coverage) string {
 	switch {
-	case decision.PartialFromUnresolvedSpecifiers(c):
-		return fmt.Sprintf("%s (%s)", c.Status, decision.UnresolvedMagnitude(c))
-	case decision.PartialFromDegradedPrecision(c):
-		return fmt.Sprintf("%s (%s)", c.Status, decision.DegradedMagnitude(c))
+	case PartialFromUnresolvedSpecifiers(c):
+		return fmt.Sprintf("%s (%s)", c.Status, UnresolvedMagnitude(c))
+	case PartialFromDegradedPrecision(c):
+		return fmt.Sprintf("%s (%s)", c.Status, DegradedMagnitude(c))
 	default:
 		return c.Status
 	}
@@ -406,7 +370,7 @@ func normalizeCoverage(f AnalyzerFamily, c evidence.Coverage, gaps []evidence.Co
 		// mostly not in the install-hint table at all — so the absence stays what
 		// the coverage row already said: the config activated this analyzer and it
 		// did not run here.
-		if f.primary && !decision.HasCoverageGap(gaps, c.Tool) {
+		if f.primary && !HasCoverageGap(gaps, c.Tool) {
 			return evidenceNotApplicable
 		}
 		return evidenceAbsent
@@ -418,9 +382,9 @@ func normalizeCoverage(f AnalyzerFamily, c evidence.Coverage, gaps []evidence.Co
 		// differently, which is why the second predicate reads the typed counters
 		// that split them rather than the row's prose reason.
 		switch {
-		case decision.PartialFromUnresolvedSpecifiers(c):
+		case PartialFromUnresolvedSpecifiers(c):
 			return evidencePartialUnresolved
-		case decision.PartialFromDegradedPrecision(c):
+		case PartialFromDegradedPrecision(c):
 			return evidencePartialDegraded
 		}
 		return evidenceUnavailable
@@ -475,7 +439,7 @@ const (
 //     either side, typically because its tool is not installed on this host.
 //     Treating it as unusable made the delta inert for a whole class of
 //     environments, including archfit's own runtime image (no Rust toolchain, no
-//     SCIP indexer) on any repo carrying a Cargo.toml. decision.gradeTool grades
+//     SCIP indexer) on any repo carrying a Cargo.toml. gradeTool grades
 //     this shape symmetric-comparable; the two paths must agree.
 //
 // Symmetric partial-with-unresolved-specifiers never pairs asymmetrically. Nor
@@ -520,4 +484,50 @@ func pairFamily(head, base familySummary) familyPairing {
 	default:
 		return familyUnpaired
 	}
+}
+
+// Coverage names of the analyzers that produce findings outside the
+// per-language primaries. One analyzer is one coverage name: ast-grep drives
+// two passes and reports under two names, so they compare separately.
+const (
+	toolAstGrep       = "ast-grep"
+	toolAstGrepSyntax = "ast-grep/syntax"
+	toolScip          = "scip"
+	toolScipSymbols   = "scip-symbols"
+	toolJscpd         = "jscpd"
+	toolCargoModules  = "cargo-modules"
+)
+
+// FamilyOptions names the analyzers a run activated. PrimaryTools are the
+// per-language dependency-graph analyzers the extractor registry supplies; the
+// remaining flags are the opt-in analyzers.
+type FamilyOptions struct {
+	PrimaryTools                                 []string
+	Patterns, Syntax, SCIP, Clones, CargoModules bool
+}
+
+// AnalyzerFamilies returns the finding-producing analyzer families to compare.
+func AnalyzerFamilies(o FamilyOptions) []AnalyzerFamily {
+	fams := make([]AnalyzerFamily, 0, len(o.PrimaryTools)+5)
+	for _, tool := range o.PrimaryTools {
+		fams = append(fams, AnalyzerFamily{name: tool, primary: true})
+	}
+	// The pattern pass and the syntax pass are two analyzers with two coverage
+	// names and two independent activation switches, so they compare separately.
+	if o.Patterns {
+		fams = append(fams, AnalyzerFamily{name: toolAstGrep})
+	}
+	if o.Syntax {
+		fams = append(fams, AnalyzerFamily{name: toolAstGrepSyntax})
+	}
+	if o.SCIP {
+		fams = append(fams, AnalyzerFamily{name: toolScip}, AnalyzerFamily{name: toolScipSymbols})
+	}
+	if o.Clones {
+		fams = append(fams, AnalyzerFamily{name: toolJscpd})
+	}
+	if o.CargoModules {
+		fams = append(fams, AnalyzerFamily{name: toolCargoModules})
+	}
+	return fams
 }

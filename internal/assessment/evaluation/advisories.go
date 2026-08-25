@@ -13,7 +13,6 @@ import (
 )
 
 const advisoryKind = finding.KindAdvisory
-const bcRule = "bc/imbalanced_coupling"
 const bcRollupCap = 8
 
 func candidateFindings(candidates []relationship.AdvisoryCandidate) []finding.Finding {
@@ -59,7 +58,7 @@ func groupBCAdvisories(in []finding.Finding) []finding.Finding {
 	keys := make([]key, 0)
 	passthrough := make([]finding.Finding, 0)
 	for _, f := range in {
-		if f.RuleID != bcRule {
+		if f.RuleID != finding.RuleIDBCImbalanced {
 			passthrough = append(passthrough, f)
 			continue
 		}

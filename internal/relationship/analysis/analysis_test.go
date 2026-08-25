@@ -201,8 +201,8 @@ func TestAnalyzeLabelPrecedence(t *testing.T) {
 			if test.wantStale {
 				wantKeys = []string{labels.Key(moduleA, moduleB)}
 			}
-			if !slices.Equal(got.StaleLabelKeys, wantKeys) {
-				t.Errorf("StaleLabelKeys = %v, want %v", got.StaleLabelKeys, wantKeys)
+			if !slices.Equal(got.Assessment.StaleLabelKeys, wantKeys) {
+				t.Errorf("StaleLabelKeys = %v, want %v", got.Assessment.StaleLabelKeys, wantKeys)
 			}
 		})
 	}
@@ -239,8 +239,8 @@ func TestAnalyzeSkipsEvidenceHashingOnDeltaRuns(t *testing.T) {
 			if s := onlyEdge(t, got).Strength; s != test.wantStrength {
 				t.Errorf("strength = %q, want %q", s, test.wantStrength)
 			}
-			if len(got.StaleLabelKeys) != test.wantStaleKeys {
-				t.Errorf("StaleLabelKeys = %v, want %d entries", got.StaleLabelKeys, test.wantStaleKeys)
+			if len(got.Assessment.StaleLabelKeys) != test.wantStaleKeys {
+				t.Errorf("StaleLabelKeys = %v, want %d entries", got.Assessment.StaleLabelKeys, test.wantStaleKeys)
 			}
 		})
 	}
@@ -268,8 +268,8 @@ func TestAnalyzeCountsNonHighConfidenceLLMLabels(t *testing.T) {
 					Status: labels.StatusApproved, Provenance: test.provenance, Confidence: test.confidence,
 				}},
 			})
-			if got.LLMApprovedCount != test.want {
-				t.Fatalf("LLMApprovedCount = %d, want %d", got.LLMApprovedCount, test.want)
+			if got.Evidence.LLMApprovedCount != test.want {
+				t.Fatalf("LLMApprovedCount = %d, want %d", got.Evidence.LLMApprovedCount, test.want)
 			}
 		})
 	}
@@ -308,8 +308,8 @@ func TestAnalyzeEmitsAdvisoryCandidatesForSevereEdges(t *testing.T) {
 			if sev := onlyEdge(t, got).Severity; sev != test.wantSeverity {
 				t.Fatalf("edge severity = %q, want %q", sev, test.wantSeverity)
 			}
-			rules := make([]string, 0, len(got.AdvisoryCandidates))
-			for _, c := range got.AdvisoryCandidates {
+			rules := make([]string, 0, len(got.Assessment.AdvisoryCandidates))
+			for _, c := range got.Assessment.AdvisoryCandidates {
 				rules = append(rules, c.RuleID)
 				if c.From != fileA || c.To != fileB || c.FromModule != moduleA || c.ToModule != moduleB {
 					t.Errorf("candidate endpoints = %+v, want the classified edge endpoints", c)
@@ -370,20 +370,20 @@ func TestAnalyzeCloneOnlyPairs(t *testing.T) {
 				Graph: g, Policy: relationshipPolicy(twoModules()),
 				CloneClusters: []clone.Cluster{test.cluster}, FileClassIndex: test.index,
 			})
-			if len(got.CloneOnly) != test.wantPairs {
-				t.Fatalf("clone-only pairs = %+v, want %d", got.CloneOnly, test.wantPairs)
+			if len(got.Evidence.CloneOnly) != test.wantPairs {
+				t.Fatalf("clone-only pairs = %+v, want %d", got.Evidence.CloneOnly, test.wantPairs)
 			}
 			if test.wantPairs == 0 {
 				return
 			}
-			pair := got.CloneOnly[0]
+			pair := got.Evidence.CloneOnly[0]
 			if pair.Strength != relationship.StrengthSymmetric {
 				t.Errorf("clone pair strength = %q, want symmetric", pair.Strength)
 			}
 			if pair.FromModule != moduleA || pair.ToModule != moduleB {
 				t.Errorf("clone pair modules = %s -> %s, want a -> b", pair.FromModule, pair.ToModule)
 			}
-			for _, c := range got.AdvisoryCandidates {
+			for _, c := range got.Assessment.AdvisoryCandidates {
 				if c.RuleID == ruleClone && c.EdgeKind != "clone" {
 					t.Errorf("duplicated-knowledge candidate kind = %q, want clone", c.EdgeKind)
 				}
@@ -404,30 +404,30 @@ func TestAnalyzeRuntimeSignalRollup(t *testing.T) {
 		RuntimeSites: sites, RuntimeConfidence: confidence,
 	})
 
-	if len(got.RuntimeSignals) != 2 {
-		t.Fatalf("runtime signals = %+v, want one per module", got.RuntimeSignals)
+	if len(got.Evidence.RuntimeSignals) != 2 {
+		t.Fatalf("runtime signals = %+v, want one per module", got.Evidence.RuntimeSignals)
 	}
-	if got.RuntimeSignals[0].Module != moduleA || got.RuntimeSignals[1].Module != moduleB {
-		t.Errorf("runtime signals = %+v, want modules sorted", got.RuntimeSignals)
+	if got.Evidence.RuntimeSignals[0].Module != moduleA || got.Evidence.RuntimeSignals[1].Module != moduleB {
+		t.Errorf("runtime signals = %+v, want modules sorted", got.Evidence.RuntimeSignals)
 	}
-	if got.RuntimeSignals[0].Count != 2 || got.RuntimeSignals[0].IntegrationKind != kindQueue {
-		t.Errorf("module a signal = %+v, want 2 queue sites", got.RuntimeSignals[0])
+	if got.Evidence.RuntimeSignals[0].Count != 2 || got.Evidence.RuntimeSignals[0].IntegrationKind != kindQueue {
+		t.Errorf("module a signal = %+v, want 2 queue sites", got.Evidence.RuntimeSignals[0])
 	}
-	if got.RuntimeSignals[0].Confidence != confidence {
-		t.Errorf("confidence = %q, want %q carried through", got.RuntimeSignals[0].Confidence, confidence)
+	if got.Evidence.RuntimeSignals[0].Confidence != confidence {
+		t.Errorf("confidence = %q, want %q carried through", got.Evidence.RuntimeSignals[0].Confidence, confidence)
 	}
-	if len(got.RuntimeRelations) != 2 {
-		t.Fatalf("runtime relations = %+v, want one per (module, target, kind)", got.RuntimeRelations)
+	if len(got.Evidence.RuntimeRelations) != 2 {
+		t.Fatalf("runtime relations = %+v, want one per (module, target, kind)", got.Evidence.RuntimeRelations)
 	}
-	if got.RuntimeRelations[0].Target != libNATS {
-		t.Errorf("relation target = %q, want the library name", got.RuntimeRelations[0].Target)
+	if got.Evidence.RuntimeRelations[0].Target != libNATS {
+		t.Errorf("relation target = %q, want the library name", got.Evidence.RuntimeRelations[0].Target)
 	}
 	// A site with no library falls back to the integration kind as its target.
-	if got.RuntimeRelations[1].Target != "event" {
-		t.Errorf("libraryless relation target = %q, want the integration kind", got.RuntimeRelations[1].Target)
+	if got.Evidence.RuntimeRelations[1].Target != "event" {
+		t.Errorf("libraryless relation target = %q, want the integration kind", got.Evidence.RuntimeRelations[1].Target)
 	}
-	if len(got.RuntimeRelations[0].Sites) != 2 {
-		t.Errorf("relation sites = %+v, want the sampled sites", got.RuntimeRelations[0].Sites)
+	if len(got.Evidence.RuntimeRelations[0].Sites) != 2 {
+		t.Errorf("relation sites = %+v, want the sampled sites", got.Evidence.RuntimeRelations[0].Sites)
 	}
 }
 
@@ -449,17 +449,17 @@ func TestAnalyzeSummariesAreProduced(t *testing.T) {
 	got := analysis.Analyze(analysis.Input{
 		Graph: graphWith(string(relationship.StrengthIntrusive)), Policy: relationshipPolicy(twoModules()),
 	})
-	if got.ClassifiedEdges == nil {
+	if got.Evidence.ClassifiedEdges == nil {
 		t.Fatal("ClassifiedEdges = nil, want a classified-edge summary")
 	}
-	if got.ClassifiedEdges.Total != 1 {
-		t.Errorf("ClassifiedEdges.Total = %d, want 1", got.ClassifiedEdges.Total)
+	if got.Evidence.ClassifiedEdges.Total != 1 {
+		t.Errorf("ClassifiedEdges.Total = %d, want 1", got.Evidence.ClassifiedEdges.Total)
 	}
-	if got.VolatilityProvenance == nil {
+	if got.Evidence.VolatilityProvenance == nil {
 		t.Fatal("VolatilityProvenance = nil, want the provenance rollup")
 	}
-	if got.VolatilityProvenance.Declared != 2 {
-		t.Errorf("declared volatility modules = %d, want both fixture modules", got.VolatilityProvenance.Declared)
+	if got.Evidence.VolatilityProvenance.Declared != 2 {
+		t.Errorf("declared volatility modules = %d, want both fixture modules", got.Evidence.VolatilityProvenance.Declared)
 	}
 }
 
@@ -488,10 +488,10 @@ func TestAnalyzeSameModuleEdgesAreLocalCouplingOnly(t *testing.T) {
 	if edge.Severity != relationship.SeverityNone {
 		t.Errorf("severity = %q, want none: same-module coupling is report-only", edge.Severity)
 	}
-	if len(got.AdvisoryCandidates) != 0 {
-		t.Errorf("advisory candidates = %+v, want none for a same-module edge", got.AdvisoryCandidates)
+	if len(got.Assessment.AdvisoryCandidates) != 0 {
+		t.Errorf("advisory candidates = %+v, want none for a same-module edge", got.Assessment.AdvisoryCandidates)
 	}
-	if len(got.LocalCoupling) == 0 {
+	if len(got.Evidence.LocalCoupling) == 0 {
 		t.Error("LocalCoupling = empty, want the same-module edge reported locally")
 	}
 }
@@ -536,7 +536,7 @@ func TestAnalyzeEmptyGraph(t *testing.T) {
 	if !got.Relationships.Empty() {
 		t.Fatalf("relationships = %+v, want an empty set", got.Relationships)
 	}
-	if len(got.AdvisoryCandidates) != 0 || len(got.CloneOnly) != 0 || len(got.StaleLabelKeys) != 0 {
+	if len(got.Assessment.AdvisoryCandidates) != 0 || len(got.Evidence.CloneOnly) != 0 || len(got.Assessment.StaleLabelKeys) != 0 {
 		t.Fatalf("result = %+v, want no derived facts from an empty graph", got)
 	}
 }
@@ -611,15 +611,15 @@ func TestAnalyzeStaticDistanceCandidates(t *testing.T) {
 			got := analysis.Analyze(analysis.Input{Graph: g, Policy: relationshipPolicy(twoModules())})
 
 			if test.wantTarget == "" {
-				if len(got.DistanceConfigCandidates) != 0 {
-					t.Fatalf("candidates = %+v, want none", got.DistanceConfigCandidates)
+				if len(got.Evidence.DistanceConfigCandidates) != 0 {
+					t.Fatalf("candidates = %+v, want none", got.Evidence.DistanceConfigCandidates)
 				}
 				return
 			}
-			if len(got.DistanceConfigCandidates) != 1 {
-				t.Fatalf("candidates = %+v, want 1", got.DistanceConfigCandidates)
+			if len(got.Evidence.DistanceConfigCandidates) != 1 {
+				t.Fatalf("candidates = %+v, want 1", got.Evidence.DistanceConfigCandidates)
 			}
-			c := got.DistanceConfigCandidates[0]
+			c := got.Evidence.DistanceConfigCandidates[0]
 			if c.Target != test.wantTarget {
 				t.Errorf("target = %q, want %q", c.Target, test.wantTarget)
 			}
@@ -659,14 +659,14 @@ func TestAnalyzeConnascenceEvidence(t *testing.T) {
 	if len(edge.Classified.Connascence) != 2 {
 		t.Errorf("classified connascence = %+v, want both facts", edge.Classified.Connascence)
 	}
-	if got.Connascence == nil {
+	if got.Evidence.Connascence == nil {
 		t.Fatal("Connascence = nil, want the report-only summary")
 	}
-	if got.Connascence.EdgesWithEvidence != 1 || got.Connascence.TotalEvidence != 2 {
-		t.Errorf("connascence summary = %+v, want 1 edge with 2 facts", got.Connascence)
+	if got.Evidence.Connascence.EdgesWithEvidence != 1 || got.Evidence.Connascence.TotalEvidence != 2 {
+		t.Errorf("connascence summary = %+v, want 1 edge with 2 facts", got.Evidence.Connascence)
 	}
-	if got.Connascence.ByKind["name"] != 1 || got.Connascence.BySource["go/types"] != 2 {
-		t.Errorf("connascence rollups = %+v, want per-kind and per-source counts", got.Connascence)
+	if got.Evidence.Connascence.ByKind["name"] != 1 || got.Evidence.Connascence.BySource["go/types"] != 2 {
+		t.Errorf("connascence rollups = %+v, want per-kind and per-source counts", got.Evidence.Connascence)
 	}
 	// Connascence is disclosure, not a distance input.
 	plain := onlyEdge(t, analysis.Analyze(analysis.Input{

@@ -85,18 +85,34 @@ type DistanceOmittedRungReason struct {
 	Reason string
 }
 
-// AnalysisResult is the complete relationship-owned output of classification.
-type AnalysisResult struct {
-	Relationships            Set
-	StaleLabelKeys           []string
+// AssessmentSignals is the explicit relationship-to-assessment contract: the
+// classification facts assessment needs to raise advisories. It deliberately
+// carries no report evidence and no finding lifecycle.
+type AssessmentSignals struct {
+	AdvisoryCandidates []AdvisoryCandidate
+	StaleLabelKeys     []string
+}
+
+// AnalysisEvidence is report-only relationship provenance. Assessment never
+// reads it; the application projects it into the external report contract.
+type AnalysisEvidence struct {
 	LLMApprovedCount         int
 	RuntimeSignals           []RuntimeSignal
 	RuntimeRelations         []RuntimeRelationship
 	CloneOnly                []CloneOnlyPair
-	AdvisoryCandidates       []AdvisoryCandidate
 	ClassifiedEdges          *ClassifiedEdgeSummary
 	Connascence              *evidence.ConnascenceReport
 	DistanceConfigCandidates []evidence.DistanceConfigCandidate
 	LocalCoupling            []evidence.LocalCouplingModule
 	VolatilityProvenance     *VolatilityProvenance
+}
+
+// AnalysisResult is the relationship stage output. The three members are
+// separate on purpose: Relationships is the immutable set every consumer may
+// hold, Assessment is the narrow judgment contract, and Evidence is report-only
+// provenance no decision may read.
+type AnalysisResult struct {
+	Relationships Set
+	Assessment    AssessmentSignals
+	Evidence      AnalysisEvidence
 }

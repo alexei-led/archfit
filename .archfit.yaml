@@ -397,8 +397,20 @@ rules:
     from: internal/relationship/**
     to: internal/model/report/**
     gate: fail
-  # The pipeline projection is a technical adapter only. Assessment lifecycle
-  # and finding ownership stays behind evaluation's result port.
+  # Assessment consumes the public relationship contract, never a relationship
+  # implementation package.
+  - id: assessment_no_relationship_internals
+    type: forbidden_dependency
+    from: internal/assessment/**
+    to: internal/relationship/{classify,scoring,coupling,facts,labels,analysis}/**
+    gate: fail
+  # The pipeline is a technical adapter only. Assessment lifecycle, judgment,
+  # and repair ownership stays behind evaluation's result port.
+  - id: analysispipeline_no_assessment_judgment
+    type: forbidden_dependency
+    from: internal/analysispipeline/**
+    to: internal/assessment/{status,staleness,finding,rules,metrics,score,decision,agenttask}/**
+    gate: fail
   - id: analysispipeline_projection_no_status
     type: forbidden_dependency
     from: internal/analysispipeline/report_projection.go
@@ -425,6 +437,23 @@ rules:
     type: forbidden_dependency
     from: internal/output/**
     to: internal/assessment/**
+    gate: fail
+  - id: renderer_no_relationship
+    type: forbidden_dependency
+    from: internal/output/**
+    to: internal/relationship/**
+    gate: fail
+  - id: renderer_no_evidence
+    type: forbidden_dependency
+    from: internal/output/**
+    to: internal/evidence/**
+    gate: fail
+  # The application projector reads domain values; it never reaches into a
+  # relationship or evidence implementation package to rebuild them.
+  - id: projector_no_domain_internals
+    type: forbidden_dependency
+    from: internal/application/report.go
+    to: internal/{relationship,evidence}/**
     gate: fail
   # Ring gate 3: model packages are pure value types
   - id: model_no_config

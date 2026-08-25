@@ -37,6 +37,21 @@ const (
 	KindAdvisory = "advisory"
 )
 
+// Rule IDs that assessment itself emits (rather than reading from declared
+// policy). They are part of the published finding contract, so they are named
+// once here instead of being repeated as literals at every producer and
+// consumer.
+const (
+	// RuleIDBCImbalanced is the balanced-coupling advisory the coupling gate
+	// promotes to a gate finding.
+	RuleIDBCImbalanced = "bc/imbalanced_coupling"
+	// RuleIDDuplicatedKnowledge is the clone-only coupling advisory.
+	RuleIDDuplicatedKnowledge = "bc/duplicated_knowledge"
+	// RuleIDCouplingGate is the synthetic finding a tripped coupling gate emits
+	// when it has no promotable advisory.
+	RuleIDCouplingGate = "bc/coupling_gate"
+)
+
 // Endpoint identifies one side of a finding edge (resolved at diagnostic assembly).
 type Endpoint struct {
 	Module string `json:"module"`

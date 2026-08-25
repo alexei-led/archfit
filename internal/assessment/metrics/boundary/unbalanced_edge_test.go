@@ -7,27 +7,26 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/metrics/boundary"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/testutil/metricstest"
 )
 
 func TestUnbalancedEdge_Count(t *testing.T) {
 	// 1 edge: intrusive + cross_module_different_owner + high volatility → count 1
-	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
-	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
-	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
+	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
+	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
+	e := metricstest.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: metricstest.EdgeKindImports}
 
-	idx := coupling.Index{
-		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
-			Strength:   coupling.StrengthIntrusive,
-			Distance:   coupling.DistanceCrossModuleDiffOwner,
-			Volatility: coupling.VolatilityHigh,
+	idx := metricstest.Index{
+		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): metricstest.Classification{
+			Strength:   relationship.StrengthIntrusive,
+			Distance:   relationship.DistanceCrossModuleDiffOwner,
+			Volatility: relationship.VolatilityHigh,
 		},
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx)})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]metricstest.Node{nodeA, nodeB}, []metricstest.Edge{e}, idx)})
 
 	if result.Value != 1 {
 		t.Errorf("expected value 1 got %v", result.Value)
@@ -44,20 +43,20 @@ func TestUnbalancedEdge_Count(t *testing.T) {
 
 func TestUnbalancedEdge_ZeroCount(t *testing.T) {
 	// Contract edge → not counted
-	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
-	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
-	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
+	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
+	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
+	e := metricstest.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: metricstest.EdgeKindImports}
 
-	idx := coupling.Index{
-		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
-			Strength:   coupling.StrengthContract,
-			Distance:   coupling.DistanceCrossModuleDiffOwner,
-			Volatility: coupling.VolatilityHigh,
+	idx := metricstest.Index{
+		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): metricstest.Classification{
+			Strength:   relationship.StrengthContract,
+			Distance:   relationship.DistanceCrossModuleDiffOwner,
+			Volatility: relationship.VolatilityHigh,
 		},
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx)})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]metricstest.Node{nodeA, nodeB}, []metricstest.Edge{e}, idx)})
 
 	if result.Value != 0 {
 		t.Errorf("expected value 0 got %v", result.Value)
@@ -72,20 +71,20 @@ func TestUnbalancedEdge_DeclaredExternalNotCounted(t *testing.T) {
 	// routes DistanceExternal to the default (excluded) case by design (frozen v2
 	// metric — declared external seams stay out of it), so this must NOT count as
 	// an unbalanced edge even though strength and volatility both qualify.
-	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
-	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
-	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
+	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
+	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
+	e := metricstest.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: metricstest.EdgeKindImports}
 
-	idx := coupling.Index{
-		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
-			Strength:   coupling.StrengthIntrusive,
-			Distance:   coupling.DistanceExternal,
-			Volatility: coupling.VolatilityHigh,
+	idx := metricstest.Index{
+		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): metricstest.Classification{
+			Strength:   relationship.StrengthIntrusive,
+			Distance:   relationship.DistanceExternal,
+			Volatility: relationship.VolatilityHigh,
 		},
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx)})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]metricstest.Node{nodeA, nodeB}, []metricstest.Edge{e}, idx)})
 
 	if result.Value != 0 {
 		t.Errorf("expected value 0 (declared_external excluded, not counted as unbalanced) got %v", result.Value)
@@ -97,20 +96,20 @@ func TestUnbalancedEdge_UnknownVolatilityIsNA(t *testing.T) {
 	// (no churn data, no subdomain config). The high-volatility test cannot be
 	// evaluated, so the metric is n/a — not a false "strong" (absence of evidence
 	// is not evidence of balance).
-	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
-	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
-	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
+	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
+	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
+	e := metricstest.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: metricstest.EdgeKindImports}
 
-	idx := coupling.Index{
-		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
-			Strength:   coupling.StrengthIntrusive,
-			Distance:   coupling.DistanceCrossModuleDiffOwner,
-			Volatility: coupling.VolatilityUnknown,
+	idx := metricstest.Index{
+		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): metricstest.Classification{
+			Strength:   relationship.StrengthIntrusive,
+			Distance:   relationship.DistanceCrossModuleDiffOwner,
+			Volatility: relationship.VolatilityUnknown,
 		},
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx)})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]metricstest.Node{nodeA, nodeB}, []metricstest.Edge{e}, idx)})
 
 	if result.Band != bandNAStr {
 		t.Errorf("expected band n/a got %q", result.Band)
@@ -128,15 +127,15 @@ func TestUnbalancedEdge_BaselinedFindingSuppressesCount(t *testing.T) {
 	// is already baselined — StatusNew/"" are the only statuses that count as
 	// new_high, so a baselined edge must not add to the count even though it
 	// still qualifies structurally.
-	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
-	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
-	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
+	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
+	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
+	e := metricstest.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: metricstest.EdgeKindImports}
 
-	idx := coupling.Index{
-		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
-			Strength:   coupling.StrengthIntrusive,
-			Distance:   coupling.DistanceCrossModuleDiffOwner,
-			Volatility: coupling.VolatilityHigh,
+	idx := metricstest.Index{
+		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): metricstest.Classification{
+			Strength:   relationship.StrengthIntrusive,
+			Distance:   relationship.DistanceCrossModuleDiffOwner,
+			Volatility: relationship.VolatilityHigh,
 		},
 	}
 	findings := []finding.Finding{
@@ -147,7 +146,7 @@ func TestUnbalancedEdge_BaselinedFindingSuppressesCount(t *testing.T) {
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx), Findings: findings})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]metricstest.Node{nodeA, nodeB}, []metricstest.Edge{e}, idx), Findings: findings})
 
 	if result.Value != 0 {
 		t.Errorf("expected value 0 (baselined edge must not count as new_high) got %v", result.Value)
@@ -163,15 +162,15 @@ func TestUnbalancedEdge_HigherPriorityStatusWins(t *testing.T) {
 	// (StatusBaseline, priority 1) — a naive "last write wins" index would
 	// keep StatusBaseline and drop the count to 0; the actual statusPriority
 	// logic must keep the higher-priority StatusNew regardless of order.
-	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
-	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
-	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
+	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
+	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
+	e := metricstest.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: metricstest.EdgeKindImports}
 
-	idx := coupling.Index{
-		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
-			Strength:   coupling.StrengthIntrusive,
-			Distance:   coupling.DistanceCrossModuleDiffOwner,
-			Volatility: coupling.VolatilityHigh,
+	idx := metricstest.Index{
+		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): metricstest.Classification{
+			Strength:   relationship.StrengthIntrusive,
+			Distance:   relationship.DistanceCrossModuleDiffOwner,
+			Volatility: relationship.VolatilityHigh,
 		},
 	}
 	edgeEv := finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Path: pathB}}
@@ -181,7 +180,7 @@ func TestUnbalancedEdge_HigherPriorityStatusWins(t *testing.T) {
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]graph.Node{nodeA, nodeB}, []graph.Edge{e}, idx), Findings: findings})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationships([]metricstest.Node{nodeA, nodeB}, []metricstest.Edge{e}, idx), Findings: findings})
 
 	if result.Value != 1 {
 		t.Errorf("expected value 1 (higher-priority StatusNew must win over StatusBaseline) got %v", result.Value)

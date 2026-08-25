@@ -9,11 +9,8 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/assessment/agenttask"
-	"github.com/alexei-led/archfit/internal/assessment/metrics"
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/rules"
-	"github.com/alexei-led/archfit/internal/assessment/score"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
@@ -22,14 +19,13 @@ import (
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
 type preparedRun struct {
 	input                StageInput
-	rules                []rules.Rule
-	metrics              []metrics.Metric
 	acquired             acquiredStage
 	relations            relationshipStage
 	base                 baseline.Baseline
@@ -43,7 +39,7 @@ type preparedRun struct {
 	labels               []labels.Label
 	warnings             []string
 	ownerWarnings        []string
-	captured             *signal.CommonInput
+	captured             *relationship.Set
 	requireTools         bool
 	captureRelationships bool
 	previousWarnLabel    string
@@ -106,11 +102,11 @@ func (a *Analyzer) prepareRun(ctx context.Context, req application.AnalysisReque
 	facts := factcache.NewStore(factsCacheDir(bundleDir))
 	facts.RefreshMode = deps.Refresh
 	extractors := registry.Build(deps.Runner, a.PreparedOptions.Extractors, facts)
-	ruleSet, err := rules.New(runPolicy.Gates.Rules)
+	ruleSet, err := evaluation.NewRuleset(runPolicy.Gates.Rules)
 	if err != nil {
 		return nil, err
 	}
-	metricSet := metrics.New(runPolicy.Gates.Metrics)
+	metricSet := evaluation.NewMetricset(runPolicy.Gates.Metrics)
 	var warnings []string
 	noteWarning := func(tool string, e error) {
 		if e != nil {
@@ -158,18 +154,14 @@ func (a *Analyzer) prepareRun(ctx context.Context, req application.AnalysisReque
 	if err != nil {
 		return nil, err
 	}
-	var captured signal.CommonInput
-	var extras []metrics.Metric
-	if req.CaptureRelationships {
-		extras = append(extras, &relationshipCapture{in: &captured})
-	}
-	metricSet = append(metricSet, extras...)
+	var captured relationship.Set
 	stageInput := StageInput{Mode: mode, Scope: resolved, Policy: runPolicy, Extractors: extractors,
 		Patterns: factsResult.Patterns, Resolver: factsResult.Resolver, Syntax: factsResult.Syntax,
 		SyntaxCfg: a.PreparedOptions.Syntax, PatternCfg: a.PreparedOptions.Patterns, Rules: ruleSet,
 		Metrics: metricSet, BaseMetrics: base.Metrics, Accepted: base, Signals: change, Labels: lbls,
-		Now: rc.evaluatedAt(), ConfigHash: effectiveConfigHash(configPath), PrimaryExtractorTools: registry.PrimaryTools()}
-	return &preparedRun{input: stageInput, rules: ruleSet, metrics: metricSet, base: base, runContext: rc,
+		CaptureRelationships: req.CaptureRelationships,
+		Now:                  rc.evaluatedAt(), ConfigHash: effectiveConfigHash(configPath), PrimaryExtractorTools: registry.PrimaryTools()}
+	return &preparedRun{input: stageInput, base: base, runContext: rc,
 		mode: mode, request: req, options: a.PreparedOptions, policy: runPolicy, config: a.Config, ownerSource: ownerSource,
 		labels: lbls, warnings: warnings, ownerWarnings: ownerWarnings, requireTools: req.RequireTools,
 		captureRelationships: req.CaptureRelationships, previousWarnLabel: previousWarnLabel, captured: &captured}, nil
@@ -200,19 +192,6 @@ func (a *Analyzer) finalizePreparedRun(ctx context.Context, run *preparedRun, di
 	}
 	EmitHealthWarnings(deps, diag, run.policy.Topology.Modules, run.input.Scope.Root, run.runContext.ConfigSource)
 	deps.reportPhase("Scoring architecture")
-	card := score.Synthesize(diag)
-	gateView := PolicyCouplingGateView(run.policy)
-	ApplyCouplingGate(&diag, card, gateView, run.base)
-	if !run.request.SuppressGateReasons {
-		for _, reason := range score.EvaluateCouplingGate(card, gateView, run.base.CouplingScore()).Reasons {
-			_, _ = fmt.Fprintln(deps.stderr(), "coupling gate: "+reason)
-		}
-	}
-	if gateView.Enabled && gateView.MaxDrop != nil {
-		if mismatches := run.base.ScoreSnapshotMismatches(); len(mismatches) > 0 {
-			_, _ = fmt.Fprintf(deps.stderr(), "coupling gate: max_drop skipped — baseline score snapshot is incompatible (%s); run `archfit baseline` to re-anchor\n", strings.Join(scoreSnapshotMismatchDetails(run.base, mismatches), ", "))
-		}
-	}
 	ruleTypes := make(map[string]string, len(run.policy.Gates.Rules.Rules))
 	for _, def := range run.policy.Gates.Rules.Rules {
 		ruleTypes[def.ID] = def.Type
@@ -233,16 +212,29 @@ func (a *Analyzer) finalizePreparedRun(ctx context.Context, run *preparedRun, di
 			crateRootDirs[cr.Name] = cr.Dir
 		}
 	}
-	resolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, policy.ModuleRootDirs(run.policy.Topology.Modules), OnDiskWithin(run.input.Scope.Root))
-	validate := ValidationCommand(run.runContext.ConfigSource, run.runContext.ScanRoot)
-	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts, resolver)
-	diag.AdvisoryTasks = agenttask.BuildAdvisoryTasks(diag.Findings, []string{validate})
+	anchor := evaluation.BaselineAnchor{CouplingScore: run.base.CouplingScore(), SnapshotMismatches: run.base.ScoreSnapshotMismatches()}
+	gate := run.policy.Gates.Coupling
+	finalized := evaluation.Finalize(&diag, evaluation.FinalizeInput{
+		Gate: gate, Baseline: anchor, RuleTypes: ruleTypes, ModulePublic: modulePublic,
+		ValidationCommands: []string{ValidationCommand(run.runContext.ConfigSource, run.runContext.ScanRoot)},
+		KnownFiles:         knownFiles, CrateRootDirs: crateRootDirs,
+		ModuleRootDirs: policy.ModuleRootDirs(run.policy.Topology.Modules),
+		OnDisk:         OnDiskWithin(run.input.Scope.Root),
+	})
+	card := finalized.Score
+	if !run.request.SuppressGateReasons {
+		for _, reason := range finalized.GateReasons {
+			_, _ = fmt.Fprintln(deps.stderr(), "coupling gate: "+reason)
+		}
+		if evaluation.CouplingGateAnchorStale(gate, anchor) {
+			_, _ = fmt.Fprintf(deps.stderr(), "coupling gate: max_drop skipped — baseline score snapshot is incompatible (%s); run `archfit baseline` to re-anchor\n", strings.Join(scoreSnapshotMismatchDetails(run.base, anchor.SnapshotMismatches), ", "))
+		}
+	}
 	diag.ToolCoverage = MarkDisabledPrimaries(diag.ToolCoverage, Coverage(run.config), run.input.Scope.Root)
 	diag.CoverageGaps = BuildCoverageGaps(diag.ToolCoverage, Coverage(run.config), run.input.Scope.Root)
 	diag.ConfigWarnings = BuildConfigWarnings(run.options.LintWarnings, run.warnings)
 	diag.ConfigWarnings = append(diag.ConfigWarnings, BuildJudgmentDecisionTasks(run.policy.Topology.Modules, run.labels, run.runContext.ConfigSource)...)
-	hardGate := ApplyToolGate(&diag, runInputRequireTools(run))
-	var baseScore *score.Scorecard
+	out := application.AnalysisResult{Score: card, HardGate: ApplyToolGate(&diag, runInputRequireTools(run))}
 	if run.mode.Base != "" {
 		if deps.Progress != nil {
 			deps.reportPhase("Comparing against base")
@@ -252,11 +244,17 @@ func (a *Analyzer) finalizePreparedRun(ctx context.Context, run *preparedRun, di
 		if err != nil {
 			return application.AnalysisResult{}, err
 		}
-		baseScore = &bsc
-		diag.GitFindingDelta = BuildGitFindingDelta(GitDeltaInput{BaseRef: run.mode.Base, Tasks: diag.AgentTasks, BaseFindingIDs: bev.FindingIDs,
-			Head: AnalyzerEvidence{Coverage: diag.ToolCoverage, Gaps: diag.CoverageGaps, Hash: diag.ConfigHash}, Base: AnalyzerEvidence{Coverage: bev.Coverage, Gaps: bev.CoverageGaps, Hash: bev.ConfigHash}, Families: AnalyzerFamilies(AnalyzerSettings(a.Config))})
+		out.BaseScore = &bsc.Score
+		settings := AnalyzerSettings(a.Config)
+		evaluation.AttachGitOrigin(&diag, evaluation.GitOriginInput{
+			BaseRef: run.mode.Base, BaseFindingIDs: bev.FindingIDs,
+			HeadCoverage: diag.ToolCoverage, HeadGaps: diag.CoverageGaps, HeadConfigHash: diag.ConfigHash,
+			BaseCoverage: bev.Coverage, BaseGaps: bev.CoverageGaps, BaseConfigHash: bev.ConfigHash,
+			PrimaryTools: registry.PrimaryTools(), Patterns: settings.Patterns, Syntax: settings.Syntax,
+			SCIP: settings.SCIP, Clones: settings.Clones, CargoModules: settings.CargoModules,
+		})
 	}
-	out := application.AnalysisResult{Diagnostic: diag, Score: card, BaseScore: baseScore, HardGate: hardGate}
+	out.Diagnostic = diag
 	if runInputCapture(run) && run.captured != nil {
 		out.EnrichmentEvidence = projectEnrichmentEvidence(*run.captured)
 	}

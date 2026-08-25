@@ -10,8 +10,8 @@ import (
 	"time"
 
 	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/metrics"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/rules"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
@@ -354,11 +354,11 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Diagnostic {
 	cfg := loadRendered(t, rendered)
 
 	classifyCfg := cfg.ForClassify()
-	rs, err := rules.New(cfg.ForRules())
+	rs, err := evaluation.NewRuleset(cfg.ForRules())
 	if err != nil {
-		t.Fatalf("rules.New: %v", err)
+		t.Fatalf("evaluation.NewRuleset: %v", err)
 	}
-	ms := metrics.New(cfg.Metrics)
+	ms := evaluation.NewMetricset(cfg.Metrics)
 
 	extractor := goextract.New(evidenceports.ExtractConfig{})
 	base := baseline.Baseline{SchemaVersion: baseline.SchemaVersion}

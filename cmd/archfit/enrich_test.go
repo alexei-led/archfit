@@ -14,9 +14,6 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
 
@@ -37,8 +34,6 @@ const (
 	filePkgBB = "pkg/b/b.go"
 
 	// globPkgA and globPkgB are the module path globs shared by enrich fixtures.
-	globPkgA = "pkg/a/**"
-	globPkgB = "pkg/b/**"
 
 	rustSyntheticFrom  = "crate::api"
 	rustSyntheticTo    = "crate::domain"
@@ -75,125 +70,6 @@ func enrichDraftJSONWithRefs(from, to, strength, rationale string, refs ...strin
 func abstainedDraftJSON(from, to, strength, confidence, rationale string) string {
 	return fmt.Sprintf(`{"from":%q,"to":%q,"strength":%q,"confidence":%q,"basis":%q,"evidence_refs":[],"rationale":%q}`,
 		from, to, strength, confidence, initcfg.DraftBasisSemanticJudgment, rationale)
-}
-
-func enrichFixture() (*graph.Graph, coupling.Index, policy.ModuleMap) {
-	cfg := config.Config{
-		Version: 1,
-		Modules: map[string]policy.ModuleDef{
-			modA: {Paths: []string{globPkgA}},
-			modB: {Paths: []string{globPkgB}},
-			"c":  {Paths: []string{"pkg/c/**"}},
-		},
-	}
-	edges := []graph.Edge{
-		{From: fileNodeA, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
-		{From: "file:pkg/a/a2.go", To: "file:pkg/b/b2.go", Kind: graph.EdgeKindImports, Language: "go"},
-		{From: fileNodeA, To: fileNodeC, Kind: graph.EdgeKindImports, Language: "go"},
-		{From: fileNodeC, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
-	}
-	nodes := []graph.Node{
-		{Kind: graph.NodeKindFile, Path: filePkgAA},
-		{Kind: graph.NodeKindFile, Path: "pkg/a/a2.go"},
-		{Kind: graph.NodeKindFile, Path: filePkgBB},
-		{Kind: graph.NodeKindFile, Path: "pkg/b/b2.go"},
-		{Kind: graph.NodeKindFile, Path: "pkg/c/c.go"},
-	}
-	g := graph.Build([]graph.Facts{{Language: "go", Nodes: nodes, Edges: edges}})
-
-	cross := coupling.Classification{Strength: coupling.StrengthFunctional, Distance: coupling.DistanceCrossModuleDiffOwner}
-	idx := coupling.Index{
-		fileNodeA + "\x00" + fileNodeB + "\x00imports":    cross,
-		"file:pkg/a/a2.go\x00file:pkg/b/b2.go\x00imports": cross,
-		// a→c is contract (glob-decided elsewhere) — must not be refinable.
-		fileNodeA + "\x00file:pkg/c/c.go\x00imports": {Strength: coupling.StrengthContract, Distance: coupling.DistanceCrossModuleDiffOwner},
-		// c→b functional but same-module distance? keep cross to test approved skip.
-		"file:pkg/c/c.go\x00" + fileNodeB + "\x00imports": cross,
-	}
-	return g, idx, cfg.ForClassify().ModuleMap
-}
-
-func TestSelectRefinablePairs(t *testing.T) {
-	t.Parallel()
-	g, idx, mm := enrichFixture()
-
-	// c→b is already approved — must be excluded.
-	existing := []labels.Label{{From: "c", To: modB, Strength: enrichModel, Status: labels.StatusApproved}}
-
-	pairs := selectRefinablePairs(g, idx, mm, existing, nil)
-	if len(pairs) != 1 {
-		t.Fatalf("pairs = %+v, want exactly a->b", pairs)
-	}
-	p := pairs[0]
-	if p.From != modA || p.To != modB {
-		t.Errorf("pair = %s->%s, want a->b", p.From, p.To)
-	}
-	if p.EdgeCount != 2 {
-		t.Errorf("edge count = %d, want 2", p.EdgeCount)
-	}
-	if p.Strength != enrichFunctional {
-		t.Errorf("strength = %q", p.Strength)
-	}
-	if len(p.SamplePaths) != 2 || !strings.Contains(p.SamplePaths[0], "pkg/a/") {
-		t.Errorf("samples = %v", p.SamplePaths)
-	}
-}
-
-func syntheticRustPairFixture(strength coupling.Strength) (*graph.Graph, coupling.Index, policy.ModuleMap, policy.ModuleMap) {
-	cfg := config.Config{Version: 1, Modules: map[string]policy.ModuleDef{}}
-	from := graph.Node{Kind: graph.NodeKindModule, Path: rustSyntheticFrom, Language: graph.LangRust}
-	to := graph.Node{Kind: graph.NodeKindModule, Path: rustSyntheticTo, Language: graph.LangRust}
-	edge := graph.Edge{From: from.ID(), To: to.ID(), Kind: graph.EdgeKindImports, Language: graph.LangRust}
-	g := graph.Build([]graph.Facts{{
-		Language: graph.LangRust,
-		Nodes:    []graph.Node{from, to},
-		Edges:    []graph.Edge{edge},
-	}})
-	idx := coupling.Index{
-		edge.From + "\x00" + edge.To + "\x00" + string(edge.Kind): {
-			Strength: strength,
-			Distance: coupling.DistanceCrossModuleDiffOwner,
-		},
-	}
-	return g, idx, cfg.ForClassify().ModuleMap, enrichModuleMap(cfg, g)
-}
-
-func TestSelectRefinablePairs_UsesAugmentedSyntheticModules(t *testing.T) {
-	t.Parallel()
-	g, idx, originalMM, augmentedMM := syntheticRustPairFixture(coupling.StrengthFunctional)
-
-	if got := selectRefinablePairs(g, idx, originalMM, nil, nil); len(got) != 0 {
-		t.Fatalf("unaugmented module map selected pairs = %+v, want none", got)
-	}
-	pairs := selectRefinablePairs(g, idx, augmentedMM, nil, nil)
-	if len(pairs) != 1 {
-		t.Fatalf("augmented module map selected pairs = %+v, want synthetic Rust pair", pairs)
-	}
-	if pairs[0].From != rustSyntheticFrom || pairs[0].To != rustSyntheticTo {
-		t.Fatalf("pair = %s->%s, want %s->%s", pairs[0].From, pairs[0].To, rustSyntheticFrom, rustSyntheticTo)
-	}
-}
-
-func TestSelectRefinablePairs_StaleApprovedCanBeRedrafted(t *testing.T) {
-	t.Parallel()
-	g, idx, mm := enrichFixture()
-	key := labels.Key("c", modB)
-	existing := []labels.Label{{
-		From: "c", To: modB, Strength: enrichModel,
-		EvidenceHash: staleEvidence, Status: labels.StatusApproved,
-	}}
-	evidence := map[string]string{key: currentEvidence}
-
-	pairs := selectRefinablePairs(g, idx, mm, existing, evidence)
-	found := false
-	for _, p := range pairs {
-		if labels.Key(p.From, p.To) == key {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("stale approved pair %q was not selected for a replacement draft: %+v", key, pairs)
-	}
 }
 
 func TestEnrichUserPrompt_IncludesRepositoryEvidenceIDs(t *testing.T) {
@@ -330,42 +206,6 @@ func (p *scriptedProvider) Complete(_ context.Context, _ llm.Request) (llm.Respo
 	r := p.responses[p.calls]
 	p.calls++
 	return llm.Response{Text: r}, nil
-}
-
-// TestSelectRefinablePairs_UnknownStrength verifies that edges with
-// StrengthUnknown (no heuristic available) are selected without requiring SCIP.
-func TestSelectRefinablePairs_UnknownStrength(t *testing.T) {
-	t.Parallel()
-	cfg := config.Config{
-		Version: 1,
-		Modules: map[string]policy.ModuleDef{
-			modA: {Paths: []string{globPkgA}},
-			modB: {Paths: []string{globPkgB}},
-		},
-	}
-	edges := []graph.Edge{
-		{From: fileNodeA, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
-	}
-	nodes := []graph.Node{
-		{Kind: graph.NodeKindFile, Path: filePkgAA},
-		{Kind: graph.NodeKindFile, Path: filePkgBB},
-	}
-	g := graph.Build([]graph.Facts{{Language: "go", Nodes: nodes, Edges: edges}})
-	idx := coupling.Index{
-		fileNodeA + "\x00" + fileNodeB + "\x00imports": {
-			Strength: coupling.StrengthUnknown,
-			Distance: coupling.DistanceCrossModuleDiffOwner,
-		},
-	}
-	mm := cfg.ForClassify().ModuleMap
-
-	pairs := selectRefinablePairs(g, idx, mm, nil, nil)
-	if len(pairs) != 1 {
-		t.Fatalf("pairs = %+v, want exactly a->b for unknown strength", pairs)
-	}
-	if pairs[0].Strength != string(coupling.StrengthUnknown) {
-		t.Errorf("strength = %q, want %q", pairs[0].Strength, coupling.StrengthUnknown)
-	}
 }
 
 // TestDraftLabels_ProvenanceAndConfidence checks that drafts carry provenance:llm

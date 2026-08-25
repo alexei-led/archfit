@@ -11,8 +11,7 @@ import (
 )
 
 const (
-	advisoryRuleBCImbalanced = "bc/imbalanced_coupling"
-	advisoryTaskFileCap      = 8
+	advisoryTaskFileCap = 8
 )
 
 // BuildAdvisoryTasks converts grouped Balanced-Coupling advisories into a
@@ -21,7 +20,7 @@ const (
 func BuildAdvisoryTasks(findings []finding.Finding, validation []string) []result.AdvisoryTask {
 	tasks := make([]result.AdvisoryTask, 0)
 	for _, f := range findings {
-		if f.Kind != finding.KindAdvisory || f.RuleID != advisoryRuleBCImbalanced {
+		if f.Kind != finding.KindAdvisory || f.RuleID != finding.RuleIDBCImbalanced {
 			continue
 		}
 		groupCount, err := strconv.Atoi(f.MatchedBy["group_count"])

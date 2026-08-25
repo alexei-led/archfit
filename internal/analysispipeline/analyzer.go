@@ -8,9 +8,7 @@ import (
 	"sync"
 
 	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/assessment/metrics"
-	"github.com/alexei-led/archfit/internal/assessment/rules"
-	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
@@ -140,15 +138,12 @@ func (a *Analyzer) Assess(ctx context.Context, req application.AnalysisRequest, 
 		return application.AnalysisResult{}, errors.New("analysis stage is not prepared")
 	}
 	p := runCtx.Policy
-	ruleset, err := rules.New(p.Gates.Rules)
+	ruleset, err := evaluation.NewRuleset(p.Gates.Rules)
 	if err != nil {
 		return application.AnalysisResult{}, err
 	}
-	metricset := metrics.New(p.Gates.Metrics)
-	var captured signal.CommonInput
-	if req.CaptureRelationships {
-		metricset = append(metricset, &relationshipCapture{in: &captured})
-	}
+	metricset := evaluation.NewMetricset(p.Gates.Metrics)
+	var captured relationship.Set
 	base := baseline.Baseline{}
 	if !req.EmptyBaseline {
 		bundleDir := runCtx.BundleDir
@@ -165,13 +160,12 @@ func (a *Analyzer) Assess(ctx context.Context, req application.AnalysisRequest, 
 			RuntimeAsync:   signal.RuntimeAsyncSignals{Sites: facts.RuntimeAsyncSites, Confidence: facts.RuntimeConfidence},
 			DeprecatedDeps: facts.DeprecatedDeps,
 		}, Labels: runCtx.PinnedLabels, BaseMetrics: base.Metrics, Accepted: base, Now: runCtx.Now,
-		ConfigHash: runCtx.ConfigHash, PrimaryExtractorTools: runCtx.PrimaryExtractorTools}
-	acquired := acquiredStage{acquired: acquisition.Result{Graph: facts.Graph, Coverages: facts.Coverage, SCIPSymbols: facts.Symbols, SemanticStrengthOverlay: facts.SemanticStrengthOverlay}, ruleEvidence: ruleEvidence{evidence: rules.Evidence{PatternMatches: facts.PatternMatches, SyntaxFacts: facts.SyntaxFacts}}}
+		CaptureRelationships: req.CaptureRelationships,
+		ConfigHash:           runCtx.ConfigHash, PrimaryExtractorTools: runCtx.PrimaryExtractorTools}
+	acquired := acquiredStage{acquired: acquisition.Result{Graph: facts.Graph, Coverages: facts.Coverage, SCIPSymbols: facts.Symbols, SemanticStrengthOverlay: facts.SemanticStrengthOverlay}, ruleEvidence: ruleEvidence{evidence: evaluation.RuleEvidence{PatternMatches: facts.PatternMatches, SyntaxFacts: facts.SyntaxFacts}}}
 	relations := relationshipStageFromAnalysis(in)
-	diag, err := projectAssessment(input, acquired, relations)
-	if err != nil {
-		return application.AnalysisResult{}, err
-	}
+	diag, capturedSet := projectAssessment(input, acquired, relations)
+	captured = capturedSet
 	configSource := runCtx.ConfigSource
 	if configSource == "" {
 		configSource = a.ConfigPath
@@ -196,7 +190,7 @@ func scoreSnapshotMismatchDetails(b baseline.Baseline, mismatches []string) []st
 		case baseline.InputScoreVersion:
 			out = append(out, fmt.Sprintf("%s %q, current %q", input, b.Score.ScoreVersion, report.ScoreVersion))
 		case baseline.InputRubricVersion:
-			out = append(out, fmt.Sprintf("%s %d, current %d", input, b.Score.EffectiveRubricVersion(), score.RubricVersion))
+			out = append(out, fmt.Sprintf("%s %d, current %d", input, b.Score.EffectiveRubricVersion(), report.RubricVersion))
 		default:
 			out = append(out, input)
 		}

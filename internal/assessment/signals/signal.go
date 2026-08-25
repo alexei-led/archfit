@@ -5,8 +5,9 @@ package signal
 import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
-	neutral "github.com/alexei-led/archfit/internal/evidence"
+	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
@@ -16,20 +17,35 @@ type SymbolSignals struct {
 	Graph symbol.Graph
 }
 
-// SizeSignals aliases neutral source-size evidence for metric compatibility.
-type SizeSignals = neutral.SizeSignals
+// SizeSignals carries the per-file source facts assessment metrics read.
+type SizeSignals struct {
+	FileLOC        map[string]int
+	FileClassIndex map[string]fileclass.FileClass
+}
 
-// DuplicationSignals aliases neutral clone evidence for metric compatibility.
-type DuplicationSignals = neutral.DuplicationSignals
+// DuplicationSignals carries the clone facts assessment metrics read.
+type DuplicationSignals struct{ Clusters []clone.Cluster }
 
-// RunSignals aliases the neutral evidence bundle for metric compatibility.
-type RunSignals = neutral.RunSignals
+// DynamicImportSignals carries the dynamic-import facts assessment reports.
+type DynamicImportSignals struct{ Sites []evidence.DynamicImportSite }
 
-// DynamicImportSignals aliases neutral dynamic-import evidence.
-type DynamicImportSignals = neutral.DynamicImportSignals
+// RuntimeAsyncSignals carries the runtime integration facts assessment reports.
+type RuntimeAsyncSignals struct {
+	Sites      []evidence.RuntimeAsyncSite
+	Confidence string
+}
 
-// RuntimeAsyncSignals aliases neutral runtime-async evidence.
-type RuntimeAsyncSignals = neutral.RuntimeAsyncSignals
+// RunSignals is the assessment-owned signal bundle for one run. The stage
+// adapter fills it from acquired evidence; assessment never reads the neutral
+// evidence snapshot itself.
+type RunSignals struct {
+	Size           SizeSignals
+	Duplication    DuplicationSignals
+	ExtraCoverage  []evidence.Coverage
+	DynamicImports DynamicImportSignals
+	RuntimeAsync   RuntimeAsyncSignals
+	DeprecatedDeps []evidence.DeprecatedDep
+}
 
 // ---------------------------------------------------------------------------
 // Per-family metric inputs (the narrow replacement for the former god input).

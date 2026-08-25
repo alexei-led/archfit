@@ -16,64 +16,11 @@ import (
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
 
 // cmdAbstained is the `config enrich abstained` subcommand token.
 const cmdAbstained = "abstained"
-
-// abstainedFixture builds a graph + index with one abstained a→b pair (two
-// unknown-strength edges, the first carrying a location), plus edges that must
-// be excluded: known strength, same-module distance, external (unknown)
-// distance, and an approved pair.
-func abstainedFixture() (*graph.Graph, coupling.Index, policy.ModuleMap) {
-	cfg := config.Config{
-		Version: 1,
-		Modules: map[string]policy.ModuleDef{
-			modA: {Paths: []string{globPkgA}},
-			modB: {Paths: []string{globPkgB}},
-			"c":  {Paths: []string{"pkg/c/**"}},
-		},
-	}
-	edges := []graph.Edge{
-		{From: fileNodeA, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go",
-			Locations: []graph.Location{{File: filePkgAA, Line: 3}}},
-		{From: "file:pkg/a/a2.go", To: "file:pkg/b/b2.go", Kind: graph.EdgeKindImports, Language: "go"},
-		{From: fileNodeA, To: fileNodeC, Kind: graph.EdgeKindImports, Language: "go"},
-		{From: fileNodeC, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
-		{From: fileNodeC, To: "file:pkg/c/c2.go", Kind: graph.EdgeKindImports, Language: "go"},
-		{From: "file:pkg/c/c2.go", To: "file:vendor/x/x.go", Kind: graph.EdgeKindImports, Language: "go"},
-	}
-	nodes := []graph.Node{
-		{Kind: graph.NodeKindFile, Path: filePkgAA},
-		{Kind: graph.NodeKindFile, Path: "pkg/a/a2.go"},
-		{Kind: graph.NodeKindFile, Path: filePkgBB},
-		{Kind: graph.NodeKindFile, Path: "pkg/b/b2.go"},
-		{Kind: graph.NodeKindFile, Path: "pkg/c/c.go"},
-		{Kind: graph.NodeKindFile, Path: "pkg/c/c2.go"},
-		{Kind: graph.NodeKindFile, Path: "vendor/x/x.go"},
-	}
-	g := graph.Build([]graph.Facts{{Language: "go", Nodes: nodes, Edges: edges}})
-
-	unknown := coupling.Classification{Strength: coupling.StrengthUnknown, Distance: coupling.DistanceCrossModuleDiffOwner}
-	idx := coupling.Index{
-		// a→b: abstained twice (the selectable pair).
-		fileNodeA + "\x00" + fileNodeB + "\x00imports":    unknown,
-		"file:pkg/a/a2.go\x00file:pkg/b/b2.go\x00imports": unknown,
-		// a→c: known strength — NOT abstained, excluded.
-		fileNodeA + "\x00file:pkg/c/c.go\x00imports": {Strength: coupling.StrengthFunctional, Distance: coupling.DistanceCrossModuleDiffOwner},
-		// c→b: abstained but the pair is approved in the tests below.
-		"file:pkg/c/c.go\x00" + fileNodeB + "\x00imports": unknown,
-		// c→c2: same-module — excluded.
-		"file:pkg/c/c.go\x00file:pkg/c/c2.go\x00imports": {Strength: coupling.StrengthUnknown, Distance: coupling.DistanceSameModule},
-		// c2→vendor: external (unknown distance) — missing facts, excluded.
-		"file:pkg/c/c2.go\x00file:vendor/x/x.go\x00imports": {Strength: coupling.StrengthUnknown, Distance: coupling.DistanceUnknown},
-	}
-	return g, idx, cfg.ForClassify().ModuleMap
-}
 
 func TestAbstainedUserPrompt_IncludesRepositoryEvidenceIDs(t *testing.T) {
 	t.Parallel()
@@ -86,120 +33,6 @@ func TestAbstainedUserPrompt_IncludesRepositoryEvidenceIDs(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
-	}
-}
-
-func TestSelectAbstainedPairs(t *testing.T) {
-	t.Parallel()
-	g, idx, mm := abstainedFixture()
-	existing := []labels.Label{{From: "c", To: modB, Strength: enrichModel, Status: labels.StatusApproved}}
-
-	pairs, total := selectAbstainedPairs(g, idx, mm, existing, nil)
-	if len(pairs) != 1 {
-		t.Fatalf("pairs = %+v, want exactly a->b", pairs)
-	}
-	p := pairs[0]
-	if p.From != modA || p.To != modB {
-		t.Errorf("pair = %s->%s, want a->b", p.From, p.To)
-	}
-	if p.EdgeCount != 2 || total != 2 {
-		t.Errorf("edge count = %d, total = %d, want 2, 2", p.EdgeCount, total)
-	}
-	if len(p.Samples) != 2 {
-		t.Fatalf("samples = %+v, want 2", p.Samples)
-	}
-	// Context completeness: endpoints on every sample, location on the located edge.
-	located := false
-	for _, s := range p.Samples {
-		if s.FromPath == "" || s.ToPath == "" {
-			t.Errorf("sample missing endpoints: %+v", s)
-		}
-		if s.File == filePkgAA && s.Line == 3 {
-			located = true
-		}
-	}
-	if !located {
-		t.Errorf("no sample carries the pkg/a/a.go:3 location: %+v", p.Samples)
-	}
-}
-
-func TestSelectAbstainedPairs_UsesAugmentedSyntheticModules(t *testing.T) {
-	t.Parallel()
-	g, idx, originalMM, augmentedMM := syntheticRustPairFixture(coupling.StrengthUnknown)
-
-	if pairs, total := selectAbstainedPairs(g, idx, originalMM, nil, nil); len(pairs) != 0 || total != 0 {
-		t.Fatalf("unaugmented module map selected pairs = %+v total=%d, want none", pairs, total)
-	}
-	pairs, total := selectAbstainedPairs(g, idx, augmentedMM, nil, nil)
-	if len(pairs) != 1 || total != 1 {
-		t.Fatalf("augmented module map selected pairs = %+v total=%d, want one synthetic Rust pair", pairs, total)
-	}
-	if pairs[0].From != rustSyntheticFrom || pairs[0].To != rustSyntheticTo {
-		t.Fatalf("pair = %s->%s, want %s->%s", pairs[0].From, pairs[0].To, rustSyntheticFrom, rustSyntheticTo)
-	}
-}
-
-func TestSelectAbstainedPairs_StaleApprovedCanBeRedrafted(t *testing.T) {
-	t.Parallel()
-	g, idx, mm := abstainedFixture()
-	key := labels.Key("c", modB)
-	existing := []labels.Label{{
-		From: "c", To: modB, Strength: enrichModel,
-		EvidenceHash: staleEvidence, Status: labels.StatusApproved,
-	}}
-	evidence := map[string]string{key: currentEvidence}
-
-	pairs, total := selectAbstainedPairs(g, idx, mm, existing, evidence)
-	if total != 3 {
-		t.Fatalf("total = %d, want 3 (stale approved pair should be eligible)", total)
-	}
-	found := false
-	for _, p := range pairs {
-		if labels.Key(p.From, p.To) == key {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("stale approved abstained pair %q was not selected: %+v", key, pairs)
-	}
-}
-
-func TestSelectAbstainedPairs_CapRespected(t *testing.T) {
-	t.Parallel()
-	cfg := config.Config{
-		Version: 1,
-		Modules: map[string]policy.ModuleDef{
-			modA: {Paths: []string{globPkgA}},
-			modB: {Paths: []string{globPkgB}},
-		},
-	}
-	const eligible = abstainedEdgeCap + 20
-	edges := make([]graph.Edge, 0, eligible)
-	nodes := make([]graph.Node, 0, 1+eligible)
-	nodes = append(nodes, graph.Node{Kind: graph.NodeKindFile, Path: filePkgBB})
-	idx := coupling.Index{}
-	unknown := coupling.Classification{Strength: coupling.StrengthUnknown, Distance: coupling.DistanceCrossModuleDiffOwner}
-	for i := range eligible {
-		from := fmt.Sprintf("file:pkg/a/f%03d.go", i)
-		edges = append(edges, graph.Edge{From: from, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"})
-		nodes = append(nodes, graph.Node{Kind: graph.NodeKindFile, Path: fmt.Sprintf("pkg/a/f%03d.go", i)})
-		idx[from+"\x00"+fileNodeB+"\x00imports"] = unknown
-	}
-	g := graph.Build([]graph.Facts{{Language: "go", Nodes: nodes, Edges: edges}})
-
-	pairs, total := selectAbstainedPairs(g, idx, cfg.ForClassify().ModuleMap, nil, nil)
-	if total != eligible {
-		t.Errorf("total = %d, want %d (edges beyond the cap must still be counted)", total, eligible)
-	}
-	included := 0
-	for _, p := range pairs {
-		included += p.EdgeCount
-		if len(p.Samples) > abstainedSampleLocs {
-			t.Errorf("pair %s->%s has %d samples, cap is %d", p.From, p.To, len(p.Samples), abstainedSampleLocs)
-		}
-	}
-	if included != abstainedEdgeCap {
-		t.Errorf("included edges = %d, want cap %d", included, abstainedEdgeCap)
 	}
 }
 

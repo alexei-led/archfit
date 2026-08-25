@@ -61,3 +61,11 @@ func writeFileAt(t *testing.T, root, rel, content string) {
 func newRunContext(path, root string) apppipeline.RunContext {
 	return apppipeline.NewRunContext(path, root)
 }
+
+// Published rule IDs the CLI contract tests assert against. They are spelled
+// out rather than imported from assessment so a rename inside the domain cannot
+// silently rewrite what the external JSON contract is expected to carry.
+const (
+	ruleIDBCImbalanced = "bc/imbalanced_coupling"
+	ruleIDCouplingGate = "bc/coupling_gate"
+)

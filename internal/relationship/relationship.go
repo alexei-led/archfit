@@ -66,15 +66,10 @@ type VolatilityProvenance struct {
 	Undeclared int `json:"undeclared"`
 }
 
-// Explicitness records whether a relationship uses a declared contract.
+// Explicitness records whether a relationship uses a declared contract. The
+// levels themselves are named by the classifier that assigns them; this
+// contract only carries the assigned value.
 type Explicitness string
-
-// Explicitness values name the relationship contract posture.
-const (
-	ExplicitnessExplicit Explicitness = "explicit"
-	ExplicitnessImplicit Explicitness = "implicit"
-	ExplicitnessUnknown  Explicitness = "unknown"
-)
 
 // Severity expresses relationship risk. Empty means no relationship finding.
 type Severity string

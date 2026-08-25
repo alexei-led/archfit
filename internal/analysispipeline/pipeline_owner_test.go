@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/policy"
 
-	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/ownership"
@@ -295,17 +295,17 @@ func testGateOffGapDisclosure(t *testing.T) {
 
 	t.Run("language present keeps the gap", func(t *testing.T) {
 		t.Parallel()
-		if !decision.HasCoverageGap(BuildCoverageGaps(goAbsent, Coverage(cfgGoOff), goOnlyDir), toolGoPackages) {
+		if !hasCoverageGap(BuildCoverageGaps(goAbsent, Coverage(cfgGoOff), goOnlyDir), toolGoPackages) {
 			t.Error("gate off over a go.mod repo must still disclose the go/packages gap")
 		}
-		if !decision.HasCoverageGap(BuildCoverageGaps(cargoModulesAbsent, Coverage(cfgCargoModulesOff), rustDir), toolCargoModules) {
+		if !hasCoverageGap(BuildCoverageGaps(cargoModulesAbsent, Coverage(cfgCargoModulesOff), rustDir), toolCargoModules) {
 			t.Error("gate off over a Cargo.toml repo must still disclose the cargo-modules gap")
 		}
 	})
 
 	t.Run("language absent suppresses the gap", func(t *testing.T) {
 		t.Parallel()
-		if decision.HasCoverageGap(BuildCoverageGaps(cargoModulesAbsent, Coverage(cfgCargoModulesOff), goOnlyDir), toolCargoModules) {
+		if hasCoverageGap(BuildCoverageGaps(cargoModulesAbsent, Coverage(cfgCargoModulesOff), goOnlyDir), toolCargoModules) {
 			t.Error("no Cargo.toml: an opt-out needs no install prompt")
 		}
 	})
@@ -364,7 +364,7 @@ func testGoWorkspaceMarkerGaps(t *testing.T) {
 		}
 		gaps := BuildCoverageGaps(
 			[]result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}}, Coverage(cfg), root)
-		if decision.HasCoverageGap(gaps, toolGoPackages) {
+		if hasCoverageGap(gaps, toolGoPackages) {
 			t.Errorf("gap raised over a member set go.work never named: %+v", gaps)
 		}
 	})
@@ -385,7 +385,7 @@ func testGoWorkspaceMarkerGaps(t *testing.T) {
 		}
 		gaps := BuildCoverageGaps(
 			[]result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}}, Coverage(cfg), root)
-		if !decision.HasCoverageGap(gaps, toolGoPackages) {
+		if !hasCoverageGap(gaps, toolGoPackages) {
 			t.Errorf("no gap for a workspace member the extractor loads: %+v", gaps)
 		}
 	})
@@ -402,7 +402,7 @@ func testGoWorkspaceMarkerGaps(t *testing.T) {
 		cfg := config.Config{Exclude: scope.MergeExclusions(nil)}
 		gaps := BuildCoverageGaps(
 			[]result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}}, Coverage(cfg), root)
-		if !decision.HasCoverageGap(gaps, toolGoPackages) {
+		if !hasCoverageGap(gaps, toolGoPackages) {
 			t.Errorf("no gap for a go.work member the extractor loads: %+v", gaps)
 		}
 	})
@@ -425,7 +425,7 @@ func testTSProjectMarkerGaps(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		writeFileAt(t, root, "package.json", "{}\n")
-		if !decision.HasCoverageGap(BuildCoverageGaps(tsAbsent(), Coverage(cfg), root), toolDepCruiser) {
+		if !hasCoverageGap(BuildCoverageGaps(tsAbsent(), Coverage(cfg), root), toolDepCruiser) {
 			t.Error("expected a dependency-cruiser gap for a repo with package.json")
 		}
 	})
@@ -434,7 +434,7 @@ func testTSProjectMarkerGaps(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		writeFileAt(t, root, "tsconfig.json", "{}\n")
-		if decision.HasCoverageGap(BuildCoverageGaps(tsAbsent(), Coverage(cfg), root), toolDepCruiser) {
+		if hasCoverageGap(BuildCoverageGaps(tsAbsent(), Coverage(cfg), root), toolDepCruiser) {
 			t.Error("tsconfig.json without package.json is not a project this extractor analyses")
 		}
 	})
@@ -469,7 +469,7 @@ func testPyProjectMarkerGaps(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		writeFileAt(t, root, "pyproject.toml", "[project]\nname = \"x\"\n")
-		if !decision.HasCoverageGap(BuildCoverageGaps(pyAbsent(), Coverage(plain), root), toolGrimp) {
+		if !hasCoverageGap(BuildCoverageGaps(pyAbsent(), Coverage(plain), root), toolGrimp) {
 			t.Error("expected a grimp gap for a repo with pyproject.toml")
 		}
 	})
@@ -478,7 +478,7 @@ func testPyProjectMarkerGaps(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		writeFileAt(t, root, "setup.cfg", "[metadata]\nname = x\n")
-		if decision.HasCoverageGap(BuildCoverageGaps(pyAbsent(), Coverage(plain), root), toolGrimp) {
+		if hasCoverageGap(BuildCoverageGaps(pyAbsent(), Coverage(plain), root), toolGrimp) {
 			t.Error("setup.cfg is not a marker this extractor accepts")
 		}
 	})
@@ -493,7 +493,7 @@ func testPyProjectMarkerGaps(t *testing.T) {
 			Exclude:   scope.MergeExclusions(nil),
 			Languages: config.LanguagesConfig{Python: config.PythonLanguage{Package: "mypkg"}},
 		}
-		if !decision.HasCoverageGap(BuildCoverageGaps(pyAbsent(), Coverage(cfg), root), toolGrimp) {
+		if !hasCoverageGap(BuildCoverageGaps(pyAbsent(), Coverage(cfg), root), toolGrimp) {
 			t.Error("expected a grimp gap for a configured languages.python.package directory")
 		}
 	})
@@ -505,7 +505,7 @@ func testPyProjectMarkerGaps(t *testing.T) {
 			Exclude:   scope.MergeExclusions(nil),
 			Languages: config.LanguagesConfig{Python: config.PythonLanguage{Package: "mypkg"}},
 		}
-		if decision.HasCoverageGap(BuildCoverageGaps(pyAbsent(), Coverage(cfg), root), toolGrimp) {
+		if hasCoverageGap(BuildCoverageGaps(pyAbsent(), Coverage(cfg), root), toolGrimp) {
 			t.Error("a configured package dir that does not exist is not a Python project")
 		}
 	})
@@ -561,7 +561,7 @@ func testGoModuleFilterGaps(t *testing.T) {
 			}
 			gaps := BuildCoverageGaps(
 				[]result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}}, Coverage(cfg), root)
-			if gotGap := decision.HasCoverageGap(gaps, toolGoPackages); gotGap != tc.want {
+			if gotGap := hasCoverageGap(gaps, toolGoPackages); gotGap != tc.want {
 				t.Errorf("go/packages gap = %v, want %v (gaps: %+v)", gotGap, tc.want, gaps)
 			}
 		})
@@ -599,7 +599,7 @@ func testRustManifestMarkerGaps(t *testing.T) {
 	t.Run("configured sub-crate manifest keeps the cargo gap", func(t *testing.T) {
 		t.Parallel()
 		gaps := BuildCoverageGaps(rustAbsent, Coverage(rustCfg(subManifest)), subCrateDir)
-		if !decision.HasCoverageGap(gaps, toolCargo) {
+		if !hasCoverageGap(gaps, toolCargo) {
 			t.Errorf("expected cargo gap for a configured sub-crate manifest, got %+v", gaps)
 		}
 	})
@@ -607,7 +607,7 @@ func testRustManifestMarkerGaps(t *testing.T) {
 	t.Run("configured sub-crate manifest keeps the cargo-modules gap", func(t *testing.T) {
 		t.Parallel()
 		gaps := BuildCoverageGaps(rustAbsent, Coverage(rustCfg(subManifest)), subCrateDir)
-		if !decision.HasCoverageGap(gaps, toolCargoModules) {
+		if !hasCoverageGap(gaps, toolCargoModules) {
 			t.Errorf("expected cargo-modules gap for a configured sub-crate manifest, got %+v", gaps)
 		}
 	})
@@ -615,7 +615,7 @@ func testRustManifestMarkerGaps(t *testing.T) {
 	t.Run("no manifest configured and no root Cargo.toml suppresses the gap", func(t *testing.T) {
 		t.Parallel()
 		gaps := BuildCoverageGaps(rustAbsent, Coverage(rustCfg("")), subCrateDir)
-		if decision.HasCoverageGap(gaps, toolCargo) {
+		if hasCoverageGap(gaps, toolCargo) {
 			t.Errorf("unsuppressed cargo gap without a root Cargo.toml: %+v", gaps)
 		}
 	})
@@ -623,7 +623,7 @@ func testRustManifestMarkerGaps(t *testing.T) {
 	t.Run("configured manifest that does not exist suppresses the gap", func(t *testing.T) {
 		t.Parallel()
 		gaps := BuildCoverageGaps(rustAbsent, Coverage(rustCfg(filepath.Join("crates", "missing", markerCargoToml))), subCrateDir)
-		if decision.HasCoverageGap(gaps, toolCargo) {
+		if hasCoverageGap(gaps, toolCargo) {
 			t.Errorf("unsuppressed cargo gap for a nonexistent manifest: %+v", gaps)
 		}
 	})
@@ -688,7 +688,7 @@ func testMarkDisabledPrimaries(t *testing.T) {
 		if cov[0].Status != result.StatusAbsent {
 			t.Fatalf("status = %q, want %q (an explicit gate opts back into the gap)", cov[0].Status, result.StatusAbsent)
 		}
-		if !decision.HasCoverageGap(BuildCoverageGaps(cov, Coverage(offGated), ""), toolDepCruiser) {
+		if !hasCoverageGap(BuildCoverageGaps(cov, Coverage(offGated), ""), toolDepCruiser) {
 			t.Error("explicit gate on a disabled language must still raise a coverage gap")
 		}
 	})
@@ -792,7 +792,7 @@ func testGoProjectMarkerGaps(t *testing.T) {
 			// no defaults present there is nothing left to exclude the marker.
 			gaps := BuildCoverageGaps(
 				[]result.Coverage{{Tool: toolGoPackages, Status: result.StatusAbsent}}, Coverage(config.Config{Exclude: scope.MergeExclusions(tc.exclude)}), root)
-			if gotGap := decision.HasCoverageGap(gaps, toolGoPackages); gotGap != tc.want {
+			if gotGap := hasCoverageGap(gaps, toolGoPackages); gotGap != tc.want {
 				t.Errorf("go/packages gap = %v, want %v (gaps: %+v)", gotGap, tc.want, gaps)
 			}
 		})
@@ -1330,4 +1330,16 @@ func TestSkippedPassCoverageRows_ReasonContent(t *testing.T) {
 			}
 		})
 	}
+}
+
+// hasCoverageGap reports whether the gap list names tool. Restated locally so
+// the pipeline's coverage tests assert on the gap values themselves rather than
+// depending on an assessment decision helper.
+func hasCoverageGap(gaps []modevidence.CoverageGap, tool string) bool {
+	for _, g := range gaps {
+		if g.Tool == tool {
+			return true
+		}
+	}
+	return false
 }

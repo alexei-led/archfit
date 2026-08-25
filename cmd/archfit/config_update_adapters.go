@@ -24,6 +24,7 @@ import (
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	relationshipanalysis "github.com/alexei-led/archfit/internal/relationship/analysis"
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
@@ -240,7 +241,7 @@ func (c *UpdateCmd) withRustSyntheticSuggestions(
 	}
 
 	g := graph.Build([]graph.Facts{rustFacts})
-	augmentedCfg, _ := apppipeline.ClassifyGraph(g, cfg.ForClassify())
+	augmentedCfg, _ := relationshipanalysis.Classify(g, cfg.ForClassify())
 	augmented := augmentedCfg.Modules
 	if len(augmented) == len(cfg.Modules) {
 		return report, nil
@@ -398,8 +399,8 @@ func staticExternalDistanceConfigCandidates(ctx context.Context, root string, cf
 }
 
 func staticExternalDistanceConfigCandidatesFromGraph(g *graph.Graph, cfg config.Config) []evidence.DistanceConfigCandidate {
-	classifyCfg, idx := apppipeline.ClassifyGraph(g, cfg.ForClassify())
-	return apppipeline.BuildStaticExternalDistanceCandidates(g, idx, classifyCfg.ModuleMap)
+	classifyCfg, idx := relationshipanalysis.Classify(g, cfg.ForClassify())
+	return relationshipanalysis.StaticExternalDistanceCandidates(g, idx, classifyCfg.ModuleMap)
 }
 
 func buildUpdateCandidateGraph(ctx context.Context, root string, cfg config.Config, deps *appDeps) *graph.Graph {

@@ -6,23 +6,22 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/metrics/boundary"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/testutil/metricstest"
 )
 
 func TestCycle_NoCycles(t *testing.T) {
 	// A→B, B→C (DAG, no cycle)
-	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
-	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
-	nodeC := graph.Node{Kind: graph.NodeKindFile, Path: pathC}
-	edges := []graph.Edge{
-		{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports},
-		{From: nodeB.ID(), To: nodeC.ID(), Kind: graph.EdgeKindImports},
+	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
+	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
+	nodeC := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathC}
+	edges := []metricstest.Edge{
+		{From: nodeA.ID(), To: nodeB.ID(), Kind: metricstest.EdgeKindImports},
+		{From: nodeB.ID(), To: nodeC.ID(), Kind: metricstest.EdgeKindImports},
 	}
-	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB, nodeC}, edges)
+	g := metricstest.NewFixture([]metricstest.Node{nodeA, nodeB, nodeC}, edges)
 
 	m := boundary.CycleMetric{}
-	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, nil)})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.Classify(g, nil)})
 
 	if result.Value != 0 {
 		t.Errorf("expected 0 cycles got %v", result.Value)
@@ -34,16 +33,16 @@ func TestCycle_NoCycles(t *testing.T) {
 
 func TestCycle_WithCycle(t *testing.T) {
 	// A→B, B→A (cycle)
-	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
-	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
-	edges := []graph.Edge{
-		{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports},
-		{From: nodeB.ID(), To: nodeA.ID(), Kind: graph.EdgeKindImports},
+	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}
+	nodeB := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathB}
+	edges := []metricstest.Edge{
+		{From: nodeA.ID(), To: nodeB.ID(), Kind: metricstest.EdgeKindImports},
+		{From: nodeB.ID(), To: nodeA.ID(), Kind: metricstest.EdgeKindImports},
 	}
-	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, edges)
+	g := metricstest.NewFixture([]metricstest.Node{nodeA, nodeB}, edges)
 
 	m := boundary.CycleMetric{}
-	result := m.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, nil)})
+	result := m.Calculate(signal.CommonInput{Relationships: metricstest.Classify(g, nil)})
 
 	if result.Value <= 0 {
 		t.Errorf("expected cycle count > 0 got %v", result.Value)
@@ -61,14 +60,14 @@ func TestCycle_WithCycle(t *testing.T) {
 // TestCycle_RustModuleCycleIsPoor: a cycle built only from Rust edges is an
 // intra-crate module cycle (cargo forbids crate cycles), softened to poor.
 func TestCycle_RustModuleCycleIsPoor(t *testing.T) {
-	a := graph.Node{Kind: graph.NodeKindPackage, Path: "demo::a"}
-	b := graph.Node{Kind: graph.NodeKindPackage, Path: "demo::b"}
-	edges := []graph.Edge{
-		{From: a.ID(), To: b.ID(), Kind: graph.EdgeKindDependsOn, Language: graph.LangRust},
-		{From: b.ID(), To: a.ID(), Kind: graph.EdgeKindDependsOn, Language: graph.LangRust},
+	a := metricstest.Node{Kind: metricstest.NodeKindPackage, Path: "demo::a"}
+	b := metricstest.Node{Kind: metricstest.NodeKindPackage, Path: "demo::b"}
+	edges := []metricstest.Edge{
+		{From: a.ID(), To: b.ID(), Kind: metricstest.EdgeKindDependsOn, Language: metricstest.LangRust},
+		{From: b.ID(), To: a.ID(), Kind: metricstest.EdgeKindDependsOn, Language: metricstest.LangRust},
 	}
-	g := metricstest.BuildGraph([]graph.Node{a, b}, edges)
-	res := boundary.CycleMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, nil)})
+	g := metricstest.NewFixture([]metricstest.Node{a, b}, edges)
+	res := boundary.CycleMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.Classify(g, nil)})
 	if res.Value <= 0 {
 		t.Fatalf("expected a cycle, got %v", res.Value)
 	}
@@ -81,23 +80,23 @@ func TestCycle_RustModuleCycleIsPoor(t *testing.T) {
 // must stay critical even when Rust crate-dep edges dominate the graph by count.
 // The old global-majority heuristic wrongly softened it to poor.
 func TestCycle_PolyglotGoCycleStaysCritical(t *testing.T) {
-	ga := graph.Node{Kind: graph.NodeKindFile, Path: "go/a.go"}
-	gb := graph.Node{Kind: graph.NodeKindFile, Path: "go/b.go"}
-	r1 := graph.Node{Kind: graph.NodeKindPackage, Path: "rc1"}
-	r2 := graph.Node{Kind: graph.NodeKindPackage, Path: "rc2"}
-	r3 := graph.Node{Kind: graph.NodeKindPackage, Path: "rc3"}
-	ext := graph.Node{Kind: graph.NodeKindExternal, Path: "serde"}
-	edges := []graph.Edge{
+	ga := metricstest.Node{Kind: metricstest.NodeKindFile, Path: "go/a.go"}
+	gb := metricstest.Node{Kind: metricstest.NodeKindFile, Path: "go/b.go"}
+	r1 := metricstest.Node{Kind: metricstest.NodeKindPackage, Path: "rc1"}
+	r2 := metricstest.Node{Kind: metricstest.NodeKindPackage, Path: "rc2"}
+	r3 := metricstest.Node{Kind: metricstest.NodeKindPackage, Path: "rc3"}
+	ext := metricstest.Node{Kind: metricstest.NodeKindExternal, Path: "serde"}
+	edges := []metricstest.Edge{
 		// The only cycle: ga <-> gb (Go edges).
-		{From: ga.ID(), To: gb.ID(), Kind: graph.EdgeKindImports, Language: graph.LangGo},
-		{From: gb.ID(), To: ga.ID(), Kind: graph.EdgeKindImports, Language: graph.LangGo},
+		{From: ga.ID(), To: gb.ID(), Kind: metricstest.EdgeKindImports, Language: metricstest.LangGo},
+		{From: gb.ID(), To: ga.ID(), Kind: metricstest.EdgeKindImports, Language: metricstest.LangGo},
 		// Non-cycling Rust edges that outnumber the Go ones.
-		{From: r1.ID(), To: ext.ID(), Kind: graph.EdgeKindDependsOn, Language: graph.LangRust},
-		{From: r2.ID(), To: ext.ID(), Kind: graph.EdgeKindDependsOn, Language: graph.LangRust},
-		{From: r3.ID(), To: ext.ID(), Kind: graph.EdgeKindDependsOn, Language: graph.LangRust},
+		{From: r1.ID(), To: ext.ID(), Kind: metricstest.EdgeKindDependsOn, Language: metricstest.LangRust},
+		{From: r2.ID(), To: ext.ID(), Kind: metricstest.EdgeKindDependsOn, Language: metricstest.LangRust},
+		{From: r3.ID(), To: ext.ID(), Kind: metricstest.EdgeKindDependsOn, Language: metricstest.LangRust},
 	}
-	g := metricstest.BuildGraph([]graph.Node{ga, gb, r1, r2, r3, ext}, edges)
-	res := boundary.CycleMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, nil)})
+	g := metricstest.NewFixture([]metricstest.Node{ga, gb, r1, r2, r3, ext}, edges)
+	res := boundary.CycleMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.Classify(g, nil)})
 	if res.Value <= 0 {
 		t.Fatalf("expected the Go cycle to be counted, got %v", res.Value)
 	}

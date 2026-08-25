@@ -1,4 +1,4 @@
-package pipeline
+package decision
 
 import (
 	"encoding/json"
@@ -6,15 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-
-	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/extract/registry"
-	"github.com/alexei-led/archfit/internal/model/pattern"
-	"github.com/alexei-led/archfit/internal/policy"
 )
 
 // TestGitFindingDelta covers the `--base` git-origin block: how tasks are placed
@@ -28,7 +21,6 @@ func TestGitFindingDelta(t *testing.T) {
 	t.Parallel()
 	t.Run("origin", testGitDeltaOrigin)
 	t.Run("analyzer_evidence", testGitDeltaAnalyzerEvidence)
-	t.Run("active_families", testGitDeltaActiveFamilies)
 	t.Run("base_finding_ids", testGitDeltaBaseFindingIDs)
 	t.Run("cross_path_agreement", testGitDeltaCrossPathAgreement)
 	t.Run("unpaired_reason", testGitDeltaUnpairedReason)
@@ -115,19 +107,19 @@ func testGitDeltaUnpairedReason(t *testing.T) {
 // comparison_reasons — lives in the reasons slice. Reading only the bool
 // collapses `comparable` and `comparable_with_gaps` into one bucket, and that
 // boundary IS the silent-versus-disclosed boundary the whole design rests on.
-func gitGrade(comparable bool, reasons []string) decision.CoverageComparability {
+func gitGrade(comparable bool, reasons []string) CoverageComparability {
 	switch {
 	case !comparable:
-		return decision.CoverageNotComparable
+		return CoverageNotComparable
 	case len(reasons) == 0:
-		return decision.CoverageComparable
+		return CoverageComparable
 	default:
-		return decision.CoverageComparableWithGaps
+		return CoverageComparableWithGaps
 	}
 }
 
 // testGitDeltaCrossPathAgreement drives ONE table of coverage shapes through
-// BOTH comparison paths — pairFamily here and decision.gradeTool behind
+// BOTH comparison paths — pairFamily here and gradeTool behind
 // `config compare` — and asserts they reach the same three-valued grade.
 //
 // Four review rounds found the same defect: the two paths graded one input shape
@@ -160,9 +152,9 @@ func testGitDeltaCrossPathAgreement(t *testing.T) {
 	rows := func(cs ...result.Coverage) []result.Coverage { return cs }
 
 	const (
-		comparable = decision.CoverageComparable
-		withGaps   = decision.CoverageComparableWithGaps
-		notCompare = decision.CoverageNotComparable
+		comparable = CoverageComparable
+		withGaps   = CoverageComparableWithGaps
+		notCompare = CoverageNotComparable
 	)
 
 	tests := []struct {
@@ -172,10 +164,10 @@ func testGitDeltaCrossPathAgreement(t *testing.T) {
 		headGap    []result.CoverageGap
 		baseGap    []result.CoverageGap
 		// want is the grade BOTH paths must reach, unless wantDecision is set.
-		want decision.CoverageComparability
+		want CoverageComparability
 		// wantDecision, when set, is the grade `config compare` reaches instead —
 		// a divergence the two paths are SPECIFIED to have. divergent says why.
-		wantDecision decision.CoverageComparability
+		wantDecision CoverageComparability
 		divergent    string
 	}{
 		{name: "ok both sides", fam: scipFamily, head: rows(covRow(toolScip, result.StatusOK)), base: rows(covRow(toolScip, result.StatusOK)), want: comparable},
@@ -262,11 +254,11 @@ func testGitDeltaCrossPathAgreement(t *testing.T) {
 			if tc.fam.primary {
 				primary = []string{tc.fam.name}
 			}
-			cmp := decision.CompareConfigs(decision.ConfigCompareInput{
-				Current: decision.ConfigCompareSide{Diag: result.Diagnostic{
+			cmp := CompareConfigs(ConfigCompareInput{
+				Current: ConfigCompareSide{Diag: result.Diagnostic{
 					ToolCoverage: tc.head, CoverageGaps: tc.headGap, PrimaryExtractorTools: primary,
 				}},
-				Candidate: decision.ConfigCompareSide{Diag: result.Diagnostic{
+				Candidate: ConfigCompareSide{Diag: result.Diagnostic{
 					ToolCoverage: tc.base, CoverageGaps: tc.baseGap, PrimaryExtractorTools: primary,
 				}},
 			})
@@ -299,9 +291,9 @@ func testGitDeltaCrossPathAgreement(t *testing.T) {
 // `comparable` carries the evidence for it — a comparison reason on the --base
 // side, a CoverageDetail on the `config compare` side — and `comparable` carries
 // none. A degradation nobody can read is the same defect as no degradation.
-func assertGradeDisclosed(t *testing.T, path string, grade decision.CoverageComparability, disclosed bool) {
+func assertGradeDisclosed(t *testing.T, path string, grade CoverageComparability, disclosed bool) {
 	t.Helper()
-	if want := grade != decision.CoverageComparable; disclosed != want {
+	if want := grade != CoverageComparable; disclosed != want {
 		t.Errorf("%s: grade %q disclosed = %v, want %v", path, grade, disclosed, want)
 	}
 }
@@ -311,6 +303,15 @@ var scipFamily = AnalyzerFamily{name: toolScip}
 
 // gitDeltaRef is the base ref label used by the pure-comparison subtests.
 const gitDeltaRef = "main"
+
+// toolGoPackages is the Go primary analyzer's coverage name, restated locally:
+// assessment compares coverage rows by name and never imports the extractors.
+const toolGoPackages = "go/packages"
+
+// couplingGateFindingID mirrors evaluation's synthetic coupling-gate finding ID.
+// The origin comparison must place it as unknown-origin without depending on
+// the evaluator that emits it.
+const couplingGateFindingID = "coupling-gate"
 
 func covRow(tool, status string) result.Coverage {
 	return result.Coverage{Tool: tool, Status: status}
@@ -385,10 +386,10 @@ func testGitDeltaOrigin(t *testing.T) {
 		},
 		{
 			name:        "synthetic coupling-gate task is unknown before ID matching",
-			tasks:       []result.AgentTask{agentTask(FindingIDCouplingGate, RuleIDBCCouplingGate)},
-			baseIDs:     []string{FindingIDCouplingGate},
+			tasks:       []result.AgentTask{agentTask(couplingGateFindingID, finding.RuleIDCouplingGate)},
+			baseIDs:     []string{couplingGateFindingID},
 			base:        comparableSide,
-			wantUnknown: []string{FindingIDCouplingGate},
+			wantUnknown: []string{couplingGateFindingID},
 			wantStatus:  result.GitComparisonUnknown,
 		},
 		{
@@ -568,7 +569,7 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 		{name: "duplicate row on one side is unavailable", fam: goFam, head: []result.Coverage{covRow(toolGoPackages, result.StatusOK), covRow(toolGoPackages, result.StatusOK)}, base: []result.Coverage{covRow(toolGoPackages, result.StatusOK)}, want: false},
 		// Every analyzer owns its own coverage name, so a repeated name is an
 		// anomaly on BOTH sides too — there is no way to know which duplicate
-		// pairs with which. Same rule as decision.gradeTool.
+		// pairs with which. Same rule as gradeTool.
 		{name: "matching duplicate rows are still unavailable", fam: astFam, head: []result.Coverage{covRow(toolAstGrep, result.StatusOK), covRow(toolAstGrep, result.StatusOK)}, base: []result.Coverage{covRow(toolAstGrep, result.StatusOK), covRow(toolAstGrep, result.StatusOK)}, want: false},
 		{name: "the pattern pass ignores the syntax pass's own row", fam: astFam, head: []result.Coverage{covRow(toolAstGrep, result.StatusOK), covRow(toolAstGrepSyntax, result.StatusDisabled)}, base: []result.Coverage{covRow(toolAstGrep, result.StatusOK), covRow(toolAstGrepSyntax, result.StatusOK)}, want: true},
 		{name: "the syntax pass compares on its own row", fam: AnalyzerFamily{name: toolAstGrepSyntax}, head: []result.Coverage{covRow(toolAstGrep, result.StatusOK), covRow(toolAstGrepSyntax, result.StatusDisabled)}, base: []result.Coverage{covRow(toolAstGrep, result.StatusOK), covRow(toolAstGrepSyntax, result.StatusOK)}, want: false},
@@ -581,7 +582,7 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 		// CHANGED from degraded:false — this row pinned the defect. A CoverageGap
 		// is only emitted for tools in the install-hint table, and scip is not in
 		// it, so this shape (the live one on archfit's own config wherever no SCIP
-		// indexer is installed) paired SILENTLY while decision.gradeTool graded the
+		// indexer is installed) paired SILENTLY while gradeTool graded the
 		// identical row comparable_with_gaps and emitted a detail. Every family
 		// compared here was activated by the effective config, so its absence is
 		// always shared blindness that must be disclosed.
@@ -589,7 +590,7 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 		// CHANGED from want:false. An enabled analyzer whose tool is missing on
 		// the host reports absent WITH a gap on BOTH sides. Symmetric, that is the
 		// same safety argument as gapless symmetric absence — neither side ran it,
-		// so neither has a finding the other hides — and decision.gradeTool
+		// so neither has a finding the other hides — and gradeTool
 		// already grades it comparable_with_gaps. Failing it made --base
 		// permanently all-unknown wherever an enabled analyzer is uninstalled,
 		// including archfit's own runtime image on any repo with a Cargo.toml.
@@ -688,68 +689,6 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 		}
 	})
 }
-
-func testGitDeltaActiveFamilies(t *testing.T) {
-	t.Parallel()
-	names := func(fams []AnalyzerFamily) []string {
-		out := make([]string, 0, len(fams))
-		for _, f := range fams {
-			out = append(out, f.name)
-		}
-		return out
-	}
-	primaries := names(AnalyzerFamilies(AnalyzerSettings(config.Config{})))
-	if len(primaries) != len(registry.All()) {
-		t.Fatalf("a bare config must activate only the per-language primaries, got %v", primaries)
-	}
-
-	on := config.Analyzer{Enabled: evidenceports.ModeOn}
-	timedOn := config.TimedAnalyzer{Enabled: evidenceports.ModeOn}
-	tests := []struct {
-		name string
-		cfg  config.Config
-		want []string
-	}{
-		{name: "rule patterns activate the ast-grep pattern pass only", cfg: config.Config{
-			Rules: []policy.RuleDef{{ID: "r", Patterns: []pattern.Def{{ID: "p", Lang: "go", Rule: "x"}}}},
-		}, want: []string{toolAstGrep}},
-		{name: "syntax activates the ast-grep syntax pass only", cfg: config.Config{
-			Analyzers: config.AnalyzersConfig{Syntax: on},
-		}, want: []string{toolAstGrepSyntax}},
-		{name: "patterns and syntax activate two independent families", cfg: config.Config{
-			Rules:     []policy.RuleDef{{ID: "r", Patterns: []pattern.Def{{ID: "p", Lang: "go", Rule: "x"}}}},
-			Analyzers: config.AnalyzersConfig{Syntax: on},
-		}, want: []string{toolAstGrep, toolAstGrepSyntax}},
-		{name: "scip activates both scip rows", cfg: config.Config{
-			Analyzers: config.AnalyzersConfig{Scip: timedOn},
-		}, want: []string{toolScip, toolScipSymbols}},
-		{name: "clones activate jscpd", cfg: config.Config{
-			Analyzers: config.AnalyzersConfig{Clones: timedOn},
-		}, want: []string{toolJscpd}},
-		{name: "cargo modules activate cargo-modules", cfg: config.Config{
-			Analyzers: config.AnalyzersConfig{CargoModules: on},
-		}, want: []string{toolCargoModules}},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := names(AnalyzerFamilies(AnalyzerSettings(tc.cfg)))
-			for _, want := range tc.want {
-				if !slices.Contains(got, want) {
-					t.Errorf("family %q missing from %v", want, got)
-				}
-			}
-			if len(got) != len(primaries)+len(tc.want) {
-				t.Errorf("families = %v, want the primaries plus %v", got, tc.want)
-			}
-		})
-	}
-}
-
-// testGitDeltaBaseFindingIDs pins the base projection: every lifecycle label
-// except `fixed` is observed evidence, and the finding's kind is irrelevant —
-// a base advisory still matches a head task promoted to gate kind, because the
-// stable ID is all that crosses over.
 func testGitDeltaBaseFindingIDs(t *testing.T) {
 	t.Parallel()
 	got := BaseFindingIDs([]finding.Finding{

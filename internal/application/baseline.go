@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -74,11 +75,11 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 	doc := ProjectReport(out.Diagnostic, out.Score, out.BaseScore, out.HardGate)
 	snapshot := BaselineSnapshot{Metrics: documentMetrics(doc)}
 	for _, f := range doc.Findings {
-		if f.Status == report.FindingStatusFixed || f.RuleID == "bc/coupling_gate" {
+		if f.Status == report.FindingStatusFixed || f.RuleID == finding.RuleIDCouplingGate {
 			continue
 		}
 		kind := f.Kind
-		if f.RuleID == "bc/imbalanced_coupling" {
+		if f.RuleID == finding.RuleIDBCImbalanced {
 			kind = report.FindingKindAdvisory
 		}
 		snapshot.Accepted = append(snapshot.Accepted, BaselineFinding{Fingerprint: f.ID, RuleID: f.RuleID, Kind: kind, Severity: f.Severity})

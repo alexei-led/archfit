@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/metrics"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/rules"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
@@ -22,9 +21,9 @@ import (
 // relationship contract; adapters and graph internals stay outside this package.
 type Input struct {
 	Relationships      relationship.Set
-	Evidence           rules.Evidence
-	Rules              []rules.Rule
-	Metrics            []metrics.Metric
+	Evidence           RuleEvidence
+	Rules              Ruleset
+	Metrics            Metricset
 	Signals            signal.RunSignals
 	Symbols            symbol.Graph
 	Coverage           []result.Coverage
@@ -38,6 +37,9 @@ type Input struct {
 	StaleLabelKeys     []string
 	IncludeAdvisories  bool
 	Delta              bool
+	// CaptureRelationships records the classified relationship set the metric
+	// pass observed, for the enrichment use case. It never changes assessment.
+	CaptureRelationships bool
 }
 
 // Result contains gate findings, metric values, and the verdict inputs produced
@@ -50,22 +52,30 @@ type Result struct {
 	Warnings     int
 	WaiversUsed  int
 	Delta        *result.DeltaReport
+	// Captured is the relationship set the metric pass observed. It is only
+	// populated when Input.CaptureRelationships is set.
+	Captured relationship.Set
 }
 
 // Evaluate applies rules, statuses, and metrics in their domain order.
 func Evaluate(in Input) Result {
-	raw := make([]finding.Finding, 0, len(in.Rules))
-	for _, rule := range in.Rules {
-		raw = append(raw, rule.Check(in.Relationships, in.Evidence)...)
+	raw := make([]finding.Finding, 0, in.Rules.Len())
+	for _, rule := range in.Rules.rules {
+		raw = append(raw, rule.Check(in.Relationships, rules.Evidence{PatternMatches: in.Evidence.PatternMatches, SyntaxFacts: in.Evidence.SyntaxFacts})...)
 	}
 	tagged := status.Assign(raw, in.Accepted, in.Policy.Waivers, in.Now, finding.KindGate)
 	collected := signal.CollectedSignals{
 		Common: signal.CommonInput{Relationships: in.Relationships, Findings: tagged, Baseline: in.Baseline, Coverage: signal.NewCoverageView(in.Coverage), ChangedFiles: in.ChangedFiles, Symbols: signal.SymbolSignals{Graph: in.Symbols}},
 		Symbol: signal.SymbolSignals{Graph: in.Symbols}, Size: in.Signals.Size, Duplication: in.Signals.Duplication,
 	}
-	calculated := make([]result.MetricResult, 0, len(in.Metrics))
-	for _, metric := range in.Metrics {
+	calculated := make([]result.MetricResult, 0, in.Metrics.Len())
+	for _, metric := range in.Metrics.metrics {
 		calculated = append(calculated, metric.Calculate(collected))
+	}
+	var captured relationship.Set
+	if in.CaptureRelationships {
+		captured = collected.Common.Relationships
+		calculated = append(calculated, capturedMetricResult())
 	}
 	gates := make([]finding.Finding, 0, len(tagged))
 	advisories := 0
@@ -115,7 +125,7 @@ func Evaluate(in Input) Result {
 			delta = &result.DeltaReport{New: buckets.New, Existing: buckets.Existing, Resolved: buckets.Resolved, SeverityChanged: buckets.SeverityChanged, TouchedByDelta: buckets.TouchedByDelta}
 		}
 	}
-	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, calculated, in.Gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed, Delta: delta}
+	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, calculated, in.Gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed, Delta: delta, Captured: captured}
 }
 
 func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[string]policy.MetricConfig, advisories int) result.Verdict {

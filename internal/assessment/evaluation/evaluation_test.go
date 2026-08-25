@@ -174,7 +174,7 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got := evaluation.Evaluate(evaluation.Input{
-				Rules:    []rules.Rule{stubRule{id: ruleForbidden, findings: test.findings}},
+				Rules:    evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: test.findings}),
 				Accepted: test.accepted,
 				Policy:   policy.AssessmentPolicy{Waivers: test.waivers},
 				Now:      evaluatedAt,
@@ -263,7 +263,7 @@ func TestEvaluateMetricGating(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got := evaluation.Evaluate(evaluation.Input{
-				Metrics:  []metrics.Metric{stubMetric{res: test.metric}},
+				Metrics:  evaluation.MetricsetOf(stubMetric{res: test.metric}),
 				Gates:    map[string]policy.MetricConfig{metricName: test.gate},
 				Accepted: acceptedSet{},
 				Now:      evaluatedAt,
@@ -280,8 +280,8 @@ func TestEvaluateMetricGating(t *testing.T) {
 
 func TestEvaluateGateFindingOutranksMetricWarn(t *testing.T) {
 	got := evaluation.Evaluate(evaluation.Input{
-		Rules:    []rules.Rule{stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", pathA, pathB, finding.SeverityHigh)}}},
-		Metrics:  []metrics.Metric{stubMetric{res: metricValue(new(float64(-1)), result.DirectionHigherIsBetter)}},
+		Rules:    evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", pathA, pathB, finding.SeverityHigh)}}),
+		Metrics:  evaluation.MetricsetOf(stubMetric{res: metricValue(new(float64(-1)), result.DirectionHigherIsBetter)}),
 		Gates:    map[string]policy.MetricConfig{metricName: {Gate: string(policy.GateWarn)}},
 		Accepted: acceptedSet{},
 		Now:      evaluatedAt,
@@ -337,7 +337,7 @@ func TestEvaluateBaselinedAdvisoryDrivesWarnVerdict(t *testing.T) {
 		Edge:     finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Path: pathB}, Kind: kindImports},
 	}
 	got := evaluation.Evaluate(evaluation.Input{
-		Rules:    []rules.Rule{stubRule{id: ruleBC, findings: []finding.Finding{adv}}},
+		Rules:    evaluation.RulesetOf(stubRule{id: ruleBC, findings: []finding.Finding{adv}}),
 		Accepted: acceptedSet{},
 		Now:      evaluatedAt,
 	})
@@ -507,7 +507,7 @@ func TestEvaluateResolvesGateEvidenceFromRelationships(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			got := evaluation.Evaluate(evaluation.Input{
 				Relationships: relationship.Set{Edges: test.edges},
-				Rules:         []rules.Rule{stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", pathA, pathB, finding.SeverityCritical)}}},
+				Rules:         evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", pathA, pathB, finding.SeverityCritical)}}),
 				Accepted:      acceptedSet{},
 				Now:           evaluatedAt,
 			})
@@ -542,7 +542,7 @@ func TestEvaluateDeltaBuckets(t *testing.T) {
 
 	t.Run("delta off returns no report", func(t *testing.T) {
 		got := evaluation.Evaluate(evaluation.Input{
-			Rules: []rules.Rule{stubRule{id: ruleForbidden, findings: findings}}, Accepted: accepted, Now: evaluatedAt,
+			Rules: evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: findings}), Accepted: accepted, Now: evaluatedAt,
 		})
 		if got.Delta != nil {
 			t.Fatalf("Delta = %+v, want nil when delta mode is off", got.Delta)
@@ -551,7 +551,7 @@ func TestEvaluateDeltaBuckets(t *testing.T) {
 
 	t.Run("delta on buckets by lifecycle and touched files", func(t *testing.T) {
 		got := evaluation.Evaluate(evaluation.Input{
-			Rules: []rules.Rule{stubRule{id: ruleForbidden, findings: findings}}, Accepted: accepted,
+			Rules: evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: findings}), Accepted: accepted,
 			ChangedFiles: []string{"e/e.go"}, Delta: true, Now: evaluatedAt,
 		})
 		if got.Delta == nil {

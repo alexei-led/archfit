@@ -32,7 +32,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/model/evidence"
@@ -99,12 +99,12 @@ type BaseEvidence struct {
 // run context: its config source, bundle directory, and evaluation time carry
 // over unchanged; only the scan root is swapped for the base worktree. cfg is
 // the caller's EFFECTIVE head config — the base side never reparses the file.
-func ScoreBaseRef(ctx context.Context, deps *Deps, baseRef string, head RunContext, opts RunOptions, snapshot policy.PolicySnapshot, cfg config.Config, advisory bool) (score.Scorecard, BaseEvidence, error) {
+func ScoreBaseRef(ctx context.Context, deps *Deps, baseRef string, head RunContext, opts RunOptions, snapshot policy.PolicySnapshot, cfg config.Config, advisory bool) (evaluation.Finalized, BaseEvidence, error) {
 	// A leading-dash ref would be parsed as a flag by rev-parse/worktree-add;
 	// `git worktree add --detach <dir> --force` silently checks out HEAD and the
 	// delta becomes HEAD-vs-HEAD. Reject rather than pass through.
 	if strings.HasPrefix(baseRef, "-") {
-		return score.Scorecard{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: invalid --base ref %q", baseRef)}
+		return evaluation.Finalized{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: invalid --base ref %q", baseRef)}
 	}
 	// Resolve the git root. Use --root when given (absolutized); otherwise the
 	// config bundle directory — both are inside the repo and yield the same gitRoot.
@@ -114,7 +114,7 @@ func ScoreBaseRef(ctx context.Context, deps *Deps, baseRef string, head RunConte
 	}
 	gitRoot, err := git.RepoRoot(ctx, gitAnchor, deps.Runner)
 	if err != nil {
-		return score.Scorecard{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: --base requires a git repository: %v", err)}
+		return evaluation.Finalized{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: --base requires a git repository: %v", err)}
 	}
 
 	// HEAD-side analysis boundary: --root when given, else the whole repo.
@@ -135,7 +135,7 @@ func ScoreBaseRef(ctx context.Context, deps *Deps, baseRef string, head RunConte
 
 	tmpBase, releaseWorktreeParent, err := BaseWorktreeParent(ctx, deps, gitRoot, baseRef)
 	if err != nil {
-		return score.Scorecard{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: create temp dir: %v", err)}
+		return evaluation.Finalized{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: create temp dir: %v", err)}
 	}
 	wtDir := filepath.Join(tmpBase, "wt")
 	defer func() {
@@ -145,20 +145,20 @@ func ScoreBaseRef(ctx context.Context, deps *Deps, baseRef string, head RunConte
 	}()
 
 	if aerr := AddWorktree(ctx, deps.Runner, gitRoot, wtDir, baseRef); aerr != nil {
-		return score.Scorecard{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: cannot create worktree for ref %q: %v", baseRef, aerr)}
+		return evaluation.Finalized{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: cannot create worktree for ref %q: %v", baseRef, aerr)}
 	}
 	wtCanon, err := filepath.EvalSymlinks(wtDir)
 	if err != nil {
-		return score.Scorecard{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: eval worktree symlinks: %v", err)}
+		return evaluation.Finalized{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: eval worktree symlinks: %v", err)}
 	}
 	baseRoot, err := SubtreeInWorktree(gitRoot, headScanRoot, wtCanon)
 	if err != nil {
-		return score.Scorecard{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: map subtree into worktree: %v", err)}
+		return evaluation.Finalized{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: map subtree into worktree: %v", err)}
 	}
 
 	sc, ev, err := runScoreSide(ctx, deps, opts, snapshot, cfg, baseRunContext(head, baseRoot), advisory)
 	if err != nil {
-		return score.Scorecard{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: score base (%s): %v", baseRef, err)}
+		return evaluation.Finalized{}, BaseEvidence{}, &ExecutionError{Message: fmt.Sprintf("error: score base (%s): %v", baseRef, err)}
 	}
 	return sc, ev, nil
 }
@@ -171,7 +171,7 @@ func ScoreBaseRef(ctx context.Context, deps *Deps, baseRef string, head RunConte
 // The Diagnostic is projected to BaseEvidence here and never returned: that is
 // the structural guarantee that no base path, location, or validation command
 // reaches head output.
-func runScoreSide(ctx context.Context, deps *Deps, opts RunOptions, snapshot policy.PolicySnapshot, cfg config.Config, rc RunContext, advisory bool) (score.Scorecard, BaseEvidence, error) {
+func runScoreSide(ctx context.Context, deps *Deps, opts RunOptions, snapshot policy.PolicySnapshot, cfg config.Config, rc RunContext, advisory bool) (evaluation.Finalized, BaseEvidence, error) {
 	// Silence phase progress for the base sub-scan: the head run already announced
 	// "Comparing against base", and re-emitting discover/facts/analyze through the
 	// same reporter overflows the head phase counter (e.g. [7/6], F6). Label its
@@ -184,19 +184,22 @@ func runScoreSide(ctx context.Context, deps *Deps, opts RunOptions, snapshot pol
 	req := application.AnalysisRequest{ConfigSource: rc.ConfigSource, BundleDir: rc.BundleDir, Root: rc.ScanRoot, EvaluatedAt: rc.EvaluatedAt, EmptyBaseline: true, ReportOnly: true, NoAdvisories: !advisory}
 	acquiredSnapshot, err := analyzer.Acquire(ctx, req)
 	if err != nil {
-		return score.Scorecard{}, BaseEvidence{}, err
+		return evaluation.Finalized{}, BaseEvidence{}, err
 	}
 	relationships, err := analyzer.Relate(ctx, acquiredSnapshot)
 	if err != nil {
-		return score.Scorecard{}, BaseEvidence{}, err
+		return evaluation.Finalized{}, BaseEvidence{}, err
 	}
 	out, err := analyzer.Assess(ctx, req, acquiredSnapshot.Facts.ForAssessment(), acquiredSnapshot.Context, relationships)
 	if err != nil {
-		return score.Scorecard{}, BaseEvidence{}, err
+		return evaluation.Finalized{}, BaseEvidence{}, err
 	}
-	diag, sc := out.Diagnostic, out.Score
-	return sc, BaseEvidence{
-		FindingIDs:   baseFindingIDs(diag.Findings),
+	// Only the scorecard crosses back: the base Diagnostic is projected to
+	// BaseEvidence here and dropped, so no base path, location, or validation
+	// command rooted in the temporary worktree can reach head output.
+	diag := out.Diagnostic
+	return evaluation.Finalized{Score: out.Score}, BaseEvidence{
+		FindingIDs:   evaluation.BaseFindingIDs(diag.Findings),
 		Coverage:     diag.ToolCoverage,
 		CoverageGaps: diag.CoverageGaps,
 		ConfigHash:   diag.ConfigHash,

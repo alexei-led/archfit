@@ -7,23 +7,22 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/metrics/modularity"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/testutil/metricstest"
 )
 
 // Chain A -> B -> C (A imports B, B imports C). Reverse-deps: C has {A,B}=2,
 // B has {A}=1, A has 0.
 func TestBlastRadius_TransitiveReverseDeps(t *testing.T) {
-	a := graph.Node{Kind: graph.NodeKindModule, Path: "pkg.a"}
-	b := graph.Node{Kind: graph.NodeKindModule, Path: "pkg.b"}
-	c := graph.Node{Kind: graph.NodeKindModule, Path: "pkg.c"}
-	edges := []graph.Edge{
-		{From: a.ID(), To: b.ID(), Kind: graph.EdgeKindImports},
-		{From: b.ID(), To: c.ID(), Kind: graph.EdgeKindImports},
+	a := metricstest.Node{Kind: metricstest.NodeKindModule, Path: "pkg.a"}
+	b := metricstest.Node{Kind: metricstest.NodeKindModule, Path: "pkg.b"}
+	c := metricstest.Node{Kind: metricstest.NodeKindModule, Path: "pkg.c"}
+	edges := []metricstest.Edge{
+		{From: a.ID(), To: b.ID(), Kind: metricstest.EdgeKindImports},
+		{From: b.ID(), To: c.ID(), Kind: metricstest.EdgeKindImports},
 	}
-	g := metricstest.BuildGraph([]graph.Node{a, b, c}, edges)
+	g := metricstest.NewFixture([]metricstest.Node{a, b, c}, edges)
 
-	res := modularity.BlastRadiusMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.BuildRelationshipsFromGraph(g, nil)})
+	res := modularity.BlastRadiusMetric{}.Calculate(signal.CommonInput{Relationships: metricstest.Classify(g, nil)})
 	if res.Name != "blast_radius" {
 		t.Fatalf("name = %q", res.Name)
 	}

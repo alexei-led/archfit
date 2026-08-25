@@ -4,19 +4,21 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/relationship"
+	relationshipanalysis "github.com/alexei-led/archfit/internal/relationship/analysis"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/relationship/facts"
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
-func projectAssessment(in StageInput, acquired acquiredStage, relationships relationshipStage) (result.Result, error) {
+func projectAssessment(in StageInput, acquired acquiredStage, relationships relationshipStage) (result.Result, relationship.Set) {
 	ex := acquired.acquired
 	ruleEv := acquired.ruleEvidence
 	syntaxFacts := ruleEv.evidence.SyntaxFacts
-	classifyCfg := AugmentClassifyConfig(ex.Graph, classify.ConfigFrom(in.Policy.Relationship))
+	classifyCfg := relationshipanalysis.AugmentConfig(ex.Graph, classify.ConfigFrom(in.Policy.Relationship))
 	classified := relationships.classified
-	runtimeAsync := runtimeModules(classified.RuntimeSignals)
-	runtimeAsyncEdges := runtimeEdges(classified.RuntimeRelations)
+	runtimeAsync := runtimeModules(classified.Evidence.RuntimeSignals)
+	runtimeAsyncEdges := runtimeEdges(classified.Evidence.RuntimeRelations)
 
 	// --- Stages 4–6: assessment ---
 	// Rule evaluation, lifecycle status, and metric calculation are owned by the
@@ -36,10 +38,12 @@ func projectAssessment(in StageInput, acquired acquiredStage, relationships rela
 		Policy:             in.Policy.Assessment,
 		Gates:              in.Policy.Gates.Metrics,
 		Now:                in.Now,
-		AdvisoryCandidates: classified.AdvisoryCandidates,
-		StaleLabelKeys:     classified.StaleLabelKeys,
+		AdvisoryCandidates: classified.Assessment.AdvisoryCandidates,
+		StaleLabelKeys:     classified.Assessment.StaleLabelKeys,
 		IncludeAdvisories:  in.Mode.Advisory,
 		Delta:              in.Scope.Mode == scope.ModeDelta,
+
+		CaptureRelationships: in.CaptureRelationships,
 	})
 	resolvedFindings := assessed.Findings
 	metricResults := assessed.Metrics
@@ -69,22 +73,22 @@ func projectAssessment(in StageInput, acquired acquiredStage, relationships rela
 	// full-repo dump. Report-only; never enters the verdict. Nil outside delta mode.
 	delta := assessed.Delta
 
-	classifiedEdges := projectRelationshipSummary(classified.ClassifiedEdges)
+	classifiedEdges := projectRelationshipSummary(classified.Evidence.ClassifiedEdges)
 	if classifiedEdges != nil {
-		classifiedEdges.LLMApproved = classified.LLMApprovedCount
+		classifiedEdges.LLMApproved = classified.Evidence.LLMApprovedCount
 	}
-	connascenceReport := classified.Connascence
+	connascenceReport := classified.Evidence.Connascence
 	if connascenceReport == nil {
 		connascenceReport = &modevidence.ConnascenceReport{}
 	}
 	dynamicConnascenceSignals := buildDynamicConnascenceSignals(dynamicImports, runtimeAsyncEdges, connascenceReport.Unmeasured)
-	distanceConfigCandidates := append(append([]modevidence.DistanceConfigCandidate(nil), classified.DistanceConfigCandidates...), BuildDistanceConfigCandidates(dynamicImports, runtimeAsyncEdges, dynamicConnascenceSignals)...)
+	distanceConfigCandidates := append(append([]modevidence.DistanceConfigCandidate(nil), classified.Evidence.DistanceConfigCandidates...), BuildDistanceConfigCandidates(dynamicImports, runtimeAsyncEdges, dynamicConnascenceSignals)...)
 	sortDistanceConfigCandidates(distanceConfigCandidates)
-	if classified.VolatilityProvenance != nil && classifiedEdges != nil {
-		vp := classified.VolatilityProvenance
+	if classified.Evidence.VolatilityProvenance != nil && classifiedEdges != nil {
+		vp := classified.Evidence.VolatilityProvenance
 		classifiedEdges.VolatilityProvenance = &result.VolatilityProvenance{Declared: vp.Declared, Inherited: vp.Inherited, Cascade: vp.Cascade, Undeclared: vp.Undeclared}
 	}
-	localCoupling := classified.LocalCoupling
+	localCoupling := classified.Evidence.LocalCoupling
 
 	d := result.Result{
 		SchemaVersion:             result.SchemaVersion,
@@ -118,5 +122,5 @@ func projectAssessment(in StageInput, acquired acquiredStage, relationships rela
 		},
 	}
 
-	return d, nil
+	return d, assessed.Captured
 }

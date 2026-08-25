@@ -8,10 +8,20 @@ import (
 	"testing"
 )
 
+// TestSnapshotContractHasNoAssessmentPolicyOrReportImports pins the neutral
+// evidence contract: it records what the tools observed and never reaches into
+// the packages that judge, configure, or render it. Every production file in
+// the package is checked, so a new contract file cannot escape the rule.
 func TestSnapshotContractHasNoAssessmentPolicyOrReportImports(t *testing.T) {
-	for _, name := range []string{"snapshot.go", "signals.go"} {
-		path := filepath.Join(".", name)
-		tree, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		tree, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly)
 		if err != nil {
 			t.Fatal(err)
 		}

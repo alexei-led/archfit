@@ -9,8 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/assessment/metrics"
-	"github.com/alexei-led/archfit/internal/assessment/rules"
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
@@ -42,7 +41,7 @@ func goldenFixtureRoot(t *testing.T) string {
 // goldenConfig builds a ClassifyConfig, rules slice, and metrics slice that
 // match the testdata/golang fixture (two modules a and b, forbidden dependency
 // from a into b's internal package).
-func goldenConfig() (classify.Config, []rules.Rule, []metrics.Metric) {
+func goldenConfig() (classify.Config, evaluation.Ruleset, evaluation.Metricset) {
 	modules := map[string]policy.ModuleDef{
 		"a": {
 			Paths:    []string{globModuleA},
@@ -71,11 +70,11 @@ func goldenConfig() (classify.Config, []rules.Rule, []metrics.Metric) {
 	}
 
 	classifyCfg := cfg.ForClassify()
-	rs, err := rules.New(cfg.ForRules())
+	rs, err := evaluation.NewRuleset(cfg.ForRules())
 	if err != nil {
 		panic("goldenConfig: " + err.Error())
 	}
-	ms := metrics.New(cfg.Metrics)
+	ms := evaluation.NewMetricset(cfg.Metrics)
 	return classifyCfg, rs, ms
 }
 

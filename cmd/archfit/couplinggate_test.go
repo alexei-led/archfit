@@ -10,12 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/baseline"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -59,23 +57,6 @@ func writeCoupledRepo(t *testing.T, cfgBody string) string {
 	return filepath.Join(dir, defaultConfigPath)
 }
 
-// TestCouplingGateView verifies the coupling.gate projection: absent block =
-// disabled view (byte-identical pre-gate behavior), present block carries the
-// knobs through with Enabled set.
-func TestCouplingGateView(t *testing.T) {
-	t.Parallel()
-	if g := apppipeline.PolicyCouplingGateView(apppipeline.PolicySnapshot(config.Config{})); g.Enabled || g.MinBand != "" || g.MaxDrop != nil {
-		t.Fatalf("nil gate block must project to a zero view, got %+v", g)
-	}
-	cfg := config.Config{Coupling: config.CouplingConfig{
-		Gate: &config.CouplingGateDef{MinBand: "mixed", MaxDrop: new(5)},
-	}}
-	g := apppipeline.PolicyCouplingGateView(apppipeline.PolicySnapshot(cfg))
-	if !g.Enabled || g.MinBand != score.BandMixed || g.MaxDrop == nil || *g.MaxDrop != 5 {
-		t.Fatalf("gate view = %+v, want Enabled min_band=mixed max_drop=5", g)
-	}
-}
-
 // TestRun_Analyze_CouplingGate_MinBandTrips verifies the V2 fix end to end: a
 // measured coupling_balance band below coupling.gate.min_band fails the gate,
 // and the triggering Balanced-Coupling findings surface as gate findings with
@@ -104,13 +85,13 @@ func TestRun_Analyze_CouplingGate_MinBandTrips(t *testing.T) {
 	}
 	var bcTask *result.AgentTask
 	for i := range diag.AgentTasks {
-		if diag.AgentTasks[i].RuleID == apppipeline.RuleIDBCImbalanced {
+		if diag.AgentTasks[i].RuleID == ruleIDBCImbalanced {
 			bcTask = &diag.AgentTasks[i]
 			break
 		}
 	}
 	if bcTask == nil {
-		t.Fatalf("agent_tasks carries no %s task: %+v", apppipeline.RuleIDBCImbalanced, diag.AgentTasks)
+		t.Fatalf("agent_tasks carries no %s task: %+v", ruleIDBCImbalanced, diag.AgentTasks)
 	}
 	if len(bcTask.Files) == 0 {
 		t.Errorf("promoted coupling task has no files: %+v", *bcTask)
@@ -156,7 +137,7 @@ func TestRun_Analyze_CouplingGate_OffByDefault(t *testing.T) {
 		t.Fatalf("unmarshal JSON output: %v", err)
 	}
 	for _, task := range diag.AgentTasks {
-		if task.RuleID == apppipeline.RuleIDBCImbalanced {
+		if task.RuleID == ruleIDBCImbalanced {
 			t.Fatalf("coupling advisory produced an agent task without a gate: %+v", task)
 		}
 	}
@@ -301,92 +282,6 @@ func TestRun_Baseline_WritesScoreSnapshot(t *testing.T) {
 	}
 }
 
-// TestApplyCouplingGate_PromotionScope pins the promotion filter: a tripped
-// gate re-kinds only ACTIVE Balanced-Coupling advisories — baselined BC edges
-// stay triaged as advisories, non-BC findings are untouched — and the summary
-// counters move with the promoted findings.
-func TestApplyCouplingGate_PromotionScope(t *testing.T) {
-	t.Parallel()
-	newDiag := func() result.Diagnostic {
-		return result.Diagnostic{
-			Verdict: result.VerdictPass,
-			Findings: []finding.Finding{
-				{ID: "bc-active", RuleID: apppipeline.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusNew},
-				{ID: "bc-baselined", RuleID: apppipeline.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusBaseline},
-				{ID: "rule-gate", RuleID: "no-cycles", Kind: finding.KindGate, Status: finding.StatusNew},
-			},
-			Summary: result.Summary{GateFindings: 1, Warnings: 2},
-		}
-	}
-	card := score.Scorecard{Overall: 25, OverallBand: score.BandPoor}
-
-	t.Run("tripped gate promotes only active BC advisories", func(t *testing.T) {
-		t.Parallel()
-		diag := newDiag()
-		apppipeline.ApplyCouplingGate(&diag, card, score.CouplingGate{Enabled: true, MinBand: score.BandMixed}, baseline.Baseline{})
-		if diag.Verdict != result.VerdictFail {
-			t.Errorf("verdict = %q, want fail", diag.Verdict)
-		}
-		if got := diag.Findings[0].Kind; got != finding.KindGate {
-			t.Errorf("active BC advisory kind = %q, want gate", got)
-		}
-		if got := diag.Findings[1].Kind; got != finding.KindAdvisory {
-			t.Errorf("baselined BC advisory kind = %q, want advisory (triaged edges must not be promoted)", got)
-		}
-		if got := diag.Findings[2].Kind; got != finding.KindGate {
-			t.Errorf("non-BC gate finding kind = %q, want gate (untouched)", got)
-		}
-		if diag.Summary.GateFindings != 2 || diag.Summary.Warnings != 1 {
-			t.Errorf("summary after promotion = %+v, want GateFindings=2 Warnings=1", diag.Summary)
-		}
-	})
-
-	t.Run("disabled gate is a no-op", func(t *testing.T) {
-		t.Parallel()
-		diag := newDiag()
-		apppipeline.ApplyCouplingGate(&diag, card, score.CouplingGate{}, baseline.Baseline{})
-		if diag.Verdict != result.VerdictPass ||
-			diag.Findings[0].Kind != finding.KindAdvisory ||
-			diag.Summary != (result.Summary{GateFindings: 1, Warnings: 2}) {
-			t.Errorf("disabled gate mutated the diagnostic: verdict=%q findings[0].Kind=%q summary=%+v",
-				diag.Verdict, diag.Findings[0].Kind, diag.Summary)
-		}
-	})
-
-	t.Run("tripped gate with no promotable advisory synthesizes a gate finding", func(t *testing.T) {
-		t.Parallel()
-		// Advisory output off (or coupling.min_severity filtered everything):
-		// the score still trips — it is computed from ClassifiedEdges, not from
-		// the advisory findings — so the fail verdict must carry its own evidence.
-		diag := result.Diagnostic{
-			Verdict: result.VerdictPass,
-			Findings: []finding.Finding{
-				{ID: "bc-baselined", RuleID: apppipeline.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusBaseline},
-			},
-		}
-		apppipeline.ApplyCouplingGate(&diag, card, score.CouplingGate{Enabled: true, MinBand: score.BandMixed}, baseline.Baseline{})
-		if diag.Verdict != result.VerdictFail {
-			t.Errorf("verdict = %q, want fail", diag.Verdict)
-		}
-		if len(diag.Findings) != 2 {
-			t.Fatalf("findings = %d, want 2 (baselined advisory + synthetic gate finding)", len(diag.Findings))
-		}
-		if got := diag.Findings[0].Kind; got != finding.KindAdvisory {
-			t.Errorf("baselined BC advisory kind = %q, want advisory", got)
-		}
-		syn := diag.Findings[1]
-		if syn.RuleID != apppipeline.RuleIDBCCouplingGate || syn.Kind != finding.KindGate || syn.Status != finding.StatusNew {
-			t.Errorf("synthetic finding = %+v, want rule %s kind gate status new", syn, apppipeline.RuleIDBCCouplingGate)
-		}
-		if syn.Why == "" {
-			t.Error("synthetic finding carries no trip reason")
-		}
-		if diag.Summary.GateFindings != 1 {
-			t.Errorf("summary.GateFindings = %d, want 1", diag.Summary.GateFindings)
-		}
-	})
-}
-
 // TestRun_Analyze_CouplingGate_TripWithoutAdvisories verifies that a tripped
 // coupling gate stays self-describing when no BC advisory is available to
 // promote (--advisory=false; same shape as coupling.min_severity filtering
@@ -412,13 +307,13 @@ func TestRun_Analyze_CouplingGate_TripWithoutAdvisories(t *testing.T) {
 	}
 	var syn *finding.Finding
 	for i := range diag.Findings {
-		if diag.Findings[i].RuleID == apppipeline.RuleIDBCCouplingGate {
+		if diag.Findings[i].RuleID == ruleIDCouplingGate {
 			syn = &diag.Findings[i]
 			break
 		}
 	}
 	if syn == nil {
-		t.Fatalf("tripped gate left no %s finding: %+v", apppipeline.RuleIDBCCouplingGate, diag.Findings)
+		t.Fatalf("tripped gate left no %s finding: %+v", ruleIDCouplingGate, diag.Findings)
 	}
 	if syn.Kind != finding.KindGate || syn.Why == "" {
 		t.Errorf("synthetic finding = %+v, want kind gate with a trip reason", *syn)
@@ -428,7 +323,7 @@ func TestRun_Analyze_CouplingGate_TripWithoutAdvisories(t *testing.T) {
 	}
 	found := false
 	for _, task := range diag.AgentTasks {
-		if task.RuleID == apppipeline.RuleIDBCCouplingGate {
+		if task.RuleID == ruleIDCouplingGate {
 			found = true
 			if task.Goal == "" {
 				t.Errorf("coupling-gate agent task has no goal: %+v", task)
@@ -436,7 +331,7 @@ func TestRun_Analyze_CouplingGate_TripWithoutAdvisories(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("agent_tasks carries no %s task: %+v", apppipeline.RuleIDBCCouplingGate, diag.AgentTasks)
+		t.Fatalf("agent_tasks carries no %s task: %+v", ruleIDCouplingGate, diag.AgentTasks)
 	}
 }
 
@@ -460,7 +355,7 @@ func TestRun_Baseline_KeepsNativeAdvisoryKind(t *testing.T) {
 	}
 	sawBC := false
 	for _, a := range b.Accepted {
-		if a.RuleID != apppipeline.RuleIDBCImbalanced {
+		if a.RuleID != ruleIDBCImbalanced {
 			continue
 		}
 		sawBC = true
@@ -492,8 +387,8 @@ func TestRun_Baseline_SkipsSyntheticCouplingGateFinding(t *testing.T) {
 	if err := json.Unmarshal(checkBuf.Bytes(), &diag); err != nil {
 		t.Fatalf("unmarshal check JSON: %v", err)
 	}
-	if !slices.ContainsFunc(diag.Findings, func(f finding.Finding) bool { return f.RuleID == apppipeline.RuleIDBCCouplingGate }) {
-		t.Fatalf("fixture regression: no %s finding to skip: %+v", apppipeline.RuleIDBCCouplingGate, diag.Findings)
+	if !slices.ContainsFunc(diag.Findings, func(f finding.Finding) bool { return f.RuleID == ruleIDCouplingGate }) {
+		t.Fatalf("fixture regression: no %s finding to skip: %+v", ruleIDCouplingGate, diag.Findings)
 	}
 
 	var buf bytes.Buffer
@@ -509,7 +404,7 @@ func TestRun_Baseline_SkipsSyntheticCouplingGateFinding(t *testing.T) {
 	// scanning for the rule ID) keeps the check from passing on an empty set.
 	if len(b.Accepted) != 0 {
 		t.Errorf("baseline persisted %d findings, want 0 (the %s trip finding is the only candidate and must be skipped): %+v",
-			len(b.Accepted), apppipeline.RuleIDBCCouplingGate, b.Accepted)
+			len(b.Accepted), ruleIDCouplingGate, b.Accepted)
 	}
 }
 
