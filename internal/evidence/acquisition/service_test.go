@@ -16,6 +16,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/evidence/acquisition"
 	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -159,4 +160,35 @@ func TestAcquireRequiresARunner(t *testing.T) {
 	if _, err := svc.Acquire(context.Background(), application.AnalysisRequest{}); err == nil {
 		t.Fatal("a nil runner was accepted")
 	}
+}
+
+// TestAcquireReadsPinnedLabelsFromTheRunBundle pins the compare invariant: a
+// candidate config outside the current bundle must still classify with the
+// current bundle's approved labels. Reading them next to the candidate file
+// instead would attribute a label difference to the candidate configuration.
+func TestAcquireReadsPinnedLabelsFromTheRunBundle(t *testing.T) {
+	t.Parallel()
+	bundle, elsewhere := t.TempDir(), t.TempDir()
+	loader := &recordingLabelLoader{}
+	svc := acquisitionService(t, bundle, &gitOnlyRunner{root: bundle}, &bytes.Buffer{})
+	// The service was built for a config living in `elsewhere` — the shape
+	// `config compare` produces for its candidate side.
+	svc.ConfigPath = filepath.Join(elsewhere, "candidate.yaml")
+	svc.Labels = loader
+
+	if _, err := svc.Acquire(context.Background(), application.AnalysisRequest{
+		ConfigSource: svc.ConfigPath, BundleDir: bundle, Root: bundle,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(bundle, ".archfit-labels.yaml"); loader.path != want {
+		t.Fatalf("labels loaded from %q, want the run bundle %q", loader.path, want)
+	}
+}
+
+type recordingLabelLoader struct{ path string }
+
+func (l *recordingLabelLoader) Load(path string) ([]labels.Label, error) {
+	l.path = path
+	return nil, nil
 }

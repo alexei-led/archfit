@@ -49,19 +49,14 @@ type Service struct {
 	Options RunOptions
 	Policy  policy.PolicySnapshot
 
-	Runner     toolrun.Runner
-	Labels     LabelLoader
-	LabelsPath string
-	Stderr     io.Writer
-	Progress   func(stage string)
+	Runner   toolrun.Runner
+	Labels   LabelLoader
+	Stderr   io.Writer
+	Progress func(stage string)
 	// WarnLabel prefixes every stderr warning. The base-tree sub-run sets it to
 	// "[base] " so a base-side degradation is never misread as a head regression.
 	WarnLabel string
 	Refresh   bool
-
-	// ResolvedRoot records the boundary the last Acquire resolved. It is
-	// reporting state for the composition root, never an input to a later stage.
-	ResolvedRoot string
 }
 
 var _ application.EvidenceStage = (*Service)(nil)
@@ -95,7 +90,6 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	if err != nil {
 		return application.Acquired{}, err
 	}
-	s.ResolvedRoot = resolved.Root
 
 	runPolicy := s.Policy.Clone()
 	store := factcache.NewStore(factsCacheDir(bundleDir))
@@ -243,16 +237,19 @@ func (s *Service) collectRuleEvidence(ctx context.Context, sc scope.Scope, p pol
 	return patternMatches, syntaxFacts, append(coverage, syntaxCoverage), nil
 }
 
+// loadLabels reads the pinned labels from the RUN's bundle directory, not from
+// the service's own config path. `config compare` measures two configs against
+// one bundle: both sides must classify with the same approved labels, or the
+// comparison would attribute a label difference to the candidate config.
 func (s *Service) loadLabels(bundleDir string) ([]labels.Label, error) {
 	if s == nil || s.Labels == nil {
 		return nil, nil
 	}
-	path := s.LabelsPath
-	if path == "" {
-		path = filepath.Join(bundleDir, ".archfit-labels.yaml")
-	}
-	return s.Labels.Load(path)
+	return s.Labels.Load(filepath.Join(bundleDir, labelsFileName))
 }
+
+// labelsFileName is the pinned-label file every bundle carries.
+const labelsFileName = ".archfit-labels.yaml"
 
 func (s *Service) stderr() io.Writer {
 	if s != nil && s.Stderr != nil {

@@ -20,8 +20,7 @@ func newEvidenceService(configPath, root string, cfg config.Config, deps *appDep
 		ConfigPath: configPath, Root: root,
 		Options: cfg.RunOptions(), Policy: cfg.PolicySnapshot(),
 		Runner: deps.Runner, Labels: labelsio.Loader{},
-		LabelsPath: filepath.Join(filepath.Dir(configPath), defaultLabelsPath),
-		Stderr:     deps.stderr(), Progress: deps.progress, WarnLabel: deps.warnLabel, Refresh: deps.refresh,
+		Stderr: deps.stderr(), Progress: deps.progress, WarnLabel: deps.warnLabel, Refresh: deps.refresh,
 	}
 }
 
