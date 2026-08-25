@@ -1,43 +1,43 @@
 package config
 
 import (
-	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/view"
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 // ToolMode is the public config lifecycle view of a tool enable state.
-type ToolMode = view.ToolMode
+type ToolMode = evidenceports.ToolMode
 
 // Tool enable modes.
 const (
-	ModeAuto = view.ModeAuto
-	ModeOn   = view.ModeOn
-	ModeOff  = view.ModeOff
+	ModeAuto = evidenceports.ModeAuto
+	ModeOn   = evidenceports.ModeOn
+	ModeOff  = evidenceports.ModeOff
 )
 
 // ModuleDef is the policy-facing architectural module definition.
-type ModuleDef = module.ModuleDef
+type ModuleDef = policy.ModuleDef
 
 // ModuleMap is the policy-facing module lookup contract.
-type ModuleMap = module.Map
+type ModuleMap = policy.ModuleMap
 
 // Module role values exposed through the policy contract.
 const (
-	RoleCompositionRoot = module.RoleCompositionRoot
-	RoleAdapter         = module.RoleAdapter
-	RoleCore            = module.RoleCore
-	RoleSharedModel     = module.RoleSharedModel
-	RoleGenerated       = module.RoleGenerated
-	RoleTest            = module.RoleTest
+	RoleCompositionRoot = policy.RoleCompositionRoot
+	RoleAdapter         = policy.RoleAdapter
+	RoleCore            = policy.RoleCore
+	RoleSharedModel     = policy.RoleSharedModel
+	RoleGenerated       = policy.RoleGenerated
+	RoleTest            = policy.RoleTest
 )
 
 // ModuleRootDirs returns the configured source roots for each module.
 func ModuleRootDirs(modules map[string]ModuleDef) map[string]string {
-	return module.RootDirs(modules)
+	return policy.ModuleRootDirs(modules)
 }
 
 // MetricsConfig holds settings for all metrics, keyed by metric name.
-type MetricsConfig map[string]view.MetricEntry
+type MetricsConfig map[string]policy.MetricEntry
 
 // ModuleReviewConfig configures staleness gating of the module declarations:
 // archfit warns (or fails) when a module's `reviewed_at` is older than
@@ -57,7 +57,7 @@ type CouplingConfig struct {
 	// DuplicatedKnowledge controls clone-only duplicated knowledge (cross-module
 	// clone pairs with no import edge). "score" (default) includes those pairs in
 	// coupling_balance; "advisory" preserves the v4 report-only behavior.
-	DuplicatedKnowledge view.DuplicatedKnowledgePolicy `yaml:"duplicated_knowledge,omitempty"`
+	DuplicatedKnowledge policy.DuplicatedKnowledgePolicy `yaml:"duplicated_knowledge,omitempty"`
 	// VolatilityCascade enables the book Ch9 propagation pass: a module strongly
 	// coupled to a high-effective-volatility module inherits raised effective
 	// volatility. The pass runs to a deterministic fixpoint and never lowers values.
@@ -92,3 +92,23 @@ type OutputsConfig struct {
 // ---------------------------------------------------------------------------
 // View types — narrow projections of Config passed to each pipeline stage.
 // ---------------------------------------------------------------------------
+
+// FileClassDef holds optional user-supplied patterns for source-file
+// classification. Auto-detection (generated-header sniff, naming conventions,
+// language test patterns) runs first; these fields extend or fine-tune it for
+// custom mock frameworks and project-specific conventions.
+type FileClassDef struct {
+	// GeneratedGlobs are glob patterns (matched against the repo-relative
+	// slash path) that classify a file as Generated. Supports doublestar (`**`)
+	// semantics (github.com/bmatcuk/doublestar); `**` matches across path
+	// separators. Example: ["**/generated/**", "*.pb.go"]
+	GeneratedGlobs []string `yaml:"generated_globs,omitempty"`
+	// TestGlobs are glob patterns that classify a file as Test.
+	// Example: ["*_helpers_test.go", "testutil/**"]
+	TestGlobs []string `yaml:"test_globs,omitempty"`
+	// MockFrameworks contains filename prefix/suffix patterns (matched against
+	// the base filename only) that identify mock files as Generated. Used for
+	// custom mock code-generators not covered by built-in naming conventions.
+	// Example: ["fake_", "_double"]
+	MockFrameworks []string `yaml:"mock_frameworks,omitempty"`
+}

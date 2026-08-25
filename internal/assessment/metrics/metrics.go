@@ -5,7 +5,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/metrics/modularity"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/view"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 // Metric is the uniform interface the engine dispatches on: compute a result
@@ -50,7 +50,7 @@ func adapt[In any](c Calculator[In], project func(signal.CollectedSignals) In) M
 // New returns all metrics in a fixed order — the order the engine reports them,
 // which golden output depends on. Each metric is adapted from its typed
 // Calculator to the uniform Metric via its family projection.
-func New(metricsCfg map[string]view.MetricEntry) []Metric {
+func New(metricsCfg map[string]policy.MetricEntry) []Metric {
 	all := []Metric{
 		adapt(boundary.EncapsulationMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(boundary.UnbalancedEdgeMetric{}, signal.CollectedSignals.AsCommon),

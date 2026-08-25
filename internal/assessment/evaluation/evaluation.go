@@ -16,7 +16,6 @@ import (
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Input is the assessment stage boundary. Every value is an assessment or
@@ -33,7 +32,7 @@ type Input struct {
 	Baseline           result.MetricSnapshot
 	Accepted           status.AcceptedSet
 	Policy             policy.AssessmentPolicy
-	Gates              map[string]view.MetricConfig
+	Gates              map[string]policy.MetricConfig
 	Now                time.Time
 	AdvisoryCandidates []relationship.AdvisoryCandidate
 	StaleLabelKeys     []string
@@ -119,7 +118,7 @@ func Evaluate(in Input) Result {
 	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, calculated, in.Gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed, Delta: delta}
 }
 
-func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[string]view.MetricConfig, advisories int) result.Verdict {
+func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[string]policy.MetricConfig, advisories int) result.Verdict {
 	for _, f := range gates {
 		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
 			return result.VerdictFail
@@ -131,7 +130,7 @@ func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[s
 			continue
 		}
 		c := cfg[m.Name]
-		if c.Gate == string(view.GateOff) {
+		if c.Gate == string(policy.GateOff) {
 			continue
 		}
 		breached := *m.Delta < -metricMinDelta(c)
@@ -141,7 +140,7 @@ func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[s
 		if !breached {
 			continue
 		}
-		if c.Gate == string(view.GateWarn) {
+		if c.Gate == string(policy.GateWarn) {
 			verdict = result.VerdictWarn
 			continue
 		}
@@ -152,13 +151,13 @@ func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[s
 	}
 	return verdict
 }
-func metricMinDelta(c view.MetricConfig) float64 {
+func metricMinDelta(c policy.MetricConfig) float64 {
 	if c.MinDelta != nil {
 		return *c.MinDelta
 	}
 	return 0
 }
-func metricMaxNew(c view.MetricConfig) int {
+func metricMaxNew(c policy.MetricConfig) int {
 	if c.MaxNew != nil {
 		return *c.MaxNew
 	}

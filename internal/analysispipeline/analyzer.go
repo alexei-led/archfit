@@ -17,12 +17,10 @@ import (
 	"github.com/alexei-led/archfit/internal/evidence"
 	"github.com/alexei-led/archfit/internal/evidence/acquisition"
 	"github.com/alexei-led/archfit/internal/extract/registry"
-	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 	relationshipanalysis "github.com/alexei-led/archfit/internal/relationship/analysis"
-	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
 
 // Analyzer is the concrete implementation of the application stage ports. It
@@ -66,43 +64,53 @@ func (a *Analyzer) Prepare(context.Context) error {
 	return nil
 }
 
-// Acquire implements application.EvidenceStage. It returns neutral facts and
-// keeps no run result on the analyzer.
-func (a *Analyzer) Acquire(ctx context.Context, req application.AnalysisRequest) (evidence.Snapshot, error) {
+// Acquire implements application.EvidenceStage. It returns neutral facts plus
+// the run context they were acquired under, and keeps no run result on the
+// analyzer. Ownership and deploy-unit resolution happens exactly once, here in
+// preparation; the resolved PolicySnapshot rides the context to every later
+// stage.
+func (a *Analyzer) Acquire(ctx context.Context, req application.AnalysisRequest) (application.Acquired, error) {
 	if a == nil {
-		return evidence.Snapshot{}, errors.New("analysis runner is required")
+		return application.Acquired{}, errors.New("analysis runner is required")
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	run, err := a.prepareRun(ctx, req)
 	if err != nil {
-		return evidence.Snapshot{}, err
+		return application.Acquired{}, err
 	}
 	acquired, err := acquireStage(ctx, run.input)
 	if err != nil {
-		return evidence.Snapshot{}, err
+		return application.Acquired{}, err
 	}
 	coverage := append([]evidence.Coverage(nil), acquired.acquired.Coverages...)
 	if ex := registry.RustExtractor(run.input.Extractors); ex != nil {
 		coverage = append(coverage, ex.LastModuleGraphCoverage())
 	}
-	return evidence.Snapshot{
-		Graph: acquired.acquired.Graph, Coverage: coverage,
-		Symbols: acquired.acquired.SCIPSymbols, PatternMatches: acquired.ruleEvidence.evidence.PatternMatches,
-		SyntaxFacts: acquired.ruleEvidence.evidence.SyntaxFacts, FileLOC: run.input.Signals.Size.FileLOC,
-		FileClassIndex: run.input.Signals.Size.FileClassIndex, Clones: run.input.Signals.Duplication.Clusters,
-		DynamicImports: run.input.Signals.DynamicImports.Sites, RuntimeAsyncSites: run.input.Signals.RuntimeAsync.Sites,
-		RuntimeConfidence: run.input.Signals.RuntimeAsync.Confidence, DeprecatedDeps: run.input.Signals.DeprecatedDeps,
-		DeployUnitsByModule: run.input.Policy.DeployUnits, SemanticStrengthOverlay: acquired.acquired.SemanticStrengthOverlay, Scope: run.input.Scope,
-		BaseRef: req.BaseRef, Full: run.input.Mode.Full, PinnedLabels: run.policy.Relationship.PinnedLabels,
-		Now: run.input.Now, ConfigHash: run.input.ConfigHash, PrimaryExtractorTools: run.input.PrimaryExtractorTools,
-		ConfigSource: run.runContext.ConfigSource, BundleDir: run.runContext.BundleDir,
+	return application.Acquired{
+		Facts: evidence.Facts{
+			Graph: acquired.acquired.Graph, Coverage: coverage,
+			Symbols: acquired.acquired.SCIPSymbols, PatternMatches: acquired.ruleEvidence.evidence.PatternMatches,
+			SyntaxFacts: acquired.ruleEvidence.evidence.SyntaxFacts, FileLOC: run.input.Signals.Size.FileLOC,
+			FileClassIndex: run.input.Signals.Size.FileClassIndex, Clones: run.input.Signals.Duplication.Clusters,
+			DynamicImports: run.input.Signals.DynamicImports.Sites, RuntimeAsyncSites: run.input.Signals.RuntimeAsync.Sites,
+			RuntimeConfidence: run.input.Signals.RuntimeAsync.Confidence, DeprecatedDeps: run.input.Signals.DeprecatedDeps,
+			SemanticStrengthOverlay: acquired.acquired.SemanticStrengthOverlay,
+		},
+		Context: application.AnalysisContext{
+			Scope: run.input.Scope, BaseRef: req.BaseRef, Full: run.input.Mode.Full,
+			Now: run.input.Now, ConfigHash: run.input.ConfigHash, PrimaryExtractorTools: run.input.PrimaryExtractorTools,
+			ConfigSource: run.runContext.ConfigSource, BundleDir: run.runContext.BundleDir,
+			PinnedLabels: run.labels, Policy: run.policy,
+			OwnerSource: run.ownerSource, OwnerWarnings: run.ownerWarnings,
+		},
 	}, nil
 }
 
 // Relate implements application.RelationshipStage. It consumes only the
-// immutable snapshot and prepared configuration.
-func (a *Analyzer) Relate(ctx context.Context, in evidence.Snapshot) (relationship.AnalysisResult, error) {
+// immutable facts and the run context: the policy it classifies against was
+// resolved once during Acquire and is not re-derived here.
+func (a *Analyzer) Relate(_ context.Context, in application.Acquired) (relationship.AnalysisResult, error) {
 	if a == nil {
 		return relationship.AnalysisResult{}, errors.New("analysis stage is not prepared")
 	}
@@ -111,37 +119,18 @@ func (a *Analyzer) Relate(ctx context.Context, in evidence.Snapshot) (relationsh
 	if !a.prepared {
 		return relationship.AnalysisResult{}, errors.New("analysis stage is not prepared")
 	}
-	p := a.PreparedSnapshot.Clone()
-	for name, unit := range in.DeployUnitsByModule {
-		if def, ok := p.Topology.Modules[name]; ok && def.DeployUnit == "" {
-			def.DeployUnit = unit
-			p.Topology.Modules[name] = def
-		}
-		p.DeployUnits[name] = unit
-	}
-	if resolvedOwners, _ := resolveOwners(ctx, in.Scope, p, a.Deps); len(resolvedOwners) > 0 {
-		for name, owner := range resolvedOwners {
-			if def, ok := p.Topology.Modules[name]; ok && def.Owner == "" {
-				def.Owner = owner
-				p.Topology.Modules[name] = def
-				p.Ownership[name] = owner
-			}
-		}
-	}
-	p.Topology.ModuleMap = module.BuildMap(p.Topology.Modules)
-	p.Relationship.Topology, p.Assessment.Topology = p.Topology, p.Topology
-	p.Relationship.PinnedLabels = append([]labels.Label(nil), in.PinnedLabels...)
+	facts, runCtx := in.Facts, in.Context
 	return relationshipanalysis.Analyze(relationshipanalysis.Input{
-		Graph: in.Graph, Policy: p.Relationship,
-		Mode: relationshipanalysis.Mode{Base: in.BaseRef, Full: in.Full}, Labels: in.PinnedLabels,
-		CloneClusters: in.Clones, FileClassIndex: in.FileClassIndex,
-		RuntimeSites: in.RuntimeAsyncSites, RuntimeConfidence: in.RuntimeConfidence,
+		Graph: facts.Graph, Policy: runCtx.Policy.Relationship,
+		Mode: relationshipanalysis.Mode{Base: runCtx.BaseRef, Full: runCtx.Full}, Labels: runCtx.PinnedLabels,
+		CloneClusters: facts.Clones, FileClassIndex: facts.FileClassIndex,
+		RuntimeSites: facts.RuntimeAsyncSites, RuntimeConfidence: facts.RuntimeConfidence,
 	}), nil
 }
 
 // Assess implements application.AssessmentStage. It consumes explicit values
 // and reconstructs assessment inputs without prior-run analyzer state.
-func (a *Analyzer) Assess(ctx context.Context, req application.AnalysisRequest, view evidence.AssessmentView, in relationship.AnalysisResult) (application.AnalysisResult, error) {
+func (a *Analyzer) Assess(ctx context.Context, req application.AnalysisRequest, facts evidence.AssessmentFacts, runCtx application.AnalysisContext, in relationship.AnalysisResult) (application.AnalysisResult, error) {
 	if a == nil {
 		return application.AnalysisResult{}, errors.New("analysis stage is not prepared")
 	}
@@ -150,36 +139,7 @@ func (a *Analyzer) Assess(ctx context.Context, req application.AnalysisRequest, 
 	if !a.prepared {
 		return application.AnalysisResult{}, errors.New("analysis stage is not prepared")
 	}
-	p := a.PreparedSnapshot.Clone()
-	ownerSource := "config"
-	var warnings []string
-	for name, unit := range view.DeployUnitsByModule {
-		p.DeployUnits[name] = unit
-	}
-	needOwners := false
-	for _, def := range a.PreparedSnapshot.Topology.Modules {
-		if len(def.Paths) > 0 && def.Owner == "" {
-			needOwners = true
-			break
-		}
-	}
-	if needOwners {
-		resolvedOwners, source := resolveOwners(ctx, view.Scope, p, a.Deps)
-		ownerSource = string(source)
-		if warning := OwnerDegradationWarning(source); warning != "" {
-			warnings = append(warnings, warning)
-			a.Deps.warn(warning)
-		}
-		for name, owner := range resolvedOwners {
-			if def, ok := p.Topology.Modules[name]; ok && def.Owner == "" {
-				def.Owner = owner
-				p.Topology.Modules[name] = def
-				p.Ownership[name] = owner
-			}
-		}
-		p.Topology.ModuleMap = module.BuildMap(p.Topology.Modules)
-		p.Relationship.Topology, p.Assessment.Topology = p.Topology, p.Topology
-	}
+	p := runCtx.Policy
 	ruleset, err := rules.New(p.Gates.Rules)
 	if err != nil {
 		return application.AnalysisResult{}, err
@@ -191,38 +151,39 @@ func (a *Analyzer) Assess(ctx context.Context, req application.AnalysisRequest, 
 	}
 	base := baseline.Baseline{}
 	if !req.EmptyBaseline {
-		bundleDir := view.BundleDir
+		bundleDir := runCtx.BundleDir
 		if bundleDir == "" {
-			bundleDir = filepath.Dir(view.ConfigSource)
+			bundleDir = filepath.Dir(runCtx.ConfigSource)
 		}
 		base, _ = baseline.Load(ctx, filepath.Join(bundleDir, ".archfit-baseline.json"))
 	}
 	input := StageInput{Mode: Mode{Base: req.BaseRef, Full: true, Advisory: !req.NoAdvisories, ReportOnly: req.ReportOnly, Formats: req.Formats},
-		Scope: view.Scope, Policy: p, Rules: ruleset, Metrics: metricset, Signals: signal.RunSignals{
-			Size:           signal.SizeSignals{FileLOC: view.FileLOC, FileClassIndex: view.FileClassIndex},
-			Duplication:    signal.DuplicationSignals{Clusters: view.Clones},
-			DynamicImports: signal.DynamicImportSignals{Sites: view.DynamicImports},
-			RuntimeAsync:   signal.RuntimeAsyncSignals{Sites: view.RuntimeAsyncSites, Confidence: view.RuntimeConfidence},
-			DeprecatedDeps: view.DeprecatedDeps,
-		}, BaseMetrics: base.Metrics, Accepted: base, Now: view.Now, ConfigHash: view.ConfigHash, PrimaryExtractorTools: view.PrimaryExtractorTools}
-	acquired := acquiredStage{acquired: acquisition.Result{Graph: view.Graph, Coverages: view.Coverage, SCIPSymbols: view.Symbols, SemanticStrengthOverlay: view.SemanticStrengthOverlay}, ruleEvidence: ruleEvidence{evidence: rules.Evidence{PatternMatches: view.PatternMatches, SyntaxFacts: view.SyntaxFacts}}}
+		Scope: runCtx.Scope, Policy: p, Rules: ruleset, Metrics: metricset, Signals: signal.RunSignals{
+			Size:           signal.SizeSignals{FileLOC: facts.FileLOC, FileClassIndex: facts.FileClassIndex},
+			Duplication:    signal.DuplicationSignals{Clusters: facts.Clones},
+			DynamicImports: signal.DynamicImportSignals{Sites: facts.DynamicImports},
+			RuntimeAsync:   signal.RuntimeAsyncSignals{Sites: facts.RuntimeAsyncSites, Confidence: facts.RuntimeConfidence},
+			DeprecatedDeps: facts.DeprecatedDeps,
+		}, Labels: runCtx.PinnedLabels, BaseMetrics: base.Metrics, Accepted: base, Now: runCtx.Now,
+		ConfigHash: runCtx.ConfigHash, PrimaryExtractorTools: runCtx.PrimaryExtractorTools}
+	acquired := acquiredStage{acquired: acquisition.Result{Graph: facts.Graph, Coverages: facts.Coverage, SCIPSymbols: facts.Symbols, SemanticStrengthOverlay: facts.SemanticStrengthOverlay}, ruleEvidence: ruleEvidence{evidence: rules.Evidence{PatternMatches: facts.PatternMatches, SyntaxFacts: facts.SyntaxFacts}}}
 	relations := relationshipStageFromAnalysis(in)
 	diag, err := projectAssessment(input, acquired, relations)
 	if err != nil {
 		return application.AnalysisResult{}, err
 	}
-	configSource := view.ConfigSource
+	configSource := runCtx.ConfigSource
 	if configSource == "" {
 		configSource = a.ConfigPath
 	}
 	rc := NewRunContext(configSource, a.Root)
-	rc.BundleDir = view.BundleDir
+	rc.BundleDir = runCtx.BundleDir
 	if rc.BundleDir == "" {
 		rc.BundleDir = filepath.Dir(configSource)
 	}
 	run := &preparedRun{input: input, acquired: acquired, relations: relations, base: base, runContext: rc,
-		mode: input.Mode, request: req, options: a.PreparedOptions, policy: p, config: a.Config,
-		ownerSource: ownerSource, warnings: warnings, requireTools: req.RequireTools, captureRelationships: req.CaptureRelationships, captured: &captured}
+		mode: input.Mode, request: req, options: a.PreparedOptions, policy: p, config: a.Config, labels: runCtx.PinnedLabels,
+		ownerSource: runCtx.OwnerSource, warnings: runCtx.OwnerWarnings, requireTools: req.RequireTools, captureRelationships: req.CaptureRelationships, captured: &captured}
 	return a.finalizePreparedRun(ctx, run, diag)
 }
 

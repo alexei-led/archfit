@@ -11,7 +11,10 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
+	"github.com/alexei-led/archfit/internal/scope"
 )
 
 const (
@@ -76,20 +79,51 @@ type PolicyPreparer interface {
 	Prepare(context.Context) error
 }
 
+// AnalysisContext is the application-owned run context that accompanies neutral
+// evidence through the relationship and assessment stages. Evidence answers
+// "what did the tools observe"; this answers "under which boundary, instant,
+// identity, and policy". Topology enrichment (owners, deploy units) is resolved
+// once during preparation and every later stage reads the same immutable
+// snapshot rather than re-deriving it.
+type AnalysisContext struct {
+	Scope                 scope.Scope
+	BaseRef               string
+	Full                  bool
+	Now                   time.Time
+	ConfigHash            string
+	ConfigSource          string
+	BundleDir             string
+	PrimaryExtractorTools []string
+	PinnedLabels          []labels.Label
+	Policy                policy.PolicySnapshot
+	// OwnerSource records how module ownership was resolved for this run, and
+	// OwnerWarnings the degradation disclosed while resolving it. Both are
+	// produced by the single resolution pass so assessment never repeats it.
+	OwnerSource   string
+	OwnerWarnings []string
+}
+
+// Acquired pairs the neutral evidence of one run with the context it was
+// acquired under. Application passes it along without inspecting the facts.
+type Acquired struct {
+	Facts   evidence.Facts
+	Context AnalysisContext
+}
+
 // EvidenceStage acquires scope-bound facts before relationship analysis.
 type EvidenceStage interface {
-	Acquire(context.Context, AnalysisRequest) (evidence.Snapshot, error)
+	Acquire(context.Context, AnalysisRequest) (Acquired, error)
 }
 
 // RelationshipStage classifies acquired evidence into relationship-owned facts.
 type RelationshipStage interface {
-	Relate(context.Context, evidence.Snapshot) (relationship.AnalysisResult, error)
+	Relate(context.Context, Acquired) (relationship.AnalysisResult, error)
 }
 
 // AssessmentStage evaluates relationship facts and returns the application
 // analysis result. Report projection remains in application.
 type AssessmentStage interface {
-	Assess(context.Context, AnalysisRequest, evidence.AssessmentView, relationship.AnalysisResult) (AnalysisResult, error)
+	Assess(context.Context, AnalysisRequest, evidence.AssessmentFacts, AnalysisContext, relationship.AnalysisResult) (AnalysisResult, error)
 }
 
 // StageExecutor is the shared application sequencing helper. All analysis
@@ -111,15 +145,15 @@ func (s StageExecutor) Execute(ctx context.Context, req AnalysisRequest) (Analys
 	if err := s.Preparer.Prepare(ctx); err != nil {
 		return AnalysisResult{}, fmt.Errorf("policy preparation: %w", err)
 	}
-	evidenceResult, err := s.Evidence.Acquire(ctx, req)
+	acquired, err := s.Evidence.Acquire(ctx, req)
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("evidence acquisition: %w", err)
 	}
-	relationshipResult, err := s.Relationship.Relate(ctx, evidenceResult)
+	relationshipResult, err := s.Relationship.Relate(ctx, acquired)
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("relationship analysis: %w", err)
 	}
-	out, err := s.Assessment.Assess(ctx, req, evidenceResult.AssessmentView(), relationshipResult)
+	out, err := s.Assessment.Assess(ctx, req, acquired.Facts.ForAssessment(), acquired.Context, relationshipResult)
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("assessment: %w", err)
 	}

@@ -1,24 +1,22 @@
-// Package evidence owns the immutable facts exchanged by analysis stages.
+// Package evidence owns the neutral facts exchanged by analysis stages.
 package evidence
 
 import (
-	"time"
-
 	modelclone "github.com/alexei-led/archfit/internal/model/clone"
 	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/model/symbol"
-	"github.com/alexei-led/archfit/internal/relationship/labels"
-	"github.com/alexei-led/archfit/internal/scope"
 )
 
-// Snapshot is the neutral, immutable fact bundle exchanged by the technical
-// stages. It contains acquisition output and run context only. Policy,
-// assessment rules and metrics, lifecycle status, baselines, and report models
-// deliberately do not cross this boundary.
-type Snapshot struct {
+// Facts is the neutral, immutable observation bundle produced by acquisition:
+// what the source tree and the external tools reported, and nothing else. Run
+// context (scope, instant, config identity, bundle paths) belongs to the
+// application's analysis context; policy, assessment rules and metrics,
+// lifecycle status, baselines, and report models deliberately never cross this
+// boundary.
+type Facts struct {
 	Graph                   *graph.Graph
 	Coverage                []modevidence.Coverage
 	Symbols                 symbol.Graph
@@ -31,25 +29,15 @@ type Snapshot struct {
 	RuntimeAsyncSites       []modevidence.RuntimeAsyncSite
 	RuntimeConfidence       string
 	DeprecatedDeps          []modevidence.DeprecatedDep
-	DeployUnitsByModule     map[string]string
 	SemanticStrengthOverlay *modevidence.SemanticStrengthOverlay
-
-	Scope                 scope.Scope
-	BaseRef               string
-	Full                  bool
-	PinnedLabels          []labels.Label
-	Now                   time.Time
-	ConfigHash            string
-	PrimaryExtractorTools []string
-	ConfigSource          string
-	BundleDir             string
 }
 
-// AssessmentView is the narrow evidence projection consumed by assessment.
-type AssessmentView struct {
+// AssessmentFacts is the narrow observation projection consumed by assessment.
+// It drops the raw pattern/graph acquisition detail assessment never reads back
+// through, and carries no run context.
+type AssessmentFacts struct {
 	Graph                   *graph.Graph
 	Coverage                []modevidence.Coverage
-	ChangedFiles            []string
 	Symbols                 symbol.Graph
 	FileLOC                 map[string]int
 	FileClassIndex          map[string]fileclass.FileClass
@@ -61,25 +49,16 @@ type AssessmentView struct {
 	RuntimeConfidence       string
 	DeprecatedDeps          []modevidence.DeprecatedDep
 	SemanticStrengthOverlay *modevidence.SemanticStrengthOverlay
-	Scope                   scope.Scope
-	Now                     time.Time
-	ConfigHash              string
-	PrimaryExtractorTools   []string
-	ConfigSource            string
-	BundleDir               string
-	DeployUnitsByModule     map[string]string
 }
 
-// AssessmentView returns the assessment-only projection of s.
-func (s Snapshot) AssessmentView() AssessmentView {
-	return AssessmentView{
-		Graph: s.Graph, Coverage: s.Coverage, ChangedFiles: s.Scope.Changed, Symbols: s.Symbols,
-		FileLOC: s.FileLOC, FileClassIndex: s.FileClassIndex, Clones: s.Clones,
-		PatternMatches: s.PatternMatches, SyntaxFacts: s.SyntaxFacts, DynamicImports: s.DynamicImports,
-		RuntimeAsyncSites: s.RuntimeAsyncSites, RuntimeConfidence: s.RuntimeConfidence, DeprecatedDeps: s.DeprecatedDeps,
-		SemanticStrengthOverlay: s.SemanticStrengthOverlay, Scope: s.Scope,
-		Now: s.Now, ConfigHash: s.ConfigHash, PrimaryExtractorTools: s.PrimaryExtractorTools,
-		ConfigSource: s.ConfigSource, BundleDir: s.BundleDir, DeployUnitsByModule: s.DeployUnitsByModule,
+// ForAssessment returns the assessment-only projection of f.
+func (f Facts) ForAssessment() AssessmentFacts {
+	return AssessmentFacts{
+		Graph: f.Graph, Coverage: f.Coverage, Symbols: f.Symbols,
+		FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex, Clones: f.Clones,
+		PatternMatches: f.PatternMatches, SyntaxFacts: f.SyntaxFacts, DynamicImports: f.DynamicImports,
+		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence, DeprecatedDeps: f.DeprecatedDeps,
+		SemanticStrengthOverlay: f.SemanticStrengthOverlay,
 	}
 }
 

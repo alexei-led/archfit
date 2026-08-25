@@ -4,17 +4,16 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // roleModules returns two modules — "src" (the edge source, role applied by the
 // caller) and "dst" (a core/high-volatility target with an internal glob) — owned
 // by distinct teams so the base distance is cross_module_different_owner.
-func roleModules(srcRole module.Role) map[string]module.ModuleDef {
-	return map[string]module.ModuleDef{
+func roleModules(srcRole policy.Role) map[string]policy.ModuleDef {
+	return map[string]policy.ModuleDef{
 		"src": {
 			Paths: []string{"src/**"},
 			Owner: ownerTeamX,
@@ -50,24 +49,24 @@ func TestRun_RoleSuppressesOutboundImbalance(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		role         module.Role
+		role         policy.Role
 		wantSeverity coupling.Severity
 		wantDistance coupling.Distance
 	}{
 		// Capped to same_owner: S=10,D=4,V=10 → max(6,0)+1=7 → low (not none).
-		{"composition_root → distance capped, severity low", module.RoleCompositionRoot, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
-		{"generated → distance capped, severity low", module.RoleGenerated, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
-		{"test → distance capped, severity low", module.RoleTest, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
+		{"composition_root → distance capped, severity low", policy.RoleCompositionRoot, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
+		{"generated → distance capped, severity low", policy.RoleGenerated, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
+		{"test → distance capped, severity low", policy.RoleTest, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
 		// Uncapped: S=10,D=7,V=10 → max(3,0)+1=4 → high.
-		{"adapter → still flagged", module.RoleAdapter, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
-		{"core → still flagged", module.RoleCore, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
-		{"shared_model → still flagged", module.RoleSharedModel, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
-		{"no role → still flagged", module.Role(""), coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
+		{"adapter → still flagged", policy.RoleAdapter, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
+		{"core → still flagged", policy.RoleCore, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
+		{"shared_model → still flagged", policy.RoleSharedModel, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
+		{"no role → still flagged", policy.Role(""), coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := view.ClassifyConfig{Modules: roleModules(tc.role)}
+			cfg := classify.Config{Modules: roleModules(tc.role)}
 			cl, ok := classify.Run(makeGraph([]graph.Edge{edge}), cfg)[edgeKey(edge)]
 			if !ok {
 				t.Fatalf("edge not classified")
@@ -87,12 +86,12 @@ func TestRun_RoleSuppressesOutboundImbalance(t *testing.T) {
 // outbound edges only: an edge INTO a composition_root keeps its real distance,
 // so a genuine imbalance pointing at the wiring module is not hidden.
 func TestRun_RoleDoesNotAffectInboundEdges(t *testing.T) {
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"wire": {
 			Paths:     []string{"wire/**"},
 			Internal:  []string{"wire/internal/**"},
 			Owner:     ownerTeamX,
-			Role:      module.RoleCompositionRoot,
+			Role:      policy.RoleCompositionRoot,
 			Subdomain: subdomainCore,
 		},
 		"caller": {
@@ -105,7 +104,7 @@ func TestRun_RoleDoesNotAffectInboundEdges(t *testing.T) {
 		From: "file:caller/x.go", To: "file:wire/internal/secret.go",
 		Kind: graph.EdgeKindImports, Language: "go",
 	}
-	cfg := view.ClassifyConfig{Modules: modules}
+	cfg := classify.Config{Modules: modules}
 	cl := classify.Run(makeGraph([]graph.Edge{edge}), cfg)[edgeKey(edge)]
 	if cl.Severity != coupling.SeverityHigh {
 		t.Errorf("inbound edge Severity = %q, want %q — role must cap outbound only", cl.Severity, coupling.SeverityHigh)

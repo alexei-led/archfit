@@ -21,12 +21,11 @@ import (
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Fixture root directory names, shared across every per-language table test
@@ -122,7 +121,7 @@ func TestConfigInit_PerLanguage(t *testing.T) {
 				t.Errorf("generated rule type not recognized by internal/rules: %v\n\nrendered:\n%s", err, rendered)
 			}
 			if tt.name == langRust {
-				if cfg.Languages.Rust.Enabled != view.ModeAuto {
+				if cfg.Languages.Rust.Enabled != evidenceports.ModeAuto {
 					t.Errorf("generated Rust mode = %q, want auto\n\nrendered:\n%s", cfg.Languages.Rust.Enabled, rendered)
 				}
 				if !cfg.CargoModulesEnabled() || !cfg.ScipEnabled() {
@@ -221,14 +220,14 @@ func TestPublicAPIOnly_Task1Fixtures(t *testing.T) {
 				return
 			}
 
-			modules := make(map[string]module.ModuleDef, len(discovered.Modules))
+			modules := make(map[string]policy.ModuleDef, len(discovered.Modules))
 			for _, m := range discovered.Modules {
-				modules[m.Name] = module.ModuleDef{Paths: m.Paths}
+				modules[m.Name] = policy.ModuleDef{Paths: m.Paths}
 			}
 			cfg := config.Config{
 				Version: 1,
 				Modules: modules,
-				Rules: []view.RuleDef{
+				Rules: []policy.RuleDef{
 					{ID: "no-internal-access", Type: "public_api_only"},
 				},
 			}
@@ -297,15 +296,15 @@ func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
 				return
 			}
 
-			modules := make(map[string]module.ModuleDef, len(discovered.Modules))
+			modules := make(map[string]policy.ModuleDef, len(discovered.Modules))
 			for _, m := range discovered.Modules {
-				modules[m.Name] = module.ModuleDef{Paths: m.Paths, Layer: m.Layer}
+				modules[m.Name] = policy.ModuleDef{Paths: m.Paths, Layer: m.Layer}
 			}
 			cfg := config.Config{
 				Version: 1,
 				Layers:  discovered.Layers,
 				Modules: modules,
-				Rules: []view.RuleDef{
+				Rules: []policy.RuleDef{
 					{ID: "no-back-edge", Type: "forbidden_layer_direction"},
 				},
 			}
@@ -361,7 +360,7 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Diagnostic {
 	}
 	ms := metrics.New(cfg.Metrics)
 
-	extractor := goextract.New(view.ExtractConfig{})
+	extractor := goextract.New(evidenceports.ExtractConfig{})
 	base := baseline.Baseline{SchemaVersion: baseline.SchemaVersion}
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	s := scope.Scope{Root: root, Mode: scope.ModeFull}
@@ -376,7 +375,7 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Diagnostic {
 		Extractors:  []evidenceports.Extractor{extractor},
 		Patterns:    evidenceports.NopPatternProvider{},
 		Resolver:    evidenceports.NopSymbolResolver{},
-		PatternCfg:  view.PatternConfig{},
+		PatternCfg:  pattern.Config{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,

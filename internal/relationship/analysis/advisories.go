@@ -6,8 +6,9 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/view"
+	"github.com/alexei-led/archfit/internal/relationship/classify"
 )
 
 const relationshipScoreVersion = "bc_score.v6"
@@ -16,7 +17,7 @@ const (
 	duplicatedKnowledgeRule = "bc/duplicated_knowledge"
 )
 
-func advisoryCandidates(set relationship.Set, clones []relationship.CloneOnlyPair, cfg view.ClassifyConfig) []relationship.AdvisoryCandidate {
+func advisoryCandidates(set relationship.Set, clones []relationship.CloneOnlyPair, cfg classify.Config) []relationship.AdvisoryCandidate {
 	out := make([]relationship.AdvisoryCandidate, 0, len(set.Edges)+len(clones))
 	for _, edge := range set.Edges {
 		if edge.Severity == relationship.SeverityNone || !severityAtLeast(edge.Severity, cfg.BCAdvisoryMinSeverity) {
@@ -37,7 +38,7 @@ func advisoryCandidates(set relationship.Set, clones []relationship.CloneOnlyPai
 			continue
 		}
 		matched := classificationMatched(pair.Classified, pair.Strength, pair.Distance, pair.Volatility)
-		matched["score_policy"] = string(view.NormalizeDuplicatedKnowledgePolicy(cfg.DuplicatedKnowledgePolicy))
+		matched["score_policy"] = string(policy.NormalizeDuplicatedKnowledgePolicy(cfg.DuplicatedKnowledgePolicy))
 		out = append(out, relationship.AdvisoryCandidate{
 			ID: duplicatedKnowledgeID(pair.FromModule, pair.ToModule), RuleID: duplicatedKnowledgeRule,
 			Kind: "advisory", Severity: pair.Severity, From: pair.FromPath, To: pair.ToPath,

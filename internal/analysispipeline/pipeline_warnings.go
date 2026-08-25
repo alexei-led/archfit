@@ -4,16 +4,16 @@ import (
 	"fmt"
 
 	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/policy"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // EmitHealthWarnings writes actionable hints to stderr when the pipeline
 // result looks suspicious. Each warning includes a next-command suggestion.
 // cfg must be the same config used for the analysis run (already loaded; no
 // second disk read). root and configPath are used only in the command hints.
-func EmitHealthWarnings(deps *Deps, diag result.Result, modules map[string]module.ModuleDef, root, configPath string) {
+func EmitHealthWarnings(deps *Deps, diag result.Result, modules map[string]policy.ModuleDef, root, configPath string) {
 	if deps == nil {
 		return
 	}
@@ -61,7 +61,7 @@ func coverageStatusIs(cov []evidence.Coverage, tool, status string) bool {
 	return false
 }
 
-func declaresModulePaths(modules map[string]module.ModuleDef) bool {
+func declaresModulePaths(modules map[string]policy.ModuleDef) bool {
 	for _, def := range modules {
 		if len(def.Paths) > 0 {
 			return true

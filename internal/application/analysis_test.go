@@ -79,15 +79,15 @@ func (s *orderedAnalysisStage) Prepare(context.Context) error {
 	return nil
 }
 
-func (s *orderedAnalysisStage) Acquire(context.Context, AnalysisRequest) (evidence.Snapshot, error) {
+func (s *orderedAnalysisStage) Acquire(context.Context, AnalysisRequest) (Acquired, error) {
 	s.calls = append(s.calls, "acquire")
-	return evidence.Snapshot{}, nil
+	return Acquired{}, nil
 }
-func (s *orderedAnalysisStage) Relate(context.Context, evidence.Snapshot) (relationship.AnalysisResult, error) {
+func (s *orderedAnalysisStage) Relate(context.Context, Acquired) (relationship.AnalysisResult, error) {
 	s.calls = append(s.calls, "relate")
 	return relationship.AnalysisResult{}, nil
 }
-func (s *orderedAnalysisStage) Assess(context.Context, AnalysisRequest, evidence.AssessmentView, relationship.AnalysisResult) (AnalysisResult, error) {
+func (s *orderedAnalysisStage) Assess(context.Context, AnalysisRequest, evidence.AssessmentFacts, AnalysisContext, relationship.AnalysisResult) (AnalysisResult, error) {
 	s.calls = append(s.calls, "assess")
 	return AnalysisResult{}, nil
 }
@@ -126,21 +126,21 @@ func (s *failureAnalysisStage) Prepare(context.Context) error {
 	}
 	return nil
 }
-func (s *failureAnalysisStage) Acquire(context.Context, AnalysisRequest) (evidence.Snapshot, error) {
+func (s *failureAnalysisStage) Acquire(context.Context, AnalysisRequest) (Acquired, error) {
 	s.calls = append(s.calls, "acquire")
 	if s.failed == "acquire" {
-		return evidence.Snapshot{}, errors.New("acquire failed")
+		return Acquired{}, errors.New("acquire failed")
 	}
-	return evidence.Snapshot{}, nil
+	return Acquired{}, nil
 }
-func (s *failureAnalysisStage) Relate(context.Context, evidence.Snapshot) (relationship.AnalysisResult, error) {
+func (s *failureAnalysisStage) Relate(context.Context, Acquired) (relationship.AnalysisResult, error) {
 	s.calls = append(s.calls, "relate")
 	if s.failed == "relate" {
 		return relationship.AnalysisResult{}, errors.New("relate failed")
 	}
 	return relationship.AnalysisResult{}, nil
 }
-func (s *failureAnalysisStage) Assess(context.Context, AnalysisRequest, evidence.AssessmentView, relationship.AnalysisResult) (AnalysisResult, error) {
+func (s *failureAnalysisStage) Assess(context.Context, AnalysisRequest, evidence.AssessmentFacts, AnalysisContext, relationship.AnalysisResult) (AnalysisResult, error) {
 	s.calls = append(s.calls, "assess")
 	if s.failed == "assess" {
 		return AnalysisResult{}, errors.New("assess failed")

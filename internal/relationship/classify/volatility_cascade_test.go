@@ -11,10 +11,9 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -60,7 +59,7 @@ func probeKey(to string) string {
 
 // cascadeModules is the module map used across TestVolatilityCascade cases.
 // subdomainCore/Supporting/Generic constants are declared in classify_test.go (same package).
-var cascadeModules = map[string]module.ModuleDef{
+var cascadeModules = map[string]policy.ModuleDef{
 	"payment":       {Paths: []string{"payment/**"}, Subdomain: subdomainCore},             // high
 	"notifications": {Paths: []string{"notifications/**"}, Subdomain: subdomainSupporting}, // medium
 	"gateway":       {Paths: []string{"gateway/**"}, Subdomain: subdomainGeneric},          // low
@@ -172,7 +171,7 @@ func TestVolatilityCascade(t *testing.T) {
 				{tc.from, tc.to, tc.hint},
 				{probe, tc.probeTarget, ""},
 			})
-			c := view.ClassifyConfig{
+			c := classify.Config{
 				Modules:                  cascadeModules,
 				VolatilityCascadeEnabled: tc.cascadeEnabled,
 			}
@@ -201,7 +200,7 @@ func TestVolatilityCascade_ClonePairExcluded(t *testing.T) {
 		{cascadeFileNotifications, cascadeFilePayment, string(coupling.StrengthFunctional)},
 		{probe, cascadeFileNotifications, ""},
 	})
-	c := view.ClassifyConfig{
+	c := classify.Config{
 		Modules:                  cascadeModules,
 		VolatilityCascadeEnabled: true,
 		CrossModuleClonePairs: map[string]struct{}{
@@ -225,13 +224,13 @@ func TestVolatilityCascade_ClonePairExcluded(t *testing.T) {
 func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  view.ClassifyConfig
+		cfg  classify.Config
 		to   string
 	}{
 		{
 			name: "config internal glob",
-			cfg: view.ClassifyConfig{
-				Modules: map[string]module.ModuleDef{
+			cfg: classify.Config{
+				Modules: map[string]policy.ModuleDef{
 					"payment":       {Paths: []string{"payment/**"}, Internal: []string{"payment/internal/**"}, Subdomain: subdomainCore},
 					"notifications": {Paths: []string{"notifications/**"}, Subdomain: subdomainSupporting},
 				},
@@ -241,7 +240,7 @@ func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
 		},
 		{
 			name: "approved human label",
-			cfg: view.ClassifyConfig{
+			cfg: classify.Config{
 				Modules:                  cascadeModules,
 				VolatilityCascadeEnabled: true,
 				ApprovedLabels:           map[string]string{cascadePairNotifPayment: string(coupling.StrengthFunctional)},
@@ -250,7 +249,7 @@ func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
 		},
 		{
 			name: "approved llm label",
-			cfg: view.ClassifyConfig{
+			cfg: classify.Config{
 				Modules:                  cascadeModules,
 				VolatilityCascadeEnabled: true,
 				LLMLabels:                map[string]string{cascadePairNotifPayment: string(coupling.StrengthFunctional)},
@@ -281,7 +280,7 @@ func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
 // and A/B are supporting/low. B is raised by C, then A is raised by B's effective
 // volatility. This is the book Ch9 cascade shape; it used to stop at one hop.
 func TestVolatilityCascade_TransitiveFixpoint(t *testing.T) {
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		modNameA: {Paths: []string{"a/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
 		modNameB: {Paths: []string{"b/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
 		"modC":   {Paths: []string{"c/**"}, Subdomain: subdomainCore},       // high base
@@ -298,7 +297,7 @@ func TestVolatilityCascade_TransitiveFixpoint(t *testing.T) {
 		{probe, fileA, ""},
 		{probe, fileB, ""},
 	})
-	c := view.ClassifyConfig{
+	c := classify.Config{
 		Modules:                  modules,
 		VolatilityCascadeEnabled: true,
 	}

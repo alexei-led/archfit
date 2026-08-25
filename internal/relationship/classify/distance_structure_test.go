@@ -5,9 +5,8 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -171,8 +170,8 @@ func TestCodeStructureDistance(t *testing.T) {
 // code structure (DiffOwner).
 func TestClassifyDistance_Precedence(t *testing.T) {
 	fromPath, toPath := distModCore+"/x.go", distModAPI+"/y.go"
-	mods := func(fromOwner, toOwner, fromUnit, toUnit string) map[string]module.ModuleDef {
-		return map[string]module.ModuleDef{
+	mods := func(fromOwner, toOwner, fromUnit, toUnit string) map[string]policy.ModuleDef {
+		return map[string]policy.ModuleDef{
 			distModCore: {Paths: []string{distModCore + "/**"}, Owner: fromOwner, DeployUnit: fromUnit},
 			distModAPI:  {Paths: []string{distModAPI + "/**"}, Owner: toOwner, DeployUnit: toUnit},
 		}
@@ -181,7 +180,7 @@ func TestClassifyDistance_Precedence(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		modules   map[string]module.ModuleDef
+		modules   map[string]policy.ModuleDef
 		explicit  map[string]bool
 		want      coupling.Distance
 		wantBasis coupling.DistanceBasis
@@ -268,13 +267,13 @@ func TestClassifyDistance_Precedence(t *testing.T) {
 }
 
 func TestClassifyDistance_SingleOwnerHierarchicalRepoUsesStructure(t *testing.T) {
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		modInternalClassify: {Paths: []string{modInternalClassify + "/**"}, Owner: distOwnerTeamX},
 		modCmdArchfit:       {Paths: []string{modCmdArchfit + "/**"}, Owner: distOwnerTeamX},
 	}
 	mi := buildModuleIndex(modules)
 	explicit := map[string]bool{modInternalClassify: true, modCmdArchfit: true}
-	degExplicit, degOwners := ownerDegeneracy(view.ClassifyConfig{Modules: modules, ExplicitOwners: explicit})
+	degExplicit, degOwners := ownerDegeneracy(Config{Modules: modules, ExplicitOwners: explicit})
 
 	got, gotBasis := classifyDistance(modInternalClassify+"/x.go", modCmdArchfit+"/main.go", graph.LangGo, mi, modules, explicit, degExplicit, degOwners)
 	if got != coupling.DistanceCrossModuleDiffOwner {
@@ -339,7 +338,7 @@ func TestDeployDistance(t *testing.T) {
 // maps are built once before the edge loop and passed in, not rebuilt per edge.
 func TestClassifyDistance_MultiOwnerPrecomputed(t *testing.T) {
 	// Two modules with two distinct explicit owners — non-degenerate.
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		distModCore: {Paths: []string{distModCore + "/**"}, Owner: distOwnerTeamX},
 		distModAPI:  {Paths: []string{distModAPI + "/**"}, Owner: distOwnerTeamY},
 	}
@@ -385,7 +384,7 @@ func TestClassifyDistance_MultiOwnerPrecomputed(t *testing.T) {
 
 	// Same-owner pair in the same config → degenerate (1 distinct owner) →
 	// falls through to code structure. Flat names → SameOwner floor (P1 fix).
-	modulesSame := map[string]module.ModuleDef{
+	modulesSame := map[string]policy.ModuleDef{
 		distModCore: {Paths: []string{distModCore + "/**"}, Owner: distOwnerTeamX},
 		distModAPI:  {Paths: []string{distModAPI + "/**"}, Owner: distOwnerTeamX},
 	}

@@ -15,7 +15,7 @@ import (
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
@@ -77,10 +77,10 @@ func abstainedDraftJSON(from, to, strength, confidence, rationale string) string
 		from, to, strength, confidence, initcfg.DraftBasisSemanticJudgment, rationale)
 }
 
-func enrichFixture() (*graph.Graph, coupling.Index, module.Map) {
+func enrichFixture() (*graph.Graph, coupling.Index, policy.ModuleMap) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			modA: {Paths: []string{globPkgA}},
 			modB: {Paths: []string{globPkgB}},
 			"c":  {Paths: []string{"pkg/c/**"}},
@@ -139,8 +139,8 @@ func TestSelectRefinablePairs(t *testing.T) {
 	}
 }
 
-func syntheticRustPairFixture(strength coupling.Strength) (*graph.Graph, coupling.Index, module.Map, module.Map) {
-	cfg := config.Config{Version: 1, Modules: map[string]module.ModuleDef{}}
+func syntheticRustPairFixture(strength coupling.Strength) (*graph.Graph, coupling.Index, policy.ModuleMap, policy.ModuleMap) {
+	cfg := config.Config{Version: 1, Modules: map[string]policy.ModuleDef{}}
 	from := graph.Node{Kind: graph.NodeKindModule, Path: rustSyntheticFrom, Language: graph.LangRust}
 	to := graph.Node{Kind: graph.NodeKindModule, Path: rustSyntheticTo, Language: graph.LangRust}
 	edge := graph.Edge{From: from.ID(), To: to.ID(), Kind: graph.EdgeKindImports, Language: graph.LangRust}
@@ -338,7 +338,7 @@ func TestSelectRefinablePairs_UnknownStrength(t *testing.T) {
 	t.Parallel()
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			modA: {Paths: []string{globPkgA}},
 			modB: {Paths: []string{globPkgB}},
 		},

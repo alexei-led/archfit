@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
@@ -40,7 +40,7 @@ func BuildConfigWarnings(lint []string, toolWarnings []string) []string {
 //
 // These are advisory strings appended to ConfigWarnings, not gate findings.
 // Sorted for deterministic output.
-func BuildJudgmentDecisionTasks(modules map[string]module.ModuleDef, lbls []labels.Label, configPath string) []string {
+func BuildJudgmentDecisionTasks(modules map[string]policy.ModuleDef, lbls []labels.Label, configPath string) []string {
 	var out []string
 
 	// 1. Modules missing subdomain and volatility — scorer abstains on volatility.

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -19,7 +19,7 @@ const (
 func TestBuildVolatilityCorroboration_RankedTouches(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testCorModuleCore: {Paths: []string{testCorPathCore}, Subdomain: subdomainCore},
 		testCorModuleUtil: {Paths: []string{testCorPathUtil}, Volatility: volatilityLow},
 	}}
@@ -62,7 +62,7 @@ func TestBuildVolatilityCorroboration_RankedTouches(t *testing.T) {
 func TestBuildVolatilityCorroboration_TimeoutStillReportsStatus(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testCorModuleCore: {Paths: []string{testCorPathCore}, Subdomain: subdomainCore},
 	}}
 	runner := &toolrun.RunnerMock{
@@ -83,7 +83,7 @@ func TestBuildVolatilityCorroboration_TimeoutStillReportsStatus(t *testing.T) {
 func TestBuildVolatilityCorroboration_NonGitOmitted(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testCorModuleCore: {Paths: []string{testCorPathCore}, Subdomain: subdomainCore},
 	}}
 	if got := BuildVolatilityCorroboration(context.Background(), "", "", PolicySnapshot(cfg), nil); got != nil {

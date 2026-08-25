@@ -6,14 +6,15 @@ import (
 	"strings"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	"github.com/alexei-led/archfit/internal/policy"
+
 	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -443,7 +444,7 @@ func testTSProjectMarkerGaps(t *testing.T) {
 		root := t.TempDir()
 		writeFileAt(t, root, "tsconfig.json", "{}\n")
 		off := config.Config{Languages: config.LanguagesConfig{
-			TypeScript: config.TypeScriptLanguage{Enabled: view.ModeOff},
+			TypeScript: config.TypeScriptLanguage{Enabled: evidenceports.ModeOff},
 		}}
 		cov := MarkDisabledPrimaries(tsAbsent(), Coverage(off), root)
 		if cov[0].Status != result.StatusAbsent {
@@ -636,10 +637,10 @@ func testRustManifestMarkerGaps(t *testing.T) {
 func testMarkDisabledPrimaries(t *testing.T) {
 	t.Parallel()
 	off := config.Config{Languages: config.LanguagesConfig{
-		TypeScript: config.TypeScriptLanguage{Enabled: view.ModeOff},
+		TypeScript: config.TypeScriptLanguage{Enabled: evidenceports.ModeOff},
 	}}
 	offGated := config.Config{Languages: config.LanguagesConfig{
-		TypeScript: config.TypeScriptLanguage{Enabled: view.ModeOff, Gate: config.GateFail},
+		TypeScript: config.TypeScriptLanguage{Enabled: evidenceports.ModeOff, Gate: config.GateFail},
 	}}
 	// A repo that HAS TypeScript: package.json is dependency-cruiser's marker.
 	tsDir := t.TempDir()
@@ -815,7 +816,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 		// A module with paths but no rules referencing it produces a lint warning.
 		cfg := config.Config{
 			Version: 1,
-			Modules: map[string]module.ModuleDef{
+			Modules: map[string]policy.ModuleDef{
 				"orphan": {Paths: []string{"pkg/orphan/**"}},
 			},
 		}
@@ -977,7 +978,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	t.Run("module with neither subdomain nor volatility emits decision task", func(t *testing.T) {
 		t.Parallel()
 		cfg := config.Config{
-			Modules: map[string]module.ModuleDef{
+			Modules: map[string]policy.ModuleDef{
 				"app.core": {Paths: []string{"internal/core/**"}, Subdomain: subdomainCore},
 				"app.util": {Paths: []string{"internal/util/**"}}, // no subdomain, no volatility
 			},
@@ -1003,7 +1004,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	t.Run("module with volatility declared is not flagged", func(t *testing.T) {
 		t.Parallel()
 		cfg := config.Config{
-			Modules: map[string]module.ModuleDef{
+			Modules: map[string]policy.ModuleDef{
 				"app.util": {Paths: []string{"internal/util/**"}, Volatility: "low"},
 			},
 		}
@@ -1073,7 +1074,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	t.Run("output is sorted deterministically", func(t *testing.T) {
 		t.Parallel()
 		cfg := config.Config{
-			Modules: map[string]module.ModuleDef{
+			Modules: map[string]policy.ModuleDef{
 				"zz.module": {Paths: []string{"zz/**"}},
 				"aa.module": {Paths: []string{"aa/**"}},
 			},

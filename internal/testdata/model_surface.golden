@@ -93,26 +93,9 @@ package internal/model/graph
   func internal/model/graph.NodePath(id string) string
   const internal/model/graph.StrengthHintDTO untyped string
   func internal/model/graph.TypeScriptSourceExtensions() []string
-package internal/model/module
-  func internal/model/module.BuildMap(modules map[string]internal/model/module.ModuleDef) internal/model/module.Map
-  type internal/model/module.Map struct{names []string; modules map[string]internal/model/module.ModuleDef}
-  func (internal/model/module.Map).Has(name string) bool
-  func (internal/model/module.Map).ModuleFor(path string) (string, bool)
-  func (internal/model/module.Map).ModuleForFile(file string) (string, bool)
-  func (internal/model/module.Map).IsModuleRoot(dir string) bool
-  func (internal/model/module.Map).LayerFor(path string) (string, bool)
-  func (internal/model/module.Map).LayerForName(name string) (string, bool)
-  type internal/model/module.ModuleDef struct{Paths []string "yaml:\"paths\""; Public []string "yaml:\"public\""; Internal []string "yaml:\"internal\""; Layer string "yaml:\"layer\""; Subdomain string "yaml:\"subdomain\""; Volatility string "yaml:\"volatility\""; Owner string "yaml:\"owner\""; DeployUnit string "yaml:\"deploy_unit\""; Role internal/model/module.Role "yaml:\"role,omitempty\""; ReviewedAt time.Time "yaml:\"reviewed_at,omitempty\""; ReviewedBy string "yaml:\"reviewed_by\""}
-  type internal/model/module.Role string
-  const internal/model/module.RoleAdapter internal/model/module.Role
-  const internal/model/module.RoleCompositionRoot internal/model/module.Role
-  const internal/model/module.RoleCore internal/model/module.Role
-  const internal/model/module.RoleGenerated internal/model/module.Role
-  const internal/model/module.RoleSharedModel internal/model/module.Role
-  const internal/model/module.RoleTest internal/model/module.Role
-  func internal/model/module.RootDirs(modules map[string]internal/model/module.ModuleDef) map[string]string
-  func internal/model/module.ValidRole(r internal/model/module.Role) bool
 package internal/model/pattern
+  type internal/model/pattern.Config []internal/model/pattern.Def
+  type internal/model/pattern.Def struct{ID string "yaml:\"id\""; Lang string "yaml:\"lang\""; Rule string "yaml:\"rule\""}
   type internal/model/pattern.Match struct{File string; Pattern string; Text string; Node string; Line int; Column int}
 package internal/model/report
   type internal/model/report.AdvisoryTask struct{FindingID string "json:\"finding_id\""; RuleID string "json:\"rule_id\""; Status string "json:\"status\""; Severity string "json:\"severity\""; GroupCount int "json:\"group_count\""; GroupMembers []string "json:\"group_members,omitempty\""; Goal string "json:\"goal\""; CheapestMove string "json:\"cheapest_move,omitempty\""; ScoreValue int "json:\"score_value,omitempty\""; TopFiles []string "json:\"top_files\""; Constraints []string "json:\"constraints\""; Validation []string "json:\"validation\""}
@@ -220,35 +203,3 @@ package internal/model/report
 package internal/model/symbol
   type internal/model/symbol.Graph struct{Module map[string]string; Path map[string]string; FanIn map[string]int; Refs map[string]map[string]struct{}; IntraRefs map[string]map[string]struct{}}
   func (internal/model/symbol.Graph).Empty() bool
-package internal/view
-  type internal/view.ClassifyConfig struct{Modules map[string]internal/model/module.ModuleDef; Layers []string; ModuleMap internal/model/module.Map; BCAdvisoryMinSeverity string; ApprovedLabels map[string]string; LLMLabels map[string]string; LLMLabelConfidence map[string]string; CrossModuleClonePairs map[string]struct{}; CloneEvidence map[string][]internal/model/graph.Location; ExplicitOwners map[string]bool; VolatilityCascadeEnabled bool; ExternalSystems map[string]internal/view.ExternalSystemDef; DuplicatedKnowledgePolicy internal/view.DuplicatedKnowledgePolicy}
-  func (internal/view.ClassifyConfig).StaticPolicy() internal/view.PolicyConfig
-  type internal/view.DuplicatedKnowledgePolicy string
-  const internal/view.DuplicatedKnowledgePolicyAdvisory internal/view.DuplicatedKnowledgePolicy
-  const internal/view.DuplicatedKnowledgePolicyScore internal/view.DuplicatedKnowledgePolicy
-  type internal/view.ExternalSystemDef struct{Targets []string "yaml:\"targets\""; Volatility string "yaml:\"volatility,omitempty\""}
-  type internal/view.ExtractConfig struct{Src string; Paths []string; Exclusions []string; Internal []string; Mode internal/view.ToolMode; BuildFlags []string; GoModuleInclude []string; GoModuleExclude []string; TSConfig string; PyPackage string; ProjectRoot string; CargoManifest string; CargoFeatures []string; IncludeDevDeps bool; ModuleGraph bool}
-  type internal/view.FileClassDef struct{GeneratedGlobs []string "yaml:\"generated_globs,omitempty\""; TestGlobs []string "yaml:\"test_globs,omitempty\""; MockFrameworks []string "yaml:\"mock_frameworks,omitempty\""}
-  const internal/view.GateFail internal/view.GateMode
-  type internal/view.GateMode string
-  const internal/view.GateOff internal/view.GateMode
-  const internal/view.GateWarn internal/view.GateMode
-  type internal/view.MetricConfig = internal/view.MetricEntry
-  type internal/view.MetricEntry struct{Enabled *bool "yaml:\"enabled\""; Gate string "yaml:\"gate\""; MinDelta *float64 "yaml:\"min_delta\""; MaxNew *int "yaml:\"max_new\""}
-  const internal/view.ModeAuto internal/view.ToolMode
-  const internal/view.ModeOff internal/view.ToolMode
-  const internal/view.ModeOn internal/view.ToolMode
-  func internal/view.NormalizeDuplicatedKnowledgePolicy(p internal/view.DuplicatedKnowledgePolicy) internal/view.DuplicatedKnowledgePolicy
-  type internal/view.OutputConfig struct{JSON bool; Markdown bool; SARIF bool}
-  type internal/view.PatternConfig []internal/view.PatternDef
-  type internal/view.PatternDef struct{ID string "yaml:\"id\""; Lang string "yaml:\"lang\""; Rule string "yaml:\"rule\""}
-  type internal/view.PolicyConfig struct{Modules map[string]internal/model/module.ModuleDef; Layers []string; ModuleMap internal/model/module.Map; BCAdvisoryMinSeverity string; ExplicitOwners map[string]bool; VolatilityCascadeEnabled bool; ExternalSystems map[string]internal/view.ExternalSystemDef; DuplicatedKnowledgePolicy internal/view.DuplicatedKnowledgePolicy}
-  type internal/view.RuleConfig struct{Rules []internal/view.RuleDef; Layers []string; ModuleMap internal/model/module.Map}
-  type internal/view.RuleDef struct{ID string "yaml:\"id\""; Type string "yaml:\"type\""; Gate string "yaml:\"gate\""; From string "yaml:\"from\""; To string "yaml:\"to\""; Max *int "yaml:\"max,omitempty\""; Threshold *int "yaml:\"threshold,omitempty\""; Patterns []internal/view.PatternDef "yaml:\"patterns,omitempty\""}
-  type internal/view.ScopeConfig struct{Root string; Base string; Full bool; Exclusions []string; WorkDir string}
-  type internal/view.StalenessConfig struct{Enabled bool; Threshold time.Duration; Modules map[string]internal/model/module.ModuleDef}
-  type internal/view.SyntaxConfig struct{Enabled bool; Languages []string}
-  type internal/view.ToolMode string
-  func (*internal/view.ToolMode).UnmarshalYAML(unmarshal func(any) error) error
-  type internal/view.WaiverDef struct{Rule string "yaml:\"rule\""; From string "yaml:\"from\""; To string "yaml:\"to\""; Reason string "yaml:\"reason\""; ApprovedBy string "yaml:\"approved_by\""; Expires string "yaml:\"expires\""}
-  type internal/view.WaiverSet struct{Waivers []internal/view.WaiverDef}

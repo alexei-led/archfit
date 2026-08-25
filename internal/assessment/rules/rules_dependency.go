@@ -10,9 +10,8 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // ---------------------------------------------------------------------------
@@ -22,7 +21,7 @@ import (
 // validateForbiddenDependencyDef validates a RuleDef for the
 // forbidden_dependency rule type. An empty from/to glob matches nothing, so
 // the rule would load clean yet never fire — a silently-vacuous gate.
-func validateForbiddenDependencyDef(def view.RuleDef) error {
+func validateForbiddenDependencyDef(def policy.RuleDef) error {
 	if def.From == "" || def.To == "" {
 		return fmt.Errorf("rules: forbidden_dependency %q requires both from and to globs", def.ID)
 	}
@@ -33,7 +32,7 @@ func validateForbiddenDependencyDef(def view.RuleDef) error {
 // returns ErrBadPattern at check time, which Check discards — a malformed
 // glob would make the rule silently fire zero findings forever, the same
 // silently-vacuous-gate failure the emptiness check above guards against.
-func validateScopeGlobs(def view.RuleDef) error {
+func validateScopeGlobs(def policy.RuleDef) error {
 	for field, pat := range map[string]string{"from": def.From, "to": def.To} {
 		if pat != "" && !doublestar.ValidatePattern(pat) {
 			return fmt.Errorf("rules: rule %q has a malformed %s glob %q", def.ID, field, pat)
@@ -43,7 +42,7 @@ func validateScopeGlobs(def view.RuleDef) error {
 }
 
 type forbiddenDependency struct {
-	def view.RuleDef
+	def policy.RuleDef
 }
 
 func (r *forbiddenDependency) ID() string { return r.def.ID }
@@ -79,7 +78,7 @@ func (r *forbiddenDependency) Check(s relationship.Set, _ Evidence) []finding.Fi
 // another module's internal surface is. When either endpoint isn't covered by
 // the module map, we can't rule out same-module, so callers must treat that
 // as "not same module" (module-blind fallback: the edge still fires).
-func sameModule(mm module.Map, fromPath, toPath string) bool {
+func sameModule(mm policy.ModuleMap, fromPath, toPath string) bool {
 	fromModule, fromOK := mm.ModuleFor(fromPath)
 	toModule, toOK := mm.ModuleFor(toPath)
 	return fromOK && toOK && fromModule == toModule
@@ -90,8 +89,8 @@ func sameModule(mm module.Map, fromPath, toPath string) bool {
 // ---------------------------------------------------------------------------
 
 type publicAPIOnly struct {
-	def view.RuleDef
-	mm  module.Map
+	def policy.RuleDef
+	mm  policy.ModuleMap
 }
 
 func (r *publicAPIOnly) ID() string { return r.def.ID }
@@ -145,9 +144,9 @@ func (r *publicAPIOnly) Check(s relationship.Set, _ Evidence) []finding.Finding 
 // ---------------------------------------------------------------------------
 
 type forbiddenLayerDirection struct {
-	def    view.RuleDef
+	def    policy.RuleDef
 	layers []string
-	mm     module.Map
+	mm     policy.ModuleMap
 }
 
 func (r *forbiddenLayerDirection) ID() string { return r.def.ID }
@@ -206,8 +205,8 @@ func (r *forbiddenLayerDirection) Check(s relationship.Set, _ Evidence) []findin
 // semantics as publicAPIOnly but is a distinct rule type so teams can
 // configure them independently with different IDs, severities, and exceptions.
 type internalAPIAccess struct {
-	def view.RuleDef
-	mm  module.Map
+	def policy.RuleDef
+	mm  policy.ModuleMap
 }
 
 func (r *internalAPIAccess) ID() string { return r.def.ID }
@@ -266,8 +265,8 @@ func (r *internalAPIAccess) Check(s relationship.Set, _ Evidence) []finding.Find
 // with no baseline every cross-module edge fires — run `archfit baseline` to
 // accept the current state.
 type newCrossModuleDependency struct {
-	def view.RuleDef
-	mm  module.Map
+	def policy.RuleDef
+	mm  policy.ModuleMap
 }
 
 func (r *newCrossModuleDependency) ID() string { return r.def.ID }
@@ -307,7 +306,7 @@ func (r *newCrossModuleDependency) Check(s relationship.Set, _ Evidence) []findi
 // SCC). It emits one finding per strongly-connected component of size > 1.
 // The finding ID is derived from the sorted SCC members for stability.
 type cycleRule struct {
-	def view.RuleDef
+	def policy.RuleDef
 }
 
 func (r *cycleRule) ID() string { return r.def.ID }

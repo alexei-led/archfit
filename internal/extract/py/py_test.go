@@ -8,11 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -48,11 +49,11 @@ func TestExtract_Parse(t *testing.T) {
 		},
 	}
 
-	cfg := view.ExtractConfig{
+	cfg := evidenceports.ExtractConfig{
 		PyPackage: testPkgName,
 		// Dotted module glob (same form as paths: and classifyStrength), not slash.
 		Internal: []string{testPkgName + ".b._internal.*"},
-		Mode:     view.ModeAuto,
+		Mode:     evidenceports.ModeAuto,
 	}
 	e := py.New(mock, cfg)
 
@@ -125,9 +126,9 @@ func TestExtract_WithUnresolved(t *testing.T) {
 		},
 	}
 
-	cfg := view.ExtractConfig{
+	cfg := evidenceports.ExtractConfig{
 		PyPackage: testPkgName,
-		Mode:      view.ModeAuto,
+		Mode:      evidenceports.ModeAuto,
 	}
 	e := py.New(mock, cfg)
 
@@ -194,7 +195,7 @@ func TestExtract_UnresolvedReasonSummarizesTopRoots(t *testing.T) {
 		},
 	}
 
-	e := py.New(mock, view.ExtractConfig{PyPackage: testPkgName, Mode: view.ModeAuto})
+	e := py.New(mock, evidenceports.ExtractConfig{PyPackage: testPkgName, Mode: evidenceports.ModeAuto})
 	_, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -233,7 +234,7 @@ func TestExtract_SymbolLevelStrength(t *testing.T) {
 		},
 	}
 
-	cfg := view.ExtractConfig{PyPackage: testPkgName, Mode: view.ModeAuto}
+	cfg := evidenceports.ExtractConfig{PyPackage: testPkgName, Mode: evidenceports.ModeAuto}
 	e := py.New(mock, cfg)
 
 	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
@@ -303,7 +304,7 @@ func TestExtract_ModuleLevelIntrusiveStillDetected(t *testing.T) {
 		},
 	}
 
-	cfg := view.ExtractConfig{PyPackage: testPkgName, Mode: view.ModeAuto}
+	cfg := evidenceports.ExtractConfig{PyPackage: testPkgName, Mode: evidenceports.ModeAuto}
 	e := py.New(mock, cfg)
 
 	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
@@ -340,9 +341,9 @@ func TestExtract_ToolAbsentAuto(t *testing.T) {
 		},
 	}
 
-	cfg := view.ExtractConfig{
+	cfg := evidenceports.ExtractConfig{
 		PyPackage: testPkgName,
-		Mode:      view.ModeAuto,
+		Mode:      evidenceports.ModeAuto,
 	}
 	e := py.New(mock, cfg)
 
@@ -379,7 +380,7 @@ func TestExtract_NonZeroExit(t *testing.T) {
 	}
 
 	t.Run("auto degrades to partial coverage", func(t *testing.T) {
-		cfg := view.ExtractConfig{PyPackage: testPkgName, Mode: view.ModeAuto}
+		cfg := evidenceports.ExtractConfig{PyPackage: testPkgName, Mode: evidenceports.ModeAuto}
 		e := py.New(mock, cfg)
 		facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
 		if err != nil {
@@ -394,7 +395,7 @@ func TestExtract_NonZeroExit(t *testing.T) {
 	})
 
 	t.Run("on hard-errors", func(t *testing.T) {
-		cfg := view.ExtractConfig{PyPackage: testPkgName, Mode: view.ModeOn}
+		cfg := evidenceports.ExtractConfig{PyPackage: testPkgName, Mode: evidenceports.ModeOn}
 		e := py.New(mock, cfg)
 		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode}); err == nil {
 			t.Error("ModeOn must hard-error on grimp helper non-zero exit")
@@ -438,7 +439,7 @@ func TestFirstPartyPackages_IncludesDiscoveredAndConfiguredRoots(t *testing.T) {
 		},
 	}
 
-	e := py.New(mock, view.ExtractConfig{PyPackage: "tests", Paths: []string{"prefect.blocks.**", "tests.**"}, Mode: view.ModeAuto})
+	e := py.New(mock, evidenceports.ExtractConfig{PyPackage: "tests", Paths: []string{"prefect.blocks.**", "tests.**"}, Mode: evidenceports.ModeAuto})
 	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root, Mode: testScopeMode}); err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -489,7 +490,7 @@ func TestExtract_MultiPackageArgs(t *testing.T) {
 		},
 	}
 
-	e := py.New(mock, view.ExtractConfig{Mode: view.ModeAuto})
+	e := py.New(mock, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
 	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root, Mode: testScopeMode}); err != nil {
 		t.Fatalf("Extract: %v", err)
 	}

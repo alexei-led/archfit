@@ -7,10 +7,8 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/staleness"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -34,8 +32,15 @@ func buildGraph(nodes []graph.Node) relationship.Set {
 	return set
 }
 
-// byRule returns all findings with the given RuleID.
-func assessmentPolicy(cfg view.StalenessConfig) policy.AssessmentPolicy {
+// stalenessCase is the test-local module-review policy input: the staleness
+// knobs plus the module topology the check resolves declarations against.
+type stalenessCase struct {
+	Enabled   bool
+	Threshold time.Duration
+	Modules   map[string]policy.ModuleDef
+}
+
+func assessmentPolicy(cfg stalenessCase) policy.AssessmentPolicy {
 	return policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: cfg.Modules}, Staleness: policy.StalenessPolicy{Enabled: cfg.Enabled, Threshold: cfg.Threshold}}
 }
 
@@ -53,9 +58,9 @@ func TestCheck_DisabledReturnsNil(t *testing.T) {
 	g := buildGraph([]graph.Node{
 		{Kind: graph.NodeKindPackage, Path: "internal/foo"},
 	})
-	cfg := view.StalenessConfig{
+	cfg := stalenessCase{
 		Enabled: false,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"foo": {Paths: []string{globBarAll}},
 		},
 	}
@@ -72,9 +77,9 @@ func TestCheck_UncoveredPath(t *testing.T) {
 		{Kind: graph.NodeKindPackage, Path: "internal/foo/foo.go"},
 		{Kind: graph.NodeKindPackage, Path: "internal/bar/bar.go"},
 	})
-	cfg := view.StalenessConfig{
+	cfg := stalenessCase{
 		Enabled: true,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			// Only claims internal/bar/**.
 			"bar": {Paths: []string{globBarAll}},
 		},
@@ -98,9 +103,9 @@ func TestCheck_DeadRule(t *testing.T) {
 	g := buildGraph([]graph.Node{
 		{Kind: graph.NodeKindPackage, Path: "internal/bar/bar.go"},
 	})
-	cfg := view.StalenessConfig{
+	cfg := stalenessCase{
 		Enabled: true,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"bar":   {Paths: []string{globBarAll}},
 			"ghost": {Paths: []string{globGhostAll}}, // matches nothing
 		},
@@ -127,10 +132,10 @@ func TestCheck_StaleReview_Triggers(t *testing.T) {
 	g := buildGraph([]graph.Node{
 		{Kind: graph.NodeKindPackage, Path: pathAuthGo},
 	})
-	cfg := view.StalenessConfig{
+	cfg := stalenessCase{
 		Enabled:   true,
 		Threshold: 30 * 24 * time.Hour,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			modAuth: {
 				Paths:      []string{globAuthAll},
 				ReviewedAt: reviewedAt,
@@ -153,10 +158,10 @@ func TestCheck_StaleReview_DoesNotTrigger(t *testing.T) {
 	g := buildGraph([]graph.Node{
 		{Kind: graph.NodeKindPackage, Path: pathAuthGo},
 	})
-	cfg := view.StalenessConfig{
+	cfg := stalenessCase{
 		Enabled:   true,
 		Threshold: 30 * 24 * time.Hour,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			modAuth: {
 				Paths:      []string{globAuthAll},
 				ReviewedAt: reviewedAt,
@@ -179,10 +184,10 @@ func TestCheck_StaleReview_ZeroReviewedAt_NoFinding(t *testing.T) {
 	g := buildGraph([]graph.Node{
 		{Kind: graph.NodeKindPackage, Path: pathAuthGo},
 	})
-	cfg := view.StalenessConfig{
+	cfg := stalenessCase{
 		Enabled:   true,
 		Threshold: 30 * 24 * time.Hour,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			modAuth: {
 				Paths: []string{globAuthAll},
 				// ReviewedAt zero: never reviewed.
@@ -206,10 +211,10 @@ func TestCheck_DefaultThreshold(t *testing.T) {
 	g := buildGraph([]graph.Node{
 		{Kind: graph.NodeKindPackage, Path: "pkg/api/api.go"},
 	})
-	cfg := view.StalenessConfig{
+	cfg := stalenessCase{
 		Enabled:   true,
 		Threshold: 0, // zero → defaultThreshold (90 days)
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"api": {
 				Paths:      []string{"pkg/api/**"},
 				ReviewedAt: reviewedAt,
@@ -231,9 +236,9 @@ func TestCheck_NonPackageNodesNotUncovered(t *testing.T) {
 		{Kind: graph.NodeKindModule, Path: "internal/auth"},
 		{Kind: graph.NodeKindExternal, Path: "github.com/some/lib"},
 	})
-	cfg := view.StalenessConfig{
+	cfg := stalenessCase{
 		Enabled: true,
-		Modules: map[string]module.ModuleDef{},
+		Modules: map[string]policy.ModuleDef{},
 	}
 	findings := staleness.Check(g, assessmentPolicy(cfg), time.Now())
 
@@ -253,10 +258,10 @@ func TestCheck_AllFindingsAreAdvisory(t *testing.T) {
 		{Kind: graph.NodeKindPackage, Path: "internal/covered/a.go"},
 		{Kind: graph.NodeKindPackage, Path: "internal/uncovered/b.go"},
 	})
-	cfg := view.StalenessConfig{
+	cfg := stalenessCase{
 		Enabled:   true,
 		Threshold: 30 * 24 * time.Hour,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			// covered: valid glob, old review → stale_review
 			"covered": {
 				Paths:      []string{"internal/covered/**"},
@@ -282,9 +287,9 @@ func TestCheck_AllFindingsAreAdvisory(t *testing.T) {
 func TestCheck_EmptyGraph_NoUncovered(t *testing.T) {
 	// Empty graph → no uncovered_path; dead_rule fires for every pattern.
 	g := buildGraph(nil)
-	cfg := view.StalenessConfig{
+	cfg := stalenessCase{
 		Enabled: true,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"foo": {Paths: []string{"internal/foo/**"}},
 		},
 	}

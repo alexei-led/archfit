@@ -16,10 +16,10 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // goldenFixtureRoot returns the absolute path to testdata/golang, which contains
@@ -42,8 +42,8 @@ func goldenFixtureRoot(t *testing.T) string {
 // goldenConfig builds a ClassifyConfig, rules slice, and metrics slice that
 // match the testdata/golang fixture (two modules a and b, forbidden dependency
 // from a into b's internal package).
-func goldenConfig() (view.ClassifyConfig, []rules.Rule, []metrics.Metric) {
-	modules := map[string]module.ModuleDef{
+func goldenConfig() (classify.Config, []rules.Rule, []metrics.Metric) {
+	modules := map[string]policy.ModuleDef{
 		"a": {
 			Paths:    []string{globModuleA},
 			Public:   []string{globModuleA},
@@ -59,7 +59,7 @@ func goldenConfig() (view.ClassifyConfig, []rules.Rule, []metrics.Metric) {
 	cfg := config.Config{
 		Version: 1,
 		Modules: modules,
-		Rules: []view.RuleDef{
+		Rules: []policy.RuleDef{
 			{
 				ID:   "no_internal_access",
 				Type: "forbidden_dependency",
@@ -87,7 +87,7 @@ func TestGolden_DoubleRun(t *testing.T) {
 
 	classifyCfg, rs, ms := goldenConfig()
 
-	extractor := goextract.New(view.ExtractConfig{})
+	extractor := goextract.New(evidenceports.ExtractConfig{})
 	base := baseline.Baseline{SchemaVersion: baseline.SchemaVersion}
 	// Fixed timestamp — any wall-clock source would break determinism.
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -104,7 +104,7 @@ func TestGolden_DoubleRun(t *testing.T) {
 				Extractors:  []evidenceports.Extractor{extractor},
 				Patterns:    evidenceports.NopPatternProvider{},
 				Resolver:    evidenceports.NopSymbolResolver{},
-				PatternCfg:  view.PatternConfig{},
+				PatternCfg:  pattern.Config{},
 				Rules:       rs,
 				Metrics:     ms,
 				Accepted:    base,
@@ -146,7 +146,7 @@ const (
 	globModuleBInternal = "pkg/b/internal/**"
 )
 
-func policyForClassify(cfg view.ClassifyConfig) policy.PolicySnapshot {
+func policyForClassify(cfg classify.Config) policy.PolicySnapshot {
 	owners := make(map[string]string)
 	for name, def := range cfg.Modules {
 		if def.Owner != "" {

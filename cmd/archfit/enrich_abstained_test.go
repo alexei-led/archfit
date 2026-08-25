@@ -17,7 +17,7 @@ import (
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
@@ -29,10 +29,10 @@ const cmdAbstained = "abstained"
 // unknown-strength edges, the first carrying a location), plus edges that must
 // be excluded: known strength, same-module distance, external (unknown)
 // distance, and an approved pair.
-func abstainedFixture() (*graph.Graph, coupling.Index, module.Map) {
+func abstainedFixture() (*graph.Graph, coupling.Index, policy.ModuleMap) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			modA: {Paths: []string{globPkgA}},
 			modB: {Paths: []string{globPkgB}},
 			"c":  {Paths: []string{"pkg/c/**"}},
@@ -168,7 +168,7 @@ func TestSelectAbstainedPairs_CapRespected(t *testing.T) {
 	t.Parallel()
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			modA: {Paths: []string{globPkgA}},
 			modB: {Paths: []string{globPkgB}},
 		},

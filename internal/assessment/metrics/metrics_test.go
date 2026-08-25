@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/metrics"
-	"github.com/alexei-led/archfit/internal/view"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 // ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ func TestNew_ReturnsAllMetrics(t *testing.T) {
 // removes the metric while unconfigured metrics stay enabled — and that a
 // knob-only entry (gate set, enabled absent) does NOT disable the metric.
 func TestNew_ExplicitDisableHonored(t *testing.T) {
-	cfg := map[string]view.MetricEntry{
+	cfg := map[string]policy.MetricEntry{
 		"blast_radius":    {Enabled: new(false)},
 		"coverage":        {Enabled: new(false)},
 		"cycle":           {Enabled: new(true)},

@@ -9,7 +9,6 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/relationship/scoring"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // CloneOnlyPair is a cross-module clone pair (analyzers.clones) between two
@@ -41,7 +40,7 @@ type CloneOnlyPair struct {
 // Advisory filtering (severity none, coupling.min_severity) lives downstream;
 // this detector stays pure and deterministic. Pairs are processed in sorted key
 // order.
-func CloneOnlyPairs(g *graph.Graph, c view.ClassifyConfig) []CloneOnlyPair {
+func CloneOnlyPairs(g *graph.Graph, c Config) []CloneOnlyPair {
 	if len(c.CrossModuleClonePairs) == 0 {
 		return nil
 	}

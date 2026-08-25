@@ -19,7 +19,6 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -118,7 +117,7 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 		name            string
 		findings        []finding.Finding
 		accepted        acceptedSet
-		waivers         view.WaiverSet
+		waivers         policy.WaiverSet
 		wantStatus      map[string]finding.Status
 		wantGateNew     int
 		wantWaiversUsed int
@@ -144,7 +143,7 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 			name:     "unexpired waiver suppresses the gate and is counted",
 			findings: []finding.Finding{gateFinding(fpWaived, pathA, pathB, finding.SeverityHigh)},
 			accepted: acceptedSet{},
-			waivers: view.WaiverSet{Waivers: []view.WaiverDef{
+			waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{
 				{Rule: ruleForbidden, From: pathA, To: pathB, Expires: future},
 			}},
 			wantStatus:      map[string]finding.Status{fpWaived: finding.StatusWaived},
@@ -156,7 +155,7 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 			name:     "expired waiver re-gates the finding",
 			findings: []finding.Finding{gateFinding(fpExpired, pathA, pathB, finding.SeverityHigh)},
 			accepted: acceptedSet{},
-			waivers: view.WaiverSet{Waivers: []view.WaiverDef{
+			waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{
 				{Rule: ruleForbidden, From: pathA, To: pathB, Expires: past},
 			}},
 			wantStatus:  map[string]finding.Status{fpExpired: finding.StatusExpiredWaiver},
@@ -202,7 +201,7 @@ func TestEvaluateMetricGating(t *testing.T) {
 	tests := []struct {
 		name   string
 		metric result.MetricResult
-		gate   view.MetricConfig
+		gate   policy.MetricConfig
 		want   result.Verdict
 	}{
 		{
@@ -223,25 +222,25 @@ func TestEvaluateMetricGating(t *testing.T) {
 		{
 			name:   "worsening metric inside min_delta tolerance passes",
 			metric: metricValue(new(float64(-1)), result.DirectionHigherIsBetter),
-			gate:   view.MetricConfig{MinDelta: new(float64(2))},
+			gate:   policy.MetricConfig{MinDelta: new(float64(2))},
 			want:   result.VerdictPass,
 		},
 		{
 			name:   "worsening metric beyond min_delta tolerance fails",
 			metric: metricValue(new(float64(-3)), result.DirectionHigherIsBetter),
-			gate:   view.MetricConfig{MinDelta: new(float64(2))},
+			gate:   policy.MetricConfig{MinDelta: new(float64(2))},
 			want:   result.VerdictFail,
 		},
 		{
 			name:   "gate warn downgrades a breach to warn",
 			metric: metricValue(new(float64(-1)), result.DirectionHigherIsBetter),
-			gate:   view.MetricConfig{Gate: string(view.GateWarn)},
+			gate:   policy.MetricConfig{Gate: string(policy.GateWarn)},
 			want:   result.VerdictWarn,
 		},
 		{
 			name:   "gate off skips the breach entirely",
 			metric: metricValue(new(float64(-1)), result.DirectionHigherIsBetter),
-			gate:   view.MetricConfig{Gate: string(view.GateOff)},
+			gate:   policy.MetricConfig{Gate: string(policy.GateOff)},
 			want:   result.VerdictPass,
 		},
 		{
@@ -252,7 +251,7 @@ func TestEvaluateMetricGating(t *testing.T) {
 		{
 			name:   "rising higher-is-worse metric inside max_new passes",
 			metric: metricValue(new(float64(2)), result.DirectionHigherIsWorse),
-			gate:   view.MetricConfig{MaxNew: new(2)},
+			gate:   policy.MetricConfig{MaxNew: new(2)},
 			want:   result.VerdictPass,
 		},
 		{
@@ -265,7 +264,7 @@ func TestEvaluateMetricGating(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			got := evaluation.Evaluate(evaluation.Input{
 				Metrics:  []metrics.Metric{stubMetric{res: test.metric}},
-				Gates:    map[string]view.MetricConfig{metricName: test.gate},
+				Gates:    map[string]policy.MetricConfig{metricName: test.gate},
 				Accepted: acceptedSet{},
 				Now:      evaluatedAt,
 			})
@@ -283,7 +282,7 @@ func TestEvaluateGateFindingOutranksMetricWarn(t *testing.T) {
 	got := evaluation.Evaluate(evaluation.Input{
 		Rules:    []rules.Rule{stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", pathA, pathB, finding.SeverityHigh)}}},
 		Metrics:  []metrics.Metric{stubMetric{res: metricValue(new(float64(-1)), result.DirectionHigherIsBetter)}},
-		Gates:    map[string]view.MetricConfig{metricName: {Gate: string(view.GateWarn)}},
+		Gates:    map[string]policy.MetricConfig{metricName: {Gate: string(policy.GateWarn)}},
 		Accepted: acceptedSet{},
 		Now:      evaluatedAt,
 	})
@@ -358,7 +357,7 @@ func TestEvaluateFiltersAdvisoriesByWaiverAndBaseline(t *testing.T) {
 	tests := []struct {
 		name       string
 		accepted   acceptedSet
-		waivers    view.WaiverSet
+		waivers    policy.WaiverSet
 		wantStatus finding.Status
 	}{
 		{name: "new", accepted: acceptedSet{}, wantStatus: finding.StatusNew},
@@ -370,7 +369,7 @@ func TestEvaluateFiltersAdvisoriesByWaiverAndBaseline(t *testing.T) {
 		{
 			name:     "waived advisory",
 			accepted: acceptedSet{},
-			waivers: view.WaiverSet{Waivers: []view.WaiverDef{
+			waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{
 				{Rule: ruleBC, From: pathA, To: pathB, Expires: evaluatedAt.Add(24 * time.Hour).Format("2006-01-02")},
 			}},
 			wantStatus: finding.StatusWaived,

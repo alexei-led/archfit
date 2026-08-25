@@ -6,15 +6,14 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/relationship/scoring"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
-func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnlyPair, policy view.DuplicatedKnowledgePolicy) *relationship.ClassifiedEdgeSummary {
+func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnlyPair, duplicated policy.DuplicatedKnowledgePolicy) *relationship.ClassifiedEdgeSummary {
 	s := &relationship.ClassifiedEdgeSummary{ByStrength: map[string]int{}, ByDistance: map[string]int{}, ByDistanceBasis: map[string]int{}, ByVolatility: map[string]int{}, BySeverity: map[string]int{}, ByBalanceDriver: map[string]int{}, ByCriticalDriver: map[string]int{}, ByModulePair: map[string]int{}, DistanceCompression: distanceCompression()}
 	connected := map[string]struct{}{}
 	tail := tailAccumulator{}
@@ -30,7 +29,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 		}
 		span.add(e.FromModule, e.ToModule, e.Distance, e.Classified)
 	}
-	if view.NormalizeDuplicatedKnowledgePolicy(policy) == view.DuplicatedKnowledgePolicyScore {
+	if policy.NormalizeDuplicatedKnowledgePolicy(duplicated) == policy.DuplicatedKnowledgePolicyScore {
 		for _, p := range clones {
 			s.CloneOnlyScored++
 			sum += addSummary(s, p.Classified, p.Strength, p.Distance, p.Volatility)
@@ -342,7 +341,7 @@ func toCoupling(e relationship.Edge) coupling.Classification {
 	return coupling.Classification{Strength: e.Strength, Distance: e.Distance, Volatility: e.Volatility, Severity: e.Severity, Score: coupling.EdgeScore{Scored: e.Classified.Score.Scored, Balance: e.Classified.Score.Balance, Value: e.Classified.Score.Value, Band: e.Classified.Score.Band, Breakdown: coupling.ScoreBreakdown{Modularity: e.Classified.Score.Breakdown.Modularity, VolatilityVal: e.Classified.Score.Breakdown.VolatilityValue}}}
 }
 
-func buildStaticDistanceCandidates(g *graph.Graph, idx coupling.Index, mm module.Map) []evidence.DistanceConfigCandidate {
+func buildStaticDistanceCandidates(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap) []evidence.DistanceConfigCandidate {
 	if g == nil {
 		return nil
 	}
@@ -390,7 +389,7 @@ func buildStaticDistanceCandidates(g *graph.Graph, idx coupling.Index, mm module
 	return out
 }
 
-func moduleForNode(id string, mm module.Map) (string, bool) {
+func moduleForNode(id string, mm policy.ModuleMap) (string, bool) {
 	kind, path, ok := strings.Cut(id, ":")
 	if !ok || path == "" {
 		return "", false

@@ -474,7 +474,7 @@ func TestFilesFor_OnDiskFallback(t *testing.T) {
 }
 
 // TestFilesFor_DottedModuleRootFallback pins the Python shape of the module
-// root fallback: module.RootDirs returns a dotted module-ID prefix
+// root fallback: policy.ModuleRootDirs returns a dotted module-ID prefix
 // ("myapp.domain") for a dotted glob, and filesFor must route it through the
 // full resolver — the dotted-candidate probe — rather than a bare dir check
 // that a dotted string can never pass.
@@ -578,7 +578,7 @@ func TestFilesFor_ModuleKeyCollisionSkipped(t *testing.T) {
 
 // TestFilesFor_EscapingCandidatesDropped pins the scan-root boundary: a
 // candidate that escapes upward (a module Paths glob like "../outside/**"
-// feeding the module.RootDirs fallback) or is absolute must be dropped even
+// feeding the policy.ModuleRootDirs fallback) or is absolute must be dropped even
 // when the target really exists on disk — files[] never points outside the
 // analyzed tree.
 func TestFilesFor_EscapingCandidatesDropped(t *testing.T) {

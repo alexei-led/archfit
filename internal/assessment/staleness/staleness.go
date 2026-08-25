@@ -14,7 +14,6 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
@@ -46,7 +45,7 @@ func Check(s relationship.Set, cfg policy.AssessmentPolicy, now time.Time) []fin
 
 // uncoveredPaths returns one advisory finding per package or file node that
 // is not claimed by any module's paths globs.
-func uncoveredPaths(s relationship.Set, modules map[string]module.ModuleDef) []finding.Finding {
+func uncoveredPaths(s relationship.Set, modules map[string]policy.ModuleDef) []finding.Finding {
 	var findings []finding.Finding
 	for _, n := range s.Nodes {
 		if n.Kind != "package" && n.Kind != "file" {
@@ -66,7 +65,7 @@ func uncoveredPaths(s relationship.Set, modules map[string]module.ModuleDef) []f
 
 // deadRules returns one advisory finding per module paths glob that matches
 // zero nodes in the relationship set.
-func deadRules(s relationship.Set, modules map[string]module.ModuleDef) []finding.Finding {
+func deadRules(s relationship.Set, modules map[string]policy.ModuleDef) []finding.Finding {
 	nodes := s.Nodes
 	names := make([]string, 0, len(modules))
 	for name := range modules {
@@ -92,7 +91,7 @@ func deadRules(s relationship.Set, modules map[string]module.ModuleDef) []findin
 
 // staleReviews returns one advisory finding per module whose reviewed_at is
 // set and is older than threshold relative to now.
-func staleReviews(modules map[string]module.ModuleDef, threshold time.Duration, now time.Time) []finding.Finding {
+func staleReviews(modules map[string]policy.ModuleDef, threshold time.Duration, now time.Time) []finding.Finding {
 	names := make([]string, 0, len(modules))
 	for name := range modules {
 		names = append(names, name)
@@ -124,7 +123,7 @@ func staleReviews(modules map[string]module.ModuleDef, threshold time.Duration, 
 
 // claimedByAnyModule reports whether path is matched by at least one paths
 // glob across all modules.
-func claimedByAnyModule(path string, modules map[string]module.ModuleDef) bool {
+func claimedByAnyModule(path string, modules map[string]policy.ModuleDef) bool {
 	for _, def := range modules {
 		for _, pattern := range def.Paths {
 			if matched, _ := doublestar.Match(pattern, path); matched {

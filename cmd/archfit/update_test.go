@@ -12,13 +12,14 @@ import (
 	"strings"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -99,7 +100,7 @@ func TestDistanceConfigCandidates_DynamicImportsBecomeReviewOnlyHints(t *testing
 	if err := os.WriteFile(filepath.Join(dir, testUpdatePluginsModule, "loader.py"), []byte("def load(name):\n    return __import__(name)\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testUpdatePluginsModule: {Paths: []string{testUpdatePluginsModule + "/**"}},
 	}}
 
@@ -121,7 +122,7 @@ func TestDistanceConfigCandidates_DynamicImportsBecomeReviewOnlyHints(t *testing
 func TestStaticExternalDistanceConfigCandidatesFromGraph_GoThirdPartyHint(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testUpdateModuleA: {Paths: []string{testUpdateModuleAGlob}},
 	}}
 	g := graph.Build([]graph.Facts{{
@@ -152,7 +153,7 @@ func TestStaticExternalDistanceConfigCandidatesFromGraph_GoThirdPartyHint(t *tes
 func TestCandidateConfigForUpdate_UsesDiscoveredModules(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testUpdateModuleA: {
 			Paths:      []string{"old/a/**"},
 			Public:     []string{"old/public/**"},
@@ -201,7 +202,7 @@ func TestStaticExternalDistanceConfigCandidatesFromGraph_UsesDiscoveredModuleCon
 			{From: testUpdateModuleAFile, To: "package:github.com/aws/aws-sdk-go-v2/service/s3", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testUpdateModuleAPath, Line: 7}}},
 		},
 	}})
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testUpdateModuleA: {Paths: []string{"old/a/**"}},
 	}}
 	if raw := staticExternalDistanceConfigCandidatesFromGraph(g, cfg); len(raw) != 0 {
@@ -236,7 +237,7 @@ func TestDeployUnitSuggestions_DeterministicHintsOnlyForMissingConfig(t *testing
 			return toolrun.Output{Stdout: []byte(filepath.Join(dir, "cmd", testUpdateWebModule) + "\n")}, nil
 		},
 	}
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testUpdateWebModule: {Paths: []string{testUpdateWebGlob}},
 		"api":               {Paths: []string{"cmd/api/**"}, DeployUnit: "api-service"},
 	}}
@@ -282,7 +283,7 @@ func TestDeployUnitSuggestions_UsesDiscoveredModuleMap(t *testing.T) {
 	// under a module name that does not exist in the config either.
 	t.Run("name-drifted module keeps its configured deploy unit", func(t *testing.T) {
 		const driftedName = "internal/" + testUpdateWebModule
-		driftedCfg := config.Config{Modules: map[string]module.ModuleDef{
+		driftedCfg := config.Config{Modules: map[string]policy.ModuleDef{
 			driftedName: {Paths: []string{testUpdateWebGlob}, DeployUnit: "web-service"},
 		}}
 		drift := []initcfg.NameDrift{{
@@ -443,10 +444,10 @@ modules: {}
 
 func TestEnsureRustDeepAnalysisConfig_IgnoresCommentBoundaries(t *testing.T) {
 	cfg := config.Config{
-		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: view.ModeOn}},
+		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: evidenceports.ModeOn}},
 		Analyzers: config.AnalyzersConfig{
-			CargoModules: config.Analyzer{Enabled: view.ModeAuto},
-			Scip:         config.TimedAnalyzer{Enabled: view.ModeAuto},
+			CargoModules: config.Analyzer{Enabled: evidenceports.ModeAuto},
+			Scip:         config.TimedAnalyzer{Enabled: evidenceports.ModeAuto},
 		},
 	}
 	src := []byte(`version: 1
@@ -480,10 +481,10 @@ rules:
 
 func TestEnsureRustDeepAnalysisConfig_PreservesExplicitAnalyzerOff(t *testing.T) {
 	cfg := config.Config{
-		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: view.ModeOn}},
+		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: evidenceports.ModeOn}},
 		Analyzers: config.AnalyzersConfig{
-			CargoModules: config.Analyzer{Enabled: view.ModeOff},
-			Scip:         config.TimedAnalyzer{Enabled: view.ModeOff},
+			CargoModules: config.Analyzer{Enabled: evidenceports.ModeOff},
+			Scip:         config.TimedAnalyzer{Enabled: evidenceports.ModeOff},
 		},
 	}
 	src := []byte(`version: 1
@@ -1524,18 +1525,18 @@ func TestRequiresLayerClassification(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name  string
-		rules []view.RuleDef
+		rules []policy.RuleDef
 		want  bool
 	}{
 		{"no rules", nil, false},
-		{"other rule type", []view.RuleDef{{Type: "forbidden_dependency", Gate: gateFail}}, false},
-		{"layer rule gate unset", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection}}, true},
-		{"layer rule gate warn", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateWarn}}, true},
-		{"layer rule gate fail", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateFail}}, true},
-		{"layer rule gate off", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateOff}}, false},
+		{"other rule type", []policy.RuleDef{{Type: "forbidden_dependency", Gate: gateFail}}, false},
+		{"layer rule gate unset", []policy.RuleDef{{Type: ruleTypeForbiddenLayerDirection}}, true},
+		{"layer rule gate warn", []policy.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateWarn}}, true},
+		{"layer rule gate fail", []policy.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateFail}}, true},
+		{"layer rule gate off", []policy.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateOff}}, false},
 		{
 			name: "one live layer rule among several",
-			rules: []view.RuleDef{
+			rules: []policy.RuleDef{
 				{Type: ruleTypeForbiddenLayerDirection, Gate: gateOff},
 				{Type: ruleTypeForbiddenLayerDirection, Gate: gateWarn},
 			},

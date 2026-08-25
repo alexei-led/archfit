@@ -4,10 +4,9 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Clone evidence file constants for the modA/modB pair, plus config volatility
@@ -21,7 +20,7 @@ const (
 
 // cloneOnlyCfg returns the canonical two-module config with a modA/modB clone
 // pair plus evidence, optionally mutated per test case.
-func cloneOnlyCfg(mutate func(*view.ClassifyConfig)) view.ClassifyConfig {
+func cloneOnlyCfg(mutate func(*classify.Config)) classify.Config {
 	cfg := twoModuleConfig(nil, modABClonePair)
 	cfg.CloneEvidence = map[string][]graph.Location{
 		modABKey: {
@@ -36,7 +35,7 @@ func cloneOnlyCfg(mutate func(*view.ClassifyConfig)) view.ClassifyConfig {
 }
 
 // setModule mutates one module def in place (map values are structs).
-func setModule(c *view.ClassifyConfig, name string, mutate func(*module.ModuleDef)) {
+func setModule(c *classify.Config, name string, mutate func(*policy.ModuleDef)) {
 	def := c.Modules[name]
 	mutate(&def)
 	c.Modules[name] = def
@@ -57,7 +56,7 @@ func TestCloneOnlyPairs(t *testing.T) {
 	tests := []struct {
 		name string
 		g    *graph.Graph
-		cfg  view.ClassifyConfig
+		cfg  classify.Config
 		want int
 	}{
 		{
@@ -75,7 +74,7 @@ func TestCloneOnlyPairs(t *testing.T) {
 		{
 			name: "approved label (canonical order) accepts the pair",
 			g:    emptyGraph,
-			cfg: cloneOnlyCfg(func(c *view.ClassifyConfig) {
+			cfg: cloneOnlyCfg(func(c *classify.Config) {
 				c.ApprovedLabels = map[string]string{modABKey: hintFunctional}
 			}),
 			want: 0,
@@ -83,7 +82,7 @@ func TestCloneOnlyPairs(t *testing.T) {
 		{
 			name: "approved label (reverse order) accepts the pair",
 			g:    emptyGraph,
-			cfg: cloneOnlyCfg(func(c *view.ClassifyConfig) {
+			cfg: cloneOnlyCfg(func(c *classify.Config) {
 				c.ApprovedLabels = map[string]string{modNameB + "\x00" + modNameA: hintFunctional}
 			}),
 			want: 0,
@@ -91,7 +90,7 @@ func TestCloneOnlyPairs(t *testing.T) {
 		{
 			name: "llm label accepts the pair",
 			g:    emptyGraph,
-			cfg: cloneOnlyCfg(func(c *view.ClassifyConfig) {
+			cfg: cloneOnlyCfg(func(c *classify.Config) {
 				c.LLMLabels = map[string]string{modABKey: hintFunctional}
 			}),
 			want: 0,
@@ -99,9 +98,9 @@ func TestCloneOnlyPairs(t *testing.T) {
 		{
 			name: "frozen pair still detected for score-policy rollup",
 			g:    emptyGraph,
-			cfg: cloneOnlyCfg(func(c *view.ClassifyConfig) {
-				setModule(c, modNameA, func(d *module.ModuleDef) { d.Volatility = cfgVolFrozen })
-				setModule(c, modNameB, func(d *module.ModuleDef) { d.Volatility = cfgVolFrozen })
+			cfg: cloneOnlyCfg(func(c *classify.Config) {
+				setModule(c, modNameA, func(d *policy.ModuleDef) { d.Volatility = cfgVolFrozen })
+				setModule(c, modNameB, func(d *policy.ModuleDef) { d.Volatility = cfgVolFrozen })
 			}),
 			want: 1,
 		},
@@ -182,9 +181,9 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 
 	t.Run("worst-of-pair volatility drives the score", func(t *testing.T) {
 		t.Parallel()
-		cfg := cloneOnlyCfg(func(c *view.ClassifyConfig) {
-			setModule(c, modNameA, func(d *module.ModuleDef) { d.Volatility = cfgVolLow })
-			setModule(c, modNameB, func(d *module.ModuleDef) { d.Volatility = extVolHigh })
+		cfg := cloneOnlyCfg(func(c *classify.Config) {
+			setModule(c, modNameA, func(d *policy.ModuleDef) { d.Volatility = cfgVolLow })
+			setModule(c, modNameB, func(d *policy.ModuleDef) { d.Volatility = extVolHigh })
 		})
 		pairs := classify.CloneOnlyPairs(g, cfg)
 		if len(pairs) != 1 {
@@ -197,9 +196,9 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 
 	t.Run("distinct explicit owners → diff-owner distance, high severity", func(t *testing.T) {
 		t.Parallel()
-		cfg := cloneOnlyCfg(func(c *view.ClassifyConfig) {
-			setModule(c, modNameA, func(d *module.ModuleDef) { d.Owner = "team-a" })
-			setModule(c, modNameB, func(d *module.ModuleDef) { d.Owner = "team-b" })
+		cfg := cloneOnlyCfg(func(c *classify.Config) {
+			setModule(c, modNameA, func(d *policy.ModuleDef) { d.Owner = "team-a" })
+			setModule(c, modNameB, func(d *policy.ModuleDef) { d.Owner = "team-b" })
 			c.ExplicitOwners = map[string]bool{modNameA: true, modNameB: true}
 		})
 		pairs := classify.CloneOnlyPairs(g, cfg)
@@ -221,9 +220,9 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 
 	t.Run("frozen pair stays score-bearing with no advisory severity", func(t *testing.T) {
 		t.Parallel()
-		cfg := cloneOnlyCfg(func(c *view.ClassifyConfig) {
-			setModule(c, modNameA, func(d *module.ModuleDef) { d.Volatility = cfgVolFrozen })
-			setModule(c, modNameB, func(d *module.ModuleDef) { d.Volatility = cfgVolFrozen })
+		cfg := cloneOnlyCfg(func(c *classify.Config) {
+			setModule(c, modNameA, func(d *policy.ModuleDef) { d.Volatility = cfgVolFrozen })
+			setModule(c, modNameB, func(d *policy.ModuleDef) { d.Volatility = cfgVolFrozen })
 		})
 		pairs := classify.CloneOnlyPairs(g, cfg)
 		if len(pairs) != 1 {

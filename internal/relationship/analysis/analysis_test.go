@@ -12,7 +12,6 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/relationship/analysis"
@@ -38,16 +37,16 @@ const (
 
 // twoModules is the standard fixture topology: module a owned by team-a,
 // module b owned by team-b, so an a→b edge is a cross-owner relationship.
-func twoModules() map[string]module.ModuleDef {
-	return map[string]module.ModuleDef{
+func twoModules() map[string]policy.ModuleDef {
+	return map[string]policy.ModuleDef{
 		moduleA: {Paths: []string{"a/**"}, Owner: teamA, DeployUnit: moduleA, Subdomain: "core", Volatility: volHigh},
 		moduleB: {Paths: []string{"b/**"}, Owner: teamB, DeployUnit: moduleB, Subdomain: "supporting", Volatility: volHigh},
 	}
 }
 
-func relationshipPolicy(modules map[string]module.ModuleDef) policy.RelationshipPolicy {
+func relationshipPolicy(modules map[string]policy.ModuleDef) policy.RelationshipPolicy {
 	return policy.RelationshipPolicy{Topology: policy.TopologyView{
-		Modules: modules, ModuleMap: module.BuildMap(modules),
+		Modules: modules, ModuleMap: policy.BuildModuleMap(modules),
 		ExplicitOwners: map[string]bool{moduleA: true, moduleB: true},
 	}}
 }
@@ -467,7 +466,7 @@ func TestAnalyzeSummariesAreProduced(t *testing.T) {
 // A same-module edge is scored but stays report-only: it never becomes a
 // relationship advisory.
 func TestAnalyzeSameModuleEdgesAreLocalCouplingOnly(t *testing.T) {
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		moduleA: {Paths: []string{"a/**"}, Owner: teamA, DeployUnit: moduleA, Volatility: volHigh},
 	}
 	g := graph.Build([]graph.Facts{{

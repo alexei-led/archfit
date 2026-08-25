@@ -190,7 +190,7 @@ func runScoreSide(ctx context.Context, deps *Deps, opts RunOptions, snapshot pol
 	if err != nil {
 		return score.Scorecard{}, BaseEvidence{}, err
 	}
-	out, err := analyzer.Assess(ctx, req, acquiredSnapshot.AssessmentView(), relationships)
+	out, err := analyzer.Assess(ctx, req, acquiredSnapshot.Facts.ForAssessment(), acquiredSnapshot.Context, relationships)
 	if err != nil {
 		return score.Scorecard{}, BaseEvidence{}, err
 	}

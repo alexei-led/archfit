@@ -430,7 +430,7 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	//
 	// forbidden_layer_direction is checked by forbiddenLayerDirection.Check,
 	// which derives layer ordering from cfg.Layers and endpoint layers from the
-	// module map (module.Map.LayerFor) — it never reads a per-rule
+	// module map (policy.ModuleMap.LayerFor) — it never reads a per-rule
 	// from_layer/to_layer, so those keys are not emitted here. Because the check
 	// is global (every rule instance re-detects every back-edge in the graph),
 	// exactly ONE rule is emitted: a second instance would duplicate each

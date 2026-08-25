@@ -66,7 +66,6 @@ modules:
     layer: model
     subdomain: supporting
     volatility: medium
-
   # Runtime stage snapshots carry neutral facts plus cross-stage context. They
   # are core contracts, not pure model values or concrete adapters.
   evidence-stage-contracts:
@@ -81,7 +80,6 @@ modules:
     layer: core
     subdomain: supporting
     volatility: medium
-
   # Scope resolution is a supporting boundary over an injected VCS resolver.
   analysis-scope:
     owner: alexei-led
@@ -94,7 +92,6 @@ modules:
     layer: support
     subdomain: supporting
     volatility: low
-
   # File-level syntax classification is core evidence analysis, not a pure DTO.
   evidence-analysis:
     owner: alexei-led
@@ -107,7 +104,6 @@ modules:
     layer: core
     subdomain: supporting
     volatility: low
-
   # Graph and extractor-fact acquisition is an evidence-analysis stage. It is
   # adapter-layer because its ports carry scope and extractor process inputs.
   evidence-acquisition:
@@ -121,7 +117,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-
   # Architectural policy semantics.
   architecture-policy:
     owner: alexei-led
@@ -134,7 +129,6 @@ modules:
     layer: core
     subdomain: core
     volatility: high
-
   # Relationship classification and scoring semantics.
   relationship-analysis:
     owner: alexei-led
@@ -150,22 +144,6 @@ modules:
     layer: core
     subdomain: core
     volatility: high
-
-  # Architectural module and ownership value types remain separate until the
-  # policy capability owns their behavior without making stage contracts point
-  # outward from the model layer.
-  architecture-model:
-    owner: alexei-led
-    deploy_unit: archfit-cli
-    role: shared_model
-    paths:
-      - internal/model/module/**
-    public:
-      - internal/model/module
-    layer: model
-    subdomain: supporting
-    volatility: medium
-
   # Stable score, decision, persistence, and output contracts.
   report-contract:
     owner: alexei-led
@@ -180,21 +158,6 @@ modules:
     layer: model
     subdomain: supporting
     volatility: medium
-
-  # Transitional stage data contracts. Keep this module explicit until its
-  # remaining production consumers migrate to owner-specific contracts.
-  stage-views:
-    owner: alexei-led
-    deploy_unit: archfit-cli
-    role: shared_model
-    paths:
-      - internal/view/**
-    public:
-      - internal/view
-    layer: model
-    subdomain: supporting
-    volatility: low
-
   # Config decoding and validation is a separate lifecycle adapter around the
   # policy language. The domain policy package never imports this adapter.
   policy-config-adapter:
@@ -208,7 +171,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: high
-
   evidence-adapters:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -238,7 +200,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-
   persistence-adapters:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -258,7 +219,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-
   provider-adapters:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -270,7 +230,6 @@ modules:
     layer: adapter
     subdomain: generic
     volatility: medium
-
   report-adapters:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -286,7 +245,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-
   assessment-repair:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -300,7 +258,6 @@ modules:
     layer: core
     subdomain: core
     volatility: high
-
   analysis-application:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -311,7 +268,6 @@ modules:
     layer: application
     subdomain: supporting
     volatility: medium
-
   # Technical sequencing only. Domain stages live in evidence-analysis,
   # relationship-analysis, and assessment-repair.
   pipeline-engine:
@@ -325,7 +281,6 @@ modules:
     layer: engine
     subdomain: supporting
     volatility: medium
-
   config-lifecycle:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -339,7 +294,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-
   cli-composition:
     owner: alexei-led
     role: composition_root
@@ -351,7 +305,6 @@ modules:
     layer: cmd
     subdomain: generic
     volatility: medium
-
   development-tools:
     owner: alexei-led
     role: composition_root
@@ -366,7 +319,6 @@ modules:
     layer: cmd
     subdomain: generic
     volatility: low
-
   architecture-tests:
     owner: alexei-led
     role: test
@@ -485,19 +437,33 @@ rules:
     from: internal/model/**
     to: internal/baseline
     gate: fail
-  # Stage-contract package stays data-only: view may import only the model kernel.
-  - id: view_no_config
-    type: forbidden_dependency
-    from: internal/view/**
-    to: internal/config
-    gate: fail
-  # Policy-language boundary: runtime stages consume internal/view contracts,
+  # Policy-language boundary: runtime stages consume internal/policy declarations,
   # not the volatile config decoder/model. Only composition roots and the
   # config-lifecycle adapters may import internal/config.
   - id: policy_no_config
     type: forbidden_dependency
     from: internal/policy/**
     to: internal/config
+    gate: fail
+  # Evidence reports observations. A policy decision inside an acquisition
+  # contract means the tool boundary has started deciding architecture.
+  - id: evidence_no_policy
+    type: forbidden_dependency
+    from: internal/evidence/**
+    to: internal/policy/**
+    gate: fail
+  - id: evidence_no_config
+    type: forbidden_dependency
+    from: internal/evidence/**
+    to: internal/config
+    gate: fail
+  # internal/view is dissolved: every stage contract has a capability owner. The
+  # rule stays as a re-introduction guard — a new shared stage-view package is a
+  # boundary regression, not a refactor.
+  - id: no_stage_view
+    type: forbidden_dependency
+    from: internal/**
+    to: internal/view/**
     gate: fail
   - id: classify_no_config
     type: forbidden_dependency
@@ -557,11 +523,6 @@ rules:
   - id: agenttask_no_config
     type: forbidden_dependency
     from: internal/assessment/agenttask/**
-    to: internal/config
-    gate: fail
-  - id: evidence_ports_no_config
-    type: forbidden_dependency
-    from: internal/evidence/ports/**
     to: internal/config
     gate: fail
   - id: report_ports_no_config

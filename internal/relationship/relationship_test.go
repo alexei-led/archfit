@@ -27,7 +27,10 @@ func TestAnalysisResultOwnsOnlyRelationshipFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	forbiddenImports := []string{"internal/view", "internal/model/module", "internal/model/graph", "internal/relationship/coupling"}
+	// The relationship contract names its own facts. It must not reach for the
+	// policy vocabulary, the raw graph, or the classifier's internals — those are
+	// the broad type owners that make this contract expensive to depend on.
+	forbiddenImports := []string{"internal/policy", "internal/model/graph", "internal/relationship/coupling"}
 	for _, imp := range tree.Imports {
 		name := strings.Trim(imp.Path.Value, "\"")
 		for _, forbidden := range forbiddenImports {

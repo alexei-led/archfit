@@ -24,15 +24,15 @@ func (p *preparationRecorder) Prepare(context.Context) error {
 	return p.err
 }
 
-func (p *preparationRecorder) Acquire(context.Context, AnalysisRequest) (evidence.Snapshot, error) {
+func (p *preparationRecorder) Acquire(context.Context, AnalysisRequest) (Acquired, error) {
 	p.calls = append(p.calls, "acquire")
-	return evidence.Snapshot{}, nil
+	return Acquired{}, nil
 }
-func (p *preparationRecorder) Relate(context.Context, evidence.Snapshot) (relationship.AnalysisResult, error) {
+func (p *preparationRecorder) Relate(context.Context, Acquired) (relationship.AnalysisResult, error) {
 	p.calls = append(p.calls, "relate")
 	return relationship.AnalysisResult{}, nil
 }
-func (p *preparationRecorder) Assess(context.Context, AnalysisRequest, evidence.AssessmentView, relationship.AnalysisResult) (AnalysisResult, error) {
+func (p *preparationRecorder) Assess(context.Context, AnalysisRequest, evidence.AssessmentFacts, AnalysisContext, relationship.AnalysisResult) (AnalysisResult, error) {
 	p.calls = append(p.calls, "assess")
 	diagnostic := result.New()
 	diagnostic.Findings = append(diagnostic.Findings, finding.Finding{

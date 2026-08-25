@@ -6,11 +6,10 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -89,7 +88,7 @@ func TestRun(t *testing.T) {
 	//               owner="team-x", deploy_unit="svc-a", subdomain="generic"
 	//   module "d": paths=["services/d/**"], public=["services/d/api/**"]
 	//               owner="team-x", deploy_unit="svc-a", subdomain=""  (unknown)
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"a": {
 			Paths:      []string{pathsA},
 			Public:     []string{"services/a/api/**"},
@@ -122,7 +121,7 @@ func TestRun(t *testing.T) {
 		},
 	}
 
-	cfg := view.ClassifyConfig{Modules: modules}
+	cfg := classify.Config{Modules: modules}
 
 	// Helper to build a simple imports edge between two file paths.
 	importEdge := func(from, to string) graph.Edge {
@@ -265,7 +264,7 @@ func TestRun_AttachesDeterministicConnascenceEvidence(t *testing.T) {
 		},
 	}
 	g := makeGraph([]graph.Edge{edge})
-	idx := classify.Run(g, view.ClassifyConfig{Modules: map[string]module.ModuleDef{
+	idx := classify.Run(g, classify.Config{Modules: map[string]policy.ModuleDef{
 		"a": {Paths: []string{pathsA}},
 		"b": {Paths: []string{pathsB}},
 	}})
@@ -287,7 +286,7 @@ func TestRun_ConnascenceAbstainsWithoutExtractorEvidence(t *testing.T) {
 		Language: graph.LangGo,
 	}
 	g := makeGraph([]graph.Edge{edge})
-	idx := classify.Run(g, view.ClassifyConfig{Modules: map[string]module.ModuleDef{
+	idx := classify.Run(g, classify.Config{Modules: map[string]policy.ModuleDef{
 		"a": {Paths: []string{pathsA}},
 		"b": {Paths: []string{pathsB}},
 	}})
@@ -300,7 +299,7 @@ func TestRun_ConnascenceAbstainsWithoutExtractorEvidence(t *testing.T) {
 // TestRun_EmptyGraph verifies that Run on an empty graph returns an empty index.
 func TestRun_EmptyGraph(t *testing.T) {
 	g := graph.Build(nil)
-	cfg := view.ClassifyConfig{Modules: map[string]module.ModuleDef{}}
+	cfg := classify.Config{Modules: map[string]policy.ModuleDef{}}
 	idx := classify.Run(g, cfg)
 	if len(idx) != 0 {
 		t.Errorf("expected empty index for empty graph, got %d entries", len(idx))
@@ -324,14 +323,14 @@ func TestRun_RegistersRustModuleGraphNodes(t *testing.T) {
 	g := makeGraph([]graph.Edge{e})
 
 	// Without registration: unknown distance (not counted).
-	bare := classify.Run(g, view.ClassifyConfig{Modules: map[string]module.ModuleDef{}})
+	bare := classify.Run(g, classify.Config{Modules: map[string]policy.ModuleDef{}})
 	if cl := bare[edgeKey(e)]; cl.Distance != coupling.DistanceUnknown {
 		t.Errorf("unregistered: Distance = %q, want unknown (module nodes not in config)", cl.Distance)
 	}
 
 	// With registration: cross-module, same owner (siblings in one crate), functional.
-	mods := classify.AugmentModulesFromGraph(g, map[string]module.ModuleDef{})
-	idx := classify.Run(g, view.ClassifyConfig{Modules: mods})
+	mods := classify.AugmentModulesFromGraph(g, map[string]policy.ModuleDef{})
+	idx := classify.Run(g, classify.Config{Modules: mods})
 	cl, ok := idx[edgeKey(e)]
 	if !ok {
 		t.Fatalf("edge not found in index")
@@ -351,7 +350,7 @@ func TestAugmentModulesFromGraph_LeavesNonRustUntouched(t *testing.T) {
 	g := makeGraph([]graph.Edge{{
 		From: "package:internal/x", To: "package:internal/y", Kind: graph.EdgeKindImports, Language: "go",
 	}})
-	in := map[string]module.ModuleDef{}
+	in := map[string]policy.ModuleDef{}
 	out := classify.AugmentModulesFromGraph(g, in)
 	if len(out) != 0 {
 		t.Errorf("non-Rust nodes must not be registered, got %d modules: %v", len(out), out)
@@ -361,11 +360,11 @@ func TestAugmentModulesFromGraph_LeavesNonRustUntouched(t *testing.T) {
 // TestRun_IndexKeyMatchesEdge verifies that the index key format is consistent
 // with edge canonical key (from + NUL + to + NUL + kind).
 func TestRun_IndexKeyMatchesEdge(t *testing.T) {
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"a": {Paths: []string{globPkgA}, Public: []string{"pkg/a/api/**"}},
 		"b": {Paths: []string{globPkgB}, Public: []string{"pkg/b/api/**"}},
 	}
-	cfg := view.ClassifyConfig{Modules: modules}
+	cfg := classify.Config{Modules: modules}
 
 	e := graph.Edge{
 		From:     "file:pkg/a/main.go",
@@ -385,11 +384,11 @@ func TestRun_IndexKeyMatchesEdge(t *testing.T) {
 // TestRun_ExplicitVolatilityFieldOverridesSubdomain verifies that an explicit
 // Volatility field on a ModuleDef takes precedence over the Subdomain heuristic.
 func TestRun_ExplicitVolatilityFieldOverridesSubdomain(t *testing.T) {
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"a": {Paths: []string{globPkgA}},
 		"b": {Paths: []string{globPkgB}, Subdomain: subdomainCore, Volatility: "low"},
 	}
-	cfg := view.ClassifyConfig{Modules: modules}
+	cfg := classify.Config{Modules: modules}
 
 	e := graph.Edge{
 		From:     filePkgAXGo,
@@ -413,7 +412,7 @@ func TestRun_ExplicitVolatilityFieldOverridesSubdomain(t *testing.T) {
 func TestRun_ExplicitnessHintOverridesGlob(t *testing.T) {
 	// module "a" treats services/a/internal/** as internal → StrengthIntrusive → ExplicitnessImplicit by glob.
 	// An AST signal can flip this to "explicit" via ExplicitnessHint.
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"a": {
 			Paths:    []string{pathsA},
 			Internal: []string{"services/a/internal/**"},
@@ -425,7 +424,7 @@ func TestRun_ExplicitnessHintOverridesGlob(t *testing.T) {
 			Owner:  ownerTeamY, DeployUnit: deployUnitB,
 		},
 	}
-	cfg := view.ClassifyConfig{Modules: modules}
+	cfg := classify.Config{Modules: modules}
 
 	tests := []struct {
 		name    string
@@ -481,7 +480,7 @@ func TestRun_Severity(t *testing.T) {
 	//   "b": paths=services/b/**, public=services/b/api/**, internal=services/b/internal/**,
 	//        owner=team-y, deploy=svc-b, subdomain=supporting (low volatility)
 	//   "c": paths=services/c/**, public=services/c/api/**, owner=team-x, deploy=svc-a, subdomain=generic (low vol)
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"a": {
 			Paths:      []string{pathsA},
 			Public:     []string{"services/a/api/**"},
@@ -505,7 +504,7 @@ func TestRun_Severity(t *testing.T) {
 			Subdomain:  subdomainGeneric,
 		},
 	}
-	cfg := view.ClassifyConfig{Modules: modules}
+	cfg := classify.Config{Modules: modules}
 
 	importEdge := func(from, to string) graph.Edge {
 		return graph.Edge{
@@ -572,11 +571,11 @@ func TestRun_Severity(t *testing.T) {
 func TestRun_StrengthHintFallbackAndPrecedence(t *testing.T) {
 	// Module "b" declares services/b/api/** as its public surface but no internal
 	// globs, so a plain import of services/b/impl.go has no config-derived strength.
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"a": {Paths: []string{pathsA}, Owner: ownerTeamX, DeployUnit: deployUnitA},
 		"b": {Paths: []string{pathsB}, Public: []string{publicB}, Owner: ownerTeamY, DeployUnit: deployUnitB},
 	}
-	cfg := view.ClassifyConfig{Modules: modules}
+	cfg := classify.Config{Modules: modules}
 
 	const toBImpl = "file:services/b/impl.go" // no config-derived strength
 
@@ -671,7 +670,7 @@ const (
 )
 
 func TestRun_ApprovedLabelPrecedence(t *testing.T) {
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"a": {Paths: []string{globPkgA}},
 		"b": {Paths: []string{globPkgB}},
 	}
@@ -692,14 +691,14 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 	key := edge.From + "\x00" + edge.To + "\x00" + string(edge.Kind)
 
 	t.Run("hint applies without a label", func(t *testing.T) {
-		idx := classify.Run(g, view.ClassifyConfig{Modules: modules})
+		idx := classify.Run(g, classify.Config{Modules: modules})
 		if got := idx[key].Strength; got != coupling.StrengthFunctional {
 			t.Errorf("strength = %q, want functional (hint)", got)
 		}
 	})
 
 	t.Run("approved label beats hint", func(t *testing.T) {
-		idx := classify.Run(g, view.ClassifyConfig{
+		idx := classify.Run(g, classify.Config{
 			Modules:        modules,
 			ApprovedLabels: map[string]string{labelKeyAB: pinnedModel},
 		})
@@ -714,11 +713,11 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		// refines the floor to model — beating the contract default and the
 		// functional hint. (Previously the glob was treated as authoritative contract,
 		// which masked the real coupling strength — the bug F2 fixes.)
-		withGlobs := map[string]module.ModuleDef{
+		withGlobs := map[string]policy.ModuleDef{
 			"a": {Paths: []string{globPkgA}},
 			"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
 		}
-		idx := classify.Run(g, view.ClassifyConfig{
+		idx := classify.Run(g, classify.Config{
 			Modules:        withGlobs,
 			ApprovedLabels: map[string]string{labelKeyAB: pinnedModel},
 		})
@@ -730,18 +729,18 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 	t.Run("public glob without label refines to hint kind", func(t *testing.T) {
 		// No human label: the public-glob contract floor is refined to the hint's
 		// kind (functional here), not left at the weakest contract default.
-		withGlobs := map[string]module.ModuleDef{
+		withGlobs := map[string]policy.ModuleDef{
 			"a": {Paths: []string{globPkgA}},
 			"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
 		}
-		idx := classify.Run(g, view.ClassifyConfig{Modules: withGlobs})
+		idx := classify.Run(g, classify.Config{Modules: withGlobs})
 		if got := idx[key].Strength; got != coupling.StrengthFunctional {
 			t.Errorf("strength = %q, want functional (hint refines public-glob floor)", got)
 		}
 	})
 
 	t.Run("label for a different pair does not apply", func(t *testing.T) {
-		idx := classify.Run(g, view.ClassifyConfig{
+		idx := classify.Run(g, classify.Config{
 			Modules:        modules,
 			ApprovedLabels: map[string]string{"b\x00a": pinnedModel},
 		})
@@ -758,7 +757,7 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 // compiler-grade beats LLM, the same rule as SCIP-for-Go — and, being
 // human-approved, it is not overridden by the clone-Symmetric upgrade.
 func TestRun_LLMLabelPrecedence(t *testing.T) {
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"a": {Paths: []string{globPkgA}},
 		"b": {Paths: []string{globPkgB}},
 	}
@@ -776,7 +775,7 @@ func TestRun_LLMLabelPrecedence(t *testing.T) {
 
 	t.Run("fills a cell all static sources left unknown", func(t *testing.T) {
 		g, key := buildEdge("")
-		idx := classify.Run(g, view.ClassifyConfig{Modules: modules, LLMLabels: llmModel})
+		idx := classify.Run(g, classify.Config{Modules: modules, LLMLabels: llmModel})
 		cl := idx[key]
 		if cl.Strength != coupling.StrengthModel {
 			t.Errorf("strength = %q, want model (llm label fills the abstained cell)", cl.Strength)
@@ -794,7 +793,7 @@ func TestRun_LLMLabelPrecedence(t *testing.T) {
 
 	t.Run("high-confidence llm fill does not count as uncertain", func(t *testing.T) {
 		g, key := buildEdge("")
-		idx := classify.Run(g, view.ClassifyConfig{
+		idx := classify.Run(g, classify.Config{
 			Modules:            modules,
 			LLMLabels:          llmModel,
 			LLMLabelConfidence: map[string]string{labelKeyAB: labels.ConfidenceHigh},
@@ -810,7 +809,7 @@ func TestRun_LLMLabelPrecedence(t *testing.T) {
 
 	t.Run("never overrides the Go type-info hint", func(t *testing.T) {
 		g, key := buildEdge(hintFunctional)
-		idx := classify.Run(g, view.ClassifyConfig{Modules: modules, LLMLabels: llmModel})
+		idx := classify.Run(g, classify.Config{Modules: modules, LLMLabels: llmModel})
 		cl := idx[key]
 		if cl.Strength != coupling.StrengthFunctional {
 			t.Errorf("strength = %q, want functional (compiler-grade hint beats llm label)", cl.Strength)
@@ -821,24 +820,24 @@ func TestRun_LLMLabelPrecedence(t *testing.T) {
 	})
 
 	t.Run("never refines a config public-glob contract floor", func(t *testing.T) {
-		withPublic := map[string]module.ModuleDef{
+		withPublic := map[string]policy.ModuleDef{
 			"a": {Paths: []string{globPkgA}},
 			"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
 		}
 		g, key := buildEdge("")
-		idx := classify.Run(g, view.ClassifyConfig{Modules: withPublic, LLMLabels: llmModel})
+		idx := classify.Run(g, classify.Config{Modules: withPublic, LLMLabels: llmModel})
 		if got := idx[key].Strength; got != coupling.StrengthContract {
 			t.Errorf("strength = %q, want contract (config-authoritative floor stands)", got)
 		}
 	})
 
 	t.Run("never overrides config-authoritative intrusive", func(t *testing.T) {
-		withInternal := map[string]module.ModuleDef{
+		withInternal := map[string]policy.ModuleDef{
 			"a": {Paths: []string{globPkgA}},
 			"b": {Paths: []string{globPkgB}, Internal: []string{globPkgB}},
 		}
 		g, key := buildEdge("")
-		idx := classify.Run(g, view.ClassifyConfig{Modules: withInternal, LLMLabels: llmModel})
+		idx := classify.Run(g, classify.Config{Modules: withInternal, LLMLabels: llmModel})
 		if got := idx[key].Strength; got != coupling.StrengthIntrusive {
 			t.Errorf("strength = %q, want intrusive (internal glob is authoritative)", got)
 		}
@@ -846,7 +845,7 @@ func TestRun_LLMLabelPrecedence(t *testing.T) {
 
 	t.Run("directional: reverse-pair label does not apply", func(t *testing.T) {
 		g, key := buildEdge("")
-		idx := classify.Run(g, view.ClassifyConfig{
+		idx := classify.Run(g, classify.Config{
 			Modules:   modules,
 			LLMLabels: map[string]string{"b\x00a": pinnedModel},
 		})
@@ -857,7 +856,7 @@ func TestRun_LLMLabelPrecedence(t *testing.T) {
 
 	t.Run("not overridden by the clone-Symmetric upgrade", func(t *testing.T) {
 		g, key := buildEdge("")
-		idx := classify.Run(g, view.ClassifyConfig{
+		idx := classify.Run(g, classify.Config{
 			Modules:               modules,
 			LLMLabels:             llmModel,
 			CrossModuleClonePairs: map[string]struct{}{labelKeyAB: {}},
@@ -888,22 +887,22 @@ func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 		}})
 		return g, e.From + "\x00" + e.To + "\x00" + string(e.Kind)
 	}
-	publicB := map[string]module.ModuleDef{
+	publicB := map[string]policy.ModuleDef{
 		"a": {Paths: []string{globPkgA}},
 		"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
 	}
-	internalB := map[string]module.ModuleDef{
+	internalB := map[string]policy.ModuleDef{
 		"a": {Paths: []string{globPkgA}},
 		"b": {Paths: []string{globPkgB}, Internal: []string{globPkgB}},
 	}
 	// No public/internal globs: classifyStrength is unknown, the hint decides.
-	noGlobB := map[string]module.ModuleDef{
+	noGlobB := map[string]policy.ModuleDef{
 		"a": {Paths: []string{globPkgA}},
 		"b": {Paths: []string{globPkgB}},
 	}
 	cases := []struct {
 		name    string
-		modules map[string]module.ModuleDef
+		modules map[string]policy.ModuleDef
 		hint    string
 		want    coupling.Strength
 	}{
@@ -925,7 +924,7 @@ func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			g, key := build(tc.hint)
-			idx := classify.Run(g, view.ClassifyConfig{Modules: tc.modules})
+			idx := classify.Run(g, classify.Config{Modules: tc.modules})
 			if got := idx[key].Strength; got != tc.want {
 				t.Errorf("strength = %q, want %q", got, tc.want)
 			}
@@ -953,17 +952,17 @@ func TestRun_StrengthFallbackFromConnascence(t *testing.T) {
 		}})
 		return g, e.From + "\x00" + e.To + "\x00" + string(e.Kind)
 	}
-	publicB := map[string]module.ModuleDef{
+	publicB := map[string]policy.ModuleDef{
 		"a": {Paths: []string{globPkgA}},
 		"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
 	}
-	noGlobB := map[string]module.ModuleDef{
+	noGlobB := map[string]policy.ModuleDef{
 		"a": {Paths: []string{globPkgA}},
 		"b": {Paths: []string{globPkgB}},
 	}
 	cases := []struct {
 		name         string
-		modules      map[string]module.ModuleDef
+		modules      map[string]policy.ModuleDef
 		hints        []graph.ConnascenceHint
 		want         coupling.Strength
 		wantInferred bool
@@ -978,7 +977,7 @@ func TestRun_StrengthFallbackFromConnascence(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			g, key := build(tc.hints)
-			idx := classify.Run(g, view.ClassifyConfig{Modules: tc.modules})
+			idx := classify.Run(g, classify.Config{Modules: tc.modules})
 			if got := idx[key].Strength; got != tc.want {
 				t.Fatalf("strength = %q, want %q", got, tc.want)
 			}
@@ -990,7 +989,7 @@ func TestRun_StrengthFallbackFromConnascence(t *testing.T) {
 }
 
 func TestRun_ContractRecommended(t *testing.T) {
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		subdomainCore: {
 			Paths:      []string{"services/core/**"},
 			Public:     []string{"services/core/api/**"},
@@ -1020,7 +1019,7 @@ func TestRun_ContractRecommended(t *testing.T) {
 			DeployUnit: deployUnitA,
 		},
 	}
-	cfg := view.ClassifyConfig{Modules: modules}
+	cfg := classify.Config{Modules: modules}
 
 	edge := func(from, to, hint string) graph.Edge {
 		return graph.Edge{
@@ -1114,7 +1113,7 @@ func TestRun_DegenerateOwnerSuppression(t *testing.T) {
 		// Module names use path structure so codeStructureDistance works correctly:
 		//   "pkg/a" and "pkg/b" are siblings → structural = SameOwner.
 		//   "pkg/a" and "services/x" are distant trees → structural = DiffOwner.
-		modules := map[string]module.ModuleDef{
+		modules := map[string]policy.ModuleDef{
 			modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX},
 			modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamX},
 			modKeySvcX: {Paths: []string{globSvcX}, Owner: ownerTeamX},
@@ -1143,7 +1142,7 @@ func TestRun_DegenerateOwnerSuppression(t *testing.T) {
 		// Two modules with DISTINCT owners (not degenerate). isDegenerateOwnerMap returns false.
 		// For sibling modules: code-structure = SameOwner, ownership = DiffOwner.
 		// max(SameOwner, DiffOwner) = DiffOwner — ownership lifts the result.
-		modules := map[string]module.ModuleDef{
+		modules := map[string]policy.ModuleDef{
 			modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX},
 			modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamY},
 		}
@@ -1168,7 +1167,7 @@ func TestRun_DegenerateOwnerSuppression(t *testing.T) {
 func TestRun_VolatilityUndeclaredWithoutConfig(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"a": {Paths: []string{globPkgA}, Owner: ownerTeamX},
 			"b": {Paths: []string{globPkgB}, Owner: ownerTeamY}, // no volatility, no subdomain
 		},
@@ -1199,7 +1198,7 @@ func TestRun_VolatilityUndeclaredWithoutConfig(t *testing.T) {
 // when every module shares the same owner.
 func TestRun_SingleOwnerFarModulesStayFar(t *testing.T) {
 	// All three modules have the same owner → degenerate → ownership suppressed.
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX},
 		modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamX},
 		modKeySvcX: {Paths: []string{globSvcX}, Owner: ownerTeamX},
@@ -1242,7 +1241,7 @@ func TestRun_MultiOwnerSiblingsLifted(t *testing.T) {
 	// Two distinct owners → not degenerate → ownership applies.
 	// pkg/a and pkg/b are code-structure siblings (same_owner by structure),
 	// but owned by different teams → ownership lifts to DiffOwner.
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX},
 		modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamY},
 	}
@@ -1271,7 +1270,7 @@ func TestSmallOSSDistanceFixture(t *testing.T) {
 	// Typical small OSS repo: one or two maintainers, same owner everywhere.
 	// Code structure must be the sole differentiator.
 	const soleOwner = "alice"
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"cmd/tool":       {Paths: []string{"cmd/tool/**"}, Owner: soleOwner},
 		"internal/core":  {Paths: []string{"internal/core/**"}, Owner: soleOwner},
 		"internal/store": {Paths: []string{"internal/store/**"}, Owner: soleOwner},
@@ -1344,7 +1343,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 	}
 
 	t.Run("degenerate owner → code_structure basis", func(t *testing.T) {
-		modules := map[string]module.ModuleDef{
+		modules := map[string]policy.ModuleDef{
 			modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX},
 			modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamX},
 		}
@@ -1358,7 +1357,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 	})
 
 	t.Run("explicit owner → ownership basis", func(t *testing.T) {
-		modules := map[string]module.ModuleDef{
+		modules := map[string]policy.ModuleDef{
 			modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX},
 			modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamY},
 		}
@@ -1373,7 +1372,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 	})
 
 	t.Run("deploy unit difference → deploy_unit basis", func(t *testing.T) {
-		modules := map[string]module.ModuleDef{
+		modules := map[string]policy.ModuleDef{
 			modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX, DeployUnit: deployUnitA},
 			modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamX, DeployUnit: deployUnitB},
 		}
@@ -1390,7 +1389,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 	})
 
 	t.Run("same module → unknown basis (omits from JSON)", func(t *testing.T) {
-		modules := map[string]module.ModuleDef{
+		modules := map[string]policy.ModuleDef{
 			modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX},
 		}
 		// Same-module edge; basis is unknown regardless of ownership config.
@@ -1409,10 +1408,10 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 func TestRun_CohesiveCloseModules(t *testing.T) {
 	// Single module "internal/core". Two files within it.
 	const soleOwner = "alice"
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"internal/core": {Paths: []string{"internal/core/**"}, Owner: soleOwner},
 	}
-	cfg := view.ClassifyConfig{Modules: modules}
+	cfg := classify.Config{Modules: modules}
 
 	e := graph.Edge{
 		From:     "file:internal/core/domain.go",
@@ -1442,11 +1441,11 @@ func TestRun_CohesiveCloseModules(t *testing.T) {
 func TestRun_SmallOSSDeployUnitBoundaryStaysFar(t *testing.T) {
 	// Single owner "alice" everywhere (degenerate → ownership suppressed).
 	// But modules declare distinct deploy units, which is absolute.
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		modKeyPkgA: {Paths: []string{globPkgA}, Owner: "alice", DeployUnit: deployUnitA},
 		modKeyPkgB: {Paths: []string{globPkgB}, Owner: "alice", DeployUnit: deployUnitB},
 	}
-	cfg := view.ClassifyConfig{Modules: modules}
+	cfg := classify.Config{Modules: modules}
 
 	e := graph.Edge{
 		From:     filePkgAXGo,
@@ -1472,7 +1471,7 @@ func TestRun_SmallOSSDeployUnitBoundaryStaysFar(t *testing.T) {
 // owner: alexei-led, so without this guard all distances collapse to SameOwner.
 func TestRun_ExplicitOwnerSingleSameOwner(t *testing.T) {
 	const ownerAlexei = "alexei-led"
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerAlexei},
 		modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerAlexei},
 		modKeySvcX: {Paths: []string{globSvcX}, Owner: ownerAlexei},
@@ -1515,7 +1514,7 @@ func TestRun_ExplicitOwnerSingleSameOwner(t *testing.T) {
 func TestRun_VolatilityUnknownWhenModuleUnresolved(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"a": {Paths: []string{globPkgA}, Owner: ownerTeamX},
 		},
 	}
@@ -1578,7 +1577,7 @@ func TestAugmentCargoCrateNodes(t *testing.T) {
 			{Dir: "crates/ruff_linter", Name: "ruff_linter"},
 			{Dir: "crates/ruff_python_ast", Name: crateAst},
 		}, []graph.Edge{e})
-		cfg := map[string]module.ModuleDef{
+		cfg := map[string]policy.ModuleDef{
 			"ruff_linter": {Paths: []string{"crates/ruff_linter/**"}, Volatility: "high", Subdomain: subdomainCore},
 			crateAst:      {Paths: []string{"crates/ruff_python_ast/**"}, Volatility: "medium", Subdomain: "generic"},
 		}
@@ -1591,7 +1590,7 @@ func TestAugmentCargoCrateNodes(t *testing.T) {
 			t.Errorf("module attributes lost: vol=%q sub=%q", mods[crateAst].Volatility, mods[crateAst].Subdomain)
 		}
 		// The cross-crate edge now classifies with a real Distance (was Unknown → external).
-		idx := classify.Run(g, view.ClassifyConfig{Modules: mods})
+		idx := classify.Run(g, classify.Config{Modules: mods})
 		cl, ok := idx[edgeKey(e)]
 		if !ok {
 			t.Fatal("cross-crate edge missing from coupling index")
@@ -1607,7 +1606,7 @@ func TestAugmentCargoCrateNodes(t *testing.T) {
 			{Dir: crateTokio, Name: crateTokio},
 			{Dir: crateUtil, Name: crateUtil},
 		}, []graph.Edge{e})
-		cfg := map[string]module.ModuleDef{
+		cfg := map[string]policy.ModuleDef{
 			crateTokio: {Paths: []string{crateTokio}},
 			crateUtil:  {Paths: []string{crateUtil}},
 		}
@@ -1626,7 +1625,7 @@ func TestAugmentCargoCrateNodes(t *testing.T) {
 			Language:   graph.LangRust,
 			CrateRoots: []graph.CrateRoot{{Dir: "crates/solo", Name: crateSolo}},
 		}})
-		cfg := map[string]module.ModuleDef{crateSolo: {Paths: []string{"crates/solo/**"}}}
+		cfg := map[string]policy.ModuleDef{crateSolo: {Paths: []string{"crates/solo/**"}}}
 		mods := classify.AugmentCargoCrateNodes(g, cfg)
 		if len(mods[crateSolo].Paths) != 1 || mods[crateSolo].Paths[0] != "crates/solo/**" {
 			t.Errorf("single-crate repo should be untouched, got %v", mods[crateSolo].Paths)
@@ -1683,7 +1682,7 @@ func TestAugmentGoWorkspaceModules_TwoMembersAutoRegister(t *testing.T) {
 	}
 	g := buildGoWorkspaceGraph(goMods, []graph.Edge{e})
 
-	mods := classify.AugmentGoWorkspaceModules(g, map[string]module.ModuleDef{})
+	mods := classify.AugmentGoWorkspaceModules(g, map[string]policy.ModuleDef{})
 	if len(mods) != 2 {
 		t.Fatalf("want 2 synthetic modules, got %d: %v", len(mods), mods)
 	}
@@ -1703,7 +1702,7 @@ func TestAugmentGoWorkspaceModules_TwoMembersAutoRegister(t *testing.T) {
 	}
 
 	// Cross-member edge must get a real Distance and score.
-	idx := classify.Run(g, view.ClassifyConfig{Modules: mods})
+	idx := classify.Run(g, classify.Config{Modules: mods})
 	cl, ok := idx[edgeKey(e)]
 	if !ok {
 		t.Fatalf("edge not found in coupling index")
@@ -1726,7 +1725,7 @@ func TestAugmentGoWorkspaceModules_OneMemberNoOp(t *testing.T) {
 		[]graph.GoModule{{Path: "example.com/myapp", RelDir: "cmd/myapp"}},
 		nil,
 	)
-	in := map[string]module.ModuleDef{"mymod": {Paths: []string{pathsA}}}
+	in := map[string]policy.ModuleDef{"mymod": {Paths: []string{pathsA}}}
 	out := classify.AugmentGoWorkspaceModules(g, in)
 	if len(out) != len(in) {
 		t.Errorf("1-member: want map unchanged (len %d), got len %d: %v", len(in), len(out), out)
@@ -1743,7 +1742,7 @@ func TestAugmentGoWorkspaceModules_ConfigGlobWins(t *testing.T) {
 	g := buildGoWorkspaceGraph(goMods, nil)
 	// Both member directories already covered by explicit config modules.
 	// Use the deployUnitA/B constants ("svc-a"/"svc-b") as map keys to satisfy goconst.
-	in := map[string]module.ModuleDef{
+	in := map[string]policy.ModuleDef{
 		deployUnitA: {Paths: []string{pathsA}},
 		deployUnitB: {Paths: []string{pathsB}},
 	}
@@ -1759,10 +1758,10 @@ func TestAugmentGoWorkspaceModules_ConfigGlobWins(t *testing.T) {
 // module). Without this fix, inter-submodule edges classify as different_owner
 // instead of cross_module_same_owner (the herdr regression).
 func TestAugmentModulesFromGraph_OwnerInheritance(t *testing.T) {
-	// Config declares the crate-level module with owner="team-x".
+	// classify.Config declares the crate-level module with owner="team-x".
 	// cargo-modules graph produces submodule nodes "mycrate::a" and "mycrate::b"
 	// which are NOT in config — they should be synthesised and inherit owner "team-x".
-	configMods := map[string]module.ModuleDef{
+	configMods := map[string]policy.ModuleDef{
 		crateName: {Paths: []string{crateName + "/**"}, Owner: ownerTeamX},
 	}
 	e := graph.Edge{
@@ -1788,7 +1787,7 @@ func TestAugmentModulesFromGraph_OwnerInheritance(t *testing.T) {
 	}
 
 	// The inter-submodule edge must classify as cross_module_same_owner, not different_owner.
-	idx := classify.Run(g, view.ClassifyConfig{Modules: augmented})
+	idx := classify.Run(g, classify.Config{Modules: augmented})
 	cl, ok := idx[edgeKey(e)]
 	if !ok {
 		t.Fatalf("edge not found in index after augmentation")
@@ -1823,7 +1822,7 @@ func TestAugmentCargoCrateNodes_LeavesGoUntouched(t *testing.T) {
 	}})
 	// One declared module that does NOT cover either uncovered package —
 	// mirrors omni's "intentionally-partial module coverage" shape.
-	in := map[string]module.ModuleDef{
+	in := map[string]policy.ModuleDef{
 		"declared": {Paths: []string{"cmd/**"}, Owner: ownerTeamX},
 	}
 
@@ -1853,7 +1852,7 @@ type wantInherited struct {
 
 // assertInherited fails t for every field of got that does not match want,
 // so a single run reports every dropped attribute at once.
-func assertInherited(t *testing.T, label string, got module.ModuleDef, want wantInherited) {
+func assertInherited(t *testing.T, label string, got policy.ModuleDef, want wantInherited) {
 	t.Helper()
 	if got.Owner != want.Owner {
 		t.Errorf("%s: Owner = %q, want %q (ancestor inheritance)", label, got.Owner, want.Owner)
@@ -1888,7 +1887,7 @@ func TestAugmentFunctions_InheritAllAncestorAttributes(t *testing.T) {
 		Layer:      "domain",
 		DeployUnit: "svc-inherit",
 	}
-	parent := module.ModuleDef{
+	parent := policy.ModuleDef{
 		Owner:      want.Owner,
 		Volatility: want.Volatility,
 		Subdomain:  want.Subdomain,
@@ -1897,10 +1896,10 @@ func TestAugmentFunctions_InheritAllAncestorAttributes(t *testing.T) {
 	}
 
 	t.Run("AugmentModulesFromGraph (Rust submodule)", func(t *testing.T) {
-		// Config declares only the crate-level module "mycrate"; the
+		// classify.Config declares only the crate-level module "mycrate"; the
 		// cargo-modules graph produces submodule node "mycrate::child" that
 		// is not in config and must be synthesised as a child of "mycrate".
-		configMods := map[string]module.ModuleDef{"mycrate": parent}
+		configMods := map[string]policy.ModuleDef{"mycrate": parent}
 		e := graph.Edge{
 			From: "package:mycrate", To: "package:mycrate::child",
 			Kind: graph.EdgeKindDependsOn, Language: langRust, StrengthHint: hintFunctional,
@@ -1921,7 +1920,7 @@ func TestAugmentFunctions_InheritAllAncestorAttributes(t *testing.T) {
 		// still gets auto-registered), but its stripped directory IS a path
 		// prefix of the member's RelDir, so ancestorByPath can donate —
 		// mirrors the documented "partial ancestor donates owner" fallback.
-		configMods := map[string]module.ModuleDef{parentModuleKey: {
+		configMods := map[string]policy.ModuleDef{parentModuleKey: {
 			Paths: []string{"services"}, Owner: want.Owner, Volatility: want.Volatility,
 			Subdomain: want.Subdomain, Layer: want.Layer, DeployUnit: want.DeployUnit,
 		}}
@@ -1944,7 +1943,7 @@ func TestAugmentFunctions_InheritAllAncestorAttributes(t *testing.T) {
 		// prefix of the crate's root ("crates/extra") but does not itself
 		// cover "crates/extra/x" via ModuleFor, so the crate falls through to
 		// synthetic registration and donation via ancestorByPath.
-		configMods := map[string]module.ModuleDef{parentModuleKey: {
+		configMods := map[string]policy.ModuleDef{parentModuleKey: {
 			Paths: []string{"crates"}, Owner: want.Owner, Volatility: want.Volatility,
 			Subdomain: want.Subdomain, Layer: want.Layer, DeployUnit: want.DeployUnit,
 		}}
@@ -1973,7 +1972,7 @@ func TestAugmentFunctions_InheritOwnerlessAncestorAttributes(t *testing.T) {
 		Layer:      "domain",
 		DeployUnit: "svc-ownerless",
 	}
-	parent := module.ModuleDef{
+	parent := policy.ModuleDef{
 		Volatility: want.Volatility,
 		Subdomain:  want.Subdomain,
 		Layer:      want.Layer,
@@ -1981,7 +1980,7 @@ func TestAugmentFunctions_InheritOwnerlessAncestorAttributes(t *testing.T) {
 	}
 
 	t.Run("AugmentModulesFromGraph (Rust submodule)", func(t *testing.T) {
-		configMods := map[string]module.ModuleDef{crateName: parent}
+		configMods := map[string]policy.ModuleDef{crateName: parent}
 		e := graph.Edge{
 			From: "package:" + crateName, To: "package:" + crateName + "::child",
 			Kind: graph.EdgeKindDependsOn, Language: langRust, StrengthHint: hintFunctional,
@@ -1997,7 +1996,7 @@ func TestAugmentFunctions_InheritOwnerlessAncestorAttributes(t *testing.T) {
 	})
 
 	t.Run("AugmentGoWorkspaceModules (workspace member)", func(t *testing.T) {
-		configMods := map[string]module.ModuleDef{parentModuleKey: {
+		configMods := map[string]policy.ModuleDef{parentModuleKey: {
 			Paths:      []string{"services"},
 			Volatility: want.Volatility,
 			Subdomain:  want.Subdomain,
@@ -2019,7 +2018,7 @@ func TestAugmentFunctions_InheritOwnerlessAncestorAttributes(t *testing.T) {
 	})
 
 	t.Run("AugmentCargoCrateNodes (uncovered crate)", func(t *testing.T) {
-		configMods := map[string]module.ModuleDef{parentModuleKey: {
+		configMods := map[string]policy.ModuleDef{parentModuleKey: {
 			Paths:      []string{"crates"},
 			Volatility: want.Volatility,
 			Subdomain:  want.Subdomain,
@@ -2050,10 +2049,10 @@ func TestAugmentFunctions_InheritOwnerlessAncestorAttributes(t *testing.T) {
 // (which keys on Severity) never fires for it. Abstain rules are identical:
 // unknown strength still abstains at same-module distance.
 func TestRun_SameModuleScoredSeverityNone(t *testing.T) {
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		"a": {Paths: []string{pathsA}, Subdomain: subdomainCore},
 	}
-	cfg := view.ClassifyConfig{Modules: modules}
+	cfg := classify.Config{Modules: modules}
 
 	// Low strength (model) at same-module distance in a volatile (core) module:
 	// |3-2|=1, 10-10=0, max(1,0)+1=2 → critical band — the ball-of-mud quadrant.

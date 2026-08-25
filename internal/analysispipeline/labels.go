@@ -2,7 +2,7 @@ package pipeline
 
 import (
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
@@ -14,7 +14,7 @@ import (
 //
 // Exported because enrich (cmd) must stamp drafts with EXACTLY the hash the
 // engine will later verify — one computation, two callers.
-func PairEvidence(g *graph.Graph, mm module.Map, wanted map[string]struct{}) map[string]string {
+func PairEvidence(g *graph.Graph, mm policy.ModuleMap, wanted map[string]struct{}) map[string]string {
 	if len(wanted) == 0 {
 		return nil
 	}

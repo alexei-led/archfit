@@ -38,13 +38,13 @@ func (s *lifecycleStage) record(ctx context.Context, step string) error {
 }
 
 func (s *lifecycleStage) Prepare(ctx context.Context) error { return s.record(ctx, prepareCall) }
-func (s *lifecycleStage) Acquire(ctx context.Context, _ AnalysisRequest) (evidence.Snapshot, error) {
-	return evidence.Snapshot{}, s.record(ctx, acquireStageCall)
+func (s *lifecycleStage) Acquire(ctx context.Context, _ AnalysisRequest) (Acquired, error) {
+	return Acquired{}, s.record(ctx, acquireStageCall)
 }
-func (s *lifecycleStage) Relate(ctx context.Context, _ evidence.Snapshot) (relationship.AnalysisResult, error) {
+func (s *lifecycleStage) Relate(ctx context.Context, _ Acquired) (relationship.AnalysisResult, error) {
 	return relationship.AnalysisResult{}, s.record(ctx, relateStageCall)
 }
-func (s *lifecycleStage) Assess(ctx context.Context, _ AnalysisRequest, _ evidence.AssessmentView, _ relationship.AnalysisResult) (AnalysisResult, error) {
+func (s *lifecycleStage) Assess(ctx context.Context, _ AnalysisRequest, _ evidence.AssessmentFacts, _ AnalysisContext, _ relationship.AnalysisResult) (AnalysisResult, error) {
 	return s.out, s.record(ctx, assessStageCall)
 }
 
@@ -214,7 +214,7 @@ type requestCaptureStage struct {
 	captured *AnalysisRequest
 }
 
-func (s *requestCaptureStage) Acquire(ctx context.Context, req AnalysisRequest) (evidence.Snapshot, error) {
+func (s *requestCaptureStage) Acquire(ctx context.Context, req AnalysisRequest) (Acquired, error) {
 	*s.captured = req
 	return s.lifecycleStage.Acquire(ctx, req)
 }

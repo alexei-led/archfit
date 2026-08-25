@@ -1,8 +1,10 @@
-// Package module holds the shared module vocabulary: module definitions,
-// path-to-module resolution, and architectural roles. It is part of the
-// frozen model kernel; config decodes into these types and every analysis
-// stage consumes them.
-package module
+// Module vocabulary: module definitions, path-to-module resolution, and
+// architectural roles. These are policy declarations, not neutral model values —
+// owner, layer, subdomain, volatility, and role are exactly the architecture
+// decisions this package owns. Config decodes into them; every analysis stage
+// consumes them.
+
+package policy
 
 import (
 	gopath "path"
@@ -51,7 +53,7 @@ func ValidRole(r Role) bool {
 // ModuleDef defines a module's path ownership and metadata.
 // Name kept as ModuleDef (not Def): it is the JSON-schema definition name
 // in archfit.schema.json, an external contract.
-type ModuleDef struct { //nolint:revive // schema contract name; see doc comment
+type ModuleDef struct {
 	Paths      []string  `yaml:"paths"`
 	Public     []string  `yaml:"public"`
 	Internal   []string  `yaml:"internal"`
@@ -65,36 +67,36 @@ type ModuleDef struct { //nolint:revive // schema contract name; see doc comment
 	ReviewedBy string    `yaml:"reviewed_by"`
 }
 
-// Map resolves a repo-relative path to the owning module name.
+// ModuleMap resolves a repo-relative path to the owning module name.
 // It uses doublestar glob matching against module path patterns.
-type Map struct {
+type ModuleMap struct {
 	// sorted module names for deterministic iteration when globs overlap
 	names   []string
 	modules map[string]ModuleDef
 }
 
-// buildMap constructs a Map from the Config's Modules.
+// buildModuleMap constructs a ModuleMap from the Config's Modules.
 // Module names are sorted alphabetically so iteration is deterministic.
-func buildMap(modules map[string]ModuleDef) Map {
+func buildModuleMap(modules map[string]ModuleDef) ModuleMap {
 	names := make([]string, 0, len(modules))
 	for name := range modules {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	return Map{names: names, modules: modules}
+	return ModuleMap{names: names, modules: modules}
 }
 
-// BuildMap is the exported counterpart of buildMap.
-// It lets the engine rebuild a Map after module augmentation
+// BuildModuleMap is the exported counterpart of buildModuleMap.
+// It lets the engine rebuild a ModuleMap after module augmentation
 // (AugmentModulesFromGraph, AugmentGoWorkspaceModules) without importing
 // an unexported function.
-func BuildMap(modules map[string]ModuleDef) Map {
-	return buildMap(modules)
+func BuildModuleMap(modules map[string]ModuleDef) ModuleMap {
+	return buildModuleMap(modules)
 }
 
 // Has reports whether a module with exactly this name (map key) is configured.
 // Distinct from ModuleFor, which matches a repo-relative path against path globs.
-func (mm Map) Has(name string) bool {
+func (mm ModuleMap) Has(name string) bool {
 	_, ok := mm.modules[name]
 	return ok
 }
@@ -112,7 +114,7 @@ func (mm Map) Has(name string) bool {
 // shadow every specific module, collapsing real cross-module coupling to
 // same-module and mis-classifying volatility/distance. Most-specific match makes
 // resolution honour the documented "specific stanza wins" intent.
-func (mm Map) ModuleFor(path string) (string, bool) {
+func (mm ModuleMap) ModuleFor(path string) (string, bool) {
 	best := ""
 	bestSpec := -1
 	for _, name := range mm.names {
@@ -181,7 +183,7 @@ func buildExtToLang() map[string]string {
 // the raw path first preserves ModuleFor's existing, tested resolution for
 // every language whose configs are already glob-compatible with real file
 // paths, and only reaches for language-specific normalization as a fallback.
-func (mm Map) ModuleForFile(file string) (string, bool) {
+func (mm ModuleMap) ModuleForFile(file string) (string, bool) {
 	if mod, ok := mm.ModuleFor(file); ok {
 		return mod, true
 	}
@@ -208,7 +210,7 @@ func (mm Map) ModuleForFile(file string) (string, bool) {
 // treats a package entry point and a genuinely separate deployable as
 // different tiers; tagging every main.go as its own deploy unit regardless of
 // depth conflates them.
-func (mm Map) IsModuleRoot(dir string) bool {
+func (mm ModuleMap) IsModuleRoot(dir string) bool {
 	name, ok := mm.ModuleForFile(dir)
 	if !ok {
 		return false
@@ -233,7 +235,7 @@ func globRoot(pattern string) string {
 	return strings.TrimSuffix(pattern[:idx], "/")
 }
 
-// RootDirs returns, for every module with at least one Paths glob, the
+// ModuleRootDirs returns, for every module with at least one Paths glob, the
 // literal (wildcard-free) root of its first Paths pattern. Used as the
 // agent_tasks files[] last-resort fallback when no finding location resolves
 // to a real file. For slash globs the root is a directory prefix; for Python's
@@ -241,7 +243,7 @@ func globRoot(pattern string) string {
 // the trailing separator dot trimmed ("myapp.domain") — the resolver turns it
 // into a real path via the Python file-candidate probe, never emitting the
 // dotted form itself.
-func RootDirs(modules map[string]ModuleDef) map[string]string {
+func ModuleRootDirs(modules map[string]ModuleDef) map[string]string {
 	out := make(map[string]string, len(modules))
 	for name, def := range modules {
 		if len(def.Paths) == 0 {
@@ -254,7 +256,7 @@ func RootDirs(modules map[string]ModuleDef) map[string]string {
 
 // LayerFor returns the layer name for the module that owns the given repo-relative
 // path. Returns ("", false) if no module matches or the module has no layer set.
-func (mm Map) LayerFor(path string) (string, bool) {
+func (mm ModuleMap) LayerFor(path string) (string, bool) {
 	name, ok := mm.ModuleFor(path)
 	if !ok {
 		return "", false
@@ -270,7 +272,7 @@ func (mm Map) LayerFor(path string) (string, bool) {
 // (map key). Returns ("", false) if the name is not found or the module has no
 // layer set. Use LayerFor when you have a file path; use LayerForName when you
 // already hold a module name from ModuleFor.
-func (mm Map) LayerForName(name string) (string, bool) {
+func (mm ModuleMap) LayerForName(name string) (string, bool) {
 	def, ok := mm.modules[name]
 	if !ok || def.Layer == "" {
 		return "", false

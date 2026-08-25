@@ -81,11 +81,11 @@ func inCoreRing(pkgPath string) bool {
 	return false
 }
 
-// modelThirdPartyAllowed lists vetted, pure third-party imports allowed for a
-// specific model package. doublestar is a pure glob matcher (no I/O) used by
-// module path resolution.
-var modelThirdPartyAllowed = map[string]map[string]bool{
-	modulePrefix + "internal/model/module": {"github.com/bmatcuk/doublestar/v4": true},
+// contractThirdPartyAllowed lists vetted, pure third-party imports allowed for a
+// specific kernel or policy package. doublestar is a pure glob matcher (no I/O)
+// used by module path resolution.
+var contractThirdPartyAllowed = map[string]map[string]bool{
+	modulePrefix + "internal/policy": {"github.com/bmatcuk/doublestar/v4": true},
 }
 
 // adapterPrefixes are packages the core ring must never import — adapters AND
@@ -173,7 +173,6 @@ func TestTransitionalImportRatchet(t *testing.T) {
 		max        int
 		why        string
 	}{
-		{modulePrefix + "internal/view", 33, "internal/view is deleted in Task 2; policy owns these contracts"},
 		{modulePrefix + "internal/analysispipeline", 9, "internal/analysispipeline is deleted in Task 4"},
 		{modulePrefix + "internal/evidence", 3, "only relationship analysis may receive the full evidence snapshot"},
 	} {
@@ -201,9 +200,12 @@ func TestTransitionalContractSurfaceRatchet(t *testing.T) {
 		{modulePrefix + "internal/analysispipeline", 88},
 		{modulePrefix + "internal/relationship", 55},
 		{modulePrefix + "internal/assessment/result", 47},
-		{modulePrefix + "internal/view", 29},
 		{modulePrefix + "internal/evidence", 8},
-		{modulePrefix + "internal/policy", 8},
+		// Task 2 deleted internal/view (29 exported) and internal/model/module
+		// (11 exported), moving their contracts to their owners — most of them
+		// here. 40 is below the 48 those three packages published together, and
+		// like every cap in this table it may fall, never rise.
+		{modulePrefix + "internal/policy", 40},
 	}
 	paths := make([]string, 0, len(targets))
 	for _, tc := range targets {
@@ -405,12 +407,12 @@ func TestArchImports(t *testing.T) {
 		checkModelStdlibOnly(t, loaded)
 	})
 
-	t.Run("view_kernel_only", func(t *testing.T) { checkViewKernelOnly(t, loaded) })
+	t.Run("policy_owns_domain_contracts", func(t *testing.T) { checkPolicyContractPurity(t, loaded) })
 }
 
 // checkModelStdlibOnly asserts every model kernel package imports only the
 // stdlib, sibling model packages, or an explicitly vetted pure third-party
-// dependency (modelThirdPartyAllowed).
+// dependency (contractThirdPartyAllowed).
 func checkModelStdlibOnly(t *testing.T, loaded map[string]*packages.Package) {
 	t.Helper()
 	found := false
@@ -420,7 +422,7 @@ func checkModelStdlibOnly(t *testing.T, loaded map[string]*packages.Package) {
 		}
 		found = true
 		for imp := range pkg.Imports {
-			if !isStdlib(imp) && !isModelPkg(imp) && !modelThirdPartyAllowed[pkgPath][imp] {
+			if !isStdlib(imp) && !isModelPkg(imp) && !contractThirdPartyAllowed[pkgPath][imp] {
 				t.Errorf("model package %s must not import non-stdlib %q", pkgPath, imp)
 			}
 		}
@@ -430,20 +432,23 @@ func checkModelStdlibOnly(t *testing.T, loaded map[string]*packages.Package) {
 	}
 }
 
-// checkViewKernelOnly asserts internal/view (stage-contract types: data-only
-// projections) imports only the stdlib and the model kernel — never config,
-// engine, adapters, or any behavior-bearing package.
-func checkViewKernelOnly(t *testing.T, loaded map[string]*packages.Package) {
+// checkPolicyContractPurity asserts internal/policy — the authoritative
+// architecture-policy vocabulary that replaced the transitional internal/view
+// stage contracts — imports only the stdlib and the model kernel. Policy states
+// domain meaning; decoding it, acquiring evidence for it, and evaluating it all
+// live outward of this package.
+func checkPolicyContractPurity(t *testing.T, loaded map[string]*packages.Package) {
 	t.Helper()
-	const viewPkg = modulePrefix + "internal/view"
-	pkg, ok := loaded[viewPkg]
+	const policyPkg = modulePrefix + "internal/policy"
+	pkg, ok := loaded[policyPkg]
 	if !ok {
-		t.Fatalf("expected view package not loaded: %s", viewPkg)
+		t.Fatalf("expected policy package not loaded: %s", policyPkg)
 	}
 	for imp := range pkg.Imports {
-		if !isStdlib(imp) && !isModelPkg(imp) {
-			t.Errorf("view package must not import non-kernel %q: stage contracts are data-only", imp)
+		if isStdlib(imp) || isModelPkg(imp) || contractThirdPartyAllowed[policyPkg][imp] {
+			continue
 		}
+		t.Errorf("policy package must not import non-kernel %q: policy values are pure domain declarations", imp)
 	}
 }
 

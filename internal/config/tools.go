@@ -3,7 +3,9 @@ package config
 import (
 	"time"
 
-	"github.com/alexei-led/archfit/internal/view"
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 // Language id constants. These are the YAML keys under `languages:` and the
@@ -39,21 +41,21 @@ const (
 
 // GoLanguage configures the Go extractor (`languages.go`).
 type GoLanguage struct {
-	Enabled view.ToolMode  `yaml:"enabled"`
-	Gate    GateMode       `yaml:"gate,omitempty"`
-	Modules GoModuleFilter `yaml:"modules,omitempty"`
+	Enabled evidenceports.ToolMode `yaml:"enabled"`
+	Gate    GateMode               `yaml:"gate,omitempty"`
+	Modules GoModuleFilter         `yaml:"modules,omitempty"`
 }
 
 // TypeScriptLanguage configures the TypeScript extractor (`languages.typescript`).
 type TypeScriptLanguage struct {
-	Enabled view.ToolMode `yaml:"enabled"`
-	Gate    GateMode      `yaml:"gate,omitempty"`
+	Enabled evidenceports.ToolMode `yaml:"enabled"`
+	Gate    GateMode               `yaml:"gate,omitempty"`
 }
 
 // PythonLanguage configures the Python extractor (`languages.python`).
 type PythonLanguage struct {
-	Enabled view.ToolMode `yaml:"enabled"`
-	Gate    GateMode      `yaml:"gate,omitempty"`
+	Enabled evidenceports.ToolMode `yaml:"enabled"`
+	Gate    GateMode               `yaml:"gate,omitempty"`
 	// Package is the top-level importable package name passed to grimp
 	// (e.g. "myapp"). Empty = auto-detect from the project layout.
 	Package string `yaml:"package,omitempty"`
@@ -61,8 +63,8 @@ type PythonLanguage struct {
 
 // RustLanguage configures the Rust extractor (`languages.rust`).
 type RustLanguage struct {
-	Enabled view.ToolMode `yaml:"enabled"`
-	Gate    GateMode      `yaml:"gate,omitempty"`
+	Enabled evidenceports.ToolMode `yaml:"enabled"`
+	Gate    GateMode               `yaml:"gate,omitempty"`
 	// Manifest is the path to Cargo.toml. Empty = auto (the root manifest).
 	Manifest string `yaml:"manifest,omitempty"`
 	// Features are the cargo features to activate for `cargo metadata`.
@@ -88,17 +90,17 @@ type LanguagesConfig struct {
 // Analyzer is the common enable/gate shape for analyzers with no extra knobs
 // (`analyzers.syntax`, `analyzers.cargo_modules`).
 type Analyzer struct {
-	Enabled view.ToolMode `yaml:"enabled"`
-	Gate    GateMode      `yaml:"gate,omitempty"`
+	Enabled evidenceports.ToolMode `yaml:"enabled"`
+	Gate    GateMode               `yaml:"gate,omitempty"`
 }
 
 // TimedAnalyzer adds a per-run subprocess timeout (`analyzers.scip`,
 // `analyzers.clones`). On timeout the result is dropped and dependent metrics
 // report n/a; the run continues. Timeout is a Go duration string (e.g. "5m").
 type TimedAnalyzer struct {
-	Enabled view.ToolMode `yaml:"enabled"`
-	Gate    GateMode      `yaml:"gate,omitempty"`
-	Timeout string        `yaml:"timeout,omitempty"`
+	Enabled evidenceports.ToolMode `yaml:"enabled"`
+	Gate    GateMode               `yaml:"gate,omitempty"`
+	Timeout string                 `yaml:"timeout,omitempty"`
 }
 
 // AnalyzersConfig groups the opt-in analyzer settings (`analyzers:`).
@@ -146,22 +148,24 @@ func (c Config) LLM() (LLMConfig, bool) {
 
 // SyntaxEnabled reports whether the syntax-facts provider is explicitly enabled
 // (analyzers.syntax.enabled: true). Opt-in only — auto/false/absent all disable it.
-func (c Config) SyntaxEnabled() bool { return c.Analyzers.Syntax.Enabled == view.ModeOn }
+func (c Config) SyntaxEnabled() bool { return c.Analyzers.Syntax.Enabled == evidenceports.ModeOn }
 
 // ScipEnabled reports whether the SCIP strength provider is explicitly enabled
 // (analyzers.scip.enabled: true). Opt-in only — running a SCIP indexer is
 // whole-repo and slow, so it must not run on the fast gate path by default.
 // Config-driven (not PATH presence) preserves same-config→same-metrics.
-func (c Config) ScipEnabled() bool { return c.Analyzers.Scip.Enabled == view.ModeOn }
+func (c Config) ScipEnabled() bool { return c.Analyzers.Scip.Enabled == evidenceports.ModeOn }
 
 // ClonesEnabled reports whether the clone-detection analyzer is explicitly
 // enabled (analyzers.clones.enabled: true). Opt-in only.
-func (c Config) ClonesEnabled() bool { return c.Analyzers.Clones.Enabled == view.ModeOn }
+func (c Config) ClonesEnabled() bool { return c.Analyzers.Clones.Enabled == evidenceports.ModeOn }
 
 // CargoModulesEnabled reports whether the cargo-modules intra-crate module-graph
 // analyzer is explicitly enabled (analyzers.cargo_modules.enabled: true). Opt-in
 // only — it compiles the crate (minutes).
-func (c Config) CargoModulesEnabled() bool { return c.Analyzers.CargoModules.Enabled == view.ModeOn }
+func (c Config) CargoModulesEnabled() bool {
+	return c.Analyzers.CargoModules.Enabled == evidenceports.ModeOn
+}
 
 // ToolTimeout returns the configured per-analyzer subprocess timeout for the
 // given analyzer id (ToolScip, ToolClones). Returns 0 when not set or unparseable
@@ -188,7 +192,7 @@ func (c Config) ToolTimeout(id string) time.Duration {
 // internal id (LangGo…LangRust, ToolSyntax…ToolCargoModules). Unknown ids return
 // ModeAuto. Lets cmd coverage code resolve a tool's posture without knowing which
 // config section holds it.
-func (c Config) ToolMode(id string) view.ToolMode {
+func (c Config) ToolMode(id string) evidenceports.ToolMode {
 	switch id {
 	case LangGo:
 		return c.Languages.Go.Enabled
@@ -207,7 +211,7 @@ func (c Config) ToolMode(id string) view.ToolMode {
 	case ToolCargoModules:
 		return c.Analyzers.CargoModules.Enabled
 	default:
-		return view.ModeAuto
+		return evidenceports.ModeAuto
 	}
 }
 
@@ -238,7 +242,7 @@ func (c Config) ToolGate(id string) GateMode {
 
 // SetToolMode forces the enable mode for a language or analyzer addressed by its
 // internal id. Used by --lang flag overrides. Unknown ids are a no-op.
-func (c *Config) SetToolMode(id string, mode view.ToolMode) {
+func (c *Config) SetToolMode(id string, mode evidenceports.ToolMode) {
 	switch id {
 	case LangGo:
 		c.Languages.Go.Enabled = mode
@@ -260,13 +264,13 @@ func (c *Config) SetToolMode(id string, mode view.ToolMode) {
 }
 
 // GateMode controls how a missing tool affects the gate.
-type GateMode = view.GateMode
+type GateMode = policy.GateMode
 
 // GateOff, GateWarn, and GateFail define gate behavior.
 const (
-	GateOff  = view.GateOff
-	GateWarn = view.GateWarn
-	GateFail = view.GateFail
+	GateOff  = policy.GateOff
+	GateWarn = policy.GateWarn
+	GateFail = policy.GateFail
 )
 
 // GoModuleFilter restricts Go workspace analysis to a subset of go.work members

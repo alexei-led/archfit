@@ -6,12 +6,15 @@ import (
 	"strings"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/registry"
-	"github.com/alexei-led/archfit/internal/view"
+	"github.com/alexei-led/archfit/internal/model/pattern"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 // TestGitFindingDelta covers the `--base` git-origin block: how tasks are placed
@@ -700,21 +703,21 @@ func testGitDeltaActiveFamilies(t *testing.T) {
 		t.Fatalf("a bare config must activate only the per-language primaries, got %v", primaries)
 	}
 
-	on := config.Analyzer{Enabled: view.ModeOn}
-	timedOn := config.TimedAnalyzer{Enabled: view.ModeOn}
+	on := config.Analyzer{Enabled: evidenceports.ModeOn}
+	timedOn := config.TimedAnalyzer{Enabled: evidenceports.ModeOn}
 	tests := []struct {
 		name string
 		cfg  config.Config
 		want []string
 	}{
 		{name: "rule patterns activate the ast-grep pattern pass only", cfg: config.Config{
-			Rules: []view.RuleDef{{ID: "r", Patterns: []view.PatternDef{{ID: "p", Lang: "go", Rule: "x"}}}},
+			Rules: []policy.RuleDef{{ID: "r", Patterns: []pattern.Def{{ID: "p", Lang: "go", Rule: "x"}}}},
 		}, want: []string{toolAstGrep}},
 		{name: "syntax activates the ast-grep syntax pass only", cfg: config.Config{
 			Analyzers: config.AnalyzersConfig{Syntax: on},
 		}, want: []string{toolAstGrepSyntax}},
 		{name: "patterns and syntax activate two independent families", cfg: config.Config{
-			Rules:     []view.RuleDef{{ID: "r", Patterns: []view.PatternDef{{ID: "p", Lang: "go", Rule: "x"}}}},
+			Rules:     []policy.RuleDef{{ID: "r", Patterns: []pattern.Def{{ID: "p", Lang: "go", Rule: "x"}}}},
 			Analyzers: config.AnalyzersConfig{Syntax: on},
 		}, want: []string{toolAstGrep, toolAstGrepSyntax}},
 		{name: "scip activates both scip rows", cfg: config.Config{

@@ -19,10 +19,9 @@ import (
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/syntax"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -41,13 +40,13 @@ var cloneTestGenGlobs = []string{
 type Options struct {
 	Exclusions    []string
 	FileClass     syntax.FileClassConfig
-	ModuleMap     module.Map
+	ModuleMap     policy.ModuleMap
 	ClonesEnabled bool
 	CloneTimeout  time.Duration
 	SCIPEnabled   bool
 	SCIPTimeout   time.Duration
-	Syntax        view.SyntaxConfig
-	GoExtract     view.ExtractConfig
+	Syntax        evidenceports.SyntaxConfig
+	GoExtract     evidenceports.ExtractConfig
 }
 
 // Result contains neutral evidence and adapter ports for one pipeline run.

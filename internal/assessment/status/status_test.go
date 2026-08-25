@@ -7,8 +7,8 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/status"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -55,7 +55,7 @@ func TestAssign_NewFinding(t *testing.T) {
 	result := status.Assign(
 		[]finding.Finding{f},
 		fakeAccepted{},
-		view.WaiverSet{},
+		policy.WaiverSet{},
 		time.Now(),
 		kindGate,
 	)
@@ -78,7 +78,7 @@ func TestAssign_BaselineFinding(t *testing.T) {
 	result := status.Assign(
 		[]finding.Finding{f},
 		base,
-		view.WaiverSet{},
+		policy.WaiverSet{},
 		time.Now(),
 		kindGate,
 	)
@@ -96,8 +96,8 @@ func TestAssign_ActiveException(t *testing.T) {
 
 	// Expires 1 year from now — active (not expired).
 	future := time.Now().AddDate(1, 0, 0).Format("2006-01-02")
-	exceptions := view.WaiverSet{
-		Waivers: []view.WaiverDef{
+	exceptions := policy.WaiverSet{
+		Waivers: []policy.WaiverDef{
 			{
 				Rule:    testRuleID,
 				From:    testFrom,
@@ -128,8 +128,8 @@ func TestAssign_ExpiredException(t *testing.T) {
 
 	// Expired 1 year ago.
 	past := time.Now().AddDate(-1, 0, 0).Format("2006-01-02")
-	exceptions := view.WaiverSet{
-		Waivers: []view.WaiverDef{
+	exceptions := policy.WaiverSet{
+		Waivers: []policy.WaiverDef{
 			{
 				Rule:    testRuleID,
 				From:    testFrom,
@@ -165,7 +165,7 @@ func TestAssign_FixedFinding(t *testing.T) {
 	result := status.Assign(
 		[]finding.Finding{},
 		base,
-		view.WaiverSet{},
+		policy.WaiverSet{},
 		time.Now(),
 		kindGate,
 	)
@@ -192,12 +192,12 @@ func TestAssign_FixedFindingKindFilter(t *testing.T) {
 		{Fingerprint: "aabbccddaabbccddaabbccddaabbccdd", RuleID: "bc/imbalanced_coupling", Kind: kindAdvisory},
 	}
 
-	gateResult := status.Assign([]finding.Finding{}, base, view.WaiverSet{}, time.Now(), kindGate)
+	gateResult := status.Assign([]finding.Finding{}, base, policy.WaiverSet{}, time.Now(), kindGate)
 	if len(gateResult) != 1 || gateResult[0].Kind != kindGate {
 		t.Errorf("gate pass: want 1 gate fixed finding, got %v", gateResult)
 	}
 
-	advResult := status.Assign([]finding.Finding{}, base, view.WaiverSet{}, time.Now(), kindAdvisory)
+	advResult := status.Assign([]finding.Finding{}, base, policy.WaiverSet{}, time.Now(), kindAdvisory)
 	if len(advResult) != 1 || advResult[0].Kind != kindAdvisory {
 		t.Errorf("advisory pass: want 1 advisory fixed finding, got %v", advResult)
 	}
@@ -214,8 +214,8 @@ func TestAssign_ExpiryBoundary(t *testing.T) {
 	expiryDate := "2025-06-01"
 	endOfExpiryDay := time.Date(2025, 6, 2, 0, 0, 0, 0, time.UTC) // expiry + 24h
 
-	exceptions := view.WaiverSet{
-		Waivers: []view.WaiverDef{
+	exceptions := policy.WaiverSet{
+		Waivers: []policy.WaiverDef{
 			{
 				Rule:    testRuleID,
 				From:    testFrom,

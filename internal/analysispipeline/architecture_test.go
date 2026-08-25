@@ -72,7 +72,11 @@ func TestStageInputHasSinglePolicySource(t *testing.T) {
 					continue
 				}
 				switch field.Names[0].Name {
-				case "Classify", "Staleness", "Waivers", "MetricGates", "ApprovedLabels", "Labels":
+				// Labels is deliberately absent from this list: Task 2 removed
+				// pinned labels from policy.RelationshipPolicy because they are a
+				// per-run enrich signal, not a declaration. StageInput.Labels is
+				// their single carrier, not a second copy of a policy field.
+				case "Classify", "Staleness", "Waivers", "MetricGates", "ApprovedLabels":
 					t.Errorf("StageInput retains duplicate policy field %s", field.Names[0].Name)
 				}
 			}

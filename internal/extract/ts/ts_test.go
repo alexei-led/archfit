@@ -9,12 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -62,8 +63,8 @@ func TestExtract_Parse(t *testing.T) {
 	data := loadFixture(t, "depcruise_output.json")
 	runner := mockRunner(data)
 
-	cfg := view.ExtractConfig{
-		Mode:     view.ModeAuto,
+	cfg := evidenceports.ExtractConfig{
+		Mode:     evidenceports.ModeAuto,
 		Internal: []string{"src/b/internal/**"},
 	}
 	extractor := ts.New(runner, cfg)
@@ -123,7 +124,7 @@ func TestExtract_CouldNotResolve(t *testing.T) {
 	data := loadFixture(t, "depcruise_unresolved.json")
 	runner := mockRunner(data)
 
-	cfg := view.ExtractConfig{Mode: view.ModeAuto}
+	cfg := evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}
 	extractor := ts.New(runner, cfg)
 
 	s := scope.Scope{Root: fixtureDir}
@@ -171,7 +172,7 @@ func TestExtract_ExternalNodes(t *testing.T) {
 	data := loadFixture(t, "depcruise_external.json")
 	runner := mockRunner(data)
 
-	cfg := view.ExtractConfig{Mode: view.ModeAuto}
+	cfg := evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}
 	extractor := ts.New(runner, cfg)
 
 	facts, cov, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir})
@@ -256,7 +257,7 @@ func TestExtract_EdgeTypes(t *testing.T) {
 	data := loadFixture(t, "depcruise_edgetypes.json")
 	runner := mockRunner(data)
 
-	extractor := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
+	extractor := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
 
 	facts, _, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir})
 	if err != nil {
@@ -330,7 +331,7 @@ func TestExtract_ToolAbsentAuto(t *testing.T) {
 		// RunFunc must not be called; leave nil to panic if it is.
 	}
 
-	cfg := view.ExtractConfig{Mode: view.ModeAuto}
+	cfg := evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}
 	extractor := ts.New(runner, cfg)
 
 	s := scope.Scope{Root: fixtureDir}
@@ -407,7 +408,7 @@ func TestExtract_IncludeOnly(t *testing.T) {
 				},
 			}
 
-			extractor := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
+			extractor := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
 			s := scope.Scope{
 				Root:          root,
 				GitRoot:       filepath.Dir(root),
@@ -497,8 +498,8 @@ func TestExtract_SubtreePathStrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Configure internal globs as ScanRoot-relative: "src/**"
-			cfg := view.ExtractConfig{
-				Mode:     view.ModeAuto,
+			cfg := evidenceports.ExtractConfig{
+				Mode:     evidenceports.ModeAuto,
 				Internal: []string{"src/**"},
 			}
 			runner := &toolrun.RunnerMock{
@@ -605,7 +606,7 @@ func TestExtract_TSConfigSubdir(t *testing.T) {
 		},
 	}
 
-	extractor := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
+	extractor := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
 	s := scope.Scope{
 		Root:          pkg,
 		GitRoot:       gitRoot,
@@ -666,7 +667,7 @@ func TestExtract_TSConfigSubdir_RootFallback(t *testing.T) {
 		},
 	}
 
-	extractor := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
+	extractor := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
 	s := scope.Scope{
 		Root:          pkg,
 		GitRoot:       gitRoot,
@@ -729,7 +730,7 @@ func TestExtract_TSConfigAutoDetect(t *testing.T) {
 				},
 			}
 
-			extractor := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto, TSConfig: tt.cfgTS})
+			extractor := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, TSConfig: tt.cfgTS})
 			if _, _, err := extractor.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
 				t.Fatalf("Extract: %v", err)
 			}
@@ -774,7 +775,7 @@ func TestExtract_SourceDirMissing(t *testing.T) {
 	s := scope.Scope{Root: fixtureDir}
 
 	t.Run("auto degrades to partial coverage", func(t *testing.T) {
-		facts, cov, err := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto}).Extract(context.Background(), s)
+		facts, cov, err := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}).Extract(context.Background(), s)
 		if err != nil {
 			t.Fatalf("auto mode must not error on depcruise non-zero exit; got %v", err)
 		}
@@ -787,7 +788,7 @@ func TestExtract_SourceDirMissing(t *testing.T) {
 	})
 
 	t.Run("on hard-errors", func(t *testing.T) {
-		_, _, err := ts.New(runner, view.ExtractConfig{Mode: view.ModeOn}).Extract(context.Background(), s)
+		_, _, err := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeOn}).Extract(context.Background(), s)
 		if err == nil {
 			t.Error("ModeOn must hard-error on depcruise non-zero exit")
 		}
@@ -817,7 +818,7 @@ func TestExtract_SrcDotIsLiteral(t *testing.T) {
 		},
 	}
 	s := scope.Scope{Root: fixtureDir}
-	_, _, err := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto, Src: "."}).Extract(context.Background(), s)
+	_, _, err := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: "."}).Extract(context.Background(), s)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -864,7 +865,7 @@ func TestExtract_PackagePinned(t *testing.T) {
 				},
 			}
 
-			extractor := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
+			extractor := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
 			if _, _, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir}); err != nil {
 				t.Fatalf("Extract: %v", err)
 			}

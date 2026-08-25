@@ -1,15 +1,13 @@
-package module_test
+package policy
 
 import (
 	"testing"
-
-	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 const kernelModule = "kernel"
 
 func TestModuleFor_MostSpecificWins(t *testing.T) {
-	mm := module.BuildMap(map[string]module.ModuleDef{
+	mm := BuildModuleMap(map[string]ModuleDef{
 		"catchall":   {Paths: []string{"internal/**"}},
 		kernelModule: {Paths: []string{"internal/model/**"}},
 	})
@@ -34,23 +32,23 @@ func TestModuleFor_MostSpecificWins(t *testing.T) {
 
 func TestValidRole(t *testing.T) {
 	tests := []struct {
-		role module.Role
+		role Role
 		want bool
 	}{
 		{"", true}, // absent role is allowed
-		{module.RoleCompositionRoot, true},
-		{module.RoleGenerated, true},
+		{RoleCompositionRoot, true},
+		{RoleGenerated, true},
 		{"banana", false},
 	}
 	for _, tt := range tests {
-		if got := module.ValidRole(tt.role); got != tt.want {
+		if got := ValidRole(tt.role); got != tt.want {
 			t.Errorf("ValidRole(%q) = %v, want %v", tt.role, got, tt.want)
 		}
 	}
 }
 
 func TestIsModuleRoot(t *testing.T) {
-	mm := module.BuildMap(map[string]module.ModuleDef{
+	mm := BuildModuleMap(map[string]ModuleDef{
 		kernelModule: {Paths: []string{"internal/model/**"}},
 	})
 	if !mm.IsModuleRoot("internal/model") {

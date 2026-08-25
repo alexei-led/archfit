@@ -4,6 +4,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/relationship/facts"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -12,8 +13,7 @@ func projectAssessment(in StageInput, acquired acquiredStage, relationships rela
 	ex := acquired.acquired
 	ruleEv := acquired.ruleEvidence
 	syntaxFacts := ruleEv.evidence.SyntaxFacts
-	classifyCfg := in.Policy.Relationship.ClassifyConfig()
-	classifyCfg = AugmentClassifyConfig(ex.Graph, classifyCfg)
+	classifyCfg := AugmentClassifyConfig(ex.Graph, classify.ConfigFrom(in.Policy.Relationship))
 	classified := relationships.classified
 	runtimeAsync := runtimeModules(classified.RuntimeSignals)
 	runtimeAsyncEdges := runtimeEdges(classified.RuntimeRelations)

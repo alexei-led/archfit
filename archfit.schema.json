@@ -388,7 +388,7 @@
         "lang",
         "rule"
       ],
-      "description": "PatternDef defines a single structural pattern rule for ast-grep."
+      "description": "Def declares a single structural pattern rule for the pattern-search port."
     },
     "PythonLanguage": {
       "properties": {

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/factcache"
@@ -22,7 +24,6 @@ import (
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -40,7 +41,7 @@ const (
 // It satisfies the engine.Extractor interface structurally.
 type Extractor struct {
 	runner toolrun.Runner
-	cfg    view.ExtractConfig
+	cfg    evidenceports.ExtractConfig
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
 	Cache *factcache.Store
 }
@@ -53,7 +54,7 @@ var pyManifestNames = []string{
 }
 
 // New returns an Extractor configured with the given runner and config.
-func New(runner toolrun.Runner, cfg view.ExtractConfig) *Extractor {
+func New(runner toolrun.Runner, cfg evidenceports.ExtractConfig) *Extractor {
 	return &Extractor{runner: runner, cfg: cfg}
 }
 
@@ -76,13 +77,13 @@ func (e *Extractor) CoverageTool() string {
 // Extract returns empty Facts and an "absent" Coverage — never an error.
 // If mode is on and the tool is absent, Extract returns an error.
 func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error) {
-	if e.cfg.Mode == view.ModeOff {
+	if e.cfg.Mode == evidenceports.ModeOff {
 		return graph.Facts{}, absentCoverage(), nil
 	}
 
 	// Applicability: requires pyproject.toml, setup.py, or cfg.PyPackage directory.
 	if !Applicable(s.Root, e.cfg.PyPackage) {
-		if e.cfg.Mode == view.ModeOn {
+		if e.cfg.Mode == evidenceports.ModeOn {
 			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/py: no Python project marker found at %s", s.Root)
 		}
 		return graph.Facts{}, absentCoverage(), nil
@@ -91,7 +92,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	// Detect uv (preferred) or python3.12.
 	tool, version, found := e.detectTool(ctx)
 	if !found {
-		if e.cfg.Mode == view.ModeOn {
+		if e.cfg.Mode == evidenceports.ModeOn {
 			return graph.Facts{}, evidence.Coverage{}, errors.New("extract/py: uv or Python 3.12+ not found; install uv (https://docs.astral.sh/uv/) or Python 3.12+")
 		}
 		return graph.Facts{}, absentCoverage(), nil
@@ -174,7 +175,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		// A helper crash is a coverage gap, not a run-level failure (the "warn-loud,
 		// don't block" contract); only an explicitly required analyzer (ModeOn)
 		// hard-errors.
-		if e.cfg.Mode == view.ModeOn {
+		if e.cfg.Mode == evidenceports.ModeOn {
 			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/py: %s", reason)
 		}
 		return graph.Facts{}, evidence.Coverage{Tool: toolGrimp, Version: version, Status: statusPartial, Reason: reason}, nil
@@ -212,7 +213,7 @@ func (e *Extractor) cachedRunner(s scope.Scope, tool, version string, pkgs, firs
 		return e.runner
 	}
 	cfgHash, err := factcache.HashJSON(struct {
-		Cfg               view.ExtractConfig
+		Cfg               evidenceports.ExtractConfig
 		Root              string
 		HelperHash        string
 		ResolverStateHash string
@@ -303,7 +304,7 @@ func cacheableGrimp(out toolrun.Output) bool {
 // comparable — and in the other direction hid a configured package dir behind
 // "no Python here".
 //
-// pkg is view.ExtractConfig.PyPackage (empty when unset).
+// pkg is evidenceports.ExtractConfig.PyPackage (empty when unset).
 func Applicable(root, pkg string) bool {
 	for _, marker := range []string{"pyproject.toml", "setup.py"} {
 		if _, err := os.Stat(filepath.Join(root, marker)); err == nil {

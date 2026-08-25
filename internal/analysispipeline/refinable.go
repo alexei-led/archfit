@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
@@ -22,7 +22,7 @@ type RefinablePair struct {
 // SelectRefinablePairs selects unresolved or heuristic-strength module pairs
 // for semantic review. It keeps graph and coupling interpretation in the
 // relationship pipeline; callers receive only prompt-ready data.
-func SelectRefinablePairs(g *graph.Graph, idx coupling.Index, mm module.Map, approved map[string]struct{}) []RefinablePair {
+func SelectRefinablePairs(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap, approved map[string]struct{}) []RefinablePair {
 	if g == nil {
 		return nil
 	}

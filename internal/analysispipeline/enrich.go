@@ -16,7 +16,7 @@ func (a *Analyzer) AnalyzeEnrichment(ctx context.Context, req application.Enrich
 	if err != nil {
 		return application.EnrichmentResult{}, err
 	}
-	out, err := a.Assess(ctx, application.AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root, CaptureRelationships: true}, snapshot.AssessmentView(), relationships)
+	out, err := a.Assess(ctx, application.AnalysisRequest{ConfigSource: req.ConfigPath, Root: req.Root, CaptureRelationships: true}, snapshot.Facts.ForAssessment(), snapshot.Context, relationships)
 	if err != nil {
 		return application.EnrichmentResult{}, err
 	}

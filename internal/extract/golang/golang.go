@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/factcache"
@@ -14,7 +16,6 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // BC integration-strength labels used for StrengthHint on Go edges.
@@ -56,7 +57,7 @@ var goStrengthRank = map[string]int{
 // It is in-process (no subprocess) and satisfies the engine.Extractor interface
 // structurally: Name() string and Extract(ctx, scope.Scope) (graph.Facts, evidence.Coverage, error).
 type GoExtractor struct {
-	cfg view.ExtractConfig
+	cfg evidenceports.ExtractConfig
 	// Runner probes the go-toolchain version for the fact-cache key; nil
 	// (tests) yields an empty version component, never an error.
 	Runner toolrun.Runner
@@ -68,7 +69,7 @@ type GoExtractor struct {
 }
 
 // New returns a GoExtractor configured with the given ExtractConfig.
-func New(cfg view.ExtractConfig) *GoExtractor {
+func New(cfg evidenceports.ExtractConfig) *GoExtractor {
 	return &GoExtractor{cfg: cfg}
 }
 
@@ -106,7 +107,7 @@ func (e *GoExtractor) CoverageTool() string {
 // external edges are excluded from scoring by distance, so their hints are
 // report-only.
 func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error) {
-	if e.cfg.Mode == view.ModeOff {
+	if e.cfg.Mode == evidenceports.ModeOff {
 		return graph.Facts{}, evidence.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
 	}
 
@@ -130,7 +131,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		// go.mod or an unresolvable build constraint. This is a coverage gap, not a
 		// run-level failure (the "warn-loud, don't block" contract); only an
 		// explicitly required analyzer (ModeOn) hard-errors.
-		if e.cfg.Mode == view.ModeOn {
+		if e.cfg.Mode == evidenceports.ModeOn {
 			return graph.Facts{}, evidence.Coverage{}, err
 		}
 		return graph.Facts{}, evidence.Coverage{Tool: toolGoPackages, Status: statusPartial, Reason: err.Error()}, nil

@@ -452,8 +452,10 @@ go test ./internal/policy ./internal/config/... ./internal/evidence/... \
 go test ./internal/ -run 'TestArchImports|TestModelSurfaceNoDrift' -count=1
 ! rg -n 'internal/view' --glob '*.go' --glob '!**/*_test.go'
 ! test -d internal/view
+# Two lines: the helper's declaration and its single call site in Prepare.
+# Anything above two is a second ownership resolution in the same run.
 rg -n 'resolveOwners\(' internal | tee /tmp/resolve-owners.txt
-test "$(wc -l </tmp/resolve-owners.txt | tr -d ' ')" -eq 1
+test "$(wc -l </tmp/resolve-owners.txt | tr -d ' ')" -eq 2
 make test-fast
 make archfit
 ```
@@ -466,16 +468,20 @@ Manual checks:
 - Approved labels remain policy input; label persistence remains an adapter.
 - No volatility or distance metadata changes are made for score improvement.
 
-- [ ] Run and report impact analysis for PolicySnapshot, ClassifyConfig, Snapshot,
+- [x] Run and report impact analysis for PolicySnapshot, ClassifyConfig, Snapshot,
       resolveOwners, and every renamed symbol; warn on HIGH/CRITICAL impact.
-- [ ] Introduce pure authoritative Policy values and update config/schema adapters.
-- [ ] Split EvidenceFacts from AnalysisContext and update acquisition ports.
-- [ ] Resolve ownership/topology once and pass one cloned/immutable PolicySnapshot.
-- [ ] Migrate all production and test consumers from `internal/view`; delete it.
-- [ ] Move or delete legacy module/policy compatibility types and update the
+      (`resolveOwners` CRITICAL — 3 direct callers, 5 processes; `evidence.Snapshot`
+      HIGH — 3 processes. Both blast radii are confined to `internal/analysispipeline`,
+      the package Task 4 dissolves. `PolicySnapshot`/`ClassifyConfig` resolve as
+      types, so GitNexus reports UNKNOWN rather than a call-graph radius.)
+- [x] Introduce pure authoritative Policy values and update config/schema adapters.
+- [x] Split EvidenceFacts from AnalysisContext and update acquisition ports.
+- [x] Resolve ownership/topology once and pass one cloned/immutable PolicySnapshot.
+- [x] Migrate all production and test consumers from `internal/view`; delete it.
+- [x] Move or delete legacy module/policy compatibility types and update the
       approved contract golden.
-- [ ] Add and pass policy/evidence/import fitness gates.
-- [ ] Run task verification, confirm byte-identical outputs, and commit the
+- [x] Add and pass policy/evidence/import fitness gates.
+- [x] Run task verification, confirm byte-identical outputs, and commit the
       independently complete Policy/Evidence migration.
 
 ### Task 3: Complete the Relationship and Assessment domain model

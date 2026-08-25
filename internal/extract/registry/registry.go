@@ -11,7 +11,6 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Tool names one external binary archfit can probe, with a one-line
@@ -24,7 +23,7 @@ type Tool struct {
 }
 
 // Configs maps canonical language IDs to projected extractor configuration.
-type Configs map[string]view.ExtractConfig
+type Configs map[string]evidenceports.ExtractConfig
 
 // Descriptor is one row of the language registry: everything cmd needs
 // to wire a language into the pipeline, doctor, and install commands. Adding a
@@ -50,12 +49,12 @@ type Descriptor struct {
 	// the module filter removes) fabricates presence, and a marker it accepts but
 	// the list omits (a configured python package dir, a sub-crate Cargo.toml, a
 	// go.work member) fabricates absence.
-	ProjectPresent func(root string, cfg view.ExtractConfig) bool
+	ProjectPresent func(root string, cfg evidenceports.ExtractConfig) bool
 	// NewExtractor builds the language's evidenceports.Extractor from the shared runner,
 	// the language's projected ExtractConfig view, and the fact-cache store.
 	// Store.RefreshMode lets a caller force fresh extraction while still writing
 	// the refreshed fact back to disk.
-	NewExtractor func(toolrun.Runner, view.ExtractConfig, *factcache.Store) evidenceports.Extractor
+	NewExtractor func(toolrun.Runner, evidenceports.ExtractConfig, *factcache.Store) evidenceports.Extractor
 	// PrimaryTool is the coverage name of the dependency-graph analyzer this
 	// language unlocks (as it appears in ToolCoverage, e.g. "go/packages").
 	PrimaryTool string
@@ -88,7 +87,7 @@ var languages = []Descriptor{
 	{
 		ID:             "go",
 		ProjectPresent: goProjectPresent,
-		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg evidenceports.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
 			ex := golang.New(cfg)
 			ex.Runner = r // go-toolchain version probe for the fact-cache key
 			ex.Cache = fc
@@ -105,7 +104,7 @@ var languages = []Descriptor{
 		ID:             "typescript",
 		Aliases:        []string{"ts"},
 		ProjectPresent: tsProjectPresent,
-		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg evidenceports.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
 			ex := ts.New(r, cfg)
 			ex.Cache = fc
 			return ex
@@ -123,7 +122,7 @@ var languages = []Descriptor{
 		ID:             "python",
 		Aliases:        []string{"py"},
 		ProjectPresent: pyProjectPresent,
-		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg evidenceports.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
 			ex := py.New(r, cfg)
 			ex.Cache = fc
 			return ex
@@ -139,7 +138,7 @@ var languages = []Descriptor{
 		ID:             "rust",
 		Aliases:        []string{"rs"},
 		ProjectPresent: rustProjectPresent,
-		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg evidenceports.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
 			ex := rust.New(r, cfg)
 			ex.Cache = fc
 			return ex
@@ -159,20 +158,20 @@ func All() []Descriptor {
 	return slices.Clone(languages)
 }
 
-func goProjectPresent(root string, cfg view.ExtractConfig) bool {
+func goProjectPresent(root string, cfg evidenceports.ExtractConfig) bool {
 	members, err := golang.AnalysableMembers(root, cfg.Exclusions, cfg.GoModuleInclude, cfg.GoModuleExclude)
 	return err != nil || len(members.Dirs) > 0
 }
 
-func tsProjectPresent(root string, _ view.ExtractConfig) bool {
+func tsProjectPresent(root string, _ evidenceports.ExtractConfig) bool {
 	return ts.Applicable(root)
 }
 
-func pyProjectPresent(root string, cfg view.ExtractConfig) bool {
+func pyProjectPresent(root string, cfg evidenceports.ExtractConfig) bool {
 	return py.Applicable(root, cfg.PyPackage)
 }
 
-func rustProjectPresent(root string, cfg view.ExtractConfig) bool {
+func rustProjectPresent(root string, cfg evidenceports.ExtractConfig) bool {
 	return rust.Applicable(root, cfg.CargoManifest)
 }
 
@@ -184,13 +183,13 @@ func rustProjectPresent(root string, cfg view.ExtractConfig) bool {
 //
 // False whenever discovery is unavailable or errors — never disable a workspace
 // on a guess.
-func GoWorkOff(scanRoot string, cfg view.ExtractConfig) bool {
+func GoWorkOff(scanRoot string, cfg evidenceports.ExtractConfig) bool {
 	m, err := golang.DiscoverMembers(scanRoot, cfg.Exclusions)
 	return err == nil && m.GoWorkOff
 }
 
 // New constructs the registered extractor for one canonical language ID.
-func New(id string, runner toolrun.Runner, cfg view.ExtractConfig, facts *factcache.Store) evidenceports.Extractor {
+func New(id string, runner toolrun.Runner, cfg evidenceports.ExtractConfig, facts *factcache.Store) evidenceports.Extractor {
 	for _, lang := range languages {
 		if lang.ID == id {
 			return lang.NewExtractor(runner, cfg, facts)
@@ -211,7 +210,7 @@ func Build(runner toolrun.Runner, configs Configs, facts *factcache.Store) []evi
 }
 
 // ProjectPresent reports whether the registered language applies under root.
-func ProjectPresent(id, root string, cfg view.ExtractConfig) bool {
+func ProjectPresent(id, root string, cfg evidenceports.ExtractConfig) bool {
 	for _, lang := range languages {
 		if lang.ID == id {
 			return lang.ProjectPresent(root, cfg)

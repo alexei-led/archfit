@@ -1,61 +1,45 @@
-// Package policy owns the domain projections of archfit's architecture policy.
-// It has no YAML or filesystem knowledge; config adapters build these values.
+// Package policy owns the domain projections of archfit's architecture policy:
+// topology, module and layer semantics, ownership, deploy units, gates, rule
+// definitions, and waivers. It has no YAML, filesystem, or run-context
+// knowledge; config adapters decode into these values and stages consume them.
 package policy
 
 import (
 	"maps"
 	"slices"
 	"time"
-
-	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/relationship/labels"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // TopologyView is the structural policy used to resolve module boundaries.
 type TopologyView struct {
-	Modules         map[string]module.ModuleDef
+	Modules         map[string]ModuleDef
 	Layers          []string
-	ModuleMap       module.Map
-	ExternalSystems map[string]view.ExternalSystemDef
+	ModuleMap       ModuleMap
+	ExternalSystems map[string]ExternalSystemDef
 	ExplicitOwners  map[string]bool
 }
 
 // RelationshipPolicy contains only declarations needed to classify relationships.
+// Per-run enrichment (pinned labels, clone pairs) is a run signal, not policy,
+// and reaches relationship analysis through its own stage input.
 type RelationshipPolicy struct {
 	Topology                 TopologyView
 	MinimumSeverity          string
 	VolatilityCascadeEnabled bool
-	DuplicatedKnowledge      view.DuplicatedKnowledgePolicy
-	PinnedLabels             []labels.Label
-	ApprovedLabels           map[string]string
-	LLMLabels                map[string]string
-	LLMLabelConfidence       map[string]string
-}
-
-// ClassifyConfig adapts the relationship projection for the transitional
-// classifier seam. It keeps runtime labels outside the static topology.
-func (p RelationshipPolicy) ClassifyConfig() view.ClassifyConfig {
-	return view.ClassifyConfig{
-		Modules: p.Topology.Modules, Layers: p.Topology.Layers, ModuleMap: p.Topology.ModuleMap,
-		BCAdvisoryMinSeverity: p.MinimumSeverity, ExplicitOwners: p.Topology.ExplicitOwners,
-		VolatilityCascadeEnabled: p.VolatilityCascadeEnabled, ExternalSystems: p.Topology.ExternalSystems,
-		DuplicatedKnowledgePolicy: p.DuplicatedKnowledge, ApprovedLabels: maps.Clone(p.ApprovedLabels),
-		LLMLabels: maps.Clone(p.LLMLabels), LLMLabelConfidence: maps.Clone(p.LLMLabelConfidence),
-	}
+	DuplicatedKnowledge      DuplicatedKnowledgePolicy
 }
 
 // AssessmentPolicy contains declarations needed by assessment consumers.
 type AssessmentPolicy struct {
 	Topology  TopologyView
-	Waivers   view.WaiverSet
+	Waivers   WaiverSet
 	Staleness StalenessPolicy
 }
 
 // StalenessPolicy controls map-quality review findings.
 type StalenessPolicy struct {
 	Enabled   bool
-	Threshold time.Duration
+	Threshold time.Duration // zero value defaults to 90*24*time.Hour in Check
 }
 
 // CouplingGate is the domain representation of coupling.gate. It intentionally
@@ -69,10 +53,10 @@ type CouplingGate struct {
 
 // GatePolicy contains rule and metric gate declarations.
 type GatePolicy struct {
-	Rules        view.RuleConfig
-	Metrics      map[string]view.MetricConfig
+	Rules        RuleConfig
+	Metrics      map[string]MetricConfig
 	Coupling     CouplingGate
-	ModuleReview view.GateMode
+	ModuleReview GateMode
 }
 
 // PolicySnapshot is the per-run policy contract. Ownership and deploy units are
@@ -94,10 +78,6 @@ type PolicySnapshot struct {
 func New(topology TopologyView, relationship RelationshipPolicy, assessment AssessmentPolicy, gates GatePolicy, ownership, deployUnits map[string]string) PolicySnapshot {
 	topology = cloneTopology(topology)
 	relationship.Topology = topology
-	relationship.ApprovedLabels = maps.Clone(relationship.ApprovedLabels)
-	relationship.LLMLabels = maps.Clone(relationship.LLMLabels)
-	relationship.LLMLabelConfidence = maps.Clone(relationship.LLMLabelConfidence)
-	relationship.PinnedLabels = slices.Clone(relationship.PinnedLabels)
 	assessment.Topology = topology
 	assessment.Waivers = cloneWaivers(assessment.Waivers)
 	gates.Rules = cloneRuleConfig(gates.Rules)
@@ -119,35 +99,81 @@ func (p PolicySnapshot) Clone() PolicySnapshot {
 	return New(p.Topology, p.Relationship, p.Assessment, p.Gates, p.Ownership, p.DeployUnits)
 }
 
+// WithResolvedTopology returns an independent snapshot whose modules carry the
+// resolved owners and deploy units, with every topology projection rebuilt from
+// the same augmented module map. Ownership and deploy-unit resolution runs once
+// per run; every stage then reads the same immutable result.
+func (p PolicySnapshot) WithResolvedTopology(owners, deployUnits map[string]string) PolicySnapshot {
+	out := p.Clone()
+	if out.Ownership == nil {
+		out.Ownership = map[string]string{}
+	}
+	if out.DeployUnits == nil {
+		out.DeployUnits = map[string]string{}
+	}
+	for name, owner := range owners {
+		if def, ok := out.Topology.Modules[name]; ok && def.Owner == "" {
+			def.Owner = owner
+			out.Topology.Modules[name] = def
+			out.Ownership[name] = owner
+		}
+	}
+	// A discovered deploy unit only fills a gap: a module that declares one keeps
+	// it, and a unit reported for a name no module covers is not policy at all.
+	for name, unit := range deployUnits {
+		if def, ok := out.Topology.Modules[name]; ok && def.DeployUnit == "" {
+			def.DeployUnit = unit
+			out.Topology.Modules[name] = def
+			out.DeployUnits[name] = unit
+		}
+	}
+	out.Topology.ModuleMap = BuildModuleMap(out.Topology.Modules)
+	out.Relationship.Topology, out.Assessment.Topology = out.Topology, out.Topology
+	out.Gates.Rules.ModuleMap = out.Topology.ModuleMap
+	return out
+}
+
+// NeedsOwnerResolution reports whether any path-bearing module leaves `owner:`
+// undeclared, which is what makes repository-history ownership resolution worth
+// its cost.
+func (p PolicySnapshot) NeedsOwnerResolution() bool {
+	for _, def := range p.Topology.Modules {
+		if len(def.Paths) > 0 && def.Owner == "" {
+			return true
+		}
+	}
+	return false
+}
+
 func cloneTopology(in TopologyView) TopologyView {
-	modules := make(map[string]module.ModuleDef, len(in.Modules))
+	modules := make(map[string]ModuleDef, len(in.Modules))
 	for name, def := range in.Modules {
 		def.Paths = slices.Clone(def.Paths)
 		def.Public = slices.Clone(def.Public)
 		def.Internal = slices.Clone(def.Internal)
 		modules[name] = def
 	}
-	external := make(map[string]view.ExternalSystemDef, len(in.ExternalSystems))
+	external := make(map[string]ExternalSystemDef, len(in.ExternalSystems))
 	for name, def := range in.ExternalSystems {
 		def.Targets = slices.Clone(def.Targets)
 		external[name] = def
 	}
-	return TopologyView{Modules: modules, Layers: slices.Clone(in.Layers), ModuleMap: module.BuildMap(modules), ExternalSystems: external, ExplicitOwners: maps.Clone(in.ExplicitOwners)}
+	return TopologyView{Modules: modules, Layers: slices.Clone(in.Layers), ModuleMap: BuildModuleMap(modules), ExternalSystems: external, ExplicitOwners: maps.Clone(in.ExplicitOwners)}
 }
 
-func cloneWaivers(in view.WaiverSet) view.WaiverSet {
-	return view.WaiverSet{Waivers: slices.Clone(in.Waivers)}
+func cloneWaivers(in WaiverSet) WaiverSet {
+	return WaiverSet{Waivers: slices.Clone(in.Waivers)}
 }
 
-func cloneRuleConfig(in view.RuleConfig) view.RuleConfig {
-	return view.RuleConfig{Rules: slices.Clone(in.Rules), Layers: slices.Clone(in.Layers), ModuleMap: in.ModuleMap}
+func cloneRuleConfig(in RuleConfig) RuleConfig {
+	return RuleConfig{Rules: slices.Clone(in.Rules), Layers: slices.Clone(in.Layers), ModuleMap: in.ModuleMap}
 }
 
-func cloneMetricConfigs(in map[string]view.MetricConfig) map[string]view.MetricConfig {
+func cloneMetricConfigs(in map[string]MetricConfig) map[string]MetricConfig {
 	if in == nil {
 		return nil
 	}
-	out := make(map[string]view.MetricConfig, len(in))
+	out := make(map[string]MetricConfig, len(in))
 	for name, cfg := range in {
 		out[name] = cfg
 	}

@@ -5,7 +5,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
@@ -25,7 +25,7 @@ type AbstainedPair struct {
 
 // SelectAbstainedPairs selects unknown-strength cross-module edges for review.
 // It owns graph/classification interpretation; callers receive prompt DTOs.
-func SelectAbstainedPairs(g *graph.Graph, idx coupling.Index, mm module.Map, approved map[string]struct{}, edgeCap, sampleCap int) (pairs []AbstainedPair, total int) {
+func SelectAbstainedPairs(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap, approved map[string]struct{}, edgeCap, sampleCap int) (pairs []AbstainedPair, total int) {
 	if g == nil {
 		return nil, 0
 	}

@@ -6,7 +6,6 @@ import (
 
 	historygit "github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -49,7 +48,7 @@ func BuildVolatilityCorroboration(ctx context.Context, gitRoot, subtreePrefix st
 	return out
 }
 
-func declaredVolatilityLabel(def module.ModuleDef) string {
+func declaredVolatilityLabel(def policy.ModuleDef) string {
 	switch strings.ToLower(def.Volatility) {
 	case volatilityHigh:
 		return volatilityHigh

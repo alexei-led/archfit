@@ -20,7 +20,6 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/acquire"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
@@ -43,6 +42,7 @@ type preparedRun struct {
 	ownerSource          string
 	labels               []labels.Label
 	warnings             []string
+	ownerWarnings        []string
 	captured             *signal.CommonInput
 	requireTools         bool
 	captureRelationships bool
@@ -136,44 +136,28 @@ func (a *Analyzer) prepareRun(ctx context.Context, req application.AnalysisReque
 		DeprecatedDeps: factsResult.DeprecatedDeps,
 	}
 	noteWarning("loc", factsResult.LOCError)
+	// Ownership and deploy-unit resolution runs exactly once per run. The
+	// resolved snapshot travels on the analysis context; relationship analysis
+	// and assessment read it instead of re-walking repository history.
 	ownerSource := "config"
-	needsOwners := false
-	for _, def := range runPolicy.Topology.Modules {
-		if len(def.Paths) > 0 && def.Owner == "" {
-			needsOwners = true
-			break
-		}
-	}
-	if needsOwners {
-		resolvedOwners, source := resolveOwners(ctx, resolved, runPolicy, deps)
-		for name, owner := range resolvedOwners {
-			if def, ok := runPolicy.Topology.Modules[name]; ok && def.Owner == "" {
-				def.Owner = owner
-				runPolicy.Topology.Modules[name] = def
-				runPolicy.Ownership[name] = owner
-			}
-		}
+	var ownerWarnings []string
+	var resolvedOwners map[string]string
+	if runPolicy.NeedsOwnerResolution() {
+		owners, source := resolveOwners(ctx, resolved, runPolicy, deps)
+		resolvedOwners = owners
 		ownerSource = string(source)
 		if warning := OwnerDegradationWarning(source); warning != "" {
+			ownerWarnings = append(ownerWarnings, warning)
 			warnings = append(warnings, warning)
 			deps.warn(warning)
 		}
 	}
-	for name, unit := range factsResult.DeployUnitsByModule {
-		if def, ok := runPolicy.Topology.Modules[name]; ok && def.DeployUnit == "" {
-			def.DeployUnit = unit
-			runPolicy.Topology.Modules[name] = def
-			runPolicy.DeployUnits[name] = unit
-		}
-	}
-	runPolicy.Topology.ModuleMap = module.BuildMap(runPolicy.Topology.Modules)
-	runPolicy.Relationship.Topology, runPolicy.Assessment.Topology = runPolicy.Topology, runPolicy.Topology
+	runPolicy = runPolicy.WithResolvedTopology(resolvedOwners, factsResult.DeployUnitsByModule)
 	noteWarning("jscpd", factsResult.CloneError)
 	lbls, err := deps.loadLabels(bundleDir)
 	if err != nil {
 		return nil, err
 	}
-	runPolicy.Relationship.PinnedLabels = append([]labels.Label(nil), lbls...)
 	var captured signal.CommonInput
 	var extras []metrics.Metric
 	if req.CaptureRelationships {
@@ -183,11 +167,11 @@ func (a *Analyzer) prepareRun(ctx context.Context, req application.AnalysisReque
 	stageInput := StageInput{Mode: mode, Scope: resolved, Policy: runPolicy, Extractors: extractors,
 		Patterns: factsResult.Patterns, Resolver: factsResult.Resolver, Syntax: factsResult.Syntax,
 		SyntaxCfg: a.PreparedOptions.Syntax, PatternCfg: a.PreparedOptions.Patterns, Rules: ruleSet,
-		Metrics: metricSet, BaseMetrics: base.Metrics, Accepted: base, Signals: change,
+		Metrics: metricSet, BaseMetrics: base.Metrics, Accepted: base, Signals: change, Labels: lbls,
 		Now: rc.evaluatedAt(), ConfigHash: effectiveConfigHash(configPath), PrimaryExtractorTools: registry.PrimaryTools()}
 	return &preparedRun{input: stageInput, rules: ruleSet, metrics: metricSet, base: base, runContext: rc,
 		mode: mode, request: req, options: a.PreparedOptions, policy: runPolicy, config: a.Config, ownerSource: ownerSource,
-		labels: lbls, warnings: warnings, requireTools: req.RequireTools,
+		labels: lbls, warnings: warnings, ownerWarnings: ownerWarnings, requireTools: req.RequireTools,
 		captureRelationships: req.CaptureRelationships, previousWarnLabel: previousWarnLabel, captured: &captured}, nil
 }
 
@@ -249,7 +233,7 @@ func (a *Analyzer) finalizePreparedRun(ctx context.Context, run *preparedRun, di
 			crateRootDirs[cr.Name] = cr.Dir
 		}
 	}
-	resolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, module.RootDirs(run.policy.Topology.Modules), OnDiskWithin(run.input.Scope.Root))
+	resolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, policy.ModuleRootDirs(run.policy.Topology.Modules), OnDiskWithin(run.input.Scope.Root))
 	validate := ValidationCommand(run.runContext.ConfigSource, run.runContext.ScanRoot)
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts, resolver)
 	diag.AdvisoryTasks = agenttask.BuildAdvisoryTasks(diag.Findings, []string{validate})

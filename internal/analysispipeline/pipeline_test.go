@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 func TestPolicySnapshotProjectsOwnershipAndDeployUnits(t *testing.T) {
-	cfg := config.Config{Version: 1, Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Version: 1, Modules: map[string]policy.ModuleDef{
 		"cli": {Owner: "team-cli", DeployUnit: "archfit-cli", Paths: []string{"cmd/**"}},
 	}}
 	got := PolicySnapshot(cfg)

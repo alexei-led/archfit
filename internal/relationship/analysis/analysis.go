@@ -12,14 +12,12 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 	"github.com/alexei-led/archfit/internal/syntax"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Mode contains only relationship-relevant run posture.
@@ -43,11 +41,11 @@ type Input struct {
 
 // Analyze classifies acquired graph evidence exactly once.
 func Analyze(in Input) relationship.AnalysisResult {
-	cfg := in.Policy.ClassifyConfig()
+	cfg := classify.ConfigFrom(in.Policy)
 	cfg.Modules = classify.AugmentModulesFromGraph(in.Graph, cfg.Modules)
 	cfg.Modules = classify.AugmentGoWorkspaceModules(in.Graph, cfg.Modules)
 	cfg.Modules = classify.AugmentCargoCrateNodes(in.Graph, cfg.Modules)
-	cfg.ModuleMap = module.BuildMap(cfg.Modules)
+	cfg.ModuleMap = policy.BuildModuleMap(cfg.Modules)
 
 	evidenceHashes := pairEvidence(in.Graph, cfg.ModuleMap, in.Labels, in.Mode)
 	approved, llm, stale := labels.Approved(in.Labels, evidenceHashes)
@@ -80,7 +78,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 	return out
 }
 
-func cloneOnlyPairs(g *graph.Graph, cfg view.ClassifyConfig) []relationship.CloneOnlyPair {
+func cloneOnlyPairs(g *graph.Graph, cfg classify.Config) []relationship.CloneOnlyPair {
 	pairs := classify.CloneOnlyPairs(g, cfg)
 	out := make([]relationship.CloneOnlyPair, 0, len(pairs))
 	for _, p := range pairs {
@@ -90,7 +88,7 @@ func cloneOnlyPairs(g *graph.Graph, cfg view.ClassifyConfig) []relationship.Clon
 	return out
 }
 
-func pairEvidence(g *graph.Graph, mm module.Map, lbls []labels.Label, mode Mode) map[string]string {
+func pairEvidence(g *graph.Graph, mm policy.ModuleMap, lbls []labels.Label, mode Mode) map[string]string {
 	if (!mode.Full && mode.Base != "") || len(lbls) == 0 || g == nil {
 		return nil
 	}
@@ -119,7 +117,7 @@ func pairEvidence(g *graph.Graph, mm module.Map, lbls []labels.Label, mode Mode)
 	return out
 }
 
-func clonePairs(clusters []clone.Cluster, mm module.Map, index map[string]fileclass.FileClass) (map[string]struct{}, map[string][]graph.Location) {
+func clonePairs(clusters []clone.Cluster, mm policy.ModuleMap, index map[string]fileclass.FileClass) (map[string]struct{}, map[string][]graph.Location) {
 	filtered := make([]clone.Cluster, 0, len(clusters))
 	cfg := syntax.FileClassConfig{}
 	for _, c := range clusters {
@@ -149,7 +147,7 @@ func clonePairs(clusters []clone.Cluster, mm module.Map, index map[string]filecl
 	return set, cloneEvidence(clusters, mm, index)
 }
 
-func cloneEvidence(clusters []clone.Cluster, mm module.Map, index map[string]fileclass.FileClass) map[string][]graph.Location {
+func cloneEvidence(clusters []clone.Cluster, mm policy.ModuleMap, index map[string]fileclass.FileClass) map[string][]graph.Location {
 	out := map[string][]graph.Location{}
 	cfg := syntax.FileClassConfig{}
 	moduleFor := func(f string) string {
@@ -222,7 +220,7 @@ func cloneLanguage(path string) string {
 	}
 }
 
-func buildSet(g *graph.Graph, idx coupling.Index, mm module.Map) relationship.Set {
+func buildSet(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap) relationship.Set {
 	if g == nil {
 		return relationship.Set{}
 	}
@@ -280,7 +278,7 @@ func locations(in []graph.Location) []relationship.Location {
 	return out
 }
 
-func runtimeModules(sites []evidence.RuntimeAsyncSite, confidence string, mm module.Map) []relationship.RuntimeSignal {
+func runtimeModules(sites []evidence.RuntimeAsyncSite, confidence string, mm policy.ModuleMap) []relationship.RuntimeSignal {
 	byModule := map[string][]evidence.RuntimeAsyncSite{}
 	for _, s := range sites {
 		m, ok := mm.ModuleForFile(s.File)
@@ -314,7 +312,7 @@ func dominantKind(sites []evidence.RuntimeAsyncSite) string {
 	}
 	return best
 }
-func runtimeEdges(sites []evidence.RuntimeAsyncSite, confidence string, mm module.Map) []relationship.RuntimeRelationship {
+func runtimeEdges(sites []evidence.RuntimeAsyncSite, confidence string, mm policy.ModuleMap) []relationship.RuntimeRelationship {
 	type key struct{ from, target, kind string }
 	grouped := map[key][]evidence.RuntimeAsyncSite{}
 	for _, s := range sites {

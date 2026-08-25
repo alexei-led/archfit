@@ -10,7 +10,7 @@ import (
 	apppipeline "github.com/alexei-led/archfit/internal/analysispipeline"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 // TestGitFindingDelta covers the `--base` git-origin block: how tasks are placed
@@ -34,7 +34,7 @@ func testGitDeltaEffectiveConfig(t *testing.T) {
 	t.Parallel()
 	t.Run("module map is independent of the head config", func(t *testing.T) {
 		t.Parallel()
-		original := config.Config{Modules: map[string]module.ModuleDef{
+		original := config.Config{Modules: map[string]policy.ModuleDef{
 			"a": {Paths: []string{"pkg/a/**"}},
 		}}
 		snapshot := apppipeline.WithIndependentModules(original)

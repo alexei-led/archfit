@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
@@ -12,7 +14,6 @@ import (
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/extract/ts"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Coverage names read from the adapters that stamp them, never re-typed here.
@@ -25,9 +26,9 @@ import (
 // import an adapter; a test file may (the ring rule and TestArchImports both
 // scan production imports only).
 var (
-	toolDepCruiserName = ts.New(nil, view.ExtractConfig{}).CoverageTool()
-	toolGrimpName      = py.New(nil, view.ExtractConfig{}).CoverageTool()
-	toolGoPackagesName = goextract.New(view.ExtractConfig{}).CoverageTool()
+	toolDepCruiserName = ts.New(nil, evidenceports.ExtractConfig{}).CoverageTool()
+	toolGrimpName      = py.New(nil, evidenceports.ExtractConfig{}).CoverageTool()
+	toolGoPackagesName = goextract.New(evidenceports.ExtractConfig{}).CoverageTool()
 )
 
 // TestPartialFromUnresolvedSpecifiers_AdapterCoverageNames drives the real

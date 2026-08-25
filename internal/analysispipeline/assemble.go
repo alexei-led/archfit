@@ -6,7 +6,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
@@ -33,11 +33,11 @@ const dynamicImportSiteCap = 5
 // metrics, or the verdict — this is evidence only.
 // It is exported so config update can show the same review-only distance hints
 // as analyze without running the full engine pipeline.
-func BuildDynamicImports(sites []evidence.DynamicImportSite, mm module.Map) []evidence.DynamicImport {
+func BuildDynamicImports(sites []evidence.DynamicImportSite, mm policy.ModuleMap) []evidence.DynamicImport {
 	return buildDynamicImports(sites, mm)
 }
 
-func buildDynamicImports(sites []evidence.DynamicImportSite, mm module.Map) []evidence.DynamicImport {
+func buildDynamicImports(sites []evidence.DynamicImportSite, mm policy.ModuleMap) []evidence.DynamicImport {
 	byModule := make(map[string][]evidence.DynamicImportSite)
 	for _, s := range sites {
 		mod, ok := mm.ModuleForFile(s.File)
@@ -76,11 +76,11 @@ const runtimeAsyncSiteCap = 5
 // runtime target, and integration kind. The result is relationship-level evidence
 // for future runtime-distance scoring, but remains report-only today. It is
 // exported so config update can show the same review-only distance hints as analyze.
-func BuildRuntimeAsyncEdges(sites []evidence.RuntimeAsyncSite, confidence string, mm module.Map) []evidence.RuntimeAsyncEdge {
+func BuildRuntimeAsyncEdges(sites []evidence.RuntimeAsyncSite, confidence string, mm policy.ModuleMap) []evidence.RuntimeAsyncEdge {
 	return buildRuntimeAsyncEdges(sites, confidence, mm)
 }
 
-func buildRuntimeAsyncEdges(sites []evidence.RuntimeAsyncSite, confidence string, mm module.Map) []evidence.RuntimeAsyncEdge {
+func buildRuntimeAsyncEdges(sites []evidence.RuntimeAsyncSite, confidence string, mm policy.ModuleMap) []evidence.RuntimeAsyncEdge {
 	type edgeKey struct {
 		fromModule string
 		target     string
@@ -258,11 +258,11 @@ const (
 // external_systems hints. The candidates deliberately do not alter distance,
 // scoring, findings, baselines, or gate verdicts: an external seam enters the
 // BC model only after a human declares it in config.
-func BuildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm module.Map) []evidence.DistanceConfigCandidate {
+func BuildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap) []evidence.DistanceConfigCandidate {
 	return buildStaticExternalDistanceCandidates(g, idx, mm)
 }
 
-func buildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm module.Map) []evidence.DistanceConfigCandidate {
+func buildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap) []evidence.DistanceConfigCandidate {
 	if g == nil || len(idx) == 0 {
 		return nil
 	}
@@ -427,7 +427,7 @@ func indexKeyForEdge(e graph.Edge) string {
 	return e.From + "\x00" + e.To + "\x00" + string(e.Kind)
 }
 
-func moduleForNodeID(id string, mm module.Map) (string, bool) {
+func moduleForNodeID(id string, mm policy.ModuleMap) (string, bool) {
 	kind, path, ok := splitNodeID(id)
 	if !ok || path == "" {
 		return "", false

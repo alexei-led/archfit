@@ -40,7 +40,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc apppi
 	if err != nil {
 		return result.Result{}, score.Scorecard{}, err
 	}
-	out, err := a.Assess(ctx, application.AnalysisRequest{ConfigSource: rc.ConfigSource, BundleDir: rc.BundleDir, Root: rc.ScanRoot, BaseRef: mode.Base, Formats: mode.Formats, ReportOnly: mode.ReportOnly, NoAdvisories: !mode.Advisory, EmptyBaseline: true}, snapshot.AssessmentView(), relationships)
+	out, err := a.Assess(ctx, application.AnalysisRequest{ConfigSource: rc.ConfigSource, BundleDir: rc.BundleDir, Root: rc.ScanRoot, BaseRef: mode.Base, Formats: mode.Formats, ReportOnly: mode.ReportOnly, NoAdvisories: !mode.Advisory, EmptyBaseline: true}, snapshot.Facts.ForAssessment(), snapshot.Context, relationships)
 	if err != nil {
 		return result.Result{}, score.Scorecard{}, err
 	}

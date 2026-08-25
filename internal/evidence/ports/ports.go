@@ -16,7 +16,6 @@ import (
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 //go:generate moq -out extractor_moq.go . Extractor
@@ -53,7 +52,7 @@ type PatternProvider interface {
 	// Find runs all patterns in c against the given scope and returns matches,
 	// a coverage record, and any hard error. A missing tool must not return an
 	// error — it returns empty matches and a coverage record with status="absent".
-	Find(ctx context.Context, s scope.Scope, c view.PatternConfig) ([]pattern.Match, evidence.Coverage, error)
+	Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]pattern.Match, evidence.Coverage, error)
 }
 
 // SymbolResolver is the port for barrel-file / re-export resolution (Phase 3: SCIP).
@@ -125,7 +124,7 @@ var _ PatternProvider = NopPatternProvider{}
 func (NopPatternProvider) Name() string { return "nop-pattern" }
 
 // Find returns empty matches and an absent coverage record.
-func (NopPatternProvider) Find(_ context.Context, _ scope.Scope, _ view.PatternConfig) ([]pattern.Match, evidence.Coverage, error) {
+func (NopPatternProvider) Find(_ context.Context, _ scope.Scope, _ pattern.Config) ([]pattern.Match, evidence.Coverage, error) {
 	return nil, evidence.Coverage{Tool: "ast-grep", Status: evidence.StatusAbsent}, nil
 }
 

@@ -10,12 +10,13 @@ import (
 	"strings"
 	"time"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -37,7 +38,7 @@ const (
 // It satisfies the evidenceports.Extractor interface structurally.
 type Extractor struct {
 	runner             toolrun.Runner
-	cfg                view.ExtractConfig
+	cfg                evidenceports.ExtractConfig
 	lastModuleGraphCov evidence.Coverage // cargo-modules coverage from most recent Extract call
 	lastCrateRoots     []graph.CrateRoot // crate roots from most recent Extract call
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
@@ -52,7 +53,7 @@ var rustManifestNames = []string{"Cargo.toml", "Cargo.lock"}
 // New returns an Extractor configured with the given runner and config. The
 // module-graph coverage is seeded to a well-formed absent record so a caller that
 // reads LastModuleGraphCoverage before Extract never sees a zero-value Coverage.
-func New(runner toolrun.Runner, cfg view.ExtractConfig) *Extractor {
+func New(runner toolrun.Runner, cfg evidenceports.ExtractConfig) *Extractor {
 	return &Extractor{
 		runner:             runner,
 		cfg:                cfg,
@@ -110,7 +111,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	// well-formed row instead of a zero-value Coverage{} (empty Tool/Status). The
 	// cfg.ModuleGraph branch below overwrites it when the graph actually runs.
 	e.lastModuleGraphCov = evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
-	if e.cfg.Mode == view.ModeOff {
+	if e.cfg.Mode == evidenceports.ModeOff {
 		return graph.Facts{}, absentCoverage(""), nil
 	}
 
@@ -124,7 +125,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		// Cargo.toml just means "not a Rust project at this root": degrade to an
 		// n/a coverage record (warn-loud), never exit 3, even when rust is enabled
 		// — a multi-language repo or a manifest-less subtree must not fail the run (E3).
-		if e.cfg.Mode == view.ModeOn && e.cfg.CargoManifest != "" {
+		if e.cfg.Mode == evidenceports.ModeOn && e.cfg.CargoManifest != "" {
 			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/rust: configured rust_manifest %s not found", marker)
 		}
 		return graph.Facts{}, absentCoverage(""), nil
@@ -132,7 +133,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 
 	// Detect cargo.
 	if _, ok := e.runner.Detect(ctx, toolCargo); !ok {
-		if e.cfg.Mode == view.ModeOn {
+		if e.cfg.Mode == evidenceports.ModeOn {
 			return graph.Facts{}, evidence.Coverage{}, errors.New("extract/rust: cargo not found; install Rust via https://rustup.rs")
 		}
 		return graph.Facts{}, absentCoverage(""), nil
@@ -166,7 +167,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		// failure (the "warn-loud, don't block" contract); only an explicitly
 		// required analyzer (ModeOn) hard-errors.
 		reason := fmt.Sprintf("cargo metadata exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
-		if e.cfg.Mode == view.ModeOn {
+		if e.cfg.Mode == evidenceports.ModeOn {
 			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/rust: %s", reason)
 		}
 		return graph.Facts{}, evidence.Coverage{Tool: toolCargo, Version: version, Status: statusPartial, Reason: reason}, nil
@@ -250,7 +251,7 @@ func (e *Extractor) cachedRunner(s scope.Scope, analyzer, version string, exts [
 		return e.runner
 	}
 	cfgHash, err := factcache.HashJSON(struct {
-		Cfg  view.ExtractConfig
+		Cfg  evidenceports.ExtractConfig
 		Root string
 	}{e.cfg, s.Root})
 	if err != nil {

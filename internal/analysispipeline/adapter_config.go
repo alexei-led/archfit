@@ -7,12 +7,12 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/rules"
 	"github.com/alexei-led/archfit/internal/config"
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/extract/acquire"
 	"github.com/alexei-led/archfit/internal/extract/registry"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // PolicySnapshot converts decoded config at the application boundary. The
@@ -29,8 +29,8 @@ func PolicySnapshot(cfg config.Config) policy.PolicySnapshot {
 			deployUnits[name] = def.DeployUnit
 		}
 	}
-	topology := policy.TopologyView{Modules: cfg.Modules, Layers: cfg.Layers, ModuleMap: module.BuildMap(cfg.Modules), ExternalSystems: cfg.ExternalSystems, ExplicitOwners: cfg.ExplicitOwnersView()}
-	relationship := policy.RelationshipPolicy{MinimumSeverity: cfg.Coupling.MinSeverity, VolatilityCascadeEnabled: cfg.Coupling.VolatilityCascade, DuplicatedKnowledge: view.NormalizeDuplicatedKnowledgePolicy(cfg.Coupling.DuplicatedKnowledge)}
+	topology := policy.TopologyView{Modules: cfg.Modules, Layers: cfg.Layers, ModuleMap: policy.BuildModuleMap(cfg.Modules), ExternalSystems: cfg.ExternalSystems, ExplicitOwners: cfg.ExplicitOwnersView()}
+	relationship := policy.RelationshipPolicy{MinimumSeverity: cfg.Coupling.MinSeverity, VolatilityCascadeEnabled: cfg.Coupling.VolatilityCascade, DuplicatedKnowledge: policy.NormalizeDuplicatedKnowledgePolicy(cfg.Coupling.DuplicatedKnowledge)}
 	stale := cfg.ForStaleness()
 	assessment := policy.AssessmentPolicy{Waivers: cfg.ForWaivers(), Staleness: policy.StalenessPolicy{Enabled: stale.Enabled, Threshold: stale.Threshold}}
 	gate := policy.CouplingGate{}
@@ -42,7 +42,7 @@ func PolicySnapshot(cfg config.Config) policy.PolicySnapshot {
 		}
 		gate = policy.CouplingGate{Enabled: true, MinBand: g.MinBand, MaxDrop: maxDrop}
 	}
-	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: cfg.ForRules(), Metrics: cfg.Metrics, Coupling: gate, ModuleReview: view.GateMode(cfg.ModuleReview.Gate)}, owners, deployUnits)
+	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: cfg.ForRules(), Metrics: cfg.Metrics, Coupling: gate, ModuleReview: policy.GateMode(cfg.ModuleReview.Gate)}, owners, deployUnits)
 }
 
 // CoverageOptions is the narrow analyzer activation input built by the config adapter.
@@ -79,11 +79,11 @@ func Coverage(cfg config.Config) CoverageOptions {
 // declarations are deliberately absent; they travel only in PolicySnapshot.
 type RunOptions struct {
 	Exclusions   []string
-	Scope        view.ScopeConfig
+	Scope        scope.Config
 	Extractors   registry.Configs
 	Acquisition  acquire.Options
-	Syntax       view.SyntaxConfig
-	Patterns     view.PatternConfig
+	Syntax       evidenceports.SyntaxConfig
+	Patterns     pattern.Config
 	LintWarnings []string
 	Coverage     CoverageOptions
 }
@@ -122,7 +122,7 @@ func PrintConfigLint(w io.Writer, warnings []config.LintWarning) {
 
 // WithIndependentModules copies the decoded module map for a base-tree run.
 func WithIndependentModules(cfg config.Config) config.Config {
-	modules := make(map[string]module.ModuleDef, len(cfg.Modules))
+	modules := make(map[string]policy.ModuleDef, len(cfg.Modules))
 	maps.Copy(modules, cfg.Modules)
 	cfg.Modules = modules
 	return cfg

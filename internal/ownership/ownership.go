@@ -35,7 +35,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -117,7 +117,7 @@ const (
 // runner is used only for the git-author fallback path.
 //
 // Never returns an error — tool/file absence yields an empty map.
-func Resolve(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modules module.Map, runner toolrun.Runner) (map[string]string, Source) {
+func Resolve(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modules policy.ModuleMap, runner toolrun.Runner) (map[string]string, Source) {
 	// CODEOWNERS lives at the git repository root (the monorepo root), not the
 	// analyzed subtree. Fall back to scanRoot when gitRoot is unknown (non-git).
 	coRoot := gitRoot
@@ -279,7 +279,7 @@ func matchPathPattern(p, repoPath string) bool {
 // gitRoot-relative path (subtreePrefix + scanRoot-relative path); modules are
 // keyed on the scanRoot-relative path. subtreePrefix=="" collapses both to the
 // same value (whole-repo scan).
-func resolveFromCodeowners(rules []ownerRule, scanRoot, subtreePrefix string, modules module.Map) map[string]string {
+func resolveFromCodeowners(rules []ownerRule, scanRoot, subtreePrefix string, modules policy.ModuleMap) map[string]string {
 	// module name → map[owner]count
 	ownerCount := make(map[string]map[string]int)
 
@@ -348,7 +348,7 @@ func resolveFromCodeowners(rules []ownerRule, scanRoot, subtreePrefix string, mo
 // when scanRoot is a subtree the run is scoped with a subtreePrefix pathspec and
 // each path is stripped back to its scanRoot-relative form before module mapping
 // (module globs are scanRoot-relative). gitRoot=="" (non-git) runs from scanRoot.
-func resolveFromGitAuthor(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modules module.Map, runner toolrun.Runner) (map[string]string, bool) {
+func resolveFromGitAuthor(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modules policy.ModuleMap, runner toolrun.Runner) (map[string]string, bool) {
 	workDir := gitRoot
 	if workDir == "" {
 		workDir = scanRoot
@@ -368,7 +368,7 @@ func resolveFromGitAuthor(ctx context.Context, scanRoot, gitRoot, subtreePrefix 
 // per file into a module→owner map. The second return is true only when the
 // subprocess itself hit gitTimeout; any other failure (non-git dir, git error)
 // returns an empty map with false, matching Resolve's "never an error" contract.
-func runGitAuthorLog(ctx context.Context, workDir, subtreePrefix string, modules module.Map, runner toolrun.Runner, maxCommits int) (map[string]string, bool) {
+func runGitAuthorLog(ctx context.Context, workDir, subtreePrefix string, modules policy.ModuleMap, runner toolrun.Runner, maxCommits int) (map[string]string, bool) {
 	args := []string{"log", "--format=%ae", "--name-only"}
 	if maxCommits > 0 {
 		args = append(args, "-n", strconv.Itoa(maxCommits))

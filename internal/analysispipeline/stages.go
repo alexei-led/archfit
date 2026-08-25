@@ -14,14 +14,14 @@ import (
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 	relationshipanalysis "github.com/alexei-led/archfit/internal/relationship/analysis"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // StageInput carries the inputs shared by evidence, relationship, and assessment stages.
@@ -31,15 +31,16 @@ type StageInput struct {
 	Policy                policy.PolicySnapshot
 	Extractors            []evidenceports.Extractor
 	Patterns              evidenceports.PatternProvider
-	PatternCfg            view.PatternConfig
+	PatternCfg            pattern.Config
 	Resolver              evidenceports.SymbolResolver
 	Syntax                evidenceports.SyntaxProvider
-	SyntaxCfg             view.SyntaxConfig
+	SyntaxCfg             evidenceports.SyntaxConfig
 	Rules                 []rules.Rule
 	Metrics               []metrics.Metric
 	Accepted              status.AcceptedSet
 	BaseMetrics           report.MetricSnapshot
 	Signals               signal.RunSignals
+	Labels                []labels.Label
 	Now                   time.Time
 	PrimaryExtractorTools []string
 	ConfigHash            string
@@ -48,7 +49,7 @@ type StageInput struct {
 // AugmentClassifyConfig returns cfg with the same synthetic-module augmentation
 // and ModuleMap rebuild that Run applies before label freshness, classification,
 // advisories, and diagnostics.
-func AugmentClassifyConfig(g *graph.Graph, cfg view.ClassifyConfig) view.ClassifyConfig {
+func AugmentClassifyConfig(g *graph.Graph, cfg classify.Config) classify.Config {
 	// Register auto-discovered module-graph nodes (Rust "<crate>::<mod>") as modules so
 	// classify can resolve their distance/volatility; otherwise their edges are
 	// distance-unknown and coupling_balance/encapsulation never see them. No-op for
@@ -68,7 +69,7 @@ func AugmentClassifyConfig(g *graph.Graph, cfg view.ClassifyConfig) view.Classif
 	// consumers see auto-registered members. The Augment* calls above mutate
 	// cfg.Modules but NOT cfg.ModuleMap, which was built at config-view construction
 	// time.
-	cfg.ModuleMap = module.BuildMap(cfg.Modules)
+	cfg.ModuleMap = policy.BuildModuleMap(cfg.Modules)
 	return cfg
 }
 
@@ -118,7 +119,7 @@ func classifyRelationships(ex acquisition.Result, in StageInput) relationshipSta
 	classified := relationshipanalysis.Analyze(relationshipanalysis.Input{
 		Graph: ex.Graph, Policy: in.Policy.Relationship,
 		Mode:              relationshipanalysis.Mode{Base: in.Mode.Base, Full: in.Mode.Full},
-		Labels:            in.Policy.Relationship.PinnedLabels,
+		Labels:            in.Labels,
 		CloneClusters:     in.Signals.Duplication.Clusters,
 		FileClassIndex:    in.Signals.Size.FileClassIndex,
 		RuntimeSites:      in.Signals.RuntimeAsync.Sites,
@@ -128,7 +129,7 @@ func classifyRelationships(ex acquisition.Result, in StageInput) relationshipSta
 }
 
 // BuildRules builds policy evaluators without exposing their package to the CLI.
-func BuildRules(cfg view.RuleConfig) ([]rules.Rule, error) {
+func BuildRules(cfg policy.RuleConfig) ([]rules.Rule, error) {
 	return rules.New(cfg)
 }
 

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"reflect"
 
 	"github.com/invopop/jsonschema"
 
@@ -20,12 +21,14 @@ const (
 	schemaID    = "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.schema.json"
 	schemaDraft = "https://json-schema.org/draft/2020-12/schema"
 	typeString  = "string" // JSON Schema scalar type, reused across patches
+
+	patternPkgPath = "github.com/alexei-led/archfit/internal/model/pattern"
 )
 
 // toolModeSchema is the union that replaces the inlined {type: string} for any
 // struct field named "enabled" that carries ToolMode. It mirrors what the YAML
 // config actually accepts: a native boolean (true/false) or the string "auto".
-// The legacy "on"/"off" spellings are rejected by view.ToolMode.UnmarshalYAML.
+// The legacy "on"/"off" spellings are rejected by evidenceports.ToolMode.UnmarshalYAML.
 var toolModeSchema = &jsonschema.Schema{
 	Description: "Enable state: true | false | \"auto\" (on/off are not accepted)",
 	OneOf: []*jsonschema.Schema{
@@ -40,6 +43,16 @@ var gateModeSchema = &jsonschema.Schema{
 	Type:        typeString,
 	Enum:        []any{"off", "warn", "fail"},
 	Description: "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)",
+}
+
+// schemaDefinitionName maps a Go type to its published $defs key. pattern.Def is
+// the neutral kernel spelling of what .archfit.yaml calls a pattern definition;
+// the schema has always published it as "PatternDef" and must keep doing so.
+func schemaDefinitionName(t reflect.Type) string {
+	if t.PkgPath() == patternPkgPath && t.Name() == "Def" {
+		return "PatternDef"
+	}
+	return t.Name()
 }
 
 // Generate produces the JSON Schema bytes for config.Config.
@@ -63,28 +76,36 @@ func Generate(srcDir string) ([]byte, error) {
 		// module and layer selectors) fail schema validation in editors. Only
 		// fields tagged `jsonschema:"required"` (Config.Version) are required.
 		RequiredFromJSONSchemaTags: true,
+		// The published $defs keys are part of the schema contract: editors and
+		// validators reference them, and patchDefinitions keys its enum/required
+		// tightening off the same names. Go type names may move between packages
+		// during refactors, so pin the one name whose Go identifier no longer
+		// matches its schema identity instead of silently renaming a $def.
+		Namer: schemaDefinitionName,
 	}
 
 	// Pull doc-comments from the source so each property gets a description.
 	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", srcDir); err != nil {
 		return nil, fmt.Errorf("configschema: AddGoComments: %w", err)
 	}
-	// ModuleDef and friends live in the shared kernel (internal/model/module);
-	// load their doc-comments too so module properties keep descriptions.
-	// AddGoComments keys the map by Join(base, relativeWalkDir); with
-	// moduleDir == srcDir/../model/module the walk dir is "../model/module",
-	// so base must be the parent import path (internal/model) for the join to
-	// resolve to internal/model/module.
-	moduleDir := filepath.Join(srcDir, "..", "model", "module")
-	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/model", moduleDir); err != nil {
-		return nil, fmt.Errorf("configschema: AddGoComments(module): %w", err)
+	// Policy declarations (ModuleDef, RuleDef, WaiverDef, MetricEntry,
+	// ExternalSystemDef, …) live in internal/policy, so their doc-comments become
+	// property descriptions. AddGoComments keys the map by
+	// Join(base, relativeWalkDir); with policyDir == srcDir/../policy the walk dir
+	// is "../policy", so joining it onto the config import path resolves to
+	// internal/policy. Same join trick for the acquisition port types (ToolMode)
+	// and the neutral pattern definition.
+	policyDir := filepath.Join(srcDir, "..", "policy")
+	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", policyDir); err != nil {
+		return nil, fmt.Errorf("configschema: AddGoComments(policy): %w", err)
 	}
-	// Stage-contract types (RuleDef, WaiverDef, MetricEntry, …) live in
-	// internal/view; walk dir "../view" joined onto the config base resolves
-	// to internal/view.
-	viewDir := filepath.Join(srcDir, "..", "view")
-	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", viewDir); err != nil {
-		return nil, fmt.Errorf("configschema: AddGoComments(view): %w", err)
+	portsDir := filepath.Join(srcDir, "..", "evidence", "ports")
+	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", portsDir); err != nil {
+		return nil, fmt.Errorf("configschema: AddGoComments(ports): %w", err)
+	}
+	patternDir := filepath.Join(srcDir, "..", "model", "pattern")
+	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/model", patternDir); err != nil {
+		return nil, fmt.Errorf("configschema: AddGoComments(pattern): %w", err)
 	}
 
 	schema := r.Reflect(&config.Config{})
