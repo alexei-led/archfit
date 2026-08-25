@@ -27,9 +27,16 @@ import (
 const (
 	toolAstGrepSyntax = "ast-grep/syntax"
 	toolDeployUnit    = "deploy-unit"
-	reasonScipOff     = "opt-in: analyzers.scip.enabled"
-	reasonSyntaxOff   = "opt-in: analyzers.syntax.enabled"
 )
+
+// ReasonSCIPDisabled is the published Reason on the StatusDisabled coverage row
+// this package emits when the opt-in SCIP pass is off. Exported so tests assert
+// the shipped text rather than a copy of it.
+const ReasonSCIPDisabled = "opt-in: analyzers.scip.enabled"
+
+// ReasonSyntaxDisabled is the published Reason on the StatusDisabled coverage
+// row this package emits when the opt-in syntax pass is off.
+const ReasonSyntaxDisabled = "opt-in: analyzers.syntax.enabled"
 
 var cloneTestGenGlobs = []string{
 	"**/*_test.go", "**/*_test.ts", "**/*_test.py", "**/mock_*.go", "**/*_mock.go",
@@ -107,7 +114,7 @@ func Collect(ctx context.Context, root string, opts Options, runner toolrun.Runn
 		out.Resolver = adapter
 	} else {
 		out.ExtraCoverage = append(out.ExtraCoverage, evidence.Coverage{
-			Tool: "scip", Status: evidence.StatusDisabled, Reason: reasonScipOff,
+			Tool: "scip", Status: evidence.StatusDisabled, Reason: ReasonSCIPDisabled,
 		})
 	}
 
@@ -118,7 +125,7 @@ func Collect(ctx context.Context, root string, opts Options, runner toolrun.Runn
 		out.Syntax = adapter
 	} else {
 		out.ExtraCoverage = append(out.ExtraCoverage, evidence.Coverage{
-			Tool: toolAstGrepSyntax, Status: evidence.StatusDisabled, Reason: reasonSyntaxOff,
+			Tool: toolAstGrepSyntax, Status: evidence.StatusDisabled, Reason: ReasonSyntaxDisabled,
 		})
 	}
 

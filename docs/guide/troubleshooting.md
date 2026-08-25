@@ -24,7 +24,7 @@ with parser errors like these:
 | `archfit analyze --gate` | `archfit: unknown flag --gate, did you mean "--base"?` | `archfit check`                                                              |
 | `--full`                 | `archfit: unknown flag --full`                         | Remove it. Full scan is now the default.                                     |
 | `--advisory`             | `archfit: unknown flag --advisory`                     | Remove it. Advisories are on by default. Use `--no-advisories` to hide them. |
-| `--no-cache`             | (current flag)                                          | Use `--no-cache` to bypass cache reads and writes; use `--refresh` to refresh entries. |
+| `--no-cache`             | `archfit: unknown flag --no-cache`                     | `--refresh` — it re-runs the extractors and writes fresh results back.       |
 | `archfit analyze --llm`  | `archfit: unknown flag --llm`                          | `archfit analyze --ai-summary`                                               |
 | `--severity`             | `archfit: unknown flag --severity`                     | `--min-severity`                                                             |
 | `--no-config`            | `archfit: unknown flag --no-config`                    | Initialize config first: `archfit config init --root .`                      |
@@ -92,9 +92,10 @@ layer assignments, and wrong `paths:` globs are outside their reach — use
 
 ## Config update lists modules under `name_drift` or `removed_modules`
 
-Module discovery derives its own key for each module (`agenttask` for
-`internal/agenttask/**`), and it does not have to match the key your config
-uses. When a configured module and a discovered module own exactly the same
+Module discovery derives its own key for each module (one per directory), and it
+does not have to match the key your config uses — archfit's own config declares
+capability modules that span several directories (`assessment-repair` over
+`internal/assessment/**`). When a configured module and a discovered module own exactly the same
 paths under different names, `config update` reports the pair under
 `name_drift`, not as an add plus a remove.
 

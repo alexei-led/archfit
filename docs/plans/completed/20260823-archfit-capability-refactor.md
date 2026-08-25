@@ -1,7 +1,11 @@
 # Capability-boundary refactor plan
 
 Date: 2026-08-23
-Status: IN PROGRESS
+Status: COMPLETED — superseded by
+[`complete-capability-architecture-migration.md`](complete-capability-architecture-migration.md),
+which finished the remaining phases. Package names below (`internal/engine`,
+`internal/ports`, `internal/model/diagnostic`) are historical: those packages are
+deleted and `internal/arch_test.go` now forbids their return.
 Design: [`docs/design/20260823-archfit-capability-map.md`](../design/20260823-archfit-capability-map.md)
 
 This plan follows observed dependency and change seams. Each phase keeps the

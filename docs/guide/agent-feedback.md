@@ -57,14 +57,14 @@ emitted as a bare key or ID. If dropping empties the set, `files` falls back to
 the target module's config `paths:` root — itself resolved to a real path (a
 Python dotted glob root goes through the module-file probe); if even that
 isn't resolvable, `files` is legitimately empty — never a fabricated string
-(`internal/agenttask/agenttask.go`, `filesFor`).
+(`internal/assessment/agenttask/agenttask.go`, `filesFor`).
 
 **`edge.path` group semantics.** For a rolled-up finding (`group_count > 1`),
 `edge.from.path`/`edge.to.path` are taken from whichever member edge owns
 `locations[0]` — never an arbitrary hash-ordered representative. When no
 member owns `locations[0]` (TypeScript edges carry no locations), the paths
 fall back to the representative member's own edge
-(`internal/analysispipeline/advisories.go`, `groupEdgePaths`). Either way the pair
+(`internal/assessment/evaluation/advisories.go`, `groupEdgePaths`). Either way the pair
 names one genuine member edge of the group. The path form is the graph
 node's: a repo-relative file for Go and TypeScript, a dotted module ID for
 Python (`myapp.domain`), a crate or `crate::mod` name for Rust — the
@@ -121,22 +121,30 @@ side only), or a config-hash mismatch moves unmatched tasks to
 task. The synthetic `bc/coupling_gate` task is per-run trip state with no stable
 counterpart, so it is always `unknown`.
 
-**Symmetric degradations pair, and say so.** Two shapes would otherwise make the
-block permanently inert on whole classes of repos and hosts, so they stay
+**Symmetric degradations pair, and say so.** Three shapes would otherwise make
+the block permanently inert on whole classes of repos and hosts, so they stay
 comparable instead:
 
 - Both sides `partial` from unresolved import specifiers — the normal steady
   state for dependency-cruiser and grimp, so treating it as unusable disabled
   the feature on every TypeScript and Python repo.
+- Both sides `partial` with every input covered and only edge precision
+  degraded — `go/packages` reports this when some packages fail to type-check.
+  Their imports are all in the graph; only the `go/types` strength hints are
+  missing, so nothing can hide behind them.
 - Both sides `absent` for an analyzer the config activated — typically its tool
   is not installed on this host (archfit's own runtime image ships no Rust
   toolchain and no SCIP indexer).
 
 The safety argument is symmetry: neither side ran what the other could hide
 behind. None is ever paired silently — each always emits a `comparison_reasons`
-entry, and the unresolved-specifier partial case carries each side's count, so
-`3 unresolved` and `5000/6000 unresolved` are distinguishable. An **asymmetric**
-absence or partial is still unavailable evidence.
+entry, and both partial cases carry each side's count, so `3 unresolved` and
+`5000/6000 unresolved` are distinguishable, as are `2 degraded` and
+`900 degraded`. The two partial shapes never pair with each other:
+complete-but-imprecise is not the same evidence as incomplete. A `go/packages`
+`partial` earned by packages that failed to LOAD is the incomplete kind and
+pairs with nothing — see the known ceiling in [ci.md](ci.md#2-github-actions-recipe).
+An **asymmetric** absence or partial is still unavailable evidence.
 
 Matching uses stable finding IDs only: lifecycle labels (`new`, `waived`,
 `baseline`) and gate-vs-advisory promotion do not affect it, and a base entry

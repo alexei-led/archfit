@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/evidence/acquisition"
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	"github.com/alexei-led/archfit/internal/extract/acquire"
 	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/policy"
@@ -49,12 +50,10 @@ const (
 	decisionModA = "app.a"
 	decisionModB = "app.b"
 
-	markerGoMod          = "go.mod"
-	markerCargoToml      = "Cargo.toml"
-	defaultConfigPath    = ".archfit.yaml"
-	enrichModel          = "model"
-	reasonScipDisabled   = "opt-in: analyzers.scip.enabled"
-	reasonSyntaxDisabled = "opt-in: analyzers.syntax.enabled"
+	markerGoMod       = "go.mod"
+	markerCargoToml   = "Cargo.toml"
+	defaultConfigPath = ".archfit.yaml"
+	enrichModel       = "model"
 )
 
 // TestBuildCoverageGaps verifies the coverage-gap table derivation:
@@ -1207,7 +1206,7 @@ func TestPyUnresolvedWarning(t *testing.T) {
 // the regression for P12: the skipped pass was silently absent from the output.
 func TestSkippedPassCoverageRows_ScipDisabled(t *testing.T) {
 	t.Parallel()
-	cov := result.Coverage{Tool: toolScip, Status: result.StatusDisabled, Reason: reasonScipDisabled}
+	cov := result.Coverage{Tool: toolScip, Status: result.StatusDisabled, Reason: acquire.ReasonSCIPDisabled}
 	if cov.Tool != "scip" {
 		t.Fatalf("disabled SCIP coverage tool = %q, want scip", cov.Tool)
 	}
@@ -1227,7 +1226,7 @@ func TestSkippedPassCoverageRows_ScipDisabled(t *testing.T) {
 func TestSkippedPassCoverageRows_SyntaxDisabled(t *testing.T) {
 	t.Parallel()
 	cov := []result.Coverage{
-		{Tool: toolAstGrepSyntax, Status: result.StatusDisabled, Reason: reasonSyntaxDisabled},
+		{Tool: toolAstGrepSyntax, Status: result.StatusDisabled, Reason: acquire.ReasonSyntaxDisabled},
 	}
 	gaps := acquisition.BuildCoverageGaps(cov, config.Config{}.CoverageOptions(), "")
 	if len(gaps) != 0 {
@@ -1244,8 +1243,8 @@ func TestSkippedPassCoverageRows_ReasonContent(t *testing.T) {
 		reason string
 		wantIn string
 	}{
-		{toolScip, reasonScipDisabled, "scip"},
-		{toolAstGrepSyntax, reasonSyntaxDisabled, "syntax"},
+		{toolScip, acquire.ReasonSCIPDisabled, "scip"},
+		{toolAstGrepSyntax, acquire.ReasonSyntaxDisabled, "syntax"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.tool, func(t *testing.T) {

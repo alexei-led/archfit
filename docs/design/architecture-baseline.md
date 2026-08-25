@@ -87,8 +87,8 @@ Cycles: 0 package cycles, 0 module cycles (`cycle` metric).
 | Invariant | Enforced by |
 | --- | --- |
 | Core ring imports no `os`, `os/exec`, YAML, or adapter | `TestArchImports` (`internal/arch_test.go`) |
-| `internal/model/**` is stdlib-only, discovered dynamically | `TestArchImports` → `checkModelPurity` (walks every loaded `internal/model` package; no hardcoded list) |
-| `internal/policy` imports only stdlib and the model kernel | `TestArchImports` → `checkPolicyContractPurity` |
+| `internal/model/**` is stdlib-only, discovered dynamically | `TestArchImports` → `checkModelStdlibOnly` (walks every loaded `internal/model` package; no hardcoded list) |
+| `internal/policy` imports stdlib, the model kernel, and one vetted pure matcher (doublestar, via `contractThirdPartyAllowed`) | `TestArchImports` → `checkPolicyContractPurity` |
 | Published model surface does not drift | `TestModelSurfaceNoDrift` (golden `internal/testdata/model_surface.golden`) |
 | Assessment sees no raw graph or coupling internals | `TestAssessmentProductionDoesNotImportRawGraphOrCoupling`, `assessment_no_raw_graph`, `assessment_no_coupling_internals` |
 | Assessment consumes only the public relationship contract | `TestAssessmentConsumesOnlyThePublicRelationshipContract`, `assessment_no_relationship_internals` |
@@ -110,9 +110,10 @@ tests and goldens, and the `arch-lint` pre-push hook runs it locally.
 
 ## Balanced-coupling rationale
 
-`.archfit.yaml` declares capabilities, not packages. Fifteen production modules
-cover 76 Go packages, because the unit that changes together is the capability,
-not the directory.
+`.archfit.yaml` declares capabilities, not packages. Seventeen production
+modules (plus `architecture-tests`) cover the 73 Go packages `go list ./...`
+reports, because the unit that changes together is the capability, not the
+directory.
 
 - **Relationship and Assessment are adjacent on purpose.** Both are core, both
   are high-volatility, and they co-change. `assessment-repair →
@@ -120,8 +121,8 @@ not the directory.
   strong coupling at short distance, which is balanced. Widening that distance
   with an event bus or a service seam would make the number look better and the
   system worse. Do not do it.
-- **The score is 41/`mixed` and that is the honest read.** 362 scored
-  cross-boundary edges, mean book balance 4.7/10, 151 critical-band edges, all
+- **The score is 41/`mixed` and that is the honest read.** 363 scored
+  cross-boundary edges, mean book balance 4.7/10, 70 critical-band edges, all
   at `cross_module_same_owner`. archfit has one owner and one deploy unit, so
   the distance dimension is degenerate by construction: every internal seam sits
   on the same rung and the balance formula is driven almost entirely by
@@ -153,8 +154,8 @@ not the directory.
    stays as an advisory growth ratchet at 430; the real published surface is
    gated by `TestModelSurfaceNoDrift` and the `forbidden_dependency` family.
 3. **`coupling_balance` evidence lists same-module pairs among "top module
-   pairs".** `by_module_pair` aggregates all 505 internal edges; the 137
-   same-module ones are reported in `local_coupling` and excluded from the 362
+   pairs".** `by_module_pair` aggregates all 509 internal edges; the 146
+   same-module ones are reported in `local_coupling` and excluded from the 363
    scored denominator. The number is correct; the label reads as if they were
    scored. Presentation only.
 4. **`config update` reports `action_required` on archfit's own config with zero

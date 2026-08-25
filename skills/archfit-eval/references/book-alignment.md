@@ -57,10 +57,10 @@ Start with:
 - `cmd/archfit/`
 - `internal/relationship/coupling/`
 - `internal/relationship/scoring/`
-- `internal/classify/`
-- `internal/score/`
-- `internal/metrics/`
-- `internal/rules/`
+- `internal/relationship/classify/`
+- `internal/assessment/score/`
+- `internal/assessment/metrics/`
+- `internal/assessment/rules/`
 - `internal/extract/`
 - `internal/labels/`
 - `.archfit-labels.yaml` handling if present

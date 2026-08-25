@@ -1084,7 +1084,7 @@ rejected before a draft is written. See [llm-enrich.md](llm-enrich.md).
 Each label entry in `.archfit-labels.yaml` may carry two optional fields:
 
 ```yaml
-- from: internal/analysispipeline
+- from: internal/evidence/acquisition
   to: internal/relationship
   strength: functional
   status: approved

@@ -45,14 +45,15 @@ From the project `.archfit.yaml` and the structural gates in `CLAUDE.md`:
 
 - **Core-ring import invariants** (`internal/arch_test.go`, run as
   `go test ./internal/ -run TestArchImports`) — the decision core
-  (`classify`, `rules`, `metrics`, `status`, `staleness`, `facts`, `scope`,
-  `score`) must not import `os`, `os/exec`, a YAML library, or adapter packages;
+  (`internal/relationship/{classify,facts}`,
+  `internal/assessment/{rules,metrics,status,staleness,score}`, `internal/scope`)
+  must not import `os`, `os/exec`, a YAML library, or adapter packages;
   LLM SDKs are reachable only from off-gate command code (`config init --ai-classify`,
   `config update --ai-classify`, `config enrich`, `analyze --ai-summary`, and `explain --ai-summary`),
   never the deterministic gate path.
 - **Forbidden dependencies and layer direction** declared as `rules` in the
-  config (e.g. the historical engine→scope inversion guard, gated `warn`).
-- **Golden output** (`go test ./internal/analysispipeline/ -run TestGolden`) — emitted
+  config (`layer_inversion`, gated `fail`).
+- **Golden output** (`go test ./internal/application/ -run TestGolden`) — emitted
   output is byte-stable; a change is regenerated deliberately after inspecting
   the diff, never automatically.
 

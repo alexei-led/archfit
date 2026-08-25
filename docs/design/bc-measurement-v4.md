@@ -413,8 +413,8 @@ Self-scan result (v5 final validation, 2026-07-05): 572 external edges excluded
 Labels in `.archfit-labels.yaml` carry confidence and provenance:
 
 ```yaml
-- from: internal/analysispipeline
-  to: internal/classify
+- from: internal/evidence/acquisition
+  to: internal/relationship/classify
   strength: functional
   status: approved
   confidence: medium # high | medium | low

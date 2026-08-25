@@ -51,7 +51,7 @@ Approved target design:
 - `docs/design/model-contract-deletion.md` — deleted scan/diagnostic/ports
   compatibility contracts; `internal/view` is explicit unfinished migration
   debt.
-- `docs/plans/20260823-archfit-capability-refactor.md` — previous migration
+- `docs/plans/completed/20260823-archfit-capability-refactor.md` — previous migration
   horizons and behavior-preservation rule.
 
 Supporting review evidence, measured against `main` at `df312e5` and PR source at

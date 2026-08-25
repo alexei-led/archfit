@@ -42,8 +42,11 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   `syntax` classifies each source file (Production/Test/Generated/Vendor) and
   exposes `LookupFileClass`/`IsTestFile` used by the LOC walk and by metrics that
   filter on Production files.
-- `internal/model/*` imports stdlib only (exception: `model/module` may use the
-  pure doublestar glob matcher). The model kernel is a frozen published contract:
+- `internal/model/*` imports stdlib only, checked by `checkModelStdlibOnly`.
+  `internal/policy` (the authoritative Policy contract) additionally imports the
+  model kernel and one vetted pure third-party matcher (doublestar), allowed via
+  `contractThirdPartyAllowed` and checked by `checkPolicyContractPurity`.
+  The model kernel is a frozen published contract:
   its exported surface is pinned by `TestModelSurfaceNoDrift` (golden:
   `internal/testdata/model_surface.golden`); regenerate deliberately with
   `ARCHFIT_UPDATE_SURFACE=1` and call the contract change out in review.
@@ -71,8 +74,9 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   Partial/timed-out/dirty results are never cached; a Go member whose build
   reaches source no key covers (local `replace` in a member go.mod, unkeyed
   go.work sibling) is vetoed per-member; a local `replace` in the go.work file
-  itself disables the whole run's Go cache. `--no-cache` bypasses reads AND
-  writes on all caches.
+  itself disables the whole run's Go cache. There is no `--no-cache` flag —
+  `--refresh` re-runs the extractors and writes the fresh results back
+  (`cmd/archfit/refresh_test.go` pins `--no-cache` as an exit-3 usage error).
 - **No gitnexus.** The `.gitnexus`/`.codegraph` index dirs are excluded from file
   walks (`scope.go`), but archfit does not run the tool and does not derive any
   per-module fact from it.
@@ -244,7 +248,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   compare) — read a repeated name as an unpairable duplicate and grade the pair
   unavailable/`not_comparable`. Never give two analyzers one coverage name.
 - **`archfit config compare <candidate>`** (`cmd/archfit/config_compare.go`,
-  pure decision in `internal/decision.CompareConfigs`). Two full pipelines over
+  pure decision in `internal/assessment/decision.CompareConfigs`). Two full pipelines over
   ONE source tree, report-only: exit 0 on success, exit 3 on an input or runtime
   error; findings never move the exit code. Both sides use an EMPTY accepted
   baseline (never reads `.archfit-baseline.json` — it records findings accepted
@@ -263,8 +267,10 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   any write. Schema in `docs/guide/commands.md`.
 - **`config update` never destroys a configured module stanza.** `DiffModules`
   matches config keys to discovery keys by NAME, and the conventions need not
-  agree — this repo configures `internal/agenttask` while discovery emits
-  `agenttask` over the identical path set. `DiffModules` runs the name-drift
+  agree — discovery emits one key per directory, while `.archfit.yaml` declares
+  capability modules that span several (`assessment-repair` over
+  `internal/assessment/**`); see accepted risk 4 in
+  `docs/design/architecture-baseline.md`. `DiffModules` runs the name-drift
   pass ITSELF (`resolveNameDrift`, unexported — there is no two-step call a
   consumer can get wrong), reclassifying each 1:1 add/remove pair with an equal
   normalized path set as `NameDrift`. On top of that, `Removed` is review-only:
@@ -438,7 +444,9 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
 
 ## Coupling scorer — key design facts
 
-`ScoreVersion = "bc_score.v6"` (`internal/relationship/coupling/coupling.go`).
+`ScoreVersion = "bc_score.v6"` (`internal/model/report/report.go`) — it is part
+of the published report contract; `internal/relationship/analysis` carries a
+private `relationshipScoreVersion` mirror that must stay in step.
 The formula implementation lives in `internal/relationship/scoring/scorer_book.go`:
 `balance = max(|S−D|, 10−V) + 1` (Khononov Ch10 verbatim).
 Ordinals frozen as named constants — changing any is a breaking metric change.
@@ -542,7 +550,7 @@ amd64 in CI, not local emulation.
 Rust crate facts are **crate-level**: `cargo metadata` makes one graph node per
 workspace member. The scorer caps a **degenerate graph** (<2 connected modules,
 e.g. a single crate) at `mixed` — it never scores `strong` on a one-node graph (see
-`internal/score`, `degenerateGraph`). Opt-in `analyzers.cargo_modules.enabled`
+`internal/assessment/score`, `degenerateGraph`). Opt-in `analyzers.cargo_modules.enabled`
 adds an **intra-crate module graph** (`<crate>::<mod>` nodes + aggregated `uses`
 edges), so single-crate projects get real cycle/blast-radius/cohesion signal.
 Opt-in `analyzers.scip.enabled` runs rust-analyzer SCIP, which produces a correct

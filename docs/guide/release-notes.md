@@ -1,5 +1,22 @@
 # Release notes
 
+## Unreleased
+
+New report-only fields. All are additive and `omitempty`, so `schema_version`
+stays `archfit.diagnostic.v2` and existing consumers are unaffected:
+
+- `classified_edges.by_balance_driver` / `by_critical_driver` — whether `|S-D|`
+  or `10-V` drove each scored edge's book balance.
+- `classified_edges.by_module_pair` — scored-edge concentration per module
+  boundary. It aggregates every internal edge, including the same-module ones
+  reported under `local_coupling`.
+- Scorecard dimensions carry `raw_value` and `cap_applied` when a confidence cap
+  changed the normalized mean.
+
+Internal: the analysis stage sequence moved behind one application-owned stage
+executor; `internal/engine`, `internal/analysispipeline`, and `internal/view` are
+gone. No CLI flag, config key, or existing JSON key changed.
+
 ## v1.7.0 configuration confidence
 
 Breaking changes:

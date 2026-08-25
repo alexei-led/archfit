@@ -3,22 +3,43 @@ package signal
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-func TestCommonInputCarriesNarrowAssessmentViews(t *testing.T) {
-	const changedFile = "a.go"
-	relationships := relationship.Set{Edges: []relationship.Edge{{FromPath: changedFile, ToPath: "b.go", Kind: "imports"}}}
-	coverage := CoverageView{{Tool: "scip", Status: "partial", FilesSeen: 10, FilesApplicable: 12, Unresolved: 2}}
-	input := CommonInput{Relationships: relationships, Coverage: coverage, ChangedFiles: []string{changedFile}}
+// TestNewCoverageViewNarrowsAcquiredRows pins the projection metrics read:
+// only the fields a metric may reason about cross the boundary, and each one
+// arrives with its acquired value. A dropped field here silently degrades every
+// coverage-aware metric to "unmeasured".
+func TestNewCoverageViewNarrowsAcquiredRows(t *testing.T) {
+	rows := []evidence.Coverage{
+		{
+			Tool: "scip", Status: evidence.StatusPartial, FilesSeen: 10, FilesApplicable: 12,
+			Unresolved: 2, SpecifiersSeen: 40,
+			// Not part of the metric contract: it must not appear on the view.
+			Reason: "empty index",
+		},
+		{Tool: "go/packages", Status: evidence.StatusOK},
+	}
 
-	if len(input.Relationships.Edges) != 1 || input.Relationships.Edges[0].Kind != "imports" {
-		t.Fatalf("relationship input lost contract data: %+v", input.Relationships)
+	got := NewCoverageView(rows)
+
+	if len(got) != len(rows) {
+		t.Fatalf("view length = %d, want %d", len(got), len(rows))
 	}
-	if len(input.Coverage) != 1 || input.Coverage[0].Tool != "scip" || input.Coverage[0].Status != "partial" || input.Coverage[0].Unresolved != 2 {
-		t.Fatalf("coverage view lost assessment data: %+v", input.Coverage)
+	want := CoverageRecord{
+		Tool: "scip", Status: evidence.StatusPartial, FilesSeen: 10, FilesApplicable: 12,
+		Unresolved: 2, SpecifiersSeen: 40,
 	}
-	if len(input.ChangedFiles) != 1 || input.ChangedFiles[0] != changedFile {
-		t.Fatalf("changed files = %v", input.ChangedFiles)
+	if got[0] != want {
+		t.Errorf("coverage record = %+v, want %+v", got[0], want)
+	}
+	if got[1] != (CoverageRecord{Tool: "go/packages", Status: evidence.StatusOK}) {
+		t.Errorf("second record = %+v", got[1])
+	}
+}
+
+func TestNewCoverageViewOnNoRows(t *testing.T) {
+	if got := NewCoverageView(nil); len(got) != 0 {
+		t.Errorf("view over no rows = %+v, want empty", got)
 	}
 }
