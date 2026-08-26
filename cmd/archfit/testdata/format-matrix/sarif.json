@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "archfit/check/base=/head="
+      },
+      "properties": {
+        "metrics": [
+          {
+            "band": "n/a",
+            "confidence": "low",
+            "definition": "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
+            "direction": "higher_is_better",
+            "display": "n/a",
+            "metric_version": "encapsulation.v1",
+            "mode": "ratio",
+            "name": "encapsulation",
+            "value": 0
+          },
+          {
+            "band": "strong",
+            "confidence": "high",
+            "definition": "intrusive edges with cross-module ownership and high volatility",
+            "direction": "higher_is_worse",
+            "display": "0 new high-risk unbalanced edges",
+            "metric_version": "unbalanced_edge.v2",
+            "mode": "count",
+            "name": "unbalanced_edge",
+            "value": 0
+          },
+          {
+            "band": "strong",
+            "confidence": "high",
+            "definition": "number of import cycles",
+            "direction": "higher_is_worse",
+            "display": "0 import cycles",
+            "metric_version": "cycle.v1",
+            "mode": "count",
+            "name": "cycle",
+            "value": 0
+          },
+          {
+            "band": "strong",
+            "confidence": "high",
+            "definition": "extracted_files / applicable_files",
+            "direction": "higher_is_better",
+            "display": "100% coverage",
+            "metric_version": "coverage.v1",
+            "mode": "ratio",
+            "name": "coverage",
+            "value": 1
+          },
+          {
+            "band": "info",
+            "confidence": "low",
+            "definition": "modules whose transitive reverse-dependencies exceed 30% of the codebase (change-impact hubs)",
+            "direction": "higher_is_worse",
+            "display": "1 of 2 modules are change-impact hubs: pkg/b (100%, 1 deps)",
+            "metric_version": "blast_radius.v1",
+            "mode": "count",
+            "name": "blast_radius",
+            "value": 1
+          }
+        ],
+        "summary": {
+          "gate_findings": 1,
+          "waivers_used": 0,
+          "warnings": 1
+        },
+        "verdict": "fail"
+      },
+      "results": [
+        {
+          "fingerprints": {
+            "archfit/v1": "ba3803eca947bf3c1b7efa8f37854d5e"
+          },
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "pkg/a/a.go"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "Import from pkg/a/** to pkg/b/** is explicitly forbidden"
+          },
+          "properties": {
+            "kind": "gate",
+            "severity": "medium",
+            "status": "new"
+          },
+          "ruleId": "no_direct_b_dependency",
+          "ruleIndex": 1
+        },
+        {
+          "fingerprints": {
+            "archfit/v1": "07af466df8bfd6e77ee485ac01c50a17"
+          },
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "pkg/a/a.go"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "balanced coupling: functional integration strength × cross_module_different_owner distance × low volatility → low severity (unbalanced coupling → elevated maintenance effort)"
+          },
+          "properties": {
+            "kind": "advisory",
+            "severity": "low",
+            "status": "new"
+          },
+          "ruleId": "bc/imbalanced_coupling",
+          "ruleIndex": 0
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/alexei-led/archfit",
+          "name": "archfit",
+          "rules": [
+            {
+              "id": "bc/imbalanced_coupling",
+              "shortDescription": {
+                "text": "bc/imbalanced_coupling"
+              }
+            },
+            {
+              "id": "no_direct_b_dependency",
+              "shortDescription": {
+                "text": "no_direct_b_dependency"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

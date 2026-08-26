@@ -131,6 +131,12 @@ type Document struct {
 	// Decision is the projected human-decision view model consumed by the console
 	// and markdown decision renderers. It is not part of the raw JSON envelope.
 	Decision Report `json:"-"`
+	// State is the projected archfit.architecture-state.v1 contract. It is tagged
+	// json:"-" for the same reason Score and Decision are: the diagnostic
+	// envelope's wire shape is frozen until the format cutover, so populating
+	// this field may not move a byte of existing output. The cutover promotes it
+	// to the primary contract (docs/design/architecture-state-reporting.md).
+	State ArchitectureState `json:"-"`
 }
 
 // Git comparison statuses describe whether every current repair task has a
@@ -151,5 +157,6 @@ func NewDocument() Document {
 		AgentTasks:     []AgentTask{},
 		AdvisoryTasks:  []AdvisoryTask{},
 		ToolCoverage:   []Coverage{},
+		State:          NewArchitectureState(),
 	}
 }

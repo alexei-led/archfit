@@ -1,6 +1,8 @@
 package application
 
 import (
+	"strconv"
+
 	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
@@ -34,7 +36,109 @@ func ProjectReport(r result.Result, sc score.Scorecard, baseScore *score.Scoreca
 		doc.BaseScore = &b
 	}
 	doc.Decision = projectDecision(decision.Build(r, sc, baseScore, hardGate))
+	doc.State = projectArchitectureState(r, doc, hardGate)
 	return doc
+}
+
+// projectArchitectureState builds the shadow archfit.architecture-state.v1
+// contract from facts the assessment result already carries.
+//
+// This is the contract-freeze stage of the migration, not the measurement
+// stage: every dimension reports `unmeasured` with a named owner, because the
+// collectors that fill the nine envelopes land in the next task. Reporting them
+// as measured-and-empty would be exactly the implicit green result the contract
+// exists to prevent.
+//
+// The verdict rule here is deliberately minimal and is replaced by the
+// assessment-owned aggregator: `blocked` when an active hard-gate finding or a
+// tripped tool gate exists, otherwise `needs_attention`. `healthy` is
+// unreachable by construction while any dimension is unmeasured.
+func projectArchitectureState(r result.Result, doc report.Document, hardGate bool) report.ArchitectureState {
+	state := report.NewArchitectureState()
+	state.Findings = doc.Findings
+	state.AgentTasks = doc.AgentTasks
+	state.Measurement.SourceRef = r.Head
+	state.Measurement.ToolVersions, state.Coverage.Tools = projectStateToolCoverage(r.ToolCoverage)
+	if h := r.VolatilityCorroboration; h != nil {
+		state.Measurement.HistoryDepth = h.CommitsScanned
+		state.Measurement.HistoryWindow = historyWindow(h.FullHistory, h.CommitWindow)
+	}
+	markDimensionsPending(&state.Dimensions)
+
+	state.Comparison.ConfigHash = r.ConfigHash
+	state.Comparison.RubricVersion = report.ScoreVersion
+	if r.Base != "" {
+		state.Comparison.Status = report.ComparisonNonComparable
+		state.Comparison.BaseRef = r.Base
+		state.Comparison.Reasons = []string{"state_comparison_unimplemented"}
+	}
+
+	blockers := r.Summary.GateFindings
+	if hardGate && blockers == 0 {
+		blockers = 1
+	}
+	state.Decision.ActiveBlockers = blockers
+	if blockers > 0 {
+		state.Decision.HardGates = report.HardGateFail
+		state.Verdict = report.StateBlocked
+	} else {
+		state.Verdict = report.StateNeedsAttention
+	}
+
+	measured, partial, unmeasured := state.Dimensions.CountStatuses()
+	state.Coverage.Measured, state.Coverage.Partial, state.Coverage.Unmeasured = measured, partial, unmeasured
+	state.Decision.UnknownDimensions = partial + unmeasured
+	return state
+}
+
+// historyWindow renders the bounded git-history window as the deterministic
+// string the measurement block publishes. An unbounded scan says so; a zero
+// window is left empty rather than reported as "0 commits", which would read as
+// a measured-and-empty history.
+func historyWindow(fullHistory bool, commitWindow int) string {
+	switch {
+	case fullHistory:
+		return "full history"
+	case commitWindow > 0:
+		return strconv.Itoa(commitWindow) + " commits"
+	default:
+		return ""
+	}
+}
+
+// markDimensionsPending stamps every envelope with the reason it is unmeasured.
+// The contract-freeze stage ships the nine envelopes before their collectors,
+// and an unmeasured dimension with no stated reason is indistinguishable from
+// one nobody bothered to explain. Each collector deletes its own entry as it
+// lands.
+func markDimensionsPending(d *report.Dimensions) {
+	for _, dim := range []*report.DimensionState{
+		&d.Intent, &d.Structure, &d.Modularity, &d.Coupling, &d.ChangeLocality,
+		&d.Complexity, &d.Testability, &d.Operations, &d.Drift,
+	} {
+		dim.Unknown = []report.UnknownFact{{
+			Fact:   dim.Name,
+			Reason: "collector not wired: the architecture-state contract ships before its measurements",
+			Owner:  dim.Owner,
+		}}
+	}
+}
+
+// projectStateToolCoverage splits the existing coverage rows into the two views
+// the state contract keeps separate: deterministic tool versions (a measurement
+// fact) and per-tool status (an evidence-coverage fact). Rows stay in the order
+// acquisition produced them, and a version is recorded only when the tool
+// reported one.
+func projectStateToolCoverage(in []evidence.Coverage) (map[string]string, []report.StateToolCoverage) {
+	versions := make(map[string]string, len(in))
+	tools := make([]report.StateToolCoverage, 0, len(in))
+	for _, c := range in {
+		if c.Version != "" {
+			versions[c.Tool] = c.Version
+		}
+		tools = append(tools, report.StateToolCoverage{Tool: c.Tool, Status: c.Status, Reason: c.Reason})
+	}
+	return versions, tools
 }
 
 func projectScorecard(in score.Scorecard) report.Scorecard {

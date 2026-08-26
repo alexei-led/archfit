@@ -1,0 +1,24 @@
+ARCHFIT RESULT
+
+Decision   FAIL
+Gate       FAIL  ·  1 blocking
+Warnings   1 advisory
+Score      78 / 100  serviceable
+
+Gate violations. Fix before merge.
+
+RECOMMENDATIONS
+
+  MUST FIX
+    · no_direct_b_dependency — Import from pkg/a/** to pkg/b/** is explicitly forbidden
+
+  SHOULD FIX
+    none
+
+  WATCH
+    · bc/imbalanced_coupling — balanced coupling: functional integration strength × cross_module_different_owner distan…
+
+TARGETS
+  Current     78  serviceable
+  Near-term   81-100  strong
+  Main goal   keep blocking findings at 0

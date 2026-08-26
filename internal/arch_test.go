@@ -751,19 +751,68 @@ func TestAnalyzeCheckSourceFilesDoNotImportDomainInternals(t *testing.T) {
 func assertReportAdaptersNoDomainImports(t *testing.T, loaded map[string]*packages.Package) {
 	t.Helper()
 	for pkgPath, pkg := range loaded {
-		isRenderer := strings.HasPrefix(pkgPath, modulePrefix+"internal/output/") ||
-			pkgPath == modulePrefix+"internal/report/ports"
-		if !isRenderer {
+		if !isReportAdapter(pkgPath) {
 			continue
 		}
 		for imp := range pkg.Imports {
-			if !strings.HasPrefix(imp, modulePrefix+"internal/") {
-				continue
-			}
-			if imp != modulePrefix+"internal/model/report" && imp != modulePrefix+"internal/report/ports" {
+			if reportAdapterForbids(imp) {
 				t.Errorf("report adapter %s may import only report contracts, not %s", pkgPath, imp)
 			}
 		}
+	}
+}
+
+// isReportAdapter reports whether pkgPath is a report-rendering adapter: an
+// output format or the rendering port itself.
+func isReportAdapter(pkgPath string) bool {
+	return strings.HasPrefix(pkgPath, modulePrefix+"internal/output/") ||
+		pkgPath == modulePrefix+"internal/report/ports"
+}
+
+// reportAdapterForbids reports whether a report adapter importing imp would
+// breach the report boundary. Adapters render a finished contract: they may
+// reach the report DTOs and the rendering port, plus anything outside internal/
+// (stdlib and vendored formatters), and nothing else. Reaching into Assessment
+// or Relationship internals would let a renderer re-derive a fact instead of
+// presenting the one the pipeline decided.
+func reportAdapterForbids(imp string) bool {
+	if !strings.HasPrefix(imp, modulePrefix+"internal/") {
+		return false
+	}
+	return imp != modulePrefix+"internal/model/report" && imp != modulePrefix+"internal/report/ports"
+}
+
+// TestReportBoundaryRuleFiresOnDomainImports is the executable fixture behind
+// the report-boundary gate: it proves the predicate rejects the imports the
+// architecture-state migration must keep out of renderers, instead of passing
+// vacuously because no adapter happens to violate it today.
+func TestReportBoundaryRuleFiresOnDomainImports(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		pkg     string
+		imp     string
+		adapter bool
+		forbid  bool
+	}{
+		{name: "renderer reads report DTOs", pkg: modulePrefix + "internal/output/jsonout", imp: modulePrefix + "internal/model/report", adapter: true},
+		{name: "renderer reads the rendering port", pkg: modulePrefix + "internal/output/console", imp: modulePrefix + "internal/report/ports", adapter: true},
+		{name: "renderer reads stdlib", pkg: modulePrefix + "internal/output/sarif", imp: "encoding/json", adapter: true},
+		{name: "renderer reaches into assessment", pkg: modulePrefix + "internal/output/markdown", imp: modulePrefix + "internal/assessment/score", adapter: true, forbid: true},
+		{name: "renderer reaches into relationship", pkg: modulePrefix + "internal/output/scorecard", imp: modulePrefix + "internal/relationship/classify", adapter: true, forbid: true},
+		{name: "renderer reaches into application", pkg: modulePrefix + "internal/report/ports", imp: modulePrefix + "internal/application", adapter: true, forbid: true},
+		{name: "non-adapter is out of scope", pkg: modulePrefix + "internal/application", imp: modulePrefix + "internal/assessment/score"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isReportAdapter(tc.pkg); got != tc.adapter {
+				t.Fatalf("isReportAdapter(%q) = %v, want %v", tc.pkg, got, tc.adapter)
+			}
+			if !tc.adapter {
+				return
+			}
+			if got := reportAdapterForbids(tc.imp); got != tc.forbid {
+				t.Errorf("reportAdapterForbids(%q) = %v, want %v", tc.imp, got, tc.forbid)
+			}
+		})
 	}
 }
 

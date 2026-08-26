@@ -1,0 +1,20 @@
+# archfit scorecard
+
+**Rubric version:** 1
+**Overall:** 78/100 (serviceable)
+**Config hash:** `e686c0a4ca1ab9671d3ddc6d48da64e60ff9d2fd49d1cf9573c7e4c15850d826`
+
+## Dimensions
+
+### coupling_balance — 78/100 (serviceable) · confidence: medium
+mean book balance 8.0/10 across 1 scored internal cross-boundary edges
+- 1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78
+- scored fraction: 100% (1 scored, 0 abstained, internal only)
+- critical-band edges: 0 (0 distributed-monolith: critical at high distance)
+- strength distribution: functional=1; distance distribution: cross_module_different_owner=1; volatility distribution: low=1
+- balance drivers: volatility=1
+- top module pairs: a -> b=1
+- tail risk: worst balance 8/10, lower-decile balance 8/10, high-or-worse edges 0/1 (0%), critical 0, distributed-monolith 0
+- sample size below high-confidence floor: 1 scored internal cross-boundary edges (need ≥5)
+- connected module sample below high-confidence floor: 2 connected modules (need ≥3)
+- volatility provenance (modules): declared: 2, inherited: 0, cascade: 0

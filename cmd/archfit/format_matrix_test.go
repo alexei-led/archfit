@@ -1,0 +1,223 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/alexei-led/archfit/internal/model/evidence"
+)
+
+// Committed pre-migration fixture names, one per renderer. baseline.json (the
+// json format) is owned by byteidentical_test.go; the remaining four are
+// captured here so the architecture-state cutover in later tasks has a frozen
+// "before" for every format, not only for JSON.
+//
+// They live under cmd/archfit/testdata/, NOT beside the analysed fixture: a
+// baseline written into the fixture tree becomes an input to the next run that
+// copies that tree, and four parallel subtests bootstrapping into a shared
+// source directory race over what each one analyses.
+const (
+	formatMatrixBaselineDir = "testdata/format-matrix"
+
+	baselineText      = "text.txt"
+	baselineMarkdown  = "markdown.md"
+	baselineSarif     = "sarif.json"
+	baselineScorecard = "scorecard.txt"
+)
+
+// formatMatrix is the compatibility matrix frozen by Task 1 of the
+// architecture-state migration (docs/design/architecture-state-reporting.md).
+// Every renderer archfit ships appears exactly once; adding a format without
+// adding its row leaves the cutover unwitnessed for that format.
+var formatMatrix = []struct {
+	format   string // --format value
+	baseline string // committed fixture under formatMatrixBaselineDir
+	jsonOut  bool   // renderer emits JSON, so the baseline is canonicalised
+}{
+	{format: "text", baseline: baselineText},
+	{format: "markdown", baseline: baselineMarkdown},
+	{format: "sarif", baseline: baselineSarif, jsonOut: true},
+	{format: "scorecard", baseline: baselineScorecard},
+}
+
+// TestFormatMatrix_PreStateBaselines pins the rendered output of every non-JSON
+// format against the machine-independent single-module fixture. It is the
+// pre-cutover half of the migration compatibility matrix: Task 1 must not move
+// any of these bytes, and the task that does cut over must move them
+// deliberately, in the same commit that updates the contract.
+func TestFormatMatrix_PreStateBaselines(t *testing.T) {
+	t.Parallel()
+	requireHealthyExtraction(t)
+	for _, tc := range formatMatrix {
+		t.Run(tc.format, func(t *testing.T) {
+			t.Parallel()
+			_, root := materializeFixtureRepo(t, fixtureSingleModule)
+			got := runAnalyzeFormat(t, root, tc.format, tc.jsonOut)
+			assertMatchesBaseline(t, filepath.Join(formatMatrixBaselineDir, tc.baseline), got)
+		})
+	}
+}
+
+// TestFormatMatrix_DoubleRunIsStable asserts each renderer is deterministic on
+// an unchanged tree. A format that differs between two identical runs cannot
+// carry a byte-comparable migration baseline at all.
+func TestFormatMatrix_DoubleRunIsStable(t *testing.T) {
+	t.Parallel()
+	for _, tc := range formatMatrix {
+		t.Run(tc.format, func(t *testing.T) {
+			t.Parallel()
+			_, root := materializeFixtureRepo(t, fixtureSingleModule)
+			first := runAnalyzeFormat(t, root, tc.format, tc.jsonOut)
+			second := runAnalyzeFormat(t, root, tc.format, tc.jsonOut)
+			if !bytes.Equal(first, second) {
+				t.Fatalf("%s renderer is not deterministic:\n%s", tc.format,
+					firstDiffLine(string(first), string(second)))
+			}
+		})
+	}
+}
+
+// TestFormatMatrix_ExitCodesUnchanged pins the process exit contract this
+// migration must preserve, at the level cmd owns. The executable authority for
+// the full 0/1/2/3 table remains scripts/tests/cli_exit_contract_test.sh; this
+// table is the in-process regression net for the paths the state cutover
+// touches: analyze is report-only for every format, and check maps a gate
+// violation to 1 and a bad config path to 3.
+func TestFormatMatrix_ExitCodesUnchanged(t *testing.T) {
+	t.Parallel()
+
+	t.Run("analyze is report-only in every format", func(t *testing.T) {
+		t.Parallel()
+		cfgPath := writeViolatingRepo(t)
+		for _, tc := range formatMatrix {
+			code, stdout, stderr := runArchfit(t, cmdAnalyze, "-c", cfgPath, "--format="+tc.format)
+			if code != 0 {
+				t.Errorf("analyze --format=%s on a violated policy: exit = %d, want 0\nstdout:\n%s\nstderr:\n%s",
+					tc.format, code, stdout, stderr)
+			}
+		}
+	})
+
+	t.Run("check maps gate state to the frozen exit codes", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct {
+			name string
+			cfg  func(*testing.T) string
+			want int
+		}{
+			{name: "clean", cfg: func(t *testing.T) string { return writeCheckFixtureRepo(t, "golang") }, want: 0},
+			{name: "violated", cfg: writeViolatingRepo, want: 1},
+			{name: "missing config", cfg: func(t *testing.T) string {
+				return filepath.Join(t.TempDir(), "nope.yaml")
+			}, want: 3},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				code, stdout, stderr := runArchfit(t, cmdCheck, "-c", tc.cfg(t))
+				if code != tc.want {
+					t.Fatalf("check %s: exit = %d, want %d\nstdout:\n%s\nstderr:\n%s",
+						tc.name, code, tc.want, stdout, stderr)
+				}
+			})
+		}
+	})
+}
+
+// requireHealthyExtraction fails fast when the environment — not the code —
+// degraded Go extraction, so an environment problem cannot be misread as an
+// output regression and "fixed" by re-recording the baselines.
+//
+// The failure mode is real and has already cost one capture: a sandbox that
+// denies writes to the Go module cache makes packages.Load fail per package,
+// which raises Coverage.Unresolved, which drops the coverage metric to low
+// confidence, which caps its band from strong to mixed. Only the scorecard
+// carries that band, so the JSON envelope stays byte-identical while every
+// scorecard-bearing renderer moves. The baselines here are captured with Go
+// extraction healthy; run these tests with module-cache writes permitted.
+func requireHealthyExtraction(t *testing.T) {
+	t.Helper()
+
+	_, root := materializeFixtureRepo(t, fixtureSingleModule)
+	var doc struct {
+		ToolCoverage []struct {
+			Tool       string `json:"tool"`
+			Status     string `json:"status"`
+			Unresolved int    `json:"unresolved"`
+		} `json:"tool_coverage"`
+	}
+	if err := json.Unmarshal(runAnalyzeFormat(t, root, formatJSON, true), &doc); err != nil {
+		t.Fatalf("decode tool coverage: %v", err)
+	}
+	for _, c := range doc.ToolCoverage {
+		if c.Tool != toolGoPackages {
+			continue
+		}
+		if c.Status != string(evidence.StatusOK) || c.Unresolved != 0 {
+			t.Fatalf("Go extraction is degraded in this environment (%s: status=%q unresolved=%d) — "+
+				"the format baselines are not comparable here; do not re-record them",
+				c.Tool, c.Status, c.Unresolved)
+		}
+		return
+	}
+	t.Fatalf("no %s coverage row in the fixture run: %+v", toolGoPackages, doc.ToolCoverage)
+}
+
+// runAnalyzeFormat runs `archfit analyze --format <format>` in-process against
+// the materialized repo and normalises the temp root out of the result. JSON
+// renderers additionally round-trip through normalizeArchfitJSON for canonical
+// key ordering; text renderers are compared as written.
+func runAnalyzeFormat(t *testing.T, root, format string, jsonOut bool) []byte {
+	t.Helper()
+
+	cfgPath := filepath.Join(root, ".archfit.yaml")
+	var buf bytes.Buffer
+	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, "--format=" + format}, &buf)
+	if code != 0 && code != 1 {
+		t.Fatalf("archfit analyze --format=%s exited %d (want 0 or 1):\n%s", format, code, buf.String())
+	}
+	if jsonOut {
+		got, err := normalizeArchfitJSON(buf.Bytes(), root)
+		if err != nil {
+			t.Fatalf("normalise %s output: %v", format, err)
+		}
+		return got
+	}
+	return []byte(normalizeRoot(buf.String(), root))
+}
+
+// normalizeRoot replaces the temp scan root (in both native and forward-slash
+// spelling) with <ROOT> so rendered paths are stable across runs.
+func normalizeRoot(s, root string) string {
+	out := strings.ReplaceAll(s, root, "<ROOT>")
+	if fwd := filepath.ToSlash(root); fwd != root {
+		out = strings.ReplaceAll(out, fwd, "<ROOT>")
+	}
+	return out
+}
+
+// assertMatchesBaseline compares got against the committed fixture at path,
+// bootstrapping the fixture on first run so a new format's baseline can be
+// reviewed and committed. Never delete a committed baseline to get green: that
+// re-records whatever the code now emits and makes the gate vacuous.
+func assertMatchesBaseline(t *testing.T, path string, got []byte) {
+	t.Helper()
+
+	want, err := os.ReadFile(path) //nolint:gosec // path is a compile-time testdata constant
+	if os.IsNotExist(err) {
+		if writeErr := os.WriteFile(path, got, 0o600); writeErr != nil {
+			t.Fatalf("write baseline %s: %v", path, writeErr)
+		}
+		t.Logf("baseline written to %s — review and commit", path)
+		return
+	}
+	if err != nil {
+		t.Fatalf("read baseline %s: %v", path, err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("output differs from %s:\n%s", filepath.Base(path), firstDiffLine(string(want), string(got)))
+	}
+}
