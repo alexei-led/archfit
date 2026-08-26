@@ -56,7 +56,7 @@ func testGitDeltaEffectiveConfig(t *testing.T) {
 	t.Run("head-tree owners do not reach the base measurement", func(t *testing.T) {
 		t.Parallel()
 		cfgPath := gitDeltaOwnerFixtureRepo(t)
-		code, stdout, stderr := runArchfit(t, cmdAnalyze, flagBase, diffBaseRef, "--json", "-c", cfgPath)
+		code, stdout, stderr := runArchfit(t, cmdAnalyze, flagBase, diffBaseRef, fmtLegacyJSON, "-c", cfgPath)
 		if code != 0 {
 			t.Fatalf("analyze --base: exit = %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 		}
@@ -87,7 +87,7 @@ func testGitDeltaEffectiveConfig(t *testing.T) {
 	t.Run("analyzer overrides still reach the base run", func(t *testing.T) {
 		t.Parallel()
 		cfgPath := gitDeltaFixtureRepo(t, coupledModulesCfg)
-		code, stdout, stderr := runArchfit(t, cmdAnalyze, flagBase, diffBaseRef, "--json", "--lang", "go", "-c", cfgPath)
+		code, stdout, stderr := runArchfit(t, cmdAnalyze, flagBase, diffBaseRef, fmtLegacyJSON, "--lang", "go", "-c", cfgPath)
 		if code != 0 {
 			t.Fatalf("analyze --base --lang go: exit = %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 		}
@@ -239,13 +239,13 @@ func testGitDeltaCheckBaseJSON(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			cfgPath := gitDeltaFixtureRepo(t, tc.cfgBody)
-			baseArgs := append([]string{cmdCheck, flagBase, diffBaseRef, "--json", "-c", cfgPath}, tc.extraArgs...)
+			baseArgs := append([]string{cmdCheck, flagBase, diffBaseRef, fmtLegacyJSON, "-c", cfgPath}, tc.extraArgs...)
 			code, stdout, stderr := runArchfit(t, baseArgs...)
 			if code != tc.wantCode {
 				t.Fatalf("check --base --json: exit = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, tc.wantCode, stdout, stderr)
 			}
 			// Report-only: the same run without --base reaches the same verdict.
-			plainArgs := append([]string{cmdCheck, "--json", "-c", cfgPath}, tc.extraArgs...)
+			plainArgs := append([]string{cmdCheck, fmtLegacyJSON, "-c", cfgPath}, tc.extraArgs...)
 			if plain, _, _ := runArchfit(t, plainArgs...); plain != code {
 				t.Errorf("--base changed the exit code: %d with, %d without", code, plain)
 			}

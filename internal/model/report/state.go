@@ -277,6 +277,66 @@ type StateCoverage struct {
 	Tools      []StateToolCoverage `json:"tools"`
 }
 
+// SeamDistance is the raw distance evidence behind a seam's collapsed rung. The
+// facts and the analysis level are published together: a reader must be able to
+// see WHY a pair reads as distant, not just that it does.
+type SeamDistance struct {
+	Level             string `json:"level"`
+	Basis             string `json:"basis,omitempty"`
+	FromOwner         string `json:"from_owner,omitempty"`
+	ToOwner           string `json:"to_owner,omitempty"`
+	SameOwner         bool   `json:"same_owner"`
+	FromDeployUnit    string `json:"from_deploy_unit,omitempty"`
+	ToDeployUnit      string `json:"to_deploy_unit,omitempty"`
+	SameDeployUnit    bool   `json:"same_deploy_unit"`
+	BoundaryCrossings int    `json:"boundary_crossings"`
+	SharedAncestor    int    `json:"shared_ancestor"`
+}
+
+// SeamScoreDistribution is the per-seam spread of book balance scores. P10 and
+// P90 are null below ten samples: a decile over fewer samples is invented, and
+// a null is the only honest way to say so.
+type SeamScoreDistribution struct {
+	N      int     `json:"n"`
+	Min    int     `json:"min"`
+	Median int     `json:"median"`
+	Max    int     `json:"max"`
+	P10    *int    `json:"p10"`
+	P90    *int    `json:"p90"`
+	Mean   float64 `json:"mean"`
+}
+
+// Seam is one logical ordered module pair — however many imports express it —
+// with the evidence behind its classification. The ledger is the coupling
+// dimension's evidence: the dimension envelope keeps the common shape, and the
+// per-seam facts live here rather than being flattened into a repository mean.
+type Seam struct {
+	ID                   string                `json:"id"`
+	FromModule           string                `json:"from_module"`
+	ToModule             string                `json:"to_module"`
+	Edges                int                   `json:"edges"`
+	ScoredEdges          int                   `json:"scored_edges"`
+	AbstainedEdges       int                   `json:"abstained_edges"`
+	Strength             string                `json:"strength"`
+	Distance             string                `json:"distance"`
+	Volatility           string                `json:"volatility"`
+	VolatilityProvenance string                `json:"volatility_provenance,omitempty"`
+	Severity             string                `json:"severity,omitempty"`
+	RawDistance          SeamDistance          `json:"raw_distance"`
+	Quadrant             string                `json:"quadrant,omitempty"`
+	Scores               SeamScoreDistribution `json:"scores"`
+	CriticalEdges        int                   `json:"critical_edges"`
+	HighOrWorseEdges     int                   `json:"high_or_worse_edges"`
+	CriticalSharePct     int                   `json:"critical_share_pct"`
+	HighOrWorseSharePct  int                   `json:"high_or_worse_share_pct"`
+	Labels               []string              `json:"labels,omitempty"`
+	LabelEvidenceHash    string                `json:"label_evidence_hash,omitempty"`
+	Confidence           string                `json:"confidence"`
+	RoleExpectation      string                `json:"role_expectation,omitempty"`
+	Hypothesis           string                `json:"hypothesis,omitempty"`
+	DistributedMonolith  bool                  `json:"distributed_monolith,omitempty"`
+}
+
 // ArchitectureState is the versioned architecture-state report contract. It has
 // no repository-level scalar by construction: the verdict comes from explicit
 // hard gates, diagnostics, and evidence coverage.
@@ -294,6 +354,11 @@ type ArchitectureState struct {
 	// AgentTasks is projected from the Assessment-owned agent-task result. State
 	// aggregation never derives a second task list.
 	AgentTasks []AgentTask `json:"agent_tasks"`
+	// Seams is the coupling dimension's evidence: one record per ordered module
+	// pair. It is published beside the dimensions, not inside one, for the same
+	// reason findings are — the ledger has exactly one owner and the coupling
+	// envelope keeps the common shape every dimension uses.
+	Seams []Seam `json:"seams"`
 }
 
 // NewArchitectureState returns a state whose nine envelopes are named, owned,
@@ -320,6 +385,7 @@ func NewArchitectureState() ArchitectureState {
 		Coverage:   StateCoverage{Unmeasured: DimensionCount, Tools: []StateToolCoverage{}},
 		Findings:   []Finding{},
 		AgentTasks: []AgentTask{},
+		Seams:      []Seam{},
 	}
 }
 

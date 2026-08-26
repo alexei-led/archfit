@@ -8,19 +8,46 @@ import (
 	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
+// StateRenderer marshals the architecture-state contract as the primary JSON
+// output: archfit.architecture-state.v1 AT THE DOCUMENT ROOT, so a consumer
+// reads .verdict, .decision, and .dimensions without unwrapping an envelope.
+//
+// It carries no repository scalar by construction — the state type has none —
+// so a CI job cannot go on gating a 0-100 number through the primary format.
+type StateRenderer struct{}
+
+var _ reportports.Renderer = (*StateRenderer)(nil)
+
+// NewState returns the primary architecture-state JSON renderer.
+func NewState() *StateRenderer { return &StateRenderer{} }
+
+// Format returns "json".
+func (r *StateRenderer) Format() string { return "json" }
+
+// Render writes the architecture state. Ordering is fixed by the contract's
+// declaration order and by the pipeline that produced each list, so two runs
+// over the same tree, config, and tool versions emit identical bytes.
+func (r *StateRenderer) Render(d report.Document, w io.Writer) error {
+	return json.NewEncoder(w).Encode(d.State)
+}
+
 // JSONRenderer marshals a report document plus its projected scorecard to JSON.
+//
+// This is the pre-cutover envelope, retained for exactly one release under the
+// explicit `legacy-json` format name. It is the only output that still carries
+// the repository scalar, and nothing in it reaches the verdict or the exit code.
 type JSONRenderer struct{}
 
 var _ reportports.Renderer = (*JSONRenderer)(nil)
 
-// New returns a new JSONRenderer.
+// New returns the legacy JSON renderer.
 func New() *JSONRenderer {
 	return &JSONRenderer{}
 }
 
-// Format returns "json".
+// Format returns "legacy-json".
 func (r *JSONRenderer) Format() string {
-	return "json"
+	return "legacy-json"
 }
 
 // envelope flattens the report document at the top level (preserving the existing

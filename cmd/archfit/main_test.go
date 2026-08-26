@@ -82,18 +82,24 @@ func TestRun_Analyze_GateVsReportOnly(t *testing.T) {
 }
 
 const (
-	flagRefresh       = "--refresh"
-	flagRoot          = "--root"
-	flagJSON          = "--json"
-	flagNoAdvisories  = "--no-advisories"
-	goModStub         = "module example.com/test\n\ngo 1.21\n" // minimal go.mod shared by fixture repos
-	cmdAnalyze        = "analyze"
-	cmdCheck          = "check"
-	cmdBaseline       = "baseline"
-	cmdConfig         = "config" // config subcommand group (config init / config enrich …)
-	cmdEnrich         = "enrich" // config enrich subcommand (config enrich owner / subdomain / …)
-	cmdExplain        = "explain"
-	fmtJSON           = "--format=json"
+	flagRefresh      = "--refresh"
+	flagRoot         = "--root"
+	flagJSON         = "--json"
+	flagNoAdvisories = "--no-advisories"
+	goModStub        = "module example.com/test\n\ngo 1.21\n" // minimal go.mod shared by fixture repos
+	cmdAnalyze       = "analyze"
+	cmdCheck         = "check"
+	cmdBaseline      = "baseline"
+	cmdConfig        = "config" // config subcommand group (config init / config enrich …)
+	cmdEnrich        = "enrich" // config enrich subcommand (config enrich owner / subdomain / …)
+	cmdExplain       = "explain"
+	fmtJSON          = "--format=json"
+	// fmtLegacyJSON selects the pre-cutover diagnostic envelope. Tests that
+	// assert on a diagnostic-only block (tool_coverage detail, owner_source,
+	// config_warnings, git_finding_delta) name it explicitly rather than
+	// reading those keys out of the architecture-state contract, which does not
+	// carry them.
+	fmtLegacyJSON     = "--format=legacy-json"
 	flagVersion       = "--version"
 	filePkgAA         = "pkg/a/a.go" // the gate-violating source file used across fixtures
 	filePkgBImpl      = "pkg/b/internal/impl/impl.go"
@@ -155,7 +161,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		t.Parallel()
 		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
+		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
 		if code != 0 {
 			t.Fatalf("default check: exit = %d, want 0\noutput:\n%s", code, buf.String())
 		}
@@ -177,7 +183,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		t.Parallel()
 		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, "--require-tools", fmtJSON}, &buf)
+		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, "--require-tools", fmtLegacyJSON}, &buf)
 		if code != 1 {
 			t.Fatalf("check --require-tools: exit = %d, want 1\noutput:\n%s", code, buf.String())
 		}
@@ -202,7 +208,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		cfg := "version: 2\nlanguages:\n  go:\n    enabled: false\n    gate: fail\n"
 		cfgPath := writeNonGoRepo(t, cfg)
 		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
+		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
 		if code != 1 {
 			t.Fatalf("tools.go.gate: fail → exit = %d, want 1\noutput:\n%s", code, buf.String())
 		}
@@ -783,7 +789,7 @@ func TestRun_Analyze_ScipDisabledCoverageRow(t *testing.T) {
 
 	var buf bytes.Buffer
 	// Report-only mode (exit 0) so we can parse the JSON regardless of gate verdict.
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf); code == 3 {
 		t.Fatalf("analyze exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
 	}
 
@@ -838,7 +844,7 @@ modules:
 
 	var buf bytes.Buffer
 	cfgPath := filepath.Join(dir, defaultConfigPath)
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf); code == 3 {
 		t.Fatalf("analyze exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
 	}
 
@@ -934,7 +940,7 @@ file_class:
 
 	cfgPath := filepath.Join(dir, defaultConfigPath)
 	var buf bytes.Buffer
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf); code == 3 {
 		t.Fatalf("check exited 3 (pipeline error)\noutput:\n%s", buf.String())
 	}
 

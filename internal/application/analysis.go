@@ -35,6 +35,10 @@ const (
 	FormatSARIF = "sarif"
 	// FormatScorecard selects scorecard output.
 	FormatScorecard = "scorecard"
+	// FormatLegacyJSON selects the pre-cutover JSON envelope. It is retained for
+	// exactly one release, must be selected explicitly, and never drives the
+	// verdict or the exit code.
+	FormatLegacyJSON = "legacy-json"
 )
 
 // Request contains the user intent shared by analyze and check.

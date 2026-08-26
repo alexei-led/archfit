@@ -110,15 +110,17 @@ func TestDiffCmd_Formats(t *testing.T) {
 		}
 	})
 
-	// --base --json emits the SAME diagnostic schema as a normal --json run — a
+	// --base legacy-json emits the SAME diagnostic schema as a normal run — a
 	// consistent machine contract, not a separate delta schema (regression guard
-	// for the old asymmetric diffResult output) — plus git_finding_delta.
-	t.Run("json keeps the diagnostic schema and adds the origin block", func(t *testing.T) {
+	// for the old asymmetric diffResult output) — plus git_finding_delta. The
+	// origin block is a diagnostic fact; the primary contract reports the base
+	// comparison under `comparison`.
+	t.Run("legacy json keeps the diagnostic schema and adds the origin block", func(t *testing.T) {
 		t.Parallel()
 		_, cfgPath := makeDiffFixtureRepo(t)
 
 		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, "--format=json"}, &buf)
+		code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, fmtLegacyJSON}, &buf)
 		if code != 0 {
 			t.Fatalf("--base --json: exit=%d\noutput:\n%s", code, buf.String())
 		}
@@ -455,7 +457,7 @@ func TestDiffCmd_BaseSideFactCacheReuse(t *testing.T) {
 		t.Helper()
 		fake := &cargoFakeRunner{real: toolrun.New()}
 		var stdout, stderr bytes.Buffer
-		cmd := AnalyzeCmd{Config: cfgPath, Base: diffBaseRef, Format: []string{formatJSON}}
+		cmd := AnalyzeCmd{Config: cfgPath, Base: diffBaseRef, Format: []string{formatLegacyJSON}}
 		err := cmd.Run(&appDeps{Runner: fake, Stdout: &stdout, Stderr: &stderr})
 		var ee *exitError
 		if err != nil && (!errors.As(err, &ee) || ee.code > 1) {

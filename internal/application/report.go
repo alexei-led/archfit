@@ -84,7 +84,42 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 		out.Comparison.Reasons = append([]string{}, c.Reasons...)
 	}
 
+	out.Seams = projectStateSeams(r.Seams)
+
 	out.Coverage.Measured, out.Coverage.Partial, out.Coverage.Unmeasured = out.Dimensions.CountStatuses()
+	return out
+}
+
+// projectStateSeams copies the seam ledger in the order assessment built it.
+// The ledger is evidence, not a decision: no seam is dropped, reordered, or
+// summarised here, so a reader sees exactly the pairs the run classified.
+func projectStateSeams(in []result.Seam) []report.Seam {
+	out := make([]report.Seam, 0, len(in))
+	for _, s := range in {
+		out = append(out, report.Seam{
+			ID: s.ID, FromModule: s.FromModule, ToModule: s.ToModule,
+			Edges: s.Edges, ScoredEdges: s.ScoredEdges, AbstainedEdges: s.AbstainedEdges,
+			Strength: s.Strength, Distance: s.Distance, Volatility: s.Volatility,
+			VolatilityProvenance: s.VolatilityProvenance, Severity: s.Severity,
+			RawDistance: report.SeamDistance{
+				Level: s.RawDistance.Level, Basis: s.RawDistance.Basis,
+				FromOwner: s.RawDistance.FromOwner, ToOwner: s.RawDistance.ToOwner, SameOwner: s.RawDistance.SameOwner,
+				FromDeployUnit: s.RawDistance.FromDeployUnit, ToDeployUnit: s.RawDistance.ToDeployUnit,
+				SameDeployUnit:    s.RawDistance.SameDeployUnit,
+				BoundaryCrossings: s.RawDistance.BoundaryCrossings, SharedAncestor: s.RawDistance.SharedAncestor,
+			},
+			Quadrant: s.Quadrant,
+			Scores: report.SeamScoreDistribution{
+				N: s.Scores.N, Min: s.Scores.Min, Median: s.Scores.Median, Max: s.Scores.Max,
+				P10: s.Scores.P10, P90: s.Scores.P90, Mean: s.Scores.Mean,
+			},
+			CriticalEdges: s.CriticalEdges, HighOrWorseEdges: s.HighOrWorseEdges,
+			CriticalSharePct: s.CriticalSharePct, HighOrWorseSharePct: s.HighOrWorseSharePct,
+			Labels: s.Labels, LabelEvidenceHash: s.LabelEvidenceHash, Confidence: s.Confidence,
+			RoleExpectation: s.RoleExpectation, Hypothesis: s.Hypothesis,
+			DistributedMonolith: s.DistributedMonolith,
+		})
+	}
 	return out
 }
 

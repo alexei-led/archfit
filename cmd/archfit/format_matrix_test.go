@@ -149,7 +149,7 @@ func requireHealthyExtraction(t *testing.T) {
 			Unresolved int    `json:"unresolved"`
 		} `json:"tool_coverage"`
 	}
-	if err := json.Unmarshal(runAnalyzeFormat(t, root, formatJSON, true), &doc); err != nil {
+	if err := json.Unmarshal(runAnalyzeFormat(t, root, formatLegacyJSON, true), &doc); err != nil {
 		t.Fatalf("decode tool coverage: %v", err)
 	}
 	for _, c := range doc.ToolCoverage {

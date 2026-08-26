@@ -23,6 +23,7 @@ const (
 	distanceCandidateExternalAction = "external_systems"
 	jsonHigh                        = "high"
 	jsonLow                         = "low"
+	dimCouplingBalance              = "coupling_balance"
 )
 
 // TestJSONRenderer_AdvisoryScoreFields asserts the numeric BC score fields
@@ -125,7 +126,7 @@ func TestJSONRenderer_ScorecardProjectionAndComparableDelta(t *testing.T) {
 	d := report.NewDocument()
 	d.Score = report.Scorecard{
 		Overall: 46, OverallBand: mixedBand,
-		Dimensions: []report.Dimension{{Name: "coupling_balance", Value: 46, Band: mixedBand}},
+		Dimensions: []report.Dimension{{Name: dimCouplingBalance, Value: 46, Band: mixedBand}},
 	}
 	d.BaseScore = &report.Scorecard{
 		Overall: 40, OverallBand: mixedBand,
@@ -152,7 +153,7 @@ func TestJSONRenderer_ScorecardProjectionAndComparableDelta(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
 		t.Fatalf("decode scorecard JSON: %v", err)
 	}
-	if raw.Score.Overall != 46 || raw.CouplingBalance == nil || raw.CouplingBalance.Name != "coupling_balance" || raw.CouplingBalance.Value != 46 {
+	if raw.Score.Overall != 46 || raw.CouplingBalance == nil || raw.CouplingBalance.Name != dimCouplingBalance || raw.CouplingBalance.Value != 46 {
 		t.Fatalf("score projection lost data: %+v", raw)
 	}
 	if raw.ScoreDelta.OverallDelta != 6 {
@@ -575,9 +576,64 @@ func TestJSONRenderer_GitFindingDelta(t *testing.T) {
 }
 
 func TestJSONRenderer_Format(t *testing.T) {
-	r := jsonout.New()
-	if got := r.Format(); got != "json" {
-		t.Errorf("Format() = %q, want %q", got, "json")
+	if got := jsonout.New().Format(); got != "legacy-json" {
+		t.Errorf("legacy Format() = %q, want %q", got, "legacy-json")
+	}
+	if got := jsonout.NewState().Format(); got != "json" {
+		t.Errorf("primary Format() = %q, want %q", got, "json")
+	}
+}
+
+// TestStateRenderer_RendersTheContractAtTheRoot pins the primary JSON shape: a
+// consumer reads .verdict, .decision, and the nine .dimensions keys without
+// unwrapping an envelope, and no repository scalar is reachable from the root.
+func TestStateRenderer_RendersTheContractAtTheRoot(t *testing.T) {
+	doc := report.Document{State: report.NewArchitectureState()}
+	doc.State.Verdict = report.StateNeedsAttention
+
+	var buf bytes.Buffer
+	if err := jsonout.NewState().Render(doc, &buf); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(buf.Bytes(), &root); err != nil {
+		t.Fatalf("decode: %v\n%s", err, buf.String())
+	}
+	for _, key := range []string{"schema_version", "verdict", "decision", "comparison", "measurement", "dimensions", "coverage", "findings", "agent_tasks", "seams"} {
+		if _, present := root[key]; !present {
+			t.Errorf("primary JSON is missing the %q key", key)
+		}
+	}
+	for _, forbidden := range []string{"score", "overall", "overall_band", "band", "score_version", dimCouplingBalance, "score_delta"} {
+		if _, present := root[forbidden]; present {
+			t.Errorf("primary JSON carries a top-level %q key: the architecture state has no repository scalar", forbidden)
+		}
+	}
+	var dims map[string]json.RawMessage
+	if err := json.Unmarshal(root["dimensions"], &dims); err != nil {
+		t.Fatalf("decode dimensions: %v", err)
+	}
+	if len(dims) != report.DimensionCount {
+		t.Errorf("dimensions = %d keys, want %d", len(dims), report.DimensionCount)
+	}
+}
+
+// TestStateRenderer_IsByteStable: two renders of the same document must not
+// differ. A format whose bytes move between identical runs cannot carry a
+// comparable baseline at all.
+func TestStateRenderer_IsByteStable(t *testing.T) {
+	doc := report.Document{State: report.NewArchitectureState()}
+	doc.State.Measurement.ToolVersions = map[string]string{"go/packages": "1.24", "loc": "1", "ast-grep": "0.2"}
+
+	var first, second bytes.Buffer
+	for _, w := range []*bytes.Buffer{&first, &second} {
+		if err := jsonout.NewState().Render(doc, w); err != nil {
+			t.Fatalf("Render: %v", err)
+		}
+	}
+	if first.String() != second.String() {
+		t.Errorf("two renders differ:\n%s\n%s", first.String(), second.String())
 	}
 }
 
