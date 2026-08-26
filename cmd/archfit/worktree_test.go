@@ -98,11 +98,11 @@ func TestDiffCmd_Formats(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("diff HEAD~1: exit=%d, want 0\noutput:\n%s", code, out)
 		}
-		if !strings.Contains(out, "ARCHFIT RESULT") {
-			t.Errorf("--base text should render the decision report: %s", out)
+		if !strings.Contains(out, "ARCHITECTURE STATE") {
+			t.Errorf("--base text should render the architecture state: %s", out)
 		}
-		if !strings.Contains(out, "CHANGE VS BASE") {
-			t.Errorf("--base text missing the delta section: %s", out)
+		if !strings.Contains(out, "reference: "+diffBaseRef) {
+			t.Errorf("--base text must name the compared reference: %s", out)
 		}
 		// Text output is unchanged by the git-origin block (JSON only).
 		if strings.Contains(out, "git_finding_delta") {
@@ -171,11 +171,11 @@ func TestDiffCmd_Formats(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("diff --format=markdown: exit=%d\noutput:\n%s", code, out)
 		}
-		if !strings.Contains(out, "# archfit — decision") {
-			t.Errorf("--base --markdown should lead with the decision summary: %s", out)
+		if !strings.Contains(out, "# archfit — architecture state") {
+			t.Errorf("--base --markdown should lead with the architecture state: %s", out)
 		}
-		if !strings.Contains(out, "Change vs base") {
-			t.Errorf("--base --markdown should include the delta section: %s", out)
+		if !strings.Contains(out, "- **Reference:** "+diffBaseRef) {
+			t.Errorf("--base --markdown must name the compared reference: %s", out)
 		}
 	})
 }
@@ -324,10 +324,11 @@ func TestDiffCmd_ConfigInSubdir(t *testing.T) {
 		t.Fatalf("diff config-in-subdir (--root omitted): exit=%d\noutput:\n%s", code, buf.String())
 	}
 
-	// Verify the output is the decision report with a delta section (not a crash/skip).
+	// Verify the output is the architecture state naming the compared reference
+	// (not a crash or a silently skipped comparison).
 	out := buf.String()
-	if !strings.Contains(out, "CHANGE VS BASE") {
-		t.Errorf("--base output missing the delta section: %s", out)
+	if !strings.Contains(out, "reference: HEAD~1") {
+		t.Errorf("--base output does not name the compared reference: %s", out)
 	}
 }
 

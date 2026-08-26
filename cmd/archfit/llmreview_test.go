@@ -141,7 +141,7 @@ func TestRun_Analyze_LLM_DeterministicFirst(t *testing.T) {
 	_ = cmd.Run(deps)
 	out := buf.String()
 
-	det := strings.Index(out, "ARCHFIT RESULT")
+	det := strings.Index(out, "ARCHITECTURE STATE")
 	llmIdx := strings.Index(out, "Architecture Review")
 	switch {
 	case det < 0:

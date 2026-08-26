@@ -18,6 +18,7 @@ const (
 	stateDimensionCount = 9
 	verdictBlocked      = "blocked"
 	hardGateFail        = "fail"
+	verdictBlockedLabel = "BLOCKED"
 )
 
 type characterizationDiagnostic struct {
@@ -125,7 +126,7 @@ func assertCharacterizationMarkdown(t *testing.T, configPath string) {
 	if code != 1 {
 		t.Fatalf("markdown check exit = %d, want 1", code)
 	}
-	for _, want := range []string{"FAIL", ruleNoInternalAcc, characterizationBCRuleID} {
+	for _, want := range []string{verdictBlockedLabel, ruleNoInternalAcc, characterizationBCRuleID} {
 		if !strings.Contains(string(output), want) {
 			t.Errorf("markdown output missing %q", want)
 		}

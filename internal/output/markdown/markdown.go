@@ -39,14 +39,11 @@ func New() *Renderer { return &Renderer{} }
 // Format returns "markdown".
 func (r *Renderer) Format() string { return "markdown" }
 
-// Render writes the BC-aligned Markdown report for d to w. When the document
-// carries a projected decision, the decision-led summary is written first,
-// followed by the detailed audit.
+// Render writes the BC-aligned Markdown report for d to w: the architecture
+// state headline first, then the detailed audit.
 func (r *Renderer) Render(d report.Document, w io.Writer) error {
-	if d.Decision.Band != "" {
-		if err := RenderReport(d.Decision, w); err != nil {
-			return err
-		}
+	if err := RenderState(d.State, w); err != nil {
+		return err
 	}
 	return r.renderAudit(d, w)
 }

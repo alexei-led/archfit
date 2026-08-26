@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -220,4 +221,112 @@ func assertMatchesBaseline(t *testing.T, path string, got []byte) {
 	if !bytes.Equal(got, want) {
 		t.Fatalf("output differs from %s:\n%s", filepath.Base(path), firstDiffLine(string(want), string(got)))
 	}
+}
+
+// TestFormatMatrix_CrossFormatParity is the migration's honesty check: every
+// primary format must report the SAME decision, the same nine dimensions with
+// the same statuses, the same counts, and the same finding IDs. A format that
+// quietly disagrees lets a reader pick the answer they prefer.
+//
+// SARIF is exempt from layout parity, not fact parity: it carries the state in
+// run properties, which TestFormatMatrix_SarifCarriesTheState checks.
+func TestFormatMatrix_CrossFormatParity(t *testing.T) {
+	t.Parallel()
+	requireHealthyExtraction(t)
+
+	cfgPath := writeViolatingRepo(t)
+	stateJSON := runFormatOutput(t, cfgPath, formatJSON)
+
+	var state struct {
+		Verdict  string `json:"verdict"`
+		Decision struct {
+			HardGates           string `json:"hard_gates"`
+			ActiveBlockers      int    `json:"active_blockers"`
+			AttentionDimensions int    `json:"attention_dimensions"`
+		} `json:"decision"`
+		Dimensions map[string]struct {
+			Status string `json:"status"`
+			Gate   string `json:"gate"`
+		} `json:"dimensions"`
+		Coverage struct {
+			Measured   int `json:"measured"`
+			Partial    int `json:"partial"`
+			Unmeasured int `json:"unmeasured"`
+		} `json:"coverage"`
+		Findings []struct {
+			ID     string `json:"id"`
+			RuleID string `json:"rule_id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(stateJSON, &state); err != nil {
+		t.Fatalf("decode architecture state: %v", err)
+	}
+
+	verdictLabel := strings.ToUpper(strings.ReplaceAll(state.Verdict, "_", " "))
+	coverage := []string{
+		strconv.Itoa(state.Coverage.Measured), strconv.Itoa(state.Coverage.Partial), strconv.Itoa(state.Coverage.Unmeasured),
+	}
+
+	for _, format := range []string{formatText, formatMarkdown} {
+		t.Run(format, func(t *testing.T) {
+			out := string(runFormatOutput(t, cfgPath, format))
+
+			if !strings.Contains(out, verdictLabel) {
+				t.Errorf("%s does not report the verdict %q:\n%s", format, verdictLabel, out)
+			}
+			if !strings.Contains(out, state.Decision.HardGates) {
+				t.Errorf("%s does not report hard gates %q:\n%s", format, state.Decision.HardGates, out)
+			}
+			for name, dim := range state.Dimensions {
+				if !strings.Contains(out, name) {
+					t.Errorf("%s omits dimension %q:\n%s", format, name, out)
+				}
+				if !strings.Contains(out, dim.Status) {
+					t.Errorf("%s omits status %q (dimension %s):\n%s", format, dim.Status, name, out)
+				}
+			}
+			// The coverage triple must be present as three numbers on one line,
+			// so a format cannot report a different split than JSON did.
+			if !containsCoverageTriple(out, coverage) {
+				t.Errorf("%s does not report the coverage split %v:\n%s", format, coverage, out)
+			}
+			for _, f := range state.Findings {
+				if !strings.Contains(out, f.RuleID) {
+					t.Errorf("%s omits the rule %q behind finding %s:\n%s", format, f.RuleID, f.ID, out)
+				}
+			}
+		})
+	}
+}
+
+// containsCoverageTriple reports whether any line carries all three coverage
+// counts in order. Checking the numbers on ONE line rather than anywhere in the
+// document keeps an unrelated count from satisfying the assertion.
+func containsCoverageTriple(out string, counts []string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		rest, ok := line, true
+		for _, n := range counts {
+			idx := strings.Index(rest, n)
+			if idx < 0 {
+				ok = false
+				break
+			}
+			rest = rest[idx+len(n):]
+		}
+		if ok && strings.Contains(strings.ToLower(line), "measured") {
+			return true
+		}
+	}
+	return false
+}
+
+// runFormatOutput renders one format over the fixture and returns stdout.
+func runFormatOutput(t *testing.T, cfgPath, format string) []byte {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	code := RunWithStderr([]string{cmdAnalyze, "-c", cfgPath, "--progress=none", "--format=" + format}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("analyze --format=%s: exit=%d\nstdout:\n%s\nstderr:\n%s", format, code, stdout.String(), stderr.String())
+	}
+	return stdout.Bytes()
 }

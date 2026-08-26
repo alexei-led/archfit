@@ -1,22 +1,71 @@
-# archfit — decision
+# archfit — architecture state
 
-- **Decision:** FAIL
-- **Gate:** FAIL — 1 blocking
-- **Warnings:** 1 advisory
-- **Score:** 78 / 100 (serviceable)
+- **Verdict:** BLOCKED
+- **Blocking:** 1 active — hard gates: fail
+- **Attention:** 2 dimension(s) flagged — 1 diagnostic(s)
+- **Coverage:** 4 measured / 3 partial / 2 unmeasured (of 9)
 
-Gate violations. Fix before merge.
+## Dimensions
 
-## Recommendations
+| Dimension | Status | Gate | Confidence | Denominator | Findings |
+| --- | --- | --- | --- | --- | ---: |
+| intent | measured | pass | high | declared rules evaluated 1/1 | 0 |
+| structure | measured | fail | high | discovered edges resolved to a declared module 1/1 | 1 |
+| modularity | measured | pass | low | declared modules with a declared public surface 0/2 | 0 |
+| coupling | measured | warn | high | cross-boundary edges scored 1/1 | 1 |
+| change_locality | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
+| complexity | partial | pass | medium | production files in the source walk 2/2 | 0 |
+| testability | partial | pass | medium | classified source files 2/2 | 0 |
+| operations | partial | pass | medium | analyzers reporting coverage 4/11 | 0 |
+| drift | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
 
-### Must fix
-- **no_direct_b_dependency** — Import from pkg/a/** to pkg/b/** is explicitly forbidden
+## Evidence coverage
 
-### Should fix
-- none
+| Tool | Status | Reason |
+| --- | --- | --- |
+| go/packages | ok | — |
+| dependency-cruiser | absent | — |
+| grimp | absent | — |
+| cargo | absent | — |
+| loc | ok | — |
+| deploy-unit | ok | — |
+| jscpd | disabled | clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable |
+| scip | disabled | opt-in: analyzers.scip.enabled |
+| ast-grep/syntax | disabled | opt-in: analyzers.syntax.enabled |
+| ast-grep | ok | — |
+| cargo-modules | absent | — |
 
-### Watch
-- **bc/imbalanced_coupling** — balanced coupling: functional integration strength × cross_module_different_owner distance × low volatility → low severity (unbalanced coupling → elevated maintenance effort)
+## Coupling seams (1)
+
+| Seam | Strength | Distance | Volatility | Scored | Critical | Median | Quadrant | Try |
+| --- | --- | --- | --- | ---: | ---: | ---: | --- | --- |
+| a → b | functional | cross_module_different_owner | low | 1 | 0 | 8 | tight | leave_alone |
+
+## Top actionable findings
+
+### Blocking (1)
+
+- **no_direct_b_dependency** [medium] — Import from pkg/a/** to pkg/b/** is explicitly forbidden
+
+### Diagnostic (1)
+
+- **bc/imbalanced_coupling** [low] — balanced coupling: functional integration strength × cross_module_different_owner distance × low volatility → low severity (unbalanced coupling → elevated maintenance effort)
+
+## Comparison
+
+- **Status:** not_requested
+- **Reference:** none
+
+## Not measured (8)
+
+- **modularity — public surface** (owner: assessment/metrics): no declared module states a public surface, so every symbol reads as equally public
+- **change_locality — change locality** (owner: history/git): git history is unavailable: the tree is not a repository, or no module was declared to attribute commits to
+- **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): v1 ships no cognitive-complexity analyzer; only the size tail is measured
+- **testability — executed test coverage** (owner: syntax/fileclass): v1 does not run a target repository's test suite; supplied coverage is not yet an input
+- **testability — boundary test coverage** (owner: syntax/fileclass): which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
+- **operations — observed runtime topology** (owner: policy+evidence/acquisition): v1 reports declared owners and deploy units only; nothing observes what actually runs
+- **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts have no collector in v1
+- **drift — architecture drift** (owner: assessment/decision): no comparable architecture-state reference: no comparable architecture-state reference is stored
 # archfit report
 
 **Verdict:** fail (exit 1)
