@@ -32,6 +32,7 @@ var surfaceOwners = []string{
 	modulePrefix + "internal/evidence",
 	modulePrefix + "internal/evidence/acquisition",
 	modulePrefix + "internal/assessment/evaluation",
+	modulePrefix + "internal/assessment/result",
 	modulePrefix + "internal/relationship/analysis",
 }
 

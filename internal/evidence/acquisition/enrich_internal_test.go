@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/result"
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
@@ -157,14 +157,14 @@ func TestTracksSemanticStrengthOverlay(t *testing.T) {
 		status string
 		want   bool
 	}{
-		{result.StatusOK, true},
-		{result.StatusPartial, true},
-		{result.StatusAbsent, false},
-		{result.StatusDisabled, false},
+		{evidence.StatusOK, true},
+		{evidence.StatusPartial, true},
+		{evidence.StatusAbsent, false},
+		{evidence.StatusDisabled, false},
 		{"", false},
 	}
 	for _, tt := range tests {
-		got := tracksSemanticStrengthOverlay(result.Coverage{Tool: "scip", Status: tt.status})
+		got := tracksSemanticStrengthOverlay(evidence.Coverage{Tool: "scip", Status: tt.status})
 		if got != tt.want {
 			t.Errorf("tracksSemanticStrengthOverlay(%q) = %t, want %t", tt.status, got, tt.want)
 		}

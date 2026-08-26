@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
 // Coverage names read from the adapters that stamp them, never re-typed here.
@@ -37,22 +38,22 @@ const (
 	idShared = "shared"
 	idHere   = "here"
 	idHalf   = "half"
-	dupOK    = result.StatusOK + "+" + result.StatusOK
+	dupOK    = evidence.StatusOK + "+" + evidence.StatusOK
 )
 
-func cov(tool, status string) result.Coverage {
-	return result.Coverage{Tool: tool, Status: status}
+func cov(tool, status string) evidence.Coverage {
+	return evidence.Coverage{Tool: tool, Status: status}
 }
 
-func gap(tool string) result.CoverageGap {
-	return result.CoverageGap{Tool: tool, InstallCmd: "install " + tool}
+func gap(tool string) evidence.CoverageGap {
+	return evidence.CoverageGap{Tool: tool, InstallCmd: "install " + tool}
 }
 
 // side builds one comparison side from coverage rows alone; findings, score,
 // and edge counts default to empty.
-func side(rows []result.Coverage, gaps []result.CoverageGap) decision.ConfigCompareSide {
+func side(rows []evidence.Coverage, gaps []evidence.CoverageGap) decision.ConfigCompareSide {
 	return decision.ConfigCompareSide{
-		Diag: result.Diagnostic{
+		Diag: result.Result{
 			Findings:              []finding.Finding{},
 			ToolCoverage:          rows,
 			CoverageGaps:          gaps,
@@ -86,16 +87,16 @@ func unmeasuredCard() score.Scorecard {
 
 func findingsSide(fs ...finding.Finding) decision.ConfigCompareSide {
 	return decision.ConfigCompareSide{
-		Diag:  result.Diagnostic{Findings: fs, ToolCoverage: []result.Coverage{}},
+		Diag:  result.Result{Findings: fs, ToolCoverage: []evidence.Coverage{}},
 		Score: measuredCard(70),
 	}
 }
 
 func edgesSide(scored, abstained, external int) decision.ConfigCompareSide {
 	return decision.ConfigCompareSide{
-		Diag: result.Diagnostic{
+		Diag: result.Result{
 			Findings:     []finding.Finding{},
-			ToolCoverage: []result.Coverage{},
+			ToolCoverage: []evidence.Coverage{},
 			ClassifiedEdges: &result.ClassifiedEdgeSummary{
 				Scored: scored, Abstained: abstained, External: external,
 			},
@@ -121,11 +122,11 @@ func warningCodes(ws []decision.ConfigCompareWarning) []string {
 // every result slice non-nil.
 func TestCompareConfigs_Identity(t *testing.T) {
 	s := decision.ConfigCompareSide{
-		Diag: result.Diagnostic{
+		Diag: result.Result{
 			Findings: []finding.Finding{
 				{ID: "f1", Kind: finding.KindGate, Status: finding.StatusNew},
 			},
-			ToolCoverage:          []result.Coverage{cov(primaryTool, result.StatusOK)},
+			ToolCoverage:          []evidence.Coverage{cov(primaryTool, evidence.StatusOK)},
 			PrimaryExtractorTools: []string{primaryTool},
 			ClassifiedEdges:       &result.ClassifiedEdgeSummary{Scored: 10, Abstained: 2, External: 3},
 		},
@@ -268,48 +269,48 @@ func TestCompareConfigs_Findings(t *testing.T) {
 // produces. Those never pair.
 func TestCompareCoverage_StatusPairs(t *testing.T) {
 	statuses := []string{
-		result.StatusOK,
-		result.StatusPartial,
-		result.StatusAbsent,
-		result.StatusDisabled,
-		result.StatusTimedOut,
+		evidence.StatusOK,
+		evidence.StatusPartial,
+		evidence.StatusAbsent,
+		evidence.StatusDisabled,
+		evidence.StatusTimedOut,
 	}
 	// want[current][candidate]
 	want := map[string]map[string]decision.CoverageComparability{
-		result.StatusOK: {
-			result.StatusOK:       decision.CoverageComparable,
-			result.StatusPartial:  decision.CoverageNotComparable,
-			result.StatusAbsent:   decision.CoverageNotComparable,
-			result.StatusDisabled: decision.CoverageNotComparable,
-			result.StatusTimedOut: decision.CoverageNotComparable,
+		evidence.StatusOK: {
+			evidence.StatusOK:       decision.CoverageComparable,
+			evidence.StatusPartial:  decision.CoverageNotComparable,
+			evidence.StatusAbsent:   decision.CoverageNotComparable,
+			evidence.StatusDisabled: decision.CoverageNotComparable,
+			evidence.StatusTimedOut: decision.CoverageNotComparable,
 		},
-		result.StatusPartial: {
-			result.StatusOK:       decision.CoverageNotComparable,
-			result.StatusPartial:  decision.CoverageNotComparable,
-			result.StatusAbsent:   decision.CoverageNotComparable,
-			result.StatusDisabled: decision.CoverageNotComparable,
-			result.StatusTimedOut: decision.CoverageNotComparable,
+		evidence.StatusPartial: {
+			evidence.StatusOK:       decision.CoverageNotComparable,
+			evidence.StatusPartial:  decision.CoverageNotComparable,
+			evidence.StatusAbsent:   decision.CoverageNotComparable,
+			evidence.StatusDisabled: decision.CoverageNotComparable,
+			evidence.StatusTimedOut: decision.CoverageNotComparable,
 		},
-		result.StatusAbsent: {
-			result.StatusOK:       decision.CoverageNotComparable,
-			result.StatusPartial:  decision.CoverageNotComparable,
-			result.StatusAbsent:   decision.CoverageComparableWithGaps,
-			result.StatusDisabled: decision.CoverageNotComparable,
-			result.StatusTimedOut: decision.CoverageNotComparable,
+		evidence.StatusAbsent: {
+			evidence.StatusOK:       decision.CoverageNotComparable,
+			evidence.StatusPartial:  decision.CoverageNotComparable,
+			evidence.StatusAbsent:   decision.CoverageComparableWithGaps,
+			evidence.StatusDisabled: decision.CoverageNotComparable,
+			evidence.StatusTimedOut: decision.CoverageNotComparable,
 		},
-		result.StatusDisabled: {
-			result.StatusOK:       decision.CoverageNotComparable,
-			result.StatusPartial:  decision.CoverageNotComparable,
-			result.StatusAbsent:   decision.CoverageNotComparable,
-			result.StatusDisabled: decision.CoverageComparableWithGaps,
-			result.StatusTimedOut: decision.CoverageNotComparable,
+		evidence.StatusDisabled: {
+			evidence.StatusOK:       decision.CoverageNotComparable,
+			evidence.StatusPartial:  decision.CoverageNotComparable,
+			evidence.StatusAbsent:   decision.CoverageNotComparable,
+			evidence.StatusDisabled: decision.CoverageComparableWithGaps,
+			evidence.StatusTimedOut: decision.CoverageNotComparable,
 		},
-		result.StatusTimedOut: {
-			result.StatusOK:       decision.CoverageNotComparable,
-			result.StatusPartial:  decision.CoverageNotComparable,
-			result.StatusAbsent:   decision.CoverageNotComparable,
-			result.StatusDisabled: decision.CoverageNotComparable,
-			result.StatusTimedOut: decision.CoverageNotComparable,
+		evidence.StatusTimedOut: {
+			evidence.StatusOK:       decision.CoverageNotComparable,
+			evidence.StatusPartial:  decision.CoverageNotComparable,
+			evidence.StatusAbsent:   decision.CoverageNotComparable,
+			evidence.StatusDisabled: decision.CoverageNotComparable,
+			evidence.StatusTimedOut: decision.CoverageNotComparable,
 		},
 	}
 
@@ -317,8 +318,8 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 		for _, cand := range statuses {
 			t.Run(cur+"/"+cand, func(t *testing.T) {
 				got := decision.CompareConfigs(decision.ConfigCompareInput{
-					Current:   side([]result.Coverage{cov(gapTool, cur)}, nil),
-					Candidate: side([]result.Coverage{cov(gapTool, cand)}, nil),
+					Current:   side([]evidence.Coverage{cov(gapTool, cur)}, nil),
+					Candidate: side([]evidence.Coverage{cov(gapTool, cand)}, nil),
 				}).Coverage
 				if got.Status != want[cur][cand] {
 					t.Errorf("status = %q, want %q", got.Status, want[cur][cand])
@@ -348,15 +349,15 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 	// The TOOL NAME is the discriminator, not Unresolved > 0: go/packages sets
 	// Unresolved on a partial too, counting whole packages it SKIPPED because
 	// they failed to load. That is "did not finish" and must stay not_comparable.
-	unresolved := func(tool string, n int) result.Coverage {
-		c := cov(tool, result.StatusPartial)
+	unresolved := func(tool string, n int) evidence.Coverage {
+		c := cov(tool, evidence.StatusPartial)
 		c.Unresolved = n
 		return c
 	}
 	// go/packages splits its Unresolved count by what the incompleteness COST.
 	// Inputs missing from the graph can hide a finding; precision-only loss
 	// cannot, because every import is still there.
-	goPartial := func(missing, precision int) result.Coverage {
+	goPartial := func(missing, precision int) evidence.Coverage {
 		c := unresolved(toolGoPackagesName, missing+precision)
 		c.UnresolvedInputsMissing = missing
 		c.UnresolvedPrecisionOnly = precision
@@ -365,20 +366,20 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 	specifierTool, grimpTool, goTool := toolDepCruiserName, toolGrimpName, toolGoPackagesName
 	partialPairs := []struct {
 		name               string
-		current, candidate result.Coverage
+		current, candidate evidence.Coverage
 		want               decision.CoverageComparability
 	}{
 		{"unresolved_both", unresolved(specifierTool, 3), unresolved(specifierTool, 7), decision.CoverageComparableWithGaps},
 		{"unresolved_both_grimp", unresolved(grimpTool, 3), unresolved(grimpTool, 7), decision.CoverageComparableWithGaps},
-		{"unresolved_current_only", unresolved(specifierTool, 3), cov(specifierTool, result.StatusPartial), decision.CoverageNotComparable},
-		{"unresolved_candidate_only", cov(specifierTool, result.StatusPartial), unresolved(specifierTool, 3), decision.CoverageNotComparable},
-		{"unresolved_vs_ok", unresolved(specifierTool, 3), cov(specifierTool, result.StatusOK), decision.CoverageNotComparable},
-		{"ok_vs_unresolved", cov(specifierTool, result.StatusOK), unresolved(specifierTool, 3), decision.CoverageNotComparable},
+		{"unresolved_current_only", unresolved(specifierTool, 3), cov(specifierTool, evidence.StatusPartial), decision.CoverageNotComparable},
+		{"unresolved_candidate_only", cov(specifierTool, evidence.StatusPartial), unresolved(specifierTool, 3), decision.CoverageNotComparable},
+		{"unresolved_vs_ok", unresolved(specifierTool, 3), cov(specifierTool, evidence.StatusOK), decision.CoverageNotComparable},
+		{"ok_vs_unresolved", cov(specifierTool, evidence.StatusOK), unresolved(specifierTool, 3), decision.CoverageNotComparable},
 		// go/packages counts SKIPPED PACKAGES in Unresolved, so a symmetric Go
 		// partial is two runs that both failed to load part of the tree — never
 		// comparable, however equal the two counts look.
 		{"go_packages_skipped_both", unresolved(goTool, 3), unresolved(goTool, 3), decision.CoverageNotComparable},
-		{"go_packages_skipped_vs_ok", unresolved(goTool, 3), cov(goTool, result.StatusOK), decision.CoverageNotComparable},
+		{"go_packages_skipped_vs_ok", unresolved(goTool, 3), cov(goTool, evidence.StatusOK), decision.CoverageNotComparable},
 		// A partial earned ONLY by packages that failed to type-check is a
 		// different fact: every import is in the graph on both sides, so neither
 		// side can hide a finding from the other, and the pair compares with the
@@ -387,7 +388,7 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 		{"go_packages_degraded_both", goPartial(0, 1), goPartial(0, 9), decision.CoverageComparableWithGaps},
 		// Symmetry is the whole safety argument: the precision that degraded is
 		// what strength-derived findings rest on, so degraded never pairs with ok.
-		{"go_packages_degraded_vs_ok", goPartial(0, 1), cov(goTool, result.StatusOK), decision.CoverageNotComparable},
+		{"go_packages_degraded_vs_ok", goPartial(0, 1), cov(goTool, evidence.StatusOK), decision.CoverageNotComparable},
 		// One missing input is enough to disqualify the row, on either side.
 		{"go_packages_degraded_vs_missing", goPartial(0, 1), goPartial(3, 1), decision.CoverageNotComparable},
 		{"go_packages_missing_and_degraded_both", goPartial(2, 1), goPartial(2, 1), decision.CoverageNotComparable},
@@ -397,8 +398,8 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 	for _, tt := range partialPairs {
 		t.Run("partial_"+tt.name, func(t *testing.T) {
 			got := decision.CompareConfigs(decision.ConfigCompareInput{
-				Current:   side([]result.Coverage{tt.current}, nil),
-				Candidate: side([]result.Coverage{tt.candidate}, nil),
+				Current:   side([]evidence.Coverage{tt.current}, nil),
+				Candidate: side([]evidence.Coverage{tt.candidate}, nil),
 			}).Coverage
 			if got.Status != tt.want {
 				t.Errorf("status = %q, want %q", got.Status, tt.want)
@@ -421,8 +422,8 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 		cand := unresolved(specifierTool, 5000)
 		cand.SpecifiersSeen = 6000
 		got := decision.CompareConfigs(decision.ConfigCompareInput{
-			Current:   side([]result.Coverage{cur}, nil),
-			Candidate: side([]result.Coverage{cand}, nil),
+			Current:   side([]evidence.Coverage{cur}, nil),
+			Candidate: side([]evidence.Coverage{cand}, nil),
 		}).Coverage
 		if len(got.Details) != 1 {
 			t.Fatalf("details = %+v, want exactly one", got.Details)
@@ -431,7 +432,7 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 		if !strings.Contains(d.Reason, "3 unresolved") || !strings.Contains(d.Reason, "5000/6000 unresolved") {
 			t.Errorf("reason must name both magnitudes, got %q", d.Reason)
 		}
-		if d.Current != result.StatusPartial || d.Candidate != result.StatusPartial {
+		if d.Current != evidence.StatusPartial || d.Candidate != evidence.StatusPartial {
 			t.Errorf("Current/Candidate must stay raw statuses, got %q/%q", d.Current, d.Candidate)
 		}
 	})
@@ -441,8 +442,8 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 	// not, and one word for both is what the split exists to undo.
 	t.Run("degraded_reason_carries_counts_and_names_its_condition", func(t *testing.T) {
 		got := decision.CompareConfigs(decision.ConfigCompareInput{
-			Current:   side([]result.Coverage{goPartial(0, 2)}, nil),
-			Candidate: side([]result.Coverage{goPartial(0, 41)}, nil),
+			Current:   side([]evidence.Coverage{goPartial(0, 2)}, nil),
+			Candidate: side([]evidence.Coverage{goPartial(0, 41)}, nil),
 		}).Coverage
 		if len(got.Details) != 1 {
 			t.Fatalf("details = %+v, want exactly one", got.Details)
@@ -466,57 +467,57 @@ func TestGradeTool_ReasonPerShape(t *testing.T) {
 	// primaryTool is what `side` declares primary, so the absent-arm gap rules
 	// apply to it; the specifier and precision shapes belong to the analyzers
 	// that actually produce them.
-	row := func(status string) result.Coverage {
-		return result.Coverage{Tool: primaryTool, Status: status}
+	row := func(status string) evidence.Coverage {
+		return evidence.Coverage{Tool: primaryTool, Status: status}
 	}
-	unresolvedRow := func(n int) result.Coverage {
-		c := result.Coverage{Tool: toolDepCruiserName, Status: result.StatusPartial}
+	unresolvedRow := func(n int) evidence.Coverage {
+		c := evidence.Coverage{Tool: toolDepCruiserName, Status: evidence.StatusPartial}
 		c.Unresolved = n
 		return c
 	}
-	degradedRow := func(n int) result.Coverage {
-		c := row(result.StatusPartial)
+	degradedRow := func(n int) evidence.Coverage {
+		c := row(evidence.StatusPartial)
 		c.Unresolved = n
 		c.UnresolvedPrecisionOnly = n
 		return c
 	}
-	gap := []result.CoverageGap{{Tool: primaryTool}}
+	gap := []evidence.CoverageGap{{Tool: primaryTool}}
 
 	cases := []struct {
 		name               string
-		current, candidate []result.Coverage
-		curGaps, candGaps  []result.CoverageGap
+		current, candidate []evidence.Coverage
+		curGaps, candGaps  []evidence.CoverageGap
 		want               string
 	}{
-		{"missing row", nil, []result.Coverage{row(result.StatusOK)}, nil, nil,
+		{"missing row", nil, []evidence.Coverage{row(evidence.StatusOK)}, nil, nil,
 			"coverage row missing or duplicated"},
 		{"duplicate rows",
-			[]result.Coverage{row(result.StatusOK), row(result.StatusOK)},
-			[]result.Coverage{row(result.StatusOK)}, nil, nil,
+			[]evidence.Coverage{row(evidence.StatusOK), row(evidence.StatusOK)},
+			[]evidence.Coverage{row(evidence.StatusOK)}, nil, nil,
 			"coverage row missing or duplicated"},
-		{"timed out", []result.Coverage{row(result.StatusTimedOut)},
-			[]result.Coverage{row(result.StatusTimedOut)}, nil, nil,
+		{"timed out", []evidence.Coverage{row(evidence.StatusTimedOut)},
+			[]evidence.Coverage{row(evidence.StatusTimedOut)}, nil, nil,
 			"incomplete or timed-out coverage cannot be compared"},
-		{"status moved", []result.Coverage{row(result.StatusOK)},
-			[]result.Coverage{row(result.StatusAbsent)}, nil, gap,
+		{"status moved", []evidence.Coverage{row(evidence.StatusOK)},
+			[]evidence.Coverage{row(evidence.StatusAbsent)}, nil, gap,
 			"coverage status differs between the configurations"},
-		{"unknown status", []result.Coverage{row("teapot")},
-			[]result.Coverage{row("teapot")}, nil, nil,
+		{"unknown status", []evidence.Coverage{row("teapot")},
+			[]evidence.Coverage{row("teapot")}, nil, nil,
 			"unrecognised coverage status"},
-		{"absent both, both gapped", []result.Coverage{row(result.StatusAbsent)},
-			[]result.Coverage{row(result.StatusAbsent)}, gap, gap,
+		{"absent both, both gapped", []evidence.Coverage{row(evidence.StatusAbsent)},
+			[]evidence.Coverage{row(evidence.StatusAbsent)}, gap, gap,
 			"analyzer absent under both configurations"},
-		{"absent both, one gapped", []result.Coverage{row(result.StatusAbsent)},
-			[]result.Coverage{row(result.StatusAbsent)}, gap, nil,
+		{"absent both, one gapped", []evidence.Coverage{row(evidence.StatusAbsent)},
+			[]evidence.Coverage{row(evidence.StatusAbsent)}, gap, nil,
 			"analyzer absent, but only one configuration expected it to run"},
-		{"disabled both", []result.Coverage{row(result.StatusDisabled)},
-			[]result.Coverage{row(result.StatusDisabled)}, nil, nil,
+		{"disabled both", []evidence.Coverage{row(evidence.StatusDisabled)},
+			[]evidence.Coverage{row(evidence.StatusDisabled)}, nil, nil,
 			"analyzer disabled under both configurations"},
-		{"unresolved specifiers both", []result.Coverage{unresolvedRow(2)},
-			[]result.Coverage{unresolvedRow(3)}, nil, nil,
+		{"unresolved specifiers both", []evidence.Coverage{unresolvedRow(2)},
+			[]evidence.Coverage{unresolvedRow(3)}, nil, nil,
 			"analyzer left import specifiers unresolved under both configurations"},
-		{"degraded precision both", []result.Coverage{degradedRow(2)},
-			[]result.Coverage{degradedRow(3)}, nil, nil,
+		{"degraded precision both", []evidence.Coverage{degradedRow(2)},
+			[]evidence.Coverage{degradedRow(3)}, nil, nil,
 			"analyzer covered every input under both configurations, with degraded edge precision"},
 	}
 	for _, tc := range cases {
@@ -543,43 +544,43 @@ func TestGradeTool_ReasonPerShape(t *testing.T) {
 func TestCompareCoverage_RowCount(t *testing.T) {
 	tests := []struct {
 		name               string
-		current, candidate []result.Coverage
+		current, candidate []evidence.Coverage
 		wantCurrent        string
 		wantCandidate      string
 	}{
 		{
 			name:          "row missing on the current side",
 			current:       nil,
-			candidate:     []result.Coverage{cov(gapTool, result.StatusOK)},
+			candidate:     []evidence.Coverage{cov(gapTool, evidence.StatusOK)},
 			wantCurrent:   decision.CoverageRowMissing,
-			wantCandidate: result.StatusOK,
+			wantCandidate: evidence.StatusOK,
 		},
 		{
 			name:          "row missing on the candidate side",
-			current:       []result.Coverage{cov(gapTool, result.StatusOK)},
+			current:       []evidence.Coverage{cov(gapTool, evidence.StatusOK)},
 			candidate:     nil,
-			wantCurrent:   result.StatusOK,
+			wantCurrent:   evidence.StatusOK,
 			wantCandidate: decision.CoverageRowMissing,
 		},
 		{
 			name:          "duplicate row on the candidate side only",
-			current:       []result.Coverage{cov(gapTool, result.StatusOK)},
-			candidate:     []result.Coverage{cov(gapTool, result.StatusOK), cov(gapTool, result.StatusOK)},
-			wantCurrent:   result.StatusOK,
+			current:       []evidence.Coverage{cov(gapTool, evidence.StatusOK)},
+			candidate:     []evidence.Coverage{cov(gapTool, evidence.StatusOK), cov(gapTool, evidence.StatusOK)},
+			wantCurrent:   evidence.StatusOK,
 			wantCandidate: dupOK,
 		},
 		{
 			name:          "duplicate row on both sides is still not comparable",
-			current:       []result.Coverage{cov(gapTool, result.StatusOK), cov(gapTool, result.StatusOK)},
-			candidate:     []result.Coverage{cov(gapTool, result.StatusOK), cov(gapTool, result.StatusOK)},
+			current:       []evidence.Coverage{cov(gapTool, evidence.StatusOK), cov(gapTool, evidence.StatusOK)},
+			candidate:     []evidence.Coverage{cov(gapTool, evidence.StatusOK), cov(gapTool, evidence.StatusOK)},
 			wantCurrent:   dupOK,
 			wantCandidate: dupOK,
 		},
 		{
 			name:          "a missing primary row is not silently ignored",
-			current:       []result.Coverage{cov(primaryTool, result.StatusAbsent)},
+			current:       []evidence.Coverage{cov(primaryTool, evidence.StatusAbsent)},
 			candidate:     nil,
-			wantCurrent:   result.StatusAbsent,
+			wantCurrent:   evidence.StatusAbsent,
 			wantCandidate: decision.CoverageRowMissing,
 		},
 	}
@@ -668,14 +669,14 @@ func TestCompareCoverage_PrimaryAbsent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var curGaps, candGaps []result.CoverageGap
+			var curGaps, candGaps []evidence.CoverageGap
 			if tt.curGap {
-				curGaps = []result.CoverageGap{gap(tt.tool)}
+				curGaps = []evidence.CoverageGap{gap(tt.tool)}
 			}
 			if tt.candGap {
-				candGaps = []result.CoverageGap{gap(tt.tool)}
+				candGaps = []evidence.CoverageGap{gap(tt.tool)}
 			}
-			rows := []result.Coverage{cov(tt.tool, result.StatusAbsent)}
+			rows := []evidence.Coverage{cov(tt.tool, evidence.StatusAbsent)}
 			got := decision.CompareConfigs(decision.ConfigCompareInput{
 				Current:   side(rows, curGaps),
 				Candidate: side(rows, candGaps),
@@ -695,7 +696,7 @@ func TestCompareCoverage_PrimaryAbsent(t *testing.T) {
 	// both disabled a language over a repo that HAS it are equally blind by
 	// choice — that is shared, declared blindness, never full comparability.
 	t.Run("primary disabled on both sides never drops out", func(t *testing.T) {
-		rows := []result.Coverage{cov(primaryTool, result.StatusDisabled)}
+		rows := []evidence.Coverage{cov(primaryTool, evidence.StatusDisabled)}
 		got := decision.CompareConfigs(decision.ConfigCompareInput{
 			Current:   side(rows, nil),
 			Candidate: side(rows, nil),
@@ -714,9 +715,9 @@ func TestCompareCoverage_PrimaryAbsent(t *testing.T) {
 // assumed to be an inapplicable language.
 func TestCompareCoverage_PrimaryToolsUnknown(t *testing.T) {
 	bare := decision.ConfigCompareSide{
-		Diag: result.Diagnostic{
+		Diag: result.Result{
 			Findings:     []finding.Finding{},
-			ToolCoverage: []result.Coverage{cov(primaryTool, result.StatusAbsent)},
+			ToolCoverage: []evidence.Coverage{cov(primaryTool, evidence.StatusAbsent)},
 		},
 		Score: measuredCard(70),
 	}
@@ -729,15 +730,15 @@ func TestCompareCoverage_PrimaryToolsUnknown(t *testing.T) {
 // TestCompareCoverage_Aggregate pins the union, the worst-grade priority, and
 // the stable detail order.
 func TestCompareCoverage_Aggregate(t *testing.T) {
-	current := side([]result.Coverage{
-		cov("zeta", result.StatusDisabled),
-		cov(primaryTool, result.StatusOK),
-		cov("alpha", result.StatusOK),
+	current := side([]evidence.Coverage{
+		cov("zeta", evidence.StatusDisabled),
+		cov(primaryTool, evidence.StatusOK),
+		cov("alpha", evidence.StatusOK),
 	}, nil)
-	candidate := side([]result.Coverage{
-		cov("zeta", result.StatusDisabled),
-		cov(primaryTool, result.StatusOK),
-		cov("alpha", result.StatusPartial),
+	candidate := side([]evidence.Coverage{
+		cov("zeta", evidence.StatusDisabled),
+		cov(primaryTool, evidence.StatusOK),
+		cov("alpha", evidence.StatusPartial),
 	}, nil)
 
 	got := decision.CompareConfigs(decision.ConfigCompareInput{Current: current, Candidate: candidate}).Coverage
@@ -765,7 +766,7 @@ func TestCompareCoverage_Aggregate(t *testing.T) {
 // TestCompareCoverage_UnknownStatus pins that an unrecognised status abstains
 // instead of being treated like a clean run.
 func TestCompareCoverage_UnknownStatus(t *testing.T) {
-	rows := []result.Coverage{cov(gapTool, "some-future-status")}
+	rows := []evidence.Coverage{cov(gapTool, "some-future-status")}
 	got := decision.CompareConfigs(decision.ConfigCompareInput{
 		Current:   side(rows, nil),
 		Candidate: side(rows, nil),

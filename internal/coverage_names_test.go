@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/decision"
-	"github.com/alexei-led/archfit/internal/assessment/result"
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/extract/ts"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
 // PartialFromUnresolvedSpecifiers keys on these two names alone to separate a
@@ -47,8 +47,8 @@ func TestPartialFromUnresolvedSpecifiers_AdapterCoverageNames(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := decision.PartialFromUnresolvedSpecifiers(result.Coverage{
-				Tool: tc.tool, Status: result.StatusPartial, Unresolved: 1,
+			got := decision.PartialFromUnresolvedSpecifiers(evidence.Coverage{
+				Tool: tc.tool, Status: evidence.StatusPartial, Unresolved: 1,
 			})
 			if got != tc.want {
 				t.Fatalf("PartialFromUnresolvedSpecifiers(tool=%q) = %v, want %v — the adapter's coverage name and the predicate's table have drifted apart",

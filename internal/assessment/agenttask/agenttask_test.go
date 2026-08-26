@@ -8,7 +8,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/agenttask"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
 
@@ -157,7 +157,7 @@ func TestBuild_EmptyAndDeterministic(t *testing.T) {
 // TestBuild_DeclarationsEnrichedWhenSyntaxPresent verifies that when SyntaxFacts
 // are provided, each task's Declarations field contains the facts for its files.
 func TestBuild_DeclarationsEnrichedWhenSyntaxPresent(t *testing.T) {
-	sf := []result.SyntaxFact{
+	sf := []evidence.SyntaxFact{
 		{File: fileFrom, Kind: kindFunction, Name: "CallB", Exported: true, StartLine: 3},
 		{File: fileTo, Kind: kindFunction, Name: "internalImpl", Exported: false, StartLine: 10},
 		{File: "pkg/other/other.go", Kind: kindFunction, Name: "Unrelated", Exported: true, StartLine: 1},

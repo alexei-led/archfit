@@ -348,7 +348,7 @@ func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
 // analyze pipeline (rules + metrics) over root's Go sources. Mode.Advisory is
 // always on so gate:warn rule findings (Kind=advisory) surface in
 // diag.Findings, mirroring how `archfit analyze` renders warn-gated rules.
-func runRenderedAnalyze(t *testing.T, root, rendered string) result.Diagnostic {
+func runRenderedAnalyze(t *testing.T, root, rendered string) result.Result {
 	t.Helper()
 	cfg := loadRendered(t, rendered)
 

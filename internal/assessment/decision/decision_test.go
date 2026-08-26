@@ -57,7 +57,7 @@ func healthyDims() []score.Dimension {
 	}
 }
 
-func makeDiag(verdict result.Verdict, gateFindings, warnings int) result.Diagnostic {
+func makeDiag(verdict result.Verdict, gateFindings, warnings int) result.Result {
 	d := result.New()
 	d.Verdict = verdict
 	d.Summary = result.Summary{

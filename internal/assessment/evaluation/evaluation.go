@@ -12,6 +12,7 @@ import (
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
 	"github.com/alexei-led/archfit/internal/assessment/staleness"
 	"github.com/alexei-led/archfit/internal/assessment/status"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
@@ -26,7 +27,7 @@ type Input struct {
 	Metrics            Metricset
 	Signals            signal.RunSignals
 	Symbols            symbol.Graph
-	Coverage           []result.Coverage
+	Coverage           []evidence.Coverage
 	ChangedFiles       []string
 	Baseline           result.MetricSnapshot
 	Accepted           status.AcceptedSet

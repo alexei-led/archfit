@@ -38,30 +38,6 @@ type AdvisoryTask struct {
 	Validation   []string         `json:"validation"`
 }
 
-// Coverage is retained as an assessment result compatibility alias.
-type Coverage = evidence.Coverage
-
-// CoverageGap is retained as an assessment result compatibility alias.
-type CoverageGap = evidence.CoverageGap
-
-// SyntaxFact is retained as an assessment result compatibility alias.
-type SyntaxFact = evidence.SyntaxFact
-
-// RuntimeAsyncEdge is retained as an assessment result compatibility alias.
-type RuntimeAsyncEdge = evidence.RuntimeAsyncEdge
-
-// Diagnostic is retained as an assessment result compatibility alias.
-type Diagnostic = Result
-
-// Compatibility constants keep migrated callers source-compatible.
-const (
-	StatusOK       = evidence.StatusOK
-	StatusPartial  = evidence.StatusPartial
-	StatusAbsent   = evidence.StatusAbsent
-	StatusDisabled = evidence.StatusDisabled
-	StatusTimedOut = evidence.StatusTimedOut
-)
-
 // Result is the assessment result before report projection.
 type Result struct {
 	SchemaVersion             string                              `json:"schema_version"`

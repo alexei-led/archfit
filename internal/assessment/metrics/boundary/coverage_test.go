@@ -6,6 +6,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/metrics/boundary"
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/testutil/metricstest"
 )
 
@@ -59,7 +60,7 @@ func TestCoverage_ZeroApplicable(t *testing.T) {
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
 		Coverage: signal.CoverageView{
-			{FilesSeen: 0, FilesApplicable: 0, Status: assessmentresult.StatusOK},
+			{FilesSeen: 0, FilesApplicable: 0, Status: evidence.StatusOK},
 		},
 	})
 	if result.Band != bandNAStr {
@@ -77,8 +78,8 @@ func TestCoverage_AllAbsent(t *testing.T) {
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
 		Coverage: signal.CoverageView{
-			{Tool: coverageToolGoPackages, Status: assessmentresult.StatusAbsent},
-			{Tool: "dependency-cruiser", Status: assessmentresult.StatusAbsent},
+			{Tool: coverageToolGoPackages, Status: evidence.StatusAbsent},
+			{Tool: "dependency-cruiser", Status: evidence.StatusAbsent},
 		},
 	})
 	if result.Band != bandNAStr {
@@ -95,8 +96,8 @@ func TestCoverage_AbsentRecordSkipped(t *testing.T) {
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
 		Coverage: signal.CoverageView{
-			{Tool: coverageToolGoPackages, FilesSeen: 8, FilesApplicable: 10, Status: assessmentresult.StatusOK},
-			{Tool: "grimp", Status: assessmentresult.StatusAbsent},
+			{Tool: coverageToolGoPackages, FilesSeen: 8, FilesApplicable: 10, Status: evidence.StatusOK},
+			{Tool: "grimp", Status: evidence.StatusAbsent},
 		},
 	})
 	if !metricstest.ApproxEqual(result.Value, 0.8) {
@@ -113,10 +114,10 @@ func TestCoverage_AuxiliaryToolSkipped(t *testing.T) {
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
 		Coverage: signal.CoverageView{
-			{Tool: "dependency-cruiser", FilesSeen: 118, FilesApplicable: 118, Status: assessmentresult.StatusOK},
-			{Tool: "loc", FilesSeen: 131, FilesApplicable: 131, Status: assessmentresult.StatusOK},
+			{Tool: "dependency-cruiser", FilesSeen: 118, FilesApplicable: 118, Status: evidence.StatusOK},
+			{Tool: "loc", FilesSeen: 131, FilesApplicable: 131, Status: evidence.StatusOK},
 			// ast-grep aux: seen=136 but applicable=0 — must not inflate ratio
-			{Tool: "ast-grep", FilesSeen: 136, FilesApplicable: 0, Status: assessmentresult.StatusOK},
+			{Tool: "ast-grep", FilesSeen: 136, FilesApplicable: 0, Status: evidence.StatusOK},
 		},
 	})
 	if result.Value > 1.0 {
@@ -132,8 +133,8 @@ func TestCoverage_DeployUnitAuxiliarySkipped(t *testing.T) {
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
 		Coverage: signal.CoverageView{
-			{Tool: coverageToolGoPackages, FilesSeen: 10, FilesApplicable: 10, Status: assessmentresult.StatusOK},
-			{Tool: "deploy-unit", FilesSeen: 1, FilesApplicable: 0, Status: assessmentresult.StatusOK},
+			{Tool: coverageToolGoPackages, FilesSeen: 10, FilesApplicable: 10, Status: evidence.StatusOK},
+			{Tool: "deploy-unit", FilesSeen: 1, FilesApplicable: 0, Status: evidence.StatusOK},
 		},
 	})
 	if result.Value > 1.0 {

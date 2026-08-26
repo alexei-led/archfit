@@ -8,6 +8,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
 const (
@@ -50,11 +51,11 @@ func bcAdv(from, to, strength, distance, vol string, scoreVal int, scoreBand, se
 	}
 }
 
-func okCov(tool string) result.Coverage {
-	return result.Coverage{Tool: tool, Status: result.StatusOK}
+func okCov(tool string) evidence.Coverage {
+	return evidence.Coverage{Tool: tool, Status: evidence.StatusOK}
 }
 
-func richDiagnostic() result.Diagnostic {
+func richDiagnostic() result.Result {
 	d := result.New()
 	d.ConfigHash = "deadbeef"
 	d.Metrics = []result.MetricResult{
@@ -64,7 +65,7 @@ func richDiagnostic() result.Diagnostic {
 	d.Findings = []finding.Finding{
 		bcAdv("a", "b", "functional", "cross_module_same_owner", "medium", 5, "medium", "medium", 3),
 	}
-	d.ToolCoverage = []result.Coverage{
+	d.ToolCoverage = []evidence.Coverage{
 		okCov("go/packages"), okCov("scip"), okCov("ast-grep"), okCov("jscpd"),
 	}
 	return d
@@ -913,7 +914,7 @@ func TestCouplingBalance_ExternalEdgesExcluded(t *testing.T) {
 }
 
 func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
-	diagWithTSCoverage := func(unresolved, specifiersSeen int, status string) result.Diagnostic {
+	diagWithTSCoverage := func(unresolved, specifiersSeen int, status string) result.Result {
 		d := result.New()
 		d.Metrics = []result.MetricResult{metric("blast_radius", 3, "info", "high")}
 		d.ClassifiedEdges = &result.ClassifiedEdgeSummary{
@@ -921,14 +922,14 @@ func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
 			MeanBalance: 9.0,
 			BySeverity:  map[string]int{sevLow: 50},
 		}
-		d.ToolCoverage = []result.Coverage{
+		d.ToolCoverage = []evidence.Coverage{
 			{Tool: toolDepCruiser, Status: status, FilesSeen: 10, SpecifiersSeen: specifiersSeen, Unresolved: unresolved},
 		}
 		return d
 	}
 
 	t.Run("unresolved ratio above ceiling caps confidence to medium", func(t *testing.T) {
-		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 100, result.StatusPartial))) // 20%
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 100, evidence.StatusPartial))) // 20%
 		if cb.Confidence != ConfidenceMedium {
 			t.Errorf("confidence = %q, want medium", cb.Confidence)
 		}
@@ -947,7 +948,7 @@ func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
 	// ceiling) while 5 over the 10 FilesSeen would be 50% — a FilesSeen
 	// denominator would cap here and contradict the disclosed specifier ratio.
 	t.Run("unresolved ratio within ceiling leaves confidence high", func(t *testing.T) {
-		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(5, 100, result.StatusPartial))) // 5%
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(5, 100, evidence.StatusPartial))) // 5%
 		if cb.Confidence != ConfidenceHigh {
 			t.Errorf("confidence = %q, want high", cb.Confidence)
 		}
@@ -958,21 +959,21 @@ func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
 	// not trip the cap — this pins that the boundary itself is inside the
 	// tolerated range, not just "below" it.
 	t.Run("unresolved ratio exactly at the ceiling leaves confidence high", func(t *testing.T) {
-		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(10, 100, result.StatusPartial))) // 10%
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(10, 100, evidence.StatusPartial))) // 10%
 		if cb.Confidence != ConfidenceHigh {
 			t.Errorf("confidence = %q, want high (ratio == ceiling must not trip the strict > cap)", cb.Confidence)
 		}
 	})
 
 	t.Run("ok status never triggers the cap regardless of ratio", func(t *testing.T) {
-		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 100, result.StatusOK)))
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 100, evidence.StatusOK)))
 		if cb.Confidence != ConfidenceHigh {
 			t.Errorf("confidence = %q, want high (status ok, not partial)", cb.Confidence)
 		}
 	})
 
 	t.Run("specifiers untracked (0) abstains rather than cap on a proxy ratio", func(t *testing.T) {
-		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 0, result.StatusPartial)))
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 0, evidence.StatusPartial)))
 		if cb.Confidence != ConfidenceHigh {
 			t.Errorf("confidence = %q, want high (SpecifiersSeen 0 = untracked, no cap)", cb.Confidence)
 		}
@@ -990,9 +991,9 @@ func TestSynthesize_ConfidenceCapsNeverStack(t *testing.T) {
 		MeanBalance: 9.0,
 		BySeverity:  map[string]int{sevLow: 50},
 	}
-	d.ToolCoverage = []result.Coverage{
-		{Tool: "cargo-modules", Status: result.StatusPartial},
-		{Tool: toolDepCruiser, Status: result.StatusPartial, FilesSeen: 10, SpecifiersSeen: 100, Unresolved: 20},
+	d.ToolCoverage = []evidence.Coverage{
+		{Tool: "cargo-modules", Status: evidence.StatusPartial},
+		{Tool: toolDepCruiser, Status: evidence.StatusPartial, FilesSeen: 10, SpecifiersSeen: 100, Unresolved: 20},
 	}
 
 	cb := couplingBalanceDim(t, Synthesize(d))

@@ -29,7 +29,7 @@ func TestBuildExplainPrompt_IncludesDistanceBasis(t *testing.T) {
 			"distance_basis":  "ownership",
 		},
 	}
-	prompt := buildExplainPrompt(f, result.Diagnostic{})
+	prompt := buildExplainPrompt(f, result.Result{})
 	if !strings.Contains(prompt, "distance_basis: ownership") {
 		t.Errorf("prompt missing distance_basis:\n%s", prompt)
 	}
@@ -62,7 +62,7 @@ func TestBuildExplainPrompt_DegenerateOwnerQualifier(t *testing.T) {
 			"distance_basis":  distanceBasisCodeStructure,
 		},
 	}
-	prompt := buildExplainPrompt(f, result.Diagnostic{})
+	prompt := buildExplainPrompt(f, result.Result{})
 	if !strings.Contains(prompt, "distance_basis: code_structure") {
 		t.Errorf("prompt missing distance_basis:\n%s", prompt)
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 
 	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
 	signal "github.com/alexei-led/archfit/internal/assessment/signals"
@@ -30,7 +31,7 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) assessmentresult.Metric
 		// An "absent" record means the extractor did not run or found nothing of
 		// its language (e.g. go/packages on a non-Go repo). It is not evidence of
 		// coverage, so it must not count toward the totals.
-		if c.Status == assessmentresult.StatusAbsent {
+		if c.Status == evidence.StatusAbsent {
 			continue
 		}
 		// Auxiliary tools (e.g. ast-grep syntax pass) report FilesSeen > 0 but

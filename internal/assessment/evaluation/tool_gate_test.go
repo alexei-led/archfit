@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
 // Coverage-gap gate postures and analyzer names used by the gate table. They
@@ -21,9 +22,9 @@ func TestApplyToolGate(t *testing.T) {
 	t.Parallel()
 	t.Run("require-tools raises all gaps to fail", func(t *testing.T) {
 		t.Parallel()
-		diag := result.Diagnostic{
+		diag := result.Result{
 			Verdict: result.VerdictPass,
-			CoverageGaps: []result.CoverageGap{
+			CoverageGaps: []evidence.CoverageGap{
 				{Tool: toolGrimp, Gate: gateWarn},
 				{Tool: toolJscpd, Gate: gateWarn},
 			},
@@ -43,9 +44,9 @@ func TestApplyToolGate(t *testing.T) {
 
 	t.Run("explicit fail gate trips without the flag", func(t *testing.T) {
 		t.Parallel()
-		diag := result.Diagnostic{
+		diag := result.Result{
 			Verdict: result.VerdictPass,
-			CoverageGaps: []result.CoverageGap{
+			CoverageGaps: []evidence.CoverageGap{
 				{Tool: toolGrimp, Gate: gateWarn},
 				{Tool: toolGoPackages, Gate: gateFail},
 			},
@@ -63,9 +64,9 @@ func TestApplyToolGate(t *testing.T) {
 
 	t.Run("all warn, no flag, does not trip", func(t *testing.T) {
 		t.Parallel()
-		diag := result.Diagnostic{
+		diag := result.Result{
 			Verdict: result.VerdictPass,
-			CoverageGaps: []result.CoverageGap{
+			CoverageGaps: []evidence.CoverageGap{
 				{Tool: toolGrimp, Gate: gateWarn},
 			},
 		}

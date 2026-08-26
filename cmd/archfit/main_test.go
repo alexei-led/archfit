@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -800,8 +801,8 @@ func TestRun_Analyze_ScipDisabledCoverageRow(t *testing.T) {
 	for _, c := range out.ToolCoverage {
 		if c.Tool == toolScip {
 			found = true
-			if c.Status != string(result.StatusDisabled) {
-				t.Errorf("scip coverage status = %q, want %q", c.Status, result.StatusDisabled)
+			if c.Status != string(evidence.StatusDisabled) {
+				t.Errorf("scip coverage status = %q, want %q", c.Status, evidence.StatusDisabled)
 			}
 			break
 		}
@@ -877,8 +878,8 @@ modules:
 	for _, c := range out.ToolCoverage {
 		if c.Tool == toolDeployUnit {
 			deployCoverageFound = true
-			if c.Status != string(result.StatusOK) {
-				t.Errorf("deploy-unit coverage status = %q, want %q", c.Status, result.StatusOK)
+			if c.Status != string(evidence.StatusOK) {
+				t.Errorf("deploy-unit coverage status = %q, want %q", c.Status, evidence.StatusOK)
 			}
 			if c.FilesSeen == 0 {
 				t.Errorf("deploy-unit files_seen = 0, want detected evidence")
@@ -951,7 +952,7 @@ file_class:
 	for _, c := range out.ToolCoverage {
 		if c.Tool == toolLoc {
 			found = true
-			if c.Status != string(result.StatusOK) {
+			if c.Status != string(evidence.StatusOK) {
 				t.Errorf("loc coverage status = %q, want ok", c.Status)
 			}
 			break

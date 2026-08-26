@@ -76,7 +76,7 @@ func TestRun_Analyze_CouplingGate_MinBandTrips(t *testing.T) {
 		t.Errorf("stderr carries no coupling-gate trip reason:\n%s", errBuf.String())
 	}
 
-	var diag result.Diagnostic
+	var diag result.Result
 	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
 		t.Fatalf("unmarshal JSON output: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestRun_Analyze_CouplingGate_OffByDefault(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("check without coupling.gate: exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
-	var diag result.Diagnostic
+	var diag result.Result
 	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
 		t.Fatalf("unmarshal JSON output: %v", err)
 	}
@@ -329,7 +329,7 @@ func TestRun_Analyze_CouplingGate_TripWithoutAdvisories(t *testing.T) {
 		t.Fatalf("check --no-advisories with tripped coupling gate: exit = %d, want 1\noutput:\n%s", code, buf.String())
 	}
 
-	var diag result.Diagnostic
+	var diag result.Result
 	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
 		t.Fatalf("unmarshal JSON output: %v", err)
 	}
@@ -414,7 +414,7 @@ func TestRun_Baseline_SkipsSyntheticCouplingGateFinding(t *testing.T) {
 	if code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh, flagNoAdvisories}, &checkBuf); code != 1 {
 		t.Fatalf("check --no-advisories: exit = %d, want 1 (tripped coupling gate)\noutput:\n%s", code, checkBuf.String())
 	}
-	var diag result.Diagnostic
+	var diag result.Result
 	if err := json.Unmarshal(checkBuf.Bytes(), &diag); err != nil {
 		t.Fatalf("unmarshal check JSON: %v", err)
 	}
