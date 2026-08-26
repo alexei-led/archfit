@@ -833,7 +833,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 	t.Run("empty config and no tool errors returns nil", func(t *testing.T) {
 		t.Parallel()
 		cfg := config.Config{Version: 1}
-		if got := acquisition.BuildConfigWarnings(cfg.RunOptions().LintWarnings, nil); got != nil {
+		if got := acquisition.BuildConfigWarnings(cfg.RunOptions().Lint(cfg.Modules), nil); got != nil {
 			t.Errorf("got %v, want nil", got)
 		}
 	})
@@ -848,7 +848,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 			},
 		}
 		toolErrs := []string{"jscpd: exit status 1"}
-		got := acquisition.BuildConfigWarnings(cfg.RunOptions().LintWarnings, toolErrs)
+		got := acquisition.BuildConfigWarnings(cfg.RunOptions().Lint(cfg.Modules), toolErrs)
 		if len(got) == 0 {
 			t.Fatal("want at least one warning, got none")
 		}
@@ -868,7 +868,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 		t.Parallel()
 		cfg := config.Config{Version: 1}
 		toolErrs := []string{"jscpd: not found"}
-		got := acquisition.BuildConfigWarnings(cfg.RunOptions().LintWarnings, toolErrs)
+		got := acquisition.BuildConfigWarnings(cfg.RunOptions().Lint(cfg.Modules), toolErrs)
 		if len(got) != 1 || got[0] != "jscpd: not found" {
 			t.Errorf("got %v, want [jscpd: not found]", got)
 		}

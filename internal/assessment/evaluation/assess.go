@@ -73,6 +73,11 @@ type AssessInput struct {
 	MarkedCoverage          []modevidence.Coverage
 	CoverageGaps            []modevidence.CoverageGap
 	VolatilityCorroboration *modevidence.VolatilityCorroboration
+	// DeployUnitDetectedModules counts the modules deploy-unit DETECTION mapped,
+	// which is not len(Policy.DeployUnits): the snapshot is seeded from declared
+	// units and resolution only fills gaps, so a module that both declares a unit
+	// and was detected appears in one count and not the other.
+	DeployUnitDetectedModules int
 }
 
 // Assessed is the pre-score assessment outcome: the diagnostic, the relationship
@@ -98,7 +103,7 @@ func Assess(in AssessInput) (Assessed, error) {
 	}
 	diag, captured := project(in, ruleset, newMetricset(in.Policy.Gates.Metrics))
 	diag.OwnerSource = in.OwnerSource
-	diag.DistanceContext = buildDistanceContext(diag, in.Policy, len(in.Policy.DeployUnits))
+	diag.DistanceContext = buildDistanceContext(diag, in.Policy, in.DeployUnitDetectedModules)
 	diag.VolatilityCorroboration = in.VolatilityCorroboration
 	return Assessed{
 		Diagnostic: diag,
@@ -158,6 +163,13 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 		knownFiles[file] = struct{}{}
 	}
 	gate := in.Policy.Gates.Coupling
+	// Stamp the acquisition-resolved coverage BEFORE synthesis. The scorecard's
+	// confidence caps read ToolCoverage — the cargo-modules partial-module-graph
+	// row only ever exists on the marked copy, so scoring off the raw rows makes
+	// that cap dead and reports high confidence over an incomplete Rust graph.
+	// Rule and metric evaluation already ran in Assess against the raw rows, so
+	// the marked copy cannot move a measured metric.
+	diag.ToolCoverage = in.MarkedCoverage
 	finalized := finalize(diag, FinalizeInput{
 		Gate: gate, Baseline: in.Anchor, RuleTypes: ruleTypes, ModulePublic: modulePublic,
 		ValidationCommands: []string{validationCommand(in.ConfigSource, in.ScanRoot)},
@@ -165,7 +177,6 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 		ModuleRootDirs: policy.ModuleRootDirs(in.Policy.Topology.Modules),
 		OnDisk:         scope.OnDiskWithin(in.Root),
 	})
-	diag.ToolCoverage = in.MarkedCoverage
 	diag.CoverageGaps = in.CoverageGaps
 	diag.ConfigWarnings = in.ConfigWarnings
 	return Scored{

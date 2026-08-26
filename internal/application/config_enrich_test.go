@@ -37,7 +37,7 @@ func (f *configEnrichFake) ValidateConfigEnrichJudgment(context.Context, ConfigE
 	return f.validateErr
 }
 func (f *configEnrichFake) DraftConfigEnrich(_ context.Context, req ConfigEnrichJudgmentRequest) ([]ConfigEnrichDraft, error) {
-	f.order = append(f.order, "judge")
+	f.order = append(f.order, workflowStageJudge)
 	if len(req.Modules) > 1 && req.Modules[0].Name > req.Modules[1].Name {
 		return nil, errors.New("targets not sorted")
 	}
@@ -97,7 +97,7 @@ func TestConfigEnrichDraftSelectsTargetsAndPreservesApprovedMetadata(t *testing.
 	if out.Action != ConfigEnrichDraftsWritten || out.Count != 2 {
 		t.Fatalf("out = %+v", out)
 	}
-	if !reflect.DeepEqual(f.order, []string{workflowConfig, "validate-judge", "judge", configWorkflowLoadDrafts, "save-drafts"}) {
+	if !reflect.DeepEqual(f.order, []string{workflowConfig, "validate-judge", workflowStageJudge, configWorkflowLoadDrafts, "save-drafts"}) {
 		t.Fatalf("order = %v", f.order)
 	}
 	if len(f.saved.Drafts) != 2 || f.saved.Drafts[0].Value != "human-owner" || f.saved.Drafts[0].Confidence != EnrichmentLabelConfidenceHigh || f.saved.Drafts[0].EvidenceRefs[0] != "doc:approved" {

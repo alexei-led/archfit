@@ -197,11 +197,12 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 			ConfigSource: configPath, BundleDir: bundleDir, ScanRoot: root,
 			PinnedLabels: pinned, Policy: runPolicy,
 			OwnerSource: ownerSource, OwnerWarnings: ownerWarnings,
-			ConfigWarnings:          configWarnings(s.Options.LintWarnings, warnings, runPolicy.Topology.Modules, pinned, configPath),
-			MarkedCoverage:          marked,
-			CoverageGaps:            buildCoverageGaps(marked, s.Options.Coverage, resolved.Root),
-			CrateRootDirs:           crateRootDirs,
-			VolatilityCorroboration: buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner),
+			ConfigWarnings:            configWarnings(s.lint(runPolicy.Topology.Modules), warnings, runPolicy.Topology.Modules, pinned, configPath),
+			MarkedCoverage:            marked,
+			CoverageGaps:              buildCoverageGaps(marked, s.Options.Coverage, resolved.Root),
+			CrateRootDirs:             crateRootDirs,
+			VolatilityCorroboration:   buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner),
+			DeployUnitDetectedModules: len(collected.DeployUnitsByModule),
 		},
 	}, nil
 }

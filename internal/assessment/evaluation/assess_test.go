@@ -224,3 +224,59 @@ func TestAssessDisclosesAnUnscoredGraph(t *testing.T) {
 		t.Fatalf("warnings = %q, want an actionable unscored-graph disclosure", joined)
 	}
 }
+
+// TestScoreCapsConfidenceOnAPartialRustModuleGraph pins the wiring the
+// cargo-modules confidence cap depends on: the row exists only on the marked
+// coverage, so scoring must stamp it BEFORE the scorecard is synthesised.
+// Synthesising off the raw rows leaves the cap permanently dead and reports high
+// confidence over a knowingly incomplete module graph.
+func TestScoreCapsConfidenceOnAPartialRustModuleGraph(t *testing.T) {
+	t.Parallel()
+	in := assessInput()
+	// A MEASURED coupling_balance: the cap early-returns on the n/a band, so an
+	// unmeasured fixture would pass whether or not the row reached synthesis.
+	in.Relationships.Evidence.ClassifiedEdges = &relationship.ClassifiedEdgeSummary{
+		Total: 50, Scored: 50, MeanBalance: 9.0, ConnectedModules: 4,
+		BySeverity: map[string]int{"low": 50},
+	}
+	in.MarkedCoverage = append(in.MarkedCoverage, modevidence.Coverage{
+		Tool: "cargo-modules", Status: modevidence.StatusPartial, Reason: "2 of 5 crates failed",
+	})
+	assessed, err := evaluation.Assess(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diag := assessed.Diagnostic
+	scored := evaluation.Score(&diag, evaluation.ScoreInput{
+		Policy: in.Policy, Facts: in.Facts, ConfigSource: assessCfgPath, ScanRoot: assessRoot,
+		Root: assessRoot, MarkedCoverage: in.MarkedCoverage, CoverageGaps: in.CoverageGaps,
+	})
+	if len(scored.Score.Dimensions) == 0 {
+		t.Fatal("no dimensions synthesised")
+	}
+	dim := scored.Score.Dimensions[0]
+	if dim.Confidence == "high" {
+		t.Errorf("confidence = %q, want it capped below high on a partial module graph", dim.Confidence)
+	}
+	if !strings.Contains(strings.Join(dim.Evidence, " "), "cargo-modules") {
+		t.Errorf("evidence = %v, want the partial-module-graph disclosure", dim.Evidence)
+	}
+}
+
+// TestAssessReportsTheDetectedDeployUnitCount pins that distance context reports
+// what deploy-unit DETECTION mapped, not how many units the policy snapshot
+// carries. The snapshot is seeded from declared units and resolution only fills
+// gaps, so reading its length reports a different population.
+func TestAssessReportsTheDetectedDeployUnitCount(t *testing.T) {
+	t.Parallel()
+	in := assessInput()
+	in.DeployUnitDetectedModules = 2
+	got, err := evaluation.Assess(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Diagnostic.DistanceContext.DeployUnitDetectedModules != 2 {
+		t.Errorf("deploy_unit_detected_modules = %d, want the detected count 2",
+			got.Diagnostic.DistanceContext.DeployUnitDetectedModules)
+	}
+}

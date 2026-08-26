@@ -83,12 +83,19 @@ func (c Config) RunOptions() acquisition.RunOptions {
 	acquisitionOpts.Exclusions = exclusions
 	scopeConfig := c.ForScope()
 	scopeConfig.Exclusions = exclusions
-	lint := c.Lint()
-	lintWarnings := make([]string, 0, len(lint))
+	return acquisition.RunOptions{Exclusions: exclusions, Scope: scopeConfig, Extractors: c.ExtractConfigs(), Acquisition: acquisitionOpts, Syntax: c.ForSyntax(), Patterns: c.ForPatterns(), Lint: lintWarningStrings, Coverage: c.CoverageOptions()}
+}
+
+// lintWarningStrings renders LintModules for a resolved module set. Acquisition
+// calls it after ownership resolution, so a module whose owner CODEOWNERS filled
+// no longer reports as omitting one.
+func lintWarningStrings(modules map[string]policy.ModuleDef) []string {
+	lint := LintModules(modules)
+	out := make([]string, 0, len(lint))
 	for _, warning := range lint {
-		lintWarnings = append(lintWarnings, warning.String())
+		out = append(out, warning.String())
 	}
-	return acquisition.RunOptions{Exclusions: exclusions, Scope: scopeConfig, Extractors: c.ExtractConfigs(), Acquisition: acquisitionOpts, Syntax: c.ForSyntax(), Patterns: c.ForPatterns(), LintWarnings: lintWarnings, Coverage: c.CoverageOptions()}
+	return out
 }
 
 // ExtractConfigs projects config into registry extractor configs.

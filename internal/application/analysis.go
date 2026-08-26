@@ -144,6 +144,9 @@ type AnalysisContext struct {
 	// VolatilityCorroboration is report-only git-history evidence. It never
 	// changes a score, a finding, or a verdict.
 	VolatilityCorroboration *modevidence.VolatilityCorroboration
+	// DeployUnitDetectedModules counts the modules deploy-unit detection mapped.
+	// It is report-only distance context and is NOT the declared-unit count.
+	DeployUnitDetectedModules int
 }
 
 // Acquired pairs the neutral evidence of one run with the context it was
@@ -273,6 +276,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		PrimaryExtractorTools: runCtx.PrimaryExtractorTools, OwnerSource: runCtx.OwnerSource,
 		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
 		CoverageGaps: runCtx.CoverageGaps, VolatilityCorroboration: runCtx.VolatilityCorroboration,
+		DeployUnitDetectedModules: runCtx.DeployUnitDetectedModules,
 	})
 	if err != nil {
 		return AnalysisResult{}, err

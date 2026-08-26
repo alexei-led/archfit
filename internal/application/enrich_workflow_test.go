@@ -21,6 +21,11 @@ const (
 	workflowFileA  = "a/a.go"
 	workflowFileB  = "b/b.go"
 	workflowFileC  = "c/c.go"
+
+	// Stage names the fixtures append to the recorded call order.
+	workflowStageCapture = "capture"
+	workflowStageJudge   = "judge"
+	workflowStageLoad    = "load"
 )
 
 // workflowEvidence is a real evidence stage over a two-file fixture graph: one
@@ -35,7 +40,7 @@ type workflowEvidence struct {
 }
 
 func (e workflowEvidence) Acquire(context.Context, AnalysisRequest) (Acquired, error) {
-	*e.order = append(*e.order, "capture")
+	*e.order = append(*e.order, workflowStageCapture)
 	modules := map[string]policy.ModuleDef{
 		workflowModA: {Paths: []string{"a/**"}, Subdomain: "core"},
 		workflowModB: {Paths: []string{"b/**"}, Subdomain: subdomainSupporting},
@@ -78,7 +83,7 @@ type workflowStore struct {
 }
 
 func (s *workflowStore) Load(context.Context, string) ([]EnrichmentLabel, error) {
-	*s.order = append(*s.order, "load")
+	*s.order = append(*s.order, workflowStageLoad)
 	return s.labels, nil
 }
 
@@ -94,7 +99,7 @@ type workflowJudge struct {
 }
 
 func (j workflowJudge) Judge(context.Context, EnrichmentJudgmentRequest) ([]EnrichmentLabel, error) {
-	*j.order = append(*j.order, "judge")
+	*j.order = append(*j.order, workflowStageJudge)
 	return j.drafts, nil
 }
 
@@ -127,9 +132,9 @@ func freshHashFor(t *testing.T, ev workflowEvidence) string {
 
 func TestEnrichServiceWorkflowOrderPreservesApprovedAndStampsEvidence(t *testing.T) {
 	order := []string{}
-	ev := workflowEvidence{order: &order, hint: "functional"}
+	ev := workflowEvidence{order: &order, hint: mergeFunctional}
 	store := &workflowStore{order: &order, labels: []EnrichmentLabel{{
-		From: workflowModA, To: workflowModB, Strength: "contract",
+		From: workflowModA, To: workflowModB, Strength: mergeContract,
 		Status: EnrichmentLabelStatusApproved, EvidenceHash: freshHashFor(t, ev),
 	}}}
 	// The judge proposes a draft for BOTH pairs; only the un-approved one may land.
@@ -143,7 +148,7 @@ func TestEnrichServiceWorkflowOrderPreservesApprovedAndStampsEvidence(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(order, []string{"capture", "load", "judge", "save"}) {
+	if !reflect.DeepEqual(order, []string{workflowStageCapture, workflowStageLoad, workflowStageJudge, "save"}) {
 		t.Fatalf("order = %v", order)
 	}
 	if out.Drafts != 2 {
@@ -153,7 +158,7 @@ func TestEnrichServiceWorkflowOrderPreservesApprovedAndStampsEvidence(t *testing
 	for _, l := range store.saved {
 		saved[EnrichmentPairKey(l.From, l.To)] = l
 	}
-	if got := saved[EnrichmentPairKey(workflowModA, workflowModB)]; got.Strength != "contract" || got.Status != EnrichmentLabelStatusApproved {
+	if got := saved[EnrichmentPairKey(workflowModA, workflowModB)]; got.Strength != mergeContract || got.Status != EnrichmentLabelStatusApproved {
 		t.Fatalf("a fresh approved label was clobbered by a draft: %+v", got)
 	}
 	if got := saved[EnrichmentPairKey(workflowModA, workflowModC)]; got.Strength != "model" || got.EvidenceHash == "" {
@@ -169,7 +174,7 @@ func TestEnrichServiceNoCandidateSkipsJudgeAndSave(t *testing.T) {
 	if err != nil || !out.NoCandidates {
 		t.Fatalf("out=%+v err=%v", out, err)
 	}
-	if !reflect.DeepEqual(order, []string{"capture", "load"}) || len(store.saved) != 0 {
+	if !reflect.DeepEqual(order, []string{workflowStageCapture, workflowStageLoad}) || len(store.saved) != 0 {
 		t.Fatalf("order=%v saved=%v", order, store.saved)
 	}
 }
@@ -178,7 +183,7 @@ func TestEnrichServiceSaveError(t *testing.T) {
 	order := []string{}
 	store := &workflowStore{order: &order, saveErr: errors.New("disk full")}
 	judge := workflowJudge{order: &order, drafts: []EnrichmentLabel{{From: workflowModA, To: workflowModB}}}
-	_, err := workflowService(workflowEvidence{order: &order, hint: "functional"}, store, judge).
+	_, err := workflowService(workflowEvidence{order: &order, hint: mergeFunctional}, store, judge).
 		Execute(context.Background(), EnrichmentRequest{ConfigPath: workflowConfig, LabelsPath: workflowLabels})
 	if err == nil || !errors.Is(err, store.saveErr) {
 		t.Fatalf("err=%v", err)
@@ -198,5 +203,39 @@ func TestEnrichServiceAbstainedSelection(t *testing.T) {
 	}
 	if out.Candidates != 2 || out.SelectedEdges != 2 {
 		t.Fatalf("abstained selection = %d pair(s), %d edge(s); want both unknown-strength pairs", out.Candidates, out.SelectedEdges)
+	}
+}
+
+// TestEnrichServiceZeroDraftsStillMergesApprovedLabels pins the merge path when
+// the judge keeps no draft — a literal `[]` answer, or every proposal rejected
+// as unrequested or invalid. The evidence backfill must still run so approved
+// labels not selected this run are re-hashed against current evidence; the
+// per-draft hash map is nil in exactly that case, so writing to it unguarded
+// panicked instead of saving.
+func TestEnrichServiceZeroDraftsStillMergesApprovedLabels(t *testing.T) {
+	order := []string{}
+	ev := workflowEvidence{order: &order, hint: mergeFunctional}
+	approved := EnrichmentLabel{
+		From: workflowModA, To: workflowModB, Strength: mergeContract,
+		Status: EnrichmentLabelStatusApproved, EvidenceHash: freshHashFor(t, ev),
+	}
+	store := &workflowStore{order: &order, labels: []EnrichmentLabel{approved}}
+
+	out, err := workflowService(ev, store, workflowJudge{order: &order}).
+		Execute(context.Background(), EnrichmentRequest{ConfigPath: workflowConfig, LabelsPath: workflowLabels})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Drafts != 0 {
+		t.Fatalf("drafts = %d, want 0", out.Drafts)
+	}
+	if !reflect.DeepEqual(order, []string{workflowStageCapture, workflowStageLoad, workflowStageJudge, "save"}) {
+		t.Fatalf("order = %v, want the merged labels still written", order)
+	}
+	if len(store.saved) != 1 || store.saved[0].Status != EnrichmentLabelStatusApproved {
+		t.Fatalf("saved = %+v, want the approved label kept", store.saved)
+	}
+	if out.ApprovedKept != 1 {
+		t.Fatalf("approvedKept = %d, want 1", out.ApprovedKept)
 	}
 }

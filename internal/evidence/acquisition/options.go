@@ -5,6 +5,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/acquire"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/pattern"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
@@ -39,12 +40,17 @@ type CoverageOptions struct {
 // Policy declarations are deliberately absent; they travel only in the
 // policy snapshot.
 type RunOptions struct {
-	Exclusions   []string
-	Scope        scope.Config
-	Extractors   registry.Configs
-	Acquisition  acquire.Options
-	Syntax       evidenceports.SyntaxConfig
-	Patterns     pattern.Config
-	LintWarnings []string
-	Coverage     CoverageOptions
+	Exclusions  []string
+	Scope       scope.Config
+	Extractors  registry.Configs
+	Acquisition acquire.Options
+	Syntax      evidenceports.SyntaxConfig
+	Patterns    pattern.Config
+	// Lint reports the config-quality warnings for a module set. It is a
+	// function, not a precomputed slice, because it must run against the run's
+	// RESOLVED modules: a module whose owner CODEOWNERS filled is not missing an
+	// owner, and a warning frozen at wiring time contradicts the owner_source
+	// reported in the same document.
+	Lint     func(map[string]policy.ModuleDef) []string
+	Coverage CoverageOptions
 }

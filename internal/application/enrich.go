@@ -317,7 +317,12 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 		drafts[i].EvidenceHash = draftEvidence[EnrichmentPairKey(drafts[i].From, drafts[i].To)]
 	}
 	// Keep the first evidence set so approved labels not selected this run are
-	// still evaluated against their current hash during merge.
+	// still evaluated against their current hash during merge. PairEvidence
+	// returns nil for an empty want set, which is the steady state when the
+	// judge kept zero drafts — the merge must still run, so materialise the map.
+	if draftEvidence == nil {
+		draftEvidence = make(map[string]string, len(evidence))
+	}
 	for key, hash := range evidence {
 		if _, ok := draftEvidence[key]; !ok {
 			draftEvidence[key] = hash

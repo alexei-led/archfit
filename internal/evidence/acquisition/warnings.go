@@ -13,8 +13,17 @@ import (
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
 
+// lint reports the config-quality warnings for the run's resolved modules. A
+// Service built without the projection (tests) lints nothing.
+func (s *Service) lint(modules map[string]policy.ModuleDef) []string {
+	if s.Options.Lint == nil {
+		return nil
+	}
+	return s.Options.Lint(modules)
+}
+
 // buildConfigWarnings assembles the advisory ConfigWarnings block: under-specified
-// modules from cfg.Lint() (deterministic order) followed by any swallowed
+// modules from the config lint (deterministic order) followed by any swallowed
 // optional-tool errors. Returns nil when both are empty.
 func buildConfigWarnings(lint []string, toolWarnings []string) []string {
 	out := make([]string, 0, len(lint)+len(toolWarnings))

@@ -53,9 +53,17 @@ func (w LintWarning) String() string {
 // nothing. Results are returned in deterministic module order; the Missing slice
 // within each is in fixed order. Lint is advisory and never gates.
 func (c Config) Lint() []LintWarning {
+	return LintModules(c.Modules)
+}
+
+// LintModules is Lint over an arbitrary module set. Acquisition projects it so
+// the warnings are computed against the run's RESOLVED modules: ownership
+// resolution (CODEOWNERS, git history) runs after config decode, and a warning
+// frozen before it would claim a module omits an owner the run went on to fill.
+func LintModules(modules map[string]policy.ModuleDef) []LintWarning {
 	var out []LintWarning
-	for _, name := range sortedKeys(c.Modules) {
-		def := c.Modules[name]
+	for _, name := range sortedKeys(modules) {
+		def := modules[name]
 		if len(def.Paths) == 0 {
 			continue
 		}
