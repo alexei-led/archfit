@@ -546,6 +546,15 @@ rules:
     from: internal/output/**
     to: internal/assessment/score/**
     gate: fail
+  # The architecture decision is made from explicit hard-gate results and
+  # finding classifications, never from an averaged repository scalar. The state
+  # package cannot reach the scorer at all, so "the aggregator is metric-blind"
+  # is a structural fact rather than a review convention.
+  - id: assessment_no_score_decision
+    type: forbidden_dependency
+    from: internal/assessment/state/**
+    to: internal/assessment/score/**
+    gate: fail
   - id: output_no_decision
     type: forbidden_dependency
     from: internal/output/**

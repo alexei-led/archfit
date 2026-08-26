@@ -3,6 +3,7 @@ package result
 
 import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/assessment/state"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
@@ -71,6 +72,12 @@ type Result struct {
 	GitFindingDelta           *GitFindingDelta                    `json:"git_finding_delta,omitempty"`
 	Delta                     *DeltaReport                        `json:"delta,omitempty"`
 	Summary                   Summary                             `json:"summary"`
+	// State is the architecture-state result. It rides the diagnostic rather
+	// than a parallel return value so every stage that already carries the
+	// diagnostic carries the state too. It is `json:"-"` because the diagnostic
+	// schema is frozen: the state reaches the wire through its own contract in
+	// the report projection, not by widening this one.
+	State state.Architecture `json:"-"`
 }
 
 // New returns an empty assessment result with deterministic collections.
@@ -84,5 +91,6 @@ func New() Result {
 		AgentTasks:     []AgentTask{},
 		AdvisoryTasks:  []AdvisoryTask{},
 		ToolCoverage:   []evidence.Coverage{},
+		State:          state.New(),
 	}
 }

@@ -33,4 +33,5 @@ var (
 	HealthWarnings          = healthWarnings
 	ValidationCommand       = validationCommand
 	ApplyToolGate           = applyToolGate
+	BuildState              = buildState
 )
