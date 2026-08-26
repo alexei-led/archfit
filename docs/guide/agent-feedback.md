@@ -41,12 +41,14 @@ Every ACTIVE gate finding produces one structured repair task:
 Goals are deterministic templates per rule type; constraints join the rule's
 configured constraint text, allowed alternatives, and the target module's
 public globs; validation is the exact `archfit check` command that must pass.
-`agent_tasks[]` is gate-only. Advisory findings stay out of this channel unless
-a tripped
-[`coupling.gate`](configuration-reference.md#couplinggate) promotes active
-`bc/imbalanced_coupling` advisories to gate kind; then the edges behind the
-failing score arrive in `agent_tasks[]` with file evidence
-(`bc/duplicated_knowledge` stays advisory — it never gates).
+`agent_tasks[]` is gate-only, and advisory findings stay out of this channel.
+Advisory promotion is gone: a scalar gate had to borrow findings to point at,
+whereas
+[`coupling.gate.distributed_monolith`](configuration-reference.md#couplinggate)
+names its own seams — a blocked run emits one `bc/coupling_gate` gate finding
+PER newly introduced seam, keyed `coupling-gate/<seamID>` and carrying the module
+pair. `bc/imbalanced_coupling` and `bc/duplicated_knowledge` are diagnostics and
+never gate.
 
 **`files[]` existence guarantee.** Every entry is a repo-relative path that
 exists on disk — this is the field an agent trusts blindly to open the right

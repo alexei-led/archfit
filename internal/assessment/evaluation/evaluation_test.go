@@ -310,7 +310,7 @@ func TestEvaluateAdvisoryVisibilityAndWarnVerdict(t *testing.T) {
 		wantVerdict       result.Verdict
 	}{
 		{name: "advisories excluded", includeAdvisories: false, wantVisible: 0, wantWarnings: 0, wantVerdict: result.VerdictPass},
-		{name: "advisories included warn", includeAdvisories: true, wantVisible: 1, wantWarnings: 1, wantVerdict: result.VerdictPass},
+		{name: "advisories included, counted as a warning, verdict stays pass", includeAdvisories: true, wantVisible: 1, wantWarnings: 1, wantVerdict: result.VerdictPass},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

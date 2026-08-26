@@ -139,9 +139,10 @@ larger than a review fix.
 # Deferred from the architecture-state-reporting review
 
 Date: 2026-08-26
-Source: code review of `docs/plans/architecture-state-reporting.md`. Everything
-mechanical that review found is fixed on the branch. What follows is real, cited,
-and larger than a review fix.
+Source: code review of `docs/plans/architecture-state-reporting.md`. Every
+behavioral defect and every gate that could not fail is fixed on the branch. What
+follows is real, cited, and either larger than a review fix or a test gap that
+guards no known live defect.
 
 ## A. The comparison model is implemented only against the stored baseline
 
@@ -222,6 +223,37 @@ Each is a real gap, none guards a known live defect:
 - `internal/assessment/evaluation/advisories.go` `groupBCAdvisories` — no test
   feeds two candidates differing only in `Status`, which is the mechanic behind
   the baseline self-referentiality bug CLAUDE.md documents.
+- `internal/relationship/analysis/seams.go` `roleExpectation` — only
+  `RoleCompositionRoot` and the empty default run. A swapped mapping
+  (adapter→core) publishes the wrong `role_expectation` on every seam of that
+  role and nothing fails. Extend the existing role test into a table over all
+  five `policy.Role` values.
+- `internal/assessment/evaluation/dimensions.go` `intentDimension` — the fixture
+  at `dimensions_test.go` declares an `off_rule` but no test asserts the
+  resulting `Coverage{Observed: 1, Total: 2}` or the "conformance to 1 declared
+  rules" unknown fact. Counting an off rule as evaluated would claim conformance
+  to a boundary nobody checks.
+- `internal/testutil/report/convert.go` `reporttest.Findings` always allocates
+  an empty slice, while production `projectFindings`
+  (`internal/application/report.go`) deliberately emits `nil` (wire `null`) for a
+  finding with no locations. The renderer tests exercise a shape production never
+  emits, and a regression flipping `null` → `[]` in the published schema is
+  unobservable.
+- `internal/relationship/analysis/dynamic.go` — `pathDir` (the fallback module
+  key for a dynamic-import site outside every declared module glob) and the
+  `dynamicImportSiteCap` truncation never execute. Report-only output, so
+  bounded.
+- `internal/erosion_test.go` `TestErosion_NoDeadArchfitRule` is a one-line
+  delegation with no paired "fires on a violating input" fixture, unlike the
+  other four owners. Both CLAUDE.md and the package comment claim each gate ships
+  one. Either add a synthetic rule aimed at a non-existent path, or correct the
+  claim. `TestSelfModelHasNoDeadRules` also has no "inspected at least one rule"
+  guard, so an empty `cfg.Rules` passes its main loop.
+- `dimension_coverage_required` is required by the plan's Task 2 as a
+  `.archfit.yaml` rule alongside `assessment_no_score_decision`, but is enforced
+  only by `internal/assessment/evaluation/dimensions_test.go`. The test documents
+  why it is not expressible as a dependency rule; the dogfood gate does not cover
+  it either way.
 
 ## D. Surface and vocabulary hygiene introduced by the branch
 
