@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/decision"
-	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -46,45 +45,45 @@ func TestConfigCompare(t *testing.T) {
 // target, so neither the four edge counters nor the rounded score moves.
 func testCompareClassificationMix(t *testing.T) {
 	t.Parallel()
-	summary := func(mutate func(*result.ClassifiedEdgeSummary)) *result.ClassifiedEdgeSummary {
-		s := &result.ClassifiedEdgeSummary{
+	summary := func(mutate func(*report.ClassifiedEdgeSummary)) *report.ClassifiedEdgeSummary {
+		s := &report.ClassifiedEdgeSummary{
 			Total: 1, Scored: 1,
 			ByStrength:      map[string]int{enrichFunctional: 1},
 			ByDistance:      map[string]int{"cross_module_different_owner": 1},
 			ByDistanceBasis: map[string]int{"ownership": 1},
 			ByVolatility:    map[string]int{volatilityLow: 1},
-			VolatilityProvenance: &result.VolatilityProvenance{
+			VolatilityProvenance: &report.VolatilityProvenance{
 				Declared: 2, Undeclared: 0,
 			},
 		}
 		mutate(s)
 		return s
 	}
-	unchanged := func(*result.ClassifiedEdgeSummary) {}
+	unchanged := func(*report.ClassifiedEdgeSummary) {}
 
 	tests := []struct {
 		name       string
-		mutate     func(*result.ClassifiedEdgeSummary)
+		mutate     func(*report.ClassifiedEdgeSummary)
 		wantSubstr string
 	}{
 		{name: "identical mix reports nothing", mutate: unchanged},
 		{
 			name: "owner edit moves the distance rung",
-			mutate: func(s *result.ClassifiedEdgeSummary) {
+			mutate: func(s *report.ClassifiedEdgeSummary) {
 				s.ByDistance = map[string]int{"cross_module_same_owner": 1}
 			},
 			wantSubstr: "distance mix: cross_module_different_owner 1 → 0, cross_module_same_owner 0 → 1",
 		},
 		{
 			name: "volatility provenance moves",
-			mutate: func(s *result.ClassifiedEdgeSummary) {
-				s.VolatilityProvenance = &result.VolatilityProvenance{Declared: 1, Undeclared: 1}
+			mutate: func(s *report.ClassifiedEdgeSummary) {
+				s.VolatilityProvenance = &report.VolatilityProvenance{Declared: 1, Undeclared: 1}
 			},
 			wantSubstr: "volatility provenance (modules): declared 2 → 1, undeclared 0 → 1",
 		},
 		{
 			name: "strength mix moves",
-			mutate: func(s *result.ClassifiedEdgeSummary) {
+			mutate: func(s *report.ClassifiedEdgeSummary) {
 				s.ByStrength = map[string]int{llmStrengthContract: 1}
 			},
 			wantSubstr: "strength mix: contract 0 → 1, functional 1 → 0",

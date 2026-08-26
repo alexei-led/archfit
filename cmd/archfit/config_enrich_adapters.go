@@ -324,6 +324,11 @@ func parseValueResponse(text string, spec valueSpec, batch []initcfg.ClassifyTar
 		if value == "" {
 			continue
 		}
+		// Order is the contract: malformed JSON is an error, an out-of-enum value
+		// is skipped, and only a VALID value missing its rationale is an error.
+		if spec.valid != nil && !spec.valid(value) {
+			continue
+		}
 		rationale := strings.TrimSpace(entry.Rationale)
 		if rationale == "" {
 			return nil, fmt.Errorf("enrich --%s: entry %q missing rationale", spec.name, entry.Module)

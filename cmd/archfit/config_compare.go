@@ -28,7 +28,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -308,17 +307,24 @@ func configCompareDiffLines(current, candidate application.CompareSide, res appl
 // The list is the complete set of classification histograms the diagnostic
 // carries, so the identity line's claim covers the whole mix rather than a
 // chosen subset of it.
-func classificationMixLines(current, candidate any) []string {
-	mixes := []struct{ label, field string }{
-		{"strength mix", "ByStrength"}, {"distance mix", "ByDistance"},
-		{"distance basis mix", "ByDistanceBasis"}, {"volatility mix", "ByVolatility"},
-		{"severity mix", "BySeverity"}, {"balance driver mix", "ByBalanceDriver"},
-		{"critical driver mix", "ByCriticalDriver"}, {"module pair mix", "ByModulePair"},
-		{"volatility provenance (modules)", "VolatilityProvenance"},
+func classificationMixLines(current, candidate *report.ClassifiedEdgeSummary) []string {
+	mixes := []struct {
+		label string
+		get   func(*report.ClassifiedEdgeSummary) map[string]int
+	}{
+		{"strength mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByStrength }},
+		{"distance mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByDistance }},
+		{"distance basis mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByDistanceBasis }},
+		{"volatility mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByVolatility }},
+		{"severity mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.BySeverity }},
+		{"balance driver mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByBalanceDriver }},
+		{"critical driver mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByCriticalDriver }},
+		{"module pair mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByModulePair }},
+		{"volatility provenance (modules)", volatilityProvenanceHistogram},
 	}
 	var lines []string
 	for _, m := range mixes {
-		cur, cand := summaryHistogram(current, m.field), summaryHistogram(candidate, m.field)
+		cur, cand := summaryHistogram(current, m.get), summaryHistogram(candidate, m.get)
 		if line, changed := histogramCompareLine(m.label, cur, cand); changed {
 			lines = append(lines, line)
 		}
@@ -326,44 +332,27 @@ func classificationMixLines(current, candidate any) []string {
 	return lines
 }
 
-// summaryHistogram accepts both the application report summary and the legacy
-// assessment summary used by package-main characterization tests. Reflection is
-// confined to this compatibility seam; command production code owns no domain
-// values.
-func summaryHistogram(summary any, field string) map[string]int {
+// summaryHistogram reads one histogram off a nil-safe summary. Typed accessors,
+// not field names: renaming a field on ClassifiedEdgeSummary must break the
+// build, never silently drop the row from the comparison.
+func summaryHistogram(summary *report.ClassifiedEdgeSummary, get func(*report.ClassifiedEdgeSummary) map[string]int) map[string]int {
 	if summary == nil {
 		return nil
 	}
-	v := reflect.ValueOf(summary)
-	if v.Kind() == reflect.Pointer {
-		if v.IsNil() {
-			return nil
-		}
-		v = v.Elem()
-	}
-	f := v.FieldByName(field)
-	if !f.IsValid() {
+	return get(summary)
+}
+
+// volatilityProvenanceHistogram flattens the provenance counters into the same
+// bucket shape as the map-valued mixes so one comparison covers both.
+func volatilityProvenanceHistogram(s *report.ClassifiedEdgeSummary) map[string]int {
+	p := s.VolatilityProvenance
+	if p == nil {
 		return nil
 	}
-	if field != "VolatilityProvenance" && f.Kind() == reflect.Map {
-		out := make(map[string]int, f.Len())
-		for _, k := range f.MapKeys() {
-			out[k.String()] = int(f.MapIndex(k).Int())
-		}
-		return out
+	return map[string]int{
+		"declared": p.Declared, "inherited": p.Inherited,
+		"cascade": p.Cascade, "undeclared": p.Undeclared,
 	}
-	if f.Kind() != reflect.Pointer || f.IsNil() {
-		return nil
-	}
-	f = f.Elem()
-	out := map[string]int{}
-	for _, name := range []string{"Declared", "Inherited", "Cascade", "Undeclared"} {
-		x := f.FieldByName(name)
-		if x.IsValid() {
-			out[strings.ToLower(name)] = int(x.Int())
-		}
-	}
-	return out
 }
 
 // histogramCompareLine renders only the buckets that moved, sorted by bucket so

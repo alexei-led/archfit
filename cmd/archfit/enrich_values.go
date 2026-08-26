@@ -14,8 +14,12 @@ const valueBatchSize = 25
 
 // valueSpec contains only command-adapter concerns for one scalar judgment.
 type valueSpec struct {
-	name           string
-	draftPath      string
+	name      string
+	draftPath string
+	// valid rejects an out-of-enum LLM proposal. nil = any non-empty value is
+	// accepted. An invalid value is SKIPPED, never an error: one bad entry in a
+	// 25-module batch must not discard the whole draft file.
+	valid          func(string) bool
 	systemPrompt   string
 	withCodeowners bool
 }
@@ -35,6 +39,7 @@ Use basis "deterministic_fact" only when the value comes directly from CODEOWNER
 var volatilitySpec = valueSpec{
 	name:      "volatility",
 	draftPath: defaultVolatilityPath,
+	valid:     func(s string) bool { return validVolatilities[s] },
 	systemPrompt: `You are assessing how frequently each module's interface evolves (Balanced Coupling volatility).
 For each module pick one of:
 - "low": stable interfaces, rarely changes (foundational types, shared models).

@@ -71,7 +71,7 @@ Start with:
 - `internal/assessment/metrics/`
 - `internal/assessment/rules/`
 - `internal/extract/`
-- `internal/labels/`
+- `internal/relationship/labels/`
 - `.archfit-labels.yaml` handling if present
 - AI/config surfaces:
   - `config init --ai-classify`

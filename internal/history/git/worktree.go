@@ -224,6 +224,13 @@ type Worktree struct{ Runner toolrun.Runner }
 // inter-process lock.
 func (w Worktree) Checkout(ctx context.Context, baseRef, anchorDir, headRoot string) (string, func(), error) {
 	noop := func() {}
+	// A leading-dash ref is parsed as a FLAG by rev-parse and `git worktree add`,
+	// which then silently checks out HEAD — the base tree becomes the head tree
+	// and every finding grades pre_existing. The application rejects this too;
+	// repeated here so the mechanics are safe for any caller.
+	if strings.HasPrefix(baseRef, "-") {
+		return "", noop, fmt.Errorf("invalid base ref %q: a ref may not start with '-'", baseRef)
+	}
 	gitAnchor := anchorDir
 	if abs, err := filepath.Abs(gitAnchor); err == nil {
 		gitAnchor = abs

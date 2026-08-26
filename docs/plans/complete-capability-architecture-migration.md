@@ -719,6 +719,11 @@ Manual checks:
 - [x] Move each remaining analysispipeline responsibility to its approved owner.
 - [x] Reduce Application ports and exported DTOs to approved context boundaries;
       remove migration aliases and single-use internal interfaces.
+      PARTIAL: the `ConfigUpdateService` / `ConfigEnrichService` port sets still
+      carry single-implementation interfaces that route data through
+      adapter-internal state rather than through the call. Collapsing them
+      rewrites the config-update golden tests, so it is deferred as its own
+      change — see `docs/plans/20260826-post-migration-followups.md` §1.
 - [x] Make owner stage implementations explicit and per-run-state safe.
 - [x] Reduce command files to flags, construction, renderer selection, and exit
       translation; document any composition-only fan-out exception.

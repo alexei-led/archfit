@@ -48,7 +48,6 @@ type Request struct {
 
 	NoAdvisories bool
 	RequireTools bool
-	ReportOnly   bool
 }
 
 // AnalysisRequest is the narrow technical-stage input. The application owns

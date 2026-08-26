@@ -218,10 +218,12 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `go.mod` the `languages.go.modules` filter removes) fabricates presence; a
   marker it accepts but a list omits (`languages.python.package`, a sub-crate
   `languages.rust.manifest`, a `go.work` member a walk cannot reach) fabricates
-  absence. `buildCoverageGaps` reads `cfg.Exclude` AS GIVEN — `Run`
-  merges it once at setup and `scope.MergeExclusions` is NOT idempotent (it
-  consumes `!` re-includes), so a second merge re-seeds defaults the user removed
-  and the probe then skips trees the extractors analysed.
+  absence. The exclusion set is merged EXACTLY ONCE, in
+  `Config.RunOptions()` (`internal/config/projection.go`), before
+  `Config.CoverageOptions()` projects the probes `buildCoverageGaps` reads;
+  `scope.MergeExclusions` is NOT idempotent (it consumes `!` re-includes), so a
+  second merge re-seeds defaults the user removed and the probe then skips trees
+  the extractors analysed.
 - **A language switched off over a language that IS PRESENT reports `disabled`,
   never `absent`** (`markDisabledPrimaries`, `internal/evidence/acquisition/coverage.go`,
   applied to `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode

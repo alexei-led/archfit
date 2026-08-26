@@ -162,7 +162,6 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 		Formats:      req.formats,
 		NoAdvisories: req.noAdvisories,
 		RequireTools: req.requireTools,
-		ReportOnly:   req.reportOnly,
 	})
 	if err != nil {
 		return applicationExitError(err)

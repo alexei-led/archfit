@@ -244,3 +244,34 @@ func TestEnrichOwner_LLMUnconfigured(t *testing.T) {
 		t.Errorf("exit = %d, want 3 (llm not configured)\noutput: %s", code, buf.String())
 	}
 }
+
+// TestParseValueResponse_OutOfEnumValueIsSkippedNotFatal pins the guard order:
+// an out-of-enum value is dropped, and the rationale check that follows never
+// sees it. Without the skip, one hallucinated volatility in a 25-module batch
+// aborts the whole draft run and writes no file at all.
+func TestParseValueResponse_OutOfEnumValueIsSkippedNotFatal(t *testing.T) {
+	t.Parallel()
+	batch := []initcfg.ClassifyTarget{{Name: enrichModAuth}, {Name: enrichModNotify}}
+	body := `[{"module":"` + enrichModAuth + `","value":"occasional","rationale":"","basis":"semantic_judgment"},` +
+		`{"module":"` + enrichModNotify + `","value":"high","rationale":"churny adapter","basis":"semantic_judgment"}]`
+
+	drafts, err := parseValueResponse(body, volatilitySpec, batch, false)
+	if err != nil {
+		t.Fatalf("an out-of-enum entry must be skipped, not fail the batch: %v", err)
+	}
+	if len(drafts) != 1 || drafts[0].Module != enrichModNotify || drafts[0].Value != volatilityHigh {
+		t.Fatalf("want only the valid %s=high draft, got %+v", enrichModNotify, drafts)
+	}
+}
+
+// TestParseValueResponse_ValidValueStillNeedsRationale pins the other half of
+// the order: the enum skip must not swallow a genuinely malformed entry.
+func TestParseValueResponse_ValidValueStillNeedsRationale(t *testing.T) {
+	t.Parallel()
+	batch := []initcfg.ClassifyTarget{{Name: enrichModAuth}}
+	body := `[{"module":"` + enrichModAuth + `","value":"high","rationale":"  ","basis":"semantic_judgment"}]`
+
+	if _, err := parseValueResponse(body, volatilitySpec, batch, false); err == nil {
+		t.Fatal("a valid value with no rationale must fail the batch")
+	}
+}

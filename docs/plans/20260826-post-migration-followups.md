@@ -89,3 +89,47 @@ plus "one pure Application-owned projector", so it is not a defect — but every
 new evidence field now costs three edits and a mapper line.
 `TestProjectReportCarriesEveryEvidenceBlock` exists so a dropped mapper line
 fails a test instead of shipping an empty JSON block.
+
+## 4. Structural gaps the second review pass routed here
+
+Each is a real weakening of a guard rather than a live defect, and each is
+larger than a review fix.
+
+- **Coverage names have two independent copies.** The emitters
+  (`internal/extract/{astgrep,scip,clones,rust}`) and the consumer
+  (`internal/assessment/decision.AnalyzerFamilies`) no longer share one constant
+  set — the move out of `cmd/archfit` split them into non-importing packages.
+  `internal/coverage_names_test.go` pins only `dependency-cruiser`, `grimp`, and
+  `go/packages`. Renaming `ast-grep/syntax`, `scip`, `scip-symbols`, `jscpd`, or
+  `cargo-modules` in an adapter compiles and passes, while every
+  `analyze --base` task silently degrades to `unknown` origin. Extend the test
+  with the same adapter-driven pattern for the other five.
+- **`Config.ExtractConfigs()` hand-lists the four languages**
+  (`internal/config/projection.go`) while `registry.Build` iterates the
+  registry, so a fifth registered language would receive a zero `ExtractConfig`
+  (`Mode ""`, no exclusions) and `TestBuildExtractorsOrder` would still pass.
+  `CoverageOptions()` already iterates `registry.All()` correctly. Build the map
+  the same way, or assert a key per registry ID.
+- **Two dead slots on `relationship.ClassifiedEdgeSummary`**
+  (`internal/relationship/advisory.go` `LLMApproved`, `VolatilityProvenance`):
+  never written by `buildClassifiedSummary`, always overwritten downstream by
+  `evaluation/projector.go`. Reading them off `AnalysisResult` yields zero.
+  Remove them and populate only `result.ClassifiedEdgeSummary`.
+- **The exported-surface gate is narrower than the criterion it enforces.**
+  `internal/surface_test.go` limits `surfaceOwners` to five packages
+  (`internal/assessment/decision`, `internal/assessment/result`, and
+  `internal/policy` are outside it), checks only `*types.Func` rather than types
+  and fields, and `identifierUses` indexes `_test.go` files — so an export used
+  only by an out-of-package test counts as having a production consumer. Widen
+  the owner set and exclude test files. Related surface hygiene: several
+  `decision` helpers (`CompareAnalyzerEvidence`, `PartialFromDegradedPrecision`,
+  `UnresolvedMagnitude`, `DegradedMagnitude`, `HasCoverageGap`) lost their only
+  out-of-package consumer when `git_finding_delta.go` moved in and can be
+  unexported.
+- **Baseline and pinned-label validation now runs after evidence acquisition**
+  (`internal/application/analysis.go` `Execute`). A malformed
+  `.archfit-baseline.json` still exits 3, but only after the full extractor pass
+  and its fact-cache writes; `main` rejected it before any subprocess ran. The
+  error is also double-prefixed (`baseline: baseline: parse …`). Moving the load
+  ahead of `Acquire` needs the resolved bundle dir, which today only
+  `AnalysisContext` carries.

@@ -172,7 +172,7 @@ func TestServiceForwardsRequestAndWrapsStageFailure(t *testing.T) {
 		var got AnalysisRequest
 		stage := &requestCaptureStage{lifecycleStage: newLifecycleStage(), captured: &got}
 		resp, err := (Service{Stages: StageExecutor{Preparer: stage, Evidence: stage, Stderr: io.Discard}}).
-			Execute(t.Context(), Request{JSON: true, NoAdvisories: true, RequireTools: true, ReportOnly: true})
+			Execute(t.Context(), Request{JSON: true, NoAdvisories: true, RequireTools: true})
 		if err != nil {
 			t.Fatal(err)
 		}

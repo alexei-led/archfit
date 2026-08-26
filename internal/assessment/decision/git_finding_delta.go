@@ -100,18 +100,6 @@ type AnalyzerFamily struct {
 	primary bool
 }
 
-// NewAnalyzerFamily constructs an analyzer-family value for compatibility tests
-// and adapters without exposing the package-internal field names as API.
-func NewAnalyzerFamily(name string, primary bool) AnalyzerFamily {
-	return AnalyzerFamily{name: name, primary: primary}
-}
-
-// AnalyzerFamilyName returns the coverage tool name for this family.
-func (f AnalyzerFamily) AnalyzerFamilyName() string { return f.name }
-
-// AnalyzerFamilyPrimary reports whether this is a language-primary family.
-func (f AnalyzerFamily) AnalyzerFamilyPrimary() bool { return f.primary }
-
 // AnalyzerEvidence is one side's analyzer coverage plus the config hash that
 // produced it.
 type AnalyzerEvidence struct {
