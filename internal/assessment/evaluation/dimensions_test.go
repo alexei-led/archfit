@@ -123,13 +123,23 @@ func TestDimensionStatuses(t *testing.T) {
 	}
 }
 
-// TestMeasuredDimensionsCarryDenominatorAndProvenance is the honesty invariant:
-// a dimension that claims a measurement must say what it counted, and every
-// number it reports must name the capability that observed it.
-func TestMeasuredDimensionsCarryDenominatorAndProvenance(t *testing.T) {
+// TestDimensionCoverageRequired is the executable fixture behind the
+// dimension_coverage_required rule. It is not expressible as a dependency rule,
+// so it is enforced here: the nine envelopes always account for themselves
+// exactly once, a dimension that claims a measurement says what it counted and
+// who observed every number it reports, and a dimension that measured nothing
+// says why.
+func TestDimensionCoverageRequired(t *testing.T) {
 	t.Parallel()
 	diag, in := dimensionsFixture()
-	for _, dim := range evaluation.BuildDimensions(diag, in, nil).All() {
+	dims := evaluation.BuildDimensions(diag, in, nil)
+	if measured, partial, unmeasured := dims.CountStatuses(); measured+partial+unmeasured != state.DimensionCount {
+		t.Fatalf("coverage counts (%d, %d, %d) do not sum to %d", measured, partial, unmeasured, state.DimensionCount)
+	}
+	for _, dim := range dims.All() {
+		if dim.Name == "" || dim.Owner == "" {
+			t.Errorf("envelope %+v ships without a name or an evidence owner", dim)
+		}
 		if dim.Status == state.Unmeasured {
 			if len(dim.Unknown) == 0 {
 				t.Errorf("%s is unmeasured with no stated reason", dim.Name)

@@ -816,6 +816,46 @@ func TestReportBoundaryRuleFiresOnDomainImports(t *testing.T) {
 	}
 }
 
+// TestStateDecisionIsMetricBlind is the executable fixture behind the
+// assessment_no_score_decision rule. The architecture verdict is decided from
+// explicit hard-gate results, finding classifications, and dimension statuses;
+// letting the state package reach the scorer, the report DTOs, or the
+// relationship graph would put a repository scalar back inside the decision it
+// replaced.
+//
+// The check is import purity rather than a call-site scan: a package that
+// imports nothing but stdlib cannot read a score by any route, including one a
+// future refactor invents.
+func TestStateDecisionIsMetricBlind(t *testing.T) {
+	const stateDir = "assessment/state"
+	entries, err := os.ReadDir(stateDir)
+	if err != nil {
+		t.Fatalf("read %s: %v", stateDir, err)
+	}
+	sources := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || filepath.Ext(name) != goSourceExt || strings.HasSuffix(name, "_test"+goSourceExt) {
+			continue
+		}
+		sources++
+		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(stateDir, name), nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, imp := range file.Imports {
+			path := strings.Trim(imp.Path.Value, "\"")
+			if !isStdlib(path) {
+				t.Errorf("%s/%s imports %q: the architecture decision reads explicit classifications only, never a score, a report DTO, or a graph",
+					stateDir, name, path)
+			}
+		}
+	}
+	if sources == 0 {
+		t.Fatalf("no production source found in %s: the rule would pass vacuously", stateDir)
+	}
+}
+
 // isForbiddenForCore reports whether imp is forbidden for a core ring package.
 // Forbidden: os, os/exec, any YAML library, any adapter package.
 func isForbiddenForCore(imp string) bool {

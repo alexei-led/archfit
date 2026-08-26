@@ -683,15 +683,15 @@ Manual checks:
   explicit policy, not a hidden default.
 - Confirm dimension ownership does not introduce a generic `state` god package.
 
-- [ ] Slice 2A: separate hard-gate and diagnostic results; project existing
+- [x] Slice 2A: separate hard-gate and diagnostic results; project existing
       agent tasks; prove output and exit behavior are unchanged; commit.
-- [ ] Slice 2B: populate all nine envelopes from existing facts and explicit
+- [x] Slice 2B: populate all nine envelopes from existing facts and explicit
       partial/unmeasured states; prove denominators/order; commit.
-- [ ] Slice 2C: implement metric-blind state aggregation and shadow report
+- [x] Slice 2C: implement metric-blind state aggregation and shadow report
       mapping; prove healthy/attention/blocked fixtures; commit.
-- [ ] Add fail-before/pass-after architecture fixtures preventing score reads and
+- [x] Add fail-before/pass-after architecture fixtures preventing score reads and
       missing dimension status.
-- [ ] Preserve finding identity, status, ordering, and exit behavior until the
+- [x] Preserve finding identity, status, ordering, and exit behavior until the
       explicit Task 4 cutover.
 
 ### Task 3: Replace scalar coupling with seam-ledger diagnostics and honest labels
