@@ -1108,19 +1108,19 @@ Manual checks:
   semantic change, renderer field, and new CLI use case. Record touched modules
   and whether the delta is comparable.
 
-- [ ] Map existing static facts into complexity, testability, operations, and
+- [x] Map existing static facts into complexity, testability, operations, and
       history envelopes; list unsupported runtime evidence as unknown. Populate
       only deterministic root `measurement` fields; keep the four comparability
       hashes only in the root `comparison` block.
-- [ ] Finalize drift/config/model/labels/rubric hashes and reuse Task 4 baseline
+- [x] Finalize drift/config/model/labels/rubric hashes and reuse Task 4 baseline
       idempotence/comparability checks without writing the final baseline yet.
-- [ ] Finalize truthful `.archfit.yaml`, `archfit.schema.json`, generated schema,
+- [x] Finalize truthful `.archfit.yaml`, `archfit.schema.json`, generated schema,
       and label validation atomically.
-- [ ] Add all erosion-prevention architecture fixtures and CI gates.
-- [ ] Update architecture and contributor documentation.
-- [ ] Refresh GitNexus and record Task 5 compare/all change evidence.
-- [ ] Run full self-validation without regenerating the final baseline.
-- [ ] Commit Task 5 so the branch binary and self-config are stable inputs to the
+- [x] Add all erosion-prevention architecture fixtures and CI gates.
+- [x] Update architecture and contributor documentation.
+- [x] Refresh GitNexus and record Task 5 compare/all change evidence (compare vs main: 406 files / 4555 symbols / critical — the whole Tasks 1-5 cutover; all: 16 files / 25 symbols / 0 affected flows / low).
+- [x] Run full self-validation without regenerating the final baseline.
+- [x] Commit Task 5 so the branch binary and self-config are stable inputs to the
       corpus acceptance task.
 
 ### Task 6: Validate v1 across the cross-language corpus and close compatibility gaps

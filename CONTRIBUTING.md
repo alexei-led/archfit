@@ -71,6 +71,7 @@ go test ./internal/ -run TestArchImports        # import ring
 go test ./internal/ -run TestSelfModel          # .archfit.yaml describes real source
 go test ./internal/ -run TestModelSurfaceNoDrift # published model contract
 go test ./internal/application/ -run TestGolden # output fixtures
+go test ./internal/ ./cmd/archfit/ -run TestErosion_ # architecture-state erosion gates
 make archfit                                    # dogfood the configured gate
 pre-commit run --all-files
 ```
@@ -118,6 +119,43 @@ Two rules to internalise:
 Do not weaken a gate, add a waiver, relabel volatility, or re-baseline to make a
 check pass. Fix the boundary or record the accepted risk with a written
 rationale.
+
+### Architecture-state erosion gates
+
+Six named checks keep the state report from decaying back into the averaged
+score it replaced. CI runs them as an explicit step; run them locally with
+`go test ./internal/ ./cmd/archfit/ -run TestErosion_`.
+
+| Check                       | What it prevents                                                     |
+| --------------------------- | -------------------------------------------------------------------- |
+| `no_scalar_decision`        | an averaged score re-entering the path from evidence to exit code    |
+| `no_dead_archfit_rule`      | a rule reporting "0 violations" for a boundary nobody checks         |
+| `dimension_status_required` | an envelope with no status reading as an empty, healthy result       |
+| `config_hash_required`      | a delta taken across a config edit blaming the code                  |
+| `label_evidence_required`   | an unevidenced approval silencing a seam permanently                 |
+| `baseline_idempotent`       | a self-referential capture reporting drift that is not there         |
+
+Each check has a paired fixture proving it fires on a violating input, so none
+can pass because it happens to look at nothing. When you extend one, extend its
+fixture in the same commit.
+
+Three more rules that follow from the state contract:
+
+- A dimension that measured nothing reports `unmeasured` with a named
+  `UnknownFact`. Never report a missing collector as a measured zero — an empty
+  list reads as healthy, and "we found no problems" must stay distinguishable
+  from "nothing looked".
+- The four comparability fingerprints live only in the root `comparison` block.
+  A second copy is a second answer to whether two runs may be compared.
+- `.archfit-labels.yaml` stays empty unless a pair was reviewed by hand. An
+  approved label needs `evidence_hash`, `rationale`, `provenance`, and
+  `confidence`; without the hash it can never go stale and silences its pair
+  permanently.
+
+See
+[docs/design/architecture-state-reporting.md](docs/design/architecture-state-reporting.md)
+for the full contract, the nine dimensions, and what v1 does and does not
+measure.
 
 ## Tests and docs
 

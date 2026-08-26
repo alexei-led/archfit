@@ -62,8 +62,9 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 	out.Dimensions = projectStateDimensions(r.State.Dimensions)
 	out.Findings = doc.Findings
 	out.AgentTasks = doc.AgentTasks
-	out.Measurement.SourceRef = r.Head
+	out.Measurement.SourceRef = sourceRef(r.Head)
 	out.Measurement.ToolVersions, out.Coverage.Tools = projectStateToolCoverage(r.ToolCoverage)
+	out.Measurement.HistoryWindow = historyUnavailable
 	if h := r.VolatilityCorroboration; h != nil {
 		out.Measurement.HistoryDepth = h.CommitsScanned
 		out.Measurement.HistoryWindow = historyWindow(h.FullHistory, h.CommitWindow)
@@ -176,10 +177,33 @@ func projectStateDimension(in state.Dimension) report.DimensionState {
 	return out
 }
 
+// sourceWorktree is the measurement source ref of a full run. Archfit measures
+// the files on disk, and a full run never resolves HEAD, so naming a commit
+// here would assert that the measured bytes equal that commit — false the
+// moment the tree is dirty. Only a delta run, which really did diff against a
+// resolved SHA, publishes one.
+const sourceWorktree = "worktree"
+
+// historyUnavailable is the history window of a run that scanned no history at
+// all: not a repository, no module to attribute commits to, or the scan failed.
+// It is recorded rather than left empty so an unmeasured change-locality
+// envelope still says what window it did not cover.
+const historyUnavailable = "unavailable"
+
+// sourceRef names the tree this run measured. It is deterministic by
+// construction: two runs over the same tree publish the same value, so it can
+// ride the byte-identity contract.
+func sourceRef(head string) string {
+	if head == "" {
+		return sourceWorktree
+	}
+	return head
+}
+
 // historyWindow renders the bounded git-history window as the deterministic
 // string the measurement block publishes. An unbounded scan says so; a zero
-// window is left empty rather than reported as "0 commits", which would read as
-// a measured-and-empty history.
+// window reports the unavailable marker rather than "0 commits", which would
+// read as a measured-and-empty history.
 func historyWindow(fullHistory bool, commitWindow int) string {
 	switch {
 	case fullHistory:
@@ -187,7 +211,7 @@ func historyWindow(fullHistory bool, commitWindow int) string {
 	case commitWindow > 0:
 		return strconv.Itoa(commitWindow) + " commits"
 	default:
-		return ""
+		return historyUnavailable
 	}
 }
 

@@ -52,7 +52,7 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 		Structure:      structureDimension(diag),
 		Modularity:     modularityDimension(diag, in.Policy),
 		Coupling:       couplingDimension(diag),
-		ChangeLocality: changeLocalityDimension(diag),
+		ChangeLocality: changeLocalityDimension(diag, in.Policy),
 		Complexity:     complexityDimension(in.Facts),
 		Testability:    testabilityDimension(in.Facts),
 		Operations:     operationsDimension(diag, in.Policy, in.RequiredToolFailure),
@@ -332,7 +332,7 @@ func seamMetrics(seams []result.Seam) []state.MetricValue {
 // Zero observed commits is unmeasured, never a quiet zero: an unscanned history
 // and a genuinely stable repository produce the same number and must not
 // produce the same status.
-func changeLocalityDimension(diag *result.Result) state.Dimension {
+func changeLocalityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dimension {
 	dim := state.NewDimension(state.DimensionChangeLocality, state.OwnerChangeLocality)
 	h := diag.VolatilityCorroboration
 	switch {
@@ -358,8 +358,13 @@ func changeLocalityDimension(diag *result.Result) state.Dimension {
 			Owner:  state.OwnerChangeLocality,
 		})
 	}
-	dim.Coverage = state.Coverage{Basis: "modules touched in the scanned history window",
-		Observed: h.ModulesTouched, Total: h.ModulesTouched}
+	// The denominator is the declared module set, not the touched count. Observed
+	// over observed is a tautology: it reports 100% coverage on a window that
+	// reached one module out of forty, which is the shape of a history scan whose
+	// bound is too small to say anything about the rest of the repository.
+	declared := max(len(p.Topology.Modules), h.ModulesTouched)
+	dim.Coverage = state.Coverage{Basis: "declared modules touched in the scanned history window",
+		Observed: h.ModulesTouched, Total: declared}
 	dim.Metrics = []state.MetricValue{
 		count("commits_scanned", h.CommitsScanned, provGitHistory),
 		count("modules_touched", h.ModulesTouched, provGitHistory),

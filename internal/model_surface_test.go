@@ -1,5 +1,5 @@
 // Model compat gate (CI): the shared kernel (internal/model/*)
-// is a frozen published contract — its declared volatility in .archfit.yaml is
+// is a pinned published contract — its declared volatility in .archfit.yaml is
 // `low`, and this test is what makes that label true. Any change to the
 // kernel's exported surface (removed/renamed symbols, changed signatures)
 // fails CI until the golden file is deliberately regenerated:

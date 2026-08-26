@@ -60,6 +60,12 @@ jobs:
         run: go test ./internal/ -run TestModelSurfaceNoDrift
       - name: CI gate — golden output
         run: go test ./internal/application/ -run TestGolden
+      # Erosion gates for the architecture-state contract. Named checks:
+      # no_scalar_decision, no_dead_archfit_rule (internal/erosion_test.go);
+      # dimension_status_required, config_hash_required, label_evidence_required,
+      # baseline_idempotent (cmd/archfit/erosion_test.go).
+      - name: CI gate — architecture-state erosion
+        run: go test ./internal/ ./cmd/archfit/ -run TestErosion_ -count=1
       - name: Install architecture analyzers
         run: |
           npm install -g jscpd@5.0.11 @ast-grep/cli@0.44.0

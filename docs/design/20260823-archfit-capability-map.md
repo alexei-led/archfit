@@ -12,9 +12,10 @@ measured against.
 
 This is a review-driven redesign of Archfit as one Go modular monolith. It
 replaces the provisional type-centric module map with domain-driven boundaries.
-The goal is local change, explicit contracts, and balanced coupling. The Archfit
-score is an acceptance signal, but never a reason to relabel volatility/distance,
-add waivers, or create boundaries that do not exist in source.
+The goal is local change, explicit contracts, and balanced coupling. Archfit's
+own output is an acceptance signal, but never a reason to relabel
+volatility/distance, add waivers, or create boundaries that do not exist in
+source.
 
 Source inputs:
 
@@ -51,11 +52,17 @@ before-picture the migration was measured against:
 Final state after the capability migration (2026-08-26): `internal/engine`,
 `internal/analysispipeline`, and `internal/view` are deleted;
 `application.StageExecutor` owns the stage order; the CLI holds composition and
-exit translation only. `coupling_balance` is 41/`mixed` over 362 scored
-cross-boundary edges — the number moved because the module map now describes
-capabilities rather than the transitional engine split, not because coupling
-worsened. See [architecture-baseline.md](architecture-baseline.md) for the
-measured map and the balanced-coupling rationale.
+exit translation only. See [architecture-baseline.md](architecture-baseline.md)
+for the measured map and the balanced-coupling rationale.
+
+Superseded since (2026-08-26): the repository `coupling_balance` scalar this
+document treats as an acceptance signal is retired. It no longer produces or
+moves the verdict, the exit code, the baseline, or a delta — the primary output
+is `archfit.architecture-state.v1`, whose verdict comes from explicit hard
+gates, active diagnostics, and evidence coverage across nine dimensions. Coupling
+is now reported per seam. Read
+[architecture-state-reporting.md](architecture-state-reporting.md) for the
+current contract; the capability boundaries recorded below still hold.
 
 ## Domain model
 

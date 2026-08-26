@@ -104,6 +104,12 @@ Cycles: 0 package cycles, 0 module cycles (`cycle` metric).
 | Layer direction | `layer_inversion` (`forbidden_layer_direction`, gate `fail`) |
 | The self-model describes real source | `TestSelfModel*` (`internal/selfmodel_test.go`): no dead path glob, no unowned Go package, no equal-specificity ownership tie, no dead rule, public entries real and owned, every declared layer used |
 | Output/exit contracts | `TestGolden` (`internal/application`), `scripts/tests/cli_exit_contract_test.sh` |
+| No averaged score reaches the verdict or the exit code | `TestErosion_NoScalarDecision`, `TestStateDecisionIsMetricBlind`, `TestSeamGateIsScoreBlind` |
+| Every dimension envelope states a status, owner, confidence, and denominator | `TestErosion_DimensionStatusRequired` |
+| Every run publishes the comparability fingerprints | `TestErosion_ConfigHashRequired` |
+| An approved label carries the evidence it rests on | `TestErosion_LabelEvidenceRequired` |
+| A baseline capture is a function of tree and config alone | `TestErosion_BaselineIdempotent` |
+| No rule aims at source that does not exist | `TestErosion_NoDeadArchfitRule` |
 
 `make archfit` runs the configured gate over archfit itself; CI runs it after
 tests and goldens, and the `arch-lint` pre-push hook runs it locally.
@@ -168,13 +174,20 @@ directory.
    review-only and `--apply` never deletes a stanza; the noise is a known
    consequence of capability-grained modules and is not a config gap.
 
-5. **`archfit baseline` is not idempotent on this repo.** Accepting the 104
-   visible advisories surfaces 55 previously-grouped ones and a second round
-   still does not reach a fixed point (104 → 159 → 142). `.archfit-baseline.json`
-   is therefore deliberately empty: the gate passes with 0 blocking findings
-   and 0 `agent_tasks` without it, so there is nothing to accept. Verified that
-   the empty baseline suppresses nothing — a forbidden import injected into
-   `internal/assessment/finding` still exits 1 with 2 blocking findings.
+5. **`.archfit-baseline.json` is deliberately empty.** The gate passes with 0
+   blocking findings and 0 `agent_tasks` without it, so there is nothing to
+   accept. Verified that the empty baseline suppresses nothing — a forbidden
+   import injected into `internal/assessment/finding` still exits 1 with 2
+   blocking findings.
+
+   The non-idempotence that originally forced this is **fixed**. Capture used to
+   read the file it was about to overwrite, and BC advisories roll up per
+   `(module pair, strength, distance, volatility, STATUS)` — so accepting a
+   group's representative split the group on the next run and exposed its
+   siblings as new representatives (104 → 159 → 142, never settling). Capture now
+   runs with an empty baseline, making the written file a pure function of tree
+   and config; `TestErosion_BaselineIdempotent` (`baseline_idempotent`) holds it
+   there. The empty baseline stands on its own reason, not on that defect.
 
 6. **`config update` runs its own extract → graph → classify pipeline inside
    `cmd`.** `cmd/archfit/config_update_adapters.go` builds a candidate graph and
@@ -219,6 +232,13 @@ belongs in `internal/assessment` or `internal/relationship`, not in `cmd`.
 the same commit. `TestSelfModelCoversEveryGoPackage` fails on an unowned
 package and `TestSelfModelHasNoDeadPathGlobs` fails on the glob you left
 behind.
+
+**Add or change a state dimension.** The nine envelopes live in
+`internal/assessment/evaluation/dimensions.go`; the contract lives in
+`internal/model/report/state.go`. A new collector extends an existing envelope
+and deletes the `UnknownFact` it retires — the contract does not move. A new
+top-level state field is a published-contract change: see the recipe below and
+`docs/design/architecture-state-reporting.md`.
 
 **Change the published model surface.** Regenerate with
 `ARCHFIT_UPDATE_SURFACE=1 go test ./internal/ -run TestModelSurfaceNoDrift`,

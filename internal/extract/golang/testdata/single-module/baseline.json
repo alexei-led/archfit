@@ -705,8 +705,8 @@
   ],
   "measurement": {
     "history_depth": 0,
-    "history_window": "",
-    "source_ref": "",
+    "history_window": "unavailable",
+    "source_ref": "worktree",
     "tool_versions": {}
   },
   "schema_version": "archfit.architecture-state.v1",

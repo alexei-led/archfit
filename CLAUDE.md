@@ -25,6 +25,8 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - Import ring: `go test ./internal/ -run TestArchImports`
 - Golden output: `go test ./internal/application/ -run TestGolden` — regenerate
   deliberately and inspect the diff; output changes are never automatic.
+- Erosion gates: `go test ./internal/ ./cmd/archfit/ -run TestErosion_` — the six
+  named architecture-state checks (see the erosion invariant below).
 - Dogfood gate: `make archfit` — CI runs the same target after tests/goldens. Also
   runs locally pre-push via the `arch-lint` hook in `.pre-commit-config.yaml`. The
   self-config (`.archfit.yaml`) gates its own architecture: forbidden-dependency
@@ -47,7 +49,7 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   `internal/policy` (the authoritative Policy contract) additionally imports the
   model kernel and one vetted pure third-party matcher (doublestar), allowed via
   `contractThirdPartyAllowed` and checked by `checkPolicyContractPurity`.
-  The model kernel is a frozen published contract:
+  The model kernel is a pinned published contract:
   its exported surface is pinned by `TestModelSurfaceNoDrift` (golden:
   `internal/testdata/model_surface.golden`); regenerate deliberately with
   `ARCHFIT_UPDATE_SURFACE=1` and call the contract change out in review.
@@ -493,6 +495,44 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   operations report `partial` by contract, and any partial dimension is
   `needs_attention`. `make archfit` accepts 0 or 2; only 1 fails it. A coupling
   advisory is a diagnostic and can never reach exit 1.
+- **Six named erosion gates** hold the architecture-state contract against decay
+  back into the averaged score it replaced. Each has ONE executable owner and a
+  PAIRED fixture proving it fires on a violating input — a structural rule nobody
+  has watched fail is a rule nobody knows still works.
+  `no_scalar_decision` + `no_dead_archfit_rule` live in `internal/erosion_test.go`
+  (which carries the name→owner table); `dimension_status_required`,
+  `config_hash_required`, `label_evidence_required`, and `baseline_idempotent`
+  live in `cmd/archfit/erosion_test.go` and run the real command over a fixture
+  repo. `no_scalar_decision` scopes `internal/application/analysis.go` to
+  `outcomeFor`/`seamAnchor`, NOT the whole file: `AnalysisResult` still CARRIES
+  `score.Scorecard` for the legacy renderers, and carrying a retired fact for one
+  release is not the same defect as deciding from it. The scoped rule FAILS if its
+  target function is renamed away, so it cannot silently check nothing.
+  `label_evidence_required` is the one check whose positive case is vacuous today
+  (`.archfit-labels.yaml` is `labels: []`) — its fixtures are what prove it works.
+- **`measurement` is a property of the tree, never of the run**
+  (`report.StateMeasurement`, populated in `application.projectArchitectureState`).
+  Exactly four fields: `source_ref`, `history_depth`, `history_window`,
+  `tool_versions`, pinned by `TestMeasurementCarriesOnlyDeterministicFields`. One
+  wall-clock timestamp, absolute path, or PID here retires the byte-identity
+  contract every format baseline depends on. A full run reports
+  `source_ref: worktree` — it measures files on disk, and naming a commit would
+  claim the bytes equal it even on a dirty tree; only a delta run, which really
+  diffed against a resolved SHA, publishes one. A run that scanned no history
+  records `history_window: unavailable` with depth 0 rather than leaving both
+  blank, so "no history here" stays distinguishable from "the scan was never
+  wired up".
+- **The four comparability fingerprints live ONLY in the root `comparison`
+  block** (`TestFingerprintsLiveOnlyInTheComparisonBlock` walks the serialised
+  wire form). A second copy is a second answer to "may these two runs be
+  compared", and the copies drift. `labels_hash` is `omitempty` and absent when no
+  label is approved — empty compares equal to empty, so two unlabelled repos stay
+  comparable; a malformed labels file is exit 3 long before a report exists. A
+  seam's `label_evidence_hash` is a DIFFERENT fact (the edges behind one label)
+  and stays on the seam.
+- **`change_locality`'s denominator is the DECLARED module set**, not the touched
+  count (`changeLocalityDimension`). Observed-over-observed is a tautology: it
+  reported 100% coverage on a window that reached one module out of forty.
 - **Baseline schema v2** (`internal/baseline`, `SchemaVersion =
   "archfit.baseline.v2"`). Stores accepted findings, the metric snapshot, and the
   architecture-state reference: the four comparison fingerprints (`config_hash`,

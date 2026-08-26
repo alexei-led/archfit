@@ -41,12 +41,12 @@ not to stop development.
 DIMENSIONS
 
   intent          measured    gate: pass            confidence: high     declared rules evaluated 60/60
-  structure       measured    gate: pass            confidence: high     discovered edges resolved to a declared module 543/1253
+  structure       measured    gate: pass            confidence: high     discovered edges resolved to a declared module 544/1255
   modularity      measured    gate: warn            confidence: high     declared modules with a declared public surface 17/18
-  coupling        measured    gate: warn            confidence: high     cross-boundary edges scored 383/383
-  change_locality measured    gate: pass            confidence: high     modules touched in the scanned history window 18/18
+  coupling        measured    gate: warn            confidence: high     cross-boundary edges scored 384/384
+  change_locality measured    gate: pass            confidence: high     declared modules touched in the scanned history window 18/18
   complexity      partial     gate: pass            confidence: medium   production files in the source walk 233/233
-  testability     partial     gate: pass            confidence: medium   classified source files 437/443
+  testability     partial     gate: pass            confidence: medium   classified source files 440/446
   operations      partial     gate: pass            confidence: medium   analyzers reporting coverage 8/12
   drift           unmeasured  gate: not_applicable  confidence: unrated  no denominator
 

@@ -39,7 +39,7 @@ func stateFixture() result.Result {
 		{Tool: stateToolSCIP, Status: evidence.StatusPartial, Reason: "empty index"},
 	}
 	diagnostic.VolatilityCorroboration = &evidence.VolatilityCorroboration{
-		Source: "git", Status: "measured", CommitWindow: 500, CommitsScanned: 500,
+		Source: gitSource, Status: "measured", CommitWindow: 500, CommitsScanned: 500,
 	}
 	return diagnostic
 }
@@ -231,10 +231,10 @@ func TestStateComparisonIsStrictAndExplains(t *testing.T) {
 		base       decision.Fingerprints
 		wantReason string
 	}{
-		{"config differs", decision.Fingerprints{ConfigHash: driftedFingerprint, ModelHash: head.ModelHash, LabelsHash: head.LabelsHash, RubricVersion: head.RubricVersion}, "config_hash"},
-		{"model differs", decision.Fingerprints{ConfigHash: head.ConfigHash, ModelHash: driftedFingerprint, LabelsHash: head.LabelsHash, RubricVersion: head.RubricVersion}, "model_hash"},
-		{"labels differ", decision.Fingerprints{ConfigHash: head.ConfigHash, ModelHash: head.ModelHash, LabelsHash: driftedFingerprint, RubricVersion: head.RubricVersion}, "labels_hash"},
-		{"rubric differs", decision.Fingerprints{ConfigHash: head.ConfigHash, ModelHash: head.ModelHash, LabelsHash: head.LabelsHash, RubricVersion: "bc_score.v5"}, "rubric_version"},
+		{"config differs", decision.Fingerprints{ConfigHash: driftedFingerprint, ModelHash: head.ModelHash, LabelsHash: head.LabelsHash, RubricVersion: head.RubricVersion}, keyConfigHash},
+		{"model differs", decision.Fingerprints{ConfigHash: head.ConfigHash, ModelHash: driftedFingerprint, LabelsHash: head.LabelsHash, RubricVersion: head.RubricVersion}, keyModelHash},
+		{"labels differ", decision.Fingerprints{ConfigHash: head.ConfigHash, ModelHash: head.ModelHash, LabelsHash: driftedFingerprint, RubricVersion: head.RubricVersion}, keyLabelsHash},
+		{"rubric differs", decision.Fingerprints{ConfigHash: head.ConfigHash, ModelHash: head.ModelHash, LabelsHash: head.LabelsHash, RubricVersion: "bc_score.v5"}, keyRubricVersion},
 	}
 	for _, tc := range mismatches {
 		t.Run(tc.name, func(t *testing.T) {

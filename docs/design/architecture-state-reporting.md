@@ -1,6 +1,6 @@
 # Architecture-state reporting (`archfit.architecture-state.v1`)
 
-Status: contract frozen, collectors pending.
+Status: shipped. Contract pinned, all nine collectors landed.
 Plan: `docs/plans/architecture-state-reporting.md`.
 
 Archfit's headline is being replaced. The repository-level `coupling_balance`
@@ -228,26 +228,137 @@ instead of presenting the one the pipeline decided.
 the predicate rejects the imports the migration must keep out of renderers,
 rather than passing vacuously because no adapter happens to violate it today.
 
-The model kernel's exported surface is pinned by `TestModelSurfaceNoDrift`
+The model kernel is a pinned published contract. Its exported surface is
+held by `TestModelSurfaceNoDrift`
 (`internal/testdata/model_surface.golden`). The state contract is part of that
 published surface; regenerating the golden is a contract change and is called out
 in review.
 
-## What is not built yet
+## What v1 measures, and what it does not
 
-The contract ships before its collectors. Every envelope currently reports
-`unmeasured` with a named owner and a stated reason, and
-`projectArchitectureState` (`internal/application/report.go`) carries only the
-facts the assessment result already holds: source ref, history depth and window,
-tool versions, per-tool coverage, config hash, rubric version, and the finding
-and agent-task lists.
+All nine collectors have landed. Each envelope reports what this run actually
+observed and names, as an `UnknownFact`, whatever it could not.
 
-Reporting those envelopes as measured-and-empty would be exactly the implicit
-green result this contract exists to prevent. Each collector deletes its own
-`UnknownFact` entry as it lands, and the coverage counters follow mechanically
-from `Dimensions.CountStatuses`.
+| Dimension         | v1 status         | Denominator                                    | Named unknowns                                                     |
+| ----------------- | ----------------- | ---------------------------------------------- | ------------------------------------------------------------------ |
+| `intent`          | measured          | declared rules evaluated / declared rules       | conformance to rules declaring `gate: off`                          |
+| `structure`       | measured          | edges resolved to a declared module / all edges | direction and layer of edges leaving the module map                 |
+| `modularity`      | measured          | modules with a public surface / declared modules| —                                                                   |
+| `coupling`        | measured; partial while any edge abstains | scored / scored+abstained cross-boundary edges | the balance of each abstained edge  |
+| `change_locality` | measured; unmeasured with no history | declared modules touched / declared modules | essential vs accidental volatility           |
+| `complexity`      | **always partial**| production files / walked files                 | cognitive complexity — v1 ships no analyzer for it                  |
+| `testability`     | **always partial**| test+production files / classified files        | executed test coverage; which boundaries a test exercises           |
+| `operations`      | **always partial**| analyzers reporting / analyzer rows             | observed runtime topology; SBOM and vulnerability state; each gap   |
+| `drift`           | measured only against a comparable v2 reference | qualifying seams compared | everything, when the reference is non-comparable |
 
-The shadow verdict rule is likewise minimal and is replaced by the
-assessment-owned aggregator: `blocked` when an active hard-gate finding or a
-tripped tool gate exists, otherwise `needs_attention`. `healthy` is unreachable
-by construction while any dimension is unmeasured.
+Three dimensions are partial **by contract**, not by omission. Archfit does not
+execute a target repository's test suite, does not observe what runs, and ships
+no cognitive-complexity analyzer. Reporting those as measured-and-empty is the
+implicit green result this contract exists to prevent — so a clean repository
+lands on `NEEDS_ATTENTION` (exit 2 for `check`), and that is correct, not a bug
+to configure away. `make archfit` accepts 0 or 2; only 1 fails it.
+
+A later collector enriches an existing envelope and deletes its own
+`UnknownFact`. Neither the contract nor the coverage counters change: the counts
+follow mechanically from `Dimensions.CountStatuses`.
+
+### Measurement is a property of the tree, not of the run
+
+`StateMeasurement` publishes `source_ref`, `history_depth`, `history_window`, and
+`tool_versions` — and nothing else. A full run measures files on disk and reports
+`source_ref: worktree`; naming a commit there would claim the measured bytes
+equal it, which is false the moment the tree is dirty. Only a delta run, which
+really did diff against a resolved SHA, publishes one.
+
+A run that scanned no history records `history_window: unavailable` with depth 0
+rather than leaving both blank, so "there is no history here" stays
+distinguishable from "nobody wired the scan up".
+
+The four comparability fingerprints live **only** in the root `comparison` block.
+A second copy anywhere in the document is a second answer to "may these two runs
+be compared", and the copies would drift.
+`TestFingerprintsLiveOnlyInTheComparisonBlock` walks the serialised wire form and
+pins that. `labels_hash` is absent when no label is approved — empty compares
+equal to empty, so two unlabelled repositories stay comparable, and a malformed
+labels file is exit 3 long before any report exists.
+
+## Label policy
+
+`.archfit-labels.yaml` stays empty until a module pair has been reviewed by hand
+and every edge in it has one defensible strength. A label overrides measured
+integration strength, which moves seam severity and distributed-monolith
+qualification, so it is an architecture decision — never metadata cleanup.
+
+Validation is structural and hard. A self-pair, a duplicate ordered pair, an
+undeclared endpoint, an invalid strength/status/confidence/provenance is exit 3:
+an override that applies to nothing, or two answers to one question decided by
+file order, cannot produce a valid report. A **stale** evidence hash is not an
+error — it disables the override and emits the `labels/stale` diagnostic, which
+can never be promoted to a gate.
+
+An approved label owes its evidence: `evidence_hash`, `rationale`, `provenance`,
+and `confidence`. Without an evidence hash the freshness check is skipped
+forever, so the label silences its pair permanently and nothing in the report
+says a human decision is doing it. `label_evidence_required` gates that.
+
+## Gate policy
+
+Only a named hard rule blocks. Hard gates are reportable forbidden-dependency and
+layer-direction rules at `gate: fail`, cycles when configured to fail, a
+required-tool policy failure, an expired waiver on an active fail rule, a
+configured coverage floor, and the opt-in distributed-monolith rule.
+
+Everything else is diagnostic: coupling scores and distributions, local
+same-owner cascades, hubs and fan-in/out, public-surface size with no explicit
+rule, complexity, static testability, change locality, operational declarations,
+drift magnitude, stale label evidence, and optional missing tools. A coupling
+seam never blocks merely because its score is low.
+
+The self-config keeps `coupling.gate.distributed_monolith` at `mode: warn` with
+`max_new_seams: 0`. Archfit is a single-owner, single-deploy-unit monolith, so no
+seam qualifies; enabling `fail` here would gate on a condition the repository
+cannot currently reach, which teaches readers to ignore the gate.
+
+## Erosion gates
+
+Six named checks keep the contract from decaying back into the scalar report it
+replaced. CI runs them as an explicit gate step; each has one executable owner
+and each owner proves it fires on a fixture that violates it, so none can pass
+vacuously.
+
+| Check                       | Owner                                 | What it prevents                                                   |
+| --------------------------- | ------------------------------------- | ------------------------------------------------------------------ |
+| `no_scalar_decision`        | `internal.TestErosion_NoScalarDecision` | an averaged score re-entering the path from evidence to exit code |
+| `no_dead_archfit_rule`      | `internal.TestErosion_NoDeadArchfitRule` | a rule reporting "0 violations" for a boundary nobody checks     |
+| `dimension_status_required` | `cmd/archfit.TestErosion_DimensionStatusRequired` | an envelope with no status reading as an empty, healthy result |
+| `config_hash_required`      | `cmd/archfit.TestErosion_ConfigHashRequired` | a delta taken across a config edit blaming the code           |
+| `label_evidence_required`   | `cmd/archfit.TestErosion_LabelEvidenceRequired` | an unevidenced approval silencing a seam permanently       |
+| `baseline_idempotent`       | `cmd/archfit.TestErosion_BaselineIdempotent` | a self-referential capture reporting drift that is not there  |
+
+`no_scalar_decision` scopes `internal/application/analysis.go` to the decision
+functions rather than the whole file, deliberately: the run result still
+**carries** the scorecard for the legacy renderers, and carrying a retired fact
+for one release is not the same defect as deciding from it. The scoped rule fails
+loudly if its target function is renamed away, so it cannot silently check
+nothing.
+
+## Maintenance recipes
+
+- **Adding a collector to an existing envelope.** Extend the dimension function
+  in `internal/assessment/evaluation/dimensions.go`, add its `MetricValue` with a
+  provenance string, and delete the `UnknownFact` it retires. The contract, the
+  coverage counters, and the renderers need no change.
+- **Adding a metric to the state.** It is a `MetricValue` inside an existing
+  envelope. A new top-level field is a contract change: it needs a JSON tag, a
+  `TestModelSurfaceNoDrift` golden regeneration, and a review that says so.
+- **Changing a dimension's status rule.** Update the collector and its
+  `dimensions_test.go` case together. `dimension_status_required` rejects the
+  shapes that read as healthy-by-omission; it does not decide which status is
+  right for a given evidence set.
+- **Changing the distance ordinals or the balance formula.** Bump
+  `ScoreVersion`. It is a comparability fingerprint, so every stored reference
+  becomes non-comparable — which is the point: two runs under different formulas
+  must not subtract cleanly.
+- **Moving a package.** Update the owning `paths:` in `.archfit.yaml` in the same
+  commit. `TestSelfModel*` fails on a dead glob, an unowned package, an
+  equal-specificity ownership tie, or a rule aimed at a path that does not exist.

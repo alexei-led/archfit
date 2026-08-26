@@ -48,22 +48,22 @@ func TestSeamAnchor(t *testing.T) {
 		{
 			name:          "config drift names config_hash",
 			base:          Baseline{State: drifted(func(s *BaselineStateSnapshot) { s.ConfigHash = driftedFingerprint })},
-			wantReasonHas: "config_hash",
+			wantReasonHas: keyConfigHash,
 		},
 		{
 			name:          "module rename names model_hash",
 			base:          Baseline{State: drifted(func(s *BaselineStateSnapshot) { s.ModelHash = driftedFingerprint })},
-			wantReasonHas: "model_hash",
+			wantReasonHas: keyModelHash,
 		},
 		{
 			name:          "label change names labels_hash",
 			base:          Baseline{State: drifted(func(s *BaselineStateSnapshot) { s.LabelsHash = driftedFingerprint })},
-			wantReasonHas: "labels_hash",
+			wantReasonHas: keyLabelsHash,
 		},
 		{
 			name:          "rubric change names rubric_version",
 			base:          Baseline{State: drifted(func(s *BaselineStateSnapshot) { s.RubricVersion = "bc_score.v1" })},
-			wantReasonHas: "rubric_version",
+			wantReasonHas: keyRubricVersion,
 		},
 	}
 
