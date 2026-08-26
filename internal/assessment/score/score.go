@@ -98,7 +98,7 @@ func Synthesize(d result.Result) Scorecard {
 	// internal-edge denominator, so the measured balance reads better than reality.
 	// Cap to medium (mirrors the cargo-modules cap above) so a high-noise TS
 	// extraction cannot read as a confident verdict.
-	if tsUnresolvedPartial(d) {
+	if TSUnresolvedPartial(d) {
 		applyMediumConfidenceCap(&cb,
 			"TypeScript unresolved-specifier ratio exceeds threshold — high confidence disallowed "+
 				"(path aliases or missing installs may be dropping internal edges as external)")
@@ -190,14 +190,20 @@ const tsUnresolvedRatioCeiling = 0.10
 // toolDepCruiser is the ToolCoverage name the TypeScript extractor reports under.
 const toolDepCruiser = "dependency-cruiser"
 
-// tsUnresolvedPartial reports whether the TypeScript extractor (dependency-cruiser)
+// TSUnresolvedPartial reports whether the TypeScript extractor (dependency-cruiser)
 // reported partial coverage with an unresolved-specifier ratio above
 // tsUnresolvedRatioCeiling — a signal that path-alias or module-resolution
 // failures are dropping internal edges into the external bucket, which
 // coupling_balance excludes from its denominator entirely. SpecifiersSeen 0
 // (an extractor that does not track specifier totals) abstains rather than
 // divide by a proxy denominator.
-func tsUnresolvedPartial(d result.Result) bool {
+//
+// It is exported because the architecture-state coupling envelope must reach
+// the SAME conclusion this package's confidence cap does. Re-deriving the ratio
+// there would let the primary contract and the metric disagree about the same
+// run, which is exactly what happened before: coupling_balance disclosed
+// "high confidence disallowed" while dimensions.coupling reported high.
+func TSUnresolvedPartial(d result.Result) bool {
 	for _, c := range d.ToolCoverage {
 		if c.Tool != toolDepCruiser || c.Status != evidence.StatusPartial || c.SpecifiersSeen == 0 {
 			continue

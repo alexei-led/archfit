@@ -452,3 +452,78 @@ func TestDriftDimensionRequiresAComparableReference(t *testing.T) {
 		})
 	}
 }
+
+// TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope pins the
+// coupling envelope against the honesty defect the corpus sweep found on
+// storybook: dependency-cruiser left 55% of the import specifiers unresolved,
+// coupling_balance disclosed "high confidence disallowed", and the PRIMARY
+// contract still reported `measured` with `high` confidence and no unknown
+// fact. Two answers about the same evidence, and the wrong one was primary.
+func TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope(t *testing.T) {
+	t.Parallel()
+
+	// Every edge that survived resolution is scored, so the scored fraction is
+	// 100% and cannot express what dependency-cruiser dropped.
+	edges := &result.ClassifiedEdgeSummary{Total: 10, Scored: 10, ConnectedModules: 2}
+
+	for _, tc := range []struct {
+		name           string
+		coverage       modevidence.Coverage
+		wantStatus     state.MeasurementStatus
+		wantConfidence state.Confidence
+		wantUnknown    bool
+	}{
+		{
+			name:           "a clean TypeScript extraction stays measured",
+			coverage:       modevidence.Coverage{Tool: "dependency-cruiser", Status: modevidence.StatusOK},
+			wantStatus:     state.Measured,
+			wantConfidence: state.ConfidenceHigh,
+		},
+		{
+			// Exactly at the ceiling: the cap is strictly greater-than, so this
+			// side of the boundary must not move the envelope.
+			name: "unresolved specifiers at the ceiling stay measured",
+			coverage: modevidence.Coverage{
+				Tool: "dependency-cruiser", Status: modevidence.StatusPartial,
+				Unresolved: 10, SpecifiersSeen: 100,
+			},
+			wantStatus:     state.Measured,
+			wantConfidence: state.ConfidenceHigh,
+		},
+		{
+			name: "unresolved specifiers above the ceiling make it partial",
+			coverage: modevidence.Coverage{
+				Tool: "dependency-cruiser", Status: modevidence.StatusPartial,
+				Unresolved: 6288, SpecifiersSeen: 11337,
+			},
+			wantStatus:     state.Partial,
+			wantConfidence: state.ConfidenceMedium,
+			wantUnknown:    true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			diag := &result.Result{
+				Findings:        []finding.Finding{},
+				ClassifiedEdges: edges,
+				ToolCoverage:    []modevidence.Coverage{tc.coverage},
+			}
+			dim := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).Coupling
+			if dim.Status != tc.wantStatus {
+				t.Errorf("status = %q, want %q", dim.Status, tc.wantStatus)
+			}
+			if dim.Confidence != tc.wantConfidence {
+				t.Errorf("confidence = %q, want %q", dim.Confidence, tc.wantConfidence)
+			}
+			named := false
+			for _, u := range dim.Unknown {
+				if strings.Contains(u.Fact, "TypeScript") {
+					named = true
+				}
+			}
+			if named != tc.wantUnknown {
+				t.Errorf("names the unresolved imports = %v, want %v (unknown: %+v)", named, tc.wantUnknown, dim.Unknown)
+			}
+		})
+	}
+}

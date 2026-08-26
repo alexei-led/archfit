@@ -6,6 +6,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/assessment/state"
 	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
@@ -289,6 +290,20 @@ func couplingDimension(diag *result.Result) state.Dimension {
 			// fact about edges. It is not the seam policy, which counts logical
 			// module pairs and is owned by the coupling gate, not this envelope.
 			count("critical_high_distance_edges", tail.DistributedMonolithEdges, provRelationship))
+	}
+	// A TypeScript extraction that could not resolve most of its import
+	// specifiers dropped internal edges into the external bucket, which this
+	// denominator excludes entirely — so `205 of 205 scored` is 100% of what
+	// survived resolution, not 100% of the imports. The scored fraction cannot
+	// show that, and reporting `measured` over it claims a completeness the run
+	// does not have.
+	if score.TSUnresolvedPartial(*diag) {
+		dim.Status = state.Partial
+		dim.Unknown = append(dim.Unknown, state.UnknownFact{
+			Fact:   "coupling of unresolved TypeScript imports",
+			Reason: "dependency-cruiser left more than a tenth of the import specifiers unresolved; those edges are excluded from this denominator, so the scored fraction understates what was missed — check tsconfig paths/baseUrl and installed dependencies",
+			Owner:  state.OwnerCoupling,
+		})
 	}
 	dim.Metrics = append(dim.Metrics, seamMetrics(diag.Seams)...)
 	dim.Metrics = append(dim.Metrics, metricValues(diag.Metrics, "unbalanced_edge")...)
