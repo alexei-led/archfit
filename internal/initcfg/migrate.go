@@ -67,6 +67,10 @@ var (
 	topLevelVersion = regexp.MustCompile(`^version:\s*(\d+)\s*(#.*)?$`)
 	// retiredGateKey matches an indented retired coupling-gate knob.
 	retiredGateKey = regexp.MustCompile(`^(\s+)(min_band|max_drop):\s*\S.*$`)
+	// existingStanza matches an already-authored distributed_monolith key, so a
+	// hybrid config (a retired knob beside a hand-written replacement) is not
+	// given a second copy of it.
+	existingStanza = regexp.MustCompile(`^\s+distributed_monolith:\s*$`)
 )
 
 // MigrateToV2 rewrites a v1 config onto schema v2.
@@ -83,7 +87,9 @@ var (
 //     the comment lines immediately above them (a comment directly above a key
 //     documents that key, and leaving it behind would document a key that is
 //     gone);
-//   - a `distributed_monolith` stanza in warn mode replaces them in place.
+//   - a `distributed_monolith` stanza in warn mode replaces them in place —
+//     unless the file already declares one, in which case the author's stanza
+//     stands and only the retired keys go.
 //
 // It never infers `mode: fail`. Fail blocks a build, so switching it on stays an
 // owner decision taken after a report-only run against a comparable reference.
@@ -100,6 +106,13 @@ func MigrateToV2(src []byte) MigrationResult {
 		Output:        src,
 	}
 	lines := strings.Split(string(src), "\n")
+	hasStanza := false
+	for _, line := range lines {
+		if existingStanza.MatchString(line) {
+			hasStanza = true
+			break
+		}
+	}
 	kept := make([]string, 0, len(lines)+6)
 	gateIndent := ""
 	// insertAt is where the FIRST retired key stood. The replacement stanza
@@ -138,7 +151,7 @@ func MigrateToV2(src []byte) MigrationResult {
 		kept = append(kept, line)
 	}
 
-	if insertAt >= 0 {
+	if insertAt >= 0 && !hasStanza {
 		kept = insertDistributedMonolith(kept, gateIndent, insertAt)
 		out.Changes = append(out.Changes, MigrationChange{Key: "coupling.gate.distributed_monolith",
 			Action: migrationInserted, Detail: "mode: warn, max_new_seams: 0"})

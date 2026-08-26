@@ -385,7 +385,7 @@ Defer tools that only provide generic style, security, formatting, dead-code, or
 Minimal example:
 
 ```yaml
-version: 1
+version: 2
 
 modules:
   checkout:

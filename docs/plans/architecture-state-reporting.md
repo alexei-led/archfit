@@ -819,6 +819,48 @@ baseline predates the seam ledger and is non-comparable, so the gate abstains.
 claim to withhold. Fail mode is NOT enabled: on this tree it would gate on
 nothing while reading as a control that exists.
 
+**Impact-analysis fallback (recorded, per the plan's GitNexus clause).** The
+GitNexus MCP tools were not available in this environment, so the documented
+fallback was used and **no claim of exact graph coverage is made**. Blast radius
+was bounded by the import graph instead:
+
+```sh
+git diff --name-only 366b69d..HEAD                      # 96 files
+go list -f '{{.ImportPath}} {{join .Deps " "}}' ./... \
+  | grep github.com/alexei-led/archfit/<changed-pkg>     # reverse importers
+```
+
+Changed Go packages (17): `cmd/archfit`, `internal`, `internal/application`,
+`internal/assessment/{decision,evaluation,result,score}`, `internal/config`,
+`internal/configschema`, `internal/evidence/acquisition`, `internal/initcfg`,
+`internal/labels/labelsio`, `internal/policy`,
+`internal/relationship{,/analysis,/classify,/labels}`.
+
+Reverse importers of the reshaped contracts: `internal/relationship` 37,
+`internal/policy` 19, `internal/assessment/result` 17,
+`internal/assessment/score` 10. Every one of those packages is covered by
+`go build ./...`, `go vet ./...`, and the full `make test` run recorded below;
+the compile-time surface changes (`policy.CouplingGate`, `score.CouplingGate` →
+`score.SeamGate`, `BaselineAnchor`, `evaluation.Scored`) are all breaking, so a
+missed call site is a build failure rather than a silent behavior change.
+
+**Deferred to Task 4A (decide, do not discover).**
+
+1. `policy.ModelHash` is computed AFTER `WithResolvedTopology`, so it covers
+   resolver-filled owners and detected deploy units, not only authored ones.
+   Consequence: a CODEOWNERS or deploy-unit change between base and head makes
+   the state comparison `non_comparable`, which means an ownership split — the
+   canonical way a new distributed-monolith seam appears — can never produce a
+   blockable "new seam"; only code-edge changes can. That may be the intended
+   "a policy change is not a code change" line, but the frozen text
+   ("`model_hash` covers canonical module map/public surfaces") does not settle
+   it. Settle it when 4A persists the hashes.
+2. Task 4B must assert that the legacy `score_delta` envelope is not emitted as
+   a comparable delta beside a `non_comparable` state comparison. Task 3
+   deliberately left the legacy envelope untouched (its preconditions require
+   it), so this assertion belongs to the format cutover and must not fall
+   between the two tasks.
+
 ### Task 4: Migrate all formats, baseline, delta, and CLI behavior
 
 Justification: R1, R9-R11; all supported output adapters and baseline flows

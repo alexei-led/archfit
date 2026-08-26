@@ -181,3 +181,34 @@ modules:
 		t.Errorf("replacement stanza landed after modules: — it must stay inside the gate block:\n%s", out)
 	}
 }
+
+// TestMigrateToV2_KeepsAnAuthoredStanza pins the hybrid case: a config that
+// already declares distributed_monolith (perhaps a partial hand-migration)
+// loses only the retired keys. Splicing a second stanza in would produce a
+// duplicate YAML key, which the decoder rejects — a migration that leaves the
+// file unloadable is worse than one that does nothing.
+func TestMigrateToV2_KeepsAnAuthoredStanza(t *testing.T) {
+	const hybrid = `version: 1
+coupling:
+  gate:
+    min_band: strong
+    distributed_monolith:
+      mode: fail
+      max_new_seams: 3
+`
+	got := initcfg.MigrateToV2([]byte(hybrid))
+	out := string(got.Output)
+
+	if strings.Count(out, "distributed_monolith:") != 1 {
+		t.Errorf("migration produced a duplicate stanza:\n%s", out)
+	}
+	if !strings.Contains(out, "mode: fail") || !strings.Contains(out, "max_new_seams: 3") {
+		t.Errorf("migration overwrote the author's own policy:\n%s", out)
+	}
+	if strings.Contains(out, "min_band") {
+		t.Errorf("migration kept the retired key:\n%s", out)
+	}
+	if second := initcfg.MigrateToV2(got.Output); second.Changed() {
+		t.Errorf("second pass reports %q, want already_current", second.Status)
+	}
+}

@@ -35,7 +35,7 @@ This writes a starter `.archfit.yaml` for the current repo. Review the generated
 Sample output:
 
 ```yaml
-version: 1
+version: 2
 languages:
   go:
     enabled: true
