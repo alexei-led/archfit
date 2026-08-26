@@ -199,7 +199,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   name ("go") instead of the coverage name ("go/packages") created a phantom
   analyzer next to the real family and left the family with zero rows.
 - **Applicability is decided by the extractor, never by a marker list**
-  (`LanguageDescriptor.ProjectPresent`, `cmd/archfit/registry.go` — the row's doc
+  (`LanguageDescriptor.ProjectPresent`, `internal/extract/registry/registry.go` — the row's doc
   comment is the contract; probes are projected by `Config.CoverageOptions()` and
   read in `internal/evidence/acquisition/coverage.go`).
   Every language answers "is this language present under root?" by calling its OWN

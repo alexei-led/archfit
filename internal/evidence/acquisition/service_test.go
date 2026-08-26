@@ -41,7 +41,7 @@ func (r *gitOnlyRunner) Detect(context.Context, string) (toolrun.ToolInfo, bool)
 
 func (r *gitOnlyRunner) Run(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
 	r.calls = append(r.calls, cmd.Name+" "+strings.Join(cmd.Args, " "))
-	if cmd.Name != "git" {
+	if cmd.Name != gitTool {
 		return toolrun.Output{ExitCode: 1}, nil
 	}
 	if len(cmd.Args) >= 2 && cmd.Args[0] == "rev-parse" && cmd.Args[1] == "--show-toplevel" {

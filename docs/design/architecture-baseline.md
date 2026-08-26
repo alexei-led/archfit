@@ -184,7 +184,7 @@ knob in `internal/config`, project it through `policy.RuleConfig` or
 **Add a language or analyzer.** Extractor goes in `internal/extract/<lang>`,
 behind `ports.Extractor`, driven by `toolrun.Runner` — never `exec.Command`.
 Export an applicability function and wire it as the descriptor's
-`ProjectPresent` in `cmd/archfit/registry.go`; a probe that disagrees with its
+`ProjectPresent` in `internal/extract/registry/registry.go`; a probe that disagrees with its
 extractor turns "we did not measure" into "there is nothing here". Give it one
 coverage name of its own.
 

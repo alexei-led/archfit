@@ -287,9 +287,15 @@ func projectDistanceCompression(in *result.DistanceCompressionSummary) *report.D
 func projectFindings(in []finding.Finding) []report.Finding {
 	out := make([]report.Finding, 0, len(in))
 	for _, f := range in {
-		locations := make([]report.Location, 0, len(f.Locations))
-		for _, loc := range f.Locations {
-			locations = append(locations, report.Location{File: loc.File, Line: loc.Line})
+		// nil in, nil out: report.Finding.Locations has no omitempty, so a
+		// zero-length slice would publish `[]` where the schema has always
+		// carried `null` for a finding with no locations.
+		var locations []report.Location
+		if len(f.Locations) > 0 {
+			locations = make([]report.Location, 0, len(f.Locations))
+			for _, loc := range f.Locations {
+				locations = append(locations, report.Location{File: loc.File, Line: loc.Line})
+			}
 		}
 		out = append(out, report.Finding{
 			ID: f.ID, Kind: f.Kind, RuleID: f.RuleID, Status: string(f.Status), Severity: string(f.Severity),

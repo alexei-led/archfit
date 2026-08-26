@@ -176,7 +176,7 @@ func distanceCompression() *relationship.DistanceCompressionSummary {
 type spanAccumulator struct{ boundary, ancestor map[int]int }
 
 func (a *spanAccumulator) add(from, to string, distance relationship.Distance, c relationship.Classification) {
-	if c.DistanceBasis != "code_structure" || distance == relationship.DistanceSameModule || distance == relationship.DistanceUnknown || from == "" || to == "" || c.Score.Band == relationship.SeverityNone {
+	if c.DistanceBasis != "code_structure" || distance == relationship.DistanceSameModule || distance == relationship.DistanceUnknown || from == "" || to == "" {
 		return
 	}
 	span := classify.HierarchySpan(from, to)

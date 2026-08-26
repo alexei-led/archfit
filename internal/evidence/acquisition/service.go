@@ -154,8 +154,15 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 	coverage := append(append([]evidence.Coverage(nil), graphResult.Coverages...), ruleCoverage...)
 	crateRootDirs := map[string]string{}
+	// cargo-modules is an opt-in module-graph analyzer, not a file extractor: its
+	// row counts crates, not files. It is report evidence only (ToolCoverage, the
+	// coverage-gap block, the tool gate, the partial-module-graph confidence cap),
+	// so it must stay out of the raw rows rule and metric evaluation read — the
+	// `coverage` metric would otherwise divide crate counts by file counts and can
+	// exceed the 1.0 ceiling its own contract calls impossible.
+	var reportOnlyCoverage []evidence.Coverage
 	if ex := registry.RustExtractor(extractors); ex != nil {
-		coverage = append(coverage, ex.LastModuleGraphCoverage())
+		reportOnlyCoverage = append(reportOnlyCoverage, ex.LastModuleGraphCoverage())
 		for _, cr := range ex.LastCrateRoots() {
 			crateRootDirs[cr.Name] = cr.Dir
 		}
@@ -170,7 +177,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 	// Rule and metric evaluation reads the RAW coverage rows; the marked copy is
 	// report evidence only, so a config opt-out can never move a measured metric.
-	marked := markDisabledPrimaries(append([]evidence.Coverage(nil), coverage...), s.Options.Coverage, resolved.Root)
+	marked := markDisabledPrimaries(append(append([]evidence.Coverage(nil), coverage...), reportOnlyCoverage...), s.Options.Coverage, resolved.Root)
 
 	return application.Acquired{
 		Facts: evidencecontract.Facts{

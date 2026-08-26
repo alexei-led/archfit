@@ -24,7 +24,7 @@ type ExplainCmd struct {
 func (c *ExplainCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
 
-	cfg, err := loadAnalysisConfig(ctx, c.Config)
+	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {
 		return configLoadError(err)
 	}

@@ -125,3 +125,43 @@ func TestClassifiedSummarySkipsLLMProvenanceOnSameModuleEdges(t *testing.T) {
 		t.Errorf("llm counters = %d/%d, want zero without approved llm labels", s.LabeledLLM, s.LLMLowConfidenceEdges)
 	}
 }
+
+// TestDistanceCompressionCountsWellBalancedEdges pins the structural-span
+// evidence contract: code_structure_boundary_counts / _ancestor_depths describe
+// the SHAPE of the module tree the scored edges cross, not the risk they carry.
+// Filtering them by severity band erases every well-balanced edge — and a
+// balance of 9 or 10 lands in the "none" band, which is also the zero value —
+// so a healthy repo silently reported no structural spans at all.
+func TestDistanceCompressionCountsWellBalancedEdges(t *testing.T) {
+	// One owner, one deploy unit, frozen volatility: ownership is degenerate, so
+	// distance stays on the code_structure basis, and 10-V dominates the balance
+	// into the "none" band.
+	modules := map[string]policy.ModuleDef{
+		moduleA: {Paths: []string{globA}, Owner: teamA, DeployUnit: teamA, Volatility: string(relationship.VolatilityFrozen)},
+		moduleB: {Paths: []string{globB}, Owner: teamA, DeployUnit: teamA, Volatility: string(relationship.VolatilityFrozen)},
+	}
+	got := analysis.Analyze(analysis.Input{
+		Graph:  graphWith(string(relationship.StrengthContract)),
+		Policy: relationshipPolicy(modules),
+	})
+	s := got.Evidence.ClassifiedEdges
+	if s == nil || s.Scored != 1 {
+		t.Fatalf("scored = %+v, want the single cross-boundary edge scored", s)
+	}
+	edge := onlyEdge(t, got)
+	if edge.Classified.DistanceBasis != "code_structure" {
+		t.Fatalf("distance basis = %q, want code_structure: the fixture must exercise the structural ladder", edge.Classified.DistanceBasis)
+	}
+	if edge.Classified.Score.Band != relationship.SeverityNone {
+		t.Fatalf("band = %q, want the none band: the fixture must exercise a well-balanced edge", edge.Classified.Score.Band)
+	}
+	if s.DistanceCompression == nil {
+		t.Fatal("DistanceCompression = nil, want the structural-span evidence")
+	}
+	if len(s.DistanceCompression.CodeStructureBoundaryCounts) == 0 {
+		t.Error("CodeStructureBoundaryCounts is empty: a well-balanced code_structure edge still crosses module boundaries")
+	}
+	if len(s.DistanceCompression.CodeStructureAncestorDepths) == 0 {
+		t.Error("CodeStructureAncestorDepths is empty: a well-balanced code_structure edge still has a shared-ancestor depth")
+	}
+}
