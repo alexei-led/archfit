@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -52,6 +53,30 @@ func TestMigrationTargetsCurrentSchema(t *testing.T) {
 	if initcfg.TargetSchemaVersion != config.SchemaVersion {
 		t.Errorf("initcfg.TargetSchemaVersion = %d, config.SchemaVersion = %d — the migration would write a schema the binary refuses to analyse",
 			initcfg.TargetSchemaVersion, config.SchemaVersion)
+	}
+}
+
+// TestRenderedInitConfigLoadsAtTheCurrentSchema closes the other half of the
+// same seam. `config init` renders the version line itself, so a schema bump
+// that updated only the migration would leave init writing a config this binary
+// refuses — and TestMigrationTargetsCurrentSchema stays green through it,
+// because it never reads what init emits.
+func TestRenderedInitConfigLoadsAtTheCurrentSchema(t *testing.T) {
+	t.Parallel()
+	body := initcfg.Render(initcfg.DiscoveredConfig{
+		Modules: []initcfg.ModuleDef{{Name: "a", Paths: []string{"pkg/a/**"}}},
+	}, nil, false)
+
+	path := filepath.Join(t.TempDir(), defaultConfigPath)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(context.Background(), path)
+	if err != nil {
+		t.Fatalf("config init output does not load: %v\n%s", err, body)
+	}
+	if cfg.Version != config.SchemaVersion {
+		t.Errorf("rendered version = %d, want %d", cfg.Version, config.SchemaVersion)
 	}
 }
 

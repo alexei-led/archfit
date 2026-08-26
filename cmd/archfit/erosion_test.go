@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
@@ -297,4 +299,61 @@ func loadRepoLabels(t *testing.T) []labels.Label {
 // run reports drift that is not there.
 func TestErosion_BaselineIdempotent(t *testing.T) {
 	TestRun_Baseline_IsIdempotent(t)
+	baselineCaptureIgnoresItsOwnFile(t)
+}
+
+// baselineCaptureIgnoresItsOwnFile is this gate's paired violating-input
+// fixture, and it drives the defect directly rather than the symptom.
+//
+// TestRun_Baseline_IsIdempotent compares two captures from the SAME starting
+// state, so it has two vacuous passes available to it: a capture that accepts
+// nothing writes two identical empty files, and a capture that is stable only
+// because nothing perturbed it proves nothing about self-reference. This
+// fixture removes both. It asserts the capture is non-vacuous, then perturbs
+// exactly the input the pre-fix code read — the baseline file itself — and
+// requires the same bytes back. Pre-fix, dropping an accepted representative
+// split its rolled-up group and exposed the siblings, so this input produced a
+// different file; post-fix the capture cannot see it at all.
+func baselineCaptureIgnoresItsOwnFile(t *testing.T) {
+	t.Helper()
+	cfgPath := writeCoupledRepo(t, distributedMonolithCfg)
+	path := filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath)
+
+	capture := func() []byte {
+		t.Helper()
+		var buf bytes.Buffer
+		if code := Run([]string{cmdBaseline, "-c", cfgPath}, &buf); code != 0 {
+			t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // path derives from t.TempDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+
+	clean := capture()
+	stored, err := baseline.Load(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Accepted) == 0 {
+		t.Fatal("fixture regression: the capture accepted nothing, so two empty files would compare equal and the gate would pass vacuously")
+	}
+
+	stored.Accepted = stored.Accepted[1:]
+	if err := baseline.Save(context.Background(), path, stored); err != nil {
+		t.Fatal(err)
+	}
+	perturbed, err := os.ReadFile(path) //nolint:gosec // path derives from t.TempDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(perturbed, clean) {
+		t.Fatal("fixture regression: dropping an accepted entry did not change the file, so the perturbation tests nothing")
+	}
+
+	if got := capture(); !bytes.Equal(got, clean) {
+		t.Errorf("capture over an unchanged tree depends on the baseline it overwrites\nwant:\n%s\ngot:\n%s", clean, got)
+	}
 }

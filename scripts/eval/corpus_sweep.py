@@ -897,6 +897,12 @@ class Sweep:
             return record
 
         work = self.output_dir / sanitize(spec.label)
+        # Grade the record FAIL before the first fallible step. A harness error
+        # is a failure, not an unmeasured repo: leaving the status `unverified`
+        # let finalize_status promote an allow-listed label to
+        # accepted_unverified, discarding the recorded failure, and a strict
+        # sweep exited 0 over a repo nothing had analysed.
+        record["status"] = STATUS_FAIL  # resolved by finalize_status once checks ran
         try:
             work = prepare_work_dir(work)
         except RuntimeError as exc:
@@ -904,7 +910,6 @@ class Sweep:
             return record
 
         record["config"]["target_head"] = self.git_head(spec.root)
-        record["status"] = STATUS_FAIL  # resolved by finalize_status once checks ran
 
         cfg = self.prepare_config(spec, work, record)
         if cfg is None:
@@ -950,10 +955,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--format-repos", default="", help="Labels to check format parity on"
     )
+    # The delivery path is the DEFAULT. docs/test-corpus.md forbids the full
+    # `config update --apply` for a schema migration — it also proposes
+    # structural module edits, which hides whether the migration itself settles
+    # and makes the second-run idempotence signal meaningless. --no-migration-only
+    # opts into the structural artifact deliberately.
     parser.add_argument(
         "--migration-only",
-        action="store_true",
-        help="Migrate the candidate with `config update --migration-only` (delivery path)",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Migrate the candidate with `config update --migration-only` (delivery path, default)",
     )
     parser.add_argument(
         "--allow-unverified",

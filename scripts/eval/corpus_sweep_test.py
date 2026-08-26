@@ -81,6 +81,17 @@ class TestFlagParsing(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 cs.parse_allow_unverified([bad])
 
+    def test_migration_only_defaults_on_at_the_argparse_layer(self):
+        # The bug lived in the argparse-to-Sweep seam: Sweep's own default was
+        # already True while the flag was store_true, so a flagless sweep ran
+        # the full `config update --apply` that docs/test-corpus.md forbids for
+        # a schema migration. Assert the parser, not the Sweep constructor.
+        self.assertTrue(cs.build_parser().parse_args([]).migration_only)
+        self.assertTrue(cs.build_parser().parse_args(["--migration-only"]).migration_only)
+        self.assertFalse(
+            cs.build_parser().parse_args(["--no-migration-only"]).migration_only
+        )
+
     def test_config_version(self):
         self.assertEqual(cs.config_version("version: 2\nmodules: {}\n"), 2)
         self.assertEqual(cs.config_version("# version: 2\nmodules: {}\n"), None)
@@ -681,6 +692,49 @@ class TestHarnessGuards(unittest.TestCase):
 
     def test_strict_mode_fails_on_an_empty_record_set(self):
         self.assertEqual(cs.strict_exit_code([]), 1)
+
+    def test_a_work_dir_error_is_a_failure_an_allow_list_cannot_absorb(self):
+        # An unmarked pre-existing work directory makes prepare_work_dir raise.
+        # The record used to return still carrying the seeded `unverified`
+        # status, so --allow-unverified promoted it to accepted_unverified and
+        # strict mode exited 0 over a repo nothing had analysed.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "target"
+            root.mkdir()
+            out = Path(tmp) / "out"
+            (out / "target").mkdir(parents=True)
+            sweep = cs.Sweep(Path("/bin/true"), out, runner=FakeRunner([]), cwd=Path(tmp))
+            record = sweep.process(
+                cs.RepoSpec("target", root, "go"),
+                want_ai=False,
+                want_repeat=False,
+                want_formats=False,
+            )
+
+        self.assertEqual(record["status"], cs.STATUS_FAIL)
+        self.assertTrue(record["failures"], "the harness error was discarded")
+        resolved = cs.finalize_status(record, {"target": "not cloned here"})
+        self.assertEqual(resolved["status"], cs.STATUS_FAIL)
+        self.assertEqual(cs.strict_exit_code([resolved]), 1)
+
+    def test_an_absent_repository_stays_unverified(self):
+        # The counterpart the fix must not break: a repo that is genuinely not
+        # on this host is an unmeasured gap, and an allow-list entry may accept
+        # it. The FAIL grade has to start after that early return.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            out.mkdir()
+            sweep = cs.Sweep(Path("/bin/true"), out, runner=FakeRunner([]), cwd=Path(tmp))
+            record = sweep.process(
+                cs.RepoSpec("target", Path(tmp) / "absent", "go"),
+                want_ai=False,
+                want_repeat=False,
+                want_formats=False,
+            )
+
+        self.assertEqual(record["status"], cs.STATUS_UNVERIFIED)
+        resolved = cs.finalize_status(record, {"target": "not cloned here"})
+        self.assertEqual(resolved["status"], cs.STATUS_ACCEPTED_UNVERIFIED)
 
     def test_a_missing_coverage_count_is_a_failure(self):
         doc = state_doc()
