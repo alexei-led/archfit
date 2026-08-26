@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/application"
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/evidence"
 	"github.com/alexei-led/archfit/internal/evidence/acquisition"
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
@@ -77,9 +78,11 @@ func (g goldenEvidence) Acquire(ctx context.Context, _ application.AnalysisReque
 	if err != nil {
 		return application.Acquired{}, err
 	}
+	facts := evidence.Facts{Graph: collected.Graph, Coverage: collected.Coverages, Symbols: collected.SCIPSymbols}
 	return application.Acquired{
-		Facts:   evidence.Facts{Graph: collected.Graph, Coverage: collected.Coverages, Symbols: collected.SCIPSymbols},
-		Context: application.AnalysisContext{Scope: sc, Full: true, Now: g.now, Policy: g.policy},
+		Facts:        facts,
+		Observations: evaluation.Observations{Coverage: facts.Coverage, Symbols: facts.Symbols},
+		Context:      application.AnalysisContext{Scope: sc, Full: true, Now: g.now, Policy: g.policy},
 	}, nil
 }
 

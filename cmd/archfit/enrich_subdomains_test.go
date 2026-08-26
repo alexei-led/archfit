@@ -167,7 +167,7 @@ func TestEnrichSubdomainPin(t *testing.T) {
 		Version: 1,
 		Drafts: []initcfg.SubdomainDraft{
 			{Module: enrichModAuth, Subdomain: subdomainCore, Volatility: "low", Status: initcfg.SubdomainStatusApproved},
-			{Module: enrichModNotify, Subdomain: "supporting", Status: initcfg.SubdomainStatusApproved},
+			{Module: enrichModNotify, Subdomain: "supporting", Volatility: "low", Status: initcfg.SubdomainStatusApproved},
 		},
 	}
 	if err := initcfg.WriteSubdomainDrafts(subdomainsPath, draftFile); err != nil {

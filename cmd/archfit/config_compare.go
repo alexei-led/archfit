@@ -1,7 +1,7 @@
 // Package main — `archfit config compare <candidate>`.
 //
 // Two configurations, one source tree, two full measurements, one report-only
-// difference. The pure comparison lives in internal/decision (CompareConfigs);
+// difference. The pure comparison lives in internal/assessment/decision (CompareConfigs);
 // this file owns the composition (two pipeline runs) and the two output shapes.
 //
 // Invariants:

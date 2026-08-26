@@ -413,7 +413,7 @@ func bcEdges(fs []finding.Finding) []bcEdge {
 
 // IsActiveGateFinding reports whether f is an active gate finding — one that
 // counts against the verdict (status new or expired_waiver). Shared with
-// internal/decision so the recommendation buckets match the gate verdict.
+// internal/assessment/decision so the recommendation buckets match the gate verdict.
 func IsActiveGateFinding(f finding.Finding) bool {
 	return f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver
 }

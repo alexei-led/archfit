@@ -44,19 +44,18 @@ type Observations struct {
 // snapshot — only the narrow observation projection and the public relationship
 // contract.
 type AssessInput struct {
-	Facts         Observations
-	Relationships relationship.AnalysisResult
-	Policy        policy.PolicySnapshot
-	Accepted      status.AcceptedSet
-	BaseMetrics   result.MetricSnapshot
-	Scope         scope.Scope
-	Now           time.Time
-	BaseRef       string
-	Head          string
-	// Advisory mirrors the caller's --no-advisories posture; CaptureRelationships
-	// records the classified set for the enrichment use case.
-	Advisory             bool
-	CaptureRelationships bool
+	Facts               Observations
+	Relationships       relationship.Set
+	RelationshipSignals relationship.AssessmentSignals
+	Policy              policy.PolicySnapshot
+	Accepted            status.AcceptedSet
+	BaseMetrics         result.MetricSnapshot
+	Scope               scope.Scope
+	Now                 time.Time
+	BaseRef             string
+	Head                string
+	// Advisory mirrors the caller's --no-advisories posture.
+	Advisory bool
 
 	ConfigSource string
 	// ScanRoot is the analysis boundary as the CALLER gave it. Warning hints echo
@@ -80,12 +79,10 @@ type AssessInput struct {
 	DeployUnitDetectedModules int
 }
 
-// Assessed is the pre-score assessment outcome: the diagnostic, the relationship
-// set the metric pass observed (enrichment only), and the health warnings the
-// caller must disclose before scoring.
+// Assessed is the pre-score assessment outcome: the diagnostic and the health
+// warnings the caller must disclose before scoring.
 type Assessed struct {
 	Diagnostic result.Result
-	Captured   relationship.Set
 	Warnings   []string
 }
 
@@ -101,13 +98,11 @@ func Assess(in AssessInput) (Assessed, error) {
 		// No persisted baseline: nothing was accepted, so every finding is new.
 		in.Accepted = status.Empty{}
 	}
-	diag, captured := project(in, ruleset, newMetricset(in.Policy.Gates.Metrics))
+	diag := project(in, ruleset, newMetricset(in.Policy.Gates.Metrics))
 	diag.OwnerSource = in.OwnerSource
-	diag.DistanceContext = buildDistanceContext(diag, in.Policy, in.DeployUnitDetectedModules)
 	diag.VolatilityCorroboration = in.VolatilityCorroboration
 	return Assessed{
 		Diagnostic: diag,
-		Captured:   captured,
 		Warnings:   healthWarnings(diag, in.CoverageGaps, in.Policy.Topology.Modules, in.ScanRoot, in.ConfigSource),
 	}, nil
 }

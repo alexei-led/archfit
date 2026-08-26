@@ -114,20 +114,6 @@ func (NopSyntaxProvider) Syntax(_ context.Context, _ scope.Scope, _ []string) ([
 	return nil, evidence.Coverage{}, nil
 }
 
-// NopPatternProvider is a no-op PatternProvider used when no Phase 3 tools are
-// present. Find returns empty matches and a coverage record with status="absent".
-type NopPatternProvider struct{}
-
-var _ PatternProvider = NopPatternProvider{}
-
-// Name returns "nop-pattern".
-func (NopPatternProvider) Name() string { return "nop-pattern" }
-
-// Find returns empty matches and an absent coverage record.
-func (NopPatternProvider) Find(_ context.Context, _ scope.Scope, _ pattern.Config) ([]pattern.Match, evidence.Coverage, error) {
-	return nil, evidence.Coverage{Tool: "ast-grep", Status: evidence.StatusAbsent}, nil
-}
-
 // NopSymbolResolver is a no-op SymbolResolver used when no Phase 3 tools are
 // present. Resolve returns the input path unchanged with confidence "high".
 type NopSymbolResolver struct{}

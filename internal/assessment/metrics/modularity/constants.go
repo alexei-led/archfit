@@ -1,5 +1,5 @@
 // Package modularity implements the modularity metrics. The shared
-// module-graph/history helpers live in internal/metrics/internal/modgraph.
+// module-graph/history helpers live in internal/assessment/metrics/internal/modgraph.
 package modularity
 
 // hubBlastThreshold is the relative-blast fraction at which a module is a "hub"

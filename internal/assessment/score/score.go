@@ -257,7 +257,7 @@ func bandFor(v int) Band {
 
 // BandRank returns b's ordinal (0=critical … 4=strong, -1=unknown) for band
 // ≥/≤ comparisons. The canonical band ordering lives here so other packages
-// (e.g. internal/decision) order bands consistently.
+// (e.g. internal/assessment/decision) order bands consistently.
 func BandRank(b Band) int {
 	switch b {
 	case BandCritical:

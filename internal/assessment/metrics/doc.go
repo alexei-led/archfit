@@ -10,6 +10,6 @@
 // compiler thus forbids a metric from reading a signal outside its declared
 // family. Every metric is a pure function of its
 // input; absent inputs yield n/a, never a false zero. Shared scoring helpers
-// live in internal/metrics/internal/result; shared module-graph helpers in
-// internal/metrics/internal/modgraph.
+// live in internal/assessment/metrics/internal/result; shared module-graph helpers in
+// internal/assessment/metrics/internal/modgraph.
 package metrics

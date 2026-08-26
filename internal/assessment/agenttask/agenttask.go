@@ -15,7 +15,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-// matchedByModuleKey mirrors internal/rules' unexported matchedByModule
+// matchedByModuleKey mirrors internal/assessment/rules' unexported matchedByModule
 // MatchedBy key ("module") — the two packages agree on the key by convention,
 // not by import, since agenttask must not depend on the rules package.
 const matchedByModuleKey = "module"

@@ -37,9 +37,6 @@ type Input struct {
 	StaleLabelKeys     []string
 	IncludeAdvisories  bool
 	Delta              bool
-	// CaptureRelationships records the classified relationship set the metric
-	// pass observed, for the enrichment use case. It never changes assessment.
-	CaptureRelationships bool
 }
 
 // Result contains gate findings, metric values, and the verdict inputs produced
@@ -52,9 +49,6 @@ type Result struct {
 	Warnings     int
 	WaiversUsed  int
 	Delta        *result.DeltaReport
-	// Captured is the relationship set the metric pass observed. It is only
-	// populated when Input.CaptureRelationships is set.
-	Captured relationship.Set
 }
 
 // evaluate applies rules, statuses, and metrics in their domain order.
@@ -71,10 +65,6 @@ func evaluate(in Input) Result {
 	calculated := make([]result.MetricResult, 0, in.Metrics.Len())
 	for _, metric := range in.Metrics.metrics {
 		calculated = append(calculated, metric.Calculate(collected))
-	}
-	var captured relationship.Set
-	if in.CaptureRelationships {
-		captured = collected.Common.Relationships
 	}
 	gates := make([]finding.Finding, 0, len(tagged))
 	advisories := 0
@@ -133,7 +123,7 @@ func evaluate(in Input) Result {
 			delta = &result.DeltaReport{New: buckets.New, Existing: buckets.Existing, Resolved: buckets.Resolved, SeverityChanged: buckets.SeverityChanged, TouchedByDelta: buckets.TouchedByDelta}
 		}
 	}
-	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, calculated, in.Gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed, Delta: delta, Captured: captured}
+	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, calculated, in.Gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed, Delta: delta}
 }
 
 func countActive(in []finding.Finding) int {

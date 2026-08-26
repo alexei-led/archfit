@@ -40,23 +40,16 @@ func assessPolicy() policy.PolicySnapshot {
 		policy.AssessmentPolicy{Topology: topology}, policy.GatePolicy{}, nil, nil)
 }
 
-// assessRelationships is one classified cross-module edge: enough for the
-// projector to assemble a real diagnostic without running an extractor.
-func assessRelationships() relationship.AnalysisResult {
-	return relationship.AnalysisResult{
-		Relationships: relationship.Set{
-			Nodes: []relationship.Node{{ID: "file:" + assessFileA, Path: assessFileA}, {ID: "file:" + assessFileB, Path: assessFileB}},
-			Edges: []relationship.Edge{{
-				FromPath: assessFileA, ToPath: assessFileB, FromModule: assessModA, ToModule: assessModB,
-				Kind: "imports", Strength: relationship.StrengthFunctional,
-				Distance: relationship.DistanceCrossModuleSameOwner,
-			}},
-		},
-		Evidence: relationship.AnalysisEvidence{
-			DynamicImports: []modevidence.DynamicImport{{Module: assessModA, Count: 2}},
-			RuntimeModules: []modevidence.RuntimeAsyncModule{{Module: assessModA, IntegrationKind: "queue", Count: 1}},
-			RuntimeEdges:   []modevidence.RuntimeAsyncEdge{{FromModule: assessModA, Target: "nats", IntegrationKind: "queue", Count: 1}},
-		},
+// assessRelationships is one classified cross-module edge: enough for assessment
+// to assemble a real diagnostic without running an extractor.
+func assessRelationships() relationship.Set {
+	return relationship.Set{
+		Nodes: []relationship.Node{{ID: "file:" + assessFileA, Path: assessFileA}, {ID: "file:" + assessFileB, Path: assessFileB}},
+		Edges: []relationship.Edge{{
+			FromPath: assessFileA, ToPath: assessFileB, FromModule: assessModA, ToModule: assessModB,
+			Kind: "imports", Strength: relationship.StrengthFunctional,
+			Distance: relationship.DistanceCrossModuleSameOwner,
+		}},
 	}
 }
 
@@ -67,13 +60,16 @@ func assessInput() evaluation.AssessInput {
 			FileFacts: []modevidence.FileFact{{Module: assessModA}},
 		},
 		Relationships: assessRelationships(),
-		Policy:        assessPolicy(),
-		Scope:         scope.Scope{Root: assessRoot, Mode: scope.ModeFull},
-		Now:           time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		Advisory:      true,
-		ConfigSource:  assessCfgPath,
-		ConfigHash:    assessHash,
-		OwnerSource:   assessOwner,
+		RelationshipSignals: relationship.AssessmentSignals{
+			ClassifiedEdges: &relationship.ClassifiedEdgeSummary{Total: 1, Scored: 1},
+		},
+		Policy:       assessPolicy(),
+		Scope:        scope.Scope{Root: assessRoot, Mode: scope.ModeFull},
+		Now:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Advisory:     true,
+		ConfigSource: assessCfgPath,
+		ConfigHash:   assessHash,
+		OwnerSource:  assessOwner,
 		MarkedCoverage: []modevidence.Coverage{
 			{Tool: assessGrimp, Status: modevidence.StatusDisabled, Reason: "language analysis disabled by config"},
 		},
@@ -85,7 +81,7 @@ func assessInput() evaluation.AssessInput {
 
 // TestAssessAssemblesTheDiagnosticFromOwnedEvidence pins that assessment
 // attaches what its owners already resolved instead of re-deriving it: the run
-// identity from acquisition, the report-only rollups from relationship analysis.
+// identity from acquisition and explicit relationship signals.
 func TestAssessAssemblesTheDiagnosticFromOwnedEvidence(t *testing.T) {
 	t.Parallel()
 	got, err := evaluation.Assess(assessInput())
@@ -99,20 +95,14 @@ func TestAssessAssemblesTheDiagnosticFromOwnedEvidence(t *testing.T) {
 	if diag.ConfigHash != assessHash || diag.OwnerSource != assessOwner {
 		t.Errorf("run identity = hash %q owner %q, want the acquisition context verbatim", diag.ConfigHash, diag.OwnerSource)
 	}
-	if len(diag.DynamicImports) != 1 || diag.DynamicImports[0].Module != assessModA {
-		t.Errorf("dynamic imports = %+v, want the relationship stage's rollup", diag.DynamicImports)
-	}
-	if len(diag.RuntimeAsync) != 1 || len(diag.RuntimeAsyncEdges) != 1 {
-		t.Errorf("runtime async = %+v / %+v, want the relationship stage's rollups", diag.RuntimeAsync, diag.RuntimeAsyncEdges)
-	}
 	if len(diag.FileFacts) != 1 {
 		t.Errorf("file facts = %+v, want the acquisition-built block", diag.FileFacts)
 	}
 	if diag.VolatilityCorroboration == nil || diag.VolatilityCorroboration.Source != "git_history" {
 		t.Errorf("volatility corroboration = %+v, want the acquisition-resolved block", diag.VolatilityCorroboration)
 	}
-	if diag.DistanceContext == nil || diag.DistanceContext.OwnerModel == "" {
-		t.Errorf("distance context = %+v, want it derived from the run policy", diag.DistanceContext)
+	if diag.ClassifiedEdges == nil || diag.ClassifiedEdges.Scored != 1 {
+		t.Errorf("classified edges = %+v, want the explicit relationship assessment signal", diag.ClassifiedEdges)
 	}
 	// Rule and metric evaluation reads the RAW coverage rows, so a config opt-out
 	// cannot move a measured metric. The marked copy lands only in Score.
@@ -214,7 +204,7 @@ func TestAssessRejectsAnInvalidRuleDefinition(t *testing.T) {
 func TestAssessDisclosesAnUnscoredGraph(t *testing.T) {
 	t.Parallel()
 	in := assessInput()
-	in.Relationships.Evidence.ClassifiedEdges = &relationship.ClassifiedEdgeSummary{Total: 12, Scored: 0}
+	in.RelationshipSignals.ClassifiedEdges = &relationship.ClassifiedEdgeSummary{Total: 12, Scored: 0}
 	got, err := evaluation.Assess(in)
 	if err != nil {
 		t.Fatal(err)
@@ -235,7 +225,7 @@ func TestScoreCapsConfidenceOnAPartialRustModuleGraph(t *testing.T) {
 	in := assessInput()
 	// A MEASURED coupling_balance: the cap early-returns on the n/a band, so an
 	// unmeasured fixture would pass whether or not the row reached synthesis.
-	in.Relationships.Evidence.ClassifiedEdges = &relationship.ClassifiedEdgeSummary{
+	in.RelationshipSignals.ClassifiedEdges = &relationship.ClassifiedEdgeSummary{
 		Total: 50, Scored: 50, MeanBalance: 9.0, ConnectedModules: 4,
 		BySeverity: map[string]int{"low": 50},
 	}
@@ -260,23 +250,5 @@ func TestScoreCapsConfidenceOnAPartialRustModuleGraph(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(dim.Evidence, " "), "cargo-modules") {
 		t.Errorf("evidence = %v, want the partial-module-graph disclosure", dim.Evidence)
-	}
-}
-
-// TestAssessReportsTheDetectedDeployUnitCount pins that distance context reports
-// what deploy-unit DETECTION mapped, not how many units the policy snapshot
-// carries. The snapshot is seeded from declared units and resolution only fills
-// gaps, so reading its length reports a different population.
-func TestAssessReportsTheDetectedDeployUnitCount(t *testing.T) {
-	t.Parallel()
-	in := assessInput()
-	in.DeployUnitDetectedModules = 2
-	got, err := evaluation.Assess(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Diagnostic.DistanceContext.DeployUnitDetectedModules != 2 {
-		t.Errorf("deploy_unit_detected_modules = %d, want the detected count 2",
-			got.Diagnostic.DistanceContext.DeployUnitDetectedModules)
 	}
 }

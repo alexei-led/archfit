@@ -89,6 +89,7 @@ type AnalysisResult struct {
 	BaseScore          *score.Scorecard
 	HardGate           bool
 	EnrichmentEvidence *EnrichmentEvidence
+	relationships      relationship.Set
 }
 
 // PolicyPreparer validates decoded policy and emits config-quality diagnostics
@@ -155,10 +156,12 @@ type AnalysisContext struct {
 }
 
 // Acquired pairs the neutral evidence of one run with the context it was
-// acquired under. Application passes it along without inspecting the facts.
+// acquired under plus the assessment observation projection acquisition built.
+// Application passes full facts only to relationship analysis.
 type Acquired struct {
-	Facts   evidence.Facts
-	Context AnalysisContext
+	Facts        evidence.Facts
+	Observations evaluation.Observations
+	Context      AnalysisContext
 }
 
 // EvidenceStage acquires scope-bound facts before relationship analysis. It is
@@ -228,19 +231,6 @@ func (s StageExecutor) Execute(ctx context.Context, req AnalysisRequest) (Analys
 	return assessed, nil
 }
 
-// observationsOf narrows the neutral acquisition snapshot to the observations
-// assessment is allowed to decide over. The dependency graph stops here: only
-// relationship analysis receives it, and assessment reads its conclusions.
-func observationsOf(f evidence.Facts) evaluation.Observations {
-	return evaluation.Observations{
-		Coverage: f.Coverage, Symbols: f.Symbols, PatternMatches: f.PatternMatches,
-		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
-		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
-		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,
-		DeprecatedDeps: f.DeprecatedDeps, SemanticStrengthOverlay: f.SemanticStrengthOverlay,
-	}
-}
-
 // relate runs the relationship stage. It is a pure decision over the acquired
 // facts and the run policy resolved during acquisition.
 func relate(acquired Acquired) relationship.AnalysisResult {
@@ -269,14 +259,14 @@ func (s StageExecutor) loadBaseline(ctx context.Context, req AnalysisRequest, ru
 // comparison in the one order every use case shares.
 func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired Acquired, base Baseline) (AnalysisResult, error) {
 	runCtx := acquired.Context
-	facts := observationsOf(acquired.Facts)
+	facts := acquired.Observations
 	s.reportPhase("Analyzing dependencies")
 	relationships := relate(acquired)
 	assessed, err := evaluation.Assess(evaluation.AssessInput{
-		Facts: facts, Relationships: relationships, Policy: runCtx.Policy,
+		Facts: facts, Relationships: relationships.Relationships, RelationshipSignals: relationships.Assessment, Policy: runCtx.Policy,
 		Accepted: base.Accepted, BaseMetrics: result.MetricSnapshot(base.Metrics),
 		Scope: runCtx.Scope, Now: runCtx.Now, BaseRef: req.BaseRef,
-		Advisory: !req.NoAdvisories, CaptureRelationships: req.CaptureRelationships,
+		Advisory:     !req.NoAdvisories,
 		ConfigSource: runCtx.ConfigSource, ScanRoot: runCtx.ScanRoot, ConfigHash: runCtx.ConfigHash,
 		PrimaryExtractorTools: runCtx.PrimaryExtractorTools, OwnerSource: runCtx.OwnerSource,
 		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
@@ -287,6 +277,8 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		return AnalysisResult{}, err
 	}
 	diag := assessed.Diagnostic
+	attachRelationshipEvidence(&diag, relationships.Evidence)
+	diag.DistanceContext = buildDistanceContext(diag, runCtx.Policy, runCtx.DeployUnitDetectedModules)
 	if req.DiscloseHealthWarnings {
 		for _, warning := range assessed.Warnings {
 			s.warn(warning)
@@ -316,7 +308,8 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 	}
 	out.Diagnostic = diag
 	if req.CaptureRelationships {
-		out.EnrichmentEvidence = projectEnrichmentEvidence(assessed.Captured)
+		out.EnrichmentEvidence = projectEnrichmentEvidence(relationships.Relationships)
+		out.relationships = relationships.Relationships
 	}
 	return out, nil
 }

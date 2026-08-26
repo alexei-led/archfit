@@ -126,7 +126,7 @@ func freshHashFor(t *testing.T, ev workflowEvidence) string {
 		t.Fatal(err)
 	}
 	captured := relate(acquired).Relationships
-	hashes := pairEvidence(*projectEnrichmentEvidence(captured), map[string]struct{}{EnrichmentPairKey(workflowModA, workflowModB): {}})
+	hashes := pairEvidence(captured, map[string]struct{}{EnrichmentPairKey(workflowModA, workflowModB): {}})
 	return hashes[EnrichmentPairKey(workflowModA, workflowModB)]
 }
 

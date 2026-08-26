@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 // EnrichmentEdge is the prompt-ready projection of one classified relationship.
@@ -123,6 +125,7 @@ type EnrichmentResult struct {
 	Candidates, SelectedEdges, TotalEdges, Drafts, ApprovedKept int
 	LabelsPath                                                  string
 	NoCandidates                                                bool
+	relationships                                               relationship.Set
 }
 
 // EnrichmentLabelStore is the persistence port for review labels.
@@ -177,7 +180,7 @@ func (s EnrichService) capture(ctx context.Context, req EnrichmentRequest) (Enri
 	if out.EnrichmentEvidence == nil {
 		return EnrichmentResult{}, nil
 	}
-	return EnrichmentResult{Evidence: *out.EnrichmentEvidence}, nil
+	return EnrichmentResult{Evidence: *out.EnrichmentEvidence, relationships: out.relationships}, nil
 }
 
 // snippetRoot returns the directory source snippets are read from, falling back
@@ -276,15 +279,15 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 	for _, label := range existing {
 		wanted[EnrichmentPairKey(label.From, label.To)] = struct{}{}
 	}
-	evidence := pairEvidence(captured.Evidence, wanted)
+	evidence := pairEvidence(captured.relationships, wanted)
 	approved := effectiveApprovedLabels(existing, evidence)
 	var candidates []EnrichmentCandidatePair
 	var abstained []EnrichmentAbstainedPair
 	total := 0
 	if req.Abstained {
-		abstained, total = selectAbstained(captured.Evidence, approved, req.EdgeCap, req.SampleCap)
+		abstained, total = selectAbstained(captured.relationships, approved, req.EdgeCap, req.SampleCap)
 	} else {
-		candidates = selectCandidates(captured.Evidence, approved)
+		candidates = selectCandidates(captured.relationships, approved)
 	}
 	selectedEdges := len(candidates)
 	for _, pair := range abstained {
@@ -312,7 +315,7 @@ func (s EnrichService) Execute(ctx context.Context, req EnrichmentRequest) (Enri
 	for _, draft := range drafts {
 		draftWanted[EnrichmentPairKey(draft.From, draft.To)] = struct{}{}
 	}
-	draftEvidence := pairEvidence(captured.Evidence, draftWanted)
+	draftEvidence := pairEvidence(captured.relationships, draftWanted)
 	for i := range drafts {
 		drafts[i].EvidenceHash = draftEvidence[EnrichmentPairKey(drafts[i].From, drafts[i].To)]
 	}

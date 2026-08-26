@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -12,6 +13,8 @@ const (
 	configWorkflowRead       = "read"
 	configWorkflowLoadDrafts = "load-drafts"
 	configWorkflowCore       = "core"
+	configWorkflowDrafts     = "drafts"
+	configWorkflowHuge       = "huge"
 )
 
 type configEnrichFake struct {
@@ -109,7 +112,7 @@ func TestConfigEnrichDraftValidatesVolatilityJudgments(t *testing.T) {
 	f := &configEnrichFake{
 		config: ConfigEnrichConfig{AIConfigured: true, Modules: map[string]ConfigEnrichModule{"a": {}}},
 		judgments: []ConfigEnrichDraft{
-			{Module: "a", Value: "huge", Status: ConfigEnrichDraftStatusApproved},
+			{Module: "a", Value: configWorkflowHuge, Status: ConfigEnrichDraftStatusApproved},
 			{Module: "outside", Value: configEnrichVolatilityLow, Status: ConfigEnrichDraftStatusApproved},
 		},
 		draftFile: ConfigEnrichDraftFile{Version: 1, Field: "volatility"},
@@ -127,7 +130,7 @@ func TestConfigEnrichDraftValidatesVolatilityJudgments(t *testing.T) {
 
 func TestConfigEnrichDraftNoTargetsStillValidatesProvider(t *testing.T) {
 	f := &configEnrichFake{config: ConfigEnrichConfig{AIConfigured: true, Modules: map[string]ConfigEnrichModule{"a": {Subdomain: configWorkflowCore}}}}
-	out, err := configEnrichServiceWith(f).Execute(context.Background(), ConfigEnrichRequest{ConfigPath: workflowConfig, DraftPath: "drafts", Kind: ConfigEnrichSubdomain})
+	out, err := configEnrichServiceWith(f).Execute(context.Background(), ConfigEnrichRequest{ConfigPath: workflowConfig, DraftPath: configWorkflowDrafts, Kind: ConfigEnrichSubdomain})
 	if err != nil || out.Action != ConfigEnrichAllSet {
 		t.Fatalf("out=%+v err=%v", out, err)
 	}
@@ -138,12 +141,53 @@ func TestConfigEnrichDraftNoTargetsStillValidatesProvider(t *testing.T) {
 
 func TestConfigEnrichApplyNoApprovedStopsBeforeConfigRead(t *testing.T) {
 	f := &configEnrichFake{draftFile: ConfigEnrichDraftFile{Version: 1}}
-	out, err := configEnrichServiceWith(f).Execute(context.Background(), ConfigEnrichRequest{ConfigPath: workflowConfig, DraftPath: "drafts", Kind: ConfigEnrichOwner, Apply: true})
+	out, err := configEnrichServiceWith(f).Execute(context.Background(), ConfigEnrichRequest{ConfigPath: workflowConfig, DraftPath: configWorkflowDrafts, Kind: ConfigEnrichOwner, Apply: true})
 	if err != nil || out.Action != ConfigEnrichNoApproved {
 		t.Fatalf("out=%+v err=%v", out, err)
 	}
 	if !reflect.DeepEqual(f.order, []string{configWorkflowLoadDrafts}) {
 		t.Fatalf("side effects before no-approved decision: %v", f.order)
+	}
+}
+
+func TestConfigEnrichApplyRejectsInvalidApprovedDraftValues(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		kind  ConfigEnrichKind
+		draft ConfigEnrichDraft
+		want  string
+	}{
+		{
+			name:  "subdomain enum",
+			kind:  ConfigEnrichSubdomain,
+			draft: ConfigEnrichDraft{Module: "a", Subdomain: "platform", Volatility: configEnrichVolatilityLow, Status: ConfigEnrichDraftStatusApproved},
+			want:  "a subdomain \"platform\"",
+		},
+		{
+			name:  "subdomain volatility enum",
+			kind:  ConfigEnrichSubdomain,
+			draft: ConfigEnrichDraft{Module: "a", Subdomain: subdomainCore, Volatility: configWorkflowHuge, Status: ConfigEnrichDraftStatusApproved},
+			want:  "a volatility \"huge\"",
+		},
+		{
+			name:  "volatility enum",
+			kind:  ConfigEnrichVolatility,
+			draft: ConfigEnrichDraft{Module: "a", Value: configWorkflowHuge, Status: ConfigEnrichDraftStatusApproved},
+			want:  "a volatility \"huge\"",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &configEnrichFake{draftFile: ConfigEnrichDraftFile{Version: 1, Drafts: []ConfigEnrichDraft{tc.draft}}}
+			_, err := configEnrichServiceWith(f).Execute(context.Background(), ConfigEnrichRequest{
+				ConfigPath: workflowConfig, DraftPath: configWorkflowDrafts, Kind: tc.kind, Apply: true,
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want invalid approved draft detail %q", err, tc.want)
+			}
+			if !reflect.DeepEqual(f.order, []string{configWorkflowLoadDrafts, workflowConfig}) {
+				t.Fatalf("side effects before invalid-approved decision: %v", f.order)
+			}
+		})
 	}
 }
 
@@ -163,7 +207,7 @@ func TestConfigEnrichApplyPinsOnlyUnsetValuesWithReviewedDefaults(t *testing.T) 
 	if out.Action != ConfigEnrichPinned || out.Count != 1 || out.ReviewedBy != "config enrich owner" {
 		t.Fatalf("out = %+v", out)
 	}
-	if !reflect.DeepEqual(f.order, []string{configWorkflowLoadDrafts, configWorkflowRead, workflowConfig, "clock", "edit", "write"}) {
+	if !reflect.DeepEqual(f.order, []string{configWorkflowLoadDrafts, workflowConfig, configWorkflowRead, "clock", "edit", "write"}) {
 		t.Fatalf("order = %v", f.order)
 	}
 	if len(f.pins) != 1 || f.pins[0].Module != "a" || f.pins[0].ReviewedBy != "config enrich owner" || f.pins[0].ReviewedAt.Location() != time.UTC {
@@ -184,7 +228,7 @@ func TestConfigEnrichApplyApprovedButAlreadySetIsNoop(t *testing.T) {
 	if err != nil || out.Action != ConfigEnrichNoChanges {
 		t.Fatalf("out=%+v err=%v", out, err)
 	}
-	if !reflect.DeepEqual(f.order, []string{configWorkflowLoadDrafts, configWorkflowRead, workflowConfig, "clock"}) {
+	if !reflect.DeepEqual(f.order, []string{configWorkflowLoadDrafts, workflowConfig, configWorkflowRead, "clock"}) {
 		t.Fatalf("order = %v", f.order)
 	}
 }

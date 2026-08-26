@@ -236,7 +236,7 @@ func DeltaBuckets(findings []finding.Finding, accepted AcceptedSet, changed []st
 	return r
 }
 
-// matchedByModuleKey mirrors internal/rules' unexported matchedByModule
+// matchedByModuleKey mirrors internal/assessment/rules' unexported matchedByModule
 // MatchedBy key ("module") — the two packages agree on the key by convention,
 // not by import, since status must not depend on the rules package.
 const matchedByModuleKey = "module"

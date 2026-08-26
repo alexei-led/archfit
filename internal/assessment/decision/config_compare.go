@@ -370,7 +370,7 @@ func gradeTool(
 
 // Analyzers whose Coverage.Unresolved counts import SPECIFIERS a COMPLETED run
 // could not resolve. Named here rather than imported because the decision core
-// never depends on an adapter package — internal/score declares
+// never depends on an adapter package — internal/assessment/score declares
 // "dependency-cruiser" the same way for the same reason.
 const (
 	toolDepCruiser = "dependency-cruiser"

@@ -7,6 +7,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/evidence"
 	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/policy"
@@ -29,7 +30,8 @@ func (f *contextCarryingStage) Prepare(context.Context) error {
 
 func (f *contextCarryingStage) Acquire(context.Context, AnalysisRequest) (Acquired, error) {
 	return Acquired{
-		Facts: evidence.Facts{FileLOC: map[string]int{"a.go": 1}},
+		Facts:        evidence.Facts{FileLOC: map[string]int{"a.go": 1}},
+		Observations: evaluation.Observations{FileLOC: map[string]int{"a.go": 1}},
 		Context: AnalysisContext{
 			ConfigHash: acquiredConfigHash, OwnerSource: acquiredOwnerSource,
 			Policy:         policy.New(policy.TopologyView{}, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, policy.GatePolicy{}, nil, nil),

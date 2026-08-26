@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/application"
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	evidencecontract "github.com/alexei-led/archfit/internal/evidence"
 	"github.com/alexei-led/archfit/internal/extract/acquire"
 	"github.com/alexei-led/archfit/internal/extract/registry"
@@ -178,19 +179,21 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	// Rule and metric evaluation reads the RAW coverage rows; the marked copy is
 	// report evidence only, so a config opt-out can never move a measured metric.
 	marked := markDisabledPrimaries(append(append([]evidence.Coverage(nil), coverage...), reportOnlyCoverage...), s.Options.Coverage, resolved.Root)
+	snapshot := evidencecontract.Facts{
+		Graph: graphResult.Graph, Coverage: coverage,
+		Symbols: graphResult.SCIPSymbols, PatternMatches: patternMatches,
+		SyntaxFacts: syntaxFacts, FileLOC: collected.FileLOC,
+		FileClassIndex: collected.FileClassIndex,
+		FileFacts:      facts.Build(graphResult.SCIPSymbols, collected.FileLOC),
+		Clones:         collected.DuplicationClusters,
+		DynamicImports: collected.DynamicImports, RuntimeAsyncSites: collected.RuntimeAsyncSites,
+		RuntimeConfidence: collected.RuntimeConfidence, DeprecatedDeps: collected.DeprecatedDeps,
+		SemanticStrengthOverlay: graphResult.SemanticStrengthOverlay,
+	}
 
 	return application.Acquired{
-		Facts: evidencecontract.Facts{
-			Graph: graphResult.Graph, Coverage: coverage,
-			Symbols: graphResult.SCIPSymbols, PatternMatches: patternMatches,
-			SyntaxFacts: syntaxFacts, FileLOC: collected.FileLOC,
-			FileClassIndex: collected.FileClassIndex,
-			FileFacts:      facts.Build(graphResult.SCIPSymbols, collected.FileLOC),
-			Clones:         collected.DuplicationClusters,
-			DynamicImports: collected.DynamicImports, RuntimeAsyncSites: collected.RuntimeAsyncSites,
-			RuntimeConfidence: collected.RuntimeConfidence, DeprecatedDeps: collected.DeprecatedDeps,
-			SemanticStrengthOverlay: graphResult.SemanticStrengthOverlay,
-		},
+		Facts:        snapshot,
+		Observations: assessmentObservationsOf(snapshot),
 		Context: application.AnalysisContext{
 			Scope: resolved, BaseRef: req.BaseRef, Full: true,
 			Now: now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
@@ -205,6 +208,16 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 			DeployUnitDetectedModules: len(collected.DeployUnitsByModule),
 		},
 	}, nil
+}
+
+func assessmentObservationsOf(f evidencecontract.Facts) evaluation.Observations {
+	return evaluation.Observations{
+		Coverage: f.Coverage, Symbols: f.Symbols, PatternMatches: f.PatternMatches,
+		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
+		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
+		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,
+		DeprecatedDeps: f.DeprecatedDeps, SemanticStrengthOverlay: f.SemanticStrengthOverlay,
+	}
 }
 
 // configWarnings assembles the advisory config-warning block: config lint,

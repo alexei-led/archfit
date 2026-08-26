@@ -86,10 +86,12 @@ type DistanceOmittedRungReason struct {
 }
 
 // AssessmentSignals is the explicit relationship-to-assessment contract: the
-// classification facts assessment needs to raise advisories. It deliberately
-// carries no report evidence and no finding lifecycle.
+// classification facts assessment needs to raise advisories, disclose health
+// hints, and synthesize metrics. It deliberately carries no report evidence and
+// no finding lifecycle.
 type AssessmentSignals struct {
 	AdvisoryCandidates []AdvisoryCandidate
+	ClassifiedEdges    *ClassifiedEdgeSummary
 	StaleLabelKeys     []string
 }
 

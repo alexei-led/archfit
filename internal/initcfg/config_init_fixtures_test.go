@@ -373,12 +373,14 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Diagnostic {
 	if err != nil {
 		t.Fatalf("acquisition.Collect: %v", err)
 	}
+	relationships := relationshipanalysis.Analyze(relationshipanalysis.Input{
+		Graph: collected.Graph, Policy: runPolicy.Relationship, Mode: relationshipanalysis.Mode{Full: true},
+	})
 	assessed, err := evaluation.Assess(evaluation.AssessInput{
-		Facts: evaluation.Observations{Coverage: collected.Coverages, Symbols: collected.SCIPSymbols},
-		Relationships: relationshipanalysis.Analyze(relationshipanalysis.Input{
-			Graph: collected.Graph, Policy: runPolicy.Relationship, Mode: relationshipanalysis.Mode{Full: true},
-		}),
-		Policy: runPolicy, Accepted: base, BaseMetrics: result.MetricSnapshot(base.Metrics),
+		Facts:               evaluation.Observations{Coverage: collected.Coverages, Symbols: collected.SCIPSymbols},
+		Relationships:       relationships.Relationships,
+		RelationshipSignals: relationships.Assessment,
+		Policy:              runPolicy, Accepted: base, BaseMetrics: result.MetricSnapshot(base.Metrics),
 		Scope: s, Now: now, Advisory: true,
 	})
 	if err != nil {

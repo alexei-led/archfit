@@ -35,13 +35,14 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 
 Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 
-- Core ring (`classify`, `rules`, `metrics` + sub-packages, `status`, `staleness`,
-  `facts`, `score`, `scope`, `syntax`) must not import `os`, `os/exec`, any YAML
-  lib, or adapter packages — it decides over already-gathered facts. `score`
-  synthesises the coupling_balance band from an already-computed `Diagnostic`.
-  `syntax` classifies each source file (Production/Test/Generated/Vendor) and
-  exposes `LookupFileClass`/`IsTestFile` used by the LOC walk and by metrics that
-  filter on Production files.
+- Core ring (`internal/relationship/**`, `internal/assessment/**`,
+  `internal/syntax`, and `internal/scope`) must not import `os`, `os/exec`, any
+  YAML lib, or adapter packages — it decides over already-gathered facts. `scope`
+  is the only filesystem exception: it uses `os.Stat` and symlink resolution to
+  canonicalize the caller's analysis boundary. `assessment/score` synthesises the
+  coupling_balance band from an already-computed `Diagnostic`; `syntax`
+  classifies each source file (Production/Test/Generated/Vendor) for the LOC walk
+  and Production-file metrics.
 - `internal/model/*` imports stdlib only, checked by `checkModelStdlibOnly`.
   `internal/policy` (the authoritative Policy contract) additionally imports the
   model kernel and one vetted pure third-party matcher (doublestar), allowed via
@@ -604,7 +605,7 @@ history or looking up a completed plan by name.
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **archfit** (11045 symbols, 35545 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **archfit** (11185 symbols, 36748 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

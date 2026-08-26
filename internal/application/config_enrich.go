@@ -264,15 +264,18 @@ func (s ConfigEnrichService) apply(ctx context.Context, req ConfigEnrichRequest)
 	if len(approved) == 0 {
 		return ConfigEnrichResult{Action: ConfigEnrichNoApproved}, nil
 	}
-	source, err := s.Files.ReadConfigEnrichFile(ctx, req.ConfigPath)
-	if err != nil {
-		return ConfigEnrichResult{}, fmt.Errorf("reading config: %w", err)
-	}
 	cfg, err := s.Configs.LoadConfigEnrich(ctx, req.ConfigPath)
 	if err != nil {
 		return ConfigEnrichResult{}, err
 	}
 	current := configEnrichCurrent(cfg, req.Kind)
+	if err := validateApprovedConfigEnrichDrafts(approved, req.Kind, current); err != nil {
+		return ConfigEnrichResult{}, err
+	}
+	source, err := s.Files.ReadConfigEnrichFile(ctx, req.ConfigPath)
+	if err != nil {
+		return ConfigEnrichResult{}, fmt.Errorf("reading config: %w", err)
+	}
 	reviewedBy := req.ReviewedBy
 	if reviewedBy == "" {
 		reviewedBy = "config enrich " + string(req.Kind)
@@ -421,6 +424,39 @@ func approvedConfigEnrichDrafts(drafts []ConfigEnrichDraft) []ConfigEnrichDraft 
 	return approved
 }
 
+func validateApprovedConfigEnrichDrafts(drafts []ConfigEnrichDraft, kind ConfigEnrichKind, current map[string]string) error {
+	invalid := make([]string, 0)
+	for _, draft := range drafts {
+		if current[draft.Module] != "" {
+			continue
+		}
+		switch kind {
+		case ConfigEnrichSubdomain:
+			subdomain := strings.TrimSpace(draft.Subdomain)
+			if subdomain == "" {
+				continue
+			}
+			if !validConfigEnrichSubdomain(subdomain) {
+				invalid = append(invalid, fmt.Sprintf("%s subdomain %q", draft.Module, draft.Subdomain))
+			}
+			volatility := strings.TrimSpace(draft.Volatility)
+			if !validConfigEnrichVolatility(volatility) {
+				invalid = append(invalid, fmt.Sprintf("%s volatility %q", draft.Module, draft.Volatility))
+			}
+		case ConfigEnrichVolatility:
+			value := strings.TrimSpace(draft.Value)
+			if value != "" && !validConfigEnrichVolatility(value) {
+				invalid = append(invalid, fmt.Sprintf("%s volatility %q", draft.Module, draft.Value))
+			}
+		}
+	}
+	if len(invalid) == 0 {
+		return nil
+	}
+	sort.Strings(invalid)
+	return fmt.Errorf("approved %s draft has invalid value(s): %s", kind, strings.Join(invalid, "; "))
+}
+
 func configEnrichCurrent(cfg ConfigEnrichConfig, kind ConfigEnrichKind) map[string]string {
 	current := make(map[string]string, len(cfg.Modules))
 	for name, mod := range cfg.Modules {
@@ -437,16 +473,18 @@ func actionableConfigEnrichPins(drafts []ConfigEnrichDraft, kind ConfigEnrichKin
 		}
 		pin := ConfigEnrichPin{Module: draft.Module, ReviewedAt: reviewedAt, ReviewedBy: reviewedBy}
 		if kind == ConfigEnrichSubdomain {
-			if draft.Subdomain == "" {
+			subdomain := strings.TrimSpace(draft.Subdomain)
+			if subdomain == "" {
 				continue
 			}
-			pin.Subdomain = draft.Subdomain
-			pin.Volatility = draft.Volatility
+			pin.Subdomain = subdomain
+			pin.Volatility = strings.TrimSpace(draft.Volatility)
 		} else {
-			if draft.Value == "" {
+			value := strings.TrimSpace(draft.Value)
+			if value == "" {
 				continue
 			}
-			pin.Value = draft.Value
+			pin.Value = value
 		}
 		pins = append(pins, pin)
 	}

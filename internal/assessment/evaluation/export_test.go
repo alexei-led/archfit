@@ -30,7 +30,6 @@ var (
 	Finalize                = finalize
 	NewMetricset            = newMetricset
 	CouplingGateAnchorStale = couplingGateAnchorStale
-	BuildDistanceContext    = buildDistanceContext
 	HealthWarnings          = healthWarnings
 	ValidationCommand       = validationCommand
 	ApplyToolGate           = applyToolGate

@@ -75,12 +75,13 @@ func Analyze(in Input) relationship.AnalysisResult {
 		unmeasuredConnascence = connascence.Unmeasured
 	}
 	dynamicConnascence := buildDynamicConnascenceSignals(dynamicImports, runtimeAsyncEdges, unmeasuredConnascence)
+	classifiedEdges := buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy)
 	distanceCandidates := append(buildStaticDistanceCandidates(in.Graph, idx, cfg.ModuleMap),
 		BuildDistanceConfigCandidates(dynamicImports, runtimeAsyncEdges, dynamicConnascence)...)
 	sortDistanceConfigCandidates(distanceCandidates)
 	out := relationship.AnalysisResult{
 		Relationships: set,
-		Assessment:    relationship.AssessmentSignals{AdvisoryCandidates: advisoryCandidates(set, clones, cfg)},
+		Assessment:    relationship.AssessmentSignals{AdvisoryCandidates: advisoryCandidates(set, clones, cfg), ClassifiedEdges: classifiedEdges},
 		Evidence: relationship.AnalysisEvidence{
 			LLMApprovedCount:          labels.LLMApprovedCount(in.Labels, evidenceHashes),
 			RuntimeModules:            runtimeModules(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),
@@ -88,7 +89,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 			DynamicImports:            dynamicImports,
 			DynamicConnascenceSignals: dynamicConnascence,
 			CloneOnly:                 clones,
-			ClassifiedEdges:           buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy),
+			ClassifiedEdges:           classifiedEdges,
 			Connascence:               connascence,
 			DistanceConfigCandidates:  distanceCandidates,
 			LocalCoupling:             buildLocalCouplingSummary(set),
