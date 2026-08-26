@@ -65,6 +65,8 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 		Base:                    in.BaseRef,
 		Head:                    in.Head,
 		ConfigHash:              in.ConfigHash,
+		ModelHash:               in.ModelHash,
+		LabelsHash:              in.LabelsHash,
 		PrimaryExtractorTools:   in.PrimaryExtractorTools,
 		Metrics:                 metricResults,
 		Findings:                resolvedFindings,

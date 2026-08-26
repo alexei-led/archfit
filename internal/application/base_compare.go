@@ -6,14 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // BaseEvidence is the ONLY data allowed to cross from the base sub-run into
-// head output: observed finding IDs, analyzer coverage, and the config hash.
+// head output: observed finding IDs, analyzer coverage, and the run
+// fingerprints.
 // Base task paths, locations, validation commands, and declarations are dropped
 // at the source — the base run is scored inside a temporary worktree that no
 // longer exists when the head report is read, so any path from it is a lie.
@@ -24,8 +27,12 @@ type BaseEvidence struct {
 	// Coverage and CoverageGaps are the base run's analyzer coverage evidence.
 	Coverage     []modevidence.Coverage
 	CoverageGaps []modevidence.CoverageGap
-	// ConfigHash is the base run's effective config hash.
+	// ConfigHash, ModelHash, and LabelsHash are the base run's fingerprints.
+	// They cross with the finding IDs and coverage rows because they are the
+	// only way the head side can tell a code change from a policy change.
 	ConfigHash string
+	ModelHash  string
+	LabelsHash string
 }
 
 // attachBaseComparison checks the base ref out into a clean detached worktree,
@@ -65,6 +72,11 @@ func (s StageExecutor) attachBaseComparison(ctx context.Context, req AnalysisReq
 	if err != nil {
 		return nil, &ExecutionError{Message: fmt.Sprintf("score base (%s): %v", req.BaseRef, err)}
 	}
+	diag.Comparison = decision.CompareFingerprints(req.BaseRef,
+		decision.Fingerprints{ConfigHash: diag.ConfigHash, ModelHash: diag.ModelHash,
+			LabelsHash: diag.LabelsHash, RubricVersion: report.ScoreVersion},
+		decision.Fingerprints{ConfigHash: evidence.ConfigHash, ModelHash: evidence.ModelHash,
+			LabelsHash: evidence.LabelsHash, RubricVersion: report.ScoreVersion})
 	evaluation.AttachGitOrigin(diag, evaluation.GitOriginInput{
 		BaseRef: req.BaseRef, BaseFindingIDs: evidence.FindingIDs,
 		HeadCoverage: diag.ToolCoverage, HeadGaps: diag.CoverageGaps, HeadConfigHash: diag.ConfigHash,
@@ -104,6 +116,8 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 		Coverage:     diag.ToolCoverage,
 		CoverageGaps: diag.CoverageGaps,
 		ConfigHash:   diag.ConfigHash,
+		ModelHash:    diag.ModelHash,
+		LabelsHash:   diag.LabelsHash,
 	}, nil
 }
 

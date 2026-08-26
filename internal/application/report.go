@@ -69,15 +69,19 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 		out.Measurement.HistoryWindow = historyWindow(h.FullHistory, h.CommitWindow)
 	}
 
-	out.Comparison.ConfigHash = r.ConfigHash
-	out.Comparison.RubricVersion = report.ScoreVersion
-	if r.Base != "" {
-		// Comparison is strict: the model and labels hashes the contract
-		// requires do not exist yet, so a base run reports why it cannot compare
-		// rather than a delta it cannot justify.
-		out.Comparison.Status = report.ComparisonNonComparable
-		out.Comparison.BaseRef = r.Base
-		out.Comparison.Reasons = []string{"state_comparison_unimplemented"}
+	out.Comparison = report.StateComparison{
+		Status: report.ComparisonNotRequested, Reasons: []string{},
+		ConfigHash: r.ConfigHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
+		RubricVersion: report.ScoreVersion,
+	}
+	if c := r.Comparison; c != nil {
+		// The comparison verdict is decided where both sides exist (the base
+		// comparison in the application, the fingerprint rule in assessment).
+		// The projection copies it: a renderer must not be able to reach a
+		// different answer than the run did.
+		out.Comparison.Status = report.ComparisonStatus(c.Status)
+		out.Comparison.BaseRef = c.BaseRef
+		out.Comparison.Reasons = append([]string{}, c.Reasons...)
 	}
 
 	out.Coverage.Measured, out.Coverage.Partial, out.Coverage.Unmeasured = out.Dimensions.CountStatuses()

@@ -110,5 +110,10 @@ func Load(path string) ([]labels.Label, error) {
 			return nil, fmt.Errorf("labels: entry %d (%s -> %s): invalid provenance %q (human|llm|tool)", i, l.From, l.To, l.Provenance)
 		}
 	}
+	// Shape checks only: labelsio has no module map, so module existence is
+	// checked where the labels meet the config (acquisition).
+	if err := labels.Validate(f.Labels, nil); err != nil {
+		return nil, fmt.Errorf("%w (%s)", err, path)
+	}
 	return f.Labels, nil
 }

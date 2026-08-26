@@ -105,11 +105,17 @@ type PolicyPreparer interface {
 // once during preparation and every later stage reads the same immutable
 // snapshot rather than re-deriving it.
 type AnalysisContext struct {
-	Scope        scope.Scope
-	BaseRef      string
-	Full         bool
-	Now          time.Time
-	ConfigHash   string
+	Scope      scope.Scope
+	BaseRef    string
+	Full       bool
+	Now        time.Time
+	ConfigHash string
+	// ModelHash and LabelsHash fingerprint the module model and the approved
+	// label set. With ConfigHash and the rubric version they are the four
+	// inputs a numerical comparison needs to agree on; any mismatch makes the
+	// comparison non-comparable rather than a delta nobody can justify.
+	ModelHash    string
+	LabelsHash   string
 	ConfigSource string
 	BundleDir    string
 	// ScanRoot is the analysis boundary AS THE CALLER GAVE IT (empty means "the
@@ -267,6 +273,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		Scope: runCtx.Scope, Now: runCtx.Now, BaseRef: req.BaseRef,
 		Advisory:     !req.NoAdvisories,
 		ConfigSource: runCtx.ConfigSource, ScanRoot: runCtx.ScanRoot, ConfigHash: runCtx.ConfigHash,
+		ModelHash: runCtx.ModelHash, LabelsHash: runCtx.LabelsHash,
 		PrimaryExtractorTools: runCtx.PrimaryExtractorTools, OwnerSource: runCtx.OwnerSource,
 		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
 		CoverageGaps: runCtx.CoverageGaps, VolatilityCorroboration: runCtx.VolatilityCorroboration,

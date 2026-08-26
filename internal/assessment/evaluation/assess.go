@@ -62,6 +62,8 @@ type AssessInput struct {
 	// it verbatim; Scope.Root is its canonical form and would not copy-paste back.
 	ScanRoot              string
 	ConfigHash            string
+	ModelHash             string
+	LabelsHash            string
 	PrimaryExtractorTools []string
 	OwnerSource           string
 	// ConfigWarnings, MarkedCoverage, CoverageGaps, and VolatilityCorroboration

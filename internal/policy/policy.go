@@ -5,8 +5,13 @@
 package policy
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"maps"
 	"slices"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -192,4 +197,39 @@ func cloneMetricConfigs(in map[string]MetricConfig) map[string]MetricConfig {
 		out[name] = cfg
 	}
 	return out
+}
+
+// ModelHash is the canonical fingerprint of the module model: names, path and
+// surface globs, and the classification metadata that decides distance and
+// volatility.
+//
+// It exists so a comparison can refuse rather than mislead. Seam identity is
+// derived from module NAMES, so a rename produces a different seam; without a
+// model fingerprint that rename would read as one resolved seam plus one new
+// seam, and a new-seam gate would block on a no-op refactor. A changed glob has
+// the same effect on which edges cross which boundary.
+//
+// Determinism is the whole contract: every map is walked in sorted key order
+// and every slice is sorted before hashing, so two runs over the same model
+// produce the same hash regardless of iteration order.
+func ModelHash(modules map[string]ModuleDef) string {
+	names := make([]string, 0, len(modules))
+	for name := range modules {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	h := sha256.New()
+	for _, name := range names {
+		def := modules[name]
+		_, _ = io.WriteString(h, name+"\x00")
+		for _, globs := range [][]string{def.Paths, def.Public, def.Internal} {
+			sorted := append([]string(nil), globs...)
+			sort.Strings(sorted)
+			_, _ = io.WriteString(h, strings.Join(sorted, "\x01")+"\x00")
+		}
+		for _, field := range []string{def.Layer, def.Subdomain, def.Volatility, def.Owner, def.DeployUnit, string(def.Role)} {
+			_, _ = io.WriteString(h, field+"\x00")
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }

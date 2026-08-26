@@ -137,7 +137,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 	runPolicy = runPolicy.WithResolvedTopology(resolvedOwners, collected.DeployUnitsByModule)
 	noteToolError(toolJscpd, collected.CloneError)
-	pinned, err := s.loadLabels(bundleDir)
+	pinned, err := s.loadLabels(bundleDir, runPolicy.Topology.Modules)
 	if err != nil {
 		return application.Acquired{}, err
 	}
@@ -197,6 +197,8 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		Context: application.AnalysisContext{
 			Scope: resolved, BaseRef: req.BaseRef, Full: true,
 			Now: now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
+			ModelHash:    policy.ModelHash(runPolicy.Topology.Modules),
+			LabelsHash:   labels.FileHash(pinned),
 			ConfigSource: configPath, BundleDir: bundleDir, ScanRoot: root,
 			PinnedLabels: pinned, Policy: runPolicy,
 			OwnerSource: ownerSource, OwnerWarnings: ownerWarnings,
@@ -262,11 +264,26 @@ func (s *Service) collectRuleEvidence(ctx context.Context, sc scope.Scope, p pol
 // the service's own config path. `config compare` measures two configs against
 // one bundle: both sides must classify with the same approved labels, or the
 // comparison would attribute a label difference to the candidate config.
-func (s *Service) loadLabels(bundleDir string) ([]labels.Label, error) {
+func (s *Service) loadLabels(bundleDir string, modules map[string]policy.ModuleDef) ([]labels.Label, error) {
 	if s == nil || s.Labels == nil {
 		return nil, nil
 	}
-	return s.Labels.Load(filepath.Join(bundleDir, labelsFileName))
+	pinned, err := s.Labels.Load(filepath.Join(bundleDir, labelsFileName))
+	if err != nil {
+		return nil, err
+	}
+	// Module existence is checked HERE, not in the loader: this is the first
+	// point where the labels and the module map are both in hand. A label
+	// naming a module the config does not declare is an override that applies
+	// to nothing, which is a config error, not a silent no-op.
+	declared := make(map[string]struct{}, len(modules))
+	for name := range modules {
+		declared[name] = struct{}{}
+	}
+	if err := labels.Validate(pinned, declared); err != nil {
+		return nil, err
+	}
+	return pinned, nil
 }
 
 // labelsFileName is the pinned-label file every bundle carries.

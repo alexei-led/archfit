@@ -1,6 +1,7 @@
 package labels_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/relationship/labels"
@@ -222,5 +223,74 @@ func TestApproved_ProvenanceSplit(t *testing.T) {
 	}
 	if len(stale) != 1 || stale[0].From != modF {
 		t.Errorf("stale = %+v, want only the dead-hash llm label (freshness applies to llm labels too)", stale)
+	}
+}
+
+// TestValidate pins the relational label invariants. They are hard errors
+// because a label pins the strength of every edge in its module pair: an
+// unknown module is an override that applies to nothing, and a duplicate pair
+// is two answers to one question decided by file order.
+func TestValidate(t *testing.T) {
+	declared := map[string]struct{}{"a": {}, "b": {}, "c": {}}
+	label := func(from, to string) labels.Label {
+		return labels.Label{From: from, To: to, Strength: strengthModel, Status: labels.StatusApproved}
+	}
+
+	tests := []struct {
+		name    string
+		lbls    []labels.Label
+		modules map[string]struct{}
+		wantErr string
+	}{
+		{name: "empty label set is valid", modules: declared},
+		{
+			name: "distinct declared pairs are valid",
+			lbls: []labels.Label{label("a", "b"), label("b", "c"), label("b", "a")}, modules: declared,
+		},
+		{
+			name: "a self-pair is rejected",
+			lbls: []labels.Label{label("a", "a")}, modules: declared,
+			wantErr: "cannot be labelled against itself",
+		},
+		{
+			name: "a duplicate ordered pair is rejected",
+			lbls: []labels.Label{label("a", "b"), label("a", "b")}, modules: declared,
+			wantErr: "duplicates entry 0",
+		},
+		{
+			name: "an unknown source module is rejected",
+			lbls: []labels.Label{label("ghost", "b")}, modules: declared,
+			wantErr: `module "ghost" is not declared`,
+		},
+		{
+			name: "an unknown target module is rejected",
+			lbls: []labels.Label{label("a", "ghost")}, modules: declared,
+			wantErr: `module "ghost" is not declared`,
+		},
+		{
+			// Without a module map the shape checks still hold, so a labels
+			// file can be validated before a config is in hand.
+			name: "module existence is skipped without a module map",
+			lbls: []labels.Label{label("ghost", "phantom")},
+		},
+		{
+			name:    "shape checks still apply without a module map",
+			lbls:    []labels.Label{label("a", "b"), label("a", "b")},
+			wantErr: "duplicates entry 0",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := labels.Validate(tc.lbls, tc.modules)
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Errorf("Validate = %v, want nil", err)
+			case tc.wantErr != "" && err == nil:
+				t.Errorf("Validate = nil, want an error mentioning %q", tc.wantErr)
+			case tc.wantErr != "" && !strings.Contains(err.Error(), tc.wantErr):
+				t.Errorf("Validate = %q, want it to mention %q", err, tc.wantErr)
+			}
+		})
 	}
 }

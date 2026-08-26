@@ -64,7 +64,17 @@ type Result struct {
 	OwnerSource               string                              `json:"owner_source,omitempty"`
 	PrimaryExtractorTools     []string                            `json:"primary_extractor_tools,omitempty"`
 	ConfigWarnings            []string                            `json:"config_warnings,omitempty"`
-	ClassifiedEdges           *ClassifiedEdgeSummary              `json:"classified_edges,omitempty"`
+	// ModelHash and LabelsHash fingerprint the module model and the approved
+	// label set. `json:"-"` for the same reason State is: the diagnostic schema
+	// is frozen, and they reach the wire through the architecture-state
+	// comparison block.
+	ModelHash  string `json:"-"`
+	LabelsHash string `json:"-"`
+	// Comparison records what this run was compared against, when anything was.
+	// Nil means no comparison was requested. `json:"-"` for the same reason the
+	// hashes are: it reaches the wire through the architecture-state contract.
+	Comparison      *StateComparison       `json:"-"`
+	ClassifiedEdges *ClassifiedEdgeSummary `json:"classified_edges,omitempty"`
 	// Seams is the logical coupling seam ledger, one record per ordered module
 	// pair. It is `json:"-"` for the same reason State is: the diagnostic
 	// schema is frozen, and the seam ledger reaches the wire through the

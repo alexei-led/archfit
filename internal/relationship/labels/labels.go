@@ -25,7 +25,9 @@ package labels
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"sort"
+	"strings"
 )
 
 // Status values for a label.
@@ -188,4 +190,70 @@ func LLMConfidenceByKey(lbls []Label, evidence map[string]string) map[string]str
 		}
 	}
 	return out
+}
+
+// Validate checks the relational invariants of a label set: no self-pair, no
+// duplicate ordered pair, and — when modules is non-empty — both endpoints
+// declared.
+//
+// These are hard errors, not diagnostics. A label pins the integration strength
+// of every edge in its module pair, so an unknown module or a duplicated pair
+// means the file no longer describes a decision anyone can act on: the first is
+// an override that silently applies to nothing, the second is two answers to
+// one question with the winner decided by file order. Neither can produce a
+// valid report, so both belong to the exit-3 class.
+//
+// modules is the set of declared module names. Pass nil to check only what does
+// not need a module map — the shape checks still hold, so a labels file can be
+// validated before a config is in hand.
+func Validate(lbls []Label, modules map[string]struct{}) error {
+	seen := make(map[string]int, len(lbls))
+	for i, l := range lbls {
+		if l.From == l.To {
+			return fmt.Errorf("labels: entry %d (%s -> %s): a module cannot be labelled against itself", i, l.From, l.To)
+		}
+		key := Key(l.From, l.To)
+		if first, dup := seen[key]; dup {
+			return fmt.Errorf("labels: entry %d duplicates entry %d (%s -> %s): one module pair has one strength",
+				i, first, l.From, l.To)
+		}
+		seen[key] = i
+		if len(modules) == 0 {
+			continue
+		}
+		for _, endpoint := range []string{l.From, l.To} {
+			if _, ok := modules[endpoint]; !ok {
+				return fmt.Errorf("labels: entry %d (%s -> %s): module %q is not declared in the config — the override would apply to nothing",
+					i, l.From, l.To, endpoint)
+			}
+		}
+	}
+	return nil
+}
+
+// FileHash is the canonical fingerprint of a label set.
+//
+// Labels override integration strength, which moves seam severity and the
+// distributed-monolith qualification. Two runs whose labels differ are
+// therefore measuring under different rules, and a numerical delta between them
+// would attribute a policy change to the code. Draft labels are inert and are
+// deliberately excluded: adding one changes nothing measurable, so it must not
+// invalidate a comparison.
+//
+// Entries are sorted by their ordered-pair key, so the hash is independent of
+// file order.
+func FileHash(lbls []Label) string {
+	items := make([]string, 0, len(lbls))
+	for _, l := range lbls {
+		if l.Status != StatusApproved {
+			continue
+		}
+		items = append(items, strings.Join([]string{
+			l.From, l.To, l.Strength, l.EvidenceHash, l.Confidence, l.Provenance,
+		}, "\x01"))
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	return HashItems(items)
 }
