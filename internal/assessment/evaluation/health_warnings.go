@@ -21,7 +21,7 @@ const toolGrimp = "grimp"
 // gaps is passed explicitly rather than read off diag: Score stamps
 // diag.CoverageGaps AFTER Assess computes these warnings, so reading the field
 // here would silently disable the coverage-gap hint.
-func healthWarnings(diag result.Result, gaps []evidence.CoverageGap, modules map[string]policy.ModuleDef, scanRoot, configPath string) []string {
+func healthWarnings(diag result.Result, gaps []evidence.CoverageGap, topology policy.TopologyView, fileLOC map[string]int, scanRoot, configPath string) []string {
 	var out []string
 	warn := func(msg string) { out = append(out, msg) }
 	if len(gaps) > 0 {
@@ -40,16 +40,32 @@ func healthWarnings(diag result.Result, gaps []evidence.CoverageGap, modules map
 		}
 	}
 
-	// Use the already-matched FileFacts from the pipeline run rather than
-	// re-walking the source tree. Empty FileFacts with declared module paths
-	// means no source files matched any module glob.
-	if len(diag.FileFacts) == 0 && declaresModulePaths(modules) {
+	// Use the LOC walk's own file set rather than re-walking the source tree.
+	//
+	// This deliberately does NOT read diag.FileFacts: those are built from the
+	// SCIP symbol graph, which is opt-in and off by default, so an empty
+	// FileFacts means "no symbol indexer ran", not "no file matched a module
+	// glob". Warning on it told every default-configured repository that its
+	// module paths were wrong.
+	if !anyFileMatchesAModule(fileLOC, topology.ModuleMap) && declaresModulePaths(topology.Modules) {
 		// Reuse the repair-task command builder: it omits --root when the caller
 		// gave none (empty ScanRoot means "the whole repository"), so the hint
 		// never suggests `--root ""`.
 		warn("no source files matched declared module paths — check --root and module globs\n  → run: " + validationCommand(configPath, scanRoot))
 	}
 	return out
+}
+
+// anyFileMatchesAModule reports whether at least one walked source file
+// resolves to a declared module. An empty walk answers false: nothing matched,
+// which is the condition the warning describes.
+func anyFileMatchesAModule(fileLOC map[string]int, mm policy.ModuleMap) bool {
+	for file := range fileLOC {
+		if _, ok := mm.ModuleForFile(file); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func pythonAllEdgesExternal(cov []evidence.Coverage, edges *result.ClassifiedEdgeSummary) bool {

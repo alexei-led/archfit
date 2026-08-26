@@ -105,7 +105,7 @@ func Assess(in AssessInput) (Assessed, error) {
 	diag.VolatilityCorroboration = in.VolatilityCorroboration
 	return Assessed{
 		Diagnostic: diag,
-		Warnings:   healthWarnings(diag, in.CoverageGaps, in.Policy.Topology.Modules, in.ScanRoot, in.ConfigSource),
+		Warnings:   healthWarnings(diag, in.CoverageGaps, in.Policy.Topology, in.Facts.FileLOC, in.ScanRoot, in.ConfigSource),
 	}, nil
 }
 
