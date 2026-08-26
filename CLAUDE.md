@@ -155,12 +155,22 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   pairs are not either — they have no import edge. Seam order is by module pair,
   and the gate re-sorts by ID so a ledger reordering cannot reorder gate findings.
 - **Comparison is strict on four fingerprints** (`decision.CompareFingerprints`).
-  `config_hash` + `model_hash` (`policy.ModelHash` over the canonical module map)
+  `config_hash` + `model_hash` (`policy.ModelHash` over the RESOLVED module map)
   + `labels_hash` (`labels.FileHash` over APPROVED entries only) +
   `rubric_version`. Any mismatch is `non_comparable` with a reason NAMING the
   drifted input — never a delta with a caveat. Model hash is load-bearing: seam
   identity comes from module NAMES, so without it a rename reads as one resolved
   seam plus one new seam and a new-seam gate blocks on a no-op refactor.
+  It is taken AFTER `PolicySnapshot.WithResolvedTopology`, so a CODEOWNERS-filled
+  owner or a detected deploy unit moves it — settled decision, pinned by
+  `policy.TestModelHashCoversResolvedTopology`. Distance (and therefore seam
+  qualification) is computed from owner and deploy unit, so hashing only the
+  DECLARED map would let an owner flip re-qualify an existing seam and block a
+  no-op commit; covering the resolved map makes the same event an abstention.
+  Accepted cost: an ownership or deploy-unit split makes the stored baseline
+  non-comparable, so `mode: fail` blocks only on code-edge changes until
+  `archfit baseline` is re-run. Rationale in
+  `docs/design/architecture-state-reporting.md`.
 - **Labels are validated structurally** (`labels.Validate`). Self-pair, duplicate
   ordered pair, and (where the module map is in hand) undeclared endpoint are
   hard errors — an override that applies to nothing, or two answers to one
@@ -580,7 +590,13 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
 - `gate:` is wired for **all rule types** (`off` skips, `warn` is advisory/non-blocking,
   `fail`/unset is blocking; exception: `public_api_change` defaults to `warn` when unset). An unknown `type` value is a config error.
   `metrics.<name>.gate` follows the same convention: a worsening baseline delta
-  blocks when `gate` is unset. `MetricEntry.Enabled` is a `*bool` so a knob-only
+  blocks when `gate` is unset. A tripped ratchet produces NO finding, so it
+  reaches the verdict the same way the required-tool gate does — through
+  `evaluation.BlockingMetricRegressions` into the state's hard-gate result
+  (`buildState`), never through the finding populations. It also raises the
+  owning dimension's `gate` to `fail`, routed by the envelope's own metric list.
+  Asserting only `evaluation.Result.Verdict` cannot see this: nothing reads that
+  verdict for the exit code. `MetricEntry.Enabled` is a `*bool` so a knob-only
   entry (`{gate: warn}`) stays enabled — only explicit `enabled: false` disables
   the metric (`metrics.New`). `coupling_balance` does not gate at all — the only
   coupling gate is `coupling.gate.distributed_monolith`; see the coupling-gate

@@ -499,8 +499,10 @@ cannot hide a qualifying seam: the rule reads the full classified edge set.
 "Newly introduced" needs a reference whose config, module map, labels, and
 rubric all match this run. Without one the rule reports the seam total, states
 that no new-seam count is claimed, and does not block — an unrated gate never
-fails. Reference precedence is fixed: an explicit `--base` reference wins,
-otherwise the stored baseline, otherwise no "new seam" claim is made.
+fails. In v1 the only reference is the stored `.archfit-baseline.json` written
+by `archfit baseline`. `analyze --base <ref>` produces a report-only comparison
+against another tree; it is **not** a seam-gate reference, so a run with
+`--base` and no committed baseline still makes no "new seam" claim.
 
 When the gate blocks, the verdict becomes FAIL (exit 1), the reasons print to
 stderr, and the run emits one `bc/coupling_gate` gate finding **per newly

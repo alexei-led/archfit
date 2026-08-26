@@ -128,6 +128,27 @@ the run `non_comparable` with stated reasons — never a numerical delta compute
 across incomparable models. No project option may weaken this. A module rename
 changes the model hash, so it cannot surface as a comparable resolved/new seam.
 
+**`model_hash` covers the RESOLVED module map, not the declared one.** It is
+taken after `PolicySnapshot.WithResolvedTopology`, so it includes the owners
+CODEOWNERS/git history filled in and the deploy units detection mapped — not
+only what `.archfit.yaml` declares. Task 3 deferred this choice to 4A; it is
+settled here, and `TestModelHashCoversResolvedTopology` pins it.
+
+The reason is the direction of the failure. A seam qualifies for the
+distributed-monolith gate at high distance, and distance is computed from owner
+and deploy unit. Hashing only the declared map would leave a resolved-owner
+change — a CODEOWNERS edit, a new commit by a different author, or an
+`ownership.Resolve` git timeout — silently re-qualifying an existing seam, and
+`mode: fail` would block a no-op commit. Including it turns the same event into
+an ABSTENTION with a named cause, which is the safe direction and matches the
+abstain-not-fake rule the rest of the scorer follows.
+
+The cost is real and accepted: an ownership or deploy-unit split — one canonical
+way a distributed-monolith seam appears — makes the stored baseline
+non-comparable, so `mode: fail` blocks only on seams introduced by a code-edge
+change. Re-run `archfit baseline` after a topology change to restore a
+comparable reference.
+
 ### Determinism
 
 `StateMeasurement` carries only deterministic source, history, and tool facts. It

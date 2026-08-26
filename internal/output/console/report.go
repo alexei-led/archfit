@@ -63,7 +63,15 @@ func writeHeadline(b *strings.Builder, s report.ArchitectureState) {
 	kv(b, "ATTENTION", fmt.Sprintf("%d dimension(s) flagged  ·  %d diagnostic(s)", s.Decision.AttentionDimensions, diagnostics))
 	kv(b, "COVERAGE", fmt.Sprintf("%d measured · %d partial · %d unmeasured  (of %d)",
 		s.Coverage.Measured, s.Coverage.Partial, s.Coverage.Unmeasured, report.DimensionCount))
-	if blockers == 0 {
+	// The reassurance is keyed on the VERDICT, never on the finding count alone.
+	// A required-tool policy failure and a tripped metric ratchet both block
+	// without producing a finding, so "no blockers … not to stop development"
+	// over a BLOCKED run tells the reader to ignore the exit code the same run
+	// just returned.
+	switch {
+	case s.Verdict == report.StateBlocked && blockers == 0:
+		b.WriteString("\nBlocked by a hard gate that produces no finding — a required\nanalyzer or a metric ratchet. See the dimension(s) below reporting\ngate: fail.\n")
+	case blockers == 0:
 		b.WriteString("\nNo blockers. Use this run for architecture-improvement planning,\nnot to stop development.\n")
 	}
 }

@@ -117,6 +117,11 @@ func TestFormatMatrix_ExitCodesUnchanged(t *testing.T) {
 			// here is the implicit green result the contract prevents.
 			{name: "clean", cfg: func(t *testing.T) string { return writeCheckFixtureRepo(t, "golang") }, want: 2},
 			{name: "violated", cfg: writeViolatingRepo, want: 1},
+			// A tripped metric ratchet blocks without producing a finding, so
+			// it reaches the exit code only through the state's hard-gate
+			// result. It shipped broken once precisely because this table had
+			// no case for it: every other blocking path has a gate finding.
+			{name: "metric regression", cfg: writeMetricRegressionRepo, want: 1},
 			{name: "missing config", cfg: func(t *testing.T) string {
 				return filepath.Join(t.TempDir(), "nope.yaml")
 			}, want: 3},
@@ -530,4 +535,51 @@ func TestFormatMatrix_SarifCarriesTheState(t *testing.T) {
 			t.Errorf("SARIF ruleId for %s = %q, JSON says %q", f.ID, rule, f.RuleID)
 		}
 	}
+}
+
+// writeMetricRegressionRepo returns a clean fixture whose committed baseline
+// records a better `coverage` value than the tree now measures, so the run
+// carries a worsening delta on a metric whose gate is unset — the documented
+// blocking default.
+//
+// The baseline is CAPTURED, then edited, rather than hand-authored: the
+// regression has to travel the real write/read path, and a hand-written
+// snapshot would pass even if capture stopped recording metrics.
+func writeMetricRegressionRepo(t *testing.T) string {
+	t.Helper()
+
+	cfgPath := writeCheckFixtureRepo(t, "golang")
+	if code, stdout, stderr := runArchfit(t, cmdBaseline, "-c", cfgPath); code != 0 {
+		t.Fatalf("baseline capture: exit = %d, want 0\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	path := filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath)
+	raw, err := os.ReadFile(path) //#nosec G304 -- test-owned temp path
+	if err != nil {
+		t.Fatalf("read captured baseline: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("decode captured baseline: %v", err)
+	}
+	metrics, ok := doc["metrics"].(map[string]any)
+	if !ok {
+		t.Fatalf("captured baseline has no metrics object: %s", raw)
+	}
+	entry, ok := metrics["coverage"].(map[string]any)
+	if !ok {
+		t.Fatalf("captured baseline has no coverage metric: %s", raw)
+	}
+	value, ok := entry["value"].(float64)
+	if !ok {
+		t.Fatalf("coverage metric has no numeric value: %v", entry)
+	}
+	entry["value"] = value + 1
+	edited, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("encode edited baseline: %v", err)
+	}
+	if err := os.WriteFile(path, edited, 0o600); err != nil {
+		t.Fatalf("write edited baseline: %v", err)
+	}
+	return cfgPath
 }

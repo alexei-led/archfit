@@ -164,6 +164,24 @@ func TestRenderState_CleanRunSaysSo(t *testing.T) {
 	}
 }
 
+// TestRenderState_BlockedWithoutAFindingSaysWhy pins the one case where the
+// blocker COUNT and the verdict disagree: a required-tool failure and a tripped
+// metric ratchet both block without producing a finding. Printing "not to stop
+// development" there tells the reader to ignore the exit code the same run
+// returned.
+func TestRenderState_BlockedWithoutAFindingSaysWhy(t *testing.T) {
+	s := report.NewArchitectureState()
+	s.Verdict = report.StateBlocked
+	s.Decision.HardGates = report.HardGateFail
+	out := render(t, s)
+	if strings.Contains(out, "not to stop development") {
+		t.Errorf("a blocked run must never be described as planning-only input:\n%s", out)
+	}
+	if !strings.Contains(out, "gate: fail") {
+		t.Errorf("a blocked run with no finding must point at the failing gate:\n%s", out)
+	}
+}
+
 // TestRenderState_IsDeterministic: two renders of the same state must not
 // differ, or the format cannot carry a byte-comparable baseline.
 func TestRenderState_IsDeterministic(t *testing.T) {

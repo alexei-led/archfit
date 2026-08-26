@@ -279,6 +279,11 @@ type Architecture struct {
 	// blocks without producing a finding, so it is carried separately rather
 	// than faked as one.
 	RequiredToolFailure bool
+	// MetricRegressions names the metrics whose accepted-baseline delta worsened
+	// past a blocking threshold. Like RequiredToolFailure it blocks without
+	// producing a finding, so a blocked run with zero active blockers can still
+	// name its cause.
+	MetricRegressions []string
 }
 
 // ConfidenceFor is the confidence a measurement status supports on its own.

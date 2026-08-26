@@ -40,4 +40,9 @@ var (
 	ApplyToolGate     = applyToolGate
 	BuildState        = buildState
 	BuildDimensions   = buildDimensions
+
+	// BlockingMetricRegressions is the metric half of the hard-gate result.
+	// Nothing outside this package computes it — Score does — so it is exposed
+	// only so the metric-gating table can assert the path the exit code takes.
+	BlockingMetricRegressions = blockingMetricRegressions
 )

@@ -145,18 +145,8 @@ func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[s
 	}
 	verdict := result.VerdictPass
 	for _, m := range ms {
-		if m.Delta == nil {
-			continue
-		}
 		c := cfg[m.Name]
-		if c.Gate == string(policy.GateOff) {
-			continue
-		}
-		breached := *m.Delta < -metricMinDelta(c)
-		if m.Direction == result.DirectionHigherIsWorse {
-			breached = *m.Delta > float64(metricMaxNew(c))
-		}
-		if !breached {
+		if !metricBreach(m, c) {
 			continue
 		}
 		if c.Gate == string(policy.GateWarn) {
@@ -169,6 +159,48 @@ func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[s
 		return result.VerdictWarn
 	}
 	return verdict
+}
+
+// metricBreach reports whether a metric's accepted-baseline delta worsened past
+// its configured threshold. It is the single breach predicate: the legacy
+// verdict and the architecture state's hard-gate result read the same rule, so
+// they can never disagree about whether a ratchet was tripped.
+//
+// Direction is the metric's own: a count metric worsens upward past `max_new`,
+// a ratio metric worsens downward past `min_delta`. A metric with no delta was
+// never compared, and `gate: off` opted out of the comparison entirely.
+func metricBreach(m result.MetricResult, c policy.MetricConfig) bool {
+	if m.Delta == nil || c.Gate == string(policy.GateOff) {
+		return false
+	}
+	if m.Direction == result.DirectionHigherIsWorse {
+		return *m.Delta > float64(metricMaxNew(c))
+	}
+	return *m.Delta < -metricMinDelta(c)
+}
+
+// blockingMetricRegressions names the metrics whose baseline delta worsened
+// past a threshold whose gate BLOCKS — `fail`, or unset, which is the
+// documented default. A `warn` gate is diagnostic and never appears here.
+//
+// A tripped ratchet produces no finding, so — exactly like the required-tool
+// policy failure — it cannot be inferred from the finding populations and has
+// to be carried into the architecture state explicitly. Without it the
+// documented `metrics.<name>.gate` contract is a knob that decodes, validates,
+// and decides nothing.
+//
+// Names are returned in the caller's metric order, which is the metric
+// registration order, so the disclosure is deterministic.
+func blockingMetricRegressions(ms []result.MetricResult, cfg map[string]policy.MetricConfig) []string {
+	out := make([]string, 0, len(ms))
+	for _, m := range ms {
+		c := cfg[m.Name]
+		if c.Gate == string(policy.GateWarn) || !metricBreach(m, c) {
+			continue
+		}
+		out = append(out, m.Name)
+	}
+	return out
 }
 func metricMinDelta(c policy.MetricConfig) float64 {
 	if c.MinDelta != nil {

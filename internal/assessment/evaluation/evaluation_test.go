@@ -208,6 +208,11 @@ func TestEvaluateMetricGating(t *testing.T) {
 		metric result.MetricResult
 		gate   policy.MetricConfig
 		want   result.Verdict
+		// wantBlocks is the architecture-state half of the same decision: a
+		// blocking ratchet produces no finding, so it reaches the hard-gate
+		// result through BlockingMetricRegressions or not at all. Asserting only
+		// Verdict left that path dead — the exit code stopped reading Verdict.
+		wantBlocks bool
 	}{
 		{
 			name:   "unmeasured delta never gates",
@@ -220,9 +225,10 @@ func TestEvaluateMetricGating(t *testing.T) {
 			want:   result.VerdictPass,
 		},
 		{
-			name:   "worsening higher-is-better metric fails when gate is unset",
-			metric: metricValue(new(float64(-1)), result.DirectionHigherIsBetter),
-			want:   result.VerdictFail,
+			name:       "worsening higher-is-better metric fails when gate is unset",
+			metric:     metricValue(new(float64(-1)), result.DirectionHigherIsBetter),
+			want:       result.VerdictFail,
+			wantBlocks: true,
 		},
 		{
 			name:   "worsening metric inside min_delta tolerance passes",
@@ -231,10 +237,11 @@ func TestEvaluateMetricGating(t *testing.T) {
 			want:   result.VerdictPass,
 		},
 		{
-			name:   "worsening metric beyond min_delta tolerance fails",
-			metric: metricValue(new(float64(-3)), result.DirectionHigherIsBetter),
-			gate:   policy.MetricConfig{MinDelta: new(float64(2))},
-			want:   result.VerdictFail,
+			name:       "worsening metric beyond min_delta tolerance fails",
+			metric:     metricValue(new(float64(-3)), result.DirectionHigherIsBetter),
+			gate:       policy.MetricConfig{MinDelta: new(float64(2))},
+			want:       result.VerdictFail,
+			wantBlocks: true,
 		},
 		{
 			name:   "gate warn downgrades a breach to warn",
@@ -249,9 +256,10 @@ func TestEvaluateMetricGating(t *testing.T) {
 			want:   result.VerdictPass,
 		},
 		{
-			name:   "rising higher-is-worse metric fails",
-			metric: metricValue(new(float64(1)), result.DirectionHigherIsWorse),
-			want:   result.VerdictFail,
+			name:       "rising higher-is-worse metric fails",
+			metric:     metricValue(new(float64(1)), result.DirectionHigherIsWorse),
+			want:       result.VerdictFail,
+			wantBlocks: true,
 		},
 		{
 			name:   "rising higher-is-worse metric inside max_new passes",
@@ -278,6 +286,10 @@ func TestEvaluateMetricGating(t *testing.T) {
 			}
 			if len(got.Metrics) != 1 || got.Metrics[0].Name != metricName {
 				t.Errorf("Metrics = %+v, want one %s result", got.Metrics, metricName)
+			}
+			regressed := evaluation.BlockingMetricRegressions(got.Metrics, map[string]policy.MetricConfig{metricName: test.gate})
+			if blocks := len(regressed) > 0; blocks != test.wantBlocks {
+				t.Errorf("BlockingMetricRegressions = %v, want blocking = %v", regressed, test.wantBlocks)
 			}
 		})
 	}
