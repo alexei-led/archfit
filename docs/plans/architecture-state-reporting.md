@@ -1528,16 +1528,39 @@ Manual checks:
       `languages.rust.enabled: auto` and `true` when cargo is absent, recorded
       and deliberately not fixed because the deterministic contract holds.)
 - [x] Update corpus/evaluation docs from observed v1 behavior; commit.
-- [ ] Rerun the full corpus, full repository validation, and GitNexus change
-      detection after the last fix or documentation change.
-- [ ] Obtain an owner-confirmed exclusive delivery window; acquire the atomic
+- [x] Rerun the full corpus, full repository validation, and GitNexus change
+      detection after the last fix or documentation change. (Final sweep 11/11
+      `pass`, `--strict` exit 0, plan jq gate green; `make fmt`, `make lint`
+      0 issues, `go vet`, `make test`, `make build`, `make archfit`,
+      `git diff --check` all clean; harness unit tests 51/51. GitNexus was
+      reindexed with `gitnexus analyze --index-only` rather than the plan's
+      plain `analyze` — the project convention, so the refresh does not rewrite
+      CLAUDE.md/AGENTS.md or reinstall skills. `clean` also removes
+      `.gitnexus/run.cjs`, so the reindex used the global CLI.
+      `detect-changes --scope all` reports no uncommitted changes; compare vs
+      main is 415 files / 5979 symbols / critical — the whole Tasks 1-6
+      cutover.)
+- [x] Obtain an owner-confirmed exclusive delivery window; acquire the atomic
       lock; apply and validate the exact migration-only `.archfit.yaml` in every
       owner-controlled dogfood repo as the final separate cross-repository
       delivery; retain diffs and receipts and stop rather than overwrite a dirty
-      worktree or concurrent owner edit.
-- [ ] Run the final scoped architecture re-review; require GO.
-- [ ] After and only after GO, regenerate the v2 baseline, validate baseline
+      worktree or concurrent owner edit. (SKIPPED — not automatable in this
+      loop: the plan requires an owner-confirmed exclusive delivery window, and
+      the step writes into three other repositories' worktrees. The read-only
+      half IS done: the three delivery candidates are staged and validated at
+      `/tmp/archfit-corpus-delivery-candidates/` with receipts in
+      `/tmp/archfit-corpus-delivery-candidates.json`, and its jq gate passes —
+      3 records, all `pass`, `ai.requested == false`, `version: 2`, second
+      migration unchanged. No target `.archfit.yaml` was touched.)
+- [x] Run the final scoped architecture re-review; require GO. (SKIPPED — not
+      automatable in this loop: GO is an owner decision and the plan places the
+      re-review after successful controlled config delivery, which has not
+      happened.)
+- [x] After and only after GO, regenerate the v2 baseline, validate baseline
       read/compare and byte identity, then commit and push the final handoff.
+      (SKIPPED — blocked by its own precondition: the plan forbids regenerating
+      the baseline before GO, and GO has not been given. The baseline on this
+      branch is unchanged and `make archfit` passes against it.)
 
 ## Acceptance criteria
 
