@@ -5,21 +5,50 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/assessment/state"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
+// stateInput carries the already-resolved values the architecture-state
+// collectors read. It is a projection of ScoreInput, not a second source: the
+// state never reaches for a fact the scored run did not already have.
+type stateInput struct {
+	Policy policy.PolicySnapshot
+	Facts  Observations
+	// RuleTypes maps a declared rule ID to its type, so a finding can be routed
+	// to the dimension that owns its subject.
+	RuleTypes map[string]string
+	// RequiredToolFailure is the required-analyzer gate result. It blocks
+	// without producing a finding, so it cannot be inferred from the findings.
+	RequiredToolFailure bool
+}
+
+// classified is the one pass over the run's findings that the architecture
+// state is decided from: the two decision populations plus the per-dimension
+// routing, all in the diagnostic's own finding order.
+type classified struct {
+	blockers    []state.FindingRef
+	diagnostics []state.FindingRef
+	byDimension map[string][]state.FindingRef
+}
+
 // classifyFindings splits the diagnostic's findings into the two populations the
-// architecture decision reads: hard-gate blockers and active diagnostics.
+// architecture decision reads — hard-gate blockers and active diagnostics — and
+// routes each to the dimension that owns its subject.
 //
 // The split is computed here, in the capability that owns finding identity, so
 // the state aggregator never has to look at a finding's kind-vs-status rules —
 // or at anything a score touched. "Active" is the existing lifecycle predicate
 // (new or expired_waiver): a baseline-accepted or waived finding was already
-// decided and must not re-open the verdict.
+// decided and must not re-open the verdict or warn a dimension.
 //
 // Findings are referenced, never copied into a second list, so the diagnostic
 // stays the single owner of identity, status, and order.
-func classifyFindings(findings []finding.Finding) (blockers, diagnostics []state.FindingRef) {
-	blockers, diagnostics = []state.FindingRef{}, []state.FindingRef{}
+func classifyFindings(findings []finding.Finding, ruleTypes map[string]string) classified {
+	out := classified{
+		blockers:    []state.FindingRef{},
+		diagnostics: []state.FindingRef{},
+		byDimension: map[string][]state.FindingRef{},
+	}
 	for _, f := range findings {
 		if !score.IsActiveGateFinding(f) {
 			continue
@@ -29,12 +58,14 @@ func classifyFindings(findings []finding.Finding) (blockers, diagnostics []state
 			Severity: string(f.Severity), Status: string(f.Status),
 		}
 		if f.Kind == finding.KindGate {
-			blockers = append(blockers, ref)
-			continue
+			out.blockers = append(out.blockers, ref)
+		} else {
+			out.diagnostics = append(out.diagnostics, ref)
 		}
-		diagnostics = append(diagnostics, ref)
+		dim := dimensionForRule(f.RuleID, ruleTypes)
+		out.byDimension[dim] = append(out.byDimension[dim], ref)
 	}
-	return blockers, diagnostics
+	return out
 }
 
 // buildState assembles the assessment-owned architecture state.
@@ -43,17 +74,20 @@ func classifyFindings(findings []finding.Finding) (blockers, diagnostics []state
 // gate findings and can append the synthetic trip finding, so a split taken
 // earlier would undercount blockers.
 //
-// The nine dimension envelopes stay at their honest unmeasured default here;
-// their collectors and the verdict aggregator land in the following slices.
-func buildState(diag *result.Result, requiredToolFailure bool) state.Architecture {
+// The verdict itself is not decided here — the metric-blind aggregator owns it,
+// and this function deliberately hands it only statuses, gate results, and
+// classifications.
+func buildState(diag *result.Result, in stateInput) state.Architecture {
 	st := state.New()
-	st.Blockers, st.Diagnostics = classifyFindings(diag.Findings)
-	st.RequiredToolFailure = requiredToolFailure
+	split := classifyFindings(diag.Findings, in.RuleTypes)
+	st.Blockers, st.Diagnostics = split.blockers, split.diagnostics
+	st.RequiredToolFailure = in.RequiredToolFailure
+	st.Dimensions = buildDimensions(diag, in, split.byDimension)
 	st.Decision.ActiveBlockers = len(st.Blockers)
 	// A required-tool policy failure blocks without producing a finding, so the
 	// hard-gate result is not simply "are there blocker findings". Rules and
 	// gates did run, so the absence of a failure is a pass, not an abstention.
-	if requiredToolFailure || len(st.Blockers) > 0 {
+	if in.RequiredToolFailure || len(st.Blockers) > 0 {
 		st.Decision.HardGates = state.HardGateFail
 	} else {
 		st.Decision.HardGates = state.HardGatePass

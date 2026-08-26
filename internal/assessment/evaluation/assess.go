@@ -185,7 +185,9 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	// literal: it can rewrite the verdict, and the state must classify the
 	// finalized run, not the one halfway through it.
 	hardGate := in.ApplyToolGate && applyToolGate(diag, in.RequireTools)
-	diag.State = buildState(diag, hardGate)
+	diag.State = buildState(diag, stateInput{
+		Policy: in.Policy, Facts: in.Facts, RuleTypes: ruleTypes, RequiredToolFailure: hardGate,
+	})
 	return Scored{
 		Score: finalized.Score, GateReasons: finalized.GateReasons,
 		AnchorStale: couplingGateAnchorStale(gate, in.Anchor),

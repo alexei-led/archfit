@@ -28,12 +28,17 @@ const (
 	assessOwner   = "codeowners"
 	assessCore    = "core"
 	assessGrimp   = "grimp"
+	assessPathsA  = "a/**"
+	assessPathsB  = "b/**"
+	assessHistory = "git_history"
+	confHigh      = "high"
+	metricCycle   = "cycle"
 )
 
 func assessPolicy() policy.PolicySnapshot {
 	modules := map[string]policy.ModuleDef{
-		assessModA: {Paths: []string{"a/**"}, Subdomain: assessCore},
-		assessModB: {Paths: []string{"b/**"}, Subdomain: "supporting"},
+		assessModA: {Paths: []string{assessPathsA}, Subdomain: assessCore},
+		assessModB: {Paths: []string{assessPathsB}, Subdomain: "supporting"},
 	}
 	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
 	return policy.New(topology, policy.RelationshipPolicy{Topology: topology},
@@ -75,7 +80,7 @@ func assessInput() evaluation.AssessInput {
 		},
 		CoverageGaps:            []modevidence.CoverageGap{{Tool: "cargo", Gate: "warn"}},
 		ConfigWarnings:          []string{"decision needed: module a has no volatility"},
-		VolatilityCorroboration: &modevidence.VolatilityCorroboration{Source: "git_history", Status: "ok"},
+		VolatilityCorroboration: &modevidence.VolatilityCorroboration{Source: assessHistory, Status: "ok"},
 	}
 }
 
@@ -227,7 +232,7 @@ func TestScoreCapsConfidenceOnAPartialRustModuleGraph(t *testing.T) {
 	// unmeasured fixture would pass whether or not the row reached synthesis.
 	in.RelationshipSignals.ClassifiedEdges = &relationship.ClassifiedEdgeSummary{
 		Total: 50, Scored: 50, MeanBalance: 9.0, ConnectedModules: 4,
-		BySeverity: map[string]int{"low": 50},
+		BySeverity: map[string]int{volLow: 50},
 	}
 	in.MarkedCoverage = append(in.MarkedCoverage, modevidence.Coverage{
 		Tool: "cargo-modules", Status: modevidence.StatusPartial, Reason: "2 of 5 crates failed",
@@ -245,7 +250,7 @@ func TestScoreCapsConfidenceOnAPartialRustModuleGraph(t *testing.T) {
 		t.Fatal("no dimensions synthesised")
 	}
 	dim := scored.Score.Dimensions[0]
-	if dim.Confidence == "high" {
+	if dim.Confidence == confHigh {
 		t.Errorf("confidence = %q, want it capped below high on a partial module graph", dim.Confidence)
 	}
 	if !strings.Contains(strings.Join(dim.Evidence, " "), "cargo-modules") {

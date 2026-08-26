@@ -172,7 +172,7 @@ func TestFinalize_BuildsRepairTasks(t *testing.T) {
 		},
 	}
 	evaluation.Finalize(&diag, evaluation.FinalizeInput{
-		RuleTypes:          map[string]string{ruleNoCycles: "forbidden_dependency"},
+		RuleTypes:          map[string]string{ruleNoCycles: ruleForbidden},
 		ValidationCommands: []string{validate},
 		KnownFiles:         map[string]struct{}{"pkg/a/a.go": {}, "pkg/b/b.go": {}},
 		OnDisk:             func(string) bool { return true },

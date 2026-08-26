@@ -39,7 +39,7 @@ func TestBuildStateClassifiesFindings(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			diag := result.Result{Findings: []finding.Finding{tc.finding}}
-			st := evaluation.BuildState(&diag, false)
+			st := evaluation.BuildState(&diag, evaluation.StateInput{})
 			if got := len(st.Blockers) == 1; got != tc.blocker {
 				t.Errorf("blockers = %+v, want blocker=%t", st.Blockers, tc.blocker)
 			}
@@ -59,7 +59,7 @@ func TestBuildStateReferencesFindingIdentity(t *testing.T) {
 		ID: "abc123", Kind: finding.KindGate, RuleID: "core_no_toolrun",
 		Status: finding.StatusNew, Severity: finding.SeverityCritical,
 	}}}
-	st := evaluation.BuildState(&diag, false)
+	st := evaluation.BuildState(&diag, evaluation.StateInput{})
 	want := state.FindingRef{ID: "abc123", RuleID: "core_no_toolrun", Kind: finding.KindGate,
 		Severity: string(finding.SeverityCritical), Status: string(finding.StatusNew)}
 	if len(st.Blockers) != 1 || st.Blockers[0] != want {
@@ -90,7 +90,7 @@ func TestBuildStateHardGateResult(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			diag := result.Result{Findings: tc.findings}
-			st := evaluation.BuildState(&diag, tc.toolGate)
+			st := evaluation.BuildState(&diag, evaluation.StateInput{RequiredToolFailure: tc.toolGate})
 			if st.Decision.HardGates != tc.want {
 				t.Errorf("hard gates = %q, want %q", st.Decision.HardGates, tc.want)
 			}
@@ -104,13 +104,13 @@ func TestBuildStateHardGateResult(t *testing.T) {
 	}
 }
 
-// TestBuildStateLeavesDimensionsUnmeasured pins the slice boundary: the split
-// ships before the collectors, so every envelope must still report unmeasured
-// rather than measured-and-empty.
-func TestBuildStateLeavesDimensionsUnmeasured(t *testing.T) {
+// TestBuildStateOverNothingMeasuresNothing is the abstain-not-fake contract at
+// the run level: a run with no policy, no graph, and no files must report nine
+// unmeasured envelopes, never nine measured-and-empty ones.
+func TestBuildStateOverNothingMeasuresNothing(t *testing.T) {
 	t.Parallel()
 	diag := result.Result{}
-	st := evaluation.BuildState(&diag, false)
+	st := evaluation.BuildState(&diag, evaluation.StateInput{})
 	if st.Decision.UnknownDimensions != state.DimensionCount {
 		t.Errorf("unknown dimensions = %d, want %d", st.Decision.UnknownDimensions, state.DimensionCount)
 	}

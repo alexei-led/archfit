@@ -93,7 +93,7 @@ func TestEvaluateLabelsFindingEndpointsWithoutAMatchingEdge(t *testing.T) {
 	// The finding names the same two endpoints but a kind no edge carries, so
 	// FindByFindingEdge cannot match it.
 	f := gateFinding(fpGate, pathA, pathB, finding.SeverityHigh)
-	f.Edge.Kind = "cycle"
+	f.Edge.Kind = metricCycle
 
 	got := evaluation.Evaluate(evaluation.Input{
 		Relationships: set,
@@ -110,8 +110,8 @@ func TestEvaluateLabelsFindingEndpointsWithoutAMatchingEdge(t *testing.T) {
 // A path no edge touches still resolves through the configured module map.
 func TestEvaluateLabelsFindingEndpointsFromConfiguredModules(t *testing.T) {
 	modules := map[string]policy.ModuleDef{
-		moduleA: {Paths: []string{"a/**"}},
-		moduleB: {Paths: []string{"b/**"}},
+		moduleA: {Paths: []string{assessPathsA}},
+		moduleB: {Paths: []string{assessPathsB}},
 	}
 	got := evaluation.Evaluate(evaluation.Input{
 		Rules:    evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding(fpGate, pathA, pathB, finding.SeverityHigh)}}),

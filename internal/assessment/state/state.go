@@ -281,6 +281,33 @@ type Architecture struct {
 	RequiredToolFailure bool
 }
 
+// ConfidenceFor is the confidence a measurement status supports on its own.
+//
+// V1 derives confidence from status because status is the one evidence-quality
+// fact all nine dimensions share. A dimension with a sharper signal — a
+// low-confidence contributing metric, a truncated tool run — lowers it further
+// from its own evidence; nothing may raise it above this rung.
+func ConfidenceFor(s MeasurementStatus) Confidence {
+	switch s {
+	case Measured:
+		return ConfidenceHigh
+	case Partial:
+		return ConfidenceMedium
+	default:
+		return ConfidenceUnrated
+	}
+}
+
+// NewDimension returns one honestly unmeasured envelope with deterministic
+// non-nil collections. Collectors start here and fill in what they observed.
+func NewDimension(name, owner string) Dimension {
+	return Dimension{
+		Name: name, Owner: owner,
+		Status: Unmeasured, Confidence: ConfidenceUnrated, Gate: GateNotApplicable,
+		Metrics: []MetricValue{}, Findings: []FindingRef{}, Unknown: []UnknownFact{},
+	}
+}
+
 // New returns a state whose nine envelopes are named, owned, and honestly
 // unmeasured, with deterministic non-nil collections. A caller that measures
 // nothing therefore reports nothing measured — never an implicit green result.
@@ -288,25 +315,17 @@ func New() Architecture {
 	return Architecture{
 		Decision: Decision{HardGates: HardGateUnmeasured, UnknownDimensions: DimensionCount},
 		Dimensions: Dimensions{
-			Intent:         newDimension(DimensionIntent, OwnerIntent),
-			Structure:      newDimension(DimensionStructure, OwnerStructure),
-			Modularity:     newDimension(DimensionModularity, OwnerModularity),
-			Coupling:       newDimension(DimensionCoupling, OwnerCoupling),
-			ChangeLocality: newDimension(DimensionChangeLocality, OwnerChangeLocality),
-			Complexity:     newDimension(DimensionComplexity, OwnerComplexity),
-			Testability:    newDimension(DimensionTestability, OwnerTestability),
-			Operations:     newDimension(DimensionOperations, OwnerOperations),
-			Drift:          newDimension(DimensionDrift, OwnerDrift),
+			Intent:         NewDimension(DimensionIntent, OwnerIntent),
+			Structure:      NewDimension(DimensionStructure, OwnerStructure),
+			Modularity:     NewDimension(DimensionModularity, OwnerModularity),
+			Coupling:       NewDimension(DimensionCoupling, OwnerCoupling),
+			ChangeLocality: NewDimension(DimensionChangeLocality, OwnerChangeLocality),
+			Complexity:     NewDimension(DimensionComplexity, OwnerComplexity),
+			Testability:    NewDimension(DimensionTestability, OwnerTestability),
+			Operations:     NewDimension(DimensionOperations, OwnerOperations),
+			Drift:          NewDimension(DimensionDrift, OwnerDrift),
 		},
 		Blockers:    []FindingRef{},
 		Diagnostics: []FindingRef{},
-	}
-}
-
-func newDimension(name, owner string) Dimension {
-	return Dimension{
-		Name: name, Owner: owner,
-		Status: Unmeasured, Confidence: ConfidenceUnrated, Gate: GateNotApplicable,
-		Metrics: []MetricValue{}, Findings: []FindingRef{}, Unknown: []UnknownFact{},
 	}
 }
