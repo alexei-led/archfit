@@ -263,13 +263,24 @@ func resultProperties(f report.Finding, dimension string, seamOf map[string]stri
 }
 
 // levelFor maps finding kind+status to a SARIF level: active gate findings are
-// errors, advisories are warnings, everything resolved/accepted is a note.
+// errors, active advisories are warnings, everything resolved/accepted is a note.
+//
+// Both kinds read activity through one predicate. An expired waiver is active on
+// either kind — the status assignment is kind-blind, and the run counts an
+// expired advisory as a live diagnostic that sets its dimension to warn — so
+// grading it a note here would contradict the state block in the same document.
 func levelFor(f report.Finding) string {
-	if f.Kind == report.FindingKindGate && (f.Status == report.FindingStatusNew || f.Status == report.FindingStatusExpiredWaiver) {
+	if !findingActive(f) {
+		return "note"
+	}
+	if f.Kind == report.FindingKindGate {
 		return "error"
 	}
-	if f.Kind == report.FindingKindAdvisory && f.Status == report.FindingStatusNew {
-		return "warning"
-	}
-	return "note"
+	return "warning"
+}
+
+// findingActive reports whether a finding still counts against this run: newly
+// observed, or accepted under a waiver that has since expired.
+func findingActive(f report.Finding) bool {
+	return f.Status == report.FindingStatusNew || f.Status == report.FindingStatusExpiredWaiver
 }

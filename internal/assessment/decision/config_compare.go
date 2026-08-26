@@ -346,7 +346,7 @@ func gradeTool(
 		// emitted for tools carrying an install hint, so scip, scip-symbols and
 		// ast-grep never raise one however loudly the config asked for them.
 		// Their absence is shared blindness, reported as such. `analyze --base`
-		// (cmd/archfit/git_finding_delta.go) applies the identical split — reading
+		// (internal/assessment/decision/git_finding_delta.go) applies the identical split — reading
 		// gap presence as "the config expected this analyzer" made the two paths
 		// grade the same row differently and paired it there in silence.
 		if _, ok := primary[tool]; ok {
@@ -393,7 +393,7 @@ const (
 // rejected ast-grep rule file, an empty SCIP index, a failed jscpd run) leaves
 // every one of those counters at zero and is unstable by both checks.
 //
-// `analyze --base` reads this same function (cmd/archfit/git_finding_delta.go)
+// `analyze --base` reads this same function (internal/assessment/decision/git_finding_delta.go)
 // so the two comparison paths cannot grade one coverage row differently.
 func PartialFromUnresolvedSpecifiers(c evidence.Coverage) bool {
 	if c.Status != evidence.StatusPartial || c.Unresolved <= 0 {
@@ -416,7 +416,7 @@ func PartialFromUnresolvedSpecifiers(c evidence.Coverage) bool {
 // abstaining there is what keeps a future partial from grading itself
 // comparable by omission.
 //
-// `analyze --base` reads this same function (cmd/archfit/git_finding_delta.go),
+// `analyze --base` reads this same function (internal/assessment/decision/git_finding_delta.go),
 // for the same reason PartialFromUnresolvedSpecifiers is shared.
 func PartialFromDegradedPrecision(c evidence.Coverage) bool {
 	if c.Status != evidence.StatusPartial {
@@ -501,7 +501,7 @@ func primaryTools(a, b result.Result) map[string]struct{} {
 }
 
 // HasCoverageGap reports whether the gap list carries an entry for tool.
-// Exported because `analyze --base` (cmd/archfit/git_finding_delta.go) reads gap
+// Exported because `analyze --base` (internal/assessment/decision/git_finding_delta.go) reads gap
 // presence under the SAME rule this file applies, and a second copy of the loop
 // is a second place for that rule to drift.
 func HasCoverageGap(gaps []evidence.CoverageGap, tool string) bool {

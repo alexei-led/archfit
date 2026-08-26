@@ -65,12 +65,17 @@ var (
 	// topLevelVersion matches the root `version:` key: column zero only, so a
 	// nested `version:` under some other stanza is never rewritten.
 	topLevelVersion = regexp.MustCompile(`^version:\s*(\d+)\s*(#.*)?$`)
-	// retiredGateKey matches an indented retired coupling-gate knob.
-	retiredGateKey = regexp.MustCompile(`^(\s+)(min_band|max_drop):\s*\S.*$`)
+	// retiredGateKey matches an indented retired coupling-gate knob. The value
+	// is deliberately unconstrained: a valueless `min_band:` is still the
+	// retired key, and leaving it behind ships a "migrated" file that the
+	// current schema still rejects.
+	retiredGateKey = regexp.MustCompile(`^(\s+)(min_band|max_drop):`)
 	// existingStanza matches an already-authored distributed_monolith key, so a
 	// hybrid config (a retired knob beside a hand-written replacement) is not
-	// given a second copy of it.
-	existingStanza = regexp.MustCompile(`^\s+distributed_monolith:\s*$`)
+	// given a second copy of it. It matches block AND flow style — over-matching
+	// only skips the insert, which a reader can see and fix, while under-matching
+	// splices a duplicate YAML key that makes the file unloadable.
+	existingStanza = regexp.MustCompile(`^\s+distributed_monolith:`)
 )
 
 // MigrateToV2 rewrites a v1 config onto schema v2.
@@ -124,7 +129,11 @@ func MigrateToV2(src []byte) MigrationResult {
 		if m := topLevelVersion.FindStringSubmatch(line); m != nil {
 			from, _ := strconv.Atoi(m[1])
 			out.FromVersion = from
-			if from == TargetSchemaVersion {
+			// Only ever move the version forward. A file declaring a NEWER
+			// schema than this build understands is "upgrade archfit", which
+			// validateSchemaVersion says; silently rewriting it to 2 would
+			// answer a question the migration was never asked.
+			if from >= TargetSchemaVersion {
 				kept = append(kept, line)
 				continue
 			}
@@ -151,6 +160,13 @@ func MigrateToV2(src []byte) MigrationResult {
 		kept = append(kept, line)
 	}
 
+	// A later retired key at a shallower indent can let dropLeadingComments pop
+	// lines from BELOW the recorded position, leaving insertAt past the end.
+	// Clamp rather than slice out of range: the stanza then lands at the end of
+	// the block instead of panicking on a file the user cannot currently load.
+	if insertAt > len(kept) {
+		insertAt = len(kept)
+	}
 	if insertAt >= 0 && !hasStanza {
 		kept = insertDistributedMonolith(kept, gateIndent, insertAt)
 		out.Changes = append(out.Changes, MigrationChange{Key: "coupling.gate.distributed_monolith",

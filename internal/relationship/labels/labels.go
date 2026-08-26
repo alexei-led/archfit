@@ -192,6 +192,23 @@ func LLMConfidenceByKey(lbls []Label, evidence map[string]string) map[string]str
 	return out
 }
 
+// EvidenceHashByKey returns each effective label's OWN stored evidence hash,
+// keyed by Key(from,to). It is not the hash computed for the current run: a
+// hand-authored label is effective with no stored hash at all (isEffective
+// skips freshness for it), and publishing the run's hash under a field
+// documenting what the approval rested on would claim evidence nobody saw.
+// An entry is absent, or present and empty, exactly when the label stored none.
+func EvidenceHashByKey(lbls []Label, evidence map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, l := range lbls {
+		if !isEffective(l, evidence) {
+			continue
+		}
+		out[Key(l.From, l.To)] = l.EvidenceHash
+	}
+	return out
+}
+
 // Validate checks the relational invariants of a label set: no self-pair, no
 // duplicate ordered pair, and — when modules is non-empty — both endpoints
 // declared.

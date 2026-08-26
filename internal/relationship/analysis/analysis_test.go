@@ -452,11 +452,11 @@ func TestAnalyzeSummariesAreProduced(t *testing.T) {
 	got := analysis.Analyze(analysis.Input{
 		Graph: graphWith(string(relationship.StrengthIntrusive)), Policy: relationshipPolicy(twoModules()),
 	})
-	if got.Evidence.ClassifiedEdges == nil {
+	if got.Assessment.ClassifiedEdges == nil {
 		t.Fatal("ClassifiedEdges = nil, want a classified-edge summary")
 	}
-	if got.Evidence.ClassifiedEdges.Total != 1 {
-		t.Errorf("ClassifiedEdges.Total = %d, want 1", got.Evidence.ClassifiedEdges.Total)
+	if got.Assessment.ClassifiedEdges.Total != 1 {
+		t.Errorf("ClassifiedEdges.Total = %d, want 1", got.Assessment.ClassifiedEdges.Total)
 	}
 	if got.Evidence.VolatilityProvenance == nil {
 		t.Fatal("VolatilityProvenance = nil, want the provenance rollup")

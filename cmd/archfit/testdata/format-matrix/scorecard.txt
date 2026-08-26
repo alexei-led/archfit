@@ -77,12 +77,13 @@ denominator: classified source files 2/2
 
 ### operations — partial · gate: pass · confidence: medium
 owner: policy+evidence/acquisition
-denominator: analyzers reporting coverage 4/11
+denominator: applicable analyzers reporting coverage 4/4
 - modules_with_owner: 2 count (2/2)
 - distinct_owners: 2 count
 - deploy_units: 0 count
 - declared_external_systems: 0 count
 - coverage_gaps: 0 count
+- analyzers_not_applicable: 7 count
 - coverage: 1 ratio
 - not measured — observed runtime topology: v1 reports declared owners and deploy units only; nothing observes what actually runs
 - not measured — supply-chain inventory: SBOM and vulnerability facts have no collector in v1
@@ -90,7 +91,7 @@ denominator: analyzers reporting coverage 4/11
 ### drift — unmeasured · gate: not_applicable · confidence: unrated
 owner: assessment/decision
 denominator: none — this dimension measured nothing
-- not measured — architecture drift: no comparable architecture-state reference: no comparable architecture-state reference is stored
+- not measured — architecture drift: no comparable architecture-state reference is stored
 - delta: non_comparable
   - no comparable architecture-state reference is stored
 

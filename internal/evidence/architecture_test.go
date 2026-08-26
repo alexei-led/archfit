@@ -17,10 +17,12 @@ func TestSnapshotContractHasNoAssessmentPolicyOrReportImports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	checked := 0
 	for _, name := range files {
 		if strings.HasSuffix(name, "_test.go") {
 			continue
 		}
+		checked++
 		tree, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly)
 		if err != nil {
 			t.Fatal(err)
@@ -31,5 +33,11 @@ func TestSnapshotContractHasNoAssessmentPolicyOrReportImports(t *testing.T) {
 				t.Fatalf("%s imports forbidden contract package %s", name, pkg)
 			}
 		}
+	}
+	if checked == 0 {
+		t.Fatal("no production files were inspected — this rule checked nothing")
+	}
+	if checked == 0 {
+		t.Fatal("no production files were inspected — this rule checked nothing")
 	}
 }

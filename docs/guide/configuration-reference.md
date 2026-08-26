@@ -924,8 +924,9 @@ Report-only metrics (band `info`; they never gate the verdict):
 - `blast_radius` — modules whose transitive reverse-dependency reach is a large
   share of the codebase.
 
-`coupling_balance` is not a `metrics:` entry — the synthesised score gates
-through the [`coupling.gate`](#couplinggate) block.
+`coupling_balance` is not a `metrics:` entry, and a `metrics.coupling_balance:`
+key is a config error. It is a diagnostic that never gates; the only coupling
+gate is [`coupling.gate.distributed_monolith`](#couplinggate).
 
 Metric entry fields:
 

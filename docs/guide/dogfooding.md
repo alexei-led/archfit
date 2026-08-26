@@ -23,13 +23,14 @@ A **signal** is report-only. Metric absolute values, `blast_radius`, and Balance
 Coupling advisories describe the shape of the architecture — coupling risk,
 blast radius, cycle count — but they never fail the build on their own. They are
 there to inform a human or an AI agent, and to feed `archfit analyze --ai-summary`. One
-signal is promotable: the synthesised `coupling_balance` score gates when a
-`coupling.gate` block is configured (archfit's own config has none, so the score
-stays report-only here).
+signal is promotable: `coupling.gate.distributed_monolith` blocks on seams newly
+introduced against a comparable reference. archfit's own config sets `mode: warn`
+on the evidence — 380 scored edges, 78 critical, **0** at high distance, so no
+seam qualifies.
 
 | Aspect       | Violation                             | Regression                                   | Signal                                                    |
 | ------------ | ------------------------------------- | -------------------------------------------- | --------------------------------------------------------- |
-| Source       | `rules` with `gate: fail`/`warn`      | `metrics` delta vs baseline, `coupling.gate` | metric absolute values, BC advisories                     |
+| Source       | `rules` with `gate: fail`/`warn`      | `metrics` delta vs baseline, `coupling.gate.distributed_monolith` | metric absolute values, BC advisories                     |
 | Effect       | sets exit code; fails CI              | fails CI unless downgraded per metric        | report-only; never gates                                  |
 | Determinism  | byte-identical, gate-grade            | byte-identical, gate-grade                   | deterministic, but advisory                               |
 | Examples     | forbidden dependency, cycle, API leak | new cycle, encapsulation drop, coverage drop | `blast_radius`, `coupling_balance` advisories, BC rollups |
@@ -80,8 +81,8 @@ capabilities:
   produces no coverage gap at all.
 
 Their absolute values do not fail the build. Baseline deltas can still gate for
-metrics such as `cycle` and `encapsulation`, and `coupling_balance` can gate when
-`coupling.gate` is configured. The signals show up in `archfit analyze --markdown`
+metrics such as `cycle` and `encapsulation`; `coupling_balance` never gates at
+all. The signals show up in `archfit analyze --markdown`
 and the JSON bundle that `archfit analyze --ai-summary` narrates.
 
 ## See it yourself
@@ -91,6 +92,8 @@ archfit check --config .archfit.yaml                  # gates only: the verdict
 archfit analyze --markdown --config .archfit.yaml   # gates + signals, as Markdown
 ```
 
-The expected result on a clean checkout is **pass with signals** — no violations
-or metric regressions, plus architecture signals for review. That is the normal
-steady state: signals are information, not debt to chase to zero.
+The expected result on a clean checkout is **`NEEDS ATTENTION`, exit 2** — no
+violations or metric regressions, but complexity, testability, and operations
+report `partial` by contract in v1, and any partial dimension flags the verdict.
+`make archfit` accepts `0` or `2`; only `1` fails it. That is the normal steady
+state: signals are information, not debt to chase to zero.

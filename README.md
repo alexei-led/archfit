@@ -47,7 +47,7 @@ DIMENSIONS
   change_locality measured    gate: pass            confidence: high     declared modules touched in the scanned history window 18/18
   complexity      partial     gate: pass            confidence: medium   production files in the source walk 233/233
   testability     partial     gate: pass            confidence: medium   classified source files 440/446
-  operations      partial     gate: pass            confidence: medium   analyzers reporting coverage 8/12
+  operations      partial     gate: pass            confidence: medium   applicable analyzers reporting coverage 8/8
   drift           unmeasured  gate: not_applicable  confidence: unrated  no denominator
 
 NOT MEASURED (5)
@@ -124,7 +124,7 @@ archfit config init --root .        # generate a starter .archfit.yaml
 archfit config update --json        # review the config: drift, pending edits, open decisions
 archfit analyze                     # human review: the decision report
 archfit baseline -c .archfit.yaml   # accept current findings as baseline
-archfit check -c .archfit.yaml      # CI gate: exit 0 clean / 1 violation / 2 warn / 3 error
+archfit check -c .archfit.yaml      # CI gate: exit 0 healthy / 2 needs attention / 1 blocked / 3 error
 ```
 
 Once a candidate config file exists, `archfit config compare cand.yaml` measures
@@ -139,9 +139,10 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
 - **Two intent-based commands.** `archfit analyze` → report-only, always exits 0;
   `archfit check` → CI gate, exits non-zero on violations.
   Both support `--json`, `--sarif`, `--markdown`, `--format scorecard`, or `--format legacy-json`.
-- **A decision, not just a score** — `HEALTHY` / `ACCEPTABLE WITH WATCH ITEMS` /
-  `NEEDS ATTENTION` / `FAIL`, with blocking-vs-advisory split, categorized
-  recommendations, and evidence for why the score is low / what would improve it.
+- **A decision, not a score** — `HEALTHY` / `NEEDS ATTENTION` / `BLOCKED`, with a
+  blocking-vs-diagnostic split, nine dimension envelopes that each say what they
+  measured and what they could not, and a seam ledger naming the boundaries to
+  look at. There is no repository scalar.
 - **Deterministic gates** for forbidden dependencies, public-API boundaries,
   layer direction, cycles, and configured thresholds. Same input → byte-identical
   JSON, safe for CI.
@@ -177,7 +178,7 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
 archfit separates **facts**, **gates**, and **narration**. Language adapters
 collect dependency facts; a deterministic, LLM-free core classifies them, runs
 the gates, and computes metrics. The application sequences
-`Prepare → Acquire → Relate → Assess → Project` and builds the architecture
+`Prepare → Acquire → Relate → Assess → Score` and builds the architecture
 state once, then hands a data-only report contract to each renderer; the CLI
 only picks concrete adapters and translates the verdict into an exit code. Optional LLM features sit
 strictly off to the side.

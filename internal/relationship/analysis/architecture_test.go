@@ -13,10 +13,12 @@ func TestAnalysisDoesNotImportAssessmentOrReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	checked := 0
 	for _, path := range files {
 		if strings.HasSuffix(path, "_test.go") {
 			continue
 		}
+		checked++
 		tree, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
 		if err != nil {
 			t.Fatal(err)
@@ -28,5 +30,8 @@ func TestAnalysisDoesNotImportAssessmentOrReport(t *testing.T) {
 				t.Fatalf("relationship analysis imports assessment/report: %s", name)
 			}
 		}
+	}
+	if checked == 0 {
+		t.Fatal("no production files were inspected — this rule checked nothing")
 	}
 }

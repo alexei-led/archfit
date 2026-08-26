@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/report"
@@ -82,7 +83,8 @@ func writeDimensionTable(b *strings.Builder, dims report.Dimensions) {
 	b.WriteString("| --- | --- | --- | --- | --- | ---: |\n")
 	for _, dim := range dims.All() {
 		fmt.Fprintf(b, "| %s | %s | %s | %s | %s | %d |\n",
-			dim.Name, dim.Status, dim.Gate, dim.Confidence, stateCoverageCell(dim.Coverage), len(dim.Findings))
+			mdTableCell(dim.Name), dim.Status, dim.Gate, dim.Confidence,
+			mdTableCell(stateCoverageCell(dim.Coverage)), len(dim.Findings))
 	}
 }
 
@@ -106,7 +108,7 @@ func writeCoverageTable(b *strings.Builder, c report.StateCoverage) {
 		if reason == "" {
 			reason = "—"
 		}
-		fmt.Fprintf(b, "| %s | %s | %s |\n", tool.Tool, tool.Status, reason)
+		fmt.Fprintf(b, "| %s | %s | %s |\n", mdTableCell(tool.Tool), tool.Status, mdTableCell(reason))
 	}
 }
 
@@ -141,10 +143,21 @@ func writeSeamLedger(b *strings.Builder, seams []report.Seam) {
 		if s.DistributedMonolith {
 			name += " ⚠"
 		}
-		fmt.Fprintf(b, "| %s | %s | %s | %s | %d | %d | %d | %s | %s |\n",
-			name, s.Strength, s.Distance, s.Volatility, s.ScoredEdges, s.CriticalEdges,
-			s.Scores.Median, dash(s.Quadrant), dash(s.Hypothesis))
+		fmt.Fprintf(b, "| %s | %s | %s | %s | %d | %d | %s | %s | %s |\n",
+			mdTableCell(name), s.Strength, s.Distance, s.Volatility,
+			s.ScoredEdges, s.CriticalEdges, seamMedianCell(s.Scores),
+			dash(s.Quadrant), mdTableCell(dash(s.Hypothesis)))
 	}
+}
+
+// seamMedianCell renders the balance median. A seam whose every edge abstained
+// has no distribution at all, and printing the zero value as "0" would publish a
+// balance score below the book's 1..10 range as if it had been measured.
+func seamMedianCell(d report.SeamScoreDistribution) string {
+	if d.N == 0 {
+		return "—"
+	}
+	return strconv.Itoa(d.Median)
 }
 
 func dash(v string) string {

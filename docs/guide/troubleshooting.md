@@ -211,8 +211,9 @@ gap. To make CI block on a missing tool instead, opt in with `--require-tools` o
 
 ## Config-quality warnings ("N modules under-specified")
 
-These now appear as a `## Config warnings` section (md) and `config_warnings[]`
-(json), not just stderr. Most clear once modules declare `owner`, `subdomain`, and
+These appear as a `## Config warnings` section (md) and, under
+`--format legacy-json`, a `config_warnings[]` block — the primary
+`archfit.architecture-state.v1` JSON does not carry it. Most clear once modules declare `owner`, `subdomain`, and
 `volatility` — draft them with `archfit config enrich owner`/`config enrich volatility` or
 `archfit config init --ai-classify -o draft.yaml`, review, then apply. Filling them improves
 ownership/volatility distance inputs and can move `coupling_balance` out of `n/a`;
@@ -243,9 +244,11 @@ when the rendered verdict is FAIL.
 Use `archfit check` in CI, pre-push hooks, and agent repair loops. It is the gate
 command. Current exit codes are:
 
-- `0` — clean run
-- `1` — violations
-- `2` — warnings
+- `0` — `healthy`
+- `1` — `blocked` (a hard gate failed) — this is the one to fail CI on
+- `2` — `needs_attention`. **Normal on a healthy repo in v1**: complexity,
+  testability, and operations report `partial` by contract, and any partial
+  dimension flags the verdict
 - `3` — config or tool error
 
 Use `archfit analyze` for local reports, markdown output, SARIF exports, scorecard

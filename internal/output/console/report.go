@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -168,12 +169,22 @@ func writeSeams(b *strings.Builder, seams []report.Seam) {
 			marker = "  [distributed monolith]"
 		}
 		fmt.Fprintf(b, "  %s -> %s%s\n", s.FromModule, s.ToModule, marker)
-		fmt.Fprintf(b, "    %s × %s × %s volatility · %d critical of %d scored · median balance %d\n",
-			s.Strength, s.Distance, s.Volatility, s.CriticalEdges, s.ScoredEdges, s.Scores.Median)
+		fmt.Fprintf(b, "    %s × %s × %s volatility · %d critical of %d scored · median balance %s\n",
+			s.Strength, s.Distance, s.Volatility, s.CriticalEdges, s.ScoredEdges, seamMedian(s.Scores))
 		if s.Hypothesis != "" {
 			fmt.Fprintf(b, "    try: %s\n", s.Hypothesis)
 		}
 	}
+}
+
+// seamMedian renders the balance median. A seam whose every edge abstained has
+// no distribution at all, and printing the zero value as "0" would publish a
+// balance below the book's 1..10 range as if it had been measured.
+func seamMedian(d report.SeamScoreDistribution) string {
+	if d.N == 0 {
+		return "n/a"
+	}
+	return strconv.Itoa(d.Median)
 }
 
 // rankSeams orders the ledger worst-first for display: qualifying seams, then

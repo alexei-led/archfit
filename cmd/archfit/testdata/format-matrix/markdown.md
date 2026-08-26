@@ -16,7 +16,7 @@
 | change_locality | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
 | complexity | partial | pass | medium | production files in the source walk 2/2 | 0 |
 | testability | partial | pass | medium | classified source files 2/2 | 0 |
-| operations | partial | pass | medium | analyzers reporting coverage 4/11 | 0 |
+| operations | partial | pass | medium | applicable analyzers reporting coverage 4/4 | 0 |
 | drift | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
 
 ## Evidence coverage
@@ -65,7 +65,7 @@
 - **testability — boundary test coverage** (owner: syntax/fileclass): which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
 - **operations — observed runtime topology** (owner: policy+evidence/acquisition): v1 reports declared owners and deploy units only; nothing observes what actually runs
 - **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts have no collector in v1
-- **drift — architecture drift** (owner: assessment/decision): no comparable architecture-state reference: no comparable architecture-state reference is stored
+- **drift — architecture drift** (owner: assessment/decision): no comparable architecture-state reference is stored
 # archfit report
 
 **Config hash:** `0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6`

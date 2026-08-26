@@ -133,3 +133,123 @@ larger than a review fix.
   error is also double-prefixed (`baseline: baseline: parse …`). Moving the load
   ahead of `Acquire` needs the resolved bundle dir, which today only
   `AnalysisContext` carries.
+
+---
+
+# Deferred from the architecture-state-reporting review
+
+Date: 2026-08-26
+Source: code review of `docs/plans/architecture-state-reporting.md`. Everything
+mechanical that review found is fixed on the branch. What follows is real, cited,
+and larger than a review fix.
+
+## A. The comparison model is implemented only against the stored baseline
+
+Three findings, one root cause. `evaluation.Score` builds the architecture state
+(`internal/assessment/evaluation/assess.go`), and `attachBaseComparison` runs
+*after* it (`internal/application/analysis.go`), so nothing computed by the base
+sub-run can reach a dimension envelope.
+
+1. **`--base` never becomes the comparison reference.** The plan freezes the
+   precedence at line 425: "an explicit `--base` reference wins; otherwise the
+   stored v2 baseline is used; otherwise no 'new seam' claim is made."
+   `seamAnchor` (`internal/application/analysis.go`) reads only the persisted
+   baseline. `scoreBaseTree` computes the base tree's seams and then drops them:
+   `application.BaseEvidence` (`internal/application/base_compare.go`) carries
+   finding IDs, coverage, gaps, and hashes, not `QualifyingSeamIDs`. So
+   `check --base main` with `mode: fail` can never gate against `main`, and the
+   output contradicts itself — root `comparison.status: comparable` beside
+   `dimensions.drift: unmeasured` with reason "no comparable architecture-state
+   reference is stored".
+2. **The root `comparison` block never discloses a baseline reference.**
+   `comparison.status` is written only by `attachBaseComparison`
+   (`internal/application/report.go`). With a comparable v2 baseline and no
+   `--base`, `dimensions.drift` is `measured`, new/resolved seams are published,
+   and the seam gate can block — while the root block still says
+   `not_requested` / `reference: none`. Two answers to "was this run compared".
+3. **Per-dimension deltas are never produced.** Only `driftDimension` sets
+   `Delta` (`internal/assessment/evaluation/dimensions.go`);
+   `DimensionDelta.Metrics` is never populated for any dimension. The v2 baseline
+   writes `DimensionSnapshot` and `HardGateFindingIDs`, and
+   `application.BaselineDimension` loads them, but **no code reads them** — only
+   `QualifyingSeamIDs` is consumed. Either feed the snapshots into `stateInput`
+   or delete the unread fields and record the deferral.
+
+Fix shape: carry the base run's qualifying seam IDs and dimension snapshots on
+`BaseEvidence`, and either move the state build after the base comparison or pass
+the resolved anchor into `evaluation.Score`. One design change closes all three.
+
+## B. `config compare` still headlines the retired repository scalar
+
+`archfit.config-compare.v1` emits `score_delta` plus each side's full
+`report.Scorecard` (`cmd/archfit/config_compare.go`), and the text renderer prints
+`score: 40 (mixed) → 46 (mixed) (+6)` (`scoreCompareLine`). The plan's frozen text
+(line 765) says a config/model/labels/rubric mismatch emits `non_comparable` and
+**no numerical delta** — and `config compare`'s `config_hash` differs by
+construction. This is the one non-legacy output where the retired averaged score
+is still decision support, and it says exactly what the plan forbids.
+
+Deferred rather than fixed in review because it is a schema change to a separate
+published `v1` contract, and the plan pairs the removal with an addition —
+"compare seam IDs and distributions when comparable" (Task 3) — that does not
+exist yet. Do both together: drop `score_delta` and the two `Scorecard` blocks,
+add seam-ID and distribution buckets beside the existing finding buckets.
+
+## C. Test harnesses for paths whose tests were lost in the migration
+
+Each is a real gap, none guards a known live defect:
+
+- `internal/history/git/worktree.go` — every error return deliberately hands back
+  a non-nil `cleanup` closure, and `lockWorktree`'s poll loop has a `ctx.Done()`
+  arm. Neither is exercised. A regression leaks a temp worktree and an
+  inter-process flock keyed on the base SHA, blocking later runs, or hangs a
+  cancelled `--base` run.
+- `internal/evidence/acquisition/service.go` `collectRuleEvidence` — the
+  `SyntaxCfg.Enabled=true` + nil-provider guard, the provider error return, and
+  the per-fact module stamping. If stamping regresses, syntax-driven rules match
+  nothing and report zero violations, which is indistinguishable from a clean
+  repo.
+- `internal/relationship/analysis/advisories.go` `appendLocations` — only the
+  empty-input early return runs. The dedup, the `CloneLocations` merge, and the
+  file/line sort do not; an unstable sort there breaks byte-identity for every
+  committed baseline.
+- `internal/relationship/analysis/summaries.go` `buildLocalCouplingSummary` — the
+  offender sort comparator, the 5-offender cap, and `ComplexitySharePct` are
+  uncovered; the block is published output.
+- `internal/relationship/analysis/seams.go` `keepWorst` — all three tie-break
+  levels are unexercised. The final lexical tie-break is what makes seam
+  representative choice deterministic.
+- `internal/assessment/evaluation/advisories.go` `groupBCAdvisories` — no test
+  feeds two candidates differing only in `Status`, which is the mechanic behind
+  the baseline self-referentiality bug CLAUDE.md documents.
+
+## D. Surface and vocabulary hygiene introduced by the branch
+
+- `internal/history/git` exported eight symbols (`CleanEnv`, `WorktreesDir`,
+  `WorktreeParent`, `SnapToRoot`, `SubtreeInWorktree`, `AddWorktree`,
+  `RemoveWorktree`, `ResolveCommit`) with no out-of-package consumer; all were
+  unexported on `main` before the move. Only `Worktree.Checkout` has one.
+- `internal/model/report`'s decision view-model is write-only:
+  `report.Report`, `DimReport`, `Recommendations`, `DecisionBand` + its four
+  constants, `Document.Decision` (tagged `json:"-"`), and
+  `application.projectDecision`/`projectRecs`. The renderers moved to
+  `RenderState`; nothing reads the projection. Deleting it moves
+  `internal/testdata/model_surface.golden`, so regenerate with
+  `ARCHFIT_UPDATE_SURFACE=1` and call the contract change out in review.
+- `internal/relationship/coupling` is half alias-façade (`Strength`, `Distance`,
+  `Volatility`, `Severity` alias `internal/relationship`) and half duplicate
+  vocabulary (`Location`, `Explicitness`, `ConnascenceEvidence`, `EdgeScore`,
+  `ScoreBreakdown` are separate types needing a hand mapper at
+  `analysis.go:303-329`, which also renames three fields for no reason). Pick one
+  direction; ~216 call sites.
+- `internal/assessment/state` and `internal/model/report/state.go` declare the
+  identical string for ~30 state terms with no shared source, and
+  `internal/model/evidence` / `internal/model/report/evidence.go` for 9 more.
+  Only four pairs are pinned by `internal/surface_test.go`.
+- Auxiliary coverage names (`ast-grep/syntax`, `deploy-unit`, `cargo-modules`)
+  are declared as private constants in three non-importing packages plus two bare
+  literals. They are a cross-package protocol: renaming one compiles and passes
+  while `analyze --base` silently degrades every task to `unknown` origin.
+- `internal/assessment/agenttask/agenttask.go` `pythonModuleFileCandidates` is a
+  byte-identical private fork of `internal/model/graph/convention.go`. Three
+  things must now stay in step with no test pinning them.

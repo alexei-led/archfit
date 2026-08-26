@@ -168,9 +168,9 @@
           {
             "confidence": "medium",
             "coverage": {
-              "basis": "analyzers reporting coverage",
+              "basis": "applicable analyzers reporting coverage",
               "observed": 4,
-              "total": 11
+              "total": 4
             },
             "gate": "pass",
             "name": "operations",

@@ -52,6 +52,8 @@ jobs:
         run: go test -race -coverprofile=coverage.out ./...
       - name: SCIP reader tests (python)
         run: python3 internal/extract/scip/scip_reader_test.py
+      - name: Corpus sweep harness tests (python)
+        run: python3 scripts/eval/corpus_sweep_test.py
       - name: CLI exit-contract tests (shell)
         run: bash scripts/tests/cli_exit_contract_test.sh
       - name: CI gate — arch imports

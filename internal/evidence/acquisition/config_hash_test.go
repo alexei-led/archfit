@@ -32,7 +32,3 @@ func TestEffectiveConfigHash(t *testing.T) {
 		t.Error("effectiveConfigHash did not change after config mutation")
 	}
 }
-
-// TestConfigToolGate verifies the coverage-tool → config-key gate resolution:
-// an unmapped tool and an empty gate both default to warn; a configured gate on
-// the mapped key (e.g. tools.go.gate for go/packages) is surfaced verbatim.

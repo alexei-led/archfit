@@ -211,9 +211,9 @@ inline PR annotations.
 - **BC advisories** — Balanced Coupling imbalances (strength × distance ×
   volatility) at or above the configured severity, plus report-only
   `bc/duplicated_knowledge` for cross-module clone pairs with no import edge.
-- **Metrics** — `coupling_balance` (scored; gates via the opt-in
-  `coupling.gate`), the baseline-delta gated `unbalanced_edge`, `cycle`,
-  `encapsulation`, `coverage`, and report-only `blast_radius`.
+- **Metrics** — `coupling_balance` (scored; a diagnostic that never gates), the
+  baseline-delta gated `unbalanced_edge`, `cycle`, `encapsulation`, `coverage`,
+  and report-only `blast_radius`.
 - **Structural facts** — neutral per-module evidence (fan-in, fan-out, LOC)
   for downstream judgment.
 

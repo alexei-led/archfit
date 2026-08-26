@@ -212,7 +212,7 @@ class TestFormatParity(unittest.TestCase):
             "COVERAGE   5 measured · 3 partial · 1 unmeasured (of 9)",
         ]
         for name, dim in state["dimensions"].items():
-            body.append(f"  {name}  {dim['status']}")
+            body.append(f"  {name}  {dim['status']}  gate: {dim['gate']}")
         body.append("COMPARISON")
         body.append("  status: not_requested")
         body.append("FINDING INDEX")
@@ -250,7 +250,7 @@ class TestFormatParity(unittest.TestCase):
 
     def test_a_missing_dimension_fails_parity(self):
         state, out = self.rendered()
-        out = out.replace("  testability  partial\n", "")
+        out = out.replace("  testability  partial  gate: pass\n", "")
         failures = cs.check_text_parity("text", out, state)
         self.assertTrue(any("testability" in f for f in failures), failures)
 
@@ -263,18 +263,37 @@ class TestFormatParity(unittest.TestCase):
         )
         self.assertEqual(cs.check_text_parity("text", out, state), [])
 
-    def test_coverage_triple_needs_one_line(self):
-        self.assertTrue(
-            cs.contains_coverage_triple(
-                "COVERAGE 5 measured 3 partial 1 unmeasured", (5, 3, 1)
+    def test_a_dimension_row_cannot_supply_the_coverage_triple(self):
+        # The old check looked for the three counts as substrings in order on
+        # any line mentioning "measured", so a dimension denominator satisfied
+        # it: "63/70" supplies a 6, a 3, and a 0. Parse the labels instead.
+        self.assertIsNone(
+            cs.rendered_coverage_triple(
+                "  structure  measured  gate: pass  packages 63/70"
             )
         )
-        self.assertFalse(
-            cs.contains_coverage_triple(
-                "5 measured\n3 partial\n1 unmeasured", (5, 3, 1)
-            )
+        self.assertEqual(
+            cs.rendered_coverage_triple("COVERAGE 5 measured · 3 partial · 1 unmeasured"),
+            (5, 3, 1),
         )
-        self.assertFalse(cs.contains_coverage_triple("total 5 3 1", (5, 3, 1)))
+
+    def test_a_wrong_dimension_gate_fails_parity(self):
+        state, out = self.rendered()
+        out = out.replace("  coupling  measured  gate: pass", "  coupling  measured  gate: fail")
+        failures = cs.check_text_parity("text", out, state)
+        self.assertTrue(any("coupling" in f and "gate" in f for f in failures), failures)
+
+    def test_a_status_borrowed_from_another_row_fails_parity(self):
+        # Every status word appears in the coverage headline, so a
+        # document-global substring test could never fail. Drop one row's own
+        # status and the check must still fire.
+        state, out = self.rendered()
+        out = out.replace("  coupling  measured  gate: pass", "  coupling  gate: pass")
+        failures = cs.check_text_parity("text", out, state)
+        self.assertTrue(any("coupling" in f and "status" in f for f in failures), failures)
+
+    def test_bare_numbers_are_not_a_coverage_triple(self):
+        self.assertIsNone(cs.rendered_coverage_triple("total 5 3 1"))
 
 
 class TestSarifParity(unittest.TestCase):
@@ -437,7 +456,7 @@ class TestSweepFlow(unittest.TestCase):
         cfg = self.staged_candidate(sweep, record)
         # Stand in for the binary's write: the version check reads the file back.
         cfg.write_text("version: 2\nmodules: {}\n")
-        sweep.migrate_config(cfg, self.work, record)
+        sweep.migrate_config(self.spec, cfg, self.work, record)
 
         update_calls = [c for c in runner.calls if "update" in c]
         self.assertEqual(len(update_calls), 2, update_calls)
@@ -452,7 +471,7 @@ class TestSweepFlow(unittest.TestCase):
         sweep, _ = self.sweep()
         record = cs.blank_record("target", str(self.target), "go")
         cfg = self.staged_candidate(sweep, record)
-        sweep.migrate_config(cfg, self.work, record)
+        sweep.migrate_config(self.spec, cfg, self.work, record)
         self.assertEqual(record["config"]["version"], 1)
         self.assertTrue(
             any("want 2" in f for f in record["failures"]), record["failures"]
@@ -470,7 +489,7 @@ class TestSweepFlow(unittest.TestCase):
             return cs.CommandResult(0, "", "")
 
         sweep.runner = rewriting
-        sweep.migrate_config(cfg, self.work, record)
+        sweep.migrate_config(self.spec, cfg, self.work, record)
         self.assertTrue(record["config"]["second_update_changed"])
         self.assertTrue(
             any("rewrote" in f for f in record["failures"]), record["failures"]
@@ -621,6 +640,69 @@ class TestCorpusInventory(unittest.TestCase):
             ("herdr", "rust"),
         ):
             self.assertEqual(cs.CORPUS[label].language, language)
+
+
+
+
+class TestHarnessGuards(unittest.TestCase):
+    """The guards that keep a misconfigured sweep from lying or destroying data."""
+
+    def test_refuses_to_wipe_a_directory_the_sweep_did_not_create(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            victim = Path(tmp) / "spotinfo"
+            victim.mkdir()
+            (victim / "README.md").write_text("a real repository", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                cs.prepare_work_dir(victim)
+            self.assertTrue((victim / "README.md").exists())
+
+    def test_re_creates_a_directory_the_sweep_owns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = cs.prepare_work_dir(Path(tmp) / "w")
+            (work / "stale").write_text("x", encoding="utf-8")
+            work = cs.prepare_work_dir(work)
+            self.assertFalse((work / "stale").exists())
+            self.assertTrue((work / cs.WORK_DIR_MARKER).exists())
+
+    def test_strict_mode_fails_on_an_empty_record_set(self):
+        self.assertEqual(cs.strict_exit_code([]), 1)
+
+    def test_a_missing_coverage_count_is_a_failure(self):
+        doc = state_doc()
+        del doc["coverage"]["measured"]
+        failures = cs.validate_state(doc)
+        self.assertTrue(any("measured" in f for f in failures), failures)
+
+    def test_a_non_numeric_metric_value_is_a_failure(self):
+        doc = state_doc()
+        doc["dimensions"]["intent"]["metrics"] = [
+            {"name": "m", "value": "high", "unit": None}
+        ]
+        failures = cs.validate_state(doc)
+        self.assertTrue(any("want a number" in f for f in failures), failures)
+        self.assertTrue(any("want a string" in f for f in failures), failures)
+
+    def test_a_check_verdict_from_non_object_json_is_reported(self):
+        # `null` decodes fine; .get on it used to raise past the decode guard
+        # and be recorded as a harness error, masking the real defect.
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            sweep = cs.Sweep(
+                Path("archfit"),
+                work,
+                runner=lambda _cmd, _cwd: cs.CommandResult(0, "null", ""),
+            )
+            record = cs.blank_record("t", str(work), "go")
+            sweep.collect_check(
+                work / "archfit.yaml",
+                cs.RepoSpec("t", work, "go"),
+                work,
+                record,
+                state_doc(),
+            )
+        self.assertTrue(
+            any("verdict" in f for f in record["failures"]), record["failures"]
+        )
 
 
 if __name__ == "__main__":

@@ -22,6 +22,11 @@ type seamInput struct {
 	// EvidenceHashes maps a label key to the dependency-surface hash the label
 	// was approved against, as computed for this run.
 	EvidenceHashes map[string]string
+	// LabelEvidenceHashes maps a label key to the hash the LABEL stored, which
+	// is what the seam publishes. It is a different fact from EvidenceHashes
+	// above: that one is this run's evidence, and a hand-authored label with no
+	// stored hash must publish nothing rather than borrow it.
+	LabelEvidenceHashes map[string]string
 }
 
 // buildSeams groups the classified cross-boundary edges into one record per
@@ -46,7 +51,14 @@ func buildSeams(in seamInput) []relationship.Seam {
 		key := e.FromModule + "\x00" + e.ToModule
 		a, ok := acc[key]
 		if !ok {
-			a = &seamAccumulator{from: e.FromModule, to: e.ToModule}
+			// Seed the strength rung. Its "worst so far" comparison is
+			// rank-based and the zero Strength shares a rank with
+			// StrengthUnknown, so a seam whose every edge abstained never
+			// overwrote the zero value and published "" — a string outside the
+			// strength vocabulary. (Distance cannot hit this: seamEdge filters
+			// the unknown rung. Severity can, but SeverityNone IS the zero
+			// value, so the zero is the right answer there.)
+			a = &seamAccumulator{from: e.FromModule, to: e.ToModule, strength: relationship.StrengthUnknown}
 			acc[key], order = a, append(order, key)
 		}
 		a.add(e)
@@ -216,7 +228,7 @@ func seamLabels(in seamInput, from, to string) ([]string, string) {
 	if len(used) == 0 {
 		return nil, ""
 	}
-	return used, in.EvidenceHashes[key]
+	return used, in.LabelEvidenceHashes[key]
 }
 
 // seamConfidence reports how much of the seam was measured. An abstained edge

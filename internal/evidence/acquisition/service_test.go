@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -100,8 +101,11 @@ func TestAcquireResolvesOwnershipOncePerRunAndKeepsNoState(t *testing.T) {
 	if _, err := svc.Acquire(context.Background(), application.AnalysisRequest{EvaluatedAt: time.Unix(1, 0)}); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.calls) != len(first) {
-		t.Errorf("second run issued %d commands, first issued %d: acquisition must keep no state between runs", len(runner.calls), len(first))
+	// Compare the command SET, not its size. The fake records full command
+	// strings, so swapping one git invocation for a different one of equal
+	// count would otherwise satisfy a "keeps no state" assertion.
+	if !slices.Equal(runner.calls, first) {
+		t.Errorf("second run issued %v, first issued %v: acquisition must keep no state between runs", runner.calls, first)
 	}
 }
 

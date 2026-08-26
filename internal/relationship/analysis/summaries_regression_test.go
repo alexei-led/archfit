@@ -41,7 +41,7 @@ func mixedGraph() *graph.Graph {
 // produced shares above 100%.
 func TestTailRiskCountsCrossBoundaryEdgesOnly(t *testing.T) {
 	got := analysis.Analyze(analysis.Input{Graph: mixedGraph(), Policy: relationshipPolicy(twoModules())})
-	s := got.Evidence.ClassifiedEdges
+	s := got.Assessment.ClassifiedEdges
 	if s == nil || s.TailRisk == nil {
 		t.Fatal("TailRisk = nil, want the tail summary")
 	}
@@ -73,7 +73,7 @@ func TestTailRiskKeepsWellBalancedEdges(t *testing.T) {
 		Graph:  graphWith(string(relationship.StrengthContract)),
 		Policy: relationshipPolicy(modules),
 	})
-	s := got.Evidence.ClassifiedEdges
+	s := got.Assessment.ClassifiedEdges
 	if s == nil || s.Scored != 1 {
 		t.Fatalf("scored = %+v, want the single cross-boundary edge scored", s)
 	}
@@ -108,7 +108,7 @@ func TestClassifiedSummaryCountsLLMLabelProvenance(t *testing.T) {
 	if edge.Strength != relationship.StrengthIntrusive {
 		t.Fatalf("strength = %q, want the approved label applied", edge.Strength)
 	}
-	s := got.Evidence.ClassifiedEdges
+	s := got.Assessment.ClassifiedEdges
 	if s.LabeledLLM != 1 {
 		t.Errorf("LabeledLLM = %d, want the llm-labeled edge counted", s.LabeledLLM)
 	}
@@ -121,7 +121,7 @@ func TestClassifiedSummaryCountsLLMLabelProvenance(t *testing.T) {
 // provenance must not reach the counters either.
 func TestClassifiedSummarySkipsLLMProvenanceOnSameModuleEdges(t *testing.T) {
 	got := analysis.Analyze(analysis.Input{Graph: mixedGraph(), Policy: relationshipPolicy(twoModules())})
-	if s := got.Evidence.ClassifiedEdges; s.LabeledLLM != 0 || s.LLMLowConfidenceEdges != 0 {
+	if s := got.Assessment.ClassifiedEdges; s.LabeledLLM != 0 || s.LLMLowConfidenceEdges != 0 {
 		t.Errorf("llm counters = %d/%d, want zero without approved llm labels", s.LabeledLLM, s.LLMLowConfidenceEdges)
 	}
 }
@@ -144,7 +144,7 @@ func TestDistanceCompressionCountsWellBalancedEdges(t *testing.T) {
 		Graph:  graphWith(string(relationship.StrengthContract)),
 		Policy: relationshipPolicy(modules),
 	})
-	s := got.Evidence.ClassifiedEdges
+	s := got.Assessment.ClassifiedEdges
 	if s == nil || s.Scored != 1 {
 		t.Fatalf("scored = %+v, want the single cross-boundary edge scored", s)
 	}
@@ -173,7 +173,7 @@ func TestDistanceCompressionCountsWellBalancedEdges(t *testing.T) {
 // total larger than the critical-band count on the very same line.
 func TestDriverHistogramsCountCrossBoundaryEdgesOnly(t *testing.T) {
 	got := analysis.Analyze(analysis.Input{Graph: mixedGraph(), Policy: relationshipPolicy(twoModules())})
-	s := got.Evidence.ClassifiedEdges
+	s := got.Assessment.ClassifiedEdges
 	if s == nil {
 		t.Fatal("ClassifiedEdges = nil, want the summary")
 	}

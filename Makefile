@@ -45,6 +45,7 @@ build: ## compile the archfit binary
 test: ## run tests with race detector and coverage
 	go test -race -coverprofile=coverage.out $(if $(TEST_PKGS),$(TEST_PKGS),./...)
 	python3 internal/extract/scip/scip_reader_test.py
+	python3 scripts/eval/corpus_sweep_test.py
 	bash scripts/tests/cli_exit_contract_test.sh
 
 ifeq ($(firstword $(MAKECMDGOALS)),test)

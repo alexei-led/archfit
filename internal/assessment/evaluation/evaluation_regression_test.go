@@ -60,6 +60,12 @@ func TestEvaluateHidesWarnRuleAdvisoriesWithoutAdvisories(t *testing.T) {
 	if on.Warnings != 1 {
 		t.Errorf("warnings = %d, want the warn-rule advisory counted", on.Warnings)
 	}
+	// Pinned on BOTH sides of the flag. Asserting the verdict only when
+	// advisories are hidden lets a regression that drops the warn verdict while
+	// keeping the count correct pass unnoticed.
+	if on.Verdict != result.VerdictWarn {
+		t.Errorf("verdict with advisories = %q, want warn", on.Verdict)
+	}
 }
 
 // TestEvaluateCountsRuleAndCouplingAdvisoriesInWarnings pins that

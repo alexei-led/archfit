@@ -11,6 +11,16 @@ import (
 // are two different seams with two different balancing hypotheses.
 func TestSeamIDIsStableAndOrdered(t *testing.T) {
 	forward := relationship.SeamID("alpha", "beta")
+	// The digest itself, not just its shape. Every property below survives a
+	// change of domain constant or separator — the ID would still be
+	// deterministic, still 64 chars, still direction-sensitive — while every
+	// stored seam comparison silently re-keys and a comparable baseline starts
+	// reporting each existing seam as newly introduced.
+	const wantForward = "9e775cc4ceb8ef47f7be35d44ea76fd8313096faac87628db147e0644fe3f2f5"
+	if forward != wantForward {
+		t.Errorf("SeamID(alpha, beta) = %q, want %q — the frozen preimage is "+
+			`sha256("seam.v1\x00" + from + "\x00" + to)`, forward, wantForward)
+	}
 	if forward != relationship.SeamID("alpha", "beta") {
 		t.Error("SeamID is not deterministic for identical modules")
 	}

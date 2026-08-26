@@ -212,3 +212,92 @@ coupling:
 		t.Errorf("second pass reports %q, want already_current", second.Status)
 	}
 }
+
+// TestMigrateToV2_KeepsAnAuthoredFlowStanza is the flow-style twin of the test
+// above. The stanza guard used to require a bare `distributed_monolith:` on its
+// own line, so an inline mapping went unseen and the migration spliced a second
+// copy of the key into the same YAML mapping — an unloadable file, and the gate
+// mode decided by duplicate-key resolution rather than by the author.
+func TestMigrateToV2_KeepsAnAuthoredFlowStanza(t *testing.T) {
+	const hybrid = `version: 1
+coupling:
+  gate:
+    min_band: strong
+    distributed_monolith: {mode: fail, max_new_seams: 3}
+`
+	got := initcfg.MigrateToV2([]byte(hybrid))
+	out := string(got.Output)
+
+	if strings.Count(out, "distributed_monolith:") != 1 {
+		t.Errorf("migration produced a duplicate stanza:\n%s", out)
+	}
+	if !strings.Contains(out, "mode: fail") {
+		t.Errorf("migration overwrote the author's own policy:\n%s", out)
+	}
+	if strings.Contains(out, "min_band") {
+		t.Errorf("migration kept the retired key:\n%s", out)
+	}
+}
+
+// TestMigrateToV2_RemovesAValuelessRetiredKey pins that a bare `min_band:` is
+// still the retired key. Leaving it behind ships a file stamped v2 that the
+// current schema still rejects — a migration whose only outcome is a
+// dead end.
+func TestMigrateToV2_RemovesAValuelessRetiredKey(t *testing.T) {
+	const src = `version: 1
+coupling:
+  gate:
+    min_band:
+`
+	got := initcfg.MigrateToV2([]byte(src))
+	if strings.Contains(string(got.Output), "min_band") {
+		t.Errorf("migration kept the valueless retired key:\n%s", got.Output)
+	}
+	if second := initcfg.MigrateToV2(got.Output); second.Changed() {
+		t.Errorf("second pass reports %q, want already_current", second.Status)
+	}
+}
+
+// TestMigrateToV2_RetiredKeysAtMixedIndentDoNotPanic pins the slice bound that
+// used to blow up. A later retired key at a SHALLOWER indent lets the
+// comment-drop pass pop lines from below the recorded insert position, so the
+// splice index ran past the end of the kept slice. The input is valid YAML and
+// reachable straight from `config update --migration-only --apply`, so the user
+// got a Go stack trace instead of exit 3.
+func TestMigrateToV2_RetiredKeysAtMixedIndentDoNotPanic(t *testing.T) {
+	const src = `version: 1
+coupling:
+  gate:
+  # documents min_band
+  # second comment line
+    min_band: strong
+  max_drop: 5
+`
+	got := initcfg.MigrateToV2([]byte(src))
+	out := string(got.Output)
+	if strings.Contains(out, "min_band") || strings.Contains(out, "max_drop") {
+		t.Errorf("migration kept a retired key:\n%s", out)
+	}
+	if !strings.Contains(out, "distributed_monolith:") {
+		t.Errorf("migration dropped the replacement stanza:\n%s", out)
+	}
+}
+
+// TestMigrateToV2_NeverDowngradesANewerSchema pins the direction of the version
+// edit. A file declaring a schema this build does not know is "upgrade
+// archfit", which validateSchemaVersion already says; rewriting it down to the
+// target would answer a question the migration was never asked.
+func TestMigrateToV2_NeverDowngradesANewerSchema(t *testing.T) {
+	const src = `version: 3
+coupling:
+  gate:
+    min_band: strong
+`
+	got := initcfg.MigrateToV2([]byte(src))
+	if !strings.Contains(string(got.Output), "version: 3") {
+		t.Errorf("migration rewrote a newer schema version:\n%s", got.Output)
+	}
+	if got.FromVersion != 3 {
+		t.Errorf("FromVersion = %d, want 3", got.FromVersion)
+	}
+}

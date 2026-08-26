@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -59,8 +60,13 @@ func (c *UpdateCmd) runMigration(deps *appDeps) error {
 		_, _ = fmt.Fprintf(deps.Stdout, "%s is already schema v%d — nothing to migrate\n", c.Config, result.ToVersion)
 		return nil
 	}
-	if err := os.WriteFile(c.Config, result.Output, 0o600); err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: writing %s: %v", c.Config, err)}
+	// The migration is a line transform over YAML it does not parse, so
+	// "the edit produced a loadable v2 config" has to be an enforced
+	// post-condition, not an assumption. safeWriteConfig validates through
+	// config.Load + ValidateRules, backs the original up, and renames
+	// atomically — the same protocol every other config writer uses.
+	if err := safeWriteConfig(context.Background(), deps, c.Config, result.Output, src); err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: migrating %s: %v", c.Config, err)}
 	}
 	writeMigrationPreview(deps, c.Config, result)
 	_, _ = fmt.Fprintf(deps.Stdout, "\napplied to %s\n", c.Config)

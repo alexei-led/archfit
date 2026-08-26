@@ -215,21 +215,31 @@ def validate_state(doc: Any) -> list[str]:
     if not isinstance(coverage, dict):
         failures.append("coverage is missing or not an object")
     else:
-        counted = sum(
-            int(coverage.get(k, 0) or 0) for k in ("measured", "partial", "unmeasured")
-        )
-        if counted != len(DIMENSION_KEYS):
-            failures.append(
-                f"coverage counts sum to {counted}, want {len(DIMENSION_KEYS)}"
+        # Required, not defaulted. Defaulting a missing key to 0 made the sum
+        # and the dimensions-agree check pass on a document that omitted the
+        # count entirely — an independent harness cannot supply the value it
+        # exists to verify.
+        missing = [
+            k for k in ("measured", "partial", "unmeasured") if not isinstance(coverage.get(k), int)
+        ]
+        if missing:
+            failures.append(f"coverage block is missing integer counts for {missing}")
+        else:
+            declared = (
+                coverage["measured"],
+                coverage["partial"],
+                coverage["unmeasured"],
             )
-        observed = _status_counts(dims)
-        declared = tuple(
-            int(coverage.get(k, 0) or 0) for k in ("measured", "partial", "unmeasured")
-        )
-        if observed != declared:
-            failures.append(
-                f"coverage block says {declared} but the dimensions are {observed}"
-            )
+            counted = sum(declared)
+            if counted != len(DIMENSION_KEYS):
+                failures.append(
+                    f"coverage counts sum to {counted}, want {len(DIMENSION_KEYS)}"
+                )
+            observed = _status_counts(dims)
+            if observed != declared:
+                failures.append(
+                    f"coverage block says {declared} but the dimensions are {observed}"
+                )
 
     for key in ("findings", "agent_tasks", "seams"):
         if not isinstance(doc.get(key), list):
@@ -288,6 +298,20 @@ def _validate_dimensions(dims: dict[str, Any]) -> list[str]:
                 failures.append(
                     f"dimension {name} metric {metric.get('name')!r} is missing {missing}"
                 )
+                continue
+            # Presence is not the contract: MetricValue.Value is a float64 and
+            # Unit a string, so a metric carrying a band name where a number
+            # belongs is a schema break the key check cannot see.
+            if not isinstance(metric["value"], (int, float)) or isinstance(
+                metric["value"], bool
+            ):
+                failures.append(
+                    f"dimension {name} metric {metric['name']!r} value is {metric['value']!r}, want a number"
+                )
+            if not isinstance(metric["unit"], str):
+                failures.append(
+                    f"dimension {name} metric {metric['name']!r} unit is {metric['unit']!r}, want a string"
+                )
     return failures
 
 
@@ -301,26 +325,35 @@ def canonical_finding_ids(doc: dict[str, Any]) -> list[str]:
     ]
 
 
-def contains_coverage_triple(out: str, counts: tuple[int, int, int]) -> bool:
-    """Report whether one line carries all three coverage counts, in order.
+COVERAGE_TRIPLE_RE = re.compile(
+    r"(\d+)\s*(?:measured)\D+?(\d+)\s*(?:partial)\D+?(\d+)\s*(?:unmeasured)"
+)
 
-    Checking a single line rather than the whole document keeps an unrelated
-    number elsewhere from satisfying the assertion.
+
+def rendered_coverage_triple(out: str) -> tuple[int, int, int] | None:
+    """Parse the coverage headline a human format printed.
+
+    Parsing the numbers off their own labels, rather than testing whether three
+    strings appear in order somewhere, is what makes this an assertion: a
+    dimension row carrying "63/70" used to satisfy a wanted (6, 3, 0).
     """
-    wanted = [str(n) for n in counts]
+    m = COVERAGE_TRIPLE_RE.search(out)
+    if m is None:
+        return None
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+
+def dimension_line(out: str, dim_name: str) -> str | None:
+    """Return the rendered line that names dim_name, or None.
+
+    Every human format puts a dimension's name, status, and gate on one line
+    (text and scorecard as a heading, Markdown as a table row), so the line is
+    the unit a parity assertion can be scoped to.
+    """
     for line in out.splitlines():
-        if "measured" not in line.lower():
-            continue
-        rest, ok = line, True
-        for token in wanted:
-            at = rest.find(token)
-            if at < 0:
-                ok = False
-                break
-            rest = rest[at + len(token) :]
-        if ok:
-            return True
-    return False
+        if re.search(rf"\b{re.escape(dim_name)}\b", line):
+            return line
+    return None
 
 
 def check_finding_sequence(out: str, canonical: list[str]) -> list[str]:
@@ -360,19 +393,38 @@ def check_text_parity(name: str, out: str, state: dict[str, Any]) -> list[str]:
         failures.append(f"{name} does not report hard gates {hard_gates!r}")
 
     for dim_name, dim in (state.get("dimensions") or {}).items():
-        if dim_name not in out:
+        line = dimension_line(out, dim_name)
+        if line is None:
             failures.append(f"{name} omits dimension {dim_name}")
-        elif dim.get("status") not in out:
-            failures.append(f"{name} omits status {dim.get('status')!r} for {dim_name}")
+            continue
+        # The status and gate must sit on the DIMENSION'S OWN line. Searching
+        # the whole document can never fail: nine dimensions share three status
+        # words, and the coverage headline prints all three of them, so a format
+        # that drops a row still finds the word somewhere else.
+        for field in ("status", "gate"):
+            want = dim.get(field)
+            if want and not re.search(rf"\b{re.escape(str(want))}\b", line):
+                failures.append(
+                    f"{name} reports {dim_name} without {field}={want!r}: {line.strip()!r}"
+                )
 
     coverage = state.get("coverage") or {}
-    triple = (
-        int(coverage.get("measured", 0) or 0),
-        int(coverage.get("partial", 0) or 0),
-        int(coverage.get("unmeasured", 0) or 0),
-    )
-    if not contains_coverage_triple(out, triple):
-        failures.append(f"{name} does not report the coverage split {triple}")
+    missing_coverage = [
+        k for k in ("measured", "partial", "unmeasured") if k not in coverage
+    ]
+    if missing_coverage:
+        failures.append(f"state coverage block is missing {missing_coverage}")
+    else:
+        triple = (
+            int(coverage["measured"]),
+            int(coverage["partial"]),
+            int(coverage["unmeasured"]),
+        )
+        rendered = rendered_coverage_triple(out)
+        if rendered is None:
+            failures.append(f"{name} renders no coverage split, want {triple}")
+        elif rendered != triple:
+            failures.append(f"{name} reports the coverage split {rendered}, want {triple}")
 
     comparison_status = (state.get("comparison") or {}).get("status")
     if comparison_status and comparison_status not in out:
@@ -430,6 +482,10 @@ def check_sarif_parity(raw: str, state: dict[str, Any]) -> list[str]:
 
 def strict_exit_code(records: list[dict[str, Any]]) -> int:
     """Strict mode returns 0 only when every record passes or is an accepted gap."""
+    if not records:
+        # Nothing measured is not a pass. Without this a selection that produced
+        # no records exits 0 and reads as a green sweep.
+        return 1
     for record in records:
         if record.get("status") in (STATUS_PASS, STATUS_ACCEPTED_UNVERIFIED):
             continue
@@ -470,18 +526,57 @@ class CommandResult:
 Runner = Callable[[list[str], Path], CommandResult]
 
 
+# WORK_DIR_MARKER names a directory this sweep created. process() wipes its work
+# directory before each run, and the work path is `--output-dir / <repo label>` —
+# labels that are also the directory names the corpus itself lives under. Without
+# an ownership marker, `--output-dir ~/workspace` rmtree'd the repositories the
+# sweep was measuring.
+WORK_DIR_MARKER = ".archfit-sweep-workdir"
+
+
+def prepare_work_dir(work: Path) -> Path:
+    """Create (or re-create) a work directory this sweep owns.
+
+    Refuses to delete anything the sweep did not create.
+    """
+    if work.exists():
+        if not (work / WORK_DIR_MARKER).exists():
+            raise RuntimeError(
+                f"refusing to wipe {work}: not a sweep work directory "
+                f"(no {WORK_DIR_MARKER}). Choose an empty --output-dir."
+            )
+        shutil.rmtree(work)
+    work.mkdir(parents=True, exist_ok=True)
+    (work / WORK_DIR_MARKER).write_text("", encoding="utf-8")
+    return work
+
+
+# COMMAND_TIMEOUT bounds one archfit invocation. The sweep runs repos
+# concurrently with --progress=none, so a hung analyze occupies a worker
+# silently and forever; a recorded timeout is a finding, a hang is not.
+COMMAND_TIMEOUT = 3600
+
+
 def subprocess_runner(cmd: list[str], cwd: Path) -> CommandResult:
     # Capture BYTES and decode UTF-8 explicitly. text=True decodes with the
     # locale encoding, and archfit's output is UTF-8 (em dashes, ×, →) — under a
     # non-UTF-8 locale that raised UnicodeDecodeError and turned a healthy
     # storybook run into a harness crash.
-    proc = subprocess.run(
-        cmd,
-        cwd=str(cwd),
-        capture_output=True,
-        check=False,
-        env=os.environ.copy(),
-    )
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            capture_output=True,
+            check=False,
+            env=os.environ.copy(),
+            timeout=COMMAND_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        out = exc.stdout.decode("utf-8", "replace") if exc.stdout else ""
+        err = exc.stderr.decode("utf-8", "replace") if exc.stderr else ""
+        return CommandResult(
+            124, out, f"{err}\nharness: timed out after {COMMAND_TIMEOUT}s"
+        )
     return CommandResult(
         proc.returncode,
         proc.stdout.decode("utf-8"),
@@ -551,16 +646,21 @@ class Sweep:
                 return None
         return cfg
 
-    def migrate_config(self, cfg: Path, work: Path, record: dict[str, Any]) -> None:
+    def migrate_config(
+        self, spec: RepoSpec, cfg: Path, work: Path, record: dict[str, Any]
+    ) -> None:
         """Migrate the candidate to schema v2 and prove the migration settles.
 
         `--migration-only` is deliberate: a full `config update --apply` also
         proposes structural module edits, and bundling those into a schema
         migration would hide whether the migration itself is idempotent.
         """
-        args = ["config", "update", "--apply", "-c", str(cfg), "-r", str(cfg.parent)]
-        if self.migration_only:
-            args = ["config", "update", "--migration-only", "--apply", "-c", str(cfg)]
+        args = ["config", "update", "--migration-only", "--apply", "-c", str(cfg)]
+        if not self.migration_only:
+            # A full structural update must see the SOURCE tree. Pointing -r at
+            # the work directory discovered a folder holding one YAML file and
+            # proposed edits for it.
+            args = ["config", "update", "--apply", "-c", str(cfg), "-r", str(spec.root)]
 
         first = self.run(args, log=work / "config-update")
         record["config"]["update_exit"] = first.returncode
@@ -654,9 +754,13 @@ class Sweep:
         )
         record["check"]["exit"] = result.returncode
         try:
-            record["check"]["verdict"] = json.loads(result.stdout).get("verdict")
+            doc = json.loads(result.stdout)
         except json.JSONDecodeError:
-            record["check"]["verdict"] = None
+            doc = None
+        # `null`, an array, and a scalar all decode cleanly; .get on any of them
+        # raises past the decode guard and is recorded as a harness error,
+        # masking the real defect.
+        record["check"]["verdict"] = doc.get("verdict") if isinstance(doc, dict) else None
 
         verdict = record["check"]["verdict"]
         if verdict is None:
@@ -778,9 +882,11 @@ class Sweep:
             return record
 
         work = self.output_dir / sanitize(spec.label)
-        if work.exists():
-            shutil.rmtree(work)
-        work.mkdir(parents=True, exist_ok=True)
+        try:
+            work = prepare_work_dir(work)
+        except RuntimeError as exc:
+            record["failures"].append(str(exc))
+            return record
 
         record["config"]["target_head"] = self.git_head(spec.root)
         record["status"] = STATUS_FAIL  # resolved by finalize_status once checks ran
@@ -788,7 +894,7 @@ class Sweep:
         cfg = self.prepare_config(spec, work, record)
         if cfg is None:
             return record
-        self.migrate_config(cfg, work, record)
+        self.migrate_config(spec, cfg, work, record)
 
         state = self.collect_analyze(cfg, spec, work, record)
         if state is not None:
@@ -868,12 +974,39 @@ def main(argv: list[str] | None = None) -> int:
     if unknown:
         print(f"error: unknown repo label(s): {', '.join(unknown)}", file=sys.stderr)
         return 1
-    ai_repos = set(parse_csv_list(args.ai_repos))
-    repeat_repos = set(parse_csv_list(args.repeat_repos))
-    format_repos = set(parse_csv_list(args.format_repos))
+    if not selected:
+        print("error: --repos selected no repositories", file=sys.stderr)
+        return 1
+    # The three opt-in check lists are validated against the SELECTION, not the
+    # corpus: a typo used to silently switch a check off everywhere while strict
+    # mode still exited 0, which reads as "the check passed".
+    chosen = set(selected)
+    subsets = {}
+    for flag, value in (
+        ("--ai-repos", args.ai_repos),
+        ("--repeat-repos", args.repeat_repos),
+        ("--format-repos", args.format_repos),
+    ):
+        labels = set(parse_csv_list(value))
+        stray = sorted(labels - chosen)
+        if stray:
+            print(
+                f"error: {flag} names label(s) outside --repos: {', '.join(stray)}",
+                file=sys.stderr,
+            )
+            return 1
+        subsets[flag] = labels
+    ai_repos = subsets["--ai-repos"]
+    repeat_repos = subsets["--repeat-repos"]
+    format_repos = subsets["--format-repos"]
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    # Fail on an unwritable summary path BEFORE the sweep, not after: the write
+    # is the last statement in main, so a missing parent directory discarded
+    # every result the run had just spent hours producing.
+    summary_file = Path(args.summary_file)
+    summary_file.parent.mkdir(parents=True, exist_ok=True)
     sweep = Sweep(archfit, output_dir, migration_only=args.migration_only)
 
     specs = [CORPUS[label] for label in CORPUS if label in set(selected)]
@@ -910,7 +1043,7 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     records.sort(key=lambda item: item["label"])
-    Path(args.summary_file).write_text(
+    summary_file.write_text(
         json.dumps(records, indent=2, sort_keys=True), encoding="utf-8"
     )
     print_progress({"summary_file": args.summary_file, "repos": len(records)})

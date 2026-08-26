@@ -62,6 +62,28 @@ func TestApplyToolGate(t *testing.T) {
 		}
 	})
 
+	t.Run("gate: off survives --require-tools", func(t *testing.T) {
+		t.Parallel()
+		// An explicit `gate: off` is the user saying "this analyzer is not part
+		// of my gate". --require-tools raises WARN gaps; deleting the off skip
+		// would silently convert every opt-out into an exit-1 hard gate.
+		diag := result.Result{
+			Verdict: result.VerdictPass,
+			CoverageGaps: []evidence.CoverageGap{
+				{Tool: toolJscpd, Gate: gateOff},
+			},
+		}
+		if ApplyToolGate(&diag, true) {
+			t.Fatal("ApplyToolGate(gate: off, require=true) = true, want false")
+		}
+		if diag.CoverageGaps[0].Gate != gateOff {
+			t.Errorf("off gap was raised to %q under --require-tools", diag.CoverageGaps[0].Gate)
+		}
+		if diag.Verdict != result.VerdictPass {
+			t.Errorf("verdict = %q, want pass (unchanged)", diag.Verdict)
+		}
+	})
+
 	t.Run("all warn, no flag, does not trip", func(t *testing.T) {
 		t.Parallel()
 		diag := result.Result{

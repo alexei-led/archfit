@@ -85,7 +85,8 @@ func Analyze(in Input) relationship.AnalysisResult {
 			AdvisoryCandidates: advisoryCandidates(set, clones, cfg),
 			ClassifiedEdges:    classifiedEdges,
 			Seams: buildSeams(seamInput{Set: set, Config: cfg, DeclaredModules: in.Policy.Topology.Modules,
-				Graph: in.Graph, EvidenceHashes: evidenceHashes}),
+				Graph: in.Graph, EvidenceHashes: evidenceHashes,
+				LabelEvidenceHashes: labels.EvidenceHashByKey(in.Labels, evidenceHashes)}),
 		},
 		Evidence: relationship.AnalysisEvidence{
 			LLMApprovedCount:          labels.LLMApprovedCount(in.Labels, evidenceHashes),
@@ -94,7 +95,6 @@ func Analyze(in Input) relationship.AnalysisResult {
 			DynamicImports:            dynamicImports,
 			DynamicConnascenceSignals: dynamicConnascence,
 			CloneOnly:                 clones,
-			ClassifiedEdges:           classifiedEdges,
 			Connascence:               connascence,
 			DistanceConfigCandidates:  distanceCandidates,
 			LocalCoupling:             buildLocalCouplingSummary(set),

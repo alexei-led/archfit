@@ -504,14 +504,25 @@ func operationsDimension(diag *result.Result, p policy.PolicySnapshot, requiredT
 			deployUnits[def.DeployUnit] = struct{}{}
 		}
 	}
-	reporting := 0
+	// An analyzer only belongs in the denominator when it was applicable at all.
+	// A gapless `absent` primary means the extractor's own probe says the
+	// language is not in the tree, and `disabled` means the config opted out —
+	// counting either reads as "N analyzers failed to report" on a repo where
+	// they were never asked, which is the overstated gap this contract exists to
+	// prevent. The excluded count is published beside the ratio rather than
+	// silently dropped.
+	reporting, applicable := 0, 0
 	for _, c := range diag.ToolCoverage {
+		if c.Status == modevidence.StatusAbsent || c.Status == modevidence.StatusDisabled {
+			continue
+		}
+		applicable++
 		if c.Status == modevidence.StatusOK || c.Status == modevidence.StatusPartial {
 			reporting++
 		}
 	}
 	dim.Status = state.Partial
-	dim.Coverage = state.Coverage{Basis: "analyzers reporting coverage", Observed: reporting, Total: len(diag.ToolCoverage)}
+	dim.Coverage = state.Coverage{Basis: "applicable analyzers reporting coverage", Observed: reporting, Total: applicable}
 	dim.Metrics = []state.MetricValue{
 		{Name: "modules_with_owner", Value: float64(withOwner), Unit: unitCount,
 			Denominator: &state.MetricDenominator{Observed: withOwner, Total: modules},
@@ -520,6 +531,7 @@ func operationsDimension(diag *result.Result, p policy.PolicySnapshot, requiredT
 		count("deploy_units", len(deployUnits), provPolicy),
 		count("declared_external_systems", len(p.Topology.ExternalSystems), provPolicy),
 		count("coverage_gaps", len(diag.CoverageGaps), provAcquisition),
+		count("analyzers_not_applicable", len(diag.ToolCoverage)-applicable, provAcquisition),
 	}
 	dim.Metrics = append(dim.Metrics, metricValues(diag.Metrics, "coverage")...)
 	dim.Confidence = weakest(state.ConfidenceFor(dim.Status), metricConfidence(diag.Metrics, "coverage"))
@@ -559,9 +571,12 @@ func driftDimension(diag *result.Result, ref BaselineAnchor) state.Dimension {
 	if !ref.SeamsComparable {
 		dim.Delta = &state.Delta{Status: state.ComparisonNonComparable, Reasons: ref.driftReasons()}
 		attachFindingBuckets(dim.Delta, diag.Delta)
+		// The reason already states the cause in full; prefixing it produced
+		// "no comparable architecture-state reference: no comparable
+		// architecture-state reference is stored" in every clean report.
 		return unmeasured(dim, state.UnknownFact{
 			Fact:   "architecture drift",
-			Reason: "no comparable architecture-state reference: " + ref.driftReasons()[0],
+			Reason: ref.driftReasons()[0],
 			Owner:  state.OwnerDrift,
 		})
 	}
@@ -586,9 +601,19 @@ func driftDimension(diag *result.Result, ref BaselineAnchor) state.Dimension {
 	}
 	dim.Status = state.Measured
 	dim.Confidence = state.ConfidenceFor(dim.Status)
+	// The denominator is BOTH sides' qualifying seams, not this run's. Counting
+	// only the current side is observed-over-observed: a run that resolved five
+	// seams and carries none would report 0/0 and read as "nothing to compare"
+	// rather than "five seams compared, all gone".
+	compared := len(currentSet)
+	for id := range stored {
+		if _, still := currentSet[id]; !still {
+			compared++
+		}
+	}
 	dim.Coverage = state.Coverage{
 		Basis:    "distributed-monolith seams compared against the stored reference",
-		Observed: len(current), Total: len(current),
+		Observed: compared, Total: compared,
 	}
 	dim.Metrics = []state.MetricValue{
 		{Name: "new_seams", Value: float64(newSeams), Unit: unitCount, Provenance: []string{provAssessment}},

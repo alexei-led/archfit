@@ -208,3 +208,29 @@ func TestConfigUpdateMigrationOnly_AlreadyCurrentIsANoOp(t *testing.T) {
 		t.Errorf("a no-op migration rewrote the file:\n%s", after)
 	}
 }
+
+// TestConfigUpdateMigrationOnly_ApplyRefusesAnUnloadableResult pins the
+// post-condition the write protocol enforces. MigrateToV2 is a line transform
+// over YAML it never parses, so a shape it cannot see — here a flow-mapping
+// gate whose retired keys survive the transform — would otherwise ship a file
+// stamped v2 that the schema still rejects, and the only advertised escape from
+// a v1 config would have made the file worse. Exit 3, original untouched.
+func TestConfigUpdateMigrationOnly_ApplyRefusesAnUnloadableResult(t *testing.T) {
+	t.Parallel()
+	const flowGate = `version: 1
+coupling:
+  gate: {min_band: serviceable, max_drop: 5}
+modules:
+  a:
+    paths: ["pkg/a/**"]
+`
+	path := writeLegacyConfig(t, flowGate)
+
+	code, stdout, stderr := runArchfit(t, cmdConfig, cmdUpdate, flagMigrationOnly, "--apply", "-c", path)
+	if code != 3 {
+		t.Errorf("exit = %d, want 3\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if after := readConfigFile(t, path); after != flowGate {
+		t.Errorf("a refused migration still rewrote the config:\n%s", after)
+	}
+}

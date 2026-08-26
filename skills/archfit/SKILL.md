@@ -33,13 +33,21 @@ or to decide whether to adopt `archfit` — use web research for that. Do not us
 this skill to evaluate archfit itself against the book-alignment workflow or the
 test corpus — use `skills/archfit-eval/`.
 
-archfit measures **Balanced Coupling** (`coupling_balance` band, Khononov S×D×V
-formula) plus structural architecture rules (forbidden deps, layering, cycles,
-public API) and complementary metrics. `unbalanced_edge`, `cycle`,
-`encapsulation`, and `coverage` can gate on baseline regressions; `blast_radius`
-and absolute metric values are signals. It is not a 0-100 composite architecture
-report card — code-quality concerns (complexity, duplication, panic/unsafe/god-
-struct density) are delegated to linters by design.
+archfit reports one **architecture state**: a verdict (`healthy` /
+`needs_attention` / `blocked`) over nine dimension envelopes — `intent`,
+`structure`, `modularity`, `coupling`, `change_locality`, `complexity`,
+`testability`, `operations`, `drift` — each stating its own status, gate,
+confidence, denominator, and what it could not measure. **There is no repository
+score.** Coupling additionally reports a **seam ledger**: one record per ordered
+module pair, with a stable ID, a score distribution, and a balancing hypothesis.
+
+Underneath it measures **Balanced Coupling** (`coupling_balance` band, Khononov
+S×D×V formula) plus structural architecture rules (forbidden deps, layering,
+cycles, public API) and complementary metrics. `unbalanced_edge`, `cycle`,
+`encapsulation`, and `coverage` can gate on baseline regressions;
+`coupling_balance` and absolute metric values never gate. Code-quality concerns
+(complexity, duplication, panic/unsafe/god-struct density) are delegated to
+linters by design.
 
 ## Routing
 
@@ -95,6 +103,9 @@ Install, configure, add CI, baseline, add an exception, or fix findings.
 
 1. Inspect first: `.archfit.yaml`, `.archfit-baseline.json`, CI workflows,
    language package files, and existing generated `archfit` artifacts.
+   **Check the config schema version before editing.** `version: 1` and the
+   retired `coupling.gate.min_band` / `max_drop` keys exit `3` under schema v2;
+   migrate with `archfit config update --migration-only --apply` first.
 2. Detect the repo languages and read `references/languages.md` for each one in
    scope before suggesting tool setup or config globs.
 3. Check the surface: `archfit --help`, `archfit doctor`.
@@ -116,7 +127,10 @@ redirect to a draft file instead of `.archfit.yaml`).
 
 ## Agent repair loop
 
-Fixing findings autonomously: run `archfit check --json`; exit 0 means done.
+Fixing findings autonomously: run `archfit check --json`. **Exit 0 or 2 means
+done** — 2 (`needs_attention`) is the normal result on a healthy repo in v1,
+because complexity, testability, and operations report `partial` by contract.
+Exit 1 (`blocked`) is the one to repair; looping until 0 never terminates.
 Each `agent_tasks[]` entry has `goal`, `constraints`, `files`, and a
 `validation` command — fix within the constraints, touch only the listed files
 where possible, then re-run `validation` verbatim. Never "fix" `baseline` or
@@ -125,8 +139,9 @@ where possible, then re-run `validation` verbatim. Never "fix" `baseline` or
 ## Coverage gaps and gate promotion
 
 archfit never scores absence of evidence as healthy. A metric reading `n/a`, or a
-`## Coverage gaps` / `## Required tools missing` section (`coverage_gaps[]` +
-`config_warnings[]` in JSON), means an analyzer did not run — not a passing gate.
+`## Coverage gaps` / `## Required tools missing` section (`coverage.tools[]` in
+the primary JSON; `coverage_gaps[]` + `config_warnings[]` under
+`--format legacy-json`), means an analyzer did not run — not a passing gate.
 Read the gap's `affected_metrics` and `install_cmd`; close it by installing the
 tool (`archfit doctor` lists them) or filling the config, not by ignoring it.
 

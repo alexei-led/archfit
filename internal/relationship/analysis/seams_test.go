@@ -395,3 +395,60 @@ func TestApprovedLabelIsReportedOnTheSeam(t *testing.T) {
 		t.Errorf("seam labels = %v, want the applied label key disclosed", s.Labels)
 	}
 }
+
+// TestHandAuthoredLabelPublishesNoEvidenceHash pins what
+// `label_evidence_hash` means. A hand-authored label with no stored hash is
+// effective — isEffective skips the freshness check for it — and the seam used
+// to publish THIS RUN'S computed hash under a field documenting the evidence the
+// approval rested on. That is a claim nobody made: the reviewer never saw a
+// hash, so the honest answer is none.
+func TestHandAuthoredLabelPublishesNoEvidenceHash(t *testing.T) {
+	fresh := labels.Label{
+		From: moduleA, To: moduleB, Strength: string(relationship.StrengthContract),
+		Status: labels.StatusApproved, Provenance: labels.ProvenanceHuman,
+	}
+	got := analysis.Analyze(analysis.Input{
+		Graph:  seamGraph(1, string(relationship.StrengthIntrusive)),
+		Policy: relationshipPolicy(twoModules()),
+		Labels: []labels.Label{fresh},
+		Mode:   analysis.Mode{Full: true},
+	})
+
+	s := seamAB(t, got)
+	if len(s.Labels) != 1 {
+		t.Fatalf("seam labels = %v, want the applied label key disclosed", s.Labels)
+	}
+	if s.LabelEvidenceHash != "" {
+		t.Errorf("label_evidence_hash = %q, want empty: the label stored none", s.LabelEvidenceHash)
+	}
+}
+
+// TestSeamOfWhollyAbstainedEdgesReportsUnknownStrength pins the strength rung,
+// whose "worst so far" comparison is rank-based. The zero Strength shares a
+// rank with StrengthUnknown, so an all-abstained seam — the normal state on a
+// heuristic-strength language with no SCIP and no public:/internal: globs —
+// never overwrote the zero value and published "" outside its own vocabulary.
+// Its distribution has no samples at all, so N must stay 0 rather than report a
+// median of zero, which is below the book's 1..10 range.
+//
+// Severity is exempt: SeverityNone IS the zero value, so the zero is correct.
+func TestSeamOfWhollyAbstainedEdgesReportsUnknownStrength(t *testing.T) {
+	got := analysis.Analyze(analysis.Input{
+		Graph:  seamGraph(2, ""),
+		Policy: relationshipPolicy(twoModules()),
+	})
+
+	s := seamAB(t, got)
+	if s.ScoredEdges != 0 || s.AbstainedEdges == 0 {
+		t.Fatalf("seam scored=%d abstained=%d, want a wholly abstained seam", s.ScoredEdges, s.AbstainedEdges)
+	}
+	if s.Strength != relationship.StrengthUnknown {
+		t.Errorf("strength = %q, want %q", s.Strength, relationship.StrengthUnknown)
+	}
+	if s.Severity != relationship.SeverityNone {
+		t.Errorf("severity = %q, want none — no edge produced a band", s.Severity)
+	}
+	if s.Scores.N != 0 {
+		t.Errorf("scores.n = %d, want 0 — no edge contributed a balance", s.Scores.N)
+	}
+}

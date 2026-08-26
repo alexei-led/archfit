@@ -151,7 +151,7 @@ func loadSnippet(root, file string, line int) string {
 	for n := start; n <= end; n++ {
 		text := lines[n-1]
 		if len(text) > abstainedSnippetLineCap {
-			text = text[:abstainedSnippetLineCap] + "…"
+			text = cutAtRuneBoundary(text, abstainedSnippetLineCap) + "…"
 		}
 		fmt.Fprintf(&b, "%4d: %s\n", n, text)
 	}

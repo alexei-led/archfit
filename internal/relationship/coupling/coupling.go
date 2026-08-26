@@ -70,14 +70,6 @@ const (
 	VolatilityUnknown    = relationship.VolatilityUnknown
 )
 
-// VolatilityResolved reports whether v is a concrete level the tool can act on
-// (frozen/low/medium/high), as opposed to undeclared (config gap) or unknown
-// (unresolvable). Callers that need "do we actually have a volatility?" should
-// use this rather than comparing against VolatilityUnknown alone.
-func VolatilityResolved(v Volatility) bool {
-	return relationship.VolatilityResolved(v)
-}
-
 // ConnascenceKind names a book Ch6 connascence category. Static evidence may
 // attach to coupling edges; dynamic categories are disclosed as unmeasured until
 // deterministic runtime-trace evidence exists. These labels never feed scoring.

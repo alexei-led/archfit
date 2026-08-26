@@ -83,6 +83,13 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 - **No gitnexus.** The `.gitnexus`/`.codegraph` index dirs are excluded from file
   walks (`scope.go`), but archfit does not run the tool and does not derive any
   per-module fact from it.
+- **The `operations` denominator counts APPLICABLE analyzers only**
+  (`operationsDimension`, `internal/assessment/evaluation/dimensions.go`). Rows
+  with `StatusAbsent` (the extractor's own probe says the language is not in the
+  tree) and `StatusDisabled` (the config opted out) are excluded and disclosed as
+  the `analyzers_not_applicable` metric. Counting all rows read as "7 analyzers
+  failed to report" on a single-language repo where 7 were never asked — the
+  overstated gap the coverage contract exists to prevent.
 - **Severity source is `cl.Score.Band`** (`classify.go`, `Run`). `cl.Severity =
 cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   old discrete severity table and is no longer called anywhere. Do not re-introduce
@@ -121,12 +128,22 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   file and drop every comment): it bumps the root `version:`, removes the retired
   keys with the comment lines documenting them, and splices
   `distributed_monolith: {mode: warn, max_new_seams: 0}` in at the first removed
-  key's position. It never infers `mode: fail`, and running it twice is
+  key's position. It never infers `mode: fail`, it only moves the version
+  FORWARD (`from >= TargetSchemaVersion` is left alone — a newer schema means
+  "upgrade archfit", not "downgrade the file"), and running it twice is
   byte-identical. `initcfg.TargetSchemaVersion` restates `config.SchemaVersion`
   because initcfg may not import config (`*_no_config`); the two are pinned
   together by `cmd/archfit.TestMigrationTargetsCurrentSchema`. The CLI path lives
   in `cmd/archfit/config_migrate.go` (an exempt domain adapter) and
   short-circuits BEFORE discovery, tool calls, and cache access.
+  **`--apply` writes through `safeWriteConfig`, never `os.WriteFile`.** A line
+  transform cannot see every YAML shape — a flow-mapping `gate: {min_band: …}`
+  leaves the retired keys in place, and a block scalar containing `min_band:`
+  loses that prose line — so "the migration produced a LOADABLE v2 config" has to
+  be an enforced post-condition (`config.Load` + `ValidateRules` on a temp file,
+  a `.bak`, then an atomic rename). This is the only advertised escape from a v1
+  config, so it runs on files the user cannot currently load and there is nothing
+  to restore from if it corrupts one.
 - **Seam ledger** (`relationship.Seam`, built by `analysis.buildSeams`, carried
   on `AssessmentSignals.Seams` → `result.Result.Seams`). One record per ordered
   module pair with a stable ID (`sha256("seam.v1\x00"+from+"\x00"+to)`), the

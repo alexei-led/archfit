@@ -289,6 +289,12 @@ func validateRuleSuggestionShape(s initcfg.RuleSuggestion) error {
 		if s.Mode != "" && s.Mode != distributedMonolithWarnMode {
 			return fmt.Errorf("rule suggestion %q may only propose the coupling gate in warn mode", subject)
 		}
+		// A knob is required. writeRuleSuggestion emits every field
+		// conditionally, so an entry carrying neither renders a bare
+		// `- type: coupling.gate` that configures nothing.
+		if s.Mode == "" && s.MaxNewSeams == nil {
+			return fmt.Errorf("rule suggestion %q requires mode or max_new_seams", subject)
+		}
 	}
 	return nil
 }

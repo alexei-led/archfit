@@ -1,18 +1,33 @@
 # Plan: Replace Scalar Architecture Score with Deterministic Architecture State
 
-> **Ralphex execution plan.** This plan is for review and approval only. Do not
-> execute it until the owner approves the reviewed plan.
+> **Status: DELIVERED — 3 owner-gated items outstanding.** All six tasks are
+> implemented and their checks pass. Three items in Task 6's final slice are
+> marked `[x]` with an inline `(SKIPPED …)` note and are **not** done; they need
+> the owner, not the executor:
 >
-> Suggested executor:
+> 1. controlled `.archfit.yaml` delivery to the owner-controlled dogfood repos
+>    (candidates staged locally only);
+> 2. the final scoped architecture re-review returning GO, which the Acceptance
+>    criteria below require;
+> 3. the post-GO v2 baseline regeneration and handoff commit —
+>    `.archfit-baseline.json` is still `archfit.baseline.v1`, so the drift and
+>    seam-comparison path has not been exercised against a real v2 reference on
+>    this repository.
 >
-> ```sh
-> ralphex docs/plans/architecture-state-reporting.md
-> ```
+> Also disclosed: R12's four-language acceptance is partial. The run host has no
+> `cargo` / `rust-analyzer` / `cargo-modules`, so yazi, herdr, ruff, and tokio
+> satisfied the contract while measuring no crate graph.
 >
-> The plan is intentionally incremental. Each task is independently committable
-> and must pass its focused checks before the next task begins. The executor must
-> stop on behavior drift, ambiguous product semantics, missing evidence, or a
-> requested score/config change that cannot be justified by architecture truth.
+> This file stays in `docs/plans/` rather than `docs/plans/completed/` until
+> those three items close.
+>
+> ---
+>
+> **Ralphex execution plan.** The plan is intentionally incremental. Each task is
+> independently committable and must pass its focused checks before the next task
+> begins. The executor must stop on behavior drift, ambiguous product semantics,
+> missing evidence, or a requested score/config change that cannot be justified by
+> architecture truth.
 
 ## Overview
 
@@ -1659,7 +1674,7 @@ cross-language compatibility, and config migration honesty. It must return GO.
 Only then may the executor perform the final baseline write as a post-review
 handoff; a baseline is never a prerequisite for this review.
 
-After approval, execute with:
+Originally executed with:
 
 ```sh
 ralphex docs/plans/architecture-state-reporting.md

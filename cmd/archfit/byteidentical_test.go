@@ -12,6 +12,9 @@ import (
 	"testing"
 )
 
+// envUpdateBaselines gates regeneration of the committed JSON baselines.
+const envUpdateBaselines = "ARCHFIT_UPDATE_BASELINES"
+
 // Fixture dirs relative to this source file (cmd/archfit/).
 const (
 	fixtureSingleModule       = "../../internal/extract/golang/testdata/single-module"
@@ -61,7 +64,13 @@ func runByteIdenticalTest(t *testing.T, fixtureRelPath string) {
 	baselinePath := filepath.Join(absFixture, "baseline.json")
 	want, readErr := os.ReadFile(baselinePath) //nolint:gosec // fixture path constructed from runtime.Caller
 	if os.IsNotExist(readErr) {
-		// First run: write the baseline for review and commit.
+		// Regeneration is deliberate, matching TestModelSurfaceNoDrift and the
+		// format-matrix fixtures. Bootstrapping unconditionally is what makes
+		// "delete the baseline to get green" work in the first place.
+		if os.Getenv(envUpdateBaselines) == "" {
+			t.Fatalf("baseline %s is missing; regenerate deliberately with %s=1 and inspect the diff",
+				baselinePath, envUpdateBaselines)
+		}
 		if writeErr := os.WriteFile(baselinePath, got, 0o600); writeErr != nil {
 			t.Fatalf("write baseline %s: %v", baselinePath, writeErr)
 		}

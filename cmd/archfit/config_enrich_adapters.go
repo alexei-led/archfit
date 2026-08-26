@@ -352,10 +352,7 @@ func readCodeowners(root string) string {
 			continue
 		}
 		const maxCodeowners = 8000
-		if len(data) > maxCodeowners {
-			data = data[:maxCodeowners]
-		}
-		return string(data)
+		return cutAtRuneBoundary(string(data), maxCodeowners)
 	}
 	return ""
 }

@@ -302,7 +302,7 @@
         {
           "fact": "architecture drift",
           "owner": "assessment/decision",
-          "reason": "no comparable architecture-state reference: no comparable architecture-state reference is stored"
+          "reason": "no comparable architecture-state reference is stored"
         }
       ]
     },
@@ -435,9 +435,9 @@
     "operations": {
       "confidence": "medium",
       "coverage": {
-        "basis": "analyzers reporting coverage",
+        "basis": "applicable analyzers reporting coverage",
         "observed": 4,
-        "total": 11
+        "total": 4
       },
       "findings": [],
       "gate": "pass",
@@ -485,6 +485,14 @@
           ],
           "unit": "count",
           "value": 0
+        },
+        {
+          "name": "analyzers_not_applicable",
+          "provenance": [
+            "evidence/acquisition"
+          ],
+          "unit": "count",
+          "value": 7
         },
         {
           "name": "coverage",

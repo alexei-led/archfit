@@ -14,7 +14,7 @@ DIMENSIONS
   change_locality unmeasured  gate: not_applicable  confidence: unrated  no denominator
   complexity      partial     gate: pass            confidence: medium   production files in the source walk 2/2
   testability     partial     gate: pass            confidence: medium   classified source files 2/2
-  operations      partial     gate: pass            confidence: medium   analyzers reporting coverage 4/11
+  operations      partial     gate: pass            confidence: medium   applicable analyzers reporting coverage 4/4
   drift           unmeasured  gate: not_applicable  confidence: unrated  no denominator
 
 NOT MEASURED (8)
@@ -34,7 +34,7 @@ NOT MEASURED (8)
   operations — supply-chain inventory
     SBOM and vulnerability facts have no collector in v1
   drift — architecture drift
-    no comparable architecture-state reference: no comparable architecture-state reference is stored
+    no comparable architecture-state reference is stored
 
 COUPLING SEAMS (1)
 

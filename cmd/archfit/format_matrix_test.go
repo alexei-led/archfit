@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -213,6 +214,12 @@ func assertMatchesBaseline(t *testing.T, path string, got []byte) {
 
 	want, err := os.ReadFile(path) //nolint:gosec // path is a compile-time testdata constant
 	if os.IsNotExist(err) {
+		// Regeneration is deliberate, matching TestModelSurfaceNoDrift and the
+		// config-schema golden. Bootstrapping silently turned a deleted or
+		// unshipped fixture into a self-recording no-op that reported green.
+		if os.Getenv("ARCHFIT_UPDATE_FORMATS") == "" {
+			t.Fatalf("baseline %s is missing; regenerate deliberately with ARCHFIT_UPDATE_FORMATS=1 and inspect the diff", path)
+		}
 		if writeErr := os.WriteFile(path, got, 0o600); writeErr != nil {
 			t.Fatalf("write baseline %s: %v", path, writeErr)
 		}
@@ -290,11 +297,20 @@ func TestFormatMatrix_CrossFormatParity(t *testing.T) {
 				t.Errorf("%s does not report hard gates %q:\n%s", format, state.Decision.HardGates, out)
 			}
 			for name, dim := range state.Dimensions {
-				if !strings.Contains(out, name) {
+				// Status and gate must sit on the DIMENSION'S OWN line. A
+				// document-global Contains can never fail here: nine
+				// dimensions share three status words and the coverage
+				// headline prints all three, so a format that drops a row
+				// still finds the word somewhere else. Every human format
+				// renders name, status, and gate together.
+				lines := dimensionLines(out, name)
+				if len(lines) == 0 {
 					t.Errorf("%s omits dimension %q:\n%s", format, name, out)
+					continue
 				}
-				if !strings.Contains(out, dim.Status) {
-					t.Errorf("%s omits status %q (dimension %s):\n%s", format, dim.Status, name, out)
+				if !anyLineHas(lines, dim.Status, dim.Gate) {
+					t.Errorf("%s reports no %s line carrying status %q and gate %q; candidates: %q",
+						format, name, dim.Status, dim.Gate, lines)
 				}
 			}
 			// The coverage triple must be present as three numbers on one line,
@@ -345,17 +361,46 @@ func assertCanonicalFindingSequence(t *testing.T, format, out string, canonical 
 // counts in order. Checking the numbers on ONE line rather than anywhere in the
 // document keeps an unrelated count from satisfying the assertion.
 func containsCoverageTriple(out string, counts []string) bool {
+	m := coverageTripleRe.FindStringSubmatch(out)
+	if m == nil {
+		return false
+	}
+	return m[1] == counts[0] && m[2] == counts[1] && m[3] == counts[2]
+}
+
+// coverageTripleRe parses the coverage headline off its own labels. Testing
+// whether three numbers appear in order on a line mentioning "measured" is not
+// an assertion: a dimension denominator like "63/70" supplies a 6, a 3, and a 0.
+var coverageTripleRe = regexp.MustCompile(
+	`(\d+)\s*measured\D+?(\d+)\s*partial\D+?(\d+)\s*unmeasured`)
+
+// dimensionLines returns every rendered line naming dim as a whole word. The
+// word boundary matters: the scorecard prints a `local_coupling_modules` metric
+// before the `coupling` heading, and a substring match would grade the wrong
+// line. Text and scorecard render a heading, Markdown a table row; all three put
+// the name, status, and gate together on one of these lines.
+func dimensionLines(out, dim string) []string {
+	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(dim) + `\b`)
+	var hits []string
 	for _, line := range strings.Split(out, "\n") {
-		rest, ok := line, true
-		for _, n := range counts {
-			idx := strings.Index(rest, n)
-			if idx < 0 {
+		if re.MatchString(line) {
+			hits = append(hits, line)
+		}
+	}
+	return hits
+}
+
+// anyLineHas reports whether one of lines carries every token.
+func anyLineHas(lines []string, tokens ...string) bool {
+	for _, line := range lines {
+		ok := true
+		for _, tok := range tokens {
+			if !strings.Contains(line, tok) {
 				ok = false
 				break
 			}
-			rest = rest[idx+len(n):]
 		}
-		if ok && strings.Contains(strings.ToLower(line), "measured") {
+		if ok {
 			return true
 		}
 	}
@@ -389,6 +434,11 @@ func TestFormatMatrix_SarifCarriesTheState(t *testing.T) {
 			HardGates      string `json:"hard_gates"`
 			ActiveBlockers int    `json:"active_blockers"`
 		} `json:"decision"`
+		Dimensions map[string]struct {
+			Status     string `json:"status"`
+			Gate       string `json:"gate"`
+			Confidence string `json:"confidence"`
+		} `json:"dimensions"`
 		Coverage struct {
 			Measured   int `json:"measured"`
 			Partial    int `json:"partial"`
@@ -412,7 +462,10 @@ func TestFormatMatrix_SarifCarriesTheState(t *testing.T) {
 					ActiveBlockers int    `json:"active_blockers"`
 				} `json:"decision"`
 				Dimensions []struct {
-					Name string `json:"name"`
+					Name       string `json:"name"`
+					Status     string `json:"status"`
+					Gate       string `json:"gate"`
+					Confidence string `json:"confidence"`
 				} `json:"dimensions"`
 				Coverage struct {
 					Measured   int `json:"measured"`
@@ -445,6 +498,20 @@ func TestFormatMatrix_SarifCarriesTheState(t *testing.T) {
 	}
 	if len(props.Dimensions) != stateDimensionCount {
 		t.Errorf("SARIF dimensions = %d, want %d", len(props.Dimensions), stateDimensionCount)
+	}
+	// SARIF is exempt from human LAYOUT parity, not from FACT parity. Counting
+	// the envelopes lets SARIF report every dimension measured while JSON
+	// reports three partial, so compare the facts by name.
+	for _, dim := range props.Dimensions {
+		want, ok := state.Dimensions[dim.Name]
+		if !ok {
+			t.Errorf("SARIF carries dimension %q, which the state does not", dim.Name)
+			continue
+		}
+		if dim.Status != want.Status || dim.Gate != want.Gate || dim.Confidence != want.Confidence {
+			t.Errorf("SARIF %s = {%s %s %s}, JSON says {%s %s %s}",
+				dim.Name, dim.Status, dim.Gate, dim.Confidence, want.Status, want.Gate, want.Confidence)
+		}
 	}
 
 	// Finding identity is untouched by the cutover: an existing code-scanning

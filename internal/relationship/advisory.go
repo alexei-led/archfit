@@ -115,7 +115,6 @@ type AnalysisEvidence struct {
 	DynamicImports            []evidence.DynamicImport
 	DynamicConnascenceSignals *evidence.DynamicConnascenceSignals
 	CloneOnly                 []CloneOnlyPair
-	ClassifiedEdges           *ClassifiedEdgeSummary
 	Connascence               *evidence.ConnascenceReport
 	DistanceConfigCandidates  []evidence.DistanceConfigCandidate
 	LocalCoupling             []evidence.LocalCouplingModule
