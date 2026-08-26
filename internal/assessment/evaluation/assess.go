@@ -158,9 +158,16 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 			modulePublic[name] = def.Public
 		}
 	}
-	knownFiles := make(map[string]struct{}, len(in.Facts.FileClassIndex))
-	for file := range in.Facts.FileClassIndex {
-		knownFiles[file] = struct{}{}
+	// A nil FileClassIndex (the LOC walk did not run) leaves knownFiles nil,
+	// which disables agent-task path resolution rather than resolving every
+	// candidate against os.Stat alone. Allocating unconditionally would make
+	// PathResolver's documented nil contract unreachable.
+	var knownFiles map[string]struct{}
+	if in.Facts.FileClassIndex != nil {
+		knownFiles = make(map[string]struct{}, len(in.Facts.FileClassIndex))
+		for file := range in.Facts.FileClassIndex {
+			knownFiles[file] = struct{}{}
+		}
 	}
 	gate := in.Policy.Gates.Coupling
 	// Stamp the acquisition-resolved coverage BEFORE synthesis. The scorecard's

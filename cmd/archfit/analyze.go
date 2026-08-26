@@ -154,7 +154,7 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	if err := config.ApplyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	resp, err := application.Service{Stages: newAnalysisStages(req.configPath, req.root, cfg, deps)}.Execute(ctx, application.Request{
+	resp, err := application.Service{Stages: newAnalyzeStages(req.configPath, req.root, cfg, deps)}.Execute(ctx, application.Request{
 		BaseRef:      req.baseRef,
 		JSON:         req.json,
 		Markdown:     req.markdown,

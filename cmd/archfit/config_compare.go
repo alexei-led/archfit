@@ -312,7 +312,9 @@ func classificationMixLines(current, candidate any) []string {
 	mixes := []struct{ label, field string }{
 		{"strength mix", "ByStrength"}, {"distance mix", "ByDistance"},
 		{"distance basis mix", "ByDistanceBasis"}, {"volatility mix", "ByVolatility"},
-		{"severity mix", "BySeverity"}, {"volatility provenance (modules)", "VolatilityProvenance"},
+		{"severity mix", "BySeverity"}, {"balance driver mix", "ByBalanceDriver"},
+		{"critical driver mix", "ByCriticalDriver"}, {"module pair mix", "ByModulePair"},
+		{"volatility provenance (modules)", "VolatilityProvenance"},
 	}
 	var lines []string
 	for _, m := range mixes {

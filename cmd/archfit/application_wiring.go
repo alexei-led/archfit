@@ -50,6 +50,15 @@ func newAnalysisStages(configPath, root string, cfg config.Config, deps *appDeps
 	}
 }
 
+// newAnalyzeStages composes the analyze/check run. It is the only composition
+// that owns the user's stderr conversation, so it is the only one that
+// discloses the config-quality block.
+func newAnalyzeStages(configPath, root string, cfg config.Config, deps *appDeps) application.StageExecutor {
+	stages := newAnalysisStages(configPath, root, cfg, deps)
+	stages.Preparer = config.Preparer{Config: cfg, Stderr: deps.stderr(), DiscloseLint: true}
+	return stages
+}
+
 // newReportOnlyStages composes a run that never consults the persisted
 // baseline: config comparison and the base sub-run measure trees, not accepted
 // history.

@@ -11,6 +11,9 @@ import (
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
+// globModuleA is the single-module path glob these projection fixtures share.
+const globModuleA = "a/**"
+
 func TestPolicySnapshotProjectsOwnershipAndDeployUnits(t *testing.T) {
 	t.Parallel()
 	cfg := Config{Version: 1, Modules: map[string]policy.ModuleDef{
@@ -56,10 +59,43 @@ func TestValidateRulesRejectsUnknownRuleType(t *testing.T) {
 // aliased map would inherit head-tree owners and never resolve its own.
 func TestWithIndependentModulesDoesNotAliasTheHeadModuleMap(t *testing.T) {
 	t.Parallel()
-	head := Config{Modules: map[string]policy.ModuleDef{"a": {Paths: []string{"a/**"}}}}
+	head := Config{Modules: map[string]policy.ModuleDef{"a": {Paths: []string{globModuleA}}}}
 	base := head.WithIndependentModules()
-	base.Modules["a"] = policy.ModuleDef{Paths: []string{"a/**"}, Owner: "base-team"}
+	base.Modules["a"] = policy.ModuleDef{Paths: []string{globModuleA}, Owner: "base-team"}
 	if head.Modules["a"].Owner != "" {
 		t.Fatalf("head module map mutated through the base copy: %+v", head.Modules["a"])
+	}
+}
+
+// TestPreparerDisclosesLintOnlyWhenAsked pins the config-quality block to the
+// analyze/check composition. Every other stage runs the same executor over a
+// stderr stream it does not own — and `config compare` builds TWO preparers
+// over one stream, so an ungated disclosure prints the block twice with nothing
+// naming the side that produced it.
+func TestPreparerDisclosesLintOnlyWhenAsked(t *testing.T) {
+	t.Parallel()
+	cfg := Config{Version: 1, Modules: map[string]policy.ModuleDef{
+		"bare": {Paths: []string{globModuleA}}, // no owner, no volatility -> lint warns
+	}}
+	if len(cfg.Lint()) == 0 {
+		t.Fatal("fixture must produce a lint warning")
+	}
+	for _, tc := range []struct {
+		name     string
+		disclose bool
+		want     bool
+	}{
+		{"analyze/check", true, true},
+		{"every other stage", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf strings.Builder
+			if err := (Preparer{Config: cfg, Stderr: &buf, DiscloseLint: tc.disclose}).Prepare(context.Background()); err != nil {
+				t.Fatalf("Prepare: %v", err)
+			}
+			if got := strings.Contains(buf.String(), "config-quality"); got != tc.want {
+				t.Errorf("disclosed = %t, want %t (stderr %q)", got, tc.want, buf.String())
+			}
+		})
 	}
 }

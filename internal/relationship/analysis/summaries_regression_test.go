@@ -203,3 +203,44 @@ func sumCounts(m map[string]int) int {
 	}
 	return total
 }
+
+// TestStaticExternalCandidatesDedupEvidenceSites pins that one candidate group
+// never repeats an evidence site. Two edges in one group can carry byte-equal
+// sites: the Rust extractor stamps every crate dependency with the package-level
+// "Cargo.toml", so a workspace whose members map to one configured module emits
+// the same site once per member. Count reports how many edges were seen;
+// evidence_sites is meant to be the distinct places a reviewer can look.
+func TestStaticExternalCandidatesDedupEvidenceSites(t *testing.T) {
+	const manifest = "a/Cargo.toml"
+	site := graph.Location{File: manifest, Line: 1}
+	g := graph.Build([]graph.Facts{{
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindFile, Path: fileA, Language: graph.LangRust},
+			{Kind: graph.NodeKindFile, Path: fileA2, Language: graph.LangRust},
+		},
+		// Both edges leave module a for the same undeclared target and report
+		// the identical manifest location.
+		Edges: []graph.Edge{
+			{From: nodeA, To: "external:serde", Kind: graph.EdgeKindImports, Language: graph.LangRust, Locations: []graph.Location{site}},
+			{From: "file:" + fileA2, To: "external:serde", Kind: graph.EdgeKindImports, Language: graph.LangRust, Locations: []graph.Location{site}},
+		},
+	}})
+	got := analysis.Analyze(analysis.Input{Graph: g, Policy: relationshipPolicy(twoModules())})
+	var found bool
+	for _, c := range got.Evidence.DistanceConfigCandidates {
+		if c.Target == "" || c.Module != moduleA {
+			continue
+		}
+		found = true
+		if c.Count != 2 {
+			t.Errorf("candidate %q count = %d, want 2 (both edges counted)", c.Target, c.Count)
+		}
+		if len(c.EvidenceSites) != 1 {
+			t.Errorf("candidate %q evidence_sites = %d, want 1 distinct site; got %+v",
+				c.Target, len(c.EvidenceSites), c.EvidenceSites)
+		}
+	}
+	if !found {
+		t.Fatal("no external distance candidate for module a; fixture no longer exercises the dedup")
+	}
+}

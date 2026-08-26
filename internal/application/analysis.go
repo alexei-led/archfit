@@ -136,6 +136,12 @@ type AnalysisContext struct {
 	// analyzer applicability probes and the source tree, which only acquisition
 	// may touch. Rule and metric evaluation deliberately reads the RAW coverage
 	// on Facts, so a config opt-out cannot move a measured metric.
+	//
+	// CoverageGaps elements are mutated IN PLACE by the assessment stage: under
+	// --require-tools, the tool gate stamps Gate on the gap it fails on. An
+	// AnalysisContext must therefore never be cached or shared across two
+	// scorings — acquisition allocates a fresh slice per run and that is what
+	// keeps the two sides of --base and config compare independent.
 	MarkedCoverage []modevidence.Coverage
 	CoverageGaps   []modevidence.CoverageGap
 	// CrateRootDirs maps a Rust crate name to its repo-relative source dir, for

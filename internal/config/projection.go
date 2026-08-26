@@ -162,6 +162,13 @@ func ApplyFlagOverrides(cfg *Config, severity string, lang []string) error {
 type Preparer struct {
 	Config Config
 	Stderr io.Writer
+	// DiscloseLint writes the config-quality block to stderr. Only analyze/check
+	// set it. Every other stage runs the same executor without owning the user's
+	// stderr conversation: baseline/explain/enrich never disclosed it, and
+	// `config compare` builds TWO preparers over one stream, so an ungated
+	// disclosure prints the block twice with nothing naming the side that
+	// produced it — the labelling contract that command documents.
+	DiscloseLint bool
 }
 
 // Prepare validates rule definitions and writes config-quality warnings.
@@ -169,7 +176,9 @@ func (p Preparer) Prepare(context.Context) error {
 	if err := ValidateRules(p.Config); err != nil {
 		return err
 	}
-	PrintLint(p.stderr(), p.Config.Lint())
+	if p.DiscloseLint {
+		PrintLint(p.stderr(), p.Config.Lint())
+	}
 	return nil
 }
 

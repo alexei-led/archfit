@@ -368,6 +368,7 @@ func buildStaticDistanceCandidates(g *graph.Graph, idx coupling.Index, mm policy
 		return nil
 	}
 	groups := map[string]*evidence.DistanceConfigCandidate{}
+	seen := map[string]map[evidence.DistanceConfigEvidenceSite]struct{}{}
 	for _, e := range g.Edges() {
 		c, ok := idx[e.From+"\x00"+e.To+"\x00"+string(e.Kind)]
 		if !ok || c.Distance != coupling.DistanceUnknown {
@@ -389,10 +390,20 @@ func buildStaticDistanceCandidates(g *graph.Graph, idx coupling.Index, mm policy
 		if v == nil {
 			v = &evidence.DistanceConfigCandidate{SourceBlock: "classified_external_edges", Module: from, Target: target, IntegrationKind: string(e.Kind), SuggestedReviewAction: "external_systems"}
 			groups[k] = v
+			seen[k] = map[evidence.DistanceConfigEvidenceSite]struct{}{}
 		}
 		v.Count++
 		for _, l := range e.Locations {
-			v.EvidenceSites = append(v.EvidenceSites, evidence.DistanceConfigEvidenceSite{File: l.File, Line: l.Line, Kind: string(e.Kind), Language: e.Language, Target: rawTarget})
+			// Dedup per group. Several edges in one group can carry the same
+			// site: the Rust extractor stamps every crate dependency with the
+			// package-level "Cargo.toml", so a workspace whose members map to
+			// one configured module repeats that site once per member.
+			site := evidence.DistanceConfigEvidenceSite{File: l.File, Line: l.Line, Kind: string(e.Kind), Language: e.Language, Target: rawTarget}
+			if _, dup := seen[k][site]; dup {
+				continue
+			}
+			seen[k][site] = struct{}{}
+			v.EvidenceSites = append(v.EvidenceSites, site)
 		}
 	}
 	out := make([]evidence.DistanceConfigCandidate, 0, len(groups))
@@ -478,7 +489,9 @@ func normalizeTSTarget(path string) (string, string, bool) {
 	}
 	root := parts[0]
 	if strings.HasPrefix(root, "@") {
-		if len(parts) < 2 {
+		// A scope needs a package after it. A bare "@" is not a scope, so
+		// node_modules/@/foo must not become an external_systems suggestion.
+		if len(parts) < 2 || root == "@" {
 			return "", path, false
 		}
 		root += "/" + parts[1]

@@ -58,11 +58,22 @@ func resolveEvidence(s relationship.Set, mm policy.ModuleMap, findings []finding
 		mod, _ := mm.ModuleFor(path)
 		return mod
 	}
+	// Index the severity join once. A per-finding scan is O(findings × edges),
+	// and a broad forbidden_dependency or an unbaselined
+	// new_cross_module_dependency makes findings proportional to edges. First
+	// write wins, matching Set.FindByFindingEdge for duplicate stripped pairs.
+	byEdge := make(map[[3]string]relationship.Edge, len(s.Edges))
+	for _, e := range s.Edges {
+		k := [3]string{e.FromPath, e.ToPath, e.Kind}
+		if _, dup := byEdge[k]; !dup {
+			byEdge[k] = e
+		}
+	}
 	out := make([]finding.Finding, 0, len(findings))
 	for _, f := range findings {
 		f.Edge.From.Module = resolve(f.Edge.From.Path)
 		f.Edge.To.Module = resolve(f.Edge.To.Path)
-		if edge, ok := s.FindByFindingEdge(f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind); ok {
+		if edge, ok := byEdge[[3]string{f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind}]; ok {
 			f.Severity = severityFor(edge.Strength, edge.Distance)
 		}
 		out = append(out, f)

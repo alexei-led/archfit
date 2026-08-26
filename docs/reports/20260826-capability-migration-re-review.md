@@ -127,10 +127,14 @@ that only the single application projector and the renderers may touch it.
    is documented as a growth ratchet (430) and the real surface is gated
    elsewhere. Changing the rule's semantics is a tool-behavior change and was
    deliberately not made during a behavior-preserving migration.
-3. `coupling_balance` evidence lists same-module pairs among "top module pairs".
-   `by_module_pair` aggregates all 505 internal edges; the 143 same-module ones
-   are excluded from the 362 scored denominator and reported in
-   `local_coupling`. Numbers correct, label misleading. Presentation only.
+3. ~~`coupling_balance` evidence lists same-module pairs among "top module
+   pairs".~~ Withdrawn on re-check: `addDriver`
+   (`internal/relationship/analysis/summaries.go`) returns early on
+   `DistanceSameModule`, so all three driver histograms — `by_balance_driver`,
+   `by_critical_driver`, `by_module_pair` — count scored CROSS-BOUNDARY edges
+   only and sum to the scored denominator printed beside them. Same-module
+   coupling is reported in `local_coupling`, as
+   `docs/design/architecture-baseline.md` states. No residual risk.
 4. `config update` reports `action_required` with zero issues on archfit's own
    config, because discovery emits directory-grained module names while
    `.archfit.yaml` declares capability-grained ones. `Removed` is review-only

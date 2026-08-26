@@ -11,8 +11,11 @@ stays `archfit.diagnostic.v2` and existing consumers are unaffected:
   boundary. Like every other histogram the dimension reports, it counts scored
   CROSS-BOUNDARY edges only; same-module coupling is reported under
   `local_coupling`.
-- Scorecard dimensions carry `raw_value` and `cap_applied` when a confidence cap
-  changed the normalized mean.
+- Scorecard dimensions carry `raw_value` — the normalized mean before any
+  confidence cap — and `cap_applied`, the name of the cap that moved it.
+  `raw_value` is emitted whenever it is non-zero, so it appears alongside an
+  equal `value` on an uncapped dimension; `cap_applied` appears only when a cap
+  actually lowered the value.
 
 The `coupling_balance` `summary` and `evidence` **values** changed (the keys did
 not): the summaries now point at the driver histograms, and the scored-fraction

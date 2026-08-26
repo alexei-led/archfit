@@ -176,6 +176,20 @@ directory.
    the empty baseline suppresses nothing — a forbidden import injected into
    `internal/assessment/finding` still exits 1 with 2 blocking findings.
 
+6. **`config update` runs its own extract → graph → classify pipeline inside
+   `cmd`.** `cmd/archfit/config_update_adapters.go` builds a candidate graph and
+   calls `relationshipanalysis.Classify` to propose `external_systems` and
+   deploy-unit edits. It is a config-AUTHORING pass, not a gate path: it decides
+   no verdict, produces no finding, and consumes no baseline. The behaviour
+   pre-dates the capability migration (`main`'s `cmd/archfit/update.go` imported
+   `internal/classify` and `internal/engine` directly); the migration only moved
+   it behind the `relationship/analysis` facade. It is why
+   `cli_no_domain_implementation` names the classifier and scorer packages but
+   not `internal/relationship/analysis`, and why `config_update_adapters.go` is
+   registered in `cmdDomainAdapterFiles` (`internal/arch_test.go`). Upgrade
+   trigger — if this pass ever needs to score, gate, or read the baseline, it
+   moves behind an application port first.
+
 ## Change recipes
 
 **Add a metric or rule.** Implement in `internal/assessment/{metrics,rules}`.

@@ -655,31 +655,72 @@ func assertAdaptersNoAssessmentApplicationImport(t *testing.T, loaded map[string
 	}
 }
 
-func TestNamedCommandStagesDoNotImportDomainInternals(t *testing.T) {
-	named := []string{
-		"analyze.go", "baseline.go", "config_compare.go", "explain.go",
-		"enrich.go", "enrich_abstained.go", "enrich_values.go", "update.go",
+// cmdDomainAdapterFiles are the ONLY cmd/archfit files allowed to reach a
+// domain internal. Each is a composition-root adapter that translates between a
+// domain value and a CLI concern; the command stages themselves must go through
+// the application use case.
+//
+// The list is an exception register, not a scan list: every other non-test file
+// in the package is checked by default, so a NEW command stage is covered the
+// moment it is added. A filename allowlist had the inverse property and was
+// vacuous — it named `update.go` while that command's domain imports lived in
+// `config_update_adapters.go`, which the list did not name.
+var cmdDomainAdapterFiles = map[string]string{
+	// Runs `config update`'s own authoring pipeline (extract → graph → classify)
+	// to propose config edits. Pre-exists the capability migration; recorded as
+	// accepted risk in docs/design/architecture-baseline.md.
+	"config_update_adapters.go": "config-update authoring pipeline",
+	"config_enrich_adapters.go": "config-enrich draft/review adapter",
+	"application_wiring.go":     "composition root: selects concrete stage implementations",
+	"init.go":                   "config init authors a config file; initcfg is its writer",
+	"llmreview.go":              "off-gate LLM review; initcfg supplies the draft format",
+	"draft_metadata.go":         "initcfg draft metadata translation",
+	"evidence_pack.go":          "initcfg evidence-pack translation",
+}
+
+func TestCommandStagesDoNotImportDomainInternals(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("..", "cmd", "archfit"))
+	if err != nil {
+		t.Fatalf("read cmd/archfit: %v", err)
 	}
-	for _, name := range named {
+	forbidden := []string{
+		modulePrefix + "internal/assessment/",
+		modulePrefix + "internal/relationship/",
+		modulePrefix + "internal/model/graph",
+		modulePrefix + "internal/model/evidence",
+		modulePrefix + "internal/labels/labelsio",
+		modulePrefix + "internal/initcfg",
+	}
+	checked := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if _, exempt := cmdDomainAdapterFiles[name]; exempt {
+			continue
+		}
+		checked++
 		path := filepath.Join("..", "cmd", "archfit", name)
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
 		if err != nil {
 			t.Fatalf("parse %s: %v", path, err)
 		}
 		for _, imp := range file.Imports {
-			importPath := strings.Trim(imp.Path.Value, "\\\"")
-			for _, forbidden := range []string{
-				modulePrefix + "internal/assessment/",
-				modulePrefix + "internal/relationship/",
-				modulePrefix + "internal/model/graph",
-				modulePrefix + "internal/model/evidence",
-				modulePrefix + "internal/labels/labelsio",
-				modulePrefix + "internal/initcfg",
-			} {
-				if strings.HasPrefix(importPath, forbidden) {
+			importPath := strings.Trim(imp.Path.Value, `"`)
+			for _, prefix := range forbidden {
+				if strings.HasPrefix(importPath, prefix) {
 					t.Errorf("cmd/archfit/%s must use the application use case and its adapters, not %s", name, importPath)
 				}
 			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no command stage files were checked; the exemption register has swallowed the package")
+	}
+	for name := range cmdDomainAdapterFiles {
+		if _, err := os.Stat(filepath.Join("..", "cmd", "archfit", name)); err != nil {
+			t.Errorf("exempt file %s does not exist; drop it from cmdDomainAdapterFiles", name)
 		}
 	}
 }
