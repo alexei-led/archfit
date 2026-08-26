@@ -993,3 +993,28 @@ func TestIsForbiddenForCore(t *testing.T) {
 		}
 	}
 }
+
+// TestSeamGateIsScoreBlind is the executable fixture behind the coupling-gate
+// migration: the repository coupling scalar must not reach the gate that
+// replaced it.
+//
+// It is a source scan rather than a behavior test because the failure mode is a
+// re-introduction, not a wrong answer: a future change that passes a Scorecard
+// back into the gate would compile, pass every existing test, and quietly put
+// an averaged repository number back in charge of the verdict.
+func TestSeamGateIsScoreBlind(t *testing.T) {
+	const gateFile = "assessment/score/gate.go"
+	src, err := os.ReadFile(gateFile)
+	if err != nil {
+		t.Fatalf("read %s: %v", gateFile, err)
+	}
+	for _, forbidden := range []string{"Scorecard", "Overall", "MinBand", "MaxDrop", "BandRank"} {
+		if strings.Contains(string(src), forbidden) {
+			t.Errorf("%s references %q: the seam gate decides from the seam ledger, never from a repository score",
+				gateFile, forbidden)
+		}
+	}
+	if !strings.Contains(string(src), "EvaluateSeamGate") {
+		t.Fatalf("%s no longer defines EvaluateSeamGate: the rule would pass vacuously", gateFile)
+	}
+}

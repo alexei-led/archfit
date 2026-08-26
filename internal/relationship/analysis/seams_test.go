@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/relationship/analysis"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
 
 const (
@@ -335,5 +336,62 @@ func TestSeamsAreDeterministicallyOrdered(t *testing.T) {
 				t.Fatalf("seam order = %v, want %v", got, want)
 			}
 		}
+	}
+}
+
+// TestStaleLabelDisablesTheOverrideAndIsReported pins the stale-evidence rule:
+// a label whose evidence hash no longer matches the dependency surface stops
+// applying — the strength falls back to what the static sources actually saw —
+// and the run says so. Silently applying a label approved against a different
+// surface is the failure mode; silently dropping it without a word is the other.
+func TestStaleLabelDisablesTheOverrideAndIsReported(t *testing.T) {
+	stale := labels.Label{
+		From: moduleA, To: moduleB, Strength: string(relationship.StrengthContract),
+		Status: labels.StatusApproved, EvidenceHash: "hash-from-a-different-tree",
+		Provenance: labels.ProvenanceHuman,
+	}
+	in := analysis.Input{
+		Graph:  seamGraph(1, string(relationship.StrengthIntrusive)),
+		Policy: relationshipPolicy(twoModules()),
+		Labels: []labels.Label{stale},
+	}
+
+	got := analysis.Analyze(in)
+	if len(got.Assessment.StaleLabelKeys) != 1 {
+		t.Fatalf("stale label keys = %v, want the stale pair reported", got.Assessment.StaleLabelKeys)
+	}
+	s := seamAB(t, got)
+	if s.Strength != relationship.StrengthIntrusive {
+		t.Errorf("strength = %q, want the extractor's intrusive hint — a stale label must not override", s.Strength)
+	}
+	if len(s.Labels) != 0 {
+		t.Errorf("seam labels = %v, want none: a disabled override is not in effect", s.Labels)
+	}
+}
+
+// TestApprovedLabelIsReportedOnTheSeam pins the other half: a fresh approved
+// label applies and the seam discloses which label did it, so a reader can tell
+// a measured strength from a reviewed one.
+func TestApprovedLabelIsReportedOnTheSeam(t *testing.T) {
+	// A full run (not a base run) with no evidence hash recorded on the label
+	// leaves the freshness check unanchored, which is the "approved and in
+	// effect" path.
+	fresh := labels.Label{
+		From: moduleA, To: moduleB, Strength: string(relationship.StrengthContract),
+		Status: labels.StatusApproved, Provenance: labels.ProvenanceHuman,
+	}
+	got := analysis.Analyze(analysis.Input{
+		Graph:  seamGraph(1, string(relationship.StrengthIntrusive)),
+		Policy: relationshipPolicy(twoModules()),
+		Labels: []labels.Label{fresh},
+		Mode:   analysis.Mode{Full: true},
+	})
+
+	if len(got.Assessment.StaleLabelKeys) != 0 {
+		t.Errorf("stale label keys = %v, want none for a label in effect", got.Assessment.StaleLabelKeys)
+	}
+	s := seamAB(t, got)
+	if len(s.Labels) != 1 || s.Labels[0] != labels.Key(moduleA, moduleB) {
+		t.Errorf("seam labels = %v, want the applied label key disclosed", s.Labels)
 	}
 }

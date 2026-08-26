@@ -11,7 +11,11 @@ import (
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
-const ruleNoCycles = "no-cycles"
+const (
+	ruleNoCycles = "no-cycles"
+	fileModuleA  = "pkg/a/a.go"
+	fileModuleB  = "pkg/b/b.go"
+)
 
 // qualifyingSeam is one distributed-monolith seam: intrusive coupling across a
 // deploy-unit boundary, in the critical band.
@@ -157,7 +161,7 @@ func TestFinalize_BuildsRepairTasks(t *testing.T) {
 		Verdict: result.VerdictFail,
 		Findings: []finding.Finding{
 			{ID: "g1", RuleID: ruleNoCycles, Kind: finding.KindGate, Status: finding.StatusNew,
-				Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: "a", Path: "pkg/a/a.go"}, To: finding.Endpoint{Module: "b", Path: "pkg/b/b.go"}}},
+				Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: "a", Path: fileModuleA}, To: finding.Endpoint{Module: "b", Path: fileModuleB}}},
 			{ID: "a1", RuleID: finding.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusNew,
 				MatchedBy: map[string]string{"group_count": "3", "group_members": "a1,a2,a3"}},
 		},
@@ -165,7 +169,7 @@ func TestFinalize_BuildsRepairTasks(t *testing.T) {
 	evaluation.Finalize(&diag, evaluation.FinalizeInput{
 		RuleTypes:          map[string]string{ruleNoCycles: ruleForbidden},
 		ValidationCommands: []string{validate},
-		KnownFiles:         map[string]struct{}{"pkg/a/a.go": {}, "pkg/b/b.go": {}},
+		KnownFiles:         map[string]struct{}{fileModuleA: {}, fileModuleB: {}},
 		OnDisk:             func(string) bool { return true },
 	})
 	if len(diag.AgentTasks) != 1 || diag.AgentTasks[0].FindingID != "g1" {
@@ -176,5 +180,91 @@ func TestFinalize_BuildsRepairTasks(t *testing.T) {
 	}
 	if len(diag.AdvisoryTasks) != 1 || diag.AdvisoryTasks[0].FindingID != "a1" {
 		t.Fatalf("advisory tasks = %+v, want one for the BC advisory", diag.AdvisoryTasks)
+	}
+}
+
+// TestApplySeamGate_IgnoresTheRepositoryScore pins the migration's whole point:
+// a catastrophic repository coupling score with no qualifying seam does not
+// block, and a healthy one with a new qualifying seam does. The scalar is not
+// an input in either direction.
+func TestApplySeamGate_IgnoresTheRepositoryScore(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		seams       []result.Seam
+		wantVerdict result.Verdict
+	}{
+		{
+			name: "no qualifying seam never blocks, whatever the score says",
+			seams: []result.Seam{{
+				ID: "seam-1", FromModule: "a", ToModule: "b", Severity: "critical",
+				Scores: result.SeamScoreDistribution{N: 40, Min: 1, Median: 1, Max: 2, Mean: 1.2},
+			}},
+			wantVerdict: result.VerdictPass,
+		},
+		{
+			name: "one qualifying seam blocks, whatever the score says",
+			seams: []result.Seam{func() result.Seam {
+				s := qualifyingSeam("seam-1", "billing", "shipping")
+				s.Scores = result.SeamScoreDistribution{N: 40, Min: 9, Median: 10, Max: 10, Mean: 9.8}
+				return s
+			}()},
+			wantVerdict: result.VerdictFail,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			diag := seamDiag(tc.seams...)
+			evaluation.ApplySeamGate(&diag, policy.CouplingGate{Mode: policy.DistributedMonolithFail}, comparableAnchor())
+			if diag.Verdict != tc.wantVerdict {
+				t.Errorf("verdict = %q, want %q", diag.Verdict, tc.wantVerdict)
+			}
+		})
+	}
+}
+
+// TestFinalize_PreservesPerEdgeAdvisoryEvidence pins that retiring gate
+// promotion did not cost the per-edge evidence a reviewer reads. A coupling
+// advisory still carries its own cheapest move and score value, so `explain`
+// and the advisory task list can still say what to change and why.
+func TestFinalize_PreservesPerEdgeAdvisoryEvidence(t *testing.T) {
+	t.Parallel()
+	diag := result.Result{
+		Verdict: result.VerdictPass,
+		Findings: []finding.Finding{{
+			ID: "bc-1", RuleID: finding.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusNew,
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Module: "a", Path: fileModuleA},
+				To:   finding.Endpoint{Module: "b", Path: fileModuleB},
+			},
+			MatchedBy: map[string]string{"cheapest_move": "reduce_strength", "score_value": "3",
+				"group_count": "2", "group_members": "bc-1,bc-2"},
+		}},
+	}
+
+	evaluation.Finalize(&diag, evaluation.FinalizeInput{
+		Gate:               policy.CouplingGate{Mode: policy.DistributedMonolithWarn},
+		ValidationCommands: []string{"archfit check -c .archfit.yaml"},
+		KnownFiles:         map[string]struct{}{fileModuleA: {}, fileModuleB: {}},
+		OnDisk:             func(string) bool { return true },
+	})
+
+	if diag.Findings[0].Kind != finding.KindAdvisory {
+		t.Errorf("advisory kind = %q, want advisory — the seam gate promotes nothing", diag.Findings[0].Kind)
+	}
+	if len(diag.AdvisoryTasks) != 1 {
+		t.Fatalf("advisory tasks = %+v, want one for the coupling advisory", diag.AdvisoryTasks)
+	}
+	task := diag.AdvisoryTasks[0]
+	if task.CheapestMove != "reduce_strength" {
+		t.Errorf("cheapest_move = %q, want the per-edge remediation preserved", task.CheapestMove)
+	}
+	if task.ScoreValue != 3 {
+		t.Errorf("score_value = %d, want the per-edge balance preserved", task.ScoreValue)
+	}
+	if len(task.TopFiles) == 0 {
+		t.Error("top_files = [], want the per-edge file evidence preserved")
 	}
 }

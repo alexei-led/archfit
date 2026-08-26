@@ -85,33 +85,71 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   old discrete severity table and is no longer called anywhere. Do not re-introduce
   it; the book formula (`ScoreVersion = "bc_score.v6"`) is the single severity source.
-- **Coupling gate** (`coupling.gate: {min_band, max_drop}`). The synthesised
-  coupling_balance score can fail the verdict: `score.Synthesize` +
-  `applyCouplingGate` run INSIDE `evaluation.Score`
-  (`internal/assessment/evaluation/assess.go`), before `agenttask.Build`, so a tripped gate escalates `diag.Verdict` and
-  promotes the active BC advisories to `Kind: "gate"` (they flow into
-  `agent_tasks[]` through the unchanged agenttask filter). `min_band` is a band
-  floor; `max_drop` compares against the score snapshot `archfit baseline`
-  stores (`baseline.ScoreSnapshot`, omitted when unmeasured). BandNA never
-  gates (abstain ≠ fail). Trip reasons print to stderr from `analyze` ONLY
-  (re-evaluated there via the pure `score.EvaluateCouplingGate`) — never from
-  baseline/enrich/explain/`--base` scoring, which share the stage executor
-  (`AnalysisRequest.SuppressGateReasons`). A separate
-  stale-baseline notice can also print from `analyze` when `max_drop` is skipped
-  because the stored score snapshot is incompatible with this binary —
-  `baseline.ScoreSnapshotMismatches` names the offending input
-  (`score_version`, `rubric_version`); a snapshot written before rubric tracking
-  reads as rubric `1` and still anchors.
-  The score comes from `ClassifiedEdges` (pre-advisory-filter), so a trip with
-  no promotable advisory (advisory off, or `coupling.min_severity` above every
-  active edge) emits one synthetic `bc/coupling_gate` gate finding carrying
-  the trip reasons — a FAIL verdict never ships with 0 gate findings.
-  `archfit baseline` persists BC findings with their NATIVE advisory kind
-  (promotion is per-run; a stored "gate" kind orphans the entry for
-  `status.Assign`) and skips the synthetic trip finding entirely. The
-  `couplingGateView` projection lives in cmd, NOT
-  on `Config` — config (support layer) must not import score (core layer); the
-  dogfood gate catches that inversion.
+- **Coupling gate is the distributed-monolith SEAM rule**
+  (`coupling.gate.distributed_monolith: {mode, max_new_seams}`, config schema
+  **v2**). It counts logical seams — one ordered module pair, however many
+  imports express it — not edges. `score.EvaluateSeamGate` + `applySeamGate` run
+  inside `evaluation.Score` (`internal/assessment/evaluation/finalize.go`),
+  before `agenttask.Build`. A seam qualifies when it has at least one active
+  source-graph edge in the critical band at high distance
+  (`coupling.DistanceIsHigh`); it is built from the FULL classified edge set, so
+  no severity/baseline/waiver filter can hide one.
+  `mode: fail` blocks ONLY on seams newly introduced against a **comparable**
+  reference (all four of `config_hash`, `model_hash`, `labels_hash`,
+  `rubric_version` equal); without one the gate reports the seam total, states
+  that no new-seam count is claimed, and never blocks. A blocked run emits one
+  `bc/coupling_gate` gate finding PER new seam, keyed `coupling-gate/<seamID>`
+  and carrying the module pair. Advisory PROMOTION is gone: the scalar gate had
+  to borrow findings to point at; the seam gate names its own seams. Reasons
+  print to stderr from `analyze` ONLY (`AnalysisRequest.SuppressGateReasons`),
+  and are EMPTY when no seam qualifies — an abstention printed on every clean
+  run trains readers to ignore the line that matters.
+  `internal/arch_test.go:TestSeamGateIsScoreBlind` forbids `Scorecard`/`Overall`
+  in `score/gate.go`: the repository scalar must not reach the gate that
+  replaced it. Self-config evidence (2026-08-26): 380 scored edges, all
+  `cross_module_same_owner`, 78 critical, **0** at high distance → 0 qualifying
+  seams, which is why the self-config stays `mode: warn`.
+- **Config schema v2 is the only analysable schema.** `config.SchemaVersion = 2`;
+  `analyze`/`check` reject `version: 1` AND the retired
+  `coupling.gate.min_band`/`max_drop` keys with the exact hint
+  `config.MigrationHint` ("→ run: archfit config update --migration-only
+  --apply"). The retired keys still DECODE on purpose — the migration has to read
+  a v1 file — so the refusal lives in `validate()`, never in the decoder.
+  `initcfg.MigrateToV2` is a LINE transform (a YAML round-trip would reflow the
+  file and drop every comment): it bumps the root `version:`, removes the retired
+  keys with the comment lines documenting them, and splices
+  `distributed_monolith: {mode: warn, max_new_seams: 0}` in at the first removed
+  key's position. It never infers `mode: fail`, and running it twice is
+  byte-identical. `initcfg.TargetSchemaVersion` restates `config.SchemaVersion`
+  because initcfg may not import config (`*_no_config`); the two are pinned
+  together by `cmd/archfit.TestMigrationTargetsCurrentSchema`. The CLI path lives
+  in `cmd/archfit/config_migrate.go` (an exempt domain adapter) and
+  short-circuits BEFORE discovery, tool calls, and cache access.
+- **Seam ledger** (`relationship.Seam`, built by `analysis.buildSeams`, carried
+  on `AssessmentSignals.Seams` → `result.Result.Seams`). One record per ordered
+  module pair with a stable ID (`sha256("seam.v1\x00"+from+"\x00"+to)`), the
+  scored/abstained denominator, a nearest-rank score distribution
+  (`ceil(p*n)-1`; p10/p90 **null** below ten samples), raw owner/deploy/structural
+  distance facts beside the collapsed rung, the book Ch10 quadrant, the labels in
+  effect, and a balancing hypothesis. Same-module edges (a different fractal
+  level) and unresolved targets (external hygiene) are NOT seams; clone-only
+  pairs are not either — they have no import edge. Seam order is by module pair,
+  and the gate re-sorts by ID so a ledger reordering cannot reorder gate findings.
+- **Comparison is strict on four fingerprints** (`decision.CompareFingerprints`).
+  `config_hash` + `model_hash` (`policy.ModelHash` over the canonical module map)
+  + `labels_hash` (`labels.FileHash` over APPROVED entries only) +
+  `rubric_version`. Any mismatch is `non_comparable` with a reason NAMING the
+  drifted input — never a delta with a caveat. Model hash is load-bearing: seam
+  identity comes from module NAMES, so without it a rename reads as one resolved
+  seam plus one new seam and a new-seam gate blocks on a no-op refactor.
+- **Labels are validated structurally** (`labels.Validate`). Self-pair, duplicate
+  ordered pair, and (where the module map is in hand) undeclared endpoint are
+  hard errors — an override that applies to nothing, or two answers to one
+  question decided by file order, cannot produce a valid report. Shape checks run
+  in `labelsio.Load`; module existence runs in `acquisition.loadLabels`, the first
+  point where labels and the module map are both resolved. A STALE evidence hash
+  is not an error: it disables the override and emits the `labels/stale`
+  diagnostic, which can never be promoted to a gate.
 - **FileClass facility** (`internal/model/fileclass`, `internal/syntax/fileclass`).
   Every source file is classified as `Production | Test | Generated | Vendor` once
   during the LOC walk; the result is stored in `SizeSignals.FileClassIndex`. Use
@@ -442,8 +480,9 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `metrics.<name>.gate` follows the same convention: a worsening baseline delta
   blocks when `gate` is unset. `MetricEntry.Enabled` is a `*bool` so a knob-only
   entry (`{gate: warn}`) stays enabled — only explicit `enabled: false` disables
-  the metric (`metrics.New`). `coupling_balance` gates via the `coupling.gate:`
-  block, not `metrics:` — see the coupling-gate invariant above.
+  the metric (`metrics.New`). `coupling_balance` does not gate at all — the only
+  coupling gate is `coupling.gate.distributed_monolith`; see the coupling-gate
+  invariant above.
 
 ## Coupling scorer — key design facts
 

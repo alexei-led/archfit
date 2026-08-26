@@ -795,19 +795,29 @@ Manual checks:
 - Confirm the scalar may appear only under a seam’s diagnostic details or a
   versioned legacy field.
 
-- [ ] Implement logical seam grouping and denominator/distribution metrics.
-- [ ] Add raw distance context and explicit analysis-level fields.
-- [ ] Add config v2 init/load/schema plus the exact distributed-monolith
+- [x] Implement logical seam grouping and denominator/distribution metrics.
+- [x] Add raw distance context and explicit analysis-level fields.
+- [x] Add config v2 init/load/schema plus the exact distributed-monolith
       config-update report/apply/idempotence path, v1/retired-field migration
       error, and current-HEAD dry-run before enabling fail mode.
-- [ ] Separate diagnostic coupling from the explicit per-seam gate policy.
-- [ ] Add hard structural label validation plus diagnostic stale-evidence handling.
-- [ ] Derive composition-root/adapter expectations from existing roles without
+- [x] Separate diagnostic coupling from the explicit per-seam gate policy.
+- [x] Add hard structural label validation plus diagnostic stale-evidence handling.
+- [x] Derive composition-root/adapter expectations from existing roles without
       label hacks or new role keys.
-- [ ] Make config/model/labels/rubric comparison explicit and non-comparable when needed.
-- [ ] Add seam fixtures and preserve per-edge explain evidence.
-- [ ] Remove repository `Scorecard.Overall` from the new primary decision path.
-- [ ] Run focused tests and commit the seam-ledger implementation.
+- [x] Make config/model/labels/rubric comparison explicit and non-comparable when needed.
+- [x] Add seam fixtures and preserve per-edge explain evidence.
+- [x] Remove repository `Scorecard.Overall` from the new primary decision path.
+- [x] Run focused tests and commit the seam-ledger implementation.
+
+Current-HEAD dry run (2026-08-26, `make build` then the freshly built binary,
+self-config in `mode: warn`, `max_new_seams: 0`): 380 scored internal
+cross-boundary edges, **all** at `cross_module_same_owner`, 78 in the critical
+band, **0** at high distance — therefore **0 qualifying distributed-monolith
+seams**. This matches R3 exactly. No new-seam count is claimed: the stored
+baseline predates the seam ledger and is non-comparable, so the gate abstains.
+`analyze` prints nothing, which is correct — with no qualifying seam there is no
+claim to withhold. Fail mode is NOT enabled: on this tree it would gate on
+nothing while reading as a control that exists.
 
 ### Task 4: Migrate all formats, baseline, delta, and CLI behavior
 
