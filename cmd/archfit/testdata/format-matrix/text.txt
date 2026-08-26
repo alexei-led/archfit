@@ -53,3 +53,8 @@ TOP ACTIONABLE FINDINGS
 COMPARISON
 
   status: not_requested  ·  reference: none
+
+FINDING INDEX (2)
+
+  ba3803eca947bf3c1b7efa8f37854d5e  new  no_direct_b_dependency
+  07af466df8bfd6e77ee485ac01c50a17  new  bc/imbalanced_coupling

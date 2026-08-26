@@ -45,6 +45,7 @@ func RenderState(s report.ArchitectureState, w io.Writer) error {
 	writeSeams(&b, s.Seams)
 	writeActionableFindings(&b, s)
 	writeComparison(&b, s.Comparison)
+	writeFindingIndex(&b, s.Findings)
 
 	_, err := io.WriteString(w, b.String())
 	return err
@@ -252,6 +253,24 @@ func writeComparison(b *strings.Builder, c report.StateComparison) {
 	fmt.Fprintf(b, "  status: %s  ·  reference: %s\n", c.Status, target)
 	for _, reason := range c.Reasons {
 		fmt.Fprintf(b, "    %s\n", condense(reason, 140))
+	}
+}
+
+// writeFindingIndex appends every finding in the document's canonical order
+// with its ID, lifecycle status, and rule. The actionable section above is
+// deliberately abbreviated for a terminal reader; this appendix is what makes
+// the abbreviation safe, because a truncated list is indistinguishable from a
+// shorter run otherwise. Every format carries the same sequence, including
+// accepted and waived findings, so no reader can pick the format that omits
+// the finding they would rather not see.
+func writeFindingIndex(b *strings.Builder, findings []report.Finding) {
+	fmt.Fprintf(b, "\nFINDING INDEX (%d)\n\n", len(findings))
+	if len(findings) == 0 {
+		b.WriteString("  none\n")
+		return
+	}
+	for _, f := range findings {
+		fmt.Fprintf(b, "  %s  %s  %s\n", f.ID, f.Status, f.RuleID)
 	}
 }
 

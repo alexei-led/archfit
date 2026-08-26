@@ -52,9 +52,25 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 	writeComparison(&b, s.Comparison)
 	writeDelta(&b, d.Delta)
 	writeRequiredToolsMissing(&b, d.CoverageGaps)
+	writeFindingIndex(&b, s.Findings)
 
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// writeFindingIndex appends every finding in the document's canonical order
+// with its ID, lifecycle status, and rule. The scorecard is a per-dimension
+// view and names no finding otherwise, so without this appendix it is the one
+// format a reader cannot reconcile against the others.
+func writeFindingIndex(b *strings.Builder, findings []report.Finding) {
+	fmt.Fprintf(b, "\n## Finding index (%d)\n\n", len(findings))
+	if len(findings) == 0 {
+		b.WriteString("- none\n")
+		return
+	}
+	for _, f := range findings {
+		fmt.Fprintf(b, "- `%s` %s %s\n", f.ID, f.Status, f.RuleID)
+	}
 }
 
 // verdictLabel renders the verdict for humans. JSON stores lower case.

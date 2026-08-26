@@ -98,3 +98,8 @@ denominator: none — this dimension measured nothing
 
 - status: not_requested
 - reference: none
+
+## Finding index (2)
+
+- `ba3803eca947bf3c1b7efa8f37854d5e` new no_direct_b_dependency
+- `07af466df8bfd6e77ee485ac01c50a17` new bc/imbalanced_coupling

@@ -157,3 +157,10 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - ast-grep/syntax: disabled — opt-in: analyzers.syntax.enabled
 - ast-grep: ok
 - cargo-modules: absent
+
+## Finding index (2)
+
+| Finding | Status | Rule |
+| --- | --- | --- |
+| `ba3803eca947bf3c1b7efa8f37854d5e` | new | no_direct_b_dependency |
+| `07af466df8bfd6e77ee485ac01c50a17` | new | bc/imbalanced_coupling |

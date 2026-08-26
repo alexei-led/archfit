@@ -44,6 +44,13 @@ func goldenDocument() reportmodel.Document {
 		Status: reportmodel.ComparisonNonComparable, Reasons: []string{"no comparable architecture-state reference is stored"},
 	}
 	d.State.Coverage = reportmodel.StateCoverage{Measured: 1, Partial: 0, Unmeasured: 8}
+	// Two findings with DIFFERENT lifecycle statuses: the finding index is the
+	// scorecard's only reference to finding identity, and an accepted finding
+	// that vanished here would break cross-format parity silently.
+	d.State.Findings = []reportmodel.Finding{
+		{ID: "f1", RuleID: "bc/imbalanced_coupling", Status: "new"},
+		{ID: "f2", RuleID: "no_direct_b_dependency", Status: "accepted"},
+	}
 	return d
 }
 
@@ -105,6 +112,11 @@ denominator: none — this dimension measured nothing
 
 - status: not_requested
 - reference: none
+
+## Finding index (2)
+
+- ` + "`f1`" + ` new bc/imbalanced_coupling
+- ` + "`f2`" + ` accepted no_direct_b_dependency
 `
 
 // TestRenderer_Golden asserts the exact rendered state scorecard.

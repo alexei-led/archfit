@@ -45,7 +45,17 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 	if err := RenderState(d.State, w); err != nil {
 		return err
 	}
-	return r.renderAudit(d, w)
+	if err := r.renderAudit(d, w); err != nil {
+		return err
+	}
+	// The index closes the document, after the audit. Both the state headline
+	// and the audit abbreviate or re-sort findings for a reader; the appendix is
+	// the one place the full canonical sequence appears, and it has to come last
+	// so no later section can reorder what a consumer reads as canonical.
+	var b strings.Builder
+	writeFindingIndex(&b, d.State.Findings)
+	_, err := io.WriteString(w, b.String())
+	return err
 }
 
 // renderAudit writes the detailed BC-aligned Markdown audit for d to w.

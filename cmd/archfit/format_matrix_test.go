@@ -260,18 +260,26 @@ func TestFormatMatrix_CrossFormatParity(t *testing.T) {
 		Findings []struct {
 			ID     string `json:"id"`
 			RuleID string `json:"rule_id"`
+			Status string `json:"status"`
 		} `json:"findings"`
 	}
 	if err := json.Unmarshal(stateJSON, &state); err != nil {
 		t.Fatalf("decode architecture state: %v", err)
+	}
+	if len(state.Findings) == 0 {
+		t.Fatal("the parity fixture produced no findings — the finding-sequence assertion below would be vacuous")
 	}
 
 	verdictLabel := strings.ToUpper(strings.ReplaceAll(state.Verdict, "_", " "))
 	coverage := []string{
 		strconv.Itoa(state.Coverage.Measured), strconv.Itoa(state.Coverage.Partial), strconv.Itoa(state.Coverage.Unmeasured),
 	}
+	canonical := make([]string, 0, len(state.Findings))
+	for _, f := range state.Findings {
+		canonical = append(canonical, f.ID)
+	}
 
-	for _, format := range []string{formatText, formatMarkdown} {
+	for _, format := range []string{formatText, formatMarkdown, formatScorecard} {
 		t.Run(format, func(t *testing.T) {
 			out := string(runFormatOutput(t, cfgPath, format))
 
@@ -298,8 +306,38 @@ func TestFormatMatrix_CrossFormatParity(t *testing.T) {
 				if !strings.Contains(out, f.RuleID) {
 					t.Errorf("%s omits the rule %q behind finding %s:\n%s", format, f.RuleID, f.ID, out)
 				}
+				if !strings.Contains(out, f.Status) {
+					t.Errorf("%s omits the status %q of finding %s:\n%s", format, f.Status, f.ID, out)
+				}
 			}
+			// A human format may lead with the actionable findings and cap that
+			// list, but it must still append every finding ID in the document's
+			// canonical order. Without the appendix an abbreviated render and a
+			// genuinely shorter run are indistinguishable.
+			assertCanonicalFindingSequence(t, format, out, canonical)
 		})
+	}
+}
+
+// assertCanonicalFindingSequence checks that every canonical finding ID appears
+// in out, and that the LAST occurrence of each one runs in canonical order — the
+// appendix. Earlier mentions in an actionable section are free to reorder by
+// severity; the appendix is what fixes the sequence across formats.
+func assertCanonicalFindingSequence(t *testing.T, format, out string, canonical []string) {
+	t.Helper()
+
+	prev := -1
+	for _, id := range canonical {
+		at := strings.LastIndex(out, id)
+		if at < 0 {
+			t.Errorf("%s omits finding %s from its finding index:\n%s", format, id, out)
+			return
+		}
+		if at <= prev {
+			t.Errorf("%s lists finding %s out of canonical order (at %d, previous at %d)", format, id, at, prev)
+			return
+		}
+		prev = at
 	}
 }
 

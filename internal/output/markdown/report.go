@@ -206,6 +206,22 @@ func writeFindingList(b *strings.Builder, label string, findings []report.Findin
 	}
 }
 
+// writeFindingIndex appends every finding in the document's canonical order
+// with its ID, lifecycle status, and rule. The actionable list above is capped
+// for readability; without this appendix a capped list and a shorter run render
+// identically, and the finding sequence would differ between formats.
+func writeFindingIndex(b *strings.Builder, findings []report.Finding) {
+	fmt.Fprintf(b, "\n## Finding index (%d)\n\n", len(findings))
+	if len(findings) == 0 {
+		b.WriteString("_none_\n")
+		return
+	}
+	b.WriteString("| Finding | Status | Rule |\n| --- | --- | --- |\n")
+	for _, f := range findings {
+		fmt.Fprintf(b, "| `%s` | %s | %s |\n", f.ID, f.Status, f.RuleID)
+	}
+}
+
 func writeStateComparison(b *strings.Builder, c report.StateComparison) {
 	b.WriteString("\n## Comparison\n\n")
 	target := c.BaseRef
