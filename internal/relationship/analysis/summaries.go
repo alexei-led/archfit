@@ -369,6 +369,8 @@ func buildStaticDistanceCandidates(g *graph.Graph, idx coupling.Index, mm policy
 	}
 	groups := map[string]*evidence.DistanceConfigCandidate{}
 	seen := map[string]map[evidence.DistanceConfigEvidenceSite]struct{}{}
+	// Hoisted: GoModules copies its backing slice on every call.
+	goModules := g.GoModules()
 	for _, e := range g.Edges() {
 		c, ok := idx[e.From+"\x00"+e.To+"\x00"+string(e.Kind)]
 		if !ok || c.Distance != coupling.DistanceUnknown {
@@ -381,7 +383,7 @@ func buildStaticDistanceCandidates(g *graph.Graph, idx coupling.Index, mm policy
 		if to, ok := moduleForNode(e.To, mm); ok && to != "" {
 			continue
 		}
-		target, rawTarget, ok := normalizeExternalTarget(e.To, e.Language, g.GoModules())
+		target, rawTarget, ok := normalizeExternalTarget(e.To, e.Language, goModules)
 		if !ok || target == "" {
 			continue
 		}

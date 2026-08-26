@@ -146,7 +146,7 @@ func clonePairs(clusters []clone.Cluster, mm policy.ModuleMap, index map[string]
 	for _, c := range clusters {
 		bad := false
 		for _, f := range c.Files {
-			if !fileclass.IsProduction(syntax.LookupFileClass(f, index, cloneLanguage(f), cfg)) {
+			if !fileclass.IsProduction(syntax.LookupFileClass(filepath.ToSlash(f), index, cloneLanguage(f), cfg)) {
 				bad = true
 				break
 			}
@@ -183,7 +183,7 @@ func cloneEvidence(clusters []clone.Cluster, mm policy.ModuleMap, index map[stri
 	for _, c := range clusters {
 		bad := false
 		for _, f := range c.Files {
-			if !fileclass.IsProduction(syntax.LookupFileClass(f, index, cloneLanguage(f), cfg)) {
+			if !fileclass.IsProduction(syntax.LookupFileClass(filepath.ToSlash(f), index, cloneLanguage(f), cfg)) {
 				bad = true
 				break
 			}

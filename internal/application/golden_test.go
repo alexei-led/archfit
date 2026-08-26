@@ -104,8 +104,12 @@ func TestGolden_DoubleRun(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Execute: %v", err)
 		}
+		// Encode the PROJECTED wire document, not the pre-projection assessment
+		// result: report projection is the last stage before output, so a
+		// non-deterministic projector must fail this gate.
+		doc := application.ProjectReport(out.Diagnostic, out.Score, out.BaseScore, out.HardGate)
 		var buf bytes.Buffer
-		if encErr := json.NewEncoder(&buf).Encode(out.Diagnostic); encErr != nil {
+		if encErr := json.NewEncoder(&buf).Encode(doc); encErr != nil {
 			t.Fatalf("encode: %v", encErr)
 		}
 		return buf.Bytes()
