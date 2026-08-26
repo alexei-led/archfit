@@ -52,7 +52,7 @@ func populatedResult() result.Result {
 		EvidenceSites:         []evidence.DistanceConfigEvidenceSite{{File: blockFileA, Line: 7, Kind: "publish", Language: "go", Target: blockNats}},
 		SuggestedReviewAction: "declare external_systems.nats"}}
 	r.VolatilityCorroboration = &evidence.VolatilityCorroboration{Source: "git", Status: "ok", CommitWindow: 90, FullHistory: true, CommitsScanned: 12, ModulesTouched: 2, Caveat: "c",
-		TopTouched: []evidence.VolatilityTouch{{Module: "a", TouchCommits: 9, DeclaredVolatility: "high"}}}
+		TopTouched: []evidence.VolatilityTouch{{Module: "a", TouchCommits: 9, DeclaredVolatility: stateSevHigh}}}
 	r.LocalCoupling = []evidence.LocalCouplingModule{{Module: "a", ScoredEdges: 4, AbstainedEdges: 1, ComplexityEdges: 2, ComplexitySharePct: 50, MeanBalance: 3.5,
 		WorstOffenders: []evidence.LocalCouplingEdge{{From: blockFileA, To: "a/b.go", Strength: mergeContract, Balance: 2, Band: "critical", File: blockFileA, Line: 3}}}}
 	r.Delta = &result.DeltaReport{New: []string{"n"}, Existing: []string{"e"}, Resolved: []string{"r"}, SeverityChanged: []string{"s"}, TouchedByDelta: []string{"t"}}

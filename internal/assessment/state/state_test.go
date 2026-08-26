@@ -15,8 +15,8 @@ import (
 func TestNewMeasuresNothing(t *testing.T) {
 	t.Parallel()
 	st := state.New()
-	if st.Verdict != "" {
-		t.Errorf("verdict = %q, want it unset until the aggregator decides", st.Verdict)
+	if st.Verdict != state.NeedsAttention {
+		t.Errorf("verdict = %q, want %q: nine unknown dimensions cannot be healthy", st.Verdict, state.NeedsAttention)
 	}
 	if st.Decision.HardGates != state.HardGateUnmeasured {
 		t.Errorf("hard gates = %q, want %q", st.Decision.HardGates, state.HardGateUnmeasured)
@@ -56,6 +56,9 @@ func TestNewNamesAndOwnsEveryDimension(t *testing.T) {
 		}
 		if dim.Metrics == nil || dim.Findings == nil || dim.Unknown == nil {
 			t.Errorf("dimension %q has a nil collection; serialization must be deterministic", dim.Name)
+		}
+		if len(dim.Unknown) == 0 || dim.Unknown[0].Owner != dim.Owner {
+			t.Errorf("dimension %q is unmeasured without a reason owned by %q: %+v", dim.Name, dim.Owner, dim.Unknown)
 		}
 	}
 }

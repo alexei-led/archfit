@@ -83,16 +83,18 @@ func buildState(diag *result.Result, in stateInput) state.Architecture {
 	st.Blockers, st.Diagnostics = split.blockers, split.diagnostics
 	st.RequiredToolFailure = in.RequiredToolFailure
 	st.Dimensions = buildDimensions(diag, in, split.byDimension)
-	st.Decision.ActiveBlockers = len(st.Blockers)
 	// A required-tool policy failure blocks without producing a finding, so the
 	// hard-gate result is not simply "are there blocker findings". Rules and
 	// gates did run, so the absence of a failure is a pass, not an abstention.
+	hardGates := state.HardGatePass
 	if in.RequiredToolFailure || len(st.Blockers) > 0 {
-		st.Decision.HardGates = state.HardGateFail
-	} else {
-		st.Decision.HardGates = state.HardGatePass
+		hardGates = state.HardGateFail
 	}
-	_, partial, unmeasured := st.Dimensions.CountStatuses()
-	st.Decision.UnknownDimensions = partial + unmeasured
+	st.Verdict, st.Decision = state.Decide(state.DecisionInput{
+		HardGates:         hardGates,
+		ActiveBlockers:    len(st.Blockers),
+		ActiveDiagnostics: len(st.Diagnostics),
+		Dimensions:        st.Dimensions.Signals(),
+	})
 	return st
 }

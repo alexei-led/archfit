@@ -309,11 +309,12 @@ func NewDimension(name, owner string) Dimension {
 }
 
 // New returns a state whose nine envelopes are named, owned, and honestly
-// unmeasured, with deterministic non-nil collections. A caller that measures
-// nothing therefore reports nothing measured — never an implicit green result.
+// unmeasured, with deterministic non-nil collections, already decided from that
+// evidence: nine unknown dimensions and no evaluated gate can only be
+// needs_attention. A caller that measures nothing therefore reports nothing
+// measured — never an implicit green result, and never an undecided one.
 func New() Architecture {
-	return Architecture{
-		Decision: Decision{HardGates: HardGateUnmeasured, UnknownDimensions: DimensionCount},
+	st := Architecture{
 		Dimensions: Dimensions{
 			Intent:         NewDimension(DimensionIntent, OwnerIntent),
 			Structure:      NewDimension(DimensionStructure, OwnerStructure),
@@ -328,4 +329,19 @@ func New() Architecture {
 		Blockers:    []FindingRef{},
 		Diagnostics: []FindingRef{},
 	}
+	for _, dim := range st.Dimensions.Each() {
+		// An unmeasured envelope with no stated reason is indistinguishable from
+		// one nobody bothered to explain. Collectors build their envelopes with
+		// NewDimension and state their own reason; this default covers the
+		// envelopes no collector reached.
+		dim.Unknown = []UnknownFact{{
+			Fact:   dim.Name,
+			Reason: "no collector reported this dimension",
+			Owner:  dim.Owner,
+		}}
+	}
+	st.Verdict, st.Decision = Decide(DecisionInput{
+		HardGates: HardGateUnmeasured, Dimensions: st.Dimensions.Signals(),
+	})
+	return st
 }

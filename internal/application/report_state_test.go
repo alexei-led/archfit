@@ -9,14 +9,17 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/assessment/state"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // Shared literals for the shadow-state fixtures.
 const (
-	stateHeadRef  = "HEAD"
-	stateToolSCIP = "scip"
+	stateHeadRef     = "HEAD"
+	stateToolSCIP    = "scip"
+	stateMetricEdges = "internal_edges"
+	stateSevHigh     = "high"
 )
 
 // stateFixture is a small assessment result carrying one of each fact the
@@ -69,7 +72,7 @@ func TestProjectReportPopulatesShadowState(t *testing.T) {
 		t.Errorf("coverage counts %+v do not sum to %d", state.Coverage, report.DimensionCount)
 	}
 	if state.Coverage.Unmeasured != report.DimensionCount {
-		t.Errorf("Coverage.Unmeasured = %d, want %d: no collector is wired yet", state.Coverage.Unmeasured, report.DimensionCount)
+		t.Errorf("Coverage.Unmeasured = %d, want %d: the fixture measured nothing", state.Coverage.Unmeasured, report.DimensionCount)
 	}
 	if state.Decision.UnknownDimensions != report.DimensionCount {
 		t.Errorf("Decision.UnknownDimensions = %d, want %d", state.Decision.UnknownDimensions, report.DimensionCount)
@@ -85,46 +88,105 @@ func TestProjectReportPopulatesShadowState(t *testing.T) {
 	}
 }
 
-// TestShadowStateVerdictRule pins the contract-freeze verdict rule: an active
-// hard gate blocks, everything else needs attention, and healthy is unreachable
-// while any dimension is unmeasured.
-func TestShadowStateVerdictRule(t *testing.T) {
+// TestShadowStateProjectsTheAssessmentVerdict pins that the projection carries
+// the assessment's decision instead of re-deriving one. A renderer must not be
+// able to reach a different conclusion than the run did.
+func TestShadowStateProjectsTheAssessmentVerdict(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
-		gateFindings int
-		hardGate     bool
+		verdict      state.Verdict
+		hardGates    state.HardGateState
+		blockers     int
 		wantVerdict  report.StateVerdict
 		wantGates    report.HardGateState
 		wantBlockers int
 	}{
-		{name: "clean", wantVerdict: report.StateNeedsAttention, wantGates: report.HardGateUnmeasured},
 		{
-			name: "active gate finding", gateFindings: 2,
+			name: "needs attention", verdict: state.NeedsAttention, hardGates: state.HardGatePass,
+			wantVerdict: report.StateNeedsAttention, wantGates: report.HardGatePass,
+		},
+		{
+			name: "blocked by findings", verdict: state.Blocked, hardGates: state.HardGateFail, blockers: 2,
 			wantVerdict: report.StateBlocked, wantGates: report.HardGateFail, wantBlockers: 2,
 		},
 		{
-			name: "tripped tool gate only", hardGate: true,
-			wantVerdict: report.StateBlocked, wantGates: report.HardGateFail, wantBlockers: 1,
+			name: "blocked with no finding", verdict: state.Blocked, hardGates: state.HardGateFail,
+			wantVerdict: report.StateBlocked, wantGates: report.HardGateFail,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			diagnostic := stateFixture()
-			diagnostic.Summary = result.Summary{GateFindings: tc.gateFindings}
+			diagnostic.State.Verdict = tc.verdict
+			diagnostic.State.Decision.HardGates = tc.hardGates
+			diagnostic.State.Decision.ActiveBlockers = tc.blockers
 
-			state := ProjectReport(diagnostic, score.Scorecard{}, nil, tc.hardGate).State
-			if state.Verdict != tc.wantVerdict {
-				t.Errorf("Verdict = %q, want %q", state.Verdict, tc.wantVerdict)
+			projected := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State
+			if projected.Verdict != tc.wantVerdict {
+				t.Errorf("Verdict = %q, want %q", projected.Verdict, tc.wantVerdict)
 			}
-			if state.Decision.HardGates != tc.wantGates {
-				t.Errorf("Decision.HardGates = %q, want %q", state.Decision.HardGates, tc.wantGates)
+			if projected.Decision.HardGates != tc.wantGates {
+				t.Errorf("Decision.HardGates = %q, want %q", projected.Decision.HardGates, tc.wantGates)
 			}
-			if state.Decision.ActiveBlockers != tc.wantBlockers {
-				t.Errorf("Decision.ActiveBlockers = %d, want %d", state.Decision.ActiveBlockers, tc.wantBlockers)
-			}
-			if state.Verdict == report.StateHealthy {
-				t.Error("healthy must be unreachable while dimensions are unmeasured")
+			if projected.Decision.ActiveBlockers != tc.wantBlockers {
+				t.Errorf("Decision.ActiveBlockers = %d, want %d", projected.Decision.ActiveBlockers, tc.wantBlockers)
 			}
 		})
+	}
+}
+
+// TestShadowStateProjectsEveryEnvelopeField pins the assessment-to-report
+// mapping: the two vocabularies are separate by architecture rule, so a field
+// silently dropped here would be invisible everywhere else.
+func TestShadowStateProjectsEveryEnvelopeField(t *testing.T) {
+	diagnostic := stateFixture()
+	measured := state.NewDimension(state.DimensionStructure, state.OwnerStructure)
+	measured.Status = state.Measured
+	measured.Confidence = state.ConfidenceMedium
+	measured.Gate = state.GateWarn
+	measured.Coverage = state.Coverage{Basis: "edges", Observed: 7, Total: 9}
+	measured.Metrics = []state.MetricValue{{
+		Name: stateMetricEdges, Value: 7, Unit: "count",
+		Denominator: &state.MetricDenominator{Observed: 7, Total: 9}, Provenance: []string{"relationship/analysis"},
+	}}
+	measured.Findings = []state.FindingRef{{ID: "f1", RuleID: "dep", Kind: report.FindingKindGate, Severity: stateSevHigh, Status: "new"}}
+	measured.Unknown = []state.UnknownFact{{Fact: "x", Reason: "y", Owner: state.OwnerStructure}}
+	measured.Delta = &state.Delta{Status: state.ComparisonNonComparable, Reasons: []string{"r"},
+		Metrics:     []state.MetricDelta{{Name: stateMetricEdges, Before: 5, After: 7, Change: 2}},
+		NewFindings: []string{"f1"}}
+	diagnostic.State.Dimensions.Structure = measured
+
+	got := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State.Dimensions.Structure
+	want := report.DimensionState{
+		Name: state.DimensionStructure, Owner: state.OwnerStructure,
+		Status: report.MeasurementMeasured, Confidence: report.ConfidenceMedium, Gate: report.GateWarn,
+		Coverage: report.DimensionCoverage{Basis: "edges", Observed: 7, Total: 9},
+		Metrics: []report.MetricValue{{Name: stateMetricEdges, Value: 7, Unit: "count",
+			Denominator: &report.MetricDenominator{Observed: 7, Total: 9}, Provenance: []string{"relationship/analysis"}}},
+		Findings: []report.FindingRef{{ID: "f1", RuleID: "dep", Kind: report.FindingKindGate, Severity: stateSevHigh, Status: "new"}},
+		Unknown:  []report.UnknownFact{{Fact: "x", Reason: "y", Owner: state.OwnerStructure}},
+		Delta: &report.DimensionDelta{Status: report.ComparisonNonComparable, Reasons: []string{"r"},
+			Metrics:     []report.MetricDelta{{Name: stateMetricEdges, Before: 5, After: 7, Change: 2}},
+			NewFindings: []string{"f1"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("projected envelope =\n%+v\nwant\n%+v", got, want)
+	}
+}
+
+// TestShadowStateCoverageCountsTheProjectedEnvelopes pins that the coverage
+// summary is recomputed from what was actually projected, so the counts and the
+// envelopes cannot disagree.
+func TestShadowStateCoverageCountsTheProjectedEnvelopes(t *testing.T) {
+	diagnostic := stateFixture()
+	diagnostic.State.Dimensions.Structure.Status = state.Measured
+	diagnostic.State.Dimensions.Coupling.Status = state.Partial
+
+	coverage := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State.Coverage
+	if coverage.Measured != 1 || coverage.Partial != 1 || coverage.Unmeasured != report.DimensionCount-2 {
+		t.Errorf("coverage = %+v, want 1 measured, 1 partial, %d unmeasured", coverage, report.DimensionCount-2)
+	}
+	if coverage.Measured+coverage.Partial+coverage.Unmeasured != report.DimensionCount {
+		t.Errorf("coverage counts %+v do not sum to %d", coverage, report.DimensionCount)
 	}
 }
 

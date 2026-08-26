@@ -7,6 +7,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/assessment/state"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
@@ -36,59 +37,104 @@ func ProjectReport(r result.Result, sc score.Scorecard, baseScore *score.Scoreca
 		doc.BaseScore = &b
 	}
 	doc.Decision = projectDecision(decision.Build(r, sc, baseScore, hardGate))
-	doc.State = projectArchitectureState(r, doc, hardGate)
+	doc.State = projectArchitectureState(r, doc)
 	return doc
 }
 
-// projectArchitectureState builds the shadow archfit.architecture-state.v1
-// contract from facts the assessment result already carries.
+// projectArchitectureState projects the assessment-owned architecture state
+// onto the external archfit.architecture-state.v1 contract, and adds the run
+// facts assessment deliberately never sees: which tree was measured, which tool
+// versions produced the evidence, and what this run was compared against.
 //
-// This is the contract-freeze stage of the migration, not the measurement
-// stage: every dimension reports `unmeasured` with a named owner, because the
-// collectors that fill the nine envelopes land in the next task. Reporting them
-// as measured-and-empty would be exactly the implicit green result the contract
-// exists to prevent.
-//
-// The verdict rule here is deliberately minimal and is replaced by the
-// assessment-owned aggregator: `blocked` when an active hard-gate finding or a
-// tripped tool gate exists, otherwise `needs_attention`. `healthy` is
-// unreachable by construction while any dimension is unmeasured.
-func projectArchitectureState(r result.Result, doc report.Document, hardGate bool) report.ArchitectureState {
-	state := report.NewArchitectureState()
-	state.Findings = doc.Findings
-	state.AgentTasks = doc.AgentTasks
-	state.Measurement.SourceRef = r.Head
-	state.Measurement.ToolVersions, state.Coverage.Tools = projectStateToolCoverage(r.ToolCoverage)
+// The verdict, the decision counters, and every dimension envelope are copied
+// verbatim. Nothing is decided here — the application projects, it does not
+// judge — so no renderer can reach a different conclusion than the assessment
+// did.
+func projectArchitectureState(r result.Result, doc report.Document) report.ArchitectureState {
+	out := report.NewArchitectureState()
+	out.Verdict = report.StateVerdict(r.State.Verdict)
+	out.Decision = report.StateDecision{
+		HardGates:           report.HardGateState(r.State.Decision.HardGates),
+		ActiveBlockers:      r.State.Decision.ActiveBlockers,
+		AttentionDimensions: r.State.Decision.AttentionDimensions,
+		UnknownDimensions:   r.State.Decision.UnknownDimensions,
+	}
+	out.Dimensions = projectStateDimensions(r.State.Dimensions)
+	out.Findings = doc.Findings
+	out.AgentTasks = doc.AgentTasks
+	out.Measurement.SourceRef = r.Head
+	out.Measurement.ToolVersions, out.Coverage.Tools = projectStateToolCoverage(r.ToolCoverage)
 	if h := r.VolatilityCorroboration; h != nil {
-		state.Measurement.HistoryDepth = h.CommitsScanned
-		state.Measurement.HistoryWindow = historyWindow(h.FullHistory, h.CommitWindow)
+		out.Measurement.HistoryDepth = h.CommitsScanned
+		out.Measurement.HistoryWindow = historyWindow(h.FullHistory, h.CommitWindow)
 	}
-	markDimensionsPending(&state.Dimensions)
 
-	state.Comparison.ConfigHash = r.ConfigHash
-	state.Comparison.RubricVersion = report.ScoreVersion
+	out.Comparison.ConfigHash = r.ConfigHash
+	out.Comparison.RubricVersion = report.ScoreVersion
 	if r.Base != "" {
-		state.Comparison.Status = report.ComparisonNonComparable
-		state.Comparison.BaseRef = r.Base
-		state.Comparison.Reasons = []string{"state_comparison_unimplemented"}
+		// Comparison is strict: the model and labels hashes the contract
+		// requires do not exist yet, so a base run reports why it cannot compare
+		// rather than a delta it cannot justify.
+		out.Comparison.Status = report.ComparisonNonComparable
+		out.Comparison.BaseRef = r.Base
+		out.Comparison.Reasons = []string{"state_comparison_unimplemented"}
 	}
 
-	blockers := r.Summary.GateFindings
-	if hardGate && blockers == 0 {
-		blockers = 1
-	}
-	state.Decision.ActiveBlockers = blockers
-	if blockers > 0 {
-		state.Decision.HardGates = report.HardGateFail
-		state.Verdict = report.StateBlocked
-	} else {
-		state.Verdict = report.StateNeedsAttention
-	}
+	out.Coverage.Measured, out.Coverage.Partial, out.Coverage.Unmeasured = out.Dimensions.CountStatuses()
+	return out
+}
 
-	measured, partial, unmeasured := state.Dimensions.CountStatuses()
-	state.Coverage.Measured, state.Coverage.Partial, state.Coverage.Unmeasured = measured, partial, unmeasured
-	state.Decision.UnknownDimensions = partial + unmeasured
-	return state
+// projectStateDimensions copies the nine envelopes in contract order. The
+// assessment and report types are separate by architecture rule, not by
+// accident: assessment must not import the report DTOs, so this is the one
+// place the two vocabularies meet.
+func projectStateDimensions(in state.Dimensions) report.Dimensions {
+	src := in.All()
+	out := report.Dimensions{}
+	dst := []*report.DimensionState{
+		&out.Intent, &out.Structure, &out.Modularity, &out.Coupling, &out.ChangeLocality,
+		&out.Complexity, &out.Testability, &out.Operations, &out.Drift,
+	}
+	for i, dim := range src {
+		*dst[i] = projectStateDimension(dim)
+	}
+	return out
+}
+
+func projectStateDimension(in state.Dimension) report.DimensionState {
+	out := report.DimensionState{
+		Name: in.Name, Owner: in.Owner,
+		Status: report.MeasurementStatus(in.Status), Confidence: report.Confidence(in.Confidence),
+		Gate:     report.GateState(in.Gate),
+		Coverage: report.DimensionCoverage{Basis: in.Coverage.Basis, Observed: in.Coverage.Observed, Total: in.Coverage.Total},
+		Metrics:  make([]report.MetricValue, 0, len(in.Metrics)),
+		Findings: make([]report.FindingRef, 0, len(in.Findings)),
+		Unknown:  make([]report.UnknownFact, 0, len(in.Unknown)),
+	}
+	for _, m := range in.Metrics {
+		metric := report.MetricValue{Name: m.Name, Value: m.Value, Unit: m.Unit, Provenance: m.Provenance}
+		if m.Denominator != nil {
+			metric.Denominator = &report.MetricDenominator{Observed: m.Denominator.Observed, Total: m.Denominator.Total}
+		}
+		out.Metrics = append(out.Metrics, metric)
+	}
+	for _, f := range in.Findings {
+		out.Findings = append(out.Findings, report.FindingRef{ID: f.ID, RuleID: f.RuleID, Kind: f.Kind, Severity: f.Severity, Status: f.Status})
+	}
+	for _, u := range in.Unknown {
+		out.Unknown = append(out.Unknown, report.UnknownFact{Fact: u.Fact, Reason: u.Reason, Owner: u.Owner})
+	}
+	if in.Delta != nil {
+		delta := &report.DimensionDelta{
+			Status: report.ComparisonStatus(in.Delta.Status), Reasons: in.Delta.Reasons,
+			NewFindings: in.Delta.NewFindings, ResolvedFindings: in.Delta.ResolvedFindings,
+		}
+		for _, m := range in.Delta.Metrics {
+			delta.Metrics = append(delta.Metrics, report.MetricDelta{Name: m.Name, Before: m.Before, After: m.After, Change: m.Change})
+		}
+		out.Delta = delta
+	}
+	return out
 }
 
 // historyWindow renders the bounded git-history window as the deterministic
@@ -103,24 +149,6 @@ func historyWindow(fullHistory bool, commitWindow int) string {
 		return strconv.Itoa(commitWindow) + " commits"
 	default:
 		return ""
-	}
-}
-
-// markDimensionsPending stamps every envelope with the reason it is unmeasured.
-// The contract-freeze stage ships the nine envelopes before their collectors,
-// and an unmeasured dimension with no stated reason is indistinguishable from
-// one nobody bothered to explain. Each collector deletes its own entry as it
-// lands.
-func markDimensionsPending(d *report.Dimensions) {
-	for _, dim := range []*report.DimensionState{
-		&d.Intent, &d.Structure, &d.Modularity, &d.Coupling, &d.ChangeLocality,
-		&d.Complexity, &d.Testability, &d.Operations, &d.Drift,
-	} {
-		dim.Unknown = []report.UnknownFact{{
-			Fact:   dim.Name,
-			Reason: "collector not wired: the architecture-state contract ships before its measurements",
-			Owner:  dim.Owner,
-		}}
 	}
 }
 
