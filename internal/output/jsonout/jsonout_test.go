@@ -782,3 +782,70 @@ func TestJSONRenderer_Render_FileFacts(t *testing.T) {
 		t.Errorf("round-trip LOC = %d, want 310", got.FileFacts[0].LOC)
 	}
 }
+
+// TestJSONRenderer_ScoreDeltaSuppressedWhenNonComparable is the fitness gate the
+// migration plan assigned to the format cutover: the legacy envelope must not
+// publish a numerical delta beside a non_comparable state comparison. A module
+// rename moves model_hash, which moves the score without the code moving —
+// reporting that as a delta is how a policy edit gets read as a regression.
+func TestJSONRenderer_ScoreDeltaSuppressedWhenNonComparable(t *testing.T) {
+	const mixedBand = "mixed"
+	base := func() report.Document {
+		d := report.NewDocument()
+		d.Score = report.Scorecard{Overall: 46, OverallBand: mixedBand}
+		d.BaseScore = &report.Scorecard{Overall: 40, OverallBand: mixedBand}
+		d.State = report.NewArchitectureState()
+		return d
+	}
+
+	tests := []struct {
+		name        string
+		status      report.ComparisonStatus
+		reasons     []string
+		wantDelta   bool
+		wantReasons bool
+	}{
+		{name: "comparable publishes the delta", status: report.ComparisonComparable, wantDelta: true},
+		{
+			name:   "non comparable publishes reasons instead",
+			status: report.ComparisonNonComparable,
+			reasons: []string{
+				"model_hash differs between the two runs (abc vs def): a policy change is not a code change",
+			},
+			wantReasons: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d := base()
+			d.State.Comparison.Status = tc.status
+			d.State.Comparison.Reasons = tc.reasons
+
+			var buf bytes.Buffer
+			if err := jsonout.New().Render(d, &buf); err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			var raw map[string]json.RawMessage
+			if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+				t.Fatalf("decode: %v\n%s", err, buf.String())
+			}
+
+			_, hasDelta := raw["score_delta"]
+			if hasDelta != tc.wantDelta {
+				t.Errorf("score_delta present = %v, want %v:\n%s", hasDelta, tc.wantDelta, buf.String())
+			}
+			_, hasReasons := raw["comparison_reasons"]
+			if hasReasons != tc.wantReasons {
+				t.Errorf("comparison_reasons present = %v, want %v:\n%s", hasReasons, tc.wantReasons, buf.String())
+			}
+			var status string
+			if err := json.Unmarshal(raw["comparison_status"], &status); err != nil {
+				t.Fatalf("decode comparison_status: %v", err)
+			}
+			if status != string(tc.status) {
+				t.Errorf("comparison_status = %q, want %q", status, tc.status)
+			}
+		})
+	}
+}

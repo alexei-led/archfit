@@ -240,13 +240,32 @@ Synopsis:
 archfit baseline [flags]
 ```
 
-What it writes:
+What it writes (`schema_version: archfit.baseline.v2`):
 
 - Saves the baseline beside the config as `.archfit-baseline.json`.
-- Keeps metrics and score snapshots so later runs can detect fixed findings and score movement.
-- Records the scorer version (`score_version`) and rubric version (`rubric_version`)
-  the score snapshot was produced under, so an incompatible snapshot is reported as
-  a non-comparable reference rather than silently compared against.
+- Keeps the accepted finding fingerprints and the metric snapshot, so later runs
+  can detect fixed findings.
+- Keeps the architecture-state reference under `state`: the four comparison
+  fingerprints (`config_hash`, `model_hash`, `labels_hash`, `rubric_version`)
+  together with the facts they qualify — `hard_gate_finding_ids`,
+  `qualifying_seam_ids`, and a snapshot of the nine dimensions. A dimension or
+  seam delta is claimed only when all four fingerprints still match; any
+  mismatch is reported as non-comparable and names the input that moved.
+- Stores **no repository score**. Schema v2 retired the scalar gate, so a stored
+  score would anchor nothing.
+
+Reading an older baseline (`archfit.baseline.v1`):
+
+- Its accepted finding fingerprints stay usable — those are acceptance decisions
+  the owner made.
+- Its scalar snapshot is ignored, reported as `legacy_score_snapshot_ignored`.
+- Every state, dimension, and seam comparison against it is non-comparable: a
+  file written before the seam ledger existed records no seams, and reading that
+  as "there were none" would report every existing seam as newly introduced.
+- It is never rewritten on read. Re-baseline deliberately to upgrade it.
+
+Capture is a pure function of the tree and the config: the run reads an empty
+accepted set, so two captures over an unchanged tree are byte-identical.
 
 Flags:
 

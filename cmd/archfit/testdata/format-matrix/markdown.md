@@ -68,7 +68,6 @@
 - **drift — architecture drift** (owner: assessment/decision): no comparable architecture-state reference: no comparable architecture-state reference is stored
 # archfit report
 
-**Verdict:** fail (exit 1)
 **Config hash:** `0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6`
 
 ## Summary

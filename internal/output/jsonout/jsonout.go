@@ -65,8 +65,19 @@ type envelope struct {
 	ScoreVersion    string            `json:"score_version"`
 	CouplingBalance *report.Dimension `json:"coupling_balance,omitempty"`
 	// ScoreDelta is the scorecard delta vs --base. Named distinctly from the
-	// embedded report document's `delta` (findings lifecycle) to avoid a key collision.
+	// embedded report document's `delta` (findings lifecycle) to avoid a key
+	// collision. It is OMITTED when the run's state comparison is not
+	// comparable: a config edit, a module rename, a label change, or a rubric
+	// bump moves the number without the code moving, and publishing it beside a
+	// non_comparable verdict is exactly the false numerical delta the contract
+	// forbids — in the legacy envelope as much as in the primary one.
 	ScoreDelta *scoreDelta `json:"score_delta,omitempty"`
+	// ComparisonStatus discloses why score_delta is absent, so a consumer can
+	// tell "no --base was requested" from "the two runs are not comparable".
+	ComparisonStatus report.ComparisonStatus `json:"comparison_status"`
+	// ComparisonReasons name the drifted inputs when the status is
+	// non_comparable. Empty otherwise.
+	ComparisonReasons []string `json:"comparison_reasons,omitempty"`
 }
 
 // scoreDelta is the per-dimension head-vs-base comparison emitted with --base.
@@ -88,12 +99,16 @@ type dimensionDelta struct {
 // schema_version is part of the embedded report document and is always present.
 func (r *JSONRenderer) Render(d report.Document, w io.Writer) error {
 	env := envelope{
-		Document:        d,
-		Score:           d.Score,
-		ScoreVersion:    report.ScoreVersion,
-		CouplingBalance: dimensionByName(d.Score, report.DimCouplingBalance),
+		Document:         d,
+		Score:            d.Score,
+		ScoreVersion:     report.ScoreVersion,
+		CouplingBalance:  dimensionByName(d.Score, report.DimCouplingBalance),
+		ComparisonStatus: d.State.Comparison.Status,
 	}
-	if d.BaseScore != nil {
+	if d.State.Comparison.Status == report.ComparisonNonComparable {
+		env.ComparisonReasons = d.State.Comparison.Reasons
+	}
+	if d.BaseScore != nil && d.State.Comparison.Status != report.ComparisonNonComparable {
 		env.ScoreDelta = buildDelta(d.Score, *d.BaseScore)
 	}
 	return json.NewEncoder(w).Encode(env)

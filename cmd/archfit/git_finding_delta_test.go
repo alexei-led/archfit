@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
@@ -67,16 +69,22 @@ func testGitDeltaEffectiveConfig(t *testing.T) {
 		if got.GitFindingDelta == nil {
 			t.Fatalf("--base --json must emit git_finding_delta\n%s", stdout)
 		}
-		// The head tree splits ownership, so the shared edge crosses owners and
-		// scores critical. The base tree has one owner, so the same edge is a
-		// same-owner sibling. A base run that inherited the head module map
-		// would measure the head's owners and score identically, collapsing the
-		// delta to zero — so a nonzero delta IS the isolation.
-		if got.ScoreDelta == nil {
-			t.Fatalf("fixture regression: --base emitted no score_delta\n%s", stdout)
+		// The head tree splits ownership, so the shared edge crosses owners; the
+		// base tree has one owner, so the same edge is a same-owner sibling. The
+		// two module maps therefore differ, and model_hash says so. A base run
+		// that inherited the head module map would produce an EQUAL model_hash
+		// and a comparable verdict — so the named model_hash mismatch IS the
+		// isolation evidence.
+		if got.StateComparison != "non_comparable" {
+			t.Errorf("the base run measured head-tree owners: comparison = %q, want non_comparable on a differing module map", got.StateComparison)
 		}
-		if got.ScoreDelta.OverallDelta == 0 {
-			t.Error("the base run measured head-tree owners: overall_delta = 0, want a real change")
+		if !slices.ContainsFunc(got.StateReasons, func(r string) bool { return strings.Contains(r, "model_hash") }) {
+			t.Errorf("the comparability refusal must name model_hash, got %v", got.StateReasons)
+		}
+		// A non-comparable run publishes no numerical delta: an ownership split
+		// moves the score without the code moving.
+		if got.ScoreDelta != nil {
+			t.Errorf("score_delta published beside a non_comparable comparison: %+v", got.ScoreDelta)
 		}
 		d := got.GitFindingDelta
 		if len(d.ComparisonReasons) != 0 {
@@ -195,6 +203,11 @@ type gitDeltaJSON struct {
 	ScoreDelta *struct {
 		OverallDelta int `json:"overall_delta"`
 	} `json:"score_delta"`
+	// StateComparison is the run's own comparability verdict, disclosed beside
+	// the legacy envelope so a consumer can tell an absent delta from a
+	// non-comparable one.
+	StateComparison string   `json:"comparison_status"`
+	StateReasons    []string `json:"comparison_reasons"`
 }
 
 func testGitDeltaCheckBaseJSON(t *testing.T) {

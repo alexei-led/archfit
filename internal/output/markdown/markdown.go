@@ -56,12 +56,15 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 //  4. Supporting structural metrics (beyond Balanced Coupling)
 //  5. Distance confidence
 //  6. Agent tasks
+//
+// The audit deliberately restates no verdict. The state headline above it
+// already decided one, and the legacy pass/warn/fail vocabulary maps to a
+// different exit table — a document carrying both read "NEEDS ATTENTION" in the
+// headline and "PASS (exit 0)" three sections later, with the exit claim false.
 func (r *Renderer) renderAudit(d report.Document, w io.Writer) error {
 	var b strings.Builder
-	verdict, exitCode := verdictLabel(d.Verdict)
 
 	b.WriteString("# archfit report\n\n")
-	fmt.Fprintf(&b, "**Verdict:** %s (exit %d)\n", verdict, exitCode)
 	if d.ConfigHash != "" {
 		fmt.Fprintf(&b, "**Config hash:** `%s`\n", d.ConfigHash)
 	}
@@ -212,17 +215,6 @@ func severityRank(s string) int {
 		return 1
 	default:
 		return 0
-	}
-}
-
-func verdictLabel(v report.Verdict) (string, int) {
-	switch v {
-	case report.VerdictFail:
-		return "fail", 1
-	case report.VerdictWarn:
-		return "warn", 2
-	default:
-		return "pass", 0
 	}
 }
 
