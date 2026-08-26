@@ -262,19 +262,27 @@ func appendLLMLabelEvidence(evidence []string, summary *result.ClassifiedEdgeSum
 }
 
 func appendCouplingEvidence(evidence []string, summary *result.ClassifiedEdgeSummary, scoredPct, criticalCount, distributedMonolith int, capApplied string, rawValue int, capReasons []string, llmConfLowered bool) []string {
-	if len(summary.ByStrength) > 0 {
-		evidence = append(evidence, fmt.Sprintf("strength distribution: %s; distance distribution: %s; volatility distribution: %s", formatCounts(summary.ByStrength), formatCounts(summary.ByDistance), formatCounts(summary.ByVolatility)))
-	}
-	if len(summary.ByBalanceDriver) > 0 {
-		evidence = append(evidence, fmt.Sprintf("balance drivers: %s; critical drivers: %s", formatCounts(summary.ByBalanceDriver), formatCounts(summary.ByCriticalDriver)))
-	}
-	if len(summary.ByModulePair) > 0 {
-		evidence = append(evidence, "top module pairs: "+formatTopCounts(summary.ByModulePair, 5))
-	}
+	// Order is load-bearing: decision.buildWhy truncates Evidence to evidenceCap
+	// before joining it into the report's "why" line, so the scored fraction and
+	// the critical/distributed-monolith count — the two most actionable numbers
+	// in the dimension — lead, and the distribution histograms follow.
 	evidence = append(evidence,
 		fmt.Sprintf("scored fraction: %d%% (%d scored, %d abstained, internal only)", scoredPct, summary.Scored, summary.Abstained),
 		fmt.Sprintf("critical-band edges: %d (%d distributed-monolith: critical at high distance)", criticalCount, distributedMonolith),
 	)
+	if len(summary.ByStrength) > 0 {
+		evidence = append(evidence, fmt.Sprintf("strength distribution: %s; distance distribution: %s; volatility distribution: %s", formatCounts(summary.ByStrength), formatCounts(summary.ByDistance), formatCounts(summary.ByVolatility)))
+	}
+	if len(summary.ByBalanceDriver) > 0 {
+		drivers := "balance drivers: " + formatCounts(summary.ByBalanceDriver)
+		if len(summary.ByCriticalDriver) > 0 {
+			drivers += "; critical drivers: " + formatCounts(summary.ByCriticalDriver)
+		}
+		evidence = append(evidence, drivers)
+	}
+	if len(summary.ByModulePair) > 0 {
+		evidence = append(evidence, "top module pairs: "+formatTopCounts(summary.ByModulePair, 5))
+	}
 	evidence = appendTailRiskEvidence(evidence, summary)
 	if capApplied != "" {
 		evidence = append(evidence, fmt.Sprintf("cap applied: %s (raw value %d)", capApplied, rawValue))

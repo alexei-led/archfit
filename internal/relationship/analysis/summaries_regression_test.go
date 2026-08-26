@@ -165,3 +165,41 @@ func TestDistanceCompressionCountsWellBalancedEdges(t *testing.T) {
 		t.Error("CodeStructureAncestorDepths is empty: a well-balanced code_structure edge still has a shared-ancestor depth")
 	}
 }
+
+// TestDriverHistogramsCountCrossBoundaryEdgesOnly pins the driver denominators.
+// Every histogram in the coupling_balance evidence line is read against Scored,
+// which counts cross-boundary edges only. Counting the same-module rung here
+// made by_balance_driver sum to Scored+SameModule and printed a critical-driver
+// total larger than the critical-band count on the very same line.
+func TestDriverHistogramsCountCrossBoundaryEdgesOnly(t *testing.T) {
+	got := analysis.Analyze(analysis.Input{Graph: mixedGraph(), Policy: relationshipPolicy(twoModules())})
+	s := got.Evidence.ClassifiedEdges
+	if s == nil {
+		t.Fatal("ClassifiedEdges = nil, want the summary")
+	}
+	if s.SameModule != 1 || s.Scored != 1 {
+		t.Fatalf("same-module/scored = %d/%d, want 1/1", s.SameModule, s.Scored)
+	}
+	if sum := sumCounts(s.ByBalanceDriver); sum != s.Scored {
+		t.Errorf("by_balance_driver sums to %d over %d scored", sum, s.Scored)
+	}
+	if sum := sumCounts(s.ByModulePair); sum != s.Scored {
+		t.Errorf("by_module_pair sums to %d over %d scored", sum, s.Scored)
+	}
+	if sum := sumCounts(s.ByCriticalDriver); sum > s.BySeverity[string(relationship.SeverityCritical)] {
+		t.Errorf("by_critical_driver sums to %d over %d critical-band edges",
+			sum, s.BySeverity[string(relationship.SeverityCritical)])
+	}
+	if sum := sumCounts(s.ByBalanceDriver); sum != sumCounts(s.ByStrength) {
+		t.Errorf("by_balance_driver (%d) and by_strength (%d) report different denominators",
+			sum, sumCounts(s.ByStrength))
+	}
+}
+
+func sumCounts(m map[string]int) int {
+	total := 0
+	for _, n := range m {
+		total += n
+	}
+	return total
+}

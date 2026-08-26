@@ -2,7 +2,7 @@
 
 - **Decision:** ACCEPTABLE WITH WATCH ITEMS
 - **Gate:** PASS — 0 blocking
-- **Warnings:** 104 advisory
+- **Warnings:** 105 advisory
 - **Score:** 41 / 100 (mixed)
 
 Acceptable with watch items. Monitor flagged areas.
@@ -21,7 +21,7 @@ Acceptable with watch items. Monitor flagged areas.
 
 ## Why the score is low
 
-- **coupling_balance** (41/100, mixed): critical-band coupling present; inspect the reported strength, distance, and volatility drivers — 363 scored internal cross-boundary edges; mean book balance 4.7/10 → value 41; strength distribution: contract=54, functional=113, model=161, symmetric=35; distance distribution: cross_module_same_owner=363; volatility distribution: high=179, low=29, medium=155; balance drivers: strength_distance=332, tie=29, volatility=148; critical drivers: strength_distance=154; top module pairs: assessment-repair -> assessment-repair=71, evidence-adapters -> evidence-contracts=41, evidence-adapters -> evidence-adapters=38, relationship-analysis -> relationship-analysis=29, assessment-repair -> evidence-contracts=23; scored fraction: 100% (363 scored, 0 abstained, internal only)
+- **coupling_balance** (41/100, mixed): critical-band coupling present; inspect the reported strength, distance, and volatility drivers — 364 scored internal cross-boundary edges; mean book balance 4.7/10 → value 41; scored fraction: 100% (364 scored, 0 abstained, internal only); critical-band edges: 69 (0 distributed-monolith: critical at high distance); strength distribution: contract=55, functional=114, model=160, symmetric=35; distance distribution: cross_module_same_owner=364; volatility distribution: high=180, low=29, medium=155; balance drivers: strength_distance=194, tie=29, volatility=141; critical drivers: strength_distance=69
   - _What moves it:_ Reduce high-fan-in functional edges across module boundaries or introduce stable contracts.
 # archfit report
 
@@ -31,7 +31,7 @@ Acceptable with watch items. Monitor flagged areas.
 ## Summary
 
 - gate findings: 0
-- warnings: 104
+- warnings: 105
 - waivers used: 0
 
 ## Metrics
@@ -45,41 +45,41 @@ Acceptable with watch items. Monitor flagged areas.
 
 - inbound module fan-in: internal/model/evidence (42), internal/relationship (30), internal/model/graph (29), internal/policy (29), internal/toolrun (28)
 - outbound destinations: cmd/archfit (34), internal/evidence/acquisition (20), internal/assessment/evaluation (18), internal/extract/acquire (17), internal/initcfg_test (17)
-- LOC: cmd/archfit (5604), internal/initcfg (4924), internal/application (2322), internal/relationship/classify (1731), internal/relationship/analysis (1583)
+- LOC: cmd/archfit (5617), internal/initcfg (4924), internal/application (2385), internal/relationship/classify (1731), internal/relationship/analysis (1619)
 
 ## Syntax surface (neutral evidence)
 
-2777 declaration(s) extracted by ast-grep (full list in `--format json`):
+2794 declaration(s) extracted by ast-grep (full list in `--format json`):
 
 - annotation: 1
 - enum: 1
-- function: 1628
+- function: 1639
 - interface: 41
-- method: 364
+- method: 367
 - struct: 430
 - type_alias: 47
-- type_leak: 265
-- exported (public API): 2511
+- type_leak: 268
+- exported (public API): 2525
 
 Per module:
 
 - (unscoped): 61
-- analysis-application: 208
+- analysis-application: 210
 - analysis-scope: 31
 - architecture-policy: 39
-- architecture-tests: 51
-- assessment-repair: 434
+- architecture-tests: 52
+- assessment-repair: 438
 - cli-composition: 323
 - config-lifecycle: 233
 - development-tools: 41
-- evidence-acquisition: 71
+- evidence-acquisition: 78
 - evidence-adapters: 460
 - evidence-analysis: 13
 - evidence-contracts: 88
 - persistence-adapters: 130
-- policy-config-adapter: 141
+- policy-config-adapter: 142
 - provider-adapters: 30
-- relationship-analysis: 242
+- relationship-analysis: 244
 - report-adapters: 100
 - report-contract: 81
 
@@ -121,18 +121,18 @@ Per module:
 - `CheckCmd` (struct)
 - `Help` (method)
 - `Run` (method)
-- ... +2491 more exported declarations (use `--format json`)
+- ... +2505 more exported declarations (use `--format json`)
 
 ## Connascence evidence (deterministic)
 
 Report-only. Static facts only; semantic and dynamic categories without deterministic evidence stay unmeasured.
 
-- edges with evidence: 1190
+- edges with evidence: 1193
 - abstained edges: 4
-- total evidence facts: 4583
+- total evidence facts: 4594
 - strength inferred from connascence: 65 edges
-- by kind: algorithm=970, meaning=619, name=1695, type=1299
-- by source: go/types=3138, scip=1445
+- by kind: algorithm=976, meaning=618, name=1700, type=1300
+- by source: go/types=3145, scip=1449
 - unmeasured: position, execution, timing, value, identity
 - roadmap: name=deterministic_static, type=deterministic_static, meaning=deterministic_static, algorithm=deterministic_static, position=unmeasured_static, execution=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges), timing=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges), value=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges), identity=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges)
 
@@ -185,11 +185,11 @@ Report-only. Source-control touch frequency is supporting evidence for Ch9 volat
 
 Top touched modules:
 
-- **cli-composition**: 170 commit(s) [declared volatility=medium]
-- **evidence-adapters**: 96 commit(s) [declared volatility=medium]
-- **config-lifecycle**: 77 commit(s) [declared volatility=medium]
+- **cli-composition**: 169 commit(s) [declared volatility=medium]
+- **evidence-adapters**: 97 commit(s) [declared volatility=medium]
+- **config-lifecycle**: 76 commit(s) [declared volatility=medium]
 - **policy-config-adapter**: 76 commit(s) [declared volatility=high]
-- **report-adapters**: 50 commit(s) [declared volatility=medium]
+- **report-adapters**: 49 commit(s) [declared volatility=medium]
 
 ## Advisory tasks (55)
 
@@ -436,7 +436,7 @@ Report-only rollups from grouped advisories; these do not affect verdict or gate
 
 _…and 30 more advisory tasks (see --json for the full list)._
 
-## Balanced Coupling advisories (100 rollups, 330 edges)
+## Balanced Coupling advisories (101 rollups, 331 edges)
 
 Same-shape edges between a module pair are grouped into one rollup.
 Integration strength × distance × volatility lint messages.
@@ -556,14 +556,6 @@ ARCHFIT[BC-UNBALANCED CRITICAL] internal/config/projection.go -> internal/applic
 ```
 
 ```
-ARCHFIT[BC-UNBALANCED CRITICAL] internal/config/projection.go -> internal/evidence/acquisition  [384a4c05]
-  integration strength: model         distance: cross_module_same_owner         volatility: high
-  score: 2/10 (critical) [book]
-  why: balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (ch...
-  cheapest move: reduce_strength
-```
-
-```
 ARCHFIT[BC-UNBALANCED CRITICAL] internal/config/tools.go -> internal/policy  [881a242a]
   integration strength: model         distance: cross_module_same_owner         volatility: high
   score: 2/10 (critical) [book]
@@ -654,7 +646,15 @@ ARCHFIT[BC-UNBALANCED CRITICAL] internal/extract/py/py.go -> internal/relationsh
   rollup: 2 same-shape edges (e.g. 3ccff7c727bf3881a6cf53d64570ef16,a35b693b468e718b11f725e00d91b286)
 ```
 
-- ... +75 more rollups (use `--format json`)
+```
+ARCHFIT[BC-UNBALANCED CRITICAL] internal/labels/labelsio/labelsio.go -> internal/application  [7721c807]
+  integration strength: model         distance: cross_module_same_owner         volatility: high
+  score: 2/10 (critical) [book]
+  why: balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (ch...
+  cheapest move: reduce_strength
+```
+
+- ... +76 more rollups (use `--format json`)
 
 ## Advisories (4)
 
@@ -677,28 +677,28 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - `owner_source`: config
 - `deploy_unit_source`: ok
 - `owner_model`: single_owner_degenerate
-- deploy-unit detector mapped modules: 17
-- distance basis: code_structure=354, deploy_unit=9
+- deploy-unit detector mapped modules: 3
+- distance basis: code_structure=355, deploy_unit=9
 - interpretation: same-owner is the lowest cross-module distance; this is a low socio-technical distance signal, not missing ownership; deploy_unit and declared external_systems evidence can still raise distance when configured/detected
 - connected modules in coupling sample: 18
 - distance rungs implemented: D=2, D=4, D=7, D=9, D=10; omitted/compressed: D=1, D=3, D=5, D=6, D=8
-- code-structure boundary crossings: 2→354
-- code-structure shared-ancestor depth: 0→354
+- code-structure boundary crossings: 2→355
+- code-structure shared-ancestor depth: 0→355
 - distance compression: D=3/D=5/D=6/D=8 remain compressed: current graph/config facts distinguish same module, same owner, different owner, deploy unit, and declared vendor seam, but not finer package/library distance without guessing.
 - D=1 compressed: object/member-level distance is not available from module dependency edges
 - D=3 compressed: current facts distinguish same module vs cross-module, but not object/package micro-distance
 - D=5 compressed: package/library middle distance is not split without explicit stable package-boundary metadata
 - D=6 compressed: intermediate ownership/library distance has no deterministic signal beyond owner and tree structure
 - D=8 compressed: library-like seams remain compressed: undeclared libraries stay excluded, while declared external_systems score at D=10
-- undeclared external/library edges excluded: 689
+- undeclared external/library edges excluded: 690
 - clone-only duplicated knowledge: 4 scored, 0 advisory-only
-- tail risk: worst balance 2/10; lower-decile balance 2/10; high-or-worse edges 81/363 (22%); critical 70; distributed-monolith 0
+- tail risk: worst balance 2/10; lower-decile balance 2/10; high-or-worse edges 81/364 (22%); critical 69; distributed-monolith 0
 - clone-only tail: worst balance 6/10; high-or-worse 0/4 scored clone-only pairs
 
 ## Coverage
 
-- scip: ok (1633 files)
-- scip-symbols: ok (9090 files)
+- scip: ok (1650 files)
+- scip-symbols: ok (9135 files)
 - go/packages: ok (225 files)
 - dependency-cruiser: absent
 - grimp: absent
@@ -707,5 +707,5 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - deploy-unit: ok (6 files)
 - jscpd: ok (319 files)
 - ast-grep: ok
-- ast-grep/syntax: ok (388 files)
+- ast-grep/syntax: ok (390 files)
 - cargo-modules: absent

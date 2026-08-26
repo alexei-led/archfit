@@ -21,7 +21,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 	span := spanAccumulator{}
 	for _, e := range set.Edges {
 		sum += addSummary(s, e.Classified, e.Strength, e.Distance, e.Volatility, e.Provenance)
-		addDriver(s, e.Classified, e.FromModule, e.ToModule)
+		addDriver(s, e.Classified, e.Distance, e.FromModule, e.ToModule)
 		tail.add(e.Classified, e.Distance, false)
 		if e.Distance != relationship.DistanceSameModule && e.Distance != relationship.DistanceUnknown {
 			connected[e.FromModule] = struct{}{}
@@ -33,7 +33,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 		for _, p := range clones {
 			s.CloneOnlyScored++
 			sum += addSummary(s, p.Classified, p.Strength, p.Distance, p.Volatility, relationship.Provenance{})
-			addDriver(s, p.Classified, p.FromModule, p.ToModule)
+			addDriver(s, p.Classified, p.Distance, p.FromModule, p.ToModule)
 			tail.add(p.Classified, p.Distance, true)
 			connected[p.FromModule] = struct{}{}
 			connected[p.ToModule] = struct{}{}
@@ -95,8 +95,14 @@ func addSummary(s *relationship.ClassifiedEdgeSummary, c relationship.Classifica
 	s.BySeverity["abstained"]++
 	return 0
 }
-func addDriver(s *relationship.ClassifiedEdgeSummary, c relationship.Classification, from, to string) {
-	if !c.Score.Scored {
+
+// addDriver records one scored CROSS-BOUNDARY edge. Same-module edges are
+// excluded for the same reason tailAccumulator.add excludes them: all three
+// maps are reported against s.Scored, which addSummary increments for
+// cross-boundary edges only, so counting the same-module rung here would make
+// the driver histograms sum past the scored denominator printed beside them.
+func addDriver(s *relationship.ClassifiedEdgeSummary, c relationship.Classification, distance relationship.Distance, from, to string) {
+	if !c.Score.Scored || distance == relationship.DistanceSameModule {
 		return
 	}
 	driver := "tie"

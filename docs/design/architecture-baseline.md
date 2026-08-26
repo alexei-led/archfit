@@ -153,11 +153,14 @@ directory.
    so `syntax_api_size_ceiling` tracks module size, not published surface. It
    stays as an advisory growth ratchet at 430; the real published surface is
    gated by `TestModelSurfaceNoDrift` and the `forbidden_dependency` family.
-3. **`coupling_balance` evidence lists same-module pairs among "top module
-   pairs".** `by_module_pair` aggregates all 509 internal edges; the 146
-   same-module ones are reported in `local_coupling` and excluded from the 363
-   scored denominator. The number is correct; the label reads as if they were
-   scored. Presentation only.
+3. **Same-module coupling is invisible in `coupling_balance`.** Every histogram
+   the dimension reports — `by_strength`, `by_severity`, `by_balance_driver`,
+   `by_critical_driver`, `by_module_pair` — counts scored CROSS-BOUNDARY edges
+   only, matching the `scored` denominator printed beside them
+   (`addSummary`/`addDriver`/`tailAccumulator.add` share the same-module
+   early-out). The 147 same-module edges are scored at the book's D=2 rung and
+   reported in `local_coupling` instead. That is fractal-level separation, not
+   an omission: a reader who wants local complexity reads the other block.
 4. **`config update` reports `action_required` on archfit's own config with zero
    issues.** Discovery emits one module per directory (`model`, `extract`,
    `evidence`), while `.archfit.yaml` declares capabilities that span several

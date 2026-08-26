@@ -494,3 +494,45 @@ func TestBuild_Delta_ZeroChange(t *testing.T) {
 		t.Errorf("Delta.Overall: want 0, got %d", r.Delta.Overall)
 	}
 }
+
+// TestCouplingBalanceWhyKeepsCriticalBandCount pins the interaction between the
+// coupling_balance evidence order and evidenceCap: buildWhy truncates Evidence
+// before joining it, so a histogram line inserted ahead of the critical-band
+// count silently drops the most actionable number in the dimension from the
+// console, markdown, and scorecard "why" text.
+func TestCouplingBalanceWhyKeepsCriticalBandCount(t *testing.T) {
+	res := result.Result{
+		ClassifiedEdges: &result.ClassifiedEdgeSummary{
+			Total:               520,
+			Scored:              364,
+			Abstained:           9,
+			SameModule:          147,
+			MeanBalance:         4.6,
+			BySeverity:          map[string]int{"critical": 69, "low": 295},
+			ByStrength:          map[string]int{"functional": 300, "contract": 64},
+			ByDistance:          map[string]int{"cross_module_same_owner": 364},
+			ByVolatility:        map[string]int{"low": 364},
+			ByBalanceDriver:     map[string]int{"strength_distance": 300, "volatility": 64},
+			ByCriticalDriver:    map[string]int{"strength_distance": 69},
+			ByModulePair:        map[string]int{"a -> b": 40, "b -> c": 30},
+			DistributedMonolith: 12,
+		},
+	}
+	rep := decision.Build(res, score.Synthesize(res), nil, false)
+
+	var why string
+	for _, d := range rep.Dimensions {
+		if d.Name == score.DimCouplingBalance {
+			why = d.Why
+		}
+	}
+	if why == "" {
+		t.Fatalf("no %s dimension in report", score.DimCouplingBalance)
+	}
+	if !strings.Contains(why, "critical-band edges: 69") {
+		t.Errorf("why dropped the critical-band count (truncated by evidenceCap):\n%s", why)
+	}
+	if !strings.Contains(why, "distributed-monolith") {
+		t.Errorf("why dropped the distributed-monolith count:\n%s", why)
+	}
+}

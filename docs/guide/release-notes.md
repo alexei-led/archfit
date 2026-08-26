@@ -8,10 +8,16 @@ stays `archfit.diagnostic.v2` and existing consumers are unaffected:
 - `classified_edges.by_balance_driver` / `by_critical_driver` — whether `|S-D|`
   or `10-V` drove each scored edge's book balance.
 - `classified_edges.by_module_pair` — scored-edge concentration per module
-  boundary. It aggregates every internal edge, including the same-module ones
-  reported under `local_coupling`.
+  boundary. Like every other histogram the dimension reports, it counts scored
+  CROSS-BOUNDARY edges only; same-module coupling is reported under
+  `local_coupling`.
 - Scorecard dimensions carry `raw_value` and `cap_applied` when a confidence cap
   changed the normalized mean.
+
+The `coupling_balance` `summary` and `evidence` **values** changed (the keys did
+not): the summaries now point at the driver histograms, and the scored-fraction
+and critical-band lines were moved ahead of the histograms so the critical /
+distributed-monolith count stays inside the truncated `why` text.
 
 Internal: the analysis stage sequence moved behind one application-owned stage
 executor; `internal/engine`, `internal/analysispipeline`, and `internal/view` are
