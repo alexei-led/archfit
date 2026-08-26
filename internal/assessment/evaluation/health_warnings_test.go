@@ -12,6 +12,9 @@ import (
 
 // modulesWithPaths is the precondition for the "no source files matched" hint:
 // the config declares at least one module glob.
+// hintNoMatchedFiles is the module-glob hint under test.
+const hintNoMatchedFiles = "no source files matched declared module paths"
+
 func modulesWithPaths() map[string]policy.ModuleDef {
 	return map[string]policy.ModuleDef{assessCore: {Paths: []string{"internal/**"}}}
 }
@@ -98,7 +101,7 @@ func TestHealthWarnings(t *testing.T) {
 			fileLOC:   map[string]int{},
 			scanRoot:  assessRoot,
 			wantCount: 1,
-			want:      []string{"no source files matched declared module paths", "--root " + assessRoot},
+			want:      []string{hintNoMatchedFiles, "--root " + assessRoot},
 		},
 		{
 			// Empty ScanRoot is "the whole repository". The hint must omit the
@@ -108,7 +111,7 @@ func TestHealthWarnings(t *testing.T) {
 			modules:   modulesWithPaths(),
 			fileLOC:   map[string]int{"vendor/x.go": 3},
 			wantCount: 1,
-			want:      []string{"no source files matched declared module paths"},
+			want:      []string{hintNoMatchedFiles},
 			// The prose legitimately names --root; the RUN command must not.
 			deny: []string{assessCfgPath + " --root"},
 		},
@@ -129,7 +132,7 @@ func TestHealthWarnings(t *testing.T) {
 			modules:   modulesWithPaths(),
 			fileLOC:   map[string]int{"cmd/tool/main.go": 40},
 			wantCount: 1,
-			want:      []string{"no source files matched declared module paths"},
+			want:      []string{hintNoMatchedFiles},
 		},
 		{
 			name: "no declared module paths stays silent",

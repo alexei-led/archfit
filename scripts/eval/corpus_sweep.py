@@ -748,6 +748,10 @@ class Sweep:
             ensure_ai_block(cfg.read_text(encoding="utf-8")), encoding="utf-8"
         )
         record["ai"]["requested"] = True
+        # The exit is RECORDED, never appended to failures. A credential or
+        # provider failure is an environment fact, and strict mode grades
+        # deterministic behaviour only. An AI-path schema or projection defect
+        # still surfaces, because it lands in the deterministic checks above.
         result = self.run(
             [
                 "analyze",
@@ -802,20 +806,6 @@ def ensure_ai_block(text: str) -> str:
     if re.search(r"(?m)^ai:\s*$", text):
         return text
     return text.rstrip() + "\nai:\n  provider: anthropic\n  model: claude-opus-4-8\n"
-
-
-def ai_failures_only(record: dict[str, Any]) -> bool:
-    """Report whether a record's only problem is the selected AI summary.
-
-    A credential or provider failure is an environment fact, not a product
-    defect, so it must not fail strict mode. An AI-path schema or projection
-    defect still surfaces through the deterministic checks above.
-    """
-    return (
-        record["ai"]["requested"]
-        and record["ai"]["exit"] not in (None, 0)
-        and not record["failures"]
-    )
 
 
 def print_progress(payload: dict[str, Any]) -> None:

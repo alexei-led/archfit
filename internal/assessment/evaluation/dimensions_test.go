@@ -21,6 +21,8 @@ import (
 const (
 	ruleNoAToB = "no_a_to_b"
 	ruleDep    = "dep"
+	// toolDepCruiser is the TypeScript primary analyzer's coverage name.
+	toolDepCruiser = "dependency-cruiser"
 )
 
 // dimensionsFixture is a run with something to measure in every dimension that
@@ -475,7 +477,7 @@ func TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope(t *testin
 	}{
 		{
 			name:           "a clean TypeScript extraction stays measured",
-			coverage:       modevidence.Coverage{Tool: "dependency-cruiser", Status: modevidence.StatusOK},
+			coverage:       modevidence.Coverage{Tool: toolDepCruiser, Status: modevidence.StatusOK},
 			wantStatus:     state.Measured,
 			wantConfidence: state.ConfidenceHigh,
 		},
@@ -484,7 +486,7 @@ func TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope(t *testin
 			// side of the boundary must not move the envelope.
 			name: "unresolved specifiers at the ceiling stay measured",
 			coverage: modevidence.Coverage{
-				Tool: "dependency-cruiser", Status: modevidence.StatusPartial,
+				Tool: toolDepCruiser, Status: modevidence.StatusPartial,
 				Unresolved: 10, SpecifiersSeen: 100,
 			},
 			wantStatus:     state.Measured,
@@ -493,7 +495,7 @@ func TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope(t *testin
 		{
 			name: "unresolved specifiers above the ceiling make it partial",
 			coverage: modevidence.Coverage{
-				Tool: "dependency-cruiser", Status: modevidence.StatusPartial,
+				Tool: toolDepCruiser, Status: modevidence.StatusPartial,
 				Unresolved: 6288, SpecifiersSeen: 11337,
 			},
 			wantStatus:     state.Partial,

@@ -1755,7 +1755,7 @@ func TestRenderer_Render_TruncatedWhyStaysValidUTF8(t *testing.T) {
 		d.Verdict = reportmodel.VerdictFail
 		f := reportmodel.Finding{
 			ID: "f1", RuleID: "bc/imbalanced_coupling", Kind: reportmodel.FindingKindGate,
-			Severity: "high", Status: "new", Why: why,
+			Severity: confidenceHigh, Status: "new", Why: why,
 		}
 		d.Findings = []reportmodel.Finding{f}
 		d.State.Findings = d.Findings

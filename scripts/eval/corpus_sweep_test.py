@@ -376,19 +376,6 @@ class TestStrictExit(unittest.TestCase):
 
 
 class TestAIIsAdvisory(unittest.TestCase):
-    def test_a_credential_failure_alone_does_not_fail_a_record(self):
-        record = cs.blank_record("spotinfo", "/r", "go")
-        record["ai"] = {"requested": True, "exit": 3}
-        self.assertTrue(cs.ai_failures_only(record))
-        record["status"] = cs.STATUS_FAIL
-        self.assertEqual(cs.finalize_status(record, {})["status"], cs.STATUS_PASS)
-
-    def test_a_deterministic_failure_still_fails_with_ai_selected(self):
-        record = cs.blank_record("spotinfo", "/r", "go")
-        record["ai"] = {"requested": True, "exit": 3}
-        record["failures"].append("analyze --json exited 3")
-        self.assertFalse(cs.ai_failures_only(record))
-
     def test_ensure_ai_block_is_idempotent(self):
         once = cs.ensure_ai_block("version: 2\n")
         self.assertIn("ai:", once)
@@ -578,6 +565,20 @@ class TestSweepFlow(unittest.TestCase):
         self.assertEqual(len(ai_calls), 1)
         self.assertIn(str(self.work / "archfit-ai.yaml"), ai_calls[0])
         self.assertNotIn(str(cfg), ai_calls[0])
+
+    def test_a_failing_ai_summary_never_fails_a_record(self):
+        sweep, _ = self.sweep()
+        cfg = self.work / "archfit.yaml"
+        cfg.write_text("version: 2\nmodules: {}\n")
+        sweep.runner = lambda cmd, cwd: cs.CommandResult(3, "", "no API key")
+        record = cs.blank_record("target", str(self.target), "go")
+        record["status"] = cs.STATUS_FAIL
+        sweep.collect_ai(cfg, self.spec, self.work, record)
+        self.assertEqual(record["ai"], {"requested": True, "exit": 3})
+        # A credential or provider failure is an environment fact; strict mode
+        # grades deterministic behaviour only.
+        self.assertEqual(record["failures"], [])
+        self.assertEqual(cs.finalize_status(record, {})["status"], cs.STATUS_PASS)
 
     def test_a_missing_repository_is_unverified_not_a_pass(self):
         sweep, _ = self.sweep()
