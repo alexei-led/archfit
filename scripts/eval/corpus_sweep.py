@@ -471,15 +471,22 @@ Runner = Callable[[list[str], Path], CommandResult]
 
 
 def subprocess_runner(cmd: list[str], cwd: Path) -> CommandResult:
+    # Capture BYTES and decode UTF-8 explicitly. text=True decodes with the
+    # locale encoding, and archfit's output is UTF-8 (em dashes, ×, →) — under a
+    # non-UTF-8 locale that raised UnicodeDecodeError and turned a healthy
+    # storybook run into a harness crash.
     proc = subprocess.run(
         cmd,
         cwd=str(cwd),
-        text=True,
         capture_output=True,
         check=False,
         env=os.environ.copy(),
     )
-    return CommandResult(proc.returncode, proc.stdout, proc.stderr)
+    return CommandResult(
+        proc.returncode,
+        proc.stdout.decode("utf-8"),
+        proc.stderr.decode("utf-8", "replace"),
+    )
 
 
 class Sweep:
@@ -503,8 +510,12 @@ class Sweep:
     def run(self, args: list[str], log: Path | None = None) -> CommandResult:
         result = self.runner([str(self.archfit), *args], self.cwd)
         if log is not None:
-            log.with_suffix(log.suffix + ".stdout").write_text(result.stdout)
-            log.with_suffix(log.suffix + ".stderr").write_text(result.stderr)
+            log.with_suffix(log.suffix + ".stdout").write_text(
+                result.stdout, encoding="utf-8"
+            )
+            log.with_suffix(log.suffix + ".stderr").write_text(
+                result.stderr, encoding="utf-8"
+            )
         return result
 
     def git_head(self, root: Path) -> str | None:
@@ -718,7 +729,7 @@ class Sweep:
                 f"repeat analyze --json exited {result.returncode}"
             )
             return
-        identical = result.stdout.encode() == first
+        identical = result.stdout.encode("utf-8") == first
         record["determinism"]["json_byte_identical"] = identical
         if not identical:
             record["failures"].append("repeat analyze --json is not byte-identical")
@@ -733,7 +744,9 @@ class Sweep:
         whether AI was selected during the sweep.
         """
         overlay = work / "archfit-ai.yaml"
-        overlay.write_text(ensure_ai_block(cfg.read_text()))
+        overlay.write_text(
+            ensure_ai_block(cfg.read_text(encoding="utf-8")), encoding="utf-8"
+        )
         record["ai"]["requested"] = True
         result = self.run(
             [
@@ -907,7 +920,9 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     records.sort(key=lambda item: item["label"])
-    Path(args.summary_file).write_text(json.dumps(records, indent=2, sort_keys=True))
+    Path(args.summary_file).write_text(
+        json.dumps(records, indent=2, sort_keys=True), encoding="utf-8"
+    )
     print_progress({"summary_file": args.summary_file, "repos": len(records)})
 
     if args.strict:

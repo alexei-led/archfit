@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // EvidenceKind identifies the source class for an architecture evidence item.
@@ -158,9 +159,9 @@ func boundEvidenceText(s string, maxBytes int) string {
 		return s
 	}
 	if maxBytes <= 3 {
-		return s[:maxBytes]
+		return cutAtRuneBoundary(s, maxBytes)
 	}
-	return strings.TrimSpace(s[:maxBytes]) + "..."
+	return strings.TrimSpace(cutAtRuneBoundary(s, maxBytes)) + "..."
 }
 
 var rootDocBaseNames = map[string]struct{}{
@@ -885,4 +886,22 @@ func strconvItoa(n int) string {
 		n /= 10
 	}
 	return string(buf[i:])
+}
+
+// cutAtRuneBoundary returns s truncated to at most n bytes, backing the cut off
+// to the nearest rune start. Slicing a UTF-8 string at an arbitrary byte index
+// splits a multi-byte rune and emits invalid UTF-8, which is not merely ugly: a
+// consumer that decodes the document strictly fails on the WHOLE document, so
+// one truncated "×" in one advisory loses the entire report.
+func cutAtRuneBoundary(s string, n int) string {
+	if n >= len(s) {
+		return s
+	}
+	if n < 0 {
+		return ""
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

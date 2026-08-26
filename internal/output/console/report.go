@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/alexei-led/archfit/internal/model/report"
 	reportports "github.com/alexei-led/archfit/internal/report/ports"
@@ -274,14 +275,32 @@ func writeFindingIndex(b *strings.Builder, findings []report.Finding) {
 	}
 }
 
-// condense trims whitespace and caps s to maxLen runes with an ellipsis.
+// condense trims whitespace and caps s to maxLen bytes with an ellipsis.
 func condense(s string, maxLen int) string {
 	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
 	if len(s) <= maxLen {
 		return s
 	}
 	if maxLen <= 3 {
-		return s[:maxLen]
+		return cutAtRuneBoundary(s, maxLen)
 	}
-	return s[:maxLen-1] + "…"
+	return cutAtRuneBoundary(s, maxLen-1) + "…"
+}
+
+// cutAtRuneBoundary returns s truncated to at most n bytes, backing the cut off
+// to the nearest rune start. Slicing a UTF-8 string at an arbitrary byte index
+// splits a multi-byte rune and emits invalid UTF-8, which is not merely ugly: a
+// consumer that decodes the document strictly fails on the WHOLE document, so
+// one truncated "×" in one advisory loses the entire report.
+func cutAtRuneBoundary(s string, n int) string {
+	if n >= len(s) {
+		return s
+	}
+	if n < 0 {
+		return ""
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

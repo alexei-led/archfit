@@ -3,6 +3,7 @@ package console
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/alexei-led/archfit/internal/model/report"
 )
@@ -169,5 +170,37 @@ func TestRenderState_IsDeterministic(t *testing.T) {
 	s := stateWith()
 	if first, second := render(t, s), render(t, s); first != second {
 		t.Errorf("two renders differ:\n%s\n---\n%s", first, second)
+	}
+}
+
+// TestCondenseIsRuneSafe pins the UTF-8 contract of the terminal renderer.
+//
+// The regression: condense sliced the string by BYTES. Every coupling advisory
+// carries "×" and "→", so a cut landing inside one emitted invalid UTF-8 — and
+// a consumer decoding the document strictly loses the whole report, not one
+// line. Found by the corpus sweep on storybook.
+func TestCondenseIsRuneSafe(t *testing.T) {
+	t.Parallel()
+	// The multi-byte runes are positioned so the cut lands inside one at every
+	// budget in the loop below.
+	subject := strings.Repeat("balanced coupling × distance → volatile target ", 12)
+	for budget := 1; budget <= 200; budget++ {
+		got := condense(subject, budget)
+		if !utf8.ValidString(got) {
+			t.Fatalf("condense(_, %d) produced invalid UTF-8: %q", budget, got)
+		}
+		if len(got) > budget+len("…") {
+			t.Fatalf("condense(_, %d) returned %d bytes", budget, len(got))
+		}
+	}
+}
+
+// TestCondenseKeepsShortStringsWhole guards the other direction: the boundary
+// fix must not start trimming text that already fits.
+func TestCondenseKeepsShortStringsWhole(t *testing.T) {
+	t.Parallel()
+	const short = "a × b"
+	if got := condense(short, 100); got != short {
+		t.Fatalf("condense(%q, 100) = %q", short, got)
 	}
 }

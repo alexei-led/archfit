@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/alexei-led/archfit/internal/model/report"
 )
@@ -98,7 +99,7 @@ func writeBCLintMessage(b *strings.Builder, f report.Finding) {
 	}
 	if why != "" {
 		if len(why) > 200 {
-			why = why[:197] + "..."
+			why = cutAtRuneBoundary(why, 197) + "..."
 		}
 		fmt.Fprintf(b, "  why: %s\n", why)
 	}
@@ -133,10 +134,28 @@ func writeGateFinding(b *strings.Builder, f report.Finding) {
 	}
 	why := strings.TrimSpace(f.Why)
 	if len(why) > 140 {
-		why = why[:137] + "..."
+		why = cutAtRuneBoundary(why, 137) + "..."
 	}
 	if why != "" {
 		why = ": " + why
 	}
 	fmt.Fprintf(b, "- **%s** [%s] %s%s%s\n", f.RuleID, f.Severity, f.Status, edge, why)
+}
+
+// cutAtRuneBoundary returns s truncated to at most n bytes, backing the cut off
+// to the nearest rune start. Slicing a UTF-8 string at an arbitrary byte index
+// splits a multi-byte rune and emits invalid UTF-8, which is not merely ugly: a
+// consumer that decodes the document strictly fails on the WHOLE document, so
+// one truncated "×" in one advisory loses the entire report.
+func cutAtRuneBoundary(s string, n int) string {
+	if n >= len(s) {
+		return s
+	}
+	if n < 0 {
+		return ""
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

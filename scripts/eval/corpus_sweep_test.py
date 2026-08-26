@@ -467,7 +467,9 @@ class TestSweepFlow(unittest.TestCase):
         cfg = self.staged_candidate(sweep, record)
         sweep.migrate_config(cfg, self.work, record)
         self.assertEqual(record["config"]["version"], 1)
-        self.assertTrue(any("want 2" in f for f in record["failures"]), record["failures"])
+        self.assertTrue(
+            any("want 2" in f for f in record["failures"]), record["failures"]
+        )
 
     def test_a_non_idempotent_second_migration_is_a_failure(self):
         sweep, _ = self.sweep()
@@ -483,7 +485,9 @@ class TestSweepFlow(unittest.TestCase):
         sweep.runner = rewriting
         sweep.migrate_config(cfg, self.work, record)
         self.assertTrue(record["config"]["second_update_changed"])
-        self.assertTrue(any("rewrote" in f for f in record["failures"]), record["failures"])
+        self.assertTrue(
+            any("rewrote" in f for f in record["failures"]), record["failures"]
+        )
 
     def test_the_source_config_hash_is_the_targets_own_file(self):
         sweep, _ = self.sweep()
@@ -495,7 +499,9 @@ class TestSweepFlow(unittest.TestCase):
         )
         self.assertEqual(record["config"]["source"], "copied-existing")
         # The target file is untouched: the sweep is read-only over corpus repos.
-        self.assertEqual((self.target / ".archfit.yaml").read_text(), "version: 1\nmodules: {}\n")
+        self.assertEqual(
+            (self.target / ".archfit.yaml").read_text(), "version: 1\nmodules: {}\n"
+        )
 
     def test_a_check_exit_that_contradicts_its_verdict_is_a_failure(self):
         sweep, _ = self.sweep()
@@ -503,16 +509,22 @@ class TestSweepFlow(unittest.TestCase):
         doc = state_doc()
         # needs_attention must be exit 2; claim 0 instead.
         sweep.runner = lambda cmd, cwd: cs.CommandResult(0, json.dumps(doc), "")
-        sweep.collect_check(self.work / "archfit.yaml", self.spec, self.work, record, doc)
+        sweep.collect_check(
+            self.work / "archfit.yaml", self.spec, self.work, record, doc
+        )
         self.assertEqual(record["check"]["exit"], 0)
-        self.assertTrue(any("maps to exit 2" in f for f in record["failures"]), record["failures"])
+        self.assertTrue(
+            any("maps to exit 2" in f for f in record["failures"]), record["failures"]
+        )
 
     def test_a_matching_check_exit_passes(self):
         sweep, _ = self.sweep()
         record = cs.blank_record("target", str(self.target), "go")
         doc = state_doc()
         sweep.runner = lambda cmd, cwd: cs.CommandResult(2, json.dumps(doc), "")
-        sweep.collect_check(self.work / "archfit.yaml", self.spec, self.work, record, doc)
+        sweep.collect_check(
+            self.work / "archfit.yaml", self.spec, self.work, record, doc
+        )
         self.assertEqual(record["failures"], [])
 
     def test_analyze_json_is_validated_not_merely_parsed(self):
@@ -520,17 +532,23 @@ class TestSweepFlow(unittest.TestCase):
         record = cs.blank_record("target", str(self.target), "go")
         broken = state_doc(schema_version="archfit.diagnostic.v2")
         sweep.runner = lambda cmd, cwd: cs.CommandResult(0, json.dumps(broken), "")
-        state = sweep.collect_analyze(self.work / "archfit.yaml", self.spec, self.work, record)
+        state = sweep.collect_analyze(
+            self.work / "archfit.yaml", self.spec, self.work, record
+        )
         self.assertIsNotNone(state)
         self.assertFalse(record["formats"]["json"]["parity"])
-        self.assertTrue(any("schema_version" in f for f in record["failures"]), record["failures"])
+        self.assertTrue(
+            any("schema_version" in f for f in record["failures"]), record["failures"]
+        )
 
     def test_a_non_byte_identical_repeat_is_a_failure(self):
         sweep, _ = self.sweep()
         (self.work / "analyze.stdout").write_text('{"a": 1}')
         sweep.runner = lambda cmd, cwd: cs.CommandResult(0, '{"a":  1}', "")
         record = cs.blank_record("target", str(self.target), "go")
-        sweep.collect_determinism(self.work / "archfit.yaml", self.spec, self.work, record)
+        sweep.collect_determinism(
+            self.work / "archfit.yaml", self.spec, self.work, record
+        )
         self.assertFalse(record["determinism"]["json_byte_identical"])
         self.assertTrue(any("byte-identical" in f for f in record["failures"]))
 
@@ -539,7 +557,9 @@ class TestSweepFlow(unittest.TestCase):
         (self.work / "analyze.stdout").write_text('{"a": 1}')
         sweep.runner = lambda cmd, cwd: cs.CommandResult(0, '{"a": 1}', "")
         record = cs.blank_record("target", str(self.target), "go")
-        sweep.collect_determinism(self.work / "archfit.yaml", self.spec, self.work, record)
+        sweep.collect_determinism(
+            self.work / "archfit.yaml", self.spec, self.work, record
+        )
         self.assertTrue(record["determinism"]["json_byte_identical"])
         self.assertEqual(record["failures"], [])
 
@@ -562,7 +582,9 @@ class TestSweepFlow(unittest.TestCase):
     def test_a_missing_repository_is_unverified_not_a_pass(self):
         sweep, _ = self.sweep()
         spec = cs.RepoSpec("gone", self.tmp / "nope", "rust")
-        record = sweep.process(spec, want_ai=False, want_repeat=False, want_formats=False)
+        record = sweep.process(
+            spec, want_ai=False, want_repeat=False, want_formats=False
+        )
         self.assertEqual(record["status"], cs.STATUS_UNVERIFIED)
         self.assertIsNotNone(record["unverified"])
 

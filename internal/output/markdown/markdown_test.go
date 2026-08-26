@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
@@ -1729,5 +1730,42 @@ func TestRender_DeprecatedDep_PipeEscaping(t *testing.T) {
 	}
 	if !strings.Contains(out, `v1\|0`) {
 		t.Errorf("pipe in subject must be escaped as \\|; output:\n%s", out)
+	}
+}
+
+// TestRenderer_Render_TruncatedWhyStaysValidUTF8 pins the UTF-8 contract of the
+// Markdown renderer.
+//
+// The regression: the long-`why` guards sliced by BYTES at 197 and 137. Every
+// coupling advisory carries "×" and "→", so a cut landing inside one emitted
+// invalid UTF-8 — and a strict consumer loses the WHOLE document, not one line.
+// Found by the corpus sweep on storybook, whose Markdown report failed to
+// decode at byte 43174.
+//
+// The loop slides the multi-byte runes across the cap byte with an ASCII
+// prefix, so some iteration always cuts inside one.
+func TestRenderer_Render_TruncatedWhyStaysValidUTF8(t *testing.T) {
+	t.Parallel()
+	const unit = "coupling × distance → volatile target "
+	for shift := 0; shift < len(unit); shift++ {
+		// Pad with ASCII so the multi-byte runes slide across the byte the cap
+		// cuts at; varying only the LENGTH would never move the cut.
+		why := strings.Repeat("x", shift) + strings.Repeat(unit, 10)
+		d := reportmodel.NewDocument()
+		d.Verdict = reportmodel.VerdictFail
+		f := reportmodel.Finding{
+			ID: "f1", RuleID: "bc/imbalanced_coupling", Kind: reportmodel.FindingKindGate,
+			Severity: "high", Status: "new", Why: why,
+		}
+		d.Findings = []reportmodel.Finding{f}
+		d.State.Findings = d.Findings
+
+		var buf bytes.Buffer
+		if err := markdown.New().Render(d, &buf); err != nil {
+			t.Fatalf("Render() error = %v", err)
+		}
+		if !utf8.Valid(buf.Bytes()) {
+			t.Fatalf("markdown render is not valid UTF-8 with a %d-byte ASCII prefix", shift)
+		}
 	}
 }
