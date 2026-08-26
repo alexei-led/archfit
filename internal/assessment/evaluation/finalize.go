@@ -37,16 +37,27 @@ type BaselineAnchor struct {
 	NonComparableReason string
 }
 
+// defaultNonComparableReason is the abstention cause when no baseline exists at
+// all. It is stated rather than left empty: "not comparable" with no reason is
+// indistinguishable from a bug.
+const defaultNonComparableReason = "no comparable architecture-state reference is stored"
+
+// driftReasons explains, in stable order, why this anchor is not comparable.
+// The slice is never empty — every caller renders reasons[0].
+func (a BaselineAnchor) driftReasons() []string {
+	reason := a.NonComparableReason
+	if reason == "" {
+		reason = defaultNonComparableReason
+	}
+	return append([]string{reason}, a.SnapshotMismatches...)
+}
+
 // seamReference projects the anchor into the gate's comparison reference. A
 // non-comparable anchor always carries at least one reason: an abstaining gate
 // has to say why.
 func (a BaselineAnchor) seamReference() score.SeamReference {
 	if !a.SeamsComparable {
-		reason := a.NonComparableReason
-		if reason == "" {
-			reason = "no comparable seam snapshot: the stored baseline predates the architecture-state contract"
-		}
-		return score.SeamReference{Reasons: append([]string{reason}, a.SnapshotMismatches...)}
+		return score.SeamReference{Reasons: a.driftReasons()}
 	}
 	ids := make(map[string]struct{}, len(a.QualifyingSeamIDs))
 	for _, id := range a.QualifyingSeamIDs {

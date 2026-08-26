@@ -1,5 +1,6 @@
 // Package baseline handles loading and saving the archfit baseline file,
-// which tracks accepted findings and metric snapshots across runs.
+// which tracks accepted findings, a metric snapshot, and the architecture-state
+// reference a later run compares against.
 package baseline
 
 import (
@@ -14,21 +15,17 @@ import (
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
-// SchemaVersion is the fixed schema_version value for baseline files.
-const SchemaVersion = "archfit.baseline.v1"
+// SchemaVersion is the schema_version this binary writes. Schema v2 stores the
+// architecture-state reference (fingerprints, hard-gate findings, seams, and
+// dimension snapshots) and no repository scalar.
+const SchemaVersion = "archfit.baseline.v2"
 
-// legacyRubricVersion is the rubric a score snapshot written before rubric
-// tracking was recorded under. Rubric 1 is the only rubric shipped so far, so a
-// legacy snapshot stays comparable with the current binary instead of reading
-// as incompatible.
-const legacyRubricVersion = 1
-
-// Score-snapshot input names reported by ScoreSnapshotMismatches. They are the
-// snapshot's own JSON field names so a disclosure can point at the stored value.
-const (
-	InputScoreVersion  = "score_version"
-	InputRubricVersion = "rubric_version"
-)
+// LegacySchemaVersion is the pre-state baseline. It stays READABLE — its
+// accepted finding fingerprints are still the user's acceptance decisions — but
+// its scalar score snapshot is ignored and it can never support a
+// state/dimension/seam comparison. It is never auto-rewritten: a rewrite would
+// silently upgrade a file the owner never re-reviewed.
+const LegacySchemaVersion = "archfit.baseline.v1"
 
 // AcceptedFinding records a finding that has been accepted into the baseline.
 // Fingerprint is the SHA256 hex ID from finding.New; RuleID is the rule that produced it.
@@ -45,38 +42,61 @@ type AcceptedFinding struct {
 	Severity string `json:"severity,omitempty"`
 }
 
-// ScoreSnapshot records the synthesised coupling_balance score at baseline
-// time, anchoring the coupling.gate.max_drop check on later runs. Written only
-// when the score was measured — an n/a (unmeasured) synthesis stores nothing,
-// so it can never anchor a phantom drop.
+// ScoreSnapshot is the retired v1 scalar snapshot. It is decoded so a v1 file
+// round-trips through Load without data loss and is never written back: schema
+// v2 retired the scalar gate, so a stored repository score anchors nothing.
 type ScoreSnapshot struct {
-	CouplingBalance int `json:"coupling_balance"`
-	// Band is disclosure-only, for humans reading the baseline JSON — no code
-	// path reads it back (min_band gates on the current run's band).
-	Band string `json:"band"`
-	// ScoreVersion is the scorer formula version (report.ScoreVersion) the
-	// snapshot was computed under. Ordinal reassignment makes scores
-	// incomparable across versions, so CouplingScore refuses to anchor
-	// max_drop on a mismatched snapshot. Empty in baselines written before
-	// version tracking — treated as stale (re-baseline to re-anchor).
-	ScoreVersion string `json:"score_version,omitempty"`
-	// RubricVersion is the scorecard rubric the snapshot
-	// was banded under. A rubric change re-cuts the band edges, so the stored
-	// value is no longer the same measurement. Absent in baselines written
-	// before rubric tracking — read as rubric 1, the only rubric shipped so far,
-	// so a legacy snapshot keeps anchoring without a forced re-baseline.
-	RubricVersion int `json:"rubric_version,omitempty"`
+	CouplingBalance int    `json:"coupling_balance"`
+	Band            string `json:"band"`
+	ScoreVersion    string `json:"score_version,omitempty"`
+	RubricVersion   int    `json:"rubric_version,omitempty"`
 }
 
-// EffectiveRubricVersion returns the rubric the snapshot was banded under,
-// reading a missing value as the pre-tracking rubric. Disclosures must quote
-// this, not the raw field: a legacy snapshot stores 0 but was banded under
-// rubric 1, and reporting the 0 would misstate what is stored.
-func (s ScoreSnapshot) EffectiveRubricVersion() int {
-	if s.RubricVersion == 0 {
-		return legacyRubricVersion
-	}
-	return s.RubricVersion
+// CoverageSnapshot is a stored dimension's denominator.
+type CoverageSnapshot struct {
+	Basis    string `json:"basis"`
+	Observed int    `json:"observed"`
+	Total    int    `json:"total"`
+}
+
+// MetricSnapshotValue is one stored dimension metric. Only the three fields a
+// later delta needs are persisted: a stored provenance list would grow the file
+// without ever being compared.
+type MetricSnapshotValue struct {
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+	Unit  string  `json:"unit"`
+}
+
+// DimensionSnapshot is one architecture-state dimension as the reference
+// recorded it.
+type DimensionSnapshot struct {
+	Name     string                `json:"name"`
+	Status   string                `json:"status"`
+	Gate     string                `json:"gate"`
+	Coverage CoverageSnapshot      `json:"coverage"`
+	Metrics  []MetricSnapshotValue `json:"metrics"`
+}
+
+// StateSnapshot is the architecture-state reference a v2 baseline stores.
+//
+// The four fingerprints are stored together with the facts they qualify: a
+// dimension or seam delta may be claimed only when all four still match, so a
+// reader can tell a code change from a policy change without guessing.
+type StateSnapshot struct {
+	ConfigHash    string `json:"config_hash"`
+	ModelHash     string `json:"model_hash"`
+	LabelsHash    string `json:"labels_hash"`
+	RubricVersion string `json:"rubric_version"`
+	// HardGateFindingIDs are the reference's active blocker IDs, so a later run
+	// can name which blockers are new without re-deriving them from the
+	// accepted set (which mixes gates and advisories).
+	HardGateFindingIDs []string `json:"hard_gate_finding_ids"`
+	// QualifyingSeamIDs are the reference's distributed-monolith seams. Absent
+	// (not empty) in any baseline written before the seam ledger existed, which
+	// is why a pre-state file can never be read as "there were no seams then".
+	QualifyingSeamIDs []string            `json:"qualifying_seam_ids"`
+	Dimensions        []DimensionSnapshot `json:"dimensions"`
 }
 
 // Baseline is the on-disk baseline file structure.
@@ -84,40 +104,14 @@ type Baseline struct {
 	SchemaVersion string                `json:"schema_version"`
 	Accepted      []AcceptedFinding     `json:"accepted"`
 	Metrics       report.MetricSnapshot `json:"metrics"`
-	// Score is the coupling_balance snapshot; omitted in baselines written
-	// before score tracking or while the score was unmeasured.
+	// Score is the retired v1 scalar snapshot; present only in a legacy file.
 	Score *ScoreSnapshot `json:"score,omitempty"`
+	// State is the architecture-state reference. Absent in a legacy file.
+	State *StateSnapshot `json:"state,omitempty"`
 }
 
-// CouplingScore returns the stored coupling_balance value, or nil when the
-// baseline carries no score snapshot or the snapshot is incompatible with the
-// current binary — a cross-version drop is a methodology change, not a
-// regression, so it must never anchor coupling.gate.max_drop.
-func (b Baseline) CouplingScore() *int {
-	if b.Score == nil || len(b.ScoreSnapshotMismatches()) > 0 {
-		return nil
-	}
-	return &b.Score.CouplingBalance
-}
-
-// ScoreSnapshotMismatches names the stored score-snapshot inputs that differ
-// from the current binary's, in stable order. Empty when no snapshot exists
-// (nothing to disclose) or when the snapshot still anchors max_drop. Callers
-// use it to say WHICH input made the snapshot incomparable instead of skipping
-// the drop check silently.
-func (b Baseline) ScoreSnapshotMismatches() []string {
-	if b.Score == nil {
-		return nil
-	}
-	var out []string
-	if b.Score.ScoreVersion != report.ScoreVersion {
-		out = append(out, InputScoreVersion)
-	}
-	if b.Score.EffectiveRubricVersion() != report.RubricVersion {
-		out = append(out, InputRubricVersion)
-	}
-	return out
-}
+// Legacy reports that this baseline predates the architecture-state contract.
+func (b Baseline) Legacy() bool { return b.SchemaVersion == LegacySchemaVersion }
 
 // HasFingerprint reports whether the given fingerprint exists in the baseline's
 // accepted findings.
@@ -148,9 +142,10 @@ func (b Baseline) Entries() []status.AcceptedEntry {
 
 var _ status.AcceptedSet = Baseline{}
 
-// Load reads the baseline from path. If the file does not exist, it returns an
-// empty Baseline (not an error). If the file exists but has a mismatched
-// schema_version, it returns an error (exit-3-style).
+// Load reads the baseline from path. A missing file returns an empty Baseline
+// (not an error). Both the current and the legacy schema load; any other
+// schema_version is an error. Load never writes: a legacy file stays a legacy
+// file until its owner re-baselines deliberately.
 func Load(_ context.Context, path string) (Baseline, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // path comes from trusted CLI/config input
 	if err != nil {
@@ -165,16 +160,20 @@ func Load(_ context.Context, path string) (Baseline, error) {
 		return Baseline{}, fmt.Errorf("baseline: parse %s: %w", path, err)
 	}
 
-	if b.SchemaVersion != SchemaVersion {
-		return Baseline{}, fmt.Errorf("baseline: schema version mismatch in %s: got %q, want %q", path, b.SchemaVersion, SchemaVersion)
+	if b.SchemaVersion != SchemaVersion && b.SchemaVersion != LegacySchemaVersion {
+		return Baseline{}, fmt.Errorf("baseline: schema version mismatch in %s: got %q, want %q or %q",
+			path, b.SchemaVersion, SchemaVersion, LegacySchemaVersion)
 	}
 
 	return b, nil
 }
 
-// Save writes b to path as JSON. It sets SchemaVersion before writing.
+// Save writes b to path as the current schema. The retired scalar snapshot is
+// dropped rather than carried forward: a v2 file that still stored a repository
+// score would invite a consumer to gate on it again.
 func Save(_ context.Context, path string, b Baseline) error {
 	b.SchemaVersion = SchemaVersion
+	b.Score = nil
 
 	// Ensure non-nil slices so JSON serializes as [] not null.
 	if b.Accepted == nil {

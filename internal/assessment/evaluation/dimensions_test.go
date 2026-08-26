@@ -6,6 +6,7 @@ package evaluation_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
@@ -362,4 +363,92 @@ func hasMetric(metrics []state.MetricValue, name string) bool {
 		}
 	}
 	return false
+}
+
+// TestDriftDimensionRequiresAComparableReference is the erosion contract: drift
+// is measurable only against a reference written under the same config, module
+// map, labels, and rubric. Everything else stays unmeasured with a named cause,
+// because a reference that records no seams is not evidence that there were
+// none.
+func TestDriftDimensionRequiresAComparableReference(t *testing.T) {
+	t.Parallel()
+	diag := &result.Result{Seams: []result.Seam{
+		{ID: "seam-kept", DistributedMonolith: true},
+		{ID: "seam-new", DistributedMonolith: true},
+		{ID: "seam-ignored"},
+	}}
+
+	tests := []struct {
+		name         string
+		anchor       evaluation.BaselineAnchor
+		wantStatus   state.MeasurementStatus
+		wantDelta    state.ComparisonStatus
+		wantMetrics  map[string]float64
+		wantReasonIn string
+	}{
+		{
+			name:         "no stored reference",
+			anchor:       evaluation.BaselineAnchor{},
+			wantStatus:   state.Unmeasured,
+			wantDelta:    state.ComparisonNonComparable,
+			wantReasonIn: "no comparable architecture-state reference",
+		},
+		{
+			name: "drifted fingerprints name the input that moved",
+			anchor: evaluation.BaselineAnchor{
+				NonComparableReason: "the stored baseline was written under different inputs",
+				SnapshotMismatches:  []string{"config_hash differs between the two runs"},
+			},
+			wantStatus:   state.Unmeasured,
+			wantDelta:    state.ComparisonNonComparable,
+			wantReasonIn: "config_hash",
+		},
+		{
+			name: "comparable reference measures the seam delta",
+			anchor: evaluation.BaselineAnchor{
+				SeamsComparable:   true,
+				QualifyingSeamIDs: []string{"seam-kept", "seam-gone"},
+			},
+			wantStatus:  state.Measured,
+			wantDelta:   state.ComparisonComparable,
+			wantMetrics: map[string]float64{"new_seams": 1, "resolved_seams": 1},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dim := evaluation.BuildDimensions(diag, evaluation.StateInput{Drift: tc.anchor}, nil).Drift
+			if dim.Status != tc.wantStatus {
+				t.Errorf("status = %q, want %q", dim.Status, tc.wantStatus)
+			}
+			if dim.Delta == nil {
+				t.Fatal("drift envelope carries no delta")
+			}
+			if dim.Delta.Status != tc.wantDelta {
+				t.Errorf("delta status = %q, want %q", dim.Delta.Status, tc.wantDelta)
+			}
+			if tc.wantReasonIn != "" {
+				joined := strings.Join(dim.Delta.Reasons, " ")
+				if !strings.Contains(joined, tc.wantReasonIn) {
+					t.Errorf("reasons %q do not name %q", joined, tc.wantReasonIn)
+				}
+			}
+			for name, want := range tc.wantMetrics {
+				got, found := 0.0, false
+				for _, m := range dim.Metrics {
+					if m.Name == name {
+						got, found = m.Value, true
+					}
+				}
+				if !found {
+					t.Errorf("metric %q missing from a measured drift envelope", name)
+					continue
+				}
+				if got != want {
+					t.Errorf("metric %q = %v, want %v", name, got, want)
+				}
+			}
+		})
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
@@ -293,7 +294,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 	s.reportPhase("Scoring architecture")
 	scored := evaluation.Score(&diag, evaluation.ScoreInput{
 		Policy: runCtx.Policy, Facts: facts,
-		Anchor:        seamAnchor(base),
+		Anchor:        seamAnchor(base, runCtx),
 		ConfigSource:  runCtx.ConfigSource,
 		ScanRoot:      runCtx.ScanRoot,
 		Root:          runCtx.Scope.Root,
@@ -302,7 +303,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		CoverageGaps: runCtx.CoverageGaps, ApplyToolGate: req.ApplyToolGate,
 	})
 	if !req.SuppressGateReasons {
-		s.discloseGate(scored, base)
+		s.discloseGate(scored)
 	}
 	out := AnalysisResult{Score: scored.Score, HardGate: scored.HardGate}
 	if req.BaseRef != "" {
@@ -322,48 +323,53 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 
 // seamAnchor projects the persisted baseline into the seam gate's reference.
 //
-// A stored baseline is never comparable yet: baseline v2 (which persists the
-// seam snapshot and the config/model/labels/rubric hashes that make a snapshot
-// comparable) is a later migration step. Until then the gate abstains and says
-// so, which is the only honest answer — a baseline written before the ledger
-// existed records no seams, and reading that as "there were none" would report
-// every existing seam as newly introduced.
-func seamAnchor(base Baseline) evaluation.BaselineAnchor {
-	anchor := evaluation.BaselineAnchor{SnapshotMismatches: snapshotMismatchDetails(base)}
-	if base.ScoreVersion != "" || base.RubricVersion != 0 {
-		anchor.NonComparableReason = "legacy_score_snapshot_ignored: the stored baseline predates the seam ledger"
+// The reference is comparable only when the stored snapshot was written under
+// the same config, module map, labels, and rubric. Everything else abstains
+// with a named cause: a baseline that records no seams because it predates the
+// ledger is not evidence that there were none, and reading it that way would
+// report every existing seam as newly introduced.
+func seamAnchor(base Baseline, runCtx AnalysisContext) evaluation.BaselineAnchor {
+	if base.State == nil {
+		if base.Legacy {
+			return evaluation.BaselineAnchor{NonComparableReason: legacyBaselineReason}
+		}
+		return evaluation.BaselineAnchor{}
 	}
-	return anchor
+	cmp := decision.CompareFingerprints("", headFingerprints(runCtx), decision.Fingerprints{
+		ConfigHash: base.State.ConfigHash, ModelHash: base.State.ModelHash,
+		LabelsHash: base.State.LabelsHash, RubricVersion: base.State.RubricVersion,
+	})
+	if cmp.Status != result.StateComparisonComparable {
+		return evaluation.BaselineAnchor{
+			NonComparableReason: "the stored baseline was written under different inputs",
+			SnapshotMismatches:  cmp.Reasons,
+		}
+	}
+	return evaluation.BaselineAnchor{SeamsComparable: true, QualifyingSeamIDs: base.State.QualifyingSeamIDs}
 }
 
-func (s StageExecutor) discloseGate(scored evaluation.Scored, _ Baseline) {
+// LegacyScoreIgnored is the fixed token reported when a pre-state baseline is
+// read: its scalar snapshot is ignored and no state, dimension, or seam
+// comparison against it is admissible. A bare "not comparable" with no named
+// cause is indistinguishable from a bug.
+const LegacyScoreIgnored = "legacy_score_snapshot_ignored"
+
+const legacyBaselineReason = LegacyScoreIgnored +
+	": the stored baseline predates the architecture-state contract"
+
+// headFingerprints are this run's four comparison inputs.
+func headFingerprints(runCtx AnalysisContext) decision.Fingerprints {
+	return decision.Fingerprints{
+		ConfigHash: runCtx.ConfigHash, ModelHash: runCtx.ModelHash,
+		LabelsHash: runCtx.LabelsHash, RubricVersion: report.ScoreVersion,
+	}
+}
+
+func (s StageExecutor) discloseGate(scored evaluation.Scored) {
 	for _, reason := range scored.GateReasons {
 		_, _ = fmt.Fprintln(s.stderr(), "coupling gate: "+reason)
 	}
 }
-
-// snapshotMismatchDetails names each incompatible score-snapshot input with the
-// stored and current value, so the notice says what actually changed.
-func snapshotMismatchDetails(base Baseline) []string {
-	out := make([]string, 0, len(base.SnapshotMismatches))
-	for _, input := range base.SnapshotMismatches {
-		switch input {
-		case baselineInputScoreVersion:
-			out = append(out, fmt.Sprintf("%s %q, current %q", input, base.ScoreVersion, report.ScoreVersion))
-		case baselineInputRubricVersion:
-			out = append(out, fmt.Sprintf("%s %d, current %d", input, base.RubricVersion, report.RubricVersion))
-		default:
-			out = append(out, input)
-		}
-	}
-	return out
-}
-
-// Score-snapshot input names shared with the baseline persistence adapter.
-const (
-	baselineInputScoreVersion  = "score_version"
-	baselineInputRubricVersion = "rubric_version"
-)
 
 func (s StageExecutor) stderr() io.Writer {
 	if s.Stderr != nil {

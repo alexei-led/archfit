@@ -11,7 +11,6 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
@@ -230,10 +229,10 @@ func TestRun_Analyze_UnmeasurableCouplingStaysSilent(t *testing.T) {
 	}
 }
 
-// TestRun_Baseline_WritesScoreSnapshot verifies that `archfit baseline`
-// persists the measured coupling_balance score, giving coupling.gate.max_drop
-// its anchor.
-func TestRun_Baseline_WritesScoreSnapshot(t *testing.T) {
+// TestRun_Baseline_WritesStateSnapshot verifies that `archfit baseline` writes
+// the schema-v2 architecture-state reference — the four comparison fingerprints
+// travelling with the facts they qualify — and no repository scalar.
+func TestRun_Baseline_WritesStateSnapshot(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg)
 
@@ -242,27 +241,61 @@ func TestRun_Baseline_WritesScoreSnapshot(t *testing.T) {
 		t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
 	}
 
-	b, err := baseline.Load(context.Background(), filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath))
+	path := filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath)
+	b, err := baseline.Load(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.Score == nil {
-		t.Fatal("baseline written without a score snapshot on a measured repo")
+	if b.SchemaVersion != baseline.SchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", b.SchemaVersion, baseline.SchemaVersion)
 	}
-	if b.Score.Band == "" || b.Score.Band == "n/a" {
-		t.Fatalf("baseline score band = %q, want a measured band", b.Score.Band)
+	if b.Score != nil {
+		t.Errorf("schema v2 must not store a repository scalar, got %+v", b.Score)
 	}
-	if b.Score.ScoreVersion != report.ScoreVersion {
-		t.Fatalf("baseline score_version = %q, want %q", b.Score.ScoreVersion, report.ScoreVersion)
+	if b.State == nil {
+		t.Fatal("baseline written without an architecture-state reference")
 	}
-	if b.Score.RubricVersion != score.RubricVersion {
-		t.Fatalf("baseline rubric_version = %d, want %d", b.Score.RubricVersion, score.RubricVersion)
+	if b.State.ConfigHash == "" || b.State.ModelHash == "" {
+		t.Errorf("state reference missing fingerprints: %+v", b.State)
 	}
-	if m := b.ScoreSnapshotMismatches(); len(m) > 0 {
-		t.Fatalf("freshly written snapshot reports incompatible inputs %v", m)
+	if b.State.RubricVersion != report.ScoreVersion {
+		t.Errorf("rubric_version = %q, want %q", b.State.RubricVersion, report.ScoreVersion)
 	}
-	if got := b.CouplingScore(); got == nil || *got != b.Score.CouplingBalance {
-		t.Fatalf("CouplingScore() = %v, want %d", got, b.Score.CouplingBalance)
+	if len(b.State.Dimensions) != report.DimensionCount {
+		t.Errorf("stored dimensions = %d, want %d", len(b.State.Dimensions), report.DimensionCount)
+	}
+}
+
+// TestRun_Baseline_IsIdempotent pins the capture contract: the file `archfit
+// baseline` writes is a function of the tree and the config alone.
+//
+// It was not. The capture read the baseline it was about to overwrite, and
+// Balanced-Coupling advisories roll up per (module pair, strength, distance,
+// volatility, STATUS) — so accepting a group's representative split the group
+// on the next run, exposed its siblings as new representatives, and wrote a
+// different file every time. Two captures over an unchanged tree never settled.
+func TestRun_Baseline_IsIdempotent(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeCoupledRepo(t, distributedMonolithCfg)
+	path := filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath)
+
+	capture := func() []byte {
+		t.Helper()
+		var buf bytes.Buffer
+		if code := Run([]string{cmdBaseline, "-c", cfgPath}, &buf); code != 0 {
+			t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // path derives from t.TempDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+
+	first := capture()
+	second := capture()
+	if !bytes.Equal(first, second) {
+		t.Errorf("second capture over an unchanged tree differs from the first\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
 }
 

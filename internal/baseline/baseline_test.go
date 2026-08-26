@@ -8,7 +8,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/model/report"
@@ -215,88 +214,134 @@ func TestEntries(t *testing.T) {
 	}
 }
 
-// TestEffectiveRubricVersion pins the legacy read: a snapshot written before
-// rubric tracking stores 0 but was banded under rubric 1, so both the
-// compatibility check and any disclosure must see 1, never the raw 0.
-func TestEffectiveRubricVersion(t *testing.T) {
-	tests := []struct {
-		name string
-		s    baseline.ScoreSnapshot
-		want int
-	}{
-		{name: "missing reads as the pre-tracking rubric", want: 1},
-		{name: "stored value is used verbatim", s: baseline.ScoreSnapshot{RubricVersion: 7}, want: 7},
+// TestLoad_LegacySchemaStaysReadable pins the migration contract: a pre-state
+// baseline keeps its accepted fingerprints (those are acceptance decisions the
+// owner made) and is recognised as legacy so no caller can read its absent seam
+// snapshot as "there were no seams then".
+func TestLoad_LegacySchemaStaysReadable(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	data, _ := json.Marshal(map[string]any{
+		"schema_version": baseline.LegacySchemaVersion,
+		"accepted":       []any{map[string]any{"fingerprint": fpA, "rule_id": "r1"}},
+		"score":          map[string]any{"coupling_balance": 42, "band": bandMixed},
+	})
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.s.EffectiveRubricVersion(); got != tc.want {
-				t.Errorf("EffectiveRubricVersion() = %d, want %d", got, tc.want)
-			}
-		})
+
+	b, err := baseline.Load(ctx, path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !b.Legacy() {
+		t.Error("Legacy() = false, want true for a v1 baseline")
+	}
+	if !b.HasFingerprint(fpA) {
+		t.Errorf("accepted fingerprint %q was dropped", fpA)
+	}
+	if b.State != nil {
+		t.Error("a legacy baseline must carry no architecture-state reference")
 	}
 }
 
-// TestCouplingScore locks the max_drop anchor contract: only a snapshot
-// compatible with the current scorer AND rubric anchors a drop. A snapshot
-// written before rubric tracking is read as rubric 1 and still anchors; any
-// other mismatch returns nil and names the incompatible input (a scorer or
-// rubric change is a methodology change, not a regression).
-func TestCouplingScore(t *testing.T) {
-	tests := []struct {
-		name          string
-		b             baseline.Baseline
-		want          *int
-		wantMismatchs []string
-	}{
-		{
-			name: "no snapshot",
-			b:    baseline.Baseline{},
-		},
-		{
-			name:          "legacy snapshot without score_version is stale",
-			b:             baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed}},
-			wantMismatchs: []string{baseline.InputScoreVersion},
-		},
-		{
-			name:          "snapshot from a different scorer version is stale",
-			b:             baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: "bc_score.v3"}},
-			wantMismatchs: []string{baseline.InputScoreVersion},
-		},
-		{
-			// Pre-rubric-tracking snapshot: rubric_version absent reads as 1, the
-			// only rubric shipped so far, so it must keep anchoring.
-			name: "snapshot without rubric_version anchors under rubric 1",
-			b:    baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: report.ScoreVersion}},
-			want: func() *int { v := 42; return &v }(),
-		},
-		{
-			name: "current scorer and rubric anchors",
-			b:    baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: report.ScoreVersion, RubricVersion: score.RubricVersion}},
-			want: func() *int { v := 42; return &v }(),
-		},
-		{
-			name:          "snapshot from a different rubric version is stale",
-			b:             baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: report.ScoreVersion, RubricVersion: score.RubricVersion + 1}},
-			wantMismatchs: []string{baseline.InputRubricVersion},
-		},
-		{
-			name:          "both inputs incompatible name both, scorer first",
-			b:             baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: "bc_score.v3", RubricVersion: score.RubricVersion + 1}},
-			wantMismatchs: []string{baseline.InputScoreVersion, baseline.InputRubricVersion},
-		},
+// TestLoad_NeverRewritesLegacyFile: reading must not upgrade a file its owner
+// never re-reviewed.
+func TestLoad_NeverRewritesLegacyFile(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	raw := []byte(`{"schema_version":"` + baseline.LegacySchemaVersion + `","accepted":[],"metrics":{}}`)
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := tc.b.CouplingScore()
-			switch {
-			case tc.want == nil && got != nil:
-				t.Errorf("CouplingScore() = %d, want nil", *got)
-			case tc.want != nil && (got == nil || *got != *tc.want):
-				t.Errorf("CouplingScore() = %v, want %d", got, *tc.want)
-			}
-			if diff := tc.b.ScoreSnapshotMismatches(); !slices.Equal(diff, tc.wantMismatchs) {
-				t.Errorf("ScoreSnapshotMismatches() = %v, want %v", diff, tc.wantMismatchs)
-			}
-		})
+
+	if _, err := baseline.Load(ctx, path); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	after, err := os.ReadFile(path) //nolint:gosec // path from t.TempDir(), trusted in tests
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(raw, after) {
+		t.Errorf("Load rewrote the file:\n got %s\nwant %s", after, raw)
+	}
+}
+
+// TestSave_DropsRetiredScoreSnapshot: schema v2 has no repository scalar. A
+// carried-over snapshot would invite a consumer to gate on it again.
+func TestSave_DropsRetiredScoreSnapshot(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	in := baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed}}
+
+	if err := baseline.Save(ctx, path, in); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	raw, err := os.ReadFile(path) //nolint:gosec // path from t.TempDir(), trusted in tests
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := m["score"]; present {
+		t.Errorf("score snapshot survived Save: %s", raw)
+	}
+	if m["schema_version"] != baseline.SchemaVersion {
+		t.Errorf("schema_version = %v, want %q", m["schema_version"], baseline.SchemaVersion)
+	}
+}
+
+// TestRoundTrip_StateSnapshot: the architecture-state reference survives a
+// write/read cycle intact — the fingerprints and the facts they qualify travel
+// together or a later delta cannot be trusted.
+func TestRoundTrip_StateSnapshot(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	want := &baseline.StateSnapshot{
+		ConfigHash: "cfg", ModelHash: "mod", LabelsHash: "lbl", RubricVersion: report.ScoreVersion,
+		HardGateFindingIDs: []string{fpA},
+		QualifyingSeamIDs:  []string{"seam-1", "seam-2"},
+		Dimensions: []baseline.DimensionSnapshot{{
+			Name: "coupling", Status: "measured", Gate: "warn",
+			Coverage: baseline.CoverageSnapshot{Basis: "scored edges", Observed: 3, Total: 4},
+			Metrics:  []baseline.MetricSnapshotValue{{Name: "critical_edges", Value: 2, Unit: "count"}},
+		}},
+	}
+
+	if err := baseline.Save(ctx, path, baseline.Baseline{State: want}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := baseline.Load(ctx, path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Legacy() {
+		t.Error("a freshly written baseline must not read as legacy")
+	}
+	if got.State == nil {
+		t.Fatal("state snapshot missing after round trip")
+	}
+	if got.State.ConfigHash != want.ConfigHash || got.State.ModelHash != want.ModelHash ||
+		got.State.LabelsHash != want.LabelsHash || got.State.RubricVersion != want.RubricVersion {
+		t.Errorf("fingerprints changed: got %+v", got.State)
+	}
+	if !slices.Equal(got.State.QualifyingSeamIDs, want.QualifyingSeamIDs) {
+		t.Errorf("seam IDs = %v, want %v", got.State.QualifyingSeamIDs, want.QualifyingSeamIDs)
+	}
+	if !slices.Equal(got.State.HardGateFindingIDs, want.HardGateFindingIDs) {
+		t.Errorf("hard-gate IDs = %v, want %v", got.State.HardGateFindingIDs, want.HardGateFindingIDs)
+	}
+	if len(got.State.Dimensions) != 1 {
+		t.Fatalf("dimensions = %d, want 1", len(got.State.Dimensions))
+	}
+	gotDim, wantDim := got.State.Dimensions[0], want.Dimensions[0]
+	if gotDim.Name != wantDim.Name || gotDim.Status != wantDim.Status ||
+		gotDim.Gate != wantDim.Gate || gotDim.Coverage != wantDim.Coverage ||
+		!slices.Equal(gotDim.Metrics, wantDim.Metrics) {
+		t.Errorf("dimension = %+v, want %+v", gotDim, wantDim)
 	}
 }

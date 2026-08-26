@@ -1,6 +1,7 @@
 package evaluation
 
 import (
+	"sort"
 	"strconv"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
@@ -55,7 +56,7 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 		Complexity:     complexityDimension(in.Facts),
 		Testability:    testabilityDimension(in.Facts),
 		Operations:     operationsDimension(diag, in.Policy, in.RequiredToolFailure),
-		Drift:          driftDimension(diag),
+		Drift:          driftDimension(diag, in.Drift),
 	}
 	for _, dim := range dims.Each() {
 		if refs := routed[dim.Name]; len(refs) > 0 {
@@ -524,27 +525,83 @@ func operationsDimension(diag *result.Result, p policy.PolicySnapshot, requiredT
 	return dim
 }
 
-// driftDimension reports erosion against a comparable reference. It is
-// unmeasured in v1 by contract, not by omission: a pre-state baseline carries a
-// scalar snapshot this binary ignores, so no stored reference can support a
-// comparable dimension or seam delta yet.
-func driftDimension(diag *result.Result) state.Dimension {
+// driftDimension reports erosion against a comparable reference.
+//
+// It is measured only when the stored reference agrees with this run on all
+// four fingerprints. Anything else is unmeasured with the drifted input named:
+// a reference written under a different config, module map, label set, or
+// rubric would turn a policy edit into a reported regression, and a reference
+// that predates the seam ledger records no seams at all — reading that as
+// "there were none" would report every existing seam as newly introduced.
+func driftDimension(diag *result.Result, ref BaselineAnchor) state.Dimension {
 	dim := state.NewDimension(state.DimensionDrift, state.OwnerDrift)
-	reasons := []string{"legacy_score_snapshot_ignored", "no_comparable_state_baseline"}
-	dim.Delta = &state.Delta{Status: state.ComparisonNonComparable, Reasons: reasons}
-	if d := diag.Delta; d != nil {
-		// Accepted finding fingerprints stay usable across the migration, so the
-		// finding-level buckets are real evidence. They are attached as evidence
-		// only: the dimension still reports unmeasured because no metric or seam
-		// on either side is comparable.
-		dim.Delta.NewFindings = d.New
-		dim.Delta.ResolvedFindings = d.Resolved
+	current := qualifyingSeamIDs(diag.Seams)
+	if !ref.SeamsComparable {
+		dim.Delta = &state.Delta{Status: state.ComparisonNonComparable, Reasons: ref.driftReasons()}
+		attachFindingBuckets(dim.Delta, diag.Delta)
+		return unmeasured(dim, state.UnknownFact{
+			Fact:   "architecture drift",
+			Reason: "no comparable architecture-state reference: " + ref.driftReasons()[0],
+			Owner:  state.OwnerDrift,
+		})
 	}
-	return unmeasured(dim, state.UnknownFact{
-		Fact:   "architecture drift",
-		Reason: "no comparable architecture-state baseline exists: a stored baseline records a scalar snapshot this binary ignores",
-		Owner:  state.OwnerDrift,
-	})
+	stored := make(map[string]struct{}, len(ref.QualifyingSeamIDs))
+	for _, id := range ref.QualifyingSeamIDs {
+		stored[id] = struct{}{}
+	}
+	newSeams, resolvedSeams := 0, 0
+	for _, id := range current {
+		if _, known := stored[id]; !known {
+			newSeams++
+		}
+	}
+	currentSet := make(map[string]struct{}, len(current))
+	for _, id := range current {
+		currentSet[id] = struct{}{}
+	}
+	for _, id := range ref.QualifyingSeamIDs {
+		if _, still := currentSet[id]; !still {
+			resolvedSeams++
+		}
+	}
+	dim.Status = state.Measured
+	dim.Confidence = state.ConfidenceFor(dim.Status)
+	dim.Coverage = state.Coverage{
+		Basis:    "distributed-monolith seams compared against the stored reference",
+		Observed: len(current), Total: len(current),
+	}
+	dim.Metrics = []state.MetricValue{
+		{Name: "new_seams", Value: float64(newSeams), Unit: unitCount, Provenance: []string{provAssessment}},
+		{Name: "resolved_seams", Value: float64(resolvedSeams), Unit: unitCount, Provenance: []string{provAssessment}},
+	}
+	dim.Delta = &state.Delta{Status: state.ComparisonComparable}
+	attachFindingBuckets(dim.Delta, diag.Delta)
+	return dim
+}
+
+// attachFindingBuckets carries the finding-level lifecycle buckets onto a drift
+// delta. Accepted finding fingerprints stay usable across the migration even
+// when no metric or seam is comparable, so they are real evidence in both the
+// comparable and the non-comparable case.
+func attachFindingBuckets(delta *state.Delta, d *result.DeltaReport) {
+	if d == nil {
+		return
+	}
+	delta.NewFindings = d.New
+	delta.ResolvedFindings = d.Resolved
+}
+
+// qualifyingSeamIDs lists this run's distributed-monolith seam IDs in stable
+// order.
+func qualifyingSeamIDs(seams []result.Seam) []string {
+	out := make([]string, 0, len(seams))
+	for _, s := range seams {
+		if s.DistributedMonolith {
+			out = append(out, s.ID)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ---------------------------------------------------------------------------

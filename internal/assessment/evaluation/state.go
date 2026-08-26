@@ -20,6 +20,10 @@ type stateInput struct {
 	// RequiredToolFailure is the required-analyzer gate result. It blocks
 	// without producing a finding, so it cannot be inferred from the findings.
 	RequiredToolFailure bool
+	// Drift is the stored architecture-state reference and its comparability.
+	// It is the same anchor the seam gate reads, so the drift dimension and the
+	// gate can never disagree about whether a comparison was admissible.
+	Drift BaselineAnchor
 }
 
 // classified is the one pass over the run's findings that the architecture

@@ -187,6 +187,7 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	hardGate := in.ApplyToolGate && applyToolGate(diag, in.RequireTools)
 	diag.State = buildState(diag, stateInput{
 		Policy: in.Policy, Facts: in.Facts, RuleTypes: ruleTypes, RequiredToolFailure: hardGate,
+		Drift: in.Anchor,
 	})
 	return Scored{Score: finalized.Score, GateReasons: finalized.GateReasons, HardGate: hardGate}
 }

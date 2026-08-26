@@ -76,14 +76,33 @@ func (baselineLoaderAdapter) Load(ctx context.Context, bundleDir string) (applic
 	if err != nil {
 		return application.Baseline{}, err
 	}
-	out := application.Baseline{
-		Accepted: b, Metrics: b.Metrics,
-		SnapshotMismatches: b.ScoreSnapshotMismatches(),
-	}
-	if b.Score != nil {
-		out.ScoreVersion, out.RubricVersion = b.Score.ScoreVersion, b.Score.EffectiveRubricVersion()
+	out := application.Baseline{Accepted: b, Metrics: b.Metrics, Legacy: b.Legacy()}
+	if b.State != nil {
+		out.State = &application.BaselineStateSnapshot{
+			ConfigHash: b.State.ConfigHash, ModelHash: b.State.ModelHash,
+			LabelsHash: b.State.LabelsHash, RubricVersion: b.State.RubricVersion,
+			HardGateFindingIDs: b.State.HardGateFindingIDs,
+			QualifyingSeamIDs:  b.State.QualifyingSeamIDs,
+			Dimensions:         loadedDimensions(b.State.Dimensions),
+		}
 	}
 	return out, nil
+}
+
+func loadedDimensions(in []baseline.DimensionSnapshot) []application.BaselineDimension {
+	out := make([]application.BaselineDimension, 0, len(in))
+	for _, d := range in {
+		dim := application.BaselineDimension{
+			Name: d.Name, Status: d.Status, Gate: d.Gate,
+			CoverageBasis: d.Coverage.Basis, CoverageObserved: d.Coverage.Observed, CoverageTotal: d.Coverage.Total,
+			Metrics: make([]application.BaselineMetric, 0, len(d.Metrics)),
+		}
+		for _, m := range d.Metrics {
+			dim.Metrics = append(dim.Metrics, application.BaselineMetric{Name: m.Name, Value: m.Value, Unit: m.Unit})
+		}
+		out = append(out, dim)
+	}
+	return out
 }
 
 type baselineWriterAdapter struct{}
@@ -93,8 +112,30 @@ func (baselineWriterAdapter) Save(ctx context.Context, path string, in applicati
 	for _, f := range in.Accepted {
 		b.Accepted = append(b.Accepted, baseline.AcceptedFinding{Fingerprint: f.Fingerprint, RuleID: f.RuleID, Kind: f.Kind, Severity: f.Severity})
 	}
-	if in.Score != nil {
-		b.Score = &baseline.ScoreSnapshot{CouplingBalance: in.Score.CouplingBalance, Band: in.Score.Band, ScoreVersion: in.Score.ScoreVersion, RubricVersion: in.Score.RubricVersion}
+	if in.State != nil {
+		b.State = &baseline.StateSnapshot{
+			ConfigHash: in.State.ConfigHash, ModelHash: in.State.ModelHash,
+			LabelsHash: in.State.LabelsHash, RubricVersion: in.State.RubricVersion,
+			HardGateFindingIDs: in.State.HardGateFindingIDs,
+			QualifyingSeamIDs:  in.State.QualifyingSeamIDs,
+			Dimensions:         savedDimensions(in.State.Dimensions),
+		}
 	}
 	return baseline.Save(ctx, path, b)
+}
+
+func savedDimensions(in []application.BaselineDimension) []baseline.DimensionSnapshot {
+	out := make([]baseline.DimensionSnapshot, 0, len(in))
+	for _, d := range in {
+		dim := baseline.DimensionSnapshot{
+			Name: d.Name, Status: d.Status, Gate: d.Gate,
+			Coverage: baseline.CoverageSnapshot{Basis: d.CoverageBasis, Observed: d.CoverageObserved, Total: d.CoverageTotal},
+			Metrics:  make([]baseline.MetricSnapshotValue, 0, len(d.Metrics)),
+		}
+		for _, m := range d.Metrics {
+			dim.Metrics = append(dim.Metrics, baseline.MetricSnapshotValue{Name: m.Name, Value: m.Value, Unit: m.Unit})
+		}
+		out = append(out, dim)
+	}
+	return out
 }
