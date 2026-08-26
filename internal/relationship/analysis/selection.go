@@ -36,6 +36,11 @@ type AbstainedPair struct {
 // RefinablePairs selects unresolved or heuristic-strength module pairs for
 // semantic review. Relationship interpretation stays here; callers receive
 // prompt-ready data.
+//
+// It walks EVERY edge kind, matching classify.Run and PairEvidence. Narrowing to
+// dependency kinds hides the pairs whose only edges are `belongs_to` (the Rust
+// cargo-modules containment edges): they are still classified, still scored, and
+// still depress coupling_balance, so they must stay labelable.
 func RefinablePairs(set relationship.Set, approved map[string]struct{}) []RefinablePair {
 	type aggregate struct {
 		strength string
@@ -43,7 +48,7 @@ func RefinablePairs(set relationship.Set, approved map[string]struct{}) []Refina
 		samples  []string
 	}
 	pairs := map[string]*aggregate{}
-	for _, edge := range set.DependencyEdges() {
+	for _, edge := range set.Edges {
 		if edge.Strength != relationship.StrengthFunctional && edge.Strength != relationship.StrengthModel && edge.Strength != relationship.StrengthUnknown {
 			continue
 		}
@@ -73,10 +78,11 @@ func RefinablePairs(set relationship.Set, approved map[string]struct{}) []Refina
 
 // AbstainedPairs selects unknown-strength cross-module edges for review and
 // reports the total number of abstained edges, including those beyond edgeCap.
+// It walks every edge kind for the same reason RefinablePairs does.
 func AbstainedPairs(set relationship.Set, approved map[string]struct{}, edgeCap, sampleCap int) (pairs []AbstainedPair, total int) {
 	byKey := map[string]*AbstainedPair{}
 	included := 0
-	for _, edge := range set.DependencyEdges() {
+	for _, edge := range set.Edges {
 		if edge.Strength != relationship.StrengthUnknown {
 			continue
 		}

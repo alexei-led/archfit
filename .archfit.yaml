@@ -317,19 +317,11 @@ rules:
     from: internal/relationship/**
     to: internal/toolrun
     gate: fail
-  - id: rules_no_toolrun
+  # Subtree form, not a per-package enumeration: a new assessment package is
+  # covered the day it is created, never the day someone remembers to list it.
+  - id: assessment_no_toolrun
     type: forbidden_dependency
-    from: internal/assessment/rules/**
-    to: internal/toolrun
-    gate: fail
-  - id: metrics_no_toolrun
-    type: forbidden_dependency
-    from: internal/assessment/metrics/**
-    to: internal/toolrun
-    gate: fail
-  - id: status_no_toolrun
-    type: forbidden_dependency
-    from: internal/assessment/status/**
+    from: internal/assessment/**
     to: internal/toolrun
     gate: fail
   - id: core_no_extract
@@ -337,9 +329,9 @@ rules:
     from: internal/relationship/**
     to: internal/extract/**
     gate: fail
-  - id: rules_no_extract
+  - id: assessment_no_extract
     type: forbidden_dependency
-    from: internal/assessment/rules/**
+    from: internal/assessment/**
     to: internal/extract/**
     gate: fail
   - id: internal_no_labelsio
@@ -471,24 +463,14 @@ rules:
     from: internal/relationship/**
     to: internal/config
     gate: fail
-  - id: rules_no_config
+  - id: assessment_no_config
     type: forbidden_dependency
-    from: internal/assessment/rules/**
-    to: internal/config
-    gate: fail
-  - id: metrics_no_config
-    type: forbidden_dependency
-    from: internal/assessment/metrics/**
+    from: internal/assessment/**
     to: internal/config
     gate: fail
   - id: extract_no_config
     type: forbidden_dependency
     from: internal/extract/**
-    to: internal/config
-    gate: fail
-  - id: staleness_no_config
-    type: forbidden_dependency
-    from: internal/assessment/staleness/**
     to: internal/config
     gate: fail
   - id: scope_no_config
@@ -501,29 +483,9 @@ rules:
     from: internal/relationship/facts/**
     to: internal/config
     gate: fail
-  - id: status_no_config
-    type: forbidden_dependency
-    from: internal/assessment/status/**
-    to: internal/config
-    gate: fail
   - id: syntax_no_config
     type: forbidden_dependency
     from: internal/syntax/**
-    to: internal/config
-    gate: fail
-  - id: score_no_config
-    type: forbidden_dependency
-    from: internal/assessment/score/**
-    to: internal/config
-    gate: fail
-  - id: decision_no_config
-    type: forbidden_dependency
-    from: internal/assessment/decision/**
-    to: internal/config
-    gate: fail
-  - id: agenttask_no_config
-    type: forbidden_dependency
-    from: internal/assessment/agenttask/**
     to: internal/config
     gate: fail
   - id: report_ports_no_config

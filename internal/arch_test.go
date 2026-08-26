@@ -53,6 +53,17 @@ var coreRingPkgs = []string{
 	// decision converts a Diagnostic + Scorecard into a human-decision view-model —
 	// pure synthesis, no I/O, no subprocess, no YAML.
 	modulePrefix + "internal/assessment/decision",
+	// The capability migration's assessment packages: evaluation runs the
+	// rule/metric/verdict pass, the other three are its contract types.
+	modulePrefix + "internal/assessment/evaluation",
+	modulePrefix + "internal/assessment/finding",
+	modulePrefix + "internal/assessment/result",
+	modulePrefix + "internal/assessment/signals",
+	modulePrefix + "internal/assessment/agenttask",
+	// Relationship capability packages split out of the dissolved engine.
+	modulePrefix + "internal/relationship/analysis",
+	modulePrefix + "internal/relationship/scoring",
+	modulePrefix + "internal/relationship/coupling",
 	// scope resolves the analysis boundary from config + git; it uses os.Stat
 	// and filepath.EvalSymlinks for path canonicalization (justified I/O — no
 	// subprocess, no YAML, no adapter). Excluded from the os-forbidden check.
@@ -67,16 +78,13 @@ var coreRingPkgs = []string{
 // family sub-packages (boundary, modularity, internal/result), so a prefix match
 // keeps every current and future sub-package covered without editing this list.
 var coreRingPrefixes = []string{
+	// Subtree prefixes, not a package enumeration: the capability migration added
+	// evaluation/finding/result/signals under internal/assessment, and an
+	// enumeration silently leaves each new package unguarded.
 	modulePrefix + "internal/relationship",
-	modulePrefix + "internal/assessment/rules",
-	modulePrefix + "internal/assessment/metrics",
-	modulePrefix + "internal/assessment/status",
-	modulePrefix + "internal/assessment/staleness",
-	modulePrefix + "internal/relationship/facts",
-	modulePrefix + "internal/assessment/score",
+	modulePrefix + "internal/assessment",
 	modulePrefix + "internal/scope",
 	modulePrefix + "internal/syntax",
-	modulePrefix + "internal/assessment/decision",
 }
 
 // inCoreRing reports whether pkgPath is a core-ring package: an exact prefix
@@ -775,16 +783,22 @@ func isModelPkg(imp string) bool {
 	return strings.HasPrefix(imp, modulePrefix+"internal/model/")
 }
 
-// TestInCoreRing verifies the prefix matcher covers metrics family sub-packages
-// without over-matching a same-prefix sibling (e.g. "internal/assessment/metricsx").
+// TestInCoreRing verifies the prefix matcher covers every assessment and
+// relationship sub-package without over-matching a same-prefix sibling
+// (e.g. "internal/assessmentx").
 func TestInCoreRing(t *testing.T) {
 	cases := map[string]bool{
 		modulePrefix + "internal/assessment/metrics":                 true,
 		modulePrefix + "internal/assessment/metrics/boundary":        true,
 		modulePrefix + "internal/assessment/metrics/internal/result": true,
+		modulePrefix + "internal/assessment/evaluation":              true,
+		modulePrefix + "internal/assessment/finding":                 true,
+		modulePrefix + "internal/assessment/result":                  true,
+		modulePrefix + "internal/assessment/signals":                 true,
+		modulePrefix + "internal/relationship/analysis":              true,
 		modulePrefix + "internal/scope":                              true,
 		modulePrefix + "internal/output/markdown":                    false,
-		modulePrefix + "internal/assessment/metricsx":                false, // must not over-match the prefix
+		modulePrefix + "internal/assessmentx":                        false, // must not over-match the prefix
 	}
 	for path, want := range cases {
 		if got := inCoreRing(path); got != want {

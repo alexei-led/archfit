@@ -345,13 +345,15 @@ const (
 	enrichmentStrengthContract   = "contract"
 	enrichmentStrengthFunctional = "functional"
 	enrichmentStrengthModel      = "model"
+	enrichmentStrengthSymmetric  = "symmetric"
 	enrichmentStrengthIntrusive  = "intrusive"
 )
 
 // ValidEnrichmentStrength validates a provider-proposed strength.
 func ValidEnrichmentStrength(s string) bool {
 	switch s {
-	case enrichmentStrengthContract, enrichmentStrengthFunctional, enrichmentStrengthModel, enrichmentStrengthIntrusive:
+	case enrichmentStrengthContract, enrichmentStrengthFunctional, enrichmentStrengthModel,
+		enrichmentStrengthSymmetric, enrichmentStrengthIntrusive:
 		return true
 	default:
 		return false

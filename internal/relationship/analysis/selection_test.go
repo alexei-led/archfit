@@ -240,3 +240,32 @@ func TestAugmentConfig_RegistersSyntheticRustModules(t *testing.T) {
 		}
 	}
 }
+
+// belongsToSet mirrors the Rust cargo-modules containment shape: a cross-module
+// edge whose only kind is belongs_to, with no strength hint.
+func belongsToSet(strength relationship.Strength) relationship.Set {
+	set := selSet(selEdge{pathA1, pathB1, modA, modB, strength, crossOwner, "", 0})
+	set.Edges[0].Kind = "belongs_to"
+	return set
+}
+
+// TestSelection_CoversNonDependencyEdgeKinds pins that selection walks every
+// edge kind. classify scores belongs_to edges and they depress coupling_balance,
+// so narrowing selection to dependency kinds would make them scored-but-unlabelable.
+func TestSelection_CoversNonDependencyEdgeKinds(t *testing.T) {
+	t.Parallel()
+	t.Run("refinable", func(t *testing.T) {
+		t.Parallel()
+		got := analysis.RefinablePairs(belongsToSet(relationship.StrengthFunctional), nil)
+		if len(got) != 1 || got[0].From != modA || got[0].To != modB {
+			t.Fatalf("pairs = %+v, want exactly a->b", got)
+		}
+	})
+	t.Run("abstained", func(t *testing.T) {
+		t.Parallel()
+		pairs, total := analysis.AbstainedPairs(belongsToSet(relationship.StrengthUnknown), nil, 100, 5)
+		if total != 1 || len(pairs) != 1 || pairs[0].From != modA || pairs[0].To != modB {
+			t.Fatalf("pairs = %+v, total = %d, want exactly a->b", pairs, total)
+		}
+	})
+}
