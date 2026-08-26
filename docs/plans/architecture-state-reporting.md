@@ -976,15 +976,15 @@ Manual checks:
 - Confirm report-only mode still renders a failing gate while preserving command
   exit semantics.
 
-- [ ] Slice 4A: reproduce baseline non-idempotence, fix it, implement baseline v2
+- [x] Slice 4A: reproduce baseline non-idempotence, fix it, implement baseline v2
       plus old-baseline reads, compare semantics, focused tests, and commit.
-- [ ] Slice 4B: implement primary JSON v1 plus `legacy-json`, double-run byte
+- [x] Slice 4B: implement primary JSON v1 plus `legacy-json`, double-run byte
       identity, stable ordering, schema tests, and commit. Use `jq -e` for
       required fields so absent state cannot pass verification.
-- [ ] Slice 4C: implement text/console and Markdown headline and normalized parity; commit.
-- [ ] Slice 4D: implement SARIF run properties and state scorecard while
+- [x] Slice 4C: implement text/console and Markdown headline and normalized parity; commit.
+- [x] Slice 4D: implement SARIF run properties and state scorecard while
       preserving finding identity; commit.
-- [ ] Slice 4E: update CLI dispatch/help/exit contract and user docs; run
+- [x] Slice 4E: update CLI dispatch/help/exit contract and user docs; run
       cross-format, golden, compare, explain, and shell exit tests; commit.
 
 ### Task 5: Finalize v1 evidence status, self-config, and erosion controls

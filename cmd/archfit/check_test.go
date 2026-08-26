@@ -34,13 +34,21 @@ func runArchfit(t *testing.T, args ...string) (int, string, string) {
 	return code, stdout.String(), stderr.String()
 }
 
-func TestRun_Check_ExitCodeZeroOnCleanConfig(t *testing.T) {
+// TestRun_Check_CleanConfigDoesNotBlock pins the frozen exit table's
+// non-blocking half: a config with nothing to violate is healthy (0) or
+// needs_attention (2), never blocked (1) and never a usage error (3).
+//
+// Exit 0 specifically is not asserted. V1 reports complexity, testability, and
+// operations partial by contract, and any partial dimension is needs_attention
+// — fabricating healthy on a fixture would be exactly the implicit green result
+// the architecture-state contract exists to prevent.
+func TestRun_Check_CleanConfigDoesNotBlock(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeCheckFixtureRepo(t, "golang")
 
 	code, stdout, stderr := runArchfit(t, cmdCheck, "-c", cfgPath)
-	if code != 0 {
-		t.Fatalf("check clean config: exit = %d, want 0\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	if code == 1 || code == 3 {
+		t.Fatalf("check clean config: exit = %d, want 0 or 2\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 	}
 }
 

@@ -384,9 +384,11 @@ func testCompareBaselineIsolation(t *testing.T) {
 	if code, stdout, stderr := runArchfit(t, cmdBaseline, "-c", cfgPath); code != 0 {
 		t.Fatalf("baseline: exit = %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 	}
-	// The baseline is load-bearing: it silences the violation for the gate.
-	if code, _, stderr := runArchfit(t, cmdCheck, "-c", cfgPath); code != 0 {
-		t.Fatalf("baseline did not accept the finding: check exit = %d\nstderr:\n%s", code, stderr)
+	// The baseline is load-bearing: it silences the violation for the gate, so
+	// the run stops blocking. It does not become healthy — v1 reports several
+	// dimensions partial by contract — so the assertion is "no longer blocked".
+	if code, _, stderr := runArchfit(t, cmdCheck, "-c", cfgPath); code == 1 {
+		t.Fatalf("baseline did not accept the finding: check still blocked\nstderr:\n%s", stderr)
 	}
 
 	afterCode, after, afterErr := runArchfit(t, cmdConfig, cmdCompare, cfgPath, flagJSON, "-c", cfgPath)

@@ -469,6 +469,51 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `no_analysispipeline` block the dissolved packages from returning — the test
   fails if either guard is deleted, and also if either starts matching real
   source. Moving a package means updating the owning `paths:` in the same commit.
+- **The primary output is `archfit.architecture-state.v1`** (`internal/model/report/state.go`,
+  rendered by `internal/output/jsonout.StateRenderer`). `--format json` emits the
+  state AT THE DOCUMENT ROOT — `verdict`, `decision`, `comparison`, `measurement`,
+  the nine `dimensions` keys, `coverage`, `findings`, `agent_tasks`, `seams` — with
+  no repository scalar. `--format legacy-json` emits the pre-cutover diagnostic
+  envelope (`jsonout.JSONRenderer`) for exactly one release; it must be selected
+  explicitly and never reaches the verdict or the exit code. Tests that assert on a
+  diagnostic-only block (`tool_coverage` detail, `owner_source`, `config_warnings`,
+  `git_finding_delta`, `advisory_tasks`) must use `legacy-json` — the state
+  contract does not carry them. Text, Markdown, SARIF, and scorecard all report the
+  same verdict, dimension statuses, coverage split, and finding IDs
+  (`cmd/archfit.TestFormatMatrix_CrossFormatParity`,
+  `TestFormatMatrix_SarifCarriesTheState`); SARIF is exempt from human LAYOUT
+  parity only — the state rides in `run.properties` and finding identity (ruleId,
+  ruleIndex, `archfit/v1` fingerprint) is unchanged by the cutover.
+- **`check` exit code IS the state verdict** (`application.outcomeFor`):
+  `healthy` → 0, `needs_attention` → 2, `blocked` → 1, error → 3. Nothing else
+  participates — a required-analyzer gate and a failing hard rule both reach the
+  verdict through the state's own hard-gate result, so a second condition at the
+  application layer could only disagree with the report the same run printed.
+  **Expect 2, not 0, on a clean repo in v1**: complexity, testability, and
+  operations report `partial` by contract, and any partial dimension is
+  `needs_attention`. `make archfit` accepts 0 or 2; only 1 fails it. A coupling
+  advisory is a diagnostic and can never reach exit 1.
+- **Baseline schema v2** (`internal/baseline`, `SchemaVersion =
+  "archfit.baseline.v2"`). Stores accepted findings, the metric snapshot, and the
+  architecture-state reference: the four comparison fingerprints (`config_hash`,
+  `model_hash`, `labels_hash`, `rubric_version`) travelling with the facts they
+  qualify — hard-gate finding IDs, distributed-monolith seam IDs, and the nine
+  dimension snapshots. NO repository scalar is written. A v1 file stays readable
+  for its accepted fingerprints, is never rewritten on read, and can never support
+  a state/dimension/seam comparison — the refusal is reported as
+  `application.LegacyScoreIgnored` ("legacy_score_snapshot_ignored").
+  `seamAnchor` (`internal/application/analysis.go`) is comparable only when
+  `decision.CompareFingerprints` finds all four equal, and the SAME anchor feeds
+  both the seam gate and the drift dimension, so the two cannot disagree about
+  whether a comparison was admissible.
+- **`archfit baseline` capture is a pure function of tree + config**
+  (`BaselineService.Execute` runs with `EmptyBaseline: true`). Reading the file it
+  was about to overwrite made the capture self-referential: BC advisories roll up
+  per `(module pair, strength, distance, volatility, STATUS)`, so accepting a
+  group's representative split the group on the next run, exposed its siblings as
+  new representatives, and wrote a different file every time. Three captures on
+  this repo produced 108, 164, then 148 accepted entries and never settled
+  (`cmd/archfit.TestRun_Baseline_IsIdempotent`).
 - Parse config once into typed views; pass a package its view, not the whole config.
 - LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `config enrich`,
   `config init --ai-classify`, `config update --ai-classify`, `analyze --ai-summary`, and `explain --ai-summary`

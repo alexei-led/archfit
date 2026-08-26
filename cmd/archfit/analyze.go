@@ -37,7 +37,8 @@ type AnalyzeCmd struct {
 	Sarif    bool `name:"sarif"    help:"Output format: SARIF (shorthand for --format sarif)."`
 
 	// Format is the advanced repeatable form. Default is text when no shorthand
-	// flag is set. Valid values: json, text, markdown, md, sarif, scorecard.
+	// flag is set. Valid values: json, text, markdown, md, sarif, scorecard,
+	// legacy-json.
 	Format []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard, legacy-json. Repeatable." enum:"json,text,markdown,md,sarif,scorecard,legacy-json"`
 
 	NoAdvisories bool     `name:"no-advisories" help:"Hide informational Balanced-Coupling advisories from the output."`
@@ -55,18 +56,25 @@ type AnalyzeCmd struct {
 }
 
 func (*AnalyzeCmd) Help() string {
-	return `Analyze architecture locally: run the full pipeline, print a verdict, scorecard, and findings.
+	return `Analyze architecture locally: run the full pipeline and print the architecture state — verdict, nine dimensions, evidence coverage, seams, and findings.
 
-This command is report-only: it always exits 0 on success. Use ` + "`archfit check`" + ` in CI when findings or warnings should fail the run.
+This command is report-only: it always exits 0 on success, whatever the verdict.
+Use ` + "`archfit check`" + ` in CI when a blocked or needs-attention state should fail the run.
 
 Common runs:
   archfit analyze                               # local text report
   archfit analyze --markdown -c .archfit.yaml   # Markdown audit report
   archfit analyze --json -c .archfit.yaml | jq .
   archfit analyze --format sarif > archfit.sarif
-  archfit analyze --format scorecard            # banded scorecard only
-  archfit analyze --base origin/main            # add a base-vs-head delta
+  archfit analyze --format scorecard            # nine-dimension state scorecard
+  archfit analyze --base origin/main            # add a base-vs-head comparison
   archfit analyze --ai-summary -c .archfit.yaml # add AI narrative section
+
+--format json emits archfit.architecture-state.v1: verdict, decision,
+dimensions, coverage, findings, agent_tasks, and the coupling seam ledger, with
+no repository score. --format legacy-json emits the pre-cutover diagnostic
+envelope; it is retained for one release, must be selected explicitly, and never
+affects the verdict or the exit code.
 
 AI agents should read agent_tasks[] from JSON output, make the constrained
 repair, then rerun the validation command in that task.

@@ -128,8 +128,12 @@ func TestRun_Check_DistributedMonolithSeamIsDiagnostic(t *testing.T) {
 			cfgPath := writeCoupledRepo(t, tc.cfg)
 
 			var buf bytes.Buffer
-			if code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh}, &buf); code != 0 {
-				t.Fatalf("check: exit = %d, want 0 — a coupling seam is diagnostic\noutput:\n%s", code, buf.String())
+			// A coupling seam is diagnostic: it may reach needs_attention
+			// (exit 2), never blocked (exit 1). Exit 0 is not asserted —
+			// v1 reports several dimensions partial by contract, so a clean
+			// fixture is needs_attention, not healthy.
+			if code := Run([]string{cmdCheck, fmtLegacyJSON, "-c", cfgPath, flagRefresh}, &buf); code == 1 || code == 3 {
+				t.Fatalf("check: exit = %d, want 0 or 2 — a coupling seam is diagnostic\noutput:\n%s", code, buf.String())
 			}
 			var diag result.Result
 			if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
@@ -221,8 +225,8 @@ func TestRun_Analyze_UnmeasurableCouplingStaysSilent(t *testing.T) {
 
 	var buf, errBuf bytes.Buffer
 	code := RunWithStderr([]string{cmdCheck, "-c", cfgPath, flagRefresh}, &buf, &errBuf)
-	if code != 0 {
-		t.Fatalf("check on unmeasurable coupling: exit = %d, want 0\noutput:\n%s", code, buf.String())
+	if code == 1 || code == 3 {
+		t.Fatalf("check on unmeasurable coupling: exit = %d, want 0 or 2 — nothing was measured to block on\noutput:\n%s", code, buf.String())
 	}
 	if strings.Contains(errBuf.String(), "distributed-monolith seam") {
 		t.Errorf("unmeasurable run disclosed a seam abstention:\n%s", errBuf.String())

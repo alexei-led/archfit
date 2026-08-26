@@ -14,6 +14,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/assessment/state"
 	"github.com/alexei-led/archfit/internal/evidence"
 	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
@@ -501,14 +502,22 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 	}, nil
 }
 
-// outcomeFor maps the analysis verdict and the hard analyzer gate onto the
-// use-case outcome. A hard gate outranks the verdict: a required analyzer that
-// did not run means the run never measured what the policy asked for.
+// outcomeFor maps the architecture verdict onto the use-case outcome.
+//
+// The verdict is the single source: blocked → fail, needs_attention → warn,
+// healthy → pass. A required-analyzer gate and a failing hard rule both reach
+// the verdict through the state's own hard-gate result, so there is nothing left
+// to outrank it here — a second condition at this layer could only disagree with
+// the report the same run just printed.
+//
+// A run with only coupling advisories is needs_attention, which is exit 2 for
+// check and still exit 0 for analyze. It is never exit 1: a diagnostic is not a
+// blocker.
 func outcomeFor(out AnalysisResult) Outcome {
-	switch {
-	case out.HardGate, out.Diagnostic.Verdict == result.VerdictFail:
+	switch out.Diagnostic.State.Verdict {
+	case state.Blocked:
 		return OutcomeFail
-	case out.Diagnostic.Verdict == result.VerdictWarn:
+	case state.NeedsAttention:
 		return OutcomeWarn
 	default:
 		return OutcomePass

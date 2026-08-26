@@ -75,6 +75,11 @@ make archfit                                    # dogfood the configured gate
 pre-commit run --all-files
 ```
 
+`make archfit` runs `archfit check` and accepts exit `0` (healthy) or `2`
+(needs attention); only exit `1` (blocked) fails it. Expect `2` on this repo:
+complexity, testability, and operations report `partial` by contract, and a
+partial dimension is never reported as healthy.
+
 Regenerate mocks after changing interfaces under `internal/evidence/ports`:
 
 ```sh

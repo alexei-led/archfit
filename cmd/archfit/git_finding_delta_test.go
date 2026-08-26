@@ -227,7 +227,11 @@ func testGitDeltaCheckBaseJSON(t *testing.T) {
 		extraArgs []string
 		wantCode  int
 	}{
-		{name: "clean gate exits 0", cfgBody: coupledModulesCfg, wantCode: 0},
+		// No rule to violate, so nothing blocks. The run is still
+		// needs_attention (exit 2): v1 reports complexity, testability, and
+		// operations partial by contract, and a partial dimension is never
+		// reported as healthy.
+		{name: "clean gate exits 2", cfgBody: coupledModulesCfg, wantCode: 2},
 		{name: "blocking rule exits 1", cfgBody: coupledModulesCfg + failRule, wantIntroduced: 1, wantCode: 1},
 		{name: "warning rule exits 2", cfgBody: coupledModulesCfg + warnRule, wantCode: 2},
 		// The synthetic coupling-gate task's unknown-origin placement is pinned

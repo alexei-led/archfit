@@ -12,6 +12,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/assessment/state"
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
@@ -138,29 +139,69 @@ func TestStageExecutorRequiresEveryStage(t *testing.T) {
 
 // The verdict and the hard coupling gate map onto the use-case outcome; the CLI
 // owns the exit code, not this layer.
-func TestServiceOutcomeFromVerdictAndHardGate(t *testing.T) {
+func TestServiceOutcomeFromStateVerdict(t *testing.T) {
 	for _, test := range []struct {
-		name     string
-		verdict  result.Verdict
-		hardGate bool
-		want     Outcome
+		name    string
+		verdict state.Verdict
+		want    Outcome
 	}{
-		{name: "pass", verdict: result.VerdictPass, want: OutcomePass},
-		{name: string(OutcomeWarn), verdict: result.VerdictWarn, want: OutcomeWarn},
-		{name: "fail", verdict: result.VerdictFail, want: OutcomeFail},
-		{name: "hard gate over a pass verdict", verdict: result.VerdictPass, hardGate: true, want: OutcomeFail},
-		{name: "hard gate over a warn verdict", verdict: result.VerdictWarn, hardGate: true, want: OutcomeFail},
+		{name: "healthy", verdict: state.Healthy, want: OutcomePass},
+		{name: string(OutcomeWarn), verdict: state.NeedsAttention, want: OutcomeWarn},
+		{name: "blocked", verdict: state.Blocked, want: OutcomeFail},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got := outcomeFor(AnalysisResult{
-				Diagnostic: result.Result{Verdict: test.verdict},
+				Diagnostic: result.Result{State: state.Architecture{Verdict: test.verdict}},
 				Score:      score.Scorecard{},
-				HardGate:   test.hardGate,
 			})
 			if got != test.want {
 				t.Errorf("Outcome = %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+// TestServiceOutcomeIgnoresTheLegacyVerdict: the architecture verdict is the
+// single source for the exit code. A stale diagnostic verdict or a hard-gate
+// flag the state already accounted for must not move it, or the process status
+// could disagree with the report the same run printed.
+func TestServiceOutcomeIgnoresTheLegacyVerdict(t *testing.T) {
+	got := outcomeFor(AnalysisResult{
+		Diagnostic: result.Result{
+			Verdict: result.VerdictFail,
+			State:   state.Architecture{Verdict: state.NeedsAttention},
+		},
+		HardGate: true,
+	})
+	if got != OutcomeWarn {
+		t.Errorf("Outcome = %q, want %q — the state verdict decides", got, OutcomeWarn)
+	}
+}
+
+// TestCouplingDiagnosticsNeverBlock is the migration's exit-code fitness gate:
+// a run whose only active findings are coupling advisories is needs_attention,
+// which is exit 2 for check and exit 0 for analyze. It is never exit 1.
+func TestCouplingDiagnosticsNeverBlock(t *testing.T) {
+	dims := state.New().Dimensions
+	for _, dim := range dims.Each() {
+		dim.Status = state.Measured
+	}
+	dims.Coupling.Gate = state.GateWarn
+	dims.Coupling.Findings = []state.FindingRef{
+		{ID: "adv-1", RuleID: "bc/imbalanced_coupling", Kind: "advisory", Status: configUpdateTestNew},
+	}
+	verdict, decision := state.Decide(state.DecisionInput{
+		HardGates: state.HardGatePass, ActiveBlockers: 0, ActiveDiagnostics: 1,
+		Dimensions: dims.Signals(),
+	})
+	if verdict != state.NeedsAttention {
+		t.Fatalf("verdict = %q, want %q for a coupling-advisories-only run", verdict, state.NeedsAttention)
+	}
+	if decision.ActiveBlockers != 0 {
+		t.Errorf("active blockers = %d, want 0 — a diagnostic is not a blocker", decision.ActiveBlockers)
+	}
+	if got := outcomeFor(AnalysisResult{Diagnostic: result.Result{State: state.Architecture{Verdict: verdict}}}); got != OutcomeWarn {
+		t.Errorf("Outcome = %q, want %q (check exit 2, analyze exit 0, never exit 1)", got, OutcomeWarn)
 	}
 }
 

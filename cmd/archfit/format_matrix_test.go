@@ -110,7 +110,11 @@ func TestFormatMatrix_ExitCodesUnchanged(t *testing.T) {
 			cfg  func(*testing.T) string
 			want int
 		}{
-			{name: "clean", cfg: func(t *testing.T) string { return writeCheckFixtureRepo(t, "golang") }, want: 0},
+			// V1 reports complexity, testability, and operations partial by
+			// contract, and any partial dimension is needs_attention — so a
+			// fixture with nothing to violate is 2, not 0. Fabricating healthy
+			// here is the implicit green result the contract prevents.
+			{name: "clean", cfg: func(t *testing.T) string { return writeCheckFixtureRepo(t, "golang") }, want: 2},
 			{name: "violated", cfg: writeViolatingRepo, want: 1},
 			{name: "missing config", cfg: func(t *testing.T) string {
 				return filepath.Join(t.TempDir(), "nope.yaml")
