@@ -29,7 +29,7 @@ func TestBuildArchitectureEvidencePack_DiscoversSourcesWithStableIDs(t *testing.
 	writeEvidenceFile(t, root, "docs/how-we-work/0001-payments.md", "# Decision 0001\n\nUse a payments module.\n")
 	writeEvidenceFile(t, root, "internal/payments/doc.go", "// Package payments owns settlement workflows.\npackage payments\n")
 	writeEvidenceFile(t, root, "internal/payments/api.go", "package payments\n\n// Service settles invoices.\ntype Service struct{}\n\nfunc SettleInvoice() {}\nconst CurrencyUSD = \"USD\"\n")
-	writeEvidenceFile(t, root, ".archfit.yaml", "version: 1\nlayers:\n  - domain\nmodules:\n  payments:\n    paths:\n      - \"internal/payments/**\"\n    public:\n      - \"internal/payments/api.go\"\nai:\n  api_key: should-not-leak\n")
+	writeEvidenceFile(t, root, ".archfit.yaml", "version: 2\nlayers:\n  - domain\nmodules:\n  payments:\n    paths:\n      - \"internal/payments/**\"\n    public:\n      - \"internal/payments/api.go\"\nai:\n  api_key: should-not-leak\n")
 
 	mods := []ModuleDef{{
 		Name:   "payments",

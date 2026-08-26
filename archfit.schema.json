@@ -84,7 +84,7 @@
         },
         "gate": {
           "$ref": "#/$defs/CouplingGateDef",
-          "description": "Gate makes the synthesised coupling_balance score gate the verdict.\nAbsent (nil) = coupling stays advisory, today's behavior. An unmeasured\nscore (band n/a) never trips the gate regardless of these knobs."
+          "description": "Gate configures the coupling verdict gate (`coupling.gate:`). An absent\nblock is not an absent policy: the distributed-monolith rule always runs\nand defaults to mode warn with max_new_seams 0."
         }
       },
       "additionalProperties": false,
@@ -92,38 +92,38 @@
       "description": "CouplingConfig tunes the Balanced-Coupling advisory pass (`coupling:`)."
     },
     "CouplingGateDef": {
-      "anyOf": [
-        {
-          "required": [
-            "min_band"
-          ]
-        },
-        {
-          "required": [
-            "max_drop"
-          ]
-        }
-      ],
       "properties": {
-        "min_band": {
-          "type": "string",
-          "enum": [
-            "poor",
-            "mixed",
-            "serviceable",
-            "strong"
-          ],
-          "description": "MinBand is the band floor: poor | mixed | serviceable | strong. The\nverdict fails when the current coupling_balance band ranks below it.\ncritical is rejected — no band ranks below it, so it could never trip."
-        },
-        "max_drop": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "MaxDrop is the tolerated point drop of the coupling_balance value against\nthe score stored in .archfit-baseline.json. Unset = no drop check;\n0 = any drop fails. Skipped when the baseline carries no stored score."
+        "distributed_monolith": {
+          "$ref": "#/$defs/DistributedMonolithDef",
+          "description": "DistributedMonolith is the v2 coupling gate: it counts logical seams, not\nimport edges, and blocks only on newly introduced qualifying seams\nagainst a comparable reference."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "CouplingGateDef configures the coupling_balance verdict gate (`coupling.gate:`)."
+      "required": [
+        "distributed_monolith"
+      ],
+      "description": "CouplingGateDef configures the coupling verdict gate (`coupling.gate:`)."
+    },
+    "DistributedMonolithDef": {
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "warn",
+            "fail"
+          ],
+          "description": "Mode is warn (diagnostic, the default) or fail (blocking). Fail is opt-in\nand is never inferred by the migration: it stays an owner decision taken\nafter a report-only run against a comparable reference."
+        },
+        "max_new_seams": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "MaxNewSeams is the tolerated number of newly introduced qualifying seams.\nUnset means 0. It applies only in fail mode and only when the comparison\nreference is comparable."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "DistributedMonolithDef configures the distributed-monolith seam rule (`coupling.gate.distributed_monolith:`)."
     },
     "ExternalSystemDef": {
       "properties": {
@@ -594,7 +594,10 @@
   },
   "properties": {
     "version": {
-      "type": "integer"
+      "type": "integer",
+      "enum": [
+        2
+      ]
     },
     "exclude": {
       "items": {

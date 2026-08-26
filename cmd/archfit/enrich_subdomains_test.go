@@ -28,7 +28,7 @@ func writeEnrichSubdomainFixture(t *testing.T) (cfgPath, dir string) {
 	t.Helper()
 	dir = t.TempDir()
 	cfgPath = filepath.Join(dir, ".archfit.yaml")
-	content := `version: 1
+	content := `version: 2
 layers:
   - core
   - adapter
@@ -122,7 +122,7 @@ func TestEnrichSubdomainDraft_AllClassified(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
-	content := `version: 1
+	content := `version: 2
 layers:
   - core
 modules:
@@ -279,7 +279,7 @@ func TestEnrichSubdomains_LLMUnconfigured(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
-	content := `version: 1
+	content := `version: 2
 modules:
   auth:
     paths:

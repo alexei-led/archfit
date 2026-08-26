@@ -328,7 +328,7 @@ func TestUpdateCmd_Apply_RustProjectEnablesDeepAnalyzers(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfgPath := writeConfig(t, dir, `version: 1
+	cfgPath := writeConfig(t, dir, `version: 2
 languages:
   rust:
     enabled: true
@@ -367,7 +367,7 @@ rules:
 		if err := os.WriteFile(filepath.Join(applyDir, markerCargoToml), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		applyCfg := writeConfig(t, applyDir, `version: 1
+		applyCfg := writeConfig(t, applyDir, `version: 2
 languages:
   rust:
     enabled: true
@@ -395,7 +395,7 @@ modules:
 	t.Run("a configured sub-crate manifest enables the deep analyzers", func(t *testing.T) {
 		subDir := t.TempDir()
 		writeFileAt(t, subDir, filepath.Join("crates", "core", markerCargoToml), "[package]\nname = \"core\"\n")
-		subCfg := writeConfig(t, subDir, `version: 1
+		subCfg := writeConfig(t, subDir, `version: 2
 languages:
   rust:
     enabled: true
@@ -426,7 +426,7 @@ modules: {}
 	t.Run("no manifest anywhere writes no Rust stanza", func(t *testing.T) {
 		plainDir := t.TempDir()
 		writeFileAt(t, plainDir, markerGoMod, "module example\n")
-		plainCfg := writeConfig(t, plainDir, `version: 1
+		plainCfg := writeConfig(t, plainDir, `version: 2
 modules: {}
 `)
 		if _, err := runUpdateCmd(t, &UpdateCmd{Config: plainCfg, Root: plainDir, Apply: true}, emptyRunner()); err != nil {
@@ -450,7 +450,7 @@ func TestEnsureRustDeepAnalysisConfig_IgnoresCommentBoundaries(t *testing.T) {
 			Scip:         config.TimedAnalyzer{Enabled: evidenceports.ModeAuto},
 		},
 	}
-	src := []byte(`version: 1
+	src := []byte(`version: 2
 languages:
   rust:
   # note: keep this section
@@ -487,7 +487,7 @@ func TestEnsureRustDeepAnalysisConfig_PreservesExplicitAnalyzerOff(t *testing.T)
 			Scip:         config.TimedAnalyzer{Enabled: evidenceports.ModeOff},
 		},
 	}
-	src := []byte(`version: 1
+	src := []byte(`version: 2
 languages:
   rust:
     enabled: true
@@ -520,7 +520,7 @@ func TestUpdateCmd_Apply_RustAnalyzerOptOutsPreserved(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := `version: 1
+	cfg := `version: 2
 languages:
   rust:
     enabled: true
@@ -567,7 +567,7 @@ func TestUpdateCmd_Apply_RustExplicitOffKeepsDeepAnalyzersDisabled(t *testing.T)
 	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := `version: 1
+	cfg := `version: 2
 languages:
   rust:
     enabled: false
@@ -602,7 +602,7 @@ func TestUpdateCmd_LLMPlanMode_SuggestsRustSyntheticModules(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"herdr\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - service
@@ -676,7 +676,7 @@ const (
 
 	// minimalConfigNoModules is a valid config with no modules section.
 	// Structurally in sync with empty discovery (Added=[], Removed=[], Drift=[]).
-	minimalConfigNoModules = `version: 1
+	minimalConfigNoModules = `version: 2
 layers:
   - core
   - adapter
@@ -688,7 +688,7 @@ rules:
     to: "internal/b/**"
 `
 	// configWithRemovedModule has a module that empty discovery will mark as Removed.
-	configWithRemovedModule = `version: 1
+	configWithRemovedModule = `version: 2
 layers:
   - core
   - adapter
@@ -801,7 +801,7 @@ func TestUpdateCmd_Apply_KeepsUnmatchedModule(t *testing.T) {
 func TestUpdateCmd_LLMApply_WritesOnlyAbsentFields(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -936,7 +936,7 @@ func TestUpdateCmd_LLMApply_SurfacesReviewOnlySuggestionsAfterStructuralEdit(t *
 func TestUpdateCmd_ExistingLayerNeverOverwritten(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -993,7 +993,7 @@ rules:
 func TestUpdateCmd_MissingLayerFilledWhenValid(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -1053,7 +1053,7 @@ func TestUpdateCmd_OutOfSetLayerWritesNothing(t *testing.T) {
 	dir := minimalRoot(t)
 	// mymod has subdomain+volatility but no layer; LLM will suggest "infra" NOT in layers.
 	// The forbidden_layer_direction rule is what makes the missing layer classifiable.
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -1181,7 +1181,7 @@ func TestUpdateCmd_LLMPlanMode_FileUnchanged(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
 	// Config has mymod with no classification fields → it is Unclassified.
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -1242,7 +1242,7 @@ rules:
 func TestUpdateCmd_LLMPlanMode_RendersCitedRuleSuggestionsAndLeavesFileUnchanged(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -1500,7 +1500,7 @@ var _ llm.Provider = rustSyntheticProvider{}
 // config update review: status, JSON document, and flag conflicts
 // ---------------------------------------------------------------------------
 
-const testUpdateReviewConfig = `version: 1
+const testUpdateReviewConfig = `version: 2
 layers:
   - core
   - adapter
@@ -1689,7 +1689,7 @@ func runConfigReviewJSONDocument(t *testing.T) {
 // nothing to write.
 func runConfigReviewNameDrift(t *testing.T) {
 	dir := minimalRoot(t)
-	cfgPath := writeConfig(t, dir, `version: 1
+	cfgPath := writeConfig(t, dir, `version: 2
 layers:
   - core
   - adapter
@@ -1802,7 +1802,7 @@ func runConfigReviewApplyDisclosesIssues(t *testing.T) {
 
 func runConfigReviewNoKnownIssues(t *testing.T) {
 	dir := minimalRoot(t)
-	cfgPath := writeConfig(t, dir, `version: 1
+	cfgPath := writeConfig(t, dir, `version: 2
 layers:
   - core
   - adapter
@@ -1865,7 +1865,7 @@ func runConfigReviewRustSettingParity(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfgPath := writeConfig(t, dir, `version: 1
+	cfgPath := writeConfig(t, dir, `version: 2
 languages:
   rust:
     enabled: true

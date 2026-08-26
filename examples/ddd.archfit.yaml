@@ -8,7 +8,7 @@
 # context boundary -> a flag).
 #   archfit analyze --config .archfit.yaml
 #   archfit analyze --format scorecard --config .archfit.yaml
-version: 1
+version: 2
 coupling:
   min_severity: medium
 languages:

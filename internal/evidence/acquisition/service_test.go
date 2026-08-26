@@ -122,7 +122,7 @@ func TestAcquireCarriesTheRunContextForLaterStages(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	cfgPath := filepath.Join(root, ".archfit.yaml")
-	if err := os.WriteFile(cfgPath, []byte("version: 1\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("version: 2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer

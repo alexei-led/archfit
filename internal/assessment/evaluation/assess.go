@@ -128,15 +128,13 @@ type ScoreInput struct {
 	CoverageGaps   []modevidence.CoverageGap
 }
 
-// Scored is the scoring outcome. GateReasons explain a tripped coupling gate
-// and AnchorStale reports that max_drop was skipped because the stored score
-// snapshot is incompatible with this binary; the caller decides whether to
-// disclose either (only `analyze` does). HardGate reports that a required
-// analyzer gap must fail the run.
+// Scored is the scoring outcome. GateReasons explain the coupling seam gate —
+// a trip when it blocked, an abstention when no comparable reference existed;
+// the caller decides whether to disclose them (only `analyze` does). HardGate
+// reports that a required analyzer gap must fail the run.
 type Scored struct {
 	Score       score.Scorecard
 	GateReasons []string
-	AnchorStale bool
 	HardGate    bool
 }
 
@@ -188,11 +186,7 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	diag.State = buildState(diag, stateInput{
 		Policy: in.Policy, Facts: in.Facts, RuleTypes: ruleTypes, RequiredToolFailure: hardGate,
 	})
-	return Scored{
-		Score: finalized.Score, GateReasons: finalized.GateReasons,
-		AnchorStale: couplingGateAnchorStale(gate, in.Anchor),
-		HardGate:    hardGate,
-	}
+	return Scored{Score: finalized.Score, GateReasons: finalized.GateReasons, HardGate: hardGate}
 }
 
 // runSignals projects the acquired facts into the change signals rule and

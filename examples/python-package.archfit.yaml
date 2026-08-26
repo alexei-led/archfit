@@ -6,7 +6,7 @@
 # internal-access edges. Set languages.python.package when the top-level package
 # name does not match the repo directory or uses a src/ layout.
 #   archfit analyze --config .archfit.yaml
-version: 1
+version: 2
 coupling:
   min_severity: medium
 languages:

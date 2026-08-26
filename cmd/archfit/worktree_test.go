@@ -52,7 +52,7 @@ func makeDiffFixtureRepo(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 
-	cfgContent := "version: 1\n"
+	cfgContent := "version: 2\n"
 	files := map[string]string{
 		"go.mod":          "module example.com/difftest\n\ngo 1.21\n",
 		"main.go":         goMainSrc,
@@ -212,7 +212,7 @@ func TestDiffCmd_NonGitRoot(t *testing.T) {
 
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
-	if err := os.WriteFile(cfgPath, []byte("version: 1\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("version: 2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -295,7 +295,7 @@ func TestDiffCmd_ConfigInSubdir(t *testing.T) {
 	files := map[string]string{
 		filepath.Join(dir, "go.mod"):  "module example.com/subdirtest\n\ngo 1.21\n",
 		filepath.Join(dir, "main.go"): goMainSrc,
-		cfgPath:                       "version: 1\n",
+		cfgPath:                       "version: 2\n",
 	}
 	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {

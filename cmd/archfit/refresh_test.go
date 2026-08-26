@@ -235,7 +235,7 @@ func writeCacheableRepoAt(t *testing.T, dir string) string {
 		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/impl\"\n\n" +
 			"func Use() string { return impl.Secret() }\n",
 		"pkg/b/impl/impl.go": implSource(),
-		defaultConfigPath: `version: 1
+		defaultConfigPath: `version: 2
 modules:
   a:
     paths: ["pkg/a/**"]

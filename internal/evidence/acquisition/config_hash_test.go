@@ -12,7 +12,7 @@ func TestEffectiveConfigHash(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".archfit.yaml")
-	if err := os.WriteFile(path, []byte("version: 1\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("version: 2\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -25,7 +25,7 @@ func TestEffectiveConfigHash(t *testing.T) {
 		t.Errorf("acquisition.ConfigHash(absent) = %q, want \"\"", got)
 	}
 
-	if err := os.WriteFile(path, []byte("version: 1\nmodules: {}\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("version: 2\nmodules: {}\n"), 0o600); err != nil {
 		t.Fatalf("rewrite config: %v", err)
 	}
 	if mutated := acquisition.ConfigHash(path); mutated == withCfg {

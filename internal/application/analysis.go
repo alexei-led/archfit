@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
@@ -287,7 +286,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 	s.reportPhase("Scoring architecture")
 	scored := evaluation.Score(&diag, evaluation.ScoreInput{
 		Policy: runCtx.Policy, Facts: facts,
-		Anchor:        evaluation.BaselineAnchor{CouplingScore: base.CouplingScore, SnapshotMismatches: base.SnapshotMismatches},
+		Anchor:        seamAnchor(base),
 		ConfigSource:  runCtx.ConfigSource,
 		ScanRoot:      runCtx.ScanRoot,
 		Root:          runCtx.Scope.Root,
@@ -314,13 +313,25 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 	return out, nil
 }
 
-func (s StageExecutor) discloseGate(scored evaluation.Scored, base Baseline) {
+// seamAnchor projects the persisted baseline into the seam gate's reference.
+//
+// A stored baseline is never comparable yet: baseline v2 (which persists the
+// seam snapshot and the config/model/labels/rubric hashes that make a snapshot
+// comparable) is a later migration step. Until then the gate abstains and says
+// so, which is the only honest answer — a baseline written before the ledger
+// existed records no seams, and reading that as "there were none" would report
+// every existing seam as newly introduced.
+func seamAnchor(base Baseline) evaluation.BaselineAnchor {
+	anchor := evaluation.BaselineAnchor{SnapshotMismatches: snapshotMismatchDetails(base)}
+	if base.ScoreVersion != "" || base.RubricVersion != 0 {
+		anchor.NonComparableReason = "legacy_score_snapshot_ignored: the stored baseline predates the seam ledger"
+	}
+	return anchor
+}
+
+func (s StageExecutor) discloseGate(scored evaluation.Scored, _ Baseline) {
 	for _, reason := range scored.GateReasons {
 		_, _ = fmt.Fprintln(s.stderr(), "coupling gate: "+reason)
-	}
-	if scored.AnchorStale {
-		_, _ = fmt.Fprintf(s.stderr(), "coupling gate: max_drop skipped — baseline score snapshot is incompatible (%s); run `archfit baseline` to re-anchor\n",
-			strings.Join(snapshotMismatchDetails(base), ", "))
 	}
 }
 

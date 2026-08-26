@@ -8,10 +8,12 @@ import (
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
-// ApplyCouplingGate exposes the gate escalation over an explicit scorecard, so
-// promotion scope can be pinned without synthesising a score first.
-func ApplyCouplingGate(diag *result.Result, card score.Scorecard, gate policy.CouplingGate, anchor BaselineAnchor) {
-	applyCouplingGate(diag, card, couplingGateFor(gate), anchor.CouplingScore)
+// ApplySeamGate exposes the seam-gate escalation over an explicit ledger and
+// reference, so the block condition can be pinned without a baseline file.
+func ApplySeamGate(diag *result.Result, gate policy.CouplingGate, anchor BaselineAnchor) []string {
+	trip := score.EvaluateSeamGate(diag.Seams, seamGateFor(gate), anchor.seamReference())
+	applySeamGate(diag, trip)
+	return trip.Reasons
 }
 
 // RulesetOf and MetricsetOf let the external test package drive Evaluate with
@@ -30,13 +32,12 @@ type StateInput = stateInput
 // only production callers; the behavior tests address them directly so a
 // disclosure, gate, or projection rule can be pinned in isolation.
 var (
-	Evaluate                = evaluate
-	Finalize                = finalize
-	NewMetricset            = newMetricset
-	CouplingGateAnchorStale = couplingGateAnchorStale
-	HealthWarnings          = healthWarnings
-	ValidationCommand       = validationCommand
-	ApplyToolGate           = applyToolGate
-	BuildState              = buildState
-	BuildDimensions         = buildDimensions
+	Evaluate          = evaluate
+	Finalize          = finalize
+	NewMetricset      = newMetricset
+	HealthWarnings    = healthWarnings
+	ValidationCommand = validationCommand
+	ApplyToolGate     = applyToolGate
+	BuildState        = buildState
+	BuildDimensions   = buildDimensions
 )

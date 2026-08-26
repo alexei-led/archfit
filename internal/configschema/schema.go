@@ -183,21 +183,34 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			def.Required = []string{"id", "lang", "rule"}
 		}
 		if name == "CouplingGateDef" {
-			// Mirror validateCouplingGate (internal/config): min_band is one of
-			// the four band floors (critical rejected — could never trip), and
-			// an empty gate block gates nothing, so at least one knob is
-			// required. Without this, editors show green on exactly the
+			// Mirror validateCouplingGate (internal/config): the retired v1
+			// knobs are not offered at all (they decode only so the migration
+			// can read them), and an empty gate block gates nothing, so the
+			// distributed-monolith stanza is required when the block is
+			// present. Without this, editors show green on exactly the
 			// validated-but-inert configs the gate was built to prevent.
-			if minBand, ok := def.Properties.Get("min_band"); ok && minBand.Type == typeString {
-				minBand.Enum = []any{"poor", "mixed", "serviceable", "strong"}
+			def.Properties.Delete("min_band")
+			def.Properties.Delete("max_drop")
+			def.Required = []string{"distributed_monolith"}
+		}
+		if name == "DistributedMonolithDef" {
+			// Mirror validateCouplingGate: two modes, and a tolerated new-seam
+			// count is never negative.
+			if mode, ok := def.Properties.Get("mode"); ok && mode.Type == typeString {
+				mode.Enum = []any{"warn", "fail"}
 			}
-			if maxDrop, ok := def.Properties.Get("max_drop"); ok {
-				maxDrop.Minimum = "0" // validateCouplingGate rejects a negative drop
+			if maxNew, ok := def.Properties.Get("max_new_seams"); ok {
+				maxNew.Minimum = "0"
 			}
-			def.AnyOf = []*jsonschema.Schema{
-				{Required: []string{"min_band"}},
-				{Required: []string{"max_drop"}},
-			}
+		}
+	}
+	// The schema version is the only accepted analysis schema. A v1 file
+	// decodes for migration but never analyses, so an editor must not show it
+	// green. The root Config is inlined, not a named definition, so it is
+	// patched here rather than in the loop above.
+	if schema.Properties != nil {
+		if version, ok := schema.Properties.Get("version"); ok {
+			version.Enum = []any{config.SchemaVersion}
 		}
 	}
 }

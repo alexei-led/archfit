@@ -1,4 +1,4 @@
-version: 1
+version: 2
 # --- Design rationale (Balanced Coupling, Khononov) --------------------------
 # archfit is a sole-owner, single-binary modular monolith. Module definitions
 # below represent cohesive product capabilities, not one stanza per Go package.
@@ -32,6 +32,17 @@ coupling:
   # volatility. The cascade runs to a deterministic fixpoint and never lowers a
   # configured value.
   volatility_cascade: true
+  gate:
+    # The only coupling gate. It counts logical seams (ordered module pairs with
+    # a critical-band edge at different-owner or different-deploy-unit distance),
+    # not import edges. warn is diagnostic; fail is an explicit owner decision to
+    # take only after a report-only run against a comparable baseline shows the
+    # expected seam count. archfit is a single-owner single-deploy-unit monolith,
+    # so it currently qualifies zero seams — enabling fail here would gate on
+    # nothing and hide that fact.
+    distributed_monolith:
+      mode: warn
+      max_new_seams: 0
 # Architecture layers — innermost to outermost.
 # forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
 layers:

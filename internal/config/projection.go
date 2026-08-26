@@ -36,14 +36,14 @@ func (c Config) PolicySnapshot() policy.PolicySnapshot {
 	relationship := policy.RelationshipPolicy{MinimumSeverity: c.Coupling.MinSeverity, VolatilityCascadeEnabled: c.Coupling.VolatilityCascade, DuplicatedKnowledge: policy.NormalizeDuplicatedKnowledgePolicy(c.Coupling.DuplicatedKnowledge)}
 	stale := c.ForStaleness()
 	assessment := policy.AssessmentPolicy{Waivers: c.ForWaivers(), Staleness: policy.StalenessPolicy{Enabled: stale.Enabled, Threshold: stale.Threshold}}
-	gate := policy.CouplingGate{}
-	if g := c.Coupling.Gate; g != nil {
-		maxDrop := g.MaxDrop
-		if maxDrop != nil {
-			v := *maxDrop
-			maxDrop = &v
+	gate := policy.CouplingGate{Mode: policy.DistributedMonolithWarn}
+	if g := c.Coupling.Gate; g != nil && g.DistributedMonolith != nil {
+		if m := g.DistributedMonolith.Mode; m != "" {
+			gate.Mode = policy.DistributedMonolithMode(m)
 		}
-		gate = policy.CouplingGate{Enabled: true, MinBand: g.MinBand, MaxDrop: maxDrop}
+		if n := g.DistributedMonolith.MaxNewSeams; n != nil {
+			gate.MaxNewSeams = *n
+		}
 	}
 	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: c.ForRules(), Metrics: c.Metrics, Coupling: gate, ModuleReview: policy.GateMode(c.ModuleReview.Gate)}, owners, deployUnits)
 }

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
@@ -69,18 +68,19 @@ func testGitDeltaEffectiveConfig(t *testing.T) {
 			t.Fatalf("--base --json must emit git_finding_delta\n%s", stdout)
 		}
 		// The head tree splits ownership, so the shared edge crosses owners and
-		// scores critical. Without that split it is a same-owner sibling edge
-		// below coupling.min_severity, so the base side reports nothing.
-		if len(got.AgentTasks) != 1 {
-			t.Fatalf("fixture regression: the head owner split must produce exactly one task: %+v", got.AgentTasks)
+		// scores critical. The base tree has one owner, so the same edge is a
+		// same-owner sibling. A base run that inherited the head module map
+		// would measure the head's owners and score identically, collapsing the
+		// delta to zero — so a nonzero delta IS the isolation.
+		if got.ScoreDelta == nil {
+			t.Fatalf("fixture regression: --base emitted no score_delta\n%s", stdout)
+		}
+		if got.ScoreDelta.OverallDelta == 0 {
+			t.Error("the base run measured head-tree owners: overall_delta = 0, want a real change")
 		}
 		d := got.GitFindingDelta
 		if len(d.ComparisonReasons) != 0 {
 			t.Fatalf("fixture regression: both sides compile, want no comparison_reasons, got %v", d.ComparisonReasons)
-		}
-		if !slices.Contains(d.Introduced, got.AgentTasks[0].FindingID) {
-			t.Errorf("the base run measured head-tree owners: introduced = %v, pre_existing = %v, unknown = %v",
-				d.Introduced, d.PreExisting, d.UnknownOrigin)
 		}
 	})
 
@@ -143,9 +143,9 @@ func gitDeltaFixtureRepo(t *testing.T, cfgBody string) string {
 func gitDeltaOwnerFixtureRepo(t *testing.T) string {
 	t.Helper()
 	// min_severity keeps the same-owner form of the edge below the advisory
-	// floor; the coupling gate promotes the surviving advisory to a gate task so
-	// it reaches agent_tasks[], which is what the origin delta classifies.
-	const ownerSplitCfg = `version: 1
+	// floor, so the two trees measure differently only because their owners
+	// differ — which is exactly what a leaked head-tree module map would hide.
+	const ownerSplitCfg = `version: 2
 modules:
   a:
     paths: ["pkg/a/**"]
@@ -153,8 +153,6 @@ modules:
     paths: ["pkg/b/**"]
 coupling:
   min_severity: high
-  gate:
-    min_band: strong
 `
 	dir := t.TempDir()
 	write := func(name, content string) {
@@ -194,6 +192,9 @@ type gitDeltaJSON struct {
 		FindingID string `json:"finding_id"`
 		RuleID    string `json:"rule_id"`
 	} `json:"agent_tasks"`
+	ScoreDelta *struct {
+		OverallDelta int `json:"overall_delta"`
+	} `json:"score_delta"`
 }
 
 func testGitDeltaCheckBaseJSON(t *testing.T) {
@@ -221,9 +222,6 @@ func testGitDeltaCheckBaseJSON(t *testing.T) {
 		// not carry. The head commit adds the only violating import, so a
 		// blocking rule must attribute its task to this change.
 		wantIntroduced int
-		// wantUnknownGate requires the synthetic coupling-gate task and the
-		// resulting "unknown" comparison status.
-		wantUnknownGate bool
 		// extraArgs are appended to BOTH the --base run and the plain run, so
 		// the report-only assertion still compares like with like.
 		extraArgs []string
@@ -232,18 +230,10 @@ func testGitDeltaCheckBaseJSON(t *testing.T) {
 		{name: "clean gate exits 0", cfgBody: coupledModulesCfg, wantCode: 0},
 		{name: "blocking rule exits 1", cfgBody: coupledModulesCfg + failRule, wantIntroduced: 1, wantCode: 1},
 		{name: "warning rule exits 2", cfgBody: coupledModulesCfg + warnRule, wantCode: 2},
-		// With advisories off there is no BC advisory to promote, so a tripped
-		// coupling gate emits the synthetic bc/coupling_gate task. That task is
-		// per-run trip state with no stable base counterpart, so it is placed as
-		// unknown before ID matching — the production path that reaches
-		// comparison_status "unknown".
-		{
-			name:            "a synthetic coupling-gate task is unknown origin",
-			cfgBody:         coupledModulesCfg + "coupling:\n  gate:\n    min_band: strong\n",
-			extraArgs:       []string{flagNoAdvisories},
-			wantUnknownGate: true,
-			wantCode:        1,
-		},
+		// The synthetic coupling-gate task's unknown-origin placement is pinned
+		// in decision.TestGitFindingDelta instead: schema v2's seam gate blocks
+		// only against a comparable reference, which no single CLI run can
+		// produce, so the finding is unreachable from here.
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -278,20 +268,6 @@ func testGitDeltaCheckBaseJSON(t *testing.T) {
 			}
 			if len(d.Introduced) != tc.wantIntroduced {
 				t.Errorf("introduced_finding_ids = %v, want %d entr(y|ies)", d.Introduced, tc.wantIntroduced)
-			}
-			if tc.wantUnknownGate {
-				synthetic := ""
-				for _, task := range got.AgentTasks {
-					if task.RuleID == ruleIDCouplingGate {
-						synthetic = task.FindingID
-					}
-				}
-				if synthetic == "" {
-					t.Fatalf("fixture regression: the coupling gate did not trip, so no synthetic task exists: %s", stdout)
-				}
-				if !slices.Contains(d.UnknownOrigin, synthetic) {
-					t.Errorf("the synthetic coupling-gate task must land in unknown_origin_finding_ids: %+v", d)
-				}
 			}
 			// Every current repair task lands in exactly one origin bucket.
 			total := len(d.Introduced) + len(d.PreExisting) + len(d.UnknownOrigin)

@@ -6,7 +6,7 @@
 # internal files. Install dependency-cruiser and, for semantic strength
 # (SCIP coupling-strength hints), run `npm ci` so node_modules exists.
 #   archfit analyze --config .archfit.yaml
-version: 1
+version: 2
 coupling:
   min_severity: medium
 languages:

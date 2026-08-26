@@ -62,24 +62,44 @@ type CouplingConfig struct {
 	// coupled to a high-effective-volatility module inherits raised effective
 	// volatility. The pass runs to a deterministic fixpoint and never lowers values.
 	VolatilityCascade bool `yaml:"volatility_cascade,omitempty"`
-	// Gate makes the synthesised coupling_balance score gate the verdict.
-	// Absent (nil) = coupling stays advisory, today's behavior. An unmeasured
-	// score (band n/a) never trips the gate regardless of these knobs.
+	// Gate configures the coupling verdict gate (`coupling.gate:`). An absent
+	// block is not an absent policy: the distributed-monolith rule always runs
+	// and defaults to mode warn with max_new_seams 0.
 	Gate *CouplingGateDef `yaml:"gate,omitempty"`
 }
 
-// CouplingGateDef configures the coupling_balance verdict gate
-// (`coupling.gate:`). At least one knob must be set; validate() rejects an
-// empty block.
+// CouplingGateDef configures the coupling verdict gate (`coupling.gate:`).
 type CouplingGateDef struct {
-	// MinBand is the band floor: poor | mixed | serviceable | strong. The
-	// verdict fails when the current coupling_balance band ranks below it.
-	// critical is rejected — no band ranks below it, so it could never trip.
+	// MinBand and MaxDrop are RETIRED v1 knobs. They gated the verdict on the
+	// repository coupling scalar, which schema v2 removes as a decision input.
+	//
+	// They remain decodable for exactly one reason: `config update
+	// --migration-only` has to read a v1 file to migrate it. validate() rejects
+	// them with the migration command, so no analysis can consume them.
 	MinBand string `yaml:"min_band,omitempty"`
-	// MaxDrop is the tolerated point drop of the coupling_balance value against
-	// the score stored in .archfit-baseline.json. Unset = no drop check;
-	// 0 = any drop fails. Skipped when the baseline carries no stored score.
-	MaxDrop *int `yaml:"max_drop,omitempty"`
+	MaxDrop *int   `yaml:"max_drop,omitempty"`
+	// DistributedMonolith is the v2 coupling gate: it counts logical seams, not
+	// import edges, and blocks only on newly introduced qualifying seams
+	// against a comparable reference.
+	DistributedMonolith *DistributedMonolithDef `yaml:"distributed_monolith,omitempty"`
+}
+
+// DistributedMonolithDef configures the distributed-monolith seam rule
+// (`coupling.gate.distributed_monolith:`).
+//
+// A qualifying seam is one ordered module pair with at least one active edge in
+// the critical band at high distance (different owner or different deploy
+// unit). The rule counts seams, not edges: forty imports expressing one seam
+// are one seam.
+type DistributedMonolithDef struct {
+	// Mode is warn (diagnostic, the default) or fail (blocking). Fail is opt-in
+	// and is never inferred by the migration: it stays an owner decision taken
+	// after a report-only run against a comparable reference.
+	Mode string `yaml:"mode,omitempty"`
+	// MaxNewSeams is the tolerated number of newly introduced qualifying seams.
+	// Unset means 0. It applies only in fail mode and only when the comparison
+	// reference is comparable.
+	MaxNewSeams *int `yaml:"max_new_seams,omitempty"`
 }
 
 // OutputsConfig controls which output formats are produced.

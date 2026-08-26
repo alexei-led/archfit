@@ -78,7 +78,7 @@ func (baselineLoaderAdapter) Load(ctx context.Context, bundleDir string) (applic
 	}
 	out := application.Baseline{
 		Accepted: b, Metrics: b.Metrics,
-		CouplingScore: b.CouplingScore(), SnapshotMismatches: b.ScoreSnapshotMismatches(),
+		SnapshotMismatches: b.ScoreSnapshotMismatches(),
 	}
 	if b.Score != nil {
 		out.ScoreVersion, out.RubricVersion = b.Score.ScoreVersion, b.Score.EffectiveRubricVersion()

@@ -1,8 +1,6 @@
 package evaluation
 
 import (
-	"strings"
-
 	"github.com/alexei-led/archfit/internal/assessment/agenttask"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
@@ -10,17 +8,51 @@ import (
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
-// FindingIDCouplingGate is the fixed synthetic coupling-gate finding ID. The
-// gate emits it only when a trip has no promotable advisory, so a FAIL verdict
-// never ships with zero gate findings.
+// FindingIDCouplingGate prefixes the coupling-gate findings. One finding is
+// emitted per newly introduced distributed-monolith seam, keyed by seam ID, so
+// a blocking verdict always names the seams it blocked on and each one is
+// individually addressable.
 const FindingIDCouplingGate = "coupling-gate"
 
 // BaselineAnchor is the assessment-relevant projection of a persisted baseline.
 // The stage adapter reads the baseline file; assessment only decides whether
 // the stored anchor is comparable with this binary's scoring.
+//
+// It carries no score anchor: schema v2 retired the scalar drop check, so a
+// stored coupling score can no longer move any decision. What it carries
+// instead is whether the stored seam snapshot may be compared at all.
 type BaselineAnchor struct {
-	CouplingScore      *int
+	// SnapshotMismatches names stored inputs that differ from this binary.
+	// They become non-comparability reasons rather than a silent skip.
 	SnapshotMismatches []string
+	// SeamsComparable reports that the persisted baseline carries a seam
+	// snapshot taken under the same config, module map, labels, and rubric.
+	// False is the safe default: a baseline written before the seam ledger
+	// existed has no seams, and treating its absence as "no seams then" would
+	// report every current seam as newly introduced.
+	SeamsComparable bool
+	// QualifyingSeamIDs are the reference's own distributed-monolith seam IDs.
+	QualifyingSeamIDs []string
+	// NonComparableReason explains, in one line, why SeamsComparable is false.
+	NonComparableReason string
+}
+
+// seamReference projects the anchor into the gate's comparison reference. A
+// non-comparable anchor always carries at least one reason: an abstaining gate
+// has to say why.
+func (a BaselineAnchor) seamReference() score.SeamReference {
+	if !a.SeamsComparable {
+		reason := a.NonComparableReason
+		if reason == "" {
+			reason = "no comparable seam snapshot: the stored baseline predates the architecture-state contract"
+		}
+		return score.SeamReference{Reasons: append([]string{reason}, a.SnapshotMismatches...)}
+	}
+	ids := make(map[string]struct{}, len(a.QualifyingSeamIDs))
+	for _, id := range a.QualifyingSeamIDs {
+		ids[id] = struct{}{}
+	}
+	return score.SeamReference{Comparable: true, QualifyingSeamIDs: ids}
 }
 
 // FinalizeInput carries the explicit values assessment needs to score, gate,
@@ -46,51 +78,52 @@ type Finalized struct {
 	GateReasons []string
 }
 
-// finalize synthesises the scorecard, applies the coupling gate, and attaches
-// repair tasks to diag. It is pure: every input is an already-resolved value.
+// finalize synthesises the scorecard, applies the coupling seam gate, and
+// attaches repair tasks to diag. It is pure: every input is an already-resolved
+// value.
+//
+// The scorecard is still computed — it remains a per-seam diagnostic and feeds
+// the legacy output field — but it no longer reaches the gate. Only the seam
+// ledger decides the coupling gate.
 func finalize(diag *result.Result, in FinalizeInput) Finalized {
 	card := score.Synthesize(*diag)
-	gate := couplingGateFor(in.Gate)
-	applyCouplingGate(diag, card, gate, in.Baseline.CouplingScore)
+	trip := score.EvaluateSeamGate(diag.Seams, seamGateFor(in.Gate), in.Baseline.seamReference())
+	applySeamGate(diag, trip)
 	resolver := agenttask.NewPathResolver(in.KnownFiles, in.CrateRootDirs, in.ModuleRootDirs, in.OnDisk)
 	diag.AgentTasks = agenttask.Build(diag.Findings, in.RuleTypes, in.ModulePublic, in.ValidationCommands, diag.SyntaxFacts, resolver)
 	diag.AdvisoryTasks = agenttask.BuildAdvisoryTasks(diag.Findings, in.ValidationCommands)
-	return Finalized{Score: card, GateReasons: score.EvaluateCouplingGate(card, gate, in.Baseline.CouplingScore).Reasons}
+	return Finalized{Score: card, GateReasons: trip.Reasons}
 }
 
-// couplingGateAnchorStale reports whether max_drop was skipped because the
-// stored score snapshot is incompatible with this binary.
-func couplingGateAnchorStale(gate policy.CouplingGate, anchor BaselineAnchor) bool {
-	return gate.Enabled && gate.MaxDrop != nil && len(anchor.SnapshotMismatches) > 0
+func seamGateFor(g policy.CouplingGate) score.SeamGate {
+	return score.SeamGate{Mode: string(g.Mode), MaxNewSeams: g.MaxNewSeams}
 }
 
-func couplingGateFor(g policy.CouplingGate) score.CouplingGate {
-	return score.CouplingGate{Enabled: g.Enabled, MinBand: score.Band(g.MinBand), MaxDrop: g.MaxDrop}
-}
-
-// applyCouplingGate escalates a measured coupling score and promotes active
-// coupling advisories into gate findings.
-func applyCouplingGate(diag *result.Result, card score.Scorecard, gate score.CouplingGate, baselineScore *int) {
-	trip := score.EvaluateCouplingGate(card, gate, baselineScore)
-	if !trip.Tripped {
+// applySeamGate escalates the verdict and emits one gate finding per newly
+// introduced distributed-monolith seam.
+//
+// It deliberately does not promote existing coupling advisories. Promotion was
+// scalar-gate behaviour: the old gate tripped on a repository number, so it had
+// to borrow findings to point at. The seam gate already knows exactly which
+// seams tripped it, so it says so directly and leaves every other advisory as
+// the diagnostic it is.
+func applySeamGate(diag *result.Result, trip score.SeamGateResult) {
+	if !trip.Blocked {
 		return
 	}
 	diag.Verdict = result.VerdictFail
-	promoted := 0
-	for i := range diag.Findings {
-		f := &diag.Findings[i]
-		if f.RuleID != finding.RuleIDBCImbalanced || f.Kind != finding.KindAdvisory || !score.IsActiveGateFinding(*f) {
-			continue
-		}
-		f.Kind = finding.KindGate
-		promoted++
-	}
-	diag.Summary.GateFindings += promoted
-	diag.Summary.Warnings = max(0, diag.Summary.Warnings-promoted)
-	if promoted == 0 {
-		diag.Findings = append(diag.Findings, finding.Finding{ID: FindingIDCouplingGate, Kind: finding.KindGate,
+	for _, s := range trip.New {
+		diag.Findings = append(diag.Findings, finding.Finding{
+			ID: FindingIDCouplingGate + "/" + s.ID, Kind: finding.KindGate,
 			RuleID: finding.RuleIDCouplingGate, Status: finding.StatusNew, Severity: finding.SeverityHigh,
-			Why: strings.Join(trip.Reasons, "; ")})
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Module: s.FromModule},
+				To:   finding.Endpoint{Module: s.ToModule},
+			},
+			Why: "newly introduced distributed-monolith seam: " + s.FromModule + " -> " + s.ToModule +
+				" couples at " + s.Strength + " across " + s.Distance +
+				" (coupling.gate.distributed_monolith.mode: fail)",
+		})
 		diag.Summary.GateFindings++
 	}
 }

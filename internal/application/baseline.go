@@ -40,12 +40,14 @@ type BaselineLoader interface {
 }
 
 // Baseline is the application-owned view of a persisted baseline: the accepted
-// set lifecycle status assigns against, the metric anchor, and the score anchor
-// the coupling gate compares to.
+// set lifecycle status assigns against and the metric anchor.
+//
+// It carries no coupling-score anchor. Schema v2 retired the scalar drop gate,
+// so a stored repository score anchors nothing; the score-snapshot version
+// fields remain only to explain why a stored baseline is not seam-comparable.
 type Baseline struct {
 	Accepted           status.AcceptedSet
 	Metrics            report.MetricSnapshot
-	CouplingScore      *int
 	SnapshotMismatches []string
 	ScoreVersion       string
 	RubricVersion      int

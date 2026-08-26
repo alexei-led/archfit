@@ -41,7 +41,7 @@ func TestRunOptionsThreadsOneMergedExclusionSetThroughEveryStage(t *testing.T) {
 func TestValidateRulesRejectsUnknownRuleType(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), ".archfit.yaml")
-	if err := os.WriteFile(path, []byte("version: 1\nrules:\n  - id: bad\n    type: bogus_type\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("version: 2\nrules:\n  - id: bad\n    type: bogus_type\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := Load(context.Background(), path)

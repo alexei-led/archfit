@@ -235,7 +235,7 @@ func TestEnrichOwner_LLMUnconfigured(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
-	content := "version: 1\nmodules:\n  auth:\n    paths:\n      - \"internal/auth/**\"\n"
+	content := "version: 2\nmodules:\n  auth:\n    paths:\n      - \"internal/auth/**\"\n"
 	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -40,7 +40,7 @@ func TestRun_Check_Root_ScopesLocCount(t *testing.T) {
 	// does not influence which subtree is scanned.
 	cfgDir := t.TempDir()
 	cfgPath := filepath.Join(cfgDir, ".archfit.yaml")
-	if err := os.WriteFile(cfgPath, []byte("version: 1\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("version: 2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -112,7 +112,7 @@ func TestRun_Check_Root_NonGitFullMode(t *testing.T) {
 	// Plain directory — deliberately NOT git-initialised.
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
-	if err := os.WriteFile(cfgPath, []byte("version: 1\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("version: 2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -159,7 +159,7 @@ func TestRun_Check_Root_OutputWarningUsesRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfgPath := filepath.Join(subDir, ".archfit.yaml")
-	if err := os.WriteFile(cfgPath, []byte("version: 1\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("version: 2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	gitInitFixtureRepo(t, repoDir)
@@ -234,7 +234,7 @@ func TestRun_Check_Root_CaseVariantSubtree_OwnerSourceCodeowners(t *testing.T) {
 	// Module paths are scanRoot-relative (--root IS the services/api subtree,
 	// so the scanned files' module-relative path is just "handler.go").
 	cfgPath := filepath.Join(repoDir, ".archfit.yaml")
-	cfg := "version: 1\nmodules:\n  api:\n    paths: [\"**\"]\n"
+	cfg := "version: 2\nmodules:\n  api:\n    paths: [\"**\"]\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestRun_Check_OwnerDegradation_CodeownersNoMatch_WarnsAndSurfacesSource(t *
 	gitInitFixtureRepo(t, repoDir)
 
 	cfgPath := filepath.Join(repoDir, ".archfit.yaml")
-	cfg := "version: 1\nmodules:\n  app:\n    paths: [\"src/**\"]\n"
+	cfg := "version: 2\nmodules:\n  app:\n    paths: [\"src/**\"]\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestRun_Check_OwnerDegradation_None_NoWarning(t *testing.T) {
 	gitInitFixtureRepo(t, repoDir)
 
 	cfgPath := filepath.Join(repoDir, ".archfit.yaml")
-	cfg := "version: 1\nmodules:\n  app:\n    paths: [\"src/**\"]\n"
+	cfg := "version: 2\nmodules:\n  app:\n    paths: [\"src/**\"]\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}

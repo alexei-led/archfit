@@ -133,7 +133,7 @@ func writeGapRepo(t *testing.T, extraCfg string) string {
 	t.Helper()
 	// An explicit languages.go.gate bypasses the "no go.mod → suppress gap" logic
 	// in coverage-gap derivation, making the go/packages absence a deterministic gap.
-	cfg := "version: 1\nlanguages:\n  go:\n    gate: warn\n" + extraCfg
+	cfg := "version: 2\nlanguages:\n  go:\n    gate: warn\n" + extraCfg
 	return writeNonGoRepo(t, cfg)
 }
 
@@ -199,7 +199,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		t.Parallel()
 		// go is disabled so go/packages reports absent (a gap) deterministically,
 		// regardless of whether a Go toolchain happens to half-load a non-Go tree.
-		cfg := "version: 1\nlanguages:\n  go:\n    enabled: false\n    gate: fail\n"
+		cfg := "version: 2\nlanguages:\n  go:\n    enabled: false\n    gate: fail\n"
 		cfgPath := writeNonGoRepo(t, cfg)
 		var buf bytes.Buffer
 		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
@@ -270,7 +270,7 @@ func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 		t.Fatal(err)
 	}
 	cfgPath = filepath.Join(cfgDir, defaultConfigPath)
-	cfgBody := `version: 1
+	cfgBody := `version: 2
 modules:
   a:
     paths: ["pkg/a/**"]
@@ -718,7 +718,7 @@ func TestRun_Check_LabelsFileDeterministic(t *testing.T) {
 	cfgPath := writeViolatingRepo(t)
 	dir := filepath.Dir(cfgPath)
 
-	labelsYAML := `version: 1
+	labelsYAML := `version: 2
 labels:
   - from: a
     to: b
@@ -819,7 +819,7 @@ func TestRun_Analyze_DeployUnitCoverageRowIsDiagnosticOnly(t *testing.T) {
 	files := map[string]string{
 		markerGoMod:       "module example.com/deploycov\n\ngo 1.21\n",
 		"cmd/api/main.go": goMainSrc,
-		defaultConfigPath: `version: 1
+		defaultConfigPath: `version: 2
 modules:
   cmd/api:
     paths: ["cmd/api/**"]
@@ -915,7 +915,7 @@ func TestRun_Check_FileClassConfigWiredToPipeline(t *testing.T) {
 		// Custom generated file — NOT matched by built-in filename heuristics.
 		// Only config-supplied generated_globs should catch it.
 		"codegen/mycodegen_output.go": "package codegen\n\nfunc Generated() {}\n",
-		defaultConfigPath: `version: 1
+		defaultConfigPath: `version: 2
 file_class:
   generated_globs:
     - "codegen/**"

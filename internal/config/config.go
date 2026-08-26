@@ -187,8 +187,8 @@ var removedConfigKeys = map[string]string{
 // than a silent skip: a typo in coupling.min_severity or a gate must not
 // quietly disable the check it was meant to configure.
 func validate(cfg Config) error {
-	if cfg.Version <= 0 {
-		return fmt.Errorf("version must be > 0 (got %d)", cfg.Version)
+	if err := validateSchemaVersion(cfg.Version); err != nil {
+		return err
 	}
 	if cfg.AI.Provider != "" {
 		if _, valid := LLMProviders[cfg.AI.Provider]; !valid {
@@ -233,7 +233,7 @@ func validate(cfg Config) error {
 		knob, ok := knownMetrics[name]
 		if !ok {
 			if name == "coupling_balance" {
-				return errors.New("metrics.coupling_balance is not a metric — the synthesised coupling score gates via the coupling.gate block (min_band / max_drop)")
+				return errors.New("metrics.coupling_balance is not a metric — coupling gates via the coupling.gate.distributed_monolith block")
 			}
 			return fmt.Errorf("metrics.%s is not a known metric (known: blast_radius, coverage, cycle, encapsulation, unbalanced_edge)", name)
 		}
@@ -284,31 +284,46 @@ func validateRules(rules []policy.RuleDef) error {
 	return nil
 }
 
-// couplingGateBands are the accepted coupling.gate.min_band floors. critical is
-// deliberately absent: no band ranks below it, so a critical floor could never
-// trip — a config that looks like a gate but is inert by construction.
-var couplingGateBands = map[string]struct{}{"poor": {}, "mixed": {}, "serviceable": {}, "strong": {}}
+// distributedMonolithModes are the accepted
+// coupling.gate.distributed_monolith.mode values. Empty means warn.
+var distributedMonolithModes = map[string]struct{}{
+	string(policy.DistributedMonolithWarn): {}, string(policy.DistributedMonolithFail): {},
+}
 
-// validateCouplingGate checks the coupling.gate block: a present block must
-// configure at least one knob (an empty block is a gate that never trips — the
-// validated-but-inert disease), min_band must be a real floor, and max_drop is
-// a tolerated drop, never negative.
+// validateCouplingGate checks the coupling.gate block.
+//
+// The retired v1 knobs are rejected here rather than at decode time on purpose:
+// `config update --migration-only` has to decode them to migrate them, so the
+// refusal belongs to analysis validation, not to the YAML reader.
 func validateCouplingGate(g *CouplingGateDef) error {
 	if g == nil {
 		return nil
 	}
-	if g.MinBand == "" && g.MaxDrop == nil {
-		return errors.New("coupling.gate requires min_band and/or max_drop — an empty block gates nothing")
-	}
 	if g.MinBand != "" {
-		if _, ok := couplingGateBands[g.MinBand]; !ok {
-			return fmt.Errorf("coupling.gate.min_band %q is not one of: poor, mixed, serviceable, strong", g.MinBand)
+		return retiredCouplingKeyError("min_band")
+	}
+	if g.MaxDrop != nil {
+		return retiredCouplingKeyError("max_drop")
+	}
+	d := g.DistributedMonolith
+	if d == nil {
+		return errors.New("coupling.gate requires distributed_monolith — an empty block gates nothing; remove the block to accept the warn default")
+	}
+	if d.Mode != "" {
+		if _, ok := distributedMonolithModes[d.Mode]; !ok {
+			return fmt.Errorf("coupling.gate.distributed_monolith.mode %q is not one of: warn, fail", d.Mode)
 		}
 	}
-	if g.MaxDrop != nil && *g.MaxDrop < 0 {
-		return fmt.Errorf("coupling.gate.max_drop must be >= 0 (a tolerated score drop, got %d)", *g.MaxDrop)
+	if d.MaxNewSeams != nil && *d.MaxNewSeams < 0 {
+		return fmt.Errorf("coupling.gate.distributed_monolith.max_new_seams must be >= 0 (a tolerated new-seam count, got %d)", *d.MaxNewSeams)
 	}
 	return nil
+}
+
+// retiredCouplingKeyError names the retired knob and the one supported way out.
+// The exact command string is part of the migration contract.
+func retiredCouplingKeyError(key string) error {
+	return fmt.Errorf("coupling.gate.%s was retired in schema v2 — the repository coupling scalar no longer gates the verdict\n%s", key, MigrationHint)
 }
 
 // externalVolatilities are the accepted external_systems.<name>.volatility
@@ -418,7 +433,7 @@ func validateGate(field, gate string) error {
 // rules are defined — only metric checks run.
 func Default() Config {
 	return Config{
-		Version: 1,
+		Version: SchemaVersion,
 		Coupling: CouplingConfig{
 			MinSeverity:         levelMedium,
 			DuplicatedKnowledge: policy.DuplicatedKnowledgePolicyScore,
@@ -503,4 +518,29 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// SchemaVersion is the only config schema version this binary analyses. A v1
+// file decodes (so it can be migrated) but never analyses.
+const SchemaVersion = 2
+
+// MigrationHint is the exact, frozen instruction printed whenever a config is
+// rejected for being v1 or for carrying a retired v1 key. It names the single
+// supported migration path; tests pin the string.
+const MigrationHint = "→ run: archfit config update --migration-only --apply"
+
+// validateSchemaVersion accepts only the current schema. A v1 file is a
+// migration, not a syntax error, so it gets the migration command rather than
+// a generic bounds complaint.
+func validateSchemaVersion(v int) error {
+	switch {
+	case v == SchemaVersion:
+		return nil
+	case v <= 0:
+		return fmt.Errorf("version must be %d (got %d)", SchemaVersion, v)
+	case v < SchemaVersion:
+		return fmt.Errorf("config schema v%d is not supported by this binary (it analyses v%d only)\n%s", v, SchemaVersion, MigrationHint)
+	default:
+		return fmt.Errorf("config schema v%d is newer than this binary understands (it analyses v%d only) — upgrade archfit", v, SchemaVersion)
+	}
 }

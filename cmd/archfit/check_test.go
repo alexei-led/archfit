@@ -44,9 +44,21 @@ func TestRun_Check_ExitCodeZeroOnCleanConfig(t *testing.T) {
 	}
 }
 
+// forbiddenEdgeRule blocks the fixture's one cross-module edge. It replaces the
+// retired scalar coupling gate as the way to make a check fail: schema v2's
+// only coupling gate counts newly introduced seams against a comparable
+// reference, which is not a thing a single CLI run can produce.
+const forbiddenEdgeRule = `rules:
+  - id: no-a-to-b
+    type: forbidden_dependency
+    from: "pkg/a/**"
+    to: "pkg/b/**"
+    gate: fail
+`
+
 func writeFailingCheckRepo(t *testing.T) string {
 	t.Helper()
-	return writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
+	return writeCoupledRepo(t, coupledModulesCfg+forbiddenEdgeRule)
 }
 
 func TestRun_Check_ExitCodeOneOnViolatedPolicy(t *testing.T) {

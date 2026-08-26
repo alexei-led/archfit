@@ -42,13 +42,26 @@ type StalenessPolicy struct {
 	Threshold time.Duration // zero value defaults to 90*24*time.Hour in Check
 }
 
+// DistributedMonolithMode is the posture of the distributed-monolith seam rule.
+type DistributedMonolithMode string
+
+// Distributed-monolith modes. warn is the default and is diagnostic; fail is
+// opt-in and blocks only against a comparable reference.
+const (
+	DistributedMonolithWarn DistributedMonolithMode = "warn"
+	DistributedMonolithFail DistributedMonolithMode = "fail"
+)
+
 // CouplingGate is the domain representation of coupling.gate. It intentionally
 // uses score-independent primitives so config and policy do not depend on the
 // score implementation.
+//
+// There is no Enabled flag: the distributed-monolith rule always evaluates. An
+// absent config block means the warn default, not an absent policy, so a
+// missing stanza cannot silently disable the only coupling gate that exists.
 type CouplingGate struct {
-	Enabled bool
-	MinBand string
-	MaxDrop *int
+	Mode        DistributedMonolithMode
+	MaxNewSeams int
 }
 
 // GatePolicy contains rule and metric gate declarations.
@@ -83,9 +96,10 @@ func New(topology TopologyView, relationship RelationshipPolicy, assessment Asse
 	gates.Rules = cloneRuleConfig(gates.Rules)
 	gates.Rules.ModuleMap = topology.ModuleMap
 	gates.Metrics = cloneMetricConfigs(gates.Metrics)
-	if gates.Coupling.MaxDrop != nil {
-		maxDrop := *gates.Coupling.MaxDrop
-		gates.Coupling.MaxDrop = &maxDrop
+	if gates.Coupling.Mode == "" {
+		// A zero-value GatePolicy still carries the real default: the
+		// distributed-monolith rule always evaluates, diagnostically.
+		gates.Coupling.Mode = DistributedMonolithWarn
 	}
 	return PolicySnapshot{
 		Topology: topology, Ownership: maps.Clone(ownership), DeployUnits: maps.Clone(deployUnits),

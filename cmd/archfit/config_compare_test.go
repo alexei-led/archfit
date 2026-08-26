@@ -143,7 +143,7 @@ const cmdCompare = "compare"
 // leaves the declared module set entirely: it becomes an external edge, excluded
 // from coupling_balance. Measuring less of the same tree is what the
 // measurement-loss warnings exist to expose.
-const narrowModuleCfg = `version: 1
+const narrowModuleCfg = `version: 2
 modules:
   a:
     paths: ["pkg/a/**"]
@@ -398,19 +398,21 @@ func testCompareBaselineIsolation(t *testing.T) {
 	}
 }
 
-// testCompareAdvisoryPromotion pins the finding rule: the coupling gate promotes
-// Balanced-Coupling advisories to gate kind, but the ID does not move, so the
-// same seam must land in both_ids rather than split across the one-sided buckets.
+// testCompareAdvisoryPromotion pins the finding rule: a gate knob changes a
+// finding's KIND without changing its ID, so the same violation must land in
+// both_ids rather than split across the one-sided buckets. The current config
+// blocks on the rule; the candidate only warns.
 func testCompareAdvisoryPromotion(t *testing.T) {
 	t.Parallel()
-	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
-	candidatePath := writeCandidateCfg(t, coupledModulesCfg)
+	cfgPath := writeCoupledRepo(t, coupledModulesCfg+forbiddenEdgeRule)
+	candidatePath := writeCandidateCfg(t, coupledModulesCfg+
+		strings.Replace(forbiddenEdgeRule, "gate: fail", "gate: warn", 1))
 
 	// The premise is load-bearing and invisible in the compare document, which
-	// carries no finding kinds: if the gate stopped tripping, this test would
+	// carries no finding kinds: if the rule stopped blocking, this test would
 	// silently degrade into a duplicate of testCompareCandidateOutsideTree.
 	if code, _, stderr := runArchfit(t, cmdCheck, "-c", cfgPath); code != 1 {
-		t.Fatalf("fixture regression: the coupling gate must trip and promote the advisory: check exit = %d\nstderr:\n%s", code, stderr)
+		t.Fatalf("fixture regression: the current config must block on the rule: check exit = %d\nstderr:\n%s", code, stderr)
 	}
 
 	doc := runCompareJSON(t, cfgPath, candidatePath)
@@ -480,7 +482,7 @@ func testCompareProtectedFiles(t *testing.T) {
 		t.Fatalf("baseline: exit = %d\nstderr:\n%s", code, stderr)
 	}
 	labelsPath := filepath.Join(repoDir, defaultLabelsPath)
-	if err := os.WriteFile(labelsPath, []byte("version: 1\nlabels: []\n"), 0o600); err != nil {
+	if err := os.WriteFile(labelsPath, []byte("version: 2\nlabels: []\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -577,7 +579,7 @@ func testCompareExitCodes(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg)
 	missing := filepath.Join(t.TempDir(), "absent.archfit.yaml")
-	invalid := writeCandidateCfg(t, "version: 1\nrules:\n  - id: bogus\n    type: not_a_rule_type\n")
+	invalid := writeCandidateCfg(t, "version: 2\nrules:\n  - id: bogus\n    type: not_a_rule_type\n")
 
 	tests := []struct {
 		name      string
