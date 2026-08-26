@@ -127,6 +127,15 @@ type scanRequest struct {
 // the returned report document and maps the application exit decision to the
 // CLI error contract.
 func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
+	// A conflicting output-format combination is a usage error: decide it before
+	// the progress banner and the config read, so `--json --markdown -c
+	// missing.yaml` names the flag conflict instead of a config the run never
+	// needed. Format semantics stay owned by the application; cmd only decides
+	// when the check runs.
+	if err := application.ValidateFormats(req.json, req.markdown, req.sarif, req.formats); err != nil {
+		return applicationExitError(err)
+	}
+
 	rep := newProgressReporter(deps.stderr(), analyzePhaseTotal(req.aiSummary, req.baseRef != ""), req.progress, req.quiet, time.Now())
 	rep.banner("Archfit analyzing " + analyzeTarget(req.configPath, req.root))
 	defer rep.finish()

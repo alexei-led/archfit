@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/application"
@@ -22,6 +23,23 @@ func TestOutcomeExitCodeOwnsCLIOutcomeTranslation(t *testing.T) {
 				t.Fatalf("outcomeExitCode(%q) = %d, want %d", test.outcome, got, test.want)
 			}
 		})
+	}
+}
+
+func TestRunScanRejectsFormatConflictBeforeConfigLoad(t *testing.T) {
+	var stderr bytes.Buffer
+	deps := &appDeps{Stderr: &stderr}
+	err := runScan(t.Context(), deps, scanRequest{
+		configPath: t.TempDir() + "/missing.yaml",
+		json:       true,
+		sarif:      true,
+		progress:   progressNone,
+	})
+	if err == nil {
+		t.Fatal("runScan error = nil, want format conflict")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("runScan error = %q, want the format conflict, not the config load failure", err)
 	}
 }
 

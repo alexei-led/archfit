@@ -1,6 +1,6 @@
 # Horizon 1 architecture re-review
 
-Date: 2026-08-24  
+Date: 2026-08-24
 Scope: report projection and diagnostic compatibility migration on PR #33
 
 ## Decision
