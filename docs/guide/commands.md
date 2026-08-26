@@ -218,7 +218,7 @@ Use cases:
 
 - first-time rollout;
 - re-anchoring after a deliberate cleanup wave;
-- re-anchoring `coupling.gate.max_drop` after a scorer or rubric change.
+- re-anchoring after a scorer or rubric change.
 
 A baseline is always the accepted state of the tree as checked out. There is no
 git-base mode; compare against a ref with `archfit check --base` instead.
@@ -234,8 +234,8 @@ What it writes:
 - Saves the baseline beside the config as `.archfit-baseline.json`.
 - Keeps metrics and score snapshots so later runs can detect fixed findings and score movement.
 - Records the scorer version (`score_version`) and rubric version (`rubric_version`)
-  the score snapshot was produced under, so an incompatible snapshot cannot anchor
-  `coupling.gate.max_drop`.
+  the score snapshot was produced under, so an incompatible snapshot is reported as
+  a non-comparable reference rather than silently compared against.
 
 Flags:
 
@@ -405,7 +405,8 @@ Use cases:
 - after adding, removing, or moving modules;
 - after enabling more language analyzers;
 - checking which config fields still need a decision;
-- reviewing AI proposals for new modules without changing the gate behavior.
+- reviewing AI proposals for new modules without changing the gate behavior;
+- migrating a config to the current schema version (`--migration-only`).
 
 Synopsis:
 
@@ -418,6 +419,10 @@ Notes:
 - Without `--apply`, this command is report-only.
 - With `--apply`, only added modules, path drift, and settings are written live.
 - `--apply` never deletes, comments out, or re-keys a configured module stanza.
+- `--migration-only` is a different job: a mechanical schema rewrite of the one
+  config file, with no discovery, no tool calls, and no cache access. It cannot
+  be combined with `--ai-classify` or `--refresh` (exit 3), and `--json`
+  previews while `--apply` writes — combining those two is also exit 3.
 - AI semantic proposals remain review-only even when `--apply` is used.
 - The report leads with one status line: `action_required`, `review_available`,
   or `no_known_issues`. `no_known_issues` means these checks found nothing; it is
@@ -485,6 +490,7 @@ Flags:
 | `--ai-classify` | bool   | `false`                 | Run AI classification for unclassified modules. Off-gate.                | `archfit config update --ai-classify -c .archfit.yaml`                      |
 | `--apply`       | bool   | `false`                 | Write structural changes live into `.archfit.yaml`. Backups are created. | `archfit config update --apply -c .archfit.yaml`                            |
 | `--json`        | bool   | `false`                 | Emit the review as JSON. Report-only.                                    | `archfit config update --json -c .archfit.yaml`                             |
+| `--migration-only` | bool | `false`                | Migrate the config to the current schema version and nothing else.       | `archfit config update --migration-only --apply -c .archfit.yaml`           |
 | `--refresh`     | bool   | `false`                 | Re-run AI calls and refresh the AI cache.                                | `archfit config update --ai-classify --refresh -c .archfit.yaml`            |
 | `--ai-provider` | string | `anthropic`             | Override the AI provider.                                                | `archfit config update --ai-classify --ai-provider ollama -c .archfit.yaml` |
 | `--ai-model`    | string | `claude-opus-4-8`       | Override the AI model.                                                   | `archfit config update --ai-classify --ai-model llama3.1 -c .archfit.yaml`  |
@@ -985,3 +991,56 @@ These are small, but they are still part of the surface.
 | --------------- | ------------------------------------------ | ------------------------------------- |
 | `-h, --help`    | every command                              | Show context-sensitive help and exit. |
 | `-v, --version` | top-level command and command help surface | Print version and exit.               |
+
+### `archfit config update --migration-only`
+
+Migrates one config file to the current schema version. It is the supported
+v1-to-v2 path, and the only thing `analyze` and `check` accept as an answer to a
+v1 config or a retired `coupling.gate.min_band` / `max_drop` key.
+
+```sh
+archfit config update --migration-only --json -c .archfit.yaml   # preview
+archfit config update --migration-only --apply -c .archfit.yaml  # write
+```
+
+What it does, deterministically:
+
+- sets the top-level `version:` to the current schema version;
+- removes the retired `coupling.gate.min_band` and `coupling.gate.max_drop`
+  keys, together with the comment lines documenting them;
+- inserts `coupling.gate.distributed_monolith` with `mode: warn` and
+  `max_new_seams: 0`;
+- reports the semantic policy change that follows from retiring the old gate.
+
+What it deliberately does not do:
+
+- infer `mode: fail`. Fail blocks a build, so enabling it stays an owner
+  decision taken after a report-only run against a comparable reference;
+- touch any other key, comment, or line. It is a line transform, not a YAML
+  round-trip, so authored formatting survives;
+- run discovery, analyzers, or the fact cache;
+- structural synchronization — that is ordinary `config update`.
+
+Running it twice is byte-identical: after the first pass there is nothing left
+to migrate.
+
+`--json` emits `archfit.config-migration.v1`:
+
+```json
+{
+  "schema_version": "archfit.config-migration.v1",
+  "status": "migration_required",
+  "from_version": 1,
+  "to_version": 2,
+  "config": ".archfit.yaml",
+  "changes": [
+    { "key": "version", "action": "set", "detail": "1 → 2" },
+    { "key": "coupling.gate.min_band", "action": "removed", "detail": "retired in schema v2" },
+    { "key": "coupling.gate.distributed_monolith", "action": "inserted", "detail": "mode: warn, max_new_seams: 0" }
+  ],
+  "policy_changes": ["..."]
+}
+```
+
+`status` is `migration_required` or `already_current`. Both exit 0; only an
+input or usage error exits 3.

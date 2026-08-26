@@ -33,7 +33,7 @@ outputs         — output format preferences
 ## Complete small example
 
 ```yaml
-version: 1
+version: 2
 
 exclude:
   - "**/generated/**"
@@ -443,7 +443,7 @@ LLM response cache lives at `.archfit-cache/llm/`.
 
 ## `coupling`
 
-Balanced-Coupling advisory tuning and the `coupling_balance` gate.
+Balanced-Coupling advisory tuning and the distributed-monolith seam gate.
 
 ```yaml
 coupling:
@@ -451,8 +451,9 @@ coupling:
   duplicated_knowledge: score # score (default) | advisory
   volatility_cascade: false
   gate:
-    min_band: mixed # band floor: poor | mixed | serviceable | strong
-    max_drop: 5 # tolerated coupling_balance point drop vs the baseline snapshot
+    distributed_monolith:
+      mode: warn # warn (default, diagnostic) | fail (blocking)
+      max_new_seams: 0 # tolerated newly introduced qualifying seams
 ```
 
 - `min_severity` — minimum advisory severity to show: `low` (all cross-module
@@ -473,39 +474,56 @@ coupling:
 
 ### `coupling.gate`
 
-Makes the synthesised `coupling_balance` score able to fail the run. Without
-this block the score is report-only — the default, and backward compatible.
-The block requires `min_band` and/or `max_drop`; an empty `gate:` is a config
-error (it would gate nothing).
+The only coupling gate. It counts **logical seams**, not import edges: one
+ordered module pair is one seam however many imports express it, so a seam
+written forty times does not read as forty times the risk.
 
-- `min_band` — band floor. Trips when the overall `coupling_balance` band
-  ranks below the floor: one of `poor`, `mixed`, `serviceable`, `strong`.
-  `critical` is rejected — no band ranks below it, so it could never trip.
-- `max_drop` — tolerated point drop of the `coupling_balance` value against
-  the score snapshot stored by `archfit baseline`. `0` means any drop trips.
-  A baseline written before the snapshot existed, or while the score was
-  unmeasured, carries no anchor — the drop check is skipped, never guessed.
-  A snapshot recorded under a different scorer version (`score_version`) or a
-  different scorecard rubric (`rubric_version`) also carries no anchor: a
-  methodology change is not a regression. A snapshot written before rubric
-  tracking is read as rubric `1` — the only rubric shipped so far — so it keeps
-  anchoring. The skip is disclosed on stderr and names the incompatible input —
-  re-run `archfit baseline` to re-anchor.
+The block requires `distributed_monolith`; an empty `gate:` is a config error
+(it would gate nothing). Omitting the whole block is fine and is **not** the
+same as switching the rule off — an absent block means `mode: warn`,
+`max_new_seams: 0`.
 
-An unmeasured score (band `n/a`) never trips the gate, whatever the knobs say:
-abstention is not failure. Only the unmeasured case is exempt — a run with
-partial tool coverage that still produces a measured score (for example TS
-with some unresolved imports, confidence capped at `medium`) gates like any
-other measured run.
+A seam qualifies as a distributed monolith when it has at least one **active
+edge** — a current source-graph edge between two resolved modules — in the
+critical band at high distance (`cross_module_different_owner` or
+`cross_deploy_unit`). Advisory display filters, baseline acceptance, and waivers
+cannot hide a qualifying seam: the rule reads the full classified edge set.
 
-When the gate trips, the verdict becomes FAIL (exit 1), the trip reasons print
-to stderr, and the active `bc/imbalanced_coupling` advisories are promoted to
-blocking findings — they then flow into `agent_tasks[]` like any other gate
-finding. Baselined and waived advisories stay triaged. When no advisory is
-available to promote (advisory output disabled, or `coupling.min_severity`
-filtering every active edge), the run emits one synthetic `bc/coupling_gate`
-finding carrying the trip reasons instead, so the report and `agent_tasks[]`
-always explain the failure.
+- `mode` — `warn` (default) reports qualifying seams and never fails the run.
+  `fail` blocks, but only on seams **newly introduced** against a comparable
+  reference. Opt into `fail` after a report-only run against a comparable
+  baseline shows the seam count you expect.
+- `max_new_seams` — tolerated count of newly introduced qualifying seams in
+  `fail` mode. Unset means `0`.
+
+"Newly introduced" needs a reference whose config, module map, labels, and
+rubric all match this run. Without one the rule reports the seam total, states
+that no new-seam count is claimed, and does not block — an unrated gate never
+fails. Reference precedence is fixed: an explicit `--base` reference wins,
+otherwise the stored baseline, otherwise no "new seam" claim is made.
+
+When the gate blocks, the verdict becomes FAIL (exit 1), the reasons print to
+stderr, and the run emits one `bc/coupling_gate` gate finding **per newly
+introduced seam**, each naming its module pair, so `agent_tasks[]` points at
+the seams that blocked rather than at unrelated advisories.
+
+#### Retired in schema v2
+
+`coupling.gate.min_band` and `coupling.gate.max_drop` gated the verdict on the
+repository `coupling_balance` scalar. They are retired: an averaged repository
+score is not an architecture decision. A config carrying either key, or
+declaring `version: 1`, is rejected by `analyze` and `check` with an exit-3
+error naming the migration:
+
+```sh
+archfit config update --migration-only --json   # preview the migration
+archfit config update --migration-only --apply  # perform it
+```
+
+The migration bumps the schema version, removes the retired knobs, and inserts
+`distributed_monolith` in **warn** mode. It never infers `fail` — that blocks a
+build, so it stays your decision. It preserves your comments and every unrelated
+key, and running it twice is byte-identical.
 
 `coupling_balance` is not a `metrics:` entry; a `metrics.coupling_balance:`
 key is a config error that points here.
@@ -1027,7 +1045,7 @@ server comment:
 
 ```yaml
 # yaml-language-server: $schema=./archfit.schema.json
-version: 1
+version: 2
 ```
 
 VS Code users can configure the schema in `.vscode/settings.json`:

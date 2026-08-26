@@ -169,8 +169,8 @@ type RuleSuggestion struct {
 	From         string
 	To           string
 	Max          *int
-	MinBand      string
-	MaxDrop      *int
+	Mode         string
+	MaxNewSeams  *int
 	Rationale    string
 	EvidenceRefs []string
 	Basis        string
@@ -522,11 +522,11 @@ func writeRuleSuggestionComments(b *strings.Builder, ann map[string]ModuleAnnota
 		if s.Max != nil {
 			fmt.Fprintf(b, "  #   max: %d\n", *s.Max)
 		}
-		if s.MinBand != "" {
-			fmt.Fprintf(b, "  #   min_band: %s\n", sanitizeComment(s.MinBand))
+		if s.Mode != "" {
+			fmt.Fprintf(b, "  #   mode: %s\n", sanitizeComment(s.Mode))
 		}
-		if s.MaxDrop != nil {
-			fmt.Fprintf(b, "  #   max_drop: %d\n", *s.MaxDrop)
+		if s.MaxNewSeams != nil {
+			fmt.Fprintf(b, "  #   max_new_seams: %d\n", *s.MaxNewSeams)
 		}
 		if s.Basis != "" {
 			fmt.Fprintf(b, "  #   basis: %s\n", sanitizeComment(s.Basis))

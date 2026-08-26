@@ -703,6 +703,7 @@ var cmdDomainAdapterFiles = map[string]string{
 	"llmreview.go":              "off-gate LLM review; initcfg supplies the draft format",
 	"draft_metadata.go":         "initcfg draft metadata translation",
 	"evidence_pack.go":          "initcfg evidence-pack translation",
+	"config_migrate.go":         "config schema migration; initcfg owns the YAML transform",
 }
 
 func TestCommandStagesDoNotImportDomainInternals(t *testing.T) {

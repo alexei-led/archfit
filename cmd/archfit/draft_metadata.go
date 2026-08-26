@@ -19,6 +19,9 @@ const (
 	ruleTypePublicAPIMax            = "public_api_max"
 	ruleTypePublicAPIChange         = "public_api_change"
 	ruleTypeCouplingGate            = "coupling.gate"
+	// distributedMonolithWarnMode is the only coupling-gate mode a suggestion
+	// may propose: fail blocks a build, so it stays an owner decision.
+	distributedMonolithWarnMode = "warn"
 )
 
 var allowedDraftRuleTypes = map[string]struct{}{
@@ -36,8 +39,8 @@ type ruleSuggestionResponse struct {
 	From         string   `json:"from"`
 	To           string   `json:"to"`
 	Max          *int     `json:"max"`
-	MinBand      string   `json:"min_band"`
-	MaxDrop      *int     `json:"max_drop"`
+	Mode         string   `json:"mode"`
+	MaxNewSeams  *int     `json:"max_new_seams"`
 	Rationale    string   `json:"rationale"`
 	EvidenceRefs []string `json:"evidence_refs"`
 	Basis        string   `json:"basis"`
@@ -249,8 +252,8 @@ func parseRuleSuggestionResponses(module string, entries []ruleSuggestionRespons
 			From:         from,
 			To:           to,
 			Max:          e.Max,
-			MinBand:      strings.TrimSpace(e.MinBand),
-			MaxDrop:      e.MaxDrop,
+			Mode:         strings.TrimSpace(e.Mode),
+			MaxNewSeams:  e.MaxNewSeams,
 			Rationale:    rationale,
 			EvidenceRefs: refs,
 			Basis:        basis,
@@ -280,8 +283,11 @@ func validateRuleSuggestionShape(s initcfg.RuleSuggestion) error {
 	case ruleTypePublicAPIChange:
 		// No extra shape: public_api_change is global and defaults to gate: warn.
 	case ruleTypeCouplingGate:
-		if s.MinBand == "" && s.MaxDrop == nil {
-			return fmt.Errorf("rule suggestion %q requires min_band or max_drop", subject)
+		// The coupling gate counts newly introduced distributed-monolith seams.
+		// fail is never proposed: it blocks a build, so it stays an owner
+		// decision taken after a report-only run.
+		if s.Mode != "" && s.Mode != distributedMonolithWarnMode {
+			return fmt.Errorf("rule suggestion %q may only propose the coupling gate in warn mode", subject)
 		}
 	}
 	return nil
