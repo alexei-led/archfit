@@ -171,11 +171,18 @@ func TestSelfModelHasNoAmbiguousPackageOwnership(t *testing.T) {
 }
 
 // globWeight mirrors the ordering policy.ModuleMap uses to pick the most
-// specific match: more path segments and fewer wildcards win.
+// specific match: the byte length of the glob's literal prefix, i.e. everything
+// before the first wildcard metacharacter. Copied verbatim from
+// policy.globSpecificity (internal/policy/module.go) — the tie this test looks
+// for is only real if the two rank patterns identically, so keep them in step.
 func globWeight(glob string) int {
-	weight := strings.Count(glob, "/") * 10
-	weight -= strings.Count(glob, "*") * 3
-	return weight
+	for i := 0; i < len(glob); i++ {
+		switch glob[i] {
+		case '*', '?', '[', '{':
+			return i
+		}
+	}
+	return len(glob)
 }
 
 // TestSelfModelHasNoDeadRules fails when a rule points at a path that no longer

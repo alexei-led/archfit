@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -155,7 +156,7 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 		ReportOnly:   req.reportOnly,
 	})
 	if err != nil {
-		return err
+		return applicationExitError(err)
 	}
 
 	if err := analyzeRender(deps, resp); err != nil {
@@ -176,6 +177,18 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 		return &exitError{code: code}
 	}
 	return nil
+}
+
+// applicationExitError maps a controlled use-case failure onto the CLI exit
+// contract. The use case names the failure; cmd owns the exit code and the one
+// "error: " prefix, so main.go's uncoded fallback cannot add a second one.
+func applicationExitError(err error) error {
+	var formats *application.InvalidFormatsError
+	var exec *application.ExecutionError
+	if errors.As(err, &formats) || errors.As(err, &exec) {
+		return &exitError{code: 3, msg: "error: " + err.Error()}
+	}
+	return err
 }
 
 func outcomeExitCode(outcome application.Outcome) int {

@@ -201,7 +201,7 @@ func TestServiceForwardsRequestAndWrapsStageFailure(t *testing.T) {
 		if !errors.As(err, &exec) {
 			t.Fatalf("Execute error = %T (%v), want *ExecutionError", err, err)
 		}
-		if exec.Message != "error: evidence acquisition: no tools" {
+		if exec.Message != "evidence acquisition: no tools" {
 			t.Errorf("message = %q, want the stage cause disclosed", exec.Message)
 		}
 	})

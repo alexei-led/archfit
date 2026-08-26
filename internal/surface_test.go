@@ -16,6 +16,9 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/packages"
+
+	"github.com/alexei-led/archfit/internal/assessment/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // surfaceOwners are the packages the capability migration reshaped. Every
@@ -167,4 +170,19 @@ func readSource(path string) (string, error) {
 		return true
 	})
 	return b.String(), nil
+}
+
+// TestScorecardRubricVersionsAgree pins the two copies of the rubric version
+// equal. The write path stamps score.RubricVersion into the stored baseline
+// snapshot; the read path compares it against report.RubricVersion. score is a
+// core-ring package and cannot import the report contract, so the constant is
+// duplicated — a one-sided bump would make every stored baseline read as an
+// incompatible snapshot and silently skip the coupling gate's max_drop check.
+func TestScorecardRubricVersionsAgree(t *testing.T) {
+	t.Parallel()
+
+	if score.RubricVersion != report.RubricVersion {
+		t.Fatalf("score.RubricVersion = %d, report.RubricVersion = %d; bump both or neither",
+			score.RubricVersion, report.RubricVersion)
+	}
 }

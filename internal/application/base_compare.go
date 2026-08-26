@@ -39,10 +39,10 @@ func (s StageExecutor) attachBaseComparison(ctx context.Context, req AnalysisReq
 	// `git worktree add --detach <dir> --force` silently checks out HEAD and the
 	// delta becomes HEAD-vs-HEAD. Reject rather than pass through.
 	if strings.HasPrefix(req.BaseRef, "-") {
-		return nil, &ExecutionError{Message: fmt.Sprintf("error: invalid --base ref %q", req.BaseRef)}
+		return nil, &ExecutionError{Message: fmt.Sprintf("invalid --base ref %q", req.BaseRef)}
 	}
 	if s.Worktree == nil || s.NewBaseEvidence == nil {
-		return nil, &ExecutionError{Message: "error: --base is not available in this build"}
+		return nil, &ExecutionError{Message: "--base is not available in this build"}
 	}
 	if s.Progress != nil {
 		s.reportPhase("Comparing against base")
@@ -59,11 +59,11 @@ func (s StageExecutor) attachBaseComparison(ctx context.Context, req AnalysisReq
 		defer cleanup()
 	}
 	if err != nil {
-		return nil, &ExecutionError{Message: "error: " + err.Error()}
+		return nil, &ExecutionError{Message: err.Error()}
 	}
 	card, evidence, err := s.scoreBaseTree(ctx, req, runCtx, bundleDir, baseRoot)
 	if err != nil {
-		return nil, &ExecutionError{Message: fmt.Sprintf("error: score base (%s): %v", req.BaseRef, err)}
+		return nil, &ExecutionError{Message: fmt.Sprintf("score base (%s): %v", req.BaseRef, err)}
 	}
 	evaluation.AttachGitOrigin(diag, evaluation.GitOriginInput{
 		BaseRef: req.BaseRef, BaseFindingIDs: evidence.FindingIDs,

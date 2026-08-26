@@ -262,8 +262,10 @@ func (s StageExecutor) loadBaseline(ctx context.Context, req AnalysisRequest, ru
 func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired Acquired, base Baseline) (AnalysisResult, error) {
 	runCtx := acquired.Context
 	facts := observationsOf(acquired.Facts)
+	s.reportPhase("Analyzing dependencies")
+	relationships := relate(acquired)
 	assessed, err := evaluation.Assess(evaluation.AssessInput{
-		Facts: facts, Relationships: relate(acquired), Policy: runCtx.Policy,
+		Facts: facts, Relationships: relationships, Policy: runCtx.Policy,
 		Accepted: base.Accepted, BaseMetrics: result.MetricSnapshot(base.Metrics),
 		Scope: runCtx.Scope, Now: runCtx.Now, BaseRef: req.BaseRef,
 		Advisory: !req.NoAdvisories, CaptureRelationships: req.CaptureRelationships,
@@ -403,10 +405,10 @@ func resolveFormats(jsonFlag, markdownFlag, sarifFlag bool, formats []string) ([
 		shorthands++
 	}
 	if shorthands > 1 {
-		return nil, &InvalidFormatsError{Message: "error: --json, --markdown, and --sarif are mutually exclusive; use at most one"}
+		return nil, &InvalidFormatsError{Message: "--json, --markdown, and --sarif are mutually exclusive; use at most one"}
 	}
 	if shorthands > 0 && len(formats) > 0 {
-		return nil, &InvalidFormatsError{Message: "error: --json/--markdown/--sarif and --format are mutually exclusive"}
+		return nil, &InvalidFormatsError{Message: "--json/--markdown/--sarif and --format are mutually exclusive"}
 	}
 	switch {
 	case jsonFlag:
@@ -443,7 +445,14 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 		RequireTools: req.RequireTools, ApplyToolGate: true, DiscloseHealthWarnings: true,
 	})
 	if err != nil {
-		return Response{}, &ExecutionError{Message: fmt.Sprintf("error: %v", err)}
+		// A controlled stage failure already carries the user-facing wording; the
+		// internal stage name the wrapper added is not part of it. Re-wrapping
+		// would leak "assessment:" and a second "error:" prefix into stderr.
+		var controlled *ExecutionError
+		if errors.As(err, &controlled) {
+			return Response{}, controlled
+		}
+		return Response{}, &ExecutionError{Message: err.Error()}
 	}
 
 	return Response{
