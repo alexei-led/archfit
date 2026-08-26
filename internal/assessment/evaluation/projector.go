@@ -76,6 +76,7 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 		AdvisoryTasks:           []result.AdvisoryTask{},
 		ToolCoverage:            coverage,
 		ClassifiedEdges:         classifiedEdges,
+		Seams:                   projectSeams(in.RelationshipSignals.Seams),
 		Delta:                   delta,
 		Summary: result.Summary{
 			GateFindings: gateNew,

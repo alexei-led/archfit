@@ -65,13 +65,18 @@ type Result struct {
 	PrimaryExtractorTools     []string                            `json:"primary_extractor_tools,omitempty"`
 	ConfigWarnings            []string                            `json:"config_warnings,omitempty"`
 	ClassifiedEdges           *ClassifiedEdgeSummary              `json:"classified_edges,omitempty"`
-	DistanceContext           *evidence.DistanceContext           `json:"distance_context,omitempty"`
-	DistanceConfigCandidates  []evidence.DistanceConfigCandidate  `json:"distance_config_candidates,omitempty"`
-	VolatilityCorroboration   *evidence.VolatilityCorroboration   `json:"volatility_corroboration,omitempty"`
-	LocalCoupling             []evidence.LocalCouplingModule      `json:"local_coupling,omitempty"`
-	GitFindingDelta           *GitFindingDelta                    `json:"git_finding_delta,omitempty"`
-	Delta                     *DeltaReport                        `json:"delta,omitempty"`
-	Summary                   Summary                             `json:"summary"`
+	// Seams is the logical coupling seam ledger, one record per ordered module
+	// pair. It is `json:"-"` for the same reason State is: the diagnostic
+	// schema is frozen, and the seam ledger reaches the wire through the
+	// architecture-state contract.
+	Seams                    []Seam                             `json:"-"`
+	DistanceContext          *evidence.DistanceContext          `json:"distance_context,omitempty"`
+	DistanceConfigCandidates []evidence.DistanceConfigCandidate `json:"distance_config_candidates,omitempty"`
+	VolatilityCorroboration  *evidence.VolatilityCorroboration  `json:"volatility_corroboration,omitempty"`
+	LocalCoupling            []evidence.LocalCouplingModule     `json:"local_coupling,omitempty"`
+	GitFindingDelta          *GitFindingDelta                   `json:"git_finding_delta,omitempty"`
+	Delta                    *DeltaReport                       `json:"delta,omitempty"`
+	Summary                  Summary                            `json:"summary"`
 	// State is the architecture-state result. It rides the diagnostic rather
 	// than a parallel return value so every stage that already carries the
 	// diagnostic carries the state too. It is `json:"-"` because the diagnostic

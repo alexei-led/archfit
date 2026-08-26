@@ -32,3 +32,39 @@ func projectRelationshipSummary(in *relationship.ClassifiedEdgeSummary) *result.
 	}
 	return out
 }
+
+// projectSeams copies the relationship seam ledger into the assessment result.
+// It is a pure rename of typed values: assessment never recomputes a seam, and
+// nothing here reads a threshold.
+func projectSeams(in []relationship.Seam) []result.Seam {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]result.Seam, 0, len(in))
+	for _, s := range in {
+		out = append(out, result.Seam{
+			ID: s.ID, FromModule: s.FromModule, ToModule: s.ToModule,
+			Edges: s.Edges, ScoredEdges: s.ScoredEdges, AbstainedEdges: s.AbstainedEdges,
+			Strength: string(s.Strength), Distance: string(s.Distance), Volatility: string(s.Volatility),
+			VolatilityProvenance: s.VolatilityProvenance, Severity: string(s.Severity),
+			RawDistance: result.SeamDistance{
+				Level: string(s.RawDistance.Level), Basis: s.RawDistance.Basis,
+				FromOwner: s.RawDistance.FromOwner, ToOwner: s.RawDistance.ToOwner, SameOwner: s.RawDistance.SameOwner,
+				FromDeployUnit: s.RawDistance.FromDeployUnit, ToDeployUnit: s.RawDistance.ToDeployUnit,
+				SameDeployUnit:    s.RawDistance.SameDeployUnit,
+				BoundaryCrossings: s.RawDistance.BoundaryCrossings, SharedAncestor: s.RawDistance.SharedAncestor,
+			},
+			Quadrant: string(s.Quadrant),
+			Scores: result.SeamScoreDistribution{
+				N: s.Scores.N, Min: s.Scores.Min, Median: s.Scores.Median, Max: s.Scores.Max,
+				P10: s.Scores.P10, P90: s.Scores.P90, Mean: s.Scores.Mean,
+			},
+			CriticalEdges: s.CriticalEdges, HighOrWorseEdges: s.HighOrWorseEdges,
+			CriticalSharePct: s.CriticalSharePct, HighOrWorseSharePct: s.HighOrWorseSharePct,
+			Labels: s.Labels, LabelEvidenceHash: s.LabelEvidenceHash, Confidence: string(s.Confidence),
+			RoleExpectation: string(s.RoleExpectation), Hypothesis: string(s.Hypothesis),
+			DistributedMonolith: s.DistributedMonolith,
+		})
+	}
+	return out
+}

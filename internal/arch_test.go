@@ -351,15 +351,26 @@ func TestTransitionalContractSurfaceRatchet(t *testing.T) {
 	targets := []struct {
 		pkg string
 		max int
+		// contractPrefix carves one deliberately-added contract out of the cap.
+		// Names carrying it count against contractMax instead of max, so a
+		// contract the migration ADDS on purpose cannot be used as cover for
+		// the scalar-era surface it is supposed to replace: both bounds hold
+		// independently, and both may still only fall.
+		contractPrefix string
+		contractMax    int
 	}{
-		{modulePrefix + "internal/relationship", 55},
-		{modulePrefix + "internal/assessment/result", 35},
-		{modulePrefix + "internal/evidence", 8},
+		// Task 3 adds the Seam* ledger contract (25 names) here as the
+		// replacement for the repository coupling scalar. The remaining
+		// scalar-era surface stays capped at 55 and comes down in Task 4 when
+		// the formats stop reading ClassifiedEdgeSummary.
+		{pkg: modulePrefix + "internal/relationship", max: 55, contractPrefix: "Seam", contractMax: 25},
+		{pkg: modulePrefix + "internal/assessment/result", max: 35},
+		{pkg: modulePrefix + "internal/evidence", max: 8},
 		// Task 2 deleted internal/view (29 exported) and internal/model/module
 		// (11 exported), moving their contracts to their owners — most of them
 		// here. 40 is below the 48 those three packages published together, and
 		// like every cap in this table it may fall, never rise.
-		{modulePrefix + "internal/policy", 40},
+		{pkg: modulePrefix + "internal/policy", max: 40},
 	}
 	paths := make([]string, 0, len(targets))
 	for _, tc := range targets {
@@ -369,16 +380,25 @@ func TestTransitionalContractSurfaceRatchet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load transitional contract packages: %v", err)
 	}
-	counts := make(map[string]int, len(loaded))
+	prefixes := make(map[string]string, len(targets))
+	for _, tc := range targets {
+		prefixes[tc.pkg] = tc.contractPrefix
+	}
+	counts, contractCounts := make(map[string]int, len(loaded)), make(map[string]int, len(loaded))
 	for _, pkg := range loaded {
 		if pkg.Types == nil {
 			t.Fatalf("no type information for %s", pkg.PkgPath)
 		}
 		scope := pkg.Types.Scope()
 		for _, name := range scope.Names() {
-			if scope.Lookup(name).Exported() {
-				counts[pkg.PkgPath]++
+			if !scope.Lookup(name).Exported() {
+				continue
 			}
+			if prefix := prefixes[pkg.PkgPath]; prefix != "" && strings.HasPrefix(name, prefix) {
+				contractCounts[pkg.PkgPath]++
+				continue
+			}
+			counts[pkg.PkgPath]++
 		}
 	}
 	for _, tc := range targets {
@@ -389,6 +409,13 @@ func TestTransitionalContractSurfaceRatchet(t *testing.T) {
 		if got > tc.max {
 			t.Errorf("%s exported surface = %d, want <= %d: the migration narrows these contracts, it never widens them",
 				tc.pkg, got, tc.max)
+		}
+		if tc.contractPrefix == "" {
+			continue
+		}
+		if got := contractCounts[tc.pkg]; got > tc.contractMax {
+			t.Errorf("%s %s* contract surface = %d, want <= %d: an added contract is capped too",
+				tc.pkg, tc.contractPrefix, got, tc.contractMax)
 		}
 	}
 }

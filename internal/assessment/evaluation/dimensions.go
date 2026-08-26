@@ -9,6 +9,7 @@ import (
 	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 // Metric units. They mirror the existing metric Mode vocabulary so a dimension
@@ -244,9 +245,9 @@ func modularityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dim
 // strength or distance is unknown, which lowers confidence rather than
 // disappearing from the count.
 //
-// V1 reports the underlying edge classification only. The logical seam ledger,
-// its distribution, and the distributed-monolith policy are a separate task;
-// this envelope carries their facts when they land.
+// The edge split is the denominator; the seam ledger is the unit a reader acts
+// on. Both travel: forty imports expressing one seam is one thing to redesign,
+// and reporting only the edge count reads as forty.
 func couplingDimension(diag *result.Result) state.Dimension {
 	dim := state.NewDimension(state.DimensionCoupling, state.OwnerCoupling)
 	ce := diag.ClassifiedEdges
@@ -288,9 +289,42 @@ func couplingDimension(diag *result.Result) state.Dimension {
 			// module pairs and is owned by the coupling gate, not this envelope.
 			count("critical_high_distance_edges", tail.DistributedMonolithEdges, provRelationship))
 	}
+	dim.Metrics = append(dim.Metrics, seamMetrics(diag.Seams)...)
 	dim.Metrics = append(dim.Metrics, metricValues(diag.Metrics, "unbalanced_edge")...)
 	dim.Confidence = weakest(state.ConfidenceFor(dim.Status), metricConfidence(diag.Metrics, "unbalanced_edge"))
 	return dim
+}
+
+// seamMetrics reports the ledger's shape: how many logical seams the edges
+// express, and how many of them sit in each interesting quadrant.
+//
+// The counts are seams, never edges. The two differ by an order of magnitude on
+// a real repository, and reporting the edge count as the seam count is the
+// weighting defect the ledger exists to fix (plan R4).
+func seamMetrics(seams []result.Seam) []state.MetricValue {
+	if len(seams) == 0 {
+		return nil
+	}
+	var distributed, tight, unrated int
+	for _, s := range seams {
+		if s.DistributedMonolith {
+			distributed++
+		}
+		if s.Quadrant == string(relationship.SeamQuadrantTight) {
+			tight++
+		}
+		if s.Confidence == string(relationship.SeamConfidenceUnrated) {
+			unrated++
+		}
+	}
+	return []state.MetricValue{
+		count("seams", len(seams), provRelationship),
+		{Name: "distributed_monolith_seams", Value: float64(distributed), Unit: unitCount,
+			Denominator: &state.MetricDenominator{Observed: len(seams) - unrated, Total: len(seams)},
+			Provenance:  []string{provRelationship}},
+		count("tight_seams", tight, provRelationship),
+		count("unrated_seams", unrated, provRelationship),
+	}
 }
 
 // changeLocalityDimension reports the bounded git-history corroboration.

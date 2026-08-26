@@ -81,7 +81,12 @@ func Analyze(in Input) relationship.AnalysisResult {
 	sortDistanceConfigCandidates(distanceCandidates)
 	out := relationship.AnalysisResult{
 		Relationships: set,
-		Assessment:    relationship.AssessmentSignals{AdvisoryCandidates: advisoryCandidates(set, clones, cfg), ClassifiedEdges: classifiedEdges},
+		Assessment: relationship.AssessmentSignals{
+			AdvisoryCandidates: advisoryCandidates(set, clones, cfg),
+			ClassifiedEdges:    classifiedEdges,
+			Seams: buildSeams(seamInput{Set: set, Config: cfg, DeclaredModules: in.Policy.Topology.Modules,
+				Graph: in.Graph, EvidenceHashes: evidenceHashes}),
+		},
 		Evidence: relationship.AnalysisEvidence{
 			LLMApprovedCount:          labels.LLMApprovedCount(in.Labels, evidenceHashes),
 			RuntimeModules:            runtimeModules(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap),

@@ -93,6 +93,11 @@ type AssessmentSignals struct {
 	AdvisoryCandidates []AdvisoryCandidate
 	ClassifiedEdges    *ClassifiedEdgeSummary
 	StaleLabelKeys     []string
+	// Seams is the logical seam ledger: one record per ordered module pair,
+	// built from the full classified edge set before any severity, baseline, or
+	// waiver filter. The distributed-monolith policy counts these seams, so a
+	// display filter must never be able to hide one.
+	Seams []Seam
 }
 
 // AnalysisEvidence is report-only relationship provenance. Assessment never

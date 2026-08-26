@@ -148,3 +148,64 @@ const (
 	// GitComparisonUnknown means at least one task origin was uncertain.
 	GitComparisonUnknown = "unknown"
 )
+
+// Seam is the assessment-side mirror of one logical coupling seam: an ordered
+// module pair with its measured edge denominator, score distribution, raw
+// distance context, and role expectation.
+//
+// The seam replaces the repository coupling scalar as the unit of coupling
+// reporting. Every field is a fact about that one pair; there is deliberately
+// no repository-wide roll-up here, because averaging seams is exactly the
+// aggregation the migration removes.
+type Seam struct {
+	ID                   string                `json:"id"`
+	FromModule           string                `json:"from_module"`
+	ToModule             string                `json:"to_module"`
+	Edges                int                   `json:"edges"`
+	ScoredEdges          int                   `json:"scored_edges"`
+	AbstainedEdges       int                   `json:"abstained_edges"`
+	Strength             string                `json:"strength"`
+	Distance             string                `json:"distance"`
+	Volatility           string                `json:"volatility"`
+	VolatilityProvenance string                `json:"volatility_provenance,omitempty"`
+	Severity             string                `json:"severity,omitempty"`
+	RawDistance          SeamDistance          `json:"raw_distance"`
+	Quadrant             string                `json:"quadrant,omitempty"`
+	Scores               SeamScoreDistribution `json:"scores"`
+	CriticalEdges        int                   `json:"critical_edges"`
+	HighOrWorseEdges     int                   `json:"high_or_worse_edges"`
+	CriticalSharePct     int                   `json:"critical_share_pct"`
+	HighOrWorseSharePct  int                   `json:"high_or_worse_share_pct"`
+	Labels               []string              `json:"labels,omitempty"`
+	LabelEvidenceHash    string                `json:"label_evidence_hash,omitempty"`
+	Confidence           string                `json:"confidence"`
+	RoleExpectation      string                `json:"role_expectation,omitempty"`
+	Hypothesis           string                `json:"hypothesis,omitempty"`
+	DistributedMonolith  bool                  `json:"distributed_monolith,omitempty"`
+}
+
+// SeamDistance is the raw distance evidence behind a seam's collapsed rung.
+type SeamDistance struct {
+	Level             string `json:"level"`
+	Basis             string `json:"basis,omitempty"`
+	FromOwner         string `json:"from_owner,omitempty"`
+	ToOwner           string `json:"to_owner,omitempty"`
+	SameOwner         bool   `json:"same_owner"`
+	FromDeployUnit    string `json:"from_deploy_unit,omitempty"`
+	ToDeployUnit      string `json:"to_deploy_unit,omitempty"`
+	SameDeployUnit    bool   `json:"same_deploy_unit"`
+	BoundaryCrossings int    `json:"boundary_crossings"`
+	SharedAncestor    int    `json:"shared_ancestor"`
+}
+
+// SeamScoreDistribution is the per-seam spread of book balance scores. P10 and
+// P90 are null below ten samples: a decile over fewer samples is invented.
+type SeamScoreDistribution struct {
+	N      int     `json:"n"`
+	Min    int     `json:"min"`
+	Median int     `json:"median"`
+	Max    int     `json:"max"`
+	P10    *int    `json:"p10"`
+	P90    *int    `json:"p90"`
+	Mean   float64 `json:"mean"`
+}
