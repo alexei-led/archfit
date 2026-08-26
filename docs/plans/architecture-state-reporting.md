@@ -1510,14 +1510,24 @@ Manual checks:
   repository validation, and successful controlled config delivery. After GO,
   regenerate the v2 baseline and run final baseline-read/compare validation.
 
-- [ ] Slice 6A: update and test the corpus harness for v1 state, strict exits,
+- [x] Slice 6A: update and test the corpus harness for v1 state, strict exits,
       format parity, config migration artifacts, and idempotence; commit.
-- [ ] Run the mandatory four-language fast matrix and classify every anomaly.
-- [ ] Fix each confirmed Archfit/config-migration defect with impact evidence, a
+- [x] Run the mandatory four-language fast matrix and classify every anomaly.
+- [x] Fix each confirmed Archfit/config-migration defect with impact evidence, a
       minimal regression test, and one focused commit; rerun the affected repo
-      and fast matrix after each fix.
-- [ ] Run the full corpus and inspect every config/output/coverage result.
-- [ ] Update corpus/evaluation docs from observed v1 behavior; commit.
+      and fast matrix after each fix. (Four defects: missing canonical finding
+      index in text/Markdown/scorecard; byte-sliced UTF-8 truncation in three
+      packages; the module-glob hint reading the SCIP-derived FileFacts; the
+      coupling envelope ignoring the TypeScript unresolved-specifier cap. No
+      config-migration defect found — every corpus config migrated as a single
+      `version:` line change and was byte-idempotent.)
+- [x] Run the full corpus and inspect every config/output/coverage result.
+      (11/11 pass, `--strict` exit 0, both plan jq gates green. Anomalies
+      classified in docs/test-corpus.md §Observed v1 behaviour; the only open
+      item is a disclosure-quality difference between
+      `languages.rust.enabled: auto` and `true` when cargo is absent, recorded
+      and deliberately not fixed because the deterministic contract holds.)
+- [x] Update corpus/evaluation docs from observed v1 behavior; commit.
 - [ ] Rerun the full corpus, full repository validation, and GitNexus change
       detection after the last fix or documentation change.
 - [ ] Obtain an owner-confirmed exclusive delivery window; acquire the atomic
