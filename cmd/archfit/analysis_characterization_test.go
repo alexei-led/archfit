@@ -12,7 +12,7 @@ const (
 	characterizationGateFindingID     = "2b94da420ec7ed905e95b7565c44b316"
 	characterizationAdvisoryFindingID = "908bc68647ca3f180713dd7d90f3c774"
 	characterizationBCRuleID          = "bc/imbalanced_coupling"
-	characterizationScoreDimension    = "coupling_balance"
+	characterizationScoreDimension    = "coupling"
 
 	stateSchemaVersion  = "archfit.architecture-state.v1"
 	stateDimensionCount = 9
@@ -169,7 +169,7 @@ func assertCharacterizationScorecard(t *testing.T, configPath string) {
 	if code != 1 {
 		t.Fatalf("scorecard check exit = %d, want 1", code)
 	}
-	for _, want := range []string{"# archfit scorecard", characterizationScoreDimension, "**Overall:**"} {
+	for _, want := range []string{"# archfit architecture state", "### " + characterizationScoreDimension + " — ", "**Coverage:**"} {
 		if !strings.Contains(string(output), want) {
 			t.Errorf("scorecard output missing %q", want)
 		}

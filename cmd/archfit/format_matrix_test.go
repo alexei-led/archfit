@@ -330,3 +330,95 @@ func runFormatOutput(t *testing.T, cfgPath, format string) []byte {
 	}
 	return stdout.Bytes()
 }
+
+// TestFormatMatrix_SarifCarriesTheState is SARIF's half of the parity rule: it
+// is exempt from human layout, not from facts. The run properties must report
+// the same verdict, decision, nine dimensions, and coverage split as
+// --format json, and every finding must keep its rule ID and fingerprint.
+func TestFormatMatrix_SarifCarriesTheState(t *testing.T) {
+	t.Parallel()
+	requireHealthyExtraction(t)
+
+	cfgPath := writeViolatingRepo(t)
+
+	var state struct {
+		Verdict  string `json:"verdict"`
+		Decision struct {
+			HardGates      string `json:"hard_gates"`
+			ActiveBlockers int    `json:"active_blockers"`
+		} `json:"decision"`
+		Coverage struct {
+			Measured   int `json:"measured"`
+			Partial    int `json:"partial"`
+			Unmeasured int `json:"unmeasured"`
+		} `json:"coverage"`
+		Findings []struct {
+			ID     string `json:"id"`
+			RuleID string `json:"rule_id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(runFormatOutput(t, cfgPath, formatJSON), &state); err != nil {
+		t.Fatalf("decode architecture state: %v", err)
+	}
+
+	var log struct {
+		Runs []struct {
+			Properties struct {
+				Verdict  string `json:"verdict"`
+				Decision struct {
+					HardGates      string `json:"hard_gates"`
+					ActiveBlockers int    `json:"active_blockers"`
+				} `json:"decision"`
+				Dimensions []struct {
+					Name string `json:"name"`
+				} `json:"dimensions"`
+				Coverage struct {
+					Measured   int `json:"measured"`
+					Partial    int `json:"partial"`
+					Unmeasured int `json:"unmeasured"`
+				} `json:"coverage"`
+			} `json:"properties"`
+			Results []struct {
+				RuleID       string            `json:"ruleId"`
+				Fingerprints map[string]string `json:"fingerprints"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(runFormatOutput(t, cfgPath, formatSarif), &log); err != nil {
+		t.Fatalf("decode SARIF: %v", err)
+	}
+	if len(log.Runs) != 1 {
+		t.Fatalf("SARIF runs = %d, want 1", len(log.Runs))
+	}
+	props := log.Runs[0].Properties
+
+	if props.Verdict != state.Verdict {
+		t.Errorf("SARIF verdict = %q, JSON says %q", props.Verdict, state.Verdict)
+	}
+	if props.Decision != state.Decision {
+		t.Errorf("SARIF decision = %+v, JSON says %+v", props.Decision, state.Decision)
+	}
+	if props.Coverage != state.Coverage {
+		t.Errorf("SARIF coverage = %+v, JSON says %+v", props.Coverage, state.Coverage)
+	}
+	if len(props.Dimensions) != stateDimensionCount {
+		t.Errorf("SARIF dimensions = %d, want %d", len(props.Dimensions), stateDimensionCount)
+	}
+
+	// Finding identity is untouched by the cutover: an existing code-scanning
+	// consumer must keep resolving the same alerts.
+	fingerprints := map[string]string{}
+	for _, r := range log.Runs[0].Results {
+		fingerprints[r.Fingerprints["archfit/v1"]] = r.RuleID
+	}
+	for _, f := range state.Findings {
+		rule, present := fingerprints[f.ID]
+		if !present {
+			t.Errorf("SARIF dropped finding %s (%s)", f.ID, f.RuleID)
+			continue
+		}
+		if rule != f.RuleID {
+			t.Errorf("SARIF ruleId for %s = %q, JSON says %q", f.ID, rule, f.RuleID)
+		}
+	}
+}

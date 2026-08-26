@@ -15,6 +15,7 @@ import (
 
 const (
 	ruleInternal = "no_internal_access"
+	fpGate       = "f-gate"
 	fileA        = "pkg/a/a.go"
 )
 
@@ -26,7 +27,7 @@ func sampleDiagnostic() reportmodel.Document {
 	d.Metrics = []reportmodel.MetricResult{{Name: "cycle", Value: 0, Band: "green"}}
 	d.Findings = reporttest.Findings(
 		finding.Finding{
-			ID: "f-gate", Kind: "gate", RuleID: ruleInternal,
+			ID: fpGate, Kind: "gate", RuleID: ruleInternal,
 			Status: finding.StatusNew, Severity: finding.SeverityHigh,
 			Edge: finding.EdgeEvidence{
 				From: finding.Endpoint{Path: fileA},
@@ -46,6 +47,16 @@ func sampleDiagnostic() reportmodel.Document {
 			Edge:   finding.EdgeEvidence{From: finding.Endpoint{Path: "pkg/d/d.go"}},
 		},
 	)
+	d.State = reportmodel.NewArchitectureState()
+	d.State.Verdict = reportmodel.StateBlocked
+	d.State.Decision = reportmodel.StateDecision{
+		HardGates: reportmodel.HardGateFail, ActiveBlockers: 1, AttentionDimensions: 1, UnknownDimensions: 8,
+	}
+	d.State.Dimensions.Structure.Findings = []reportmodel.FindingRef{
+		{ID: fpGate, RuleID: ruleInternal, Kind: reportmodel.FindingKindGate},
+	}
+	d.State.Coverage = reportmodel.StateCoverage{Measured: 1, Partial: 0, Unmeasured: 8}
+	d.State.Seams = []reportmodel.Seam{{ID: "seam-ab", FromModule: "a", ToModule: "b"}}
 	return d
 }
 
@@ -103,7 +114,7 @@ func TestRender_ShapeAndLevels(t *testing.T) {
 		res := raw.(map[string]any)
 		levels[res["fingerprints"].(map[string]any)["archfit/v1"].(string)] = res["level"].(string)
 	}
-	want := map[string]string{"f-gate": "error", "f-adv": "warning", "f-base": "note"}
+	want := map[string]string{fpGate: "error", "f-adv": "warning", "f-base": "note"}
 	for fp, lvl := range want {
 		if levels[fp] != lvl {
 			t.Errorf("level[%s] = %q, want %q", fp, levels[fp], lvl)
@@ -120,10 +131,23 @@ func TestRender_ShapeAndLevels(t *testing.T) {
 		t.Errorf("startLine = %v, want 5", loc["region"])
 	}
 
-	// Metrics + verdict ride in run properties.
+	// The architecture state, the metrics, and the seam ledger ride in run
+	// properties: SARIF is exempt from human-layout parity, not fact parity.
 	props := run["properties"].(map[string]any)
-	if props["verdict"] != "fail" {
-		t.Errorf("properties.verdict = %v", props["verdict"])
+	if props["verdict"] != string(reportmodel.StateBlocked) {
+		t.Errorf("properties.verdict = %v, want %q", props["verdict"], reportmodel.StateBlocked)
+	}
+	if props["schema_version"] != reportmodel.StateSchemaVersion {
+		t.Errorf("properties.schema_version = %v, want %q", props["schema_version"], reportmodel.StateSchemaVersion)
+	}
+	if dims := props["dimensions"].([]any); len(dims) != reportmodel.DimensionCount {
+		t.Errorf("properties.dimensions = %d, want %d", len(dims), reportmodel.DimensionCount)
+	}
+	if len(props["seams"].([]any)) != 1 {
+		t.Errorf("properties.seams = %v", props["seams"])
+	}
+	if props["decision"].(map[string]any)["hard_gates"] != string(reportmodel.HardGateFail) {
+		t.Errorf("properties.decision = %v", props["decision"])
 	}
 	if len(props["metrics"].([]any)) != 1 {
 		t.Errorf("properties.metrics = %v", props["metrics"])
@@ -156,5 +180,45 @@ func TestRender_EmptyDiagnostic(t *testing.T) {
 	run := doc["runs"].([]any)[0].(map[string]any)
 	if results := run["results"].([]any); len(results) != 0 {
 		t.Errorf("results = %d, want 0", len(results))
+	}
+}
+
+// TestRender_ResultPropertiesCarryStateGrouping: a result keeps its rule ID and
+// fingerprint unchanged, and gains the dimension that owns it plus an explicit
+// gate flag, so a consumer never has to re-derive blocker-vs-diagnostic from
+// kind and status.
+func TestRender_ResultPropertiesCarryStateGrouping(t *testing.T) {
+	_, doc := render(t, sampleDiagnostic())
+	results := doc["runs"].([]any)[0].(map[string]any)["results"].([]any)
+
+	byFingerprint := map[string]map[string]any{}
+	for _, raw := range results {
+		res := raw.(map[string]any)
+		byFingerprint[res["fingerprints"].(map[string]any)["archfit/v1"].(string)] = res
+	}
+
+	gate := byFingerprint[fpGate]
+	if gate == nil {
+		t.Fatal("the gate finding lost its archfit/v1 fingerprint")
+	}
+	if gate["ruleId"] != ruleInternal {
+		t.Errorf("ruleId = %v, want %q — finding identity must survive the state cutover", gate["ruleId"], ruleInternal)
+	}
+	props := gate["properties"].(map[string]any)
+	if props["gate"] != true {
+		t.Errorf("gate flag = %v, want true", props["gate"])
+	}
+	if props["dimension"] != reportmodel.DimensionStructure {
+		t.Errorf("dimension = %v, want %q", props["dimension"], reportmodel.DimensionStructure)
+	}
+
+	// A finding no dimension references (baselined) carries no dimension key
+	// rather than an invented one.
+	baselined := byFingerprint["f-base"]["properties"].(map[string]any)
+	if _, present := baselined["dimension"]; present {
+		t.Errorf("a baselined finding must not be attributed to a dimension: %v", baselined)
+	}
+	if baselined["gate"] != true {
+		t.Errorf("a baselined gate finding keeps its kind: %v", baselined)
 	}
 }

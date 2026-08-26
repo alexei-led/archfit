@@ -6,8 +6,10 @@
 //   - one run; one driver rule per distinct finding RuleID;
 //   - one result per finding — level: error (active gate), warning (advisory),
 //     note (baselined/waived/fixed);
-//   - metric results and the verdict ride in run.properties (SARIF has no
-//     metric concept);
+//   - the architecture state rides in run.properties (SARIF has no dimension or
+//     verdict concept); finding identity — ruleId, ruleIndex, and the
+//     archfit/v1 fingerprint — is unchanged by the state cutover, so an existing
+//     code-scanning consumer keeps resolving the same alerts;
 //   - byte-deterministic: stable ordering, no timestamps; base/head refs go in
 //     automationDetails.id.
 package sarif
@@ -121,9 +123,11 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 		rules[i] = rule{ID: id, ShortDescription: message{Text: id}}
 	}
 
+	dimensionOf := findingDimensions(d.State)
+	seamOf := seamIDsByModulePair(d.State.Seams)
 	results := make([]result, 0, len(d.Findings))
 	for _, f := range d.Findings {
-		results = append(results, toResult(f, ruleIndex[f.RuleID]))
+		results = append(results, toResult(f, ruleIndex[f.RuleID], dimensionOf[f.ID], seamOf))
 	}
 
 	doc := log{
@@ -137,11 +141,7 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 			}},
 			AutomationDetails: automationID{ID: "archfit/check/base=" + d.Base + "/head=" + d.Head},
 			Results:           results,
-			Properties: map[string]any{
-				"verdict": d.Verdict,
-				"metrics": d.Metrics,
-				"summary": d.Summary,
-			},
+			Properties:        runProperties(d),
 		}},
 	}
 
@@ -150,8 +150,63 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 	return enc.Encode(doc)
 }
 
-// toResult maps one finding to a SARIF result.
-func toResult(f report.Finding, ruleIdx int) result {
+// runProperties carries the architecture state alongside the diagnostic facts
+// SARIF has no native slot for. SARIF is exempt from human-layout parity, not
+// from fact parity: a consumer reading only the SARIF log still sees the same
+// verdict, the same nine dimensions, the same coverage split, and the same
+// comparability answer the other formats report.
+func runProperties(d report.Document) map[string]any {
+	s := d.State
+	dims := make([]map[string]any, 0, report.DimensionCount)
+	for _, dim := range s.Dimensions.All() {
+		dims = append(dims, map[string]any{
+			"name": dim.Name, "owner": dim.Owner, "status": dim.Status,
+			"confidence": dim.Confidence, "gate": dim.Gate,
+			"coverage": map[string]any{"basis": dim.Coverage.Basis, "observed": dim.Coverage.Observed, "total": dim.Coverage.Total},
+			"unknown":  len(dim.Unknown),
+		})
+	}
+	return map[string]any{
+		"schema_version": s.SchemaVersion,
+		"verdict":        s.Verdict,
+		"decision":       s.Decision,
+		"dimensions":     dims,
+		"coverage":       s.Coverage,
+		"comparison":     s.Comparison,
+		"measurement":    s.Measurement,
+		"seams":          s.Seams,
+		"metrics":        d.Metrics,
+		"summary":        d.Summary,
+	}
+}
+
+// findingDimensions maps each active finding to the dimension that owns its
+// subject, so a SARIF consumer can group alerts the way the report does. A
+// finding no dimension references (baselined, waived, fixed) is simply absent.
+func findingDimensions(s report.ArchitectureState) map[string]string {
+	out := map[string]string{}
+	for _, dim := range s.Dimensions.All() {
+		for _, ref := range dim.Findings {
+			out[ref.ID] = dim.Name
+		}
+	}
+	return out
+}
+
+// seamIDsByModulePair indexes the ledger by ordered module pair so a finding on
+// a cross-boundary edge can carry its stable seam ID.
+func seamIDsByModulePair(seams []report.Seam) map[string]string {
+	out := make(map[string]string, len(seams))
+	for _, s := range seams {
+		out[s.FromModule+"\x00"+s.ToModule] = s.ID
+	}
+	return out
+}
+
+// toResult maps one finding to a SARIF result. RuleID, ruleIndex, and the
+// fingerprint are untouched by the state cutover: the architecture state adds
+// grouping metadata, it never re-identifies an alert.
+func toResult(f report.Finding, ruleIdx int, dimension string, seamOf map[string]string) result {
 	text := f.Why
 	if text == "" {
 		text = f.RuleID + " violation: " + f.Edge.From.Path + " -> " + f.Edge.To.Path
@@ -181,12 +236,30 @@ func toResult(f report.Finding, ruleIdx int) result {
 		Message:      message{Text: text},
 		Locations:    locs,
 		Fingerprints: map[string]string{"archfit/v1": f.ID},
-		Properties: map[string]any{
-			"status":   f.Status,
-			"severity": f.Severity,
-			"kind":     f.Kind,
-		},
+		Properties:   resultProperties(f, dimension, seamOf),
 	}
+}
+
+// resultProperties carries the finding's lifecycle plus the state grouping.
+// `gate` separates a blocker from a diagnostic explicitly rather than making a
+// consumer re-derive it from kind and status.
+func resultProperties(f report.Finding, dimension string, seamOf map[string]string) map[string]any {
+	props := map[string]any{
+		"status":   f.Status,
+		"severity": f.Severity,
+		"kind":     f.Kind,
+		"gate":     f.Kind == report.FindingKindGate,
+	}
+	if dimension != "" {
+		props["dimension"] = dimension
+	}
+	if f.Edge.From.Module != "" && f.Edge.To.Module != "" {
+		props["module_pair"] = f.Edge.From.Module + " -> " + f.Edge.To.Module
+		if id, ok := seamOf[f.Edge.From.Module+"\x00"+f.Edge.To.Module]; ok {
+			props["seam_id"] = id
+		}
+	}
+	return props
 }
 
 // levelFor maps finding kind+status to a SARIF level: active gate findings are

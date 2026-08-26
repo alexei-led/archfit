@@ -6,6 +6,198 @@
         "id": "archfit/check/base=/head="
       },
       "properties": {
+        "comparison": {
+          "config_hash": "0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6",
+          "model_hash": "124d0f767415a09b74bcd3206ab947f4bb01e3c7905db14a15eaed59d690ef78",
+          "reasons": [],
+          "rubric_version": "bc_score.v6",
+          "status": "not_requested"
+        },
+        "coverage": {
+          "measured": 4,
+          "partial": 3,
+          "tools": [
+            {
+              "status": "ok",
+              "tool": "go/packages"
+            },
+            {
+              "status": "absent",
+              "tool": "dependency-cruiser"
+            },
+            {
+              "status": "absent",
+              "tool": "grimp"
+            },
+            {
+              "status": "absent",
+              "tool": "cargo"
+            },
+            {
+              "status": "ok",
+              "tool": "loc"
+            },
+            {
+              "status": "ok",
+              "tool": "deploy-unit"
+            },
+            {
+              "reason": "clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable",
+              "status": "disabled",
+              "tool": "jscpd"
+            },
+            {
+              "reason": "opt-in: analyzers.scip.enabled",
+              "status": "disabled",
+              "tool": "scip"
+            },
+            {
+              "reason": "opt-in: analyzers.syntax.enabled",
+              "status": "disabled",
+              "tool": "ast-grep/syntax"
+            },
+            {
+              "status": "ok",
+              "tool": "ast-grep"
+            },
+            {
+              "status": "absent",
+              "tool": "cargo-modules"
+            }
+          ],
+          "unmeasured": 2
+        },
+        "decision": {
+          "active_blockers": 1,
+          "attention_dimensions": 2,
+          "hard_gates": "fail",
+          "unknown_dimensions": 5
+        },
+        "dimensions": [
+          {
+            "confidence": "high",
+            "coverage": {
+              "basis": "declared rules evaluated",
+              "observed": 1,
+              "total": 1
+            },
+            "gate": "pass",
+            "name": "intent",
+            "owner": "policy+assessment/evaluation",
+            "status": "measured",
+            "unknown": 0
+          },
+          {
+            "confidence": "high",
+            "coverage": {
+              "basis": "discovered edges resolved to a declared module",
+              "observed": 1,
+              "total": 1
+            },
+            "gate": "fail",
+            "name": "structure",
+            "owner": "relationship/facts",
+            "status": "measured",
+            "unknown": 0
+          },
+          {
+            "confidence": "low",
+            "coverage": {
+              "basis": "declared modules with a declared public surface",
+              "observed": 0,
+              "total": 2
+            },
+            "gate": "pass",
+            "name": "modularity",
+            "owner": "assessment/metrics",
+            "status": "measured",
+            "unknown": 1
+          },
+          {
+            "confidence": "high",
+            "coverage": {
+              "basis": "cross-boundary edges scored",
+              "observed": 1,
+              "total": 1
+            },
+            "gate": "warn",
+            "name": "coupling",
+            "owner": "relationship/analysis",
+            "status": "measured",
+            "unknown": 0
+          },
+          {
+            "confidence": "unrated",
+            "coverage": {
+              "basis": "",
+              "observed": 0,
+              "total": 0
+            },
+            "gate": "not_applicable",
+            "name": "change_locality",
+            "owner": "history/git",
+            "status": "unmeasured",
+            "unknown": 1
+          },
+          {
+            "confidence": "medium",
+            "coverage": {
+              "basis": "production files in the source walk",
+              "observed": 2,
+              "total": 2
+            },
+            "gate": "pass",
+            "name": "complexity",
+            "owner": "syntax+evidence/acquisition",
+            "status": "partial",
+            "unknown": 1
+          },
+          {
+            "confidence": "medium",
+            "coverage": {
+              "basis": "classified source files",
+              "observed": 2,
+              "total": 2
+            },
+            "gate": "pass",
+            "name": "testability",
+            "owner": "syntax/fileclass",
+            "status": "partial",
+            "unknown": 2
+          },
+          {
+            "confidence": "medium",
+            "coverage": {
+              "basis": "analyzers reporting coverage",
+              "observed": 4,
+              "total": 11
+            },
+            "gate": "pass",
+            "name": "operations",
+            "owner": "policy+evidence/acquisition",
+            "status": "partial",
+            "unknown": 2
+          },
+          {
+            "confidence": "unrated",
+            "coverage": {
+              "basis": "",
+              "observed": 0,
+              "total": 0
+            },
+            "gate": "not_applicable",
+            "name": "drift",
+            "owner": "assessment/decision",
+            "status": "unmeasured",
+            "unknown": 1
+          }
+        ],
+        "measurement": {
+          "history_depth": 0,
+          "history_window": "",
+          "source_ref": "",
+          "tool_versions": {}
+        },
         "metrics": [
           {
             "band": "n/a",
@@ -63,12 +255,54 @@
             "value": 1
           }
         ],
+        "schema_version": "archfit.architecture-state.v1",
+        "seams": [
+          {
+            "abstained_edges": 0,
+            "confidence": "high",
+            "critical_edges": 0,
+            "critical_share_pct": 0,
+            "distance": "cross_module_different_owner",
+            "edges": 1,
+            "from_module": "a",
+            "high_or_worse_edges": 0,
+            "high_or_worse_share_pct": 0,
+            "hypothesis": "leave_alone",
+            "id": "fa39601122f1503d51aa9a4075a6dfb722880a87aef6312ec824937670724349",
+            "quadrant": "tight",
+            "raw_distance": {
+              "basis": "ownership",
+              "boundary_crossings": 2,
+              "from_owner": "team-a",
+              "level": "cross_module_different_owner",
+              "same_deploy_unit": false,
+              "same_owner": false,
+              "shared_ancestor": 0,
+              "to_owner": "team-b"
+            },
+            "scored_edges": 1,
+            "scores": {
+              "max": 8,
+              "mean": 8,
+              "median": 8,
+              "min": 8,
+              "n": 1,
+              "p10": null,
+              "p90": null
+            },
+            "severity": "low",
+            "strength": "functional",
+            "to_module": "b",
+            "volatility": "low",
+            "volatility_provenance": "declared"
+          }
+        ],
         "summary": {
           "gate_findings": 1,
           "waivers_used": 0,
           "warnings": 1
         },
-        "verdict": "fail"
+        "verdict": "blocked"
       },
       "results": [
         {
@@ -92,7 +326,11 @@
             "text": "Import from pkg/a/** to pkg/b/** is explicitly forbidden"
           },
           "properties": {
+            "dimension": "structure",
+            "gate": true,
             "kind": "gate",
+            "module_pair": "a -\u003e b",
+            "seam_id": "fa39601122f1503d51aa9a4075a6dfb722880a87aef6312ec824937670724349",
             "severity": "medium",
             "status": "new"
           },
@@ -120,7 +358,11 @@
             "text": "balanced coupling: functional integration strength × cross_module_different_owner distance × low volatility → low severity (unbalanced coupling → elevated maintenance effort)"
           },
           "properties": {
+            "dimension": "coupling",
+            "gate": false,
             "kind": "advisory",
+            "module_pair": "a -\u003e b",
+            "seam_id": "fa39601122f1503d51aa9a4075a6dfb722880a87aef6312ec824937670724349",
             "severity": "low",
             "status": "new"
           },

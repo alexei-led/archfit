@@ -2,106 +2,115 @@ package scorecard
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/score"
 	reportmodel "github.com/alexei-led/archfit/internal/model/report"
-	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
 )
 
 // Test literal constants (deduplicated for goconst).
 const (
-	confHigh   = "high"
-	bandInfo   = "info"
-	bandStrong = "strong"
-	sevMedium  = "medium"
+	confHigh = "high"
 )
 
-// goldenDiagnostic is a fixed, fully-measured Diagnostic whose rendered scorecard
-// is asserted byte-for-byte below. Regenerate the golden deliberately and inspect
-// the diff if the output format changes.
-func goldenDiagnostic() reportmodel.Document {
+// goldenDocument is a fixed document whose rendered state scorecard is asserted
+// byte-for-byte below. Regenerate the golden deliberately and inspect the diff
+// if the output format changes.
+func goldenDocument() reportmodel.Document {
 	d := reportmodel.NewDocument()
-	d.ConfigHash = "abc123"
-	d.Metrics = []reportmodel.MetricResult{
-		{Name: "encapsulation", Value: 1.0, Display: "1.00", Band: bandStrong, Confidence: confHigh},
-		{Name: "coverage", Value: 1.0, Display: "1.00", Band: bandStrong, Confidence: confHigh},
-		{Name: "cycle", Value: 0, Display: "0", Band: bandStrong, Confidence: confHigh},
-		{Name: "blast_radius", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
+	d.State = reportmodel.NewArchitectureState()
+	d.State.Verdict = reportmodel.StateNeedsAttention
+	d.State.Decision = reportmodel.StateDecision{
+		HardGates: reportmodel.HardGatePass, ActiveBlockers: 0, AttentionDimensions: 1, UnknownDimensions: 8,
 	}
-	d.Findings = reporttest.Findings(
-		finding.Finding{
-			ID: "a->b", RuleID: "bc/imbalanced_coupling", Kind: "advisory",
-			Status: finding.StatusNew, Severity: sevMedium,
-			Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: "a"}, To: finding.Endpoint{Module: "b"}},
-			MatchedBy: map[string]string{
-				"strength": "functional", "distance": "cross_module_same_owner",
-				"volatility": sevMedium, "score_value": "5", "score_band": sevMedium, "group_count": "2",
-			},
+	d.State.Comparison = reportmodel.StateComparison{
+		Status: reportmodel.ComparisonNotRequested, ConfigHash: "abc123",
+		RubricVersion: reportmodel.ScoreVersion, Reasons: []string{},
+	}
+	d.State.Dimensions.Coupling = reportmodel.DimensionState{
+		Name: reportmodel.DimensionCoupling, Owner: reportmodel.OwnerCoupling,
+		Status: reportmodel.MeasurementMeasured, Confidence: confHigh, Gate: reportmodel.GateWarn,
+		Coverage: reportmodel.DimensionCoverage{Basis: "cross-boundary edges scored", Observed: 2, Total: 2},
+		Metrics: []reportmodel.MetricValue{
+			{Name: "critical_edges", Value: 1, Unit: "count"},
+			{Name: "abstained_share", Value: 0.25, Unit: "ratio", Denominator: &reportmodel.MetricDenominator{Observed: 1, Total: 4}},
 		},
-	)
-	d.ToolCoverage = []reportmodel.Coverage{
-		{Tool: "go/packages", Status: "ok"},
-		{Tool: "scip", Status: "ok"},
-		{Tool: "ast-grep", Status: "ok"},
-		{Tool: "jscpd", Status: "ok"},
 	}
+	d.State.Dimensions.Drift.Unknown = []reportmodel.UnknownFact{{
+		Fact: "architecture drift", Reason: "no comparable architecture-state reference is stored", Owner: reportmodel.OwnerDrift,
+	}}
+	d.State.Dimensions.Drift.Delta = &reportmodel.DimensionDelta{
+		Status: reportmodel.ComparisonNonComparable, Reasons: []string{"no comparable architecture-state reference is stored"},
+	}
+	d.State.Coverage = reportmodel.StateCoverage{Measured: 1, Partial: 0, Unmeasured: 8}
 	return d
 }
 
-func reportFindings(d reportmodel.Document) []finding.Finding {
-	out := make([]finding.Finding, 0, len(d.Findings))
-	for _, f := range d.Findings {
-		out = append(out, reporttest.Finding(f))
-	}
-	return out
-}
+func render(d reportmodel.Document, w io.Writer) error { return New().Render(d, w) }
 
-func render(d reportmodel.Document, w io.Writer) error {
-	var assessment result.Result
-	encoded, err := json.Marshal(d)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(encoded, &assessment); err != nil {
-		return err
-	}
-	assessment.Findings = reportFindings(d)
-	d.Score = projectScorecard(score.Synthesize(assessment))
-	return New().Render(d, w)
-}
+const golden = `# archfit architecture state
 
-func projectScorecard(in score.Scorecard) reportmodel.Scorecard {
-	out := reportmodel.Scorecard{RubricVersion: in.RubricVersion, Overall: in.Overall, OverallBand: reportmodel.ScoreBand(in.OverallBand), Dimensions: make([]reportmodel.Dimension, len(in.Dimensions))}
-	for i, dim := range in.Dimensions {
-		out.Dimensions[i] = reportmodel.Dimension{Name: dim.Name, Value: dim.Value, Band: reportmodel.ScoreBand(dim.Band), Confidence: reportmodel.Confidence(dim.Confidence), Evidence: dim.Evidence, Summary: dim.Summary, RawValue: dim.RawValue, CapApplied: dim.CapApplied, Meta: dim.Meta}
-	}
-	return out
-}
-
-const golden = `# archfit scorecard
-
-**Rubric version:** 1
-**Overall:** 50/100 (mixed)
+**Verdict:** NEEDS ATTENTION
+**Hard gates:** pass — 0 active blocker(s)
+**Attention:** 1 dimension(s) flagged
+**Coverage:** 1 measured / 0 partial / 8 unmeasured (of 9)
+**Rubric version:** bc_score.v6
 **Config hash:** ` + "`abc123`" + `
 
 ## Dimensions
 
-### coupling_balance — 50/100 (mixed) · confidence: high
-coupling carries elevated maintenance effort but no distributed-monolith edges
-- 2 BC edges (1 rollups); weighted mean maintenance-effort 5.0/10
-- worst-case high/high/high (distributed-monolith) edges: 0
+### intent — unmeasured · gate: not_applicable · confidence: unrated
+owner: policy+assessment/evaluation
+denominator: none — this dimension measured nothing
+
+### structure — unmeasured · gate: not_applicable · confidence: unrated
+owner: relationship/facts
+denominator: none — this dimension measured nothing
+
+### modularity — unmeasured · gate: not_applicable · confidence: unrated
+owner: assessment/metrics
+denominator: none — this dimension measured nothing
+
+### coupling — measured · gate: warn · confidence: high
+owner: relationship/analysis
+denominator: cross-boundary edges scored 2/2
+- critical_edges: 1 count
+- abstained_share: 0.25 ratio (1/4)
+
+### change_locality — unmeasured · gate: not_applicable · confidence: unrated
+owner: history/git
+denominator: none — this dimension measured nothing
+
+### complexity — unmeasured · gate: not_applicable · confidence: unrated
+owner: syntax+evidence/acquisition
+denominator: none — this dimension measured nothing
+
+### testability — unmeasured · gate: not_applicable · confidence: unrated
+owner: syntax/fileclass
+denominator: none — this dimension measured nothing
+
+### operations — unmeasured · gate: not_applicable · confidence: unrated
+owner: policy+evidence/acquisition
+denominator: none — this dimension measured nothing
+
+### drift — unmeasured · gate: not_applicable · confidence: unrated
+owner: assessment/decision
+denominator: none — this dimension measured nothing
+- not measured — architecture drift: no comparable architecture-state reference is stored
+- delta: non_comparable
+  - no comparable architecture-state reference is stored
+
+## Comparison
+
+- status: not_requested
+- reference: none
 `
 
-// TestRenderer_Golden asserts the exact rendered scorecard for a fixed Diagnostic.
+// TestRenderer_Golden asserts the exact rendered state scorecard.
 func TestRenderer_Golden(t *testing.T) {
 	var buf bytes.Buffer
-	if err := render(goldenDiagnostic(), &buf); err != nil {
+	if err := render(goldenDocument(), &buf); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	if got := buf.String(); got != golden {
@@ -109,10 +118,10 @@ func TestRenderer_Golden(t *testing.T) {
 	}
 }
 
-// TestRenderer_DoubleRun asserts the scorecard format is deterministic: two
-// renders of the same Diagnostic are byte-identical (CI determinism gate).
+// TestRenderer_DoubleRun asserts the format is deterministic: two renders of the
+// same document are byte-identical (CI determinism gate).
 func TestRenderer_DoubleRun(t *testing.T) {
-	d := goldenDiagnostic()
+	d := goldenDocument()
 	var a, b bytes.Buffer
 	if err := render(d, &a); err != nil {
 		t.Fatalf("Render a: %v", err)
@@ -132,10 +141,44 @@ func TestRenderer_Format(t *testing.T) {
 	}
 }
 
+// TestRenderer_CarriesNoRepositoryScore is the migration contract for this
+// format: the scorecard reports nine dimensions, never one averaged number.
+func TestRenderer_CarriesNoRepositoryScore(t *testing.T) {
+	var buf bytes.Buffer
+	if err := render(goldenDocument(), &buf); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+	for _, forbidden := range []string{"**Overall:**", "/100", "archfit scorecard"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("scorecard carries %q: it is a state report, not an architecture score:\n%s", forbidden, out)
+		}
+	}
+}
+
+// TestRenderer_ListsEveryDimension: all nine envelopes appear, so an unmeasured
+// one cannot be silently omitted.
+func TestRenderer_ListsEveryDimension(t *testing.T) {
+	var buf bytes.Buffer
+	if err := render(goldenDocument(), &buf); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+	for _, name := range []string{
+		reportmodel.DimensionIntent, reportmodel.DimensionStructure, reportmodel.DimensionModularity,
+		reportmodel.DimensionCoupling, reportmodel.DimensionChangeLocality, reportmodel.DimensionComplexity,
+		reportmodel.DimensionTestability, reportmodel.DimensionOperations, reportmodel.DimensionDrift,
+	} {
+		if !strings.Contains(out, "### "+name+" — ") {
+			t.Errorf("missing dimension block for %q:\n%s", name, out)
+		}
+	}
+}
+
 // TestRenderer_RequiredToolsMissing asserts the coverage-gap block renders after
-// the dimensions so absent evidence is never mistaken for a strong result.
+// the dimensions so absent evidence is never mistaken for a healthy result.
 func TestRenderer_RequiredToolsMissing(t *testing.T) {
-	d := goldenDiagnostic()
+	d := goldenDocument()
 	d.CoverageGaps = []reportmodel.CoverageGap{
 		{Tool: "go/packages", InstallCmd: "https://go.dev/dl", AffectedMetrics: []string{"coverage", "coupling_balance"}, Gate: "warn"},
 	}
@@ -154,10 +197,22 @@ func TestRenderer_RequiredToolsMissing(t *testing.T) {
 	}
 }
 
-// TestRenderer_Delta asserts the compact delta-count block renders for a delta
-// run and is omitted when there is no delta.
+// TestRenderer_RequiredToolsMissingAbsentWhenEmpty asserts the section is
+// omitted when every required tool ran (no coverage gap).
+func TestRenderer_RequiredToolsMissingAbsentWhenEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	if err := render(goldenDocument(), &buf); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if strings.Contains(buf.String(), "Required tools missing") {
+		t.Errorf("required-tools section should be omitted when no gap\nfull output:\n%s", buf.String())
+	}
+}
+
+// TestRenderer_Delta asserts the finding-lifecycle bucket block renders for a
+// delta run and is omitted when there is no delta.
 func TestRenderer_Delta(t *testing.T) {
-	d := goldenDiagnostic()
+	d := goldenDocument()
 	d.Delta = &reportmodel.DeltaReport{
 		New:             []string{"n1", "n2"},
 		SeverityChanged: []string{"s1"},
@@ -184,9 +239,8 @@ func TestRenderer_Delta(t *testing.T) {
 		}
 	}
 
-	// Absent when no delta.
 	var plain bytes.Buffer
-	if err := render(goldenDiagnostic(), &plain); err != nil {
+	if err := render(goldenDocument(), &plain); err != nil {
 		t.Fatalf("Render plain: %v", err)
 	}
 	if strings.Contains(plain.String(), "## Delta") {
@@ -194,27 +248,15 @@ func TestRenderer_Delta(t *testing.T) {
 	}
 }
 
-// TestRenderer_RequiredToolsMissingAbsentWhenEmpty asserts the section is omitted
-// when every required tool ran (no coverage gap).
-func TestRenderer_RequiredToolsMissingAbsentWhenEmpty(t *testing.T) {
-	var buf bytes.Buffer
-	if err := render(goldenDiagnostic(), &buf); err != nil {
-		t.Fatalf("Render: %v", err)
-	}
-	if strings.Contains(buf.String(), "Required tools missing") {
-		t.Errorf("required-tools section should be omitted when no gap\nfull output:\n%s", buf.String())
-	}
-}
-
-// TestRenderer_EmptyDiagnostic asserts the renderer never panics on a near-empty
-// Diagnostic and still emits the coupling_balance dimension header.
-func TestRenderer_EmptyDiagnostic(t *testing.T) {
+// TestRenderer_EmptyDocument asserts the renderer never panics on a zero
+// document and still emits all nine dimension blocks.
+func TestRenderer_EmptyDocument(t *testing.T) {
 	var buf bytes.Buffer
 	if err := render(reportmodel.NewDocument(), &buf); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "### coupling_balance ") {
-		t.Errorf("missing coupling_balance dimension header in:\n%s", out)
+	if strings.Count(out, "### ") != reportmodel.DimensionCount {
+		t.Errorf("expected %d dimension blocks, got:\n%s", reportmodel.DimensionCount, out)
 	}
 }
