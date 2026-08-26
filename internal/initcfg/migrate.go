@@ -24,6 +24,11 @@ const (
 	MigrationRequired = "migration_required"
 	// MigrationAlreadyCurrent means nothing needs to change.
 	MigrationAlreadyCurrent = "already_current"
+	// MigrationUnversioned means the file declares no root `version:` key, so
+	// there is no schema to migrate FROM. Such a file is rejected by every
+	// archfit schema this migration knows about (v1 required `version > 0` too),
+	// and the fix — deciding which schema the author meant — is not mechanical.
+	MigrationUnversioned = "unversioned"
 )
 
 // MigrationChange is one deterministic edit the migration makes.
@@ -101,6 +106,13 @@ var (
 //
 // Running it twice is byte-idempotent: after the first pass the version is
 // current and the retired keys are gone, so the second pass finds nothing.
+//
+// A file with no root `version:` key returns MigrationUnversioned and is left
+// untouched. Inserting one is not a safe mechanical edit — prepending
+// `version: 2` above a `---` document marker splices a SECOND YAML document,
+// and the loader would then validate the two-line first document while silently
+// dropping the config the author wrote. Reporting the refusal loses nothing:
+// such a file was never a loadable v1 config either.
 func MigrateToV2(src []byte) MigrationResult {
 	out := MigrationResult{
 		SchemaVersion: MigrationSchemaVersion,
@@ -111,12 +123,18 @@ func MigrateToV2(src []byte) MigrationResult {
 		Output:        src,
 	}
 	lines := strings.Split(string(src), "\n")
-	hasStanza := false
+	hasStanza, hasVersion := false, false
 	for _, line := range lines {
 		if existingStanza.MatchString(line) {
 			hasStanza = true
-			break
 		}
+		if topLevelVersion.MatchString(line) {
+			hasVersion = true
+		}
+	}
+	if !hasVersion {
+		out.Status = MigrationUnversioned
+		return out
 	}
 	kept := make([]string, 0, len(lines)+6)
 	gateIndent := ""

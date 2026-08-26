@@ -115,6 +115,29 @@ func verdict(sc card) string {
 // suite; this is the named entry point CI runs it under.
 func TestErosion_NoDeadArchfitRule(t *testing.T) {
 	TestSelfModelHasNoDeadRules(t)
+	deadRuleDetectionFires(t)
+}
+
+// deadRuleDetectionFires is this gate's paired violating-input fixture.
+//
+// A synthetic dead rule cannot be added to .archfit.yaml — the gate would then
+// fail on every run — so the fixture drives the predicate the gate decides on:
+// a glob naming a package that does not exist must NOT match, while a glob
+// naming one that does must. Without it, `matchesAny` silently returning true
+// for everything would leave the gate passing over a config full of dead rules.
+func deadRuleDetectionFires(t *testing.T) {
+	t.Helper()
+	dirs, goFiles := repoDirs(t)
+	candidates := append(append([]string{}, dirs...), goFiles...)
+
+	const dead = "internal/no-such-package-erosion-fixture/**"
+	if matchesAny(dead, candidates) {
+		t.Errorf("matchesAny(%q) = true — a rule aimed at nothing would read as live", dead)
+	}
+	const live = "internal/assessment/**"
+	if !matchesAny(live, candidates) {
+		t.Errorf("matchesAny(%q) = false — the check cannot see real source, so no rule can be graded", live)
+	}
 }
 
 // scalarIdentsFoundIn returns the scalar identifiers a source names, keyed by

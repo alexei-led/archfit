@@ -193,6 +193,7 @@ func TestSelfModelHasNoDeadRules(t *testing.T) {
 	candidates := append(append([]string{}, dirs...), goFiles...)
 
 	seen := map[string]bool{}
+	graded := 0
 	for _, rule := range cfg.Rules {
 		if rule.ID == "" {
 			t.Errorf("rule with type %q has no id", rule.Type)
@@ -213,6 +214,7 @@ func TestSelfModelHasNoDeadRules(t *testing.T) {
 			if glob == "" || glob == "**" {
 				continue
 			}
+			graded++
 			if !matchesAny(glob, candidates) {
 				t.Errorf("rule %q: %s glob %q matches no directory or Go file", rule.ID, label, glob)
 			}
@@ -223,6 +225,13 @@ func TestSelfModelHasNoDeadRules(t *testing.T) {
 		if !seen[id] {
 			t.Errorf("guard rule %q is missing from .archfit.yaml (%s)", id, why)
 		}
+	}
+
+	// Non-vacuity guard. The loop above grades rules; with an empty or
+	// all-guard rule set it grades nothing and still passes, which reads as
+	// "every boundary is live" for a config that declares no boundary at all.
+	if graded == 0 {
+		t.Error("no rule was graded for dead globs — the dead-rule gate checked nothing")
 	}
 }
 

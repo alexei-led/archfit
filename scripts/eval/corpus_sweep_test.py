@@ -295,6 +295,21 @@ class TestFormatParity(unittest.TestCase):
     def test_bare_numbers_are_not_a_coverage_triple(self):
         self.assertIsNone(cs.rendered_coverage_triple("total 5 3 1"))
 
+    def test_the_opposite_comparison_status_fails_parity(self):
+        # "comparable" is a substring of "non_comparable", so a containment
+        # test passed while the renderer printed the OPPOSITE status.
+        state, out = self.rendered()
+        state["comparison"]["status"] = "comparable"
+        out = out.replace("status: not_requested", "status: non_comparable")
+        failures = cs.check_text_parity("text", out, state)
+        self.assertTrue(any("comparison status" in f for f in failures), failures)
+
+    def test_the_matching_comparison_status_passes_parity(self):
+        state, out = self.rendered()
+        state["comparison"]["status"] = "non_comparable"
+        out = out.replace("status: not_requested", "status: non_comparable")
+        self.assertEqual(cs.check_text_parity("text", out, state), [])
+
 
 class TestSarifParity(unittest.TestCase):
     def sarif(self, **over):

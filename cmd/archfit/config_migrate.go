@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 )
 
@@ -56,6 +57,15 @@ func (c *UpdateCmd) runMigration(deps *appDeps) error {
 		writeMigrationPreview(deps, c.Config, result)
 		return nil
 	}
+	// An unversioned file is not "already current" — it does not load under any
+	// schema. Saying nothing needs migrating would report success on the one
+	// command advertised as the escape from an unloadable config.
+	if result.Status == initcfg.MigrationUnversioned {
+		return &exitError{code: 3, msg: fmt.Sprintf(
+			"error: %s declares no root `version:` key, so there is no schema to migrate from — "+
+				"add `version: %d` at column zero and re-run",
+			c.Config, result.ToVersion)}
+	}
 	if !result.Changed() {
 		_, _ = fmt.Fprintf(deps.Stdout, "%s is already schema v%d — nothing to migrate\n", c.Config, result.ToVersion)
 		return nil
@@ -66,11 +76,29 @@ func (c *UpdateCmd) runMigration(deps *appDeps) error {
 	// config.Load + ValidateRules, backs the original up, and renames
 	// atomically — the same protocol every other config writer uses.
 	if err := safeWriteConfig(context.Background(), deps, c.Config, result.Output, src); err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: migrating %s: %v", c.Config, err)}
+		return &exitError{code: 3, msg: migrationWriteError(c.Config, err)}
 	}
 	writeMigrationPreview(deps, c.Config, result)
 	_, _ = fmt.Fprintf(deps.Stdout, "\napplied to %s\n", c.Config)
 	return nil
+}
+
+// migrationWriteError renders a rejected migration write.
+//
+// The post-condition rejects the result when the line transform could not reach
+// every retired key — a flow mapping (`gate: {min_band: mixed}`) keeps them on
+// one line, which the per-line regex cannot split. config's own error ends in
+// MigrationHint, which names THIS command, so surfacing it verbatim tells the
+// user to re-run the thing that just failed. Replace it with the manual remedy.
+func migrationWriteError(path string, err error) string {
+	msg := fmt.Sprintf("error: migrating %s: %v", path, err)
+	if !strings.Contains(msg, config.MigrationHint) {
+		return msg
+	}
+	return strings.ReplaceAll(msg, config.MigrationHint,
+		"the migration is a line transform and cannot rewrite these keys where they are written "+
+			"(most often a flow mapping such as `gate: {min_band: …}`) — rewrite that mapping in block "+
+			"style, one key per line, and re-run. "+path+" was not modified")
 }
 
 // migrationReport is the JSON envelope. It names the file so a report captured
@@ -81,6 +109,12 @@ type migrationReport struct {
 }
 
 func writeMigrationPreview(deps *appDeps, path string, r initcfg.MigrationResult) {
+	if r.Status == initcfg.MigrationUnversioned {
+		_, _ = fmt.Fprintf(deps.Stdout,
+			"%s declares no root `version:` key — nothing to migrate from. "+
+				"Add `version: %d` at column zero and re-run.\n", path, r.ToVersion)
+		return
+	}
 	if !r.Changed() {
 		_, _ = fmt.Fprintf(deps.Stdout, "%s is already schema v%d — nothing to migrate\n", path, r.ToVersion)
 		return

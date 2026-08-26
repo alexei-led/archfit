@@ -287,6 +287,44 @@ coupling:
 // edit. A file declaring a schema this build does not know is "upgrade
 // archfit", which validateSchemaVersion already says; rewriting it down to the
 // target would answer a question the migration was never asked.
+// TestMigrateToV2_RefusesAnUnversionedFile pins the refusal. A file with no
+// root `version:` loads under no archfit schema (v1 required `version > 0`
+// too), and the migration cannot mechanically supply one: prepending
+// `version: 2` above a `---` marker splices a second YAML document, and the
+// loader would then validate the two-line first document while dropping the
+// config the author wrote. Report it; never guess.
+func TestMigrateToV2_RefusesAnUnversionedFile(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{name: "no version key at all", src: "modules:\n  a:\n    paths: [\"a/**\"]\n"},
+		{
+			name: "no version key beside a retired knob",
+			src:  "coupling:\n  gate:\n    min_band: strong\n",
+		},
+		{
+			name: "a document marker the transform must not prepend above",
+			src:  "---\nmodules:\n  a:\n    paths: [\"a/**\"]\n",
+		},
+		{name: "a nested version does not count as the root one", src: "modules:\n  a:\n    version: 1\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := initcfg.MigrateToV2([]byte(tc.src))
+			if got.Status != initcfg.MigrationUnversioned {
+				t.Errorf("status = %q, want %q", got.Status, initcfg.MigrationUnversioned)
+			}
+			if got.Changed() {
+				t.Errorf("an unversioned file reported a migration: %+v", got.Changes)
+			}
+			if string(got.Output) != tc.src {
+				t.Errorf("an unversioned file was rewritten:\n%s", got.Output)
+			}
+		})
+	}
+}
+
 func TestMigrateToV2_NeverDowngradesANewerSchema(t *testing.T) {
 	const src = `version: 3
 coupling:

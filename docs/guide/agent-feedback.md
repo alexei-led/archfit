@@ -9,8 +9,11 @@ is deterministic — same repo + same config = byte-identical output.
 ```text
 agent edits code
   → archfit check [--base main] --json
-  → exit 0?  done.
-  → exit 1?  read agent_tasks[] — goal, constraints, files, validation
+  → exit 0?  healthy — done.
+  → exit 2?  needs_attention — no blocking finding. Read the dimension whose
+             status is not `measured` (complexity, testability, and operations
+             report `partial` by contract, so 2 is the normal clean result).
+  → exit 1?  blocked — read agent_tasks[] — goal, constraints, files, validation
   → fix within the constraints
   → run the task's validation command
   → repeat
@@ -79,8 +82,11 @@ never carry a `group_count`.
 ## git_finding_delta — which repair tasks this change introduced
 
 `--base <ref>` adds one report-only JSON block that sorts the CURRENT
-`agent_tasks[]` by git origin. It appears only with `--base`, only in `--json`
-output, and never changes the verdict or the exit code.
+`agent_tasks[]` by git origin. It appears only with `--base`, only under
+`--format legacy-json`, and never changes the verdict or the exit code. It is a
+diagnostic block, not part of `archfit.architecture-state.v1`, so `--json` does
+not carry it — and `legacy-json` ships for exactly one release (see
+[release notes](release-notes.md)).
 
 ```json
 {
@@ -155,9 +161,11 @@ reported as `fixed` never makes a current task pre-existing.
 ## advisory_tasks — the report-only rollup channel
 
 Grouped `bc/imbalanced_coupling` advisories (`group_count > 1`) also produce
-`advisory_tasks[]`. These are deterministic rollups for humans and agents to
-triage advisory noise without changing CI semantics. They are never consumed by
-verdict, gate status, baseline deltas, or `agent_tasks[]`.
+`advisory_tasks[]` under `--format legacy-json`. These are deterministic rollups
+for humans and agents to triage advisory noise without changing CI semantics.
+They are never consumed by verdict, gate status, baseline deltas, or
+`agent_tasks[]`, and they are not part of `archfit.architecture-state.v1`, so
+`--json` does not carry them.
 
 ```json
 {
@@ -180,8 +188,10 @@ verdict, gate status, baseline deltas, or `agent_tasks[]`.
 ```
 
 Use `advisory_tasks[]` for review/refactor planning only. If a run exits `1`,
-fix `agent_tasks[]` first; advisory tasks may be deferred unless your team has
-chosen to treat the score gate as a refactoring trigger.
+fix `agent_tasks[]` first; advisory tasks may be deferred. There is no score gate
+to promote them through — the only coupling gate is
+`coupling.gate.distributed_monolith`, which names its own seams and never borrows
+an advisory.
 
 ## Optional AI narrative
 

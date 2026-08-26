@@ -427,7 +427,13 @@ def check_text_parity(name: str, out: str, state: dict[str, Any]) -> list[str]:
             failures.append(f"{name} reports the coverage split {rendered}, want {triple}")
 
     comparison_status = (state.get("comparison") or {}).get("status")
-    if comparison_status and comparison_status not in out:
+    # Word-boundary match, not `in`: "comparable" is a substring of
+    # "non_comparable", so a plain containment test passes when the renderer
+    # prints the OPPOSITE status — exactly the contradiction this check exists
+    # to catch. `_` is a word character, so \b does not fire mid-token.
+    if comparison_status and not re.search(
+        rf"\b{re.escape(comparison_status)}\b", out
+    ):
         failures.append(f"{name} omits the comparison status {comparison_status!r}")
 
     failures.extend(
@@ -719,6 +725,15 @@ class Sweep:
             state = json.loads(result.stdout)
         except json.JSONDecodeError as exc:
             record["failures"].append(f"analyze --json is not valid json: {exc}")
+            return None
+
+        # `null`, an array, and a scalar all decode cleanly, so the shape guard
+        # has to run BEFORE the first .get — otherwise the AttributeError is
+        # caught by the outer sweep handler and recorded as a harness error,
+        # masking the schema violation validate_state would have named.
+        if not isinstance(state, dict):
+            record["failures"].extend(validate_state(state))
+            record["formats"]["json"]["parity"] = False
             return None
 
         record["analyze"]["schema_version"] = state.get("schema_version")

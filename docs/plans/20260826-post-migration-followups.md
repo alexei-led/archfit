@@ -243,12 +243,6 @@ Each is a real gap, none guards a known live defect:
   key for a dynamic-import site outside every declared module glob) and the
   `dynamicImportSiteCap` truncation never execute. Report-only output, so
   bounded.
-- `internal/erosion_test.go` `TestErosion_NoDeadArchfitRule` is a one-line
-  delegation with no paired "fires on a violating input" fixture, unlike the
-  other four owners. Both CLAUDE.md and the package comment claim each gate ships
-  one. Either add a synthetic rule aimed at a non-existent path, or correct the
-  claim. `TestSelfModelHasNoDeadRules` also has no "inspected at least one rule"
-  guard, so an empty `cfg.Rules` passes its main loop.
 - `dimension_coverage_required` is required by the plan's Task 2 as a
   `.archfit.yaml` rule alongside `assessment_no_score_decision`, but is enforced
   only by `internal/assessment/evaluation/dimensions_test.go`. The test documents

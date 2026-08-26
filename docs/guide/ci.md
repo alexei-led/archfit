@@ -56,11 +56,15 @@ make sure the base ref exists in the local checkout first:
 Use the plain gate for branch protection. Use delta mode on pull requests when
 you want the check output to show before/after drift against `origin/main`.
 
-Add `--json` to that step to get the per-task git origin as well:
+Add `--format legacy-json` to that step to get the per-task git origin as well.
+`git_finding_delta` is a diagnostic-only block: the primary
+`archfit.architecture-state.v1` document (`--json`) does not carry it, and
+`legacy-json` ships for exactly one release — see
+[release notes](release-notes.md).
 
 ```yaml
 - name: Architecture delta check (machine-readable)
-  run: archfit check -c .archfit.yaml --base origin/main --json > archfit-delta.json
+  run: archfit check -c .archfit.yaml --base origin/main --format legacy-json > archfit-delta.json
 ```
 
 `git_finding_delta.introduced_finding_ids` lists the current repair tasks this

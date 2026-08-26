@@ -18,8 +18,26 @@
 > `cargo` / `rust-analyzer` / `cargo-modules`, so yazi, herdr, ruff, and tokio
 > satisfied the contract while measuring no crate graph.
 >
+> **Two frozen-contract requirements are outstanding**, tracked in
+> [post-migration follow-ups](20260826-post-migration-followups.md) §A and §B and
+> annotated on the checkboxes they qualify below:
+>
+> - **§A — the comparison model is baseline-only.** `seamAnchor` reads only the
+>   stored v2 baseline, and `attachBaseComparison` runs *after* `evaluation.Score`,
+>   so `--base <ref>` can never become the seam gate's reference and no dimension
+>   but `drift` emits a `delta`. The plan's precedence ("an explicit `--base`
+>   reference wins; otherwise the stored v2 baseline") is therefore not
+>   implemented, and the persisted `DimensionSnapshot` / `HardGateFindingIDs`
+>   fields are written but never read.
+> - **§B — `config compare` still headlines the retired repository scalar.**
+>   `archfit.config-compare.v1` emits `score_delta` plus both `report.Scorecard`
+>   blocks across a `config_hash` that differs by construction — the exact shape
+>   Task 3 forbids. Deferred because the removal is a schema change to a separate
+>   published contract that the plan pairs with an addition (seam-ID and
+>   distribution buckets) that does not exist yet.
+>
 > This file stays in `docs/plans/` rather than `docs/plans/completed/` until
-> those three items close.
+> those items close.
 >
 > ---
 >
@@ -819,7 +837,10 @@ Manual checks:
 - [x] Add hard structural label validation plus diagnostic stale-evidence handling.
 - [x] Derive composition-root/adapter expectations from existing roles without
       label hacks or new role keys.
-- [x] Make config/model/labels/rubric comparison explicit and non-comparable when needed.
+- [x] Make config/model/labels/rubric comparison explicit and non-comparable when
+      needed. **Partial:** `decision.CompareFingerprints` is strict on all four
+      fingerprints, but `config compare` still publishes `score_delta` across a
+      config hash that differs by construction — follow-ups §B.
 - [x] Add seam fixtures and preserve per-edge explain evidence.
 - [x] Remove repository `Scorecard.Overall` from the new primary decision path.
 - [x] Run focused tests and commit the seam-ledger implementation.
@@ -993,6 +1014,9 @@ Manual checks:
 
 - [x] Slice 4A: reproduce baseline non-idempotence, fix it, implement baseline v2
       plus old-baseline reads, compare semantics, focused tests, and commit.
+      **Partial:** compare semantics are baseline-only — `--base <ref>` never
+      becomes the seam-gate reference, and only `drift` emits a per-dimension
+      `delta`. Follow-ups §A.
 - [x] Slice 4B: implement primary JSON v1 plus `legacy-json`, double-run byte
       identity, stable ordering, schema tests, and commit. Use `jq -e` for
       required fields so absent state cannot pass verification.

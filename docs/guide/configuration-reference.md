@@ -1134,8 +1134,9 @@ human` and `provenance: tool` do not lower confidence.
 When an edge's strength cannot be classified (`unknown`) but its distance
 resolves to an internal module, archfit **abstains** — the edge is excluded
 from the `coupling_balance` scored distribution (honest denominator) and an
-actionable `config_warnings[]` decision message is emitted in JSON/Markdown
-output prompting the operator to add a label. The same happens for modules with
+actionable `config_warnings[]` decision message is emitted in Markdown and
+under `--format legacy-json` (it is not part of
+`archfit.architecture-state.v1`) prompting the operator to add a label. The same happens for modules with
 no declared `subdomain` or `volatility`: a decision message asks for a
 declaration or suggests `archfit config enrich subdomain`.
 

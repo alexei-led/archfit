@@ -209,6 +209,62 @@ func TestConfigUpdateMigrationOnly_AlreadyCurrentIsANoOp(t *testing.T) {
 	}
 }
 
+// TestConfigUpdateMigrationOnly_RefusesAnUnversionedConfig pins the one shape
+// that used to report success on a file the binary cannot load: no root
+// `version:` key. MigrateToV2 only ever rewrote an EXISTING version line, so
+// the result was "already current" and exit 0 — while `check` refused the same
+// file with `version must be 2 (got 0)`. The only advertised escape from an
+// unloadable config must not claim there is nothing to fix.
+func TestConfigUpdateMigrationOnly_RefusesAnUnversionedConfig(t *testing.T) {
+	t.Parallel()
+	const unversioned = "modules:\n  a:\n    paths: [\"pkg/a/**\"]\n"
+
+	t.Run("apply exits 3 and leaves the file alone", func(t *testing.T) {
+		t.Parallel()
+		path := writeLegacyConfig(t, unversioned)
+		code, stdout, stderr := runArchfit(t, cmdConfig, cmdUpdate, flagMigrationOnly, "--apply", "-c", path)
+		if code != 3 {
+			t.Errorf("exit = %d, want 3\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+		}
+		if strings.Contains(stdout+stderr, "already schema") {
+			t.Errorf("an unversioned config was reported as current:\n%s%s", stdout, stderr)
+		}
+		if after := readConfigFile(t, path); after != unversioned {
+			t.Errorf("a refused migration rewrote the config:\n%s", after)
+		}
+	})
+
+	t.Run("preview names the missing key", func(t *testing.T) {
+		t.Parallel()
+		path := writeLegacyConfig(t, unversioned)
+		code, stdout, stderr := runArchfit(t, cmdConfig, cmdUpdate, flagMigrationOnly, "-c", path)
+		if code != 0 {
+			t.Fatalf("preview exit = %d, want 0\nstderr:\n%s", code, stderr)
+		}
+		if !strings.Contains(stdout, "version:") || strings.Contains(stdout, "already schema") {
+			t.Errorf("preview did not name the missing root version key:\n%s", stdout)
+		}
+	})
+
+	t.Run("json reports the unversioned status", func(t *testing.T) {
+		t.Parallel()
+		path := writeLegacyConfig(t, unversioned)
+		code, stdout, stderr := runArchfit(t, cmdConfig, cmdUpdate, flagMigrationOnly, "--json", "-c", path)
+		if code != 0 {
+			t.Fatalf("json exit = %d, want 0\nstderr:\n%s", code, stderr)
+		}
+		var got struct {
+			Status string `json:"status"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+			t.Fatalf("decoding migration report: %v\n%s", err, stdout)
+		}
+		if got.Status != initcfg.MigrationUnversioned {
+			t.Errorf("status = %q, want %q", got.Status, initcfg.MigrationUnversioned)
+		}
+	})
+}
+
 // TestConfigUpdateMigrationOnly_ApplyRefusesAnUnloadableResult pins the
 // post-condition the write protocol enforces. MigrateToV2 is a line transform
 // over YAML it never parses, so a shape it cannot see — here a flow-mapping

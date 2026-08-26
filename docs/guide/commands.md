@@ -880,8 +880,10 @@ Effect:
 
 - Compares the current branch against a git ref such as `main` or `origin/main`.
 - Adds a base-vs-head delta to the normal output.
-- Adds `git_finding_delta` to `--json` output: which current repair tasks the
-  change introduced, which pre-date the base ref, and which could not be placed.
+- Adds `git_finding_delta` to `--format legacy-json` output: which current repair
+  tasks the change introduced, which pre-date the base ref, and which could not
+  be placed. The block is diagnostic-only and is **not** part of
+  `archfit.architecture-state.v1`, so `--json` does not carry it.
 - Never changes the verdict or the exit code. A base worktree or base pipeline
   error exits `3` and prints no partial output.
 - Not accepted by `archfit baseline`, which always records the tree as checked out.
@@ -890,13 +892,14 @@ Examples:
 
 ```sh
 archfit analyze --base origin/main -c .archfit.yaml
-archfit check --base main --json -c .archfit.yaml
+archfit check --base main --format legacy-json -c .archfit.yaml
 ```
 
-Reading the origin block:
+Reading the origin block (`legacy-json` only, and only for one release — see
+[release notes](release-notes.md)):
 
 ```sh
-archfit check --base main --json -c .archfit.yaml \
+archfit check --base main --format legacy-json -c .archfit.yaml \
   | jq '.git_finding_delta.introduced_finding_ids'
 ```
 
@@ -1046,6 +1049,11 @@ What it deliberately does not do:
 
 - infer `mode: fail`. Fail blocks a build, so enabling it stays an owner
   decision taken after a report-only run against a comparable reference;
+- supply a missing root `version:`. A file that declares none loads under no
+  archfit schema, and prepending a version line is not a safe mechanical edit —
+  above a `---` document marker it would splice a second YAML document and
+  silently drop the config below it. Such a file reports `unversioned`; add
+  `version: 2` at column zero yourself and re-run;
 - touch any other key, comment, or line. It is a line transform, not a YAML
   round-trip, so authored formatting survives;
 - run discovery, analyzers, or the fact cache;
@@ -1072,5 +1080,10 @@ to migrate.
 }
 ```
 
-`status` is `migration_required` or `already_current`. Both exit 0; only an
-input or usage error exits 3.
+`status` is `migration_required`, `already_current`, or `unversioned` (no root
+`version:` key, so there is no schema to migrate from). All three exit 0 under
+`--json` and in preview. `--apply` exits 3 on `unversioned`, and on a result the
+post-write validation rejects — a line transform cannot reach a retired key
+written inside a flow mapping (`gate: {min_band: …}`), so that file is reported
+and left untouched rather than stamped v2 while still unloadable. An input or
+usage error also exits 3.
