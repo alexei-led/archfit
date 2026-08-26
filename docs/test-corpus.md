@@ -213,6 +213,81 @@ sweep:
   `telegram`, `structlog`, and `httpx` unresolved on ccgram is grimp declining
   to resolve site-packages, not a broken config.
 
+## Observed v1 behaviour (full corpus, 2026-08-26)
+
+Branch binary `v1.7.1-56`, all eleven repos, `--strict` exit 0. Every config
+migrated v1 → v2 as a single `version:` line change and was byte-idempotent on a
+second migration. Every repo verdict is `needs_attention` and every `check`
+exits 2 — the expected v1 result, because complexity, testability, and
+operations are `partial` by contract.
+
+| Repo | Lang | Coverage (M/P/U) | Findings | Seams |
+| --- | --- | --- | ---: | ---: |
+| spotinfo | Go | 5/3/1 | 32 | 29 |
+| pumba | Go | 5/3/1 | 12 | 7 |
+| omni/scheduled-tasks | Go | 5/3/1 | 1782 | 1574 |
+| prometheus | Go | 5/3/1 | 361 | 487 |
+| ccgram | Python | 3/4/2 | 59 | 75 |
+| prefect | Python | 3/4/2 | 116 | 438 |
+| storybook | TS | 4/4/1 | 73 | 73 |
+| yazi | Rust | 4/3/2 | 3 | 0 |
+| herdr | Rust | 3/3/3 | 0 | 0 |
+| ruff | Rust | 2/3/4 | 0 | 0 |
+| tokio | Rust | 2/3/4 | 0 | 0 |
+
+Byte determinism and five-format parity were checked on the four mandatory
+representatives (spotinfo, storybook, ccgram, herdr); AI summaries ran on those
+four minus herdr's stand-in set and all exited 0.
+
+### Classified anomalies
+
+- **Missing Rust toolchain (environment gap).** No `cargo`, `rust-analyzer`, or
+  `cargo-modules` on the sweep host, so the four Rust repos measure no crate
+  graph: coupling and structure are `unmeasured`, seams are 0. Disclosed as a
+  coverage gap; no crash, and no repo became `healthy`. This is the contract
+  working. It also means **Rust coupling is unverified on this sweep** — rerun on
+  a host with cargo before treating Rust coupling as validated.
+- **`languages.rust.enabled: auto` reports `cargo: absent`, `true` reports
+  `cargo: partial` (open UX finding).** Same missing binary, two different rows:
+  herdr and yazi (`true`) get `partial` plus the reason "cargo not found;
+  install Rust via https://rustup.rs", while ruff and tokio (`auto`) get a bare
+  `absent` with no reason. Both emit a `cargo` coverage gap, so the dangerous
+  shape — gapless `absent` on a primary, which both pairing paths read as "this
+  language is not in the tree" — does not occur and `analyze --base` /
+  `config compare` stay correct. Recorded, not fixed: the deterministic contract
+  holds, and changing an applicability probe is the area where bugs have shipped
+  in both directions.
+- **Unresolved third-party imports (expected).** grimp leaves site-packages
+  unresolved: 231 on ccgram (telegram, structlog, httpx), 1587 on prefect
+  (sqlalchemy, alembic, pydantic). Disclosed with counts and a next command.
+- **storybook: dependency-cruiser left 55% of import specifiers unresolved.**
+  Now lowers the coupling envelope to `partial`/medium and names the missing
+  evidence. Before that fix the primary contract said `measured`/`high` while
+  `coupling_balance` said "high confidence disallowed" about the same run.
+- **prefect: SCIP timed out** at the configured `analyzers.scip.timeout`. Both
+  `scip` rows report `timed out` with the remedy; the run continues on the
+  remaining analyzers, as designed.
+- **omni/scheduled-tasks: 384 under-specified modules; ruff: 1** (target config
+  finding). Auto-generated stanzas missing `owner`/`subdomain`/`volatility`,
+  which degrades distance and volatility classification and drives the 1782
+  findings. Disclosed on stderr as a config-quality warning. Target-side work,
+  not an archfit defect — never edit a target's ownership to flatten output.
+
+### Product defects this sweep found and fixed
+
+1. Text, Markdown, and the scorecard abbreviated or omitted the finding list, so
+   the five formats disagreed about which findings a run produced. Each human
+   format now closes with a canonical finding index.
+2. Truncation caps in the Markdown renderer, the console renderer, and initcfg
+   sliced UTF-8 by bytes. A cut inside the "×" every coupling advisory carries
+   emitted invalid UTF-8 — storybook's Markdown failed to decode at byte 43174,
+   which loses the whole document, not one line.
+3. The "no source files matched declared module paths" hint read `FileFacts`,
+   which is SCIP-derived and therefore empty on any repo that has not opted into
+   SCIP. It fired on essentially every default-configured repository.
+4. The coupling envelope ignored the TypeScript unresolved-specifier ratio that
+   already capped `coupling_balance` confidence.
+
 ## Related
 
 - `skills/archfit-eval/`
