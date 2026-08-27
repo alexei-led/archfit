@@ -284,25 +284,47 @@ contract is therefore:
   (`internal/extract/ts/ts.go:434-462`). A gitignored `.go` file under `mocks/`
   can be analyzed and covered while absent from a LOC-based inventory.
 
-  `inventory.go` therefore uses an explicit allowlist to enumerate each covered
-  module. The allowlist includes:
+  **The inventory must not be a hand-maintained list (round 17).** Rounds 15, 16
+  and 17 each found a different missing entry in a literal allowlist — first
+  LOC's `skipDirs`, then `node_modules` resolver metadata, then `.mts`/`.cts`/
+  `.mjs`/`.cjs`, `go.mod`, `go.work`, `uv.lock`, `Cargo.toml`/`Cargo.lock`,
+  `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, and `.dependency-cruiser.{cjs,mjs}`.
+  A list restated in this document cannot converge, because the truth lives in
+  extractor code and drifts with it. Restating it once more would only move the
+  next false green one round later.
 
-  - Go: `.go` source files and `go.sum` (module version lock).
-  - TypeScript/JavaScript: `.ts`, `.tsx`, `.js`, `.jsx`, `.json` files (including
-    `package.json`, `.package-lock.json`, `.modules.yaml` that the resolver reads
-    and that affect build and coverage behavior), and `node_modules/` entries
-    required by module resolution.
-  - Python: `.py` files and `pyproject.toml`, `setup.py`, `setup.cfg`,
-    `requirements*.txt`, `poetry.lock` (version locks and configurations).
-  - Any other files in covered modules that a Ralphex executor may define as
-    affecting analysis.
+  **Derived inventory.** `inventory.go` owns no file list. Each extractor already
+  declares its own inputs, and the inventory is the union of what the extractors
+  report:
 
-  The inventory hashes the paths and file content byte-for-byte, not walk order
-  or entry metadata. The inventory is unordered and deterministic per commit SHA.
-  The bracket comparison holds if and only if the worktree's enumerable set
-  matches the referenced commit's allowlist at byte level. An inventory
-  implementation that omits a file on the allowlist (e.g., resolver metadata)
-  produces a false green when that metadata changes.
+  - *Declared inputs*, from the extractor-owned sets that already exist:
+    source extensions (`internal/model/graph/convention.go:86-95`),
+    `tsManifestNames` and `nodeResolverInputs` (`internal/extract/ts/ts.go:52-60`,
+    `:432-457`), Go module inputs (`internal/extract/golang/members.go:43-79`,
+    `:179-215`), Rust manifests (`internal/extract/rust/rust.go:48-51`), and
+    Python manifests (`internal/extract/py/py.go:52-54`).
+  - *Resolved inputs*: the concrete paths each extractor actually opened during
+    the run, **including paths outside covered modules and above the scan root**.
+    This is what closes the resolver-root escape: a Git-root `tsconfig.json` or
+    `.dependency-cruiser.mjs` enters the inventory because the TypeScript
+    extractor resolved it (`internal/extract/ts/ts.go:147-159`, `:252-313`), not
+    because this document remembered to name it.
+
+  Adding a language, an extension, or a manifest name therefore extends the
+  inventory automatically. No edit to `inventory.go` or to this section is
+  required, and none is permitted as a substitute.
+
+  **Fail closed.** If any enabled extractor does not report its input set,
+  freshness is `partial` with reason `inventory_scope_unverified` and coverage
+  cannot promote. An unreported extractor is an unmeasured scope, never an empty
+  one. This is the rule that makes the derived design safe: a new or
+  non-conforming extractor degrades the verdict instead of silently shrinking
+  the inventory.
+
+  The inventory hashes paths and file content byte-for-byte, not walk order or
+  entry metadata. It is unordered and deterministic per commit SHA. The bracket
+  comparison holds if and only if the worktree's derived input set matches the
+  referenced commit's at byte level.
 
   *Accepted ceiling:* a mutation that occurs **and is reverted** entirely inside
   the analysis window is not detectable by bracketing. That is a deliberately
@@ -1166,9 +1188,11 @@ Files:
   one registered stub here.
 - `internal/extract/coverage/normalize.go` (new) — the path contract.
 - `internal/extract/coverage/inventory.go` (new) — the scanner inventory hash of
-  §2.2. Enumerates all covered-module files that any supported analyzer might
-  read (no skipDirs or dot-directory pruning), hashes path set plus contents,
-  and reproduces the same inventory from the referenced commit for comparison.
+  §2.2. Carries **no file list**: it unions each extractor's declared and
+  resolved input sets, including inputs above the scan root, hashes path set
+  plus contents, and reproduces the same inventory from the referenced commit
+  for comparison. An extractor that reports no inputs yields
+  `inventory_scope_unverified` and blocks promotion.
   Bracketed pre/post captures are owned by this file's scope, and production
   placement is tested by Task 10's deterministic mid-run mutation gate driving
   the full pipeline through `internal/evidence/acquisition/service.Acquire`
@@ -1444,17 +1468,21 @@ Fitness gate:
     injects a file write between the pre-inventory and post-inventory captures.
     Proves the brackets are computed and compared, and that a
     single-inventory implementation fails.
-  - **modify TypeScript resolver metadata** (round 16) → `partial`, reason
-    `worktree_differs_from_ref`. The fixture modifies `node_modules/package.json`
-    or `.package-lock.json` (or adds a `.modules.yaml`) under a covered module
-    after the coverage profile is generated. These files are on the inventory
-    allowlist because the resolver reads them and they affect build/coverage
-    behavior (§2.2). An inventory implementation that omits resolver metadata
-    would match pre/post inventories and incorrectly promote stale metadata to
-    `measured`. Proves the inventory includes all analyzer-observable paths on
-    the allowlist, not just source files.
-  Only the unmodified fixture may reach `measured`. All seven mutation cases must
-  reduce testability below `measured` to close the false-green surface.
+  - **table-driven analyzer-input mutations** (rounds 16-17) → `partial`, reason
+    `worktree_differs_from_ref` for **every** row. Not `or`: each row runs. The
+    table covers at minimum all three `nodeResolverInputs`
+    (`node_modules/package.json`, `.package-lock.json`, `.modules.yaml`), `go.mod`,
+    and a **parent-root** `tsconfig.json` and `.dependency-cruiser.mjs` above the
+    covered module. The parent-root rows are the round-17 resolver-root escape
+    and fail any covered-module-scoped inventory. Rows are generated from the
+    extractors' declared input sets (§2.2), so a newly declared input adds a row
+    rather than silently going untested.
+  - **stub an extractor's input reporting** → `partial`, reason
+    `inventory_scope_unverified`, never `measured`. Proves the fail-closed rule
+    and that a non-conforming extractor cannot shrink the inventory to a passing
+    subset.
+  Only the unmodified fixture may reach `measured`. Every mutation row and both
+  scope rows must reduce testability below `measured`.
   - **warm cache, then add a gitignored `.go` file** under a covered module and
     rerun with the *same* profile and source ref → `partial`, reason
     `worktree_differs_from_ref`. The first run must be asserted `measured` with
