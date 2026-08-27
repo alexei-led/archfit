@@ -1096,9 +1096,11 @@ go test ./internal/factcache/ ./internal/config/ -count=1
 ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 make build
-# Format and golden tests confirm coverage-disabled behavior is stable.
-# Task 3's IntegrationReachability fixture verifies end-to-end with and without
-# coverage. No new two-binary harness is needed here.
+
+# Verify coverage ingestion with disabled path (default config).
+# Task 3 uses materializeFixture with withCoverage=false; this verifies the
+# disabled-path (coverage.enabled: false) produces stable output.
+go test ./cmd/archfit/ -run 'IntegrationReachability/drift_lifecycle' -count=1 -v || exit 1
 make lint
 ```
 
