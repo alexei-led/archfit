@@ -77,8 +77,10 @@ denominator: classified source files 2/2
 - test_files: 0 count
 - production_files: 2 count
 - test_to_production_files: 0 ratio (0/2)
-- not measured — executed test coverage: v1 does not run a target repository's test suite; supplied coverage is not yet an input
-- not measured — boundary test coverage: which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
+- not measured — supplied coverage units: coverage is disabled, so no supplied coverage units were observed
+- not measured — coverage path resolution: coverage is disabled, so no supplied coverage paths were available to resolve
+- not measured — coverage module attribution: coverage is disabled, so no supplied coverage was available to attribute to declared modules
+- not measured — coverage freshness: coverage is disabled, so no supplied coverage freshness could be established
 
 ### operations — partial · gate: pass · confidence: medium
 owner: policy+evidence/acquisition

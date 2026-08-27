@@ -156,65 +156,33 @@ new comparable persisted reference.
 
 ---
 
-## Scoring model
+## Legacy per-metric scoring
 
-Each scorecard dimension produces a 0–100 value, a band, and a confidence.
-A band applies only to that dimension. `coupling_balance: poor` is not an
-overall architecture-quality verdict; use the gate findings and the evidence
-blocks to judge the design.
+The nine architecture-state dimensions do **not** produce 0–100 scores or
+quality bands. The primary scorecard (`--format scorecard`) renders each
+dimension's evidence-completeness status, gate posture, confidence, denominator,
+metrics, and unknown facts. A dimension's `measured`, `partial`, or `unmeasured`
+status comes only from the fixed required-fact contract described above.
 
-### Bands
+The pre-cutover diagnostic, available as `--format legacy-json`, still carries
+bands and confidence for individual metrics and for its single synthesized
+`coupling_balance` score. That metadata is per metric: ratio metrics derive a
+band from their own normalized score, while count metrics such as `cycle` use
+their documented categorical rules. It must not be read as a nine-dimension or
+repository-wide architecture score.
 
-| Band          | Score  | Meaning                                                                                   |
-| ------------- | ------ | ----------------------------------------------------------------------------------------- |
-| `strong`      | 81–100 | Healthy.                                                                                  |
-| `serviceable` | 61–80  | Acceptable.                                                                               |
-| `mixed`       | 41–60  | Watch.                                                                                    |
-| `poor`        | 21–40  | Problem.                                                                                  |
-| `critical`    | 0–20   | Measured and bad.                                                                         |
-| `n/a`         | —      | No signal to measure. Not good, not bad — _no evidence_. Never conflated with `critical`. |
-| `info`        | —      | Report-only fact; asserts no quality verdict.                                             |
+`coupling_balance` alone uses the legacy 0–100 ranges: `strong` (81–100),
+`serviceable` (61–80), `mixed` (41–60), `poor` (21–40), and `critical` (0–20).
+For all legacy metrics, `n/a` means the underlying signal was absent and `info`
+means the metric asserts no quality verdict. Neither is a numeric band.
 
-The `n/a` vs `critical` distinction is load-bearing. A repo that declares no
-public/internal API surface has nothing to score for encapsulation; that is
-`n/a`, not a `critical` failure. Reporting a confident bad score on absent
-evidence is a false alarm the tool refuses to raise.
-
-### Confidence caps the band
-
-Confidence (`high` / `medium` / `low`) reflects how much of the needed evidence
-was actually available (coverage, classified fraction, sample size). It can only
-_lower_ the reported band, never raise it
-(`internal/assessment/metrics/internal/result`, `ApplyConfidenceCap`):
-
-```text
-high   → band may reach "strong"
-medium → band capped at "serviceable"
-low    → band capped at "mixed"
-```
-
-So a metric cannot claim `strong` on thin evidence. This is why low extraction
-coverage quietly pulls every dependent metric's ceiling down instead of letting
-the tool over-claim.
-
-`coupling_balance` confidence starts with the scored fraction of classified
-internal cross-boundary facts, then applies evidence caps:
-
-- fewer than **5** scored internal cross-boundary facts ⇒ high confidence is
-  disallowed;
-- fewer than **3** connected modules in the scored/abstained coupling sample ⇒
-  high confidence is disallowed;
-- `dependency-cruiser` `partial` with unresolved-specifier ratio above **10%**
-  (`tsUnresolvedRatioCeiling`, `internal/assessment/score/score.go`) ⇒ high confidence is
-  disallowed, because unresolved specifiers land in the `external` bucket,
-  outside `coupling_balance`'s denominator;
-- `cargo-modules` `partial` on Rust ⇒ high confidence is disallowed.
-
-These caps lower `high` to `medium` and append evidence lines. They do not lower
-the numeric score or trip `coupling.gate` by themselves. Existing low confidence
-from a poor scored fraction remains low. Confidence downgrades (provenance,
-coverage, per-language partial extraction, sample size) compose by taking the
-minimum confidence — they never stack.
+Legacy metric confidence (`high` / `medium` / `low`) can cap a metric band at
+`strong` / `serviceable` / `mixed`, respectively; it never raises a band. These
+caps belong to the legacy metric result and do not decide an architecture-state
+dimension's measurement status. `coupling_balance` additionally disallows high
+confidence for fewer than five scored internal cross-boundary facts, fewer than
+three connected modules, materially unresolved TypeScript specifiers, or a
+partial Rust module graph.
 
 ### Deltas
 

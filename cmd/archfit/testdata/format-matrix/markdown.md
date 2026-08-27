@@ -130,15 +130,17 @@
 - **Status:** not_requested
 - **Reference:** none
 
-## Not measured (12)
+## Not measured (14)
 
 - **modularity — inferred public surface** (owner: assessment/metrics): no declared module states a public surface, so inferring one is outside this claim
 - **change_locality — eligible commit sample** (owner: history/git): git history is unavailable or the history scan returned no eligible commit
 - **change_locality — commit-to-module attribution** (owner: history/git): the history scan is incomplete, so not every eligible commit has a complete module attribution
 - **complexity — function length distribution** (owner: syntax+evidence/acquisition): ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution
 - **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
-- **testability — executed test coverage** (owner: syntax/fileclass): v1 does not run a target repository's test suite; supplied coverage is not yet an input
-- **testability — boundary test coverage** (owner: syntax/fileclass): which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
+- **testability — supplied coverage units** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage units were observed
+- **testability — coverage path resolution** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage paths were available to resolve
+- **testability — coverage module attribution** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage was available to attribute to declared modules
+- **testability — coverage freshness** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage freshness could be established
 - **operations — corroborated deploy unit** (owner: policy+evidence/acquisition): one or more declared modules have no independently corroborating deploy manifest
 - **operations — observed runtime topology** (owner: policy+evidence/acquisition): committed manifests corroborate declared deploy units; they do not observe what is actually running
 - **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts are a separate report family and have no collector in v1

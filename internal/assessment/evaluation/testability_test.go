@@ -40,12 +40,16 @@ func TestTestabilityDisabledCoveragePreservesLegacyEnvelope(t *testing.T) {
 		{Name: "test_to_production_files", Value: 1, Unit: assessMetricUnitRatio, Denominator: &state.MetricDenominator{Observed: 1, Total: 1}, Provenance: []string{assessProvFileClass}},
 	}
 	want.Unknown = []state.UnknownFact{{
-		Fact: "executed test coverage", Reason: "v1 does not run a target repository's test suite; supplied coverage is not yet an input", Owner: state.OwnerTestability,
+		Fact: state.FactSuppliedCoverageUnits, Reason: "coverage is disabled, so no supplied coverage units were observed", Owner: state.OwnerTestability,
 	}, {
-		Fact: "boundary test coverage", Reason: "which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect", Owner: state.OwnerTestability,
+		Fact: state.FactCoveragePathResolution, Reason: "coverage is disabled, so no supplied coverage paths were available to resolve", Owner: state.OwnerTestability,
+	}, {
+		Fact: state.FactCoverageModuleAttribution, Reason: "coverage is disabled, so no supplied coverage was available to attribute to declared modules", Owner: state.OwnerTestability,
+	}, {
+		Fact: state.FactCoverageFreshness, Reason: "coverage is disabled, so no supplied coverage freshness could be established", Owner: state.OwnerTestability,
 	}}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("absent CoverageIngest changed the legacy testability envelope:\ngot  = %#v\nwant = %#v", got, want)
+		t.Fatalf("disabled coverage testability envelope:\ngot  = %#v\nwant = %#v", got, want)
 	}
 	for _, metric := range got.Metrics {
 		for _, provenance := range metric.Provenance {
@@ -53,6 +57,24 @@ func TestTestabilityDisabledCoveragePreservesLegacyEnvelope(t *testing.T) {
 				t.Fatalf("disabled coverage leaked provenance %q into %+v", provenance, got)
 			}
 		}
+	}
+
+	empty := testabilityDimensionForTest(nil, evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{}})
+	if empty.Status != state.Unmeasured {
+		t.Fatalf("disabled coverage with empty file index status = %q, want unmeasured", empty.Status)
+	}
+	gotNames := make([]string, 0, len(empty.Unknown))
+	for _, unknown := range empty.Unknown {
+		gotNames = append(gotNames, unknown.Fact)
+	}
+	wantNames := make([]string, 0)
+	for _, fact := range state.RequiredFacts(state.DimensionTestability) {
+		if fact.InClaim {
+			wantNames = append(wantNames, fact.Name)
+		}
+	}
+	if !reflect.DeepEqual(gotNames, wantNames) {
+		t.Fatalf("disabled coverage with empty file index unknown facts = %q, want declared in-claim facts %q", gotNames, wantNames)
 	}
 }
 

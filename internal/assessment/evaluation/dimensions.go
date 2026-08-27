@@ -645,8 +645,9 @@ func appendComplexityDiagnostics(dim *state.Dimension, f Observations, threshold
 
 // testabilityDimension reports exercised production-code coverage attributed to
 // the declared module map. Supplied coverage is report input, never a reason to
-// execute the target repository's tests. The legacy static-only branch is kept
-// separate so disabled coverage preserves the complete pre-feature envelope.
+// execute the target repository's tests. The static-only branch keeps coverage
+// metrics absent when coverage is disabled while using the same required-fact
+// promotion contract.
 func testabilityDimension(p policy.PolicySnapshot, f Observations) state.Dimension {
 	if f.SuppliedCoverage == nil {
 		return legacyTestabilityDimension(f)
@@ -715,27 +716,25 @@ func testabilityDimension(p policy.PolicySnapshot, f Observations) state.Dimensi
 
 func legacyTestabilityDimension(f Observations) state.Dimension {
 	dim := state.NewDimension(state.DimensionTestability, state.OwnerTestability)
+	reasons := map[string]string{
+		state.FactProductionSourceInventory: "no file was classified, so test and production files cannot be told apart",
+		state.FactSuppliedCoverageUnits:     "coverage is disabled, so no supplied coverage units were observed",
+		state.FactCoveragePathResolution:    "coverage is disabled, so no supplied coverage paths were available to resolve",
+		state.FactCoverageModuleAttribution: "coverage is disabled, so no supplied coverage was available to attribute to declared modules",
+		state.FactCoverageFreshness:         "coverage is disabled, so no supplied coverage freshness could be established",
+	}
 	if len(f.FileClassIndex) == 0 {
-		return unmeasured(dim, state.UnknownFact{
-			Fact:   "testability",
-			Reason: "no file was classified, so test and production files cannot be told apart",
-			Owner:  state.OwnerTestability,
-		})
+		applyPromotion(&dim, nil, nil, reasons)
+		return dim
 	}
 	tests, production := testAndProductionFileCounts(f.FileClassIndex)
-	dim.Status = state.Partial
+	observed := []string(nil)
+	if production > 0 {
+		observed = append(observed, state.FactProductionSourceInventory)
+	}
+	applyPromotion(&dim, observed, nil, reasons)
 	dim.Coverage = state.Coverage{Basis: "classified source files", Observed: tests + production, Total: len(f.FileClassIndex)}
 	dim.Metrics = staticTestabilityMetrics(tests, production)
-	dim.Confidence = state.ConfidenceFor(dim.Status)
-	dim.Unknown = []state.UnknownFact{{
-		Fact:   "executed test coverage",
-		Reason: "v1 does not run a target repository's test suite; supplied coverage is not yet an input",
-		Owner:  state.OwnerTestability,
-	}, {
-		Fact:   "boundary test coverage",
-		Reason: "which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect",
-		Owner:  state.OwnerTestability,
-	}}
 	return dim
 }
 

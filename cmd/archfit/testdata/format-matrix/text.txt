@@ -68,7 +68,7 @@ DIMENSIONS
     coverage: 1 ratio
   drift           unmeasured  gate: not_applicable  confidence: unrated  no denominator
 
-NOT MEASURED (12)
+NOT MEASURED (14)
 
   modularity — inferred public surface
     no declared module states a public surface, so inferring one is outside this claim
@@ -80,10 +80,14 @@ NOT MEASURED (12)
     ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution
   complexity — cognitive complexity
     no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
-  testability — executed test coverage
-    v1 does not run a target repository's test suite; supplied coverage is not yet an input
-  testability — boundary test coverage
-    which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
+  testability — supplied coverage units
+    coverage is disabled, so no supplied coverage units were observed
+  testability — coverage path resolution
+    coverage is disabled, so no supplied coverage paths were available to resolve
+  testability — coverage module attribution
+    coverage is disabled, so no supplied coverage was available to attribute to declared modules
+  testability — coverage freshness
+    coverage is disabled, so no supplied coverage freshness could be established
   operations — corroborated deploy unit
     one or more declared modules have no independently corroborating deploy manifest
   operations — observed runtime topology

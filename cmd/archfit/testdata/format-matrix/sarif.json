@@ -526,14 +526,24 @@
             "status": "partial",
             "unknown": [
               {
-                "fact": "executed test coverage",
+                "fact": "supplied coverage units",
                 "owner": "syntax/fileclass",
-                "reason": "v1 does not run a target repository's test suite; supplied coverage is not yet an input"
+                "reason": "coverage is disabled, so no supplied coverage units were observed"
               },
               {
-                "fact": "boundary test coverage",
+                "fact": "coverage path resolution",
                 "owner": "syntax/fileclass",
-                "reason": "which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect"
+                "reason": "coverage is disabled, so no supplied coverage paths were available to resolve"
+              },
+              {
+                "fact": "coverage module attribution",
+                "owner": "syntax/fileclass",
+                "reason": "coverage is disabled, so no supplied coverage was available to attribute to declared modules"
+              },
+              {
+                "fact": "coverage freshness",
+                "owner": "syntax/fileclass",
+                "reason": "coverage is disabled, so no supplied coverage freshness could be established"
               }
             ]
           },
