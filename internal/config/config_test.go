@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/pattern"
@@ -980,6 +982,51 @@ func TestLoad_SuppliedCoverage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := loadInline(t, tc.body); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Load error = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoad_SuppliedCoverageLimits(t *testing.T) {
+	t.Run("omitted limits project bounded defaults", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\ncoverage:\n  enabled: true\n  sources:\n    - path: coverage.out\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Coverage.Sources[0].MaxBytes != nil || cfg.Coverage.Sources[0].MaxFacts != nil {
+			t.Fatalf("omitted decoded limits = %+v, want nil pointers", cfg.Coverage.Sources[0])
+		}
+		got := cfg.SuppliedCoverageOptions().Sources[0]
+		if got.MaxBytes != suppliedcoverage.DefaultMaxBytes || got.MaxFacts != suppliedcoverage.DefaultMaxFacts {
+			t.Fatalf("projected defaults = %d bytes/%d facts, want %d/%d", got.MaxBytes, got.MaxFacts, suppliedcoverage.DefaultMaxBytes, suppliedcoverage.DefaultMaxFacts)
+		}
+	})
+
+	t.Run("configured positive limits survive projection", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\ncoverage:\n  enabled: true\n  sources:\n    - path: coverage.out\n      max_bytes: 12345\n      max_facts: 678\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := cfg.SuppliedCoverageOptions().Sources[0]
+		if got.MaxBytes != 12345 || got.MaxFacts != 678 {
+			t.Fatalf("projected configured limits = %d/%d, want 12345/678", got.MaxBytes, got.MaxFacts)
+		}
+	})
+
+	for _, tc := range []struct {
+		name  string
+		field string
+		value int
+	}{
+		{name: "zero bytes", field: "max_bytes", value: 0},
+		{name: "negative bytes", field: "max_bytes", value: -1},
+		{name: "zero facts", field: "max_facts", value: 0},
+		{name: "negative facts", field: "max_facts", value: -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "version: 2\ncoverage:\n  enabled: true\n  sources:\n    - path: coverage.out\n      " + tc.field + ": " + strconv.Itoa(tc.value) + "\n"
+			if err := loadInline(t, body); err == nil || !strings.Contains(err.Error(), tc.field+" must be positive") {
+				t.Fatalf("Load error = %v, want positive %s validation", err, tc.field)
 			}
 		})
 	}

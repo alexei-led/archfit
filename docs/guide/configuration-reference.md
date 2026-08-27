@@ -267,6 +267,8 @@ coverage:
     - path: coverage.out
       format: go-coverprofile
       sidecar_path: coverage.out.sidecar.json
+      max_bytes: 67108864
+      max_facts: 1000000
     - path: coverage/lcov.info
       format: lcov
 ```
@@ -300,6 +302,13 @@ Fields:
   filename could be ambiguous.
 - `sidecar_path` — optional path to the versioned freshness sidecar. The default
   is `<path>.sidecar.json`.
+- `max_bytes` — positive per-source byte limit for the artifact, sidecar, and
+  producer-enumerated source files read for freshness verification. The default
+  is `67108864` (64 MiB). Exceeding it rejects the input; Archfit never truncates
+  coverage evidence.
+- `max_facts` — positive per-source limit on normalized coverage facts. The
+  default is `1000000`. Exceeding it rejects the whole artifact before caching
+  or module attribution rather than returning an incomplete prefix.
 
 Supported formats and units:
 

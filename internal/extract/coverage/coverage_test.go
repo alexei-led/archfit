@@ -59,6 +59,155 @@ func TestIngest_DisabledIsByteIdenticalToAbsentOnFixedInput(t *testing.T) {
 	}
 }
 
+func TestIngest_DefaultLimitsApplyToDirectOptions(t *testing.T) {
+	root, sourcePath := coverageFixture(t)
+	calls := 0
+	ingests, _ := New(nil, fixtureParser{format: FormatLCOV, facts: []evidence.CoverageFact{
+		{File: sourcePath, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines},
+	}, calls: &calls}).IngestAll(root, Options{
+		Enabled: true,
+		Sources: []Source{{Path: fixtureCoveragePath, Format: FormatLCOV}},
+	})
+	if calls != 1 || len(ingests) != 1 || len(ingests[0].Facts) != 1 {
+		t.Fatalf("direct Options ingest calls/results = %d/%+v, want default-bounded parsed fact", calls, ingests)
+	}
+	got := (Source{}).withDefaults()
+	if got.MaxBytes != DefaultMaxBytes || got.MaxFacts != DefaultMaxFacts {
+		t.Fatalf("direct Options defaults = %d bytes/%d facts, want %d/%d", got.MaxBytes, got.MaxFacts, DefaultMaxBytes, DefaultMaxFacts)
+	}
+}
+
+func TestIngest_ArtifactByteLimitBoundary(t *testing.T) {
+	const artifact = "coverage"
+	for _, tc := range []struct {
+		name       string
+		maxBytes   int64
+		wantParsed bool
+	}{
+		{name: "at limit", maxBytes: int64(len(artifact)), wantParsed: true},
+		{name: "limit plus one", maxBytes: int64(len(artifact) - 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, sourcePath := coverageFixture(t)
+			writeCoverageFile(t, root, fixtureCoveragePath, artifact)
+			calls := 0
+			ingests, _ := New(nil, fixtureParser{format: FormatLCOV, facts: []evidence.CoverageFact{
+				{File: sourcePath, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines},
+			}, calls: &calls}).IngestAll(root, Options{Enabled: true, Sources: []Source{{
+				Path: fixtureCoveragePath, Format: FormatLCOV, MaxBytes: tc.maxBytes,
+			}}})
+			got := ingests[0]
+			if tc.wantParsed {
+				if calls != 1 || len(got.Facts) != 1 || strings.Contains(got.Reason, reasonCoverageArtifactTooLarge) {
+					t.Fatalf("at-limit ingest calls/result = %d/%+v", calls, got)
+				}
+				return
+			}
+			if calls != 0 || len(got.Facts) != 0 || got.Reason != reasonCoverageArtifactTooLarge {
+				t.Fatalf("over-limit ingest calls/result = %d/%+v, want reject before parse", calls, got)
+			}
+		})
+	}
+}
+
+func TestIngest_FactLimitBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		facts     int
+		wantFacts int
+	}{
+		{name: "at limit", facts: 1, wantFacts: 1},
+		{name: "limit plus one", facts: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, sourcePath := coverageFixture(t)
+			facts := make([]evidence.CoverageFact, tc.facts)
+			for idx := range facts {
+				facts[idx] = evidence.CoverageFact{File: sourcePath, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines}
+			}
+			calls := 0
+			ingests, _ := New(nil, fixtureParser{format: FormatLCOV, facts: facts, calls: &calls}).IngestAll(root, Options{
+				Enabled: true,
+				Sources: []Source{{Path: fixtureCoveragePath, Format: FormatLCOV, MaxFacts: 1}},
+			})
+			got := ingests[0]
+			if len(got.Facts) != tc.wantFacts {
+				t.Fatalf("facts = %d, want %d: %+v", len(got.Facts), tc.wantFacts, got)
+			}
+			if tc.facts > 1 && !strings.Contains(got.Reason, reasonCoverageFactLimitExceeded) {
+				t.Fatalf("reason = %q, want %q", got.Reason, reasonCoverageFactLimitExceeded)
+			}
+		})
+	}
+}
+
+func TestIngest_FactLimitIsEnforcedOnCacheHit(t *testing.T) {
+	root, sourcePath := coverageFixture(t)
+	writeSidecar(t, root, "coverage.info.sidecar.json", "producer-ref", map[string]string{sourcePath: fileHash(t, root, sourcePath)}, 1)
+	calls := 0
+	ingestor := New(factcache.NewStore(filepath.Join(t.TempDir(), "facts")), fixtureParser{format: FormatLCOV, facts: []evidence.CoverageFact{
+		{File: sourcePath, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines},
+		{File: sourcePath, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines},
+	}, calls: &calls})
+
+	atLimit, _ := ingestor.IngestAll(root, Options{Enabled: true, Sources: []Source{{Path: fixtureCoveragePath, Format: FormatLCOV, MaxFacts: 2}}})
+	if len(atLimit[0].Facts) != 2 || calls != 1 {
+		t.Fatalf("cache priming ingest = %+v, calls = %d", atLimit[0], calls)
+	}
+	overLimit, _ := ingestor.IngestAll(root, Options{Enabled: true, Sources: []Source{{Path: fixtureCoveragePath, Format: FormatLCOV, MaxFacts: 1}}})
+	if len(overLimit[0].Facts) != 0 || !strings.Contains(overLimit[0].Reason, reasonCoverageFactLimitExceeded) {
+		t.Fatalf("over-limit cache hit = %+v", overLimit[0])
+	}
+	if calls != 1 {
+		t.Fatalf("parser calls = %d, want cache hit rejected without reparsing", calls)
+	}
+}
+
+func TestIngest_AttestationReadsHonorByteLimitBoundary(t *testing.T) {
+	t.Run("sidecar at limit and limit plus one", func(t *testing.T) {
+		root, sourcePath := coverageFixture(t)
+		const sidecar = "coverage.info.sidecar.json"
+		writeSidecar(t, root, sidecar, "producer-ref", map[string]string{sourcePath: fileHash(t, root, sourcePath)}, 1)
+		info, err := os.Stat(filepath.Join(root, sidecar))
+		if err != nil {
+			t.Fatal(err)
+		}
+		calls := 0
+		ingestor := New(nil, fixtureParser{format: FormatLCOV, facts: []evidence.CoverageFact{
+			{File: sourcePath, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines},
+		}, calls: &calls})
+
+		atLimit, _ := ingestor.IngestAll(root, Options{Enabled: true, Sources: []Source{{Path: fixtureCoveragePath, Format: FormatLCOV, MaxBytes: info.Size()}}})
+		if atLimit[0].Freshness != evidence.FreshnessMatched || atLimit[0].Reason != "" {
+			t.Fatalf("at-limit sidecar ingest = %+v", atLimit[0])
+		}
+		overLimit, _ := ingestor.IngestAll(root, Options{Enabled: true, Sources: []Source{{Path: fixtureCoveragePath, Format: FormatLCOV, MaxBytes: info.Size() - 1}}})
+		if overLimit[0].Freshness != evidence.FreshnessUnverified || !strings.Contains(overLimit[0].Reason, reasonCoverageSidecarTooLarge) {
+			t.Fatalf("over-limit sidecar ingest = %+v", overLimit[0])
+		}
+	})
+
+	t.Run("attested source at limit and limit plus one", func(t *testing.T) {
+		root, sourcePath := coverageFixture(t)
+		contents := strings.Repeat("x", 512)
+		writeCoverageFile(t, root, sourcePath, contents)
+		writeSidecar(t, root, "coverage.info.sidecar.json", "producer-ref", map[string]string{sourcePath: fileHash(t, root, sourcePath)}, 1)
+		calls := 0
+		ingestor := New(nil, fixtureParser{format: FormatLCOV, facts: []evidence.CoverageFact{
+			{File: sourcePath, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines},
+		}, calls: &calls})
+
+		atLimit, _ := ingestor.IngestAll(root, Options{Enabled: true, Sources: []Source{{Path: fixtureCoveragePath, Format: FormatLCOV, MaxBytes: int64(len(contents))}}})
+		if atLimit[0].Freshness != evidence.FreshnessMatched || atLimit[0].Reason != "" {
+			t.Fatalf("at-limit attested source ingest = %+v", atLimit[0])
+		}
+		overLimit, _ := ingestor.IngestAll(root, Options{Enabled: true, Sources: []Source{{Path: fixtureCoveragePath, Format: FormatLCOV, MaxBytes: int64(len(contents) - 1)}}})
+		if overLimit[0].Freshness != evidence.FreshnessStale || !strings.Contains(overLimit[0].Reason, reasonCoverageAttestedSourceTooLarge) {
+			t.Fatalf("over-limit attested source ingest = %+v", overLimit[0])
+		}
+	})
+}
+
 func TestCoverageCacheKeyIncludesParserVersionAndScanRoot(t *testing.T) {
 	data := []byte("coverage")
 	base := coverageCacheKey("/scan/a", fixtureCoveragePath, FormatLCOV, "parser.v1", "ref-a", data)

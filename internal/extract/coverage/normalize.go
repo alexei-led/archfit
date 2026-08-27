@@ -120,7 +120,7 @@ func discoverModulePrefixes(root string) []modulePrefix {
 		if entry.Name() != "go.mod" || !entry.Type().IsRegular() {
 			return nil
 		}
-		data, err := os.ReadFile(path) //nolint:gosec // path came from the contained root walk
+		data, err := readBoundedFile(path, DefaultMaxBytes)
 		if err != nil {
 			return nil
 		}

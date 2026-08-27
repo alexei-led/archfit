@@ -86,7 +86,18 @@ func (c Config) SuppliedCoverageOptions() suppliedcoverage.Options {
 		if format == "" {
 			format = suppliedcoverage.FormatAuto
 		}
-		sources[i] = suppliedcoverage.Source{Path: source.Path, Format: format, SidecarPath: source.SidecarPath}
+		maxBytes := suppliedcoverage.DefaultMaxBytes
+		if source.MaxBytes != nil {
+			maxBytes = *source.MaxBytes
+		}
+		maxFacts := suppliedcoverage.DefaultMaxFacts
+		if source.MaxFacts != nil {
+			maxFacts = *source.MaxFacts
+		}
+		sources[i] = suppliedcoverage.Source{
+			Path: source.Path, Format: format, SidecarPath: source.SidecarPath,
+			MaxBytes: maxBytes, MaxFacts: maxFacts,
+		}
 	}
 	return suppliedcoverage.Options{Enabled: c.Coverage.Enabled, Gate: string(c.Coverage.Gate), Sources: sources}
 }

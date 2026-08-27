@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -35,14 +34,17 @@ type attestationResult struct {
 // attest compares only the producer-enumerated covered source universe against
 // the bytes under the scan root. It never asks git, walks for extra source files,
 // or treats source_ref as proof about a worktree.
-func attest(normalizer *Normalizer, sidecarPath string) attestationResult {
+func attest(normalizer *Normalizer, sidecarPath string, maxBytes int64) attestationResult {
 	unverified := attestationResult{freshness: evidence.FreshnessUnverified, reason: reasonFreshnessUnverified}
 	path, err := resolveContainedFile(normalizer.root, sidecarPath)
 	if err != nil {
 		return unverified
 	}
-	data, err := os.ReadFile(path) //nolint:gosec // path was contained under the configured scan root
+	data, err := readBoundedFile(path, maxBytes)
 	if err != nil {
+		if errors.Is(err, errCoverageInputTooLarge) {
+			unverified.reason = joinReasons(unverified.reason, reasonCoverageSidecarTooLarge)
+		}
 		return unverified
 	}
 	var sidecar attestationSidecar
@@ -66,9 +68,13 @@ func attest(normalizer *Normalizer, sidecarPath string) attestationResult {
 		if err != nil {
 			return attestationResult{freshness: evidence.FreshnessStale, reason: reasonWorktreeDiffers, sourceRef: sidecar.SourceRef}
 		}
-		contents, err := os.ReadFile(filepath.Join(normalizer.root, filepath.FromSlash(rel)))
+		contents, err := readBoundedFile(filepath.Join(normalizer.root, filepath.FromSlash(rel)), maxBytes)
 		if err != nil {
-			return attestationResult{freshness: evidence.FreshnessStale, reason: reasonWorktreeDiffers, sourceRef: sidecar.SourceRef}
+			reason := reasonWorktreeDiffers
+			if errors.Is(err, errCoverageInputTooLarge) {
+				reason = joinReasons(reason, reasonCoverageAttestedSourceTooLarge)
+			}
+			return attestationResult{freshness: evidence.FreshnessStale, reason: reason, sourceRef: sidecar.SourceRef}
 		}
 		sum := sha256.Sum256(contents)
 		if hex.EncodeToString(sum[:]) != wantHash {

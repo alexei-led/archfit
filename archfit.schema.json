@@ -148,6 +148,16 @@
         },
         "sidecar_path": {
           "type": "string"
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 67108864
+        },
+        "max_facts": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1000000
         }
       },
       "additionalProperties": false,

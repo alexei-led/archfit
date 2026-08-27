@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,13 +32,27 @@ const (
 )
 
 const (
-	cacheAnalyzer                   = "coverage"
-	reasonCoverageSourceUnavailable = "coverage_source_unavailable"
-	reasonCoverageParserUnavailable = "coverage_parser_unavailable"
-	reasonCoverageFactsEmpty        = "coverage_facts_empty"
-	reasonInvalidCoverageFact       = "invalid_coverage_fact"
-	reasonUnresolvedCoveragePaths   = "unresolved_coverage_paths"
+	cacheAnalyzer                        = "coverage"
+	reasonCoverageSourceUnavailable      = "coverage_source_unavailable"
+	reasonCoverageParserUnavailable      = "coverage_parser_unavailable"
+	reasonCoverageArtifactTooLarge       = "coverage_artifact_too_large"
+	reasonCoverageSidecarTooLarge        = "coverage_sidecar_too_large"
+	reasonCoverageAttestedSourceTooLarge = "coverage_attested_source_too_large"
+	reasonCoverageFactLimitExceeded      = "coverage_fact_limit_exceeded"
+	reasonCoverageLimitsInvalid          = "coverage_limits_invalid"
+	reasonCoverageFactsEmpty             = "coverage_facts_empty"
+	reasonInvalidCoverageFact            = "invalid_coverage_fact"
+	reasonUnresolvedCoveragePaths        = "unresolved_coverage_paths"
 )
+
+// Default input limits keep direct Options callers bounded even when they do
+// not pass through config projection. Limits are per configured source.
+const (
+	DefaultMaxBytes int64 = 64 << 20
+	DefaultMaxFacts       = 1_000_000
+)
+
+var errCoverageInputTooLarge = errors.New("coverage input exceeds configured maximum bytes")
 
 // Source is one configured coverage artifact and its optional attestation.
 // Paths are interpreted relative to the resolved scan root and must remain
@@ -45,6 +61,18 @@ type Source struct {
 	Path        string
 	Format      string
 	SidecarPath string
+	MaxBytes    int64
+	MaxFacts    int
+}
+
+func (s Source) withDefaults() Source {
+	if s.MaxBytes == 0 {
+		s.MaxBytes = DefaultMaxBytes
+	}
+	if s.MaxFacts == 0 {
+		s.MaxFacts = DefaultMaxFacts
+	}
+	return s
 }
 
 // Options is the config-projected supplied-coverage input. Enabled is false by
@@ -107,7 +135,7 @@ func (i *Ingestor) IngestAll(scanRoot string, options Options) ([]evidence.Cover
 	}
 	ingests := make([]evidence.CoverageIngest, 0, len(options.Sources))
 	for _, source := range options.Sources {
-		ingests = append(ingests, i.ingest(normalizer, source))
+		ingests = append(ingests, i.ingest(normalizer, source.withDefaults()))
 	}
 	return ingests, coverageHealth(ingests, len(options.Sources))
 }
@@ -118,6 +146,10 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		format = FormatAuto
 	}
 	out := evidence.CoverageIngest{Format: format, Freshness: evidence.FreshnessUnverified}
+	if source.MaxBytes <= 0 || source.MaxFacts <= 0 {
+		out.Reason = reasonCoverageLimitsInvalid
+		return out
+	}
 	parser, ok := i.parsers[format]
 	if !ok || parser == nil {
 		out.Reason = reasonCoverageParserUnavailable
@@ -135,9 +167,13 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		return out
 	}
 	artifactRel = filepath.ToSlash(artifactRel)
-	data, err := os.ReadFile(artifactPath) //nolint:gosec // path is contained under the scan root
+	data, err := readBoundedFile(artifactPath, source.MaxBytes)
 	if err != nil {
-		out.Reason = reasonCoverageSourceUnavailable
+		if errors.Is(err, errCoverageInputTooLarge) {
+			out.Reason = reasonCoverageArtifactTooLarge
+		} else {
+			out.Reason = reasonCoverageSourceUnavailable
+		}
 		return out
 	}
 
@@ -153,13 +189,17 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 	if sidecarPath == "" {
 		sidecarPath = source.Path + ".sidecar.json"
 	}
-	attestation := attest(normalizer, sidecarPath)
+	attestation := attest(normalizer, sidecarPath, source.MaxBytes)
 	out.Freshness = attestation.freshness
 
 	key := coverageCacheKey(normalizer.root, artifactRel, format, parser.Version(), attestation.sourceRef, data)
 	if blob, hit := i.store.Get(cacheAnalyzer, key); hit {
 		var cached cachedFacts
 		if json.Unmarshal(blob, &cached) == nil {
+			if len(cached.Facts) > source.MaxFacts {
+				out.Reason = joinReasons(reasonCoverageFactLimitExceeded, attestation.reason)
+				return out
+			}
 			out.Facts = cached.Facts
 			out.Format = cached.Format
 			out.ToolVersion = cached.ToolVersion
@@ -179,22 +219,12 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 			return out
 		}
 	}
-	invalidFact := false
-	for _, fact := range facts {
-		rel, normalizeErr := normalizer.Normalize(fact.File)
-		if normalizeErr != nil {
-			out.UnresolvedPaths++
-			continue
-		}
-		if fact.TotalUnits < 0 || fact.CoveredUnits < 0 || fact.CoveredUnits > fact.TotalUnits || fact.Unit == "" {
-			invalidFact = true
-			continue
-		}
-		fact.File = rel
-		if fact.Format == "" {
-			fact.Format = format
-		}
-		out.Facts = append(out.Facts, fact)
+	normalized := normalizeParsedFacts(normalizer, facts, format, source.MaxFacts)
+	out.Facts = normalized.facts
+	out.UnresolvedPaths = normalized.unresolvedPaths
+	if normalized.limitExceeded {
+		out.Reason = joinReasons(reasonCoverageFactLimitExceeded, parseWarning, attestation.reason)
+		return out
 	}
 	if format == FormatAuto && len(out.Facts) > 0 && out.Facts[0].Format != "" {
 		out.Format = out.Facts[0].Format
@@ -203,7 +233,7 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 	sortCoverageFacts(out.Facts)
 
 	var invalidReason, unresolvedReason, emptyReason string
-	if invalidFact {
+	if normalized.invalidFact {
 		invalidReason = reasonInvalidCoverageFact
 	}
 	if out.UnresolvedPaths > 0 {
@@ -218,6 +248,41 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		if blob, marshalErr := json.Marshal(cachedFacts{Facts: out.Facts, Format: out.Format, ToolVersion: out.ToolVersion}); marshalErr == nil {
 			i.store.Put(cacheAnalyzer, key, blob)
 		}
+	}
+	return out
+}
+
+type normalizedFacts struct {
+	facts           []evidence.CoverageFact
+	unresolvedPaths int
+	invalidFact     bool
+	limitExceeded   bool
+}
+
+func normalizeParsedFacts(normalizer *Normalizer, facts []evidence.CoverageFact, format string, maxFacts int) normalizedFacts {
+	var out normalizedFacts
+	for _, fact := range facts {
+		rel, err := normalizer.Normalize(fact.File)
+		if err != nil {
+			out.unresolvedPaths++
+			continue
+		}
+		if fact.TotalUnits < 0 || fact.CoveredUnits < 0 || fact.CoveredUnits > fact.TotalUnits || fact.Unit == "" {
+			out.invalidFact = true
+			continue
+		}
+		if len(out.facts) == maxFacts {
+			// Reject the whole artifact rather than returning a truncated set that
+			// downstream attribution could mistake for complete evidence.
+			out.facts = nil
+			out.limitExceeded = true
+			return out
+		}
+		fact.File = rel
+		if fact.Format == "" {
+			fact.Format = format
+		}
+		out.facts = append(out.facts, fact)
 	}
 	return out
 }
@@ -358,6 +423,39 @@ func resolveContainedFile(root, configuredPath string) (string, error) {
 		return "", reasonError(reasonCoverageSourceUnavailable)
 	}
 	return resolved, nil
+}
+
+func readBoundedFile(path string, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return nil, reasonError(reasonCoverageLimitsInvalid)
+	}
+	file, err := os.Open(path) //nolint:gosec // paths are either resolved within the scan root or produced by its contained walk
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close() //nolint:errcheck // read errors are returned; close has no additional result to preserve
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > maxBytes {
+		return nil, errCoverageInputTooLarge
+	}
+
+	// The stat avoids needless reads of already-oversized files; limit+1 keeps
+	// the read bounded if the file grows or is replaced after that check.
+	readLimit := maxBytes + 1
+	if maxBytes == math.MaxInt64 {
+		readLimit = math.MaxInt64
+	}
+	data, err := io.ReadAll(io.LimitReader(file, readLimit))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, errCoverageInputTooLarge
+	}
+	return data, nil
 }
 
 type reasonError string

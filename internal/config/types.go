@@ -131,11 +131,14 @@ type CoverageConfig struct {
 }
 
 // CoverageSource is one supplied coverage artifact. Format defaults to auto;
-// SidecarPath defaults to <path>.sidecar.json when omitted.
+// SidecarPath defaults to <path>.sidecar.json when omitted. Pointer limits
+// distinguish omission (use the bounded default) from an explicit invalid zero.
 type CoverageSource struct {
 	Path        string `yaml:"path" jsonschema:"required"`
 	Format      string `yaml:"format,omitempty" jsonschema:"enum=auto,enum=go-coverprofile,enum=lcov,enum=coverage-py-json,enum=llvm-cov-json"`
 	SidecarPath string `yaml:"sidecar_path,omitempty"`
+	MaxBytes    *int64 `yaml:"max_bytes,omitempty" jsonschema:"minimum=1,default=67108864"`
+	MaxFacts    *int   `yaml:"max_facts,omitempty" jsonschema:"minimum=1,default=1000000"`
 }
 
 // ModuleReviewConfig configures staleness gating of the module declarations:

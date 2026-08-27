@@ -300,6 +300,12 @@ func validateCoverage(coverage CoverageConfig) error {
 		if _, ok := coverageFormats[format]; !ok {
 			return fmt.Errorf("coverage.sources[%d].format %q is not one of: auto, go-coverprofile, lcov, coverage-py-json, llvm-cov-json", i, source.Format)
 		}
+		if source.MaxBytes != nil && *source.MaxBytes <= 0 {
+			return fmt.Errorf("coverage.sources[%d].max_bytes must be positive", i)
+		}
+		if source.MaxFacts != nil && *source.MaxFacts <= 0 {
+			return fmt.Errorf("coverage.sources[%d].max_facts must be positive", i)
+		}
 	}
 	return nil
 }

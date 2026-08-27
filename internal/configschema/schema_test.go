@@ -9,6 +9,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/configschema"
+	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
@@ -83,6 +84,31 @@ func TestSchemaSuppliedCoverageContract(t *testing.T) {
 	wantFormats := []any{"auto", "go-coverprofile", "lcov", "coverage-py-json", "llvm-cov-json"}
 	if got := coverageSourceDef.Properties["format"].Enum; !slices.Equal(got, wantFormats) {
 		t.Errorf("CoverageSource.format enum = %v, want %v", got, wantFormats)
+	}
+}
+
+func TestSchemaSuppliedCoverageLimits(t *testing.T) {
+	got, err := configschema.Generate("../config")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	var schema struct {
+		Defs map[string]struct {
+			Properties map[string]struct {
+				Minimum json.Number `json:"minimum"`
+				Default any         `json:"default"`
+			} `json:"properties"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(got, &schema); err != nil {
+		t.Fatalf("unmarshal generated schema: %v", err)
+	}
+	limits := schema.Defs["CoverageSource"].Properties
+	if maxBytes := limits["max_bytes"]; maxBytes.Minimum != "1" || maxBytes.Default != float64(suppliedcoverage.DefaultMaxBytes) {
+		t.Errorf("CoverageSource.max_bytes schema = %+v, want minimum 1/default %d", maxBytes, suppliedcoverage.DefaultMaxBytes)
+	}
+	if maxFacts := limits["max_facts"]; maxFacts.Minimum != "1" || maxFacts.Default != float64(suppliedcoverage.DefaultMaxFacts) {
+		t.Errorf("CoverageSource.max_facts schema = %+v, want minimum 1/default %d", maxFacts, suppliedcoverage.DefaultMaxFacts)
 	}
 }
 
