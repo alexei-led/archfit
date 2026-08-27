@@ -284,11 +284,25 @@ contract is therefore:
   (`internal/extract/ts/ts.go:434-462`). A gitignored `.go` file under `mocks/`
   can be analyzed and covered while absent from a LOC-based inventory.
 
-  `inventory.go` therefore walks each covered module without skipDirs or
-  dot-directory pruning, and hashes only the paths and file content, not the
-  walk order or entry metadata. The inventory is unordered and deterministic
-  per commit SHA. The bracket comparison holds if and only if the worktree's
-  enumerable set matches the referenced commit's at byte level.
+  `inventory.go` therefore uses an explicit allowlist to enumerate each covered
+  module. The allowlist includes:
+
+  - Go: `.go` source files and `go.sum` (module version lock).
+  - TypeScript/JavaScript: `.ts`, `.tsx`, `.js`, `.jsx`, `.json` files (including
+    `package.json`, `.package-lock.json`, `.modules.yaml` that the resolver reads
+    and that affect build and coverage behavior), and `node_modules/` entries
+    required by module resolution.
+  - Python: `.py` files and `pyproject.toml`, `setup.py`, `setup.cfg`,
+    `requirements*.txt`, `poetry.lock` (version locks and configurations).
+  - Any other files in covered modules that a Ralphex executor may define as
+    affecting analysis.
+
+  The inventory hashes the paths and file content byte-for-byte, not walk order
+  or entry metadata. The inventory is unordered and deterministic per commit SHA.
+  The bracket comparison holds if and only if the worktree's enumerable set
+  matches the referenced commit's allowlist at byte level. An inventory
+  implementation that omits a file on the allowlist (e.g., resolver metadata)
+  produces a false green when that metadata changes.
 
   *Accepted ceiling:* a mutation that occurs **and is reverted** entirely inside
   the analysis window is not detectable by bracketing. That is a deliberately
@@ -1430,7 +1444,16 @@ Fitness gate:
     injects a file write between the pre-inventory and post-inventory captures.
     Proves the brackets are computed and compared, and that a
     single-inventory implementation fails.
-  Only the unmodified fixture may reach `measured`. All six mutation cases must
+  - **modify TypeScript resolver metadata** (round 16) → `partial`, reason
+    `worktree_differs_from_ref`. The fixture modifies `node_modules/package.json`
+    or `.package-lock.json` (or adds a `.modules.yaml`) under a covered module
+    after the coverage profile is generated. These files are on the inventory
+    allowlist because the resolver reads them and they affect build/coverage
+    behavior (§2.2). An inventory implementation that omits resolver metadata
+    would match pre/post inventories and incorrectly promote stale metadata to
+    `measured`. Proves the inventory includes all analyzer-observable paths on
+    the allowlist, not just source files.
+  Only the unmodified fixture may reach `measured`. All seven mutation cases must
   reduce testability below `measured` to close the false-green surface.
   - **warm cache, then add a gitignored `.go` file** under a covered module and
     rerun with the *same* profile and source ref → `partial`, reason
