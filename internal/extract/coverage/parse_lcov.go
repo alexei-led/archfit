@@ -193,3 +193,6 @@ func nonNegativeInteger(raw string) (int, error) {
 	}
 	return value, nil
 }
+
+// NewLCOVParser returns the built-in LCOV parser.
+func NewLCOVParser() Parser { return lcovParser{} }

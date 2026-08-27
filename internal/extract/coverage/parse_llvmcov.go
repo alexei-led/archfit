@@ -83,3 +83,6 @@ func (llvmCovJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 	}
 	return facts, nil
 }
+
+// NewLLVMCovJSONParser returns the built-in llvm-cov JSON parser.
+func NewLLVMCovJSONParser() Parser { return llvmCovJSONParser{} }

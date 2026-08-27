@@ -127,3 +127,6 @@ func (goCoverProfileParser) Parse(data []byte) ([]evidence.CoverageFact, error) 
 }
 
 type goCoverStats struct{ covered, total int }
+
+// NewGoCoverProfileParser returns the built-in Go coverprofile parser.
+func NewGoCoverProfileParser() Parser { return goCoverProfileParser{} }

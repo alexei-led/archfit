@@ -60,6 +60,9 @@ func (coveragePyJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) 
 	return facts, nil
 }
 
+// NewCoveragePyJSONParser returns the built-in coverage.py JSON parser.
+func NewCoveragePyJSONParser() Parser { return coveragePyJSONParser{} }
+
 func decodeJSON(data []byte, target any) error {
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	if err := decoder.Decode(target); err != nil {
