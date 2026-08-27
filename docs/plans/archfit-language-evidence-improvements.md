@@ -219,155 +219,88 @@ contract is therefore:
   SHA against `HEAD` therefore proves nothing about the files actually measured:
   any edit after the profile was produced still matches.
 
-  Promotion therefore additionally requires **scan-scope parity**: the freshness
-  probe must enumerate exactly the file set the analyzers scan, and prove that
-  set is reproducible from the referenced commit.
+  **Scope of this claim (round 19 narrowing).** Coverage freshness is a claim
+  about the **source bytes represented by the coverage artifact** — the covered
+  source universe — and about nothing else. It is *not* a claim that every
+  analyzer read matched the referenced commit.
 
-  `git status --porcelain` is **not** a sufficient detector and must not be used
-  alone. Default porcelain omits ignored files, but the analyzers walk the
-  filesystem directly with no gitignore filter
-  (`internal/extract/loc/loc.go:92`), and generated or vendored inputs are
-  resolved from the surrounding repository even when ignored
-  (`internal/history/git/worktree.go:74-76`). An ignored `.go` file under a
-  covered module is therefore scan-relevant but invisible to porcelain — the
-  round-12 false green.
+  Rounds 11-19 chased the broader claim and it does not close. Proving that
+  every acquisition reader saw commit-identical bytes requires observing reads
+  that Archfit cannot observe: at least ten independent walkers, a
+  dependency-cruiser subprocess (`internal/extract/ts/ts.go:191`), and resolver
+  metadata discovered above the scan root. Each round closed one enumerated hole
+  and revealed another, because extractor self-reports cannot be verified
+  without OS read tracing or sandboxing. **Those are explicitly out of scope.**
+  The defect was the overclaim, not the mechanism: the contract asserted
+  something unverifiable, so no mechanism could satisfy it.
 
-  **Implementation (owned by Task 8, not by tests):** `coverage.Freshness`
-  computes a *scanner inventory hash* over the same enumeration the analyzers
-  use — the walked path set plus each file's content hash, restricted to covered
-  modules — and compares it against the inventory reproduced from the referenced
-  commit. Any path present in the scan but absent from the commit (untracked or
-  ignored), or present in both with differing content, yields `stale` with
-  reason `worktree_differs_from_ref`. Because the inventory is derived from the
-  scanner's own walk rather than from git's index, ignored files cannot escape
-  it by construction. `git status --porcelain` may be used only as a fast
-  pre-filter, never as the authority.
+  The narrowed claim is verifiable because the producer of the coverage artifact
+  is the only party that knows which sources the artifact represents, and it can
+  say so at production time.
 
-  **Within-run atomicity (round 14).** Computing the inventory once, in a walk
-  separate from the analyzers' walks, leaves a TOCTOU window: a covered file can
-  change between the analyzer read and the inventory read, or after the
-  inventory read but before a later analyzer reads it, yielding `matched` for
-  bytes that were never what the analyzers consumed.
+  **`source_ref` alone can never yield `verified`/`matched`.** A commit SHA
+  attests to a tree; Archfit scans a worktree and deliberately reports
+  `source_ref: "worktree"` (`internal/application/report.go:65`, asserted in
+  `internal/application/report_measurement_test.go:72-74`). A SHA therefore
+  proves nothing about the measured bytes, and no amount of git-side checking
+  repairs that. This is the round-11 finding, retained.
 
-  Two candidate fixes were evaluated against the actual codebase and **both were
-  rejected**:
+  **Coverage attestation sidecar (optional, versioned).** A coverage artifact
+  may be accompanied by a sidecar produced *alongside* it, by whatever step
+  produced the coverage. The sidecar carries:
 
-  - *Derive freshness from scanner-produced hashes.* There is no single read
-    choke point. At least ten independent walkers read source
-    (`internal/extract/loc/loc.go`, `ts/ts.go`, `py/py.go`,
-    `golang/members.go`, `dynimports`, `manifest`, `deployunit`, `runtime`,
-    `internal/ownership`). Instrumenting each to emit path+content hashes is a
-    cross-cutting change across eight-plus packages and is not in Task 8's
-    scope.
-  - *Scan an immutable git worktree.* Disqualified by construction: a git
-    worktree holds **tracked files only**, and every gitignored input an
-    analyzer resolves through must come from the surrounding repo
-    (`internal/history/git/worktree.go:74-76`). Snapshotting into a worktree
-    would exclude precisely the ignored files §2.2 must detect.
+  - `schema_version` — integer. An unrecognized version is treated as absent,
+    never as valid.
+  - `source_ref` — the commit the producer believed it measured, when known.
+  - `modules` — the covered module identities the artifact represents.
+  - `sources` — for each source file in the covered universe, its repo-relative
+    path and a content hash.
 
-  **Adopted: bracketed inventory.** `inventory.go` captures the covered-module
-  inventory immediately **before** analysis begins and again immediately
-  **after** the last analyzer read, and promotion requires all three of: the
-  pre-inventory matches the referenced commit, the post-inventory is
-  byte-identical to the pre-inventory, and the coverage SHA matches. Any
-  difference between the two brackets means the tree moved during the run and
-  yields `stale` with reason `worktree_changed_during_run`. This needs no
-  analyzer changes and no tree copy.
+  Freshness is then decided by comparing the sidecar's `sources` against the
+  same files as scanned:
 
-  **Inventory scope (round 15).** The inventory must enumerate all supported
-  source files under covered modules that *any* analyzer might read, not just
-  those that LOC reads. LOC's walk excludes `node_modules`, `dist`, `vendor`,
-  `build`, `testdata`, `mocks`, `target`, and dot-directories
-  (`internal/extract/loc/loc.go:64-70,96-107`), but Go's `members.go` module
-  discovery prunes fewer paths (`internal/extract/golang/members.go:190-207`)
-  and TypeScript deliberately enters `node_modules`
-  (`internal/extract/ts/ts.go:434-462`). A gitignored `.go` file under `mocks/`
-  can be analyzed and covered while absent from a LOC-based inventory.
+  - **valid sidecar, every covered source hash matches** → `Freshness =
+    matched`. This is the only value that permits promotion.
+  - **valid sidecar, any covered source hash differs, or a listed path is
+    missing, or a covered source exists that the sidecar does not list** →
+    `Freshness = stale`, reason `worktree_differs_from_ref`.
+  - **no sidecar, unreadable sidecar, or unrecognized `schema_version`** →
+    `Freshness = unverified`, reason `freshness_unverified`.
 
-  **The inventory must not be a hand-maintained list (round 17).** Rounds 15, 16
-  and 17 each found a different missing entry in a literal allowlist — first
-  LOC's `skipDirs`, then `node_modules` resolver metadata, then `.mts`/`.cts`/
-  `.mjs`/`.cjs`, `go.mod`, `go.work`, `uv.lock`, `Cargo.toml`/`Cargo.lock`,
-  `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, and `.dependency-cruiser.{cjs,mjs}`.
-  A list restated in this document cannot converge, because the truth lives in
-  extractor code and drifts with it. Restating it once more would only move the
-  next false green one round later.
+  `Freshness` keeps its existing three values — `{matched, stale, unverified}` —
+  and no fourth is added. Both `stale` and `unverified` force the dimension to
+  `partial`; the distinction is preserved in the reason so diagnostics can tell
+  "measured different bytes" from "never told us which bytes". Neither is a
+  healthy zero.
 
-  **Derived inventory.** `inventory.go` owns no file list. Each extractor already
-  declares its own inputs, and the inventory is the union of what the extractors
-  report:
+  Because the hashes are compared against the scanned bytes rather than against
+  a git object, this covers tracked, untracked, and gitignored sources
+  identically — the round-12 ignored-file case included. No gitignore reasoning
+  is needed, because the sidecar enumerates the covered universe explicitly.
 
-  - *Declared inputs*, from the extractor-owned sets that already exist:
-    source extensions (`internal/model/graph/convention.go:86-95`),
-    `tsManifestNames` and `nodeResolverInputs` (`internal/extract/ts/ts.go:52-60`,
-    `:432-457`), Go module inputs (`internal/extract/golang/members.go:43-79`,
-    `:179-215`), Rust manifests (`internal/extract/rust/rust.go:48-51`), and
-    Python manifests (`internal/extract/py/py.go:52-54`).
-  - *Resolved inputs*: the concrete paths each extractor actually opened during
-    the run, **including paths outside covered modules and above the scan root**.
-    This is what closes the resolver-root escape: a Git-root `tsconfig.json` or
-    `.dependency-cruiser.mjs` enters the inventory because the TypeScript
-    extractor resolved it (`internal/extract/ts/ts.go:147-159`, `:252-313`), not
-    because this document remembered to name it.
+  **Deliberately not covered.** Analyzer manifests, lockfiles, resolver
+  metadata, and subprocess reads are **provenance and coverage facts, not
+  coverage freshness**. They are recorded where they already belong and never
+  gate the freshness verdict. Foreign test execution, OS read tracing,
+  filesystem sandboxing, and cryptographic CI attestation are out of scope.
 
-  Adding a language, an extension, or a manifest name therefore extends the
-  inventory automatically. No edit to `inventory.go` or to this section is
-  required, and none is permitted as a substitute.
-
-  **Input-reporting contract (round 18).** Deriving the inventory from
-  extractor declarations requires that extractors can report what they actually
-  read. But self-attestation is insufficient: an extractor could report
-  `{go.mod}` while reading `{go.mod, go.sum, go.work}` and pass the
-  non-silent check, producing a false green when `go.work` changes.
-
-  **Every enabled extractor must implement an explicit `ReportInputs` method**
-  (or equivalent) that returns the complete declared set of input paths and
-  patterns for that extractor. The service must:
-
-  - Enumerate the exact set of enabled extractors before `Service.Acquire`
-    begins.
-  - Call `ReportInputs` on each and union the results (the declared set).
-  - Fail closed immediately if any enabled extractor has no such method or
-    returns an empty/error result. Freshness = `partial`, reason
-    `inventory_scope_unverified`. An unreported extractor is an unmeasured
-    scope, never an empty one.
-  - Before hashing, obtain the resolved input paths by asking each extractor
-    to finalize its input set given the actual analysis context (overrides,
-    config, discovered manifests).
-  - After acquisition, verify that every path opened during analysis appears
-    in the pre-analysis declared+resolved union. Any path outside that union
-    yields `partial` with reason `inventory_scope_unverified`.
-  - Test incomplete non-empty reports: an extractor that reports only
-    `{go.mod}` but is configured to read `{go.mod, go.sum, go.work}` must
-    trigger the scope verification and yield `partial/inventory_scope_unverified`
-    (§3.2, Task 10).
-
-  This shifts inventory authority from document or discovery to extractor code:
-  each extractor owns its own input contract, and violations are detected
-  deterministically, not through centralized hand-maintained lists.
-
-  The inventory hashes paths and file content byte-for-byte, not walk order or
-  entry metadata. It is unordered and deterministic per commit SHA. The bracket
-  comparison holds if and only if the worktree's derived input set (from the
-  extractor-reported+resolved union) matches the referenced commit's at byte
-  level. A scope verification failure between analysis and bracketing yields
-  `partial` with reason `inventory_scope_unverified` and prevents promotion.
-
-  *Accepted ceiling:* a mutation that occurs **and is reverted** entirely inside
-  the analysis window is not detectable by bracketing. That is a deliberately
-  narrower hole than the current one and is accepted, not fixed. Upgrade
-  trigger: if any analyzer gains a streaming or incremental read path that makes
-  mid-run mutation likely, replace bracketing with per-scanner inventory
-  emission (the rejected first option) and revisit this note.
+  *Accepted ceiling, stated plainly:* the sidecar is producer-attested and
+  unsigned. A producer that emits a wrong sidecar yields a wrong `matched`.
+  That is accepted: the sidecar is a correctness aid for honest pipelines, not
+  a tamper-proof supply-chain control. Upgrade trigger: if signed provenance
+  becomes a product requirement, extend the sidecar with a signature field and
+  verify it here — the shape already accommodates that without a contract
+  change.
 
   **Caching:** `CoverageIngest` is cached at the parsed-fact level (format,
   parser version, ScanRoot, source ref). But `Freshness` is a decision about
   whether those facts are still valid, not a fact itself, and must be recomputed
-  on every run including cache hits. The cache key intentionally omits the
-  scanner inventory hash, so freshness cannot be cached. Any cache hit must run
-  the inventory comparison before promotion is allowed. This prevents the
-  warm-cache false green where an ignored file is added after a matched entry is
-  cached; the recomputed freshness will be `stale`.
+  on every run including cache hits. The cache key intentionally omits both the
+  sidecar and the scanned source hashes, so freshness cannot be cached. Any
+  cache hit must re-run the sidecar comparison before promotion is allowed.
+  This prevents the round-13 warm-cache false green: a covered source edited
+  after a `matched` entry was cached yields `stale` on the next run, because the
+  comparison runs again against the current bytes.
 
   This is the only condition under which the profile's SHA is evidence about the
   scanned bytes.
@@ -1214,37 +1147,13 @@ Files:
   unresolved, resolve freshness. Parsing delegated via a `Parser` interface with
   one registered stub here.
 - `internal/extract/coverage/normalize.go` (new) — the path contract.
-- `internal/extract/coverage/inventory.go` (new) — the scanner inventory hash of
-  §2.2. Carries **no file list**: it unions each extractor's declared and
-  resolved input sets via a `ReportInputs() ([]string, error)` interface
-  implemented by each enabled extractor (below), including inputs above the scan
-  root, hashes path set plus contents, and reproduces the same inventory from
-  the referenced commit for comparison. Fails closed if any enabled extractor
-  does not implement `ReportInputs` or if any actual-read path falls outside the
-  pre-analysis declared+resolved union. Bracketed pre/post captures are owned by
-  this file's scope, and production placement is tested by Task 10's
-  deterministic mid-run mutation gate driving the full pipeline through
-  `internal/evidence/acquisition/service.Acquire` (§3.2).
-- `internal/extract/ts/ts.go` (modify) — implement `ReportInputs()` returning
-  all eight source extensions, all `tsManifestNames` (lockfile names and
-  dependency-cruiser configs), the resolved `tsconfig.json` path (including
-  Git-root fallback per current resolution logic), all `nodeResolverInputs`
-  (lockfile names), and the `.dependency-cruiser` config path if resolved.
-- `internal/extract/golang/members.go` (modify) — implement `ReportInputs()`
-  returning `.go` source extensions, `go.mod`, `go.sum`, the resolved `go.work`
-  path (including parent-directory search per current logic), and any nested
-  `go.mod` discovered during the walk.
-- `internal/extract/py/py.go` (modify) — implement `ReportInputs()` returning
-  `.py` source extensions, `pyproject.toml`, `setup.py`, `setup.cfg`,
-  `requirements*.txt`, `poetry.lock`, and `uv.lock`.
-- `internal/extract/rust/rust.go` (modify) — implement `ReportInputs()`
-  returning `.rs` source extensions, `Cargo.toml`, and `Cargo.lock`.
-- `internal/evidence/acquisition/service.go` (modify) — coordinates the
-  sequential analyzer pipeline. `Service.Acquire` must invoke
-  `coverage.Freshness.Before()` before the first analyzer read and
-  `.After()` after the last, with the brackets framing the entire sequence
-  (§2.2). Direct-call fallback in tests is insufficient; the full pipeline must
-  be driven.
+- `internal/extract/coverage/attest.go` (new) — the coverage attestation
+  sidecar of §2.2. Locates the sidecar beside the coverage artifact, rejects an
+  unrecognized `schema_version` as absent, hashes each covered source as
+  scanned, and compares. Returns `matched`, `stale`
+  (`worktree_differs_from_ref`), or `partial` (`freshness_unverified`). It reads
+  only the covered source universe the sidecar enumerates — it does not walk the
+  repository, consult git, or ask extractors anything.
 - `internal/factcache/**` — key covers source content hash + format + parser
   version + ScanRoot + source ref. Stale/unverified/partial ingests are never
   cached, matching `docs/design/fact-cache.md`.
@@ -1275,22 +1184,29 @@ Fitness gate:
 - `coverage.enabled: false` → byte-identical output vs `.archfit-task8-ref.json`,
   the reference this task captures before its first edit. Never compared against
   Task 6: Task 7 changes serialized output on purpose.
-- Freshness is bound to the **scanned bytes** via the scanner inventory hash of
-  §2.2, not to `HEAD` and not to `git status --porcelain`. Four cases, all
-  asserted in `internal/extract/coverage/coverage_test.go`:
-  - clean tree, SHA matches → `Freshness = matched`;
-  - **tracked covered file modified** after the profile → `stale`, reason
-    `worktree_differs_from_ref`, even though the sidecar SHA still equals `HEAD`;
-  - **untracked file added** under a covered module → `stale`, same reason;
-  - **gitignored `.go` file added or modified** under a covered module → `stale`,
-    same reason. The fixture writes a `.gitignore` covering the path, so `git
-  status --porcelain` reports a clean tree while the scanner still walks the
-    file. A porcelain-based implementation fails this case; an inventory-hash
-    implementation passes it.
-  The last three are the false-green cases. A SHA-only check passes all three; a
-  porcelain-based check still passes the ignored-file case. Only scan-scope
-  parity closes them, which is why the mechanism is specified in §2.2 rather
-  than left to the tests.
+- Freshness is decided **only** by the coverage attestation sidecar of §2.2,
+  compared against the scanned bytes. Asserted in
+  `internal/extract/coverage/coverage_test.go`:
+  - valid sidecar, every listed covered source hash matches → `matched`;
+  - **listed covered source modified** after the sidecar was produced → `stale`,
+    reason `worktree_differs_from_ref`, even when the coverage `source_ref`
+    still equals `HEAD`;
+  - **listed covered source deleted** → `stale`, same reason;
+  - **covered source present that the sidecar does not list** → `stale`, same
+    reason — a sidecar cannot under-enumerate its own universe and still match;
+  - **gitignored listed source modified** → `stale`, same reason. The fixture
+    writes a `.gitignore` covering the path, so `git status --porcelain` reports
+    a clean tree. The comparison never consults git, so ignored status cannot
+    affect the outcome. This is the round-12 case, closed by construction rather
+    than by a detector rule.
+  - **no sidecar**, unreadable sidecar, or unrecognized `schema_version` →
+    `unverified`, reason `freshness_unverified` — never `matched`, even on a
+    clean tree whose `source_ref` equals `HEAD`. This is the round-11 rule: a
+    SHA attests to a tree, never to the scanned worktree bytes.
+  A SHA-only implementation fails the modify, delete, and no-sidecar rows. A
+  porcelain-based implementation additionally fails the gitignored row. Only the
+  sidecar comparison passes all of them, which is why the mechanism lives in
+  §2.2 and not in the tests.
 
 Impact commands:
 
@@ -1494,61 +1410,35 @@ Fitness gate:
   generated the profile and assert `testability` stays `partial`:
   - modify a tracked covered `.go` file → `partial`, reason
     `worktree_differs_from_ref`;
-  - add an untracked `.go` file under a covered module → `partial`, same reason;
-  - **add or modify a gitignored `.go` file under a covered module** → `partial`,
-    same reason. The fixture writes a `.gitignore` covering that path, so `git
-    status --porcelain` reports a clean tree while the scanner still walks the
-    file.
-  - **add or modify a gitignored `.go` file under `mocks/`** (which LOC excludes
-    but Go's members discovery does not per round 15) → `partial`, same reason.
-    A narrower inventory that only enumerates LOC-walked files would miss this
-    and incorrectly promote it. Proves the inventory is not narrower than the
-    broadest analyzer scope.
-  - **mutate a covered file mid-run** → `partial`, reason
-    `worktree_changed_during_run`. Deterministic, not a sleep race: the test
-    drives the full production analysis pipeline through `Service.Acquire` and
-    injects a file write between the pre-inventory and post-inventory captures.
-    Proves the brackets are computed and compared, and that a
-    single-inventory implementation fails.
-  - **table-driven analyzer-input mutations** (rounds 16-17) → `partial`, reason
-    `worktree_differs_from_ref` for **every** row. Not `or`: each row runs. The
-    table covers at minimum all three `nodeResolverInputs`
-    (`node_modules/package.json`, `.package-lock.json`, `.modules.yaml`), `go.mod`,
-    and a **parent-root** `tsconfig.json` and `.dependency-cruiser.mjs` above the
-    covered module. The parent-root rows are the round-17 resolver-root escape
-    and fail any covered-module-scoped inventory. Rows are generated from the
-    extractors' declared input sets (§2.2), so a newly declared input adds a row
-    rather than silently going untested.
-  - **stub an extractor's input reporting** → `partial`, reason
-    `inventory_scope_unverified`, never `measured`. Proves the fail-closed rule
-    for silent reporters and that a non-conforming extractor cannot shrink the
-    inventory to a passing subset.
-  - **incomplete non-empty extractor report** (round 18) → `partial`, reason
-    `inventory_scope_unverified`. The fixture configures an extractor to read a
-    full declared input set (e.g., Go's `{go.mod, go.sum, go.work}`) but
-    `ReportInputs()` is overridden or patched to return only a subset (e.g.,
-    `{go.mod}`). The inventory call should detect that an actual-read path
-    (`go.work`) is outside the pre-analysis declared+resolved union and yield
-    `inventory_scope_unverified`. Proves the fail-closed rule catches not only
-    silent reporters but also non-empty partial reports, and that Task 10's
-    mutation rows cannot be the sole oracle of correctness (since they derive
-    from the same declarations being tested).
-  Only the unmodified fixture may reach `measured`. Every mutation row, both
-  scope rows (silent and partial), and all table-driven input rows must reduce
-  testability below `measured`.
-  - **warm cache, then add a gitignored `.go` file** under a covered module and
-    rerun with the *same* profile and source ref → `partial`, reason
+  - add an untracked `.go` file under a covered module that the sidecar lists →
+    `partial`, same reason;
+  - **modify a gitignored `.go` file that the sidecar lists** → `partial`, same
+    reason. The fixture writes a `.gitignore` covering that path, so `git status
+    --porcelain` reports a clean tree. The sidecar comparison never consults
+    git, so ignored status is irrelevant by construction — this is the round-12
+    case, closed structurally rather than by a detector rule.
+  - **delete a source the sidecar lists** → `partial`, same reason.
+  - **add a covered source the sidecar does not list** → `partial`, same reason.
+    A sidecar that under-enumerates its own universe cannot yield `matched`.
+  - **no sidecar present** → `partial`, reason `freshness_unverified`, never
+    `measured`, even when the coverage `source_ref` equals `HEAD` and the tree is
+    clean. This is the round-11 rule: a SHA alone is not evidence about scanned
+    bytes.
+  - **sidecar with an unrecognized `schema_version`** → `partial`, reason
+    `freshness_unverified`. An unreadable or future sidecar is absent, never
+    valid.
+  Only the unmodified fixture with a valid, fully-matching sidecar may reach
+  `measured`. Every row above must hold `testability` below `measured`.
+  - **warm cache, then modify a covered source the sidecar lists**, and rerun
+    with the *same* profile, sidecar, and source ref → `partial`, reason
     `worktree_differs_from_ref`. The first run must be asserted `measured` with
     `Freshness = matched` so the cache is genuinely warm; the second run must
     not reuse it. This is the round-13 cache escape: the cache key contains the
     coverage source, format, parser version, `ScanRoot` and source ref, none of
-    which change when an ignored file appears, so a cached `matched` ingest
+    which change when a covered source is edited, so a cached `matched` ingest
     would otherwise be replayed and promote stale evidence. The test fails any
     implementation that treats `Freshness` as a cacheable fact rather than
-    recomputing it per run (§2.2).
-  Only the unmodified fixture may reach `measured`. Without all four mutation
-  cases a SHA-only, porcelain-only, or cache-replaying implementation passes
-  every stated gate while promoting stale evidence to `HEALTHY`.
+    recomputing the sidecar comparison per run (§2.2).
 - Zero test files with coverage present → `measured` with ratio 0, not
   `unmeasured`. A tested-nothing repo is a measured fact, not missing evidence.
 - Coverage ratio never influences the verdict: assert no finding or gate reads
