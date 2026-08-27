@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	ruleNoAToB = "no_a_to_b"
-	ruleDep    = "dep"
+	ruleNoAToB       = "no_a_to_b"
+	ruleDep          = "dep"
+	rulePublicAPIMax = "public_api_max"
+	gateWarnPosture  = "warn"
 	// toolDepCruiser is the TypeScript primary analyzer's coverage name.
 	toolDepCruiser      = "dependency-cruiser"
 	metricEncapsulation = "encapsulation"
@@ -280,7 +282,7 @@ func TestFindingsRouteToTheOwningDimension(t *testing.T) {
 	t.Parallel()
 	ruleTypes := map[string]string{
 		ruleDep: ruleForbidden, "layer": "forbidden_layer_direction", "cyc": metricCycle,
-		"newdep": "new_cross_module_dependency", "pub": "public_api_only", "max": "public_api_max",
+		"newdep": "new_cross_module_dependency", "pub": "public_api_only", "max": rulePublicAPIMax,
 		"leak": "public_api_type_leak", "internal": "internal_api_access", "waiver": "waiver_expiry",
 	}
 	tests := []struct {
@@ -479,8 +481,9 @@ func operationsDimensionForTest(modules map[string]policy.ModuleDef, facts evalu
 }
 
 // TestEvidenceDependentDimensionsRequireCompletedProducers pins the Task 2
-// status corrections: a partial primary graph cannot support rule conformance,
-// structure completeness, or module graph shape.
+// status corrections: a partial primary graph cannot support structure or
+// module-graph completeness, and it blocks only rules whose language scope
+// actually depends on that producer.
 func TestEvidenceDependentDimensionsRequireCompletedProducers(t *testing.T) {
 	t.Parallel()
 	diag, in := dimensionsFixture()
@@ -489,10 +492,23 @@ func TestEvidenceDependentDimensionsRequireCompletedProducers(t *testing.T) {
 		Tool: toolDepCruiser, Status: modevidence.StatusPartial, Unresolved: 1, SpecifiersSeen: 20,
 	})
 	dims := evaluation.BuildDimensions(diag, in, nil)
-	for _, dim := range []state.Dimension{dims.Intent, dims.Structure, dims.Modularity} {
+	if dims.Intent.Status != state.Measured {
+		t.Errorf("intent status = %q, want measured because its Go-scoped rule does not depend on the partial TypeScript producer", dims.Intent.Status)
+	}
+	for _, dim := range []state.Dimension{dims.Structure, dims.Modularity} {
 		if dim.Status != state.Partial {
 			t.Errorf("%s status = %q, want partial with a partial primary extractor", dim.Name, dim.Status)
 		}
+	}
+
+	in.Policy.Gates.Rules.Rules = []policy.RuleDef{{
+		ID: "typescript_dependency", Type: ruleForbidden, Gate: gateWarnPosture,
+		From: "src/core/**/*.ts", To: "src/ui/**/*.ts",
+	}}
+	in.Facts.FileClassIndex["src/core/index.ts"] = fileclass.Production
+	in.Facts.FileClassIndex["src/ui/index.ts"] = fileclass.Production
+	if got := evaluation.BuildDimensions(diag, in, nil).Intent.Status; got != state.Partial {
+		t.Errorf("TypeScript-scoped intent status = %q, want partial with its partial producer", got)
 	}
 }
 
@@ -504,7 +520,7 @@ func TestIntentRequiresSyntaxEvidenceForSyntaxRules(t *testing.T) {
 	diag, in := dimensionsFixture()
 	maxPublicAPIs := 5
 	in.Policy.Gates.Rules.Rules = append(in.Policy.Gates.Rules.Rules, policy.RuleDef{
-		ID: "public_api_limit", Type: "public_api_max", Gate: "warn", Max: &maxPublicAPIs,
+		ID: "public_api_limit", Type: rulePublicAPIMax, Gate: gateWarnPosture, Max: &maxPublicAPIs,
 	})
 	dim := evaluation.BuildDimensions(diag, in, nil).Intent
 	if dim.Status != state.Partial {
@@ -512,6 +528,108 @@ func TestIntentRequiresSyntaxEvidenceForSyntaxRules(t *testing.T) {
 	}
 	if !hasUnknownFact(dim.Unknown, state.FactActiveRuleConformance) {
 		t.Errorf("intent unknowns = %+v, want %q", dim.Unknown, state.FactActiveRuleConformance)
+	}
+}
+
+// TestIntentDoesNotConformUnsupportedLanguageRules prevents an empty supported-
+// language graph or syntax result from acting as evidence about a rule whose
+// declared scope is Java. Unsupported scope is unknown, not producer-proved n/a.
+func TestIntentDoesNotConformUnsupportedLanguageRules(t *testing.T) {
+	t.Parallel()
+	maxPublicAPIs := 5
+	primaryTools := []string{"go/packages", "dependency-cruiser", "grimp", "cargo"}
+	absentPrimaries := []modevidence.Coverage{
+		{Tool: primaryTools[0], Status: modevidence.StatusAbsent},
+		{Tool: primaryTools[1], Status: modevidence.StatusAbsent},
+		{Tool: primaryTools[2], Status: modevidence.StatusAbsent},
+		{Tool: primaryTools[3], Status: modevidence.StatusAbsent},
+	}
+	modules := map[string]policy.ModuleDef{
+		"java-service": {Paths: []string{"src/**/*.java"}},
+	}
+	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
+	tests := []struct {
+		name     string
+		rule     policy.RuleDef
+		coverage []modevidence.Coverage
+	}{
+		{
+			name: "dependency rule",
+			rule: policy.RuleDef{ID: "java_dependency", Type: ruleForbidden, Gate: gateWarnPosture,
+				From: "src/domain/**/*.java", To: "src/adapter/**/*.java"},
+			coverage: absentPrimaries,
+		},
+		{
+			name: "dependency target scope",
+			rule: policy.RuleDef{ID: "go_to_java_dependency", Type: ruleForbidden, Gate: gateWarnPosture,
+				From: "src/domain/**/*.go", To: "src/adapter/**/*.java"},
+			coverage: []modevidence.Coverage{
+				{Tool: primaryTools[0], Status: modevidence.StatusOK},
+				{Tool: primaryTools[1], Status: modevidence.StatusAbsent},
+				{Tool: primaryTools[2], Status: modevidence.StatusAbsent},
+				{Tool: primaryTools[3], Status: modevidence.StatusAbsent},
+			},
+		},
+		{
+			name: "syntax rule despite aggregate syntax success",
+			rule: policy.RuleDef{ID: "java_api_limit", Type: rulePublicAPIMax, Gate: gateWarnPosture, Max: &maxPublicAPIs},
+			coverage: append(append([]modevidence.Coverage(nil), absentPrimaries...),
+				modevidence.Coverage{Tool: "ast-grep/syntax", Status: modevidence.StatusOK}),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gates := policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{tc.rule}}}
+			in := evaluation.StateInput{
+				Policy: policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, gates, nil, nil),
+				Facts: evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
+					"src/domain/service.go":   fileclass.Production,
+					"src/domain/Service.java": fileclass.Production,
+				}},
+			}
+			diag := &result.Result{PrimaryExtractorTools: primaryTools, ToolCoverage: tc.coverage}
+			dim := evaluation.BuildDimensions(diag, in, nil).Intent
+			if dim.Status != state.Partial {
+				t.Fatalf("intent status = %q, want partial for unsupported-language rule scope", dim.Status)
+			}
+			if dim.Coverage.Observed != 0 || dim.Coverage.Total != 1 {
+				t.Errorf("intent rule coverage = %d/%d, want 0/1", dim.Coverage.Observed, dim.Coverage.Total)
+			}
+			if !hasUnknownFact(dim.Unknown, state.FactActiveRuleConformance) {
+				t.Errorf("intent unknowns = %+v, want %q", dim.Unknown, state.FactActiveRuleConformance)
+			}
+		})
+	}
+}
+
+func TestIntentOnlyAcceptsExplicitlyEmptySupportedRuleScope(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		from       string
+		wantStatus state.MeasurementStatus
+		wantSeen   int
+	}{
+		{name: "supported language scope", from: "missing/**/*.go", wantStatus: state.Measured, wantSeen: 1},
+		{name: "language-ambiguous scope", from: "missing/**", wantStatus: state.Partial, wantSeen: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			diag, in := dimensionsFixture()
+			in.Policy.Gates.Rules.Rules = []policy.RuleDef{{
+				ID: "empty_scope", Type: ruleForbidden, Gate: gateWarnPosture,
+				From: tc.from, To: "a/**/*.go",
+			}}
+			dim := evaluation.BuildDimensions(diag, in, nil).Intent
+			if dim.Status != tc.wantStatus {
+				t.Fatalf("intent status = %q, want %q", dim.Status, tc.wantStatus)
+			}
+			if dim.Coverage.Observed != tc.wantSeen || dim.Coverage.Total != 1 {
+				t.Errorf("intent rule coverage = %d/%d, want %d/1", dim.Coverage.Observed, dim.Coverage.Total, tc.wantSeen)
+			}
+		})
 	}
 }
 

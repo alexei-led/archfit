@@ -1,9 +1,12 @@
 package evaluation
 
 import (
+	"path"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
@@ -50,7 +53,7 @@ const gateOffPosture = gateOff
 // blocking a complete declared-topology claim.
 func buildDimensions(diag *result.Result, in stateInput, routed map[string][]state.FindingRef) state.Dimensions {
 	dims := state.Dimensions{
-		Intent:         intentDimension(diag, in.Policy),
+		Intent:         intentDimension(diag, in.Policy, in.Facts),
 		Structure:      structureDimension(diag),
 		Modularity:     modularityDimension(diag, in.Policy),
 		Coupling:       couplingDimension(diag),
@@ -192,12 +195,253 @@ func ruleNeedsDependencies(ruleType string) bool {
 	return ruleType != ruleTypePublicAPIMax && ruleType != ruleTypePublicAPIChange
 }
 
-func syntaxEvidenceComplete(diag *result.Result, primaries primaryInventory) bool {
-	if primaries.known && primaries.applicable == 0 {
+func syntaxEvidenceComplete(diag *result.Result, languages map[string]struct{}) bool {
+	rows := coverageRows(diag.ToolCoverage, syntaxCoverageTool)
+	if len(rows) != 1 || rows[0].Status != modevidence.StatusOK {
+		return false
+	}
+	// The syntax row is aggregate, while language opt-outs are reported on the
+	// per-language primary rows. An aggregate success cannot cover a scoped
+	// language that configuration removed from the syntax invocation.
+	for language := range languages {
+		tool, ok := primaryToolForLanguage(diag, language)
+		if !ok {
+			return false
+		}
+		primaryRows := coverageRows(diag.ToolCoverage, tool)
+		if len(primaryRows) != 1 || primaryRows[0].Status == modevidence.StatusDisabled {
+			return false
+		}
+	}
+	return true
+}
+
+type ruleScopeStatus uint8
+
+const (
+	ruleScopeUnknown ruleScopeStatus = iota
+	ruleScopeApplicable
+	ruleScopeNotApplicable
+)
+
+type ruleScope struct {
+	status    ruleScopeStatus
+	languages map[string]struct{}
+}
+
+// ruleProducerScope derives the language denominator of one rule from the
+// files its own selectors can reach. A selector over an unsupported language
+// remains unknown: the supported-source inventory cannot prove that scope
+// empty, so a rule invocation over an empty graph is not conformance evidence.
+func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observations) ruleScope {
+	files := sourceInventoryFiles(f)
+	switch rule.Type {
+	case ruleTypePublicAPIMax, ruleTypePublicAPIChange:
+		return moduleRuleScope(p.Topology, files)
+	case ruleTypePublicAPILeak:
+		// The current type-leak producer is explicitly Go-only.
+		return restrictRuleScopeLanguages(moduleRuleScope(p.Topology, files), "go")
+	case "forbidden_dependency", "public_api_only", "internal_api_access":
+		// Dependency producers are selected by the source endpoint language, but
+		// an explicitly unsupported target scope is still unevaluated: no
+		// producer can emit a relationship to that source-file vocabulary.
+		if unsupportedOrAmbiguousSourcePattern(p.Topology.ModuleMap, rule.To) {
+			return ruleScope{status: ruleScopeUnknown}
+		}
+		return patternRuleScope(p.Topology.ModuleMap, rule.From, files)
+	case "forbidden_layer_direction":
+		return moduleRuleScope(p.Topology, files)
+	case "new_cross_module_dependency":
+		if len(p.Topology.Modules) < 2 {
+			return ruleScope{status: ruleScopeNotApplicable}
+		}
+		return moduleRuleScope(p.Topology, files)
+	case "cycle":
+		return allSourceScope(p.Topology.ModuleMap, files)
+	default:
+		return ruleScope{status: ruleScopeUnknown}
+	}
+}
+
+func sourceInventoryFiles(f Observations) []string {
+	set := make(map[string]struct{}, len(f.FileClassIndex)+len(f.FileLOC))
+	for file := range f.FileClassIndex {
+		set[file] = struct{}{}
+	}
+	for file := range f.FileLOC {
+		set[file] = struct{}{}
+	}
+	files := make([]string, 0, len(set))
+	for file := range set {
+		files = append(files, file)
+	}
+	sort.Strings(files)
+	return files
+}
+
+func allSourceScope(moduleMap policy.ModuleMap, files []string) ruleScope {
+	languages := make(map[string]struct{})
+	for _, file := range files {
+		language, _, supported := moduleMap.RuleSelectorForFile(file)
+		if !supported {
+			return ruleScope{status: ruleScopeUnknown}
+		}
+		languages[language] = struct{}{}
+	}
+	if len(languages) == 0 {
+		return ruleScope{status: ruleScopeUnknown}
+	}
+	return ruleScope{status: ruleScopeApplicable, languages: languages}
+}
+
+func moduleRuleScope(topology policy.TopologyView, files []string) ruleScope {
+	if len(topology.Modules) == 0 {
+		return ruleScope{status: ruleScopeNotApplicable}
+	}
+	languages := make(map[string]struct{})
+	modulesWithFiles := make(map[string]struct{})
+	for _, file := range files {
+		module, owned := topology.ModuleMap.ModuleForFile(file)
+		if !owned {
+			continue
+		}
+		modulesWithFiles[module] = struct{}{}
+		language, _, supported := topology.ModuleMap.RuleSelectorForFile(file)
+		if !supported {
+			return ruleScope{status: ruleScopeUnknown}
+		}
+		languages[language] = struct{}{}
+	}
+	// Every declared module is part of a public-surface or module relationship
+	// rule's scope. An explicitly unsupported extension prevents conformance;
+	// otherwise the complete supported-source inventory proves an empty module
+	// scope n/a for the producers Archfit can invoke.
+	for module, def := range topology.Modules {
+		if _, hasFile := modulesWithFiles[module]; hasFile {
+			continue
+		}
+		if len(def.Paths) == 0 {
+			return ruleScope{status: ruleScopeUnknown}
+		}
+		for _, pattern := range def.Paths {
+			if !explicitlySupportedSourcePattern(topology.ModuleMap, pattern) {
+				return ruleScope{status: ruleScopeUnknown}
+			}
+		}
+	}
+	if len(languages) > 0 {
+		return ruleScope{status: ruleScopeApplicable, languages: languages}
+	}
+	return ruleScope{status: ruleScopeNotApplicable}
+}
+
+func restrictRuleScopeLanguages(scope ruleScope, allowed ...string) ruleScope {
+	if scope.status != ruleScopeApplicable {
+		return scope
+	}
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, language := range allowed {
+		allowedSet[language] = struct{}{}
+	}
+	languages := make(map[string]struct{})
+	for language := range scope.languages {
+		if _, ok := allowedSet[language]; ok {
+			languages[language] = struct{}{}
+		}
+	}
+	if len(languages) == 0 {
+		return ruleScope{status: ruleScopeNotApplicable}
+	}
+	return ruleScope{status: ruleScopeApplicable, languages: languages}
+}
+
+func patternRuleScope(moduleMap policy.ModuleMap, pattern string, files []string) ruleScope {
+	if pattern == "" {
+		return allSourceScope(moduleMap, files)
+	}
+	languages := make(map[string]struct{})
+	for _, file := range files {
+		language, selector, supported := moduleMap.RuleSelectorForFile(file)
+		if !supported {
+			if matched, _ := doublestar.Match(pattern, file); matched {
+				return ruleScope{status: ruleScopeUnknown}
+			}
+			continue
+		}
+		if rulePatternMatches(pattern, file, selector) {
+			languages[language] = struct{}{}
+		}
+	}
+	if len(languages) > 0 {
+		return ruleScope{status: ruleScopeApplicable, languages: languages}
+	}
+	if !explicitlySupportedSourcePattern(moduleMap, pattern) {
+		return ruleScope{status: ruleScopeUnknown}
+	}
+	return ruleScope{status: ruleScopeNotApplicable}
+}
+
+func rulePatternMatches(pattern, file, selector string) bool {
+	if matched, _ := doublestar.Match(pattern, file); matched {
 		return true
 	}
-	rows := coverageRows(diag.ToolCoverage, syntaxCoverageTool)
-	return len(rows) == 1 && rows[0].Status == modevidence.StatusOK
+	if selector == "" || selector == file {
+		return false
+	}
+	matched, _ := doublestar.Match(pattern, selector)
+	return matched
+}
+
+func explicitlySupportedSourcePattern(moduleMap policy.ModuleMap, pattern string) bool {
+	ext := path.Ext(pattern)
+	if ext == "" || strings.ContainsAny(ext, "*?[{") {
+		return false
+	}
+	_, _, supported := moduleMap.RuleSelectorForFile("scope" + ext)
+	return supported
+}
+
+func unsupportedOrAmbiguousSourcePattern(moduleMap policy.ModuleMap, pattern string) bool {
+	ext := path.Ext(pattern)
+	return ext != "" && !explicitlySupportedSourcePattern(moduleMap, pattern)
+}
+
+func primaryToolForLanguage(diag *result.Result, language string) (string, bool) {
+	// PrimaryExtractorTools is injected in the registry's append-only language
+	// order (Go, TypeScript, Python, Rust). Keep adapter tool names out of core;
+	// an unknown language or shortened inventory abstains instead of guessing.
+	index := -1
+	switch language {
+	case "go":
+		index = 0
+	case "typescript":
+		index = 1
+	case "python":
+		index = 2
+	case "rust":
+		index = 3
+	}
+	if index < 0 || index >= len(diag.PrimaryExtractorTools) {
+		return "", false
+	}
+	return diag.PrimaryExtractorTools[index], true
+}
+
+func primaryEvidenceComplete(diag *result.Result, languages map[string]struct{}) bool {
+	if len(languages) == 0 {
+		return false
+	}
+	for language := range languages {
+		tool, ok := primaryToolForLanguage(diag, language)
+		if !ok {
+			return false
+		}
+		rows := coverageRows(diag.ToolCoverage, tool)
+		if len(rows) != 1 || rows[0].Status != modevidence.StatusOK {
+			return false
+		}
+	}
+	return true
 }
 
 func metricsProduced(computed []result.MetricResult, names ...string) bool {
@@ -225,7 +469,7 @@ func applyPromotion(dim *state.Dimension, observed, notApplicable []string, reas
 // configuration declares and how much of it was actually evaluated. A config
 // that declares neither a module nor a rule states no intent, so there is
 // nothing to conform to and nothing to measure.
-func intentDimension(diag *result.Result, p policy.PolicySnapshot) state.Dimension {
+func intentDimension(diag *result.Result, p policy.PolicySnapshot, f Observations) state.Dimension {
 	dim := state.NewDimension(state.DimensionIntent, state.OwnerIntent)
 	rules := p.Gates.Rules.Rules
 	modules := len(p.Topology.Modules)
@@ -238,24 +482,38 @@ func intentDimension(diag *result.Result, p policy.PolicySnapshot) state.Dimensi
 		return dim
 	}
 
-	primaries := primaryDependencyInventory(diag)
-	syntaxComplete := syntaxEvidenceComplete(diag, primaries)
 	active, evaluated := 0, 0
+	var unevaluatedRules []string
 	for _, rule := range rules {
 		if rule.Gate == gateOffPosture {
 			continue
 		}
 		active++
+		scope := ruleProducerScope(rule, p, f)
+		if scope.status == ruleScopeNotApplicable {
+			evaluated++
+			continue
+		}
+		if scope.status != ruleScopeApplicable {
+			unevaluatedRules = append(unevaluatedRules, rule.ID)
+			continue
+		}
 		complete := true
-		if ruleNeedsDependencies(rule.Type) && !primaries.complete() {
+		if ruleNeedsDependencies(rule.Type) && !primaryEvidenceComplete(diag, scope.languages) {
 			complete = false
 		}
-		if ruleNeedsSyntax(rule.Type) && !syntaxComplete {
+		if ruleNeedsSyntax(rule.Type) && !syntaxEvidenceComplete(diag, scope.languages) {
 			complete = false
 		}
 		if complete {
 			evaluated++
+		} else {
+			unevaluatedRules = append(unevaluatedRules, rule.ID)
 		}
+	}
+	if len(unevaluatedRules) > 0 {
+		sort.Strings(unevaluatedRules)
+		reasons[state.FactActiveRuleConformance] += ": " + strings.Join(unevaluatedRules, ", ")
 	}
 	observed := []string{state.FactDeclaredIntentInventory}
 	var notApplicable []string

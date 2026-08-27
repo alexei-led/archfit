@@ -163,6 +163,17 @@ func buildExtToLang() map[string]string {
 	return idx
 }
 
+// RuleSelectorForFile returns the supported language and graph-node path that
+// policy rule selectors evaluate for a real source file. False means no
+// registered source convention owns the extension.
+func (mm ModuleMap) RuleSelectorForFile(file string) (language, selector string, ok bool) {
+	language, ok = extToLang[gopath.Ext(file)]
+	if !ok {
+		return "", "", false
+	}
+	return language, graph.BuiltinConventions.Lookup(language).FileToModuleKey(file), true
+}
+
 // ModuleForFile returns the module name owning file, a repo-relative REAL
 // source file path (as opposed to ModuleFor's graph-node-ID space, which is
 // dotted for Python and crate-relative for Rust). It tries the raw file path
