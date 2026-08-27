@@ -257,6 +257,20 @@ func TestCoverageCacheKeyIncludesParserVersionAndScanRoot(t *testing.T) {
 	}
 }
 
+func TestIngest_AttestedArtifactWithNilStore(t *testing.T) {
+	root, sourcePath := coverageFixture(t)
+	writeSidecar(t, root, "coverage.info.sidecar.json", "definitely-not-the-worktree-head", map[string]string{sourcePath: fileHash(t, root, sourcePath)}, 1)
+	calls := 0
+	ingests, row := New(nil, fixtureParser{format: FormatLCOV, facts: []evidence.CoverageFact{
+		{File: sourcePath, CoveredUnits: 7, TotalUnits: 10, Unit: coverageUnitLines},
+	}, calls: &calls}).IngestAll(root, fixtureOptions())
+
+	if calls != 1 {
+		t.Fatalf("parser calls = %d, want 1", calls)
+	}
+	assertMatchedIngest(t, ingests, row, sourcePath)
+}
+
 func TestIngest_CachesParsedFactsByArtifactContent(t *testing.T) {
 	root, sourcePath := coverageFixture(t)
 	writeSidecar(t, root, "coverage.info.sidecar.json", "definitely-not-the-worktree-head", map[string]string{sourcePath: fileHash(t, root, sourcePath)}, 1)

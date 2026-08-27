@@ -193,19 +193,21 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 	out.Freshness = attestation.freshness
 
 	key := coverageCacheKey(normalizer.root, artifactRel, format, parser.Version(), attestation.sourceRef, data)
-	if blob, hit := i.store.Get(cacheAnalyzer, key); hit {
-		var cached cachedFacts
-		if json.Unmarshal(blob, &cached) == nil {
-			if len(cached.Facts) > source.MaxFacts {
-				out.Reason = joinReasons(reasonCoverageFactLimitExceeded, attestation.reason)
+	if i.store != nil {
+		if blob, hit := i.store.Get(cacheAnalyzer, key); hit {
+			var cached cachedFacts
+			if json.Unmarshal(blob, &cached) == nil {
+				if len(cached.Facts) > source.MaxFacts {
+					out.Reason = joinReasons(reasonCoverageFactLimitExceeded, attestation.reason)
+					return out
+				}
+				out.Facts = cached.Facts
+				out.Format = cached.Format
+				out.ToolVersion = cached.ToolVersion
+				stampFactMetadata(out.Facts, artifactRel, out.Format, out.ToolVersion, attestation.sourceRef)
+				out.Reason = attestation.reason
 				return out
 			}
-			out.Facts = cached.Facts
-			out.Format = cached.Format
-			out.ToolVersion = cached.ToolVersion
-			stampFactMetadata(out.Facts, artifactRel, out.Format, out.ToolVersion, attestation.sourceRef)
-			out.Reason = attestation.reason
-			return out
 		}
 	}
 
@@ -244,7 +246,7 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 	}
 	factReason := joinReasons(parseWarning, invalidReason, unresolvedReason, emptyReason)
 	out.Reason = joinReasons(factReason, attestation.reason)
-	if out.Freshness == evidence.FreshnessMatched && out.UnresolvedPaths == 0 && factReason == "" {
+	if i.store != nil && out.Freshness == evidence.FreshnessMatched && out.UnresolvedPaths == 0 && factReason == "" {
 		if blob, marshalErr := json.Marshal(cachedFacts{Facts: out.Facts, Format: out.Format, ToolVersion: out.ToolVersion}); marshalErr == nil {
 			i.store.Put(cacheAnalyzer, key, blob)
 		}
