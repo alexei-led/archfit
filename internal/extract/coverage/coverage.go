@@ -176,9 +176,14 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 	}
 
 	facts, err := parser.Parse(data)
+	parseWarning := ""
 	if err != nil {
-		out.Reason = joinReasons("coverage_parse_failed", attestation.reason)
-		return out
+		if errors.Is(err, ErrLCOVSummaryDiscrepancy) {
+			parseWarning = joinReasons("coverage_parse_warning", err.Error())
+		} else {
+			out.Reason = joinReasons("coverage_parse_failed", err.Error(), attestation.reason)
+			return out
+		}
 	}
 	invalidFact := false
 	for _, fact := range facts {
@@ -213,7 +218,7 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 	if len(out.Facts) == 0 {
 		emptyReason = reasonCoverageFactsEmpty
 	}
-	factReason := joinReasons(invalidReason, unresolvedReason, emptyReason)
+	factReason := joinReasons(parseWarning, invalidReason, unresolvedReason, emptyReason)
 	out.Reason = joinReasons(factReason, attestation.reason)
 	if out.Freshness == evidence.FreshnessMatched && out.UnresolvedPaths == 0 && factReason == "" {
 		if blob, marshalErr := json.Marshal(cachedFacts{Facts: out.Facts, Format: out.Format, ToolVersion: out.ToolVersion}); marshalErr == nil {

@@ -16,8 +16,8 @@ FNF:1
 FNH:1
 DA:1,3
 DA:2,0
-LF:99
-LH:99
+LF:2
+LH:1
 end_of_record
 SF:src/b.ts
 DA:4,1
@@ -40,6 +40,16 @@ end_of_record
 		if facts[i] != want[i] {
 			t.Errorf("fact[%d] = %+v, want %+v", i, facts[i], want[i])
 		}
+	}
+}
+
+func TestLCOVParserReportsSummaryDiscrepancyButKeepsDAFacts(t *testing.T) {
+	facts, err := (LCOVParser{}).Parse([]byte("SF:file.ts\nDA:1,1\nDA:2,0\nLF:9\nLH:9\nend_of_record\n"))
+	if !errors.Is(err, ErrLCOVSummaryDiscrepancy) || len(facts) != 1 {
+		t.Fatalf("facts=%+v err=%v, want DA facts plus discrepancy", facts, err)
+	}
+	if facts[0].CoveredUnits != 1 || facts[0].TotalUnits != 2 {
+		t.Fatalf("fact=%+v, want 1/2 from DA records", facts[0])
 	}
 }
 

@@ -30,6 +30,7 @@ func (LCOVParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 	}
 	totals := make(map[string]map[int]int)
 	var current *record
+	var discrepancies []string
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	scanner.Buffer(make([]byte, 4096), 4*1024*1024)
 	lineNumber := 0
@@ -104,6 +105,13 @@ func (LCOVParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 			if value != "" || current == nil || !current.hasData {
 				return nil, lcovError(lineNumber, "incomplete source record")
 			}
+			covered, total := lcovCounts(current.lines)
+			if current.lf != nil && *current.lf != total {
+				discrepancies = append(discrepancies, fmt.Sprintf("%s LF=%d, DA=%d", current.path, *current.lf, total))
+			}
+			if current.lh != nil && *current.lh != covered {
+				discrepancies = append(discrepancies, fmt.Sprintf("%s LH=%d, DA=%d", current.path, *current.lh, covered))
+			}
 			mergeLCOVLines(totals, current.path, current.lines)
 			current = nil
 		default:
@@ -135,7 +143,20 @@ func (LCOVParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 		}
 		facts = append(facts, evidence.CoverageFact{File: path, CoveredUnits: covered, TotalUnits: total, Unit: "lines", Format: FormatLCOV})
 	}
+	if len(discrepancies) > 0 {
+		return facts, fmt.Errorf("%w: %s", ErrLCOVSummaryDiscrepancy, strings.Join(discrepancies, "; "))
+	}
 	return facts, nil
+}
+
+func lcovCounts(lines map[int]int) (covered, total int) {
+	for _, hits := range lines {
+		total++
+		if hits > 0 {
+			covered++
+		}
+	}
+	return covered, total
 }
 
 func mergeLCOVLines(all map[string]map[int]int, path string, lines map[int]int) {
