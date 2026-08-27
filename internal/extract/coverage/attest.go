@@ -27,14 +27,17 @@ type attestationSidecar struct {
 }
 
 type attestationResult struct {
-	freshness evidence.CoverageFreshness
-	reason    string
-	sourceRef string
+	freshness      evidence.CoverageFreshness
+	reason         string
+	sourceRef      string
+	matchedSources map[string]struct{}
 }
 
-// attest compares only the producer-enumerated covered source universe against
-// the bytes under the scan root. It never asks git, walks for extra source files,
-// or treats source_ref as proof about a worktree.
+// attest compares the producer-enumerated source universe against the bytes
+// under the scan root. The ingest path separately verifies that this universe
+// contains every normalized file described by the coverage artifact. It never
+// asks git, walks for extra source files, or treats source_ref as proof about a
+// worktree.
 func attest(normalizer *Normalizer, sidecarPath string, maxBytes int64) attestationResult {
 	unverified := attestationResult{freshness: evidence.FreshnessUnverified, reason: reasonFreshnessUnverified}
 	path, err := resolveContainedFile(normalizer.root, sidecarPath)
@@ -61,11 +64,15 @@ func attest(normalizer *Normalizer, sidecarPath string, maxBytes int64) attestat
 			return unverified
 		}
 	}
+	if len(sidecar.Sources) == 0 {
+		return unverified
+	}
 	sourcePaths := make([]string, 0, len(sidecar.Sources))
 	for rawPath := range sidecar.Sources {
 		sourcePaths = append(sourcePaths, rawPath)
 	}
 	sort.Strings(sourcePaths)
+	matchedSources := make(map[string]struct{}, len(sourcePaths))
 	for _, rawPath := range sourcePaths {
 		wantHash := sidecar.Sources[rawPath]
 		if !validSHA256(wantHash) {
@@ -87,8 +94,32 @@ func attest(normalizer *Normalizer, sidecarPath string, maxBytes int64) attestat
 		if hex.EncodeToString(sum[:]) != wantHash {
 			return attestationResult{freshness: evidence.FreshnessStale, reason: reasonWorktreeDiffers, sourceRef: sidecar.SourceRef}
 		}
+		matchedSources[rel] = struct{}{}
 	}
-	return attestationResult{freshness: evidence.FreshnessMatched, sourceRef: sidecar.SourceRef}
+	return attestationResult{
+		freshness:      evidence.FreshnessMatched,
+		sourceRef:      sidecar.SourceRef,
+		matchedSources: matchedSources,
+	}
+}
+
+// bindAttestationToFacts prevents a valid but incomplete or unrelated sidecar
+// from attesting coverage facts it does not name. Facts are normalized before
+// this comparison, as are matchedSources in attest.
+func bindAttestationToFacts(attestation attestationResult, facts []evidence.CoverageFact) attestationResult {
+	if attestation.freshness != evidence.FreshnessMatched {
+		return attestation
+	}
+	for _, fact := range facts {
+		if _, ok := attestation.matchedSources[fact.File]; !ok {
+			return attestationResult{
+				freshness: evidence.FreshnessStale,
+				reason:    reasonWorktreeDiffers,
+				sourceRef: attestation.sourceRef,
+			}
+		}
+	}
+	return attestation
 }
 
 func ensureJSONEOF(dec *json.Decoder) error {

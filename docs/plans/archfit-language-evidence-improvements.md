@@ -277,12 +277,15 @@ the working tree, not a git object.
   Freshness is then decided by comparing the sidecar's `sources` against the
   same files as scanned:
 
-  - **valid sidecar, every covered source hash matches** → `Freshness =
-    matched`. This is the only value that permits promotion.
-  - **valid sidecar, any covered source hash differs, or a listed path is
-    missing** → `Freshness = stale`, reason `worktree_differs_from_ref`.
-  - **no sidecar, unreadable sidecar, or unrecognized `schema_version`** →
-    `Freshness = unverified`, reason `freshness_unverified`.
+  - **valid sidecar, non-empty `sources`, every normalized covered fact path is
+    listed, and every covered source hash matches** → `Freshness = matched`.
+    This is the only value that permits promotion.
+  - **valid sidecar, any covered source hash differs, a listed path is missing,
+    or a normalized covered fact path is omitted** → `Freshness = stale`, reason
+    `worktree_differs_from_ref`.
+  - **no sidecar, unreadable sidecar, unrecognized `schema_version`, or empty or
+    missing `sources`** → `Freshness = unverified`, reason
+    `freshness_unverified`.
 
   `Freshness` keeps its existing three values — `{matched, stale, unverified}` —
   and no fourth is added. Both `stale` and `unverified` force the dimension to
@@ -293,7 +296,8 @@ the working tree, not a git object.
   Because the hashes are compared against the scanned bytes rather than against
   a git object, this covers tracked, untracked, and gitignored sources
   identically — the round-12 ignored-file case included. No gitignore reasoning
-  is needed, because the sidecar enumerates the covered universe explicitly.
+  is needed. Archfit cross-binds the sidecar enumeration to the normalized file
+  facts parsed from the coverage artifact.
 
   **Deliberately not covered.** Analyzer manifests, lockfiles, resolver
   metadata, and subprocess reads are **provenance and coverage facts, not
@@ -302,12 +306,13 @@ the working tree, not a git object.
   filesystem sandboxing, and cryptographic CI attestation are out of scope.
 
   *Accepted ceiling, stated plainly:* the sidecar is producer-attested and
-  unsigned. A producer that emits a wrong sidecar yields a wrong `matched`.
-  That is accepted: the sidecar is a correctness aid for honest pipelines, not
-  a tamper-proof supply-chain control. Upgrade trigger: if signed provenance
-  becomes a product requirement, extend the sidecar with a signature field and
-  verify it here — the shape already accommodates that without a contract
-  change.
+  unsigned. Archfit rejects empty, partial, or unrelated source maps by
+  cross-binding them to parsed coverage file facts, but a producer can still
+  alter the artifact and sidecar together. The sidecar is a correctness aid for
+  honest pipelines, not a tamper-proof supply-chain control. Upgrade trigger: if
+  signed provenance becomes a product requirement, extend the sidecar with a
+  signature field and verify it here — the shape already accommodates that
+  without a contract change.
 
   **Caching:** `CoverageIngest` is cached at the parsed-fact level (format,
   parser version, ScanRoot, source ref). But `Freshness` is a decision about
@@ -1173,8 +1178,9 @@ Files:
   an unrecognized `schema_version` as absent, hashes each covered source as
   scanned, and compares. Returns exactly one of: `matched`, `stale`
   (`worktree_differs_from_ref`), or `unverified` (`freshness_unverified`). It
-  reads only the covered source universe the sidecar enumerates — it does not
-  walk the repository, consult git, or ask extractors anything.
+  reads only the source paths the sidecar enumerates, then cross-binds that set
+  to the normalized file facts parsed from the artifact. It does not walk the
+  repository, consult git, or ask extractors anything.
 - `internal/factcache/**` — key covers source content hash + format + parser
   version + ScanRoot + source ref. Stale and unverified ingests are never
   cached, matching `docs/design/fact-cache.md`.
@@ -1207,7 +1213,8 @@ Fitness gate:
 - Freshness is decided **only** by the coverage attestation sidecar of §2.2,
   compared against the scanned bytes. Asserted in
   `internal/extract/coverage/coverage_test.go`:
-  - valid sidecar, every listed covered source hash matches → `matched`;
+  - valid sidecar, non-empty `sources`, every normalized covered fact path is
+    listed, and every listed covered source hash matches → `matched`;
   - **listed covered source modified** after the sidecar was produced → `stale`,
     reason `worktree_differs_from_ref`, even when the coverage `source_ref`
     still equals `HEAD`;
@@ -1217,10 +1224,12 @@ Fitness gate:
     a clean tree. The comparison never consults git, so ignored status cannot
     affect the outcome. This is the round-12 case, closed by construction rather
     than by a detector rule.
-  - **no sidecar**, unreadable sidecar, or unrecognized `schema_version` →
-    `unverified`, reason `freshness_unverified` — never `matched`, even on a
-    clean tree whose `source_ref` equals `HEAD`. This is the round-11 rule: a
-    SHA attests to a tree, never to the scanned worktree bytes.
+  - **no sidecar**, unreadable sidecar, unrecognized `schema_version`, or empty
+    or missing `sources` → `unverified`, reason `freshness_unverified` — never
+    `matched`, even on a clean tree whose `source_ref` equals `HEAD`. This is the
+    round-11 rule: a SHA attests to a tree, never to the scanned worktree bytes.
+  - **partial or unrelated `sources`** that omit any normalized covered fact path
+    → `stale`, reason `worktree_differs_from_ref`.
   A SHA-only implementation fails the modify, delete, and no-sidecar rows. A
   porcelain-based implementation additionally fails the gitignored row. Only the
   sidecar comparison passes all of them, which is why the mechanism lives in
@@ -1443,10 +1452,12 @@ Fitness gate:
     `freshness_unverified`. A future or unreadable sidecar is absent, never
     valid.
   - **sidecar present and readable, but one or more `sources` hashes mismatch
-    or are missing** → `partial`, reason `worktree_differs_from_ref`.
-  - **sidecar present with schema_version 1 and all `sources` hashes match** →
-    promotion allowed, regardless of `source_ref` match. This is the only
-    condition for `matched`.
+    or are missing, or a normalized covered fact path is omitted** → `partial`,
+    reason `worktree_differs_from_ref`.
+  - **sidecar present with schema_version 1, non-empty `sources`, every
+    normalized covered fact path listed, and all hashes matching** → promotion
+    allowed, regardless of `source_ref` match. This is the only condition for
+    `matched`.
   Only the unmodified fixture with a valid, fully-matching sidecar may reach
   `measured`. No other gate rows are needed; Task 10 tests warm-cache
   invalidation and the fixture's sidecar generation, not scope detection.

@@ -353,21 +353,22 @@ version 1 shape:
 - `sources` enumerates the covered source universe with lowercase SHA256 hashes
   of the exact file bytes. Include every source represented by the artifact.
 
-Freshness is `matched` when every source the producer enumerated exists under the
-current analysis root and its bytes hash to the sidecar value. A missing or
-changed listed source is `stale` with reason `worktree_differs_from_ref`. A
-missing, unreadable, malformed, or unknown-version sidecar is `unverified` with
-reason `freshness_unverified`. Only `matched` can promote testability; both other
-values keep it `partial`. The comparison runs on every analysis, including
-parsed-fact cache hits.
+Freshness is `matched` when `sources` is non-empty, every normalized file fact
+parsed from the artifact has a matching sidecar entry, and every enumerated
+source exists under the current analysis root with bytes hashing to the sidecar
+value. A missing or changed listed source, or a parsed covered path omitted from
+`sources`, is `stale` with reason `worktree_differs_from_ref`. Empty or missing
+`sources`, or a missing, unreadable, malformed, or unknown-version sidecar, is
+`unverified` with reason `freshness_unverified`. Only `matched` can promote
+testability; both other values keep it `partial`. The comparison runs on every
+analysis, including parsed-fact cache hits.
 
-The sidecar is producer-attested and unsigned. Archfit validates every listed
-path/hash but does not independently rediscover the artifact's covered-source
-universe or prove that `sources` is complete. Therefore an empty or incomplete
-but syntactically valid sidecar can be classified `matched`; the producer must
-enumerate the full universe. This protects honest pipelines from accidental
-reuse, not malicious or faulty misattestation. Artifact-to-source cross-binding
-and signature-backed attestation are the recorded upgrade triggers in the
+The sidecar is producer-attested and unsigned. Cross-binding prevents an empty,
+partial, or unrelated source map from attesting the files described by the
+artifact, but Archfit cannot authenticate the producer or prove the artifact
+itself did not omit source facts. A faulty or malicious producer can alter the
+artifact and sidecar together. Signature-backed attestation remains the recorded
+upgrade trigger in the
 [evidence contract](../design/evidence-contract.md#accepted-ceilings-and-upgrade-triggers).
 
 ### Testability promotion and multiple artifacts

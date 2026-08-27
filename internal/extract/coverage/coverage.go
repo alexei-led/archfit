@@ -197,6 +197,8 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		if blob, hit := i.store.Get(cacheAnalyzer, key); hit {
 			var cached cachedFacts
 			if json.Unmarshal(blob, &cached) == nil {
+				attestation = bindAttestationToFacts(attestation, cached.Facts)
+				out.Freshness = attestation.freshness
 				if len(cached.Facts) > source.MaxFacts {
 					out.Reason = joinReasons(reasonCoverageFactLimitExceeded, attestation.reason)
 					return out
@@ -224,6 +226,8 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 	normalized := normalizeParsedFacts(normalizer, facts, format, source.MaxFacts)
 	out.Facts = normalized.facts
 	out.UnresolvedPaths = normalized.unresolvedPaths
+	attestation = bindAttestationToFacts(attestation, out.Facts)
+	out.Freshness = attestation.freshness
 	if normalized.limitExceeded {
 		out.Reason = joinReasons(reasonCoverageFactLimitExceeded, parseWarning, attestation.reason)
 		return out

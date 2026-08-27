@@ -100,11 +100,12 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   is metadata, not a freshness gate. Freshness is recomputed even on fact-cache
   hits. Duplicate equal-denominator facts use the greatest covered count as a
   lower bound; unit/denominator conflicts suppress the ratio and force partial.
-  The sidecar is unsigned producer attestation: Archfit verifies every listed
-  path/hash but does not independently prove the covered-source enumeration is
-  complete. Empty/incomplete valid enumeration is an accepted misattestation
-  ceiling; upgrade via artifact-to-source cross-binding or authenticated trusted
-  producers as documented in `docs/design/evidence-contract.md`.
+  The sidecar is unsigned producer attestation: Archfit cross-binds every
+  normalized covered fact path to a listed path/hash and verifies the current
+  bytes. Empty/missing `sources` is unverified; omitting a covered fact path is
+  stale. Archfit still cannot authenticate the producer or prove the artifact
+  itself did not omit source facts; upgrade via authenticated trusted producers
+  as documented in `docs/design/evidence-contract.md`.
 - **`operations` claims declared topology, not runtime topology.** Every declared
   module needs an independently corroborated deploy unit plus a declared or
   CODEOWNERS-backed owner; git-author fallback is visible but does not qualify.

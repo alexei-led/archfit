@@ -344,6 +344,122 @@ func TestIngest_FreshnessRecomputedOnCacheHits(t *testing.T) {
 	})
 }
 
+func TestIngest_CoveredFactsMustBeAttested(t *testing.T) {
+	cases := []struct {
+		name          string
+		writeSidecar  func(t *testing.T, root, sourcePath, secondSource, unrelatedSource string)
+		facts         func(sourcePath, secondSource string) []evidence.CoverageFact
+		wantFreshness evidence.CoverageFreshness
+		wantReason    string
+	}{
+		{
+			name: "sources field omitted",
+			writeSidecar: func(t *testing.T, root, _, _, _ string) {
+				writeCoverageFile(t, root, "coverage.info.sidecar.json", `{"schema_version":1,"source_ref":"producer-ref","modules":["app"]}`)
+			},
+			wantFreshness: evidence.FreshnessUnverified,
+			wantReason:    reasonFreshnessUnverified,
+		},
+		{
+			name: "empty sources map",
+			writeSidecar: func(t *testing.T, root, _, _, _ string) {
+				writeSidecar(t, root, "coverage.info.sidecar.json", "producer-ref", map[string]string{}, 1)
+			},
+			wantFreshness: evidence.FreshnessUnverified,
+			wantReason:    reasonFreshnessUnverified,
+		},
+		{
+			name: "partial sources map",
+			writeSidecar: func(t *testing.T, root, sourcePath, _, _ string) {
+				writeSidecar(t, root, "coverage.info.sidecar.json", "producer-ref", map[string]string{
+					sourcePath: fileHash(t, root, sourcePath),
+				}, 1)
+			},
+			facts: func(sourcePath, secondSource string) []evidence.CoverageFact {
+				return []evidence.CoverageFact{
+					{File: sourcePath, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines},
+					{File: secondSource, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines},
+				}
+			},
+			wantFreshness: evidence.FreshnessStale,
+			wantReason:    reasonWorktreeDiffers,
+		},
+		{
+			name: "unrelated sources map",
+			writeSidecar: func(t *testing.T, root, _, _, unrelatedSource string) {
+				writeSidecar(t, root, "coverage.info.sidecar.json", "producer-ref", map[string]string{
+					unrelatedSource: fileHash(t, root, unrelatedSource),
+				}, 1)
+			},
+			wantFreshness: evidence.FreshnessStale,
+			wantReason:    reasonWorktreeDiffers,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, sourcePath := coverageFixture(t)
+			const (
+				secondSource    = "src/worker.go"
+				unrelatedSource = "src/unrelated.go"
+			)
+			writeCoverageFile(t, root, secondSource, "package worker\n")
+			writeCoverageFile(t, root, unrelatedSource, "package unrelated\n")
+			tc.writeSidecar(t, root, sourcePath, secondSource, unrelatedSource)
+
+			facts := []evidence.CoverageFact{{File: sourcePath, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines}}
+			if tc.facts != nil {
+				facts = tc.facts(sourcePath, secondSource)
+			}
+			calls := 0
+			ingests, row := New(nil, fixtureParser{format: FormatLCOV, facts: facts, calls: &calls}).IngestAll(root, fixtureOptions())
+			if calls != 1 || len(ingests) != 1 || len(ingests[0].Facts) != len(facts) {
+				t.Fatalf("ingest calls/results = %d/%+v", calls, ingests)
+			}
+			got := ingests[0]
+			if got.Freshness != tc.wantFreshness || !strings.Contains(got.Reason, tc.wantReason) {
+				t.Fatalf("freshness/reason = %q/%q, want %q containing %q", got.Freshness, got.Reason, tc.wantFreshness, tc.wantReason)
+			}
+			if row.Status != evidence.StatusPartial {
+				t.Fatalf("coverage health = %+v, want partial", row)
+			}
+		})
+	}
+}
+
+func TestIngest_CoveredFactsMustBeAttestedOnCacheHit(t *testing.T) {
+	root, sourcePath := coverageFixture(t)
+	const secondSource = "src/worker.go"
+	writeCoverageFile(t, root, secondSource, "package worker\n")
+	writeSidecar(t, root, "coverage.info.sidecar.json", "producer-ref", map[string]string{
+		sourcePath:   fileHash(t, root, sourcePath),
+		secondSource: fileHash(t, root, secondSource),
+	}, 1)
+
+	calls := 0
+	ingestor := New(factcache.NewStore(filepath.Join(t.TempDir(), "facts")), fixtureParser{format: FormatLCOV, facts: []evidence.CoverageFact{
+		{File: sourcePath, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines},
+		{File: secondSource, CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines},
+	}, calls: &calls})
+	first, _ := ingestor.IngestAll(root, fixtureOptions())
+	if calls != 1 || first[0].Freshness != evidence.FreshnessMatched {
+		t.Fatalf("cache-priming ingest = %+v, calls = %d", first[0], calls)
+	}
+
+	writeSidecar(t, root, "coverage.info.sidecar.json", "producer-ref", map[string]string{
+		sourcePath: fileHash(t, root, sourcePath),
+	}, 1)
+	second, row := ingestor.IngestAll(root, fixtureOptions())
+	if calls != 1 {
+		t.Fatalf("parser calls = %d, want cache hit", calls)
+	}
+	if second[0].Freshness != evidence.FreshnessStale || second[0].Reason != reasonWorktreeDiffers {
+		t.Fatalf("cache-hit freshness/reason = %q/%q, want stale/%s", second[0].Freshness, second[0].Reason, reasonWorktreeDiffers)
+	}
+	if row.Status != evidence.StatusPartial {
+		t.Fatalf("coverage health = %+v, want partial", row)
+	}
+}
+
 func TestIngest_UnverifiedSidecarsNeverPromoteOrCache(t *testing.T) {
 	cases := []struct {
 		name  string

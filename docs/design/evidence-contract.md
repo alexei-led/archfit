@@ -316,7 +316,8 @@ supported language, as established by that language producer's own probe.
 `coverage_freshness`. Required coverage is quantified over every declared
 module. Supplied facts must use one compatible unit kind; languages are not an
 independent completeness denominator. Freshness is observed only when every
-configured source has a valid sidecar whose listed source hashes match the
+configured source has a valid, non-empty sidecar, every normalized coverage fact
+path appears in its `sources` map, and every listed source hash matches the
 scanned bytes.
 
 **Denominator:** Declared modules represented by attributed coverage over all
@@ -475,14 +476,14 @@ These limits are deliberate. They are not missing-fact loopholes:
   or `lizard` only if corpus evidence shows that graph shape ranks an
   architecture seam materially differently from a code-level metric.
 - **Coverage freshness is producer-attested, not tamper-proof or independently
-  complete.** The version 1 sidecar is unsigned. Archfit validates every
-  path/hash the producer lists, but it does not rediscover the artifact's full
-  covered-source universe or prove that `sources` is complete. An empty or
-  incomplete but syntactically valid sidecar can therefore be classified
-  `matched`; that is accepted producer misattestation, not a completeness
-  guarantee. Add artifact-to-source cross-binding where a format permits it, or
-  signature-backed trusted-producer attestation, when stronger provenance
-  becomes a product requirement.
+  complete.** The version 1 sidecar is unsigned. Archfit cross-binds every
+  normalized file fact parsed from the artifact to `sources` and validates its
+  path/hash against current bytes. Empty or missing `sources` is `unverified`;
+  omitting any parsed covered path is `stale`. Archfit still cannot authenticate
+  the producer or prove that the artifact itself did not omit source facts: a
+  faulty or malicious producer can alter the artifact and sidecar together. Add
+  signature-backed trusted-producer attestation when stronger provenance becomes
+  a product requirement.
 - **Duplicate aggregate coverage uses a lower bound, not exact union.** For the
   same file, unit, and total denominator, Archfit keeps the greatest covered
   count and reports `merged_coverage_facts`; differing units or totals force
