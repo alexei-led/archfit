@@ -56,6 +56,34 @@ func TestTestabilityDisabledCoveragePreservesLegacyEnvelope(t *testing.T) {
 	}
 }
 
+func TestTestabilityEnabledCoverageWithEmptyFileIndexNamesEveryMissingFact(t *testing.T) {
+	t.Parallel()
+	facts := evaluation.Observations{
+		FileClassIndex: map[string]fileclass.FileClass{},
+		SuppliedCoverage: []modevidence.CoverageIngest{{
+			Freshness: modevidence.FreshnessMatched,
+		}},
+	}
+	dim := testabilityDimensionForTest(testabilityModules("a"), facts)
+	if dim.Status != state.Unmeasured {
+		t.Fatalf("empty file index status = %q, want unmeasured", dim.Status)
+	}
+
+	got := make([]string, 0, len(dim.Unknown))
+	for _, unknown := range dim.Unknown {
+		got = append(got, unknown.Fact)
+	}
+	want := make([]string, 0)
+	for _, fact := range state.RequiredFacts(state.DimensionTestability) {
+		if fact.InClaim {
+			want = append(want, fact.Name)
+		}
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("empty file index unknown facts = %q, want declared in-claim facts %q", got, want)
+	}
+}
+
 func TestTestabilityFreshCoverageMeasuresDeclaredModules(t *testing.T) {
 	t.Parallel()
 	modules := testabilityModules("a", "b")

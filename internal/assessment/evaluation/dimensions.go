@@ -654,11 +654,14 @@ func testabilityDimension(p policy.PolicySnapshot, f Observations) state.Dimensi
 
 	dim := state.NewDimension(state.DimensionTestability, state.OwnerTestability)
 	if len(f.FileClassIndex) == 0 {
-		return unmeasured(dim, state.UnknownFact{
-			Fact:   "testability",
-			Reason: "no file was classified, so test and production files cannot be told apart",
-			Owner:  state.OwnerTestability,
+		applyPromotion(&dim, nil, nil, map[string]string{
+			state.FactProductionSourceInventory: "no file was classified, so test and production files cannot be told apart",
+			state.FactSuppliedCoverageUnits:     "without a classified source inventory, supplied coverage units cannot be interpreted",
+			state.FactCoveragePathResolution:    "without a classified source inventory, coverage paths cannot be resolved against supported source",
+			state.FactCoverageModuleAttribution: "without a classified source inventory, coverage cannot be attributed to declared modules",
+			state.FactCoverageFreshness:         "without a classified source inventory, freshness cannot establish applicable source evidence",
 		})
+		return dim
 	}
 	tests, production := testAndProductionFileCounts(f.FileClassIndex)
 	staticMetrics := staticTestabilityMetrics(tests, production)

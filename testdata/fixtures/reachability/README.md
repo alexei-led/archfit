@@ -31,40 +31,32 @@ The committed directory intentionally has no `.git/`, `.archfit.yaml`,
 `.archfit-baseline.json`, coverage artifact, sidecar, cache, or ref file. The
 test owns all run artifacts:
 
-1. `materializeFixture(t, false)` copies this directory, initializes git, and
+1. `materializeFixture(t, true)` copies this directory, initializes git, and
    commits the copied source with fixed identity and timestamps.
-2. It renders `.archfit.yaml` from the template with no `coverage:` block.
+2. It uses only `go test -coverprofile` to produce supplied coverage, writes
+   tracked, untracked, and gitignored covered sources, emits the version-1
+   content-hash sidecar described by the evidence contract, and renders the
+   `coverage:` block in `.archfit.yaml`. Archfit never executes the target tests
+   itself.
 3. The integration test runs `analyze` twice, then runs `baseline` to persist a
    comparable reference, then re-runs `analyze` and `check`.
-4. The `withCoverage=true` path uses only `go test -coverprofile`, writes
-   tracked, untracked, and gitignored covered sources, and emits the version-1
-   content-hash sidecar described by the evidence contract. Task 10 exercises
-   matched, stale, unverified, and warm-cache freshness outcomes through this
-   path; Archfit never executes the target tests itself.
+4. Separate subtests use `withCoverage=false` to exercise the drift lifecycle
+   and use `withCoverage=true` to exercise matched, stale, unverified, and
+   warm-cache freshness outcomes.
 
-## Recorded Task 3 outcome
+## Recorded terminal outcome
 
-The observed post-baseline result is **Outcome B-temporary**:
+The observed post-baseline result is **Outcome A**:
 
 - `analyze` exits 0 because it is report-only.
-- `check` exits 2.
-- Verdict: `needs_attention`.
-- Decision: hard gates `pass`, active blockers 0, unknown dimensions 3, active
+- `check` exits 0.
+- Verdict: `healthy`.
+- Decision: hard gates `pass`, active blockers 0, unknown dimensions 0, active
   diagnostics 0.
-- Measured: `intent`, `structure`, `modularity`, `coupling`,
-  `change_locality`, and `drift`.
-- Partial: `complexity`, `testability`, and `operations`.
-- Unmeasured: none after the persisted baseline is loaded.
-
-The blockers and Task 2 audit remedies are:
-
-| Blocking dimension | Blocking symbol | Outcome class | Remedy class | Remedy |
-| --- | --- | --- | --- | --- |
-| `complexity` | `complexityDimension` | B-temporary | new collector required | Task 7 supplies complete module-graph depth, fan-in, and fan-out facts. |
-| `testability` | `testabilityDimension` | B-temporary | new collector required | Tasks 8-10 ingest, attribute, and freshness-check supplied coverage. |
-| `operations` | `operationsDimension` | B-temporary | new collector required | Task 6 retains deploy-unit and ownership provenance and reconciles it per module. |
-
-No B-permanent blocker was observed.
+- Measured: all nine dimensions — `intent`, `structure`, `modularity`,
+  `coupling`, `change_locality`, `complexity`, `testability`, `operations`, and
+  `drift`.
+- Partial or unmeasured: none after the persisted baseline is loaded.
 
 ## Recorded JSON envelope
 

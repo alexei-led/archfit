@@ -208,6 +208,41 @@ func TestIngest_AttestationReadsHonorByteLimitBoundary(t *testing.T) {
 	})
 }
 
+func TestAttest_SourceFailureReasonUsesSortedPathOrder(t *testing.T) {
+	root := t.TempDir()
+	const (
+		mismatchedSource = "src/a-hash-mismatch.go"
+		oversizedSource  = "src/z-oversized.go"
+		sidecarPath      = "coverage.info.sidecar.json"
+		maxBytes         = int64(512)
+	)
+	writeCoverageFile(t, root, mismatchedSource, "package mismatch\n")
+	writeCoverageFile(t, root, oversizedSource, strings.Repeat("x", int(maxBytes)+1))
+	writeSidecar(t, root, sidecarPath, "producer-ref", map[string]string{
+		mismatchedSource: strings.Repeat("0", sha256.Size*2),
+		oversizedSource:  fileHash(t, root, oversizedSource),
+	}, 1)
+	info, err := os.Stat(filepath.Join(root, sidecarPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() > maxBytes {
+		t.Fatalf("sidecar size = %d, test limit = %d", info.Size(), maxBytes)
+	}
+	normalizer, err := NewNormalizer(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for run := 0; run < 100; run++ {
+		got := attest(normalizer, sidecarPath, maxBytes)
+		if got.freshness != evidence.FreshnessStale || got.reason != reasonWorktreeDiffers {
+			t.Fatalf("run %d freshness/reason = %q/%q, want stale/%s from lexically first source",
+				run, got.freshness, got.reason, reasonWorktreeDiffers)
+		}
+	}
+}
+
 func TestCoverageCacheKeyIncludesParserVersionAndScanRoot(t *testing.T) {
 	data := []byte("coverage")
 	base := coverageCacheKey("/scan/a", fixtureCoveragePath, FormatLCOV, "parser.v1", "ref-a", data)

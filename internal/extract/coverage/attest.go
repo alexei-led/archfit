@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/evidence"
@@ -60,7 +61,13 @@ func attest(normalizer *Normalizer, sidecarPath string, maxBytes int64) attestat
 			return unverified
 		}
 	}
-	for rawPath, wantHash := range sidecar.Sources {
+	sourcePaths := make([]string, 0, len(sidecar.Sources))
+	for rawPath := range sidecar.Sources {
+		sourcePaths = append(sourcePaths, rawPath)
+	}
+	sort.Strings(sourcePaths)
+	for _, rawPath := range sourcePaths {
+		wantHash := sidecar.Sources[rawPath]
 		if !validSHA256(wantHash) {
 			return unverified
 		}
