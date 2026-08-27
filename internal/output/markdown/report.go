@@ -23,6 +23,7 @@ func RenderState(s report.ArchitectureState, w io.Writer) error {
 	b.WriteString("# archfit — architecture state\n\n")
 	writeStateHeadline(&b, s)
 	writeDimensionTable(&b, s.Dimensions)
+	writeDimensionMetrics(&b, s.Dimensions)
 	writeCoverageTable(&b, s.Coverage)
 	writeSeamLedger(&b, s.Seams)
 	writeActionableFindings(&b, s)

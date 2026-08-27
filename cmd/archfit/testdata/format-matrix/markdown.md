@@ -19,6 +19,80 @@
 | operations | partial | pass | medium | declared modules with a corroborated deploy unit and qualifying owner 0/2 | 0 |
 | drift | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
 
+## Dimension metrics
+
+### intent
+
+- `declared_modules`: 2 count
+- `declared_layers`: 0 count
+- `declared_rules`: 1 count (1/1)
+- `declared_waivers`: 0 count
+- `waivers_used`: 0 count
+- `expired_waivers`: 0 count
+
+### structure
+
+- `internal_edges`: 1 count
+- `external_edges`: 0 count
+- `same_module_edges`: 0 count
+- `connected_modules`: 2 count
+- `cycle`: 0 count
+
+### modularity
+
+- `declared_modules`: 2 count
+- `public_surface_entries`: 0 count (0/2)
+- `local_coupling_modules`: 0 count
+- `blast_radius`: 1 count
+
+### coupling
+
+- `scored_edges`: 1 count (1/1)
+- `abstained_edges`: 0 count
+- `declared_external_edges`: 0 count
+- `clone_only_seams`: 0 count
+- `critical_band_edges`: 0 count
+- `high_or_worse_edges`: 0 count
+- `critical_high_distance_edges`: 0 count
+- `seams`: 1 count
+- `distributed_monolith_seams`: 0 count (1/1)
+- `tight_seams`: 1 count
+- `unrated_seams`: 0 count
+- `unbalanced_edge`: 0 count
+
+### complexity
+
+- `max_dependency_chain`: 1 count (2/2)
+- `module_fan_in_p90`: 1 count (2/2)
+- `module_fan_out_p90`: 1 count (2/2)
+- `production_files`: 2 count
+- `production_loc`: 10 count
+- `largest_production_file_loc`: 6 count
+
+### testability
+
+- `test_files`: 0 count
+- `production_files`: 2 count
+- `test_to_production_files`: 0 ratio (0/2)
+
+### operations
+
+- `modules_with_owner`: 2 count (2/2)
+- `distinct_owners`: 2 count
+- `owners_from_declared`: 2 count
+- `owners_from_codeowners`: 0 count
+- `owners_from_git_author_fallback`: 0 count
+- `declared_deploy_units`: 0 count
+- `corroborated_deploy_units`: 0 count
+- `modules_with_corroborated_deploy_unit`: 0 count (0/2)
+- `matching_declared_deploy_units`: 0 count
+- `mismatched_declared_deploy_units`: 0 count
+- `declared_external_systems`: 0 count
+- `analyzers_reporting_coverage`: 4 count (4/4)
+- `coverage_gaps`: 0 count
+- `analyzers_not_applicable`: 7 count
+- `coverage`: 1 ratio
+
 ## Evidence coverage
 
 | Tool | Status | Reason |

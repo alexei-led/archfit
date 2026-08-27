@@ -82,6 +82,19 @@ func TestRenderState_Headline(t *testing.T) {
 // TestRenderState_ListsEveryDimension: all nine envelopes are always shown with
 // their status, gate, confidence, and denominator. Omitting an unmeasured one
 // would make missing evidence invisible.
+func TestRenderState_RendersDimensionMetrics(t *testing.T) {
+	s := stateWith()
+	s.Dimensions.Complexity.Metrics = []report.MetricValue{
+		{Name: "max_dependency_chain", Value: 3, Unit: "count", Denominator: &report.MetricDenominator{Observed: 2, Total: 2}},
+	}
+	out := render(t, s)
+	for _, want := range []string{"max_dependency_chain: 3 count (2/2)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dimension metric missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestRenderState_ListsEveryDimension(t *testing.T) {
 	out := render(t, stateWith())
 	for _, name := range []string{

@@ -1512,10 +1512,10 @@ Rollback: single commit revert.
 
 ### Task 11: Renderers, five-format parity, and SARIF
 
-- [ ] Console, Markdown, JSON, scorecard render the new metric families
-- [ ] SARIF carries them in run properties
-- [ ] Format-matrix baselines regenerated deliberately
-- [ ] Determinism re-pinned
+- [x] Console, Markdown, JSON, scorecard render the new metric families
+- [x] SARIF carries them in run properties
+- [x] Format-matrix baselines regenerated deliberately
+- [x] Determinism re-pinned
 
 Justification: the state contract requires five-format parity on facts. New
 metrics must appear consistently or the formats disagree about what was measured.

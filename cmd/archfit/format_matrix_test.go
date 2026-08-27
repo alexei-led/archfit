@@ -13,10 +13,10 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-// Committed pre-migration fixture names, one per renderer. baseline.json (the
-// json format) is owned by byteidentical_test.go; the remaining four are
-// captured here so the architecture-state cutover in later tasks has a frozen
-// "before" for every format, not only for JSON.
+// Committed format-matrix fixture names, one per non-legacy renderer. The JSON
+// format's byte-identical baseline is owned by byteidentical_test.go; the
+// remaining four are captured here so the architecture-state contract has a
+// reviewed baseline for every human/SARIF format.
 //
 // They live under cmd/archfit/testdata/, NOT beside the analysed fixture: a
 // baseline written into the fixture tree becomes an input to the next run that
@@ -47,10 +47,10 @@ var formatMatrix = []struct {
 }
 
 // TestFormatMatrix_PreStateBaselines pins the rendered output of every non-JSON
-// format against the machine-independent single-module fixture. It is the
-// pre-cutover half of the migration compatibility matrix: Task 1 must not move
-// any of these bytes, and the task that does cut over must move them
-// deliberately, in the same commit that updates the contract.
+// format against the machine-independent single-module fixture. Despite its
+// historical name, these are the current reviewed format baselines; regenerate
+// them only with ARCHFIT_UPDATE_FORMATS=1 after an intentional presentation
+// change.
 func TestFormatMatrix_PreStateBaselines(t *testing.T) {
 	t.Parallel()
 	requireHealthyExtraction(t)
@@ -69,7 +69,18 @@ func TestFormatMatrix_PreStateBaselines(t *testing.T) {
 // carry a byte-comparable migration baseline at all.
 func TestFormatMatrix_DoubleRunIsStable(t *testing.T) {
 	t.Parallel()
-	for _, tc := range formatMatrix {
+	// JSON has a dedicated byte-identical baseline beside its source fixture,
+	// but it still belongs in this cross-renderer determinism check.
+	formats := append(append([]struct {
+		format   string
+		baseline string
+		jsonOut  bool
+	}{}, formatMatrix...), struct {
+		format   string
+		baseline string
+		jsonOut  bool
+	}{format: formatJSON, jsonOut: true})
+	for _, tc := range formats {
 		t.Run(tc.format, func(t *testing.T) {
 			t.Parallel()
 			_, root := materializeFixtureRepo(t, fixtureSingleModule)
@@ -210,12 +221,22 @@ func normalizeRoot(s, root string) string {
 	return out
 }
 
-// assertMatchesBaseline compares got against the committed fixture at path,
-// bootstrapping the fixture on first run so a new format's baseline can be
+// assertMatchesBaseline compares got against the committed fixture at path.
+// ARCHFIT_UPDATE_FORMATS explicitly regenerates it so the resulting diff can be
 // reviewed and committed. Never delete a committed baseline to get green: that
 // re-records whatever the code now emits and makes the gate vacuous.
 func assertMatchesBaseline(t *testing.T, path string, got []byte) {
 	t.Helper()
+
+	// Regeneration is an explicit opt-in because a baseline update is part of
+	// the reviewed format contract, not a way to hide an output mismatch.
+	if os.Getenv("ARCHFIT_UPDATE_FORMATS") != "" {
+		if writeErr := os.WriteFile(path, got, 0o600); writeErr != nil {
+			t.Fatalf("write baseline %s: %v", path, writeErr)
+		}
+		t.Logf("baseline regenerated at %s — review and commit", path)
+		return
+	}
 
 	want, err := os.ReadFile(path) //nolint:gosec // path is a compile-time testdata constant
 	if os.IsNotExist(err) {
@@ -261,8 +282,16 @@ func TestFormatMatrix_CrossFormatParity(t *testing.T) {
 			AttentionDimensions int    `json:"attention_dimensions"`
 		} `json:"decision"`
 		Dimensions map[string]struct {
-			Status string `json:"status"`
-			Gate   string `json:"gate"`
+			Status  string `json:"status"`
+			Gate    string `json:"gate"`
+			Metrics []struct {
+				Name  string  `json:"name"`
+				Value float64 `json:"value"`
+				Unit  string  `json:"unit"`
+			} `json:"metrics"`
+			Unknown []struct {
+				Fact string `json:"fact"`
+			} `json:"unknown"`
 		} `json:"dimensions"`
 		Coverage struct {
 			Measured   int `json:"measured"`
@@ -316,6 +345,19 @@ func TestFormatMatrix_CrossFormatParity(t *testing.T) {
 				if !anyLineHas(lines, dim.Status, dim.Gate) {
 					t.Errorf("%s reports no %s line carrying status %q and gate %q; candidates: %q",
 						format, name, dim.Status, dim.Gate, lines)
+				}
+				// Metric names and unknown facts are the dimension-specific
+				// state payload. Both in-claim gaps and permitted out-of-claim
+				// disclosures must survive the human layout unchanged.
+				for _, metric := range dim.Metrics {
+					if !strings.Contains(out, metric.Name) {
+						t.Errorf("%s omits %s metric %q", format, name, metric.Name)
+					}
+				}
+				for _, unknown := range dim.Unknown {
+					if !strings.Contains(out, unknown.Fact) {
+						t.Errorf("%s omits %s unknown fact %q", format, name, unknown.Fact)
+					}
 				}
 			}
 			// The coverage triple must be present as three numbers on one line,
@@ -443,6 +485,14 @@ func TestFormatMatrix_SarifCarriesTheState(t *testing.T) {
 			Status     string `json:"status"`
 			Gate       string `json:"gate"`
 			Confidence string `json:"confidence"`
+			Metrics    []struct {
+				Name  string  `json:"name"`
+				Value float64 `json:"value"`
+				Unit  string  `json:"unit"`
+			} `json:"metrics"`
+			Unknown []struct {
+				Fact string `json:"fact"`
+			} `json:"unknown"`
 		} `json:"dimensions"`
 		Coverage struct {
 			Measured   int `json:"measured"`
@@ -471,6 +521,14 @@ func TestFormatMatrix_SarifCarriesTheState(t *testing.T) {
 					Status     string `json:"status"`
 					Gate       string `json:"gate"`
 					Confidence string `json:"confidence"`
+					Metrics    []struct {
+						Name  string  `json:"name"`
+						Value float64 `json:"value"`
+						Unit  string  `json:"unit"`
+					} `json:"metrics"`
+					Unknown []struct {
+						Fact string `json:"fact"`
+					} `json:"unknown"`
 				} `json:"dimensions"`
 				Coverage struct {
 					Measured   int `json:"measured"`
@@ -516,6 +574,24 @@ func TestFormatMatrix_SarifCarriesTheState(t *testing.T) {
 		if dim.Status != want.Status || dim.Gate != want.Gate || dim.Confidence != want.Confidence {
 			t.Errorf("SARIF %s = {%s %s %s}, JSON says {%s %s %s}",
 				dim.Name, dim.Status, dim.Gate, dim.Confidence, want.Status, want.Gate, want.Confidence)
+		}
+		if len(dim.Metrics) != len(want.Metrics) {
+			t.Errorf("SARIF %s metrics = %d, JSON says %d", dim.Name, len(dim.Metrics), len(want.Metrics))
+		} else {
+			for i, metric := range dim.Metrics {
+				if metric.Name != want.Metrics[i].Name || metric.Value != want.Metrics[i].Value || metric.Unit != want.Metrics[i].Unit {
+					t.Errorf("SARIF %s metric[%d] = %+v, JSON says %+v", dim.Name, i, metric, want.Metrics[i])
+				}
+			}
+		}
+		if len(dim.Unknown) != len(want.Unknown) {
+			t.Errorf("SARIF %s unknown facts = %d, JSON says %d", dim.Name, len(dim.Unknown), len(want.Unknown))
+		} else {
+			for i, unknown := range dim.Unknown {
+				if unknown.Fact != want.Unknown[i].Fact {
+					t.Errorf("SARIF %s unknown[%d] = %q, JSON says %q", dim.Name, i, unknown.Fact, want.Unknown[i].Fact)
+				}
+			}
 		}
 	}
 

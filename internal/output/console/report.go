@@ -125,7 +125,21 @@ func writeDimensions(b *strings.Builder, dims report.Dimensions) {
 	for _, dim := range dims.All() {
 		fmt.Fprintf(b, "  %-*s %-11s gate: %-15s confidence: %-8s %s\n",
 			dimensionNameWidth, dim.Name, dim.Status, dim.Gate, dim.Confidence, coverageLabel(dim.Coverage))
+		for _, metric := range dim.Metrics {
+			fmt.Fprintf(b, "    %s: %s %s%s\n", metric.Name, formatMetricValue(metric.Value), metric.Unit, metricDenominator(metric.Denominator))
+		}
 	}
+}
+
+func formatMetricValue(value float64) string {
+	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+func metricDenominator(d *report.MetricDenominator) string {
+	if d == nil {
+		return ""
+	}
+	return fmt.Sprintf(" (%d/%d)", d.Observed, d.Total)
 }
 
 // coverageLabel renders a dimension's denominator. An unmeasured envelope has

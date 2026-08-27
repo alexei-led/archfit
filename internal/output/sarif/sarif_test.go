@@ -55,6 +55,12 @@ func sampleDiagnostic() reportmodel.Document {
 	d.State.Dimensions.Structure.Findings = []reportmodel.FindingRef{
 		{ID: fpGate, RuleID: ruleInternal, Kind: reportmodel.FindingKindGate},
 	}
+	d.State.Dimensions.Complexity.Metrics = []reportmodel.MetricValue{
+		{Name: "max_dependency_chain", Value: 3, Unit: "count", Denominator: &reportmodel.MetricDenominator{Observed: 2, Total: 2}},
+	}
+	d.State.Dimensions.Complexity.Unknown = []reportmodel.UnknownFact{{
+		Fact: "cognitive complexity", Reason: "not collected", Owner: reportmodel.OwnerComplexity,
+	}}
 	d.State.Coverage = reportmodel.StateCoverage{Measured: 1, Partial: 0, Unmeasured: 8}
 	d.State.Seams = []reportmodel.Seam{{ID: "seam-ab", FromModule: "a", ToModule: "b"}}
 	return d
@@ -142,6 +148,20 @@ func TestRender_ShapeAndLevels(t *testing.T) {
 	}
 	if dims := props["dimensions"].([]any); len(dims) != reportmodel.DimensionCount {
 		t.Errorf("properties.dimensions = %d, want %d", len(dims), reportmodel.DimensionCount)
+	} else {
+		for _, raw := range dims {
+			dim := raw.(map[string]any)
+			if dim["name"] == "complexity" {
+				metrics := dim["metrics"].([]any)
+				if len(metrics) != 1 || metrics[0].(map[string]any)["name"] != "max_dependency_chain" {
+					t.Errorf("complexity metrics = %v", metrics)
+				}
+				unknown := dim["unknown"].([]any)
+				if len(unknown) != 1 || unknown[0].(map[string]any)["fact"] != "cognitive complexity" {
+					t.Errorf("complexity unknown = %v", unknown)
+				}
+			}
+		}
 	}
 	if len(props["seams"].([]any)) != 1 {
 		t.Errorf("properties.seams = %v", props["seams"])

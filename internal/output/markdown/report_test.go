@@ -79,6 +79,21 @@ func TestRenderState_HeadlineAndTables(t *testing.T) {
 	}
 }
 
+// TestRenderState_RendersDimensionMetrics keeps the typed metric families in
+// the state renderer, including a metric denominator.
+func TestRenderState_RendersDimensionMetrics(t *testing.T) {
+	s := stateFixture()
+	s.Dimensions.Coupling.Metrics = []report.MetricValue{
+		{Name: "scored_edges", Value: 7, Unit: "count", Denominator: &report.MetricDenominator{Observed: 7, Total: 9}},
+	}
+	out := renderState(t, s)
+	for _, want := range []string{"## Dimension metrics", "### coupling", "`scored_edges`: 7 count (7/9)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("markdown state missing metric %q:\n%s", want, out)
+		}
+	}
+}
+
 // TestRenderState_ListsEveryDimension: the table always has nine rows, so an
 // unmeasured envelope cannot be silently omitted.
 func TestRenderState_ListsEveryDimension(t *testing.T) {
