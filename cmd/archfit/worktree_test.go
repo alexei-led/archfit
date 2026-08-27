@@ -198,6 +198,7 @@ func TestDiffCmd_WorktreeCleanup(t *testing.T) {
 	// (.archfit-cache/worktrees/<sha>) may stay registered.
 	cmd := exec.Command("git", "worktree", "list", "--porcelain")
 	cmd.Dir = repoDir
+	cmd.Env = scrubGitFixtureEnv(os.Environ())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git worktree list: %v\n%s", err, out)
