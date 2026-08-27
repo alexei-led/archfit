@@ -280,8 +280,7 @@ the working tree, not a git object.
   - **valid sidecar, every covered source hash matches** → `Freshness =
     matched`. This is the only value that permits promotion.
   - **valid sidecar, any covered source hash differs, or a listed path is
-    missing, or a covered source exists that the sidecar does not list** →
-    `Freshness = stale`, reason `worktree_differs_from_ref`.
+    missing** → `Freshness = stale`, reason `worktree_differs_from_ref`.
   - **no sidecar, unreadable sidecar, or unrecognized `schema_version`** →
     `Freshness = unverified`, reason `freshness_unverified`.
 
@@ -329,11 +328,10 @@ Config shape (new `coverage:` block, schema additive):
 coverage:
   enabled: true          # default false — opt-in
   gate: warn             # off | warn | fail, reusing the analyzer GateMode
-  require_ref: true      # a profile without a matching commit SHA cannot promote
   sources:
     - path: coverage.out
       format: go-coverprofile   # auto | go-coverprofile | lcov | coverage-py-json | llvm-cov-json
-      ref_file: coverage.out.ref
+      sidecar_path: coverage.out.sidecar.json   # optional; defaults to <path>.sidecar.json
     - path: coverage/lcov.info
       format: lcov
 ```
@@ -1214,8 +1212,6 @@ Fitness gate:
     reason `worktree_differs_from_ref`, even when the coverage `source_ref`
     still equals `HEAD`;
   - **listed covered source deleted** → `stale`, same reason;
-  - **covered source present that the sidecar does not list** → `stale`, same
-    reason — a sidecar cannot under-enumerate its own universe and still match;
   - **gitignored listed source modified** → `stale`, same reason. The fixture
     writes a `.gitignore` covering the path, so `git status --porcelain` reports
     a clean tree. The comparison never consults git, so ignored status cannot
@@ -1895,7 +1891,7 @@ Task 3 does not render a `coverage:` key that only exists from Task 8.
 | Define the evidence contract before implementing collectors                        | Task 1 is the entry point; Task 2 makes it executable                |
 | Build one end-to-end healthy fixture and prove exit 0                              | Task 3 ships it; Task 13 flips it to assert healthy                  |
 | Do not execute target tests from `analyze`/`check`                                 | §3.2; §2 Stage C rejects it explicitly                               |
-| Coverage freshness needs commit binding, not timestamps                            | §3.2 `require_ref`, `Freshness ∈ {matched, stale, unverified}`       |
+| Coverage freshness needs byte binding, not timestamps or a bare SHA                | §2.2 sidecar hash comparison, `Freshness ∈ {matched, stale, unverified}` |
 | Parsed manifests are declarations, not observed runtime                            | Task 5 narrowed to *declared-topology completeness*; §2 Stage C      |
 | Per-function complexity risks code-quality scope creep                             | Task 6 promotes on module-graph shape; function size is out-of-claim |
 | Coverage proves exercise, not test quality                                         | Task 9 claim narrowed; mutation/assertion strength out-of-claim      |
