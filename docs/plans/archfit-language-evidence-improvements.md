@@ -478,10 +478,10 @@ Rollback: delete the document; nothing depends on it yet.
 
 ### Task 2: Characterize current behaviour against the contract
 
-- [ ] Audit all nine dimensions against their Task 1 contract definitions
-- [ ] Record every mismatch between contract and current code
-- [ ] Classify each mismatch: status-semantics change, implementation fix, or new collector required
-- [ ] Do not assume current behaviour satisfies the contract — assume it does not
+- [x] Audit all nine dimensions against their Task 1 contract definitions
+- [x] Record every mismatch between contract and current code
+- [x] Classify each mismatch: status-semantics change, implementation fix, or new collector required
+- [x] Do not assume current behaviour satisfies the contract — assume it does not
 
 Justification: Task 1 is prose; this measures reality against it. The first draft
 of this plan assumed the six evidence-dependent collectors already satisfied the
