@@ -226,7 +226,11 @@ func validate(cfg Config) error {
 	if err := validateRules(cfg.Rules); err != nil {
 		return err
 	}
-	for _, name := range sortedKeys(cfg.Metrics) {
+	if threshold := cfg.Metrics.FunctionLOCThreshold; threshold != nil && *threshold <= 0 {
+		return fmt.Errorf("metrics.function_loc_threshold must be a positive integer (got %d)", *threshold)
+	}
+	metricEntries := cfg.Metrics.MetricEntries()
+	for _, name := range sortedKeys(metricEntries) {
 		if reason, removed := removedConfigKeys[name]; removed {
 			return fmt.Errorf("metrics.%s was %s — remove it", name, reason)
 		}
@@ -237,7 +241,7 @@ func validate(cfg Config) error {
 			}
 			return fmt.Errorf("metrics.%s is not a known metric (known: blast_radius, coverage, cycle, encapsulation, unbalanced_edge)", name)
 		}
-		if err := validateMetricEntry(name, knob, cfg.Metrics[name]); err != nil {
+		if err := validateMetricEntry(name, knob, metricEntries[name]); err != nil {
 			return err
 		}
 	}

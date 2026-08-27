@@ -58,6 +58,7 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 	delta := assessed.Delta
 
 	classifiedEdges := projectRelationshipSummary(in.RelationshipSignals.ClassifiedEdges)
+	graphComplexity := moduleGraphComplexity(in.Policy.Topology.Modules, in.Relationships)
 
 	d := result.Result{
 		SchemaVersion:           result.SchemaVersion,
@@ -78,6 +79,7 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 		AdvisoryTasks:           []result.AdvisoryTask{},
 		ToolCoverage:            coverage,
 		ClassifiedEdges:         classifiedEdges,
+		ModuleGraphComplexity:   graphComplexity,
 		Seams:                   projectSeams(in.RelationshipSignals.Seams),
 		Delta:                   delta,
 		Summary: result.Summary{

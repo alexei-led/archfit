@@ -58,6 +58,16 @@ type DeltaReport struct {
 	TouchedByDelta  []string `json:"touched_by_delta,omitempty"`
 }
 
+// ModuleGraphComplexity is the architecture-level distribution over the
+// declared module graph. It stays internal to assessment; the architecture-state
+// envelope publishes the individual metrics.
+type ModuleGraphComplexity struct {
+	Modules            int
+	MaxDependencyChain int
+	FanInP90           int
+	FanOutP90          int
+}
+
 // ClassifiedEdgeSummary is the assessment distribution over classified relationships.
 type ClassifiedEdgeSummary struct {
 	Total                          int                         `json:"total"`

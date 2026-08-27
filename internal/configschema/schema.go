@@ -15,6 +15,7 @@ import (
 	"github.com/invopop/jsonschema"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 const (
@@ -109,6 +110,12 @@ func Generate(srcDir string) ([]byte, error) {
 	}
 
 	schema := r.Reflect(&config.Config{})
+	// MetricsConfig's ordinary entries are decoded through its custom mixed-map
+	// contract, so no Go field directly references MetricEntry for reflection.
+	// Publish that definition explicitly before the mixed-map patch points at it.
+	metricEntry := r.Reflect(&policy.MetricEntry{})
+	metricEntry.Version, metricEntry.ID = "", ""
+	schema.Definitions["MetricEntry"] = metricEntry
 
 	// Stable identity headers.
 	schema.ID = jsonschema.ID(schemaID)
@@ -149,6 +156,16 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			if gate.Type == typeString && gate.Enum == nil {
 				*gate = *gateModeSchema
 			}
+		}
+		if name == "MetricsConfig" {
+			// Metrics is a mixed public map: one reserved diagnostic integer and
+			// every other key an ordinary object-shaped MetricEntry. A negative
+			// lookahead keeps the generic object schema from also applying to the
+			// reserved scalar.
+			def.PatternProperties = map[string]*jsonschema.Schema{
+				`^(?!function_loc_threshold$).+$`: {Ref: "#/$defs/MetricEntry"},
+			}
+			def.AdditionalProperties = jsonschema.FalseSchema
 		}
 		if name == "CouplingConfig" {
 			// Mirror validate(): clone-only duplicated knowledge has exactly two

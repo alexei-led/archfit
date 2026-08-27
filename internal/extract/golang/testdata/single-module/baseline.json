@@ -24,8 +24,8 @@
     "status": "not_requested"
   },
   "coverage": {
-    "measured": 4,
-    "partial": 3,
+    "measured": 5,
+    "partial": 2,
     "tools": [
       {
         "status": "ok",
@@ -81,7 +81,7 @@
     "active_blockers": 1,
     "attention_dimensions": 2,
     "hard_gates": "fail",
-    "unknown_dimensions": 5
+    "unknown_dimensions": 4
   },
   "dimensions": {
     "change_locality": {
@@ -111,15 +111,51 @@
       ]
     },
     "complexity": {
-      "confidence": "medium",
+      "confidence": "high",
       "coverage": {
-        "basis": "production files in the source walk",
+        "basis": "declared modules with complete dependency-chain and degree values",
         "observed": 2,
         "total": 2
       },
       "findings": [],
       "gate": "pass",
       "metrics": [
+        {
+          "denominator": {
+            "observed": 2,
+            "total": 2
+          },
+          "name": "max_dependency_chain",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 1
+        },
+        {
+          "denominator": {
+            "observed": 2,
+            "total": 2
+          },
+          "name": "module_fan_in_p90",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 1
+        },
+        {
+          "denominator": {
+            "observed": 2,
+            "total": 2
+          },
+          "name": "module_fan_out_p90",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 1
+        },
         {
           "name": "production_files",
           "provenance": [
@@ -146,13 +182,18 @@
         }
       ],
       "name": "complexity",
-      "owner": "syntax+evidence/acquisition",
-      "status": "partial",
+      "owner": "relationship/analysis+syntax+evidence/acquisition",
+      "status": "measured",
       "unknown": [
+        {
+          "fact": "function length distribution",
+          "owner": "syntax+evidence/acquisition",
+          "reason": "ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution"
+        },
         {
           "fact": "cognitive complexity",
           "owner": "syntax+evidence/acquisition",
-          "reason": "v1 ships no cognitive-complexity analyzer; only the size tail is measured"
+          "reason": "no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure"
         }
       ]
     },

@@ -3,7 +3,7 @@
 **Verdict:** BLOCKED
 **Hard gates:** fail — 1 active blocker(s)
 **Attention:** 2 dimension(s) flagged
-**Coverage:** 4 measured / 3 partial / 2 unmeasured (of 9)
+**Coverage:** 5 measured / 2 partial / 2 unmeasured (of 9)
 **Rubric version:** bc_score.v6
 **Config hash:** `0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6`
 
@@ -59,13 +59,17 @@ denominator: none — this dimension measured nothing
 - not measured — eligible commit sample: git history is unavailable or the history scan returned no eligible commit
 - not measured — commit-to-module attribution: the history scan is incomplete, so not every eligible commit has a complete module attribution
 
-### complexity — partial · gate: pass · confidence: medium
-owner: syntax+evidence/acquisition
-denominator: production files in the source walk 2/2
+### complexity — measured · gate: pass · confidence: high
+owner: relationship/analysis+syntax+evidence/acquisition
+denominator: declared modules with complete dependency-chain and degree values 2/2
+- max_dependency_chain: 1 count (2/2)
+- module_fan_in_p90: 1 count (2/2)
+- module_fan_out_p90: 1 count (2/2)
 - production_files: 2 count
 - production_loc: 10 count
 - largest_production_file_loc: 6 count
-- not measured — cognitive complexity: v1 ships no cognitive-complexity analyzer; only the size tail is measured
+- not measured — function length distribution: ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution
+- not measured — cognitive complexity: no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
 
 ### testability — partial · gate: pass · confidence: medium
 owner: syntax/fileclass

@@ -13,6 +13,8 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/policy"
+
+	"github.com/goccy/go-yaml"
 )
 
 func TestLoad_Valid(t *testing.T) {
@@ -632,6 +634,64 @@ func TestForRules(t *testing.T) {
 	}
 }
 
+func TestFunctionLOCThresholdConfig(t *testing.T) {
+	t.Run("absent uses the diagnostic default", func(t *testing.T) {
+		cfg := config.Config{Version: config.SchemaVersion}
+		if got := cfg.Metrics.FunctionLOCThresholdValue(); got != policy.DefaultFunctionLOCThreshold {
+			t.Fatalf("function LOC threshold = %d, want default %d", got, policy.DefaultFunctionLOCThreshold)
+		}
+		if got := cfg.PolicySnapshot().Assessment.FunctionLOCThreshold; got != policy.DefaultFunctionLOCThreshold {
+			t.Fatalf("projected threshold = %d, want default %d", got, policy.DefaultFunctionLOCThreshold)
+		}
+	})
+
+	t.Run("scalar coexists with object metric entries", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\nmetrics:\n  function_loc_threshold: 75\n  cycle:\n    enabled: true\n    gate: fail\n    max_new: 0\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cfg.Metrics.FunctionLOCThresholdValue(); got != 75 {
+			t.Fatalf("function LOC threshold = %d, want 75", got)
+		}
+		if cycle := cfg.ForMetric("cycle"); cycle.Enabled == nil || !*cycle.Enabled || cycle.Gate != "fail" {
+			t.Fatalf("cycle metric entry = %+v, want existing object form preserved", cycle)
+		}
+		if _, reservedEnteredGates := cfg.PolicySnapshot().Gates.Metrics["function_loc_threshold"]; reservedEnteredGates {
+			t.Fatal("function_loc_threshold entered metric gates")
+		}
+
+		encoded, err := yaml.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("marshal config: %v", err)
+		}
+		roundTrip, err := loadConfigInline(t, string(encoded))
+		if err != nil {
+			t.Fatalf("round-trip config: %v\n%s", err, encoded)
+		}
+		if roundTrip.Metrics.FunctionLOCThresholdValue() != 75 || roundTrip.ForMetric("cycle").Gate != "fail" {
+			t.Fatalf("round-trip metrics = %+v", roundTrip.Metrics)
+		}
+	})
+
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "zero", value: "0", want: "positive integer"},
+		{name: "negative", value: "-1", want: "positive integer"},
+		{name: "fraction", value: "1.5", want: "must be an integer"},
+		{name: "object", value: "{ threshold: 60 }", want: "must be an integer"},
+	} {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
+			_, err := loadConfigInline(t, "version: 2\nmetrics:\n  function_loc_threshold: "+tc.value+"\n")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestForMetric(t *testing.T) {
 	cfg, err := config.Load(context.Background(), "testdata/valid.yaml")
 	if err != nil {
@@ -858,13 +918,18 @@ func TestForPatterns(t *testing.T) {
 // loadInline writes body to a temp config file and loads it, returning the error.
 func loadInline(t *testing.T, body string) error {
 	t.Helper()
+	_, err := loadConfigInline(t, body)
+	return err
+}
+
+func loadConfigInline(t *testing.T, body string) (config.Config, error) {
+	t.Helper()
 	dir := t.TempDir()
 	p := filepath.Join(dir, ".archfit.yaml")
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := config.Load(context.Background(), p)
-	return err
+	return config.Load(context.Background(), p)
 }
 
 func TestLoad_ExternalSystems(t *testing.T) {

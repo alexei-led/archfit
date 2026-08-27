@@ -109,15 +109,17 @@ const (
 // Evidence owners for each dimension. Every dimension names the capability that
 // produces its facts; an envelope with no owner cannot be measured by anyone.
 const (
-	OwnerIntent         = "policy+assessment/evaluation"
-	OwnerStructure      = "relationship/facts"
-	OwnerModularity     = "assessment/metrics"
-	OwnerCoupling       = "relationship/analysis"
-	OwnerChangeLocality = "history/git"
-	OwnerComplexity     = "syntax+evidence/acquisition"
-	OwnerTestability    = "syntax/fileclass"
-	OwnerOperations     = "policy+evidence/acquisition"
-	OwnerDrift          = "assessment/decision"
+	OwnerIntent          = "policy+assessment/evaluation"
+	OwnerStructure       = "relationship/facts"
+	OwnerModularity      = "assessment/metrics"
+	OwnerCoupling        = "relationship/analysis"
+	OwnerChangeLocality  = "history/git"
+	OwnerComplexity      = "relationship/analysis+syntax+evidence/acquisition"
+	OwnerComplexityGraph = "relationship/analysis"
+	OwnerComplexitySize  = "syntax+evidence/acquisition"
+	OwnerTestability     = "syntax/fileclass"
+	OwnerOperations      = "policy+evidence/acquisition"
+	OwnerDrift           = "assessment/decision"
 )
 
 // MetricDenominator is the observed-over-total coverage of one metric. It makes
@@ -253,13 +255,13 @@ func RequiredFacts(dimension string) []RequiredFact {
 		}
 	case DimensionComplexity:
 		return []RequiredFact{
-			required(FactDeclaredModuleGraph, OwnerComplexity),
-			required(FactDependencyChainDepth, OwnerComplexity),
-			required(FactModuleFanInDistribution, OwnerComplexity),
-			required(FactModuleFanOutDistribution, OwnerComplexity),
-			outOfClaim(FactCodeSizeTail, OwnerComplexity),
-			outOfClaim(FactFunctionLengthDistribution, OwnerComplexity),
-			outOfClaim(FactCognitiveComplexity, OwnerComplexity),
+			required(FactDeclaredModuleGraph, OwnerComplexityGraph),
+			required(FactDependencyChainDepth, OwnerComplexityGraph),
+			required(FactModuleFanInDistribution, OwnerComplexityGraph),
+			required(FactModuleFanOutDistribution, OwnerComplexityGraph),
+			outOfClaim(FactCodeSizeTail, OwnerComplexitySize),
+			outOfClaim(FactFunctionLengthDistribution, OwnerComplexitySize),
+			outOfClaim(FactCognitiveComplexity, OwnerComplexitySize),
 		}
 	case DimensionTestability:
 		return []RequiredFact{

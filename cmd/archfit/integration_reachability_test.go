@@ -34,12 +34,6 @@ type reachabilityRemedy struct {
 }
 
 var reachabilityRemedies = map[string]reachabilityRemedy{
-	report.DimensionComplexity: {
-		OutcomeClass: reachabilityTemporaryOutcome,
-		Symbol:       "complexityDimension",
-		RemedyClass:  reachabilityNewCollectorRemedy,
-		Remedy:       "Task 7 must collect complete module-graph depth, fan-in, and fan-out facts",
-	},
 	report.DimensionTestability: {
 		OutcomeClass: reachabilityTemporaryOutcome,
 		Symbol:       "testabilityDimension",
@@ -93,6 +87,7 @@ func testIntegrationReachabilityBaselineTransition(t *testing.T) {
 			state.Dimensions.Drift.Status, state.Dimensions.Drift.Unknown, state.Dimensions.Drift.Delta)
 	}
 	assertReachabilityOperations(t, state.Dimensions.Operations)
+	assertReachabilityComplexity(t, state.Dimensions.Complexity)
 	for _, unknown := range state.Dimensions.Drift.Unknown {
 		if strings.Contains(strings.ToLower(unknown.Reason), "comparable") {
 			t.Errorf("post-baseline drift still reports a comparability blocker: %+v", unknown)
@@ -402,6 +397,24 @@ func assertReachabilityEnvelope(t *testing.T, data []byte) {
 	sort.Strings(got)
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("JSON root keys = %v, want %v", got, want)
+	}
+}
+
+func assertReachabilityComplexity(t *testing.T, complexity report.DimensionState) {
+	t.Helper()
+	if complexity.Status != report.MeasurementMeasured {
+		t.Fatalf("complexity status = %q, want measured from the complete fixture module graph; unknown=%+v", complexity.Status, complexity.Unknown)
+	}
+	metrics := make(map[string]float64, len(complexity.Metrics))
+	for _, metric := range complexity.Metrics {
+		metrics[metric.Name] = metric.Value
+	}
+	for name, want := range map[string]float64{
+		"max_dependency_chain": 1, "module_fan_in_p90": 1, "module_fan_out_p90": 1,
+	} {
+		if got, found := metrics[name]; !found || got != want {
+			t.Errorf("complexity metric %q = %v (found=%t), want %v", name, got, found, want)
+		}
 	}
 }
 

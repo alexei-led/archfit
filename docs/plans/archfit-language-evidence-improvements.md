@@ -1058,10 +1058,10 @@ Rollback: single commit revert.
 
 ### Task 7: Give `complexity` an architecture-level claim
 
-- [ ] State the architecture claim in the contract (Task 1) before coding
-- [ ] Promote on module-graph complexity: dependency-chain depth and degree tail
-- [ ] Publish function-size distribution as an out-of-claim diagnostic
-- [ ] Promote via `Promote`
+- [x] State the architecture claim in the contract (Task 1) before coding
+- [x] Promote on module-graph complexity: dependency-chain depth and degree tail
+- [x] Publish function-size distribution as an out-of-claim diagnostic
+- [x] Promote via `Promote`
 
 Justification: `complexityDimension` publishes file LOC only. Two native facts
 are already available: module-graph shape from existing relationship facts, and

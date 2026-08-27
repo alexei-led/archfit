@@ -14,8 +14,8 @@
           "status": "not_requested"
         },
         "coverage": {
-          "measured": 4,
-          "partial": 3,
+          "measured": 5,
+          "partial": 2,
           "tools": [
             {
               "status": "ok",
@@ -71,7 +71,7 @@
           "active_blockers": 1,
           "attention_dimensions": 2,
           "hard_gates": "fail",
-          "unknown_dimensions": 5
+          "unknown_dimensions": 4
         },
         "dimensions": [
           {
@@ -140,17 +140,17 @@
             "unknown": 2
           },
           {
-            "confidence": "medium",
+            "confidence": "high",
             "coverage": {
-              "basis": "production files in the source walk",
+              "basis": "declared modules with complete dependency-chain and degree values",
               "observed": 2,
               "total": 2
             },
             "gate": "pass",
             "name": "complexity",
-            "owner": "syntax+evidence/acquisition",
-            "status": "partial",
-            "unknown": 1
+            "owner": "relationship/analysis+syntax+evidence/acquisition",
+            "status": "measured",
+            "unknown": 2
           },
           {
             "confidence": "medium",

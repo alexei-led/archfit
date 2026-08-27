@@ -1,8 +1,13 @@
 package config
 
 import (
+	"fmt"
+	"strconv"
+
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/policy"
+
+	"github.com/goccy/go-yaml"
 )
 
 // ToolMode is the public config lifecycle view of a tool enable state.
@@ -36,8 +41,85 @@ func ModuleRootDirs(modules map[string]ModuleDef) map[string]string {
 	return policy.ModuleRootDirs(modules)
 }
 
-// MetricsConfig holds settings for all metrics, keyed by metric name.
-type MetricsConfig map[string]policy.MetricEntry
+// MetricsConfig holds gate settings for computed metrics plus diagnostic-only
+// complexity settings. Entries stays inline so existing object-shaped metric
+// YAML keeps its public form, while function_loc_threshold is the one reserved
+// scalar in the same block.
+type MetricsConfig struct {
+	FunctionLOCThreshold *int                          `yaml:"function_loc_threshold,omitempty" jsonschema:"minimum=1,default=60"`
+	Entries              map[string]policy.MetricEntry `yaml:"-"`
+}
+
+// UnmarshalYAML decodes the one reserved scalar separately from ordinary
+// object-shaped metric entries. Re-decoding each object with strict mode keeps
+// unknown fields loud even though the outer key set is intentionally dynamic.
+func (m *MetricsConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	var raw map[string]any
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+	m.FunctionLOCThreshold = nil
+	m.Entries = make(map[string]policy.MetricEntry, len(raw))
+	for name, value := range raw {
+		if name == "function_loc_threshold" {
+			var threshold int
+			switch number := value.(type) {
+			case uint64:
+				if strconv.IntSize == 32 && number > uint64(^uint32(0)>>1) {
+					return fmt.Errorf("metrics.function_loc_threshold must be an integer in range (got %d)", number)
+				}
+				if strconv.IntSize == 64 && number > ^uint64(0)>>1 {
+					return fmt.Errorf("metrics.function_loc_threshold must be an integer in range (got %d)", number)
+				}
+				threshold = int(number) //nolint:gosec // range checked for the platform int size above
+			case int64:
+				if strconv.IntSize == 32 && (number < int64(-1<<31) || number > int64(1<<31-1)) {
+					return fmt.Errorf("metrics.function_loc_threshold must be an integer in range (got %d)", number)
+				}
+				threshold = int(number)
+			default:
+				return fmt.Errorf("metrics.function_loc_threshold must be an integer (got %T)", value)
+			}
+			m.FunctionLOCThreshold = &threshold
+			continue
+		}
+		encoded, err := yaml.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("metrics.%s: encode value: %w", name, err)
+		}
+		var entry policy.MetricEntry
+		if err := yaml.UnmarshalWithOptions(encoded, &entry, yaml.DisallowUnknownField()); err != nil {
+			return fmt.Errorf("metrics.%s: %w", name, err)
+		}
+		m.Entries[name] = entry
+	}
+	return nil
+}
+
+// MarshalYAML preserves the public mixed map shape for config rewrite paths.
+func (m MetricsConfig) MarshalYAML() (any, error) {
+	out := make(map[string]any, len(m.Entries)+1)
+	for name, entry := range m.Entries {
+		out[name] = entry
+	}
+	if m.FunctionLOCThreshold != nil {
+		out["function_loc_threshold"] = *m.FunctionLOCThreshold
+	}
+	return out, nil
+}
+
+// MetricEntries returns only computed-metric gate configuration. The reserved
+// function-size diagnostic threshold never enters metric evaluation or gates.
+func (m MetricsConfig) MetricEntries() map[string]policy.MetricEntry { return m.Entries }
+
+// FunctionLOCThresholdValue returns the configured function-size tail threshold.
+// The setting is diagnostic only; its absent value is the published default.
+func (m MetricsConfig) FunctionLOCThresholdValue() int {
+	if m.FunctionLOCThreshold == nil {
+		return policy.DefaultFunctionLOCThreshold
+	}
+	return *m.FunctionLOCThreshold
+}
 
 // ModuleReviewConfig configures staleness gating of the module declarations:
 // archfit warns (or fails) when a module's `reviewed_at` is older than

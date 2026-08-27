@@ -271,7 +271,11 @@ observed zero depths and degrees.
 all declared modules.
 
 **In-claim:** The complete declared module graph and its chain-depth and degree
-distributions.
+distributions. Dependency-chain depth is the longest path in dependency edges
+through the graph's strongly connected component (SCC) condensation DAG. An
+edgeless graph has depth zero, edges inside one SCC add no depth, and an edge
+between SCCs adds one; cycle severity remains owned by the existing cycle
+evidence.
 
 **Out-of-claim:** File LOC, function/method length distributions, and cognitive
 complexity. Size tails locate code hotspots but one large function does not

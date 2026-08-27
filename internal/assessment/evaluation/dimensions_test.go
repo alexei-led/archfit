@@ -42,6 +42,7 @@ func dimensionsFixture() (*result.Result, evaluation.StateInput) {
 			{Name: metricEncapsulation, Value: 0, Band: bandNA, Confidence: volLow, Version: "encapsulation.v3", Mode: "ratio"},
 			{Name: "coverage", Value: 1, Band: "strong", Confidence: confHigh, Version: "coverage.v1", Mode: "ratio"},
 		},
+		ModuleGraphComplexity: &result.ModuleGraphComplexity{Modules: 2, MaxDependencyChain: 1, FanInP90: 1, FanOutP90: 1},
 		ClassifiedEdges: &result.ClassifiedEdgeSummary{
 			Total: 20, Scored: 10, Abstained: 2, SameModule: 3, External: 5, ConnectedModules: 2,
 			DependencyEdges: 20, InternalDependencies: 15, ClassifiedInternalDependencies: 15,
@@ -106,7 +107,7 @@ func TestDimensionStatuses(t *testing.T) {
 				state.DimensionModularity:     state.Measured,
 				state.DimensionCoupling:       state.Partial,
 				state.DimensionChangeLocality: state.Measured,
-				state.DimensionComplexity:     state.Partial,
+				state.DimensionComplexity:     state.Measured,
 				state.DimensionTestability:    state.Partial,
 				state.DimensionOperations:     state.Measured,
 				state.DimensionDrift:          state.Unmeasured,

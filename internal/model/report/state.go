@@ -102,7 +102,7 @@ const (
 	OwnerModularity     = "assessment/metrics"
 	OwnerCoupling       = "relationship/analysis"
 	OwnerChangeLocality = "history/git"
-	OwnerComplexity     = "syntax+evidence/acquisition"
+	OwnerComplexity     = "relationship/analysis+syntax+evidence/acquisition"
 	OwnerTestability    = "syntax/fileclass"
 	OwnerOperations     = "policy+evidence/acquisition"
 	OwnerDrift          = "assessment/decision"

@@ -3,7 +3,7 @@
 - **Verdict:** BLOCKED
 - **Blocking:** 1 active — hard gates: fail
 - **Attention:** 2 dimension(s) flagged — 1 diagnostic(s)
-- **Coverage:** 4 measured / 3 partial / 2 unmeasured (of 9)
+- **Coverage:** 5 measured / 2 partial / 2 unmeasured (of 9)
 
 ## Dimensions
 
@@ -14,7 +14,7 @@
 | modularity | measured | pass | low | declared modules with a declared public surface 0/2 | 0 |
 | coupling | measured | warn | high | cross-boundary edges scored 1/1 | 1 |
 | change_locality | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
-| complexity | partial | pass | medium | production files in the source walk 2/2 | 0 |
+| complexity | measured | pass | high | declared modules with complete dependency-chain and degree values 2/2 | 0 |
 | testability | partial | pass | medium | classified source files 2/2 | 0 |
 | operations | partial | pass | medium | declared modules with a corroborated deploy unit and qualifying owner 0/2 | 0 |
 | drift | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
@@ -56,12 +56,13 @@
 - **Status:** not_requested
 - **Reference:** none
 
-## Not measured (11)
+## Not measured (12)
 
 - **modularity — inferred public surface** (owner: assessment/metrics): no declared module states a public surface, so inferring one is outside this claim
 - **change_locality — eligible commit sample** (owner: history/git): git history is unavailable or the history scan returned no eligible commit
 - **change_locality — commit-to-module attribution** (owner: history/git): the history scan is incomplete, so not every eligible commit has a complete module attribution
-- **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): v1 ships no cognitive-complexity analyzer; only the size tail is measured
+- **complexity — function length distribution** (owner: syntax+evidence/acquisition): ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution
+- **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
 - **testability — executed test coverage** (owner: syntax/fileclass): v1 does not run a target repository's test suite; supplied coverage is not yet an input
 - **testability — boundary test coverage** (owner: syntax/fileclass): which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
 - **operations — corroborated deploy unit** (owner: policy+evidence/acquisition): one or more declared modules have no independently corroborating deploy manifest

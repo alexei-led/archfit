@@ -75,6 +75,9 @@ type Result struct {
 	// hashes are: it reaches the wire through the architecture-state contract.
 	Comparison      *StateComparison       `json:"-"`
 	ClassifiedEdges *ClassifiedEdgeSummary `json:"classified_edges,omitempty"`
+	// ModuleGraphComplexity is an assessment-internal summary of the relationship
+	// graph. The architecture-state complexity envelope is its only wire form.
+	ModuleGraphComplexity *ModuleGraphComplexity `json:"-"`
 	// Seams is the logical coupling seam ledger, one record per ordered module
 	// pair. It is `json:"-"` for the same reason State is: the diagnostic
 	// schema is frozen, and the seam ledger reaches the wire through the

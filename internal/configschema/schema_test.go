@@ -9,6 +9,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/configschema"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 // schemaFile is the committed schema path, relative to the repo root.
@@ -55,11 +56,14 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 	}
 	var schema struct {
 		Defs map[string]struct {
-			Required   []string         `json:"required"`
-			AnyOf      []map[string]any `json:"anyOf"`
-			Properties map[string]struct {
+			Required             []string                  `json:"required"`
+			AnyOf                []map[string]any          `json:"anyOf"`
+			PatternProperties    map[string]map[string]any `json:"patternProperties"`
+			AdditionalProperties any                       `json:"additionalProperties"`
+			Properties           map[string]struct {
 				Enum    []any       `json:"enum"`
 				Minimum json.Number `json:"minimum"`
+				Default any         `json:"default"`
 			} `json:"properties"`
 		} `json:"$defs"`
 		Properties map[string]struct {
@@ -68,6 +72,25 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 	}
 	if err := json.Unmarshal(got, &schema); err != nil {
 		t.Fatalf("unmarshal generated schema: %v", err)
+	}
+
+	if _, ok := schema.Defs["MetricEntry"]; !ok {
+		t.Fatal("MetricEntry definition missing from generated schema")
+	}
+	metricsDef, ok := schema.Defs["MetricsConfig"]
+	if !ok {
+		t.Fatal("MetricsConfig definition missing from generated schema")
+	}
+	threshold := metricsDef.Properties["function_loc_threshold"]
+	if threshold.Minimum != "1" || threshold.Default != float64(policy.DefaultFunctionLOCThreshold) {
+		t.Errorf("function_loc_threshold schema = %+v, want minimum 1 and default %d", threshold, policy.DefaultFunctionLOCThreshold)
+	}
+	ordinary, ok := metricsDef.PatternProperties[`^(?!function_loc_threshold$).+$`]
+	if !ok || ordinary["$ref"] != "#/$defs/MetricEntry" {
+		t.Errorf("MetricsConfig.patternProperties = %+v, want ordinary keys to reference MetricEntry", metricsDef.PatternProperties)
+	}
+	if metricsDef.AdditionalProperties != false {
+		t.Errorf("MetricsConfig.additionalProperties = %#v, want false", metricsDef.AdditionalProperties)
 	}
 
 	ruleDef, ok := schema.Defs["RuleDef"]

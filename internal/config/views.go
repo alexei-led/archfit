@@ -179,10 +179,7 @@ func (c Config) ForRules() policy.RuleConfig {
 // configured — the metric stays enabled; only an explicit `enabled: false`
 // disables it (Enabled is *bool, nil means default-on; see metrics.New).
 func (c Config) ForMetric(name string) policy.MetricConfig {
-	if c.Metrics == nil {
-		return policy.MetricConfig{}
-	}
-	return c.Metrics[name]
+	return c.Metrics.MetricEntries()[name]
 }
 
 // ForWaivers returns the WaiverSet view consumed by the status stage.

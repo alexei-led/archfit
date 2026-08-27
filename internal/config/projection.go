@@ -35,7 +35,10 @@ func (c Config) PolicySnapshot() policy.PolicySnapshot {
 	topology := policy.TopologyView{Modules: c.Modules, Layers: c.Layers, ModuleMap: policy.BuildModuleMap(c.Modules), ExternalSystems: c.ExternalSystems, ExplicitOwners: c.ExplicitOwnersView()}
 	relationship := policy.RelationshipPolicy{MinimumSeverity: c.Coupling.MinSeverity, VolatilityCascadeEnabled: c.Coupling.VolatilityCascade, DuplicatedKnowledge: policy.NormalizeDuplicatedKnowledgePolicy(c.Coupling.DuplicatedKnowledge)}
 	stale := c.ForStaleness()
-	assessment := policy.AssessmentPolicy{Waivers: c.ForWaivers(), Staleness: policy.StalenessPolicy{Enabled: stale.Enabled, Threshold: stale.Threshold}}
+	assessment := policy.AssessmentPolicy{
+		Waivers: c.ForWaivers(), Staleness: policy.StalenessPolicy{Enabled: stale.Enabled, Threshold: stale.Threshold},
+		FunctionLOCThreshold: c.Metrics.FunctionLOCThresholdValue(),
+	}
 	gate := policy.CouplingGate{Mode: policy.DistributedMonolithWarn}
 	if g := c.Coupling.Gate; g != nil && g.DistributedMonolith != nil {
 		if m := g.DistributedMonolith.Mode; m != "" {
@@ -45,7 +48,7 @@ func (c Config) PolicySnapshot() policy.PolicySnapshot {
 			gate.MaxNewSeams = *n
 		}
 	}
-	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: c.ForRules(), Metrics: c.Metrics, Coupling: gate, ModuleReview: policy.GateMode(c.ModuleReview.Gate)}, owners, deployUnits)
+	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: c.ForRules(), Metrics: c.Metrics.MetricEntries(), Coupling: gate, ModuleReview: policy.GateMode(c.ModuleReview.Gate)}, owners, deployUnits)
 }
 
 // CoverageOptions projects analyzer gates and applicability probes. Every probe

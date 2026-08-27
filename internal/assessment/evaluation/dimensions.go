@@ -42,9 +42,9 @@ const gateOffPosture = gateOff
 // projection of a policy declaration, a relationship classification, a computed
 // metric, a file-class walk, an acquisition coverage row, or git history.
 //
-// Where an in-claim fact has no collector — architecture graph complexity,
-// supplied test coverage, or a comparable persisted baseline — the envelope
-// reports partial or unmeasured and names the missing fact. Out-of-claim facts,
+// Where an in-claim fact has no collector — supplied test coverage or a
+// comparable persisted baseline — the envelope reports partial or unmeasured
+// and names the missing fact. Out-of-claim facts,
 // such as observed runtime topology, remain explicit disclosures without
 // blocking a complete declared-topology claim.
 func buildDimensions(diag *result.Result, in stateInput, routed map[string][]state.FindingRef) state.Dimensions {
@@ -54,7 +54,7 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 		Modularity:     modularityDimension(diag, in.Policy),
 		Coupling:       couplingDimension(diag),
 		ChangeLocality: changeLocalityDimension(diag, in.Policy),
-		Complexity:     complexityDimension(in.Facts),
+		Complexity:     complexityDimension(diag, in.Policy, in.Facts),
 		Testability:    testabilityDimension(in.Facts),
 		Operations:     operationsDimension(diag, in.Policy, in.Facts, in.RequiredToolFailure),
 		Drift:          driftDimension(diag, in.Drift),
@@ -533,44 +533,113 @@ func changeLocalityDimension(diag *result.Result, p policy.PolicySnapshot) state
 	return dim
 }
 
-// complexityDimension reports code size over production files. It is always
-// partial in v1: cognitive complexity has no collector, so the envelope carries
-// the size tail and names what is missing rather than implying the tail is the
-// whole answer.
-func complexityDimension(f Observations) state.Dimension {
+// complexityDimension promotes only on the complete declared module graph.
+// File and function size tails remain out-of-claim diagnostics: they may be
+// absent while module-graph complexity is measured, and they never move status.
+func complexityDimension(diag *result.Result, p policy.PolicySnapshot, f Observations) state.Dimension {
 	dim := state.NewDimension(state.DimensionComplexity, state.OwnerComplexity)
-	if len(f.FileLOC) == 0 {
-		return unmeasured(dim, state.UnknownFact{
-			Fact:   "code size and complexity",
-			Reason: "the source walk produced no file, so there is nothing to measure size or complexity over",
-			Owner:  state.OwnerComplexity,
-		})
+	reasons := map[string]string{
+		state.FactDeclaredModuleGraph:      "no declared module graph was assembled over the production-source module set",
+		state.FactDependencyChainDepth:     "dependency-chain depth is incomplete because the module dependency graph is incomplete",
+		state.FactModuleFanInDistribution:  "the module fan-in distribution is incomplete because the module dependency graph is incomplete",
+		state.FactModuleFanOutDistribution: "the module fan-out distribution is incomplete because the module dependency graph is incomplete",
 	}
-	production, productionLOC, largest := 0, 0, 0
+
+	productionModules := make(map[string]struct{})
+	productionFiles, productionLOC, largest := 0, 0, 0
 	for file, loc := range f.FileLOC {
 		if !fileclass.IsProduction(classOf(f.FileClassIndex, file)) {
 			continue
 		}
-		production++
+		productionFiles++
 		productionLOC += loc
-		if loc > largest {
-			largest = loc
+		largest = max(largest, loc)
+		if module, ok := p.Topology.ModuleMap.ModuleForFile(file); ok {
+			productionModules[module] = struct{}{}
 		}
 	}
-	dim.Status = state.Partial
-	dim.Coverage = state.Coverage{Basis: "production files in the source walk", Observed: production, Total: len(f.FileLOC)}
-	dim.Metrics = []state.MetricValue{
-		count("production_files", production, provFileClass),
-		count("production_loc", productionLOC, provFileClass),
-		count("largest_production_file_loc", largest, provFileClass),
+	if len(productionModules) == 0 {
+		reasons[state.FactDeclaredModuleGraph] = "no declared module contains production source, so architecture-level complexity does not apply"
+		applyPromotion(&dim, nil, nil, reasons)
+		appendComplexityDiagnostics(&dim, f, p.Assessment.FunctionLOCThreshold, productionFiles, productionLOC, largest)
+		return dim
 	}
+
+	observed := make([]string, 0, 4)
+	graph := diag.ModuleGraphComplexity
+	if graph != nil && graph.Modules == len(p.Topology.Modules) {
+		// The declared module denominator is known even when one dependency
+		// producer is incomplete. That makes the result partial rather than
+		// letting out-of-claim syntax facts promote an absent graph.
+		observed = append(observed, state.FactDeclaredModuleGraph)
+	}
+	primaries := primaryDependencyInventory(diag)
+	edges := diag.ClassifiedEdges
+	graphComplete := graph != nil && primaries.complete() && edges != nil &&
+		edges.ClassifiedInternalDependencies == edges.InternalDependencies &&
+		edges.AttributedFirstPartyNodes == edges.FirstPartyNodes
+	if graphComplete {
+		observed = append(observed,
+			state.FactDependencyChainDepth,
+			state.FactModuleFanInDistribution,
+			state.FactModuleFanOutDistribution,
+		)
+	}
+	applyPromotion(&dim, observed, nil, reasons)
+
+	totalModules := len(p.Topology.Modules)
+	observedModules := 0
+	if graphComplete {
+		observedModules = totalModules
+	}
+	dim.Coverage = state.Coverage{
+		Basis:    "declared modules with complete dependency-chain and degree values",
+		Observed: observedModules, Total: totalModules,
+	}
+	if graphComplete {
+		denominator := &state.MetricDenominator{Observed: totalModules, Total: totalModules}
+		dim.Metrics = append(dim.Metrics,
+			state.MetricValue{Name: "max_dependency_chain", Value: float64(graph.MaxDependencyChain), Unit: unitCount, Denominator: denominator, Provenance: []string{provRelationship}},
+			state.MetricValue{Name: "module_fan_in_p90", Value: float64(graph.FanInP90), Unit: unitCount, Denominator: denominator, Provenance: []string{provRelationship}},
+			state.MetricValue{Name: "module_fan_out_p90", Value: float64(graph.FanOutP90), Unit: unitCount, Denominator: denominator, Provenance: []string{provRelationship}},
+		)
+	}
+	appendComplexityDiagnostics(&dim, f, p.Assessment.FunctionLOCThreshold, productionFiles, productionLOC, largest)
 	dim.Confidence = state.ConfidenceFor(dim.Status)
-	dim.Unknown = []state.UnknownFact{{
-		Fact:   "cognitive complexity",
-		Reason: "v1 ships no cognitive-complexity analyzer; only the size tail is measured",
-		Owner:  state.OwnerComplexity,
-	}}
 	return dim
+}
+
+func appendComplexityDiagnostics(dim *state.Dimension, f Observations, threshold, productionFiles, productionLOC, largest int) {
+	if len(f.FileLOC) > 0 {
+		dim.Metrics = append(dim.Metrics,
+			count("production_files", productionFiles, provFileClass),
+			count("production_loc", productionLOC, provFileClass),
+			count("largest_production_file_loc", largest, provFileClass),
+		)
+	} else {
+		dim.Unknown = append(dim.Unknown, state.UnknownFact{
+			Fact: state.FactCodeSizeTail, Reason: "the source walk produced no file, so the out-of-claim file-size tail is unavailable", Owner: state.OwnerComplexitySize,
+		})
+	}
+
+	functions := functionLengthDistribution(f.SyntaxFacts, threshold)
+	if functions.Observed > 0 {
+		denominator := &state.MetricDenominator{Observed: functions.Observed, Total: functions.Total}
+		dim.Metrics = append(dim.Metrics,
+			state.MetricValue{Name: "function_loc_p50", Value: float64(functions.P50), Unit: unitCount, Denominator: denominator, Provenance: []string{provAcquisition}},
+			state.MetricValue{Name: "function_loc_p90", Value: float64(functions.P90), Unit: unitCount, Denominator: denominator, Provenance: []string{provAcquisition}},
+			state.MetricValue{Name: "function_loc_max", Value: float64(functions.Max), Unit: unitCount, Denominator: denominator, Provenance: []string{provAcquisition}},
+			state.MetricValue{Name: "functions_over_threshold", Value: float64(functions.OverThreshold), Unit: unitCount, Denominator: denominator, Provenance: []string{provAcquisition}},
+		)
+	}
+	if functions.Observed < functions.Total || functions.Total == 0 {
+		dim.Unknown = append(dim.Unknown, state.UnknownFact{
+			Fact: state.FactFunctionLengthDistribution, Reason: "ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution", Owner: state.OwnerComplexitySize,
+		})
+	}
+	dim.Unknown = append(dim.Unknown, state.UnknownFact{
+		Fact: state.FactCognitiveComplexity, Reason: "no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure", Owner: state.OwnerComplexitySize,
+	})
 }
 
 // testabilityDimension reports the static test-to-production file split. It is
