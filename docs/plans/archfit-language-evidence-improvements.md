@@ -1120,33 +1120,29 @@ go test ./internal/factcache/ ./internal/config/ -count=1
 ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 make build
-.bin/archfit analyze --config .archfit.yaml --json > /tmp/t7.json
-# Self-contained: capture the reference from HEAD~1 in this same task rather
-# than reusing a /tmp file another task wrote. Review round 5 found the old
-# cross-task /tmp/c1.json dependency could be stale or absent and produce a
-# false byte-identity pass.
-git stash --include-untracked --quiet
-make build && # Compare HEAD vs. task-modified binaries analyzing the same fixed fixture,
-# not the same binary analyzing a modified source tree. The task adds Go files,
-# which changes file counts in the analysis output — we want to test that
-# coverage.enabled:false gives identical behavior, not that file counts don't
-# change.
-make build  # task-modified binary
+# Round 6 Fusion found that comparing a modified source tree before/after is
+# invalid: the task adds Go files that change LOC/file-count metrics in the
+# analysis output. Replace with: build HEAD binary, build task binary, analyze
+# the same fixed fixture with both. This tests binary compatibility, not
+# source-tree-before-after.
+make build  # task-modified binary → .bin/archfit
 TASK_BIN=".bin/archfit"
-# Build the HEAD version (before edits) in a separate temp binary
-HEAD_SHA=$(git rev-parse HEAD)
-git show "$HEAD_SHA:.bin/archfit" > /tmp/archfit-head-8 2>/dev/null || \
-  { git show "$HEAD_SHA:Makefile" > /tmp/Makefile-head && 
-    (cd /tmp && make -f /tmp/Makefile-head build && cp .bin/archfit /tmp/archfit-head-8); }
-HEAD_BIN="/tmp/archfit-head-8"
+# Capture the HEAD version before any editing
+HEAD_BINARY=$(git show HEAD:.bin/archfit > /tmp/archfit-head-8 2>/dev/null || \
+  { git show HEAD:Makefile > /tmp/Makefile-head && \
+    (cd /tmp && make -f /tmp/Makefile-head build && cp .bin/archfit /tmp/archfit-head-8); } && 
+  echo "/tmp/archfit-head-8")
+test -x "$HEAD_BINARY" || { echo "Failed to build HEAD binary"; exit 1; }
 
-# Use the materializeFixture-created repo (persisted baseline already set)
+# Use the materializeFixture-created repo (persisted baseline already set).
+# Verify that analyzing with HEAD binary vs. task-modified binary over the same
+# fixture gives identical output when coverage.enabled is false.
 go test ./cmd/archfit/ -run 'TestTaskEightFixture' -v -count=1 \
-  -fixture-dir /tmp/archfit-fixture \
-  -old-binary "$HEAD_BIN" \
-  -new-binary "$TASK_BIN" \
-  | grep -q "COVERAGE DISABLED UNCHANGED OK" && echo "NO-OP WHEN DISABLED OK" || exit 1
-make lint && make archfit
+  -fixture-repo=/tmp/archfit-fixture \
+  -old-binary="$HEAD_BINARY" \
+  -new-binary="$TASK_BIN" \
+  -expect-identical-output 2>&1 | grep -q "NO-OP WHEN DISABLED OK" || exit 1
+make lint
 ```
 
 Manual checks: read `normalize.go` and confirm no branch discards an unmapped
@@ -1326,26 +1322,27 @@ go test ./internal/assessment/evaluation/ -run 'TestTestability' -count=1 -v
 make test
 make build
 
-# 1. Disabled path is unchanged (coverage.enabled defaults false).
-#    Do not compare before/after on a source tree modified by this task, as the
-#    analyzed file counts change. Instead, build the HEAD binary, then build the
-#    task-modified binary, and analyze the same fixed fixture with both.
-make build  # HEAD binary → .bin/archfit
-HEAD_BIN="/tmp/archfit-head-10"
-cp .bin/archfit "$HEAD_BIN"
-make build  # task-modified binary → .bin/archfit
+# 1. Disabled path unchanged (coverage.enabled defaults false).
+#    Do not compare modified source tree before/after; the task adds test files,
+#    which change file counts in the analysis. Instead: build HEAD and task
+#    binaries, analyze the same fixture with both. This tests binary compat.
+make build  # task-modified binary
 TASK_BIN=".bin/archfit"
+HEAD_BINARY=$(git show HEAD:.bin/archfit > /tmp/archfit-head-10 2>/dev/null || \
+  { git show HEAD:Makefile > /tmp/Makefile-head-10 && \
+    (cd /tmp && make -f /tmp/Makefile-head-10 build && cp .bin/archfit /tmp/archfit-head-10); } && 
+  echo "/tmp/archfit-head-10")
+test -x "$HEAD_BINARY" || { echo "Failed to build HEAD binary"; exit 1; }
 
-# Use the same fixture directory (from materializeFixture, already persisted baseline)
-go test ./cmd/archfit/ -run 'TestTaskTenFixture' -v -count=1 \
-  -fixture-dir /tmp/archfit-fixture \
-  -old-binary "$HEAD_BIN" \
-  -new-binary "$TASK_BIN" — \
-  echo "COVERAGE INGESTION DISABLED UNCHANGED OK" || exit 1
+# Verify HEAD and task binaries agree on the fixture when coverage is disabled.
+go test ./cmd/archfit/ -run 'TestTaskTenCoverageDisabled' -v -count=1 \
+  -fixture-repo=/tmp/archfit-fixture \
+  -old-binary="$HEAD_BINARY" \
+  -new-binary="$TASK_BIN" \
+  -expect-identical-when-disabled 2>&1 | grep -q "COVERAGE INGESTION DISABLED UNCHANGED OK" || exit 1
 
-# 2. Enabled path runs through the Task 3 fixture helper, which owns the temp
-#    repo, the rendered config with coverage.enabled: true, the generated
-#    coverage.out, and the matching coverage.out.ref. There is no ad-hoc
+# 2. Enabled path: Task 3's materializeFixture with coverage (Task 10 fixture).
+#    Covers the full file-to-module mapping and freshness check path. No ad-hoc
 #    /tmp config: an earlier revision referenced /tmp/archfit-cov.yaml that no
 #    task created, which would have stopped an executor here.
 go test ./cmd/archfit/ -run 'IntegrationReachability/testability_measured' -count=1 -v
