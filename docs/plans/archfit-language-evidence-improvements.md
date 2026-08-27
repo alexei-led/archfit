@@ -496,20 +496,30 @@ Files:
 - `testdata/fixtures/reachability/` (new) — minimal Go module: two declared
   modules with owners, `CODEOWNERS`, `Dockerfile`, one enabled rule that passes,
   no abstained edges.
-- `testdata/fixtures/reachability/coverage.out` (new) — a minimal Go coverprofile
-  covering the fixture's own packages, committed alongside the fixture.
-- `testdata/fixtures/reachability/coverage.out.ref` (new) — the fixture commit
-  SHA the profile was produced from, per the §3.2 freshness contract. Fusion
-  review found the fixture otherwise could never exercise Task 10's `measured`
-  path, leaving the final healthy gate unreachable by construction. The test's
-  setup helper regenerates both after creating the fixture commit, so the SHA
-  always matches.
+- `testdata/fixtures/reachability/` holds only **committed source**: the Go
+  module, `CODEOWNERS`, `Dockerfile`, and `.archfit.yaml.tmpl`. It contains no
+  git repository, no baseline, no coverage file, and no ref file.
 - `testdata/fixtures/reachability/README.md` (new) — every file, the dimension it
-  serves, and the contract fact it satisfies.
-- `cmd/archfit/integration_reachability_test.go` (new) — deterministic git init,
-  two commits (so a `--base` ref exists), coverage regeneration, then the
-  dual-outcome assertion. Reuses the existing parity and byte-stability harnesses
-  rather than adding a third.
+  serves, the contract fact it satisfies, and the **recorded JSON envelope shape**
+  observed on first run (see §3.4).
+- `cmd/archfit/integration_reachability_test.go` (new) — owns a
+  `materializeFixture(t)` helper that is the **only** way this plan's fixture is
+  run. It copies the committed source into `t.TempDir()`, runs `git init` and one
+  commit there, renders `.archfit.yaml` from the template with `coverage.enabled:
+  true`, generates `coverage.out` with `go test -coverprofile` inside the temp
+  repo, writes `coverage.out.ref` from that repo's `HEAD`, then runs `archfit
+  baseline` to persist a comparable baseline. It returns the temp repo path and
+  config path.
+
+**Why a temp repo and not committed artifacts.** Fusion review established two
+facts that make committed coverage impossible: a tracked `coverage.out.ref`
+cannot contain the SHA of the commit that contains it, and a fixture directory
+inside this repository has no git history of its own — `git -C
+testdata/fixtures/reachability rev-parse HEAD` resolves to the *parent* archfit
+repository, so any ref taken that way is meaningless. Materializing into
+`t.TempDir()` removes both problems and makes the fixture hermetic. Every CLI
+gate in Tasks 3, 10 and 13 runs through this helper; none runs against the
+committed directory directly.
 
 Preconditions: Tasks 1–2 merged; audit table reviewed and its classifications
 accepted by the owner.
@@ -530,23 +540,28 @@ Fitness gate:
   `cmd/archfit/format_matrix_test.go` for the non-JSON formats and
   `cmd/archfit/byteidentical_test.go` for JSON. Fusion verified these are two
   separate harnesses, not one.
-- Drift comparison uses `--base`, not `baseline` alone. Verified against
-  `cmd/archfit/baseline.go`, whose own help states: *"It records one full
-  baseline of the tree as checked out. There is no git-base mode; compare against
-  a ref with `archfit check --base`."* `baseline` records reviewed findings so CI
-  can suppress known ones; it does **not** establish drift comparability. The
-  first draft conflated the two (and an earlier draft wrongly cited
-  `ARCHFIT_UPDATE_SURFACE`, which regenerates the Go model-surface golden in
-  `internal/model_surface_test.go` and is unrelated to drift). The fixture setup
-  therefore creates two commits and runs `check --base <first-commit>`.
-- Drift comparability is verified by fingerprint, not by file existence: drift is
-  measured only when `SeamsComparable` is true, which requires matching config,
-  module-map, label-set, and rubric fingerprints
-  (`internal/assessment/evaluation/finalize.go`).
+- **Drift is driven by the persisted baseline, not by `--base`.** Verified in
+  code, because two review rounds contradicted each other on this point:
+  `internal/application/analysis.go:302` passes `Anchor: seamAnchor(base, runCtx)`
+  into `evaluation.Assess`, where `base` is the *persisted baseline*;
+  `seamAnchor` (`:336`) returns a non-comparable anchor when `base.State == nil`.
+  The `--base` path at `:314` runs **after** `Assess` and only populates
+  `out.BaseScore` via `attachBaseComparison`; it never reaches
+  `driftDimension(diag, ref)` (`dimensions.go:568`), which reads only
+  `ref.SeamsComparable`.
+  So the fixture sequence is: run `archfit baseline` to persist a baseline, then
+  re-run `analyze`. `--base` is a separate base-vs-head comparison feature and is
+  **not** used to establish drift comparability. An earlier revision of this plan
+  asserted the opposite on panel advice and was wrong.
+- Drift comparability is by fingerprint, not file existence: it requires matching
+  config, module-map, label-set, and rubric fingerprints
+  (`seamAnchor` → `decision.CompareFingerprints`). A baseline written under a
+  different config is present but non-comparable, and drift stays `unmeasured`
+  with a named cause.
 - `SeamsComparable` is an internal evaluation field, not a wire field, so the
-  test asserts it through the observable proxy: with `--base` supplied, drift
-  must not report `unmeasured` with reason "not comparable". The test asserts the
-  reported drift status and reason, not the private field.
+  test asserts the observable proxy: after `baseline` + re-`analyze`, drift must
+  not report `unmeasured` with a non-comparable reason. The test asserts the
+  reported drift status and reason, never the private field.
 
 Impact commands:
 
@@ -556,35 +571,25 @@ Impact commands:
 
 Verification commands:
 
+The fixture is only ever exercised through the Go test, because
+`materializeFixture` owns the temp repo, the rendered config, the coverage
+artifacts, and the persisted baseline. There is no standalone shell sequence to
+run against the committed directory — that was the source of the parent-repo
+`git -C` defect.
+
 ```sh
 make build
+
+# The test prints the verdict, per-dimension status, the recorded JSON envelope
+# shape, and (on Outcome B) the blocker report with each blocker's remedy class.
 go test ./cmd/archfit/ -run IntegrationReachability -count=1 -v
 
-CFG=testdata/fixtures/reachability/.archfit.yaml
-BASE=$(git -C testdata/fixtures/reachability rev-parse HEAD~1)
-
-# determinism (no comparison)
-.bin/archfit analyze --config "$CFG" --format json > /tmp/r1.json
-.bin/archfit analyze --config "$CFG" --format json > /tmp/r2.json
-diff /tmp/r1.json /tmp/r2.json && echo "DETERMINISTIC OK"
-
-# drift comparability requires --base, not baseline alone
-.bin/archfit baseline --config "$CFG"
-.bin/archfit analyze --config "$CFG" --base "$BASE" --format json > /tmp/r3.json
-
-python3 - <<'PY'
-import json
-# Envelope note: read the state root defensively. Task 3 must record which shape
-# the CLI actually emits and every later task must then use that one shape.
-raw = json.load(open("/tmp/r3.json"))
-st = raw.get("architecture_state", raw)
-print("verdict:", st["verdict"])
-print("comparison:", (raw.get("comparison") or st.get("comparison", {})).get("status"))
-for k, v in sorted(st["dimensions"].items()):
-    print(f"  {k:16} {v['status']:11} {[u['fact'] for u in (v.get('unknown') or [])]}")
-PY
-
-.bin/archfit check --config "$CFG" --base "$BASE"; echo "exit=$?"
+# Determinism and drift are asserted inside the test, against the temp repo:
+#   1. analyze twice          -> byte-identical
+#   2. archfit baseline       -> persists a baseline in the temp repo
+#   3. analyze again          -> seamAnchor finds it; drift must not report
+#                                unmeasured-with-non-comparable-reason
+#   4. check                  -> exit code recorded for the dual-outcome report
 go test ./cmd/archfit/ -run 'TestFormatMatrix|ByteIdentical' -count=1
 ```
 
@@ -654,8 +659,14 @@ Fitness gate:
   breaking the "each task is one independently revertible green commit" rule in
   §4. Format-matrix and byte-identical baselines are refreshed here, as a
   reviewed diff called out in the commit message, and every refreshed line must
-  trace to an audit row. Task 11 then regenerates only for the *new metric
-  families* it introduces.
+  trace to an audit row.
+
+  **This rule is global, not local to Task 4.** Every task that changes a
+  serialized status, metric, or fact — Tasks 5, 6, 7 and 10 — refreshes the
+  goldens it invalidates, in its own commit, with the same trace-to-justification
+  requirement. Task 11 owns renderer *presentation* changes and cross-format
+  parity for the completed fact set; it is not a cleanup task for baselines other
+  tasks broke.
 - `.archfit-baseline.json` is refreshed here if and only if this task changes the
   self-analysis finding set; the refresh is a separate reviewed hunk.
 
@@ -670,15 +681,22 @@ Verification commands:
 go test ./internal/assessment/state/ -run TestPromotion -count=1 -v
 go test ./cmd/archfit/ -run IntegrationReachability -count=1 -v   # outcome may change
 
-# every changed file must be authorised by the Task 2 scope artifact,
-# except the goldens this task is explicitly allowed to refresh
+# Scope gate. Fails closed, sees untracked files, and compares against a ref
+# captured BEFORE the task started (git diff alone is empty after committing,
+# and omits new files such as promotion_test.go).
+#   PRE=$(git rev-parse HEAD)   # capture before starting the task
 SCOPE=docs/design/evidence-contract-audit-scope.txt
-git diff --name-only | while read -r f; do
+violations=0
+{ git diff --name-only "$PRE"; git ls-files --others --exclude-standard; } \
+  | sort -u | while read -r f; do
   case "$f" in
+    # goldens and the new promotion files this task is explicitly authorised to add
     cmd/archfit/testdata/*|.archfit-baseline.json) continue ;;
+    internal/assessment/state/promotion_test.go) continue ;;
   esac
-  cut -f1 "$SCOPE" | grep -qx "$f" || echo "UNAUTHORISED FILE: $f"
+  cut -f1 "$SCOPE" | grep -qx "$f" || { echo "UNAUTHORISED FILE: $f"; violations=1; }
 done
+test "$violations" -eq 0 || { echo "SCOPE GATE FAILED"; exit 1; }
 
 go test ./cmd/archfit/ -run 'TestFormatMatrix|ByteIdentical' -count=1
 make test-fast && make lint
@@ -733,6 +751,8 @@ Fitness gate:
   reason unchanged from today.
 - `MeasurementStatus` still has exactly three values; schema version unchanged.
 - The Task 3 fixture's blocking set loses `drift`.
+- Goldens invalidated by this task's output change are refreshed in this same
+  commit (per the global rule in Task 4), so the commit is green on its own.
 
 Impact commands:
 
@@ -821,6 +841,8 @@ Fitness gate:
 - No CODEOWNERS → provenance `git_author`, distance behaviour unchanged.
 - The `measured` state still carries the runtime/SBOM unknown facts, marked
   out-of-claim — proving the narrowed claim is explicit, not hidden.
+- Goldens invalidated by this task's output change are refreshed in this same
+  commit (per the global rule in Task 4), so the commit is green on its own.
 
 Impact commands:
 
@@ -904,6 +926,8 @@ Fitness gate:
   the graph is complete — proving the in-claim/out-of-claim split works.
 - Incomplete module graph → `partial` naming the graph fact.
 - Two identical runs produce byte-identical values.
+- Goldens invalidated by this task's output change are refreshed in this same
+  commit (per the global rule in Task 4), so the commit is green on its own.
 
 Impact commands:
 
@@ -1069,12 +1093,27 @@ repository archfit does not own):
   is rejected and counted as unresolved, never read and never attributed.
 - **Symlinks.** Path resolution does not follow symlinks out of ScanRoot; an
   escaping link is treated as unresolved.
-- **Bounded reads.** Each source has a maximum size and a parse timeout; exceeding
-  either is a named failure that forces `partial`, not a silent truncation.
-- **Duplicate facts.** The same file appearing twice (e.g. merged profiles) is
-  merged by a documented rule — union of covered units over the same denominator
-  — and a conflicting denominator for one file is a named error, not a silent
-  last-write-wins.
+- **Bounded reads.** Each source has a maximum byte size and a maximum fact
+  count, both configurable. Exceeding either is a named failure that forces
+  `partial`, not a silent truncation. Limits are deterministic counts, not wall
+  clock, so results do not vary with machine speed.
+- **Duplicate facts — no union arithmetic.** Fusion review established that an
+  exact "union of covered units" is *not computable* from the aggregate
+  `CoveredUnits`/`TotalUnits` pair in `CoverageFact`: two profiles reporting 6/10
+  and 7/10 for one file may overlap anywhere between 3/10 and 10/10. The plan
+  therefore does not attempt union arithmetic. The rule is:
+  - same file, **same** `Unit` and same `TotalUnits` → keep the maximum
+    `CoveredUnits`, increment `merged_coverage_facts`. This is a documented
+    lower bound on true coverage, never an overstatement.
+  - same file, **differing** `TotalUnits` → named error; the sources disagree
+    about the denominator and cannot be reconciled.
+  - same file, **differing** `Unit` (statements vs lines) → named error. Units
+    are never summed or averaged across kinds, and a module's denominator is
+    always single-unit.
+  Exact union would require per-unit identities (line numbers or statement
+  ranges), which the fact model deliberately does not carry. Accepted ceiling;
+  upgrade trigger is a real multi-profile repository where the max-rule bound is
+  too loose to be useful.
 - **No fabricated zero.** Any of the above failing must produce a named unknown.
   A rejected or unreadable source can never be attributed as zero coverage.
 
@@ -1145,6 +1184,8 @@ Fitness gate:
   `unmeasured`. A tested-nothing repo is a measured fact, not missing evidence.
 - Coverage ratio never influences the verdict: assert no finding or gate reads
   `coverage_ratio`. A low ratio makes the dimension `measured`, not `blocked`.
+- Goldens invalidated by this task's output change are refreshed in this same
+  commit (per the global rule in Task 4), so the commit is green on its own.
 
 Impact commands:
 
@@ -1158,12 +1199,18 @@ Verification commands:
 go test ./internal/assessment/evaluation/ -run 'TestTestability' -count=1 -v
 make test
 make build
-go test -coverprofile=/tmp/self.out ./... > /dev/null 2>&1
-git rev-parse HEAD > /tmp/self.out.ref
-.bin/archfit analyze --config .archfit.yaml --json > /tmp/t9-off.json
-diff /tmp/c1.json /tmp/t9-off.json && echo "DISABLED PATH UNCHANGED OK"
-.bin/archfit analyze --config /tmp/archfit-cov.yaml --json \
-  | python3 -c 'import json,sys;s=json.load(sys.stdin)["dimensions"]["testability"];print(s["status"],{m["name"]:m["value"] for m in s["metrics"]})'
+
+# 1. Disabled path is unchanged (coverage.enabled defaults false)
+.bin/archfit analyze --config .archfit.yaml --format json > /tmp/t10-off.json
+diff /tmp/c1.json /tmp/t10-off.json && echo "DISABLED PATH UNCHANGED OK"
+
+# 2. Enabled path runs through the Task 3 fixture helper, which owns the temp
+#    repo, the rendered config with coverage.enabled: true, the generated
+#    coverage.out, and the matching coverage.out.ref. There is no ad-hoc
+#    /tmp config: an earlier revision referenced /tmp/archfit-cov.yaml that no
+#    task created, which would have stopped an executor here.
+go test ./cmd/archfit/ -run 'IntegrationReachability/testability_measured' -count=1 -v
+
 make lint && make archfit
 ```
 
@@ -1301,20 +1348,27 @@ Rollback: single commit revert.
 
 ### Task 13: Full corpus, reachability confirmation, and baseline gate
 
-- [ ] If Task 3 Outcome A (healthy reached): flip the test to assert `healthy` and `check` exit 0
-- [ ] If Task 3 Outcome B (not reached): record why, accept the constraint, and close the plan
+- [ ] If Task 3 reports Outcome A (healthy reached): flip the test to assert `healthy` and `check` exit 0
+- [ ] If Task 3 reports Outcome B-temporary: Stages A/B were expected to clear it — re-run Task 3; a still-blocking dimension here is a defect in Tasks 5–10, not grounds to close
+- [ ] If and only if Task 3 reports Outcome B-permanent, owner-ratified in the Task 2 audit: record the constraint and close the plan
 - [ ] Extend `corpus_sweep.py` with the promotion-contract assertion (if collectors were added)
 - [ ] Run the full 11-repository sweep in strict mode (if collectors were added)
 - [ ] Refresh the self-baseline and dogfood gate (if status changed)
 - [ ] Record residual coverage gaps honestly
 
-Justification: unit fixtures and the three hardcoded dimensions limit reachability
-in Stages A and B. This task confirms whether Task 3's reachability characterization
-hold true across the corpus. If the fixture proved `HEALTHY` unreachable by
-design (`Outcome B`), this task is a no-op that ratifies the design decision.
-If collectors in Stages A and B delivered Outcome A, this task verifies it at
-scale. `scripts/eval/corpus_sweep.py` already asserts nine dimensions, coverage
-counts summing to nine, exit-code agreement, format parity, and byte determinism.
+Justification: unit fixtures cannot prove promotion behaves on real trees with
+partial toolchains. This task confirms Task 3's reachability finding at corpus
+scale. Three outcomes, matching the Task 3 classification:
+
+- **Outcome A:** Stages A/B delivered healthy — verify it holds across the corpus
+  and flip the fixture test to require it.
+- **Outcome B-temporary still present:** a dimension Tasks 5–10 were supposed to
+  close is still blocking. That is a **defect in those tasks**, not grounds to
+  close the plan; fix and re-run.
+- **Outcome B-permanent, owner-ratified:** ratify the constraint and close.
+
+`scripts/eval/corpus_sweep.py` already asserts nine dimensions, coverage counts
+summing to nine, exit-code agreement, format parity, and byte determinism.
 
 Files:
 
@@ -1478,6 +1532,30 @@ Also applied: preconditions renumbered after the Task 4 insertion; Stage 0
 described as "no *production*-code changes"; the parser-slice exception to
 one-task-one-commit documented in §4 and Task 9; JSON envelope shape pinned in
 §3.4; Task 13 corpus environment gates made explicit.
+
+### Round 4 — readiness review of the corrected plan
+
+Fusion run `3e9d2b57-5e38-433b-a409-dbd174e13bd1`, 3 of 4 panelists completing.
+Verdict: **NO-GO** — blockers 2, 4, 5, 7 and 8 were not fully fixed, and two
+panelists dissented from the third. All are now fixed:
+
+| Round-4 finding                                                                                       | Fix                                                                                                     |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Round 3's drift advice was wrong.** `seamAnchor` reads the *persisted baseline*; `--base` is attached after `Assess` and never reaches `driftDimension` | verified in `analysis.go:302/314/336` and `dimensions.go:568`; Task 3 reverted to `baseline` + re-`analyze`, with the code citation recorded so this cannot flip again |
+| `git -C testdata/fixtures/reachability rev-parse HEAD~1` resolves to the **parent** repo                | fixture is now materialized into `t.TempDir()` with its own `git init`; no shell gate runs against the committed directory |
+| A tracked `coverage.out.ref` cannot hold the SHA of the commit containing it                            | coverage and ref are generated at runtime inside the temp repo, never committed                          |
+| Nothing enabled `coverage` in the fixture config                                                        | `.archfit.yaml` is rendered from a template with `coverage.enabled: true` by the helper                   |
+| Task 10 referenced `/tmp/archfit-cov.yaml`, which no task created                                       | replaced with a subtest that runs through the fixture helper                                              |
+| Task 13 still closed the plan on any Outcome B                                                          | closes only on owner-ratified **B-permanent**; B-temporary is a defect in Tasks 5–10                       |
+| Task 4 scope gate printed but never failed, and `git diff --name-only` misses untracked files           | gate now fails closed, unions `git ls-files --others`, and diffs against a pre-task ref                   |
+| "Union of covered units" is not computable from aggregate counts                                        | replaced with a max-rule lower bound for identical denominators, named errors for differing denominators or units, and an accepted-ceiling note |
+| Goldens for Tasks 5, 6, 7, 10 were deferred to Task 11, leaving red intermediate commits                | golden refresh made a global per-task rule; added to all four fitness gates                               |
+| Parser timeouts were machine-speed dependent                                                            | bounded reads are deterministic byte and fact counts, not wall clock                                      |
+
+Unresolved and explicitly flagged for the executor rather than guessed: the exact
+JSON container for `dimensions` was not verified by any panelist. Task 3 records
+the observed envelope shape in its fixture README on first run, and §3.4 requires
+every later task to use that recorded shape.
 
 ### Rounds 1–2 — design and first readiness review
 
