@@ -243,6 +243,44 @@ contract is therefore:
   it by construction. `git status --porcelain` may be used only as a fast
   pre-filter, never as the authority.
 
+  **Within-run atomicity (round 14).** Computing the inventory once, in a walk
+  separate from the analyzers' walks, leaves a TOCTOU window: a covered file can
+  change between the analyzer read and the inventory read, or after the
+  inventory read but before a later analyzer reads it, yielding `matched` for
+  bytes that were never what the analyzers consumed.
+
+  Two candidate fixes were evaluated against the actual codebase and **both were
+  rejected**:
+
+  - *Derive freshness from scanner-produced hashes.* There is no single read
+    choke point. At least ten independent walkers read source
+    (`internal/extract/loc/loc.go`, `ts/ts.go`, `py/py.go`,
+    `golang/members.go`, `dynimports`, `manifest`, `deployunit`, `runtime`,
+    `internal/ownership`). Instrumenting each to emit path+content hashes is a
+    cross-cutting change across eight-plus packages and is not in Task 8's
+    scope.
+  - *Scan an immutable git worktree.* Disqualified by construction: a git
+    worktree holds **tracked files only**, and every gitignored input an
+    analyzer resolves through must come from the surrounding repo
+    (`internal/history/git/worktree.go:74-76`). Snapshotting into a worktree
+    would exclude precisely the ignored files §2.2 must detect.
+
+  **Adopted: bracketed inventory.** `inventory.go` captures the covered-module
+  inventory immediately **before** analysis begins and again immediately
+  **after** the last analyzer read, and promotion requires all three of: the
+  pre-inventory matches the referenced commit, the post-inventory is
+  byte-identical to the pre-inventory, and the coverage SHA matches. Any
+  difference between the two brackets means the tree moved during the run and
+  yields `stale` with reason `worktree_changed_during_run`. This needs no
+  analyzer changes and no tree copy.
+
+  *Accepted ceiling:* a mutation that occurs **and is reverted** entirely inside
+  the analysis window is not detectable by bracketing. That is a deliberately
+  narrower hole than the current one and is accepted, not fixed. Upgrade
+  trigger: if any analyzer gains a streaming or incremental read path that makes
+  mid-run mutation likely, replace bracketing with per-scanner inventory
+  emission (the rejected first option) and revisit this note.
+
   **Caching:** `CoverageIngest` is cached at the parsed-fact level (format,
   parser version, ScanRoot, source ref). But `Freshness` is a decision about
   whether those facts are still valid, not a fact itself, and must be recomputed
@@ -1360,6 +1398,12 @@ Fitness gate:
     with the §2.2 scanner inventory hash, which is why the mechanism is owned by
     `internal/extract/coverage/inventory.go` in Task 8 rather than asserted only
     here.
+  - **mutate a covered file mid-run** → `partial`, reason
+    `worktree_changed_during_run`. Deterministic, not a sleep race: the test
+    injects a hook between the pre-inventory capture and the post-inventory
+    capture (or, if no hook exists, drives the two capture calls directly) and
+    writes to a covered `.go` file in between. Proves the brackets are compared
+    and that a single-inventory implementation fails.
   - **warm cache, then add a gitignored `.go` file** under a covered module and
     rerun with the *same* profile and source ref → `partial`, reason
     `worktree_differs_from_ref`. The first run must be asserted `measured` with
