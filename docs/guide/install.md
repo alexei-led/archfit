@@ -145,8 +145,16 @@ rustup default stable
 cargo --version
 ```
 
-If rustup is not installed, use your platform package manager where available, or
-the official rustup installer from <https://rust-lang.org/tools/install/>.
+If rustup is not installed, use the official installer. It does not require
+Homebrew or `sudo` and installs into `~/.cargo`:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+. "$HOME/.cargo/env"
+rustup default stable
+```
+
+The installer is also documented at <https://rust-lang.org/tools/install/>.
 
 `archfit` runs `cargo metadata` to extract the crate dependency graph. Two opt-in
 tools add intra-crate module depth (important for single-crate repos, which are one

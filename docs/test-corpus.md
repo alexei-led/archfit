@@ -273,6 +273,24 @@ four minus herdr's stand-in set and all exited 0.
   findings. Disclosed on stderr as a config-quality warning. Target-side work,
   not an archfit defect — never edit a target's ownership to flatten output.
 
+### Rust toolchain follow-up (2026-08-27)
+
+After installing the official stable toolchain with rustup (`rustc`, `cargo`,
+`rust-analyzer`, and `cargo-modules`), the four Rust repositories were rerun with
+`.bin/archfit v1.7.1-56`. All four produced valid v1 reports, passed the strict
+harness, migrated to v2 idempotently, and had byte-identical repeated JSON.
+
+| Repo | Coverage (M/P/U) | Findings | Seams | Rust analyzer result |
+| --- | --- | ---: | ---: | --- |
+| yazi | 3/4/2 | 22 | 210 | cargo ok; cargo-modules disabled by config |
+| herdr | 4/4/1 | 686 | 704 | cargo and cargo-modules ok |
+| ruff | 3/4/2 | 55 | 7175 | cargo ok; SCIP partial |
+| tokio | 3/4/2 | 916 | 979 | cargo ok; cargo-modules partial for benches/examples/stress-test |
+
+Every run had `analyze=0`, `check=2`, verdict `needs_attention`, and no Archfit
+execution failures. The earlier Rust rows above are retained as the historical
+no-toolchain run; they must not be used as the current Rust coverage result.
+
 ### Product defects this sweep found and fixed
 
 1. Text, Markdown, and the scorecard abbreviated or omitted the finding list, so
