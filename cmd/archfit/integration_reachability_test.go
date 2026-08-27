@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -57,6 +58,11 @@ var reachabilityRemedies = map[string]reachabilityRemedy{
 // this fixture. It records either valid outcome: a fully asserted healthy state,
 // or a complete impossibility report whose remedies come from the Task 2 audit.
 func TestIntegrationReachability(t *testing.T) {
+	t.Run("baseline_transition", testIntegrationReachabilityBaselineTransition)
+	t.Run("drift_lifecycle", testIntegrationReachabilityDriftLifecycle)
+}
+
+func testIntegrationReachabilityBaselineTransition(t *testing.T) {
 	root, configPath := materializeFixture(t, false)
 
 	firstCode, first := runReachabilityState(t, cmdAnalyze, configPath)
@@ -118,6 +124,95 @@ func TestIntegrationReachability(t *testing.T) {
 	// escape the test-owned repository without this test noticing.
 	if !strings.HasPrefix(configPath, root+string(filepath.Separator)) {
 		t.Fatalf("rendered config %q is outside materialized root %q", configPath, root)
+	}
+}
+
+func testIntegrationReachabilityDriftLifecycle(t *testing.T) {
+	root, configPath := materializeFixture(t, false)
+
+	t.Run("comparison_not_requested_without_persisted_baseline", func(t *testing.T) {
+		code, raw := runReachabilityState(t, cmdAnalyze, configPath)
+		if code != 0 {
+			t.Fatalf("analyze without a baseline: exit=%d, want 0", code)
+		}
+		state := decodeReachabilityState(t, raw)
+		if state.Comparison.Status != report.ComparisonNotRequested {
+			t.Fatalf("root comparison status = %q, want not_requested", state.Comparison.Status)
+		}
+		reason := assertReachabilityUnmeasuredDrift(t, state, "no comparable architecture-state reference is stored")
+		if strings.Contains(reason, "the stored baseline was written under different inputs") {
+			t.Fatalf("missing-baseline reason is indistinguishable from an incomparable baseline: %q", reason)
+		}
+	})
+
+	t.Run("comparison_not_requested_with_incomparable_persisted_baseline", func(t *testing.T) {
+		baselineCode, baselineOut, baselineErr := runArchfit(t, cmdBaseline, "-c", configPath, flagRefresh)
+		if baselineCode != 0 {
+			t.Fatalf("baseline: exit=%d\nstdout:\n%s\nstderr:\n%s", baselineCode, baselineOut, baselineErr)
+		}
+		makeReachabilityBaselineIncomparable(t, root)
+
+		code, raw := runReachabilityState(t, cmdAnalyze, configPath)
+		if code != 0 {
+			t.Fatalf("analyze with an incomparable baseline: exit=%d, want 0", code)
+		}
+		state := decodeReachabilityState(t, raw)
+		if state.Comparison.Status != report.ComparisonNotRequested {
+			t.Fatalf("root comparison status = %q, want not_requested", state.Comparison.Status)
+		}
+		reason := assertReachabilityUnmeasuredDrift(t, state, "the stored baseline was written under different inputs")
+		if !strings.Contains(reason, "config_hash") {
+			t.Fatalf("incomparable-baseline reason %q does not name the drifted config_hash", reason)
+		}
+		if strings.Contains(reason, "no comparable architecture-state reference is stored") {
+			t.Fatalf("incomparable-baseline reason is indistinguishable from a missing baseline: %q", reason)
+		}
+	})
+}
+
+func assertReachabilityUnmeasuredDrift(t *testing.T, state report.ArchitectureState, wantReason string) string {
+	t.Helper()
+	drift := state.Dimensions.Drift
+	if drift.Status != report.MeasurementUnmeasured {
+		t.Fatalf("drift status = %q, want unmeasured; unknown=%+v delta=%+v", drift.Status, drift.Unknown, drift.Delta)
+	}
+	if drift.Delta == nil {
+		t.Fatal("unmeasured drift carries no comparison delta")
+	}
+	if drift.Delta.Status != report.ComparisonNonComparable {
+		t.Fatalf("drift delta status = %q, want non_comparable", drift.Delta.Status)
+	}
+	deltaReason := strings.Join(drift.Delta.Reasons, " ")
+	if !strings.Contains(deltaReason, wantReason) {
+		t.Fatalf("drift delta reason %q does not contain %q", deltaReason, wantReason)
+	}
+	unknownReasons := make([]string, 0, len(drift.Unknown))
+	for _, unknown := range drift.Unknown {
+		unknownReasons = append(unknownReasons, unknown.Reason)
+	}
+	if joined := strings.Join(unknownReasons, " "); !strings.Contains(joined, wantReason) {
+		t.Fatalf("drift unknown reasons %q do not contain %q", joined, wantReason)
+	}
+	return deltaReason
+}
+
+func makeReachabilityBaselineIncomparable(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, defaultBaselinePath)
+	stored, err := baseline.Load(t.Context(), path)
+	if err != nil {
+		t.Fatalf("load captured baseline: %v", err)
+	}
+	if stored.State == nil {
+		t.Fatal("captured baseline has no architecture-state snapshot")
+	}
+	driftedHash := strings.Repeat("0", 64)
+	if stored.State.ConfigHash == driftedHash {
+		driftedHash = strings.Repeat("1", 64)
+	}
+	stored.State.ConfigHash = driftedHash
+	if err := baseline.Save(t.Context(), path, stored); err != nil {
+		t.Fatalf("write incomparable baseline: %v", err)
 	}
 }
 

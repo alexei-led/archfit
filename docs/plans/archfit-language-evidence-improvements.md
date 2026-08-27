@@ -878,9 +878,9 @@ Rollback: revert per approval row; each mismatch fix is independent.
 
 ### Task 5: Implement drift lifecycle policy (stage A, task 1)
 
-- [ ] Implement the Task 1 decision for "comparison not requested"
-- [ ] Keep "baseline requested but missing/incomparable" as `unmeasured`
-- [ ] Cover both paths with tests
+- [x] Implement the Task 1 decision for "comparison not requested"
+- [x] Keep "baseline requested but missing/incomparable" as `unmeasured`
+- [x] Cover both paths with tests
 
 Justification: §1.1. Drift is `unmeasured` on every first run, so `HEALTHY` is
 unreachable regardless of the three hardcoded collectors. Panel: this is a

@@ -502,29 +502,32 @@ func TestDriftDimensionRequiresAComparableReference(t *testing.T) {
 	}}
 
 	tests := []struct {
-		name         string
-		anchor       evaluation.BaselineAnchor
-		wantStatus   state.MeasurementStatus
-		wantDelta    state.ComparisonStatus
-		wantMetrics  map[string]float64
-		wantReasonIn string
+		name          string
+		anchor        evaluation.BaselineAnchor
+		wantStatus    state.MeasurementStatus
+		wantDelta     state.ComparisonStatus
+		wantMetrics   map[string]float64
+		wantReasonIn  string
+		wantReasonOut string
 	}{
 		{
-			name:         "no stored reference",
-			anchor:       evaluation.BaselineAnchor{},
-			wantStatus:   state.Unmeasured,
-			wantDelta:    state.ComparisonNonComparable,
-			wantReasonIn: "no comparable architecture-state reference",
+			name:          "comparison not requested without a persisted baseline",
+			anchor:        evaluation.BaselineAnchor{},
+			wantStatus:    state.Unmeasured,
+			wantDelta:     state.ComparisonNonComparable,
+			wantReasonIn:  "no comparable architecture-state reference",
+			wantReasonOut: "stored baseline was written under different inputs",
 		},
 		{
-			name: "drifted fingerprints name the input that moved",
+			name: "persisted baseline with drifted fingerprints",
 			anchor: evaluation.BaselineAnchor{
 				NonComparableReason: "the stored baseline was written under different inputs",
 				SnapshotMismatches:  []string{"config_hash differs between the two runs"},
 			},
-			wantStatus:   state.Unmeasured,
-			wantDelta:    state.ComparisonNonComparable,
-			wantReasonIn: "config_hash",
+			wantStatus:    state.Unmeasured,
+			wantDelta:     state.ComparisonNonComparable,
+			wantReasonIn:  "config_hash",
+			wantReasonOut: "no comparable architecture-state reference is stored",
 		},
 		{
 			name: "comparable reference measures the seam delta",
@@ -551,11 +554,12 @@ func TestDriftDimensionRequiresAComparableReference(t *testing.T) {
 			if dim.Delta.Status != tc.wantDelta {
 				t.Errorf("delta status = %q, want %q", dim.Delta.Status, tc.wantDelta)
 			}
-			if tc.wantReasonIn != "" {
-				joined := strings.Join(dim.Delta.Reasons, " ")
-				if !strings.Contains(joined, tc.wantReasonIn) {
-					t.Errorf("reasons %q do not name %q", joined, tc.wantReasonIn)
-				}
+			joinedReasons := strings.Join(dim.Delta.Reasons, " ")
+			if tc.wantReasonIn != "" && !strings.Contains(joinedReasons, tc.wantReasonIn) {
+				t.Errorf("reasons %q do not name %q", joinedReasons, tc.wantReasonIn)
+			}
+			if tc.wantReasonOut != "" && strings.Contains(joinedReasons, tc.wantReasonOut) {
+				t.Errorf("reasons %q unexpectedly contain %q", joinedReasons, tc.wantReasonOut)
 			}
 			for name, want := range tc.wantMetrics {
 				got, found := 0.0, false
