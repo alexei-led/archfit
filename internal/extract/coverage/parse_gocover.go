@@ -24,6 +24,9 @@ var (
 	// ErrMalformedLLVMCovJSON identifies an llvm-cov JSON artifact that does
 	// not contain the required per-file line summaries.
 	ErrMalformedLLVMCovJSON = errors.New("malformed llvm-cov JSON")
+	// ErrLCOVSummaryDiscrepancy reports stale LF/LH summaries while retaining
+	// the authoritative DA-derived facts returned by the LCOV parser.
+	ErrLCOVSummaryDiscrepancy = errors.New("LCOV summary disagrees with DA records")
 	// ErrAmbiguousCoverageFormat means that automatic format detection could
 	// not select exactly one supported parser.
 	ErrAmbiguousCoverageFormat = errors.New("ambiguous coverage format")
