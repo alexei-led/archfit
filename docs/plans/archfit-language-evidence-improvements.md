@@ -314,17 +314,44 @@ contract is therefore:
   inventory automatically. No edit to `inventory.go` or to this section is
   required, and none is permitted as a substitute.
 
-  **Fail closed.** If any enabled extractor does not report its input set,
-  freshness is `partial` with reason `inventory_scope_unverified` and coverage
-  cannot promote. An unreported extractor is an unmeasured scope, never an empty
-  one. This is the rule that makes the derived design safe: a new or
-  non-conforming extractor degrades the verdict instead of silently shrinking
-  the inventory.
+  **Input-reporting contract (round 18).** Deriving the inventory from
+  extractor declarations requires that extractors can report what they actually
+  read. But self-attestation is insufficient: an extractor could report
+  `{go.mod}` while reading `{go.mod, go.sum, go.work}` and pass the
+  non-silent check, producing a false green when `go.work` changes.
+
+  **Every enabled extractor must implement an explicit `ReportInputs` method**
+  (or equivalent) that returns the complete declared set of input paths and
+  patterns for that extractor. The service must:
+
+  - Enumerate the exact set of enabled extractors before `Service.Acquire`
+    begins.
+  - Call `ReportInputs` on each and union the results (the declared set).
+  - Fail closed immediately if any enabled extractor has no such method or
+    returns an empty/error result. Freshness = `partial`, reason
+    `inventory_scope_unverified`. An unreported extractor is an unmeasured
+    scope, never an empty one.
+  - Before hashing, obtain the resolved input paths by asking each extractor
+    to finalize its input set given the actual analysis context (overrides,
+    config, discovered manifests).
+  - After acquisition, verify that every path opened during analysis appears
+    in the pre-analysis declared+resolved union. Any path outside that union
+    yields `partial` with reason `inventory_scope_unverified`.
+  - Test incomplete non-empty reports: an extractor that reports only
+    `{go.mod}` but is configured to read `{go.mod, go.sum, go.work}` must
+    trigger the scope verification and yield `partial/inventory_scope_unverified`
+    (§3.2, Task 10).
+
+  This shifts inventory authority from document or discovery to extractor code:
+  each extractor owns its own input contract, and violations are detected
+  deterministically, not through centralized hand-maintained lists.
 
   The inventory hashes paths and file content byte-for-byte, not walk order or
   entry metadata. It is unordered and deterministic per commit SHA. The bracket
-  comparison holds if and only if the worktree's derived input set matches the
-  referenced commit's at byte level.
+  comparison holds if and only if the worktree's derived input set (from the
+  extractor-reported+resolved union) matches the referenced commit's at byte
+  level. A scope verification failure between analysis and bracketing yields
+  `partial` with reason `inventory_scope_unverified` and prevents promotion.
 
   *Accepted ceiling:* a mutation that occurs **and is reverted** entirely inside
   the analysis window is not detectable by bracketing. That is a deliberately
@@ -1189,14 +1216,29 @@ Files:
 - `internal/extract/coverage/normalize.go` (new) — the path contract.
 - `internal/extract/coverage/inventory.go` (new) — the scanner inventory hash of
   §2.2. Carries **no file list**: it unions each extractor's declared and
-  resolved input sets, including inputs above the scan root, hashes path set
-  plus contents, and reproduces the same inventory from the referenced commit
-  for comparison. An extractor that reports no inputs yields
-  `inventory_scope_unverified` and blocks promotion.
-  Bracketed pre/post captures are owned by this file's scope, and production
-  placement is tested by Task 10's deterministic mid-run mutation gate driving
-  the full pipeline through `internal/evidence/acquisition/service.Acquire`
-  (§3.2).
+  resolved input sets via a `ReportInputs() ([]string, error)` interface
+  implemented by each enabled extractor (below), including inputs above the scan
+  root, hashes path set plus contents, and reproduces the same inventory from
+  the referenced commit for comparison. Fails closed if any enabled extractor
+  does not implement `ReportInputs` or if any actual-read path falls outside the
+  pre-analysis declared+resolved union. Bracketed pre/post captures are owned by
+  this file's scope, and production placement is tested by Task 10's
+  deterministic mid-run mutation gate driving the full pipeline through
+  `internal/evidence/acquisition/service.Acquire` (§3.2).
+- `internal/extract/ts/ts.go` (modify) — implement `ReportInputs()` returning
+  all eight source extensions, all `tsManifestNames` (lockfile names and
+  dependency-cruiser configs), the resolved `tsconfig.json` path (including
+  Git-root fallback per current resolution logic), all `nodeResolverInputs`
+  (lockfile names), and the `.dependency-cruiser` config path if resolved.
+- `internal/extract/golang/members.go` (modify) — implement `ReportInputs()`
+  returning `.go` source extensions, `go.mod`, `go.sum`, the resolved `go.work`
+  path (including parent-directory search per current logic), and any nested
+  `go.mod` discovered during the walk.
+- `internal/extract/py/py.go` (modify) — implement `ReportInputs()` returning
+  `.py` source extensions, `pyproject.toml`, `setup.py`, `setup.cfg`,
+  `requirements*.txt`, `poetry.lock`, and `uv.lock`.
+- `internal/extract/rust/rust.go` (modify) — implement `ReportInputs()`
+  returning `.rs` source extensions, `Cargo.toml`, and `Cargo.lock`.
 - `internal/evidence/acquisition/service.go` (modify) — coordinates the
   sequential analyzer pipeline. `Service.Acquire` must invoke
   `coverage.Freshness.Before()` before the first analyzer read and
@@ -1479,10 +1521,21 @@ Fitness gate:
     rather than silently going untested.
   - **stub an extractor's input reporting** → `partial`, reason
     `inventory_scope_unverified`, never `measured`. Proves the fail-closed rule
-    and that a non-conforming extractor cannot shrink the inventory to a passing
-    subset.
-  Only the unmodified fixture may reach `measured`. Every mutation row and both
-  scope rows must reduce testability below `measured`.
+    for silent reporters and that a non-conforming extractor cannot shrink the
+    inventory to a passing subset.
+  - **incomplete non-empty extractor report** (round 18) → `partial`, reason
+    `inventory_scope_unverified`. The fixture configures an extractor to read a
+    full declared input set (e.g., Go's `{go.mod, go.sum, go.work}`) but
+    `ReportInputs()` is overridden or patched to return only a subset (e.g.,
+    `{go.mod}`). The inventory call should detect that an actual-read path
+    (`go.work`) is outside the pre-analysis declared+resolved union and yield
+    `inventory_scope_unverified`. Proves the fail-closed rule catches not only
+    silent reporters but also non-empty partial reports, and that Task 10's
+    mutation rows cannot be the sole oracle of correctness (since they derive
+    from the same declarations being tested).
+  Only the unmodified fixture may reach `measured`. Every mutation row, both
+  scope rows (silent and partial), and all table-driven input rows must reduce
+  testability below `measured`.
   - **warm cache, then add a gitignored `.go` file** under a covered module and
     rerun with the *same* profile and source ref → `partial`, reason
     `worktree_differs_from_ref`. The first run must be asserted `measured` with
