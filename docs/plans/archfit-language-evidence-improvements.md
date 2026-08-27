@@ -465,9 +465,15 @@ drift}`, but a fixture alone cannot change those, so a success-only gate would
 never pass and would pressure an executor to weaken the contract to force green.
 Both outcomes below are valid completions:
 
-- **A:** the fixture reaches `healthy` and `check` exits 0.
-- **B:** it does not, and the test emits a report naming each blocking dimension,
-  the symbol that blocks it, and the remedy class.
+- **A:** the fixture reaches `healthy` and `check` exits 0. `Decide`
+  (`internal/assessment/state/decision.go:48-66`) requires **three** conditions,
+  not just nine measured dimensions, so Outcome A asserts all three explicitly:
+  `unknown_dimensions == 0`, `active_blockers == 0`, and `hard_gates == pass`.
+  Review round 5 flagged that a naturally-emitted advisory could otherwise hold
+  the fixture at `needs_attention` with every dimension measured, which would
+  look like a collector bug when it is really an un-asserted precondition.
+- **B:** it does not, and the test emits a report naming each blocking dimension
+  or diagnostic, the symbol that blocks it, and the remedy class.
 
 **Outcome B has two sub-kinds and they must be distinguished.** Fusion review
 found the first draft ambiguous — Task 13 read any Outcome B as grounds to close
@@ -503,13 +509,19 @@ Files:
   serves, the contract fact it satisfies, and the **recorded JSON envelope shape**
   observed on first run (see §3.4).
 - `cmd/archfit/integration_reachability_test.go` (new) — owns a
-  `materializeFixture(t)` helper that is the **only** way this plan's fixture is
-  run. It copies the committed source into `t.TempDir()`, runs `git init` and one
-  commit there, renders `.archfit.yaml` from the template with `coverage.enabled:
-  true`, generates `coverage.out` with `go test -coverprofile` inside the temp
-  repo, writes `coverage.out.ref` from that repo's `HEAD`, then runs `archfit
-  baseline` to persist a comparable baseline. It returns the temp repo path and
-  config path.
+  `materializeFixture(t, withCoverage)` helper that is the **only** way this
+  plan's fixture is run. It copies the committed source into `t.TempDir()`, runs
+  `git init` and one commit there, renders `.archfit.yaml` from the template,
+  then runs `archfit baseline` to persist a comparable baseline — which is what
+  makes drift comparable, per the finding above. It returns the temp repo path
+  and the rendered config path.
+
+  When `withCoverage` is true it additionally generates `coverage.out` via `go
+  test -coverprofile` inside the temp repo, writes `coverage.out.ref` from that
+  repo's `HEAD`, and renders the config with `coverage.enabled: true`. **Task 3
+  calls it with `withCoverage=false`**: the `coverage:` config block does not
+  exist until Task 8, so rendering that key earlier risks failing config load.
+  Task 10 is the first caller to pass `true`.
 
 **Why a temp repo and not committed artifacts.** Fusion review established two
 facts that make committed coverage impossible: a tracked `coverage.out.ref`
@@ -542,13 +554,17 @@ Fitness gate:
   separate harnesses, not one.
 - **Drift is driven by the persisted baseline, not by `--base`.** Verified in
   code, because two review rounds contradicted each other on this point:
-  `internal/application/analysis.go:302` passes `Anchor: seamAnchor(base, runCtx)`
-  into `evaluation.Assess`, where `base` is the *persisted baseline*;
-  `seamAnchor` (`:336`) returns a non-comparable anchor when `base.State == nil`.
-  The `--base` path at `:314` runs **after** `Assess` and only populates
-  `out.BaseScore` via `attachBaseComparison`; it never reaches
-  `driftDimension(diag, ref)` (`dimensions.go:568`), which reads only
-  `ref.SeamsComparable`.
+  `internal/application/analysis.go:300-302` passes `Anchor: seamAnchor(base,
+  runCtx)` into **`evaluation.Score`** (not `Assess`), where `base` is the
+  *persisted baseline*; `seamAnchor` (`:336-355`) returns a non-comparable anchor
+  when `base.State == nil`, when the baseline is legacy, or when config/model/
+  label/rubric fingerprints differ. `driftDimension(diag, ref)`
+  (`dimensions.go:568-581`) reads `ref.SeamsComparable` from that anchor.
+
+  `req.BaseRef` *is* passed into `evaluation.Assess` at `:277-280`, so `--base`
+  is not inert — but the base-vs-head comparison is attached after scoring at
+  `:314-320` and only populates `out.BaseScore`. It does not supply the anchor
+  that drift reads.
   So the fixture sequence is: run `archfit baseline` to persist a baseline, then
   re-run `analyze`. `--base` is a separate base-vs-head comparison feature and is
   **not** used to establish drift comparability. An earlier revision of this plan
@@ -681,22 +697,37 @@ Verification commands:
 go test ./internal/assessment/state/ -run TestPromotion -count=1 -v
 go test ./cmd/archfit/ -run IntegrationReachability -count=1 -v   # outcome may change
 
-# Scope gate. Fails closed, sees untracked files, and compares against a ref
-# captured BEFORE the task started (git diff alone is empty after committing,
-# and omits new files such as promotion_test.go).
-#   PRE=$(git rev-parse HEAD)   # capture before starting the task
+# Scope gate. Must fail CLOSED.
+#
+# Two traps this avoids, both found in review:
+#   1. `git diff --name-only` alone is empty after the task commits, and never
+#      lists untracked files such as the new promotion_test.go.
+#   2. Setting a flag inside `... | while read` mutates a SUBSHELL, so the
+#      parent still sees violations=0 and the gate silently passes. Verified:
+#        violations=0; printf 'a\n' | while read -r f; do violations=1; done
+#        echo $violations   # -> 0
+#      Use a temp file, not a pipeline-scoped variable.
+
+# Run this FIRST, before making any edit for this task:
+#   git rev-parse HEAD > .git/archfit-task4-pre-ref
+PRE=$(cat .git/archfit-task4-pre-ref)
 SCOPE=docs/design/evidence-contract-audit-scope.txt
-violations=0
+VIOL=$(mktemp)
+
 { git diff --name-only "$PRE"; git ls-files --others --exclude-standard; } \
-  | sort -u | while read -r f; do
+  | sort -u > "$VIOL.all"
+
+while read -r f; do
   case "$f" in
-    # goldens and the new promotion files this task is explicitly authorised to add
+    # goldens and new promotion files this task is explicitly authorised to add
     cmd/archfit/testdata/*|.archfit-baseline.json) continue ;;
     internal/assessment/state/promotion_test.go) continue ;;
   esac
-  cut -f1 "$SCOPE" | grep -qx "$f" || { echo "UNAUTHORISED FILE: $f"; violations=1; }
-done
-test "$violations" -eq 0 || { echo "SCOPE GATE FAILED"; exit 1; }
+  cut -f1 "$SCOPE" | grep -qx "$f" || echo "UNAUTHORISED FILE: $f" >> "$VIOL"
+done < "$VIOL.all"
+
+if [ -s "$VIOL" ]; then cat "$VIOL"; echo "SCOPE GATE FAILED"; rm -f "$VIOL" "$VIOL.all"; exit 1; fi
+rm -f "$VIOL" "$VIOL.all"; echo "SCOPE GATE OK"
 
 go test ./cmd/archfit/ -run 'TestFormatMatrix|ByteIdentical' -count=1
 make test-fast && make lint
@@ -729,8 +760,22 @@ must remain separately reportable.
 Files:
 
 - `internal/assessment/evaluation/dimensions.go` — `driftDimension` branches on
-  `comparison.status == not_requested` distinctly from
-  `SeamsComparable == false`.
+  the **persisted-baseline lifecycle**, which `seamAnchor`
+  (`internal/application/analysis.go:336`) already distinguishes:
+  - `base.State == nil` and not legacy → no baseline has ever been persisted.
+    This is the "comparison not requested / not yet calibrated" case and takes
+    the Task 1 decision.
+  - `base.Legacy` → `legacyBaselineReason`; a baseline exists but predates the
+    seam ledger. Evidence gap, stays `unmeasured`.
+  - fingerprint mismatch → the compare reason. Evidence gap, stays `unmeasured`.
+
+  **Do not branch on `comparison.status`.** That field belongs to the `--base`
+  base-vs-head comparison, which is attached after scoring and does not drive
+  drift (§Task 3). Review round 5 flagged that using it here would silently
+  recouple drift to `--base` and reintroduce exactly the semantic error round 4
+  caught. The distinction must be carried on `BaselineAnchor`, extending it with
+  an explicit lifecycle field if `seamAnchor`'s current branches cannot express
+  it — that extension is itself a Task 2 audit row.
 - `internal/assessment/state/state.go` — if Task 1 chose a not-applicable
   concept, add it as a `RequiredFact` not-applicable marker; **do not** add a
   fourth `MeasurementStatus` value, which would change the wire contract and all
@@ -766,8 +811,10 @@ Verification commands:
 go test ./internal/assessment/evaluation/ -run 'TestDrift' -count=1 -v
 go test ./internal/application/ -count=1
 make build
-.bin/archfit analyze --config testdata/fixtures/reachability/.archfit.yaml --json \
-  | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d["comparison"]["status"], d["dimensions"]["drift"]["status"])'
+# Runs through materializeFixture, which owns the temp repo, the rendered
+# config, and the persisted baseline. There is no committed
+# testdata/fixtures/reachability/.archfit.yaml to point at.
+go test ./cmd/archfit/ -run 'IntegrationReachability/drift_lifecycle' -count=1 -v
 make lint
 ```
 
@@ -857,8 +904,16 @@ Verification commands:
 go test ./internal/extract/deployunit/ ./internal/ownership/ ./internal/extract/acquire/ -count=1
 go test ./internal/assessment/evaluation/ -run 'TestOperations' -count=1 -v
 make build
-.bin/archfit analyze --config .archfit.yaml --json \
-  | python3 -c 'import json,sys;s=json.load(sys.stdin)["dimensions"]["operations"];print(s["status"],[m["name"] for m in s["metrics"]],[u["fact"] for u in s.get("unknown",[])])'
+.bin/archfit analyze --config .archfit.yaml --format json > /tmp/t6.json
+# Use the envelope shape Task 3 recorded in the fixture README (§3.4); do not
+# assume a container here.
+python3 - /tmp/t6.json <<'PY'
+import json,sys
+raw=json.load(open(sys.argv[1]))
+st=raw.get("architecture_state", raw)
+s=st["dimensions"]["operations"]
+print(s["status"], [m["name"] for m in s["metrics"]], [u["fact"] for u in s.get("unknown",[])])
+PY
 make lint && make archfit
 ```
 
@@ -940,9 +995,9 @@ Verification commands:
 ```sh
 go test ./internal/assessment/evaluation/ -run 'TestComplexity' -count=1 -v
 make build
-.bin/archfit analyze --config .archfit.yaml --json > /tmp/c1.json
-.bin/archfit analyze --config .archfit.yaml --json > /tmp/c2.json
-diff /tmp/c1.json /tmp/c2.json && echo "DETERMINISTIC OK"
+.bin/archfit analyze --config .archfit.yaml --format json > /tmp/t7-a.json
+.bin/archfit analyze --config .archfit.yaml --format json > /tmp/t7-b.json
+diff /tmp/t7-a.json /tmp/t7-b.json && echo "DETERMINISTIC OK"
 ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 make lint && make archfit
@@ -1023,7 +1078,15 @@ ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift 
 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 make build
 .bin/archfit analyze --config .archfit.yaml --json > /tmp/t7.json
-diff /tmp/c1.json /tmp/t7.json && echo "NO-OP WHEN DISABLED OK"
+# Self-contained: capture the reference from HEAD~1 in this same task rather
+# than reusing a /tmp file another task wrote. Review round 5 found the old
+# cross-task /tmp/c1.json dependency could be stale or absent and produce a
+# false byte-identity pass.
+git stash --include-untracked --quiet
+make build && .bin/archfit analyze --config .archfit.yaml --format json > /tmp/t8-before.json
+git stash pop --quiet
+make build && .bin/archfit analyze --config .archfit.yaml --format json > /tmp/t8-after.json
+diff /tmp/t8-before.json /tmp/t8-after.json && echo "NO-OP WHEN DISABLED OK"
 make lint && make archfit
 ```
 
@@ -1200,9 +1263,13 @@ go test ./internal/assessment/evaluation/ -run 'TestTestability' -count=1 -v
 make test
 make build
 
-# 1. Disabled path is unchanged (coverage.enabled defaults false)
-.bin/archfit analyze --config .archfit.yaml --format json > /tmp/t10-off.json
-diff /tmp/c1.json /tmp/t10-off.json && echo "DISABLED PATH UNCHANGED OK"
+# 1. Disabled path is unchanged (coverage.enabled defaults false).
+#    Reference is captured in this task, not inherited from another task's /tmp.
+git stash --include-untracked --quiet
+make build && .bin/archfit analyze --config .archfit.yaml --format json > /tmp/t10-before.json
+git stash pop --quiet
+make build && .bin/archfit analyze --config .archfit.yaml --format json > /tmp/t10-after.json
+diff /tmp/t10-before.json /tmp/t10-after.json && echo "DISABLED PATH UNCHANGED OK"
 
 # 2. Enabled path runs through the Task 3 fixture helper, which owns the temp
 #    repo, the rendered config with coverage.enabled: true, the generated
@@ -1416,7 +1483,9 @@ Verification commands:
 ```sh
 make build
 go test ./cmd/archfit/ -run IntegrationReachability -count=1 -v
-.bin/archfit check --config testdata/fixtures/reachability/.archfit.yaml; echo "exit=$?"   # expect 0
+# The terminal healthy assertion runs inside the fixture test, which owns the
+# temp repo, rendered config, coverage artifacts and persisted baseline.
+go test ./cmd/archfit/ -run 'IntegrationReachability' -count=1 -v   # expect Outcome A
 python3 scripts/eval/corpus_sweep_test.py
 python3 scripts/eval/corpus_sweep.py --strict \
   --repeat-repos spotinfo,ccgram,storybook,yazi \
@@ -1556,6 +1625,27 @@ Unresolved and explicitly flagged for the executor rather than guessed: the exac
 JSON container for `dimensions` was not verified by any panelist. Task 3 records
 the observed envelope shape in its fixture README on first run, and §3.4 requires
 every later task to use that recorded shape.
+
+### Round 5 — readiness review
+
+Fusion run `cf7312fb-8e37-4075-84c8-29a3762d5939`, 3 of 4 panelists completing.
+All three confirmed the round-4 drift conclusion is correct. Verdict: **NO-GO**,
+five true blockers. All fixed:
+
+| Round-5 finding                                                                                          | Fix                                                                                                |
+| ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Task 4 scope gate was still fail-open.** `violations=1` inside `... \| while read` mutates a subshell, so the parent kept `0`; `PRE` was only a comment | rewritten to use a temp file and a redirect instead of a pipeline, with `PRE` captured to `.git/archfit-task4-pre-ref` as a real first step. Bug reproduced locally before fixing |
+| Tasks 5 and 13 still ran `--config testdata/fixtures/reachability/.archfit.yaml`, which the helper never commits | both routed through `materializeFixture` subtests; no gate points at the committed directory        |
+| Task 5 branched drift on `comparison.status`, which belongs to the `--base` path                          | branches on the persisted-baseline lifecycle from `seamAnchor` instead, with an explicit "do not use `comparison.status`" warning naming the recoupling risk |
+| Tasks 8 and 10 diffed against `/tmp/c1.json` written by Task 7 — stale or absent gives a false pass        | each task now captures its own before/after reference via `git stash` in the same command block      |
+| Task 6 hardcoded `["dimensions"]`, contradicting §3.4's recorded-envelope rule                             | reads the root defensively and defers to the shape Task 3 recorded                                   |
+
+Also applied from round 5's nice-to-haves: the drift citation corrected to
+`evaluation.Score` (the anchor does **not** go to `Assess`, though `req.BaseRef`
+does, at `:277-280`); Outcome A now asserts `active_blockers == 0` and
+`hard_gates == pass` alongside zero unknown dimensions, per
+`decision.go:48-66`; and `materializeFixture` gained a `withCoverage` flag so
+Task 3 does not render a `coverage:` key that only exists from Task 8.
 
 ### Rounds 1–2 — design and first readiness review
 
