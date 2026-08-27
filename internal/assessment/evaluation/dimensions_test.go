@@ -22,31 +22,37 @@ const (
 	ruleNoAToB = "no_a_to_b"
 	ruleDep    = "dep"
 	// toolDepCruiser is the TypeScript primary analyzer's coverage name.
-	toolDepCruiser = "dependency-cruiser"
+	toolDepCruiser      = "dependency-cruiser"
+	metricEncapsulation = "encapsulation"
+	bandNA              = "n/a"
 )
 
 // dimensionsFixture is a run with something to measure in every dimension that
 // v1 can measure at all.
 func dimensionsFixture() (*result.Result, evaluation.StateInput) {
+	const primaryTool = "go/packages"
 	diag := &result.Result{
 		Findings: []finding.Finding{},
 		Metrics: []result.MetricResult{
 			{Name: metricCycle, Value: 0, Band: "strong", Confidence: confHigh, Version: "cycle.v1", Mode: "count"},
-			{Name: "blast_radius", Value: 2, Band: "info", Confidence: volLow, Version: "blast_radius.v1", Mode: "count"},
-			{Name: "encapsulation", Value: 0, Band: "n/a", Confidence: volLow, Version: "encapsulation.v3", Mode: "ratio"},
+			{Name: "blast_radius", Value: 2, Band: "info", Confidence: volLow, Version: "blast_radius.v2", Mode: "count"},
+			{Name: metricEncapsulation, Value: 0, Band: bandNA, Confidence: volLow, Version: "encapsulation.v3", Mode: "ratio"},
 			{Name: "coverage", Value: 1, Band: "strong", Confidence: confHigh, Version: "coverage.v1", Mode: "ratio"},
 		},
 		ClassifiedEdges: &result.ClassifiedEdgeSummary{
 			Total: 20, Scored: 10, Abstained: 2, SameModule: 3, External: 5, ConnectedModules: 2,
+			DependencyEdges: 20, InternalDependencies: 15, ClassifiedInternalDependencies: 15,
+			SameModuleDependencies: 3, DependencyModules: 2, FirstPartyNodes: 2, AttributedFirstPartyNodes: 2,
 			TailRisk: &result.CouplingTailRiskSummary{CriticalEdges: 1, HighOrWorseEdges: 3, DistributedMonolithEdges: 0},
 		},
 		VolatilityCorroboration: &modevidence.VolatilityCorroboration{
 			Source: assessHistory, Status: modevidence.StatusOK, CommitsScanned: 120, ModulesTouched: 4,
 		},
 		ToolCoverage: []modevidence.Coverage{
-			{Tool: "go/packages", Status: modevidence.StatusOK},
+			{Tool: primaryTool, Status: modevidence.StatusOK},
 			{Tool: "scip", Status: modevidence.StatusAbsent},
 		},
+		PrimaryExtractorTools: []string{primaryTool},
 	}
 	modules := map[string]policy.ModuleDef{
 		assessModA: {Paths: []string{assessPathsA}, Public: []string{"a/api"}, Owner: "team-a", DeployUnit: "svc"},
@@ -344,6 +350,107 @@ func TestOperationsFailsOnARequiredToolPolicyFailure(t *testing.T) {
 	}
 }
 
+// TestEvidenceDependentDimensionsRequireCompletedProducers pins the Task 2
+// status corrections: a partial primary graph cannot support rule conformance,
+// structure completeness, or module graph shape.
+func TestEvidenceDependentDimensionsRequireCompletedProducers(t *testing.T) {
+	t.Parallel()
+	diag, in := dimensionsFixture()
+	diag.PrimaryExtractorTools = append(diag.PrimaryExtractorTools, toolDepCruiser)
+	diag.ToolCoverage = append(diag.ToolCoverage, modevidence.Coverage{
+		Tool: toolDepCruiser, Status: modevidence.StatusPartial, Unresolved: 1, SpecifiersSeen: 20,
+	})
+	dims := evaluation.BuildDimensions(diag, in, nil)
+	for _, dim := range []state.Dimension{dims.Intent, dims.Structure, dims.Modularity} {
+		if dim.Status != state.Partial {
+			t.Errorf("%s status = %q, want partial with a partial primary extractor", dim.Name, dim.Status)
+		}
+	}
+}
+
+// TestIntentRequiresSyntaxEvidenceForSyntaxRules prevents a rule invocation over
+// an empty syntax fact set from being mistaken for a successful conformance
+// result.
+func TestIntentRequiresSyntaxEvidenceForSyntaxRules(t *testing.T) {
+	t.Parallel()
+	diag, in := dimensionsFixture()
+	maxPublicAPIs := 5
+	in.Policy.Gates.Rules.Rules = append(in.Policy.Gates.Rules.Rules, policy.RuleDef{
+		ID: "public_api_limit", Type: "public_api_max", Gate: "warn", Max: &maxPublicAPIs,
+	})
+	dim := evaluation.BuildDimensions(diag, in, nil).Intent
+	if dim.Status != state.Partial {
+		t.Fatalf("intent status = %q, want partial without ast-grep/syntax completion", dim.Status)
+	}
+	if !hasUnknownFact(dim.Unknown, state.FactActiveRuleConformance) {
+		t.Errorf("intent unknowns = %+v, want %q", dim.Unknown, state.FactActiveRuleConformance)
+	}
+}
+
+// TestCompletedEmptyDependencyInventoryIsMeasured pins STR-1: a producer that
+// completed and found zero dependencies observed a zero; it did not abstain.
+func TestCompletedEmptyDependencyInventoryIsMeasured(t *testing.T) {
+	t.Parallel()
+	diag, in := dimensionsFixture()
+	diag.ClassifiedEdges = &result.ClassifiedEdgeSummary{}
+	diag.Metrics = []result.MetricResult{
+		{Name: metricCycle, Band: bandNA, Confidence: volLow, Version: "cycle.v1"},
+		{Name: "blast_radius", Band: bandNA, Confidence: volLow, Version: "blast_radius.v2"},
+		{Name: metricEncapsulation, Band: bandNA, Confidence: volLow, Version: "encapsulation.v3"},
+	}
+	dims := evaluation.BuildDimensions(diag, in, nil)
+	if dims.Structure.Status != state.Measured {
+		t.Errorf("structure status = %q, want measured for a completed empty inventory", dims.Structure.Status)
+	}
+	if dims.Modularity.Status != state.Measured {
+		t.Errorf("modularity status = %q, want measured for producer-proved empty graph facts", dims.Modularity.Status)
+	}
+}
+
+// TestStructureUsesTheDependencyOnlyDenominator pins STR-3: containment edges,
+// clone-only pairs, and declared external systems stay out of the structure
+// claim even though coupling's existing summary still carries them.
+func TestStructureUsesTheDependencyOnlyDenominator(t *testing.T) {
+	t.Parallel()
+	diag, in := dimensionsFixture()
+	dim := evaluation.BuildDimensions(diag, in, nil).Structure
+	if dim.Coverage.Observed != 15 || dim.Coverage.Total != 20 {
+		t.Errorf("structure coverage = %d/%d, want dependency-only 15/20", dim.Coverage.Observed, dim.Coverage.Total)
+	}
+	for name, want := range map[string]float64{
+		"internal_edges": 15, "external_edges": 5, "same_module_edges": 3, "connected_modules": 2,
+	} {
+		if got, ok := dimensionMetricValue(dim.Metrics, name); !ok || got != want {
+			t.Errorf("metric %q = %v (found=%t), want %v", name, got, ok, want)
+		}
+	}
+}
+
+// TestMeasuredRuntimeDimensionsOnlyDiscloseOutOfClaimUnknowns applies the fixed
+// fact registry to real collector output, not only to synthetic Promote calls.
+func TestMeasuredRuntimeDimensionsOnlyDiscloseOutOfClaimUnknowns(t *testing.T) {
+	t.Parallel()
+	diag, in := dimensionsFixture()
+	for _, dim := range evaluation.BuildDimensions(diag, in, nil).All() {
+		if dim.Status != state.Measured {
+			continue
+		}
+		facts := state.RequiredFacts(dim.Name)
+		for _, unknown := range dim.Unknown {
+			foundOutOfClaim := false
+			for _, fact := range facts {
+				if fact.Name == unknown.Fact && !fact.InClaim {
+					foundOutOfClaim = true
+					break
+				}
+			}
+			if !foundOutOfClaim {
+				t.Errorf("measured %s carries undeclared or in-claim unknown %+v", dim.Name, unknown)
+			}
+		}
+	}
+}
+
 // TestBuildDimensionsIsDeterministic pins that two identical runs produce
 // byte-identical envelopes. Several collectors read maps, so a stray map
 // iteration would show up here and nowhere else.
@@ -359,8 +466,22 @@ func TestBuildDimensionsIsDeterministic(t *testing.T) {
 }
 
 func hasMetric(metrics []state.MetricValue, name string) bool {
+	_, ok := dimensionMetricValue(metrics, name)
+	return ok
+}
+
+func dimensionMetricValue(metrics []state.MetricValue, name string) (float64, bool) {
 	for _, m := range metrics {
 		if m.Name == name {
+			return m.Value, true
+		}
+	}
+	return 0, false
+}
+
+func hasUnknownFact(unknown []state.UnknownFact, name string) bool {
+	for _, fact := range unknown {
+		if fact.Fact == name {
 			return true
 		}
 	}
@@ -519,7 +640,7 @@ func TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope(t *testin
 			}
 			named := false
 			for _, u := range dim.Unknown {
-				if strings.Contains(u.Fact, "TypeScript") {
+				if u.Fact == state.FactExtractorResolutionWithinCeiling {
 					named = true
 				}
 			}

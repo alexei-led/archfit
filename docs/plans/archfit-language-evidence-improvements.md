@@ -736,12 +736,12 @@ Rollback: delete the fixture directory and the test file.
 
 ### Task 4: Implement the Task 2 audit decisions
 
-- [ ] For each mismatch classified as "status-semantics change", implement the decision
-- [ ] For each classified as "implementation fix", make the fix
-- [ ] Leave the "new collector required" items for Tasks 5–13
-- [ ] Keep the three hardcoded-`Partial` collectors unchanged in this task
-- [ ] Add `RequiredFact`, `Promote`, and their invariant tests
-- [ ] Route the six evidence-dependent dimensions through `Promote`
+- [x] For each mismatch classified as "status-semantics change", implement the decision
+- [x] For each classified as "implementation fix", make the fix
+- [x] Leave the "new collector required" items for Tasks 5–13
+- [x] Keep the three hardcoded-`Partial` collectors unchanged in this task
+- [x] Add `RequiredFact`, `Promote`, and their invariant tests
+- [x] Route the six evidence-dependent dimensions through `Promote`
 
 Justification: Task 2 has determined what needs to change and which changes are
 outside the scope of static evidence and existing collectors. This task implements

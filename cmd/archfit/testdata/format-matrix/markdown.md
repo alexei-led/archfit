@@ -10,7 +10,7 @@
 | Dimension | Status | Gate | Confidence | Denominator | Findings |
 | --- | --- | --- | --- | --- | ---: |
 | intent | measured | pass | high | declared rules evaluated 1/1 | 0 |
-| structure | measured | fail | high | discovered edges resolved to a declared module 1/1 | 1 |
+| structure | measured | fail | high | discovered dependencies resolved inside the declared module map 1/1 | 1 |
 | modularity | measured | pass | low | declared modules with a declared public surface 0/2 | 0 |
 | coupling | measured | warn | high | cross-boundary edges scored 1/1 | 1 |
 | change_locality | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
@@ -56,16 +56,18 @@
 - **Status:** not_requested
 - **Reference:** none
 
-## Not measured (8)
+## Not measured (10)
 
-- **modularity — public surface** (owner: assessment/metrics): no declared module states a public surface, so every symbol reads as equally public
-- **change_locality — change locality** (owner: history/git): git history is unavailable: the tree is not a repository, or no module was declared to attribute commits to
+- **modularity — inferred public surface** (owner: assessment/metrics): no declared module states a public surface, so inferring one is outside this claim
+- **change_locality — eligible commit sample** (owner: history/git): git history is unavailable or the history scan returned no eligible commit
+- **change_locality — commit-to-module attribution** (owner: history/git): the history scan is incomplete, so not every eligible commit has a complete module attribution
 - **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): v1 ships no cognitive-complexity analyzer; only the size tail is measured
 - **testability — executed test coverage** (owner: syntax/fileclass): v1 does not run a target repository's test suite; supplied coverage is not yet an input
 - **testability — boundary test coverage** (owner: syntax/fileclass): which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
 - **operations — observed runtime topology** (owner: policy+evidence/acquisition): v1 reports declared owners and deploy units only; nothing observes what actually runs
 - **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts have no collector in v1
-- **drift — architecture drift** (owner: assessment/decision): no comparable architecture-state reference is stored
+- **drift — admissible persisted reference** (owner: assessment/decision): no comparable architecture-state reference is stored
+- **drift — complete two-sided seam identity** (owner: assessment/decision): two-sided seam identity cannot be compared without an admissible persisted reference
 # archfit report
 
 **Config hash:** `0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6`
@@ -124,7 +126,7 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 
 - **cycle**: 0 import cycles — strong
 - **coverage**: 100% coverage — strong
-- **blast_radius**: 1 of 2 modules are change-impact hubs: pkg/b (100%, 1 deps) — info (low confidence)
+- **blast_radius**: 1 of 2 modules are change-impact hubs: b (100%, 1 deps) — info (low confidence)
 
 ## Distance confidence
 

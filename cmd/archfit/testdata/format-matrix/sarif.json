@@ -90,7 +90,7 @@
           {
             "confidence": "high",
             "coverage": {
-              "basis": "discovered edges resolved to a declared module",
+              "basis": "discovered dependencies resolved inside the declared module map",
               "observed": 1,
               "total": 1
             },
@@ -137,7 +137,7 @@
             "name": "change_locality",
             "owner": "history/git",
             "status": "unmeasured",
-            "unknown": 1
+            "unknown": 2
           },
           {
             "confidence": "medium",
@@ -189,7 +189,7 @@
             "name": "drift",
             "owner": "assessment/decision",
             "status": "unmeasured",
-            "unknown": 1
+            "unknown": 2
           }
         ],
         "measurement": {
@@ -248,8 +248,8 @@
             "confidence": "low",
             "definition": "modules whose transitive reverse-dependencies exceed 30% of the codebase (change-impact hubs)",
             "direction": "higher_is_worse",
-            "display": "1 of 2 modules are change-impact hubs: pkg/b (100%, 1 deps)",
-            "metric_version": "blast_radius.v1",
+            "display": "1 of 2 modules are change-impact hubs: b (100%, 1 deps)",
+            "metric_version": "blast_radius.v2",
             "mode": "count",
             "name": "blast_radius",
             "value": 1

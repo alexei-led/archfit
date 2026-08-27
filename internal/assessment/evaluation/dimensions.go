@@ -122,6 +122,104 @@ func dimensionForRule(ruleID string, ruleTypes map[string]string) string {
 // Dimension collectors
 // ---------------------------------------------------------------------------
 
+const (
+	syntaxCoverageTool      = "ast-grep/syntax"
+	ruleTypePublicAPIMax    = "public_api_max"
+	ruleTypePublicAPIChange = "public_api_change"
+	ruleTypePublicAPILeak   = "public_api_type_leak"
+)
+
+type primaryInventory struct {
+	known      bool
+	applicable int
+	completed  int
+}
+
+func primaryDependencyInventory(diag *result.Result) primaryInventory {
+	out := primaryInventory{known: len(diag.PrimaryExtractorTools) > 0}
+	gapped := make(map[string]struct{}, len(diag.CoverageGaps))
+	for _, gap := range diag.CoverageGaps {
+		gapped[gap.Tool] = struct{}{}
+	}
+	seenTools := make(map[string]struct{}, len(diag.PrimaryExtractorTools))
+	for _, tool := range diag.PrimaryExtractorTools {
+		if _, duplicateTool := seenTools[tool]; duplicateTool {
+			continue
+		}
+		seenTools[tool] = struct{}{}
+		rows := coverageRows(diag.ToolCoverage, tool)
+		if len(rows) == 1 && rows[0].Status == modevidence.StatusAbsent {
+			if _, hasGap := gapped[tool]; !hasGap {
+				// A gapless absent primary is the extractor's own proof that its
+				// language is not present in this tree.
+				continue
+			}
+		}
+		out.applicable++
+		if len(rows) == 1 && rows[0].Status == modevidence.StatusOK {
+			out.completed++
+			continue
+		}
+	}
+	return out
+}
+
+func coverageRows(rows []modevidence.Coverage, tool string) []modevidence.Coverage {
+	out := make([]modevidence.Coverage, 0, 1)
+	for _, row := range rows {
+		if row.Tool == tool {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func (p primaryInventory) complete() bool {
+	return p.known && p.completed == p.applicable
+}
+
+func ruleNeedsSyntax(ruleType string) bool {
+	switch ruleType {
+	case ruleTypePublicAPIMax, ruleTypePublicAPIChange, ruleTypePublicAPILeak:
+		return true
+	default:
+		return false
+	}
+}
+
+func ruleNeedsDependencies(ruleType string) bool {
+	return ruleType != ruleTypePublicAPIMax && ruleType != ruleTypePublicAPIChange
+}
+
+func syntaxEvidenceComplete(diag *result.Result, primaries primaryInventory) bool {
+	if primaries.known && primaries.applicable == 0 {
+		return true
+	}
+	rows := coverageRows(diag.ToolCoverage, syntaxCoverageTool)
+	return len(rows) == 1 && rows[0].Status == modevidence.StatusOK
+}
+
+func metricsProduced(computed []result.MetricResult, names ...string) bool {
+	for _, name := range names {
+		if _, ok := metricByName(computed, name); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func applyPromotion(dim *state.Dimension, observed, notApplicable []string, reasons map[string]string) {
+	status, missing := state.Promote(dim.Name, observed, notApplicable)
+	for i := range missing {
+		if reason := reasons[missing[i].Fact]; reason != "" {
+			missing[i].Reason = reason
+		}
+	}
+	dim.Status = status
+	dim.Confidence = state.ConfidenceFor(status)
+	dim.Unknown = append(dim.Unknown, missing...)
+}
+
 // intentDimension reports configured intent and gate conformance: what the
 // configuration declares and how much of it was actually evaluated. A config
 // that declares neither a module nor a rule states no intent, so there is
@@ -130,20 +228,42 @@ func intentDimension(diag *result.Result, p policy.PolicySnapshot) state.Dimensi
 	dim := state.NewDimension(state.DimensionIntent, state.OwnerIntent)
 	rules := p.Gates.Rules.Rules
 	modules := len(p.Topology.Modules)
-	if len(rules) == 0 && modules == 0 {
-		return unmeasured(dim, state.UnknownFact{
-			Fact:   "configured intent",
-			Reason: "the configuration declares no module and no rule, so there is no stated intent to conform to",
-			Owner:  state.OwnerIntent,
-		})
+	reasons := map[string]string{
+		state.FactDeclaredIntentInventory: "the configuration declares no module and no rule, so there is no stated intent to inventory",
+		state.FactActiveRuleConformance:   "one or more active rules lack the completed producer evidence their checks require",
 	}
-	evaluated := 0
-	for _, r := range rules {
-		if r.Gate != gateOffPosture {
+	if len(rules) == 0 && modules == 0 {
+		applyPromotion(&dim, nil, nil, reasons)
+		return dim
+	}
+
+	primaries := primaryDependencyInventory(diag)
+	syntaxComplete := syntaxEvidenceComplete(diag, primaries)
+	active, evaluated := 0, 0
+	for _, rule := range rules {
+		if rule.Gate == gateOffPosture {
+			continue
+		}
+		active++
+		complete := true
+		if ruleNeedsDependencies(rule.Type) && !primaries.complete() {
+			complete = false
+		}
+		if ruleNeedsSyntax(rule.Type) && !syntaxComplete {
+			complete = false
+		}
+		if complete {
 			evaluated++
 		}
 	}
-	dim.Status = state.Measured
+	observed := []string{state.FactDeclaredIntentInventory}
+	var notApplicable []string
+	if active == 0 {
+		notApplicable = append(notApplicable, state.FactActiveRuleConformance)
+	} else if evaluated == active {
+		observed = append(observed, state.FactActiveRuleConformance)
+	}
+	applyPromotion(&dim, observed, notApplicable, reasons)
 	dim.Coverage = state.Coverage{Basis: "declared rules evaluated", Observed: evaluated, Total: len(rules)}
 	dim.Metrics = []state.MetricValue{
 		count("declared_modules", modules, provPolicy),
@@ -155,14 +275,13 @@ func intentDimension(diag *result.Result, p policy.PolicySnapshot) state.Dimensi
 		count("waivers_used", diag.Summary.WaiversUsed, provAssessment),
 		count("expired_waivers", countStatus(diag.Findings, finding.StatusExpiredWaiver), provAssessment),
 	}
-	if off := len(rules) - evaluated; off > 0 {
+	if off := len(rules) - active; off > 0 {
 		dim.Unknown = append(dim.Unknown, state.UnknownFact{
-			Fact:   "conformance to " + strconv.Itoa(off) + " declared rules",
-			Reason: "the rules declare gate: off, so they were compiled out and never evaluated",
+			Fact:   state.FactDisabledRuleConformance,
+			Reason: "conformance to " + strconv.Itoa(off) + " declared rules was compiled out by gate: off",
 			Owner:  state.OwnerIntent,
 		})
 	}
-	dim.Confidence = state.ConfidenceFor(dim.Status)
 	return dim
 }
 
@@ -172,29 +291,47 @@ func intentDimension(diag *result.Result, p policy.PolicySnapshot) state.Dimensi
 // says nothing about this repository's internal structure.
 func structureDimension(diag *result.Result) state.Dimension {
 	dim := state.NewDimension(state.DimensionStructure, state.OwnerStructure)
-	ce := diag.ClassifiedEdges
-	if ce == nil || ce.Total == 0 {
-		return unmeasured(dim, state.UnknownFact{
-			Fact:   "dependency structure",
-			Reason: "relationship analysis classified no edge; no extractor produced a dependency graph over this tree",
-			Owner:  state.OwnerStructure,
-		})
+	primaries := primaryDependencyInventory(diag)
+	reasons := map[string]string{
+		state.FactPrimaryDependencyInventory: "no applicable primary dependency inventory completed over this tree",
+		state.FactInternalEdgeClassification: "module, direction, layer, or cycle classification is incomplete for the discovered internal dependencies",
 	}
-	internal := ce.Total - ce.External
-	dim.Status = state.Measured
-	dim.Coverage = state.Coverage{Basis: "discovered edges resolved to a declared module", Observed: internal, Total: ce.Total}
+	if !primaries.known || primaries.applicable == 0 {
+		if primaries.known {
+			reasons[state.FactPrimaryDependencyInventory] = "every primary extractor proved its language absent, so dependency structure does not apply to this tree"
+		}
+		applyPromotion(&dim, nil, nil, reasons)
+		return dim
+	}
+
+	ce := diag.ClassifiedEdges
+	observed := make([]string, 0, 2)
+	if primaries.complete() {
+		observed = append(observed, state.FactPrimaryDependencyInventory)
+	}
+	if primaries.completed > 0 && ce != nil &&
+		ce.ClassifiedInternalDependencies == ce.InternalDependencies && metricsProduced(diag.Metrics, "cycle") {
+		observed = append(observed, state.FactInternalEdgeClassification)
+	}
+	applyPromotion(&dim, observed, nil, reasons)
+	if ce == nil {
+		return dim
+	}
+
+	external := ce.DependencyEdges - ce.InternalDependencies
+	dim.Coverage = state.Coverage{Basis: "discovered dependencies resolved inside the declared module map", Observed: ce.InternalDependencies, Total: ce.DependencyEdges}
 	dim.Metrics = []state.MetricValue{
-		count("internal_edges", internal, provRelationship),
-		count("external_edges", ce.External, provRelationship),
-		count("same_module_edges", ce.SameModule, provRelationship),
-		count("connected_modules", ce.ConnectedModules, provRelationship),
+		count("internal_edges", ce.InternalDependencies, provRelationship),
+		count("external_edges", external, provRelationship),
+		count("same_module_edges", ce.SameModuleDependencies, provRelationship),
+		count("connected_modules", ce.DependencyModules, provRelationship),
 	}
 	dim.Metrics = append(dim.Metrics, metricValues(diag.Metrics, "cycle")...)
 	dim.Confidence = weakest(state.ConfidenceFor(dim.Status), metricConfidence(diag.Metrics, "cycle"))
-	if ce.External > 0 {
+	if external > 0 {
 		dim.Unknown = append(dim.Unknown, state.UnknownFact{
-			Fact:   "structure of " + strconv.Itoa(ce.External) + " edges leaving the module map",
-			Reason: "the target is not a declared module, so its direction and layer cannot be judged",
+			Fact:   state.FactExternalDependencyStructure,
+			Reason: "the target of " + strconv.Itoa(external) + " dependencies is outside the declared module map, so its direction and layer are outside this claim",
 			Owner:  state.OwnerStructure,
 		})
 	}
@@ -207,12 +344,14 @@ func structureDimension(diag *result.Result) state.Dimension {
 func modularityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dimension {
 	dim := state.NewDimension(state.DimensionModularity, state.OwnerModularity)
 	modules := len(p.Topology.Modules)
+	reasons := map[string]string{
+		state.FactDeclaredModuleInventory:   "the configuration declares no module, so there is no boundary inventory",
+		state.FactModuleBoundaryAttribution: "the complete first-party graph was not attributed to declared modules or explicit outside-map results",
+		state.FactModuleGraphShape:          "an applicable cohesion, hub, or encapsulation graph fact was not produced",
+	}
 	if modules == 0 {
-		return unmeasured(dim, state.UnknownFact{
-			Fact:   "module boundaries",
-			Reason: "the configuration declares no module, so there is no boundary to measure cohesion or public surface against",
-			Owner:  state.OwnerModularity,
-		})
+		applyPromotion(&dim, nil, nil, reasons)
+		return dim
 	}
 	withPublic, publicEntries := 0, 0
 	for _, def := range p.Topology.Modules {
@@ -221,7 +360,25 @@ func modularityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dim
 			publicEntries += len(def.Public)
 		}
 	}
-	dim.Status = state.Measured
+
+	observed := []string{state.FactDeclaredModuleInventory}
+	var notApplicable []string
+	primaries := primaryDependencyInventory(diag)
+	ce := diag.ClassifiedEdges
+	switch {
+	case primaries.known && primaries.applicable == 0:
+		// Every language producer proved absence. Boundary attribution and
+		// graph-shape metrics have producer-proved empty denominators.
+		notApplicable = append(notApplicable, state.FactModuleBoundaryAttribution, state.FactModuleGraphShape)
+	case primaries.complete():
+		if ce != nil && ce.AttributedFirstPartyNodes == ce.FirstPartyNodes {
+			observed = append(observed, state.FactModuleBoundaryAttribution)
+		}
+		if metricsProduced(diag.Metrics, "blast_radius", "encapsulation") {
+			observed = append(observed, state.FactModuleGraphShape)
+		}
+	}
+	applyPromotion(&dim, observed, notApplicable, reasons)
 	dim.Coverage = state.Coverage{Basis: "declared modules with a declared public surface", Observed: withPublic, Total: modules}
 	dim.Metrics = []state.MetricValue{
 		count("declared_modules", modules, provPolicy),
@@ -234,8 +391,8 @@ func modularityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dim
 	dim.Confidence = weakest(state.ConfidenceFor(dim.Status), metricConfidence(diag.Metrics, "blast_radius", "encapsulation"))
 	if withPublic == 0 {
 		dim.Unknown = append(dim.Unknown, state.UnknownFact{
-			Fact:   "public surface",
-			Reason: "no declared module states a public surface, so every symbol reads as equally public",
+			Fact:   state.FactInferredPublicSurface,
+			Reason: "no declared module states a public surface, so inferring one is outside this claim",
 			Owner:  state.OwnerModularity,
 		})
 	}
@@ -253,26 +410,25 @@ func modularityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dim
 func couplingDimension(diag *result.Result) state.Dimension {
 	dim := state.NewDimension(state.DimensionCoupling, state.OwnerCoupling)
 	ce := diag.ClassifiedEdges
+	reasons := map[string]string{
+		state.FactCouplingCandidateInventory:       "no cross-boundary candidate was identified: the module map matched nothing, or every dependency left the declared modules",
+		state.FactCouplingStrength:                 "integration strength is unknown on one or more cross-boundary candidates, so no rung is invented",
+		state.FactCouplingDistance:                 "architectural distance is unknown on one or more cross-boundary candidates, so no rung is invented",
+		state.FactExtractorResolutionWithinCeiling: "dependency-cruiser left more than a tenth of import specifiers unresolved; omitted edges may understate the candidate denominator",
+	}
 	if ce == nil || ce.Scored+ce.Abstained == 0 {
-		return unmeasured(dim, state.UnknownFact{
-			Fact:   "coupling seams",
-			Reason: "no cross-boundary edge was classified: the module map matched nothing, or every edge left the declared modules",
-			Owner:  state.OwnerCoupling,
-		})
+		applyPromotion(&dim, nil, nil, reasons)
+		return dim
 	}
 	denominator := ce.Scored + ce.Abstained
-	dim.Status = state.Measured
-	if ce.Abstained > 0 {
-		// An abstained edge is a measured seam with an unknown rung. The
-		// dimension is not fully measured while any remain, and saying so is the
-		// difference between "no critical coupling" and "we could not tell".
-		dim.Status = state.Partial
-		dim.Unknown = append(dim.Unknown, state.UnknownFact{
-			Fact:   "balance of " + strconv.Itoa(ce.Abstained) + " cross-boundary edges",
-			Reason: "integration strength or distance is unknown, so the edge is deliberately unscored rather than given an invented rung",
-			Owner:  state.OwnerCoupling,
-		})
+	observed := []string{state.FactCouplingCandidateInventory}
+	if ce.Abstained == 0 {
+		observed = append(observed, state.FactCouplingStrength, state.FactCouplingDistance)
 	}
+	if !score.TSUnresolvedPartial(*diag) {
+		observed = append(observed, state.FactExtractorResolutionWithinCeiling)
+	}
+	applyPromotion(&dim, observed, nil, reasons)
 	dim.Coverage = state.Coverage{Basis: "cross-boundary edges scored", Observed: ce.Scored, Total: denominator}
 	dim.Metrics = []state.MetricValue{
 		{Name: "scored_edges", Value: float64(ce.Scored), Unit: unitCount,
@@ -290,20 +446,6 @@ func couplingDimension(diag *result.Result) state.Dimension {
 			// fact about edges. It is not the seam policy, which counts logical
 			// module pairs and is owned by the coupling gate, not this envelope.
 			count("critical_high_distance_edges", tail.DistributedMonolithEdges, provRelationship))
-	}
-	// A TypeScript extraction that could not resolve most of its import
-	// specifiers dropped internal edges into the external bucket, which this
-	// denominator excludes entirely — so `205 of 205 scored` is 100% of what
-	// survived resolution, not 100% of the imports. The scored fraction cannot
-	// show that, and reporting `measured` over it claims a completeness the run
-	// does not have.
-	if score.TSUnresolvedPartial(*diag) {
-		dim.Status = state.Partial
-		dim.Unknown = append(dim.Unknown, state.UnknownFact{
-			Fact:   "coupling of unresolved TypeScript imports",
-			Reason: "dependency-cruiser left more than a tenth of the import specifiers unresolved; those edges are excluded from this denominator, so the scored fraction understates what was missed — check tsconfig paths/baseUrl and installed dependencies",
-			Owner:  state.OwnerCoupling,
-		})
 	}
 	dim.Metrics = append(dim.Metrics, seamMetrics(diag.Seams)...)
 	dim.Metrics = append(dim.Metrics, metricValues(diag.Metrics, "unbalanced_edge")...)
@@ -350,29 +492,26 @@ func seamMetrics(seams []result.Seam) []state.MetricValue {
 func changeLocalityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dimension {
 	dim := state.NewDimension(state.DimensionChangeLocality, state.OwnerChangeLocality)
 	h := diag.VolatilityCorroboration
-	switch {
-	case h == nil:
-		return unmeasured(dim, state.UnknownFact{
-			Fact:   "change locality",
-			Reason: "git history is unavailable: the tree is not a repository, or no module was declared to attribute commits to",
-			Owner:  state.OwnerChangeLocality,
-		})
-	case h.CommitsScanned == 0:
-		return unmeasured(dim, state.UnknownFact{
-			Fact:   "change locality",
-			Reason: "the history scan returned no eligible commit (" + h.Status + "), so co-change cannot be distinguished from a stable tree",
-			Owner:  state.OwnerChangeLocality,
-		})
+	reasons := map[string]string{
+		state.FactEligibleCommitSample:    "git history is unavailable or the history scan returned no eligible commit",
+		state.FactCommitModuleAttribution: "the history scan is incomplete, so not every eligible commit has a complete module attribution",
 	}
-	dim.Status = state.Measured
-	if h.Status != modevidence.StatusOK {
-		dim.Status = state.Partial
-		dim.Unknown = append(dim.Unknown, state.UnknownFact{
-			Fact:   "the remainder of the history window",
-			Reason: "the history scan reported " + h.Status + ", so the commit sample is truncated",
-			Owner:  state.OwnerChangeLocality,
-		})
+	if h == nil {
+		applyPromotion(&dim, nil, nil, reasons)
+		return dim
 	}
+	if h.CommitsScanned == 0 {
+		reasons[state.FactEligibleCommitSample] = "the history scan returned no eligible commit (" + h.Status + "), so co-change cannot be distinguished from a stable tree"
+		applyPromotion(&dim, nil, nil, reasons)
+		return dim
+	}
+	observed := []string{state.FactEligibleCommitSample}
+	if h.Status == modevidence.StatusOK {
+		observed = append(observed, state.FactCommitModuleAttribution)
+	} else {
+		reasons[state.FactCommitModuleAttribution] = "the history scan reported " + h.Status + ", so the commit sample and its module attribution are truncated"
+	}
+	applyPromotion(&dim, observed, nil, reasons)
 	// The denominator is the declared module set, not the touched count. Observed
 	// over observed is a tautology: it reports 100% coverage on a window that
 	// reached one module out of forty, which is the shape of a history scan whose
@@ -384,11 +523,10 @@ func changeLocalityDimension(diag *result.Result, p policy.PolicySnapshot) state
 		count("commits_scanned", h.CommitsScanned, provGitHistory),
 		count("modules_touched", h.ModulesTouched, provGitHistory),
 	}
-	dim.Confidence = state.ConfidenceFor(dim.Status)
 	// Git history reflects both essential and accidental volatility, so it
 	// corroborates a declared volatility and never replaces it.
 	dim.Unknown = append(dim.Unknown, state.UnknownFact{
-		Fact:   "essential vs accidental volatility",
+		Fact:   state.FactEssentialAccidentalVolatility,
 		Reason: "commit frequency corroborates a declared volatility; it cannot establish one",
 		Owner:  state.OwnerChangeLocality,
 	})
@@ -569,16 +707,14 @@ func driftDimension(diag *result.Result, ref BaselineAnchor) state.Dimension {
 	dim := state.NewDimension(state.DimensionDrift, state.OwnerDrift)
 	current := qualifyingSeamIDs(diag.Seams)
 	if !ref.SeamsComparable {
-		dim.Delta = &state.Delta{Status: state.ComparisonNonComparable, Reasons: ref.driftReasons()}
+		reasons := ref.driftReasons()
+		dim.Delta = &state.Delta{Status: state.ComparisonNonComparable, Reasons: reasons}
 		attachFindingBuckets(dim.Delta, diag.Delta)
-		// The reason already states the cause in full; prefixing it produced
-		// "no comparable architecture-state reference: no comparable
-		// architecture-state reference is stored" in every clean report.
-		return unmeasured(dim, state.UnknownFact{
-			Fact:   "architecture drift",
-			Reason: ref.driftReasons()[0],
-			Owner:  state.OwnerDrift,
+		applyPromotion(&dim, nil, nil, map[string]string{
+			state.FactAdmissiblePersistedReference: reasons[0],
+			state.FactCompleteTwoSidedSeamIdentity: "two-sided seam identity cannot be compared without an admissible persisted reference",
 		})
+		return dim
 	}
 	stored := make(map[string]struct{}, len(ref.QualifyingSeamIDs))
 	for _, id := range ref.QualifyingSeamIDs {
@@ -599,8 +735,10 @@ func driftDimension(diag *result.Result, ref BaselineAnchor) state.Dimension {
 			resolvedSeams++
 		}
 	}
-	dim.Status = state.Measured
-	dim.Confidence = state.ConfidenceFor(dim.Status)
+	applyPromotion(&dim, []string{
+		state.FactAdmissiblePersistedReference,
+		state.FactCompleteTwoSidedSeamIdentity,
+	}, nil, nil)
 	// The denominator is BOTH sides' qualifying seams, not this run's. Counting
 	// only the current side is observed-over-observed: a run that resolved five
 	// seams and carries none would report 0/0 and read as "nothing to compare"

@@ -21,31 +21,38 @@ type AdvisoryCandidate struct {
 
 // ClassifiedEdgeSummary is the report-neutral distribution of classified edges.
 type ClassifiedEdgeSummary struct {
-	Total                 int
-	Scored                int
-	Abstained             int
-	SameModule            int
-	MeanBalance           float64
-	TailRisk              *CouplingTailRiskSummary
-	ByStrength            map[string]int
-	ByDistance            map[string]int
-	ByDistanceBasis       map[string]int
-	ByVolatility          map[string]int
-	BySeverity            map[string]int
-	ByBalanceDriver       map[string]int
-	ByCriticalDriver      map[string]int
-	ByModulePair          map[string]int
-	DistributedMonolith   int
-	External              int
-	DeclaredExternal      int
-	ConnectedModules      int
-	CloneOnlyScored       int
-	CloneOnlyAdvisory     int
-	LLMApproved           int
-	LabeledLLM            int
-	LLMLowConfidenceEdges int
-	VolatilityProvenance  *VolatilityProvenance
-	DistanceCompression   *DistanceCompressionSummary
+	Total                          int
+	Scored                         int
+	Abstained                      int
+	SameModule                     int
+	DependencyEdges                int
+	InternalDependencies           int
+	ClassifiedInternalDependencies int
+	SameModuleDependencies         int
+	DependencyModules              int
+	FirstPartyNodes                int
+	AttributedFirstPartyNodes      int
+	MeanBalance                    float64
+	TailRisk                       *CouplingTailRiskSummary
+	ByStrength                     map[string]int
+	ByDistance                     map[string]int
+	ByDistanceBasis                map[string]int
+	ByVolatility                   map[string]int
+	BySeverity                     map[string]int
+	ByBalanceDriver                map[string]int
+	ByCriticalDriver               map[string]int
+	ByModulePair                   map[string]int
+	DistributedMonolith            int
+	External                       int
+	DeclaredExternal               int
+	ConnectedModules               int
+	CloneOnlyScored                int
+	CloneOnlyAdvisory              int
+	LLMApproved                    int
+	LabeledLLM                     int
+	LLMLowConfidenceEdges          int
+	VolatilityProvenance           *VolatilityProvenance
+	DistanceCompression            *DistanceCompressionSummary
 }
 
 // CouplingTailRiskSummary records lower-tail relationship statistics.

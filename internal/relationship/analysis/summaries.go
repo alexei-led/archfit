@@ -15,11 +15,38 @@ import (
 
 func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnlyPair, duplicated policy.DuplicatedKnowledgePolicy) *relationship.ClassifiedEdgeSummary {
 	s := &relationship.ClassifiedEdgeSummary{ByStrength: map[string]int{}, ByDistance: map[string]int{}, ByDistanceBasis: map[string]int{}, ByVolatility: map[string]int{}, BySeverity: map[string]int{}, ByBalanceDriver: map[string]int{}, ByCriticalDriver: map[string]int{}, ByModulePair: map[string]int{}, DistanceCompression: distanceCompression()}
+	for _, n := range set.Nodes {
+		if !n.FirstParty {
+			continue
+		}
+		s.FirstPartyNodes++
+		if n.BoundaryClassified {
+			s.AttributedFirstPartyNodes++
+		}
+	}
 	connected := map[string]struct{}{}
+	dependencyModules := map[string]struct{}{}
 	tail := tailAccumulator{}
 	sum := 0
 	span := spanAccumulator{}
 	for _, e := range set.Edges {
+		if e.IsDependency() {
+			s.DependencyEdges++
+			if e.FromModule != "" && e.ToModule != "" {
+				s.InternalDependencies++
+				// buildSet preserves the directed kind plus both module and
+				// layer placements. An empty layer on a known module is an
+				// observed unlayered placement, not a failed attribution.
+				if e.StructureClassified {
+					s.ClassifiedInternalDependencies++
+				}
+				dependencyModules[e.FromModule] = struct{}{}
+				dependencyModules[e.ToModule] = struct{}{}
+				if e.FromModule == e.ToModule {
+					s.SameModuleDependencies++
+				}
+			}
+		}
 		sum += addSummary(s, e.Classified, e.Strength, e.Distance, e.Volatility, e.Provenance)
 		addDriver(s, e.Classified, e.Distance, e.FromModule, e.ToModule)
 		tail.add(e.Classified, e.Distance, false)
@@ -47,6 +74,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 			s.ConnectedModules++
 		}
 	}
+	s.DependencyModules = len(dependencyModules)
 	if s.Scored > 0 {
 		s.MeanBalance = float64(sum) / float64(s.Scored)
 		s.TailRisk = tail.result(s.Scored)

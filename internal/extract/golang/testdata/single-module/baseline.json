@@ -99,9 +99,14 @@
       "status": "unmeasured",
       "unknown": [
         {
-          "fact": "change locality",
+          "fact": "eligible commit sample",
           "owner": "history/git",
-          "reason": "git history is unavailable: the tree is not a repository, or no module was declared to attribute commits to"
+          "reason": "git history is unavailable or the history scan returned no eligible commit"
+        },
+        {
+          "fact": "commit-to-module attribution",
+          "owner": "history/git",
+          "reason": "the history scan is incomplete, so not every eligible commit has a complete module attribution"
         }
       ]
     },
@@ -300,9 +305,14 @@
       "status": "unmeasured",
       "unknown": [
         {
-          "fact": "architecture drift",
+          "fact": "admissible persisted reference",
           "owner": "assessment/decision",
           "reason": "no comparable architecture-state reference is stored"
+        },
+        {
+          "fact": "complete two-sided seam identity",
+          "owner": "assessment/decision",
+          "reason": "two-sided seam identity cannot be compared without an admissible persisted reference"
         }
       ]
     },
@@ -415,7 +425,7 @@
         {
           "name": "blast_radius",
           "provenance": [
-            "assessment/metrics/blast_radius.v1"
+            "assessment/metrics/blast_radius.v2"
           ],
           "unit": "count",
           "value": 1
@@ -426,9 +436,9 @@
       "status": "measured",
       "unknown": [
         {
-          "fact": "public surface",
+          "fact": "inferred public surface",
           "owner": "assessment/metrics",
-          "reason": "no declared module states a public surface, so every symbol reads as equally public"
+          "reason": "no declared module states a public surface, so inferring one is outside this claim"
         }
       ]
     },
@@ -522,7 +532,7 @@
     "structure": {
       "confidence": "high",
       "coverage": {
-        "basis": "discovered edges resolved to a declared module",
+        "basis": "discovered dependencies resolved inside the declared module map",
         "observed": 1,
         "total": 1
       },

@@ -8,7 +8,7 @@ COVERAGE   4 measured · 3 partial · 2 unmeasured  (of 9)
 DIMENSIONS
 
   intent          measured    gate: pass            confidence: high     declared rules evaluated 1/1
-  structure       measured    gate: fail            confidence: high     discovered edges resolved to a declared module 1/1
+  structure       measured    gate: fail            confidence: high     discovered dependencies resolved inside the declared module map 1/1
   modularity      measured    gate: pass            confidence: low      declared modules with a declared public surface 0/2
   coupling        measured    gate: warn            confidence: high     cross-boundary edges scored 1/1
   change_locality unmeasured  gate: not_applicable  confidence: unrated  no denominator
@@ -17,12 +17,14 @@ DIMENSIONS
   operations      partial     gate: pass            confidence: medium   applicable analyzers reporting coverage 4/4
   drift           unmeasured  gate: not_applicable  confidence: unrated  no denominator
 
-NOT MEASURED (8)
+NOT MEASURED (10)
 
-  modularity — public surface
-    no declared module states a public surface, so every symbol reads as equally public
-  change_locality — change locality
-    git history is unavailable: the tree is not a repository, or no module was declared to attribute commits to
+  modularity — inferred public surface
+    no declared module states a public surface, so inferring one is outside this claim
+  change_locality — eligible commit sample
+    git history is unavailable or the history scan returned no eligible commit
+  change_locality — commit-to-module attribution
+    the history scan is incomplete, so not every eligible commit has a complete module attribution
   complexity — cognitive complexity
     v1 ships no cognitive-complexity analyzer; only the size tail is measured
   testability — executed test coverage
@@ -33,8 +35,10 @@ NOT MEASURED (8)
     v1 reports declared owners and deploy units only; nothing observes what actually runs
   operations — supply-chain inventory
     SBOM and vulnerability facts have no collector in v1
-  drift — architecture drift
+  drift — admissible persisted reference
     no comparable architecture-state reference is stored
+  drift — complete two-sided seam identity
+    two-sided seam identity cannot be compared without an admissible persisted reference
 
 COUPLING SEAMS (1)
 

@@ -149,6 +149,190 @@ type FindingRef struct {
 	Status   string
 }
 
+// RequiredFact is one fixed fact kind in a dimension's evidence contract.
+// InClaim facts decide promotion. Out-of-claim facts document which unknown
+// disclosures may coexist with a measured dimension without weakening its
+// claim.
+type RequiredFact struct {
+	Name    string
+	Owner   string
+	InClaim bool
+}
+
+// Required fact names. Collectors use these constants when reporting missing
+// evidence so contract tests can distinguish in-claim gaps from permitted
+// out-of-claim disclosures without matching prose.
+const (
+	FactDeclaredIntentInventory          = "declared intent inventory"
+	FactActiveRuleConformance            = "active rule conformance"
+	FactDisabledRuleConformance          = "disabled rule conformance"
+	FactPrimaryDependencyInventory       = "primary dependency inventory"
+	FactInternalEdgeClassification       = "internal edge classification"
+	FactExternalDependencyStructure      = "external dependency structure"
+	FactDeclaredModuleInventory          = "declared module inventory"
+	FactModuleBoundaryAttribution        = "module boundary attribution"
+	FactModuleGraphShape                 = "module graph shape"
+	FactInferredPublicSurface            = "inferred public surface"
+	FactCouplingCandidateInventory       = "coupling candidate inventory"
+	FactCouplingStrength                 = "coupling strength"
+	FactCouplingDistance                 = "coupling distance"
+	FactExtractorResolutionWithinCeiling = "extractor resolution within ceiling"
+	FactLocalAndUndeclaredCoupling       = "local and undeclared-external coupling"
+	FactEligibleCommitSample             = "eligible commit sample"
+	FactCommitModuleAttribution          = "commit-to-module attribution"
+	FactEssentialAccidentalVolatility    = "essential vs accidental volatility"
+	FactDeclaredModuleGraph              = "declared module graph"
+	FactDependencyChainDepth             = "dependency chain depth"
+	FactModuleFanInDistribution          = "module fan-in distribution"
+	FactModuleFanOutDistribution         = "module fan-out distribution"
+	FactCodeSizeTail                     = "code size tail"
+	FactFunctionLengthDistribution       = "function length distribution"
+	FactCognitiveComplexity              = "cognitive complexity"
+	FactProductionSourceInventory        = "production source inventory"
+	FactSuppliedCoverageUnits            = "supplied coverage units"
+	FactCoveragePathResolution           = "coverage path resolution"
+	FactCoverageModuleAttribution        = "coverage module attribution"
+	FactCoverageFreshness                = "coverage freshness"
+	FactAssertionQuality                 = "assertion quality"
+	FactBoundaryTestSemantics            = "boundary test semantics"
+	FactDeclaredOperationalTopology      = "declared operational topology"
+	FactCorroboratedDeployUnit           = "corroborated deploy unit"
+	FactOwnerProvenance                  = "owner provenance"
+	FactTopologyReconciliation           = "declared-to-corroborated topology reconciliation"
+	FactRuntimeTopology                  = "observed runtime topology"
+	FactSupplyChainInventory             = "supply-chain inventory"
+	FactAnalyzerHealth                   = "analyzer health"
+	FactAdmissiblePersistedReference     = "admissible persisted reference"
+	FactCompleteTwoSidedSeamIdentity     = "complete two-sided seam identity"
+	FactBaseComparison                   = "base comparison"
+)
+
+// RequiredFacts returns the source-fixed fact contract for one dimension.
+// Runtime configuration may change which producers are applicable, but it can
+// never remove a fact kind from this set.
+func RequiredFacts(dimension string) []RequiredFact {
+	required := func(name, owner string) RequiredFact {
+		return RequiredFact{Name: name, Owner: owner, InClaim: true}
+	}
+	outOfClaim := func(name, owner string) RequiredFact {
+		return RequiredFact{Name: name, Owner: owner, InClaim: false}
+	}
+	switch dimension {
+	case DimensionIntent:
+		return []RequiredFact{
+			required(FactDeclaredIntentInventory, OwnerIntent),
+			required(FactActiveRuleConformance, OwnerIntent),
+			outOfClaim(FactDisabledRuleConformance, OwnerIntent),
+		}
+	case DimensionStructure:
+		return []RequiredFact{
+			required(FactPrimaryDependencyInventory, OwnerStructure),
+			required(FactInternalEdgeClassification, OwnerStructure),
+			outOfClaim(FactExternalDependencyStructure, OwnerStructure),
+		}
+	case DimensionModularity:
+		return []RequiredFact{
+			required(FactDeclaredModuleInventory, OwnerModularity),
+			required(FactModuleBoundaryAttribution, OwnerModularity),
+			required(FactModuleGraphShape, OwnerModularity),
+			outOfClaim(FactInferredPublicSurface, OwnerModularity),
+		}
+	case DimensionCoupling:
+		return []RequiredFact{
+			required(FactCouplingCandidateInventory, OwnerCoupling),
+			required(FactCouplingStrength, OwnerCoupling),
+			required(FactCouplingDistance, OwnerCoupling),
+			required(FactExtractorResolutionWithinCeiling, OwnerCoupling),
+			outOfClaim(FactLocalAndUndeclaredCoupling, OwnerCoupling),
+		}
+	case DimensionChangeLocality:
+		return []RequiredFact{
+			required(FactEligibleCommitSample, OwnerChangeLocality),
+			required(FactCommitModuleAttribution, OwnerChangeLocality),
+			outOfClaim(FactEssentialAccidentalVolatility, OwnerChangeLocality),
+		}
+	case DimensionComplexity:
+		return []RequiredFact{
+			required(FactDeclaredModuleGraph, OwnerComplexity),
+			required(FactDependencyChainDepth, OwnerComplexity),
+			required(FactModuleFanInDistribution, OwnerComplexity),
+			required(FactModuleFanOutDistribution, OwnerComplexity),
+			outOfClaim(FactCodeSizeTail, OwnerComplexity),
+			outOfClaim(FactFunctionLengthDistribution, OwnerComplexity),
+			outOfClaim(FactCognitiveComplexity, OwnerComplexity),
+		}
+	case DimensionTestability:
+		return []RequiredFact{
+			required(FactProductionSourceInventory, OwnerTestability),
+			required(FactSuppliedCoverageUnits, OwnerTestability),
+			required(FactCoveragePathResolution, OwnerTestability),
+			required(FactCoverageModuleAttribution, OwnerTestability),
+			required(FactCoverageFreshness, OwnerTestability),
+			outOfClaim(FactAssertionQuality, OwnerTestability),
+			outOfClaim(FactBoundaryTestSemantics, OwnerTestability),
+		}
+	case DimensionOperations:
+		return []RequiredFact{
+			required(FactDeclaredOperationalTopology, OwnerOperations),
+			required(FactCorroboratedDeployUnit, OwnerOperations),
+			required(FactOwnerProvenance, OwnerOperations),
+			required(FactTopologyReconciliation, OwnerOperations),
+			outOfClaim(FactRuntimeTopology, OwnerOperations),
+			outOfClaim(FactSupplyChainInventory, OwnerOperations),
+			outOfClaim(FactAnalyzerHealth, OwnerOperations),
+		}
+	case DimensionDrift:
+		return []RequiredFact{
+			required(FactAdmissiblePersistedReference, OwnerDrift),
+			required(FactCompleteTwoSidedSeamIdentity, OwnerDrift),
+			outOfClaim(FactBaseComparison, OwnerDrift),
+		}
+	default:
+		return nil
+	}
+}
+
+// Promote applies the shared evidence-completeness rule for one applicable
+// dimension. Callers establish applicability before invoking it. Required facts
+// covered by observed or notApplicable produce measured; a missing set with at
+// least one observed in-claim fact produces partial; no observed in-claim fact
+// produces unmeasured. Every missing in-claim fact is returned explicitly.
+func Promote(dimension string, observed, notApplicable []string) (MeasurementStatus, []UnknownFact) {
+	observedSet := make(map[string]struct{}, len(observed))
+	for _, name := range observed {
+		observedSet[name] = struct{}{}
+	}
+	notApplicableSet := make(map[string]struct{}, len(notApplicable))
+	for _, name := range notApplicable {
+		notApplicableSet[name] = struct{}{}
+	}
+
+	observedInClaim := 0
+	missing := make([]UnknownFact, 0)
+	for _, fact := range RequiredFacts(dimension) {
+		if !fact.InClaim {
+			continue
+		}
+		if _, ok := observedSet[fact.Name]; ok {
+			observedInClaim++
+			continue
+		}
+		if _, ok := notApplicableSet[fact.Name]; ok {
+			continue
+		}
+		missing = append(missing, UnknownFact{
+			Fact: fact.Name, Reason: "the required fact was not observed or proved not applicable", Owner: fact.Owner,
+		})
+	}
+	if len(missing) == 0 {
+		return Measured, []UnknownFact{}
+	}
+	if observedInClaim > 0 {
+		return Partial, missing
+	}
+	return Unmeasured, missing
+}
+
 // UnknownFact names one thing a dimension could not observe, why, and which
 // capability would have to observe it. It is how partial/unmeasured states stay
 // honest instead of silently reading as zero.

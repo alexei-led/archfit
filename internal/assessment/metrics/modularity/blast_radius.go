@@ -21,8 +21,9 @@ type BlastRadiusMetric struct{}
 // Name returns "blast_radius".
 func (m BlastRadiusMetric) Name() string { return "blast_radius" }
 
-// Version returns "blast_radius.v1".
-func (m BlastRadiusMetric) Version() string { return "blast_radius.v1" }
+// Version returns "blast_radius.v2". V2 resolves graph nodes and edges through
+// the declared architecture module map instead of extractor package/crate keys.
+func (m BlastRadiusMetric) Version() string { return "blast_radius.v2" }
 
 // hubInfo is one high-blast module for display.
 type hubInfo struct {

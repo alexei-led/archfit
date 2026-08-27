@@ -21,7 +21,7 @@ denominator: declared rules evaluated 1/1
 
 ### structure — measured · gate: fail · confidence: high
 owner: relationship/facts
-denominator: discovered edges resolved to a declared module 1/1
+denominator: discovered dependencies resolved inside the declared module map 1/1
 - internal_edges: 1 count
 - external_edges: 0 count
 - same_module_edges: 0 count
@@ -35,7 +35,7 @@ denominator: declared modules with a declared public surface 0/2
 - public_surface_entries: 0 count (0/2)
 - local_coupling_modules: 0 count
 - blast_radius: 1 count
-- not measured — public surface: no declared module states a public surface, so every symbol reads as equally public
+- not measured — inferred public surface: no declared module states a public surface, so inferring one is outside this claim
 
 ### coupling — measured · gate: warn · confidence: high
 owner: relationship/analysis
@@ -56,7 +56,8 @@ denominator: cross-boundary edges scored 1/1
 ### change_locality — unmeasured · gate: not_applicable · confidence: unrated
 owner: history/git
 denominator: none — this dimension measured nothing
-- not measured — change locality: git history is unavailable: the tree is not a repository, or no module was declared to attribute commits to
+- not measured — eligible commit sample: git history is unavailable or the history scan returned no eligible commit
+- not measured — commit-to-module attribution: the history scan is incomplete, so not every eligible commit has a complete module attribution
 
 ### complexity — partial · gate: pass · confidence: medium
 owner: syntax+evidence/acquisition
@@ -91,7 +92,8 @@ denominator: applicable analyzers reporting coverage 4/4
 ### drift — unmeasured · gate: not_applicable · confidence: unrated
 owner: assessment/decision
 denominator: none — this dimension measured nothing
-- not measured — architecture drift: no comparable architecture-state reference is stored
+- not measured — admissible persisted reference: no comparable architecture-state reference is stored
+- not measured — complete two-sided seam identity: two-sided seam identity cannot be compared without an admissible persisted reference
 - delta: non_comparable
   - no comparable architecture-state reference is stored
 
