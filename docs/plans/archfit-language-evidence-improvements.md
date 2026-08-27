@@ -217,12 +217,34 @@ contract is therefore:
   (`internal/application/report.go:65`, asserted in
   `internal/application/report_measurement_test.go:72-74`). Matching a sidecar
   SHA against `HEAD` therefore proves nothing about the files actually measured:
-  any edit after the profile was produced still matches. Promotion additionally
-  requires a clean tree for the covered sources — `git status --porcelain`
-  reporting no modified tracked file and no untracked file under any covered
-  module. A dirty or untracked covered source forces `partial` with reason
-  `worktree_differs_from_ref`. This is the only condition under which the
-  profile's SHA is evidence about the scanned bytes.
+  any edit after the profile was produced still matches.
+
+  Promotion therefore additionally requires **scan-scope parity**: the freshness
+  probe must enumerate exactly the file set the analyzers scan, and prove that
+  set is reproducible from the referenced commit.
+
+  `git status --porcelain` is **not** a sufficient detector and must not be used
+  alone. Default porcelain omits ignored files, but the analyzers walk the
+  filesystem directly with no gitignore filter
+  (`internal/extract/loc/loc.go:92`), and generated or vendored inputs are
+  resolved from the surrounding repository even when ignored
+  (`internal/history/git/worktree.go:74-76`). An ignored `.go` file under a
+  covered module is therefore scan-relevant but invisible to porcelain — the
+  round-12 false green.
+
+  **Implementation (owned by Task 8, not by tests):** `coverage.Freshness`
+  computes a *scanner inventory hash* over the same enumeration the analyzers
+  use — the walked path set plus each file's content hash, restricted to covered
+  modules — and compares it against the inventory reproduced from the referenced
+  commit. Any path present in the scan but absent from the commit (untracked or
+  ignored), or present in both with differing content, yields `stale` with
+  reason `worktree_differs_from_ref`. Because the inventory is derived from the
+  scanner's own walk rather than from git's index, ignored files cannot escape
+  it by construction. `git status --porcelain` may be used only as a fast
+  pre-filter, never as the authority.
+
+  This is the only condition under which the profile's SHA is evidence about the
+  scanned bytes.
 
 Config shape (new `coverage:` block, schema additive):
 
@@ -1066,6 +1088,12 @@ Files:
   unresolved, resolve freshness. Parsing delegated via a `Parser` interface with
   one registered stub here.
 - `internal/extract/coverage/normalize.go` (new) — the path contract.
+- `internal/extract/coverage/inventory.go` (new) — the scanner inventory hash of
+  §2.2. Enumerates covered-module files using the analyzers' own filesystem walk
+  (no gitignore filter, matching `internal/extract/loc/loc.go:92`), hashes path
+  set plus contents, and reproduces the same inventory from the referenced
+  commit for comparison. This is where ignored-file staleness is caught; it is
+  not a test-only concern.
 - `internal/factcache/**` — key covers source content hash + format + parser
   version + ScanRoot + source ref. Stale/unverified/partial ingests are never
   cached, matching `docs/design/fact-cache.md`.
@@ -1096,13 +1124,22 @@ Fitness gate:
 - `coverage.enabled: false` → byte-identical output vs `.archfit-task8-ref.json`,
   the reference this task captures before its first edit. Never compared against
   Task 6: Task 7 changes serialized output on purpose.
-- Freshness is bound to the **scanned bytes**, not just to `HEAD` (§2.2). Three
-  cases, all asserted in `internal/extract/coverage/coverage_test.go`:
+- Freshness is bound to the **scanned bytes** via the scanner inventory hash of
+  §2.2, not to `HEAD` and not to `git status --porcelain`. Four cases, all
+  asserted in `internal/extract/coverage/coverage_test.go`:
   - clean tree, SHA matches → `Freshness = matched`;
   - **tracked covered file modified** after the profile → `stale`, reason
     `worktree_differs_from_ref`, even though the sidecar SHA still equals `HEAD`;
-  - **untracked file added** under a covered module → `stale`, same reason.
-  The last two are the false-green cases: a SHA-only check passes them.
+  - **untracked file added** under a covered module → `stale`, same reason;
+  - **gitignored `.go` file added or modified** under a covered module → `stale`,
+    same reason. The fixture writes a `.gitignore` covering the path, so `git
+  status --porcelain` reports a clean tree while the scanner still walks the
+    file. A porcelain-based implementation fails this case; an inventory-hash
+    implementation passes it.
+  The last three are the false-green cases. A SHA-only check passes all three; a
+  porcelain-based check still passes the ignored-file case. Only scan-scope
+  parity closes them, which is why the mechanism is specified in §2.2 rather
+  than left to the tests.
 
 Impact commands:
 
@@ -1308,13 +1345,15 @@ Fitness gate:
     `worktree_differs_from_ref`;
   - add an untracked `.go` file under a covered module → `partial`, same reason;
   - **add or modify a gitignored `.go` file under a covered module** → `partial`,
-    same reason. Default `git status --porcelain` omits ignored files, but
-    Archfit walks the filesystem directly (internal/extract/loc/loc.go:92) and
-    includes ignored content. This is the remaining false-green: stale ignored
-    source passes the porcelain check but Archfit scans it differently.
-  Only the unmodified fixture may reach `measured`. Without all three cases a
-  SHA-only or porcelain-only implementation passes every stated gate while
-  promoting stale evidence to `HEALTHY`.
+    same reason. The fixture writes a `.gitignore` covering that path, so `git
+    status --porcelain` reports a clean tree while the scanner still walks the
+    file. This case fails any porcelain-based implementation and passes only
+    with the §2.2 scanner inventory hash, which is why the mechanism is owned by
+    `internal/extract/coverage/inventory.go` in Task 8 rather than asserted only
+    here.
+  Only the unmodified fixture may reach `measured`. Without all three mutation
+  cases a SHA-only or porcelain-only implementation passes every stated gate
+  while promoting stale evidence to `HEALTHY`.
 - Zero test files with coverage present → `measured` with ratio 0, not
   `unmeasured`. A tested-nothing repo is a measured fact, not missing evidence.
 - Coverage ratio never influences the verdict: assert no finding or gate reads
