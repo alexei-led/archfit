@@ -8,6 +8,9 @@ on:
       - main
 permissions:
   contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   lint:
     name: Lint
@@ -16,19 +19,19 @@ jobs:
       # persist-credentials:false: govulncheck-action runs a nested checkout;
       # a persisted auth extraheader here collides with it (duplicate
       # Authorization header -> HTTP 400). This job never pushes.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.12.2
       - name: govulncheck
-        uses: golang/govulncheck-action@v1.0.4
+        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
         with:
           go-version-file: go.mod
   test:
@@ -36,15 +39,17 @@ jobs:
     runs-on: ubuntu-24.04
     needs: lint
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24"
-      - uses: astral-sh/setup-uv@v8.2.0 # no bare v8 major tag published
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           python-version: "3.13"
           enable-cache: false
@@ -69,6 +74,8 @@ jobs:
       - name: CI gate — architecture-state erosion
         run: go test ./internal/ ./cmd/archfit/ -run TestErosion_ -count=1
       - name: Install architecture analyzers
+        # Versions are pinned and the commands exercise Archfit's real adapters.
+        # zizmor: ignore[adhoc-packages]
         run: |
           npm install -g jscpd@5.0.11 @ast-grep/cli@0.44.0
           go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7
@@ -76,7 +83,7 @@ jobs:
       - name: CI gate — architecture drift
         run: make archfit
       - name: Upload coverage
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage
           path: coverage.out
@@ -97,8 +104,10 @@ jobs:
           - goos: darwin
             goarch: arm64
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -110,10 +119,10 @@ jobs:
         run: |
           go build -trimpath \
             -ldflags="-s -w -X main.version=${GITHUB_REF_NAME:-dev}" \
-            -o dist/archfit-${{ matrix.goos }}-${{ matrix.goarch }} \
+            -o "dist/archfit-${GOOS}-${GOARCH}" \
             ./cmd/archfit
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: archfit-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/archfit-${{ matrix.goos }}-${{ matrix.goarch }}
