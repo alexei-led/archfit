@@ -1096,21 +1096,9 @@ go test ./internal/factcache/ ./internal/config/ -count=1
 ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 make build
-
-# Integration test: coverage.enabled:false produces no output regression.
-# Cannot use git stash (mutates source tree) or git show .bin/archfit (ignored).
-# Use git archive to extract HEAD, build HEAD binary in isolation, compare
-# outputs on the same fixture.
-echo "Building HEAD binary from git archive..."
-TEMP_HEAD=$(mktemp -d)
-trap 'rm -rf "$TEMP_HEAD"' EXIT
-git archive HEAD | tar -xC "$TEMP_HEAD" || { echo "Failed to extract HEAD source"; exit 1; }
-(cd "$TEMP_HEAD" && make build) || { echo "Failed to build HEAD binary"; exit 1; }
-HEAD_BIN="$TEMP_HEAD/.bin/archfit"
-test -x "$HEAD_BIN" || { echo "HEAD binary not found"; exit 1; }
-
-# Subtest verifies both binaries on the same fixture produce identical output.
-go test ./cmd/archfit -run TestCoverageIngestDisabled -v -count=1 || exit 1
+# Format and golden tests confirm coverage-disabled behavior is stable.
+# Task 3's IntegrationReachability fixture verifies end-to-end with and without
+# coverage. No new two-binary harness is needed here.
 make lint
 ```
 
