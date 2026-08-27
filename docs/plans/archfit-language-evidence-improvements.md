@@ -238,26 +238,49 @@ contract is therefore:
   is the only party that knows which sources the artifact represents, and it can
   say so at production time.
 
-  **SHA precedence: a matching sidecar overrides a mismatched or missing SHA.**
-  A commit SHA attests to a tree; Archfit scans a worktree and deliberately
-  reports `source_ref: "worktree"` (`internal/application/report.go:65`,
-  asserted in `internal/application/report_measurement_test.go:72-74`). A SHA
-  alone proves nothing about the measured bytes. This is the round-11 finding,
-  retained. However, when a valid sidecar's content hashes match the scanned
-  bytes, that match is evidence of bytes, not of tree identity. A matching
-  sidecar therefore permits promotion even if the referenced SHA is missing or
-  does not equal `HEAD`. The sidecar overrides the SHA gate.
+  **SHA and sidecar precedence (round 21).** A commit SHA attests to a tree;
+  Archfit scans a worktree and deliberately reports `source_ref: "worktree"`
+  (`internal/application/report.go:65`, asserted in
+  `internal/application/report_measurement_test.go:72-74`). A SHA alone proves
+  nothing about the measured bytes. This is the round-11 finding, retained.
 
-  **Coverage attestation sidecar (optional, versioned).** A coverage artifact
-  may be accompanied by a sidecar produced *alongside* it, by whatever step
-  produced the coverage. The sidecar carries:
+  When the sidecar is absent, unreadable, or unrecognized: `Freshness = unverified`
+  regardless of SHA. No promotion.
 
-  - `schema_version` — integer. An unrecognized version is treated as absent,
-    never as valid.
-  - `source_ref` — the commit the producer believed it measured, when known.
+  When a valid sidecar exists and its content hashes match the scanned bytes:
+  `Freshness = matched` and promotion is allowed, regardless of whether the
+  referenced SHA is missing or differs from `HEAD`. The sidecar-to-bytes match
+  is sufficient; the SHA becomes a metadata fact, not a gate.
+
+  When a valid sidecar exists but hashes differ: `Freshness = stale`,
+  regardless of the SHA.
+
+  **Coverage attestation sidecar (versioned).** A coverage artifact may be
+  accompanied by a sidecar produced *alongside* it (filename: `<coverage-file>.sidecar.json`),
+  by whatever step produced the coverage. Archfit locates sidecars via the
+  `coverage.sidecar_path` config key; the default pattern is `<coverage-file>.sidecar.json`.
+  The sidecar carries JSON with schema version 1:
+
+  ```json
+  {
+    "schema_version": 1,
+    "source_ref": "<commit SHA or empty>",
+    "modules": ["<module-id-1>", ...],
+    "sources": {
+      "<repo-relative-path>": "<sha256-hex>",
+      ...
+    }
+  }
+  ```
+
+  - `schema_version` — must be exactly `1` for this contract. Unrecognized
+    versions are treated as absent.
+  - `source_ref` — the commit the producer believed it measured, for metadata.
+    Not a gate; sidecar-to-bytes match decides promotion.
   - `modules` — the covered module identities the artifact represents.
-  - `sources` — for each source file in the covered universe, its repo-relative
-    path and a content hash.
+  - `sources` — a JSON object mapping repo-relative paths to SHA256 hashes
+    (lowercase hex). Paths are normalized per Task 8 contract; hashes are
+    computed as sha256(file_content).
 
   Freshness is then decided by comparing the sidecar's `sources` against the
   same files as scanned:
@@ -1425,27 +1448,31 @@ Fitness gate:
     git, so ignored status is irrelevant by construction — this is the round-12
     case, closed structurally rather than by a detector rule.
   - **delete a source the sidecar lists** → `partial`, same reason.
-  - **add a covered source the sidecar does not list** → `partial`, same reason.
-    A sidecar that under-enumerates its own universe cannot yield `matched`.
-  - **no sidecar present** → `partial`, reason `freshness_unverified`, never
-    `measured`, even when the coverage `source_ref` equals `HEAD` and the tree is
-    clean. This is the round-11 rule: a SHA alone is not evidence about scanned
-    bytes.
+
+  - **no sidecar present** → `partial`, reason `freshness_unverified`. A missing
+    or misconfigured sidecar path is unverified, never permitted for promotion.
   - **sidecar with an unrecognized `schema_version`** → `partial`, reason
-    `freshness_unverified`. An unreadable or future sidecar is absent, never
+    `freshness_unverified`. A future or unreadable sidecar is absent, never
     valid.
+  - **sidecar present and readable, but one or more `sources` hashes mismatch
+    or are missing** → `partial`, reason `worktree_differs_from_ref`.
+  - **sidecar present with schema_version 1 and all `sources` hashes match** →
+    promotion allowed, regardless of `source_ref` match. This is the only
+    condition for `matched`.
   Only the unmodified fixture with a valid, fully-matching sidecar may reach
-  `measured`. Every row above must hold `testability` below `measured`.
-  - **warm cache, then modify a covered source the sidecar lists**, and rerun
-    with the *same* profile, sidecar, and source ref → `partial`, reason
-    `worktree_differs_from_ref`. The first run must be asserted `measured` with
-    `Freshness = matched` so the cache is genuinely warm; the second run must
-    not reuse it. This is the round-13 cache escape: the cache key contains the
-    coverage source, format, parser version, `ScanRoot` and source ref, none of
-    which change when a covered source is edited, so a cached `matched` ingest
-    would otherwise be replayed and promote stale evidence. The test fails any
-    implementation that treats `Freshness` as a cacheable fact rather than
-    recomputing the sidecar comparison per run (§2.2).
+  `measured`. No other gate rows are needed; Task 10 tests warm-cache
+  invalidation and the fixture's sidecar generation, not scope detection.
+  - **warm cache with matching sidecar, then modify a covered source the
+    sidecar lists, and rerun** with the *same* profile and sidecar → `partial`,
+    reason `worktree_differs_from_ref`. The first run must be asserted
+    `measured` with `Freshness = matched` so the cache is genuinely warm; the
+    second run must not reuse it. This is the round-13 cache escape: the cache
+    key contains the coverage source, format, parser version, `ScanRoot` and
+    source ref, none of which change when a covered source is edited, so a
+    cached `matched` ingest would otherwise be replayed and promote stale
+    evidence. The test fails any implementation that treats `Freshness` as a
+    cacheable fact rather than recomputing the sidecar comparison per run
+    (§2.2).
 - Zero test files with coverage present → `measured` with ratio 0, not
   `unmeasured`. A tested-nothing repo is a measured fact, not missing evidence.
 - Coverage ratio never influences the verdict: assert no finding or gate reads
