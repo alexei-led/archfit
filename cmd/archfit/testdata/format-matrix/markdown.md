@@ -16,7 +16,7 @@
 | change_locality | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
 | complexity | partial | pass | medium | production files in the source walk 2/2 | 0 |
 | testability | partial | pass | medium | classified source files 2/2 | 0 |
-| operations | partial | pass | medium | applicable analyzers reporting coverage 4/4 | 0 |
+| operations | partial | pass | medium | declared modules with a corroborated deploy unit and qualifying owner 0/2 | 0 |
 | drift | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
 
 ## Evidence coverage
@@ -56,7 +56,7 @@
 - **Status:** not_requested
 - **Reference:** none
 
-## Not measured (10)
+## Not measured (11)
 
 - **modularity — inferred public surface** (owner: assessment/metrics): no declared module states a public surface, so inferring one is outside this claim
 - **change_locality — eligible commit sample** (owner: history/git): git history is unavailable or the history scan returned no eligible commit
@@ -64,8 +64,9 @@
 - **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): v1 ships no cognitive-complexity analyzer; only the size tail is measured
 - **testability — executed test coverage** (owner: syntax/fileclass): v1 does not run a target repository's test suite; supplied coverage is not yet an input
 - **testability — boundary test coverage** (owner: syntax/fileclass): which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
-- **operations — observed runtime topology** (owner: policy+evidence/acquisition): v1 reports declared owners and deploy units only; nothing observes what actually runs
-- **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts have no collector in v1
+- **operations — corroborated deploy unit** (owner: policy+evidence/acquisition): one or more declared modules have no independently corroborating deploy manifest
+- **operations — observed runtime topology** (owner: policy+evidence/acquisition): committed manifests corroborate declared deploy units; they do not observe what is actually running
+- **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts are a separate report family and have no collector in v1
 - **drift — admissible persisted reference** (owner: assessment/decision): no comparable architecture-state reference is stored
 - **drift — complete two-sided seam identity** (owner: assessment/decision): two-sided seam identity cannot be compared without an admissible persisted reference
 # archfit report

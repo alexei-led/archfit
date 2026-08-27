@@ -168,15 +168,15 @@
           {
             "confidence": "medium",
             "coverage": {
-              "basis": "applicable analyzers reporting coverage",
-              "observed": 4,
-              "total": 4
+              "basis": "declared modules with a corroborated deploy unit and qualifying owner",
+              "observed": 0,
+              "total": 2
             },
             "gate": "pass",
             "name": "operations",
             "owner": "policy+evidence/acquisition",
             "status": "partial",
-            "unknown": 2
+            "unknown": 3
           },
           {
             "confidence": "unrated",

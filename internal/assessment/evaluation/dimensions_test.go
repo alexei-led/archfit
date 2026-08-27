@@ -25,6 +25,9 @@ const (
 	toolDepCruiser      = "dependency-cruiser"
 	metricEncapsulation = "encapsulation"
 	bandNA              = "n/a"
+	assessUnitSvc       = "svc"
+	assessUnitAPI       = "api"
+	assessTeamA         = "team-a"
 )
 
 // dimensionsFixture is a run with something to measure in every dimension that
@@ -55,8 +58,8 @@ func dimensionsFixture() (*result.Result, evaluation.StateInput) {
 		PrimaryExtractorTools: []string{primaryTool},
 	}
 	modules := map[string]policy.ModuleDef{
-		assessModA: {Paths: []string{assessPathsA}, Public: []string{"a/api"}, Owner: "team-a", DeployUnit: "svc"},
-		assessModB: {Paths: []string{assessPathsB}, Owner: "team-a"},
+		assessModA: {Paths: []string{assessPathsA}, Public: []string{"a/api"}, Owner: assessTeamA, DeployUnit: assessUnitSvc},
+		assessModB: {Paths: []string{assessPathsB}, Owner: assessTeamA},
 	}
 	topology := policy.TopologyView{Modules: modules, Layers: []string{assessCore, "adapter"}, ModuleMap: policy.BuildModuleMap(modules)}
 	gates := policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{
@@ -67,8 +70,17 @@ func dimensionsFixture() (*result.Result, evaluation.StateInput) {
 		Policy:    policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, gates, nil, nil),
 		RuleTypes: map[string]string{ruleNoAToB: ruleForbidden, "off_rule": metricCycle},
 		Facts: evaluation.Observations{
-			FileLOC:        map[string]int{"a/a.go": 100, "a/a_test.go": 40, "b/b.go": 250},
-			FileClassIndex: map[string]fileclass.FileClass{"a/a.go": fileclass.Production, "a/a_test.go": fileclass.Test, "b/b.go": fileclass.Production},
+			FileLOC:             map[string]int{"a/a.go": 100, "a/a_test.go": 40, "b/b.go": 250},
+			FileClassIndex:      map[string]fileclass.FileClass{"a/a.go": fileclass.Production, "a/a_test.go": fileclass.Test, "b/b.go": fileclass.Production},
+			DeclaredDeployUnits: map[string]string{assessModA: assessUnitSvc},
+			CorroboratedDeployUnits: map[string]modevidence.CorroboratedDeployUnit{
+				assessModA: {Path: "a", Unit: assessUnitSvc, Source: modevidence.TopologySourceDockerfile},
+				assessModB: {Path: "b", Unit: "worker", Source: modevidence.TopologySourceDockerfile},
+			},
+			OwnerProvenance: map[string]modevidence.OwnerProvenance{
+				assessModA: {Module: assessModA, Owner: assessTeamA, Source: modevidence.TopologySourceDeclared},
+				assessModB: {Module: assessModB, Owner: assessTeamA, Source: modevidence.TopologySourceDeclared},
+			},
 		},
 	}
 	return diag, in
@@ -96,7 +108,7 @@ func TestDimensionStatuses(t *testing.T) {
 				state.DimensionChangeLocality: state.Measured,
 				state.DimensionComplexity:     state.Partial,
 				state.DimensionTestability:    state.Partial,
-				state.DimensionOperations:     state.Partial,
+				state.DimensionOperations:     state.Measured,
 				state.DimensionDrift:          state.Unmeasured,
 			},
 		},
@@ -348,6 +360,121 @@ func TestOperationsFailsOnARequiredToolPolicyFailure(t *testing.T) {
 	if got := evaluation.BuildDimensions(diag, in, nil).Operations.Gate; got != state.GateFail {
 		t.Errorf("operations gate = %q, want %q", got, state.GateFail)
 	}
+}
+
+func TestOperationsDeclaredTopologyCompleteness(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Dockerfiles and CODEOWNERS provenance measure the declared topology", func(t *testing.T) {
+		t.Parallel()
+		modules := map[string]policy.ModuleDef{
+			assessModA: {Paths: []string{assessPathsA}, Owner: "@team-a", DeployUnit: assessUnitAPI},
+			assessModB: {Paths: []string{assessPathsB}, Owner: "@team-b", DeployUnit: "declared-worker"},
+		}
+		facts := evaluation.Observations{
+			DeclaredDeployUnits: map[string]string{assessModA: assessUnitAPI, assessModB: "declared-worker"},
+			CorroboratedDeployUnits: map[string]modevidence.CorroboratedDeployUnit{
+				assessModA: {Path: "a", Unit: assessUnitAPI, Source: modevidence.TopologySourceDockerfile},
+				assessModB: {Path: "b", Unit: "detected-worker", Source: modevidence.TopologySourceDockerfile},
+			},
+			OwnerProvenance: map[string]modevidence.OwnerProvenance{
+				assessModA: {Module: assessModA, Owner: "@team-a", Source: modevidence.TopologySourceCodeowners},
+				assessModB: {Module: assessModB, Owner: "@team-b", Source: modevidence.TopologySourceCodeowners},
+			},
+		}
+		dim := operationsDimensionForTest(modules, facts)
+		if dim.Status != state.Measured {
+			t.Fatalf("operations status = %q, want measured; unknown=%+v", dim.Status, dim.Unknown)
+		}
+		for name, want := range map[string]float64{
+			"owners_from_codeowners":                2,
+			"owners_from_git_author_fallback":       0,
+			"declared_deploy_units":                 2,
+			"corroborated_deploy_units":             2,
+			"modules_with_corroborated_deploy_unit": 2,
+			"matching_declared_deploy_units":        1,
+			"mismatched_declared_deploy_units":      1,
+		} {
+			if got, ok := dimensionMetricValue(dim.Metrics, name); !ok || got != want {
+				t.Errorf("metric %q = %v (found=%t), want %v", name, got, ok, want)
+			}
+		}
+		for _, fact := range []string{state.FactRuntimeTopology, state.FactSupplyChainInventory} {
+			if !hasUnknownFact(dim.Unknown, fact) {
+				t.Errorf("measured operations unknowns = %+v, want out-of-claim %q", dim.Unknown, fact)
+			}
+		}
+	})
+
+	t.Run("missing corroboration and ownership statements stay partial", func(t *testing.T) {
+		t.Parallel()
+		modules := map[string]policy.ModuleDef{assessModA: {Paths: []string{assessPathsA}}}
+		dim := operationsDimensionForTest(modules, evaluation.Observations{
+			DeclaredDeployUnits: map[string]string{}, CorroboratedDeployUnits: map[string]modevidence.CorroboratedDeployUnit{},
+			OwnerProvenance: map[string]modevidence.OwnerProvenance{},
+		})
+		if dim.Status != state.Partial {
+			t.Fatalf("operations status = %q, want partial", dim.Status)
+		}
+		if !hasUnknownFact(dim.Unknown, state.FactCorroboratedDeployUnit) || !hasUnknownFact(dim.Unknown, state.FactOwnerProvenance) {
+			t.Errorf("operations unknowns = %+v, want corroboration and owner provenance", dim.Unknown)
+		}
+		for _, unknown := range dim.Unknown {
+			if unknown.Fact == state.FactCorroboratedDeployUnit && !strings.Contains(unknown.Reason, "corroborating deploy manifest") {
+				t.Errorf("corroboration reason %q does not name the missing manifest", unknown.Reason)
+			}
+		}
+	})
+
+	t.Run("a declaration is never its own corroboration", func(t *testing.T) {
+		t.Parallel()
+		modules := map[string]policy.ModuleDef{assessModA: {
+			Paths: []string{assessPathsA}, Owner: assessTeamA, DeployUnit: assessUnitAPI,
+		}}
+		dim := operationsDimensionForTest(modules, evaluation.Observations{
+			DeclaredDeployUnits:     map[string]string{assessModA: assessUnitAPI},
+			CorroboratedDeployUnits: map[string]modevidence.CorroboratedDeployUnit{},
+			OwnerProvenance: map[string]modevidence.OwnerProvenance{
+				assessModA: {Module: assessModA, Owner: assessTeamA, Source: modevidence.TopologySourceDeclared},
+			},
+		})
+		if dim.Status != state.Partial {
+			t.Fatalf("operations status = %q, want partial without independent corroboration", dim.Status)
+		}
+		for name, want := range map[string]float64{"declared_deploy_units": 1, "corroborated_deploy_units": 0} {
+			if got, ok := dimensionMetricValue(dim.Metrics, name); !ok || got != want {
+				t.Errorf("metric %q = %v (found=%t), want %v", name, got, ok, want)
+			}
+		}
+	})
+
+	t.Run("git-author provenance is surfaced but does not qualify", func(t *testing.T) {
+		t.Parallel()
+		modules := map[string]policy.ModuleDef{assessModA: {
+			Paths: []string{assessPathsA}, Owner: "dev@example.com", DeployUnit: assessUnitAPI,
+		}}
+		dim := operationsDimensionForTest(modules, evaluation.Observations{
+			DeclaredDeployUnits: map[string]string{assessModA: assessUnitAPI},
+			CorroboratedDeployUnits: map[string]modevidence.CorroboratedDeployUnit{
+				assessModA: {Path: "a", Unit: assessUnitAPI, Source: modevidence.TopologySourceDockerfile},
+			},
+			OwnerProvenance: map[string]modevidence.OwnerProvenance{
+				assessModA: {Module: assessModA, Owner: "dev@example.com", Source: modevidence.TopologySourceGitAuthor},
+			},
+		})
+		if dim.Status != state.Partial || !hasUnknownFact(dim.Unknown, state.FactOwnerProvenance) {
+			t.Fatalf("operations = status %q unknown %+v, want partial owner-provenance gap", dim.Status, dim.Unknown)
+		}
+		if got, ok := dimensionMetricValue(dim.Metrics, "owners_from_git_author_fallback"); !ok || got != 1 {
+			t.Errorf("owners_from_git_author_fallback = %v (found=%t), want 1", got, ok)
+		}
+	})
+}
+
+func operationsDimensionForTest(modules map[string]policy.ModuleDef, facts evaluation.Observations) state.Dimension {
+	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
+	input := evaluation.StateInput{Policy: policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, policy.GatePolicy{}, nil, nil), Facts: facts}
+	return evaluation.BuildDimensions(&result.Result{}, input, nil).Operations
 }
 
 // TestEvidenceDependentDimensionsRequireCompletedProducers pins the Task 2

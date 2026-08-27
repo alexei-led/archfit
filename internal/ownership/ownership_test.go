@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -28,8 +29,10 @@ func buildModuleMap(t *testing.T, mods map[string][]string) policy.ModuleMap {
 }
 
 const (
-	modCmd = "cmd"
-	modPkg = "pkg"
+	modCmd       = "cmd"
+	modPkg       = "pkg"
+	modCore      = "core"
+	internalGlob = "internal/**"
 )
 
 // -----------------------------------------------------------------------
@@ -43,12 +46,28 @@ func TestResolve_CodeownersPrecedence(t *testing.T) {
 	writeFile(t, root, "internal/foo.go", "")
 
 	mm := buildModuleMap(t, map[string][]string{
-		"core": {"internal/**"},
+		modCore: {internalGlob},
 	})
 
 	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner())
-	if want := "@last-owner"; got["core"] != want {
-		t.Errorf("CODEOWNERS last-match-wins: got %q, want %q", got["core"], want)
+	if want := "@last-owner"; got[modCore] != want {
+		t.Errorf("CODEOWNERS last-match-wins: got %q, want %q", got[modCore], want)
+	}
+}
+
+func TestResolveWithProvenance_Codeowners(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "CODEOWNERS", "internal/ @core-team\n")
+	writeFile(t, root, "internal/core.go", "")
+	mm := buildModuleMap(t, map[string][]string{modCore: {internalGlob}})
+
+	owners, provenance, source := ownership.ResolveWithProvenance(context.Background(), root, root, "", mm, nilRunner())
+	if source != ownership.SourceCodeowners {
+		t.Fatalf("source = %q, want %q", source, ownership.SourceCodeowners)
+	}
+	want := modevidence.OwnerProvenance{Module: modCore, Owner: "@core-team", Source: modevidence.TopologySourceCodeowners}
+	if owners[modCore] != want.Owner || provenance[modCore] != want {
+		t.Errorf("owners/provenance = %q / %+v, want %q / %+v", owners[modCore], provenance[modCore], want.Owner, want)
 	}
 }
 
@@ -77,7 +96,7 @@ func TestResolve_CodeownersMissingFile_NoGitFallback(t *testing.T) {
 	writeFile(t, root, "internal/foo.go", "")
 
 	mm := buildModuleMap(t, map[string][]string{
-		"core": {"internal/**"},
+		modCore: {internalGlob},
 	})
 
 	// The runner should never be called because CODEOWNERS exists.
@@ -93,8 +112,8 @@ func TestResolve_CodeownersMissingFile_NoGitFallback(t *testing.T) {
 	if called {
 		t.Error("git runner was called even though CODEOWNERS exists — must not fall back per-file")
 	}
-	if _, ok := got["core"]; ok {
-		t.Errorf("expected no owner for unmatched module, got %q", got["core"])
+	if _, ok := got[modCore]; ok {
+		t.Errorf("expected no owner for unmatched module, got %q", got[modCore])
 	}
 }
 
@@ -214,6 +233,26 @@ func TestResolve_GitAuthorFallback(t *testing.T) {
 	// bob@example.com has 2 touches, alice has 1 → dominant is bob.
 	if want := "bob@example.com"; got[modCmd] != want {
 		t.Errorf("git-author dominant: got %q, want %q", got[modCmd], want)
+	}
+}
+
+func TestResolveWithProvenance_GitAuthor(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, modCmd+"/main.go", "")
+	mm := buildModuleMap(t, map[string][]string{modCmd: {modCmd + "/**"}})
+	runner := &toolrun.RunnerMock{
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{Stdout: []byte("dev@example.com\ncmd/main.go\n"), ExitCode: 0}, nil
+		},
+	}
+
+	owners, provenance, source := ownership.ResolveWithProvenance(context.Background(), root, root, "", mm, runner)
+	if source != ownership.SourceGit {
+		t.Fatalf("source = %q, want %q", source, ownership.SourceGit)
+	}
+	want := modevidence.OwnerProvenance{Module: modCmd, Owner: "dev@example.com", Source: modevidence.TopologySourceGitAuthor}
+	if owners[modCmd] != want.Owner || provenance[modCmd] != want {
+		t.Errorf("owners/provenance = %q / %+v, want %q / %+v", owners[modCmd], provenance[modCmd], want.Owner, want)
 	}
 }
 

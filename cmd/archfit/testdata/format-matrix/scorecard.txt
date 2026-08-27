@@ -78,16 +78,25 @@ denominator: classified source files 2/2
 
 ### operations — partial · gate: pass · confidence: medium
 owner: policy+evidence/acquisition
-denominator: applicable analyzers reporting coverage 4/4
+denominator: declared modules with a corroborated deploy unit and qualifying owner 0/2
 - modules_with_owner: 2 count (2/2)
 - distinct_owners: 2 count
-- deploy_units: 0 count
+- owners_from_declared: 2 count
+- owners_from_codeowners: 0 count
+- owners_from_git_author_fallback: 0 count
+- declared_deploy_units: 0 count
+- corroborated_deploy_units: 0 count
+- modules_with_corroborated_deploy_unit: 0 count (0/2)
+- matching_declared_deploy_units: 0 count
+- mismatched_declared_deploy_units: 0 count
 - declared_external_systems: 0 count
+- analyzers_reporting_coverage: 4 count (4/4)
 - coverage_gaps: 0 count
 - analyzers_not_applicable: 7 count
 - coverage: 1 ratio
-- not measured — observed runtime topology: v1 reports declared owners and deploy units only; nothing observes what actually runs
-- not measured — supply-chain inventory: SBOM and vulnerability facts have no collector in v1
+- not measured — corroborated deploy unit: one or more declared modules have no independently corroborating deploy manifest
+- not measured — observed runtime topology: committed manifests corroborate declared deploy units; they do not observe what is actually running
+- not measured — supply-chain inventory: SBOM and vulnerability facts are a separate report family and have no collector in v1
 
 ### drift — unmeasured · gate: not_applicable · confidence: unrated
 owner: assessment/decision

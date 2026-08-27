@@ -42,11 +42,11 @@ const gateOffPosture = gateOff
 // projection of a policy declaration, a relationship classification, a computed
 // metric, a file-class walk, an acquisition coverage row, or git history.
 //
-// Where v1 has no collector — cognitive complexity, executed test coverage,
-// observed runtime topology, a comparable v2 baseline — the envelope reports
-// partial or unmeasured and names the missing fact. Reporting those as
-// measured-and-empty is exactly the implicit green result the contract exists
-// to prevent.
+// Where an in-claim fact has no collector — architecture graph complexity,
+// supplied test coverage, or a comparable persisted baseline — the envelope
+// reports partial or unmeasured and names the missing fact. Out-of-claim facts,
+// such as observed runtime topology, remain explicit disclosures without
+// blocking a complete declared-topology claim.
 func buildDimensions(diag *result.Result, in stateInput, routed map[string][]state.FindingRef) state.Dimensions {
 	dims := state.Dimensions{
 		Intent:         intentDimension(diag, in.Policy),
@@ -56,7 +56,7 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 		ChangeLocality: changeLocalityDimension(diag, in.Policy),
 		Complexity:     complexityDimension(in.Facts),
 		Testability:    testabilityDimension(in.Facts),
-		Operations:     operationsDimension(diag, in.Policy, in.RequiredToolFailure),
+		Operations:     operationsDimension(diag, in.Policy, in.Facts, in.RequiredToolFailure),
 		Drift:          driftDimension(diag, in.Drift),
 	}
 	for _, dim := range dims.Each() {
@@ -615,77 +615,98 @@ func testabilityDimension(f Observations) state.Dimension {
 	return dim
 }
 
-// operationsDimension reports declared operational topology and analyzer
-// coverage. It is always partial in v1: observed runtime topology, SBOM, and
-// vulnerability facts have no collector, so declarations are all there is.
+// operationsDimension measures declared operational-topology completeness.
+// Repository manifests corroborate declarations but never claim that a unit is
+// running. Analyzer health remains an out-of-claim disclosure and cannot move
+// this status or confidence.
 //
 // It is the one dimension that can fail without a finding — the required-tool
 // policy is a gate over evidence, not over a violation.
-func operationsDimension(diag *result.Result, p policy.PolicySnapshot, requiredToolFailure bool) state.Dimension {
+func operationsDimension(diag *result.Result, p policy.PolicySnapshot, f Observations, requiredToolFailure bool) state.Dimension {
 	dim := state.NewDimension(state.DimensionOperations, state.OwnerOperations)
 	modules := len(p.Topology.Modules)
-	if modules == 0 && len(diag.ToolCoverage) == 0 {
-		return unmeasured(dim, state.UnknownFact{
-			Fact:   "operational topology",
-			Reason: "nothing declares an owner or a deploy unit and no analyzer reported coverage",
-			Owner:  state.OwnerOperations,
-		})
+	reasons := map[string]string{
+		state.FactDeclaredOperationalTopology: "the configuration declares no module, so there is no operational-topology denominator",
+		state.FactCorroboratedDeployUnit:      "one or more declared modules have no independently corroborating deploy manifest",
+		state.FactOwnerProvenance:             "one or more declared modules lack a declared or CODEOWNERS-backed owner; git-author fallback is not an ownership statement",
+		state.FactTopologyReconciliation:      "declared and corroborated deploy-unit facts did not both reach assessment for reconciliation",
 	}
-	owners, deployUnits := map[string]struct{}{}, map[string]struct{}{}
-	withOwner := 0
-	for _, def := range p.Topology.Modules {
-		if def.Owner != "" {
-			owners[def.Owner] = struct{}{}
-			withOwner++
+	if modules == 0 {
+		applyPromotion(&dim, nil, nil, reasons)
+		if requiredToolFailure {
+			dim.Gate = state.GateFail
 		}
-		if def.DeployUnit != "" {
-			deployUnits[def.DeployUnit] = struct{}{}
-		}
+		return dim
 	}
-	// An analyzer only belongs in the denominator when it was applicable at all.
-	// A gapless `absent` primary means the extractor's own probe says the
-	// language is not in the tree, and `disabled` means the config opted out —
-	// counting either reads as "N analyzers failed to report" on a repo where
-	// they were never asked, which is the overstated gap this contract exists to
-	// prevent. The excluded count is published beside the ratio rather than
-	// silently dropped.
-	reporting, applicable := 0, 0
-	for _, c := range diag.ToolCoverage {
-		if c.Status == modevidence.StatusAbsent || c.Status == modevidence.StatusDisabled {
-			continue
-		}
-		applicable++
-		if c.Status == modevidence.StatusOK || c.Status == modevidence.StatusPartial {
-			reporting++
-		}
+
+	withOwner, distinctOwners := resolvedOwnerCounts(p.Topology.Modules)
+	declaredDeployUnits := declaredDeployUnitCount(p.Topology.Modules, f.DeclaredDeployUnits)
+	corroboratedModules, corroboratedUnits := corroboratedDeployUnitCounts(p.Topology.Modules, f.CorroboratedDeployUnits)
+	qualifyingOwners, ownersFromDeclared, ownersFromCodeowners, ownersFromGitAuthor := ownerProvenanceCounts(p.Topology.Modules, f.OwnerProvenance)
+	completeModules, matchingUnits, mismatchedUnits := reconcileOperationalTopology(
+		p.Topology.Modules, f.DeclaredDeployUnits, corroboratedModules, qualifyingOwners,
+	)
+
+	observed := []string{state.FactDeclaredOperationalTopology}
+	if len(corroboratedModules) == modules {
+		observed = append(observed, state.FactCorroboratedDeployUnit)
 	}
-	dim.Status = state.Partial
-	dim.Coverage = state.Coverage{Basis: "applicable analyzers reporting coverage", Observed: reporting, Total: applicable}
+	if len(qualifyingOwners) == modules {
+		observed = append(observed, state.FactOwnerProvenance)
+	}
+	if f.DeclaredDeployUnits != nil && f.CorroboratedDeployUnits != nil {
+		observed = append(observed, state.FactTopologyReconciliation)
+	}
+	applyPromotion(&dim, observed, nil, reasons)
+	dim.Coverage = state.Coverage{
+		Basis:    "declared modules with a corroborated deploy unit and qualifying owner",
+		Observed: completeModules, Total: modules,
+	}
+
+	// An analyzer only belongs in its own denominator when it was applicable.
+	// These metrics disclose tool health but are outside the declared-topology
+	// claim and therefore do not participate in promotion or confidence.
+	reporting, applicable := analyzerCoverageCounts(diag.ToolCoverage)
 	dim.Metrics = []state.MetricValue{
 		{Name: "modules_with_owner", Value: float64(withOwner), Unit: unitCount,
 			Denominator: &state.MetricDenominator{Observed: withOwner, Total: modules},
-			Provenance:  []string{provPolicy}},
-		count("distinct_owners", len(owners), provPolicy),
-		count("deploy_units", len(deployUnits), provPolicy),
+			Provenance:  []string{provPolicy, provAcquisition}},
+		{Name: "distinct_owners", Value: float64(distinctOwners), Unit: unitCount,
+			Provenance: []string{provPolicy, provAcquisition}},
+		count("owners_from_declared", ownersFromDeclared, provPolicy),
+		count("owners_from_codeowners", ownersFromCodeowners, provAcquisition),
+		count("owners_from_git_author_fallback", ownersFromGitAuthor, provAcquisition),
+		count("declared_deploy_units", declaredDeployUnits, provPolicy),
+		count("corroborated_deploy_units", corroboratedUnits, provAcquisition),
+		{Name: "modules_with_corroborated_deploy_unit", Value: float64(len(corroboratedModules)), Unit: unitCount,
+			Denominator: &state.MetricDenominator{Observed: len(corroboratedModules), Total: modules},
+			Provenance:  []string{provAcquisition}},
+		{Name: "matching_declared_deploy_units", Value: float64(matchingUnits), Unit: unitCount,
+			Provenance: []string{provPolicy, provAcquisition}},
+		{Name: "mismatched_declared_deploy_units", Value: float64(mismatchedUnits), Unit: unitCount,
+			Provenance: []string{provPolicy, provAcquisition}},
 		count("declared_external_systems", len(p.Topology.ExternalSystems), provPolicy),
+		{Name: "analyzers_reporting_coverage", Value: float64(reporting), Unit: unitCount,
+			Denominator: &state.MetricDenominator{Observed: reporting, Total: applicable},
+			Provenance:  []string{provAcquisition}},
 		count("coverage_gaps", len(diag.CoverageGaps), provAcquisition),
 		count("analyzers_not_applicable", len(diag.ToolCoverage)-applicable, provAcquisition),
 	}
 	dim.Metrics = append(dim.Metrics, metricValues(diag.Metrics, "coverage")...)
-	dim.Confidence = weakest(state.ConfidenceFor(dim.Status), metricConfidence(diag.Metrics, "coverage"))
-	dim.Unknown = []state.UnknownFact{{
-		Fact:   "observed runtime topology",
-		Reason: "v1 reports declared owners and deploy units only; nothing observes what actually runs",
+	dim.Confidence = state.ConfidenceFor(dim.Status)
+	dim.Unknown = append(dim.Unknown, state.UnknownFact{
+		Fact:   state.FactRuntimeTopology,
+		Reason: "committed manifests corroborate declared deploy units; they do not observe what is actually running",
 		Owner:  state.OwnerOperations,
-	}, {
-		Fact:   "supply-chain inventory",
-		Reason: "SBOM and vulnerability facts have no collector in v1",
+	}, state.UnknownFact{
+		Fact:   state.FactSupplyChainInventory,
+		Reason: "SBOM and vulnerability facts are a separate report family and have no collector in v1",
 		Owner:  state.OwnerOperations,
-	}}
+	})
 	for _, gap := range diag.CoverageGaps {
 		dim.Unknown = append(dim.Unknown, state.UnknownFact{
-			Fact:   "analyzer coverage for " + gap.Tool,
-			Reason: "the analyzer did not run over this tree (gate: " + gap.Gate + "); install it with: " + gap.InstallCmd,
+			Fact:   state.FactAnalyzerHealth,
+			Reason: "analyzer " + gap.Tool + " did not run over this tree (gate: " + gap.Gate + "); install it with: " + gap.InstallCmd,
 			Owner:  state.OwnerOperations,
 		})
 	}
@@ -693,6 +714,119 @@ func operationsDimension(diag *result.Result, p policy.PolicySnapshot, requiredT
 		dim.Gate = state.GateFail
 	}
 	return dim
+}
+
+func resolvedOwnerCounts(modules map[string]policy.ModuleDef) (withOwner, distinct int) {
+	owners := make(map[string]struct{})
+	for _, def := range modules {
+		if def.Owner == "" {
+			continue
+		}
+		owners[def.Owner] = struct{}{}
+		withOwner++
+	}
+	return withOwner, len(owners)
+}
+
+func declaredDeployUnitCount(modules map[string]policy.ModuleDef, declaredUnits map[string]string) int {
+	count := 0
+	for module, unit := range declaredUnits {
+		if _, declared := modules[module]; declared && unit != "" {
+			count++
+		}
+	}
+	return count
+}
+
+func corroboratedDeployUnitCounts(
+	modules map[string]policy.ModuleDef,
+	facts map[string]modevidence.CorroboratedDeployUnit,
+) (map[string]modevidence.CorroboratedDeployUnit, int) {
+	corroborated := make(map[string]modevidence.CorroboratedDeployUnit)
+	units := make(map[string]struct{})
+	for module, fact := range facts {
+		if _, declared := modules[module]; !declared || fact.Unit == "" || !corroboratingDeploySource(fact.Source) {
+			continue
+		}
+		corroborated[module] = fact
+		units[fact.Unit] = struct{}{}
+	}
+	return corroborated, len(units)
+}
+
+func ownerProvenanceCounts(
+	modules map[string]policy.ModuleDef,
+	facts map[string]modevidence.OwnerProvenance,
+) (map[string]struct{}, int, int, int) {
+	qualifying := make(map[string]struct{})
+	declaredCount, codeownersCount, gitAuthorCount := 0, 0, 0
+	for module, fact := range facts {
+		def, declared := modules[module]
+		if !declared || fact.Owner == "" || fact.Owner != def.Owner {
+			continue
+		}
+		switch fact.Source {
+		case modevidence.TopologySourceDeclared:
+			declaredCount++
+			qualifying[module] = struct{}{}
+		case modevidence.TopologySourceCodeowners:
+			codeownersCount++
+			qualifying[module] = struct{}{}
+		case modevidence.TopologySourceGitAuthor:
+			gitAuthorCount++
+		}
+	}
+	return qualifying, declaredCount, codeownersCount, gitAuthorCount
+}
+
+func reconcileOperationalTopology(
+	modules map[string]policy.ModuleDef,
+	declaredUnits map[string]string,
+	corroborated map[string]modevidence.CorroboratedDeployUnit,
+	qualifyingOwners map[string]struct{},
+) (complete, matching, mismatched int) {
+	for module := range modules {
+		_, hasCorroboration := corroborated[module]
+		_, hasQualifyingOwner := qualifyingOwners[module]
+		if hasCorroboration && hasQualifyingOwner {
+			complete++
+		}
+		declaredUnit, hasDeclaration := declaredUnits[module]
+		corroboratedFact, hasCorroboration := corroborated[module]
+		if !hasDeclaration || !hasCorroboration {
+			continue
+		}
+		if declaredUnit == corroboratedFact.Unit {
+			matching++
+		} else {
+			mismatched++
+		}
+	}
+	return complete, matching, mismatched
+}
+
+func analyzerCoverageCounts(rows []modevidence.Coverage) (reporting, applicable int) {
+	for _, row := range rows {
+		if row.Status == modevidence.StatusAbsent || row.Status == modevidence.StatusDisabled {
+			continue
+		}
+		applicable++
+		if row.Status == modevidence.StatusOK || row.Status == modevidence.StatusPartial {
+			reporting++
+		}
+	}
+	return reporting, applicable
+}
+
+func corroboratingDeploySource(source modevidence.TopologySource) bool {
+	switch source {
+	case modevidence.TopologySourceDockerfile, modevidence.TopologySourceK8s,
+		modevidence.TopologySourceWorkspace, modevidence.TopologySourcePyproject,
+		modevidence.TopologySourceGoMain:
+		return true
+	default:
+		return false
+	}
 }
 
 // driftDimension reports erosion against a comparable reference.

@@ -445,9 +445,9 @@
     "operations": {
       "confidence": "medium",
       "coverage": {
-        "basis": "applicable analyzers reporting coverage",
-        "observed": 4,
-        "total": 4
+        "basis": "declared modules with a corroborated deploy unit and qualifying owner",
+        "observed": 0,
+        "total": 2
       },
       "findings": [],
       "gate": "pass",
@@ -459,7 +459,8 @@
           },
           "name": "modules_with_owner",
           "provenance": [
-            "policy"
+            "policy",
+            "evidence/acquisition"
           ],
           "unit": "count",
           "value": 2
@@ -467,15 +468,78 @@
         {
           "name": "distinct_owners",
           "provenance": [
+            "policy",
+            "evidence/acquisition"
+          ],
+          "unit": "count",
+          "value": 2
+        },
+        {
+          "name": "owners_from_declared",
+          "provenance": [
             "policy"
           ],
           "unit": "count",
           "value": 2
         },
         {
-          "name": "deploy_units",
+          "name": "owners_from_codeowners",
+          "provenance": [
+            "evidence/acquisition"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "owners_from_git_author_fallback",
+          "provenance": [
+            "evidence/acquisition"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "declared_deploy_units",
           "provenance": [
             "policy"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "corroborated_deploy_units",
+          "provenance": [
+            "evidence/acquisition"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "denominator": {
+            "observed": 0,
+            "total": 2
+          },
+          "name": "modules_with_corroborated_deploy_unit",
+          "provenance": [
+            "evidence/acquisition"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "matching_declared_deploy_units",
+          "provenance": [
+            "policy",
+            "evidence/acquisition"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "mismatched_declared_deploy_units",
+          "provenance": [
+            "policy",
+            "evidence/acquisition"
           ],
           "unit": "count",
           "value": 0
@@ -487,6 +551,18 @@
           ],
           "unit": "count",
           "value": 0
+        },
+        {
+          "denominator": {
+            "observed": 4,
+            "total": 4
+          },
+          "name": "analyzers_reporting_coverage",
+          "provenance": [
+            "evidence/acquisition"
+          ],
+          "unit": "count",
+          "value": 4
         },
         {
           "name": "coverage_gaps",
@@ -518,14 +594,19 @@
       "status": "partial",
       "unknown": [
         {
+          "fact": "corroborated deploy unit",
+          "owner": "policy+evidence/acquisition",
+          "reason": "one or more declared modules have no independently corroborating deploy manifest"
+        },
+        {
           "fact": "observed runtime topology",
           "owner": "policy+evidence/acquisition",
-          "reason": "v1 reports declared owners and deploy units only; nothing observes what actually runs"
+          "reason": "committed manifests corroborate declared deploy units; they do not observe what is actually running"
         },
         {
           "fact": "supply-chain inventory",
           "owner": "policy+evidence/acquisition",
-          "reason": "SBOM and vulnerability facts have no collector in v1"
+          "reason": "SBOM and vulnerability facts are a separate report family and have no collector in v1"
         }
       ]
     },

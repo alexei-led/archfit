@@ -93,6 +93,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 
 	runPolicy := s.Policy.Clone()
+	declaredDeployUnits, ownerProvenance := declaredOperationsFacts(runPolicy)
 	store := factcache.NewStore(factsCacheDir(bundleDir))
 	store.RefreshMode = s.Refresh
 	extractors := registry.Build(s.Runner, s.Options.Extractors, store)
@@ -127,9 +128,14 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	var ownerWarnings []string
 	var resolvedOwners map[string]string
 	if runPolicy.NeedsOwnerResolution() {
-		owners, source := ownership.Resolve(ctx, resolved.Root, resolved.GitRoot, resolved.SubtreePrefix, runPolicy.Topology.ModuleMap, s.Runner)
+		owners, provenance, source := ownership.ResolveWithProvenance(ctx, resolved.Root, resolved.GitRoot, resolved.SubtreePrefix, runPolicy.Topology.ModuleMap, s.Runner)
 		resolvedOwners = owners
 		ownerSource = string(source)
+		for module, fact := range provenance {
+			if _, declared := ownerProvenance[module]; !declared {
+				ownerProvenance[module] = fact
+			}
+		}
 		if warning := ownerDegradationWarning(source); warning != "" {
 			ownerWarnings = append(ownerWarnings, warning)
 			note(warning)
@@ -192,8 +198,10 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 
 	return application.Acquired{
-		Facts:        snapshot,
-		Observations: assessmentObservationsOf(snapshot),
+		Facts: snapshot,
+		Observations: assessmentObservationsOf(
+			snapshot, declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
+		),
 		Context: application.AnalysisContext{
 			Scope: resolved, BaseRef: req.BaseRef, Full: true,
 			Now: now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
@@ -212,14 +220,37 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}, nil
 }
 
-func assessmentObservationsOf(f evidencecontract.Facts) evaluation.Observations {
+func assessmentObservationsOf(
+	f evidencecontract.Facts,
+	declaredDeployUnits map[string]string,
+	corroboratedDeployUnits map[string]evidence.CorroboratedDeployUnit,
+	ownerProvenance map[string]evidence.OwnerProvenance,
+) evaluation.Observations {
 	return evaluation.Observations{
 		Coverage: f.Coverage, Symbols: f.Symbols, PatternMatches: f.PatternMatches,
 		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
 		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
 		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,
 		DeprecatedDeps: f.DeprecatedDeps, SemanticStrengthOverlay: f.SemanticStrengthOverlay,
+		DeclaredDeployUnits: declaredDeployUnits, CorroboratedDeployUnits: corroboratedDeployUnits,
+		OwnerProvenance: ownerProvenance,
 	}
+}
+
+func declaredOperationsFacts(p policy.PolicySnapshot) (map[string]string, map[string]evidence.OwnerProvenance) {
+	deployUnits := make(map[string]string)
+	owners := make(map[string]evidence.OwnerProvenance)
+	for module, def := range p.Topology.Modules {
+		if def.DeployUnit != "" {
+			deployUnits[module] = def.DeployUnit
+		}
+		if def.Owner != "" {
+			owners[module] = evidence.OwnerProvenance{
+				Module: module, Owner: def.Owner, Source: evidence.TopologySourceDeclared,
+			}
+		}
+	}
+	return deployUnits, owners
 }
 
 // configWarnings assembles the advisory config-warning block: config lint,

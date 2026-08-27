@@ -958,10 +958,10 @@ Rollback: single commit revert; drift returns to unconditional `unmeasured`.
 
 ### Task 6: Give `operations` declared-topology completeness
 
-- [ ] Surface corroborated deploy units from `deployunit.Detect`
-- [ ] Surface owner provenance (`codeowners` | `git_author` | `declared`)
-- [ ] Reconcile declared vs corroborated; publish both, never merge
-- [ ] Promote via `Promote` under the *declared-topology* claim only
+- [x] Surface corroborated deploy units from `deployunit.Detect`
+- [x] Surface owner provenance (`codeowners` | `git_author` | `declared`)
+- [x] Reconcile declared vs corroborated; publish both, never merge
+- [x] Promote via `Promote` under the *declared-topology* claim only
 
 Justification: `operationsDimension` says "nothing observes what actually runs"
 while archfit already parses Dockerfiles (`deployunit.go:335`), k8s manifests

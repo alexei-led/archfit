@@ -36,6 +36,13 @@ type Observations struct {
 	RuntimeConfidence       string
 	DeprecatedDeps          []modevidence.DeprecatedDep
 	SemanticStrengthOverlay *modevidence.SemanticStrengthOverlay
+
+	// Declared and corroborated deploy units remain separate. The corroborated
+	// map is keyed by declared module only after acquisition has attributed the
+	// detector path; it never overwrites the declaration map.
+	DeclaredDeployUnits     map[string]string
+	CorroboratedDeployUnits map[string]modevidence.CorroboratedDeployUnit
+	OwnerProvenance         map[string]modevidence.OwnerProvenance
 }
 
 // AssessInput carries every value the assessment stage decides over. All of it

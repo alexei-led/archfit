@@ -26,6 +26,39 @@ const (
 	StatusTimedOut = "timed out"
 )
 
+// TopologySource is the closed provenance vocabulary for declared operational
+// topology and the repository evidence that corroborates it.
+type TopologySource string
+
+// Operational-topology evidence sources.
+const (
+	TopologySourceDockerfile TopologySource = "dockerfile"
+	TopologySourceK8s        TopologySource = "k8s_manifest"
+	TopologySourceWorkspace  TopologySource = "workspace"
+	TopologySourcePyproject  TopologySource = "pyproject"
+	TopologySourceGoMain     TopologySource = "go_main"
+	TopologySourceCodeowners TopologySource = "codeowners"
+	TopologySourceGitAuthor  TopologySource = "git_author"
+	TopologySourceDeclared   TopologySource = "declared"
+)
+
+// CorroboratedDeployUnit is one independently detected deploy-unit declaration.
+// Path is repository-relative; Unit is the detected name, not a config value.
+type CorroboratedDeployUnit struct {
+	Path   string         `json:"path"`
+	Unit   string         `json:"unit"`
+	Source TopologySource `json:"source"`
+}
+
+// OwnerProvenance records which ownership statement or fallback produced one
+// module's resolved owner. A git-author fallback is evidence but is not an
+// ownership statement.
+type OwnerProvenance struct {
+	Module string         `json:"module"`
+	Owner  string         `json:"owner"`
+	Source TopologySource `json:"source"`
+}
+
 // DeprecatedDep is one locally-declared deprecation or retraction marker.
 type DeprecatedDep struct {
 	File    string `json:"file"`

@@ -46,12 +46,6 @@ var reachabilityRemedies = map[string]reachabilityRemedy{
 		RemedyClass:  reachabilityNewCollectorRemedy,
 		Remedy:       "Tasks 8-10 must ingest, attribute, and freshness-check supplied coverage",
 	},
-	report.DimensionOperations: {
-		OutcomeClass: reachabilityTemporaryOutcome,
-		Symbol:       "operationsDimension",
-		RemedyClass:  reachabilityNewCollectorRemedy,
-		Remedy:       "Task 6 must retain deploy-unit and ownership provenance and reconcile it per module",
-	},
 }
 
 // TestIntegrationReachability drives the only supported materialization path for
@@ -98,6 +92,7 @@ func testIntegrationReachabilityBaselineTransition(t *testing.T) {
 		t.Fatalf("post-baseline drift status = %q, want measured; unknown=%+v delta=%+v",
 			state.Dimensions.Drift.Status, state.Dimensions.Drift.Unknown, state.Dimensions.Drift.Delta)
 	}
+	assertReachabilityOperations(t, state.Dimensions.Operations)
 	for _, unknown := range state.Dimensions.Drift.Unknown {
 		if strings.Contains(strings.ToLower(unknown.Reason), "comparable") {
 			t.Errorf("post-baseline drift still reports a comparability blocker: %+v", unknown)
@@ -407,6 +402,27 @@ func assertReachabilityEnvelope(t *testing.T, data []byte) {
 	sort.Strings(got)
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("JSON root keys = %v, want %v", got, want)
+	}
+}
+
+func assertReachabilityOperations(t *testing.T, operations report.DimensionState) {
+	t.Helper()
+	if operations.Status != report.MeasurementMeasured {
+		t.Fatalf("operations status = %q, want measured from fixture Dockerfiles and CODEOWNERS; unknown=%+v", operations.Status, operations.Unknown)
+	}
+	metrics := make(map[string]float64, len(operations.Metrics))
+	for _, metric := range operations.Metrics {
+		metrics[metric.Name] = metric.Value
+	}
+	for name, want := range map[string]float64{
+		"owners_from_codeowners":                2,
+		"owners_from_git_author_fallback":       0,
+		"corroborated_deploy_units":             2,
+		"modules_with_corroborated_deploy_unit": 2,
+	} {
+		if got, found := metrics[name]; !found || got != want {
+			t.Errorf("operations metric %q = %v (found=%t), want %v", name, got, found, want)
+		}
 	}
 }
 

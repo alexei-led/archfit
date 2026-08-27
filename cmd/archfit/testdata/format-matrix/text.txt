@@ -14,10 +14,10 @@ DIMENSIONS
   change_locality unmeasured  gate: not_applicable  confidence: unrated  no denominator
   complexity      partial     gate: pass            confidence: medium   production files in the source walk 2/2
   testability     partial     gate: pass            confidence: medium   classified source files 2/2
-  operations      partial     gate: pass            confidence: medium   applicable analyzers reporting coverage 4/4
+  operations      partial     gate: pass            confidence: medium   declared modules with a corroborated deploy unit and qualifying owner 0/2
   drift           unmeasured  gate: not_applicable  confidence: unrated  no denominator
 
-NOT MEASURED (10)
+NOT MEASURED (11)
 
   modularity — inferred public surface
     no declared module states a public surface, so inferring one is outside this claim
@@ -31,10 +31,12 @@ NOT MEASURED (10)
     v1 does not run a target repository's test suite; supplied coverage is not yet an input
   testability — boundary test coverage
     which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
+  operations — corroborated deploy unit
+    one or more declared modules have no independently corroborating deploy manifest
   operations — observed runtime topology
-    v1 reports declared owners and deploy units only; nothing observes what actually runs
+    committed manifests corroborate declared deploy units; they do not observe what is actually running
   operations — supply-chain inventory
-    SBOM and vulnerability facts have no collector in v1
+    SBOM and vulnerability facts are a separate report family and have no collector in v1
   drift — admissible persisted reference
     no comparable architecture-state reference is stored
   drift — complete two-sided seam identity

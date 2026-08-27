@@ -35,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -118,6 +119,14 @@ const (
 //
 // Never returns an error — tool/file absence yields an empty map.
 func Resolve(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modules policy.ModuleMap, runner toolrun.Runner) (map[string]string, Source) {
+	owners, _, source := ResolveWithProvenance(ctx, scanRoot, gitRoot, subtreePrefix, modules, runner)
+	return owners, source
+}
+
+// ResolveWithProvenance returns the same owner map and aggregate source as
+// Resolve, plus one provenance record for every resolved module. The existing
+// Resolve signature remains stable for callers that only fill topology.
+func ResolveWithProvenance(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modules policy.ModuleMap, runner toolrun.Runner) (map[string]string, map[string]evidence.OwnerProvenance, Source) {
 	// CODEOWNERS lives at the git repository root (the monorepo root), not the
 	// analyzed subtree. Fall back to scanRoot when gitRoot is unknown (non-git).
 	coRoot := gitRoot
@@ -135,9 +144,9 @@ func Resolve(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modul
 			// CODEOWNERS present but no rule mapped to a configured module —
 			// a suspicious combination (see SourceCodeownersNoMatch), not the
 			// benign "nothing to attribute" case.
-			return m, SourceCodeownersNoMatch
+			return m, ownerProvenance(m, evidence.TopologySourceCodeowners), SourceCodeownersNoMatch
 		}
-		return m, SourceCodeowners
+		return m, ownerProvenance(m, evidence.TopologySourceCodeowners), SourceCodeowners
 	}
 
 	// Fall back to git-author only when no CODEOWNERS exists at all.
@@ -146,12 +155,20 @@ func Resolve(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modul
 		// The walk did not finish — distinct from a clean run that found
 		// nothing, so downstream diagnostics don't mistake "unknown" for
 		// "genuinely unattributed."
-		return map[string]string{}, SourceGitTimeout
+		return map[string]string{}, map[string]evidence.OwnerProvenance{}, SourceGitTimeout
 	}
 	if len(m) == 0 {
-		return m, SourceNone
+		return m, map[string]evidence.OwnerProvenance{}, SourceNone
 	}
-	return m, SourceGit
+	return m, ownerProvenance(m, evidence.TopologySourceGitAuthor), SourceGit
+}
+
+func ownerProvenance(owners map[string]string, source evidence.TopologySource) map[string]evidence.OwnerProvenance {
+	out := make(map[string]evidence.OwnerProvenance, len(owners))
+	for module, owner := range owners {
+		out[module] = evidence.OwnerProvenance{Module: module, Owner: owner, Source: source}
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------

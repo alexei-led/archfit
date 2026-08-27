@@ -5,6 +5,7 @@ package internal/model/clone
 package internal/model/evidence
   type internal/model/evidence.ConnascenceReport struct{EdgesWithEvidence int "json:\"edges_with_evidence\""; AbstainedEdges int "json:\"abstained_edges\""; TotalEvidence int "json:\"total_evidence\""; StrengthInferredEdges int "json:\"strength_inferred_edges,omitempty\""; ByKind map[string]int "json:\"by_kind,omitempty\""; BySource map[string]int "json:\"by_source,omitempty\""; Unmeasured []string "json:\"unmeasured,omitempty\""; Roadmap []internal/model/evidence.ConnascenceRoadmapItem "json:\"roadmap,omitempty\""}
   type internal/model/evidence.ConnascenceRoadmapItem struct{Kind string "json:\"kind\""; CurrentStatus string "json:\"current_status\""; Sources []string "json:\"sources,omitempty\""; RelatedSignals []string "json:\"related_signals,omitempty\""; UpgradeTrigger string "json:\"upgrade_trigger,omitempty\""}
+  type internal/model/evidence.CorroboratedDeployUnit struct{Path string "json:\"path\""; Unit string "json:\"unit\""; Source internal/model/evidence.TopologySource "json:\"source\""}
   type internal/model/evidence.Coverage struct{Tool string "json:\"tool\""; Version string "json:\"version\""; FilesSeen int "json:\"files_seen\""; FilesApplicable int "json:\"files_applicable\""; Unresolved int "json:\"unresolved\""; SpecifiersSeen int "json:\"specifiers_seen,omitempty\""; UnresolvedInputsMissing int "json:\"unresolved_inputs_missing,omitempty\""; UnresolvedPrecisionOnly int "json:\"unresolved_precision_only,omitempty\""; Status string "json:\"status\""; Reason string "json:\"reason,omitempty\""}
   type internal/model/evidence.CoverageGap struct{Tool string "json:\"tool\""; InstallCmd string "json:\"install_cmd\""; AffectedMetrics []string "json:\"affected_metrics\""; Gate string "json:\"gate\""}
   type internal/model/evidence.DeprecatedDep struct{File string "json:\"file\""; Kind string "json:\"kind\""; Subject string "json:\"subject\""; Note string "json:\"note,omitempty\""}
@@ -23,6 +24,7 @@ package internal/model/evidence
   type internal/model/evidence.FileFact struct{Module string "json:\"module\""; Files []string "json:\"files\""; InboundModuleFanIn int "json:\"inbound_module_fanin\""; OutboundDestinations int "json:\"outbound_destinations\""; LOC int "json:\"loc\""}
   type internal/model/evidence.LocalCouplingEdge struct{From string "json:\"from\""; To string "json:\"to\""; Strength string "json:\"strength\""; Balance int "json:\"balance\""; Band string "json:\"band\""; File string "json:\"file,omitempty\""; Line int "json:\"line,omitempty\""}
   type internal/model/evidence.LocalCouplingModule struct{Module string "json:\"module\""; ScoredEdges int "json:\"scored_edges\""; AbstainedEdges int "json:\"abstained_edges,omitempty\""; ComplexityEdges int "json:\"complexity_edges\""; ComplexitySharePct int "json:\"complexity_share_pct\""; MeanBalance float64 "json:\"mean_balance\""; WorstOffenders []internal/model/evidence.LocalCouplingEdge "json:\"worst_offenders,omitempty\""}
+  type internal/model/evidence.OwnerProvenance struct{Module string "json:\"module\""; Owner string "json:\"owner\""; Source internal/model/evidence.TopologySource "json:\"source\""}
   type internal/model/evidence.RuntimeAsyncEdge struct{FromModule string "json:\"from_module\""; Target string "json:\"target\""; IntegrationKind string "json:\"integration_kind\""; Count int "json:\"count\""; Confidence string "json:\"confidence\""; Sites []internal/model/evidence.RuntimeAsyncSite "json:\"sites,omitempty\""}
   type internal/model/evidence.RuntimeAsyncModule struct{Module string "json:\"module\""; IntegrationKind string "json:\"integration_kind\""; Count int "json:\"count\""; Confidence string "json:\"confidence\""}
   type internal/model/evidence.RuntimeAsyncSite struct{File string "json:\"file\""; Line int "json:\"line\""; Library string "json:\"library\""; IntegrationKind string "json:\"integration_kind\""; Language string "json:\"language\""}
@@ -35,6 +37,15 @@ package internal/model/evidence
   const internal/model/evidence.StatusPartial untyped string
   const internal/model/evidence.StatusTimedOut untyped string
   type internal/model/evidence.SyntaxFact struct{Language string "json:\"language\""; File string "json:\"file\""; Module string "json:\"module,omitempty\""; Kind string "json:\"kind\""; Name string "json:\"name\""; Exported bool "json:\"exported,omitempty\""; StartLine int "json:\"start_line\""; EndLine int "json:\"end_line,omitempty\""; Count int "json:\"count,omitempty\""; Framework string "json:\"framework,omitempty\""; FrameworkConfirmed bool "json:\"-\""}
+  type internal/model/evidence.TopologySource string
+  const internal/model/evidence.TopologySourceCodeowners internal/model/evidence.TopologySource
+  const internal/model/evidence.TopologySourceDeclared internal/model/evidence.TopologySource
+  const internal/model/evidence.TopologySourceDockerfile internal/model/evidence.TopologySource
+  const internal/model/evidence.TopologySourceGitAuthor internal/model/evidence.TopologySource
+  const internal/model/evidence.TopologySourceGoMain internal/model/evidence.TopologySource
+  const internal/model/evidence.TopologySourceK8s internal/model/evidence.TopologySource
+  const internal/model/evidence.TopologySourcePyproject internal/model/evidence.TopologySource
+  const internal/model/evidence.TopologySourceWorkspace internal/model/evidence.TopologySource
   type internal/model/evidence.VolatilityCorroboration struct{Source string "json:\"source\""; Status string "json:\"status\""; CommitWindow int "json:\"commit_window,omitempty\""; FullHistory bool "json:\"full_history,omitempty\""; CommitsScanned int "json:\"commits_scanned,omitempty\""; ModulesTouched int "json:\"modules_touched,omitempty\""; TopTouched []internal/model/evidence.VolatilityTouch "json:\"top_touched,omitempty\""; Caveat string "json:\"caveat,omitempty\""}
   type internal/model/evidence.VolatilityTouch struct{Module string "json:\"module\""; TouchCommits int "json:\"touch_commits\""; DeclaredVolatility string "json:\"declared_volatility,omitempty\""}
 package internal/model/fileclass
