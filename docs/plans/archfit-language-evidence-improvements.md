@@ -797,8 +797,8 @@ Files:
   already reads `ref.SeamsComparable` from `seamAnchor` and stays `unmeasured`
   when it is false.
 - `internal/assessment/evaluation/dimensions_test.go` — both paths.
-- `cmd/archfit/integration_reachability_test.go` (new) — test harness defining the
-  `IntegrationReachability` test suite with subtests including `drift_lifecycle`
+- `cmd/archfit/integration_reachability_test.go` — **created by Task 3**; this
+  task extends it (appends subtests, does not recreate it). Adds `drift_lifecycle`
   (tests both paths: no request, and incomparable baseline). Uses
   `materializeFixture(t, withCoverage=false)`. Verify the named subtests are
   implemented and pass.
@@ -1064,8 +1064,10 @@ Preconditions: Tasks 1–7 merged. This task must not change any dimension statu
 
 Postconditions: an opt-in, cached ingestion path exists that reports unresolved
 paths and freshness explicitly. `testability` untouched, still `partial`. With
-the default `coverage.enabled: false`, `analyze --json` is byte-identical to
-Task 6 output.
+the default `coverage.enabled: false`, `analyze --json` is byte-identical to the
+**immediate pre-task reference** captured at the start of this task — not to Task
+6 output. Task 7 intentionally adds serialized complexity metrics and refreshes
+goldens, so byte identity with any pre-Task-7 state is impossible by design.
 
 Fitness gate:
 
@@ -1080,7 +1082,9 @@ Fitness gate:
   failure path; with `gate: warn` → reported, non-blocking.
 - Cache: identical input → hit; changed file → miss; stale/unverified/partial →
   never written.
-- `coverage.enabled: false` → byte-identical output vs Task 6.
+- `coverage.enabled: false` → byte-identical output vs `.archfit-task8-ref.json`,
+  the reference this task captures before its first edit. Never compared against
+  Task 6: Task 7 changes serialized output on purpose.
 
 Impact commands:
 
@@ -1091,16 +1095,30 @@ Impact commands:
 Verification commands:
 
 ```sh
+# STEP 0, run BEFORE the first edit of this task: capture the pre-task
+# reference. The disabled-path gate compares against THIS file, never against
+# Task 6 output — Task 7 intentionally adds serialized complexity metrics, so
+# byte identity with any pre-Task-7 state is impossible by construction.
+#   make build && .bin/archfit analyze --config .archfit.yaml --format json \
+#     > .archfit-task8-ref.json
+test -s .archfit-task8-ref.json || { echo "Missing pre-task reference; capture it before editing"; exit 1; }
+
 go test ./internal/extract/coverage/ -count=1 -v
 go test ./internal/factcache/ ./internal/config/ -count=1
 ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 make build
 
-# Verify coverage ingestion with disabled path (default config).
-# Task 3 uses materializeFixture with withCoverage=false; this verifies the
-# disabled-path (coverage.enabled: false) produces stable output.
-go test ./cmd/archfit/ -run 'IntegrationReachability/drift_lifecycle' -count=1 -v || exit 1
+# Disabled path (coverage.enabled defaults false) must be byte-identical to the
+# pre-task reference captured in step 0.
+.bin/archfit analyze --config .archfit.yaml --format json > /tmp/t8-after.json
+diff .archfit-task8-ref.json /tmp/t8-after.json || { echo "DISABLED PATH CHANGED OUTPUT"; exit 1; }
+echo "DISABLED PATH BYTE-IDENTICAL OK"
+rm -f /tmp/t8-after.json
+
+# Task 3's fixture uses materializeFixture(t, withCoverage=false), so this run
+# exercises the disabled path end to end.
+go test ./cmd/archfit/ -run 'IntegrationReachability' -count=1 -v || exit 1
 make lint
 ```
 
@@ -1250,7 +1268,9 @@ Preconditions: Tasks 8–9 merged.
 
 Postconditions: with a fresh, ref-matched, fully-mapped source, `testability`
 reports `measured`. Without one it reports `partial` exactly as today. On a
-repository with no coverage configured, output is byte-identical to Task 6.
+repository with no coverage configured, output is byte-identical to the
+**immediate pre-task reference** captured at the start of this task, not to Task
+6 — Tasks 7 and 9 both change serialized output before this point.
 
 Fitness gate:
 
@@ -1260,7 +1280,9 @@ Fitness gate:
   unmapped modules; `modules_with_coverage` denominator is 5, not 3.
 - `unresolved_coverage_paths > 0` → `partial` regardless of ratio.
 - `stale` or `unverified` freshness → `partial`; ratio still published, marked.
-- Coverage disabled → status, metrics, and bytes identical to Task 6.
+- Coverage disabled → status, metrics, and bytes identical to
+  `.archfit-task10-ref.json`, the reference this task captures before its first
+  edit. Never compared against Task 6.
 - Zero test files with coverage present → `measured` with ratio 0, not
   `unmeasured`. A tested-nothing repo is a measured fact, not missing evidence.
 - Coverage ratio never influences the verdict: assert no finding or gate reads
@@ -1277,14 +1299,27 @@ Impact commands:
 Verification commands:
 
 ```sh
+# STEP 0, run BEFORE the first edit of this task: capture the pre-task
+# reference. Tasks 7 and 9 both change serialized output before this point, so
+# the disabled-path gate compares against THIS file, never against Task 6.
+#   make build && .bin/archfit analyze --config .archfit.yaml --format json \
+#     > .archfit-task10-ref.json
+test -s .archfit-task10-ref.json || { echo "Missing pre-task reference; capture it before editing"; exit 1; }
+
 go test ./internal/assessment/evaluation/ -run 'TestTestability' -count=1 -v
 make test
 make build
 
-# The IntegrationReachability fixtures created by Task 3 cover both paths:
-# - disabled: coverage.enabled defaults false, output unchanged
-# - enabled: coverage supplied and ingested, testability promoted to measured
-# Format and golden tests verify output stability.
+# Disabled path: this repo has no coverage configured, so output must be
+# byte-identical to the pre-task reference.
+.bin/archfit analyze --config .archfit.yaml --format json > /tmp/t10-after.json
+diff .archfit-task10-ref.json /tmp/t10-after.json || { echo "DISABLED PATH CHANGED OUTPUT"; exit 1; }
+echo "DISABLED PATH BYTE-IDENTICAL OK"
+rm -f /tmp/t10-after.json
+
+# Enabled path: this task is the first caller of
+# materializeFixture(t, withCoverage=true), exercising collection, ref matching
+# and testability promotion.
 go test ./cmd/archfit -run 'IntegrationReachability' -v -count=1 || exit 1
 
 make lint && make archfit
