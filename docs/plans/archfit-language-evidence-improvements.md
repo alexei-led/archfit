@@ -208,10 +208,21 @@ contract is therefore:
 
 - the coverage source is accepted only when accompanied by the commit SHA it was
   produced from (config `source_ref`, or a sidecar `<file>.ref`);
-- a profile whose SHA ≠ the analyzed `source_ref` is reported `stale` and forces
+- a profile whose SHA ≠ the analyzed commit is reported `stale` and forces
   `partial`, regardless of mtime;
 - when no SHA is available, the source is `unverified` and forces `partial` — it
-  is reported and used for diagnostics, never for promotion.
+  is reported and used for diagnostics, never for promotion;
+- **the scanned bytes must equal that commit.** `archfit` scans the working
+  tree, not a git object, and deliberately reports `source_ref: "worktree"`
+  (`internal/application/report.go:65`, asserted in
+  `internal/application/report_measurement_test.go:72-74`). Matching a sidecar
+  SHA against `HEAD` therefore proves nothing about the files actually measured:
+  any edit after the profile was produced still matches. Promotion additionally
+  requires a clean tree for the covered sources — `git status --porcelain`
+  reporting no modified tracked file and no untracked file under any covered
+  module. A dirty or untracked covered source forces `partial` with reason
+  `worktree_differs_from_ref`. This is the only condition under which the
+  profile's SHA is evidence about the scanned bytes.
 
 Config shape (new `coverage:` block, schema additive):
 
@@ -1085,6 +1096,13 @@ Fitness gate:
 - `coverage.enabled: false` → byte-identical output vs `.archfit-task8-ref.json`,
   the reference this task captures before its first edit. Never compared against
   Task 6: Task 7 changes serialized output on purpose.
+- Freshness is bound to the **scanned bytes**, not just to `HEAD` (§2.2). Three
+  cases, all asserted in `internal/extract/coverage/coverage_test.go`:
+  - clean tree, SHA matches → `Freshness = matched`;
+  - **tracked covered file modified** after the profile → `stale`, reason
+    `worktree_differs_from_ref`, even though the sidecar SHA still equals `HEAD`;
+  - **untracked file added** under a covered module → `stale`, same reason.
+  The last two are the false-green cases: a SHA-only check passes them.
 
 Impact commands:
 
@@ -1283,6 +1301,15 @@ Fitness gate:
 - Coverage disabled → status, metrics, and bytes identical to
   `.archfit-task10-ref.json`, the reference this task captures before its first
   edit. Never compared against Task 6.
+- Promotion is refused on a dirty tree. `IntegrationReachability` subtests
+  mutate the fixture *after* `materializeFixture(t, withCoverage=true)` has
+  generated the profile and assert `testability` stays `partial`:
+  - modify a tracked covered `.go` file → `partial`, reason
+    `worktree_differs_from_ref`;
+  - add an untracked `.go` file under a covered module → `partial`, same reason.
+  Only the unmodified fixture may reach `measured`. Without these two cases a
+  SHA-only implementation passes every stated gate while promoting stale
+  evidence to `HEALTHY`.
 - Zero test files with coverage present → `measured` with ratio 0, not
   `unmeasured`. A tested-nothing repo is a measured fact, not missing evidence.
 - Coverage ratio never influences the verdict: assert no finding or gate reads
@@ -1539,9 +1566,23 @@ bash scripts/tests/cli_exit_contract_test.sh
 make all
 .bin/archfit baseline --config .archfit.yaml
 make archfit
-for r in spotinfo pumba prometheus ccgram prefect storybook yazi herdr ruff tokio; do
-  git -C ~/workspace/$r status --porcelain 2>/dev/null | head -1
-done   # expect no output — corpus untouched
+# Fail-closed corpus cleanliness over all 11 repositories. The previous form
+# listed 10 (omitting omni/scheduled-tasks), piped to `head -1`, suppressed
+# errors and never tested the output, so a dirty corpus still exited 0.
+DIRTY=0
+for r in spotinfo pumba omni/scheduled-tasks prometheus ccgram prefect \
+         storybook yazi herdr ruff tokio; do
+  d=~/workspace/$r
+  if [ ! -d "$d/.git" ]; then
+    echo "MISSING CORPUS REPO: $r"; DIRTY=1; continue
+  fi
+  out=$(git -C "$d" status --porcelain) || { echo "STATUS FAILED: $r"; DIRTY=1; continue; }
+  if [ -n "$out" ]; then
+    echo "DIRTY CORPUS REPO: $r"; printf '%s\n' "$out" | head -20; DIRTY=1
+  fi
+done
+test "$DIRTY" -eq 0 || { echo "CORPUS CLEANLINESS GATE FAILED"; exit 1; }
+echo "ALL 11 CORPUS REPOS CLEAN"
 ```
 
 Manual checks: read the sweep summary and confirm every verdict change is
