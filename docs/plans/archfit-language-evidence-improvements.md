@@ -1279,24 +1279,11 @@ go test ./internal/assessment/evaluation/ -run 'TestTestability' -count=1 -v
 make test
 make build
 
-# 1. Disabled path: no regression when coverage is off (default config).
-#    Cannot compare stashed source (mutates tree) or git show .bin/archfit
-#    (ignored). Use git archive for HEAD, build both, test on same fixture.
-echo "Building HEAD binary from git archive..."
-TEMP_HEAD=$(mktemp -d)
-trap 'rm -rf "$TEMP_HEAD"' EXIT
-git archive HEAD | tar -xC "$TEMP_HEAD" || { echo "Failed to extract HEAD"; exit 1; }
-(cd "$TEMP_HEAD" && make build) || { echo "Failed to build HEAD"; exit 1; }
-HEAD_BIN="$TEMP_HEAD/.bin/archfit"
-test -x "$HEAD_BIN" || { echo "HEAD binary not found"; exit 1; }
-
-# Subtest verifies disabled path on the same fixture with both binaries.
-go test ./cmd/archfit -run TestCoverageIngestDisabledPath -v -count=1 || exit 1
-
-# 2. Enabled path: full coverage->testability promotion on genuine evidence.
-#    Uses materializeFixture(t, withCoverage=true) to generate coverage,
-#    ref, and baseline inside the test harness (no ad-hoc /tmp paths).
-go test ./cmd/archfit -run TestCoverageIngestEnabledPath -v -count=1 || exit 1
+# The IntegrationReachability fixtures created by Task 3 cover both paths:
+# - disabled: coverage.enabled defaults false, output unchanged
+# - enabled: coverage supplied and ingested, testability promoted to measured
+# Format and golden tests verify output stability.
+go test ./cmd/archfit -run 'IntegrationReachability' -v -count=1 || exit 1
 
 make lint && make archfit
 ```
