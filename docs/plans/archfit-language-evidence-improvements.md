@@ -622,10 +622,11 @@ Files:
 - `cmd/archfit/integration_reachability_test.go` (new) — owns a
   `materializeFixture(t, withCoverage)` helper that is the **only** way this
   plan's fixture is run. It copies the committed source into `t.TempDir()`, runs
-  `git init` and one commit there, renders `.archfit.yaml` from the template,
-  then runs `archfit baseline` to persist a comparable baseline — which is what
-  makes drift comparable, per the finding above. It returns the temp repo path
-  and the rendered config path.
+  `git init` and one commit there, and renders `.archfit.yaml` from the template.
+  It returns the temp repo path and the rendered config path.
+  **It does not run `archfit baseline`.** Each subtest is responsible for running
+  baseline if and only if its scenario requires one. Task 3's drift subtest calls
+  `archfit baseline` inside the test body after the first two analyses.
 
   When `withCoverage` is true it additionally generates `coverage.out` via `go
   test -coverprofile` inside the temp repo, emits a **versioned attestation
@@ -1427,8 +1428,9 @@ Fitness gate:
   generated the profile and assert `testability` stays `partial`:
   - modify a tracked covered `.go` file → `partial`, reason
     `worktree_differs_from_ref`;
-  - add an untracked `.go` file under a covered module that the sidecar lists →
-    `partial`, same reason;
+  - **modify a covered untracked `.go` file** (untracked at sidecar-generation
+    time, therefore listed in the sidecar because it was covered) → `partial`,
+    reason `worktree_differs_from_ref`;
   - **modify a gitignored `.go` file that the sidecar lists** → `partial`, same
     reason. The fixture writes a `.gitignore` covering that path, so `git status
     --porcelain` reports a clean tree. The sidecar comparison never consults
