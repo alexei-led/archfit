@@ -97,6 +97,18 @@ class TestFlagParsing(unittest.TestCase):
         self.assertEqual(cs.config_version("# version: 2\nmodules: {}\n"), None)
         self.assertEqual(cs.config_version("modules: {}\n"), None)
 
+    def test_command_environment_pins_rust_without_overriding_owner_choice(self):
+        self.assertEqual(
+            cs.command_environment({})["RUSTUP_TOOLCHAIN"],
+            cs.PINNED_RUST_TOOLCHAIN,
+        )
+        self.assertEqual(
+            cs.command_environment({"RUSTUP_TOOLCHAIN": "nightly"})[
+                "RUSTUP_TOOLCHAIN"
+            ],
+            "nightly",
+        )
+
 
 class TestRecordShape(unittest.TestCase):
     def test_blank_record_is_the_frozen_shape(self):

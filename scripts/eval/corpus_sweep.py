@@ -45,6 +45,9 @@ WORKSPACE_ROOT = Path.home() / "workspace"
 DEFAULT_ARCHFIT = REPO_ROOT / ".bin" / "archfit"
 DEFAULT_OUTPUT_DIR = Path("/tmp/archfit-corpus-eval")
 DEFAULT_SUMMARY_FILE = Path("/tmp/archfit-corpus-results.json")
+# Keep Rust corpus results reproducible without modifying third-party repos.
+# Callers can override the pin explicitly through RUSTUP_TOOLCHAIN.
+PINNED_RUST_TOOLCHAIN = "1.98.0"
 
 # The v1 contract constants. They are duplicated from the Go model on purpose:
 # the harness is an INDEPENDENT check, and importing the value it is meant to
@@ -563,6 +566,13 @@ def prepare_work_dir(work: Path) -> Path:
 COMMAND_TIMEOUT = 3600
 
 
+def command_environment(source: dict[str, str] | None = None) -> dict[str, str]:
+    """Return the subprocess environment with the owned Rust corpus pin."""
+    env = dict(os.environ if source is None else source)
+    env.setdefault("RUSTUP_TOOLCHAIN", PINNED_RUST_TOOLCHAIN)
+    return env
+
+
 def subprocess_runner(cmd: list[str], cwd: Path) -> CommandResult:
     # Capture BYTES and decode UTF-8 explicitly. text=True decodes with the
     # locale encoding, and archfit's output is UTF-8 (em dashes, ×, →) — under a
@@ -574,7 +584,7 @@ def subprocess_runner(cmd: list[str], cwd: Path) -> CommandResult:
             cwd=str(cwd),
             capture_output=True,
             check=False,
-            env=os.environ.copy(),
+            env=command_environment(),
             timeout=COMMAND_TIMEOUT,
         )
     except subprocess.TimeoutExpired as exc:
