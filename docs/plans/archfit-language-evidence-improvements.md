@@ -1360,9 +1360,19 @@ Fitness gate:
     with the §2.2 scanner inventory hash, which is why the mechanism is owned by
     `internal/extract/coverage/inventory.go` in Task 8 rather than asserted only
     here.
-  Only the unmodified fixture may reach `measured`. Without all three mutation
-  cases a SHA-only or porcelain-only implementation passes every stated gate
-  while promoting stale evidence to `HEALTHY`.
+  - **warm cache, then add a gitignored `.go` file** under a covered module and
+    rerun with the *same* profile and source ref → `partial`, reason
+    `worktree_differs_from_ref`. The first run must be asserted `measured` with
+    `Freshness = matched` so the cache is genuinely warm; the second run must
+    not reuse it. This is the round-13 cache escape: the cache key contains the
+    coverage source, format, parser version, `ScanRoot` and source ref, none of
+    which change when an ignored file appears, so a cached `matched` ingest
+    would otherwise be replayed and promote stale evidence. The test fails any
+    implementation that treats `Freshness` as a cacheable fact rather than
+    recomputing it per run (§2.2).
+  Only the unmodified fixture may reach `measured`. Without all four mutation
+  cases a SHA-only, porcelain-only, or cache-replaying implementation passes
+  every stated gate while promoting stale evidence to `HEALTHY`.
 - Zero test files with coverage present → `measured` with ratio 0, not
   `unmeasured`. A tested-nothing repo is a measured fact, not missing evidence.
 - Coverage ratio never influences the verdict: assert no finding or gate reads
