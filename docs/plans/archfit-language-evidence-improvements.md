@@ -1306,10 +1306,15 @@ Fitness gate:
   generated the profile and assert `testability` stays `partial`:
   - modify a tracked covered `.go` file → `partial`, reason
     `worktree_differs_from_ref`;
-  - add an untracked `.go` file under a covered module → `partial`, same reason.
-  Only the unmodified fixture may reach `measured`. Without these two cases a
-  SHA-only implementation passes every stated gate while promoting stale
-  evidence to `HEALTHY`.
+  - add an untracked `.go` file under a covered module → `partial`, same reason;
+  - **add or modify a gitignored `.go` file under a covered module** → `partial`,
+    same reason. Default `git status --porcelain` omits ignored files, but
+    Archfit walks the filesystem directly (internal/extract/loc/loc.go:92) and
+    includes ignored content. This is the remaining false-green: stale ignored
+    source passes the porcelain check but Archfit scans it differently.
+  Only the unmodified fixture may reach `measured`. Without all three cases a
+  SHA-only or porcelain-only implementation passes every stated gate while
+  promoting stale evidence to `HEALTHY`.
 - Zero test files with coverage present → `measured` with ratio 0, not
   `unmeasured`. A tested-nothing repo is a measured fact, not missing evidence.
 - Coverage ratio never influences the verdict: assert no finding or gate reads
