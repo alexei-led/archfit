@@ -177,9 +177,9 @@ Three properties make it testable, not aspirational:
 
 1. The required-fact set is a compile-time constant per dimension, not a runtime
    count, so a fact cannot be quietly dropped from the denominator.
-2. `TestPromotionIsMonotonic` (Task 2) asserts, per dimension, that removing any
+2. `TestPromotionIsMonotonic` (Task 4) asserts, per dimension, that removing any
    single required fact flips `measured` → `partial`.
-3. `TestNoMeasuredDimensionHasInClaimUnknowns` (Task 2) asserts every
+3. `TestNoMeasuredDimensionHasInClaimUnknowns` (Task 4) asserts every
    `UnknownFact` carried by a `measured` dimension is declared out-of-claim.
 
 "Not applicable" is deliberately narrow and must be established by the
@@ -251,7 +251,21 @@ path using the module-prefix strip `internal/extract/golang` already applies via
 increments `unresolved_coverage_paths`, which is published as a metric and forces
 `partial` when non-zero.
 
-### 3.4 What must not change
+### 3.4 JSON envelope shape is established once, in Task 3
+
+Fusion review found the first draft inconsistent: Task 3 read
+`d["architecture_state"]["dimensions"]` while Tasks 6, 7 and 10 read top-level
+`d["dimensions"]` and `d["comparison"]`. Only one can be right, and an executor
+hitting the wrong one gets a `KeyError` mid-task.
+
+Task 3 is the first task that reads the JSON output, so it **records the actual
+envelope shape in its fixture README**, and every later verification command in
+this plan uses that recorded shape. The Task 3 snippet reads the root
+defensively (`raw.get("architecture_state", raw)`) precisely so it cannot fail
+before the shape is confirmed; later tasks must not copy that defensive form once
+the answer is known.
+
+### 3.5 What must not change
 
 `gitnexus_impact(target="Decide", direction="upstream", depth=3, repo="archfit")`
 reports **CRITICAL**: 5 impacted symbols across 6 execution flows
@@ -276,7 +290,7 @@ Each task is one commit and is independently revertible.
 
 | Stage | Tasks | Ships                                                                        | Revert boundary                                                    |
 | ----- | ----- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| 0     | 1–3   | contract, audit, and reachability characterization; no code changes yet     | revert commits; specifications and test disappear, no behaviour change |
+| 0     | 1–3   | contract, audit, and reachability characterization; no *production*-code changes (Task 3 adds a test and fixture) | revert commits; docs, fixture and test disappear, no behaviour change |
 | 1     | 4     | implement Task 2 audit decisions (status semantics and implementation fixes) | revert commit; Task 3 reachability outcome may change              |
 | A     | 5–7   | drift lifecycle policy; `operations` and `complexity` reach `measured`      | revert commit; dimensions return to current state                   |
 | B     | 8–10  | supplied-coverage ingestion; `testability` reaches `measured`               | revert commit; `coverage.enabled` defaults false, no behaviour change |
@@ -380,6 +394,12 @@ Files:
 - `docs/design/evidence-contract-audit.md` (new) — nine rows, one per dimension:
   contract definition (Task 1), current behaviour with the symbol and branch that
   produces it, mismatch description, and classification.
+- `docs/design/evidence-contract-audit-scope.txt` (new) — machine-readable
+  companion: one line per file path that the audit authorises a later task to
+  change, in the form `<path>\t<classification>\t<dimension>`. Task 4 diffs its
+  changed-file set against this artifact. The first draft had Task 4 read a
+  `/tmp/audit-scope.txt` that no task produced; this replaces it with a committed,
+  reviewable file.
 - No code changes in this task.
 
 Preconditions: Task 1 merged; contract locked.
@@ -407,10 +427,18 @@ Verification commands:
 
 ```sh
 test -f docs/design/evidence-contract-audit.md
-grep -c '^## ' docs/design/evidence-contract-audit.md              # expect 9
+test -f docs/design/evidence-contract-audit-scope.txt
+grep -c '^## ' docs/design/evidence-contract-audit.md                      # expect 9
 grep -c 'Mismatch classification:' docs/design/evidence-contract-audit.md  # expect 9
-git diff --stat                                                    # expect only the new doc
-make build && make test-fast                                       # unchanged behaviour
+# every scope line must be tab-separated path/classification/dimension
+awk -F'\t' 'NF!=3{print "MALFORMED SCOPE LINE: " $0; bad=1} END{exit bad}' \
+  docs/design/evidence-contract-audit-scope.txt && echo "SCOPE FILE OK"
+# every scope path must exist today (a new file must be declared in a later task instead)
+cut -f1 docs/design/evidence-contract-audit-scope.txt | while read -r p; do
+  test -e "$p" || echo "SCOPE PATH MISSING: $p"
+done
+git diff --stat                        # expect only the two new docs
+make build && make test-fast           # unchanged behaviour
 ```
 
 Manual checks: for each of the nine, read the contract next to the collector body
@@ -439,11 +467,23 @@ Both outcomes below are valid completions:
 
 - **A:** the fixture reaches `healthy` and `check` exits 0.
 - **B:** it does not, and the test emits a report naming each blocking dimension,
-  the symbol that blocks it, and whether the remedy is a contract revision or a
-  new collector.
+  the symbol that blocks it, and the remedy class.
 
-Outcome B is the expected result before Tasks 4–9 land. Task 12 flips the test to
-require Outcome A once the collectors exist.
+**Outcome B has two sub-kinds and they must be distinguished.** Fusion review
+found the first draft ambiguous — Task 13 read any Outcome B as grounds to close
+the plan, while Task 3 expected Outcome B as the normal pre-collector result. The
+report must classify every blocker as exactly one of:
+
+- **B-temporary:** remedy is "new collector required" or "status semantics change
+  approved in Task 2". Stages 1/A/B are expected to clear it. This is the normal
+  result at this point in the plan and does **not** close it.
+- **B-permanent:** remedy is "none — this is an accepted product constraint".
+  Only this kind can close the plan, and only with explicit owner ratification
+  recorded in the Task 2 audit.
+
+Outcome B-temporary naming exactly `{complexity, testability, operations, drift}`
+is the expected result before Tasks 5–12 land. Task 13 flips the test to require
+Outcome A once those collectors exist.
 
 **Hermeticity.** Fusion flagged that a multi-language fixture pulls in tool and
 portability dependencies before basic reachability is established. The fixture is
@@ -456,12 +496,20 @@ Files:
 - `testdata/fixtures/reachability/` (new) — minimal Go module: two declared
   modules with owners, `CODEOWNERS`, `Dockerfile`, one enabled rule that passes,
   no abstained edges.
+- `testdata/fixtures/reachability/coverage.out` (new) — a minimal Go coverprofile
+  covering the fixture's own packages, committed alongside the fixture.
+- `testdata/fixtures/reachability/coverage.out.ref` (new) — the fixture commit
+  SHA the profile was produced from, per the §3.2 freshness contract. Fusion
+  review found the fixture otherwise could never exercise Task 10's `measured`
+  path, leaving the final healthy gate unreachable by construction. The test's
+  setup helper regenerates both after creating the fixture commit, so the SHA
+  always matches.
 - `testdata/fixtures/reachability/README.md` (new) — every file, the dimension it
   serves, and the contract fact it satisfies.
-- `cmd/archfit/integration_reachability_test.go` (new) — deterministic git init
-  and commit for the fixture, baseline creation via the `baseline` command, then
-  the dual-outcome assertion. Reuses the existing parity and byte-stability
-  harnesses rather than adding a third.
+- `cmd/archfit/integration_reachability_test.go` (new) — deterministic git init,
+  two commits (so a `--base` ref exists), coverage regeneration, then the
+  dual-outcome assertion. Reuses the existing parity and byte-stability harnesses
+  rather than adding a third.
 
 Preconditions: Tasks 1–2 merged; audit table reviewed and its classifications
 accepted by the owner.
@@ -482,13 +530,23 @@ Fitness gate:
   `cmd/archfit/format_matrix_test.go` for the non-JSON formats and
   `cmd/archfit/byteidentical_test.go` for JSON. Fusion verified these are two
   separate harnesses, not one.
-- Baseline setup uses the `baseline` command (`cmd/archfit/baseline.go`). The
-  first draft wrongly cited `ARCHFIT_UPDATE_SURFACE`, which regenerates the Go
-  model-surface golden (`internal/model_surface_test.go`) and has nothing to do
-  with drift.
-- Drift comparability is verified by fingerprint, not by file existence: the test
-  asserts `SeamsComparable == true` after baseline creation, since drift requires
-  matching config, module-map, label-set, and rubric fingerprints.
+- Drift comparison uses `--base`, not `baseline` alone. Verified against
+  `cmd/archfit/baseline.go`, whose own help states: *"It records one full
+  baseline of the tree as checked out. There is no git-base mode; compare against
+  a ref with `archfit check --base`."* `baseline` records reviewed findings so CI
+  can suppress known ones; it does **not** establish drift comparability. The
+  first draft conflated the two (and an earlier draft wrongly cited
+  `ARCHFIT_UPDATE_SURFACE`, which regenerates the Go model-surface golden in
+  `internal/model_surface_test.go` and is unrelated to drift). The fixture setup
+  therefore creates two commits and runs `check --base <first-commit>`.
+- Drift comparability is verified by fingerprint, not by file existence: drift is
+  measured only when `SeamsComparable` is true, which requires matching config,
+  module-map, label-set, and rubric fingerprints
+  (`internal/assessment/evaluation/finalize.go`).
+- `SeamsComparable` is an internal evaluation field, not a wire field, so the
+  test asserts it through the observable proxy: with `--base` supplied, drift
+  must not report `unmeasured` with reason "not comparable". The test asserts the
+  reported drift status and reason, not the private field.
 
 Impact commands:
 
@@ -501,18 +559,32 @@ Verification commands:
 ```sh
 make build
 go test ./cmd/archfit/ -run IntegrationReachability -count=1 -v
-.bin/archfit analyze --config testdata/fixtures/reachability/.archfit.yaml --format json > /tmp/r1.json
-.bin/archfit analyze --config testdata/fixtures/reachability/.archfit.yaml --format json > /tmp/r2.json
+
+CFG=testdata/fixtures/reachability/.archfit.yaml
+BASE=$(git -C testdata/fixtures/reachability rev-parse HEAD~1)
+
+# determinism (no comparison)
+.bin/archfit analyze --config "$CFG" --format json > /tmp/r1.json
+.bin/archfit analyze --config "$CFG" --format json > /tmp/r2.json
 diff /tmp/r1.json /tmp/r2.json && echo "DETERMINISTIC OK"
+
+# drift comparability requires --base, not baseline alone
+.bin/archfit baseline --config "$CFG"
+.bin/archfit analyze --config "$CFG" --base "$BASE" --format json > /tmp/r3.json
+
 python3 - <<'PY'
 import json
-d = json.load(open("/tmp/r1.json"))
-st = d["architecture_state"]
+# Envelope note: read the state root defensively. Task 3 must record which shape
+# the CLI actually emits and every later task must then use that one shape.
+raw = json.load(open("/tmp/r3.json"))
+st = raw.get("architecture_state", raw)
 print("verdict:", st["verdict"])
+print("comparison:", (raw.get("comparison") or st.get("comparison", {})).get("status"))
 for k, v in sorted(st["dimensions"].items()):
-    print(f"  {k:16} {v['status']}")
+    print(f"  {k:16} {v['status']:11} {[u['fact'] for u in (v.get('unknown') or [])]}")
 PY
-.bin/archfit check --config testdata/fixtures/reachability/.archfit.yaml; echo "exit=$?"
+
+.bin/archfit check --config "$CFG" --base "$BASE"; echo "exit=$?"
 go test ./cmd/archfit/ -run 'TestFormatMatrix|ByteIdentical' -count=1
 ```
 
@@ -530,17 +602,39 @@ Rollback: delete the fixture directory and the test file.
 
 - [ ] For each mismatch classified as "status-semantics change", implement the decision
 - [ ] For each classified as "implementation fix", make the fix
-- [ ] Leave the "new collector required" items for Tasks 5–12
+- [ ] Leave the "new collector required" items for Tasks 5–13
 - [ ] Keep the three hardcoded-`Partial` collectors unchanged in this task
+- [ ] Add `RequiredFact`, `Promote`, and their invariant tests
+- [ ] Route the six evidence-dependent dimensions through `Promote`
 
 Justification: Task 2 has determined what needs to change and which changes are
 outside the scope of static evidence and existing collectors. This task implements
-the decided changes. It is deliberately split from Tasks 5–12 (new collectors)
+the decided changes. It is deliberately split from Tasks 5–13 (new collectors)
 so the owner can approve status semantics separately from collector work.
 
-Files: per the Task 2 audit classified "status-semantics change" and
-"implementation fix" rows. Do not edit symbols classified "new collector
-required".
+**This task owns the promotion machinery.** Fusion review found `Promote`,
+`RequiredFact`, `TestPromotionIsMonotonic`, and
+`TestNoMeasuredDimensionHasInClaimUnknowns` referenced in §3.1 but assigned to no
+code-owning task — Task 2 is documentation-only, so an executor would have had to
+invent the API mid-run. They belong here, because this is the first task that
+changes status semantics and therefore the first that needs one implementation of
+the rule.
+
+Files:
+
+- `internal/assessment/state/state.go` — `RequiredFact` (name + owner + in-claim
+  flag), the fixed set per dimension, and
+  `Promote(observed, notApplicable) (MeasurementStatus, []UnknownFact)`. Pure
+  function, no I/O, no policy.
+- `internal/assessment/state/promotion_test.go` (new) — table over all nine:
+  full set → `measured`; each single in-claim removal → `partial` naming that
+  fact; empty → `unmeasured`; out-of-claim unknown + full set → still `measured`.
+- `internal/assessment/evaluation/dimensions.go` — route the six
+  evidence-dependent dimensions through `Promote`. The three hardcoded-`Partial`
+  collectors keep their literal status until Tasks 6, 7 and 10.
+- Additional files per the Task 2 audit rows classified "status-semantics change"
+  and "implementation fix". Do not edit symbols classified "new collector
+  required".
 
 Preconditions: Tasks 1–3 merged; audit reviewed and owner-approved.
 
@@ -553,6 +647,17 @@ Fitness gate:
 - All output changes from this task trace back to a specific row in the Task 2
   audit with the "status-semantics change" or "implementation fix" label.
 - `gitnexus_detect_changes` output exactly matches the audit's scope.
+- `TestPromotionIsMonotonic` and `TestNoMeasuredDimensionHasInClaimUnknowns` pass.
+- **Goldens are regenerated in this task, not deferred.** This task changes
+  verdicts and therefore five-format output. Fusion review flagged that deferring
+  golden regeneration to Task 11 would leave every intermediate commit red,
+  breaking the "each task is one independently revertible green commit" rule in
+  §4. Format-matrix and byte-identical baselines are refreshed here, as a
+  reviewed diff called out in the commit message, and every refreshed line must
+  trace to an audit row. Task 11 then regenerates only for the *new metric
+  families* it introduces.
+- `.archfit-baseline.json` is refreshed here if and only if this task changes the
+  self-analysis finding set; the refresh is a separate reviewed hunk.
 
 Impact commands:
 
@@ -562,10 +667,20 @@ Impact commands:
 Verification commands:
 
 ```sh
+go test ./internal/assessment/state/ -run TestPromotion -count=1 -v
 go test ./cmd/archfit/ -run IntegrationReachability -count=1 -v   # outcome may change
-git diff --name-only | while read f; do
-  grep -q "$f" /tmp/audit-scope.txt || echo "UNPLANNED FILE: $f"
+
+# every changed file must be authorised by the Task 2 scope artifact,
+# except the goldens this task is explicitly allowed to refresh
+SCOPE=docs/design/evidence-contract-audit-scope.txt
+git diff --name-only | while read -r f; do
+  case "$f" in
+    cmd/archfit/testdata/*|.archfit-baseline.json) continue ;;
+  esac
+  cut -f1 "$SCOPE" | grep -qx "$f" || echo "UNAUTHORISED FILE: $f"
 done
+
+go test ./cmd/archfit/ -run 'TestFormatMatrix|ByteIdentical' -count=1
 make test-fast && make lint
 ```
 
@@ -604,7 +719,7 @@ Files:
   five renderers.
 - `internal/assessment/evaluation/dimensions_test.go` — both paths.
 
-Preconditions: Tasks 1–3 merged; drift decision recorded.
+Preconditions: Tasks 1–4 merged; drift decision recorded in the Task 2 audit and owner-approved.
 
 Postconditions: a first run with no comparison requested no longer reports an
 evidence gap it does not have. A requested-but-incomparable baseline still
@@ -631,7 +746,7 @@ Verification commands:
 go test ./internal/assessment/evaluation/ -run 'TestDrift' -count=1 -v
 go test ./internal/application/ -count=1
 make build
-.bin/archfit analyze --config testdata/fixtures/healthy/.archfit.yaml --json \
+.bin/archfit analyze --config testdata/fixtures/reachability/.archfit.yaml --json \
   | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d["comparison"]["status"], d["dimensions"]["drift"]["status"])'
 make lint
 ```
@@ -689,7 +804,7 @@ Files:
   SBOM facts declared out-of-claim.
 - Tests in `deployunit_test.go`, `ownership_test.go`, `dimensions_test.go`.
 
-Preconditions: Tasks 1–4 merged.
+Preconditions: Tasks 1–5 merged.
 
 Postconditions: declared and corroborated topology are separate metric families
 with provenance. A tree with a Dockerfile and CODEOWNERS reaches `measured` under
@@ -772,7 +887,7 @@ Files:
   `metrics.function_loc_threshold` (default 60), tail counter only, never a gate.
 - `internal/assessment/evaluation/complexity_test.go` (new).
 
-Preconditions: Tasks 1–5 merged; complexity claim recorded in the contract.
+Preconditions: Tasks 1–6 merged; complexity claim recorded in the Task 1 contract.
 
 Postconditions: `complexity` reports an architecture-level distribution and
 reaches `measured` when the module graph is complete. Absent syntax facts leave
@@ -847,7 +962,7 @@ Files:
   cached, matching `docs/design/fact-cache.md`.
 - `internal/extract/coverage/normalize_test.go`, `coverage_test.go` (new).
 
-Preconditions: Tasks 1–6 merged. This task must not change any dimension status.
+Preconditions: Tasks 1–7 merged. This task must not change any dimension status.
 
 Postconditions: an opt-in, cached ingestion path exists that reports unresolved
 paths and freshness explicitly. `testability` untouched, still `partial`. With
@@ -904,18 +1019,22 @@ Rollback: single commit revert; the config key disappears unconsumed.
 - [ ] Format auto-detection with explicit ambiguity failure
 
 Justification: four formats cover all four supported languages using files CI
-already produces. Each is a pure byte→`[]CoverageFact` function behind the Task 7
+already produces. Each is a pure byte→`[]CoverageFact` function behind the Task 8
 `Parser` interface, independently testable and revertible. No parser spawns a
 subprocess.
 
-Mandatory internal slices — land and verify in this order, one commit each:
+Mandatory internal slices — land and verify in this order, one commit each. This
+is the single documented exception to the "one task, one commit" rule in §4:
+five parsers in one commit would be unreviewable, and each slice is independently
+revertible because parsers register independently.
 
-- **8A** Go coverprofile (`mode:` header, `file:line.col,line.col n count`), both
+
+- **9A** Go coverprofile (`mode:` header, `file:line.col,line.col n count`), both
   path shapes.
-- **8B** LCOV (`SF:`/`DA:`/`LF:`/`LH:`, `end_of_record`).
-- **8C** coverage.py JSON (`files.<path>.summary.{covered_lines,num_statements}`).
-- **8D** llvm-cov JSON (`data[].files[].summary.lines.{covered,count}`).
-- **8E** auto-detection by extension and magic prefix; ambiguity is a named
+- **9B** LCOV (`SF:`/`DA:`/`LF:`/`LH:`, `end_of_record`).
+- **9C** coverage.py JSON (`files.<path>.summary.{covered_lines,num_statements}`).
+- **9D** llvm-cov JSON (`data[].files[].summary.lines.{covered,count}`).
+- **9E** auto-detection by extension and magic prefix; ambiguity is a named
   error, never a guess.
 
 Files:
@@ -926,7 +1045,7 @@ Files:
   provenance recorded in a `README.md` beside them.
 - One `_test.go` per parser.
 
-Preconditions: Task 7 merged; `Parser` and normalization stable.
+Preconditions: Task 8 merged; `Parser` and normalization stable.
 
 Postconditions: all four formats parse to normalized facts. Malformed input
 yields a named error, never a partial silent result.
@@ -942,6 +1061,22 @@ Fitness gate:
   discrepancy rather than trusting the summary.
 - Auto-detect: a `.json` matching neither shape → named ambiguity error.
 - Randomized-truncation/fuzz test per parser asserts no panic.
+
+Input-safety gates (Fusion: a coverage file is attacker-influenced input in any
+repository archfit does not own):
+
+- **Containment.** A normalized path that escapes ScanRoot after `..` resolution
+  is rejected and counted as unresolved, never read and never attributed.
+- **Symlinks.** Path resolution does not follow symlinks out of ScanRoot; an
+  escaping link is treated as unresolved.
+- **Bounded reads.** Each source has a maximum size and a parse timeout; exceeding
+  either is a named failure that forces `partial`, not a silent truncation.
+- **Duplicate facts.** The same file appearing twice (e.g. merged profiles) is
+  merged by a documented rule — union of covered units over the same denominator
+  — and a conflicting denominator for one file is a named error, not a silent
+  last-write-wins.
+- **No fabricated zero.** Any of the above failing must produce a named unknown.
+  A rejected or unreadable source can never be attributed as zero coverage.
 
 Impact commands:
 
@@ -991,7 +1126,7 @@ Files:
   `production_files`, `test_to_production_files` retained unchanged.
 - `internal/assessment/evaluation/testability_test.go` (new).
 
-Preconditions: Tasks 7–8 merged.
+Preconditions: Tasks 8–9 merged.
 
 Postconditions: with a fresh, ref-matched, fully-mapped source, `testability`
 reports `measured`. Without one it reports `partial` exactly as today. On a
@@ -1060,7 +1195,9 @@ Files:
 - `cmd/archfit/format_matrix_test.go` — extend parity to the new families,
   including the in-claim/out-of-claim unknown distinction.
 
-Preconditions: Tasks 1–9 merged; fact set frozen.
+Preconditions: Tasks 1–10 merged; fact set frozen. Task 4 already refreshed the
+goldens for its own status changes; this task regenerates only for the new metric
+families introduced in Tasks 6, 7 and 10.
 
 Postconditions: all five formats report the same statuses, coverage split, and
 metric families. SARIF keeps finding compatibility; state stays in run properties
@@ -1087,7 +1224,7 @@ Verification commands:
 go test ./cmd/archfit/ -run TestFormatMatrix -count=1 -v
 go test ./internal/output/... -count=1
 make build
-for f in console json markdown sarif scorecard; do
+for f in text json markdown sarif scorecard; do
   .bin/archfit analyze --config .archfit.yaml --format "$f" > "/tmp/fmt-$f.a"
   .bin/archfit analyze --config .archfit.yaml --format "$f" > "/tmp/fmt-$f.b"
   diff "/tmp/fmt-$f.a" "/tmp/fmt-$f.b" || echo "NONDETERMINISM IN $f"
@@ -1130,7 +1267,7 @@ Files:
   declared-topology claim.
 - `archfit.schema.json` — regenerated, not hand-edited.
 
-Preconditions: Tasks 1–10 merged; behaviour final.
+Preconditions: Tasks 1–11 merged; behaviour final.
 
 Postconditions: docs match behaviour. A reader can determine from docs alone what
 makes each dimension `measured`.
@@ -1181,7 +1318,7 @@ counts summing to nine, exit-code agreement, format parity, and byte determinism
 
 Files:
 
-- `cmd/archfit/integration_healthy_test.go` — flip to assert `verdict == healthy`
+- `cmd/archfit/integration_reachability_test.go` — flip to assert `verdict == healthy`
   and `check` exit 0.
 - `scripts/eval/corpus_sweep.py` — per-repo assertion: every `measured` dimension
   carries no *in-claim* unknown; every `partial` dimension carries at least one.
@@ -1189,8 +1326,11 @@ Files:
 - `.archfit-baseline.json` — refreshed after the dimension changes.
 - `docs/reports/` — sweep record including repos that remain partial and why.
 
-Preconditions: Tasks 1–11 merged. Corpus repos present under `~/workspace`. Rust
-toolchain available for the Rust members.
+Preconditions: Tasks 1–12 merged. Execution-environment gates, checked before the
+sweep runs and reported as skipped rather than failed when absent: the eleven
+corpus repositories are present under `~/workspace`, and a Rust toolchain
+(`rustup`, `cargo-modules`) is installed for the four Rust members. Fusion review
+flagged these as implicit assumptions; they are now explicit preconditions.
 
 Postconditions: strict sweep passes across all 11 repositories. Repos that remain
 `NEEDS_ATTENTION` do so for a named, correct reason. The healthy fixture
@@ -1221,8 +1361,8 @@ Verification commands:
 
 ```sh
 make build
-go test ./cmd/archfit/ -run IntegrationHealthy -count=1 -v
-.bin/archfit check --config testdata/fixtures/healthy/.archfit.yaml; echo "exit=$?"   # expect 0
+go test ./cmd/archfit/ -run IntegrationReachability -count=1 -v
+.bin/archfit check --config testdata/fixtures/reachability/.archfit.yaml; echo "exit=$?"   # expect 0
 python3 scripts/eval/corpus_sweep_test.py
 python3 scripts/eval/corpus_sweep.py --strict \
   --repeat-repos spotinfo,ccgram,storybook,yazi \
@@ -1249,7 +1389,7 @@ sweep change is test-only.
 
 - Archfit executing a target repository's test suite, build, or coverage command.
 - Any change to `Decide`, the verdict rules, the exit table, or the four
-  comparability hashes. (`Decide` is CRITICAL blast radius; §3.4.)
+  comparability hashes. (`Decide` is CRITICAL blast radius; §3.5.)
 - A fourth `MeasurementStatus` value.
 - Any repository-level scalar, band, or averaged score.
 - Cognitive/cyclomatic complexity analyzers (`gocognit`, `lizard`).
@@ -1271,12 +1411,12 @@ Primary sources consulted 2026-08-27.
 
 | Fact                                                                                                                   | Source                                                                                                      | Used by            |
 | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------ |
-| Go coverprofile records a full file path for local packages and an import path for non-local ones; profiles can mix both | golang/go issue #40251 "cmd/cover: clarify the format of cover profile"; `cmd/cover` source                  | §3.3, Tasks 7, 8A  |
-| Profile line format is `name.go:line.col,line.col numStmt count` after a leading `mode:` line                             | Go blog "The cover story" <https://go.dev/blog/cover>; `golang.org/x/tools/cover` `Profile`/`ProfileBlock`   | Task 8A            |
-| Coverage modes are `set`, `count`, `atomic`                                                                              | Go blog "The cover story"                                                                                   | Task 8A gate       |
-| coverage.py stores **absolute** paths by default; relative only with `[run] relative_files = True`                       | Coverage.py configuration reference <https://coverage.readthedocs.io/en/latest/config.html>                 | §3.3, Task 8C      |
+| Go coverprofile records a full file path for local packages and an import path for non-local ones; profiles can mix both | golang/go issue #40251 "cmd/cover: clarify the format of cover profile"; `cmd/cover` source                  | §3.3, Tasks 8, 9A  |
+| Profile line format is `name.go:line.col,line.col numStmt count` after a leading `mode:` line                             | Go blog "The cover story" <https://go.dev/blog/cover>; `golang.org/x/tools/cover` `Profile`/`ProfileBlock`   | Task 9A            |
+| Coverage modes are `set`, `count`, `atomic`                                                                              | Go blog "The cover story"                                                                                   | Task 9A gate       |
+| coverage.py stores **absolute** paths by default; relative only with `[run] relative_files = True`                       | Coverage.py configuration reference <https://coverage.readthedocs.io/en/latest/config.html>                 | §3.3, Task 9C      |
 | pytest-cov exposes coverage.py's JSON reporter via `--cov-report=json`                                                   | pytest-cov reporting docs <https://pytest-cov.readthedocs.io/en/latest/reporting.html>                      | §2 Stage B         |
-| `cargo llvm-cov --json` calls `llvm-cov export -format=text`; `--summary-only` emits per-file summaries                  | taiki-e/cargo-llvm-cov README                                                                               | Task 8D            |
+| `cargo llvm-cov --json` calls `llvm-cov export -format=text`; `--summary-only` emits per-file summaries                  | taiki-e/cargo-llvm-cov README                                                                               | Task 9D            |
 | cargo-llvm-cov is actively maintained (0.8.x–0.9.x in 2026), dual-licensed Apache-2.0 OR MIT                             | crates.io, docs.rs, Homebrew formula                                                                        | §2 Stage B         |
 | Vitest supports `json-summary` and `lcov` reporters via v8 or istanbul providers                                         | Vitest coverage config <https://vitest.dev/config/coverage>                                                 | §2 Stage B         |
 | SARIF property bags are the sanctioned place for tool-specific run data                                                  | OASIS SARIF v2.1.0 §3.8                                                                                     | Task 10            |
@@ -1317,12 +1457,36 @@ panelists completing (one timed out; coverage noted as partial).
 Verdict on the first draft: **NO-GO — "the defect is real, but the proposed
 framing is too narrow."** Corrections applied:
 
+### Round 3 — readiness review of the corrected plan
+
+Fusion run `9df8f1c4-e273-4f8d-ba91-8bdb393951ad`, 4 of 4 panelists completing.
+Verdict: **GO for owner review as a draft, NO-GO for Ralphex execution**, with
+eight blockers. All eight are fixed in this revision:
+
+| Blocker                                                                                  | Fix                                                                                          |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Stale `fixtures/healthy/`, `IntegrationHealthy`, and a `console` format loop in Task 11   | renamed throughout to `fixtures/reachability/` / `IntegrationReachability`; `console` → `text` |
+| `baseline` does not establish drift comparability; `check --base` does                    | Task 3 now creates two commits and runs `--base`; §Task 3 quotes `baseline`'s own help        |
+| `Promote`, `RequiredFact`, and their invariant tests owned by no code task                | assigned to Task 4, which is the first task that changes status semantics                      |
+| Reachability fixture had no fresh, ref-matched coverage, so Task 10 could never be tested | fixture now ships `coverage.out` + `coverage.out.ref`, regenerated by the test setup           |
+| Outcome B ambiguous: Task 3 expected it, Task 13 read it as plan closure                  | split into B-temporary (normal, does not close) and B-permanent (closes, owner-ratified only)  |
+| Task 4 read `/tmp/audit-scope.txt`, which no task created                                 | Task 2 now emits committed `docs/design/evidence-contract-audit-scope.txt`                     |
+| Golden regeneration deferred to Task 11 would leave Task 4's commit red                   | Task 4 refreshes its own goldens; Task 11 regenerates only for its new metric families         |
+| Coverage inputs lacked containment, symlink, size, and duplicate-merge safeguards         | added as explicit input-safety gates in Task 9                                                 |
+
+Also applied: preconditions renumbered after the Task 4 insertion; Stage 0
+described as "no *production*-code changes"; the parser-slice exception to
+one-task-one-commit documented in §4 and Task 9; JSON envelope shape pinned in
+§3.4; Task 13 corpus environment gates made explicit.
+
+### Rounds 1–2 — design and first readiness review
+
 | Panel finding                                                                     | Where applied                                                       |
 | --------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | Closing three collectors is insufficient; drift and coupling have their own gates  | §1.1; Task 4 (drift lifecycle); Task 3 fixture requires no abstained edges |
 | `Measured` has two contradictory definitions across the nine collectors            | §1.2; Tasks 1–2 now precede all collector work                       |
 | Define the evidence contract before implementing collectors                        | Task 1 is the entry point; Task 2 makes it executable                |
-| Build one end-to-end healthy fixture and prove exit 0                              | Task 3 ships it; Task 12 flips it to assert healthy                  |
+| Build one end-to-end healthy fixture and prove exit 0                              | Task 3 ships it; Task 13 flips it to assert healthy                  |
 | Do not execute target tests from `analyze`/`check`                                 | §3.2; §2 Stage C rejects it explicitly                               |
 | Coverage freshness needs commit binding, not timestamps                            | §3.2 `require_ref`, `Freshness ∈ {matched, stale, unverified}`       |
 | Parsed manifests are declarations, not observed runtime                            | Task 5 narrowed to *declared-topology completeness*; §2 Stage C      |
