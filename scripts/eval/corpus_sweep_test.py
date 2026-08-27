@@ -27,16 +27,26 @@ def state_doc(**overrides):
     """A minimal valid architecture-state document."""
     dims = {}
     for i, name in enumerate(cs.DIMENSION_KEYS):
+        status = "measured" if i < 5 else ("partial" if i < 8 else "unmeasured")
+        unknown = []
+        if status != "measured":
+            unknown.append(
+                {
+                    "fact": f"required {name} evidence",
+                    "reason": "fixture evidence is incomplete",
+                    "owner": f"owner/{name}",
+                }
+            )
         dims[name] = {
             "name": name,
             "owner": f"owner/{name}",
-            "status": "measured" if i < 5 else ("partial" if i < 8 else "unmeasured"),
+            "status": status,
             "confidence": "high",
             "gate": "pass",
             "coverage": {"basis": "b", "observed": 1, "total": 1},
             "metrics": [{"name": "m", "value": 1.0, "unit": "count"}],
             "findings": [],
-            "unknown": [],
+            "unknown": unknown,
         }
     doc = {
         "schema_version": cs.STATE_SCHEMA_VERSION,
@@ -214,6 +224,35 @@ class TestStateValidation(unittest.TestCase):
         doc["dimensions"]["intent"]["owner"] = ""
         failures = cs.validate_state(doc)
         self.assertTrue(any("evidence owner" in f for f in failures), failures)
+
+    def test_measured_allows_a_declared_out_of_claim_unknown(self):
+        doc = state_doc()
+        doc["dimensions"]["intent"]["unknown"] = [
+            {
+                "fact": "disabled rule conformance",
+                "reason": "the rule is disabled",
+                "owner": "owner/intent",
+            }
+        ]
+        self.assertEqual(cs.validate_state(doc), [])
+
+    def test_rejects_measured_with_an_in_claim_unknown(self):
+        doc = state_doc()
+        doc["dimensions"]["intent"]["unknown"] = [
+            {
+                "fact": "declared intent inventory",
+                "reason": "the required fact is missing",
+                "owner": "owner/intent",
+            }
+        ]
+        failures = cs.validate_state(doc)
+        self.assertTrue(any("in-claim" in f for f in failures), failures)
+
+    def test_rejects_partial_without_a_named_unknown(self):
+        doc = state_doc()
+        doc["dimensions"]["complexity"]["unknown"] = []
+        failures = cs.validate_state(doc)
+        self.assertTrue(any("partial without" in f for f in failures), failures)
 
 
 class TestExitContract(unittest.TestCase):

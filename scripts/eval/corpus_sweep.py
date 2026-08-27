@@ -65,6 +65,24 @@ DIMENSION_KEYS = (
     "operations",
     "drift",
 )
+# Independent copy of the source-fixed facts that may remain unknown without
+# weakening a measured dimension's claim. Any other unknown is conservatively
+# in-claim (or undeclared) and must prevent promotion.
+OUT_OF_CLAIM_UNKNOWN_FACTS = {
+    "intent": frozenset({"disabled rule conformance"}),
+    "structure": frozenset({"external dependency structure"}),
+    "modularity": frozenset({"inferred public surface"}),
+    "coupling": frozenset({"local and undeclared-external coupling"}),
+    "change_locality": frozenset({"essential vs accidental volatility"}),
+    "complexity": frozenset(
+        {"code size tail", "function length distribution", "cognitive complexity"}
+    ),
+    "testability": frozenset({"assertion quality", "boundary test semantics"}),
+    "operations": frozenset(
+        {"observed runtime topology", "supply-chain inventory", "analyzer health"}
+    ),
+    "drift": frozenset({"base comparison"}),
+}
 # check exit code per state verdict (application.outcomeFor).
 VERDICT_EXITS = {"healthy": 0, "needs_attention": 2, "blocked": 1}
 
@@ -286,8 +304,41 @@ def _validate_dimensions(dims: dict[str, Any]) -> list[str]:
             failures.append(f"dimension {name} carries name={dim.get('name')!r}")
         if not dim.get("owner"):
             failures.append(f"dimension {name} has no evidence owner")
-        if dim.get("status") not in ("measured", "partial", "unmeasured"):
-            failures.append(f"dimension {name} status={dim.get('status')!r}")
+        status = dim.get("status")
+        if status not in ("measured", "partial", "unmeasured"):
+            failures.append(f"dimension {name} status={status!r}")
+
+        unknown = dim.get("unknown")
+        if not isinstance(unknown, list):
+            failures.append(f"dimension {name} unknown is not an array")
+        else:
+            for fact in unknown:
+                if not isinstance(fact, dict):
+                    failures.append(f"dimension {name} has an untyped unknown fact")
+                    continue
+                missing = [
+                    key for key in ("fact", "reason", "owner") if not fact.get(key)
+                ]
+                if missing:
+                    failures.append(
+                        f"dimension {name} unknown fact is missing {missing}"
+                    )
+            if status == "measured":
+                allowed = OUT_OF_CLAIM_UNKNOWN_FACTS.get(name, frozenset())
+                in_claim = [
+                    fact.get("fact")
+                    for fact in unknown
+                    if isinstance(fact, dict) and fact.get("fact") not in allowed
+                ]
+                if in_claim:
+                    failures.append(
+                        f"dimension {name} is measured with in-claim or undeclared unknown facts {in_claim}"
+                    )
+            elif status == "partial" and not unknown:
+                failures.append(
+                    f"dimension {name} is partial without a named unknown fact"
+                )
+
         metrics = dim.get("metrics")
         if not isinstance(metrics, list):
             failures.append(f"dimension {name} metrics is not an array")

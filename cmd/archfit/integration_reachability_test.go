@@ -22,8 +22,6 @@ import (
 const (
 	reachabilityFixturePath            = "../../testdata/fixtures/reachability"
 	reachabilityCoveragePlaceholder    = "{{REACHABILITY_COVERAGE_BLOCK}}"
-	reachabilityTemporaryOutcome       = "B-temporary"
-	reachabilityNewCollectorRemedy     = "new collector required"
 	reachabilityTrackedCoveredSource   = "services/api/api.go"
 	reachabilityUntrackedCoveredSource = "services/api/untracked.go"
 	reachabilityIgnoredCoveredSource   = "services/app/ignored.go"
@@ -37,25 +35,9 @@ type reachabilityCoverageSidecar struct {
 	Sources       map[string]string `json:"sources"`
 }
 
-type reachabilityRemedy struct {
-	OutcomeClass string
-	Symbol       string
-	RemedyClass  string
-	Remedy       string
-}
-
-var reachabilityRemedies = map[string]reachabilityRemedy{
-	report.DimensionTestability: {
-		OutcomeClass: reachabilityTemporaryOutcome,
-		Symbol:       "testabilityDimension",
-		RemedyClass:  reachabilityNewCollectorRemedy,
-		Remedy:       "Tasks 8-10 must ingest, attribute, and freshness-check supplied coverage",
-	},
-}
-
 // TestIntegrationReachability drives the only supported materialization path for
-// this fixture. It records either valid outcome: a fully asserted healthy state,
-// or a complete impossibility report whose remedies come from the Task 2 audit.
+// this fixture. Its terminal baseline transition requires the healthy state that
+// the completed collectors make reachable.
 func TestIntegrationReachability(t *testing.T) {
 	t.Run("baseline_transition", testIntegrationReachabilityBaselineTransition)
 	t.Run("drift_lifecycle", testIntegrationReachabilityDriftLifecycle)
@@ -63,7 +45,7 @@ func TestIntegrationReachability(t *testing.T) {
 }
 
 func testIntegrationReachabilityBaselineTransition(t *testing.T) {
-	root, configPath := materializeFixture(t, false)
+	root, configPath := materializeFixture(t, true)
 
 	firstCode, first := runReachabilityState(t, cmdAnalyze, configPath)
 	secondCode, second := runReachabilityState(t, cmdAnalyze, configPath)
@@ -115,12 +97,7 @@ func testIntegrationReachabilityBaselineTransition(t *testing.T) {
 
 	activeDiagnostics := activeReachabilityDiagnostics(state.Findings)
 	logReachabilityState(t, state, checkCode, activeDiagnostics)
-	switch state.Verdict {
-	case report.StateHealthy:
-		assertReachabilityOutcomeA(t, state, checkCode, activeDiagnostics)
-	default:
-		assertReachabilityOutcomeB(t, state, checkCode, activeDiagnostics)
-	}
+	assertReachabilityOutcomeA(t, state, checkCode, activeDiagnostics)
 
 	// Keep root live so a future edit cannot accidentally make the fixture path
 	// escape the test-owned repository without this test noticing.
@@ -744,6 +721,9 @@ func activeReachabilityDiagnostics(findings []report.Finding) []report.Finding {
 
 func assertReachabilityOutcomeA(t *testing.T, state report.ArchitectureState, checkCode int, diagnostics []report.Finding) {
 	t.Helper()
+	if state.Verdict != report.StateHealthy {
+		t.Fatalf("terminal reachability verdict = %q, want healthy", state.Verdict)
+	}
 	if checkCode != 0 || state.Decision.UnknownDimensions != 0 ||
 		state.Decision.HardGates != report.HardGatePass || len(diagnostics) != 0 {
 		t.Fatalf("Outcome A incomplete: check_exit=%d unknown_dimensions=%d hard_gates=%s active_diagnostics=%d",
@@ -753,57 +733,6 @@ func assertReachabilityOutcomeA(t *testing.T, state report.ArchitectureState, ch
 		t.Fatalf("Outcome A active_blockers = %d, want 0", state.Decision.ActiveBlockers)
 	}
 	t.Log("reachability outcome: A; healthy reached with check exit 0, hard gates passing, no unknown dimensions, and no active diagnostics")
-}
-
-func assertReachabilityOutcomeB(t *testing.T, state report.ArchitectureState, checkCode int, diagnostics []report.Finding) {
-	t.Helper()
-	var blockers []report.DimensionState
-	for _, dimension := range state.Dimensions.All() {
-		if dimension.Status != report.MeasurementMeasured {
-			blockers = append(blockers, dimension)
-		}
-	}
-
-	var lines []string
-	for _, dimension := range blockers {
-		remedy, known := reachabilityRemedies[dimension.Name]
-		if !known {
-			lines = append(lines, fmt.Sprintf(
-				"- dimension=%s status=%s outcome_class=UNCLASSIFIED symbol=UNKNOWN remedy_class=UNKNOWN",
-				dimension.Name, dimension.Status))
-			continue
-		}
-		lines = append(lines, fmt.Sprintf(
-			"- dimension=%s status=%s outcome_class=%s symbol=%s remedy_class=%q remedy=%q",
-			dimension.Name, dimension.Status, remedy.OutcomeClass, remedy.Symbol, remedy.RemedyClass, remedy.Remedy))
-	}
-	for _, diagnostic := range diagnostics {
-		lines = append(lines, fmt.Sprintf(
-			"- diagnostic=%s status=%s outcome_class=UNCLASSIFIED symbol=classifyFindings remedy_class=fixture-or-product-decision-required",
-			diagnostic.RuleID, diagnostic.Status))
-	}
-	t.Logf("reachability outcome: B\n%s", strings.Join(lines, "\n"))
-
-	if state.Verdict != report.StateNeedsAttention || checkCode != 2 {
-		t.Fatalf("Outcome B verdict=%q check_exit=%d, want needs_attention/2", state.Verdict, checkCode)
-	}
-	if state.Decision.HardGates != report.HardGatePass || state.Decision.ActiveBlockers != 0 {
-		t.Fatalf("Outcome B is not the characterized evidence-only block: decision=%+v", state.Decision)
-	}
-	if len(diagnostics) != 0 {
-		t.Fatalf("fixture emitted %d active diagnostics; report above names them, but the characterized fixture must have none", len(diagnostics))
-	}
-	if len(blockers) != len(reachabilityRemedies) {
-		t.Fatalf("blocking dimensions = %d, want %d; report:\n%s", len(blockers), len(reachabilityRemedies), strings.Join(lines, "\n"))
-	}
-	for _, dimension := range blockers {
-		if _, known := reachabilityRemedies[dimension.Name]; !known {
-			t.Fatalf("unexpected blocking dimension %q; report:\n%s", dimension.Name, strings.Join(lines, "\n"))
-		}
-	}
-	if state.Decision.UnknownDimensions != len(reachabilityRemedies) {
-		t.Fatalf("unknown_dimensions = %d, want %d", state.Decision.UnknownDimensions, len(reachabilityRemedies))
-	}
 }
 
 func logReachabilityState(t *testing.T, state report.ArchitectureState, checkCode int, diagnostics []report.Finding) {

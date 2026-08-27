@@ -1637,13 +1637,13 @@ Rollback: single commit revert.
 
 ### Task 13: Full corpus, reachability confirmation, and baseline gate
 
-- [ ] If Task 3 reports Outcome A (healthy reached): flip the test to assert `healthy` and `check` exit 0
+- [x] If Task 3 reports Outcome A (healthy reached): flip the test to assert `healthy` and `check` exit 0
 - [ ] If Task 3 reports Outcome B-temporary: Stages A/B were expected to clear it — re-run Task 3; a still-blocking dimension here is a defect in Tasks 5–10, not grounds to close
 - [ ] If and only if Task 3 reports Outcome B-permanent, owner-ratified in the Task 2 audit: record the constraint and close the plan
-- [ ] Extend `corpus_sweep.py` with the promotion-contract assertion (if collectors were added)
-- [ ] Run the full 11-repository sweep in strict mode (if collectors were added)
-- [ ] Refresh the self-baseline and dogfood gate (if status changed)
-- [ ] Record residual coverage gaps honestly
+- [x] Extend `corpus_sweep.py` with the promotion-contract assertion (if collectors were added)
+- [x] Run the full 11-repository sweep in strict mode (if collectors were added)
+- [x] Refresh the self-baseline and dogfood gate (if status changed)
+- [x] Record residual coverage gaps honestly
 
 Justification: unit fixtures cannot prove promotion behaves on real trees with
 partial toolchains. This task confirms Task 3's reachability finding at corpus

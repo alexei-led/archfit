@@ -1,5 +1,1101 @@
 {
-  "schema_version": "archfit.baseline.v1",
-  "accepted": [],
-  "metrics": {}
+  "schema_version": "archfit.baseline.v2",
+  "accepted": [
+    {
+      "fingerprint": "69d3b879c3ce3a737a2305ff389cb1e7",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "8444168e3db5da6a0127fb1d1ddb19f6",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "high"
+    },
+    {
+      "fingerprint": "088c6257fe3eba57ac2a2fb4abbd6dda",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "1f841c4ef66c9d9a70430132618740e2",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "4615d49132092a7113ecc8067314fc1e",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "3b3a0035c0f9a137bf5df57ffaf9161b",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "86e21ab46f46cfc77479c37d61d6365a",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "high"
+    },
+    {
+      "fingerprint": "bd9da20f2cdaa72e29841b99517bb28b",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "40ee017434202d1801b301f777e144ff",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "367ede3d7f17ccc5bc5251a927be6db7",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "ff0f7fb45b81ade146258afbdf355dd3",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "6793028290cda533ad5cb1fe502698a9",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "688cebe5ec01b73b7c76c2e48d8fb028",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "8046d9e0621750119e12fbad2c787ee3",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "6ff80d129819b87f7e62f0edbd688f8c",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "4ae0dcde706ef7333cb7428bc0eb4c80",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "c19d5d66ac01d90bfe0d78e5198685c6",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "1739a440ff7c65f82d106bc58e3c93b1",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "72aae8ce0418334e888e19276f0a33bf",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "high"
+    },
+    {
+      "fingerprint": "07b0acbafd10996d237ed83afbea5013",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "39280b30be11ccfb7099e2def1d47b8d",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "024a054601f108bb2f65bdaa51b20789",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "14a18a6187471cea76c40f7707552f67",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "4f3d760538a570506a5d02bdab58bee0",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "14ac826f0bb219f873ec6006917d978a",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "08ad9f3c6f1298ff86bb271fc0443532",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "15d7aca5826ff9e51126d30d5d399056",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "12585c746dab4b7aab1efe23619be40b",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "09ea5d95ec52268d4b39d9ffc93ab11c",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "0be20e8b1f3def37d037daf6b331b75a",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "fcb2c3af2a2bccd71b2521c715d08d66",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "176de03c572cc06654a543910586709c",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "e19785bd2a4e8ce6d810dc43b364814b",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "eddc084a761aefcf44f5e1c6b1021f32",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "feb6b9e7d13d752f9c75182ce614754b",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "3913f26696ce7693d537a7188c765780",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "074988238668fed37150966bd40f1e8f",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "08b3051f24559cabe4895bd0768bafe5",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "029b9c055ed2b0724c019b28844d9a66",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "01ce599a2e595405a07cb76681c5ab01",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "4dee147706e26c8ecd7f40d2b284c29b",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "bac855784f6375d70fafc86e9174c111",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "242a8cc66492e9618b2e5cabc00a265d",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "525840fc8330703c0692415a21cf4c8f",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "86666b35572dd027448b28bffd56ca62",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "d8c64b9b7736b12551e0501203f53592",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "7f461a14aae1bbdb961e731caea12447",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "high"
+    },
+    {
+      "fingerprint": "994263a03a96dbfaedda63e4b8197fc9",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "high"
+    },
+    {
+      "fingerprint": "51ad2e4f376a391f948ef1a33b7a6e11",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "981183bceb2c3fc19c21f4f06915a332",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "497f5eb92a9017ff823b7d3a95dcf57f",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "75435625022bf51b091a639cc9f58efa",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "26a6d8f21eaea67b22e168985df10833",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "a45c29b221afaa4ccceb32bc5d9c57d5",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "0c5fc2a0a2116350ac630c4cf1137bc2",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "0ad7fdb637603421a7b4aad0c527c584",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "e83b01e8879297fd84f3c20f80f35df8",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "1b1b651ef6278011aa2b28e88cfe43fd",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "high"
+    },
+    {
+      "fingerprint": "86bdce74707ac8e7c163eb38d27591aa",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "016e681e350a7b9f64711847a3c55036",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "2472e9c5dd85957da047770defe380a6",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "76eb9b0185310484f38d648e5106b9fe",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "high"
+    },
+    {
+      "fingerprint": "427ea639cccd4c6eaf80dce72d6cdf37",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "10ebd4f5c079cb2baff9d5de735d356f",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "acc940d72bd31d86f74c4420cb5c9d34",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "3756a47bfcee33461b6cd6cdf2023fdb",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "ae45f78ce8eba5d5a6892722cf3a0d54",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "39b64c61f98496c49c51073a3780d91f",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "ed4840b01ccbbe25f5cc444a2eb0896a",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "3b838968ddfb60245a3ac977a786868d",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "222d43e9a81495d242f36845e4fdb63f",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "295ca67a5ccbc7aa7c1b640c2ad5f6ad",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "a04e297f017511e99bee49f1bac93470",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "08c681ce55f6727b8b77dd3545a215ac",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "0b205e78a5a510d8c817df578b2d1f2d",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "03161988e1f74fbb8798cb93adc81646",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "2c3a0447dd65cbfe29bf677b8b2420f8",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "1188317f62fd61b5f831721759ab12d1",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "3ccff7c727bf3881a6cf53d64570ef16",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "5dc177b7d429b6e473c3975f03dca5d7",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "7721c807260391fb7b3f825e2bb25de3",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "b80edf266266d5d2ef69336e49fcdca0",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "e0052281947927e38d7ccd7ec819e3e5",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "1f17bf6a7985f31d428c95c3f3bf969b",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "947e399899d041834dadfc86ea2c6ef2",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "382f8fbfa55a240c9563e9709a8eb2fb",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "6efd59da1be96f4d3f3fd3eb57fc3603",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "35f792970b6a8fb6109547bdd688ec7f",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "614ee95e159796ccb96d322c042c5694",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "881a242a665360836d10f66f5f005e3c",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "ae66ef0d5fd05668821c865237e4d80a",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "384a4c05d69a6a07c7af2be0bb485c71",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "d7699f3bc50924cb5213951bb648fd14",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "08244a901e2803d2593cf96eddbefc72",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "16356f10bac0fda2dfccf2b120865d2b",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "dbf1524996cd43a906d2b8b1b8aa5daa",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "76f0904b89e3183658a8b2b006d245ba",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "high"
+    },
+    {
+      "fingerprint": "01b59d297d70a52756ee213f7f006469",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "17b1c08443525528864360ee6ac18886",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "093e032bba6ac6f06c5749a635af7e99",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "108a8f5162c596eae12329198aaf67aa",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "120b88a914757627b6c3fc85f7f8e1e9",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "20a6a2d090e4ec3c01b14f32a541edef",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "18ed8f9145dd0599b278815b55a45bcc",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "2e7195a3fcefee3161e601e0b6292b49",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "7d1653760b760d38e90f6b188fa527e9",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "d8aa67ce1be41a3fa6804d4939180b42",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "82c798195ae7edc20ad3b3066a0053e8",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "b088715ad4f2e2debcb026bd942f6c67",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "806e208194bc4f65a519c7f24cb45f8e",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "90578a16f4ad116c1009426c4ae12ffb",
+      "rule_id": "syntax_api_size_ceiling",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
+      "fingerprint": "b98c265d65853beceff848d802bb31a0",
+      "rule_id": "syntax_api_size_ceiling",
+      "kind": "advisory",
+      "severity": "medium"
+    }
+  ],
+  "metrics": {
+    "blast_radius": {
+      "value": 10,
+      "version": "blast_radius.v2"
+    },
+    "coverage": {
+      "value": 1,
+      "version": "coverage.v1"
+    },
+    "cycle": {
+      "value": 0,
+      "version": "cycle.v1"
+    },
+    "encapsulation": {
+      "value": 0,
+      "version": "encapsulation.v1"
+    },
+    "unbalanced_edge": {
+      "value": 0,
+      "version": "unbalanced_edge.v2"
+    }
+  },
+  "state": {
+    "config_hash": "c02a9e2a2f432139921abd6617c0ed010d0f0946085924d2b91c19d31338b2e3",
+    "model_hash": "9afa91be2d55af02cbf2034107c37ed5915489e08f4e2d81f65933c26bfdfbda",
+    "labels_hash": "",
+    "rubric_version": "bc_score.v6",
+    "hard_gate_finding_ids": [],
+    "qualifying_seam_ids": [],
+    "dimensions": [
+      {
+        "name": "intent",
+        "status": "measured",
+        "gate": "pass",
+        "coverage": {
+          "basis": "declared rules evaluated",
+          "observed": 60,
+          "total": 60
+        },
+        "metrics": [
+          {
+            "name": "declared_modules",
+            "value": 18,
+            "unit": "count"
+          },
+          {
+            "name": "declared_layers",
+            "value": 6,
+            "unit": "count"
+          },
+          {
+            "name": "declared_rules",
+            "value": 60,
+            "unit": "count"
+          },
+          {
+            "name": "declared_waivers",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "waivers_used",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "expired_waivers",
+            "value": 0,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "structure",
+        "status": "measured",
+        "gate": "pass",
+        "coverage": {
+          "basis": "discovered dependencies resolved inside the declared module map",
+          "observed": 561,
+          "total": 1339
+        },
+        "metrics": [
+          {
+            "name": "internal_edges",
+            "value": 561,
+            "unit": "count"
+          },
+          {
+            "name": "external_edges",
+            "value": 778,
+            "unit": "count"
+          },
+          {
+            "name": "same_module_edges",
+            "value": 162,
+            "unit": "count"
+          },
+          {
+            "name": "connected_modules",
+            "value": 18,
+            "unit": "count"
+          },
+          {
+            "name": "cycle",
+            "value": 0,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "modularity",
+        "status": "measured",
+        "gate": "warn",
+        "coverage": {
+          "basis": "declared modules with a declared public surface",
+          "observed": 17,
+          "total": 18
+        },
+        "metrics": [
+          {
+            "name": "declared_modules",
+            "value": 18,
+            "unit": "count"
+          },
+          {
+            "name": "public_surface_entries",
+            "value": 54,
+            "unit": "count"
+          },
+          {
+            "name": "local_coupling_modules",
+            "value": 6,
+            "unit": "count"
+          },
+          {
+            "name": "blast_radius",
+            "value": 10,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "coupling",
+        "status": "measured",
+        "gate": "warn",
+        "coverage": {
+          "basis": "cross-boundary edges scored",
+          "observed": 404,
+          "total": 404
+        },
+        "metrics": [
+          {
+            "name": "scored_edges",
+            "value": 404,
+            "unit": "count"
+          },
+          {
+            "name": "abstained_edges",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "declared_external_edges",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "clone_only_seams",
+            "value": 5,
+            "unit": "count"
+          },
+          {
+            "name": "critical_band_edges",
+            "value": 84,
+            "unit": "count"
+          },
+          {
+            "name": "high_or_worse_edges",
+            "value": 95,
+            "unit": "count"
+          },
+          {
+            "name": "critical_high_distance_edges",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "seams",
+            "value": 69,
+            "unit": "count"
+          },
+          {
+            "name": "distributed_monolith_seams",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "tight_seams",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "unrated_seams",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "unbalanced_edge",
+            "value": 0,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "change_locality",
+        "status": "measured",
+        "gate": "pass",
+        "coverage": {
+          "basis": "declared modules touched in the scanned history window",
+          "observed": 18,
+          "total": 18
+        },
+        "metrics": [
+          {
+            "name": "commits_scanned",
+            "value": 500,
+            "unit": "count"
+          },
+          {
+            "name": "modules_touched",
+            "value": 18,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "complexity",
+        "status": "measured",
+        "gate": "pass",
+        "coverage": {
+          "basis": "declared modules with complete dependency-chain and degree values",
+          "observed": 18,
+          "total": 18
+        },
+        "metrics": [
+          {
+            "name": "max_dependency_chain",
+            "value": 9,
+            "unit": "count"
+          },
+          {
+            "name": "module_fan_in_p90",
+            "value": 9,
+            "unit": "count"
+          },
+          {
+            "name": "module_fan_out_p90",
+            "value": 9,
+            "unit": "count"
+          },
+          {
+            "name": "production_files",
+            "value": 244,
+            "unit": "count"
+          },
+          {
+            "name": "production_loc",
+            "value": 53214,
+            "unit": "count"
+          },
+          {
+            "name": "largest_production_file_loc",
+            "value": 1410,
+            "unit": "count"
+          },
+          {
+            "name": "function_loc_p50",
+            "value": 20,
+            "unit": "count"
+          },
+          {
+            "name": "function_loc_p90",
+            "value": 52,
+            "unit": "count"
+          },
+          {
+            "name": "function_loc_max",
+            "value": 288,
+            "unit": "count"
+          },
+          {
+            "name": "functions_over_threshold",
+            "value": 164,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "name": "testability",
+        "status": "partial",
+        "gate": "pass",
+        "coverage": {
+          "basis": "classified source files",
+          "observed": 463,
+          "total": 469
+        },
+        "metrics": [
+          {
+            "name": "test_files",
+            "value": 219,
+            "unit": "count"
+          },
+          {
+            "name": "production_files",
+            "value": 244,
+            "unit": "count"
+          },
+          {
+            "name": "test_to_production_files",
+            "value": 0.8975409836065574,
+            "unit": "ratio"
+          }
+        ]
+      },
+      {
+        "name": "operations",
+        "status": "partial",
+        "gate": "pass",
+        "coverage": {
+          "basis": "declared modules with a corroborated deploy unit and qualifying owner",
+          "observed": 3,
+          "total": 18
+        },
+        "metrics": [
+          {
+            "name": "modules_with_owner",
+            "value": 18,
+            "unit": "count"
+          },
+          {
+            "name": "distinct_owners",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "name": "owners_from_declared",
+            "value": 18,
+            "unit": "count"
+          },
+          {
+            "name": "owners_from_codeowners",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "owners_from_git_author_fallback",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "declared_deploy_units",
+            "value": 16,
+            "unit": "count"
+          },
+          {
+            "name": "corroborated_deploy_units",
+            "value": 3,
+            "unit": "count"
+          },
+          {
+            "name": "modules_with_corroborated_deploy_unit",
+            "value": 3,
+            "unit": "count"
+          },
+          {
+            "name": "matching_declared_deploy_units",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "mismatched_declared_deploy_units",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "name": "declared_external_systems",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "analyzers_reporting_coverage",
+            "value": 8,
+            "unit": "count"
+          },
+          {
+            "name": "coverage_gaps",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "name": "analyzers_not_applicable",
+            "value": 4,
+            "unit": "count"
+          },
+          {
+            "name": "coverage",
+            "value": 1,
+            "unit": "ratio"
+          }
+        ]
+      },
+      {
+        "name": "drift",
+        "status": "unmeasured",
+        "gate": "not_applicable",
+        "coverage": {
+          "basis": "",
+          "observed": 0,
+          "total": 0
+        },
+        "metrics": []
+      }
+    ]
+  }
 }
