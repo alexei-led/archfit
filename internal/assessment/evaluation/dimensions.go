@@ -179,7 +179,7 @@ func coverageRows(rows []modevidence.Coverage, tool string) []modevidence.Covera
 }
 
 func (p primaryInventory) complete() bool {
-	return p.known && p.completed == p.applicable
+	return p.known && p.applicable > 0 && p.completed == p.applicable
 }
 
 func ruleNeedsSyntax(ruleType string) bool {

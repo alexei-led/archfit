@@ -41,6 +41,32 @@ func TestNormalizer_PathContract(t *testing.T) {
 	}
 }
 
+func TestNormalizer_GoModuleAboveSubtree(t *testing.T) {
+	repositoryRoot := t.TempDir()
+	writeNormalizeFile(t, repositoryRoot, "go.mod", "module example.com/mod\n")
+	writeNormalizeFile(t, repositoryRoot, "services/api/api.go", "package api\n")
+	scanRoot := filepath.Join(repositoryRoot, "services", "api")
+
+	normalizer, err := NewNormalizer(scanRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{
+		"example.com/mod/services/api/api.go",
+		"services/api/api.go",
+		"api.go",
+	} {
+		got, err := normalizer.Normalize(raw)
+		if err != nil {
+			t.Errorf("Normalize(%q): %v", raw, err)
+			continue
+		}
+		if got != "api.go" {
+			t.Errorf("Normalize(%q) = %q, want api.go", raw, got)
+		}
+	}
+}
+
 func TestNormalizer_ContainmentAndSymlinks(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()

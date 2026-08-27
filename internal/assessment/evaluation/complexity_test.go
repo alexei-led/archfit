@@ -126,6 +126,27 @@ func TestComplexityDimensionPromotionAndDiagnostics(t *testing.T) {
 	}
 }
 
+func TestComplexityDimensionRequiresApplicableDependencyProducer(t *testing.T) {
+	diag, in := completeComplexityFixture()
+	diag.ModuleGraphComplexity = &result.ModuleGraphComplexity{Modules: 2}
+	diag.ClassifiedEdges = &result.ClassifiedEdgeSummary{}
+
+	diag.ToolCoverage = []modevidence.Coverage{{Tool: toolGoPackages, Status: modevidence.StatusAbsent}}
+	withoutProducer := complexityDimension(diag, in.Policy, in.Facts)
+	if withoutProducer.Status != state.Partial {
+		t.Fatalf("complexity without an applicable producer = %q, want partial; unknown=%+v", withoutProducer.Status, withoutProducer.Unknown)
+	}
+	if _, found := dimensionMetric(withoutProducer.Metrics, "max_dependency_chain"); found {
+		t.Fatal("complexity without an applicable producer published graph metrics")
+	}
+
+	diag.ToolCoverage = []modevidence.Coverage{{Tool: toolGoPackages, Status: modevidence.StatusOK}}
+	withProducer := complexityDimension(diag, in.Policy, in.Facts)
+	if withProducer.Status != state.Measured {
+		t.Fatalf("complexity with a completed empty graph = %q, want measured; unknown=%+v", withProducer.Status, withProducer.Unknown)
+	}
+}
+
 func completeComplexityFixture() (*result.Result, stateInput) {
 	modules := complexityModules("a", "b")
 	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}

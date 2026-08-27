@@ -71,10 +71,6 @@ func (n *Normalizer) Normalize(raw string) (string, error) {
 	}
 
 	cleaned = strings.TrimPrefix(cleaned, "./")
-	if rel, err := n.normalizeCandidate(filepath.Join(n.root, filepath.FromSlash(cleaned))); err == nil {
-		return rel, nil
-	}
-
 	for _, module := range n.modulePrefixes {
 		if cleaned != module.path && !strings.HasPrefix(cleaned, module.path+"/") {
 			continue
@@ -85,6 +81,29 @@ func (n *Normalizer) Normalize(raw string) (string, error) {
 		if rel, err := n.normalizeCandidate(candidate); err == nil {
 			return rel, nil
 		}
+	}
+
+	// Go and sidecar producers may report paths relative to a module or
+	// repository root above ScanRoot. Only ancestor module roots can supply this
+	// base, and the path must carry the complete ancestor-to-ScanRoot prefix.
+	for _, module := range n.modulePrefixes {
+		moduleRoot := filepath.Clean(filepath.Join(n.root, filepath.FromSlash(module.dir)))
+		scanRootRel, err := filepath.Rel(moduleRoot, n.root)
+		if err != nil || scanRootRel == "." || scanRootRel == ".." ||
+			strings.HasPrefix(scanRootRel, ".."+string(filepath.Separator)) || filepath.IsAbs(scanRootRel) {
+			continue
+		}
+		scanRootPrefix := filepath.ToSlash(scanRootRel)
+		if cleaned != scanRootPrefix && !strings.HasPrefix(cleaned, scanRootPrefix+"/") {
+			continue
+		}
+		if rel, err := n.normalizeCandidate(filepath.Join(moduleRoot, filepath.FromSlash(cleaned))); err == nil {
+			return rel, nil
+		}
+	}
+
+	if rel, err := n.normalizeCandidate(filepath.Join(n.root, filepath.FromSlash(cleaned))); err == nil {
+		return rel, nil
 	}
 	return "", ErrUnresolvedPath
 }
@@ -120,24 +139,28 @@ func discoverModulePrefixes(root string) []modulePrefix {
 		if entry.Name() != "go.mod" || !entry.Type().IsRegular() {
 			return nil
 		}
-		data, err := readBoundedFile(path, DefaultMaxBytes)
-		if err != nil {
-			return nil
+		if prefix, ok := readModulePrefix(root, path); ok {
+			out = append(out, prefix)
 		}
-		modulePath := modfile.ModulePath(data)
-		if modulePath == "" {
-			return nil
-		}
-		dir, err := filepath.Rel(root, filepath.Dir(path))
-		if err != nil {
-			return nil
-		}
-		if dir == "." {
-			dir = ""
-		}
-		out = append(out, modulePrefix{path: filepath.ToSlash(modulePath), dir: filepath.ToSlash(dir)})
 		return nil
 	})
+
+	// A subtree scan commonly sits below its module's go.mod. Walk ancestors so
+	// import-path and module-root-relative coverage records can still be reduced
+	// to ScanRoot-relative paths.
+	for dir := filepath.Dir(root); ; dir = filepath.Dir(dir) {
+		path := filepath.Join(dir, "go.mod")
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			if prefix, ok := readModulePrefix(root, path); ok {
+				out = append(out, prefix)
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+	}
+
 	// Longest prefix first: nested modules must win over their parent module.
 	sort.Slice(out, func(i, j int) bool {
 		if len(out[i].path) != len(out[j].path) {
@@ -149,6 +172,25 @@ func discoverModulePrefixes(root string) []modulePrefix {
 		return out[i].dir < out[j].dir
 	})
 	return out
+}
+
+func readModulePrefix(root, path string) (modulePrefix, bool) {
+	data, err := readBoundedFile(path, DefaultMaxBytes)
+	if err != nil {
+		return modulePrefix{}, false
+	}
+	modulePath := modfile.ModulePath(data)
+	if modulePath == "" {
+		return modulePrefix{}, false
+	}
+	dir, err := filepath.Rel(root, filepath.Dir(path))
+	if err != nil {
+		return modulePrefix{}, false
+	}
+	if dir == "." {
+		dir = ""
+	}
+	return modulePrefix{path: filepath.ToSlash(modulePath), dir: filepath.ToSlash(dir)}, true
 }
 
 func skipNormalizationDir(name string) bool {
