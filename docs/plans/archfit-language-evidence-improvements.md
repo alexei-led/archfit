@@ -243,6 +243,15 @@ contract is therefore:
   it by construction. `git status --porcelain` may be used only as a fast
   pre-filter, never as the authority.
 
+  **Caching:** `CoverageIngest` is cached at the parsed-fact level (format,
+  parser version, ScanRoot, source ref). But `Freshness` is a decision about
+  whether those facts are still valid, not a fact itself, and must be recomputed
+  on every run including cache hits. The cache key intentionally omits the
+  scanner inventory hash, so freshness cannot be cached. Any cache hit must run
+  the inventory comparison before promotion is allowed. This prevents the
+  warm-cache false green where an ignored file is added after a matched entry is
+  cached; the recomputed freshness will be `stale`.
+
   This is the only condition under which the profile's SHA is evidence about the
   scanned bytes.
 
