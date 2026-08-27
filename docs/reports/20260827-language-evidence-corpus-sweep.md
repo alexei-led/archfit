@@ -56,6 +56,13 @@ Two analyses before and two analyses after the baseline transition were
 byte-identical. Drift became measured only after the persisted baseline was
 created; the root comparison remained `not_requested`, as designed.
 
+Task 3 originally classified the `complexity`, `testability`, and `operations`
+blockers as B-temporary. Re-running its reachability test after Stages A/B now
+produces Outcome A, so none of those blockers remains. Task 3 recorded no
+B-permanent outcome, and the Task 2 audit contains no owner-ratified permanent
+constraint; that conditional branch is inapplicable, and no constraint was
+recorded or used to close the plan.
+
 ## Residual coverage gaps
 
 These are disclosed gaps, not silently promoted zeros:
