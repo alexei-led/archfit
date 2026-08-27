@@ -1,0 +1,3 @@
+mode: atomic
+example.com/demo/cmd/main.go:10.1,12.2 2 1
+/checkout/demo/pkg/lib.go:20.1,22.2 3 0

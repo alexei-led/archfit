@@ -19,8 +19,8 @@ import (
 // artifact through the existing required-tool gate.
 const ToolName = "supplied-coverage"
 
-// Supported supplied-coverage format names. Task 8 establishes the registry
-// seam; concrete parsers are registered by Task 9.
+// Supported supplied-coverage format names. Concrete parsers implement the
+// pure byte-to-fact registry behind this vocabulary.
 const (
 	FormatAuto           = "auto"
 	FormatGoCoverProfile = "go-coverprofile"
@@ -70,13 +70,16 @@ type Ingestor struct {
 	parsers map[string]Parser
 }
 
-// New returns an ingestor with the Task 8 unavailable-parser stubs registered.
-// A supplied parser with the same format replaces its stub; Task 9 uses this
-// seam to register the four concrete parsers and auto-detector.
+// New returns an ingestor with all built-in format parsers registered. A
+// supplied parser with the same format replaces the built-in parser, which
+// keeps the pure parser seam independently testable.
 func New(store *factcache.Store, supplied ...Parser) *Ingestor {
-	parsers := make(map[string]Parser)
-	for _, format := range SupportedFormats() {
-		parsers[format] = unavailableParser{format: format}
+	parsers := map[string]Parser{
+		FormatAuto:           autoParser{},
+		FormatGoCoverProfile: GoCoverProfileParser{},
+		FormatLCOV:           LCOVParser{},
+		FormatCoveragePyJSON: CoveragePyJSONParser{},
+		FormatLLVMCovJSON:    LLVMCovJSONParser{},
 	}
 	for _, parser := range supplied {
 		if parser != nil {
@@ -120,7 +123,6 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		out.Reason = reasonCoverageParserUnavailable
 		return out
 	}
-	out.ToolVersion = parser.Version()
 
 	artifactPath, err := resolveContainedFile(normalizer.root, source.Path)
 	if err != nil {
@@ -138,6 +140,20 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		out.Reason = reasonCoverageSourceUnavailable
 		return out
 	}
+
+	if format == FormatAuto {
+		detected, detectErr := detectFormat(source.Path, data)
+		if detectErr != nil {
+			out.Reason = joinReasons("coverage_parse_failed", detectErr.Error())
+			return out
+		}
+		format = detected
+		out.Format = format
+		if detectedParser, found := i.parsers[format]; found && detectedParser != nil {
+			parser = detectedParser
+		}
+	}
+	out.ToolVersion = parser.Version()
 
 	sidecarPath := source.SidecarPath
 	if sidecarPath == "" {
