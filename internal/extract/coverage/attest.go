@@ -107,6 +107,9 @@ func attest(normalizer *Normalizer, sidecarPath string, maxBytes int64) attestat
 // from attesting coverage facts it does not name. Facts are normalized before
 // this comparison, as are matchedSources in attest.
 func bindAttestationToFacts(attestation attestationResult, facts []evidence.CoverageFact) attestationResult {
+	if len(facts) == 0 {
+		return unverifyAttestation(attestation)
+	}
 	if attestation.freshness != evidence.FreshnessMatched {
 		return attestation
 	}
@@ -119,6 +122,15 @@ func bindAttestationToFacts(attestation attestationResult, facts []evidence.Cove
 			}
 		}
 	}
+	return attestation
+}
+
+func unverifyAttestation(attestation attestationResult) attestationResult {
+	if attestation.freshness != evidence.FreshnessUnverified {
+		attestation.reason = joinReasons(attestation.reason, reasonFreshnessUnverified)
+	}
+	attestation.freshness = evidence.FreshnessUnverified
+	attestation.matchedSources = nil
 	return attestation
 }
 

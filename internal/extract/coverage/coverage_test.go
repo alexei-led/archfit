@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ const fixtureCoveragePath = "coverage.info"
 type fixtureParser struct {
 	format string
 	facts  []evidence.CoverageFact
+	err    error
 	calls  *int
 }
 
@@ -28,7 +30,7 @@ func (p fixtureParser) Parse([]byte) ([]evidence.CoverageFact, error) {
 	*p.calls++
 	out := make([]evidence.CoverageFact, len(p.facts))
 	copy(out, p.facts)
-	return out, nil
+	return out, p.err
 }
 
 func TestIngest_DisabledIsByteIdenticalToAbsentOnFixedInput(t *testing.T) {
@@ -56,6 +58,28 @@ func TestIngest_DisabledIsByteIdenticalToAbsentOnFixedInput(t *testing.T) {
 	}
 	if string(absent) != string(disabled) {
 		t.Fatalf("absent = %s, explicit disabled = %s", absent, disabled)
+	}
+}
+
+func TestIngest_NormalizerFailurePreservesEnabledSources(t *testing.T) {
+	missingRoot := filepath.Join(t.TempDir(), "missing")
+	ingests, row := New(nil).IngestAll(missingRoot, Options{Enabled: true, Sources: []Source{
+		{Path: "coverage.info", Format: FormatLCOV},
+		{Path: "coverage.json"},
+	}})
+	if ingests == nil || len(ingests) != 2 {
+		t.Fatalf("enabled ingests = %+v, want one failed result per configured source", ingests)
+	}
+	for idx, ingest := range ingests {
+		if ingest.Freshness != evidence.FreshnessUnverified || ingest.Reason != reasonCoverageSourceUnavailable {
+			t.Fatalf("ingest[%d] = %+v, want unverified/%s", idx, ingest, reasonCoverageSourceUnavailable)
+		}
+	}
+	if ingests[0].Format != FormatLCOV || ingests[1].Format != FormatAuto {
+		t.Fatalf("failed ingest formats = %q/%q, want %q/%q", ingests[0].Format, ingests[1].Format, FormatLCOV, FormatAuto)
+	}
+	if row.Tool != ToolName || row.Status != evidence.StatusAbsent || !strings.Contains(row.Reason, reasonCoverageSourceUnavailable) {
+		t.Fatalf("coverage health = %+v, want enabled but absent", row)
 	}
 }
 
@@ -254,6 +278,40 @@ func TestCoverageCacheKeyIncludesParserVersionAndScanRoot(t *testing.T) {
 	}
 	if got := coverageCacheKey("/scan/a", fixtureCoveragePath, FormatLCOV, "parser.v1", "ref-b", data); got == base {
 		t.Fatal("source ref did not invalidate the coverage fact key")
+	}
+}
+
+func TestIngest_ParseFailureCannotReportMatchedFreshness(t *testing.T) {
+	root, sourcePath := coverageFixture(t)
+	writeSidecar(t, root, "coverage.info.sidecar.json", "producer-ref", map[string]string{sourcePath: fileHash(t, root, sourcePath)}, 1)
+	calls := 0
+	ingests, row := New(nil, fixtureParser{format: FormatLCOV, err: errors.New("invalid coverage"), calls: &calls}).IngestAll(root, fixtureOptions())
+	if calls != 1 || len(ingests) != 1 {
+		t.Fatalf("parse calls/ingests = %d/%+v, want one failed ingest", calls, ingests)
+	}
+	got := ingests[0]
+	if got.Freshness != evidence.FreshnessUnverified || !strings.Contains(got.Reason, "coverage_parse_failed") || !strings.Contains(got.Reason, reasonFreshnessUnverified) {
+		t.Fatalf("parse failure = %+v, want unverified freshness", got)
+	}
+	if row.Status != evidence.StatusPartial {
+		t.Fatalf("coverage health = %+v, want partial", row)
+	}
+}
+
+func TestIngest_EmptyNormalizedFactsCannotReportMatchedFreshness(t *testing.T) {
+	root, sourcePath := coverageFixture(t)
+	writeSidecar(t, root, "coverage.info.sidecar.json", "producer-ref", map[string]string{sourcePath: fileHash(t, root, sourcePath)}, 1)
+	calls := 0
+	ingests, row := New(nil, fixtureParser{format: FormatLCOV, calls: &calls}).IngestAll(root, fixtureOptions())
+	if calls != 1 || len(ingests) != 1 {
+		t.Fatalf("parse calls/ingests = %d/%+v, want one empty ingest", calls, ingests)
+	}
+	got := ingests[0]
+	if got.Freshness != evidence.FreshnessUnverified || !strings.Contains(got.Reason, reasonCoverageFactsEmpty) || !strings.Contains(got.Reason, reasonFreshnessUnverified) {
+		t.Fatalf("fact-empty ingest = %+v, want unverified freshness", got)
+	}
+	if row.Status != evidence.StatusPartial {
+		t.Fatalf("coverage health = %+v, want partial", row)
 	}
 }
 

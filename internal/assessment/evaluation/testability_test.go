@@ -78,6 +78,27 @@ func TestTestabilityDisabledCoveragePreservesLegacyEnvelope(t *testing.T) {
 	}
 }
 
+func TestTestabilityEnabledUnavailableCoverageIsNotDisclosedAsDisabled(t *testing.T) {
+	t.Parallel()
+	facts := evaluation.Observations{
+		FileClassIndex: map[string]fileclass.FileClass{assessFileA: fileclass.Production},
+		SuppliedCoverage: []modevidence.CoverageIngest{{
+			Freshness: modevidence.FreshnessUnverified,
+			Format:    testabilityFormat,
+			Reason:    "coverage_source_unavailable",
+		}},
+	}
+	dim := testabilityDimensionForTest(testabilityModules("a"), facts)
+	if dim.Status != state.Partial {
+		t.Fatalf("unavailable enabled coverage status = %q, want partial", dim.Status)
+	}
+	for _, unknown := range dim.Unknown {
+		if strings.Contains(unknown.Reason, "coverage is disabled") {
+			t.Fatalf("enabled coverage disclosed as disabled: %+v", unknown)
+		}
+	}
+}
+
 func TestTestabilityEnabledCoverageWithEmptyFileIndexNamesEveryMissingFact(t *testing.T) {
 	t.Parallel()
 	facts := evaluation.Observations{

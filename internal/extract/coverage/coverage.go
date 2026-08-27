@@ -131,7 +131,17 @@ func (i *Ingestor) IngestAll(scanRoot string, options Options) ([]evidence.Cover
 	}
 	normalizer, err := NewNormalizer(scanRoot)
 	if err != nil {
-		return nil, evidence.Coverage{Tool: ToolName, Status: evidence.StatusAbsent, Reason: reasonCoverageSourceUnavailable}
+		ingests := make([]evidence.CoverageIngest, len(options.Sources))
+		for idx, source := range options.Sources {
+			format := source.Format
+			if format == "" {
+				format = FormatAuto
+			}
+			ingests[idx] = evidence.CoverageIngest{
+				Format: format, Freshness: evidence.FreshnessUnverified, Reason: reasonCoverageSourceUnavailable,
+			}
+		}
+		return ingests, coverageHealth(ingests, len(options.Sources))
 	}
 	ingests := make([]evidence.CoverageIngest, 0, len(options.Sources))
 	for _, source := range options.Sources {
@@ -219,6 +229,8 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		if errors.Is(err, ErrLCOVSummaryDiscrepancy) {
 			parseWarning = joinReasons("coverage_parse_warning", err.Error())
 		} else {
+			attestation = unverifyAttestation(attestation)
+			out.Freshness = attestation.freshness
 			out.Reason = joinReasons("coverage_parse_failed", err.Error(), attestation.reason)
 			return out
 		}
