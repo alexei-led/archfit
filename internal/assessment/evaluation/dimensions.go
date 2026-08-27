@@ -3,6 +3,7 @@ package evaluation
 import (
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
@@ -55,7 +56,7 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 		Coupling:       couplingDimension(diag),
 		ChangeLocality: changeLocalityDimension(diag, in.Policy),
 		Complexity:     complexityDimension(diag, in.Policy, in.Facts),
-		Testability:    testabilityDimension(in.Facts),
+		Testability:    testabilityDimension(in.Policy, in.Facts),
 		Operations:     operationsDimension(diag, in.Policy, in.Facts, in.RequiredToolFailure),
 		Drift:          driftDimension(diag, in.Drift),
 	}
@@ -642,11 +643,15 @@ func appendComplexityDiagnostics(dim *state.Dimension, f Observations, threshold
 	})
 }
 
-// testabilityDimension reports the static test-to-production file split. It is
-// always partial in v1: archfit does not execute a target repository's test
-// suite, so executed coverage is absent by design and is named rather than
-// approximated by the file counts.
-func testabilityDimension(f Observations) state.Dimension {
+// testabilityDimension reports exercised production-code coverage attributed to
+// the declared module map. Supplied coverage is report input, never a reason to
+// execute the target repository's tests. The legacy static-only branch is kept
+// separate so disabled coverage preserves the complete pre-feature envelope.
+func testabilityDimension(p policy.PolicySnapshot, f Observations) state.Dimension {
+	if f.SuppliedCoverage == nil {
+		return legacyTestabilityDimension(f)
+	}
+
 	dim := state.NewDimension(state.DimensionTestability, state.OwnerTestability)
 	if len(f.FileClassIndex) == 0 {
 		return unmeasured(dim, state.UnknownFact{
@@ -655,22 +660,69 @@ func testabilityDimension(f Observations) state.Dimension {
 			Owner:  state.OwnerTestability,
 		})
 	}
-	tests, production := 0, 0
-	for _, class := range f.FileClassIndex {
-		switch {
-		case class == fileclass.Test:
-			tests++
-		case fileclass.IsProduction(class):
-			production++
-		}
+	tests, production := testAndProductionFileCounts(f.FileClassIndex)
+	staticMetrics := staticTestabilityMetrics(tests, production)
+	if production == 0 {
+		dim.Metrics = staticMetrics
+		return unmeasured(dim, state.UnknownFact{
+			Fact:   state.FactProductionSourceInventory,
+			Reason: "no supported production source was classified, so exercised production code is not applicable",
+			Owner:  state.OwnerTestability,
+		})
 	}
+
+	summary := summarizeSuppliedCoverage(p.Topology, f)
+	reasons := map[string]string{
+		state.FactProductionSourceInventory: "no supported production source was classified",
+		state.FactSuppliedCoverageUnits:     summary.unitsReason,
+		state.FactCoveragePathResolution:    summary.pathReason,
+		state.FactCoverageModuleAttribution: summary.attributionReason,
+		state.FactCoverageFreshness:         summary.freshnessReason,
+	}
+	observed := []string{state.FactProductionSourceInventory}
+	if summary.unitsComplete {
+		observed = append(observed, state.FactSuppliedCoverageUnits)
+	}
+	if summary.unresolvedPaths == 0 {
+		observed = append(observed, state.FactCoveragePathResolution)
+	}
+	if summary.attributionComplete {
+		observed = append(observed, state.FactCoverageModuleAttribution)
+	}
+	if summary.freshnessMatched {
+		observed = append(observed, state.FactCoverageFreshness)
+	}
+	applyPromotion(&dim, observed, nil, reasons)
+	dim.Coverage = state.Coverage{
+		Basis:    "declared modules represented by attributed supplied coverage",
+		Observed: len(summary.coveredModules), Total: len(p.Topology.Modules),
+	}
+	dim.Metrics = staticMetrics
+	dim.Metrics = append(dim.Metrics, summary.metrics()...)
+	dim.Unknown = append(dim.Unknown,
+		state.UnknownFact{
+			Fact: state.FactAssertionQuality, Reason: "exercised instrumentation points do not establish assertion strength or mutation resistance", Owner: state.OwnerTestability,
+		},
+		state.UnknownFact{
+			Fact: state.FactBoundaryTestSemantics, Reason: "coverage does not identify which declared module boundaries a test meaningfully exercises", Owner: state.OwnerTestability,
+		},
+	)
+	return dim
+}
+
+func legacyTestabilityDimension(f Observations) state.Dimension {
+	dim := state.NewDimension(state.DimensionTestability, state.OwnerTestability)
+	if len(f.FileClassIndex) == 0 {
+		return unmeasured(dim, state.UnknownFact{
+			Fact:   "testability",
+			Reason: "no file was classified, so test and production files cannot be told apart",
+			Owner:  state.OwnerTestability,
+		})
+	}
+	tests, production := testAndProductionFileCounts(f.FileClassIndex)
 	dim.Status = state.Partial
 	dim.Coverage = state.Coverage{Basis: "classified source files", Observed: tests + production, Total: len(f.FileClassIndex)}
-	dim.Metrics = []state.MetricValue{
-		count("test_files", tests, provFileClass),
-		count("production_files", production, provFileClass),
-		ratio("test_to_production_files", tests, production, provFileClass),
-	}
+	dim.Metrics = staticTestabilityMetrics(tests, production)
 	dim.Confidence = state.ConfidenceFor(dim.Status)
 	dim.Unknown = []state.UnknownFact{{
 		Fact:   "executed test coverage",
@@ -682,6 +734,242 @@ func testabilityDimension(f Observations) state.Dimension {
 		Owner:  state.OwnerTestability,
 	}}
 	return dim
+}
+
+func testAndProductionFileCounts(index map[string]fileclass.FileClass) (tests, production int) {
+	for _, class := range index {
+		switch {
+		case class == fileclass.Test:
+			tests++
+		case fileclass.IsProduction(class):
+			production++
+		}
+	}
+	return tests, production
+}
+
+func staticTestabilityMetrics(tests, production int) []state.MetricValue {
+	return []state.MetricValue{
+		count("test_files", tests, provFileClass),
+		count("production_files", production, provFileClass),
+		ratio("test_to_production_files", tests, production, provFileClass),
+	}
+}
+
+type suppliedCoverageSummary struct {
+	coveredUnits, totalUnits int
+	unit                     string
+	declaredModules          int
+	unresolvedPaths          int
+	mergedFacts              int
+	coveredModules           map[string]struct{}
+	provenance               []string
+	unitsComplete            bool
+	attributionComplete      bool
+	freshnessMatched         bool
+	unitsReason              string
+	pathReason               string
+	attributionReason        string
+	freshnessReason          string
+}
+
+type suppliedCoverageAccumulator struct {
+	summary          suppliedCoverageSummary
+	factsByFile      map[string]modevidence.CoverageFact
+	unattributed     map[string]struct{}
+	provenance       map[string]struct{}
+	freshnessReasons map[string]struct{}
+	factsComplete    bool
+	compatible       bool
+	unit             string
+}
+
+func summarizeSuppliedCoverage(topology policy.TopologyView, f Observations) suppliedCoverageSummary {
+	acc := suppliedCoverageAccumulator{
+		summary: suppliedCoverageSummary{
+			declaredModules: len(topology.Modules), coveredModules: map[string]struct{}{},
+			freshnessMatched: len(f.SuppliedCoverage) > 0,
+		},
+		factsByFile:  make(map[string]modevidence.CoverageFact),
+		unattributed: make(map[string]struct{}), provenance: make(map[string]struct{}),
+		freshnessReasons: make(map[string]struct{}), factsComplete: len(f.SuppliedCoverage) > 0, compatible: true,
+	}
+	for _, ingest := range f.SuppliedCoverage {
+		acc.add(ingest, topology, f.FileClassIndex)
+	}
+	return acc.finish(topology)
+}
+
+func (a *suppliedCoverageAccumulator) add(ingest modevidence.CoverageIngest, topology policy.TopologyView, classes map[string]fileclass.FileClass) {
+	a.summary.unresolvedPaths += ingest.UnresolvedPaths
+	addCoverageProvenance(a.provenance, ingest)
+	if ingest.Freshness != modevidence.FreshnessMatched {
+		a.summary.freshnessMatched = false
+		reason := ingest.Reason
+		if reason == "" {
+			if ingest.Freshness == modevidence.FreshnessStale {
+				reason = "worktree_differs_from_ref"
+			} else {
+				reason = "freshness_unverified"
+			}
+		}
+		a.freshnessReasons[reason] = struct{}{}
+	}
+	if len(ingest.Facts) == 0 || coverageIngestHasRejectedFacts(ingest.Reason) {
+		a.factsComplete = false
+	}
+	for _, fact := range ingest.Facts {
+		a.addFact(fact, topology, classes)
+	}
+}
+
+func (a *suppliedCoverageAccumulator) addFact(fact modevidence.CoverageFact, topology policy.TopologyView, classes map[string]fileclass.FileClass) {
+	class, classified := classes[fact.File]
+	if !classified {
+		a.unattributed[fact.File] = struct{}{}
+		return
+	}
+	if !fileclass.IsProduction(class) {
+		return
+	}
+	module, attributed := topology.ModuleMap.ModuleForFile(fact.File)
+	if !attributed {
+		a.unattributed[fact.File] = struct{}{}
+		return
+	}
+	a.summary.coveredModules[module] = struct{}{}
+	if a.unit == "" {
+		a.unit = fact.Unit
+	} else if fact.Unit != a.unit {
+		a.compatible = false
+	}
+	if previous, duplicate := a.factsByFile[fact.File]; duplicate {
+		if previous.Unit != fact.Unit || previous.TotalUnits != fact.TotalUnits {
+			a.compatible = false
+			return
+		}
+		a.summary.mergedFacts++
+		if fact.CoveredUnits > previous.CoveredUnits {
+			a.factsByFile[fact.File] = fact
+		}
+		return
+	}
+	a.factsByFile[fact.File] = fact
+}
+
+func (a *suppliedCoverageAccumulator) finish(topology policy.TopologyView) suppliedCoverageSummary {
+	a.summary.unit = a.unit
+	if a.compatible {
+		for _, fact := range a.factsByFile {
+			a.summary.coveredUnits += fact.CoveredUnits
+			a.summary.totalUnits += fact.TotalUnits
+		}
+	}
+	a.summary.unitsComplete = a.factsComplete && a.compatible && len(a.factsByFile) > 0
+	a.summary.unitsReason = "no complete, compatible supplied coverage-unit denominator was observed"
+	if !a.compatible {
+		a.summary.unitsReason = "supplied coverage facts use incompatible units or disagree about a file denominator"
+	}
+	a.summary.pathReason = "one or more supplied coverage paths could not be resolved inside the scan root"
+	a.finishAttribution(topology)
+	a.summary.freshnessReason = "coverage freshness was not matched to the scanned source bytes"
+	if reasons := sortedStringSet(a.freshnessReasons); len(reasons) > 0 {
+		a.summary.freshnessReason = strings.Join(reasons, "; ")
+	}
+	a.summary.provenance = sortedStringSet(a.provenance)
+	return a.summary
+}
+
+func (a *suppliedCoverageAccumulator) finishAttribution(topology policy.TopologyView) {
+	missingModules := make([]string, 0)
+	for module := range topology.Modules {
+		if _, covered := a.summary.coveredModules[module]; !covered {
+			missingModules = append(missingModules, module)
+		}
+	}
+	sort.Strings(missingModules)
+	unattributedPaths := sortedStringSet(a.unattributed)
+	a.summary.attributionComplete = len(topology.Modules) > 0 && len(missingModules) == 0 && len(unattributedPaths) == 0
+	switch {
+	case len(topology.Modules) == 0:
+		a.summary.attributionReason = "the configuration declares no module, so coverage has no module denominator"
+	case len(missingModules) > 0 && len(unattributedPaths) > 0:
+		a.summary.attributionReason = "missing coverage for declared modules: " + strings.Join(missingModules, ", ") + "; unattributed coverage paths: " + strings.Join(unattributedPaths, ", ")
+	case len(missingModules) > 0:
+		a.summary.attributionReason = "missing coverage for declared modules: " + strings.Join(missingModules, ", ")
+	case len(unattributedPaths) > 0:
+		a.summary.attributionReason = "unattributed coverage paths: " + strings.Join(unattributedPaths, ", ")
+	default:
+		a.summary.attributionReason = "coverage module attribution is incomplete"
+	}
+}
+
+func coverageIngestHasRejectedFacts(reason string) bool {
+	for _, marker := range []string{
+		"coverage_source_unavailable", "coverage_parser_unavailable", "coverage_parse_failed",
+		"coverage_facts_empty", "invalid_coverage_fact",
+	} {
+		if strings.Contains(reason, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func addCoverageProvenance(provenance map[string]struct{}, ingest modevidence.CoverageIngest) {
+	format, version := ingest.Format, ingest.ToolVersion
+	if format == "" {
+		format = "unknown"
+	}
+	if version == "" {
+		version = "unknown"
+	}
+	provenance["extract/coverage/"+format+"@"+version] = struct{}{}
+	freshness := ingest.Freshness
+	if freshness == "" {
+		freshness = modevidence.FreshnessUnverified
+	}
+	provenance["coverage/freshness/"+string(freshness)] = struct{}{}
+}
+
+func sortedStringSet(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s suppliedCoverageSummary) metrics() []state.MetricValue {
+	provenance := append([]string(nil), s.provenance...)
+	metrics := make([]state.MetricValue, 0, 6)
+	if s.unitsComplete {
+		denominator := &state.MetricDenominator{Observed: s.coveredUnits, Total: s.totalUnits}
+		metrics = append(metrics,
+			state.MetricValue{Name: "covered_units", Value: float64(s.coveredUnits), Unit: s.unit, Denominator: denominator, Provenance: append([]string(nil), provenance...)},
+			state.MetricValue{Name: "total_units", Value: float64(s.totalUnits), Unit: s.unit, Denominator: denominator, Provenance: append([]string(nil), provenance...)},
+			state.MetricValue{Name: "coverage_ratio", Value: coverageRatio(s.coveredUnits, s.totalUnits), Unit: unitRatio, Denominator: denominator, Provenance: append([]string(nil), provenance...)},
+		)
+	}
+	moduleProvenance := append([]string{provPolicy}, provenance...)
+	metrics = append(metrics,
+		state.MetricValue{Name: "modules_with_coverage", Value: float64(len(s.coveredModules)), Unit: unitCount,
+			Denominator: &state.MetricDenominator{Observed: len(s.coveredModules), Total: s.declaredModules},
+			Provenance:  moduleProvenance},
+		state.MetricValue{Name: "unresolved_coverage_paths", Value: float64(s.unresolvedPaths), Unit: unitCount, Provenance: append([]string(nil), provenance...)},
+	)
+	if s.mergedFacts > 0 {
+		metrics = append(metrics, state.MetricValue{Name: "merged_coverage_facts", Value: float64(s.mergedFacts), Unit: unitCount, Provenance: provenance})
+	}
+	return metrics
+}
+
+func coverageRatio(covered, total int) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(covered) / float64(total)
 }
 
 // operationsDimension measures declared operational-topology completeness.

@@ -17,6 +17,7 @@ parent repository's history and is invalid.
 | `services/app/Dockerfile` | operations, coupling | Independently corroborates the app deploy unit and makes deployment distance explicit. It is never built. |
 | `services/api/Dockerfile` | operations, coupling | Independently corroborates the API deploy unit and makes deployment distance explicit. It is never built. |
 | `CODEOWNERS` | operations, coupling | Gives each declared module deterministic CODEOWNERS provenance and an explicit owner for distance classification. |
+| `.gitignore` | testability | Keeps the rendered config, coverage artifacts, cache, and the deliberately ignored covered source out of git status so freshness is proven from sidecar hashes rather than repository cleanliness. |
 | `.archfit.yaml.tmpl` | intent and all declared-module dimensions | Declares two modules and public surfaces, high volatility, distinct deploy units, Go-only analyzer applicability, and one enabled forbidden-dependency rule in the direction the graph does not contain, so the hard gate passes. The test removes the coverage token for Task 3. |
 | `README.md` | fixture auditability | Records why every committed file exists, the artifact lifecycle, the observed result, and the JSON envelope. |
 
@@ -35,10 +36,11 @@ test owns all run artifacts:
 2. It renders `.archfit.yaml` from the template with no `coverage:` block.
 3. The integration test runs `analyze` twice, then runs `baseline` to persist a
    comparable reference, then re-runs `analyze` and `check`.
-4. The helper's reserved `withCoverage=true` path uses only `go test
-   -coverprofile` and writes the version-1 content-hash sidecar described by the
-   evidence contract. Task 3 does not call that path because coverage config is
-   not implemented yet.
+4. The `withCoverage=true` path uses only `go test -coverprofile`, writes
+   tracked, untracked, and gitignored covered sources, and emits the version-1
+   content-hash sidecar described by the evidence contract. Task 10 exercises
+   matched, stale, unverified, and warm-cache freshness outcomes through this
+   path; Archfit never executes the target tests itself.
 
 ## Recorded Task 3 outcome
 

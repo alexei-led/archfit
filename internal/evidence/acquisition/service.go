@@ -232,7 +232,8 @@ func assessmentObservationsOf(
 	ownerProvenance map[string]evidence.OwnerProvenance,
 ) evaluation.Observations {
 	return evaluation.Observations{
-		Coverage: f.Coverage, Symbols: f.Symbols, PatternMatches: f.PatternMatches,
+		Coverage: f.Coverage, SuppliedCoverage: f.SuppliedCoverage,
+		Symbols: f.Symbols, PatternMatches: f.PatternMatches,
 		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
 		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
 		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,

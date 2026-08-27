@@ -20,11 +20,22 @@ import (
 )
 
 const (
-	reachabilityFixturePath         = "../../testdata/fixtures/reachability"
-	reachabilityCoveragePlaceholder = "{{REACHABILITY_COVERAGE_BLOCK}}"
-	reachabilityTemporaryOutcome    = "B-temporary"
-	reachabilityNewCollectorRemedy  = "new collector required"
+	reachabilityFixturePath            = "../../testdata/fixtures/reachability"
+	reachabilityCoveragePlaceholder    = "{{REACHABILITY_COVERAGE_BLOCK}}"
+	reachabilityTemporaryOutcome       = "B-temporary"
+	reachabilityNewCollectorRemedy     = "new collector required"
+	reachabilityTrackedCoveredSource   = "services/api/api.go"
+	reachabilityUntrackedCoveredSource = "services/api/untracked.go"
+	reachabilityIgnoredCoveredSource   = "services/app/ignored.go"
+	reachabilityReasonWorktreeDiffers  = "worktree_differs_from_ref"
 )
+
+type reachabilityCoverageSidecar struct {
+	SchemaVersion int               `json:"schema_version"`
+	SourceRef     string            `json:"source_ref"`
+	Modules       []string          `json:"modules"`
+	Sources       map[string]string `json:"sources"`
+}
 
 type reachabilityRemedy struct {
 	OutcomeClass string
@@ -48,6 +59,7 @@ var reachabilityRemedies = map[string]reachabilityRemedy{
 func TestIntegrationReachability(t *testing.T) {
 	t.Run("baseline_transition", testIntegrationReachabilityBaselineTransition)
 	t.Run("drift_lifecycle", testIntegrationReachabilityDriftLifecycle)
+	t.Run("testability_coverage", testIntegrationReachabilityTestabilityCoverage)
 }
 
 func testIntegrationReachabilityBaselineTransition(t *testing.T) {
@@ -158,6 +170,229 @@ func testIntegrationReachabilityDriftLifecycle(t *testing.T) {
 			t.Fatalf("incomparable-baseline reason is indistinguishable from a missing baseline: %q", reason)
 		}
 	})
+}
+
+func testIntegrationReachabilityTestabilityCoverage(t *testing.T) {
+	t.Run("fresh_full_module_coverage_is_measured", func(t *testing.T) {
+		_, configPath := materializeFixture(t, true)
+		code, raw := runReachabilityState(t, cmdAnalyze, configPath)
+		if code != 0 {
+			t.Fatalf("analyze with fresh coverage: exit=%d, want 0", code)
+		}
+		assertReachabilityTestabilityMeasured(t, decodeReachabilityState(t, raw))
+	})
+
+	t.Run("partial_coverage_keeps_five_module_denominator", func(t *testing.T) {
+		root, configPath := materializeFixture(t, true)
+		// These production modules are added after the coverage artifact and
+		// sidecar were produced. The artifact still matches every source byte it
+		// represents, but attribution must disclose the two uncovered modules.
+		writeReachabilitySource(t, root, "services/missing-d/missing.go", "package missingd\n\nfunc uncoveredD() {}\n")
+		writeReachabilitySource(t, root, "services/missing-e/missing.go", "package missinge\n\nfunc uncoveredE() {}\n")
+		addReachabilityPartialCoverageModules(t, configPath)
+
+		_, raw := runReachabilityState(t, cmdAnalyze, configPath)
+		state := decodeReachabilityState(t, raw)
+		dim := state.Dimensions.Testability
+		if dim.Status != report.MeasurementPartial {
+			t.Fatalf("3/5 testability status = %q, want partial; unknown=%+v", dim.Status, dim.Unknown)
+		}
+		metric := reachabilityDimensionMetrics(dim)["modules_with_coverage"]
+		if metric.Denominator == nil || metric.Denominator.Observed != 3 || metric.Denominator.Total != 5 {
+			t.Fatalf("modules_with_coverage denominator = %+v, want 3/5", metric.Denominator)
+		}
+		reasons := make([]string, 0, len(dim.Unknown))
+		for _, unknown := range dim.Unknown {
+			reasons = append(reasons, unknown.Reason)
+		}
+		joined := strings.Join(reasons, " ")
+		for _, module := range []string{"missing-d", "missing-e"} {
+			if !strings.Contains(joined, module) {
+				t.Errorf("partial attribution reasons %q do not name %q", joined, module)
+			}
+		}
+	})
+
+	t.Run("source_ref_is_metadata_when_hashes_match", func(t *testing.T) {
+		root, configPath := materializeFixture(t, true)
+		mutateReachabilitySidecar(t, root, func(sidecar *reachabilityCoverageSidecar) {
+			sidecar.SourceRef = strings.Repeat("f", sha256.Size*2)
+		})
+		_, raw := runReachabilityState(t, cmdAnalyze, configPath)
+		assertReachabilityTestabilityMeasured(t, decodeReachabilityState(t, raw))
+	})
+
+	for _, tc := range []struct {
+		name       string
+		wantReason string
+		mutate     func(t *testing.T, root string)
+	}{
+		{
+			name: "tracked_covered_source_modified", wantReason: reachabilityReasonWorktreeDiffers,
+			mutate: func(t *testing.T, root string) {
+				appendReachabilitySource(t, root, reachabilityTrackedCoveredSource, "\n// tracked source changed after coverage\n")
+			},
+		},
+		{
+			name: "untracked_covered_source_modified", wantReason: reachabilityReasonWorktreeDiffers,
+			mutate: func(t *testing.T, root string) {
+				appendReachabilitySource(t, root, reachabilityUntrackedCoveredSource, "\n// untracked source changed after coverage\n")
+			},
+		},
+		{
+			name: "gitignored_covered_source_modified_on_git_clean_tree", wantReason: reachabilityReasonWorktreeDiffers,
+			mutate: func(t *testing.T, root string) {
+				excludePath := filepath.Join(root, ".git", "info", "exclude")
+				if err := os.MkdirAll(filepath.Dir(excludePath), 0o750); err != nil {
+					t.Fatalf("create git info directory: %v", err)
+				}
+				if err := os.WriteFile(excludePath, []byte(reachabilityUntrackedCoveredSource+"\n"), 0o600); err != nil {
+					t.Fatalf("exclude untracked fixture source: %v", err)
+				}
+				appendReachabilitySource(t, root, reachabilityIgnoredCoveredSource, "\n// ignored source changed after coverage\n")
+				status := strings.TrimSpace(runReachabilityTool(t, root, deterministicReachabilityEnv(), "git", "status", "--porcelain"))
+				if status != "" {
+					t.Fatalf("ignored-source fixture is not git-clean: %q", status)
+				}
+			},
+		},
+		{
+			name: "listed_covered_source_deleted", wantReason: reachabilityReasonWorktreeDiffers,
+			mutate: func(t *testing.T, root string) {
+				if err := os.Remove(filepath.Join(root, filepath.FromSlash(reachabilityIgnoredCoveredSource))); err != nil {
+					t.Fatalf("delete listed covered source: %v", err)
+				}
+			},
+		},
+		{
+			name: "sidecar_missing", wantReason: "freshness_unverified",
+			mutate: func(t *testing.T, root string) {
+				if err := os.Remove(filepath.Join(root, "coverage.out.sidecar.json")); err != nil {
+					t.Fatalf("remove coverage sidecar: %v", err)
+				}
+			},
+		},
+		{
+			name: "sidecar_schema_unrecognized", wantReason: "freshness_unverified",
+			mutate: func(t *testing.T, root string) {
+				mutateReachabilitySidecar(t, root, func(sidecar *reachabilityCoverageSidecar) { sidecar.SchemaVersion = 2 })
+			},
+		},
+		{
+			name: "sidecar_source_hash_mismatch", wantReason: reachabilityReasonWorktreeDiffers,
+			mutate: func(t *testing.T, root string) {
+				mutateReachabilitySidecar(t, root, func(sidecar *reachabilityCoverageSidecar) {
+					sidecar.Sources[reachabilityTrackedCoveredSource] = strings.Repeat("0", sha256.Size*2)
+				})
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, configPath := materializeFixture(t, true)
+			tc.mutate(t, root)
+			_, raw := runReachabilityState(t, cmdAnalyze, configPath)
+			assertReachabilityTestabilityPartial(t, decodeReachabilityState(t, raw), tc.wantReason)
+		})
+	}
+
+	t.Run("warm_cache_recomputes_freshness", func(t *testing.T) {
+		root, configPath := materializeFixture(t, true)
+		_, firstRaw := runReachabilityStateWithCache(t, cmdAnalyze, configPath, false)
+		assertReachabilityTestabilityMeasured(t, decodeReachabilityState(t, firstRaw))
+
+		appendReachabilitySource(t, root, reachabilityTrackedCoveredSource, "\n// edit after the coverage fact cache is warm\n")
+		_, secondRaw := runReachabilityStateWithCache(t, cmdAnalyze, configPath, false)
+		assertReachabilityTestabilityPartial(t, decodeReachabilityState(t, secondRaw), reachabilityReasonWorktreeDiffers)
+	})
+}
+
+func addReachabilityPartialCoverageModules(t *testing.T, configPath string) {
+	t.Helper()
+	data, err := os.ReadFile(configPath) //nolint:gosec // test-owned config path
+	if err != nil {
+		t.Fatalf("read reachability config: %v", err)
+	}
+	const modules = `modules:
+  coverage-extra:
+    paths: ["services/api/untracked.go"]
+  missing-d:
+    paths: ["services/missing-d/**"]
+  missing-e:
+    paths: ["services/missing-e/**"]
+`
+	rendered := strings.Replace(string(data), "\nmodules:\n", "\n"+modules, 1)
+	if rendered == string(data) {
+		t.Fatal("reachability config has no modules block to extend")
+	}
+	// #nosec G703 -- configPath is the fixed config filename under a test-owned temporary root.
+	if err := os.WriteFile(configPath, []byte(rendered), 0o600); err != nil {
+		t.Fatalf("extend reachability config modules: %v", err)
+	}
+}
+
+func appendReachabilitySource(t *testing.T, root, rel, suffix string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	data, err := os.ReadFile(path) //nolint:gosec // test-owned root and controlled relative path
+	if err != nil {
+		t.Fatalf("read source %s: %v", rel, err)
+	}
+	// #nosec G703 -- path is contained by the test-owned temporary fixture root.
+	if err := os.WriteFile(path, append(data, suffix...), 0o600); err != nil {
+		t.Fatalf("modify source %s: %v", rel, err)
+	}
+}
+
+func assertReachabilityTestabilityMeasured(t *testing.T, state report.ArchitectureState) {
+	t.Helper()
+	dim := state.Dimensions.Testability
+	if dim.Status != report.MeasurementMeasured {
+		t.Fatalf("testability status = %q, want measured; unknown=%+v metrics=%+v", dim.Status, dim.Unknown, dim.Metrics)
+	}
+	if dim.Coverage.Observed != 2 || dim.Coverage.Total != 2 {
+		t.Fatalf("testability module coverage = %d/%d, want 2/2", dim.Coverage.Observed, dim.Coverage.Total)
+	}
+	metrics := reachabilityDimensionMetrics(dim)
+	if metrics["modules_with_coverage"].Denominator == nil || metrics["modules_with_coverage"].Denominator.Total != 2 {
+		t.Fatalf("modules_with_coverage = %+v, want declared-module denominator 2", metrics["modules_with_coverage"])
+	}
+	if metrics["unresolved_coverage_paths"].Value != 0 {
+		t.Fatalf("unresolved_coverage_paths = %v, want 0", metrics["unresolved_coverage_paths"].Value)
+	}
+	if metrics["test_files"].Value != 0 || metrics["coverage_ratio"].Value != 0 {
+		t.Fatalf("zero-test fixture static/coverage metrics = test_files %v coverage_ratio %v, want 0/0",
+			metrics["test_files"].Value, metrics["coverage_ratio"].Value)
+	}
+	if !strings.Contains(strings.Join(metrics["coverage_ratio"].Provenance, " "), "matched") {
+		t.Fatalf("measured coverage provenance does not carry matched freshness: %+v", metrics["coverage_ratio"].Provenance)
+	}
+}
+
+func assertReachabilityTestabilityPartial(t *testing.T, state report.ArchitectureState, wantReason string) {
+	t.Helper()
+	dim := state.Dimensions.Testability
+	if dim.Status != report.MeasurementPartial {
+		t.Fatalf("testability status = %q, want partial; unknown=%+v metrics=%+v", dim.Status, dim.Unknown, dim.Metrics)
+	}
+	reasons := make([]string, 0, len(dim.Unknown))
+	for _, unknown := range dim.Unknown {
+		reasons = append(reasons, unknown.Reason)
+	}
+	if joined := strings.Join(reasons, " "); !strings.Contains(joined, wantReason) {
+		t.Fatalf("testability unknown reasons %q do not contain %q", joined, wantReason)
+	}
+	metrics := reachabilityDimensionMetrics(dim)
+	if _, ok := metrics["coverage_ratio"]; !ok {
+		t.Fatalf("partial freshness discarded the observed ratio: %+v", dim.Metrics)
+	}
+}
+
+func reachabilityDimensionMetrics(dim report.DimensionState) map[string]report.MetricValue {
+	metrics := make(map[string]report.MetricValue, len(dim.Metrics))
+	for _, metric := range dim.Metrics {
+		metrics[metric.Name] = metric
+	}
+	return metrics
 }
 
 func assertReachabilityUnmeasuredDrift(t *testing.T, state report.ArchitectureState, wantReason string) string {
@@ -297,12 +532,20 @@ func runReachabilityTool(t *testing.T, dir string, env []string, name string, ar
 
 func writeReachabilityCoverage(t *testing.T, root string) {
 	t.Helper()
+	writeReachabilitySource(t, root, reachabilityUntrackedCoveredSource, "package api\n\nfunc untrackedCoveragePoint() string { return \"untracked\" }\n")
+	writeReachabilitySource(t, root, reachabilityIgnoredCoveredSource, "package app\n\nfunc ignoredCoveragePoint() string { return \"ignored\" }\n")
+
 	env := deterministicReachabilityEnv()
 	runReachabilityTool(t, root, env, "go", "test", "-coverprofile=coverage.out", "./...")
 	sourceRef := strings.TrimSpace(runReachabilityTool(t, root, env, "git", "rev-parse", "HEAD"))
 
 	sources := map[string]string{}
-	for _, rel := range []string{"services/api/api.go", "services/app/app.go"} {
+	for _, rel := range []string{
+		reachabilityTrackedCoveredSource,
+		reachabilityUntrackedCoveredSource,
+		"services/app/app.go",
+		reachabilityIgnoredCoveredSource,
+	} {
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))) //nolint:gosec // test-owned root and fixed relative paths
 		if err != nil {
 			t.Fatalf("read covered source %s: %v", rel, err)
@@ -310,12 +553,24 @@ func writeReachabilityCoverage(t *testing.T, root string) {
 		sum := sha256.Sum256(data)
 		sources[rel] = hex.EncodeToString(sum[:])
 	}
-	sidecar := struct {
-		SchemaVersion int               `json:"schema_version"`
-		SourceRef     string            `json:"source_ref"`
-		Modules       []string          `json:"modules"`
-		Sources       map[string]string `json:"sources"`
-	}{SchemaVersion: 1, SourceRef: sourceRef, Modules: []string{"api", "app"}, Sources: sources}
+	writeReachabilitySidecar(t, root, reachabilityCoverageSidecar{
+		SchemaVersion: 1, SourceRef: sourceRef, Modules: []string{"api", "app"}, Sources: sources,
+	})
+}
+
+func writeReachabilitySource(t *testing.T, root, rel, contents string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("create source directory for %s: %v", rel, err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write covered source %s: %v", rel, err)
+	}
+}
+
+func writeReachabilitySidecar(t *testing.T, root string, sidecar reachabilityCoverageSidecar) {
+	t.Helper()
 	data, err := json.MarshalIndent(sidecar, "", "  ")
 	if err != nil {
 		t.Fatalf("encode coverage sidecar: %v", err)
@@ -324,6 +579,21 @@ func writeReachabilityCoverage(t *testing.T, root string) {
 	if err := os.WriteFile(filepath.Join(root, "coverage.out.sidecar.json"), data, 0o600); err != nil {
 		t.Fatalf("write coverage sidecar: %v", err)
 	}
+}
+
+func mutateReachabilitySidecar(t *testing.T, root string, mutate func(*reachabilityCoverageSidecar)) {
+	t.Helper()
+	path := filepath.Join(root, "coverage.out.sidecar.json")
+	data, err := os.ReadFile(path) //nolint:gosec // test-owned root and fixed path
+	if err != nil {
+		t.Fatalf("read coverage sidecar: %v", err)
+	}
+	var sidecar reachabilityCoverageSidecar
+	if err := json.Unmarshal(data, &sidecar); err != nil {
+		t.Fatalf("decode coverage sidecar: %v", err)
+	}
+	mutate(&sidecar)
+	writeReachabilitySidecar(t, root, sidecar)
 }
 
 func renderReachabilityConfig(t *testing.T, root string, withCoverage bool) string {
@@ -358,7 +628,17 @@ func renderReachabilityConfig(t *testing.T, root string, withCoverage bool) stri
 
 func runReachabilityState(t *testing.T, command, configPath string) (int, []byte) {
 	t.Helper()
-	code, stdout, stderr := runArchfit(t, command, "-c", configPath, flagRefresh, "--progress=none", fmtJSON)
+	return runReachabilityStateWithCache(t, command, configPath, true)
+}
+
+func runReachabilityStateWithCache(t *testing.T, command, configPath string, refresh bool) (int, []byte) {
+	t.Helper()
+	args := []string{command, "-c", configPath}
+	if refresh {
+		args = append(args, flagRefresh)
+	}
+	args = append(args, "--progress=none", fmtJSON)
+	code, stdout, stderr := runArchfit(t, args...)
 	if code == 3 {
 		t.Fatalf("%s failed: exit=%d\nstdout:\n%s\nstderr:\n%s", command, code, stdout, stderr)
 	}

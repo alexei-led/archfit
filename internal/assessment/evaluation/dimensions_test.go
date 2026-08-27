@@ -37,10 +37,10 @@ func dimensionsFixture() (*result.Result, evaluation.StateInput) {
 	diag := &result.Result{
 		Findings: []finding.Finding{},
 		Metrics: []result.MetricResult{
-			{Name: metricCycle, Value: 0, Band: "strong", Confidence: confHigh, Version: "cycle.v1", Mode: "count"},
-			{Name: "blast_radius", Value: 2, Band: "info", Confidence: volLow, Version: "blast_radius.v2", Mode: "count"},
-			{Name: metricEncapsulation, Value: 0, Band: bandNA, Confidence: volLow, Version: "encapsulation.v3", Mode: "ratio"},
-			{Name: "coverage", Value: 1, Band: "strong", Confidence: confHigh, Version: "coverage.v1", Mode: "ratio"},
+			{Name: metricCycle, Value: 0, Band: "strong", Confidence: confHigh, Version: "cycle.v1", Mode: assessMetricUnitCount},
+			{Name: "blast_radius", Value: 2, Band: "info", Confidence: volLow, Version: "blast_radius.v2", Mode: assessMetricUnitCount},
+			{Name: metricEncapsulation, Value: 0, Band: bandNA, Confidence: volLow, Version: "encapsulation.v3", Mode: assessMetricUnitRatio},
+			{Name: "coverage", Value: 1, Band: "strong", Confidence: confHigh, Version: "coverage.v1", Mode: assessMetricUnitRatio},
 		},
 		ModuleGraphComplexity: &result.ModuleGraphComplexity{Modules: 2, MaxDependencyChain: 1, FanInP90: 1, FanOutP90: 1},
 		ClassifiedEdges: &result.ClassifiedEdgeSummary{
@@ -71,8 +71,8 @@ func dimensionsFixture() (*result.Result, evaluation.StateInput) {
 		Policy:    policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, gates, nil, nil),
 		RuleTypes: map[string]string{ruleNoAToB: ruleForbidden, "off_rule": metricCycle},
 		Facts: evaluation.Observations{
-			FileLOC:             map[string]int{"a/a.go": 100, "a/a_test.go": 40, "b/b.go": 250},
-			FileClassIndex:      map[string]fileclass.FileClass{"a/a.go": fileclass.Production, "a/a_test.go": fileclass.Test, "b/b.go": fileclass.Production},
+			FileLOC:             map[string]int{assessFileA: 100, assessFileTestA: 40, assessFileB: 250},
+			FileClassIndex:      map[string]fileclass.FileClass{assessFileA: fileclass.Production, assessFileTestA: fileclass.Test, assessFileB: fileclass.Production},
 			DeclaredDeployUnits: map[string]string{assessModA: assessUnitSvc},
 			CorroboratedDeployUnits: map[string]modevidence.CorroboratedDeployUnit{
 				assessModA: {Path: "a", Unit: assessUnitSvc, Source: modevidence.TopologySourceDockerfile},

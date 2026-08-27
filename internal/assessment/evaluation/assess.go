@@ -24,6 +24,7 @@ import (
 // relationship even by accident.
 type Observations struct {
 	Coverage                []modevidence.Coverage
+	SuppliedCoverage        []modevidence.CoverageIngest
 	Symbols                 symbol.Graph
 	PatternMatches          []pattern.Match
 	SyntaxFacts             []modevidence.SyntaxFact

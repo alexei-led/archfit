@@ -1375,10 +1375,10 @@ Rollback: revert per slice; parsers register independently.
 
 ### Task 10: Promote `testability` on genuine coverage evidence
 
-- [ ] Attribute coverage facts to declared modules
-- [ ] Publish covered/total with a real denominator and provenance
-- [ ] Promote only when attribution is complete and freshness is matched
-- [ ] Keep the static file-split metrics alongside
+- [x] Attribute coverage facts to declared modules
+- [x] Publish covered/total with a real denominator and provenance
+- [x] Promote only when attribution is complete and freshness is matched
+- [x] Keep the static file-split metrics alongside
 
 Justification: this makes `testability` capable of `measured`, deliberately last
 among evidence tasks so it inherits a tested ingestion path, normalization
