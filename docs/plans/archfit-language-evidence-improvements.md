@@ -559,10 +559,10 @@ Rollback: delete the audit document; no code was changed.
 
 ### Task 3: Characterize `HEALTHY` reachability with a hermetic fixture
 
-- [ ] Build a minimal, hermetic, Go-only fixture
-- [ ] Run `analyze` and `check` against it and record the outcome
-- [ ] Outcome A: `healthy` reached — assert it, with parity and determinism
-- [ ] Outcome B: not reached — emit an impossibility report naming each blocker and its remedy
+- [x] Build a minimal, hermetic, Go-only fixture
+- [x] Run `analyze` and `check` against it and record the outcome
+- [x] Outcome A: `healthy` reached — assert it, with parity and determinism
+- [x] Outcome B: not reached — emit an impossibility report naming each blocker and its remedy
 
 Justification: the exit-0 branch has never executed end-to-end. This task
 establishes ground truth for Stages A and B.
