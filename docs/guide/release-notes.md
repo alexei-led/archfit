@@ -81,6 +81,31 @@ Internal: the analysis stage sequence moved behind one application-owned stage
 executor; `internal/engine`, `internal/analysispipeline`, and `internal/view` are
 gone.
 
+Release validation:
+
+- The final branch binary passed the strict 11-repository corpus across Go,
+  Python, TypeScript/JavaScript, and Rust. Config migration, repeated JSON byte
+  identity, five-format finding parity, and the `0/2/1/3` exit contract were
+  checked.
+- The Rust follow-up used rustup toolchain `1.98.0`, `rust-analyzer 1.98.0`, and
+  `cargo-modules 0.26.0`. The owned corpus harness pins
+  `RUSTUP_TOOLCHAIN=1.98.0` by default without modifying third-party projects.
+- `partial` and `unmeasured` remain honest v1 outcomes: runtime coverage,
+  cognitive complexity, runtime topology, SBOM, and vulnerability state are not
+  collected by this release unless a future analyzer explicitly supplies them.
+
+Upgrade checklist:
+
+1. Run `archfit config update --migration-only --json -c .archfit.yaml` and
+   review the candidate.
+2. Apply it with `archfit config update --migration-only --apply -c
+   .archfit.yaml`.
+3. Update CI to accept `check` exit `2` as `needs_attention` and block on `1` or
+   `3` according to local policy.
+4. Migrate JSON consumers to `archfit.architecture-state.v1`; use
+   `legacy-json` only during this one-release compatibility window.
+5. Regenerate a v2 baseline only after reviewing the new state and findings.
+
 ## v1.7.0 configuration confidence
 
 Breaking changes:

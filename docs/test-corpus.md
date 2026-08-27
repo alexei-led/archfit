@@ -278,7 +278,9 @@ four minus herdr's stand-in set and all exited 0.
 After installing the official stable toolchain with rustup (`rustc`, `cargo`,
 `rust-analyzer`, and `cargo-modules`), the four Rust repositories were rerun with
 `.bin/archfit v1.7.1-56`. All four produced valid v1 reports, passed the strict
-harness, migrated to v2 idempotently, and had byte-identical repeated JSON.
+harness, migrated to v2 idempotently, and had byte-identical repeated JSON. The
+owned harness now sets `RUSTUP_TOOLCHAIN=1.98.0` by default; callers may override
+it explicitly, and third-party repositories remain unchanged.
 
 | Repo | Coverage (M/P/U) | Findings | Seams | Rust analyzer result |
 | --- | --- | ---: | ---: | --- |

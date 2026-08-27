@@ -45,13 +45,20 @@ archfit check --config .archfit.yaml
 
 ## Platform setup quick start
 
-macOS:
+macOS example with language-owned toolchains:
 
 ```sh
-brew install git go node uv ast-grep
-brew install rustup
-rustup default stable
+brew install git go ast-grep
+curl -fsSL https://fnm.vercel.app/install | bash
+fnm install 24
+fnm default 24
+curl -fsSL https://bun.com/install | bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
+
+Using Homebrew for these language runtimes is also supported. Prefer one manager
+per runtime; do not mix Homebrew Node with fnm, or Homebrew Rust with rustup.
 
 Debian / Ubuntu:
 
@@ -107,12 +114,15 @@ otherwise through `npx depcruise`.
 
 ## Python tools
 
-Recommended setup:
+Recommended setup on macOS and Linux uses Astral's official installer:
 
 ```sh
-brew install uv              # macOS
-# Linux: use a current distro package or the Astral installer; see tooling.md
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv --version
 ```
+
+A current package-manager installation is also supported. Keep one `uv` on
+`PATH` and pin its version in CI.
 
 With `uv`, `archfit` injects `grimp` for the extractor run, so the project does
 not need to add `grimp` as a dependency.
@@ -137,11 +147,14 @@ Optional SCIP support uses `scip-go`; see [Optional analysis tools](#optional-an
 
 ## Rust tools
 
-Rust repositories need the `cargo` command on `PATH`. Prefer rustup-managed
-stable Rust so `cargo`, `rustc`, and components stay aligned:
+Rust repositories need the `cargo` command on `PATH`. Prefer a rustup-managed
+toolchain so `cargo`, `rustc`, and components stay aligned. The owned
+Archfit corpus harness pins `1.98.0`; target repositories may override it with
+their own `rust-toolchain.toml` or `RUSTUP_TOOLCHAIN`:
 
 ```sh
-rustup default stable
+rustup toolchain install 1.98.0 --profile minimal --component rust-analyzer
+rustup default 1.98.0
 cargo --version
 ```
 
@@ -151,7 +164,8 @@ Homebrew or `sudo` and installs into `~/.cargo`:
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 . "$HOME/.cargo/env"
-rustup default stable
+rustup toolchain install 1.98.0 --profile minimal --component rust-analyzer
+rustup default 1.98.0
 ```
 
 The installer is also documented at <https://rust-lang.org/tools/install/>.

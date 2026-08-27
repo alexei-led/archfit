@@ -3,9 +3,9 @@
 Use this page when `archfit doctor` reports a missing analyzer, when you build CI
 images, or when a tool is installed but not found on `PATH`.
 
-Version snapshot: 2026-06-23, from upstream docs/registries and Homebrew formulae.
-Pin these versions in CI. For local development, using the package manager's latest
-stable release is usually fine.
+Version snapshot: 2026-08-27, from upstream docs, registries, and the verified
+corpus host. Pin these versions in CI. For local development, using the chosen
+manager's latest stable release is usually fine.
 
 ## Install policy
 
@@ -16,17 +16,17 @@ predictable:
    - macOS: Homebrew.
    - Debian/Ubuntu: `apt`.
    - Fedora/RHEL-like: `dnf`.
-2. Use the language package manager for language-specific CLIs.
-   - npm for Node CLIs (`dependency-cruiser`, `jscpd`, SCIP JS/Python indexers).
-   - `uv tool` for Python CLIs.
+2. Prefer one upstream manager for each language runtime.
+   - fnm for Node, or Bun as the runtime/package runner.
+   - the Astral installer and `uv tool` for Python.
    - `go install` for Go CLIs (`scip-go`).
-   - `cargo install` for Rust CLIs (`cargo-modules`, `ast-grep` when Homebrew is
-     unavailable).
-   - `rustup` for the Rust toolchain and Rust components (`cargo`,
-     `rust-analyzer`).
-3. Use remote installer scripts only when they are the upstream documented path
+   - rustup for Rust plus `cargo install` for Rust CLIs (`cargo-modules`,
+     `ast-grep` when a platform package is unavailable).
+3. Use the language package manager for analyzer CLIs: npm/Bun for JS tools,
+   `uv tool` for Python tools, `go install` for Go, and `cargo install` for Rust.
+4. Use remote installer scripts only when they are the upstream documented path
    and you have reviewed the command. Do not hide `curl | sh` inside automation.
-4. Do not mix installers for the same toolchain unless you understand PATH order
+5. Do not mix installers for the same toolchain unless you understand PATH order
    (`brew node` + `nvm`, distro Rust + `rustup`, etc.).
 
 `archfit doctor` is read-only by default; `archfit doctor --fix` bootstraps a few
@@ -36,17 +36,24 @@ common tools (use `--dry-run` to preview). Use this matrix for the complete setu
 
 ### macOS
 
-Use Homebrew for platform tools and formulae:
+Use Homebrew for platform tools and use the upstream manager for each language
+runtime:
 
 ```sh
-brew install git go node uv ast-grep
+brew install git go ast-grep
+curl -fsSL https://fnm.vercel.app/install | bash
+curl -fsSL https://bun.com/install | bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-For Rust, prefer rustup-managed toolchains:
+Then select the verified Node and Rust versions:
 
 ```sh
-brew install rustup
-rustup default stable
+fnm install 24
+fnm default 24
+rustup toolchain install 1.98.0 --profile minimal --component rust-analyzer
+rustup default 1.98.0
 ```
 
 Homebrew prefixes to keep on `PATH`:
@@ -83,11 +90,11 @@ when the distro package lags the matrix.
 | -------------------- | ---------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------- |
 | `git`                | repo root, delta mode, history metrics               | OS current (`2.54.0` Homebrew snapshot)                | `brew install git`                             | `sudo apt install git` / `sudo dnf install git`                  | <https://git-scm.com/downloads>                           |
 | `go`                 | building `archfit`; Go repo analysis via `go list`   | `1.26.x` for this repo                                 | `brew install go`                              | distro package if `1.26.x`; otherwise <https://go.dev/dl/>       | <https://go.dev/>                                         |
-| `node`, `npm`, `npx` | TS/JS tools, npm-based optional analyzers            | Node `24.x` preferred; `22+` for full optional toolset | `brew install node`                            | distro package if `>=22`; otherwise Node docs                    | <https://nodejs.org/en/download>                          |
-| `bun`, `bunx`        | optional faster TS package runner                    | `1.3.14`                                               | `brew install bun`                             | official Bun installer, manual                                   | <https://bun.sh/docs/installation>                        |
-| `uv` / `uvx`         | Python extraction; SCIP reader; Python tool installs | `0.11.23`                                              | `brew install uv`                              | distro package if current; otherwise Astral installer, manual    | <https://docs.astral.sh/uv/getting-started/installation/> |
+| `node`, `npm`, `npx` | TS/JS tools, npm-based optional analyzers            | Node `24.x` preferred; `22+` for full optional toolset | fnm (`fnm install 24`)                         | fnm or distro package if `>=22`                                  | <https://nodejs.org/en/download>                          |
+| `bun`, `bunx`        | optional faster TS package runner                    | `1.4.0`                                                | official Bun installer                         | official Bun installer                                            | <https://bun.sh/docs/installation>                        |
+| `uv` / `uvx`         | Python extraction; SCIP reader; Python tool installs | `0.12.5`                                               | official Astral installer                      | official Astral installer or current distro package              | <https://docs.astral.sh/uv/getting-started/installation/> |
 | `python3`            | Python fallback when `uv` is unavailable             | `3.12+` for direct fallback; `3.11+` with `uv`         | `brew install python`                          | `sudo apt install python3` / `sudo dnf install python3`          | <https://www.python.org/downloads/>                       |
-| `cargo`              | Rust analysis; Rust CLI installs                     | stable Rust toolchain                                  | `brew install rustup && rustup default stable` | distro `rustup` if available; otherwise rustup installer, manual | <https://rust-lang.org/tools/install/>                    |
+| `cargo`              | Rust analysis; Rust CLI installs                     | Rust `1.98.0` in the owned corpus harness              | official rustup installer                      | official rustup installer or current distro rustup               | <https://rust-lang.org/tools/install/>                    |
 
 ## Analyzer and optional tool matrix
 

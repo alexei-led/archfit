@@ -107,11 +107,14 @@ Requirements:
   or Bun with `bunx`;
 - dependency-cruiser available locally or through the package runner.
 
-Install a pinned dependency-cruiser version:
+Manage Node with one version manager such as fnm, or use Bun directly. Then
+install a pinned dependency-cruiser version in the target repository:
 
 ```sh
+fnm install 24
+fnm default 24
 npm install --save-dev dependency-cruiser@17.4.3
-# or
+# or, without Node/npm
 bun add --dev dependency-cruiser@17.4.3
 ```
 
@@ -167,12 +170,15 @@ Requirements:
 - `pyproject.toml`, `setup.py`, or configured `languages.python.package`;
 - `uv` (preferred), or Python `3.12+` with `grimp` installed.
 
-Recommended install:
+Recommended install on macOS and Linux:
 
 ```sh
-brew install uv              # macOS
-# Linux: use a current distro package or the Astral installer; see tooling.md
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv --version
 ```
+
+This is Astral's official standalone installer. A current package-manager
+installation is also supported; keep one `uv` on `PATH`.
 
 How extraction works:
 
@@ -245,15 +251,21 @@ Requirements:
 - `cargo` on `PATH`;
 - `Cargo.toml` at the repository root.
 
-Recommended install:
+Recommended install uses the official rustup installer, without Homebrew or
+`sudo`:
 
 ```sh
-rustup default stable
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+. "$HOME/.cargo/env"
+rustup toolchain install 1.98.0 --profile minimal --component rust-analyzer
+rustup default 1.98.0
+cargo install cargo-modules --version 0.26.0
 cargo --version
 ```
 
-If rustup is not installed, use your platform package manager where available, or
-follow the official rustup installer at <https://rust-lang.org/tools/install/>.
+The owned corpus harness pins Rust `1.98.0`. A target repository's
+`rust-toolchain.toml`, or an explicit `RUSTUP_TOOLCHAIN`, may select another
+version. See <https://rust-lang.org/tools/install/>.
 
 How extraction works:
 
