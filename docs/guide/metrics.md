@@ -54,9 +54,105 @@ downward (drop > `min_delta`). Per-metric `gate`/threshold knobs are documented
 in the [configuration reference](configuration-reference.md#metrics).
 
 `archfit check`'s exit code IS this verdict: `0` healthy, `2` needs_attention,
-`1` blocked, `3` tool/config error. **Expect `2`, not `0`, on a healthy repo in
-v1** — complexity, testability, and operations report `partial` by contract, so
-gate on `1`. `archfit analyze` is report-only and exits `0` on any verdict.
+`1` blocked, `3` tool/config error. Exit 0 is reachable when all nine dimensions
+are measured, all hard gates pass, and no active diagnostic remains. A run with
+no supplied coverage or no comparable persisted baseline normally exits 2
+because `testability` is partial or `drift` is unmeasured; neither gap is treated
+as a healthy zero. `archfit analyze` is report-only and exits 0 on any verdict.
+
+---
+
+## Architecture-state dimension metrics
+
+The primary report stores dimension facts in each envelope's `metrics` array.
+These facts are separate from the baseline-delta metrics described later on this
+page: their values diagnose the tree, while the dimension's fixed required-fact
+set decides `measured`, `partial`, or `unmeasured`. A low observed value does not
+by itself prevent promotion, and a high value cannot hide incomplete evidence.
+The complete nine-dimension predicates are the
+[evidence contract](../design/evidence-contract.md).
+
+The four evidence families below are the ones that can now promote from native
+or supplied facts.
+
+### `complexity` dimension
+
+The in-claim architecture measure is the complete declared-module dependency
+graph. It is `measured` only when every declared module has a chain-depth,
+fan-in, and fan-out value and the applicable primary dependency inventories and
+internal classifications completed.
+
+| Metric | Meaning and denominator | Provenance | Claim |
+| --- | --- | --- | --- |
+| `max_dependency_chain` | Longest path through the SCC-condensation DAG; all declared modules | `relationship/analysis` | in claim |
+| `module_fan_in_p90` | Nearest-rank p90 distinct incoming-module degree; all declared modules | `relationship/analysis` | in claim |
+| `module_fan_out_p90` | Nearest-rank p90 distinct outgoing-module degree; all declared modules | `relationship/analysis` | in claim |
+| `production_files`, `production_loc`, `largest_production_file_loc` | Production-only source-size diagnostics | `syntax/fileclass` | out of claim |
+| `function_loc_p50`, `function_loc_p90`, `function_loc_max`, `functions_over_threshold` | Inclusive function/method LOC over declarations with complete extents | `evidence/acquisition` | out of claim |
+
+The function threshold defaults to 60 lines and is configurable with
+`metrics.function_loc_threshold`. Function size and cognitive complexity may be
+unknown while the architecture-level dimension remains measured. Cognitive
+complexity has no claimed analyzer; see
+[accepted ceilings](../design/evidence-contract.md#accepted-ceilings-and-upgrade-triggers).
+
+### `testability` dimension
+
+Testability claims exercised-code attribution, not test quality. With top-level
+`coverage:` disabled or absent, the static file split remains partial. With it
+enabled, the dimension is `measured` only when supplied facts use compatible
+units, every coverage path resolves inside the scan root, every declared module
+is represented, and every configured source has `freshness: matched`.
+
+| Metric | Meaning and denominator | Provenance | Claim |
+| --- | --- | --- | --- |
+| `test_files`, `production_files`, `test_to_production_files` | Static file-class split retained beside execution coverage | `syntax/fileclass` | supporting, not sufficient to promote |
+| `covered_units`, `total_units`, `coverage_ratio` | Covered over total statements or lines in one compatible unit family | `extract/coverage/<format>@<parser-version>` plus `coverage/freshness/<status>` | in claim |
+| `modules_with_coverage` | Declared modules represented by attributed supplied coverage / all declared modules | coverage parser plus `policy` | in claim |
+| `unresolved_coverage_paths` | Parser paths that could not resolve to a regular file inside the scan root; must be zero | coverage parser | in claim |
+| `merged_coverage_facts` | Duplicate per-file aggregate facts merged by the documented lower-bound rule; omitted when zero | coverage parser | diagnostic |
+
+Coverage ratio is diagnostic only: 5% fresh coverage over every declared module
+is complete evidence with a low measured value, not a gate failure; 95% stale or
+unattributed coverage is partial. Assertion strength, mutation resistance, and
+whether tests meaningfully exercise module boundaries remain out of claim.
+Languages determine parser format and unit compatibility, but they are not a
+separate completeness denominator.
+
+### `operations` dimension
+
+Operations claims **declared-topology completeness**, not live runtime state. It
+is `measured` only when every declared module has both an ownership statement
+(`owner:` or CODEOWNERS, never git-author fallback) and an independently detected
+deploy unit, with declared and corroborated values reconciled.
+
+| Metric family | Meaning and denominator | Provenance | Claim |
+| --- | --- | --- | --- |
+| `modules_with_owner`, `distinct_owners` | Resolved ownership inventory; modules with any owner / declared modules | `policy`, `evidence/acquisition` | supporting |
+| `owners_from_declared`, `owners_from_codeowners`, `owners_from_git_author_fallback` | Owner provenance; git-author remains visible but does not qualify | `policy`, `evidence/acquisition` | in claim |
+| `declared_deploy_units`, `corroborated_deploy_units` | Declared module values kept separate from distinct detected unit values | `policy`, `evidence/acquisition` | in claim |
+| `modules_with_corroborated_deploy_unit` | Modules with independent deploy evidence / declared modules | `evidence/acquisition` | in claim |
+| `matching_declared_deploy_units`, `mismatched_declared_deploy_units` | Reconciliation of declared and detected unit identities | `policy`, `evidence/acquisition` | in claim |
+| `analyzers_reporting_coverage`, `coverage_gaps`, `analyzers_not_applicable` | Applicable analyzer health | `evidence/acquisition` | out of claim |
+
+Dockerfiles, Kubernetes manifests, TypeScript workspaces, `pyproject.toml`, and Go
+mains can corroborate deploy units. They prove what the repository declares and
+contains, not what is currently running. Live runtime topology and SBOM or
+vulnerability state remain separate, out-of-claim report families.
+
+### `drift` dimension
+
+Drift is baseline-driven. A persisted `archfit.baseline.v2` state reference must
+match `config_hash`, resolved `model_hash`, approved `labels_hash`, and
+`rubric_version`. When comparable, the denominator is the union of qualifying
+distributed-monolith seam identities on the current and stored sides; the metrics
+`new_seams` and `resolved_seams` have provenance `assessment/evaluation`.
+
+No baseline, a legacy baseline, or any fingerprint mismatch makes drift
+`unmeasured`, never stable-by-default. Root `comparison.status: not_requested`
+only says no separate `--base` report was requested; it does not affect drift.
+Run `archfit baseline` after reviewing a topology or policy change to establish a
+new comparable persisted reference.
 
 ---
 

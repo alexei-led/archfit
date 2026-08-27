@@ -11,8 +11,8 @@ agent edits code
   → archfit check [--base main] --json
   → exit 0?  healthy — done.
   → exit 2?  needs_attention — no blocking finding. Read the dimension whose
-             status is not `measured` (complexity, testability, and operations
-             report `partial` by contract, so 2 is the normal clean result).
+             status is not `measured` or the active diagnostic. Supply the named
+             missing fact; never treat yellow as a fabricated healthy zero.
   → exit 1?  blocked — read agent_tasks[] — goal, constraints, files, validation
   → fix within the constraints
   → run the task's validation command

@@ -30,10 +30,10 @@ Breaking changes:
   longer gates at all. Advisory promotion is gone: the seam gate names its own
   seams.
 - **`archfit check`'s exit code IS the state verdict**: `healthy` -> 0,
-  `needs_attention` -> 2, `blocked` -> 1, error -> 3. **Expect `2`, not `0`, on a
-  healthy repo in v1** — complexity, testability, and operations report `partial`
-  by contract, and any partial dimension is `needs_attention`. Gate on `1`; a
-  recipe that fails on any non-zero exit will now fail every clean build.
+  `needs_attention` -> 2, `blocked` -> 1, error -> 3. Exit `0` is reachable with
+  complete evidence for all nine dimensions, passing hard gates, and no active
+  diagnostic. Missing supplied coverage, operational corroboration, or a
+  comparable baseline produces `2`, never a fabricated healthy zero.
 - **Baseline schema v2** (`archfit.baseline.v2`) stores the four comparison
   fingerprints, hard-gate finding IDs, seam IDs, and the nine dimension
   snapshots — no repository scalar. A v1 file stays readable for its accepted
@@ -49,6 +49,13 @@ New:
   `change_locality`, `complexity`, `testability`, `operations`, `drift`), each
   with its own status, gate, confidence, denominator, metrics, and an explicit
   list of what it could not measure.
+- Architecture-level complexity from complete declared-module dependency-chain
+  and fan-in/fan-out distributions; function-size tails stay diagnostic.
+- Declared operational-topology completeness from independent deploy-unit
+  corroboration and declared/CODEOWNERS owner provenance.
+- Opt-in top-level `coverage:` ingestion for Go coverprofile, LCOV, coverage.py
+  JSON, and llvm-cov JSON. Archfit reads CI-produced artifacts and versioned
+  source-hash sidecars; it never executes the target repository's tests.
 - A coupling **seam ledger**: one record per ordered module pair with a stable
   ID, a score distribution, raw owner/deploy/structural distance facts, the book
   Ch10 quadrant, and a balancing hypothesis.
@@ -90,9 +97,10 @@ Release validation:
 - The Rust follow-up used rustup toolchain `1.98.0`, `rust-analyzer 1.98.0`, and
   `cargo-modules 0.26.0`. The owned corpus harness pins
   `RUSTUP_TOOLCHAIN=1.98.0` by default without modifying third-party projects.
-- `partial` and `unmeasured` remain honest v1 outcomes: runtime coverage,
-  cognitive complexity, runtime topology, SBOM, and vulnerability state are not
-  collected by this release unless a future analyzer explicitly supplies them.
+- `partial` and `unmeasured` remain honest outcomes: assertion quality,
+  cognitive complexity, observed runtime topology, SBOM, and vulnerability state
+  are outside the shipped claims. Missing, stale, or unattributed supplied
+  coverage remains partial rather than becoming a healthy zero.
 
 Upgrade checklist:
 
@@ -104,7 +112,9 @@ Upgrade checklist:
    `3` according to local policy.
 4. Migrate JSON consumers to `archfit.architecture-state.v1`; use
    `legacy-json` only during this one-release compatibility window.
-5. Regenerate a v2 baseline only after reviewing the new state and findings.
+5. If testability must be measured, generate coverage plus its source-hash
+   sidecar in the trusted test job and configure the top-level `coverage:` block.
+6. Regenerate a v2 baseline only after reviewing the new state and findings.
 
 ## v1.7.0 configuration confidence
 

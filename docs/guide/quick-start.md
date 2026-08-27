@@ -84,7 +84,7 @@ DIMENSIONS
 NOT MEASURED (5)
 
   complexity — cognitive complexity
-    v1 ships no cognitive-complexity analyzer; only the size tail is measured
+    no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
 
 COUPLING SEAMS (67)
 
@@ -121,9 +121,10 @@ This is the command to put in CI and local validation loops. The exit code IS th
 verdict: `0` is `healthy`, `1` is `blocked`, `2` is `needs_attention`, and `3` is
 a config, tool, or runtime error.
 
-**Expect `2`, not `0`, on a healthy repo in v1.** Complexity, testability, and
-operations report `partial` by contract, and any partial dimension flags the
-verdict. Gate on `1`:
+Exit `0` is reachable once every dimension has complete evidence, hard gates
+pass, and no diagnostic is active. During adoption, missing supplied coverage,
+operational corroboration, or a comparable persisted baseline can still produce
+exit `2`. The following recipe allows that yellow state and gates on `1`:
 
 ```sh
 archfit check -c .archfit.yaml || [ $? -eq 2 ]

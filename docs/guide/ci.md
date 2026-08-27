@@ -25,11 +25,14 @@ path. That makes the job easier to read and copy.
 
 The exit code IS the architecture-state verdict — nothing else participates.
 
-**Expect `2`, not `0`, on a healthy repo in v1.** Complexity, testability, and
-operations report `partial` by contract (v1 ships no cognitive-complexity
-analyzer, does not run your test suite, and observes no runtime topology), and
-any partial dimension makes the verdict `needs_attention`. Gate on `1`. archfit's
-own `make archfit` target accepts `0` or `2` for exactly this reason.
+Exit `0` is reachable when all nine dimensions have complete evidence, hard
+gates pass, and no diagnostic is active. Exit `2` is still common while adopting
+the evidence contract: omitted supplied coverage leaves `testability` partial,
+a missing or incomparable persisted baseline leaves `drift` unmeasured, and
+missing deploy corroboration or ownership statements leave `operations` partial.
+Treat that as an honest yellow result, not as a healthy zero. The recipe below
+allows yellow and fails only blocked runs; require exit `0` instead after your CI
+supplies every required fact.
 
 ## 2. GitHub Actions recipe
 
@@ -37,7 +40,7 @@ Minimal gate step:
 
 ```yaml
 - name: Architecture check
-  # Gate on blocked (1) only; 2 is the normal healthy-repo result in v1.
+  # Allow needs_attention (2) during adoption; fail blocked (1) and errors (3).
   run: archfit check -c .archfit.yaml || [ $? -eq 2 ]
 ```
 

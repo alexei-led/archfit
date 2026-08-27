@@ -1577,10 +1577,10 @@ Rollback: single commit revert including baselines.
 
 ### Task 12: Documentation, schema, and config reference
 
-- [ ] Document the `coverage:` block and the supplied-not-executed rationale
-- [ ] Publish the evidence contract as user-facing reference
-- [ ] Update dimension docs for `operations`, `complexity`, `testability`, `drift`
-- [ ] Record the accepted ceilings and their upgrade triggers
+- [x] Document the `coverage:` block and the supplied-not-executed rationale
+- [x] Publish the evidence contract as user-facing reference
+- [x] Update dimension docs for `operations`, `complexity`, `testability`, `drift`
+- [x] Record the accepted ceilings and their upgrade triggers
 
 Justification: the contract doc states three dimensions are "always partial in
 v1" and that v1 "does not execute a target repository's test suite". The first

@@ -77,9 +77,10 @@ pre-commit run --all-files
 ```
 
 `make archfit` runs `archfit check` and accepts exit `0` (healthy) or `2`
-(needs attention); only exit `1` (blocked) fails it. Expect `2` on this repo:
-complexity, testability, and operations report `partial` by contract, and a
-partial dimension is never reported as healthy.
+(needs attention); only exit `1` (blocked) fails it. Exit `0` is reachable with
+complete evidence. This repo may report `2` while supplied coverage,
+operational corroboration, or a comparable persisted baseline is missing; no
+evidence gap is reported as healthy.
 
 Regenerate mocks after changing interfaces under `internal/evidence/ports`:
 

@@ -75,12 +75,11 @@ Notes:
 - `archfit analyze` always exits `0` after a successful analysis, whatever the verdict.
 - `archfit analyze --require-tools` only changes the rendered verdict. It does not change the exit code on success.
 - `archfit baseline`, `archfit explain`, `archfit doctor`, and the `config` commands are success-or-error commands: `0` or `3`.
-- **Expect `2`, not `0`, on a healthy repository in v1.** Complexity, testability,
-  and operations report `partial` by contract — v1 ships no cognitive-complexity
-  analyzer, does not execute a target repository's test suite, and observes no
-  runtime topology — and any partial dimension is `needs_attention`. Reporting
-  `healthy` over unmeasured evidence would be the implicit green result this
-  contract exists to prevent. Treat `0` and `2` as "not blocked" in CI; gate on `1`.
+- Exit `0` is reachable when all nine dimensions are measured, hard gates pass,
+  and no diagnostic is active. Missing supplied coverage, a non-comparable
+  persisted baseline, or incomplete declared operational topology produces exit
+  `2`, never a healthy zero. During adoption you may treat `0` and `2` as "not
+  blocked" and gate on `1`; require `0` when complete evidence is your CI policy.
 - A coupling advisory is a diagnostic, never a blocker: it can reach `2`, never
   `1`. The only coupling gate is `coupling.gate.distributed_monolith`, and it
   blocks only in `mode: fail` against a comparable reference.

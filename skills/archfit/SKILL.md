@@ -128,9 +128,11 @@ redirect to a draft file instead of `.archfit.yaml`).
 ## Agent repair loop
 
 Fixing findings autonomously: run `archfit check --json`. **Exit 0 or 2 means
-done** — 2 (`needs_attention`) is the normal result on a healthy repo in v1,
-because complexity, testability, and operations report `partial` by contract.
-Exit 1 (`blocked`) is the one to repair; looping until 0 never terminates.
+no blocker remains** — 2 (`needs_attention`) names an active diagnostic or a
+missing evidence fact such as supplied coverage or a comparable baseline. Exit
+1 (`blocked`) is the one to repair. Do not fabricate evidence merely to turn 2
+into 0; exit 0 is reachable when the repository genuinely supplies every
+required fact.
 Each `agent_tasks[]` entry has `goal`, `constraints`, `files`, and a
 `validation` command — fix within the constraints, touch only the listed files
 where possible, then re-run `validation` verbatim. Never "fix" `baseline` or

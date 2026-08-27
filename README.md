@@ -69,9 +69,11 @@ Run `archfit analyze` for a human-readable review; use `archfit check` in CI for
 `archfit.architecture-state.v1`. Progress streams to stderr, so
 `archfit check --json | jq` stays clean.
 
-Expect `2`, not `0`, on a healthy repository in v1: complexity, testability, and
-operations report `partial` by contract, and a partial dimension is never
-reported as healthy. Gate on `1`.
+Exit `0` is reachable when all nine dimensions are measured, hard gates pass,
+and no diagnostic is active. Missing supplied coverage, operational
+corroboration, or a comparable persisted baseline produces `2`, never a
+fabricated healthy zero. Gate on `1` during adoption; require `0` when complete
+evidence is your CI policy.
 
 ## Why
 

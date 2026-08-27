@@ -1,11 +1,18 @@
 # Nine-dimension evidence contract
 
-Status: approved input to the language-evidence implementation plan.
+Status: shipped user-facing reference for `archfit.architecture-state.v1`.
 
-This document defines what each dimension in
-`archfit.architecture-state.v1` claims. It is the source of truth for deciding
-whether a dimension is `measured`, `partial`, or `unmeasured`; a collector's
-current branch structure is not the definition.
+This document defines what each dimension claims. It is the source of truth for
+deciding whether a dimension is `measured`, `partial`, or `unmeasured`; a
+collector's branch structure is not the definition. Read it with the
+[architecture-state wire contract](architecture-state-reporting.md), the
+[user-facing metric names](../guide/metrics.md#architecture-state-dimension-metrics),
+and the [supplied-coverage configuration](../guide/configuration-reference.md#coverage).
+
+A reader can use each dimension section as a checklist: **Applicable when**
+defines the subject, **Required facts** and **Denominator** define completeness,
+**In-claim** and **Out-of-claim** delimit what the status means, and the three
+status predicates give the exact result.
 
 ## Shared promotion rule
 
@@ -306,15 +313,15 @@ supported language, as established by that language producer's own probe.
 
 **Required facts:** `production_source_inventory`, `supplied_coverage_units`,
 `coverage_path_resolution`, `coverage_module_attribution`, and
-`coverage_freshness`. Required coverage is quantified per applicable language
-and declared module. An absent language is not applicable; an applicable
-language with no supplied artifact is missing. Freshness is observed only when
-a valid sidecar's source hashes match the scanned bytes.
+`coverage_freshness`. Required coverage is quantified over every declared
+module. Supplied facts must use one compatible unit kind; languages are not an
+independent completeness denominator. Freshness is observed only when every
+configured source has a valid sidecar whose listed source hashes match the
+scanned bytes.
 
-**Denominator:** Applicable declared modules represented by attributed coverage
-over all applicable declared modules, plus covered units over total units within
-each compatible single-unit coverage family. Unsupported or absent languages
-are never averaged into either denominator.
+**Denominator:** Declared modules represented by attributed coverage over all
+declared modules, plus covered units over total units within one compatible unit
+family. Statement and line units are never averaged together.
 
 **In-claim:** Production-source classification, parsed coverage units, complete
 ScanRoot-relative path resolution, module attribution, and sidecar-to-source
@@ -324,14 +331,14 @@ freshness.
 semantics, and whether a test suite is broadly well designed. Exercising an
 instrumentation point proves none of those properties.
 
-**Measured when:** `A(testability)` is true, every applicable module/language has
-a valid supplied coverage fact, all paths and modules are resolved, compatible
-unit denominators are complete, unresolved path count is zero, and freshness is
-`matched`.
+**Measured when:** `A(testability)` is true, every declared module has a valid
+supplied coverage fact, all paths and modules are resolved, the unit denominator
+is compatible and complete, unresolved path count is zero, and freshness is
+`matched` for every configured source.
 
 **Partial when:** Production-source inventory or some valid coverage facts are
-observed, but an applicable module/language lacks coverage, a source is invalid,
-units conflict, a path or module is unresolved, or freshness is `stale` or
+observed, but a declared module lacks coverage, a source is invalid, units
+conflict, a path or module is unresolved, or freshness is `stale` or
 `unverified`. No configured coverage artifact is partial, not not-applicable,
 when production source exists.
 
@@ -435,27 +442,50 @@ also `unmeasured`; the reason distinguishes the workflow case, but does not
 change the drift claim. A blocked run remains exit 1, and command/config errors
 remain exit 3.
 
-## Reconciliation with current behavior
+## Shipped implementation map
 
-The table accounts for all nine collectors in
-`internal/assessment/evaluation/dimensions.go`. “No deviation” means the current
-status branches implement this contract for the facts they can receive; Task 2
-still audits and ratifies that conclusion. Task 3 characterizes end-to-end
-reachability but does not own a production status change.
+All nine collectors implement the shared promotion rule. The implementation
+audit that preceded these changes remains in
+[`evidence-contract-audit.md`](evidence-contract-audit.md); it is historical
+design evidence, not the current behavior reference.
 
-| Dimension | Current behavior versus this contract | Deviation owner |
-| --- | --- | --- |
-| `intent` | **No observed deviation.** `intentDimension` is unmeasured with no declarations, otherwise measured, and treats `gate: off` conformance as an unknown footnote. Its inputs do not currently represent a missing active-rule result. | Task 2 ratifies or identifies an unrepresented partial path. |
-| `structure` | **Deviation.** `structureDimension` reports measured whenever `ClassifiedEdges.Total > 0`, without proving every applicable primary inventory completed or every internal classification is complete. It also reports unmeasured for a completed zero-edge inventory because completion and absence are not distinguishable in its input. External-edge unknowns are correctly out of claim. | Task 2 classifies both status-semantics gaps; Task 4 implements only approved fixes. |
-| `modularity` | **Deviation.** `modularityDimension` reports measured from a non-empty module declaration alone, even when boundary attribution or applicable graph metrics are absent/`n/a`. Its public-surface unknown is correctly out of claim. | Task 2 classifies the gap; Task 4 implements an approved status-semantics or input fix. |
-| `coupling` | **No observed deviation.** `couplingDimension` is unmeasured without a candidate denominator, partial for abstained edges or TypeScript resolution above the 10 percent ceiling, and measured only when the required candidate facts meet that rule. | Task 2 ratifies; Task 4 routes the existing rule through the common promotion mechanism without weakening it. |
-| `change_locality` | **No observed deviation.** `changeLocalityDimension` is unmeasured for no eligible commit, partial for a non-`ok` sample, and measured for a completed non-empty sample. Essential-versus-accidental volatility is correctly out of claim. | Task 2 ratifies; Task 4 routes the rule through common promotion. |
-| `complexity` | **Deviation.** `complexityDimension` uses production-file LOC as its denominator, names cognitive complexity as missing, and is hardcoded partial whenever files exist. It has no module-chain or degree facts and no measured path under the architecture-level claim. | Task 2 classifies `new collector required`; Task 7 supplies the graph collector and keeps size diagnostics out of claim. |
-| `testability` | **Deviation.** `testabilityDimension` observes only the static test/production file split and is hardcoded partial. It has no supplied coverage, path attribution, module denominator, or freshness fact, so it cannot satisfy the exercised-code claim. | Task 2 classifies `new collector required`; Tasks 8–10 add ingestion, parsers, attribution, and promotion. |
-| `operations` | **Deviation.** `operationsDimension` is hardcoded partial, uses applicable analyzer rows as its envelope denominator, discards deploy detection and owner provenance, and treats runtime/SBOM absence as if it were inside the claim. It has no measured path for declared-topology completeness. | Task 2 classifies `new collector required`; Task 6 retains corroboration/provenance, changes the denominator, and promotes only the narrowed claim. |
-| `drift` | **No observed status deviation.** `driftDimension` is measured only from `SeamsComparable` and otherwise unmeasured with a named reason. The root report's independent `not_requested` status does not feed the collector. | Task 2 ratifies the policy; Task 5 adds lifecycle tests and makes no collector change. |
+| Dimension | Shipped status implementation |
+| --- | --- |
+| `intent` | Declared inventory and active-rule conformance promote through the fixed required-fact set; disabled-rule conformance remains out of claim. |
+| `structure` | Completed primary inventories and complete internal-edge classification promote; completed empty inventories remain observable zeroes. |
+| `modularity` | Declared-module attribution and graph-shape facts promote; inferred public surface remains out of claim. |
+| `coupling` | Candidate completeness, abstentions, and the TypeScript unresolved-specifier ceiling promote through the fixed required-fact set. |
+| `change_locality` | A completed, attributed history sample promotes; essential-versus-accidental volatility remains out of claim. |
+| `complexity` | Complete declared-module graph depth and fan-in/fan-out distributions promote; file/function size and cognitive complexity remain out of claim. |
+| `testability` | Valid, completely attributed supplied coverage with matched source hashes promotes. With coverage ingestion disabled, the legacy static file split remains `partial`. |
+| `operations` | Independent deploy-unit corroboration plus declared/CODEOWNERS owner provenance for every declared module promotes; runtime and supply-chain facts remain out of claim. |
+| `drift` | A persisted seam ledger with all four matching fingerprints promotes; root `comparison.status` remains independent. |
 
-The deviations above are exhaustive for current status promotion against this
-contract. Metric presentation, confidence lowering, gate posture, finding
-routing, and comparison rendering are separate contracts and are not silently
-reclassified as evidence-completeness deviations here.
+Metric presentation, confidence, gate posture, finding routing, and comparison
+rendering are separate contracts and do not silently redefine evidence
+completeness.
+
+## Accepted ceilings and upgrade triggers
+
+These limits are deliberate. They are not missing-fact loopholes:
+
+- **Complexity is architecture-scoped, not cognitive complexity.** Native module
+  dependency-chain depth and degree tails decide the dimension; function-size
+  tails are diagnostic only. Reconsider a code-level analyzer such as `gocognit`
+  or `lizard` only if corpus evidence shows that graph shape ranks an
+  architecture seam materially differently from a code-level metric.
+- **Coverage freshness is producer-attested, not tamper-proof or independently
+  complete.** The version 1 sidecar is unsigned. Archfit validates every
+  path/hash the producer lists, but it does not rediscover the artifact's full
+  covered-source universe or prove that `sources` is complete. An empty or
+  incomplete but syntactically valid sidecar can therefore be classified
+  `matched`; that is accepted producer misattestation, not a completeness
+  guarantee. Add artifact-to-source cross-binding where a format permits it, or
+  signature-backed trusted-producer attestation, when stronger provenance
+  becomes a product requirement.
+- **Duplicate aggregate coverage uses a lower bound, not exact union.** For the
+  same file, unit, and total denominator, Archfit keeps the greatest covered
+  count and reports `merged_coverage_facts`; differing units or totals force
+  `partial` and suppress `coverage_ratio`. Carry per-unit identities and compute
+  an exact union only when a real multi-profile repository demonstrates that the
+  lower bound is too loose to be useful.

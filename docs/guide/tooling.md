@@ -110,6 +110,29 @@ when the distro package lags the matrix.
 | `rust-analyzer`                    | Rust SCIP symbol facts; edge-strength for `coupling_balance` | rustup component / Homebrew snapshot `2026-06-22` | `rustup component add rust-analyzer`; macOS alternative: `brew install rust-analyzer`                                        | <https://rust-analyzer.github.io/book/installation.html> | If using rustup, the component keeps it aligned with the toolchain.                |
 | `cargo-modules`                    | Rust intra-crate module graph                                | `0.26.0`                                          | `cargo install cargo-modules --version 0.26.0`                                                                               | <https://docs.rs/crate/cargo-modules/>                   | Installs a cargo plugin; `archfit` probes `cargo-modules`.                         |
 
+## Coverage producers are external
+
+Supplied test coverage adds no Archfit runtime binary. `analyze` and `check` read
+files; they never invoke `go test`, c8, Vitest, Jest, pytest, coverage.py, or
+`cargo llvm-cov`. Those tools belong to the target repository's existing CI test
+job and do not need to be present when Archfit reads the resulting artifact.
+
+| Language | Typical existing producer | Artifact Archfit reads |
+| --- | --- | --- |
+| Go | the Go toolchain's built-in coverage support | Go coverprofile |
+| TypeScript/JavaScript | c8, Vitest, or Jest | LCOV |
+| Python | pytest-cov / coverage.py | coverage.py JSON |
+| Rust | cargo-llvm-cov | LCOV or llvm-cov summary JSON |
+
+`archfit doctor` does not install or probe these producers. It is the CI
+pipeline's responsibility to pin them, run trusted repository tests, and write
+the version 1 source-hash sidecar alongside the artifact. Archfit's only
+coverage-tool health row is `supplied-coverage`, which reports whether the
+configured file could be read and parsed. Concrete producer commands are in
+[Language support](languages.md#supplied-test-coverage); configuration and
+freshness semantics are in the
+[`coverage:` reference](configuration-reference.md#coverage).
+
 ## PATH checks
 
 When a package manager says a tool is installed but `archfit doctor` reports it
