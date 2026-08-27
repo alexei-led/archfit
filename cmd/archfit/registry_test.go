@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -15,7 +16,7 @@ import (
 // core-ring metrics fall back to the slash/default heuristic for it silently.
 func TestBuiltinConventionsCoverage(t *testing.T) {
 	t.Parallel()
-	for _, lang := range languageRegistry {
+	for _, lang := range registry.All() {
 		if _, ok := graph.BuiltinConventions[lang.ID]; !ok {
 			t.Errorf("language %q in registry has no graph.BuiltinConventions entry", lang.ID)
 		}
@@ -31,8 +32,8 @@ func TestLangAliasesInInstallEnum(t *testing.T) {
 		t.Fatal("DoctorCmd.Lang has no enum tag values")
 	}
 	for _, v := range enum {
-		if languageByAlias(v) == "" {
-			t.Errorf("doctor --lang enum value %q does not resolve via languageByAlias", v)
+		if registry.ByAlias(v) == "" {
+			t.Errorf("doctor --lang enum value %q does not resolve via registry.ByAlias", v)
 		}
 	}
 }
@@ -58,10 +59,10 @@ func installEnumTag(t *testing.T) []string {
 // reports the canonical language name.
 func TestBuildExtractorsOrder(t *testing.T) {
 	t.Parallel()
-	exs := buildExtractors(&toolrun.RunnerMock{}, config.Default(), nil)
+	exs := registry.Build(&toolrun.RunnerMock{}, config.Default().ExtractConfigs(), nil)
 	want := []string{config.LangGo, config.LangTypeScript, config.LangPython, config.LangRust}
 	if len(exs) != len(want) {
-		t.Fatalf("buildExtractors returned %d extractors, want %d", len(exs), len(want))
+		t.Fatalf("registry.Build returned %d extractors, want %d", len(exs), len(want))
 	}
 	for i, w := range want {
 		if got := exs[i].Name(); got != w {
@@ -85,8 +86,8 @@ func TestLanguageByAlias(t *testing.T) {
 		"ruby":       "",
 	}
 	for key, want := range cases {
-		if got := languageByAlias(key); got != want {
-			t.Errorf("languageByAlias(%q) = %q, want %q", key, got, want)
+		if got := registry.ByAlias(key); got != want {
+			t.Errorf("registry.ByAlias(%q) = %q, want %q", key, got, want)
 		}
 	}
 }
@@ -95,9 +96,9 @@ func TestLanguageByAlias(t *testing.T) {
 // into the scorecard, in registry order.
 func TestPrimaryExtractorTools(t *testing.T) {
 	t.Parallel()
-	got := primaryExtractorTools()
+	got := registry.PrimaryTools()
 	want := []string{toolGoPackages, toolDepCruiser, toolGrimp, toolCargo}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("primaryExtractorTools() = %v, want %v", got, want)
+		t.Errorf("registry.PrimaryTools() = %v, want %v", got, want)
 	}
 }

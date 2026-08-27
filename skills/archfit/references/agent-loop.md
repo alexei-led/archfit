@@ -10,7 +10,8 @@ output.
 ```text
 agent edits code
   → archfit check --json
-  → exit 0?  done.
+  → exit 0 or 2?  done. (2 = needs_attention, the normal healthy-repo result
+     in v1: complexity, testability, and operations are partial by contract.)
   → exit 1?  read agent_tasks[] — goal, constraints, files, validation
   → fix within the constraints, touching only the listed files where possible
   → run the task's validation command verbatim
@@ -64,9 +65,10 @@ dates.
 
 `archfit check --sarif` emits SARIF 2.1.0 (schema-validated): active gate
 findings as `error`, advisories as `warning`, resolved/baselined as `note`, with
-file+line locations and stable `archfit/v1` fingerprints. Metrics and the
-verdict ride in `runs[0].properties`. Pipe it to GitHub code scanning for inline
-PR annotations.
+file+line locations and stable `archfit/v1` fingerprints. The whole architecture
+state — verdict, decision, the nine dimensions with their status/gate/confidence,
+and the coverage split — rides in `runs[0].properties`. Pipe it to GitHub code
+scanning for inline PR annotations.
 
 ## Scorecard delta (--base)
 
@@ -78,10 +80,12 @@ output. `--require-tools` applies exactly as without `--base`.
 
 ## Coverage gaps — missing evidence is loud, not green
 
-A metric reading `n/a` (and a `coverage_gaps[]` entry in JSON) means an analyzer
-did not run — archfit refuses to score absence as health, it does not fail by
-default. Each gap carries `tool`, `install_cmd`, `affected_metrics`, and `gate`;
-the `config_warnings[]` array carries under-specified-module advisories. An agent
+A metric reading `n/a` (and a `coverage.tools[]` row that is not `ok` in the
+primary JSON) means an analyzer did not run — archfit refuses to score absence as
+health, it does not fail by default. Under `--format legacy-json` each
+`coverage_gaps[]` entry carries `tool`, `install_cmd`, `affected_metrics`, and
+`gate`, and `config_warnings[]` carries under-specified-module advisories; the
+primary `archfit.architecture-state.v1` document carries neither array. An agent
 treats a gap as "install this tool / fill this config", not as a passing gate.
 Coverage gaps do **not** produce `agent_tasks` and do not fail unless the run
 opts in with `archfit check --require-tools` (or `analyzers.<x>.gate: fail`),
@@ -89,6 +93,12 @@ which exits `1`.
 
 ## What an agent sees
 
+- The architecture state — one `verdict`, nine `dimensions` each with its own
+  status/gate/confidence/denominator and an explicit list of what it could not
+  measure, and a `coverage` split. No repository score.
+- The coupling `seams` ledger — one record per ordered module pair, with a stable
+  ID, a score distribution, the book Ch10 quadrant, and a balancing hypothesis.
+  This is the unit to redesign; individual import edges are not.
 - Gate findings — boundary violations (forbidden deps, internal access, layer
   inversions, cycles, unreviewed new cross-module deps).
 - BC advisories — Balanced Coupling imbalances (strength × distance × volatility).

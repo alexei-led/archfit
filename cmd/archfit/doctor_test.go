@@ -34,7 +34,7 @@ func runDoctorCmd(t *testing.T, dir string) string {
 // advisory-only "dead by construction" note is gone with the vacuous rule.
 func TestDoctorCmd_VacuousForbiddenDependencyFailsLoad(t *testing.T) {
 	dir := t.TempDir()
-	const yaml = `version: 1
+	const yaml = `version: 2
 rules:
   - id: no-forbidden-deps
     type: forbidden_dependency
@@ -55,7 +55,7 @@ rules:
 
 func TestDoctorCmd_LiveForbiddenDependencyRuleLoadsClean(t *testing.T) {
 	dir := t.TempDir()
-	const yaml = `version: 1
+	const yaml = `version: 2
 rules:
   - id: no-cmd-to-internal
     type: forbidden_dependency

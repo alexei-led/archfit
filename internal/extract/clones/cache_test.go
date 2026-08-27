@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	reportmodel "github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -91,7 +91,7 @@ func TestFactCache_TimedOutRunNotCached(t *testing.T) {
 	if err != nil {
 		t.Fatalf("timed-out Run: %v", err)
 	}
-	if cov.Status != diagnostic.StatusTimedOut {
+	if cov.Status != reportmodel.StatusTimedOut {
 		t.Fatalf("want StatusTimedOut, got %s", cov.Status)
 	}
 
@@ -103,7 +103,7 @@ func TestFactCache_TimedOutRunNotCached(t *testing.T) {
 	if scans != 1 {
 		t.Errorf("want the healthy run to scan (timeout not cached), got %d scans", scans)
 	}
-	if cov.Status != diagnostic.StatusOK || len(clusters) == 0 {
+	if cov.Status != reportmodel.StatusOK || len(clusters) == 0 {
 		t.Errorf("healthy run: want OK coverage with clusters, got %s / %d clusters", cov.Status, len(clusters))
 	}
 }

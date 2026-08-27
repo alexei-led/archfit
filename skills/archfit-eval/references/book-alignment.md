@@ -55,11 +55,12 @@ Start with:
 - `CLAUDE.md`
 - `.archfit.yaml`
 - `cmd/archfit/`
-- `internal/model/coupling/`
-- `internal/classify/`
-- `internal/score/`
-- `internal/metrics/`
-- `internal/rules/`
+- `internal/relationship/coupling/`
+- `internal/relationship/scoring/`
+- `internal/relationship/classify/`
+- `internal/assessment/score/`
+- `internal/assessment/metrics/`
+- `internal/assessment/rules/`
 - `internal/extract/`
 - `internal/labels/`
 - `.archfit-labels.yaml` handling if present

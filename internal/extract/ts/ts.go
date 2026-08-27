@@ -12,15 +12,16 @@ import (
 	"strings"
 	"time"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -39,7 +40,7 @@ const (
 // It satisfies the engine.Extractor interface structurally.
 type Extractor struct {
 	runner toolrun.Runner
-	cfg    view.ExtractConfig
+	cfg    evidenceports.ExtractConfig
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
 	Cache *factcache.Store
 }
@@ -59,7 +60,7 @@ var tsManifestNames = []string{
 }
 
 // New returns an Extractor configured with the given runner and config.
-func New(runner toolrun.Runner, cfg view.ExtractConfig) *Extractor {
+func New(runner toolrun.Runner, cfg evidenceports.ExtractConfig) *Extractor {
 	return &Extractor{runner: runner, cfg: cfg}
 }
 
@@ -92,21 +93,21 @@ func Applicable(root string) bool {
 }
 
 // Extract detects dependency-cruiser, runs it against the project root,
-// parses the JSON output, and returns a graph.Facts + diagnostic.Coverage.
+// parses the JSON output, and returns a graph.Facts + evidence.Coverage.
 //
 // If mode is off, Extract returns empty Facts and an "absent" Coverage immediately.
 // If mode is auto and the tool is absent or the project has no package.json,
 // Extract returns empty Facts and an "absent" Coverage record — never an error.
 // If mode is on and the tool is absent, Extract returns an error.
-func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-	if e.cfg.Mode == view.ModeOff {
+func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error) {
+	if e.cfg.Mode == evidenceports.ModeOff {
 		return graph.Facts{}, absentCoverage(""), nil
 	}
 
 	// Applicability: requires package.json in the project root.
 	if !Applicable(s.Root) {
-		if e.cfg.Mode == view.ModeOn {
-			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: package.json not found at %s", s.Root)
+		if e.cfg.Mode == evidenceports.ModeOn {
+			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: package.json not found at %s", s.Root)
 		}
 		return graph.Facts{}, absentCoverage(""), nil
 	}
@@ -114,8 +115,8 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// Detect bunx or npx.
 	launcher, _, found := e.detectLauncher(ctx)
 	if !found {
-		if e.cfg.Mode == view.ModeOn {
-			return graph.Facts{}, diagnostic.Coverage{}, errors.New("extract/ts: dependency-cruiser not found (bunx/npx unavailable); install Node and run: npm i -D dependency-cruiser")
+		if e.cfg.Mode == evidenceports.ModeOn {
+			return graph.Facts{}, evidence.Coverage{}, errors.New("extract/ts: dependency-cruiser not found (bunx/npx unavailable); install Node and run: npm i -D dependency-cruiser")
 		}
 		return graph.Facts{}, absentCoverage(""), nil
 	}
@@ -189,7 +190,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	}
 	out, err := e.cachedRunner(s, version, e.resolveTSConfig(s.Root, workDir), workDir).Run(ctx, cmd)
 	if err != nil {
-		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: run dependency-cruiser: %w", err)
+		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: run dependency-cruiser: %w", err)
 	}
 	if out.ExitCode != 0 {
 		// dependency-cruiser exited non-zero — e.g. the source directory does not
@@ -198,15 +199,15 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		// run-level failure (the "warn-loud, don't block" contract); only an
 		// explicitly required analyzer (ModeOn) hard-errors.
 		reason := fmt.Sprintf("dependency-cruiser exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
-		if e.cfg.Mode == view.ModeOn {
-			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: %s", reason)
+		if e.cfg.Mode == evidenceports.ModeOn {
+			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: %s", reason)
 		}
-		return graph.Facts{}, diagnostic.Coverage{Tool: coverageTool, Version: version, Status: statusPartial, Reason: reason}, nil
+		return graph.Facts{}, evidence.Coverage{Tool: coverageTool, Version: version, Status: statusPartial, Reason: reason}, nil
 	}
 
 	facts, cov, err := e.parseAndNormalize(out.Stdout, version, s.SubtreePrefix)
 	if err != nil {
-		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: parse output: %w", err)
+		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: parse output: %w", err)
 	}
 	return facts, cov, nil
 }
@@ -371,7 +372,7 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir s
 		return e.runner
 	}
 	cfgHash, err := factcache.HashJSON(struct {
-		Cfg                 view.ExtractConfig
+		Cfg                 evidenceports.ExtractConfig
 		Root                string
 		TSConfigHash        string
 		WorkDirManifestHash string
@@ -575,10 +576,10 @@ func (d dcDep) connascenceHints() []graph.ConnascenceHint {
 // ---------------------------------------------------------------------------
 
 // parseAndNormalize parses dependency-cruiser JSON and builds graph.Facts.
-func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string) (graph.Facts, diagnostic.Coverage, error) {
+func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string) (graph.Facts, evidence.Coverage, error) {
 	var dc dcOutput
 	if err := json.Unmarshal(data, &dc); err != nil {
-		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("unmarshal: %w", err)
+		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("unmarshal: %w", err)
 	}
 	// normPath strips the git-root-relative prefix from paths emitted by
 	// depcruise when running from the git root (subtree mode). This converts
@@ -710,7 +711,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 		Language:   langTS,
 		Unresolved: unresolved,
 	}
-	cov := diagnostic.Coverage{
+	cov := evidence.Coverage{
 		Tool:            coverageTool,
 		Version:         version,
 		FilesSeen:       filesSeen,
@@ -734,8 +735,8 @@ func (e *Extractor) matchesInternal(path string) bool {
 }
 
 // absentCoverage returns a Coverage record indicating the tool was not found.
-func absentCoverage(version string) diagnostic.Coverage {
-	return diagnostic.Coverage{
+func absentCoverage(version string) evidence.Coverage {
+	return evidence.Coverage{
 		Tool:    coverageTool,
 		Version: version,
 		Status:  statusAbsent,

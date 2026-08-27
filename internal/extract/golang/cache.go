@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"golang.org/x/mod/modfile"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
@@ -20,7 +22,6 @@ import (
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // goAnalyzer is the fact-cache subdirectory for per-member Go facts.
@@ -403,7 +404,7 @@ func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDir
 	// is derived from a go.work whose CONTENT the process env cannot report (the
 	// probe reads the ambient one either way).
 	cfgHash, err := factcache.HashJSON(struct {
-		Cfg       view.ExtractConfig
+		Cfg       evidenceports.ExtractConfig
 		Root      string
 		GoWork    string
 		GoWorkOff bool

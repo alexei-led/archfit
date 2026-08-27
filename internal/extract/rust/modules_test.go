@@ -5,11 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const toolModules = "cargo-modules"
@@ -103,8 +104,8 @@ func moduleGraphRunner(metaJSON, dotOutput string) *toolrun.RunnerMock {
 
 func TestModuleGraph_LibCrate(t *testing.T) {
 	runner := moduleGraphRunner(libCargoMeta, libCrateDOT)
-	e := rust.New(runner, view.ExtractConfig{
-		Mode:        view.ModeAuto,
+	e := rust.New(runner, evidenceports.ExtractConfig{
+		Mode:        evidenceports.ModeAuto,
 		ModuleGraph: true,
 	})
 
@@ -169,8 +170,8 @@ func TestModuleGraph_LibCrate(t *testing.T) {
 
 func TestModuleGraph_BinaryOnlyCrate(t *testing.T) {
 	runner := moduleGraphRunner(binCargoMeta, binCrateDOT)
-	e := rust.New(runner, view.ExtractConfig{
-		Mode:        view.ModeAuto,
+	e := rust.New(runner, evidenceports.ExtractConfig{
+		Mode:        evidenceports.ModeAuto,
 		ModuleGraph: true,
 	})
 
@@ -208,8 +209,8 @@ func TestModuleGraph_BinaryOnlyCrate(t *testing.T) {
 
 func TestModuleGraph_Disabled(t *testing.T) {
 	runner := moduleGraphRunner(libCargoMeta, libCrateDOT)
-	e := rust.New(runner, view.ExtractConfig{
-		Mode:        view.ModeAuto,
+	e := rust.New(runner, evidenceports.ExtractConfig{
+		Mode:        evidenceports.ModeAuto,
 		ModuleGraph: false,
 	})
 
@@ -244,8 +245,8 @@ func TestModuleGraph_ToolAbsent(t *testing.T) {
 			return toolrun.Output{Stdout: []byte(libCargoMeta)}, nil
 		},
 	}
-	e := rust.New(runner, view.ExtractConfig{
-		Mode:        view.ModeAuto,
+	e := rust.New(runner, evidenceports.ExtractConfig{
+		Mode:        evidenceports.ModeAuto,
 		ModuleGraph: true,
 	})
 
@@ -280,8 +281,8 @@ func TestModuleGraph_MalformedDOTLinesSkipped(t *testing.T) {
 }
 `
 	runner := moduleGraphRunner(libCargoMeta, malformedDOT)
-	e := rust.New(runner, view.ExtractConfig{
-		Mode:        view.ModeAuto,
+	e := rust.New(runner, evidenceports.ExtractConfig{
+		Mode:        evidenceports.ModeAuto,
 		ModuleGraph: true,
 	})
 

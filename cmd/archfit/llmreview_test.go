@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/baseline"
-	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/application"
+	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -112,14 +112,12 @@ func runLLMReviewForTest(t *testing.T, cfgPath string, provider llm.Provider) (s
 	if err != nil {
 		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	configDir := filepath.Dir(cfgPath)
-	base, _ := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
-	diag, sc, err := runPipeline(ctx, deps, cfg, newRunContext(cfgPath, ""),
-		engine.Mode{Full: true, Advisory: true, ReportOnly: true}, base)
+	diag, sc, err := runPipeline(ctx, deps, cfg, cfgPath, "")
 	if err != nil {
 		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	err = runLLMReview(ctx, deps, cfg, cfgPath, "", true, provider, diag, sc)
+	doc := application.ProjectReport(diag, sc, nil, false)
+	err = runLLMReview(ctx, deps, cfg, cfgPath, "", true, provider, doc)
 	return buf.String(), err
 }
 
@@ -143,7 +141,7 @@ func TestRun_Analyze_LLM_DeterministicFirst(t *testing.T) {
 	_ = cmd.Run(deps)
 	out := buf.String()
 
-	det := strings.Index(out, "ARCHFIT RESULT")
+	det := strings.Index(out, "ARCHITECTURE STATE")
 	llmIdx := strings.Index(out, "Architecture Review")
 	switch {
 	case det < 0:
@@ -192,9 +190,9 @@ func TestRun_Analyze_GateLLM_FailureDoesNotMaskVerdict(t *testing.T) {
 }
 
 type analyzeJSONStableSections struct {
-	Verdict  diagnostic.Verdict `json:"verdict"`
-	Findings []finding.Finding  `json:"findings"`
-	Score    score.Scorecard    `json:"score"`
+	Verdict  result.Verdict    `json:"verdict"`
+	Findings []finding.Finding `json:"findings"`
+	Score    score.Scorecard   `json:"score"`
 }
 
 func runAnalyzeJSON(t *testing.T, cfgPath string, llmEnabled bool, provider llm.Provider) (string, error) {
@@ -414,22 +412,22 @@ func TestBuildReviewPrompt_RespectsCaps(t *testing.T) {
 		metricsN  = 100
 		dynamicN  = 100
 	)
-	diag := diagnostic.Diagnostic{}
+	diag := report.Document{}
 	for i := 0; i < findingsN; i++ {
-		diag.Findings = append(diag.Findings, finding.Finding{
+		diag.Findings = append(diag.Findings, report.Finding{
 			ID:       fmt.Sprintf("id%d", i),
-			Kind:     finding.KindGate,
+			Kind:     report.FindingKindGate,
 			RuleID:   fmt.Sprintf("rule%d", i),
-			Severity: finding.SeverityHigh,
-			Status:   finding.StatusNew,
-			Edge: finding.EdgeEvidence{
-				From: finding.Endpoint{Module: fmt.Sprintf("from%d", i)},
-				To:   finding.Endpoint{Module: fmt.Sprintf("to%d", i)},
+			Severity: report.FindingSeverityHigh,
+			Status:   report.FindingStatusNew,
+			Edge: report.FindingEdge{
+				From: report.FindingEndpoint{Module: fmt.Sprintf("from%d", i)},
+				To:   report.FindingEndpoint{Module: fmt.Sprintf("to%d", i)},
 			},
 		})
 	}
 	for i := 0; i < factsN; i++ {
-		diag.FileFacts = append(diag.FileFacts, diagnostic.FileFact{
+		diag.FileFacts = append(diag.FileFacts, report.FileFact{
 			Module:               fmt.Sprintf("mod%d", i),
 			InboundModuleFanIn:   i,
 			OutboundDestinations: i,
@@ -437,21 +435,21 @@ func TestBuildReviewPrompt_RespectsCaps(t *testing.T) {
 		})
 	}
 	for i := 0; i < metricsN; i++ {
-		diag.Metrics = append(diag.Metrics, diagnostic.MetricResult{
+		diag.Metrics = append(diag.Metrics, report.MetricResult{
 			Name:    fmt.Sprintf("metric%d", i),
 			Value:   float64(i),
-			Band:    string(score.BandPoor),
+			Band:    string(report.ScoreBandPoor),
 			Display: fmt.Sprintf("%d/10", i),
 		})
 	}
 	for i := 0; i < dynamicN; i++ {
-		diag.DynamicImports = append(diag.DynamicImports, diagnostic.DynamicImport{
+		diag.DynamicImports = append(diag.DynamicImports, report.DynamicImport{
 			Module: fmt.Sprintf("lazy%d", i),
 			Count:  i + 1,
 		})
 	}
 
-	prompt := buildReviewPrompt(diag, score.Scorecard{})
+	prompt := buildReviewPrompt(diag)
 
 	// Each section uses a unique line marker, so a strings.Count is an exact
 	// per-section line tally that must not exceed its cap.
@@ -536,7 +534,7 @@ func TestLLMReview_Run_NoLLMConfig(t *testing.T) {
 	// runLLMReview fires the "ai not configured" check before touching
 	// the provider, so we can pass a nil diag+scorecard — they are never reached.
 	err := runLLMReview(ctx, deps, cfg, cfgPath, "", true, nil,
-		diagnostic.Diagnostic{}, score.Scorecard{})
+		report.Document{})
 
 	var ee *exitError
 	if !errors.As(err, &ee) || ee.code != 3 {
@@ -552,14 +550,14 @@ func TestLLMReview_Run_NoLLMConfig(t *testing.T) {
 // is accepted as valid evidence the review may cite.
 func TestPostVerify_RejectsInvalidEnums(t *testing.T) {
 	t.Parallel()
-	diag := diagnostic.Diagnostic{
-		FileFacts:      []diagnostic.FileFact{{Module: reviewModReal}},
-		DynamicImports: []diagnostic.DynamicImport{{Module: reviewModLazy, Count: 3}},
+	diag := report.Document{
+		FileFacts:      []report.FileFact{{Module: reviewModReal}},
+		DynamicImports: []report.DynamicImport{{Module: reviewModLazy, Count: 3}},
 	}
 	rev := reviewResponse{
 		OverallBand: "excellent", // outside rubric vocabulary → blanked
 		Dimensions: []reviewDimension{
-			{Name: reviewDimBoundary, Band: string(score.BandMixed), ClaimType: claimTypeSemanticInterpretation, MetricIDs: []string{reviewDimBoundary}, Narrative: "ok"},
+			{Name: reviewDimBoundary, Band: string(report.ScoreBandMixed), ClaimType: claimTypeSemanticInterpretation, MetricIDs: []string{reviewDimBoundary}, Narrative: "ok"},
 			{Name: reviewDimBoundary, Band: "excellent", ClaimType: claimTypeSemanticInterpretation, MetricIDs: []string{reviewDimBoundary}, Narrative: "bad band → dropped"},
 		},
 		TopRisks: []reviewRisk{
@@ -576,7 +574,7 @@ func TestPostVerify_RejectsInvalidEnums(t *testing.T) {
 	if result.OverallBand != "" {
 		t.Errorf("overall_band = %q, want blanked", result.OverallBand)
 	}
-	if len(result.Dimensions) != 1 || result.Dimensions[0].Band != string(score.BandMixed) {
+	if len(result.Dimensions) != 1 || result.Dimensions[0].Band != string(report.ScoreBandMixed) {
 		t.Errorf("dimensions = %+v, want only the valid-band entry", result.Dimensions)
 	}
 	if len(result.TopRisks) != 1 || len(result.TopRisks[0].Modules) != 1 {
@@ -592,10 +590,10 @@ func TestPostVerify_RejectsInvalidEnums(t *testing.T) {
 // coupling the static metrics miss.
 func TestBuildReviewPrompt_IncludesDynamicImports(t *testing.T) {
 	t.Parallel()
-	diag := diagnostic.Diagnostic{
-		DynamicImports: []diagnostic.DynamicImport{{Module: reviewModLazy, Count: 7}},
+	diag := report.Document{
+		DynamicImports: []report.DynamicImport{{Module: reviewModLazy, Count: 7}},
 	}
-	prompt := buildReviewPrompt(diag, score.Scorecard{})
+	prompt := buildReviewPrompt(diag)
 	if !strings.Contains(prompt, "Dynamic / lazy imports") || !strings.Contains(prompt, reviewModLazy) {
 		t.Errorf("prompt missing dynamic-import section:\n%s", prompt)
 	}
@@ -603,11 +601,12 @@ func TestBuildReviewPrompt_IncludesDynamicImports(t *testing.T) {
 
 func TestBuildReviewPrompt_IncludesCitationInputs(t *testing.T) {
 	t.Parallel()
-	diag := diagnostic.Diagnostic{
-		Findings: []finding.Finding{{ID: "finding-1", Kind: finding.KindGate, RuleID: "r", Severity: finding.SeverityHigh}},
-		Metrics:  []diagnostic.MetricResult{{Name: "module_fanout", Value: 1, Band: string(score.BandPoor), Display: "1"}},
+	diag := report.Document{
+		Findings: []report.Finding{{ID: "finding-1", Kind: report.FindingKindGate, RuleID: "r", Severity: report.FindingSeverityHigh}},
+		Metrics:  []report.MetricResult{{Name: "module_fanout", Value: 1, Band: string(report.ScoreBandPoor), Display: "1"}},
+		Score:    report.Scorecard{Dimensions: []report.Dimension{{Name: reviewDimBoundary}}},
 	}
-	prompt := buildReviewPrompt(diag, score.Scorecard{Dimensions: []score.Dimension{{Name: reviewDimBoundary}}}, []string{"doc:architecture.md (doc) docs/architecture.md: Architecture intent"})
+	prompt := buildReviewPrompt(diag, []string{"doc:architecture.md (doc) docs/architecture.md: Architecture intent"})
 	for _, want := range []string{repositoryEvidenceHeader, "doc:architecture.md", "finding_id=finding-1", "metric_id=module_fanout", "metric_id=coupling_balance"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt missing %q:\n%s", want, prompt)
@@ -617,7 +616,7 @@ func TestBuildReviewPrompt_IncludesCitationInputs(t *testing.T) {
 
 func TestPostVerify_DropsUncitedRecommendations(t *testing.T) {
 	t.Parallel()
-	diag := diagnostic.Diagnostic{FileFacts: []diagnostic.FileFact{{Module: reviewModReal}}}
+	diag := report.Document{FileFacts: []report.FileFact{{Module: reviewModReal}}}
 	rev := reviewResponse{
 		OverallBand: reviewBandMixed,
 		TopRisks: []reviewRisk{
@@ -646,7 +645,7 @@ func TestPostVerify_DropsUncitedRecommendations(t *testing.T) {
 
 func TestPostVerify_DropsUnknownCitationRefs(t *testing.T) {
 	t.Parallel()
-	diag := diagnostic.Diagnostic{FileFacts: []diagnostic.FileFact{{Module: reviewModReal}}}
+	diag := report.Document{FileFacts: []report.FileFact{{Module: reviewModReal}}}
 	rev := reviewResponse{
 		OverallBand: reviewBandMixed,
 		TopRisks: []reviewRisk{
@@ -654,7 +653,7 @@ func TestPostVerify_DropsUnknownCitationRefs(t *testing.T) {
 			{Title: "good ref", Modules: []string{reviewModReal}, ClaimType: claimTypeRecommendation, EvidenceRefs: []string{"doc:architecture.md"}, Narrative: reviewNarrativeKeep, BalancingMove: reviewBalancingMove},
 		},
 	}
-	citations := buildReviewCitationSet(diag, score.Scorecard{}, []string{"doc:architecture.md (doc) docs/architecture.md: Architecture intent"})
+	citations := buildReviewCitationSet(diag, []string{"doc:architecture.md (doc) docs/architecture.md: Architecture intent"})
 
 	result, _ := postVerify(rev, diag, nil, citations)
 	if len(result.TopRisks) != 1 || result.TopRisks[0].Title != "good ref" {
@@ -664,8 +663,8 @@ func TestPostVerify_DropsUnknownCitationRefs(t *testing.T) {
 
 func TestPostVerify_AcceptsConfiguredModulesWithoutRuntimeEvidence(t *testing.T) {
 	t.Parallel()
-	diag := diagnostic.Diagnostic{}
-	citations := buildReviewCitationSet(diag, score.Scorecard{}, nil)
+	diag := report.Document{}
+	citations := buildReviewCitationSet(diag, nil)
 	citations.Modules[reviewModReal] = struct{}{}
 	rev := reviewResponse{
 		OverallBand: reviewBandMixed,
@@ -687,14 +686,14 @@ func TestPostVerify_AcceptsConfiguredModulesWithoutRuntimeEvidence(t *testing.T)
 // covering every drop path without a full pipeline run.
 func TestPostVerify_DropsUnknownEntities(t *testing.T) {
 	t.Parallel()
-	diag := diagnostic.Diagnostic{
-		FileFacts: []diagnostic.FileFact{
+	diag := report.Document{
+		FileFacts: []report.FileFact{
 			{Module: reviewModReal},
 		},
-		Findings: []finding.Finding{
-			{Edge: finding.EdgeEvidence{
-				From: finding.Endpoint{Module: "a"},
-				To:   finding.Endpoint{Module: "b"},
+		Findings: []report.Finding{
+			{Edge: report.FindingEdge{
+				From: report.FindingEndpoint{Module: "a"},
+				To:   report.FindingEndpoint{Module: "b"},
 			}},
 		},
 	}
@@ -702,7 +701,7 @@ func TestPostVerify_DropsUnknownEntities(t *testing.T) {
 	rev := reviewResponse{
 		OverallBand: reviewBandMixed,
 		Dimensions: []reviewDimension{
-			{Name: reviewDimBoundary, Band: string(score.BandPoor), ClaimType: claimTypeSemanticInterpretation, MetricIDs: []string{reviewDimBoundary}, Narrative: "ok"},
+			{Name: reviewDimBoundary, Band: string(report.ScoreBandPoor), ClaimType: claimTypeSemanticInterpretation, MetricIDs: []string{reviewDimBoundary}, Narrative: "ok"},
 			{Name: "fake_dimension", Band: reviewBandMixed, ClaimType: claimTypeSemanticInterpretation, MetricIDs: []string{reviewDimBoundary}, Narrative: "should be dropped"},
 		},
 		TopRisks: []reviewRisk{
@@ -752,20 +751,20 @@ func TestPostVerify_DropsUnknownEntities(t *testing.T) {
 func TestPostVerify_DropsUnsupportedStrengthClaim(t *testing.T) {
 	t.Parallel()
 	// Diagnostic has one finding with no strength evidence and no uses_internal edge.
-	diag := diagnostic.Diagnostic{
-		FileFacts: []diagnostic.FileFact{
+	diag := report.Document{
+		FileFacts: []report.FileFact{
 			{Module: "a"},
 			{Module: "b"},
 		},
-		Findings: []finding.Finding{
+		Findings: []report.Finding{
 			{
-				Edge: finding.EdgeEvidence{
-					From: finding.Endpoint{Module: "a"},
-					To:   finding.Endpoint{Module: "b"},
+				Edge: report.FindingEdge{
+					From: report.FindingEndpoint{Module: "a"},
+					To:   report.FindingEndpoint{Module: "b"},
 					Kind: edgeKindImports, // NOT uses_internal
 				},
 				MatchedBy: map[string]string{
-					matchedByStrength: "functional", // functional evidence only
+					matchedByStrength: llmStrengthFunctional, // functional evidence only
 				},
 			},
 		},
@@ -813,8 +812,8 @@ func TestPostVerify_DropsUnsupportedStrengthClaim(t *testing.T) {
 func TestPostVerify_FlagsConfigSubdomainConflict(t *testing.T) {
 	t.Parallel()
 	const modPayments = "payments"
-	diag := diagnostic.Diagnostic{
-		FileFacts: []diagnostic.FileFact{
+	diag := report.Document{
+		FileFacts: []report.FileFact{
 			{Module: modPayments},
 		},
 	}

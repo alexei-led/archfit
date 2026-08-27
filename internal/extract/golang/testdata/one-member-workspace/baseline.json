@@ -1,5 +1,4 @@
 {
-  "advisory_tasks": [],
   "agent_tasks": [
     {
       "constraints": [
@@ -17,214 +16,629 @@
       ]
     }
   ],
-  "base": "",
-  "classified_edges": {
-    "abstained": 0,
-    "by_distance": {
-      "cross_module_different_owner": 1
-    },
-    "by_distance_basis": {
-      "ownership": 1
-    },
-    "by_severity": {
-      "low": 1
-    },
-    "by_strength": {
-      "functional": 1
-    },
-    "by_volatility": {
-      "low": 1
-    },
-    "connected_modules": 2,
-    "distance_compression": {
-      "compressed_middle_rungs": true,
-      "deterministic_splits": [
-        "same module =\u003e D=2",
-        "code_structure sibling/parent-child =\u003e D=4; unrelated subtrees =\u003e D=7",
-        "ownership same/different owner =\u003e D=4/D=7 when the owner map is non-degenerate",
-        "different deploy_unit =\u003e D=9",
-        "declared external_systems target =\u003e D=10"
-      ],
-      "implemented_rungs": [
-        2,
-        4,
-        7,
-        9,
-        10
-      ],
-      "omitted_rung_reasons": [
-        {
-          "reason": "object/member-level distance is not available from module dependency edges",
-          "rung": 1
-        },
-        {
-          "reason": "current facts distinguish same module vs cross-module, but not object/package micro-distance",
-          "rung": 3
-        },
-        {
-          "reason": "package/library middle distance is not split without explicit stable package-boundary metadata",
-          "rung": 5
-        },
-        {
-          "reason": "intermediate ownership/library distance has no deterministic signal beyond owner and tree structure",
-          "rung": 6
-        },
-        {
-          "reason": "library-like seams remain compressed: undeclared libraries stay excluded, while declared external_systems score at D=10",
-          "rung": 8
-        }
-      ],
-      "omitted_rungs": [
-        1,
-        3,
-        5,
-        6,
-        8
-      ],
-      "rationale": "D=3/D=5/D=6/D=8 remain compressed: current graph/config facts distinguish same module, same owner, different owner, deploy unit, and declared vendor seam, but not finer package/library distance without guessing."
-    },
-    "mean_balance": 8,
-    "same_module": 0,
-    "scored": 1,
-    "tail_risk": {
-      "critical_edges": 0,
-      "distributed_monolith_edges": 0,
-      "high_or_worse_edges": 0,
-      "high_or_worse_share_pct": 0,
-      "lower_decile_balance": 8,
-      "worst_balance": 8
-    },
-    "total": 1,
-    "volatility_provenance": {
-      "cascade": 0,
-      "declared": 2,
-      "inherited": 0,
-      "undeclared": 0
-    }
+  "comparison": {
+    "config_hash": "0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6",
+    "model_hash": "124d0f767415a09b74bcd3206ab947f4bb01e3c7905db14a15eaed59d690ef78",
+    "reasons": [],
+    "rubric_version": "bc_score.v6",
+    "status": "not_requested"
   },
-  "config_hash": "e686c0a4ca1ab9671d3ddc6d48da64e60ff9d2fd49d1cf9573c7e4c15850d826",
-  "connascence": {
-    "abstained_edges": 0,
-    "by_kind": {
-      "algorithm": 1,
-      "name": 1
-    },
-    "by_source": {
-      "go/types": 2
-    },
-    "edges_with_evidence": 1,
-    "roadmap": [
+  "coverage": {
+    "measured": 4,
+    "partial": 3,
+    "tools": [
       {
-        "current_status": "deterministic_static",
-        "kind": "name",
-        "sources": [
-          "go/types",
-          "dependency-cruiser",
-          "grimp",
-          "scip"
-        ]
+        "status": "ok",
+        "tool": "go/packages"
       },
       {
-        "current_status": "deterministic_static",
-        "kind": "type",
-        "sources": [
-          "go/types",
-          "dependency-cruiser",
-          "scip"
-        ]
+        "status": "absent",
+        "tool": "dependency-cruiser"
       },
       {
-        "current_status": "deterministic_static",
-        "kind": "meaning",
-        "sources": [
-          "go/types",
-          "scip"
-        ]
+        "status": "absent",
+        "tool": "grimp"
       },
       {
-        "current_status": "deterministic_static",
-        "kind": "algorithm",
-        "sources": [
-          "go/types",
-          "scip"
-        ]
+        "status": "absent",
+        "tool": "cargo"
       },
       {
-        "current_status": "unmeasured_static",
-        "kind": "position",
-        "upgrade_trigger": "deterministic argument-order or tuple-position facts from an extractor"
+        "status": "ok",
+        "tool": "loc"
       },
       {
-        "current_status": "unmeasured_dynamic",
-        "kind": "execution",
-        "related_signals": [
-          "dynamic_imports",
-          "runtime_async_edges"
-        ],
-        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+        "status": "ok",
+        "tool": "deploy-unit"
       },
       {
-        "current_status": "unmeasured_dynamic",
-        "kind": "timing",
-        "related_signals": [
-          "dynamic_imports",
-          "runtime_async_edges"
-        ],
-        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+        "reason": "clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable",
+        "status": "disabled",
+        "tool": "jscpd"
       },
       {
-        "current_status": "unmeasured_dynamic",
-        "kind": "value",
-        "related_signals": [
-          "dynamic_imports",
-          "runtime_async_edges"
-        ],
-        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+        "reason": "opt-in: analyzers.scip.enabled",
+        "status": "disabled",
+        "tool": "scip"
       },
       {
-        "current_status": "unmeasured_dynamic",
-        "kind": "identity",
-        "related_signals": [
-          "dynamic_imports",
-          "runtime_async_edges"
-        ],
-        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+        "reason": "opt-in: analyzers.syntax.enabled",
+        "status": "disabled",
+        "tool": "ast-grep/syntax"
+      },
+      {
+        "status": "ok",
+        "tool": "ast-grep"
+      },
+      {
+        "status": "absent",
+        "tool": "cargo-modules"
       }
     ],
-    "total_evidence": 2,
-    "unmeasured": [
-      "position",
-      "execution",
-      "timing",
-      "value",
-      "identity"
-    ]
+    "unmeasured": 2
   },
-  "coupling_balance": {
-    "band": "serviceable",
-    "confidence": "medium",
-    "evidence": [
-      "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
-      "scored fraction: 100% (1 scored, 0 abstained, internal only)",
-      "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
-      "tail risk: worst balance 8/10, lower-decile balance 8/10, high-or-worse edges 0/1 (0%), critical 0, distributed-monolith 0",
-      "sample size below high-confidence floor: 1 scored internal cross-boundary edges (need ≥5)",
-      "connected module sample below high-confidence floor: 2 connected modules (need ≥3)",
-      "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
-    ],
-    "name": "coupling_balance",
-    "summary": "mean book balance 8.0/10 across 1 scored internal cross-boundary edges",
-    "value": 78
+  "decision": {
+    "active_blockers": 1,
+    "attention_dimensions": 2,
+    "hard_gates": "fail",
+    "unknown_dimensions": 5
   },
-  "distance_context": {
-    "distance_basis": {
-      "ownership": 1
+  "dimensions": {
+    "change_locality": {
+      "confidence": "unrated",
+      "coverage": {
+        "basis": "",
+        "observed": 0,
+        "total": 0
+      },
+      "findings": [],
+      "gate": "not_applicable",
+      "metrics": [],
+      "name": "change_locality",
+      "owner": "history/git",
+      "status": "unmeasured",
+      "unknown": [
+        {
+          "fact": "change locality",
+          "owner": "history/git",
+          "reason": "git history is unavailable: the tree is not a repository, or no module was declared to attribute commits to"
+        }
+      ]
     },
-    "interpretation": "ownership has multiple distinct owners, so owner distance can distinguish same-owner and different-owner module edges",
-    "owner_model": "multi_owner"
+    "complexity": {
+      "confidence": "medium",
+      "coverage": {
+        "basis": "production files in the source walk",
+        "observed": 2,
+        "total": 2
+      },
+      "findings": [],
+      "gate": "pass",
+      "metrics": [
+        {
+          "name": "production_files",
+          "provenance": [
+            "syntax/fileclass"
+          ],
+          "unit": "count",
+          "value": 2
+        },
+        {
+          "name": "production_loc",
+          "provenance": [
+            "syntax/fileclass"
+          ],
+          "unit": "count",
+          "value": 10
+        },
+        {
+          "name": "largest_production_file_loc",
+          "provenance": [
+            "syntax/fileclass"
+          ],
+          "unit": "count",
+          "value": 6
+        }
+      ],
+      "name": "complexity",
+      "owner": "syntax+evidence/acquisition",
+      "status": "partial",
+      "unknown": [
+        {
+          "fact": "cognitive complexity",
+          "owner": "syntax+evidence/acquisition",
+          "reason": "v1 ships no cognitive-complexity analyzer; only the size tail is measured"
+        }
+      ]
+    },
+    "coupling": {
+      "confidence": "high",
+      "coverage": {
+        "basis": "cross-boundary edges scored",
+        "observed": 1,
+        "total": 1
+      },
+      "findings": [
+        {
+          "id": "07af466df8bfd6e77ee485ac01c50a17",
+          "kind": "advisory",
+          "rule_id": "bc/imbalanced_coupling",
+          "severity": "low",
+          "status": "new"
+        }
+      ],
+      "gate": "warn",
+      "metrics": [
+        {
+          "denominator": {
+            "observed": 1,
+            "total": 1
+          },
+          "name": "scored_edges",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 1
+        },
+        {
+          "name": "abstained_edges",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "declared_external_edges",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "clone_only_seams",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "critical_band_edges",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "high_or_worse_edges",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "critical_high_distance_edges",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "seams",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 1
+        },
+        {
+          "denominator": {
+            "observed": 1,
+            "total": 1
+          },
+          "name": "distributed_monolith_seams",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "tight_seams",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 1
+        },
+        {
+          "name": "unrated_seams",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "unbalanced_edge",
+          "provenance": [
+            "assessment/metrics/unbalanced_edge.v2"
+          ],
+          "unit": "count",
+          "value": 0
+        }
+      ],
+      "name": "coupling",
+      "owner": "relationship/analysis",
+      "status": "measured",
+      "unknown": []
+    },
+    "drift": {
+      "confidence": "unrated",
+      "coverage": {
+        "basis": "",
+        "observed": 0,
+        "total": 0
+      },
+      "delta": {
+        "reasons": [
+          "no comparable architecture-state reference is stored"
+        ],
+        "status": "non_comparable"
+      },
+      "findings": [],
+      "gate": "not_applicable",
+      "metrics": [],
+      "name": "drift",
+      "owner": "assessment/decision",
+      "status": "unmeasured",
+      "unknown": [
+        {
+          "fact": "architecture drift",
+          "owner": "assessment/decision",
+          "reason": "no comparable architecture-state reference is stored"
+        }
+      ]
+    },
+    "intent": {
+      "confidence": "high",
+      "coverage": {
+        "basis": "declared rules evaluated",
+        "observed": 1,
+        "total": 1
+      },
+      "findings": [],
+      "gate": "pass",
+      "metrics": [
+        {
+          "name": "declared_modules",
+          "provenance": [
+            "policy"
+          ],
+          "unit": "count",
+          "value": 2
+        },
+        {
+          "name": "declared_layers",
+          "provenance": [
+            "policy"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "denominator": {
+            "observed": 1,
+            "total": 1
+          },
+          "name": "declared_rules",
+          "provenance": [
+            "policy"
+          ],
+          "unit": "count",
+          "value": 1
+        },
+        {
+          "name": "declared_waivers",
+          "provenance": [
+            "policy"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "waivers_used",
+          "provenance": [
+            "assessment/evaluation"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "expired_waivers",
+          "provenance": [
+            "assessment/evaluation"
+          ],
+          "unit": "count",
+          "value": 0
+        }
+      ],
+      "name": "intent",
+      "owner": "policy+assessment/evaluation",
+      "status": "measured",
+      "unknown": []
+    },
+    "modularity": {
+      "confidence": "low",
+      "coverage": {
+        "basis": "declared modules with a declared public surface",
+        "observed": 0,
+        "total": 2
+      },
+      "findings": [],
+      "gate": "pass",
+      "metrics": [
+        {
+          "name": "declared_modules",
+          "provenance": [
+            "policy"
+          ],
+          "unit": "count",
+          "value": 2
+        },
+        {
+          "denominator": {
+            "observed": 0,
+            "total": 2
+          },
+          "name": "public_surface_entries",
+          "provenance": [
+            "policy"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "local_coupling_modules",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "blast_radius",
+          "provenance": [
+            "assessment/metrics/blast_radius.v1"
+          ],
+          "unit": "count",
+          "value": 1
+        }
+      ],
+      "name": "modularity",
+      "owner": "assessment/metrics",
+      "status": "measured",
+      "unknown": [
+        {
+          "fact": "public surface",
+          "owner": "assessment/metrics",
+          "reason": "no declared module states a public surface, so every symbol reads as equally public"
+        }
+      ]
+    },
+    "operations": {
+      "confidence": "medium",
+      "coverage": {
+        "basis": "applicable analyzers reporting coverage",
+        "observed": 4,
+        "total": 4
+      },
+      "findings": [],
+      "gate": "pass",
+      "metrics": [
+        {
+          "denominator": {
+            "observed": 2,
+            "total": 2
+          },
+          "name": "modules_with_owner",
+          "provenance": [
+            "policy"
+          ],
+          "unit": "count",
+          "value": 2
+        },
+        {
+          "name": "distinct_owners",
+          "provenance": [
+            "policy"
+          ],
+          "unit": "count",
+          "value": 2
+        },
+        {
+          "name": "deploy_units",
+          "provenance": [
+            "policy"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "declared_external_systems",
+          "provenance": [
+            "policy"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "coverage_gaps",
+          "provenance": [
+            "evidence/acquisition"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "analyzers_not_applicable",
+          "provenance": [
+            "evidence/acquisition"
+          ],
+          "unit": "count",
+          "value": 7
+        },
+        {
+          "name": "coverage",
+          "provenance": [
+            "assessment/metrics/coverage.v1"
+          ],
+          "unit": "ratio",
+          "value": 1
+        }
+      ],
+      "name": "operations",
+      "owner": "policy+evidence/acquisition",
+      "status": "partial",
+      "unknown": [
+        {
+          "fact": "observed runtime topology",
+          "owner": "policy+evidence/acquisition",
+          "reason": "v1 reports declared owners and deploy units only; nothing observes what actually runs"
+        },
+        {
+          "fact": "supply-chain inventory",
+          "owner": "policy+evidence/acquisition",
+          "reason": "SBOM and vulnerability facts have no collector in v1"
+        }
+      ]
+    },
+    "structure": {
+      "confidence": "high",
+      "coverage": {
+        "basis": "discovered edges resolved to a declared module",
+        "observed": 1,
+        "total": 1
+      },
+      "findings": [
+        {
+          "id": "ba3803eca947bf3c1b7efa8f37854d5e",
+          "kind": "gate",
+          "rule_id": "no_direct_b_dependency",
+          "severity": "medium",
+          "status": "new"
+        }
+      ],
+      "gate": "fail",
+      "metrics": [
+        {
+          "name": "internal_edges",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 1
+        },
+        {
+          "name": "external_edges",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "same_module_edges",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "connected_modules",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 2
+        },
+        {
+          "name": "cycle",
+          "provenance": [
+            "assessment/metrics/cycle.v1"
+          ],
+          "unit": "count",
+          "value": 0
+        }
+      ],
+      "name": "structure",
+      "owner": "relationship/facts",
+      "status": "measured",
+      "unknown": []
+    },
+    "testability": {
+      "confidence": "medium",
+      "coverage": {
+        "basis": "classified source files",
+        "observed": 2,
+        "total": 2
+      },
+      "findings": [],
+      "gate": "pass",
+      "metrics": [
+        {
+          "name": "test_files",
+          "provenance": [
+            "syntax/fileclass"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "production_files",
+          "provenance": [
+            "syntax/fileclass"
+          ],
+          "unit": "count",
+          "value": 2
+        },
+        {
+          "denominator": {
+            "observed": 0,
+            "total": 2
+          },
+          "name": "test_to_production_files",
+          "provenance": [
+            "syntax/fileclass"
+          ],
+          "unit": "ratio",
+          "value": 0
+        }
+      ],
+      "name": "testability",
+      "owner": "syntax/fileclass",
+      "status": "partial",
+      "unknown": [
+        {
+          "fact": "executed test coverage",
+          "owner": "syntax/fileclass",
+          "reason": "v1 does not run a target repository's test suite; supplied coverage is not yet an input"
+        },
+        {
+          "fact": "boundary test coverage",
+          "owner": "syntax/fileclass",
+          "reason": "which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect"
+        }
+      ]
+    }
   },
-  "dynamic_imports": [],
-  "file_facts": [],
   "findings": [
     {
       "confidence": "",
@@ -297,193 +711,53 @@
       "why": "balanced coupling: functional integration strength × cross_module_different_owner distance × low volatility → low severity (unbalanced coupling → elevated maintenance effort)"
     }
   ],
-  "head": "",
-  "metrics": [
+  "measurement": {
+    "history_depth": 0,
+    "history_window": "unavailable",
+    "source_ref": "worktree",
+    "tool_versions": {}
+  },
+  "schema_version": "archfit.architecture-state.v1",
+  "seams": [
     {
-      "band": "n/a",
-      "confidence": "low",
-      "definition": "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
-      "direction": "higher_is_better",
-      "display": "n/a",
-      "metric_version": "encapsulation.v1",
-      "mode": "ratio",
-      "name": "encapsulation",
-      "value": 0
-    },
-    {
-      "band": "strong",
+      "abstained_edges": 0,
       "confidence": "high",
-      "definition": "intrusive edges with cross-module ownership and high volatility",
-      "direction": "higher_is_worse",
-      "display": "0 new high-risk unbalanced edges",
-      "metric_version": "unbalanced_edge.v2",
-      "mode": "count",
-      "name": "unbalanced_edge",
-      "value": 0
-    },
-    {
-      "band": "strong",
-      "confidence": "high",
-      "definition": "number of import cycles",
-      "direction": "higher_is_worse",
-      "display": "0 import cycles",
-      "metric_version": "cycle.v1",
-      "mode": "count",
-      "name": "cycle",
-      "value": 0
-    },
-    {
-      "band": "strong",
-      "confidence": "high",
-      "definition": "extracted_files / applicable_files",
-      "direction": "higher_is_better",
-      "display": "100% coverage",
-      "metric_version": "coverage.v1",
-      "mode": "ratio",
-      "name": "coverage",
-      "value": 1
-    },
-    {
-      "band": "info",
-      "confidence": "low",
-      "definition": "modules whose transitive reverse-dependencies exceed 30% of the codebase (change-impact hubs)",
-      "direction": "higher_is_worse",
-      "display": "1 of 2 modules are change-impact hubs: pkg/b (100%, 1 deps)",
-      "metric_version": "blast_radius.v1",
-      "mode": "count",
-      "name": "blast_radius",
-      "value": 1
+      "critical_edges": 0,
+      "critical_share_pct": 0,
+      "distance": "cross_module_different_owner",
+      "edges": 1,
+      "from_module": "a",
+      "high_or_worse_edges": 0,
+      "high_or_worse_share_pct": 0,
+      "hypothesis": "leave_alone",
+      "id": "fa39601122f1503d51aa9a4075a6dfb722880a87aef6312ec824937670724349",
+      "quadrant": "tight",
+      "raw_distance": {
+        "basis": "ownership",
+        "boundary_crossings": 2,
+        "from_owner": "team-a",
+        "level": "cross_module_different_owner",
+        "same_deploy_unit": false,
+        "same_owner": false,
+        "shared_ancestor": 0,
+        "to_owner": "team-b"
+      },
+      "scored_edges": 1,
+      "scores": {
+        "max": 8,
+        "mean": 8,
+        "median": 8,
+        "min": 8,
+        "n": 1,
+        "p10": null,
+        "p90": null
+      },
+      "severity": "low",
+      "strength": "functional",
+      "to_module": "b",
+      "volatility": "low",
+      "volatility_provenance": "declared"
     }
   ],
-  "owner_source": "config",
-  "primary_extractor_tools": [
-    "go/packages",
-    "dependency-cruiser",
-    "grimp",
-    "cargo"
-  ],
-  "schema_version": "archfit.diagnostic.v2",
-  "score": {
-    "dimensions": [
-      {
-        "band": "serviceable",
-        "confidence": "medium",
-        "evidence": [
-          "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
-          "scored fraction: 100% (1 scored, 0 abstained, internal only)",
-          "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
-          "tail risk: worst balance 8/10, lower-decile balance 8/10, high-or-worse edges 0/1 (0%), critical 0, distributed-monolith 0",
-          "sample size below high-confidence floor: 1 scored internal cross-boundary edges (need ≥5)",
-          "connected module sample below high-confidence floor: 2 connected modules (need ≥3)",
-          "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
-        ],
-        "name": "coupling_balance",
-        "summary": "mean book balance 8.0/10 across 1 scored internal cross-boundary edges",
-        "value": 78
-      }
-    ],
-    "overall": 78,
-    "overall_band": "serviceable",
-    "rubric_version": 1
-  },
-  "score_version": "bc_score.v6",
-  "summary": {
-    "gate_findings": 1,
-    "waivers_used": 0,
-    "warnings": 1
-  },
-  "tool_coverage": [
-    {
-      "files_applicable": 2,
-      "files_seen": 2,
-      "status": "ok",
-      "tool": "go/packages",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
-      "files_applicable": 0,
-      "files_seen": 0,
-      "status": "absent",
-      "tool": "dependency-cruiser",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
-      "files_applicable": 0,
-      "files_seen": 0,
-      "status": "absent",
-      "tool": "grimp",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
-      "files_applicable": 0,
-      "files_seen": 0,
-      "status": "absent",
-      "tool": "cargo",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
-      "files_applicable": 2,
-      "files_seen": 2,
-      "status": "ok",
-      "tool": "loc",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
-      "files_applicable": 0,
-      "files_seen": 0,
-      "status": "ok",
-      "tool": "deploy-unit",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
-      "files_applicable": 0,
-      "files_seen": 0,
-      "reason": "clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable",
-      "status": "disabled",
-      "tool": "jscpd",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
-      "files_applicable": 0,
-      "files_seen": 0,
-      "reason": "opt-in: analyzers.scip.enabled",
-      "status": "disabled",
-      "tool": "scip",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
-      "files_applicable": 0,
-      "files_seen": 0,
-      "reason": "opt-in: analyzers.syntax.enabled",
-      "status": "disabled",
-      "tool": "ast-grep/syntax",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
-      "files_applicable": 0,
-      "files_seen": 0,
-      "status": "ok",
-      "tool": "ast-grep",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
-      "files_applicable": 0,
-      "files_seen": 0,
-      "status": "absent",
-      "tool": "cargo-modules",
-      "unresolved": 0,
-      "version": ""
-    }
-  ],
-  "verdict": "fail"
+  "verdict": "blocked"
 }

@@ -7,11 +7,12 @@ import (
 	"slices"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // pyCacheRunner fakes uv: --version calls return a pinned version, grimp
@@ -60,7 +61,7 @@ func TestFactCache_HitAndPyFileInvalidation(t *testing.T) {
 	root := writePyFixture(t)
 	calls := 0
 	runner := pyCacheRunner(`{"edges":[{"importer":"pkg","imported":"pkg.a","line":1,"line_contents":"import pkg.a"}],"unresolved":0}`, &calls)
-	ex := py.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
+	ex := py.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
 	s := scope.Scope{Root: root}
@@ -101,7 +102,7 @@ func TestFactCache_VenvMetadataInvalidates(t *testing.T) {
 	}
 	calls := 0
 	runner := pyCacheRunner(`{"edges":[{"importer":"pkg","imported":"dep","line":1,"line_contents":"import dep"}],"unresolved":0}`, &calls)
-	ex := py.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
+	ex := py.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
 	s := scope.Scope{Root: root}
@@ -135,7 +136,7 @@ func TestFactCache_ExcludedFileEditInvalidates(t *testing.T) {
 	root := writePyFixture(t)
 	calls := 0
 	runner := pyCacheRunner(`{"edges":[],"unresolved":0}`, &calls)
-	ex := py.New(runner, view.ExtractConfig{Mode: view.ModeAuto, Exclusions: []string{"pkg/a.py"}})
+	ex := py.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Exclusions: []string{"pkg/a.py"}})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
 	s := scope.Scope{Root: root}
@@ -166,7 +167,7 @@ func TestFactCache_UnresolvedNotCached(t *testing.T) {
 	root := writePyFixture(t)
 	calls := 0
 	runner := pyCacheRunner(`{"edges":[],"unresolved":3}`, &calls)
-	ex := py.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
+	ex := py.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
 	s := scope.Scope{Root: root}

@@ -10,9 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/decision"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/assessment/decision"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // TestConfigCompare covers `archfit config compare`: the identity result, a
@@ -46,46 +45,46 @@ func TestConfigCompare(t *testing.T) {
 // target, so neither the four edge counters nor the rounded score moves.
 func testCompareClassificationMix(t *testing.T) {
 	t.Parallel()
-	summary := func(mutate func(*diagnostic.ClassifiedEdgeSummary)) *diagnostic.ClassifiedEdgeSummary {
-		s := &diagnostic.ClassifiedEdgeSummary{
+	summary := func(mutate func(*report.ClassifiedEdgeSummary)) *report.ClassifiedEdgeSummary {
+		s := &report.ClassifiedEdgeSummary{
 			Total: 1, Scored: 1,
 			ByStrength:      map[string]int{enrichFunctional: 1},
 			ByDistance:      map[string]int{"cross_module_different_owner": 1},
 			ByDistanceBasis: map[string]int{"ownership": 1},
 			ByVolatility:    map[string]int{volatilityLow: 1},
-			VolatilityProvenance: &diagnostic.VolatilityProvenance{
+			VolatilityProvenance: &report.VolatilityProvenance{
 				Declared: 2, Undeclared: 0,
 			},
 		}
 		mutate(s)
 		return s
 	}
-	unchanged := func(*diagnostic.ClassifiedEdgeSummary) {}
+	unchanged := func(*report.ClassifiedEdgeSummary) {}
 
 	tests := []struct {
 		name       string
-		mutate     func(*diagnostic.ClassifiedEdgeSummary)
+		mutate     func(*report.ClassifiedEdgeSummary)
 		wantSubstr string
 	}{
 		{name: "identical mix reports nothing", mutate: unchanged},
 		{
 			name: "owner edit moves the distance rung",
-			mutate: func(s *diagnostic.ClassifiedEdgeSummary) {
+			mutate: func(s *report.ClassifiedEdgeSummary) {
 				s.ByDistance = map[string]int{"cross_module_same_owner": 1}
 			},
 			wantSubstr: "distance mix: cross_module_different_owner 1 → 0, cross_module_same_owner 0 → 1",
 		},
 		{
 			name: "volatility provenance moves",
-			mutate: func(s *diagnostic.ClassifiedEdgeSummary) {
-				s.VolatilityProvenance = &diagnostic.VolatilityProvenance{Declared: 1, Undeclared: 1}
+			mutate: func(s *report.ClassifiedEdgeSummary) {
+				s.VolatilityProvenance = &report.VolatilityProvenance{Declared: 1, Undeclared: 1}
 			},
 			wantSubstr: "volatility provenance (modules): declared 2 → 1, undeclared 0 → 1",
 		},
 		{
 			name: "strength mix moves",
-			mutate: func(s *diagnostic.ClassifiedEdgeSummary) {
-				s.ByStrength = map[string]int{"contract": 1}
+			mutate: func(s *report.ClassifiedEdgeSummary) {
+				s.ByStrength = map[string]int{llmStrengthContract: 1}
 			},
 			wantSubstr: "strength mix: contract 0 → 1, functional 1 → 0",
 		},
@@ -144,7 +143,7 @@ const cmdCompare = "compare"
 // leaves the declared module set entirely: it becomes an external edge, excluded
 // from coupling_balance. Measuring less of the same tree is what the
 // measurement-loss warnings exist to expose.
-const narrowModuleCfg = `version: 1
+const narrowModuleCfg = `version: 2
 modules:
   a:
     paths: ["pkg/a/**"]
@@ -385,9 +384,11 @@ func testCompareBaselineIsolation(t *testing.T) {
 	if code, stdout, stderr := runArchfit(t, cmdBaseline, "-c", cfgPath); code != 0 {
 		t.Fatalf("baseline: exit = %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 	}
-	// The baseline is load-bearing: it silences the violation for the gate.
-	if code, _, stderr := runArchfit(t, cmdCheck, "-c", cfgPath); code != 0 {
-		t.Fatalf("baseline did not accept the finding: check exit = %d\nstderr:\n%s", code, stderr)
+	// The baseline is load-bearing: it silences the violation for the gate, so
+	// the run stops blocking. It does not become healthy — v1 reports several
+	// dimensions partial by contract — so the assertion is "no longer blocked".
+	if code, _, stderr := runArchfit(t, cmdCheck, "-c", cfgPath); code == 1 {
+		t.Fatalf("baseline did not accept the finding: check still blocked\nstderr:\n%s", stderr)
 	}
 
 	afterCode, after, afterErr := runArchfit(t, cmdConfig, cmdCompare, cfgPath, flagJSON, "-c", cfgPath)
@@ -399,19 +400,21 @@ func testCompareBaselineIsolation(t *testing.T) {
 	}
 }
 
-// testCompareAdvisoryPromotion pins the finding rule: the coupling gate promotes
-// Balanced-Coupling advisories to gate kind, but the ID does not move, so the
-// same seam must land in both_ids rather than split across the one-sided buckets.
+// testCompareAdvisoryPromotion pins the finding rule: a gate knob changes a
+// finding's KIND without changing its ID, so the same violation must land in
+// both_ids rather than split across the one-sided buckets. The current config
+// blocks on the rule; the candidate only warns.
 func testCompareAdvisoryPromotion(t *testing.T) {
 	t.Parallel()
-	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
-	candidatePath := writeCandidateCfg(t, coupledModulesCfg)
+	cfgPath := writeCoupledRepo(t, coupledModulesCfg+forbiddenEdgeRule)
+	candidatePath := writeCandidateCfg(t, coupledModulesCfg+
+		strings.Replace(forbiddenEdgeRule, "gate: fail", "gate: warn", 1))
 
 	// The premise is load-bearing and invisible in the compare document, which
-	// carries no finding kinds: if the gate stopped tripping, this test would
+	// carries no finding kinds: if the rule stopped blocking, this test would
 	// silently degrade into a duplicate of testCompareCandidateOutsideTree.
 	if code, _, stderr := runArchfit(t, cmdCheck, "-c", cfgPath); code != 1 {
-		t.Fatalf("fixture regression: the coupling gate must trip and promote the advisory: check exit = %d\nstderr:\n%s", code, stderr)
+		t.Fatalf("fixture regression: the current config must block on the rule: check exit = %d\nstderr:\n%s", code, stderr)
 	}
 
 	doc := runCompareJSON(t, cfgPath, candidatePath)
@@ -481,7 +484,7 @@ func testCompareProtectedFiles(t *testing.T) {
 		t.Fatalf("baseline: exit = %d\nstderr:\n%s", code, stderr)
 	}
 	labelsPath := filepath.Join(repoDir, defaultLabelsPath)
-	if err := os.WriteFile(labelsPath, []byte("version: 1\nlabels: []\n"), 0o600); err != nil {
+	if err := os.WriteFile(labelsPath, []byte("version: 2\nlabels: []\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -578,7 +581,7 @@ func testCompareExitCodes(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg)
 	missing := filepath.Join(t.TempDir(), "absent.archfit.yaml")
-	invalid := writeCandidateCfg(t, "version: 1\nrules:\n  - id: bogus\n    type: not_a_rule_type\n")
+	invalid := writeCandidateCfg(t, "version: 2\nrules:\n  - id: bogus\n    type: not_a_rule_type\n")
 
 	tests := []struct {
 		name      string
@@ -615,16 +618,16 @@ func testCompareExitCodes(t *testing.T) {
 // a difference, unmeasured on exactly one side is.
 func testCompareScoreLine(t *testing.T) {
 	t.Parallel()
-	measured := func(v int) score.Scorecard {
-		return score.Scorecard{Overall: v, OverallBand: score.BandMixed}
+	measured := func(v int) report.Scorecard {
+		return report.Scorecard{Overall: v, OverallBand: report.ScoreBandMixed}
 	}
-	unmeasured := score.Scorecard{OverallBand: score.BandNA}
+	unmeasured := report.Scorecard{OverallBand: report.ScoreBandNA}
 	delta := func(v int) *int { return &v }
 
 	tests := []struct {
 		name        string
-		current     score.Scorecard
-		candidate   score.Scorecard
+		current     report.Scorecard
+		candidate   report.Scorecard
 		delta       *int
 		wantChanged bool
 		wantSubstr  string

@@ -1,0 +1,207 @@
+package evaluation
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"maps"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship"
+)
+
+const advisoryKind = finding.KindAdvisory
+const bcRollupCap = 8
+
+// ruleIDStaleLabel is the stale pinned-label advisory. Assessment emits it
+// itself, so it has no declared rule type and is routed by ID.
+const ruleIDStaleLabel = "labels/stale"
+
+func candidateFindings(candidates []relationship.AdvisoryCandidate) []finding.Finding {
+	out := make([]finding.Finding, 0, len(candidates))
+	for _, c := range candidates {
+		matched := make(map[string]string, len(c.MatchedBy))
+		maps.Copy(matched, c.MatchedBy)
+		out = append(out, finding.Finding{ID: c.ID, Kind: advisoryKind, RuleID: c.RuleID, Status: finding.StatusNew, Severity: finding.Severity(c.Severity), Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: c.FromModule, Path: c.From}, To: finding.Endpoint{Module: c.ToModule, Path: c.To}, Kind: c.EdgeKind}, Locations: c.Locations, Why: c.Why, MatchedBy: matched})
+	}
+	return out
+}
+
+func staleLabelFindings(keys []string) []finding.Finding {
+	out := make([]finding.Finding, 0, len(keys))
+	for _, key := range keys {
+		from, to, ok := strings.Cut(key, "\x00")
+		if !ok {
+			continue
+		}
+		out = append(out, finding.Finding{ID: staleLabelID(from, to), Kind: advisoryKind, RuleID: ruleIDStaleLabel, Status: finding.StatusNew, Severity: finding.SeverityLow, Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: from}, To: finding.Endpoint{Module: to}}, Why: "pinned label evidence is stale: the " + from + " -> " + to + " dependency surface changed since approval; label ignored — re-run `archfit enrich` and re-review"})
+	}
+	return out
+}
+
+// resolveEvidence stamps configured module labels on every finding endpoint and
+// joins coupling severity where the finding names a real classified edge.
+//
+// The two lookups are deliberately independent. Module resolution is a plain
+// path -> module answer that must hold for findings that are NOT edges: the
+// cycle rule reports two lexicographically sorted SCC members that need not be
+// directly connected, and public_api_* findings carry a module name as the path
+// with an empty edge kind. Gating the label on an edge match left those
+// findings with empty modules, which also drops the "public surface of module"
+// constraint from their repair tasks.
+func resolveEvidence(s relationship.Set, mm policy.ModuleMap, findings []finding.Finding) []finding.Finding {
+	modules := moduleByPath(s)
+	resolve := func(path string) string {
+		if mod, ok := modules[path]; ok {
+			return mod
+		}
+		mod, _ := mm.ModuleFor(path)
+		return mod
+	}
+	// Index the severity join once. A per-finding scan is O(findings × edges),
+	// and a broad forbidden_dependency or an unbaselined
+	// new_cross_module_dependency makes findings proportional to edges. First
+	// write wins, matching Set.FindByFindingEdge for duplicate stripped pairs.
+	byEdge := make(map[[3]string]relationship.Edge, len(s.Edges))
+	for _, e := range s.Edges {
+		k := [3]string{e.FromPath, e.ToPath, e.Kind}
+		if _, dup := byEdge[k]; !dup {
+			byEdge[k] = e
+		}
+	}
+	out := make([]finding.Finding, 0, len(findings))
+	for _, f := range findings {
+		f.Edge.From.Module = resolve(f.Edge.From.Path)
+		f.Edge.To.Module = resolve(f.Edge.To.Path)
+		if edge, ok := byEdge[[3]string{f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind}]; ok {
+			f.Severity = severityFor(edge.Strength, edge.Distance)
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// moduleByPath indexes the classified relationship set by endpoint path. Its
+// edges carry the AUGMENTED module map's answer (synthetic Rust/Go-workspace
+// members included), which the configured policy map alone cannot reproduce —
+// so it is consulted first and the configured map only backstops paths no edge
+// touches.
+func moduleByPath(s relationship.Set) map[string]string {
+	out := make(map[string]string, len(s.Edges)*2)
+	for _, e := range s.Edges {
+		if e.FromModule != "" {
+			out[e.FromPath] = e.FromModule
+		}
+		if e.ToModule != "" {
+			out[e.ToPath] = e.ToModule
+		}
+	}
+	return out
+}
+
+func groupBCAdvisories(in []finding.Finding) []finding.Finding {
+	type key struct {
+		from, to, strength, distance, volatility string
+		status                                   finding.Status
+	}
+	groups := map[key][]finding.Finding{}
+	keys := make([]key, 0)
+	passthrough := make([]finding.Finding, 0)
+	for _, f := range in {
+		if f.RuleID != finding.RuleIDBCImbalanced {
+			passthrough = append(passthrough, f)
+			continue
+		}
+		k := key{f.Edge.From.Module, f.Edge.To.Module, f.MatchedBy["strength"], f.MatchedBy["distance"], f.MatchedBy["volatility"], f.Status}
+		if _, ok := groups[k]; !ok {
+			keys = append(keys, k)
+		}
+		groups[k] = append(groups[k], f)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := keys[i], keys[j]
+		if a.from != b.from {
+			return a.from < b.from
+		}
+		if a.to != b.to {
+			return a.to < b.to
+		}
+		if a.strength != b.strength {
+			return a.strength < b.strength
+		}
+		if a.distance != b.distance {
+			return a.distance < b.distance
+		}
+		if a.volatility != b.volatility {
+			return a.volatility < b.volatility
+		}
+		return a.status < b.status
+	})
+	out := make([]finding.Finding, 0, len(keys)+len(passthrough))
+	for _, k := range keys {
+		out = append(out, rollup(groups[k]))
+	}
+	return append(out, passthrough...)
+}
+func rollup(members []finding.Finding) finding.Finding {
+	sort.Slice(members, func(i, j int) bool { return members[i].ID < members[j].ID })
+	rep := members[0]
+	matched := make(map[string]string, len(rep.MatchedBy)+2)
+	maps.Copy(matched, rep.MatchedBy)
+	matched["group_count"] = strconv.Itoa(len(members))
+	ids := make([]string, 0, bcRollupCap)
+	for i, m := range members {
+		if i == bcRollupCap {
+			break
+		}
+		ids = append(ids, m.ID)
+	}
+	matched["group_members"] = strings.Join(ids, ",")
+	rep.MatchedBy = matched
+	seen := map[relationship.Location]struct{}{}
+	locs := []relationship.Location{}
+	for _, m := range members {
+		for _, l := range m.Locations {
+			if _, ok := seen[l]; !ok {
+				seen[l] = struct{}{}
+				locs = append(locs, l)
+			}
+		}
+	}
+	sort.Slice(locs, func(i, j int) bool {
+		if locs[i].File != locs[j].File {
+			return locs[i].File < locs[j].File
+		}
+		return locs[i].Line < locs[j].Line
+	})
+	rep.Locations = locs
+	rep.Edge.From.Path, rep.Edge.To.Path = groupEdgePaths(members, locs)
+	return rep
+}
+
+// groupEdgePaths returns honest from/to paths for a rolled-up finding: the pair
+// belonging to whichever member owns the FIRST merged location, so the reported
+// paths and locations[0] name the same member edge. members arrive sorted by ID
+// (rollup sorts), so members[0] is the representative used when no location
+// determines an owner — its pair is still a real member edge, and wiping it
+// would strip the finding's only path evidence.
+func groupEdgePaths(members []finding.Finding, locs []relationship.Location) (fromPath, toPath string) {
+	if len(locs) > 0 {
+		for _, m := range members {
+			if slices.Contains(m.Locations, locs[0]) {
+				return m.Edge.From.Path, m.Edge.To.Path
+			}
+		}
+	}
+	return members[0].Edge.From.Path, members[0].Edge.To.Path
+}
+
+func staleLabelID(from, to string) string { return fingerprint("labels/stale", from+"\x00"+to) }
+func fingerprint(rule, subject string) string {
+	h := sha256.Sum256([]byte(rule + "\x00" + subject))
+	return hex.EncodeToString(h[:16])
+}

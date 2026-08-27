@@ -30,10 +30,18 @@ from stale docs or memory.
 - `archfit config update` — sync `.archfit.yaml` with current structure.
   `--ai-classify` adds review-only semantic proposals for unclassified modules;
   even `--ai-classify --apply` applies structural drift only.
+- `archfit config update --migration-only` — migrate a config to the current
+  schema version and nothing else. `--json` previews, `--apply` writes; not
+  combinable with `--ai-classify` or `--refresh`. **Run this first on any config
+  written before schema v2** — `version: 1` and the retired
+  `coupling.gate.min_band` / `max_drop` keys now exit `3`.
+- `archfit config compare <candidate>` — measure one source tree under two
+  configurations and report the difference. Report-only: exit `0` on success,
+  `3` on an input or runtime error; findings never move the exit code.
 - `archfit analyze` — local/report command. Always report-only on success; use it
   for text/JSON/Markdown/SARIF/scorecard output and `--ai-summary` narratives.
-- `archfit check` — CI/agent-loop gate. Exits non-zero on active policy failures,
-  warnings, or config/tool errors.
+- `archfit check` — CI/agent-loop gate. Its exit code is the architecture-state
+  verdict (see Exit codes below): gate on `1`, not on any non-zero.
 - `archfit baseline` — record accepted current findings as the baseline.
 - `archfit explain <id>` — explain one finding by fingerprint prefix
   (`--ai-summary` appends an off-gate narrative; see `llm-modes.md`).
@@ -125,7 +133,8 @@ A missing analyzer is **not** scored as healthy: dependent metrics drop to `n/a`
 (no evidence — never `strong`) and a coverage gap lists the tool, the metrics its
 absence leaves unmeasured, and an install hint. Gaps surface everywhere:
 `## Coverage gaps` (md), `## Required tools missing` (scorecard),
-`coverage_gaps[]` + `config_warnings[]` (json), and stderr.
+`coverage_gaps[]` + `config_warnings[]` (`--format legacy-json` only; the
+primary JSON carries `coverage.tools[]`), and stderr.
 
 Default is warn-loud. `archfit check --require-tools` or
 `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail` makes missing required
@@ -134,13 +143,21 @@ install the tool to close the gap, not to disable the gate.
 
 ## Output formats
 
-- `text` — human decision report (decision band: HEALTHY / ACCEPTABLE WITH WATCH
-  ITEMS / NEEDS ATTENTION / FAIL).
-- `json` — machine-actionable; carries `agent_tasks[]`, metrics, coverage gaps,
-  config warnings, and structural facts (see `agent-loop.md`).
-- `markdown` / `md` — human-readable findings plus coverage/config sections.
-- `sarif` — SARIF 2.1.0 for code-scanning annotations.
-- `scorecard` — the banded deterministic score summary.
+- `text` — human architecture-state report (verdict: HEALTHY / NEEDS ATTENTION /
+  BLOCKED), the nine dimension envelopes, the coverage split, and the seam ledger.
+- `json` — `archfit.architecture-state.v1` at the document root: `verdict`,
+  `decision`, `comparison`, `measurement`, `dimensions`, `coverage`, `findings`,
+  `agent_tasks`, `seams`. **No repository score.** `coverage_gaps[]` and
+  `config_warnings[]` are NOT in this contract (see `legacy-json`).
+- `legacy-json` — the pre-cutover `archfit.diagnostic.v2` envelope, kept for one
+  release and selected explicitly. This is where `tool_coverage` detail,
+  `owner_source`, `config_warnings`, `git_finding_delta`, and `advisory_tasks`
+  still live.
+- `markdown` / `md` — the same state, plus the detailed findings audit.
+- `sarif` — SARIF 2.1.0 for code-scanning annotations; the state rides in
+  `runs[0].properties`.
+- `scorecard` — the nine-dimensional state summary. It is not an architecture
+  score.
 
 ## Finding status lifecycle
 
@@ -157,12 +174,16 @@ usage/config/runtime errors.
 
 `archfit check` uses CI/agent-loop exit codes:
 
-- `0` — pass.
-- `1` — policy failure: active gate finding, or missing required tool under
-  `--require-tools` / `analyzers.<x>.gate: fail`.
-- `2` — warning.
-- `3` — usage, config, or runtime error (includes malformed labels or missing
-  required AI config for off-gate AI commands).
+The exit code IS the architecture-state verdict; nothing else participates.
+
+- `0` — `healthy`.
+- `1` — `blocked`: active gate finding, or missing required tool under
+  `--require-tools` / `analyzers.<x>.gate: fail`. **Gate on this one.**
+- `2` — `needs_attention`. **This is the normal result on a healthy repo in v1**:
+  complexity, testability, and operations report `partial` by contract, and any
+  partial dimension flags the verdict. Do not treat it as a failure.
+- `3` — usage, config, or runtime error (includes a v1 config under schema v2,
+  malformed labels, or missing required AI config for off-gate AI commands).
 
 Exit `1` (policy/finding) is deliberately distinct from exit `3` (error). A
 missing required tool you opted to gate on is a gate result, not a crash.

@@ -1,4 +1,4 @@
-version: 1
+version: 2
 # Python module globs MUST be in DOTTED module form (grimp emits dotted node IDs
 # like "fixture_py.b._internal.impl"), NOT file paths. paths:/public:/internal:
 # and rule from:/to: all match against the dotted node ID. See

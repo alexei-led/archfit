@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	reportmodel "github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -93,8 +93,8 @@ func TestStrengths_AbsentReason(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cov.Status != diagnostic.StatusAbsent {
-				t.Errorf("status = %q, want %q", cov.Status, diagnostic.StatusAbsent)
+			if cov.Status != reportmodel.StatusAbsent {
+				t.Errorf("status = %q, want %q", cov.Status, reportmodel.StatusAbsent)
 			}
 			if cov.Reason != tc.wantReason {
 				t.Errorf("reason = %q, want %q", cov.Reason, tc.wantReason)
@@ -341,8 +341,8 @@ func TestStrengths_Timeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusTimedOut {
-		t.Errorf("status = %q, want %q", cov.Status, diagnostic.StatusTimedOut)
+	if cov.Status != reportmodel.StatusTimedOut {
+		t.Errorf("status = %q, want %q", cov.Status, reportmodel.StatusTimedOut)
 	}
 	if cov.Reason != reasonTimedOut {
 		t.Errorf("reason = %q, want %q", cov.Reason, reasonTimedOut)
@@ -489,8 +489,8 @@ func TestStrengths_PythonCannedFixture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Strengths: %v", err)
 	}
-	if cov.Status != diagnostic.StatusOK {
-		t.Errorf("cov.Status = %q, want %q", cov.Status, diagnostic.StatusOK)
+	if cov.Status != reportmodel.StatusOK {
+		t.Errorf("cov.Status = %q, want %q", cov.Status, reportmodel.StatusOK)
 	}
 
 	tests := []struct {
@@ -531,8 +531,8 @@ func TestStrengths_PythonAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Strengths: unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusAbsent {
-		t.Errorf("cov.Status = %q, want %q", cov.Status, diagnostic.StatusAbsent)
+	if cov.Status != reportmodel.StatusAbsent {
+		t.Errorf("cov.Status = %q, want %q", cov.Status, reportmodel.StatusAbsent)
 	}
 	if len(m) != 0 {
 		t.Errorf("strength map non-empty when SCIP absent: %v", m)
@@ -591,8 +591,8 @@ func TestStrengths_EmptyIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Strengths: unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusPartial {
-		t.Errorf("cov.Status = %q, want %q (empty index must be partial, not ok)", cov.Status, diagnostic.StatusPartial)
+	if cov.Status != reportmodel.StatusPartial {
+		t.Errorf("cov.Status = %q, want %q (empty index must be partial, not ok)", cov.Status, reportmodel.StatusPartial)
 	}
 	if !strings.Contains(cov.Reason, "empty index") {
 		t.Errorf("cov.Reason = %q, want it to mention \"empty index\"", cov.Reason)
@@ -635,7 +635,7 @@ func TestCargoWorkspaceMembers_TimeoutMapsToStatusTimedOut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != diagnostic.StatusTimedOut {
-		t.Errorf("status = %q, want %q (cargo timeout must not be absorbed as absent)", cov.Status, diagnostic.StatusTimedOut)
+	if cov.Status != reportmodel.StatusTimedOut {
+		t.Errorf("status = %q, want %q (cargo timeout must not be absorbed as absent)", cov.Status, reportmodel.StatusTimedOut)
 	}
 }

@@ -1,4 +1,4 @@
-// Package astgrep implements ports.PatternProvider and ports.SyntaxProvider
+// Package astgrep implements evidenceports.PatternProvider and evidenceports.SyntaxProvider
 // using the "sg" (ast-grep) binary. Syntax() runs embedded per-language rules
 // and maps ruleId→Kind+Framework into SyntaxFacts sorted by (File, StartLine, Kind, Name).
 package astgrep
@@ -13,8 +13,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/ports"
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -50,7 +50,7 @@ const (
 	kindEnum       = "enum"
 	kindAnnotation = "annotation"
 	kindTypeLeak   = "type_leak"
-	kindLazyImport = diagnostic.DynamicImportKindLazyImport
+	kindLazyImport = evidence.DynamicImportKindLazyImport
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.
@@ -236,13 +236,13 @@ var goTypeAliasNameRe = regexp.MustCompile(`^type\s+(\w+)`)
 // defined, collects SyntaxFacts, and returns them sorted by (File, StartLine,
 // Kind, Name). A missing "sg" binary returns empty facts with status "absent" —
 // never an error. Languages with no embedded rules are silently skipped.
-func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
+func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]evidence.SyntaxFact, evidence.Coverage, error) {
 	_, ok := a.runner.Detect(ctx, "sg")
 	if !ok {
-		return nil, diagnostic.Coverage{Tool: syntaxToolName, Status: diagnostic.StatusAbsent}, nil
+		return nil, evidence.Coverage{Tool: syntaxToolName, Status: evidence.StatusAbsent}, nil
 	}
 
-	var facts []diagnostic.SyntaxFact
+	var facts []evidence.SyntaxFact
 
 	runner := a.cachedRunner(ctx, s.Root)
 	for _, lang := range langs {
@@ -268,14 +268,14 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 			return decErr
 		})
 		if err != nil {
-			return nil, diagnostic.Coverage{}, err
+			return nil, evidence.Coverage{}, err
 		}
 		// sg present but exited non-zero with zero matches → rule file was rejected
 		// (e.g. YAML parse error). Silently continuing would produce zero facts and
 		// report status=ok — a false green. Surface it as a partial/degraded result.
 		if out.ExitCode != 0 && len(raw) == 0 {
 			reason := fmt.Sprintf("sg rejected rule file for %q (exit %d): %s", lang, out.ExitCode, strings.TrimSpace(string(out.Stderr)))
-			return nil, diagnostic.Coverage{Tool: syntaxToolName, Status: diagnostic.StatusPartial, Reason: reason}, nil
+			return nil, evidence.Coverage{Tool: syntaxToolName, Status: evidence.StatusPartial, Reason: reason}, nil
 		}
 		if len(raw) == 0 {
 			continue
@@ -321,7 +321,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 
 			exported := isExported(lang, m.RuleID, name)
 
-			facts = append(facts, diagnostic.SyntaxFact{
+			facts = append(facts, evidence.SyntaxFact{
 				Language:           lang,
 				File:               m.File,
 				Kind:               ki.Kind,
@@ -335,7 +335,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		}
 	}
 
-	diagnostic.SortSyntaxFacts(facts)
+	evidence.SortSyntaxFacts(facts)
 
 	// Count distinct files that produced at least one fact.
 	// FilesSeen=0 is reserved for "ran but nothing matched" — callers use it to
@@ -344,7 +344,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 	for i := range facts {
 		seen[facts[i].File] = struct{}{}
 	}
-	cov := diagnostic.Coverage{Tool: syntaxToolName, Status: diagnostic.StatusOK, FilesSeen: len(seen)}
+	cov := evidence.Coverage{Tool: syntaxToolName, Status: evidence.StatusOK, FilesSeen: len(seen)}
 	return facts, cov, nil
 }
 
@@ -483,4 +483,4 @@ func isExported(lang, ruleID, name string) bool {
 }
 
 // Compile-time interface check.
-var _ ports.SyntaxProvider = (*Adapter)(nil)
+var _ evidenceports.SyntaxProvider = (*Adapter)(nil)

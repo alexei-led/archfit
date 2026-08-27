@@ -2,34 +2,14 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/engine"
-	"github.com/alexei-led/archfit/internal/extract/deployunit"
-	"github.com/alexei-led/archfit/internal/extract/dynimports"
-	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
-	"github.com/alexei-led/archfit/internal/extract/rust"
-	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/initcfg"
+	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/view"
 )
-
-// ruleTypeForbiddenLayerDirection is the rule type whose presence makes a
-// module's `layer:` field load-bearing.
-const ruleTypeForbiddenLayerDirection = "forbidden_layer_direction"
 
 // UpdateCmd syncs .archfit.yaml with the current project structure.
 type UpdateCmd struct {
@@ -37,190 +17,60 @@ type UpdateCmd struct {
 	Root       string `short:"r" help:"Project root directory (default: directory of --config)."`
 	AIClassify bool   `name:"ai-classify" help:"Run AI classification for unclassified modules (off-gate)."`
 	Apply      bool   `name:"apply" help:"Write structural changes live into .archfit.yaml (backup created; AI semantic proposals remain review-only)."`
-	JSON       bool   `name:"json" help:"Emit the review as a JSON document (report-only; not combinable with --apply, --ai-classify, or --refresh)."`
-	Refresh    bool   `name:"refresh" help:"Re-run the AI calls and refresh the cache."`
-	AIProvider string `name:"ai-provider" help:"AI provider override." default:"anthropic"`
-	AIModel    string `name:"ai-model" help:"AI model override." default:"claude-opus-4-8"`
+	//nolint:lll // kong renders the help text verbatim; wrapping it breaks the CLI output.
+	MigrationOnly bool   `name:"migration-only" help:"Migrate the config to the current schema version and nothing else. --json previews, --apply writes. Not combinable with --ai-classify or --refresh."`
+	JSON          bool   `name:"json" help:"Emit the review as a JSON document (report-only; not combinable with --apply, --ai-classify, or --refresh)."`
+	Refresh       bool   `name:"refresh" help:"Re-run the AI calls and refresh the cache."`
+	AIProvider    string `name:"ai-provider" help:"AI provider override." default:"anthropic"`
+	AIModel       string `name:"ai-model" help:"AI model override." default:"claude-opus-4-8"`
 
 	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
-	// It is never a CLI flag (no kong tag).
 	providerOverride llm.Provider
 }
 
 func (c *UpdateCmd) Run(deps *appDeps) error {
-	// Flag conflicts are rejected before discovery, tool runs, cache access, or
-	// any write, so an invalid invocation has no side effects.
-	if err := c.validateFlags(); err != nil {
-		return err
+	if c.MigrationOnly {
+		// Short-circuit before discovery, tool calls, and cache access: a
+		// schema migration is a text edit on one file and must not depend on
+		// analysing the tree it configures.
+		return c.runMigration(deps)
 	}
-
 	root, err := c.resolveRoot()
 	if err != nil {
 		return err
 	}
-
-	ctx := context.Background()
-
-	cfg, err := loadConfig(ctx, c.Config)
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: loading config: %v", err)}
+	adapter := newConfigUpdateAdapter(c, deps)
+	service := application.ConfigUpdateService{
+		Configs: adapter, Files: adapter, Discovery: adapter, Projection: adapter,
+		Classifier: adapter, Reviewer: adapter, Editor: adapter, Writer: adapter,
 	}
-
-	originalBytes, err := os.ReadFile(c.Config)
+	out, err := service.Execute(context.Background(), application.ConfigUpdateRequest{
+		ConfigPath: c.Config, Root: root, AIClassify: c.AIClassify,
+		Apply: c.Apply, JSON: c.JSON, Refresh: c.Refresh,
+	})
 	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: reading config file: %v", err)}
-	}
-
-	existing := configToExisting(cfg.Modules)
-
-	freshCfg, err := initcfg.Discover(ctx, root, deps.Runner)
-	if err != nil {
-		return fmt.Errorf("discovering project structure: %w", err)
-	}
-
-	// DiffModules resolves name drift internally, so the review document,
-	// --ai-classify targets, and the apply edits all read the same buckets and no
-	// caller can read a provisional Issues/Unclassified list.
-	requireLayer := requiresLayerClassification(cfg)
-	report := initcfg.DiffModules(existing, freshCfg.Modules, requireLayer)
-	candidateCfg := candidateConfigForUpdate(cfg, freshCfg, report.NameDrift)
-	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, candidateCfg, deps)
-	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, candidateCfg, deps)
-	if c.AIClassify {
-		var synthErr error
-		report, synthErr = c.withRustSyntheticSuggestions(ctx, cfg, root, report, deps)
-		if synthErr != nil {
-			return synthErr
+		var invalid *application.InvalidConfigUpdateRequestError
+		if errors.As(err, &invalid) {
+			return &exitError{code: 3, msg: invalid.Error()}
 		}
-	}
-	addedNames := addedSet(report.Added)
-
-	ann, err := c.maybeClassify(ctx, cfg, root, report, addedNames)
-	if err != nil {
 		return err
 	}
-	if c.AIClassify && ann != nil {
-		report.RuleSuggestions = ruleSuggestionsFromAnnotations(ann)
-		report.ExternalSystemSuggestions = externalSystemSuggestionsFromAnnotations(ann)
+	if len(out.MissingClassifications) > 0 {
+		_, _ = fmt.Fprintf(deps.Stdout, "warning: LLM did not classify %d module(s): %s — they were left unclassified\n",
+			len(out.MissingClassifications), strings.Join(out.MissingClassifications, ", "))
 	}
-	if c.AIClassify && ann != nil {
-		warnTargets := initcfg.BuildClassifyTargets(root, classifyTargetsForUpdate(cfg, report, addedNames))
-		warnPartialClassify(deps.Stdout, warnTargets, ann)
-	}
-
-	// Settings is the single source for the Rust deep-analysis edit: the preview,
-	// the JSON document, and the apply pass all read it, so they cannot drift.
-	//
-	// Applicability comes from the same probe the coverage layer uses, NOT from
-	// freshCfg.HasRust: discovery only stats a ROOT Cargo.toml, so a config that
-	// already points languages.rust.manifest at a sub-crate manifest describes a
-	// repo archfit analyses as Rust while `config update` refused to offer it the
-	// deep-analysis defaults that make a single-crate graph measurable.
-	// `config init` keeps the root-only check — it has no existing config to read
-	// a manifest from.
-	if needsRustDeepAnalysisConfig(cfg, rustProjectPresent(root, cfg)) {
-		report.Settings = append(report.Settings, initcfg.RustDeepAnalysisSetting())
-	}
-	hasSettingEdits := len(report.Settings) > 0
-	hasEdits := initcfg.HasPendingEdits(report)
-
-	if !c.Apply {
-		review := initcfg.BuildConfigReview(report)
-		if c.JSON {
-			return writeConfigReviewJSON(deps.Stdout, review)
-		}
-		_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderReviewStatus(review))
-		_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
-		return nil
-	}
-
-	if !hasEdits {
-		// Review-only items (module gaps, unclassifiable or unchecked modules,
-		// naming differences, configured modules discovery did not emit) count here
-		// too: printing "structurally in sync" over them would claim a clean config
-		// while the report has findings to show.
-		if (c.AIClassify && ann != nil) || initcfg.HasReviewItems(report) {
-			// Same status line the preview prints: the one-line summary above the
-			// report. The unchecked modules it counts are also named in the report's
-			// own UNMATCHED and UNCHECKED sections, so neither disclosure is the
-			// only one.
-			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderReviewStatus(initcfg.BuildConfigReview(report)))
-			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
-			return nil
-		}
+	switch out.Action {
+	case application.ConfigUpdateNoChanges:
 		_, _ = fmt.Fprintln(deps.Stdout, "structurally in sync — no changes to apply")
-		return nil
-	}
-
-	edited := originalBytes
-	if initcfg.HasModuleEdits(report) {
-		edits := buildUpdateEdits(report)
-		edited, err = initcfg.ApplyEdits(originalBytes, edits)
-		if err != nil {
-			return fmt.Errorf("applying edits: %w", err)
+	case application.ConfigUpdateApplied:
+		if out.PathDrift {
+			_, _ = fmt.Fprintln(deps.Stdout, "note: module paths replaced with discovered paths")
 		}
-	}
-	if hasSettingEdits {
-		edited = ensureRustDeepAnalysisConfig(edited, cfg)
-	}
-	if err := safeWriteConfig(ctx, deps, c.Config, edited, originalBytes); err != nil {
-		return err
-	}
-	if len(report.PathDrift) > 0 {
-		_, _ = fmt.Fprintln(deps.Stdout, "note: module paths replaced with discovered paths")
-	}
-	// HasReviewItems, not HasReviewSuggestions: module gaps, naming differences,
-	// unmatched and pathless stanzas are review-only too, so gating on the
-	// suggestion families alone hid them on the ONE path that also writes. A run
-	// that had an edit to make reported less than the same run without --apply.
-	if (c.AIClassify && ann != nil) || initcfg.HasReviewItems(report) {
-		if rendered := initcfg.RenderAppliedReview(report, ann); rendered != "" {
-			_, _ = fmt.Fprint(deps.Stdout, rendered)
+		_, _ = deps.Stdout.Write(out.Output)
+	default:
+		if _, writeErr := deps.Stdout.Write(out.Output); writeErr != nil && c.JSON {
+			return &exitError{code: 3, msg: fmt.Sprintf("error: encoding config review: %v", writeErr)}
 		}
-	}
-	return nil
-}
-
-// validateFlags rejects --json combined with a mode that mutates state or calls
-// out to an AI provider. Report-only JSON must stay side-effect free.
-func (c *UpdateCmd) validateFlags() error {
-	if !c.JSON {
-		return nil
-	}
-	conflicts := make([]string, 0, 3)
-	if c.Apply {
-		conflicts = append(conflicts, "--apply")
-	}
-	if c.AIClassify {
-		conflicts = append(conflicts, "--ai-classify")
-	}
-	if c.Refresh {
-		conflicts = append(conflicts, "--refresh")
-	}
-	if len(conflicts) == 0 {
-		return nil
-	}
-	return &exitError{code: 3, msg: "error: --json cannot be combined with " + strings.Join(conflicts, ", ")}
-}
-
-// requiresLayerClassification reports whether a module without `layer:` blocks an
-// active layer policy. A forbidden_layer_direction rule is live unless its gate
-// is "off" — unset and "warn" both still check layers.
-func requiresLayerClassification(cfg config.Config) bool {
-	for _, r := range cfg.Rules {
-		if r.Type == ruleTypeForbiddenLayerDirection && r.Gate != gateOff {
-			return true
-		}
-	}
-	return false
-}
-
-// writeConfigReviewJSON emits the versioned review document.
-func writeConfigReviewJSON(w io.Writer, review initcfg.ConfigReview) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(review); err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: encoding config review: %v", err)}
 	}
 	return nil
 }
@@ -239,445 +89,4 @@ func (c *UpdateCmd) resolveRoot() (string, error) {
 		}
 	}
 	return root, nil
-}
-
-// maybeClassify runs the AI classification pass when --ai-classify is set.
-func (c *UpdateCmd) maybeClassify(
-	ctx context.Context,
-	cfg config.Config,
-	root string,
-	report initcfg.UpdateReport,
-	addedNames map[string]struct{},
-) (map[string]initcfg.ModuleAnnotation, error) {
-	if !c.AIClassify {
-		return nil, nil
-	}
-
-	p, err := c.buildAIProvider(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	targets := classifyTargetsForUpdate(cfg, report, addedNames)
-	classifyTargets := initcfg.BuildClassifyTargets(root, targets)
-	if len(classifyTargets) == 0 {
-		return nil, nil
-	}
-
-	repoEvidence := architectureEvidenceLines(root, targets, c.Config, updateEvidenceDiagnostics(report))
-	ann, err := classifyModulesWithEvidence(ctx, p, classifyTargets, cfg.Layers, repoEvidence)
-	if err != nil {
-		return nil, &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
-	}
-	return ann, nil
-}
-
-// buildAIProvider constructs the AI provider, honouring the test seam and cache flag.
-func (c *UpdateCmd) buildAIProvider(cfg config.Config) (llm.Provider, error) {
-	var llmCfg config.LLMConfig
-	if lc, ok := cfg.LLM(); ok {
-		llmCfg = lc
-	}
-	llmCfg.Provider = c.AIProvider
-	llmCfg.Model = c.AIModel
-
-	cacheDir := llmCacheDir(filepath.Dir(c.Config))
-	p, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.Refresh)
-	if err != nil {
-		return nil, &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
-	}
-	return p, nil
-}
-
-func (c *UpdateCmd) withRustSyntheticSuggestions(
-	ctx context.Context,
-	cfg config.Config,
-	root string,
-	report initcfg.UpdateReport,
-	deps *appDeps,
-) (initcfg.UpdateReport, error) {
-	extractCfg := cfg.ForExtract(config.LangRust)
-	if extractCfg.Mode == view.ModeOff || !extractCfg.ModuleGraph {
-		return report, nil
-	}
-
-	facts := factcache.NewStore(factsCacheDir(filepath.Dir(c.Config)))
-	facts.RefreshMode = c.Refresh
-	ex := rust.New(deps.Runner, extractCfg)
-	ex.Cache = facts
-	rustFacts, _, err := ex.Extract(ctx, scope.Scope{Root: root})
-	if err != nil {
-		return report, &exitError{code: 3, msg: fmt.Sprintf("error: discovering Rust synthetic modules: %v", err)}
-	}
-
-	g := graph.Build([]graph.Facts{rustFacts})
-	augmented := classify.AugmentModulesFromGraph(g, cfg.ForClassify().Modules)
-	if len(augmented) == len(cfg.Modules) {
-		return report, nil
-	}
-
-	existingNames := make(map[string]struct{}, len(cfg.Modules)+len(report.Added)+len(report.Suggested))
-	for name := range cfg.Modules {
-		existingNames[name] = struct{}{}
-	}
-	for _, m := range report.Added {
-		existingNames[m.Name] = struct{}{}
-	}
-	for _, m := range report.Suggested {
-		existingNames[m.Name] = struct{}{}
-	}
-
-	var paths []string
-	for path := range augmented {
-		if _, configured := cfg.Modules[path]; configured || !strings.Contains(path, "::") {
-			continue
-		}
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		def := augmented[path]
-		if len(def.Paths) == 0 {
-			def.Paths = []string{path}
-		}
-		report.Suggested = append(report.Suggested, initcfg.ModuleDef{
-			Name:  uniqueSyntheticModuleName(path, existingNames),
-			Paths: def.Paths,
-			Layer: def.Layer,
-		})
-	}
-	return report, nil
-}
-
-func uniqueSyntheticModuleName(path string, used map[string]struct{}) string {
-	base := strings.ReplaceAll(path, "::", "-")
-	if _, exists := used[base]; !exists {
-		used[base] = struct{}{}
-		return base
-	}
-	for i := 2; ; i++ {
-		candidate := fmt.Sprintf("%s-%d", base, i)
-		if _, exists := used[candidate]; !exists {
-			used[candidate] = struct{}{}
-			return candidate
-		}
-	}
-}
-
-// classifyTargetsForUpdate collects ModuleDefs to classify: Added modules from discovery,
-// plus existing unclassified modules (excluding those already in addedNames).
-func classifyTargetsForUpdate(
-	cfg config.Config,
-	report initcfg.UpdateReport,
-	addedNames map[string]struct{},
-) []initcfg.ModuleDef {
-	targets := make([]initcfg.ModuleDef, 0, len(report.Added)+len(report.Suggested)+len(report.Unclassified))
-	targets = append(targets, report.Added...)
-	targets = append(targets, report.Suggested...)
-	for _, name := range report.Unclassified {
-		if _, isAdded := addedNames[name]; isAdded {
-			continue
-		}
-		if def, ok := cfg.Modules[name]; ok {
-			targets = append(targets, initcfg.ModuleDef{Name: name, Paths: def.Paths, Public: def.Public})
-		} // name came from DiffModules over cfg.Modules, so absent is purely defensive
-	}
-	return targets
-}
-
-// candidateConfigForUpdate projects the config as it stands AFTER `config update
-// --apply`: discovery's module set, with every preserved stanza's hand-authored
-// metadata carried across. The deploy-unit and distance suggestion builders read
-// this projection, so a stanza whose metadata goes missing here yields a
-// suggestion to set a field the real config already sets.
-//
-// drift is why the lookup cannot key on the discovered name alone. When
-// discovery re-emits `internal/foo` as `foo` over the SAME path set, --apply
-// writes nothing at all: the stanza keeps its name and every field it carries
-// (name drift is review-only precisely because rewriting it would discard them).
-// So a drifted module enters the candidate under its CONFIG name, which is also
-// the only name the metadata lookup can find. Resolving the name BEFORE the
-// lookup keeps one copy of the field list — a second branch is a second place to
-// forget a field.
-//
-// The config name cannot collide with another discovered module: it comes from
-// the report's Removed bucket, which by construction holds only names discovery
-// did not emit, and each drift pairing is unique.
-func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig, drift []initcfg.NameDrift) config.Config {
-	if len(discovered.Modules) == 0 {
-		return cfg
-	}
-	configNameFor := make(map[string]string, len(drift))
-	for _, d := range drift {
-		configNameFor[d.DiscoveredName] = d.ConfigName
-	}
-	out := cfg
-	out.Modules = make(map[string]module.ModuleDef, len(discovered.Modules))
-	for _, mod := range discovered.Modules {
-		name := mod.Name
-		if configName, drifted := configNameFor[name]; drifted {
-			name = configName
-		}
-		def := module.ModuleDef{
-			Paths:    append([]string(nil), mod.Paths...),
-			Public:   append([]string(nil), mod.Public...),
-			Internal: append([]string(nil), mod.Internal...),
-			Layer:    mod.Layer,
-		}
-		if existing, ok := cfg.Modules[name]; ok {
-			def.Public = append([]string(nil), existing.Public...)
-			def.Internal = append([]string(nil), existing.Internal...)
-			def.Layer = existing.Layer
-			def.Subdomain = existing.Subdomain
-			def.Volatility = existing.Volatility
-			def.Owner = existing.Owner
-			def.DeployUnit = existing.DeployUnit
-			def.Role = existing.Role
-			def.ReviewedAt = existing.ReviewedAt
-			def.ReviewedBy = existing.ReviewedBy
-		}
-		out.Modules[name] = def
-	}
-	return out
-}
-
-func distanceConfigCandidates(ctx context.Context, root string, cfg config.Config, deps *appDeps) []initcfg.DistanceConfigCandidate {
-	mm := cfg.ModuleMapView()
-	dynamicImports := engine.BuildDynamicImports(dynimports.Detect(root), mm)
-	runtimeResult := runtimedetect.Detect(ctx, root, deps.Runner)
-	runtimeSites := make([]diagnostic.RuntimeAsyncSite, 0, len(runtimeResult.Signals))
-	for _, sig := range runtimeResult.Signals {
-		runtimeSites = append(runtimeSites, diagnostic.RuntimeAsyncSite{
-			File:            sig.File,
-			Line:            sig.Line,
-			Library:         sig.Library,
-			IntegrationKind: string(sig.IntegrationKind),
-			Language:        sig.Language,
-		})
-	}
-	runtimeEdges := engine.BuildRuntimeAsyncEdges(runtimeSites, runtimeResult.Confidence, mm)
-	dynamicSignals := engine.BuildDynamicConnascenceSignals(dynamicImports, runtimeEdges, nil)
-	candidates := append(
-		staticExternalDistanceConfigCandidates(ctx, root, cfg, deps),
-		engine.BuildDistanceConfigCandidates(dynamicImports, runtimeEdges, dynamicSignals)...,
-	)
-	out := make([]initcfg.DistanceConfigCandidate, 0, len(candidates))
-	for _, c := range candidates {
-		out = append(out, toInitcfgDistanceConfigCandidate(c))
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].SourceBlock != out[j].SourceBlock {
-			return out[i].SourceBlock < out[j].SourceBlock
-		}
-		if out[i].Module != out[j].Module {
-			return out[i].Module < out[j].Module
-		}
-		if out[i].Target != out[j].Target {
-			return out[i].Target < out[j].Target
-		}
-		return out[i].IntegrationKind < out[j].IntegrationKind
-	})
-	return out
-}
-
-func staticExternalDistanceConfigCandidates(ctx context.Context, root string, cfg config.Config, deps *appDeps) []diagnostic.DistanceConfigCandidate {
-	g := buildUpdateCandidateGraph(ctx, root, cfg, deps)
-	if g == nil {
-		return nil
-	}
-	return staticExternalDistanceConfigCandidatesFromGraph(g, cfg)
-}
-
-func staticExternalDistanceConfigCandidatesFromGraph(g *graph.Graph, cfg config.Config) []diagnostic.DistanceConfigCandidate {
-	classifyCfg := engine.AugmentClassifyConfig(g, cfg.ForClassify())
-	idx := classify.Run(g, classifyCfg)
-	return engine.BuildStaticExternalDistanceCandidates(g, idx, classifyCfg.ModuleMap)
-}
-
-func buildUpdateCandidateGraph(ctx context.Context, root string, cfg config.Config, deps *appDeps) *graph.Graph {
-	extractors := buildExtractors(deps.Runner, cfg, nil)
-	allFacts := make([]graph.Facts, 0, len(extractors))
-	for _, ex := range extractors {
-		facts, _, err := ex.Extract(ctx, scope.Scope{Root: root})
-		if err != nil {
-			continue
-		}
-		if len(facts.Nodes) == 0 && len(facts.Edges) == 0 {
-			continue
-		}
-		allFacts = append(allFacts, facts)
-	}
-	if len(allFacts) == 0 {
-		return nil
-	}
-	return graph.Build(allFacts)
-}
-
-func toInitcfgDistanceConfigCandidate(c diagnostic.DistanceConfigCandidate) initcfg.DistanceConfigCandidate {
-	return initcfg.DistanceConfigCandidate{
-		SourceBlock:           c.SourceBlock,
-		Module:                c.Module,
-		Target:                c.Target,
-		IntegrationKind:       c.IntegrationKind,
-		Count:                 c.Count,
-		EvidenceRefs:          distanceConfigEvidenceRefs(c.EvidenceSites),
-		SuggestedReviewAction: c.SuggestedReviewAction,
-	}
-}
-
-func distanceConfigEvidenceRefs(sites []diagnostic.DistanceConfigEvidenceSite) []string {
-	refs := make([]string, 0, len(sites))
-	for _, s := range sites {
-		if s.File == "" {
-			continue
-		}
-		ref := s.File
-		if s.Line > 0 {
-			ref = fmt.Sprintf("%s:%d", s.File, s.Line)
-		}
-		refs = append(refs, ref)
-	}
-	return refs
-}
-
-func deployUnitSuggestions(ctx context.Context, root string, cfg config.Config, deps *appDeps) []initcfg.DeployUnitSuggestion {
-	mm := cfg.ModuleMapView()
-	detected := deployunit.Detect(ctx, root, mm, deps.Runner)
-	if len(detected) == 0 {
-		return nil
-	}
-	paths := make([]string, 0, len(detected))
-	for path := range detected {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	seen := make(map[string]struct{}, len(paths))
-	out := make([]initcfg.DeployUnitSuggestion, 0, len(paths))
-	for _, path := range paths {
-		mod, ok := mm.ModuleForFile(path)
-		if !ok {
-			if !mm.Has(path) {
-				continue
-			}
-			mod = path
-		}
-		if _, exists := seen[mod]; exists {
-			continue
-		}
-		def, ok := cfg.Modules[mod]
-		if !ok || def.DeployUnit != "" {
-			continue
-		}
-		seen[mod] = struct{}{}
-		out = append(out, initcfg.DeployUnitSuggestion{Module: mod, Unit: detected[path], Source: path})
-	}
-	return out
-}
-
-func ruleSuggestionsFromAnnotations(ann map[string]initcfg.ModuleAnnotation) []initcfg.RuleSuggestion {
-	if len(ann) == 0 {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	out := make([]initcfg.RuleSuggestion, 0)
-	for module, a := range ann {
-		for _, suggestion := range a.RuleSuggestions {
-			if suggestion.SourceModule == "" {
-				suggestion.SourceModule = module
-			}
-			key := strings.Join([]string{suggestion.Type, suggestion.ID, suggestion.From, suggestion.To, suggestion.SourceModule}, "\x00")
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			out = append(out, suggestion)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Type != out[j].Type {
-			return out[i].Type < out[j].Type
-		}
-		if out[i].ID != out[j].ID {
-			return out[i].ID < out[j].ID
-		}
-		return out[i].SourceModule < out[j].SourceModule
-	})
-	return out
-}
-
-func externalSystemSuggestionsFromAnnotations(ann map[string]initcfg.ModuleAnnotation) []initcfg.ExternalSystemSuggestion {
-	if len(ann) == 0 {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	out := make([]initcfg.ExternalSystemSuggestion, 0)
-	for module, a := range ann {
-		for _, suggestion := range a.ExternalSystemSuggestions {
-			if suggestion.SourceModule == "" {
-				suggestion.SourceModule = module
-			}
-			key := strings.Join([]string{suggestion.Name, strings.Join(suggestion.Targets, ","), suggestion.SourceModule}, "\x00")
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			out = append(out, suggestion)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Name != out[j].Name {
-			return out[i].Name < out[j].Name
-		}
-		return out[i].SourceModule < out[j].SourceModule
-	})
-	return out
-}
-
-// buildUpdateEdits constructs the ordered Edit slice for an apply pass.
-func buildUpdateEdits(report initcfg.UpdateReport) []initcfg.Edit {
-	edits := make([]initcfg.Edit, 0, len(report.Added)+len(report.PathDrift))
-
-	for _, def := range report.Added {
-		edits = append(edits, initcfg.AddModuleEdit{Def: def})
-	}
-
-	for _, d := range report.PathDrift {
-		edits = append(edits, initcfg.UpdateModulePathsEdit{Module: d.Name, Paths: d.DiscoveredPaths})
-	}
-
-	// No edit is built for report.Removed: see hasActionableEdits. Removing a
-	// configured stanza stays a human decision, and the report says so.
-
-	return edits
-}
-
-// collectUpdateRepoEvidence is kept for older prompt tests; update --llm uses
-// the shared architecture evidence pack directly.
-func collectUpdateRepoEvidence(root string) []string {
-	return architectureEvidenceLines(root, nil, "", nil)
-}
-
-// configToExisting projects config.Modules into []initcfg.ExistingModule.
-func configToExisting(modules map[string]module.ModuleDef) []initcfg.ExistingModule {
-	out := make([]initcfg.ExistingModule, 0, len(modules))
-	for name, def := range modules {
-		out = append(out, initcfg.ExistingModule{
-			Name:          name,
-			Paths:         def.Paths,
-			HasSubdomain:  def.Subdomain != "",
-			HasVolatility: def.Volatility != "",
-			HasLayer:      def.Layer != "",
-			HasOwner:      def.Owner != "",
-		})
-	}
-	return out
-}
-
-// addedSet builds a set of Added module names.
-func addedSet(added []initcfg.ModuleDef) map[string]struct{} {
-	s := make(map[string]struct{}, len(added))
-	for _, a := range added {
-		s[a.Name] = struct{}{}
-	}
-	return s
 }

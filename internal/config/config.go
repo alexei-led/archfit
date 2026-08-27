@@ -12,11 +12,12 @@ import (
 	"strings"
 	"time"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/goccy/go-yaml"
 
-	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/view"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 // Config is the parsed and validated content of an archfit.yaml file.
@@ -39,16 +40,16 @@ type Config struct {
 	AI        AIConfig                    `yaml:"ai"`
 	Coupling  CouplingConfig              `yaml:"coupling"`
 	Layers    []string                    `yaml:"layers"`
-	Modules   map[string]module.ModuleDef `yaml:"modules"`
+	Modules   map[string]policy.ModuleDef `yaml:"modules"`
 	// ExternalSystems declares external integration seams (book Ch10 Example 1)
 	// whose edges enter coupling_balance scoring at declared_external (D=10).
-	ExternalSystems map[string]view.ExternalSystemDef `yaml:"external_systems,omitempty"`
-	Rules           []view.RuleDef                    `yaml:"rules"`
-	Waivers         []view.WaiverDef                  `yaml:"waivers"`
-	Metrics         MetricsConfig                     `yaml:"metrics"`
-	ModuleReview    ModuleReviewConfig                `yaml:"module_review"`
-	FileClass       view.FileClassDef                 `yaml:"file_class"`
-	Outputs         OutputsConfig                     `yaml:"outputs"`
+	ExternalSystems map[string]policy.ExternalSystemDef `yaml:"external_systems,omitempty"`
+	Rules           []policy.RuleDef                    `yaml:"rules"`
+	Waivers         []policy.WaiverDef                  `yaml:"waivers"`
+	Metrics         MetricsConfig                       `yaml:"metrics"`
+	ModuleReview    ModuleReviewConfig                  `yaml:"module_review"`
+	FileClass       FileClassDef                        `yaml:"file_class"`
+	Outputs         OutputsConfig                       `yaml:"outputs"`
 
 	// explicitOwners records which modules had a hand-authored `owner:` in YAML,
 	// populated by Load before any resolver fill. Distinguishes a user's explicit
@@ -135,9 +136,9 @@ const (
 var bcSeverities = map[string]struct{}{levelLow: {}, levelMedium: {}, levelHigh: {}, "critical": {}}
 
 // duplicatedKnowledgePolicies are the accepted coupling.duplicated_knowledge values.
-var duplicatedKnowledgePolicies = map[view.DuplicatedKnowledgePolicy]struct{}{
-	view.DuplicatedKnowledgePolicyScore:    {},
-	view.DuplicatedKnowledgePolicyAdvisory: {},
+var duplicatedKnowledgePolicies = map[policy.DuplicatedKnowledgePolicy]struct{}{
+	policy.DuplicatedKnowledgePolicyScore:    {},
+	policy.DuplicatedKnowledgePolicyAdvisory: {},
 }
 
 // gateValues are the accepted gate policy markers (spec §rules: off | warn | fail),
@@ -186,8 +187,8 @@ var removedConfigKeys = map[string]string{
 // than a silent skip: a typo in coupling.min_severity or a gate must not
 // quietly disable the check it was meant to configure.
 func validate(cfg Config) error {
-	if cfg.Version <= 0 {
-		return fmt.Errorf("version must be > 0 (got %d)", cfg.Version)
+	if err := validateSchemaVersion(cfg.Version); err != nil {
+		return err
 	}
 	if cfg.AI.Provider != "" {
 		if _, valid := LLMProviders[cfg.AI.Provider]; !valid {
@@ -212,7 +213,7 @@ func validate(cfg Config) error {
 	}
 	for _, name := range sortedKeys(cfg.Modules) {
 		if r := cfg.Modules[name].Role; r != "" {
-			if !module.ValidRole(r) {
+			if !policy.ValidRole(r) {
 				return fmt.Errorf("modules.%s.role %q is not one of: composition_root, adapter, core, shared_model, generated, test", name, r)
 			}
 		}
@@ -232,7 +233,7 @@ func validate(cfg Config) error {
 		knob, ok := knownMetrics[name]
 		if !ok {
 			if name == "coupling_balance" {
-				return errors.New("metrics.coupling_balance is not a metric — the synthesised coupling score gates via the coupling.gate block (min_band / max_drop)")
+				return errors.New("metrics.coupling_balance is not a metric — coupling gates via the coupling.gate.distributed_monolith block")
 			}
 			return fmt.Errorf("metrics.%s is not a known metric (known: blast_radius, coverage, cycle, encapsulation, unbalanced_edge)", name)
 		}
@@ -265,7 +266,7 @@ func validate(cfg Config) error {
 // ast-grep runs `sg --lang <lang> --pattern <rule>` per pattern entry and keys
 // findings by id — a partial entry loads clean but fails opaquely (or dedups
 // wrongly) at analyze time inside the subprocess.
-func validateRules(rules []view.RuleDef) error {
+func validateRules(rules []policy.RuleDef) error {
 	for i, r := range rules {
 		id := r.ID
 		if id == "" {
@@ -283,31 +284,46 @@ func validateRules(rules []view.RuleDef) error {
 	return nil
 }
 
-// couplingGateBands are the accepted coupling.gate.min_band floors. critical is
-// deliberately absent: no band ranks below it, so a critical floor could never
-// trip — a config that looks like a gate but is inert by construction.
-var couplingGateBands = map[string]struct{}{"poor": {}, "mixed": {}, "serviceable": {}, "strong": {}}
+// distributedMonolithModes are the accepted
+// coupling.gate.distributed_monolith.mode values. Empty means warn.
+var distributedMonolithModes = map[string]struct{}{
+	string(policy.DistributedMonolithWarn): {}, string(policy.DistributedMonolithFail): {},
+}
 
-// validateCouplingGate checks the coupling.gate block: a present block must
-// configure at least one knob (an empty block is a gate that never trips — the
-// validated-but-inert disease), min_band must be a real floor, and max_drop is
-// a tolerated drop, never negative.
+// validateCouplingGate checks the coupling.gate block.
+//
+// The retired v1 knobs are rejected here rather than at decode time on purpose:
+// `config update --migration-only` has to decode them to migrate them, so the
+// refusal belongs to analysis validation, not to the YAML reader.
 func validateCouplingGate(g *CouplingGateDef) error {
 	if g == nil {
 		return nil
 	}
-	if g.MinBand == "" && g.MaxDrop == nil {
-		return errors.New("coupling.gate requires min_band and/or max_drop — an empty block gates nothing")
-	}
 	if g.MinBand != "" {
-		if _, ok := couplingGateBands[g.MinBand]; !ok {
-			return fmt.Errorf("coupling.gate.min_band %q is not one of: poor, mixed, serviceable, strong", g.MinBand)
+		return retiredCouplingKeyError("min_band")
+	}
+	if g.MaxDrop != nil {
+		return retiredCouplingKeyError("max_drop")
+	}
+	d := g.DistributedMonolith
+	if d == nil {
+		return errors.New("coupling.gate requires distributed_monolith — an empty block gates nothing; remove the block to accept the warn default")
+	}
+	if d.Mode != "" {
+		if _, ok := distributedMonolithModes[d.Mode]; !ok {
+			return fmt.Errorf("coupling.gate.distributed_monolith.mode %q is not one of: warn, fail", d.Mode)
 		}
 	}
-	if g.MaxDrop != nil && *g.MaxDrop < 0 {
-		return fmt.Errorf("coupling.gate.max_drop must be >= 0 (a tolerated score drop, got %d)", *g.MaxDrop)
+	if d.MaxNewSeams != nil && *d.MaxNewSeams < 0 {
+		return fmt.Errorf("coupling.gate.distributed_monolith.max_new_seams must be >= 0 (a tolerated new-seam count, got %d)", *d.MaxNewSeams)
 	}
 	return nil
+}
+
+// retiredCouplingKeyError names the retired knob and the one supported way out.
+// The exact command string is part of the migration contract.
+func retiredCouplingKeyError(key string) error {
+	return fmt.Errorf("coupling.gate.%s was retired in schema v2 — the repository coupling scalar no longer gates the verdict\n%s", key, MigrationHint)
 }
 
 // externalVolatilities are the accepted external_systems.<name>.volatility
@@ -317,7 +333,7 @@ var externalVolatilities = map[string]struct{}{levelHigh: {}, levelMedium: {}, l
 // validateExternalSystem checks one external_systems.<name> entry: at least one
 // target glob (an entry that matches nothing declares nothing), valid glob
 // syntax, and a real volatility level when one is set.
-func validateExternalSystem(name string, def view.ExternalSystemDef) error {
+func validateExternalSystem(name string, def policy.ExternalSystemDef) error {
 	if len(def.Targets) == 0 {
 		return fmt.Errorf("external_systems.%s requires at least one targets glob — an empty entry declares nothing", name)
 	}
@@ -343,7 +359,7 @@ func validateExternalSystem(name string, def view.ExternalSystemDef) error {
 // GeneratedGlobs and TestGlobs are passed to doublestar.Match so they must be
 // valid glob syntax; MockFrameworks are plain prefix/suffix strings — only
 // emptiness is checked.
-func validateFileClass(fc view.FileClassDef) error {
+func validateFileClass(fc FileClassDef) error {
 	for i, pat := range fc.GeneratedGlobs {
 		if pat == "" {
 			return fmt.Errorf("file_class.generated_globs[%d] must not be empty", i)
@@ -372,7 +388,7 @@ func validateFileClass(fc view.FileClassDef) error {
 // threshold knobs that actually apply to the metric's kind. A knob on a metric
 // of the wrong kind is a hard error, not a silent no-op — a validated-but-inert
 // setting hides the exact misconfiguration it was meant to express.
-func validateMetricEntry(name string, knob metricKnob, e view.MetricEntry) error {
+func validateMetricEntry(name string, knob metricKnob, e policy.MetricEntry) error {
 	if err := validateGate("metrics."+name, e.Gate); err != nil {
 		return err
 	}
@@ -417,16 +433,16 @@ func validateGate(field, gate string) error {
 // rules are defined — only metric checks run.
 func Default() Config {
 	return Config{
-		Version: 1,
+		Version: SchemaVersion,
 		Coupling: CouplingConfig{
 			MinSeverity:         levelMedium,
-			DuplicatedKnowledge: view.DuplicatedKnowledgePolicyScore,
+			DuplicatedKnowledge: policy.DuplicatedKnowledgePolicyScore,
 		},
 		Languages: LanguagesConfig{
-			Go:         GoLanguage{Enabled: view.ModeAuto},
-			TypeScript: TypeScriptLanguage{Enabled: view.ModeAuto},
-			Python:     PythonLanguage{Enabled: view.ModeAuto},
-			Rust:       RustLanguage{Enabled: view.ModeAuto},
+			Go:         GoLanguage{Enabled: evidenceports.ModeAuto},
+			TypeScript: TypeScriptLanguage{Enabled: evidenceports.ModeAuto},
+			Python:     PythonLanguage{Enabled: evidenceports.ModeAuto},
+			Rust:       RustLanguage{Enabled: evidenceports.ModeAuto},
 		},
 	}
 }
@@ -502,4 +518,29 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// SchemaVersion is the only config schema version this binary analyses. A v1
+// file decodes (so it can be migrated) but never analyses.
+const SchemaVersion = 2
+
+// MigrationHint is the exact, frozen instruction printed whenever a config is
+// rejected for being v1 or for carrying a retired v1 key. It names the single
+// supported migration path; tests pin the string.
+const MigrationHint = "→ run: archfit config update --migration-only --apply"
+
+// validateSchemaVersion accepts only the current schema. A v1 file is a
+// migration, not a syntax error, so it gets the migration command rather than
+// a generic bounds complaint.
+func validateSchemaVersion(v int) error {
+	switch {
+	case v == SchemaVersion:
+		return nil
+	case v <= 0:
+		return fmt.Errorf("version must be %d (got %d)", SchemaVersion, v)
+	case v < SchemaVersion:
+		return fmt.Errorf("config schema v%d is not supported by this binary (it analyses v%d only)\n%s", v, SchemaVersion, MigrationHint)
+	default:
+		return fmt.Errorf("config schema v%d is newer than this binary understands (it analyses v%d only) — upgrade archfit", v, SchemaVersion)
+	}
 }

@@ -94,8 +94,8 @@ Severity bands derived from balance:
 | 7–8     | `low`      |
 | 9–10    | `none`     |
 
-Implemented in `internal/model/coupling/scorer_book.go` as `BookScorer`.
-`ScoreVersion` is defined in `internal/model/coupling/scorer.go`.
+Implemented in `internal/relationship/scoring/scorer_book.go` as `BookScorer`.
+`ScoreVersion` is defined in `internal/relationship/coupling/coupling.go`.
 
 ---
 
@@ -413,8 +413,8 @@ Self-scan result (v5 final validation, 2026-07-05): 572 external edges excluded
 Labels in `.archfit-labels.yaml` carry confidence and provenance:
 
 ```yaml
-- from: internal/engine
-  to: internal/classify
+- from: internal/evidence/acquisition
+  to: internal/relationship/classify
   strength: functional
   status: approved
   confidence: medium # high | medium | low

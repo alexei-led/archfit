@@ -13,7 +13,6 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // InitCmd discovers project structure and writes a starter archfit.yaml.
@@ -173,7 +172,7 @@ For each module, determine:
 - external_system_suggestions (optional): review-only proposals for external_systems entries. Every suggestion must include name, targets, rationale, evidence_refs, and basis; volatility is optional and must be low|medium|high|frozen when set.
 
 Respond with a JSON ARRAY only — no prose, no markdown fences, no code blocks. Each entry must include a "module" field matching the provided module name exactly:
-[{"module":"<name>","subdomain":"core|supporting|generic","volatility":"low|medium|high","layer":"<from allowed set>","role":"<optional role or empty>","name":"<suggested>","rationale":"<one sentence>","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","rule_suggestions":[{"id":"<stable-id>","type":"forbidden_dependency|forbidden_role_dependency|public_api_max|public_api_change|coupling.gate","from":"<selector>","to":"<selector>","max":20,"min_band":"serviceable","max_drop":5,"gate":"warn|fail","rationale":"<one sentence>","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}],"external_system_suggestions":[{"name":"payments-vendor","targets":["github.com/vendor/sdk/**"],"volatility":"low","rationale":"<one sentence>","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]}]`
+[{"module":"<name>","subdomain":"core|supporting|generic","volatility":"low|medium|high","layer":"<from allowed set>","role":"<optional role or empty>","name":"<suggested>","rationale":"<one sentence>","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","rule_suggestions":[{"id":"<stable-id>","type":"forbidden_dependency|forbidden_role_dependency|public_api_max|public_api_change|coupling.gate","from":"<selector>","to":"<selector>","max":20,"mode":"warn","max_new_seams":0,"gate":"warn|fail","rationale":"<one sentence>","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}],"external_system_suggestions":[{"name":"payments-vendor","targets":["github.com/vendor/sdk/**"],"volatility":"low","rationale":"<one sentence>","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]}]`
 
 // classifyBatchSize bounds how many modules go into one LLM classify request.
 const classifyBatchSize = 25
@@ -224,8 +223,8 @@ var (
 	validSubdomains   = map[string]bool{subdomainCore: true, subdomainSupporting: true, subdomainGeneric: true}
 	validVolatilities = map[string]bool{volatilityLow: true, volatilityMedium: true, volatilityHigh: true}
 	validRoles        = map[string]bool{
-		string(module.RoleCompositionRoot): true, string(module.RoleAdapter): true, string(module.RoleCore): true,
-		string(module.RoleSharedModel): true, string(module.RoleGenerated): true, string(module.RoleTest): true,
+		string(config.RoleCompositionRoot): true, string(config.RoleAdapter): true, string(config.RoleCore): true,
+		string(config.RoleSharedModel): true, string(config.RoleGenerated): true, string(config.RoleTest): true,
 	}
 )
 

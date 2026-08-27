@@ -7,11 +7,12 @@ import (
 	"sync"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"golang.org/x/tools/go/packages"
 
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // writeWorkspaceFixture materialises a two-member go.work workspace where
@@ -64,7 +65,7 @@ func TestFactCache_PerMemberInvalidation(t *testing.T) {
 	t.Parallel()
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	loader := &fakeLoader{calls: map[string]int{}}
-	ex := New(view.ExtractConfig{})
+	ex := New(evidenceports.ExtractConfig{})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ex.load = loader.load
 	s := scope.Scope{Root: root}
@@ -111,7 +112,7 @@ func TestFactCache_CgoCompanionFileInvalidates(t *testing.T) {
 		t.Fatal(err)
 	}
 	loader := &fakeLoader{calls: map[string]int{}}
-	ex := New(view.ExtractConfig{})
+	ex := New(evidenceports.ExtractConfig{})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ex.load = loader.load
 	ctx := context.Background()
@@ -148,7 +149,7 @@ func TestFactCache_WorkLevelReplaceDisablesCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	loader := &fakeLoader{calls: map[string]int{}}
-	ex := New(view.ExtractConfig{})
+	ex := New(evidenceports.ExtractConfig{})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ex.load = loader.load
 	ctx := context.Background()
@@ -170,7 +171,7 @@ func TestFactCache_GoModChangeInvalidates(t *testing.T) {
 	t.Parallel()
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	loader := &fakeLoader{calls: map[string]int{}}
-	ex := New(view.ExtractConfig{})
+	ex := New(evidenceports.ExtractConfig{})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ex.load = loader.load
 	ctx := context.Background()
@@ -207,7 +208,7 @@ func TestFactCache_LocalReplaceVetoesMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	loader := &fakeLoader{calls: map[string]int{}}
-	ex := New(view.ExtractConfig{})
+	ex := New(evidenceports.ExtractConfig{})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ex.load = loader.load
 	ctx := context.Background()
@@ -238,7 +239,7 @@ func TestFactCache_FilteredSiblingDependencyVetoesMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	loader := &fakeLoader{calls: map[string]int{}}
-	ex := New(view.ExtractConfig{GoModuleExclude: []string{"a"}})
+	ex := New(evidenceports.ExtractConfig{GoModuleExclude: []string{"a"}})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ex.load = loader.load
 	ctx := context.Background()
@@ -265,7 +266,7 @@ func TestFactCache_DirtyMemberNotCached(t *testing.T) {
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	calls := map[string]int{}
 	var mu sync.Mutex
-	ex := New(view.ExtractConfig{})
+	ex := New(evidenceports.ExtractConfig{})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ex.load = func(cfg *packages.Config, _ ...string) ([]*packages.Package, error) {
 		mu.Lock()
@@ -308,7 +309,7 @@ func TestFactCache_DependentMemberInvalidates(t *testing.T) {
 		t.Fatal(err)
 	}
 	loader := &fakeLoader{calls: map[string]int{}}
-	ex := New(view.ExtractConfig{})
+	ex := New(evidenceports.ExtractConfig{})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ex.load = loader.load
 	ctx := context.Background()
@@ -335,7 +336,7 @@ func TestFactCache_GoEnvChangeInvalidates(t *testing.T) {
 	t.Setenv("GOFLAGS", "")
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	loader := &fakeLoader{calls: map[string]int{}}
-	ex := New(view.ExtractConfig{})
+	ex := New(evidenceports.ExtractConfig{})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ex.load = loader.load
 	ctx := context.Background()
@@ -382,7 +383,7 @@ func TestFactCache_ExplicitGoWorkContentInvalidates(t *testing.T) {
 	t.Setenv("GOWORK", workPath)
 
 	loader := &fakeLoader{calls: map[string]int{}}
-	ex := New(view.ExtractConfig{})
+	ex := New(evidenceports.ExtractConfig{})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ex.load = loader.load
 	ctx := context.Background()

@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/calibrate"
-	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/internal/relationship/scoring"
 )
 
 // syntheticIndex builds a small coupling.Index covering key scoring quadrants.
@@ -43,7 +44,7 @@ func syntheticIndex() coupling.Index {
 // TestCompare_SyntheticIndex is a smoke test: no panic, non-nil Edges slice.
 func TestCompare_SyntheticIndex(t *testing.T) {
 	idx := syntheticIndex()
-	r := calibrate.Compare(".", idx, coupling.AdditiveScorer{}, coupling.MultiplicativeScorer{})
+	r := calibrate.Compare(".", idx, scoring.AdditiveScorer{}, scoring.MultiplicativeScorer{})
 	if len(r.Edges) == 0 {
 		t.Fatal("Compare returned no scored edges for a non-empty index")
 	}
@@ -51,7 +52,7 @@ func TestCompare_SyntheticIndex(t *testing.T) {
 
 func TestCompare_BasicProperties(t *testing.T) {
 	idx := syntheticIndex()
-	r := calibrate.Compare("/repo", idx, coupling.AdditiveScorer{}, coupling.MultiplicativeScorer{})
+	r := calibrate.Compare("/repo", idx, scoring.AdditiveScorer{}, scoring.MultiplicativeScorer{})
 
 	if r.EdgeCount != 4 {
 		t.Errorf("EdgeCount = %d, want 4", r.EdgeCount)
@@ -68,7 +69,7 @@ func TestCompare_BasicProperties(t *testing.T) {
 
 func TestCompare_ReasonLabels(t *testing.T) {
 	idx := syntheticIndex()
-	r := calibrate.Compare(".", idx, coupling.AdditiveScorer{}, coupling.MultiplicativeScorer{})
+	r := calibrate.Compare(".", idx, scoring.AdditiveScorer{}, scoring.MultiplicativeScorer{})
 
 	for _, ea := range r.Edges {
 		if ea.ScoreA.Reason != "additive" {
@@ -84,7 +85,7 @@ func TestCompare_IntrusiveCrossDeployUnitCritical(t *testing.T) {
 	// edge0: intrusive + cross_deploy_unit + high
 	// additive: 8+5-0=13→clamp→10 → critical
 	idx := syntheticIndex()
-	r := calibrate.Compare(".", idx, coupling.AdditiveScorer{}, coupling.MultiplicativeScorer{})
+	r := calibrate.Compare(".", idx, scoring.AdditiveScorer{}, scoring.MultiplicativeScorer{})
 
 	found := false
 	for _, ea := range r.Edges {
@@ -109,7 +110,7 @@ func TestCompare_XOREdgesNotCritical(t *testing.T) {
 	// edge1: contract(0) + cross_module_same_owner(1) + low → additive: 0+1-2=-1→0→none
 	// edge3: contract(0) + cross_module_different_owner(3) + high → additive: 0+3-0=3→low
 	idx := syntheticIndex()
-	r := calibrate.Compare(".", idx, coupling.AdditiveScorer{}, coupling.MultiplicativeScorer{})
+	r := calibrate.Compare(".", idx, scoring.AdditiveScorer{}, scoring.MultiplicativeScorer{})
 
 	for _, ea := range r.Edges {
 		// contract edges are low-strength; both test XOR quadrants.
@@ -142,7 +143,7 @@ func TestCompare_SkipsSameModuleAndUnknown(t *testing.T) {
 			Volatility: coupling.VolatilityLow,
 		},
 	}
-	r := calibrate.Compare(".", idx, coupling.AdditiveScorer{}, coupling.MultiplicativeScorer{})
+	r := calibrate.Compare(".", idx, scoring.AdditiveScorer{}, scoring.MultiplicativeScorer{})
 	if r.EdgeCount != 1 {
 		t.Errorf("EdgeCount = %d, want 1 (same_module and unknown skipped)", r.EdgeCount)
 	}

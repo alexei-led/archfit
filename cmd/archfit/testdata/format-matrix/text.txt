@@ -1,0 +1,60 @@
+ARCHITECTURE STATE
+
+VERDICT    BLOCKED
+BLOCKING   1 active  ·  hard gates: fail
+ATTENTION  2 dimension(s) flagged  ·  1 diagnostic(s)
+COVERAGE   4 measured · 3 partial · 2 unmeasured  (of 9)
+
+DIMENSIONS
+
+  intent          measured    gate: pass            confidence: high     declared rules evaluated 1/1
+  structure       measured    gate: fail            confidence: high     discovered edges resolved to a declared module 1/1
+  modularity      measured    gate: pass            confidence: low      declared modules with a declared public surface 0/2
+  coupling        measured    gate: warn            confidence: high     cross-boundary edges scored 1/1
+  change_locality unmeasured  gate: not_applicable  confidence: unrated  no denominator
+  complexity      partial     gate: pass            confidence: medium   production files in the source walk 2/2
+  testability     partial     gate: pass            confidence: medium   classified source files 2/2
+  operations      partial     gate: pass            confidence: medium   applicable analyzers reporting coverage 4/4
+  drift           unmeasured  gate: not_applicable  confidence: unrated  no denominator
+
+NOT MEASURED (8)
+
+  modularity — public surface
+    no declared module states a public surface, so every symbol reads as equally public
+  change_locality — change locality
+    git history is unavailable: the tree is not a repository, or no module was declared to attribute commits to
+  complexity — cognitive complexity
+    v1 ships no cognitive-complexity analyzer; only the size tail is measured
+  testability — executed test coverage
+    v1 does not run a target repository's test suite; supplied coverage is not yet an input
+  testability — boundary test coverage
+    which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
+  operations — observed runtime topology
+    v1 reports declared owners and deploy units only; nothing observes what actually runs
+  operations — supply-chain inventory
+    SBOM and vulnerability facts have no collector in v1
+  drift — architecture drift
+    no comparable architecture-state reference is stored
+
+COUPLING SEAMS (1)
+
+  a -> b
+    functional × cross_module_different_owner × low volatility · 0 critical of 1 scored · median balance 8
+    try: leave_alone
+
+TOP ACTIONABLE FINDINGS
+
+  BLOCKING (1)
+    · no_direct_b_dependency [medium] — Import from pkg/a/** to pkg/b/** is explicitly forbidden
+
+  DIAGNOSTIC (1)
+    · bc/imbalanced_coupling [low] — balanced coupling: functional integration strength × cross_module_different_owner distance × low …
+
+COMPARISON
+
+  status: not_requested  ·  reference: none
+
+FINDING INDEX (2)
+
+  ba3803eca947bf3c1b7efa8f37854d5e  new  no_direct_b_dependency
+  07af466df8bfd6e77ee485ac01c50a17  new  bc/imbalanced_coupling

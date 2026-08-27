@@ -9,7 +9,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -52,15 +52,15 @@ func goRunner(mainDirs []string) *toolrun.RunnerMock {
 }
 
 // emptyModuleMap builds a ModuleMap with no modules (no glob matching).
-func emptyModuleMap() module.Map {
+func emptyModuleMap() policy.ModuleMap {
 	return (config.Config{}).ModuleMapView()
 }
 
 // singleModuleMap builds a ModuleMap with one module covering the given path glob.
-func singleModuleMap(name, pathGlob string) module.Map {
+func singleModuleMap(name, pathGlob string) policy.ModuleMap {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			name: {Paths: []string{pathGlob}},
 		},
 	}
@@ -418,7 +418,7 @@ func TestDetect_SkipsNodeModules(t *testing.T) {
 func TestFillMissingDeployUnits(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"api":   {Paths: []string{"api/**"}, DeployUnit: unitAPIService}, // config wins
 			"web":   {Paths: []string{"web/**"}},                             // empty — should be filled
 			unitCLI: {Paths: []string{"cmd/**"}, DeployUnit: ""},             // empty — should be filled
@@ -458,7 +458,7 @@ func TestKeyByModule_RemapsPathToModule(t *testing.T) {
 	)
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			mod: {Paths: []string{modPath + "/**"}},
 		},
 	}
@@ -491,7 +491,7 @@ func TestKeyByModule_ExactKeyFallback(t *testing.T) {
 	const key = "cmd/tool" // module key equals the detected path
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			key: {Paths: []string{"cmd/tool/*.go"}}, // matches children, not the bare dir
 		},
 	}

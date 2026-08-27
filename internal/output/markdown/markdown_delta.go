@@ -5,14 +5,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // writeAgentTasks prints the structured repair-task block: one entry per
 // active gate finding, with goal, involved files, constraints, and the exact
 // validation command. Omitted when there are no active gate findings.
-func writeAgentTasks(b *strings.Builder, tasks []diagnostic.AgentTask) {
+func writeAgentTasks(b *strings.Builder, tasks []report.AgentTask) {
 	if len(tasks) == 0 {
 		return
 	}
@@ -35,7 +34,7 @@ const advisoryTaskMarkdownLimit = 25
 
 // writeAdvisoryTasks prints report-only grouped advisory work items. These are
 // separate from agent_tasks[] so advisory noise never masquerades as a gate repair.
-func writeAdvisoryTasks(b *strings.Builder, tasks []diagnostic.AdvisoryTask) {
+func writeAdvisoryTasks(b *strings.Builder, tasks []report.AdvisoryTask) {
 	if len(tasks) == 0 {
 		return
 	}
@@ -74,11 +73,11 @@ func writeAdvisoryTasks(b *strings.Builder, tasks []diagnostic.AdvisoryTask) {
 // change / pre-existing / resolved), so a reviewer can tell what the change
 // introduced from what was already there. Omitted outside delta mode (d.Delta
 // nil). Each bucket holds finding IDs that join back to d.Findings.
-func writeDelta(b *strings.Builder, d diagnostic.Diagnostic) {
+func writeDelta(b *strings.Builder, d report.Document) {
 	if d.Delta == nil {
 		return
 	}
-	byID := make(map[string]finding.Finding, len(d.Findings))
+	byID := make(map[string]report.Finding, len(d.Findings))
 	for _, f := range d.Findings {
 		byID[f.ID] = f
 	}
@@ -101,7 +100,7 @@ func writeDelta(b *strings.Builder, d diagnostic.Diagnostic) {
 			continue
 		}
 		fmt.Fprintf(b, "\n### %s (%d)\n\n", s.title, len(s.ids))
-		fs := make([]finding.Finding, 0, len(s.ids))
+		fs := make([]report.Finding, 0, len(s.ids))
 		for _, id := range s.ids {
 			if f, ok := byID[id]; ok {
 				fs = append(fs, f)
@@ -117,7 +116,7 @@ func writeDelta(b *strings.Builder, d diagnostic.Diagnostic) {
 // writeDeltaFinding renders one finding as a compact delta-bucket line. The
 // bucket already conveys lifecycle status, so the status is omitted here; the
 // severity and edge are shown when present (fixed findings carry neither).
-func writeDeltaFinding(b *strings.Builder, f finding.Finding) {
+func writeDeltaFinding(b *strings.Builder, f report.Finding) {
 	sev := ""
 	if f.Severity != "" {
 		sev = fmt.Sprintf(" [%s]", f.Severity)

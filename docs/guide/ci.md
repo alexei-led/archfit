@@ -18,13 +18,18 @@ path. That makes the job easier to read and copy.
 
 | Exit code | Meaning                                                                                                           | Typical CI action                                |
 | --------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `0`       | Pass. No blocking findings.                                                                                       | Continue the job.                                |
-| `1`       | Policy failure. Blocking findings were found, or `--require-tools` turned a missing analyzer into a hard failure. | Fail the job.                                    |
-| `2`       | Warning verdict. No blocking findings, but the run is still non-green.                                            | Fail or mark unstable, depending on your policy. |
+| `0`       | `healthy`. Nothing blocking, nothing flagged, no dimension partial.                                              | Continue the job.                                |
+| `1`       | `blocked`. A hard gate failed, or `--require-tools` turned a missing analyzer into a hard failure.               | Fail the job.                                    |
+| `2`       | `needs_attention`. Nothing blocking, but a diagnostic is active or a dimension is partial.                       | **Do not fail the job by default** — see below.  |
 | `3`       | Usage, config, or runtime/tool error.                                                                             | Treat as CI infrastructure or config failure.    |
 
-In short: `1` means the architecture policy rejected the change. `3` means the
-job itself is misconfigured or could not run correctly.
+The exit code IS the architecture-state verdict — nothing else participates.
+
+**Expect `2`, not `0`, on a healthy repo in v1.** Complexity, testability, and
+operations report `partial` by contract (v1 ships no cognitive-complexity
+analyzer, does not run your test suite, and observes no runtime topology), and
+any partial dimension makes the verdict `needs_attention`. Gate on `1`. archfit's
+own `make archfit` target accepts `0` or `2` for exactly this reason.
 
 ## 2. GitHub Actions recipe
 
@@ -32,7 +37,8 @@ Minimal gate step:
 
 ```yaml
 - name: Architecture check
-  run: archfit check -c .archfit.yaml
+  # Gate on blocked (1) only; 2 is the normal healthy-repo result in v1.
+  run: archfit check -c .archfit.yaml || [ $? -eq 2 ]
 ```
 
 Delta mode compares the current branch against a base ref. In GitHub Actions,
@@ -50,11 +56,15 @@ make sure the base ref exists in the local checkout first:
 Use the plain gate for branch protection. Use delta mode on pull requests when
 you want the check output to show before/after drift against `origin/main`.
 
-Add `--json` to that step to get the per-task git origin as well:
+Add `--format legacy-json` to that step to get the per-task git origin as well.
+`git_finding_delta` is a diagnostic-only block: the primary
+`archfit.architecture-state.v1` document (`--json`) does not carry it, and
+`legacy-json` ships for exactly one release — see
+[release notes](release-notes.md).
 
 ```yaml
 - name: Architecture delta check (machine-readable)
-  run: archfit check -c .archfit.yaml --base origin/main --json > archfit-delta.json
+  run: archfit check -c .archfit.yaml --base origin/main --format legacy-json > archfit-delta.json
 ```
 
 `git_finding_delta.introduced_finding_ids` lists the current repair tasks this
@@ -161,7 +171,7 @@ loop:
 
 ```text
 archfit check --json -c .archfit.yaml
-→ if exit 0, stop
+→ if exit 0 or 2, stop
 → if exit 1, read agent_tasks[]
 → repair the code
 → run archfit check --json -c .archfit.yaml again

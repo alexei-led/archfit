@@ -1,19 +1,26 @@
-// Package scorecard renders a Diagnostic as the architect skill's seven-dimension
-// banded scorecard: an overall 0-100 value plus one block per dimension with its
-// value, band, confidence, evidence references, and a one-line summary. The
+// Package scorecard renders the nine-dimensional architecture-state scorecard:
+// one block per dimension with its measurement status, gate posture,
+// confidence, denominator, metrics, and what it could not observe.
+//
+// It is deliberately not an architecture score. There is no 0-100 value and no
+// band, because averaging nine differently-measured dimensions into one number
+// is exactly the claim this contract exists to stop making.
 package scorecard
 
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/report"
+	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
-// Renderer formats a Diagnostic as a banded scorecard. Satisfies engine.Renderer.
+// Renderer formats a report document's architecture state as a scorecard.
 type Renderer struct{}
+
+var _ reportports.Renderer = (*Renderer)(nil)
 
 // New returns a Renderer.
 func New() *Renderer { return &Renderer{} }
@@ -21,59 +28,123 @@ func New() *Renderer { return &Renderer{} }
 // Format returns "scorecard".
 func (r *Renderer) Format() string { return "scorecard" }
 
-// Render writes the supplied scorecard and diagnostic details.
-func (r *Renderer) Render(d diagnostic.Diagnostic, sc report.Scorecard, w io.Writer) error {
+// Render writes the architecture-state scorecard.
+func (r *Renderer) Render(d report.Document, w io.Writer) error {
+	s := d.State
 	var b strings.Builder
-	b.WriteString("# archfit scorecard\n\n")
-	fmt.Fprintf(&b, "**Rubric version:** %d\n", sc.RubricVersion)
-	if sc.OverallBand.Unmeasured() {
-		fmt.Fprintf(&b, "**Overall:** n/a — coupling unmeasured (no scored cross-boundary edges)\n")
-	} else {
-		fmt.Fprintf(&b, "**Overall:** %d/100 (%s)\n", sc.Overall, sc.OverallBand)
-	}
-	if d.ConfigHash != "" {
-		fmt.Fprintf(&b, "**Config hash:** `%s`\n", d.ConfigHash)
+
+	b.WriteString("# archfit architecture state\n\n")
+	fmt.Fprintf(&b, "**Verdict:** %s\n", verdictLabel(s.Verdict))
+	fmt.Fprintf(&b, "**Hard gates:** %s — %d active blocker(s)\n", s.Decision.HardGates, s.Decision.ActiveBlockers)
+	fmt.Fprintf(&b, "**Attention:** %d dimension(s) flagged\n", s.Decision.AttentionDimensions)
+	fmt.Fprintf(&b, "**Coverage:** %d measured / %d partial / %d unmeasured (of %d)\n",
+		s.Coverage.Measured, s.Coverage.Partial, s.Coverage.Unmeasured, report.DimensionCount)
+	fmt.Fprintf(&b, "**Rubric version:** %s\n", s.Comparison.RubricVersion)
+	if s.Comparison.ConfigHash != "" {
+		fmt.Fprintf(&b, "**Config hash:** `%s`\n", s.Comparison.ConfigHash)
 	}
 
 	b.WriteString("\n## Dimensions\n")
-	for _, dim := range sc.Dimensions {
-		meta := ""
-		if dim.Meta {
-			meta = " · meta (scores the review, not the architecture)"
-		}
-		if dim.Band.Unmeasured() {
-			fmt.Fprintf(&b, "\n### %s — n/a (unmeasured) · confidence: %s%s\n",
-				dim.Name, dim.Confidence, meta)
-		} else {
-			fmt.Fprintf(&b, "\n### %s — %d/100 (%s) · confidence: %s%s\n",
-				dim.Name, dim.Value, dim.Band, dim.Confidence, meta)
-		}
-		if dim.Summary != "" {
-			fmt.Fprintf(&b, "%s\n", dim.Summary)
-		}
-		for _, e := range dim.Evidence {
-			fmt.Fprintf(&b, "- %s\n", e)
-		}
+	for _, dim := range s.Dimensions.All() {
+		writeDimension(&b, dim)
 	}
 
+	writeComparison(&b, s.Comparison)
 	writeDelta(&b, d.Delta)
-
 	writeRequiredToolsMissing(&b, d.CoverageGaps)
+	writeFindingIndex(&b, s.Findings)
 
 	_, err := io.WriteString(w, b.String())
 	return err
 }
 
-// writeDelta appends a compact delta-bucket count summary for a delta run, so a
-// scorecard reader sees how many findings this change introduced, resolved, or
-// merely touched versus pre-existing debt. Counts only — the per-finding lists
-// live in the markdown/json output. Omitted outside delta mode (delta nil).
-func writeDelta(b *strings.Builder, delta *diagnostic.DeltaReport) {
+// writeFindingIndex appends every finding in the document's canonical order
+// with its ID, lifecycle status, and rule. The scorecard is a per-dimension
+// view and names no finding otherwise, so without this appendix it is the one
+// format a reader cannot reconcile against the others.
+func writeFindingIndex(b *strings.Builder, findings []report.Finding) {
+	fmt.Fprintf(b, "\n## Finding index (%d)\n\n", len(findings))
+	if len(findings) == 0 {
+		b.WriteString("- none\n")
+		return
+	}
+	for _, f := range findings {
+		fmt.Fprintf(b, "- `%s` %s %s\n", f.ID, f.Status, f.RuleID)
+	}
+}
+
+// verdictLabel renders the verdict for humans. JSON stores lower case.
+func verdictLabel(v report.StateVerdict) string {
+	switch v {
+	case report.StateBlocked:
+		return "BLOCKED"
+	case report.StateHealthy:
+		return "HEALTHY"
+	case report.StateNeedsAttention:
+		return "NEEDS ATTENTION"
+	default:
+		return strings.ToUpper(strings.ReplaceAll(string(v), "_", " "))
+	}
+}
+
+func writeDimension(b *strings.Builder, dim report.DimensionState) {
+	fmt.Fprintf(b, "\n### %s — %s · gate: %s · confidence: %s\n",
+		dim.Name, dim.Status, dim.Gate, dim.Confidence)
+	fmt.Fprintf(b, "owner: %s\n", dim.Owner)
+	if dim.Coverage.Basis == "" {
+		b.WriteString("denominator: none — this dimension measured nothing\n")
+	} else {
+		fmt.Fprintf(b, "denominator: %s %d/%d\n", dim.Coverage.Basis, dim.Coverage.Observed, dim.Coverage.Total)
+	}
+	for _, m := range dim.Metrics {
+		fmt.Fprintf(b, "- %s: %s %s%s\n", m.Name, formatValue(m.Value), m.Unit, denominatorSuffix(m.Denominator))
+	}
+	for _, u := range dim.Unknown {
+		fmt.Fprintf(b, "- not measured — %s: %s\n", u.Fact, strings.TrimSpace(u.Reason))
+	}
+	if dim.Delta != nil {
+		fmt.Fprintf(b, "- delta: %s\n", dim.Delta.Status)
+		for _, reason := range dim.Delta.Reasons {
+			fmt.Fprintf(b, "  - %s\n", strings.TrimSpace(reason))
+		}
+	}
+}
+
+// formatValue prints a metric without trailing zeros, so a count reads as a
+// count and a ratio keeps its precision.
+func formatValue(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+func denominatorSuffix(d *report.MetricDenominator) string {
+	if d == nil {
+		return ""
+	}
+	return fmt.Sprintf(" (%d/%d)", d.Observed, d.Total)
+}
+
+func writeComparison(b *strings.Builder, c report.StateComparison) {
+	b.WriteString("\n## Comparison\n\n")
+	target := c.BaseRef
+	if target == "" {
+		target = "none"
+	}
+	fmt.Fprintf(b, "- status: %s\n- reference: %s\n", c.Status, target)
+	for _, reason := range c.Reasons {
+		fmt.Fprintf(b, "- %s\n", strings.TrimSpace(reason))
+	}
+}
+
+// writeDelta appends the finding-lifecycle bucket counts for a delta run, so a
+// reader sees how many findings this change introduced, resolved, or merely
+// touched versus pre-existing debt. Counts only — the per-finding lists live in
+// the markdown and JSON output. Omitted outside delta mode.
+func writeDelta(b *strings.Builder, delta *report.DeltaReport) {
 	if delta == nil {
 		return
 	}
 	b.WriteString("\n## Delta\n\n")
-	rows := []struct {
+	for _, row := range []struct {
 		label string
 		ids   []string
 	}{
@@ -82,22 +153,21 @@ func writeDelta(b *strings.Builder, delta *diagnostic.DeltaReport) {
 		{"touched by this change", delta.TouchedByDelta},
 		{"pre-existing", delta.Existing},
 		{"resolved", delta.Resolved},
-	}
-	for _, r := range rows {
-		fmt.Fprintf(b, "- %s: %d\n", r.label, len(r.ids))
+	} {
+		fmt.Fprintf(b, "- %s: %d\n", row.label, len(row.ids))
 	}
 }
 
-// writeRequiredToolsMissing appends the coverage-gap block to the scorecard so a
-// reader sees why dimensions are n/a rather than mistaking absent evidence for a
-// strong result. One line per missing analyzer with the dimensions it unlocks
-// and an install hint. Omitted when no tool is missing.
-func writeRequiredToolsMissing(b *strings.Builder, gaps []diagnostic.CoverageGap) {
+// writeRequiredToolsMissing appends the coverage-gap block so a reader sees why
+// dimensions are partial rather than mistaking absent evidence for a healthy
+// result. One line per missing analyzer with the dimensions it unlocks and an
+// install hint. Omitted when no tool is missing.
+func writeRequiredToolsMissing(b *strings.Builder, gaps []report.CoverageGap) {
 	if len(gaps) == 0 {
 		return
 	}
 	fmt.Fprintf(b, "\n## Required tools missing (%d)\n\n", len(gaps))
-	b.WriteString("These analyzers did not run; the metrics they feed are n/a, not strong.\n\n")
+	b.WriteString("These analyzers did not run; what they feed is unmeasured, not healthy.\n\n")
 	for _, g := range gaps {
 		fmt.Fprintf(b, "- **%s** [gate: %s] — affects %s; install: `%s`\n",
 			g.Tool, g.Gate, strings.Join(g.AffectedMetrics, ", "), g.InstallCmd)

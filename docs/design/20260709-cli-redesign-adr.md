@@ -38,7 +38,7 @@ Exit behavior:
 
 ### 2. Keep one pipeline implementation
 
-Both commands must call one implementation path: `runPipeline` / `runScan` with a `gateMode bool` switch.
+Both commands must call one implementation path: the analysis application pipeline with explicit report/gate mode, not separate scoring implementations.
 
 There will be no forked analyze/check logic. This is a hard design constraint from the fusion panel and is binding.
 

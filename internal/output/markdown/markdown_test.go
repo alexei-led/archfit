@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	reportmodel "github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/relationship"
+	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
 )
 
 const (
@@ -81,10 +83,10 @@ func TestRenderer_Format(t *testing.T) {
 
 // makeGateFinding creates a gate finding for testing.
 func makeGateFinding(ruleID string, sev finding.Severity, status finding.Status) finding.Finding {
-	f := finding.New(ruleID, graph.Edge{
-		From: "pkg/a",
-		To:   "pkg/b",
-		Kind: graph.EdgeKind("uses"),
+	f := finding.New(ruleID, relationship.Edge{
+		FromID: "pkg/a",
+		ToID:   "pkg/b",
+		Kind:   "uses",
 	}, nil)
 	f.Severity = sev
 	f.Status = status
@@ -100,8 +102,8 @@ func makeAdvisoryFinding(ruleID string) finding.Finding {
 
 func TestRenderer_Render_EmptyDiagnostic(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -110,11 +112,16 @@ func TestRenderer_Render_EmptyDiagnostic(t *testing.T) {
 
 	out := buf.String()
 
-	// Required sections always present.
-	for _, want := range []string{"Summary", "Verdict", "pass"} {
+	// Required sections always present. The audit restates no verdict: the
+	// state headline above it already decided one, and the legacy
+	// pass/warn/fail vocabulary maps to a different exit table.
+	for _, want := range []string{"# archfit — architecture state", "Verdict", "Summary"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "(exit ") {
+		t.Errorf("the audit must not restate an exit code — the exit table belongs to the verdict:\nfull output:\n%s", out)
 	}
 
 	// Optional sections absent when no findings or metrics.
@@ -134,10 +141,10 @@ func TestRenderer_Render_Delta(t *testing.T) {
 	resolvedF := finding.Finding{
 		ID: "r1", RuleID: "no_cycles", Kind: "gate", Status: finding.StatusFixed,
 	}
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictWarn
-	d.Findings = []finding.Finding{newF, resolvedF}
-	d.Delta = &diagnostic.DeltaReport{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictWarn
+	d.Findings = reporttest.Findings(newF, resolvedF)
+	d.Delta = &reportmodel.DeltaReport{
 		New:      []string{newF.ID},
 		Resolved: []string{resolvedF.ID},
 	}
@@ -172,9 +179,9 @@ func TestRenderer_Render_Delta(t *testing.T) {
 // modules per axis, deterministic order, neutral wording (no risk labels).
 func TestRenderer_Render_FileFacts(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.FileFacts = []diagnostic.FileFact{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.FileFacts = []reportmodel.FileFact{
 		{Module: "tui.polling_state", InboundModuleFanIn: 23, OutboundDestinations: 2, LOC: 310},
 		{Module: "tui.directory_callbacks", InboundModuleFanIn: 1, OutboundDestinations: 46, LOC: 580},
 		{Module: "config", InboundModuleFanIn: 19, OutboundDestinations: 0, LOC: 120},
@@ -214,9 +221,9 @@ func TestRenderer_Render_FileFacts(t *testing.T) {
 
 func TestRenderer_Render_ConnascenceSummary(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.Connascence = &diagnostic.ConnascenceReport{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.Connascence = &reportmodel.ConnascenceReport{
 		EdgesWithEvidence:     2,
 		AbstainedEdges:        1,
 		TotalEvidence:         3,
@@ -224,7 +231,7 @@ func TestRenderer_Render_ConnascenceSummary(t *testing.T) {
 		ByKind:                map[string]int{"name": 2, "type": 1},
 		BySource:              map[string]int{"go/types": 2, "scip": 1},
 		Unmeasured:            []string{"position", "execution", "timing", "value", "identity"},
-		Roadmap: []diagnostic.ConnascenceRoadmapItem{
+		Roadmap: []reportmodel.ConnascenceRoadmapItem{
 			{Kind: "name", CurrentStatus: "deterministic_static", Sources: []string{"go/types"}},
 			{Kind: "execution", CurrentStatus: "unmeasured_dynamic", RelatedSignals: []string{"dynamic_imports", "runtime_async_edges"}},
 		},
@@ -255,12 +262,12 @@ func TestRenderer_Render_ConnascenceSummary(t *testing.T) {
 
 func TestRenderer_Render_DynamicConnascenceSignals(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.DynamicConnascenceSignals = &diagnostic.DynamicConnascenceSignals{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.DynamicConnascenceSignals = &reportmodel.DynamicConnascenceSignals{
 		ReportOnlyReason: dynamicReportOnlyReasonMd,
 		Unmeasured:       []string{connascenceExecutionMd, connascenceTimingMd, "value", "identity"},
-		Signals: []diagnostic.DynamicConnascenceSignal{
+		Signals: []reportmodel.DynamicConnascenceSignal{
 			{
 				Kind:               "runtime_async",
 				RelatedConnascence: []string{connascenceExecutionMd, connascenceTimingMd},
@@ -270,7 +277,7 @@ func TestRenderer_Render_DynamicConnascenceSignals(t *testing.T) {
 				Target:             rabbitMQLib,
 				IntegrationKind:    kindMQ,
 				Count:              2,
-				Sites: []diagnostic.DynamicConnascenceSite{
+				Sites: []reportmodel.DynamicConnascenceSite{
 					{File: filePublisher, Line: 10, Kind: kindMQ, Language: "go", Target: rabbitMQLib},
 				},
 			},
@@ -281,7 +288,7 @@ func TestRenderer_Render_DynamicConnascenceSignals(t *testing.T) {
 				ReportOnlyReason:   dynamicReportOnlyReasonMd,
 				Module:             "plugins",
 				Count:              1,
-				Sites: []diagnostic.DynamicConnascenceSite{
+				Sites: []reportmodel.DynamicConnascenceSite{
 					{File: "plugins/load.py", Line: 4, Kind: "importlib", Language: langPythonMarkdownTest},
 				},
 			},
@@ -314,10 +321,10 @@ func TestRenderer_Render_DynamicConnascenceSignals(t *testing.T) {
 
 func TestRenderer_Render_SemanticStrengthOverlay(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.SemanticStrengthOverlay = &diagnostic.SemanticStrengthOverlay{
-		ByLanguage: map[string]diagnostic.SemanticStrengthOverlayStats{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.SemanticStrengthOverlay = &reportmodel.SemanticStrengthOverlay{
+		ByLanguage: map[string]reportmodel.SemanticStrengthOverlayStats{
 			graph.LangPython:     {CandidateEdges: 1, Applied: 1, Missed: 0, Before: map[string]int{strengthUnknown: 1}, After: map[string]int{strengthIntrusive: 1}},
 			graph.LangRust:       {CandidateEdges: 2, Applied: 0, Missed: 2, Before: map[string]int{strengthUnknown: 2}, After: map[string]int{strengthUnknown: 2}},
 			graph.LangTypeScript: {CandidateEdges: 2, Applied: 1, Missed: 1, Before: map[string]int{strengthUnknown: 2}, After: map[string]int{strengthModel: 1, strengthUnknown: 1}},
@@ -345,14 +352,14 @@ func TestRenderer_Render_SemanticStrengthOverlay(t *testing.T) {
 
 func TestRenderer_Render_DynamicImports(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.DynamicImports = []diagnostic.DynamicImport{
-		{Module: "app.plugins", Count: 12, Sites: []diagnostic.DynamicImportSite{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.DynamicImports = []reportmodel.DynamicImport{
+		{Module: "app.plugins", Count: 12, Sites: []reportmodel.DynamicImportSite{
 			{File: "app/plugins/loader.py", Line: 5, Kind: "lazy_import", Language: "python"},
 			{File: "app/plugins/loader.py", Line: 9, Kind: "importlib", Language: "python"},
 		}},
-		{Module: "web", Count: 1, Sites: []diagnostic.DynamicImportSite{
+		{Module: "web", Count: 1, Sites: []reportmodel.DynamicImportSite{
 			{File: "web/boot.ts", Line: 3, Kind: "require", Language: "typescript"},
 		}},
 	}
@@ -387,8 +394,8 @@ func TestRenderer_Render_DynamicImports(t *testing.T) {
 
 func TestRenderer_Render_DynamicImportsAbsentWhenEmpty(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -401,15 +408,15 @@ func TestRenderer_Render_DynamicImportsAbsentWhenEmpty(t *testing.T) {
 
 func TestRenderer_Render_RuntimeAsync(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.RuntimeAsync = []diagnostic.RuntimeAsyncModule{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.RuntimeAsync = []reportmodel.RuntimeAsyncModule{
 		{Module: modAPI, IntegrationKind: kindMQ, Count: 2, Confidence: confMedium},
 	}
-	d.RuntimeAsyncEdges = []diagnostic.RuntimeAsyncEdge{
+	d.RuntimeAsyncEdges = []reportmodel.RuntimeAsyncEdge{
 		{
 			FromModule: modAPI, Target: rabbitMQLib, IntegrationKind: kindMQ, Count: 2, Confidence: confMedium,
-			Sites: []diagnostic.RuntimeAsyncSite{
+			Sites: []reportmodel.RuntimeAsyncSite{
 				{File: filePublisher, Line: 10, Library: rabbitMQLib, IntegrationKind: kindMQ, Language: "go"},
 			},
 		},
@@ -439,8 +446,8 @@ func TestRenderer_Render_RuntimeAsync(t *testing.T) {
 
 func TestRenderer_Render_RuntimeAsyncAbsentWhenEmpty(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -453,16 +460,16 @@ func TestRenderer_Render_RuntimeAsyncAbsentWhenEmpty(t *testing.T) {
 
 func TestRenderer_Render_DistanceConfigCandidates(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.DistanceConfigCandidates = []diagnostic.DistanceConfigCandidate{{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.DistanceConfigCandidates = []reportmodel.DistanceConfigCandidate{{
 		SourceBlock:           "runtime_async_edges",
 		Module:                modAPI,
 		Target:                rabbitMQLib,
 		IntegrationKind:       kindMQ,
 		Count:                 2,
 		SuggestedReviewAction: "external_systems",
-		EvidenceSites: []diagnostic.DistanceConfigEvidenceSite{{
+		EvidenceSites: []reportmodel.DistanceConfigEvidenceSite{{
 			File: filePublisher, Line: 10, Kind: kindMQ, Language: "go", Target: rabbitMQLib,
 		}},
 	}}
@@ -491,15 +498,15 @@ func TestRenderer_Render_DistanceConfigCandidates(t *testing.T) {
 
 func TestRenderer_Render_VolatilityCorroboration(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.VolatilityCorroboration = &diagnostic.VolatilityCorroboration{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.VolatilityCorroboration = &reportmodel.VolatilityCorroboration{
 		Source:         "git_history",
 		Status:         "ok",
 		CommitWindow:   500,
 		CommitsScanned: 42,
 		ModulesTouched: 3,
-		TopTouched: []diagnostic.VolatilityTouch{
+		TopTouched: []reportmodel.VolatilityTouch{
 			{Module: "cmd/archfit", TouchCommits: 12, DeclaredVolatility: confidenceHigh},
 			{Module: "internal/output", TouchCommits: 5, DeclaredVolatility: confidenceLow},
 		},
@@ -531,9 +538,9 @@ func TestRenderer_Render_VolatilityCorroboration(t *testing.T) {
 
 func TestRenderer_Render_CoverageGaps(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.CoverageGaps = []diagnostic.CoverageGap{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.CoverageGaps = []reportmodel.CoverageGap{
 		{Tool: "go/packages", InstallCmd: "https://go.dev/dl", AffectedMetrics: []string{"coverage", "coupling_balance"}, Gate: gateWarn},
 		{Tool: toolJscpd, InstallCmd: "npm install -g jscpd", AffectedMetrics: []string{metricBlastRadius}, Gate: gateWarn},
 	}
@@ -561,8 +568,8 @@ func TestRenderer_Render_CoverageGaps(t *testing.T) {
 
 func TestRenderer_Render_CoverageGapsAbsentWhenEmpty(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -575,8 +582,8 @@ func TestRenderer_Render_CoverageGapsAbsentWhenEmpty(t *testing.T) {
 
 func TestRenderer_Render_ConfigWarnings(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 	d.ConfigWarnings = []string{
 		`module "internal/a" omits owner`,
 		jscpdCrash,
@@ -603,8 +610,8 @@ func TestRenderer_Render_ConfigWarnings(t *testing.T) {
 
 func TestRenderer_Render_ConfigWarningsGroupsRepeatedModuleOmissions(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 	for i := range 17 {
 		d.ConfigWarnings = append(d.ConfigWarnings, fmt.Sprintf(`module "mod-%02d" omits owner, subdomain/volatility`, i))
 	}
@@ -634,8 +641,8 @@ func TestRenderer_Render_ConfigWarningsGroupsRepeatedModuleOmissions(t *testing.
 
 func TestRenderer_Render_ConfigWarningsAbsentWhenEmpty(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -648,13 +655,13 @@ func TestRenderer_Render_ConfigWarningsAbsentWhenEmpty(t *testing.T) {
 
 func TestRenderer_Render_GateFindings(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictFail
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictFail
 	d.Summary.GateFindings = 2
-	d.Findings = []finding.Finding{
+	d.Findings = reporttest.Findings(
 		makeGateFinding("forbidden_dep", finding.SeverityHigh, finding.StatusNew),
 		makeGateFinding("cycle", finding.SeverityCritical, finding.StatusNew),
-	}
+	)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -677,13 +684,13 @@ func TestRenderer_Render_GateFindings(t *testing.T) {
 
 func TestRenderer_Render_AdvisoryFindings(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 	d.Summary.Warnings = 2
-	d.Findings = []finding.Finding{
+	d.Findings = reporttest.Findings(
 		makeAdvisoryFinding("bc/imbalanced_coupling"),
 		makeAdvisoryFinding("bc/imbalanced_coupling"),
-	}
+	)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -709,11 +716,11 @@ func TestRenderer_Render_AdvisoryFindings(t *testing.T) {
 
 func TestRenderer_Render_AdvisoryAbsentWhenNoAdvisory(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.Findings = []finding.Finding{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.Findings = reporttest.Findings(
 		makeGateFinding("forbidden_dep", finding.SeverityLow, finding.StatusNew),
-	}
+	)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -729,12 +736,12 @@ func TestRenderer_Render_AdvisoryAbsentWhenNoAdvisory(t *testing.T) {
 
 func TestRenderer_Render_StalenessSection(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.Findings = []finding.Finding{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.Findings = reporttest.Findings(
 		makeAdvisoryFinding("map/uncovered_path"),
 		makeAdvisoryFinding("map/dead_rule"),
-	}
+	)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -753,11 +760,11 @@ func TestRenderer_Render_StalenessSection(t *testing.T) {
 
 func TestRenderer_Render_ExceptionInventory(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 	d.Summary.WaiversUsed = 1
 	waived := makeGateFinding("forbidden_dep", finding.SeverityLow, finding.StatusWaived)
-	d.Findings = []finding.Finding{waived}
+	d.Findings = reporttest.Findings(waived)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -773,15 +780,15 @@ func TestRenderer_Render_ExceptionInventory(t *testing.T) {
 
 func TestRenderer_Render_Top10GateTruncation(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictFail
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictFail
 
 	// Create 15 gate findings.
 	for i := range 15 {
 		f := makeGateFinding("rule", finding.SeverityLow, finding.StatusNew)
 		// Make each unique by varying path.
 		f.Edge.From.Path = "pkg/" + string(rune('a'+i))
-		d.Findings = append(d.Findings, f)
+		d.Findings = append(d.Findings, reporttest.Findings(f)...)
 	}
 	d.Summary.GateFindings = 15
 
@@ -804,9 +811,9 @@ func TestRenderer_Render_Top10GateTruncation(t *testing.T) {
 
 func TestRenderer_Render_MetricsSection(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.Metrics = []diagnostic.MetricResult{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.Metrics = []reportmodel.MetricResult{
 		{Name: "coupling_ratio", Display: "0.42", Band: bandGood, Confidence: confidenceHigh},
 	}
 
@@ -826,8 +833,8 @@ func TestRenderer_Render_MetricsSection(t *testing.T) {
 
 func TestRenderer_Render_OutputIsValidText(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -848,12 +855,12 @@ func TestRenderer_Render_NewInfoMetrics(t *testing.T) {
 	// Confirm kept info-metrics render their display string and band in the Metrics section.
 	tests := []struct {
 		name    string
-		metric  diagnostic.MetricResult
+		metric  reportmodel.MetricResult
 		wantSub []string
 	}{
 		{
 			name: "cycle present",
-			metric: diagnostic.MetricResult{
+			metric: reportmodel.MetricResult{
 				Name:       metricCycle,
 				Display:    "3 cycle(s)",
 				Band:       bandInfo,
@@ -863,7 +870,7 @@ func TestRenderer_Render_NewInfoMetrics(t *testing.T) {
 		},
 		{
 			name: "unbalanced_edge present",
-			metric: diagnostic.MetricResult{
+			metric: reportmodel.MetricResult{
 				Name:       metricUnbalanced,
 				Display:    "5 unbalanced edge(s)",
 				Band:       bandInfo,
@@ -873,7 +880,7 @@ func TestRenderer_Render_NewInfoMetrics(t *testing.T) {
 		},
 		{
 			name: "cycle n/a",
-			metric: diagnostic.MetricResult{
+			metric: reportmodel.MetricResult{
 				Name:       metricCycle,
 				Display:    bandNA,
 				Band:       bandNA,
@@ -883,7 +890,7 @@ func TestRenderer_Render_NewInfoMetrics(t *testing.T) {
 		},
 		{
 			name: "unbalanced_edge n/a",
-			metric: diagnostic.MetricResult{
+			metric: reportmodel.MetricResult{
 				Name:       metricUnbalanced,
 				Display:    bandNA,
 				Band:       bandNA,
@@ -895,9 +902,9 @@ func TestRenderer_Render_NewInfoMetrics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := diagnostic.New()
-			d.Verdict = diagnostic.VerdictPass
-			d.Metrics = []diagnostic.MetricResult{tt.metric}
+			d := reportmodel.NewDocument()
+			d.Verdict = reportmodel.VerdictPass
+			d.Metrics = []reportmodel.MetricResult{tt.metric}
 
 			r := markdown.New()
 			var buf bytes.Buffer
@@ -918,9 +925,9 @@ func TestRenderer_Render_NewInfoMetrics(t *testing.T) {
 func TestRenderer_Render_ToolCoverageNewTools(t *testing.T) {
 	// Confirm scip-symbols and jscpd (clones) coverage rows render,
 	// and that an absent tool's reason + enable step renders alongside its status.
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.ToolCoverage = []diagnostic.Coverage{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.ToolCoverage = []reportmodel.Coverage{
 		{Tool: "scip-symbols", Status: statusAbsent, Reason: "install JS/TS dependencies (e.g. `npm install`) for semantic strength"},
 		{Tool: "jscpd", Status: statusAbsent},
 	}
@@ -951,9 +958,9 @@ func TestRenderer_Render_ToolCoverageNewTools(t *testing.T) {
 // goal, files, constraints, and validation; and is absent without tasks.
 func TestRenderer_Render_AgentTasks(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictFail
-	d.AgentTasks = []diagnostic.AgentTask{{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictFail
+	d.AgentTasks = []reportmodel.AgentTask{{
 		FindingID:   "abcdef1234567890",
 		RuleID:      "no_internal_access",
 		Goal:        "Replace the internal-API access from pkg/a/a.go to pkg/b/internal/impl.go with b's public API.",
@@ -979,8 +986,8 @@ func TestRenderer_Render_AgentTasks(t *testing.T) {
 		}
 	}
 
-	empty := diagnostic.New()
-	empty.Verdict = diagnostic.VerdictPass
+	empty := reportmodel.NewDocument()
+	empty.Verdict = reportmodel.VerdictPass
 	buf.Reset()
 	if err := r.Render(empty, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
@@ -992,13 +999,13 @@ func TestRenderer_Render_AgentTasks(t *testing.T) {
 
 func TestRenderer_Render_AdvisoryTasks(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.AdvisoryTasks = []diagnostic.AdvisoryTask{{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.AdvisoryTasks = []reportmodel.AdvisoryTask{{
 		FindingID:    "abcdef1234567890",
 		RuleID:       "bc/imbalanced_coupling",
-		Status:       finding.StatusNew,
-		Severity:     finding.SeverityHigh,
+		Status:       string(finding.StatusNew),
+		Severity:     string(finding.SeverityHigh),
 		GroupCount:   3,
 		GroupMembers: []string{"id1", "id2"},
 		Goal:         "Review grouped advisories.",
@@ -1034,14 +1041,14 @@ func TestRenderer_Render_AdvisoryTasks(t *testing.T) {
 
 func TestRenderer_Render_AdvisoryTasksCapsAtTop25(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 	for i := range 27 {
-		d.AdvisoryTasks = append(d.AdvisoryTasks, diagnostic.AdvisoryTask{
+		d.AdvisoryTasks = append(d.AdvisoryTasks, reportmodel.AdvisoryTask{
 			FindingID:  fmt.Sprintf("%016d", i),
 			RuleID:     fmt.Sprintf("rule-%02d", i),
-			Status:     finding.StatusNew,
-			Severity:   finding.SeverityHigh,
+			Status:     string(finding.StatusNew),
+			Severity:   string(finding.SeverityHigh),
 			GroupCount: 1,
 			Goal:       fmt.Sprintf("Review advisory %02d.", i),
 		})
@@ -1075,8 +1082,8 @@ func TestRenderer_Render_AdvisoryTasksCapsAtTop25(t *testing.T) {
 // volatility, score breakdown, why, and cheapest-move fields from MatchedBy.
 func TestRenderer_Render_BCLintMessage(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 	d.Summary.Warnings = 1
 
 	f := makeAdvisoryFinding("bc/imbalanced_coupling")
@@ -1091,7 +1098,7 @@ func TestRenderer_Render_BCLintMessage(t *testing.T) {
 		"score":         "intrusive(+8) cross_deploy(+5) vol_high(-0) = 13->10",
 		"cheapest_move": "lower strength intrusive->contract (-5)",
 	}
-	d.Findings = []finding.Finding{f}
+	d.Findings = reporttest.Findings(f)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -1120,8 +1127,8 @@ func TestRenderer_Render_BCLintMessage(t *testing.T) {
 // "score: <value>/10 (<band>) [<scorer>]" rather than just the scorer name.
 func TestRenderer_Render_BCLintMessage_NumericScore(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 	d.Summary.Warnings = 1
 
 	f := makeAdvisoryFinding("bc/imbalanced_coupling")
@@ -1136,7 +1143,7 @@ func TestRenderer_Render_BCLintMessage_NumericScore(t *testing.T) {
 		"score_value": "10",
 		"score_band":  "critical",
 	}
-	d.Findings = []finding.Finding{f}
+	d.Findings = reporttest.Findings(f)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -1153,8 +1160,8 @@ func TestRenderer_Render_BCLintMessage_NumericScore(t *testing.T) {
 // renders the rollup edge count and the section header reports rollups vs edges.
 func TestRenderer_Render_BCRollup(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 	d.Summary.Warnings = 1
 
 	f := makeAdvisoryFinding("bc/imbalanced_coupling")
@@ -1168,7 +1175,7 @@ func TestRenderer_Render_BCRollup(t *testing.T) {
 		"group_count":   "42",
 		"group_members": "id1,id2,id3",
 	}
-	d.Findings = []finding.Finding{f}
+	d.Findings = reporttest.Findings(f)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -1190,8 +1197,8 @@ func TestRenderer_Render_BCRollup(t *testing.T) {
 // (group_count absent or 1) renders no rollup line.
 func TestRenderer_Render_BCNoRollupLineWhenSingle(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 
 	f := makeAdvisoryFinding("bc/imbalanced_coupling")
 	f.Severity = finding.SeverityMedium
@@ -1203,7 +1210,7 @@ func TestRenderer_Render_BCNoRollupLineWhenSingle(t *testing.T) {
 		mbVolatility:  "unknown",
 		"group_count": "1",
 	}
-	d.Findings = []finding.Finding{f}
+	d.Findings = reporttest.Findings(f)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -1225,8 +1232,8 @@ func TestRenderer_Render_ConfigHash(t *testing.T) {
 	r := markdown.New()
 
 	t.Run("present when set", func(t *testing.T) {
-		d := diagnostic.New()
-		d.Verdict = diagnostic.VerdictPass
+		d := reportmodel.NewDocument()
+		d.Verdict = reportmodel.VerdictPass
 		d.ConfigHash = "abc123def456"
 
 		var buf bytes.Buffer
@@ -1243,8 +1250,8 @@ func TestRenderer_Render_ConfigHash(t *testing.T) {
 	})
 
 	t.Run("absent when empty", func(t *testing.T) {
-		d := diagnostic.New()
-		d.Verdict = diagnostic.VerdictPass
+		d := reportmodel.NewDocument()
+		d.Verdict = reportmodel.VerdictPass
 		d.ConfigHash = ""
 
 		var buf bytes.Buffer
@@ -1261,9 +1268,9 @@ func TestRenderer_Render_ConfigHash(t *testing.T) {
 // the dedicated "Supporting structural metrics" section and NOT in primary Metrics.
 func TestRenderer_Render_BeyondBCMetrics(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.Metrics = []diagnostic.MetricResult{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.Metrics = []reportmodel.MetricResult{
 		{Name: metricEncap, Display: "0.85", Band: bandGood, Confidence: confidenceHigh},
 		{Name: metricCycle, Display: "0", Band: "none", Confidence: confidenceHigh},
 		{Name: metricBlastRadius, Display: "0.12", Band: "low", Confidence: confidenceHigh},
@@ -1300,9 +1307,9 @@ func TestRenderer_Render_BeyondBCMetrics(t *testing.T) {
 // that no footnote block is emitted (the proxy-footnote mechanism was removed).
 func TestRenderer_Render_BeyondBCLowConfidence(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.Metrics = []diagnostic.MetricResult{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.Metrics = []reportmodel.MetricResult{
 		// Beyond-BC metric at low confidence: qualifier appended to band label.
 		{Name: metricBlastRadius, Display: "0.12", Band: "low", Confidence: confidenceLow},
 	}
@@ -1324,7 +1331,7 @@ func TestRenderer_Render_BeyondBCLowConfidence(t *testing.T) {
 
 	// JSON renderer retains every metric in full.
 	var jbuf bytes.Buffer
-	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &jbuf); err != nil {
+	if err := jsonout.New().Render(d, &jbuf); err != nil {
 		t.Fatalf("json Render() error = %v", err)
 	}
 	jout := jbuf.String()
@@ -1339,9 +1346,9 @@ func TestRenderer_Render_BeyondBCLowConfidence(t *testing.T) {
 // NOT footnoted when its confidence is high — only low-confidence proxies demote.
 func TestRenderer_Render_ProxyHeadlineWhenHighConfidence(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.Metrics = []diagnostic.MetricResult{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.Metrics = []reportmodel.MetricResult{
 		{Name: metricUnbalanced, Display: "0", Band: bandInfo, Confidence: confidenceHigh},
 	}
 
@@ -1363,9 +1370,9 @@ func TestRenderer_Render_ProxyHeadlineWhenHighConfidence(t *testing.T) {
 // is always present and reflects tool coverage sources.
 func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.DistanceContext = &diagnostic.DistanceContext{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.DistanceContext = &reportmodel.DistanceContext{
 		OwnerModel:                "single_owner_degenerate",
 		DistanceBasis:             map[string]int{"code_structure": 3, "ownership": 1},
 		DeployUnitDetectedModules: 1,
@@ -1375,7 +1382,7 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 		Interpretation:            "same-owner is the lowest cross-module distance; this is a low socio-technical distance signal, not missing ownership",
 		RuntimeInterpretation:     "async runtime bridges reduce lifecycle coupling and therefore increase perceived distance (book Ch8), but remain report-only because archfit does not yet measure synchronous first-party runtime peers deterministically",
 	}
-	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+	d.ClassifiedEdges = &reportmodel.ClassifiedEdgeSummary{
 		Scored:            10,
 		ConnectedModules:  2,
 		External:          5,
@@ -1383,7 +1390,7 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 		CloneOnlyScored:   3,
 		CloneOnlyAdvisory: 1,
 		ByDistanceBasis:   map[string]int{"code_structure": 3, "ownership": 1},
-		TailRisk: &diagnostic.CouplingTailRiskSummary{
+		TailRisk: &reportmodel.CouplingTailRiskSummary{
 			WorstBalance:              2,
 			LowerDecileBalance:        4,
 			HighOrWorseEdges:          2,
@@ -1394,13 +1401,13 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 			CloneOnlyHighOrWorseEdges: 1,
 			CloneOnlyWorstBalance:     4,
 		},
-		DistanceCompression: &diagnostic.DistanceCompressionSummary{
+		DistanceCompression: &reportmodel.DistanceCompressionSummary{
 			CompressedMiddleRungs:       true,
 			ImplementedRungs:            []int{2, 4, 7, 9, 10},
 			OmittedRungs:                []int{3, 5, 6, 8},
-			CodeStructureBoundaryCounts: []diagnostic.DistanceCount{{Value: 2, Count: 3}, {Value: 5, Count: 1}},
-			CodeStructureAncestorDepths: []diagnostic.DistanceCount{{Value: 0, Count: 1}, {Value: 1, Count: 3}},
-			OmittedRungReasons: []diagnostic.DistanceOmittedRungReason{
+			CodeStructureBoundaryCounts: []reportmodel.DistanceCount{{Value: 2, Count: 3}, {Value: 5, Count: 1}},
+			CodeStructureAncestorDepths: []reportmodel.DistanceCount{{Value: 0, Count: 1}, {Value: 1, Count: 3}},
+			OmittedRungReasons: []reportmodel.DistanceOmittedRungReason{
 				{Rung: 8, Reason: "declared external_systems use D=10; library-like seams stay compressed"},
 			},
 			Rationale: "D=3/D=5/D=6/D=8 remain compressed: no stable deterministic facts beyond structure/ownership/deploy_unit.",
@@ -1456,11 +1463,11 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 }
 
 // TestRenderer_Render_EmptyDiagnosticHasDistanceConfidence verifies the distance
-// confidence section is present even on a minimal empty diagnostic.
+// confidence section is present even on a minimal empty reportmodel.
 func TestRenderer_Render_EmptyDiagnosticHasDistanceConfidence(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -1479,9 +1486,9 @@ func TestRenderer_Render_EmptyDiagnosticHasDistanceConfidence(t *testing.T) {
 // the public API list grouped by file, and detected role/route summaries.
 func TestRenderer_Render_SyntaxSurface_Present(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.SyntaxFacts = []diagnostic.SyntaxFact{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.SyntaxFacts = []reportmodel.SyntaxFact{
 		{Language: "go", File: fileAPIHandler, Kind: kindFunction, Name: "HandleRequest", Exported: true, StartLine: 10},
 		{Language: "go", File: fileAPIHandler, Kind: kindFunction, Name: "internalHelper", Exported: false, StartLine: 30},
 		{Language: "go", File: fileAPIHandler, Kind: "route", Name: "GET /health", Exported: false, StartLine: 50, Framework: "gin"},
@@ -1547,8 +1554,8 @@ func TestRenderer_Render_SyntaxSurface_Present(t *testing.T) {
 // sg absent). No empty section, no false signal.
 func TestRenderer_Render_SyntaxSurface_Absent(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 	// SyntaxFacts intentionally empty.
 
 	var buf bytes.Buffer
@@ -1570,12 +1577,12 @@ func TestRenderer_Render_SyntaxSurface_Absent(t *testing.T) {
 // list and appends a "N more" overflow line.
 func TestRenderer_Render_SyntaxSurface_ExportedCap(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
 
 	// 25 exported functions across one file.
 	for i := range 25 {
-		d.SyntaxFacts = append(d.SyntaxFacts, diagnostic.SyntaxFact{
+		d.SyntaxFacts = append(d.SyntaxFacts, reportmodel.SyntaxFact{
 			Language:  "go",
 			File:      "pkg/big/api.go",
 			Kind:      "function",
@@ -1604,9 +1611,9 @@ func TestRenderer_Render_SyntaxSurface_ExportedCap(t *testing.T) {
 // with a Framework field render the framework name in the Public API list.
 func TestRenderer_Render_SyntaxSurface_RouteFramework(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.SyntaxFacts = []diagnostic.SyntaxFact{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.SyntaxFacts = []reportmodel.SyntaxFact{
 		{Language: "go", File: "cmd/server/routes.go", Kind: "route", Name: "GET /ping",
 			Exported: true, StartLine: 1, Framework: "gin"},
 	}
@@ -1629,9 +1636,9 @@ func TestRenderer_Render_SyntaxSurface_RouteFramework(t *testing.T) {
 // file header includes the module name when Module is set.
 func TestRenderer_Render_SyntaxSurface_PerModuleCounts(t *testing.T) {
 	r := markdown.New()
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.SyntaxFacts = []diagnostic.SyntaxFact{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.SyntaxFacts = []reportmodel.SyntaxFact{
 		// module "api" — two facts, one exported
 		{Language: "go", File: "pkg/api/handler.go", Module: "api", Kind: kindFunction, Name: "Handle", Exported: true, StartLine: 10},
 		{Language: "go", File: "pkg/api/handler.go", Module: "api", Kind: kindFunction, Name: "internal", Exported: false, StartLine: 20},
@@ -1679,9 +1686,9 @@ func TestRenderer_Render_SyntaxSurface_PerModuleCounts(t *testing.T) {
 // TestRender_DeprecatedDep_PipeEscaping verifies that pipe characters and newlines
 // in manifest deprecation note cells are escaped so the Markdown table is valid.
 func TestRender_DeprecatedDep_PipeEscaping(t *testing.T) {
-	d := diagnostic.New()
-	d.Verdict = diagnostic.VerdictPass
-	d.DeprecatedDeps = []diagnostic.DeprecatedDep{
+	d := reportmodel.NewDocument()
+	d.Verdict = reportmodel.VerdictPass
+	d.DeprecatedDeps = []reportmodel.DeprecatedDep{
 		{
 			File:    "go|mod",
 			Kind:    "retract",
@@ -1723,5 +1730,42 @@ func TestRender_DeprecatedDep_PipeEscaping(t *testing.T) {
 	}
 	if !strings.Contains(out, `v1\|0`) {
 		t.Errorf("pipe in subject must be escaped as \\|; output:\n%s", out)
+	}
+}
+
+// TestRenderer_Render_TruncatedWhyStaysValidUTF8 pins the UTF-8 contract of the
+// Markdown renderer.
+//
+// The regression: the long-`why` guards sliced by BYTES at 197 and 137. Every
+// coupling advisory carries "×" and "→", so a cut landing inside one emitted
+// invalid UTF-8 — and a strict consumer loses the WHOLE document, not one line.
+// Found by the corpus sweep on storybook, whose Markdown report failed to
+// decode at byte 43174.
+//
+// The loop slides the multi-byte runes across the cap byte with an ASCII
+// prefix, so some iteration always cuts inside one.
+func TestRenderer_Render_TruncatedWhyStaysValidUTF8(t *testing.T) {
+	t.Parallel()
+	const unit = "coupling × distance → volatile target "
+	for shift := 0; shift < len(unit); shift++ {
+		// Pad with ASCII so the multi-byte runes slide across the byte the cap
+		// cuts at; varying only the LENGTH would never move the cut.
+		why := strings.Repeat("x", shift) + strings.Repeat(unit, 10)
+		d := reportmodel.NewDocument()
+		d.Verdict = reportmodel.VerdictFail
+		f := reportmodel.Finding{
+			ID: "f1", RuleID: "bc/imbalanced_coupling", Kind: reportmodel.FindingKindGate,
+			Severity: confidenceHigh, Status: "new", Why: why,
+		}
+		d.Findings = []reportmodel.Finding{f}
+		d.State.Findings = d.Findings
+
+		var buf bytes.Buffer
+		if err := markdown.New().Render(d, &buf); err != nil {
+			t.Fatalf("Render() error = %v", err)
+		}
+		if !utf8.Valid(buf.Bytes()) {
+			t.Fatalf("markdown render is not valid UTF-8 with a %d-byte ASCII prefix", shift)
+		}
 	}
 }

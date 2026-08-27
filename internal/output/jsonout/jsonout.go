@@ -4,31 +4,59 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/report"
+	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
-// JSONRenderer marshals a Diagnostic plus its synthesised scorecard to JSON.
+// StateRenderer marshals the architecture-state contract as the primary JSON
+// output: archfit.architecture-state.v1 AT THE DOCUMENT ROOT, so a consumer
+// reads .verdict, .decision, and .dimensions without unwrapping an envelope.
+//
+// It carries no repository scalar by construction — the state type has none —
+// so a CI job cannot go on gating a 0-100 number through the primary format.
+type StateRenderer struct{}
+
+var _ reportports.Renderer = (*StateRenderer)(nil)
+
+// NewState returns the primary architecture-state JSON renderer.
+func NewState() *StateRenderer { return &StateRenderer{} }
+
+// Format returns "json".
+func (r *StateRenderer) Format() string { return "json" }
+
+// Render writes the architecture state. Ordering is fixed by the contract's
+// declaration order and by the pipeline that produced each list, so two runs
+// over the same tree, config, and tool versions emit identical bytes.
+func (r *StateRenderer) Render(d report.Document, w io.Writer) error {
+	return json.NewEncoder(w).Encode(d.State)
+}
+
+// JSONRenderer marshals a report document plus its projected scorecard to JSON.
+//
+// This is the pre-cutover envelope, retained for exactly one release under the
+// explicit `legacy-json` format name. It is the only output that still carries
+// the repository scalar, and nothing in it reaches the verdict or the exit code.
 type JSONRenderer struct{}
 
-// New returns a new JSONRenderer.
+var _ reportports.Renderer = (*JSONRenderer)(nil)
+
+// New returns the legacy JSON renderer.
 func New() *JSONRenderer {
 	return &JSONRenderer{}
 }
 
-// Format returns "json".
+// Format returns "legacy-json".
 func (r *JSONRenderer) Format() string {
-	return "json"
+	return "legacy-json"
 }
 
-// envelope flattens the Diagnostic at the top level (preserving the existing
+// envelope flattens the report document at the top level (preserving the existing
 // schema) and adds the synthesised scorecard, the hoisted coupling_balance
 // dimension (the score's main driver), and — when a base scorecard is supplied —
 // a version delta. Before this, an agent/CI consumer reading --json could not see
 // the 0-100 score, its driver, or any delta; only text/markdown carried them (F5).
 type envelope struct {
-	diagnostic.Diagnostic
+	report.Document
 	Score report.Scorecard `json:"score"`
 	// ScoreVersion pins the BC score formula version (ordinals, severity
 	// mapping). Consumers key on it: scores are not comparable across
@@ -37,8 +65,19 @@ type envelope struct {
 	ScoreVersion    string            `json:"score_version"`
 	CouplingBalance *report.Dimension `json:"coupling_balance,omitempty"`
 	// ScoreDelta is the scorecard delta vs --base. Named distinctly from the
-	// embedded Diagnostic's `delta` (findings lifecycle) to avoid a key collision.
+	// embedded report document's `delta` (findings lifecycle) to avoid a key
+	// collision. It is OMITTED when the run's state comparison is not
+	// comparable: a config edit, a module rename, a label change, or a rubric
+	// bump moves the number without the code moving, and publishing it beside a
+	// non_comparable verdict is exactly the false numerical delta the contract
+	// forbids — in the legacy envelope as much as in the primary one.
 	ScoreDelta *scoreDelta `json:"score_delta,omitempty"`
+	// ComparisonStatus discloses why score_delta is absent, so a consumer can
+	// tell "no --base was requested" from "the two runs are not comparable".
+	ComparisonStatus report.ComparisonStatus `json:"comparison_status"`
+	// ComparisonReasons name the drifted inputs when the status is
+	// non_comparable. Empty otherwise.
+	ComparisonReasons []string `json:"comparison_reasons,omitempty"`
 }
 
 // scoreDelta is the per-dimension head-vs-base comparison emitted with --base.
@@ -56,17 +95,21 @@ type dimensionDelta struct {
 	Delta int    `json:"delta"`
 }
 
-// Render writes d plus its scorecard (and an optional delta vs base) as JSON.
-// schema_version is part of the embedded Diagnostic and is always present.
-func (r *JSONRenderer) Render(d diagnostic.Diagnostic, sc report.Scorecard, base *report.Scorecard, w io.Writer) error {
+// Render writes d plus its projected scorecard (and an optional delta vs base) as JSON.
+// schema_version is part of the embedded report document and is always present.
+func (r *JSONRenderer) Render(d report.Document, w io.Writer) error {
 	env := envelope{
-		Diagnostic:      d,
-		Score:           sc,
-		ScoreVersion:    coupling.ScoreVersion,
-		CouplingBalance: dimensionByName(sc, report.DimCouplingBalance),
+		Document:         d,
+		Score:            d.Score,
+		ScoreVersion:     report.ScoreVersion,
+		CouplingBalance:  dimensionByName(d.Score, report.DimCouplingBalance),
+		ComparisonStatus: d.State.Comparison.Status,
 	}
-	if base != nil {
-		env.ScoreDelta = buildDelta(sc, *base)
+	if d.State.Comparison.Status == report.ComparisonNonComparable {
+		env.ComparisonReasons = d.State.Comparison.Reasons
+	}
+	if d.BaseScore != nil && d.State.Comparison.Status != report.ComparisonNonComparable {
+		env.ScoreDelta = buildDelta(d.Score, *d.BaseScore)
 	}
 	return json.NewEncoder(w).Encode(env)
 }
@@ -90,7 +133,10 @@ func buildDelta(head, base report.Scorecard) *scoreDelta {
 	}
 	dims := make([]dimensionDelta, 0, len(head.Dimensions))
 	for _, d := range head.Dimensions {
-		b := baseDim[d.Name]
+		b, ok := baseDim[d.Name]
+		if !ok {
+			continue
+		}
 		delta := d.Value - b.Value
 		// An n/a side (coupling unmeasured) has no real value — suppress the numeric
 		// delta so a measurement-status change is not reported as a score regression.

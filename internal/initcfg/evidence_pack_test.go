@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func writeEvidenceFile(t *testing.T, root, rel, body string) {
@@ -29,7 +30,7 @@ func TestBuildArchitectureEvidencePack_DiscoversSourcesWithStableIDs(t *testing.
 	writeEvidenceFile(t, root, "docs/how-we-work/0001-payments.md", "# Decision 0001\n\nUse a payments module.\n")
 	writeEvidenceFile(t, root, "internal/payments/doc.go", "// Package payments owns settlement workflows.\npackage payments\n")
 	writeEvidenceFile(t, root, "internal/payments/api.go", "package payments\n\n// Service settles invoices.\ntype Service struct{}\n\nfunc SettleInvoice() {}\nconst CurrencyUSD = \"USD\"\n")
-	writeEvidenceFile(t, root, ".archfit.yaml", "version: 1\nlayers:\n  - domain\nmodules:\n  payments:\n    paths:\n      - \"internal/payments/**\"\n    public:\n      - \"internal/payments/api.go\"\nai:\n  api_key: should-not-leak\n")
+	writeEvidenceFile(t, root, ".archfit.yaml", "version: 2\nlayers:\n  - domain\nmodules:\n  payments:\n    paths:\n      - \"internal/payments/**\"\n    public:\n      - \"internal/payments/api.go\"\nai:\n  api_key: should-not-leak\n")
 
 	mods := []ModuleDef{{
 		Name:   "payments",
@@ -191,6 +192,27 @@ func TestBuildArchitectureEvidencePack_DoesNotReadModulePathsOutsideRoot(t *test
 	for _, item := range items {
 		if strings.Contains(item.ID+item.Source+item.Text, "OutsideAPI") || strings.Contains(item.ID, "comment:") || strings.Contains(item.ID, "api:leak") {
 			t.Fatalf("outside-root module evidence leaked: %+v (all items: %+v)", item, items)
+		}
+	}
+}
+
+// TestBoundEvidenceTextIsRuneSafe pins the UTF-8 contract of the evidence pack.
+//
+// boundEvidenceText sliced by BYTES, so a cut landing inside a multi-byte rune
+// produced invalid UTF-8. This text is sent to an LLM and embedded in a JSON
+// report; invalid UTF-8 there is a marshalling failure, not a cosmetic one.
+// Same defect class as the Markdown and console truncation caps.
+func TestBoundEvidenceTextIsRuneSafe(t *testing.T) {
+	t.Parallel()
+	const unit = "package façade — bridges → adapters ✓ "
+	for shift := 0; shift < len(unit); shift++ {
+		// Slide the multi-byte runes across the cut byte with an ASCII prefix.
+		text := strings.Repeat("x", shift) + strings.Repeat(unit, 8)
+		for _, budget := range []int{1, 2, 3, 4, 17, 64, 137, 200} {
+			got := boundEvidenceText(text, budget)
+			if !utf8.ValidString(got) {
+				t.Fatalf("boundEvidenceText(shift=%d, %d) is not valid UTF-8: %q", shift, budget, got)
+			}
 		}
 	}
 }

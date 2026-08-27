@@ -12,13 +12,14 @@ import (
 	"strings"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -99,7 +100,7 @@ func TestDistanceConfigCandidates_DynamicImportsBecomeReviewOnlyHints(t *testing
 	if err := os.WriteFile(filepath.Join(dir, testUpdatePluginsModule, "loader.py"), []byte("def load(name):\n    return __import__(name)\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testUpdatePluginsModule: {Paths: []string{testUpdatePluginsModule + "/**"}},
 	}}
 
@@ -121,7 +122,7 @@ func TestDistanceConfigCandidates_DynamicImportsBecomeReviewOnlyHints(t *testing
 func TestStaticExternalDistanceConfigCandidatesFromGraph_GoThirdPartyHint(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testUpdateModuleA: {Paths: []string{testUpdateModuleAGlob}},
 	}}
 	g := graph.Build([]graph.Facts{{
@@ -152,7 +153,7 @@ func TestStaticExternalDistanceConfigCandidatesFromGraph_GoThirdPartyHint(t *tes
 func TestCandidateConfigForUpdate_UsesDiscoveredModules(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testUpdateModuleA: {
 			Paths:      []string{"old/a/**"},
 			Public:     []string{"old/public/**"},
@@ -201,7 +202,7 @@ func TestStaticExternalDistanceConfigCandidatesFromGraph_UsesDiscoveredModuleCon
 			{From: testUpdateModuleAFile, To: "package:github.com/aws/aws-sdk-go-v2/service/s3", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testUpdateModuleAPath, Line: 7}}},
 		},
 	}})
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testUpdateModuleA: {Paths: []string{"old/a/**"}},
 	}}
 	if raw := staticExternalDistanceConfigCandidatesFromGraph(g, cfg); len(raw) != 0 {
@@ -236,7 +237,7 @@ func TestDeployUnitSuggestions_DeterministicHintsOnlyForMissingConfig(t *testing
 			return toolrun.Output{Stdout: []byte(filepath.Join(dir, "cmd", testUpdateWebModule) + "\n")}, nil
 		},
 	}
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		testUpdateWebModule: {Paths: []string{testUpdateWebGlob}},
 		"api":               {Paths: []string{"cmd/api/**"}, DeployUnit: "api-service"},
 	}}
@@ -282,7 +283,7 @@ func TestDeployUnitSuggestions_UsesDiscoveredModuleMap(t *testing.T) {
 	// under a module name that does not exist in the config either.
 	t.Run("name-drifted module keeps its configured deploy unit", func(t *testing.T) {
 		const driftedName = "internal/" + testUpdateWebModule
-		driftedCfg := config.Config{Modules: map[string]module.ModuleDef{
+		driftedCfg := config.Config{Modules: map[string]policy.ModuleDef{
 			driftedName: {Paths: []string{testUpdateWebGlob}, DeployUnit: "web-service"},
 		}}
 		drift := []initcfg.NameDrift{{
@@ -298,26 +299,6 @@ func TestDeployUnitSuggestions_UsesDiscoveredModuleMap(t *testing.T) {
 			t.Errorf("deployUnitSuggestions = %+v, want none — the config already sets deploy_unit", suggestions)
 		}
 	})
-}
-
-func TestClassifyTargetsForUpdate_IncludesSyntheticOverridePath(t *testing.T) {
-	t.Parallel()
-	const (
-		syntheticModule = "mycrate-state"
-		syntheticPath   = "mycrate::state"
-	)
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
-		syntheticModule: {Paths: []string{syntheticPath}},
-	}}
-	report := initcfg.UpdateReport{Unclassified: []string{syntheticModule}}
-
-	got := classifyTargetsForUpdate(cfg, report, nil)
-	if len(got) != 1 {
-		t.Fatalf("targets = %d, want 1: %+v", len(got), got)
-	}
-	if got[0].Name != syntheticModule || len(got[0].Paths) != 1 || got[0].Paths[0] != syntheticPath {
-		t.Fatalf("synthetic override target not preserved: %+v", got[0])
-	}
 }
 
 func TestCollectUpdateRepoEvidence_ReadmeAndDocsHeadings(t *testing.T) {
@@ -347,7 +328,7 @@ func TestUpdateCmd_Apply_RustProjectEnablesDeepAnalyzers(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfgPath := writeConfig(t, dir, `version: 1
+	cfgPath := writeConfig(t, dir, `version: 2
 languages:
   rust:
     enabled: true
@@ -386,7 +367,7 @@ rules:
 		if err := os.WriteFile(filepath.Join(applyDir, markerCargoToml), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		applyCfg := writeConfig(t, applyDir, `version: 1
+		applyCfg := writeConfig(t, applyDir, `version: 2
 languages:
   rust:
     enabled: true
@@ -414,7 +395,7 @@ modules:
 	t.Run("a configured sub-crate manifest enables the deep analyzers", func(t *testing.T) {
 		subDir := t.TempDir()
 		writeFileAt(t, subDir, filepath.Join("crates", "core", markerCargoToml), "[package]\nname = \"core\"\n")
-		subCfg := writeConfig(t, subDir, `version: 1
+		subCfg := writeConfig(t, subDir, `version: 2
 languages:
   rust:
     enabled: true
@@ -445,7 +426,7 @@ modules: {}
 	t.Run("no manifest anywhere writes no Rust stanza", func(t *testing.T) {
 		plainDir := t.TempDir()
 		writeFileAt(t, plainDir, markerGoMod, "module example\n")
-		plainCfg := writeConfig(t, plainDir, `version: 1
+		plainCfg := writeConfig(t, plainDir, `version: 2
 modules: {}
 `)
 		if _, err := runUpdateCmd(t, &UpdateCmd{Config: plainCfg, Root: plainDir, Apply: true}, emptyRunner()); err != nil {
@@ -463,13 +444,13 @@ modules: {}
 
 func TestEnsureRustDeepAnalysisConfig_IgnoresCommentBoundaries(t *testing.T) {
 	cfg := config.Config{
-		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: view.ModeOn}},
+		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: evidenceports.ModeOn}},
 		Analyzers: config.AnalyzersConfig{
-			CargoModules: config.Analyzer{Enabled: view.ModeAuto},
-			Scip:         config.TimedAnalyzer{Enabled: view.ModeAuto},
+			CargoModules: config.Analyzer{Enabled: evidenceports.ModeAuto},
+			Scip:         config.TimedAnalyzer{Enabled: evidenceports.ModeAuto},
 		},
 	}
-	src := []byte(`version: 1
+	src := []byte(`version: 2
 languages:
   rust:
   # note: keep this section
@@ -500,13 +481,13 @@ rules:
 
 func TestEnsureRustDeepAnalysisConfig_PreservesExplicitAnalyzerOff(t *testing.T) {
 	cfg := config.Config{
-		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: view.ModeOn}},
+		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: evidenceports.ModeOn}},
 		Analyzers: config.AnalyzersConfig{
-			CargoModules: config.Analyzer{Enabled: view.ModeOff},
-			Scip:         config.TimedAnalyzer{Enabled: view.ModeOff},
+			CargoModules: config.Analyzer{Enabled: evidenceports.ModeOff},
+			Scip:         config.TimedAnalyzer{Enabled: evidenceports.ModeOff},
 		},
 	}
-	src := []byte(`version: 1
+	src := []byte(`version: 2
 languages:
   rust:
     enabled: true
@@ -539,7 +520,7 @@ func TestUpdateCmd_Apply_RustAnalyzerOptOutsPreserved(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := `version: 1
+	cfg := `version: 2
 languages:
   rust:
     enabled: true
@@ -586,7 +567,7 @@ func TestUpdateCmd_Apply_RustExplicitOffKeepsDeepAnalyzersDisabled(t *testing.T)
 	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := `version: 1
+	cfg := `version: 2
 languages:
   rust:
     enabled: false
@@ -621,7 +602,7 @@ func TestUpdateCmd_LLMPlanMode_SuggestsRustSyntheticModules(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"herdr\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - service
@@ -695,7 +676,7 @@ const (
 
 	// minimalConfigNoModules is a valid config with no modules section.
 	// Structurally in sync with empty discovery (Added=[], Removed=[], Drift=[]).
-	minimalConfigNoModules = `version: 1
+	minimalConfigNoModules = `version: 2
 layers:
   - core
   - adapter
@@ -707,7 +688,7 @@ rules:
     to: "internal/b/**"
 `
 	// configWithRemovedModule has a module that empty discovery will mark as Removed.
-	configWithRemovedModule = `version: 1
+	configWithRemovedModule = `version: 2
 layers:
   - core
   - adapter
@@ -820,7 +801,7 @@ func TestUpdateCmd_Apply_KeepsUnmatchedModule(t *testing.T) {
 func TestUpdateCmd_LLMApply_WritesOnlyAbsentFields(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -955,7 +936,7 @@ func TestUpdateCmd_LLMApply_SurfacesReviewOnlySuggestionsAfterStructuralEdit(t *
 func TestUpdateCmd_ExistingLayerNeverOverwritten(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -1012,7 +993,7 @@ rules:
 func TestUpdateCmd_MissingLayerFilledWhenValid(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -1072,7 +1053,7 @@ func TestUpdateCmd_OutOfSetLayerWritesNothing(t *testing.T) {
 	dir := minimalRoot(t)
 	// mymod has subdomain+volatility but no layer; LLM will suggest "infra" NOT in layers.
 	// The forbidden_layer_direction rule is what makes the missing layer classifiable.
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -1200,7 +1181,7 @@ func TestUpdateCmd_LLMPlanMode_FileUnchanged(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
 	// Config has mymod with no classification fields → it is Unclassified.
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -1261,7 +1242,7 @@ rules:
 func TestUpdateCmd_LLMPlanMode_RendersCitedRuleSuggestionsAndLeavesFileUnchanged(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
-	cfg := `version: 1
+	cfg := `version: 2
 layers:
   - core
   - adapter
@@ -1519,7 +1500,7 @@ var _ llm.Provider = rustSyntheticProvider{}
 // config update review: status, JSON document, and flag conflicts
 // ---------------------------------------------------------------------------
 
-const testUpdateReviewConfig = `version: 1
+const testUpdateReviewConfig = `version: 2
 layers:
   - core
   - adapter
@@ -1544,18 +1525,18 @@ func TestRequiresLayerClassification(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name  string
-		rules []view.RuleDef
+		rules []policy.RuleDef
 		want  bool
 	}{
 		{"no rules", nil, false},
-		{"other rule type", []view.RuleDef{{Type: "forbidden_dependency", Gate: gateFail}}, false},
-		{"layer rule gate unset", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection}}, true},
-		{"layer rule gate warn", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateWarn}}, true},
-		{"layer rule gate fail", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateFail}}, true},
-		{"layer rule gate off", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateOff}}, false},
+		{"other rule type", []policy.RuleDef{{Type: "forbidden_dependency", Gate: gateFail}}, false},
+		{"layer rule gate unset", []policy.RuleDef{{Type: ruleTypeForbiddenLayerDirection}}, true},
+		{"layer rule gate warn", []policy.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateWarn}}, true},
+		{"layer rule gate fail", []policy.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateFail}}, true},
+		{"layer rule gate off", []policy.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateOff}}, false},
 		{
 			name: "one live layer rule among several",
-			rules: []view.RuleDef{
+			rules: []policy.RuleDef{
 				{Type: ruleTypeForbiddenLayerDirection, Gate: gateOff},
 				{Type: ruleTypeForbiddenLayerDirection, Gate: gateWarn},
 			},
@@ -1708,7 +1689,7 @@ func runConfigReviewJSONDocument(t *testing.T) {
 // nothing to write.
 func runConfigReviewNameDrift(t *testing.T) {
 	dir := minimalRoot(t)
-	cfgPath := writeConfig(t, dir, `version: 1
+	cfgPath := writeConfig(t, dir, `version: 2
 layers:
   - core
   - adapter
@@ -1821,7 +1802,7 @@ func runConfigReviewApplyDisclosesIssues(t *testing.T) {
 
 func runConfigReviewNoKnownIssues(t *testing.T) {
 	dir := minimalRoot(t)
-	cfgPath := writeConfig(t, dir, `version: 1
+	cfgPath := writeConfig(t, dir, `version: 2
 layers:
   - core
   - adapter
@@ -1884,7 +1865,7 @@ func runConfigReviewRustSettingParity(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfgPath := writeConfig(t, dir, `version: 1
+	cfgPath := writeConfig(t, dir, `version: 2
 languages:
   rust:
     enabled: true

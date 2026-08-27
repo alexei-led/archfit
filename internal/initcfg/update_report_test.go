@@ -32,7 +32,7 @@ const (
 
 // minimalConfigWrap wraps a modules: stanza in a valid .archfit.yaml for round-trip testing.
 func minimalConfigWrap(modulesYAML string) string {
-	return "version: 1\nlayers:\n  - core\n  - adapter\nmodules:\n" + modulesYAML +
+	return "version: 2\nlayers:\n  - core\n  - adapter\nmodules:\n" + modulesYAML +
 		"rules:\n  - id: no-forbidden-deps\n    type: forbidden_dependency\n    gate: warn\n"
 }
 

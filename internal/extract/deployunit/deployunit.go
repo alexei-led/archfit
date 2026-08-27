@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -32,7 +32,7 @@ const (
 //
 // Priority order (highest first): Go main pkg, TS workspace, Python pyproject,
 // Dockerfile, k8s manifest. Only the first match per relative path is recorded.
-func Detect(ctx context.Context, root string, mm module.Map, runner toolrun.Runner) map[string]string {
+func Detect(ctx context.Context, root string, mm policy.ModuleMap, runner toolrun.Runner) map[string]string {
 	r := &detector{root: root, mm: mm, runner: runner}
 	return r.detect(ctx)
 }
@@ -55,7 +55,7 @@ func Detect(ctx context.Context, root string, mm module.Map, runner toolrun.Runn
 // containing several modules fills only the module ModuleForFile selects for that
 // path; filling every nested module is a separate enhancement (deploy-unit
 // membership), not done here.
-func KeyByModule(detected map[string]string, mm module.Map) map[string]string {
+func KeyByModule(detected map[string]string, mm policy.ModuleMap) map[string]string {
 	out := make(map[string]string, len(detected))
 	paths := make([]string, 0, len(detected))
 	for p := range detected {
@@ -80,7 +80,7 @@ func KeyByModule(detected map[string]string, mm module.Map) map[string]string {
 
 type detector struct {
 	root   string
-	mm     module.Map
+	mm     policy.ModuleMap
 	runner toolrun.Runner
 }
 

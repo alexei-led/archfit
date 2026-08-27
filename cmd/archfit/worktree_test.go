@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -53,7 +52,7 @@ func makeDiffFixtureRepo(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 
-	cfgContent := "version: 1\n"
+	cfgContent := "version: 2\n"
 	files := map[string]string{
 		"go.mod":          "module example.com/difftest\n\ngo 1.21\n",
 		"main.go":         goMainSrc,
@@ -99,11 +98,11 @@ func TestDiffCmd_Formats(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("diff HEAD~1: exit=%d, want 0\noutput:\n%s", code, out)
 		}
-		if !strings.Contains(out, "ARCHFIT RESULT") {
-			t.Errorf("--base text should render the decision report: %s", out)
+		if !strings.Contains(out, "ARCHITECTURE STATE") {
+			t.Errorf("--base text should render the architecture state: %s", out)
 		}
-		if !strings.Contains(out, "CHANGE VS BASE") {
-			t.Errorf("--base text missing the delta section: %s", out)
+		if !strings.Contains(out, "reference: "+diffBaseRef) {
+			t.Errorf("--base text must name the compared reference: %s", out)
 		}
 		// Text output is unchanged by the git-origin block (JSON only).
 		if strings.Contains(out, "git_finding_delta") {
@@ -111,15 +110,17 @@ func TestDiffCmd_Formats(t *testing.T) {
 		}
 	})
 
-	// --base --json emits the SAME diagnostic schema as a normal --json run — a
+	// --base legacy-json emits the SAME diagnostic schema as a normal run — a
 	// consistent machine contract, not a separate delta schema (regression guard
-	// for the old asymmetric diffResult output) — plus git_finding_delta.
-	t.Run("json keeps the diagnostic schema and adds the origin block", func(t *testing.T) {
+	// for the old asymmetric diffResult output) — plus git_finding_delta. The
+	// origin block is a diagnostic fact; the primary contract reports the base
+	// comparison under `comparison`.
+	t.Run("legacy json keeps the diagnostic schema and adds the origin block", func(t *testing.T) {
 		t.Parallel()
 		_, cfgPath := makeDiffFixtureRepo(t)
 
 		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, "--format=json"}, &buf)
+		code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, fmtLegacyJSON}, &buf)
 		if code != 0 {
 			t.Fatalf("--base --json: exit=%d\noutput:\n%s", code, buf.String())
 		}
@@ -170,11 +171,11 @@ func TestDiffCmd_Formats(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("diff --format=markdown: exit=%d\noutput:\n%s", code, out)
 		}
-		if !strings.Contains(out, "# archfit — decision") {
-			t.Errorf("--base --markdown should lead with the decision summary: %s", out)
+		if !strings.Contains(out, "# archfit — architecture state") {
+			t.Errorf("--base --markdown should lead with the architecture state: %s", out)
 		}
-		if !strings.Contains(out, "Change vs base") {
-			t.Errorf("--base --markdown should include the delta section: %s", out)
+		if !strings.Contains(out, "- **Reference:** "+diffBaseRef) {
+			t.Errorf("--base --markdown must name the compared reference: %s", out)
 		}
 	})
 }
@@ -213,7 +214,7 @@ func TestDiffCmd_NonGitRoot(t *testing.T) {
 
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
-	if err := os.WriteFile(cfgPath, []byte("version: 1\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("version: 2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -274,28 +275,6 @@ func TestDiffCmd_SubdirRoot(t *testing.T) {
 // TestSubtreeInWorktree_ParentEscape verifies the D4 regression: a directory
 // whose name starts with ".." (e.g. "..fixtures") must NOT be rejected by the
 // parent-escape guard, while a true parent path ("../sibling") must be.
-func TestSubtreeInWorktree_ParentEscape(t *testing.T) {
-	t.Parallel()
-
-	gitRoot := "/repo"
-	wtDir := "/wt"
-
-	// Valid subdirectory whose name starts with "..": must succeed.
-	dotdotName := filepath.Join(gitRoot, "..fixtures")
-	got, err := subtreeInWorktree(gitRoot, dotdotName, wtDir)
-	if err != nil {
-		t.Errorf("..fixtures subdir: unexpected error: %v", err)
-	}
-	if want := filepath.Join(wtDir, "..fixtures"); got != want {
-		t.Errorf("..fixtures subdir: got %q, want %q", got, want)
-	}
-
-	// True parent escape: must be rejected.
-	parent := filepath.Join(gitRoot, "..", "sibling")
-	if _, err := subtreeInWorktree(gitRoot, parent, wtDir); err == nil {
-		t.Error("parent escape: expected error, got nil")
-	}
-}
 
 // TestDiffCmd_ConfigInSubdir verifies that when the config lives in a
 // subdirectory and --root is omitted, diff analyses the whole repo (GitRoot),
@@ -318,7 +297,7 @@ func TestDiffCmd_ConfigInSubdir(t *testing.T) {
 	files := map[string]string{
 		filepath.Join(dir, "go.mod"):  "module example.com/subdirtest\n\ngo 1.21\n",
 		filepath.Join(dir, "main.go"): goMainSrc,
-		cfgPath:                       "version: 1\n",
+		cfgPath:                       "version: 2\n",
 	}
 	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -345,10 +324,11 @@ func TestDiffCmd_ConfigInSubdir(t *testing.T) {
 		t.Fatalf("diff config-in-subdir (--root omitted): exit=%d\noutput:\n%s", code, buf.String())
 	}
 
-	// Verify the output is the decision report with a delta section (not a crash/skip).
+	// Verify the output is the architecture state naming the compared reference
+	// (not a crash or a silently skipped comparison).
 	out := buf.String()
-	if !strings.Contains(out, "CHANGE VS BASE") {
-		t.Errorf("--base output missing the delta section: %s", out)
+	if !strings.Contains(out, "reference: HEAD~1") {
+		t.Errorf("--base output does not name the compared reference: %s", out)
 	}
 }
 
@@ -371,64 +351,6 @@ func assertNoBaseWorktreeLeak(t *testing.T, out string) {
 		if strings.Contains(out, seg) {
 			t.Errorf("head output leaked a base-worktree path (%q): %s", seg, out)
 		}
-	}
-}
-
-func TestBaseWorktreeParent_LocksDeterministicDir(t *testing.T) {
-	sha := strings.Repeat("a", 40)
-	runner := &toolrun.RunnerMock{
-		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-			if cmd.Name == gitBinary && len(cmd.Args) >= 3 && cmd.Args[0] == "rev-parse" {
-				return toolrun.Output{Stdout: []byte(sha + "\n")}, nil
-			}
-			return toolrun.Output{}, nil
-		},
-	}
-	deps := &appDeps{Runner: runner}
-	dir := t.TempDir()
-
-	first, releaseFirst, err := baseWorktreeParent(context.Background(), deps, dir, diffBaseRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	firstReleased := false
-	t.Cleanup(func() {
-		if !firstReleased {
-			releaseFirst()
-		}
-	})
-	if want := filepath.Join(dir, ".archfit-cache", "worktrees", sha); first != want {
-		t.Fatalf("first worktree parent = %q, want %q", first, want)
-	}
-
-	done := make(chan struct{})
-	var second string
-	var releaseSecond func()
-	var secondErr error
-	go func() {
-		second, releaseSecond, secondErr = baseWorktreeParent(context.Background(), deps, dir, diffBaseRef)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		t.Fatalf("second baseWorktreeParent returned before first lock was released: dir=%q err=%v", second, secondErr)
-	case <-time.After(3 * baseWorktreeLockPoll):
-	}
-
-	releaseFirst()
-	firstReleased = true
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("second baseWorktreeParent did not acquire lock after first release")
-	}
-	if secondErr != nil {
-		t.Fatal(secondErr)
-	}
-	defer releaseSecond()
-	if second != first {
-		t.Fatalf("second worktree parent = %q, want locked deterministic dir %q", second, first)
 	}
 }
 
@@ -536,7 +458,7 @@ func TestDiffCmd_BaseSideFactCacheReuse(t *testing.T) {
 		t.Helper()
 		fake := &cargoFakeRunner{real: toolrun.New()}
 		var stdout, stderr bytes.Buffer
-		cmd := AnalyzeCmd{Config: cfgPath, Base: diffBaseRef, Format: []string{formatJSON}}
+		cmd := AnalyzeCmd{Config: cfgPath, Base: diffBaseRef, Format: []string{formatLegacyJSON}}
 		err := cmd.Run(&appDeps{Runner: fake, Stdout: &stdout, Stderr: &stderr})
 		var ee *exitError
 		if err != nil && (!errors.As(err, &ee) || ee.code > 1) {

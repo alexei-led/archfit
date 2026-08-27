@@ -9,22 +9,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/rules"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/evidence/acquisition"
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/initcfg"
-	"github.com/alexei-led/archfit/internal/metrics"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/model/signal"
-	"github.com/alexei-led/archfit/internal/ports"
-	"github.com/alexei-led/archfit/internal/rules"
+	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship"
+	relationshipanalysis "github.com/alexei-led/archfit/internal/relationship/analysis"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Fixture root directory names, shared across every per-language table test
@@ -120,7 +120,7 @@ func TestConfigInit_PerLanguage(t *testing.T) {
 				t.Errorf("generated rule type not recognized by internal/rules: %v\n\nrendered:\n%s", err, rendered)
 			}
 			if tt.name == langRust {
-				if cfg.Languages.Rust.Enabled != view.ModeAuto {
+				if cfg.Languages.Rust.Enabled != evidenceports.ModeAuto {
 					t.Errorf("generated Rust mode = %q, want auto\n\nrendered:\n%s", cfg.Languages.Rust.Enabled, rendered)
 				}
 				if !cfg.CargoModulesEnabled() || !cfg.ScipEnabled() {
@@ -146,9 +146,9 @@ func pathIn(glob string) string {
 	return base + sep + "x"
 }
 
-// fixtureGraph builds a two-node module graph with a single uses_internal
-// edge from "module:"+from to "module:"+to.
-func fixtureGraph(from, to string) *graph.Graph {
+// fixtureGraph builds a two-node relationship.Set with a single uses_internal
+// edge from "module:"+from to "module:"+to (test-only adapter).
+func fixtureGraph(from, to string) relationship.Set {
 	nodes := []graph.Node{
 		{Kind: graph.NodeKindModule, Path: from},
 		{Kind: graph.NodeKindModule, Path: to},
@@ -156,7 +156,22 @@ func fixtureGraph(from, to string) *graph.Graph {
 	edges := []graph.Edge{
 		{From: "module:" + from, To: "module:" + to, Kind: graph.EdgeKindUsesInternal},
 	}
-	return graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+	g := graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+	set := relationship.Set{
+		Nodes: make([]relationship.Node, 0, len(g.Nodes())),
+		Edges: make([]relationship.Edge, 0, len(g.Edges())),
+	}
+	for _, n := range g.Nodes() {
+		set.Nodes = append(set.Nodes, relationship.Node{ID: n.ID(), Path: n.Path, Kind: string(n.Kind), Language: n.Language})
+	}
+	for _, e := range g.Edges() {
+		set.Edges = append(set.Edges, relationship.Edge{
+			FromID: e.From, ToID: e.To,
+			FromPath: graph.NodePath(e.From), ToPath: graph.NodePath(e.To),
+			Kind: string(e.Kind), Language: e.Language,
+		})
+	}
+	return set
 }
 
 // TestPublicAPIOnly_Task1Fixtures documents public_api_only's (V5) behavior on
@@ -204,14 +219,14 @@ func TestPublicAPIOnly_Task1Fixtures(t *testing.T) {
 				return
 			}
 
-			modules := make(map[string]module.ModuleDef, len(discovered.Modules))
+			modules := make(map[string]policy.ModuleDef, len(discovered.Modules))
 			for _, m := range discovered.Modules {
-				modules[m.Name] = module.ModuleDef{Paths: m.Paths}
+				modules[m.Name] = policy.ModuleDef{Paths: m.Paths}
 			}
 			cfg := config.Config{
 				Version: 1,
 				Modules: modules,
-				Rules: []view.RuleDef{
+				Rules: []policy.RuleDef{
 					{ID: "no-internal-access", Type: "public_api_only"},
 				},
 			}
@@ -280,15 +295,15 @@ func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
 				return
 			}
 
-			modules := make(map[string]module.ModuleDef, len(discovered.Modules))
+			modules := make(map[string]policy.ModuleDef, len(discovered.Modules))
 			for _, m := range discovered.Modules {
-				modules[m.Name] = module.ModuleDef{Paths: m.Paths, Layer: m.Layer}
+				modules[m.Name] = policy.ModuleDef{Paths: m.Paths, Layer: m.Layer}
 			}
 			cfg := config.Config{
 				Version: 1,
 				Layers:  discovered.Layers,
 				Modules: modules,
-				Rules: []view.RuleDef{
+				Rules: []policy.RuleDef{
 					{ID: "no-back-edge", Type: "forbidden_layer_direction"},
 				},
 			}
@@ -333,44 +348,45 @@ func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
 // analyze pipeline (rules + metrics) over root's Go sources. Mode.Advisory is
 // always on so gate:warn rule findings (Kind=advisory) surface in
 // diag.Findings, mirroring how `archfit analyze` renders warn-gated rules.
-func runRenderedAnalyze(t *testing.T, root, rendered string) diagnostic.Diagnostic {
+func runRenderedAnalyze(t *testing.T, root, rendered string) result.Result {
 	t.Helper()
 	cfg := loadRendered(t, rendered)
 
 	classifyCfg := cfg.ForClassify()
-	rs, err := rules.New(cfg.ForRules())
-	if err != nil {
-		t.Fatalf("rules.New: %v", err)
+	if _, err := evaluation.NewRuleset(cfg.ForRules()); err != nil {
+		t.Fatalf("evaluation.NewRuleset: %v", err)
 	}
-	ms := metrics.New(cfg.Metrics)
 
-	extractor := goextract.New(view.ExtractConfig{})
+	extractor := goextract.New(evidenceports.ExtractConfig{})
 	base := baseline.Baseline{SchemaVersion: baseline.SchemaVersion}
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	s := scope.Scope{Root: root, Mode: scope.ModeFull}
 
-	diag, err := engine.Run(context.Background(), engine.RunInput{
-		Mode:        engine.Mode{Full: true, Advisory: true},
-		Scope:       s,
-		Classify:    classifyCfg,
-		Staleness:   view.StalenessConfig{},
-		Waivers:     view.WaiverSet{},
-		Extractors:  []ports.Extractor{extractor},
-		Patterns:    ports.NopPatternProvider{},
-		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  view.PatternConfig{},
-		Rules:       rs,
-		Metrics:     ms,
-		Accepted:    base,
-		BaseMetrics: base.Metrics,
-		Labels:      nil,
-		Signals:     signal.RunSignals{},
-		Now:         now,
+	runPolicy := policy.New(
+		policy.TopologyView{Modules: classifyCfg.Modules, Layers: classifyCfg.Layers, ModuleMap: classifyCfg.ModuleMap, ExternalSystems: classifyCfg.ExternalSystems, ExplicitOwners: classifyCfg.ExplicitOwners},
+		policy.RelationshipPolicy{MinimumSeverity: classifyCfg.BCAdvisoryMinSeverity, VolatilityCascadeEnabled: classifyCfg.VolatilityCascadeEnabled, DuplicatedKnowledge: classifyCfg.DuplicatedKnowledgePolicy},
+		policy.AssessmentPolicy{}, policy.GatePolicy{Rules: cfg.ForRules(), Metrics: cfg.Metrics}, nil, nil)
+
+	collected, err := acquisition.Collect(context.Background(), acquisition.Input{
+		Scope: s, Extractors: []evidenceports.Extractor{extractor}, Resolver: evidenceports.NopSymbolResolver{},
 	})
 	if err != nil {
-		t.Fatalf("engine.Run: %v", err)
+		t.Fatalf("acquisition.Collect: %v", err)
 	}
-	return diag
+	relationships := relationshipanalysis.Analyze(relationshipanalysis.Input{
+		Graph: collected.Graph, Policy: runPolicy.Relationship, Mode: relationshipanalysis.Mode{Full: true},
+	})
+	assessed, err := evaluation.Assess(evaluation.AssessInput{
+		Facts:               evaluation.Observations{Coverage: collected.Coverages, Symbols: collected.SCIPSymbols},
+		Relationships:       relationships.Relationships,
+		RelationshipSignals: relationships.Assessment,
+		Policy:              runPolicy, Accepted: base, BaseMetrics: result.MetricSnapshot(base.Metrics),
+		Scope: s, Now: now, Advisory: true,
+	})
+	if err != nil {
+		t.Fatalf("evaluation.Assess: %v", err)
+	}
+	return assessed.Diagnostic
 }
 
 // TestConfigInit_GoFixture_LayerRuleBackEdge runs the full analyze gate over
@@ -433,8 +449,8 @@ func TestConfigInit_GoFixture_LayerRuleBackEdge_PromotedToFail(t *testing.T) {
 	}
 
 	diag := runRenderedAnalyze(t, root, promoted)
-	if diag.Verdict != diagnostic.VerdictFail {
-		t.Errorf("verdict = %q, want %q (back-edge under gate: fail): %+v", diag.Verdict, diagnostic.VerdictFail, diag.Findings)
+	if diag.Verdict != result.VerdictFail {
+		t.Errorf("verdict = %q, want %q (back-edge under gate: fail): %+v", diag.Verdict, result.VerdictFail, diag.Findings)
 	}
 }
 
@@ -471,8 +487,8 @@ func Run() string { return model.Describe() }
 	rendered := initcfg.Render(discovered, nil, false)
 
 	diag := runRenderedAnalyze(t, root, rendered)
-	if diag.Verdict != diagnostic.VerdictPass {
-		t.Errorf("verdict = %q, want %q (no back-edge): %+v", diag.Verdict, diagnostic.VerdictPass, diag.Findings)
+	if diag.Verdict != result.VerdictPass {
+		t.Errorf("verdict = %q, want %q (no back-edge): %+v", diag.Verdict, result.VerdictPass, diag.Findings)
 	}
 	for _, f := range diag.Findings {
 		if strings.HasPrefix(f.RuleID, "no-") {

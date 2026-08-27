@@ -24,7 +24,7 @@ with parser errors like these:
 | `archfit analyze --gate` | `archfit: unknown flag --gate, did you mean "--base"?` | `archfit check`                                                              |
 | `--full`                 | `archfit: unknown flag --full`                         | Remove it. Full scan is now the default.                                     |
 | `--advisory`             | `archfit: unknown flag --advisory`                     | Remove it. Advisories are on by default. Use `--no-advisories` to hide them. |
-| `--no-cache`             | `archfit: unknown flag --no-cache`                     | `--refresh`                                                                  |
+| `--no-cache`             | `archfit: unknown flag --no-cache`                     | `--refresh` — it re-runs the extractors and writes fresh results back.       |
 | `archfit analyze --llm`  | `archfit: unknown flag --llm`                          | `archfit analyze --ai-summary`                                               |
 | `--severity`             | `archfit: unknown flag --severity`                     | `--min-severity`                                                             |
 | `--no-config`            | `archfit: unknown flag --no-config`                    | Initialize config first: `archfit config init --root .`                      |
@@ -92,9 +92,10 @@ layer assignments, and wrong `paths:` globs are outside their reach — use
 
 ## Config update lists modules under `name_drift` or `removed_modules`
 
-Module discovery derives its own key for each module (`agenttask` for
-`internal/agenttask/**`), and it does not have to match the key your config
-uses. When a configured module and a discovered module own exactly the same
+Module discovery derives its own key for each module (one per directory), and it
+does not have to match the key your config uses — archfit's own config declares
+capability modules that span several directories (`assessment-repair` over
+`internal/assessment/**`). When a configured module and a discovered module own exactly the same
 paths under different names, `config update` reports the pair under
 `name_drift`, not as an add plus a remove.
 
@@ -210,8 +211,9 @@ gap. To make CI block on a missing tool instead, opt in with `--require-tools` o
 
 ## Config-quality warnings ("N modules under-specified")
 
-These now appear as a `## Config warnings` section (md) and `config_warnings[]`
-(json), not just stderr. Most clear once modules declare `owner`, `subdomain`, and
+These appear as a `## Config warnings` section (md) and, under
+`--format legacy-json`, a `config_warnings[]` block — the primary
+`archfit.architecture-state.v1` JSON does not carry it. Most clear once modules declare `owner`, `subdomain`, and
 `volatility` — draft them with `archfit config enrich owner`/`config enrich volatility` or
 `archfit config init --ai-classify -o draft.yaml`, review, then apply. Filling them improves
 ownership/volatility distance inputs and can move `coupling_balance` out of `n/a`;
@@ -242,9 +244,11 @@ when the rendered verdict is FAIL.
 Use `archfit check` in CI, pre-push hooks, and agent repair loops. It is the gate
 command. Current exit codes are:
 
-- `0` — clean run
-- `1` — violations
-- `2` — warnings
+- `0` — `healthy`
+- `1` — `blocked` (a hard gate failed) — this is the one to fail CI on
+- `2` — `needs_attention`. **Normal on a healthy repo in v1**: complexity,
+  testability, and operations report `partial` by contract, and any partial
+  dimension flags the verdict
 - `3` — config or tool error
 
 Use `archfit analyze` for local reports, markdown output, SARIF exports, scorecard

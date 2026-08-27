@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/assessment/result"
 )
 
 // TestBuildExplainPrompt_IncludesDistanceBasis verifies that buildExplainPrompt
@@ -29,7 +29,7 @@ func TestBuildExplainPrompt_IncludesDistanceBasis(t *testing.T) {
 			"distance_basis":  "ownership",
 		},
 	}
-	prompt := buildExplainPrompt(f, diagnostic.Diagnostic{})
+	prompt := buildExplainPrompt(f, result.Result{})
 	if !strings.Contains(prompt, "distance_basis: ownership") {
 		t.Errorf("prompt missing distance_basis:\n%s", prompt)
 	}
@@ -40,7 +40,7 @@ func TestBuildExplainPrompt_IncludesDistanceBasis(t *testing.T) {
 }
 
 // TestBuildExplainPrompt_DegenerateOwnerQualifier verifies that a finding whose
-// distance_basis is "code_structure" (single-owner fallback) gets the
+// distance_basis is distanceBasisCodeStructure (single-owner fallback) gets the
 // "(degenerate_owner_map)" qualifier appended to the distance label so the LLM
 // does not frame it as a cross-team boundary.
 func TestBuildExplainPrompt_DegenerateOwnerQualifier(t *testing.T) {
@@ -57,12 +57,12 @@ func TestBuildExplainPrompt_DegenerateOwnerQualifier(t *testing.T) {
 		Why:        "structural distance mismatch",
 		Constraint: "lower strength",
 		MatchedBy: map[string]string{
-			matchedByStrength: "functional",
+			matchedByStrength: llmStrengthFunctional,
 			"distance":        "internal_remote",
-			"distance_basis":  "code_structure",
+			"distance_basis":  distanceBasisCodeStructure,
 		},
 	}
-	prompt := buildExplainPrompt(f, diagnostic.Diagnostic{})
+	prompt := buildExplainPrompt(f, result.Result{})
 	if !strings.Contains(prompt, "distance_basis: code_structure") {
 		t.Errorf("prompt missing distance_basis:\n%s", prompt)
 	}

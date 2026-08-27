@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -13,14 +12,14 @@ const (
 )
 
 func needsRustDeepAnalysisConfig(cfg config.Config, hasRust bool) bool {
-	if !hasRust || cfg.Languages.Rust.Enabled == view.ModeOff {
+	if !hasRust || cfg.Languages.Rust.Enabled == config.ModeOff {
 		return false
 	}
-	if cfg.Languages.Rust.Enabled != view.ModeAuto {
+	if cfg.Languages.Rust.Enabled != config.ModeAuto {
 		return true
 	}
-	return (cfg.Analyzers.CargoModules.Enabled != view.ModeOn && cfg.Analyzers.CargoModules.Enabled != view.ModeOff) ||
-		(cfg.Analyzers.Scip.Enabled != view.ModeOn && cfg.Analyzers.Scip.Enabled != view.ModeOff)
+	return (cfg.Analyzers.CargoModules.Enabled != config.ModeOn && cfg.Analyzers.CargoModules.Enabled != config.ModeOff) ||
+		(cfg.Analyzers.Scip.Enabled != config.ModeOn && cfg.Analyzers.Scip.Enabled != config.ModeOff)
 }
 
 func ensureRustDeepAnalysisConfig(src []byte, cfg config.Config) []byte {
@@ -38,8 +37,8 @@ func ensureRustDeepAnalysisConfig(src []byte, cfg config.Config) []byte {
 	return []byte(out)
 }
 
-func ensureRustLanguageAuto(lines []string, mode view.ToolMode) []string {
-	if mode == view.ModeOff {
+func ensureRustLanguageAuto(lines []string, mode config.ToolMode) []string {
+	if mode == config.ModeOff {
 		return lines
 	}
 	start, end := topSection(lines, "languages")
@@ -59,8 +58,8 @@ func ensureRustLanguageAuto(lines []string, mode view.ToolMode) []string {
 	return insertLines(lines, rustStart+1, "    enabled: auto")
 }
 
-func ensureAnalyzerEnabled(lines []string, name string, mode view.ToolMode) []string {
-	if mode == view.ModeOff || mode == view.ModeOn {
+func ensureAnalyzerEnabled(lines []string, name string, mode config.ToolMode) []string {
+	if mode == config.ModeOff || mode == config.ModeOn {
 		return lines
 	}
 	start, end := topSection(lines, "analyzers")

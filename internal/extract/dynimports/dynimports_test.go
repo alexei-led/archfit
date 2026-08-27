@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/extract/dynimports"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	reportmodel "github.com/alexei-led/archfit/internal/model/evidence"
 )
 
 // writeFile writes content to root/rel, creating parent dirs.
@@ -50,7 +50,7 @@ class C:
 
 	sites := dynimports.Detect(root)
 
-	want := []diagnostic.DynamicImportSite{
+	want := []reportmodel.DynamicImportSite{
 		{File: pyFile, Line: 5, Kind: "lazy_import", Language: langPy},
 		{File: pyFile, Line: 6, Kind: "lazy_import", Language: langPy},
 		{File: pyFile, Line: 13, Kind: "importlib", Language: langPy},
@@ -75,7 +75,7 @@ async function load() {
 
 	sites := dynimports.Detect(root)
 
-	want := []diagnostic.DynamicImportSite{
+	want := []reportmodel.DynamicImportSite{
 		{File: "src/a.ts", Line: 3, Kind: "require", Language: langTS},
 		{File: "src/a.ts", Line: 5, Kind: "dynamic_import", Language: langTS},
 	}
@@ -99,7 +99,7 @@ const m = require("./real");
 
 	sites := dynimports.Detect(root)
 
-	want := []diagnostic.DynamicImportSite{
+	want := []reportmodel.DynamicImportSite{
 		{File: "src/b.ts", Line: 7, Kind: "require", Language: langTS},
 	}
 	if !reflect.DeepEqual(sites, want) {

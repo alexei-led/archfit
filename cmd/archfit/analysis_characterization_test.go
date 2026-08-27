@@ -1,0 +1,250 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"slices"
+	"strings"
+	"testing"
+)
+
+const (
+	characterizationGateFindingID     = "2b94da420ec7ed905e95b7565c44b316"
+	characterizationAdvisoryFindingID = "908bc68647ca3f180713dd7d90f3c774"
+	characterizationBCRuleID          = "bc/imbalanced_coupling"
+	characterizationScoreDimension    = "coupling"
+
+	stateSchemaVersion  = "archfit.architecture-state.v1"
+	stateDimensionCount = 9
+	verdictBlocked      = "blocked"
+	hardGateFail        = "fail"
+	verdictBlockedLabel = "BLOCKED"
+)
+
+type characterizationDiagnostic struct {
+	Verdict string `json:"verdict"`
+	Summary struct {
+		GateFindings int `json:"gate_findings"`
+		Warnings     int `json:"warnings"`
+	} `json:"summary"`
+	Findings []struct {
+		ID       string `json:"id"`
+		Kind     string `json:"kind"`
+		RuleID   string `json:"rule_id"`
+		Status   string `json:"status"`
+		Severity string `json:"severity"`
+	} `json:"findings"`
+	ToolCoverage []struct {
+		Tool   string `json:"tool"`
+		Status string `json:"status"`
+	} `json:"tool_coverage"`
+}
+
+func runCharacterizationFormat(t *testing.T, command, configPath, format string) (int, []byte) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	code := RunWithStderr(
+		[]string{command, "-c", configPath, flagRefresh, "--progress=none", "--format=" + format},
+		&stdout,
+		&stderr,
+	)
+	if code == 3 {
+		t.Fatalf("%s --format=%s failed: exit=%d\nstdout:\n%s\nstderr:\n%s", command, format, code, stdout.String(), stderr.String())
+	}
+	return code, stdout.Bytes()
+}
+
+func TestAnalyzeCheckCharacterization(t *testing.T) {
+	configPath := writeViolatingRepo(t)
+
+	checkCode, firstJSON := runCharacterizationFormat(t, cmdCheck, configPath, formatLegacyJSON)
+	if checkCode != 1 {
+		t.Fatalf("check exit = %d, want 1", checkCode)
+	}
+	secondCode, secondJSON := runCharacterizationFormat(t, cmdCheck, configPath, formatLegacyJSON)
+	if secondCode != checkCode {
+		t.Fatalf("second check exit = %d, want %d", secondCode, checkCode)
+	}
+	if !bytes.Equal(firstJSON, secondJSON) {
+		t.Fatal("identical check runs produced different JSON")
+	}
+	assertCharacterizationJSON(t, firstJSON)
+
+	analyzeCode, analyzeJSON := runCharacterizationFormat(t, cmdAnalyze, configPath, formatLegacyJSON)
+	if analyzeCode != 0 {
+		t.Fatalf("analyze exit = %d, want 0", analyzeCode)
+	}
+	if !bytes.Equal(analyzeJSON, firstJSON) {
+		t.Fatal("analyze and check JSON differ for the same report-only-independent findings")
+	}
+
+	assertCharacterizationState(t, configPath)
+	assertCharacterizationMarkdown(t, configPath)
+	assertCharacterizationSARIF(t, configPath)
+	assertCharacterizationScorecard(t, configPath)
+}
+
+func assertCharacterizationJSON(t *testing.T, output []byte) {
+	t.Helper()
+	var diagnostic characterizationDiagnostic
+	if err := json.Unmarshal(output, &diagnostic); err != nil {
+		t.Fatalf("decode check JSON: %v", err)
+	}
+	if diagnostic.Verdict != "fail" {
+		t.Errorf("verdict = %q, want fail", diagnostic.Verdict)
+	}
+	if diagnostic.Summary.GateFindings != 1 || diagnostic.Summary.Warnings != 1 {
+		t.Errorf("summary = gates:%d warnings:%d, want gates:1 warnings:1", diagnostic.Summary.GateFindings, diagnostic.Summary.Warnings)
+	}
+	wantFindings := []struct {
+		id, kind, rule, status, severity string
+	}{
+		{characterizationGateFindingID, "gate", ruleNoInternalAcc, "new", volatilityHigh},
+		{characterizationAdvisoryFindingID, "advisory", characterizationBCRuleID, "new", volatilityHigh},
+	}
+	if len(diagnostic.Findings) != len(wantFindings) {
+		t.Fatalf("findings = %d, want %d: %+v", len(diagnostic.Findings), len(wantFindings), diagnostic.Findings)
+	}
+	for i, want := range wantFindings {
+		got := diagnostic.Findings[i]
+		if got.ID != want.id || got.Kind != want.kind || got.RuleID != want.rule || got.Status != want.status || got.Severity != want.severity {
+			t.Errorf("finding[%d] = %+v, want id=%s kind=%s rule=%s status=%s severity=%s", i, got, want.id, want.kind, want.rule, want.status, want.severity)
+		}
+	}
+	coverageTools := make([]string, 0, len(diagnostic.ToolCoverage))
+	for _, coverage := range diagnostic.ToolCoverage {
+		coverageTools = append(coverageTools, coverage.Tool)
+	}
+	if !slices.Contains(coverageTools, toolGoPackages) {
+		t.Errorf("tool_coverage = %v, want %s", coverageTools, toolGoPackages)
+	}
+}
+
+func assertCharacterizationMarkdown(t *testing.T, configPath string) {
+	t.Helper()
+	code, output := runCharacterizationFormat(t, cmdCheck, configPath, formatMarkdown)
+	if code != 1 {
+		t.Fatalf("markdown check exit = %d, want 1", code)
+	}
+	for _, want := range []string{verdictBlockedLabel, ruleNoInternalAcc, characterizationBCRuleID} {
+		if !strings.Contains(string(output), want) {
+			t.Errorf("markdown output missing %q", want)
+		}
+	}
+}
+
+func assertCharacterizationSARIF(t *testing.T, configPath string) {
+	t.Helper()
+	code, output := runCharacterizationFormat(t, cmdCheck, configPath, formatSarif)
+	if code != 1 {
+		t.Fatalf("SARIF check exit = %d, want 1", code)
+	}
+	var document struct {
+		Version string `json:"version"`
+		Runs    []struct {
+			Results []struct {
+				Fingerprints map[string]string `json:"fingerprints"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(output, &document); err != nil {
+		t.Fatalf("decode SARIF: %v", err)
+	}
+	if document.Version != "2.1.0" || len(document.Runs) != 1 {
+		t.Fatalf("SARIF shape = version:%q runs:%d", document.Version, len(document.Runs))
+	}
+	gotFingerprints := make([]string, 0, len(document.Runs[0].Results))
+	for _, result := range document.Runs[0].Results {
+		gotFingerprints = append(gotFingerprints, result.Fingerprints["archfit/v1"])
+	}
+	wantFingerprints := []string{characterizationGateFindingID, characterizationAdvisoryFindingID}
+	if !slices.Equal(gotFingerprints, wantFingerprints) {
+		t.Errorf("SARIF fingerprints = %v, want %v", gotFingerprints, wantFingerprints)
+	}
+}
+
+func assertCharacterizationScorecard(t *testing.T, configPath string) {
+	t.Helper()
+	code, output := runCharacterizationFormat(t, cmdCheck, configPath, formatScorecard)
+	if code != 1 {
+		t.Fatalf("scorecard check exit = %d, want 1", code)
+	}
+	for _, want := range []string{"# archfit architecture state", "### " + characterizationScoreDimension + " — ", "**Coverage:**"} {
+		if !strings.Contains(string(output), want) {
+			t.Errorf("scorecard output missing %q", want)
+		}
+	}
+}
+
+// assertCharacterizationState pins the primary JSON contract on the same
+// violated fixture: the architecture state is the document root, it names a
+// blocked verdict against the gate finding the diagnostic envelope also
+// reports, all nine dimensions are present, and two identical runs emit
+// identical bytes.
+func assertCharacterizationState(t *testing.T, configPath string) {
+	t.Helper()
+
+	_, first := runCharacterizationFormat(t, cmdAnalyze, configPath, formatJSON)
+	_, second := runCharacterizationFormat(t, cmdAnalyze, configPath, formatJSON)
+	if !bytes.Equal(first, second) {
+		t.Error("identical analyze runs produced different architecture-state JSON")
+	}
+
+	var state struct {
+		SchemaVersion string `json:"schema_version"`
+		Verdict       string `json:"verdict"`
+		Decision      struct {
+			HardGates      string `json:"hard_gates"`
+			ActiveBlockers int    `json:"active_blockers"`
+		} `json:"decision"`
+		Dimensions map[string]struct {
+			Status string `json:"status"`
+		} `json:"dimensions"`
+		Coverage struct {
+			Measured   int `json:"measured"`
+			Partial    int `json:"partial"`
+			Unmeasured int `json:"unmeasured"`
+		} `json:"coverage"`
+		Findings []struct {
+			ID string `json:"id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(first, &state); err != nil {
+		t.Fatalf("decode architecture state: %v\n%s", err, first)
+	}
+	if state.SchemaVersion != stateSchemaVersion {
+		t.Errorf("schema_version = %q, want %q", state.SchemaVersion, stateSchemaVersion)
+	}
+	if state.Verdict != verdictBlocked {
+		t.Errorf("verdict = %q, want %q on a violated policy", state.Verdict, verdictBlocked)
+	}
+	if state.Decision.HardGates != hardGateFail || state.Decision.ActiveBlockers == 0 {
+		t.Errorf("decision = %+v, want a failing hard gate with at least one blocker", state.Decision)
+	}
+	if len(state.Dimensions) != stateDimensionCount {
+		t.Errorf("dimensions = %d keys, want %d", len(state.Dimensions), stateDimensionCount)
+	}
+	if sum := state.Coverage.Measured + state.Coverage.Partial + state.Coverage.Unmeasured; sum != stateDimensionCount {
+		t.Errorf("coverage counts sum to %d, want %d", sum, stateDimensionCount)
+	}
+	if !slices.ContainsFunc(state.Findings, func(f struct {
+		ID string `json:"id"`
+	}) bool {
+		return f.ID == characterizationGateFindingID
+	}) {
+		t.Errorf("the gate finding %s is missing from the architecture state", characterizationGateFindingID)
+	}
+	// No repository scalar at the document root. Per-edge evidence under a
+	// finding's matched_by is a different fact and stays: the book formula is
+	// retained as a per-seam diagnostic, only the averaged repository number is
+	// gone.
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(first, &root); err != nil {
+		t.Fatalf("decode architecture-state root: %v", err)
+	}
+	for _, forbidden := range []string{"overall", "overall_band", "score", "band", "score_version", "coupling_balance", "score_delta"} {
+		if _, present := root[forbidden]; present {
+			t.Errorf("the primary JSON carries a top-level %q key: the architecture state has no repository scalar", forbidden)
+		}
+	}
+}

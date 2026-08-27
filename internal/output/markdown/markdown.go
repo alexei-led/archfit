@@ -1,4 +1,4 @@
-// Package markdown renders a Diagnostic as Balanced-Coupling-aligned Markdown:
+// Package markdown renders a report document as Balanced-Coupling-aligned Markdown:
 // lint-message advisory format, BC vocabulary throughout, clearly-labeled
 // "Supporting structural metrics (beyond Balanced Coupling)" and
 // "Distance confidence" sections. Reads well both as raw text and rendered
@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/report"
+	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
 // confidenceHigh is the confidence value that needs no qualification in output.
@@ -28,8 +28,10 @@ var beyondBCMetrics = map[string]bool{
 	"coverage":     true,
 }
 
-// Renderer formats a Diagnostic as BC-aligned Markdown. Satisfies engine.Renderer.
+// Renderer formats a report document as BC-aligned Markdown.
 type Renderer struct{}
+
+var _ reportports.Renderer = (*Renderer)(nil)
 
 // New returns a Renderer.
 func New() *Renderer { return &Renderer{} }
@@ -37,7 +39,26 @@ func New() *Renderer { return &Renderer{} }
 // Format returns "markdown".
 func (r *Renderer) Format() string { return "markdown" }
 
-// Render writes the BC-aligned Markdown report for d to w.
+// Render writes the BC-aligned Markdown report for d to w: the architecture
+// state headline first, then the detailed audit.
+func (r *Renderer) Render(d report.Document, w io.Writer) error {
+	if err := RenderState(d.State, w); err != nil {
+		return err
+	}
+	if err := r.renderAudit(d, w); err != nil {
+		return err
+	}
+	// The index closes the document, after the audit. Both the state headline
+	// and the audit abbreviate or re-sort findings for a reader; the appendix is
+	// the one place the full canonical sequence appears, and it has to come last
+	// so no later section can reorder what a consumer reads as canonical.
+	var b strings.Builder
+	writeFindingIndex(&b, d.State.Findings)
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+// renderAudit writes the detailed BC-aligned Markdown audit for d to w.
 // Sections follow design §8:
 //  1. Verdict + config_hash + tool/coverage
 //  2. Gate violations (rules)
@@ -45,12 +66,15 @@ func (r *Renderer) Format() string { return "markdown" }
 //  4. Supporting structural metrics (beyond Balanced Coupling)
 //  5. Distance confidence
 //  6. Agent tasks
-func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
+//
+// The audit deliberately restates no verdict. The state headline above it
+// already decided one, and the legacy pass/warn/fail vocabulary maps to a
+// different exit table — a document carrying both read "NEEDS ATTENTION" in the
+// headline and "PASS (exit 0)" three sections later, with the exit claim false.
+func (r *Renderer) renderAudit(d report.Document, w io.Writer) error {
 	var b strings.Builder
-	verdict, exitCode := verdictLabel(d.Verdict)
 
 	b.WriteString("# archfit report\n\n")
-	fmt.Fprintf(&b, "**Verdict:** %s (exit %d)\n", verdict, exitCode)
 	if d.ConfigHash != "" {
 		fmt.Fprintf(&b, "**Config hash:** `%s`\n", d.ConfigHash)
 	}
@@ -63,7 +87,7 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 	writeDelta(&b, d)
 
 	// Split metrics: BC-primary vs beyond-BC.
-	var primaryMetrics, beyondMetrics []diagnostic.MetricResult
+	var primaryMetrics, beyondMetrics []report.MetricResult
 	for _, m := range d.Metrics {
 		if beyondBCMetrics[m.Name] {
 			beyondMetrics = append(beyondMetrics, m)
@@ -148,9 +172,9 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 	return err
 }
 
-func splitFindings(fs []finding.Finding) (gate, advisories []finding.Finding) {
+func splitFindings(fs []report.Finding) (gate, advisories []report.Finding) {
 	for _, f := range fs {
-		if f.Kind == finding.KindGate {
+		if f.Kind == report.FindingKindGate {
 			gate = append(gate, f)
 		} else {
 			advisories = append(advisories, f)
@@ -167,7 +191,7 @@ func splitFindings(fs []finding.Finding) (gate, advisories []finding.Finding) {
 // stable tie-break chain (rule id, status, from path, to path, edge kind, id).
 // id is a unique fingerprint, so the order is total — equal-severity findings
 // no longer depend on input order.
-func findingLess(a, b finding.Finding) bool {
+func findingLess(a, b report.Finding) bool {
 	if ra, rb := severityRank(a.Severity), severityRank(b.Severity); ra != rb {
 		return ra > rb
 	}
@@ -189,7 +213,7 @@ func findingLess(a, b finding.Finding) bool {
 	return a.ID < b.ID
 }
 
-func severityRank(s finding.Severity) int {
+func severityRank(s string) int {
 	switch s {
 	case "critical":
 		return 4
@@ -201,17 +225,6 @@ func severityRank(s finding.Severity) int {
 		return 1
 	default:
 		return 0
-	}
-}
-
-func verdictLabel(v diagnostic.Verdict) (string, int) {
-	switch v {
-	case diagnostic.VerdictFail:
-		return "fail", 1
-	case diagnostic.VerdictWarn:
-		return "warn", 2
-	default:
-		return "pass", 0
 	}
 }
 

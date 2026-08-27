@@ -12,6 +12,9 @@ import (
 	"testing"
 )
 
+// envUpdateBaselines gates regeneration of the committed JSON baselines.
+const envUpdateBaselines = "ARCHFIT_UPDATE_BASELINES"
+
 // Fixture dirs relative to this source file (cmd/archfit/).
 const (
 	fixtureSingleModule       = "../../internal/extract/golang/testdata/single-module"
@@ -37,9 +40,9 @@ func TestByteIdentical_OneMemberWorkspace(t *testing.T) {
 }
 
 // runByteIdenticalTest materialises the fixture into a fresh temp git repo,
-// runs archfit analyze --format json in-process, normalises volatile
-// fields (absolute paths), and diffs the result against baseline.json beside
-// the fixture.
+// runs archfit analyze --format json (the architecture-state contract)
+// in-process, normalises volatile fields (absolute paths), and diffs the result
+// against baseline.json beside the fixture.
 //
 // First run (no baseline.json): the file is written so the developer can
 // review and commit it. Subsequent runs compare and fail on any diff — never
@@ -51,17 +54,23 @@ func runByteIdenticalTest(t *testing.T, fixtureRelPath string) {
 	absFixture, root := materializeFixtureRepo(t, fixtureRelPath)
 	got := runAnalyzeNormalized(t, root)
 
-	// A run without --base must not gain the git-origin block: the field is a
-	// pointer with omitempty precisely so normal output stays byte-identical.
-	if bytes.Contains(got, []byte(`"git_finding_delta"`)) {
-		t.Errorf("git_finding_delta must be omitted without --base:\n%s", got)
+	// A run without --base claims no comparison: a base-comparison block must
+	// not leak into a normal run and be read as a delta nobody asked for.
+	if !bytes.Contains(got, []byte(`"status": "not_requested"`)) {
+		t.Errorf("a run without --base must report comparison.status=not_requested:\n%s", got)
 	}
 
 	// Read or bootstrap the committed baseline.
 	baselinePath := filepath.Join(absFixture, "baseline.json")
 	want, readErr := os.ReadFile(baselinePath) //nolint:gosec // fixture path constructed from runtime.Caller
 	if os.IsNotExist(readErr) {
-		// First run: write the baseline for review and commit.
+		// Regeneration is deliberate, matching TestModelSurfaceNoDrift and the
+		// format-matrix fixtures. Bootstrapping unconditionally is what makes
+		// "delete the baseline to get green" work in the first place.
+		if os.Getenv(envUpdateBaselines) == "" {
+			t.Fatalf("baseline %s is missing; regenerate deliberately with %s=1 and inspect the diff",
+				baselinePath, envUpdateBaselines)
+		}
 		if writeErr := os.WriteFile(baselinePath, got, 0o600); writeErr != nil {
 			t.Fatalf("write baseline %s: %v", baselinePath, writeErr)
 		}

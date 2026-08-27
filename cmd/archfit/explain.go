@@ -6,13 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/baseline"
+	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/coupling"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // ExplainCmd re-runs the engine and prints the details of a single finding.
@@ -29,49 +26,35 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 
 	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+		return configLoadError(err)
 	}
-
-	configDir := filepath.Dir(c.Config)
-	existingBase, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
-	// Same pipeline as check/scan: explain must resolve the finding from the
-	// same evidence (providers, change history) that produced it.
 	deps.refresh = c.Refresh
-	diag, _, err := runPipeline(ctx, deps, cfg, newRunContext(c.Config, c.Root), engine.Mode{Full: true, Advisory: true}, existingBase)
+	service := application.ExplainService{Stages: newAnalysisStages(c.Config, c.Root, cfg, deps)}
+	resp, err := service.Execute(ctx, application.ExplainRequest{ConfigPath: c.Config, Root: c.Root, Fingerprint: c.Fingerprint})
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-
-	for _, f := range diag.Findings {
-		if strings.HasPrefix(f.ID, c.Fingerprint) {
-			_, _ = fmt.Fprintf(deps.Stdout, "id:         %s\n", f.ID)
-			_, _ = fmt.Fprintf(deps.Stdout, "rule:       %s\n", f.RuleID)
-			_, _ = fmt.Fprintf(deps.Stdout, "status:     %s\n", f.Status)
-			_, _ = fmt.Fprintf(deps.Stdout, "severity:   %s\n", f.Severity)
-			_, _ = fmt.Fprintf(deps.Stdout, "edge:       %s -> %s (%s)\n", f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind)
-			if f.Edge.From.Module != "" || f.Edge.To.Module != "" {
-				_, _ = fmt.Fprintf(deps.Stdout, "modules:    %s -> %s\n", f.Edge.From.Module, f.Edge.To.Module)
-			}
-			for _, loc := range f.Locations {
-				_, _ = fmt.Fprintf(deps.Stdout, "location:   %s:%d\n", loc.File, loc.Line)
-			}
-			_, _ = fmt.Fprintf(deps.Stdout, "why:        %s\n", f.Why)
-			_, _ = fmt.Fprintf(deps.Stdout, "constraint: %s\n", f.Constraint)
-			for _, alt := range f.Alternatives {
-				_, _ = fmt.Fprintf(deps.Stdout, "allowed:    %s\n", alt)
-			}
-			if c.AISummary {
-				return explainNarrative(ctx, deps, cfg, c.Config, c.Refresh, f, diag)
-			}
-			return nil
-		}
+	f := resp.Finding
+	_, _ = fmt.Fprintf(deps.Stdout, "id:         %s\n", f.ID)
+	_, _ = fmt.Fprintf(deps.Stdout, "rule:       %s\n", f.RuleID)
+	_, _ = fmt.Fprintf(deps.Stdout, "status:     %s\n", f.Status)
+	_, _ = fmt.Fprintf(deps.Stdout, "severity:   %s\n", f.Severity)
+	_, _ = fmt.Fprintf(deps.Stdout, "edge:       %s -> %s (%s)\n", f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind)
+	if f.Edge.From.Module != "" || f.Edge.To.Module != "" {
+		_, _ = fmt.Fprintf(deps.Stdout, "modules:    %s -> %s\n", f.Edge.From.Module, f.Edge.To.Module)
 	}
-
-	return &exitError{code: 3, msg: fmt.Sprintf("error: no finding with fingerprint prefix %q", c.Fingerprint)}
+	for _, loc := range f.Locations {
+		_, _ = fmt.Fprintf(deps.Stdout, "location:   %s:%d\n", loc.File, loc.Line)
+	}
+	_, _ = fmt.Fprintf(deps.Stdout, "why:        %s\n", f.Why)
+	_, _ = fmt.Fprintf(deps.Stdout, "constraint: %s\n", f.Constraint)
+	for _, alt := range f.Alternatives {
+		_, _ = fmt.Fprintf(deps.Stdout, "allowed:    %s\n", alt)
+	}
+	if c.AISummary {
+		return explainNarrative(ctx, deps, cfg, c.Config, c.Refresh, f, resp.Document)
+	}
+	return nil
 }
 
 // explainSystemPrompt frames the finding narrative.
@@ -85,7 +68,7 @@ Plain prose, no headings, no lists, no code fences.`
 // explainNarrative appends an off-gate LLM narrative for one finding. The
 // deterministic explain output above it is already printed; this only adds
 // judgment on top — failures here never affect any verdict.
-func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, refresh bool, f finding.Finding, diag diagnostic.Diagnostic) error {
+func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, refresh bool, f report.Finding, diag report.Document) error {
 	llmCfg, configured := cfg.LLM()
 	if !configured {
 		return &exitError{code: 3, msg: "error: --ai-summary needs ai configured (provider + model); see docs/guide/llm-enrich.md"}
@@ -98,7 +81,7 @@ func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, con
 	cache.RefreshMode = refresh
 	provider = cache
 
-	resp, err := provider.Complete(ctx, llm.Request{System: explainSystemPrompt, User: buildExplainPrompt(f, diag)})
+	resp, err := provider.Complete(ctx, llm.Request{System: explainSystemPrompt, User: buildExplainPromptReport(f, diag)})
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -114,7 +97,7 @@ func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, con
 // ownership boundaries or the code-structure fallback (single-owner repos).
 // When the fallback was used, a (degenerate_owner_map) qualifier is appended
 // to prevent cross-team framing on single-owner codebases.
-func buildExplainPrompt(f finding.Finding, diag diagnostic.Diagnostic) string {
+func buildExplainPromptReport(f report.Finding, diag report.Document) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Finding:\n  rule: %s\n  severity: %s\n  status: %s\n  edge: %s -> %s (%s)\n  modules: %s -> %s\n  why: %s\n  constraint: %s\n",
 		f.RuleID, f.Severity, f.Status, f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind,
@@ -122,7 +105,7 @@ func buildExplainPrompt(f finding.Finding, diag diagnostic.Diagnostic) string {
 	if strength, ok := f.MatchedBy["strength"]; ok {
 		distanceBasis := f.MatchedBy["distance_basis"]
 		distanceLabel := f.MatchedBy["distance"]
-		if distanceBasis == string(coupling.DistanceBasisStructure) {
+		if distanceBasis == distanceBasisCodeStructure {
 			distanceLabel += " (degenerate_owner_map)"
 		}
 		fmt.Fprintf(&b, "  strength: %s  distance: %s  distance_basis: %s\n", strength, distanceLabel, distanceBasis)
@@ -134,7 +117,7 @@ func buildExplainPrompt(f finding.Finding, diag diagnostic.Diagnostic) string {
 }
 
 // moduleFactLine renders the structural facts of one module when present.
-func moduleFactLine(diag diagnostic.Diagnostic, module string) string {
+func moduleFactLine(diag report.Document, module string) string {
 	if module == "" {
 		return ""
 	}

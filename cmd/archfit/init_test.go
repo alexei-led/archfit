@@ -142,7 +142,7 @@ func TestInitCmd_NoClobber_ExistingValid_LeavesUnchanged(t *testing.T) {
 	t.Parallel()
 	root := minimalRoot(t)
 	outPath := filepath.Join(root, ".archfit.yaml")
-	const sentinel = "version: 1\n# architect-authored — do not clobber\n"
+	const sentinel = "version: 2\n# architect-authored — do not clobber\n"
 	if err := os.WriteFile(outPath, []byte(sentinel), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestInitCmd_NoClobber_BogusRuleType_ReportsLoadFailure(t *testing.T) {
 	// Syntactically valid YAML, but rules.New rejects the unknown rule type —
 	// loadConfig (not bare config.Load) must catch this, so init reports a load
 	// failure rather than misreporting the config as valid.
-	const badRuleType = "version: 1\nrules:\n  - id: bad\n    type: bogus_type\n"
+	const badRuleType = "version: 2\nrules:\n  - id: bad\n    type: bogus_type\n"
 	if err := os.WriteFile(outPath, []byte(badRuleType), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestInitCmd_Force_Overwrites(t *testing.T) {
 	t.Parallel()
 	root := minimalRoot(t)
 	outPath := filepath.Join(root, ".archfit.yaml")
-	const sentinel = "version: 1\n# old config\n"
+	const sentinel = "version: 2\n# old config\n"
 	if err := os.WriteFile(outPath, []byte(sentinel), 0o600); err != nil {
 		t.Fatal(err)
 	}

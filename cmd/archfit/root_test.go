@@ -40,7 +40,7 @@ func TestRun_Check_Root_ScopesLocCount(t *testing.T) {
 	// does not influence which subtree is scanned.
 	cfgDir := t.TempDir()
 	cfgPath := filepath.Join(cfgDir, ".archfit.yaml")
-	if err := os.WriteFile(cfgPath, []byte("version: 1\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("version: 2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -50,7 +50,7 @@ func TestRun_Check_Root_ScopesLocCount(t *testing.T) {
 	// --root sub: loc must see exactly 1 file (sub/service.go); other/other.go
 	// is outside the subtree and must not appear.
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, flagRoot, subDir, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
+	code := Run([]string{cmdAnalyze, flagRoot, subDir, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
 	if code != 0 && code != 1 {
 		t.Fatalf("check --root sub: exit = %d, want 0 or 1\n%s", code, buf.String())
 	}
@@ -68,7 +68,7 @@ func TestRun_Check_Root_ScopesLocCount(t *testing.T) {
 	// arm that proves the sub-only scan is a real scope reduction and not just
 	// an instrument error (both files missing).
 	buf.Reset()
-	code = Run([]string{cmdAnalyze, flagRoot, repoDir, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
+	code = Run([]string{cmdAnalyze, flagRoot, repoDir, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
 	if code != 0 && code != 1 {
 		t.Fatalf("check --root repo: exit = %d, want 0 or 1\n%s", code, buf.String())
 	}
@@ -112,12 +112,12 @@ func TestRun_Check_Root_NonGitFullMode(t *testing.T) {
 	// Plain directory — deliberately NOT git-initialised.
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
-	if err := os.WriteFile(cfgPath, []byte("version: 1\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("version: 2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
+	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
 	if code == 3 {
 		t.Fatalf("non-git full mode: exit = 3 (want 0 or 1 — should produce a scorecard)\n%s", buf.String())
 	}
@@ -159,13 +159,13 @@ func TestRun_Check_Root_OutputWarningUsesRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfgPath := filepath.Join(subDir, ".archfit.yaml")
-	if err := os.WriteFile(cfgPath, []byte("version: 1\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("version: 2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	gitInitFixtureRepo(t, repoDir)
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, flagRoot, subDir, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
+	code := Run([]string{cmdAnalyze, flagRoot, subDir, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
 	if code == 3 {
 		t.Fatalf("unexpected exit 3: %s", buf.String())
 	}
@@ -234,7 +234,7 @@ func TestRun_Check_Root_CaseVariantSubtree_OwnerSourceCodeowners(t *testing.T) {
 	// Module paths are scanRoot-relative (--root IS the services/api subtree,
 	// so the scanned files' module-relative path is just "handler.go").
 	cfgPath := filepath.Join(repoDir, ".archfit.yaml")
-	cfg := "version: 1\nmodules:\n  api:\n    paths: [\"**\"]\n"
+	cfg := "version: 2\nmodules:\n  api:\n    paths: [\"**\"]\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestRun_Check_Root_CaseVariantSubtree_OwnerSourceCodeowners(t *testing.T) {
 	caseVariantRoot := filepath.Join(parent, "repo", "services", "api")
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, flagRoot, caseVariantRoot, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
+	code := Run([]string{cmdAnalyze, flagRoot, caseVariantRoot, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
 	if code == 3 {
 		t.Fatalf("unexpected exit 3: %s", buf.String())
 	}
@@ -287,13 +287,13 @@ func TestRun_Check_OwnerDegradation_CodeownersNoMatch_WarnsAndSurfacesSource(t *
 	gitInitFixtureRepo(t, repoDir)
 
 	cfgPath := filepath.Join(repoDir, ".archfit.yaml")
-	cfg := "version: 1\nmodules:\n  app:\n    paths: [\"src/**\"]\n"
+	cfg := "version: 2\nmodules:\n  app:\n    paths: [\"src/**\"]\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
+	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
 	if code == 3 {
 		t.Fatalf("unexpected exit 3: %s", buf.String())
 	}
@@ -337,13 +337,13 @@ func TestRun_Check_OwnerDegradation_None_NoWarning(t *testing.T) {
 	gitInitFixtureRepo(t, repoDir)
 
 	cfgPath := filepath.Join(repoDir, ".archfit.yaml")
-	cfg := "version: 1\nmodules:\n  app:\n    paths: [\"src/**\"]\n"
+	cfg := "version: 2\nmodules:\n  app:\n    paths: [\"src/**\"]\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
+	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
 	if code == 3 {
 		t.Fatalf("unexpected exit 3: %s", buf.String())
 	}

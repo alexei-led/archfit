@@ -1,4 +1,4 @@
-version: 1
+version: 2
 # --- Design rationale (Balanced Coupling, Khononov) --------------------------
 # archfit is a sole-owner, single-binary modular monolith. Module definitions
 # below represent cohesive product capabilities, not one stanza per Go package.
@@ -7,9 +7,9 @@ version: 1
 #
 # DDD classification is about business role, not stability or directory shape.
 # Archfit's policy language, evaluation model, and fact-to-decision logic are the
-# core domain and therefore high-volatility. Evidence vocabulary, pipeline
-# contracts, orchestration, persistence, and tool integrations are supporting.
-# Provider-specific LLM integration and composition roots are generic adapters.
+# core domain and therefore high-volatility. Evidence vocabulary, use-case
+# sequencing, persistence, and tool integrations are supporting. Provider-specific
+# LLM integration and composition roots are generic adapters.
 #
 # All modules have one owner, so ownership distance is intentionally degenerate;
 # code structure and deploy-unit evidence determine distance. The book formula
@@ -32,152 +32,161 @@ coupling:
   # volatility. The cascade runs to a deterministic fixpoint and never lowers a
   # configured value.
   volatility_cascade: true
+  gate:
+    # The only coupling gate. It counts logical seams (ordered module pairs with
+    # a critical-band edge at different-owner or different-deploy-unit distance),
+    # not import edges. warn is diagnostic; fail is an explicit owner decision to
+    # take only after a report-only run against a comparable baseline shows the
+    # expected seam count. archfit is a single-owner single-deploy-unit monolith,
+    # so it currently qualifies zero seams — enabling fail here would gate on
+    # nothing and hide that fact.
+    distributed_monolith:
+      mode: warn
+      max_new_seams: 0
 # Architecture layers — innermost to outermost.
 # forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
 layers:
-  - model # rank 0: pure value types, stdlib only
-  - support # rank 1: config, scope
-  - core # rank 2: classify, rules, metrics, status
-  - engine # rank 3: orchestration pipeline
-  - adapter # rank 4: baseline, toolrun, extractors, renderers, git
-  - cmd # rank 5: composition root
+  - model # rank 0: value types and neutral contracts; no higher-rank imports
+  - support # rank 1: supporting process contracts (scope resolution)
+  - core # rank 2: policy, relationship analysis, assessment and repair
+  - application # rank 3: use-case sequencing and report projection
+  - adapter # rank 4: config, extractors, toolrun, persistence, providers, renderers
+  - cmd # rank 5: composition roots
 modules:
-  # Supporting evidence vocabulary. These types describe source facts, not
-  # Archfit's policy decisions.
-  evidence-model:
+  # The neutral evidence vocabulary: per-fact value types plus the immutable
+  # `evidence.Facts` bundle acquisition hands downstream. These types carry
+  # observations only — policy, assessment, and report decisions live in their
+  # owning capabilities, and the `evidence_no_policy`/`evidence_no_config` rules
+  # below keep it that way. Run context (scope, instant, config identity, bundle
+  # paths) is owned by the application, not by this contract.
+  evidence-contracts:
     owner: alexei-led
+    deploy_unit: archfit-cli
     role: shared_model
     paths:
+      - internal/model/evidence/**
       - internal/model/graph/**
       - internal/model/symbol/**
       - internal/model/fileclass/**
       - internal/model/clone/**
       - internal/model/pattern/**
+      - internal/evidence
+      - internal/evidence/*.go
     public:
+      - internal/model/evidence
       - internal/model/graph
       - internal/model/symbol
       - internal/model/fileclass
       - internal/model/clone
       - internal/model/pattern
+      - internal/evidence
     layer: model
     subdomain: supporting
     volatility: medium
-
-  # Core domain vocabulary: coupling, findings, diagnostics, signals, and
-  # architectural module semantics.
-  evaluation-model:
+  # Scope resolution is a supporting boundary over an injected VCS resolver.
+  analysis-scope:
     owner: alexei-led
+    deploy_unit: archfit-cli
     role: shared_model
     paths:
-      - internal/model/coupling/**
-      - internal/model/finding/**
-      - internal/model/diagnostic/**
-      - internal/model/report/**
-      - internal/model/signal/**
-      - internal/model/module/**
+      - internal/scope/**
     public:
-      - internal/model/coupling
-      - internal/model/finding
-      - internal/model/diagnostic
-      - internal/model/report
-      - internal/model/signal
-      - internal/model/module
-    layer: model
-    subdomain: core
-    volatility: high
-
-  # Stable data-only projections consumed by pipeline stages.
-  stage-views:
-    owner: alexei-led
-    role: shared_model
-    paths:
-      - internal/view/**
-    public:
-      - internal/view
-    layer: model
+      - internal/scope
+    layer: support
     subdomain: supporting
     volatility: low
-
-  # Archfit's architecture policy language and validation semantics.
-  policy-language:
+  # File-level syntax classification is core evidence analysis, not a pure DTO.
+  evidence-analysis:
     owner: alexei-led
+    deploy_unit: archfit-cli
+    role: core
+    paths:
+      - internal/syntax/**
+    public:
+      - internal/syntax
+    layer: core
+    subdomain: supporting
+    volatility: low
+  # The concrete acquisition service: it walks the tree, runs the extractors,
+  # and resolves the run's coverage and policy snapshot. Adapter-layer because
+  # its ports carry scope and extractor process inputs; it observes and never
+  # judges (see `acquisition_no_assessment_judgment` below).
+  evidence-acquisition:
+    owner: alexei-led
+    deploy_unit: archfit-cli
+    role: adapter
+    paths:
+      - internal/evidence/acquisition/**
+    public:
+      - internal/evidence/acquisition
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+  # Architectural policy semantics.
+  architecture-policy:
+    owner: alexei-led
+    deploy_unit: archfit-cli
+    role: core
+    paths:
+      - internal/policy/**
+    public:
+      - internal/policy
+    layer: core
+    subdomain: core
+    volatility: high
+  # Relationship classification and scoring semantics.
+  relationship-analysis:
+    owner: alexei-led
+    deploy_unit: archfit-cli
+    role: core
+    paths:
+      - internal/relationship/**
+    public:
+      - internal/relationship
+      - internal/relationship/coupling
+      - internal/relationship/facts
+      - internal/relationship/labels
+    layer: core
+    subdomain: core
+    volatility: high
+  # Stable score, decision, persistence, and output contracts.
+  report-contract:
+    owner: alexei-led
+    deploy_unit: archfit-cli
+    role: shared_model
+    paths:
+      - internal/model/report/**
+      - internal/report/ports/**
+    public:
+      - internal/model/report
+      - internal/report/ports
+    layer: model
+    subdomain: supporting
+    volatility: medium
+  # Config decoding and validation is a separate lifecycle adapter around the
+  # policy language. The domain policy package never imports this adapter.
+  policy-config-adapter:
+    owner: alexei-led
+    deploy_unit: archfit-cli
+    role: adapter
     paths:
       - internal/config/**
     public:
       - internal/config
-    layer: support
-    subdomain: core
-    volatility: high
-
-  # Stable process/analyzer contracts and the analysis-scope value boundary.
-  pipeline-contracts:
-    owner: alexei-led
-    role: shared_model
-    paths:
-      - internal/ports/**
-      - internal/scope/**
-      - internal/syntax/**
-    public:
-      - internal/ports
-      - internal/scope
-      - internal/syntax
-    layer: support
+    layer: adapter
     subdomain: supporting
-    volatility: low
-
-  # Core fact-to-decision capability. Package boundaries remain useful for code
-  # organization, but they belong to one cohesive domain module.
-  evaluation-core:
-    owner: alexei-led
-    role: core
-    paths:
-      - internal/classify/**
-      - internal/rules/**
-      - internal/metrics/**
-      - internal/facts/**
-      - internal/status/**
-      - internal/staleness/**
-      - internal/score/**
-      - internal/decision/**
-      - internal/agenttask/**
-    public:
-      - internal/classify
-      - internal/rules
-      - internal/metrics
-      - internal/facts
-      - internal/status
-      - internal/staleness
-      - internal/score
-      - internal/decision
-      - internal/agenttask
-    layer: core
-    subdomain: core
     volatility: high
-
-  # Application orchestration only: sequence stages through stable contracts.
-  pipeline-engine:
+  evidence-adapters:
     owner: alexei-led
-    role: core
-    paths:
-      - internal/engine/**
-    public:
-      - internal/engine
-    layer: engine
-    subdomain: supporting
-    volatility: medium
-
-  # Source-fact acquisition and external-tool adapters. Per-language packages
-  # remain separate implementations but form one architectural capability.
-  fact-adapters:
-    owner: alexei-led
+    deploy_unit: archfit-cli
     role: adapter
     paths:
       - internal/extract/**
       - internal/toolrun/**
-      - internal/factcache/**
-      - internal/history/**
-      - internal/ownership/**
+      - internal/evidence/ports/**
     public:
+      - internal/extract/acquire
+      - internal/extract/registry
       - internal/extract/golang
       - internal/extract/ts
       - internal/extract/py
@@ -191,62 +200,43 @@ modules:
       - internal/extract/loc
       - internal/extract/manifest
       - internal/toolrun
+      - internal/evidence/ports
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+  persistence-adapters:
+    owner: alexei-led
+    deploy_unit: archfit-cli
+    role: adapter
+    paths:
+      - internal/factcache/**
+      - internal/history/**
+      - internal/ownership/**
+      - internal/baseline/**
+      - internal/labels/**
+    public:
       - internal/factcache
       - internal/history/git
       - internal/ownership
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-
-  # Policy-file lifecycle: discovery, update, and schema generation.
-  config-lifecycle:
-    owner: alexei-led
-    role: adapter
-    paths:
-      - internal/initcfg/**
-      - internal/configschema/**
-    public:
-      - internal/initcfg
-      - internal/configschema
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-
-  baseline-store:
-    owner: alexei-led
-    role: adapter
-    paths:
-      - internal/baseline/**
-    public:
       - internal/baseline
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-
-  labels-policy:
-    owner: alexei-led
-    paths:
-      - internal/labels
-      - internal/labels/*.go
-    public:
-      - internal/labels
-    layer: support
-    subdomain: supporting
-    volatility: medium
-
-  labels-store:
-    owner: alexei-led
-    role: adapter
-    paths:
-      - internal/labels/labelsio/**
-    public:
       - internal/labels/labelsio
     layer: adapter
     subdomain: supporting
-    volatility: low
-
-  rendering:
+    volatility: medium
+  provider-adapters:
     owner: alexei-led
+    deploy_unit: archfit-cli
+    role: adapter
+    paths:
+      - internal/llm/**
+    public:
+      - internal/llm
+    layer: adapter
+    subdomain: generic
+    volatility: medium
+  report-adapters:
+    owner: alexei-led
+    deploy_unit: archfit-cli
     role: adapter
     paths:
       - internal/output/**
@@ -259,29 +249,55 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-
-  llm-adapter:
+  assessment-repair:
     owner: alexei-led
+    deploy_unit: archfit-cli
+    role: core
+    paths:
+      - internal/assessment/**
+    public:
+      - internal/assessment/finding
+      - internal/assessment/rules
+    layer: core
+    subdomain: core
+    volatility: high
+  # Use-case sequencing and report projection. None of the six declarable roles
+  # (core, adapter, shared_model, composition_root, generated, test) describes an
+  # application service, so the role stays unset rather than being mislabelled.
+  analysis-application:
+    owner: alexei-led
+    deploy_unit: archfit-cli
+    paths:
+      - internal/application/**
+    public:
+      - internal/application
+    layer: application
+    subdomain: supporting
+    volatility: medium
+  config-lifecycle:
+    owner: alexei-led
+    deploy_unit: archfit-cli
     role: adapter
     paths:
-      - internal/llm/**
+      - internal/initcfg/**
+      - internal/configschema/**
     public:
-      - internal/llm
+      - internal/initcfg
+      - internal/configschema
     layer: adapter
-    subdomain: generic
+    subdomain: supporting
     volatility: medium
-
-  archfit-cli:
+  cli-composition:
     owner: alexei-led
     role: composition_root
     paths:
       - cmd/archfit/**
     public:
       - cmd/archfit
+    deploy_unit: archfit-cli
     layer: cmd
     subdomain: generic
     volatility: medium
-
   development-tools:
     owner: alexei-led
     role: composition_root
@@ -292,16 +308,16 @@ modules:
     public:
       - cmd/calibrate
       - internal/calibrate
-      - scripts/eval
+      - scripts/eval/coverage
     layer: cmd
     subdomain: generic
     volatility: low
-
   architecture-tests:
     owner: alexei-led
     role: test
     paths:
       - internal
+      - internal/testutil/**
     layer: cmd
     subdomain: generic
     volatility: low
@@ -309,54 +325,25 @@ rules:
   # Ring gate 1: core must not directly import the process boundary or extractors
   - id: core_no_toolrun
     type: forbidden_dependency
-    from: internal/classify/**
+    from: internal/relationship/**
     to: internal/toolrun
     gate: fail
-  - id: rules_no_toolrun
+  # Subtree form, not a per-package enumeration: a new assessment package is
+  # covered the day it is created, never the day someone remembers to list it.
+  - id: assessment_no_toolrun
     type: forbidden_dependency
-    from: internal/rules/**
-    to: internal/toolrun
-    gate: fail
-  - id: metrics_no_toolrun
-    type: forbidden_dependency
-    from: internal/metrics/**
-    to: internal/toolrun
-    gate: fail
-  - id: status_no_toolrun
-    type: forbidden_dependency
-    from: internal/status/**
+    from: internal/assessment/**
     to: internal/toolrun
     gate: fail
   - id: core_no_extract
     type: forbidden_dependency
-    from: internal/classify/**
+    from: internal/relationship/**
     to: internal/extract/**
     gate: fail
-  - id: rules_no_extract
+  - id: assessment_no_extract
     type: forbidden_dependency
-    from: internal/rules/**
+    from: internal/assessment/**
     to: internal/extract/**
-    gate: fail
-  # Ring gate 2: engine must not import adapters directly (uses ports/interfaces only)
-  - id: engine_no_extract
-    type: forbidden_dependency
-    from: internal/engine/**
-    to: internal/extract/**
-    gate: fail
-  - id: engine_no_toolrun
-    type: forbidden_dependency
-    from: internal/engine/**
-    to: internal/toolrun
-    gate: fail
-  - id: engine_no_history
-    type: forbidden_dependency
-    from: internal/engine/**
-    to: internal/history/**
-    gate: fail
-  - id: engine_no_output
-    type: forbidden_dependency
-    from: internal/engine/**
-    to: internal/output/**
     gate: fail
   - id: internal_no_labelsio
     type: forbidden_dependency
@@ -369,6 +356,76 @@ rules:
     from: internal/**
     to: internal/llm/**
     gate: fail
+  # Domain consumers use relationship contracts, never extractor graph internals.
+  - id: assessment_no_coupling_internals
+    type: forbidden_dependency
+    from: internal/assessment/**
+    to: internal/relationship/coupling/**
+    gate: fail
+  - id: assessment_no_raw_graph
+    type: forbidden_dependency
+    from: internal/assessment/**
+    to: internal/model/graph/**
+    gate: fail
+  - id: relationship_no_assessment
+    type: forbidden_dependency
+    from: internal/relationship/**
+    to: internal/assessment/**
+    gate: fail
+  - id: assessment_no_report_dtos
+    type: forbidden_dependency
+    from: internal/assessment/**
+    to: internal/model/report/**
+    gate: fail
+  - id: relationship_no_report_dtos
+    type: forbidden_dependency
+    from: internal/relationship/**
+    to: internal/model/report/**
+    gate: fail
+  # Assessment consumes the public relationship contract, never a relationship
+  # implementation package.
+  - id: assessment_no_relationship_internals
+    type: forbidden_dependency
+    from: internal/assessment/**
+    to: internal/relationship/{classify,scoring,coupling,facts,labels,analysis}/**
+    gate: fail
+  # Evidence acquisition observes; it never judges. Rule, metric, status,
+  # staleness, finding, decision, and repair-task ownership stays behind the
+  # evaluation port, so acquisition cannot become a second assessment owner.
+  - id: acquisition_no_assessment_judgment
+    type: forbidden_dependency
+    from: internal/evidence/**
+    to: internal/assessment/{status,staleness,finding,rules,metrics,decision,agenttask}/**
+    gate: fail
+  # Application is the explicit projection boundary: it may consume domain
+  # values and construct report DTOs, while report adapters consume only DTOs.
+  - id: report_adapters_no_application
+    type: forbidden_dependency
+    from: internal/output/**
+    to: internal/application/**
+    gate: fail
+  - id: renderer_no_assessment
+    type: forbidden_dependency
+    from: internal/output/**
+    to: internal/assessment/**
+    gate: fail
+  - id: renderer_no_relationship
+    type: forbidden_dependency
+    from: internal/output/**
+    to: internal/relationship/**
+    gate: fail
+  - id: renderer_no_evidence
+    type: forbidden_dependency
+    from: internal/output/**
+    to: internal/evidence/**
+    gate: fail
+  # The application projector reads domain values; it never reaches into a
+  # relationship or evidence implementation package to rebuild them.
+  - id: projector_no_domain_internals
+    type: forbidden_dependency
+    from: internal/application/report.go
+    to: internal/{relationship,evidence}/**
+    gate: fail
   # Ring gate 3: model packages are pure value types
   - id: model_no_config
     type: forbidden_dependency
@@ -380,28 +437,46 @@ rules:
     from: internal/model/**
     to: internal/baseline
     gate: fail
-  # Stage-contract package stays data-only: view may import only the model kernel.
-  - id: view_no_config
-    type: forbidden_dependency
-    from: internal/view/**
-    to: internal/config
-    gate: fail
-  # Policy-language boundary: runtime stages consume internal/view contracts,
+  # Policy-language boundary: runtime stages consume internal/policy declarations,
   # not the volatile config decoder/model. Only composition roots and the
   # config-lifecycle adapters may import internal/config.
+  - id: policy_no_config
+    type: forbidden_dependency
+    from: internal/policy/**
+    to: internal/config
+    gate: fail
+  # Evidence reports observations. A policy decision inside an acquisition
+  # contract means the tool boundary has started deciding architecture.
+  # The neutral evidence CONTRACT carries facts, never decisions: it must not
+  # know what a module, a layer, or an owner is. Scoped to the contract package
+  # itself — internal/evidence/acquisition is the concrete stage service, and it
+  # necessarily resolves the run's policy snapshot before handing it downstream.
+  - id: evidence_no_policy
+    type: forbidden_dependency
+    from: internal/evidence/*.go
+    to: internal/policy/**
+    gate: fail
+  - id: evidence_no_config
+    type: forbidden_dependency
+    from: internal/evidence/**
+    to: internal/config
+    gate: fail
+  # internal/view is dissolved: every stage contract has a capability owner. The
+  # rule stays as a re-introduction guard — a new shared stage-view package is a
+  # boundary regression, not a refactor.
+  - id: no_stage_view
+    type: forbidden_dependency
+    from: internal/**
+    to: internal/view/**
+    gate: fail
   - id: classify_no_config
     type: forbidden_dependency
-    from: internal/classify/**
+    from: internal/relationship/**
     to: internal/config
     gate: fail
-  - id: rules_no_config
+  - id: assessment_no_config
     type: forbidden_dependency
-    from: internal/rules/**
-    to: internal/config
-    gate: fail
-  - id: metrics_no_config
-    type: forbidden_dependency
-    from: internal/metrics/**
+    from: internal/assessment/**
     to: internal/config
     gate: fail
   - id: extract_no_config
@@ -409,29 +484,14 @@ rules:
     from: internal/extract/**
     to: internal/config
     gate: fail
-  - id: staleness_no_config
-    type: forbidden_dependency
-    from: internal/staleness/**
-    to: internal/config
-    gate: fail
   - id: scope_no_config
     type: forbidden_dependency
     from: internal/scope/**
     to: internal/config
     gate: fail
-  - id: engine_no_config
-    type: forbidden_dependency
-    from: internal/engine/**
-    to: internal/config
-    gate: fail
   - id: facts_no_config
     type: forbidden_dependency
-    from: internal/facts/**
-    to: internal/config
-    gate: fail
-  - id: status_no_config
-    type: forbidden_dependency
-    from: internal/status/**
+    from: internal/relationship/facts/**
     to: internal/config
     gate: fail
   - id: syntax_no_config
@@ -439,24 +499,9 @@ rules:
     from: internal/syntax/**
     to: internal/config
     gate: fail
-  - id: score_no_config
+  - id: report_ports_no_config
     type: forbidden_dependency
-    from: internal/score/**
-    to: internal/config
-    gate: fail
-  - id: decision_no_config
-    type: forbidden_dependency
-    from: internal/decision/**
-    to: internal/config
-    gate: fail
-  - id: agenttask_no_config
-    type: forbidden_dependency
-    from: internal/agenttask/**
-    to: internal/config
-    gate: fail
-  - id: ports_no_config
-    type: forbidden_dependency
-    from: internal/ports/**
+    from: internal/report/ports/**
     to: internal/config
     gate: fail
   - id: baseline_no_config
@@ -471,7 +516,12 @@ rules:
     gate: fail
   - id: labels_no_config
     type: forbidden_dependency
-    from: internal/labels/**
+    from: internal/relationship/labels/**
+    to: internal/config
+    gate: fail
+  - id: labels_store_no_config
+    type: forbidden_dependency
+    from: internal/labels/labelsio/**
     to: internal/config
     gate: fail
   - id: toolrun_no_config
@@ -494,30 +544,111 @@ rules:
     from: internal/ownership/**
     to: internal/config
     gate: fail
-  # Stable-contract boundaries: persistence and rendering must not bind to
-  # volatile evaluation implementations. Current violations are intentional
-  # findings until the code exposes stable snapshot/report contracts.
+  # Stable-contract boundaries: persistence and rendering bind to the stable
+  # snapshot and report contracts, never to a volatile evaluation implementation.
+  # These rules pass on current source; they exist to keep it that way.
   - id: baseline_no_score
     type: forbidden_dependency
     from: internal/baseline/**
-    to: internal/score/**
+    to: internal/assessment/score/**
     gate: fail
   - id: output_no_score
     type: forbidden_dependency
     from: internal/output/**
-    to: internal/score/**
+    to: internal/assessment/score/**
+    gate: fail
+  # The architecture decision is made from explicit hard-gate results and
+  # finding classifications, never from an averaged repository scalar. The state
+  # package cannot reach the scorer at all, so "the aggregator is metric-blind"
+  # is a structural fact rather than a review convention.
+  - id: assessment_no_score_decision
+    type: forbidden_dependency
+    from: internal/assessment/state/**
+    to: internal/assessment/score/**
     gate: fail
   - id: output_no_decision
     type: forbidden_dependency
     from: internal/output/**
-    to: internal/decision/**
+    to: internal/assessment/decision/**
     gate: fail
-  # Hexagonal boundary: internal packages depend on ports, not the orchestrator.
-  # Only cmd imports internal/engine.
-  - id: internal_no_engine
+  # Application consumes narrow stage contracts. Concrete execution adapters
+  # are composed outside the capability and must not leak into its package.
+  - id: application_no_concrete_adapters
     type: forbidden_dependency
-    from: internal/**
-    to: internal/engine/**
+    from: internal/application/**
+    to: internal/{extract,toolrun,output}/**
+    gate: fail
+  - id: application_no_evidence_acquisition
+    type: forbidden_dependency
+    from: internal/application/**
+    to: internal/evidence/acquisition/**
+    gate: fail
+  - id: application_no_factcache
+    type: forbidden_dependency
+    from: internal/application/**
+    to: internal/factcache/**
+    gate: fail
+  - id: application_no_persistence_adapters
+    type: forbidden_dependency
+    from: internal/application/**
+    to: internal/history/**
+    gate: fail
+  - id: application_no_ownership
+    type: forbidden_dependency
+    from: internal/application/**
+    to: internal/ownership/**
+    gate: fail
+  - id: application_no_baseline
+    type: forbidden_dependency
+    from: internal/application/**
+    to: internal/baseline/**
+    gate: fail
+  - id: application_no_labelsio
+    type: forbidden_dependency
+    from: internal/application/**
+    to: internal/labels/labelsio/**
+    gate: fail
+  - id: application_no_provider_adapters
+    type: forbidden_dependency
+    from: internal/application/**
+    to: internal/llm/**
+    gate: fail
+  - id: application_no_config_adapter
+    type: forbidden_dependency
+    from: internal/application/**
+    to: internal/config/**
+    gate: fail
+  - id: application_no_cmd
+    type: forbidden_dependency
+    from: internal/application/**
+    to: cmd/archfit/**
+    gate: fail
+  # The orchestration hub is gone. Nothing may reintroduce it: every stage is
+  # owned by the capability that decides it, and the application sequences them.
+  - id: no_analysispipeline
+    type: forbidden_dependency
+    from: '**'
+    to: internal/analysispipeline/**
+    gate: fail
+  # Composition-root direction. The library never reaches back into the CLI, so
+  # every command stays replaceable and no domain decision can hide in cmd.
+  - id: core_no_cmd
+    type: forbidden_dependency
+    from: internal/{policy,relationship,assessment,evidence,model,scope,syntax}/**
+    to: cmd/**
+    gate: fail
+  - id: adapter_no_cli
+    type: forbidden_dependency
+    from: internal/{extract,toolrun,history,output,baseline,labels,factcache,ownership,config}/**
+    to: cmd/**
+    gate: fail
+  # The CLI selects concrete implementations and translates exit codes. A rule,
+  # metric, scorer, status, decision, finding, or classifier import there would
+  # be a second place where the verdict is decided.
+  - id: cli_no_domain_implementation
+    type: forbidden_dependency
+    from: cmd/archfit/**
+    to: internal/{assessment/rules,assessment/metrics,assessment/score,assessment/status,assessment/decision,assessment/finding,relationship/classify,relationship/scoring,relationship/coupling}/**
     gate: fail
   # Layer direction guard. The historical engine→scope inversion was
   # resolved by decoupling scope from git and reclassifying it as support.
@@ -525,13 +656,18 @@ rules:
     type: forbidden_layer_direction
     gate: fail
   # --- Syntax-facts lint rule (gate: warn = advisory, non-blocking) ---
-  # public_api_max is global (no per-module scoping); keep the ceiling above the
-  # largest measured exported surface. Current max is cmd/archfit (~281 exported
-  # declarations); 320 keeps headroom while catching a module that turns into a
-  # dumping ground.
+  # public_api_max is global (no per-module scoping) and counts EVERY exported
+  # declaration ast-grep sees in the module, test files included — for
+  # `evidence-adapters` 252 of the 397 counted declarations are `TestXxx`
+  # functions and moq fakes, so the number tracks module size, not published API
+  # surface. Read it as a growth ratchet, not an API budget. Keep the ceiling
+  # just above the largest measured module (evidence-adapters, 397 as of the
+  # capability migration); 430 leaves bounded headroom without hiding a new
+  # dumping ground. The published surface itself is gated structurally by the
+  # forbidden_dependency rules above and by TestModelSurfaceNoDrift.
   - id: syntax_api_size_ceiling
     type: public_api_max
-    max: 320
+    max: 430
     gate: warn
   # Public-API framework-type-leak — advisory dogfooding. Fires when an exported
   # field or function return type names an external (non-first-party) package.

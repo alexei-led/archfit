@@ -28,7 +28,7 @@ func writeEnrichSubdomainFixture(t *testing.T) (cfgPath, dir string) {
 	t.Helper()
 	dir = t.TempDir()
 	cfgPath = filepath.Join(dir, ".archfit.yaml")
-	content := `version: 1
+	content := `version: 2
 layers:
   - core
   - adapter
@@ -122,7 +122,7 @@ func TestEnrichSubdomainDraft_AllClassified(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
-	content := `version: 1
+	content := `version: 2
 layers:
   - core
 modules:
@@ -167,7 +167,7 @@ func TestEnrichSubdomainPin(t *testing.T) {
 		Version: 1,
 		Drafts: []initcfg.SubdomainDraft{
 			{Module: enrichModAuth, Subdomain: subdomainCore, Volatility: "low", Status: initcfg.SubdomainStatusApproved},
-			{Module: enrichModNotify, Subdomain: "supporting", Status: initcfg.SubdomainStatusApproved},
+			{Module: enrichModNotify, Subdomain: "supporting", Volatility: "low", Status: initcfg.SubdomainStatusApproved},
 		},
 	}
 	if err := initcfg.WriteSubdomainDrafts(subdomainsPath, draftFile); err != nil {
@@ -279,7 +279,7 @@ func TestEnrichSubdomains_LLMUnconfigured(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
-	content := `version: 1
+	content := `version: 2
 modules:
   auth:
     paths:

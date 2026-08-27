@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/configschema"
 )
 
@@ -61,6 +62,9 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 				Minimum json.Number `json:"minimum"`
 			} `json:"properties"`
 		} `json:"$defs"`
+		Properties map[string]struct {
+			Enum []any `json:"enum"`
+		} `json:"properties"`
 	}
 	if err := json.Unmarshal(got, &schema); err != nil {
 		t.Fatalf("unmarshal generated schema: %v", err)
@@ -99,14 +103,34 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 	if !ok {
 		t.Fatal("CouplingGateDef definition missing from generated schema")
 	}
-	if len(gateDef.AnyOf) != 2 {
-		t.Errorf("CouplingGateDef.anyOf has %d branches, want 2 (min_band or max_drop required)", len(gateDef.AnyOf))
+	// The retired v1 knobs decode only so the migration can read them. An
+	// editor that still offers them would suggest writing a config this binary
+	// refuses to analyse.
+	for _, retired := range []string{"min_band", "max_drop"} {
+		if _, present := gateDef.Properties[retired]; present {
+			t.Errorf("CouplingGateDef offers retired key %q — v2 rejects it at load", retired)
+		}
 	}
-	if gateDef.Properties["max_drop"].Minimum != "0" {
-		t.Errorf("CouplingGateDef.max_drop.minimum = %q, want %q (negative drop rejected)", gateDef.Properties["max_drop"].Minimum, "0")
+	if !slices.Equal(gateDef.Required, []string{"distributed_monolith"}) {
+		t.Errorf("CouplingGateDef.required = %v, want [distributed_monolith] — an empty gate block gates nothing",
+			gateDef.Required)
 	}
-	wantMinBandEnum := []any{"poor", "mixed", "serviceable", "strong"}
-	if got := gateDef.Properties["min_band"].Enum; !slices.Equal(got, wantMinBandEnum) {
-		t.Errorf("CouplingGateDef.min_band enum = %v, want %v (critical excluded — could never trip)", got, wantMinBandEnum)
+
+	dmDef, ok := schema.Defs["DistributedMonolithDef"]
+	if !ok {
+		t.Fatal("DistributedMonolithDef definition missing from generated schema")
+	}
+	wantModeEnum := []any{"warn", "fail"}
+	if got := dmDef.Properties["mode"].Enum; !slices.Equal(got, wantModeEnum) {
+		t.Errorf("DistributedMonolithDef.mode enum = %v, want %v", got, wantModeEnum)
+	}
+	if dmDef.Properties["max_new_seams"].Minimum != "0" {
+		t.Errorf("DistributedMonolithDef.max_new_seams.minimum = %q, want %q (a tolerated count is never negative)",
+			dmDef.Properties["max_new_seams"].Minimum, "0")
+	}
+
+	if got := schema.Properties["version"].Enum; !slices.Equal(got, []any{float64(config.SchemaVersion)}) {
+		t.Errorf("version enum = %v, want [%d] — v1 decodes for migration but never analyses",
+			got, config.SchemaVersion)
 	}
 }

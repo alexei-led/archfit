@@ -9,8 +9,11 @@ is deterministic — same repo + same config = byte-identical output.
 ```text
 agent edits code
   → archfit check [--base main] --json
-  → exit 0?  done.
-  → exit 1?  read agent_tasks[] — goal, constraints, files, validation
+  → exit 0?  healthy — done.
+  → exit 2?  needs_attention — no blocking finding. Read the dimension whose
+             status is not `measured` (complexity, testability, and operations
+             report `partial` by contract, so 2 is the normal clean result).
+  → exit 1?  blocked — read agent_tasks[] — goal, constraints, files, validation
   → fix within the constraints
   → run the task's validation command
   → repeat
@@ -41,12 +44,14 @@ Every ACTIVE gate finding produces one structured repair task:
 Goals are deterministic templates per rule type; constraints join the rule's
 configured constraint text, allowed alternatives, and the target module's
 public globs; validation is the exact `archfit check` command that must pass.
-`agent_tasks[]` is gate-only. Advisory findings stay out of this channel unless
-a tripped
-[`coupling.gate`](configuration-reference.md#couplinggate) promotes active
-`bc/imbalanced_coupling` advisories to gate kind; then the edges behind the
-failing score arrive in `agent_tasks[]` with file evidence
-(`bc/duplicated_knowledge` stays advisory — it never gates).
+`agent_tasks[]` is gate-only, and advisory findings stay out of this channel.
+Advisory promotion is gone: a scalar gate had to borrow findings to point at,
+whereas
+[`coupling.gate.distributed_monolith`](configuration-reference.md#couplinggate)
+names its own seams — a blocked run emits one `bc/coupling_gate` gate finding
+PER newly introduced seam, keyed `coupling-gate/<seamID>` and carrying the module
+pair. `bc/imbalanced_coupling` and `bc/duplicated_knowledge` are diagnostics and
+never gate.
 
 **`files[]` existence guarantee.** Every entry is a repo-relative path that
 exists on disk — this is the field an agent trusts blindly to open the right
@@ -57,14 +62,14 @@ emitted as a bare key or ID. If dropping empties the set, `files` falls back to
 the target module's config `paths:` root — itself resolved to a real path (a
 Python dotted glob root goes through the module-file probe); if even that
 isn't resolvable, `files` is legitimately empty — never a fabricated string
-(`internal/agenttask/agenttask.go`, `filesFor`).
+(`internal/assessment/agenttask/agenttask.go`, `filesFor`).
 
 **`edge.path` group semantics.** For a rolled-up finding (`group_count > 1`),
 `edge.from.path`/`edge.to.path` are taken from whichever member edge owns
 `locations[0]` — never an arbitrary hash-ordered representative. When no
 member owns `locations[0]` (TypeScript edges carry no locations), the paths
 fall back to the representative member's own edge
-(`internal/engine/advisories.go`, `groupEdgePaths`). Either way the pair
+(`internal/assessment/evaluation/advisories.go`, `groupEdgePaths`). Either way the pair
 names one genuine member edge of the group. The path form is the graph
 node's: a repo-relative file for Go and TypeScript, a dotted module ID for
 Python (`myapp.domain`), a crate or `crate::mod` name for Rust — the
@@ -77,8 +82,11 @@ never carry a `group_count`.
 ## git_finding_delta — which repair tasks this change introduced
 
 `--base <ref>` adds one report-only JSON block that sorts the CURRENT
-`agent_tasks[]` by git origin. It appears only with `--base`, only in `--json`
-output, and never changes the verdict or the exit code.
+`agent_tasks[]` by git origin. It appears only with `--base`, only under
+`--format legacy-json`, and never changes the verdict or the exit code. It is a
+diagnostic block, not part of `archfit.architecture-state.v1`, so `--json` does
+not carry it — and `legacy-json` ships for exactly one release (see
+[release notes](release-notes.md)).
 
 ```json
 {
@@ -121,35 +129,30 @@ side only), or a config-hash mismatch moves unmatched tasks to
 task. The synthetic `bc/coupling_gate` task is per-run trip state with no stable
 counterpart, so it is always `unknown`.
 
-**Symmetric degradations pair, and say so.** Two shapes would otherwise make the
-block permanently inert on whole classes of repos and hosts, so they stay
+**Symmetric degradations pair, and say so.** Three shapes would otherwise make
+the block permanently inert on whole classes of repos and hosts, so they stay
 comparable instead:
 
 - Both sides `partial` from unresolved import specifiers — the normal steady
   state for dependency-cruiser and grimp, so treating it as unusable disabled
   the feature on every TypeScript and Python repo.
 - Both sides `partial` with every input covered and only edge precision
-  degraded — go/packages reports this when some packages fail to type-check.
-  Their imports are all in the graph, only the `go/types` strength hints are
-  missing, so nothing can hide behind them; one such package anywhere used to
-  disable the feature on an ordinary Go repo.
+  degraded — `go/packages` reports this when some packages fail to type-check.
+  Their imports are all in the graph; only the `go/types` strength hints are
+  missing, so nothing can hide behind them.
 - Both sides `absent` for an analyzer the config activated — typically its tool
   is not installed on this host (archfit's own runtime image ships no Rust
   toolchain and no SCIP indexer).
 
 The safety argument is symmetry: neither side ran what the other could hide
 behind. None is ever paired silently — each always emits a `comparison_reasons`
-entry, and the two partial cases carry each side's count, so `3 unresolved` and
-`5000/6000 unresolved` are distinguishable, as are `2 degraded` and `900
-degraded`. An **asymmetric** absence or partial is still unavailable evidence,
-and the two partial shapes never pair with each other: complete-but-imprecise is
-not the same evidence as incomplete.
-
-A go/packages `partial` earned by packages that failed to LOAD is the incomplete
-kind — their imports never reached the graph — and it pairs with nothing. The
-common cause is a gitignored generated Go package, which is absent from the
-tracked-files-only base checkout; see the known ceiling in
-[ci.md](ci.md#2-github-actions-recipe).
+entry, and both partial cases carry each side's count, so `3 unresolved` and
+`5000/6000 unresolved` are distinguishable, as are `2 degraded` and
+`900 degraded`. The two partial shapes never pair with each other:
+complete-but-imprecise is not the same evidence as incomplete. A `go/packages`
+`partial` earned by packages that failed to LOAD is the incomplete kind and
+pairs with nothing — see the known ceiling in [ci.md](ci.md#2-github-actions-recipe).
+An **asymmetric** absence or partial is still unavailable evidence.
 
 Matching uses stable finding IDs only: lifecycle labels (`new`, `waived`,
 `baseline`) and gate-vs-advisory promotion do not affect it, and a base entry
@@ -158,9 +161,11 @@ reported as `fixed` never makes a current task pre-existing.
 ## advisory_tasks — the report-only rollup channel
 
 Grouped `bc/imbalanced_coupling` advisories (`group_count > 1`) also produce
-`advisory_tasks[]`. These are deterministic rollups for humans and agents to
-triage advisory noise without changing CI semantics. They are never consumed by
-verdict, gate status, baseline deltas, or `agent_tasks[]`.
+`advisory_tasks[]` under `--format legacy-json`. These are deterministic rollups
+for humans and agents to triage advisory noise without changing CI semantics.
+They are never consumed by verdict, gate status, baseline deltas, or
+`agent_tasks[]`, and they are not part of `archfit.architecture-state.v1`, so
+`--json` does not carry them.
 
 ```json
 {
@@ -183,8 +188,10 @@ verdict, gate status, baseline deltas, or `agent_tasks[]`.
 ```
 
 Use `advisory_tasks[]` for review/refactor planning only. If a run exits `1`,
-fix `agent_tasks[]` first; advisory tasks may be deferred unless your team has
-chosen to treat the score gate as a refactoring trigger.
+fix `agent_tasks[]` first; advisory tasks may be deferred. There is no score gate
+to promote them through — the only coupling gate is
+`coupling.gate.distributed_monolith`, which names its own seams and never borrows
+an advisory.
 
 ## Optional AI narrative
 
@@ -216,9 +223,9 @@ inline PR annotations.
 - **BC advisories** — Balanced Coupling imbalances (strength × distance ×
   volatility) at or above the configured severity, plus report-only
   `bc/duplicated_knowledge` for cross-module clone pairs with no import edge.
-- **Metrics** — `coupling_balance` (scored; gates via the opt-in
-  `coupling.gate`), the baseline-delta gated `unbalanced_edge`, `cycle`,
-  `encapsulation`, `coverage`, and report-only `blast_radius`.
+- **Metrics** — `coupling_balance` (scored; a diagnostic that never gates), the
+  baseline-delta gated `unbalanced_edge`, `cycle`, `encapsulation`, `coverage`,
+  and report-only `blast_radius`.
 - **Structural facts** — neutral per-module evidence (fan-in, fan-out, LOC)
   for downstream judgment.
 

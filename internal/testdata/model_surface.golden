@@ -2,134 +2,41 @@ package internal/model/clone
   type internal/model/clone.Cluster struct{Files []string; Lines int; Locations []internal/model/clone.LineRange}
   type internal/model/clone.LineRange struct{StartLine int; EndLine int}
   func internal/model/clone.ModulePairs(clusters []internal/model/clone.Cluster, key func(string) string) [][2]string
-package internal/model/coupling
-  type internal/model/coupling.AdditiveScorer struct{}
-  func (internal/model/coupling.AdditiveScorer).Score(c internal/model/coupling.Classification) internal/model/coupling.EdgeScore
-  type internal/model/coupling.BookScorer struct{}
-  func (internal/model/coupling.BookScorer).Score(c internal/model/coupling.Classification) internal/model/coupling.EdgeScore
-  type internal/model/coupling.Classification struct{Strength internal/model/coupling.Strength; Distance internal/model/coupling.Distance; Volatility internal/model/coupling.Volatility; Explicitness internal/model/coupling.Explicitness; Severity internal/model/coupling.Severity; ContractRecommended bool; Score internal/model/coupling.EdgeScore; DistanceBasis internal/model/coupling.DistanceBasis "json:\"distance_basis,omitempty\""; CloneLocations []internal/model/coupling.Location "json:\"clone_locations,omitempty\""; StrengthFromLLM bool "json:\"strength_from_llm,omitempty\""; StrengthFromNonHighLLM bool "json:\"strength_from_non_high_llm,omitempty\""; StrengthFromConnascence bool "json:\"strength_from_connascence,omitempty\""; Connascence []internal/model/coupling.ConnascenceEvidence "json:\"connascence,omitempty\""}
-  const internal/model/coupling.ConnascenceAlgorithm internal/model/coupling.ConnascenceKind
-  type internal/model/coupling.ConnascenceEvidence struct{Kind internal/model/coupling.ConnascenceKind "json:\"kind\""; Source string "json:\"source\""; Detail string "json:\"detail,omitempty\""}
-  const internal/model/coupling.ConnascenceExecution internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascenceIdentity internal/model/coupling.ConnascenceKind
-  type internal/model/coupling.ConnascenceKind string
-  const internal/model/coupling.ConnascenceMeaning internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascenceName internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascencePosition internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascenceTiming internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascenceType internal/model/coupling.ConnascenceKind
-  const internal/model/coupling.ConnascenceValue internal/model/coupling.ConnascenceKind
-  func internal/model/coupling.DefaultScorer() internal/model/coupling.Scorer
-  type internal/model/coupling.Distance string
-  type internal/model/coupling.DistanceBasis string
-  const internal/model/coupling.DistanceBasisDeployUnit internal/model/coupling.DistanceBasis
-  const internal/model/coupling.DistanceBasisExternal internal/model/coupling.DistanceBasis
-  const internal/model/coupling.DistanceBasisOwnership internal/model/coupling.DistanceBasis
-  const internal/model/coupling.DistanceBasisStructure internal/model/coupling.DistanceBasis
-  const internal/model/coupling.DistanceBasisUnknown internal/model/coupling.DistanceBasis
-  const internal/model/coupling.DistanceCrossDeployUnit internal/model/coupling.Distance
-  const internal/model/coupling.DistanceCrossModuleDiffOwner internal/model/coupling.Distance
-  const internal/model/coupling.DistanceCrossModuleSameOwner internal/model/coupling.Distance
-  const internal/model/coupling.DistanceExternal internal/model/coupling.Distance
-  func internal/model/coupling.DistanceIsHigh(d internal/model/coupling.Distance) bool
-  const internal/model/coupling.DistanceSameModule internal/model/coupling.Distance
-  const internal/model/coupling.DistanceUnknown internal/model/coupling.Distance
-  type internal/model/coupling.EdgeScore struct{Scored bool; Balance int; Value int; Band internal/model/coupling.Severity; Reason string; Breakdown internal/model/coupling.ScoreBreakdown; CheapestMove string}
-  type internal/model/coupling.Explicitness string
-  const internal/model/coupling.ExplicitnessExplicit internal/model/coupling.Explicitness
-  const internal/model/coupling.ExplicitnessImplicit internal/model/coupling.Explicitness
-  const internal/model/coupling.ExplicitnessUnknown internal/model/coupling.Explicitness
-  type internal/model/coupling.Index map[string]internal/model/coupling.Classification
-  func internal/model/coupling.LocalComplexity(cl internal/model/coupling.Classification) bool
-  type internal/model/coupling.Location struct{File string "json:\"file\""; Line int "json:\"line,omitempty\""}
-  type internal/model/coupling.MultiplicativeScorer struct{}
-  func (internal/model/coupling.MultiplicativeScorer).Score(c internal/model/coupling.Classification) internal/model/coupling.EdgeScore
-  func internal/model/coupling.ScoreBand(balance int) internal/model/coupling.Severity
-  type internal/model/coupling.ScoreBreakdown struct{StrengthVal int; DistanceVal int; VolatilityVal int; Modularity int; VolDiscount int}
-  const internal/model/coupling.ScoreDefinition untyped string
-  const internal/model/coupling.ScoreVersion untyped string
-  type internal/model/coupling.Scorer interface{Score(c internal/model/coupling.Classification) internal/model/coupling.EdgeScore}
-  type internal/model/coupling.Severity string
-  const internal/model/coupling.SeverityCritical internal/model/coupling.Severity
-  const internal/model/coupling.SeverityHigh internal/model/coupling.Severity
-  const internal/model/coupling.SeverityLow internal/model/coupling.Severity
-  const internal/model/coupling.SeverityMedium internal/model/coupling.Severity
-  const internal/model/coupling.SeverityNone internal/model/coupling.Severity
-  type internal/model/coupling.Strength string
-  const internal/model/coupling.StrengthContract internal/model/coupling.Strength
-  const internal/model/coupling.StrengthFunctional internal/model/coupling.Strength
-  const internal/model/coupling.StrengthIntrusive internal/model/coupling.Strength
-  const internal/model/coupling.StrengthModel internal/model/coupling.Strength
-  const internal/model/coupling.StrengthSymmetric internal/model/coupling.Strength
-  const internal/model/coupling.StrengthUnknown internal/model/coupling.Strength
-  type internal/model/coupling.Volatility string
-  const internal/model/coupling.VolatilityFrozen internal/model/coupling.Volatility
-  const internal/model/coupling.VolatilityHigh internal/model/coupling.Volatility
-  const internal/model/coupling.VolatilityLow internal/model/coupling.Volatility
-  const internal/model/coupling.VolatilityMedium internal/model/coupling.Volatility
-  func internal/model/coupling.VolatilityResolved(v internal/model/coupling.Volatility) bool
-  const internal/model/coupling.VolatilityUndeclared internal/model/coupling.Volatility
-  const internal/model/coupling.VolatilityUnknown internal/model/coupling.Volatility
-package internal/model/diagnostic
-  type internal/model/diagnostic.AdvisoryTask struct{FindingID string "json:\"finding_id\""; RuleID string "json:\"rule_id\""; Status internal/model/finding.Status "json:\"status\""; Severity internal/model/finding.Severity "json:\"severity\""; GroupCount int "json:\"group_count\""; GroupMembers []string "json:\"group_members,omitempty\""; Goal string "json:\"goal\""; CheapestMove string "json:\"cheapest_move,omitempty\""; ScoreValue int "json:\"score_value,omitempty\""; TopFiles []string "json:\"top_files\""; Constraints []string "json:\"constraints\""; Validation []string "json:\"validation\""}
-  type internal/model/diagnostic.AgentTask struct{FindingID string "json:\"finding_id\""; RuleID string "json:\"rule_id\""; Goal string "json:\"goal\""; Constraints []string "json:\"constraints\""; Files []string "json:\"files\""; Validation []string "json:\"validation\""; Declarations []internal/model/diagnostic.SyntaxFact "json:\"declarations,omitempty\""}
-  type internal/model/diagnostic.ClassifiedEdgeSummary struct{Total int "json:\"total\""; Scored int "json:\"scored\""; Abstained int "json:\"abstained\""; SameModule int "json:\"same_module\""; MeanBalance float64 "json:\"mean_balance\""; TailRisk *internal/model/diagnostic.CouplingTailRiskSummary "json:\"tail_risk,omitempty\""; ByStrength map[string]int "json:\"by_strength,omitempty\""; ByDistance map[string]int "json:\"by_distance,omitempty\""; ByDistanceBasis map[string]int "json:\"by_distance_basis,omitempty\""; ByVolatility map[string]int "json:\"by_volatility,omitempty\""; BySeverity map[string]int "json:\"by_severity,omitempty\""; DistributedMonolith int "json:\"distributed_monolith,omitempty\""; External int "json:\"external,omitempty\""; DeclaredExternal int "json:\"declared_external,omitempty\""; ConnectedModules int "json:\"connected_modules,omitempty\""; CloneOnlyScored int "json:\"clone_only_scored,omitempty\""; CloneOnlyAdvisory int "json:\"clone_only_advisory,omitempty\""; LLMApproved int "json:\"llm_approved,omitempty\""; LabeledLLM int "json:\"labeled_llm,omitempty\""; LLMLowConfidenceEdges int "json:\"-\""; VolatilityProvenance *internal/model/diagnostic.VolatilityProvenance "json:\"volatility_provenance,omitempty\""; DistanceCompression *internal/model/diagnostic.DistanceCompressionSummary "json:\"distance_compression,omitempty\""}
-  type internal/model/diagnostic.ConnascenceReport struct{EdgesWithEvidence int "json:\"edges_with_evidence\""; AbstainedEdges int "json:\"abstained_edges\""; TotalEvidence int "json:\"total_evidence\""; StrengthInferredEdges int "json:\"strength_inferred_edges,omitempty\""; ByKind map[string]int "json:\"by_kind,omitempty\""; BySource map[string]int "json:\"by_source,omitempty\""; Unmeasured []string "json:\"unmeasured,omitempty\""; Roadmap []internal/model/diagnostic.ConnascenceRoadmapItem "json:\"roadmap,omitempty\""}
-  type internal/model/diagnostic.ConnascenceRoadmapItem struct{Kind string "json:\"kind\""; CurrentStatus string "json:\"current_status\""; Sources []string "json:\"sources,omitempty\""; RelatedSignals []string "json:\"related_signals,omitempty\""; UpgradeTrigger string "json:\"upgrade_trigger,omitempty\""}
-  type internal/model/diagnostic.CouplingTailRiskSummary struct{WorstBalance int "json:\"worst_balance\""; LowerDecileBalance int "json:\"lower_decile_balance\""; HighOrWorseEdges int "json:\"high_or_worse_edges\""; HighOrWorseSharePct int "json:\"high_or_worse_share_pct\""; CriticalEdges int "json:\"critical_edges\""; DistributedMonolithEdges int "json:\"distributed_monolith_edges\""; CloneOnlyScored int "json:\"clone_only_scored,omitempty\""; CloneOnlyHighOrWorseEdges int "json:\"clone_only_high_or_worse_edges,omitempty\""; CloneOnlyWorstBalance int "json:\"clone_only_worst_balance,omitempty\""}
-  type internal/model/diagnostic.Coverage struct{Tool string "json:\"tool\""; Version string "json:\"version\""; FilesSeen int "json:\"files_seen\""; FilesApplicable int "json:\"files_applicable\""; Unresolved int "json:\"unresolved\""; SpecifiersSeen int "json:\"specifiers_seen,omitempty\""; UnresolvedInputsMissing int "json:\"unresolved_inputs_missing,omitempty\""; UnresolvedPrecisionOnly int "json:\"unresolved_precision_only,omitempty\""; Status string "json:\"status\""; Reason string "json:\"reason,omitempty\""}
-  type internal/model/diagnostic.CoverageGap struct{Tool string "json:\"tool\""; InstallCmd string "json:\"install_cmd\""; AffectedMetrics []string "json:\"affected_metrics\""; Gate string "json:\"gate\""}
-  type internal/model/diagnostic.DeltaReport struct{New []string "json:\"new,omitempty\""; Existing []string "json:\"existing,omitempty\""; Resolved []string "json:\"resolved,omitempty\""; SeverityChanged []string "json:\"severity_changed,omitempty\""; TouchedByDelta []string "json:\"touched_by_delta,omitempty\""}
-  type internal/model/diagnostic.DeprecatedDep struct{File string "json:\"file\""; Kind string "json:\"kind\""; Subject string "json:\"subject\""; Note string "json:\"note,omitempty\""}
-  type internal/model/diagnostic.Diagnostic struct{SchemaVersion string "json:\"schema_version\""; Verdict internal/model/diagnostic.Verdict "json:\"verdict\""; Base string "json:\"base\""; Head string "json:\"head\""; ConfigHash string "json:\"config_hash,omitempty\""; Metrics []internal/model/diagnostic.MetricResult "json:\"metrics\""; Findings []internal/model/finding.Finding "json:\"findings\""; FileFacts []internal/model/diagnostic.FileFact "json:\"file_facts\""; DynamicImports []internal/model/diagnostic.DynamicImport "json:\"dynamic_imports\""; Connascence *internal/model/diagnostic.ConnascenceReport "json:\"connascence,omitempty\""; DynamicConnascenceSignals *internal/model/diagnostic.DynamicConnascenceSignals "json:\"dynamic_connascence_signals,omitempty\""; RuntimeAsync []internal/model/diagnostic.RuntimeAsyncModule "json:\"runtime_async,omitempty\""; RuntimeAsyncEdges []internal/model/diagnostic.RuntimeAsyncEdge "json:\"runtime_async_edges,omitempty\""; DeprecatedDeps []internal/model/diagnostic.DeprecatedDep "json:\"deprecated_deps,omitempty\""; SemanticStrengthOverlay *internal/model/diagnostic.SemanticStrengthOverlay "json:\"semantic_strength_overlay,omitempty\""; SyntaxFacts []internal/model/diagnostic.SyntaxFact "json:\"syntax_facts,omitempty\""; AgentTasks []internal/model/diagnostic.AgentTask "json:\"agent_tasks\""; AdvisoryTasks []internal/model/diagnostic.AdvisoryTask "json:\"advisory_tasks\""; ToolCoverage []internal/model/diagnostic.Coverage "json:\"tool_coverage\""; CoverageGaps []internal/model/diagnostic.CoverageGap "json:\"coverage_gaps,omitempty\""; OwnerSource string "json:\"owner_source,omitempty\""; PrimaryExtractorTools []string "json:\"primary_extractor_tools,omitempty\""; ConfigWarnings []string "json:\"config_warnings,omitempty\""; ClassifiedEdges *internal/model/diagnostic.ClassifiedEdgeSummary "json:\"classified_edges,omitempty\""; DistanceContext *internal/model/diagnostic.DistanceContext "json:\"distance_context,omitempty\""; DistanceConfigCandidates []internal/model/diagnostic.DistanceConfigCandidate "json:\"distance_config_candidates,omitempty\""; VolatilityCorroboration *internal/model/diagnostic.VolatilityCorroboration "json:\"volatility_corroboration,omitempty\""; LocalCoupling []internal/model/diagnostic.LocalCouplingModule "json:\"local_coupling,omitempty\""; GitFindingDelta *internal/model/diagnostic.GitFindingDelta "json:\"git_finding_delta,omitempty\""; Delta *internal/model/diagnostic.DeltaReport "json:\"delta,omitempty\""; Summary internal/model/diagnostic.Summary "json:\"summary\""}
-  type internal/model/diagnostic.Direction string
-  const internal/model/diagnostic.DirectionHigherIsBetter internal/model/diagnostic.Direction
-  const internal/model/diagnostic.DirectionHigherIsWorse internal/model/diagnostic.Direction
-  type internal/model/diagnostic.DistanceCompressionSummary struct{CompressedMiddleRungs bool "json:\"compressed_middle_rungs\""; ImplementedRungs []int "json:\"implemented_rungs,omitempty\""; OmittedRungs []int "json:\"omitted_rungs,omitempty\""; OmittedRungReasons []internal/model/diagnostic.DistanceOmittedRungReason "json:\"omitted_rung_reasons,omitempty\""; DeterministicSplits []string "json:\"deterministic_splits,omitempty\""; CodeStructureBoundaryCounts []internal/model/diagnostic.DistanceCount "json:\"code_structure_boundary_counts,omitempty\""; CodeStructureAncestorDepths []internal/model/diagnostic.DistanceCount "json:\"code_structure_ancestor_depths,omitempty\""; Rationale string "json:\"rationale,omitempty\""}
-  type internal/model/diagnostic.DistanceConfigCandidate struct{SourceBlock string "json:\"source_block\""; Module string "json:\"module\""; Target string "json:\"target\""; IntegrationKind string "json:\"integration_kind\""; Count int "json:\"count\""; EvidenceSites []internal/model/diagnostic.DistanceConfigEvidenceSite "json:\"evidence_sites,omitempty\""; SuggestedReviewAction string "json:\"suggested_review_action\""}
-  type internal/model/diagnostic.DistanceConfigEvidenceSite struct{File string "json:\"file\""; Line int "json:\"line\""; Kind string "json:\"kind\""; Language string "json:\"language\""; Target string "json:\"target,omitempty\""}
-  type internal/model/diagnostic.DistanceContext struct{OwnerModel string "json:\"owner_model\""; DistanceBasis map[string]int "json:\"distance_basis,omitempty\""; DeployUnitDetectedModules int "json:\"deploy_unit_detected_modules,omitempty\""; DeclaredExternalSystems int "json:\"declared_external_systems,omitempty\""; RuntimeAsyncRelations int "json:\"runtime_async_relations,omitempty\""; RuntimeAsyncKinds map[string]int "json:\"runtime_async_kinds,omitempty\""; Interpretation string "json:\"interpretation\""; RuntimeInterpretation string "json:\"runtime_interpretation,omitempty\""}
-  type internal/model/diagnostic.DistanceCount struct{Value int "json:\"value\""; Count int "json:\"count\""}
-  type internal/model/diagnostic.DistanceOmittedRungReason struct{Rung int "json:\"rung\""; Reason string "json:\"reason\""}
-  type internal/model/diagnostic.DynamicConnascenceSignal struct{Kind string "json:\"kind\""; RelatedConnascence []string "json:\"related_connascence\""; Measured bool "json:\"measured\""; ReportOnlyReason string "json:\"report_only_reason\""; Module string "json:\"module\""; Target string "json:\"target,omitempty\""; IntegrationKind string "json:\"integration_kind,omitempty\""; Count int "json:\"count\""; Sites []internal/model/diagnostic.DynamicConnascenceSite "json:\"sites,omitempty\""}
-  type internal/model/diagnostic.DynamicConnascenceSignals struct{Signals []internal/model/diagnostic.DynamicConnascenceSignal "json:\"signals\""; Unmeasured []string "json:\"unmeasured,omitempty\""; ReportOnlyReason string "json:\"report_only_reason\""}
-  type internal/model/diagnostic.DynamicConnascenceSite struct{File string "json:\"file\""; Line int "json:\"line\""; Kind string "json:\"kind\""; Language string "json:\"language\""; Target string "json:\"target,omitempty\""}
-  type internal/model/diagnostic.DynamicImport struct{Module string "json:\"module\""; Count int "json:\"count\""; Sites []internal/model/diagnostic.DynamicImportSite "json:\"sites\""}
-  const internal/model/diagnostic.DynamicImportKindDynamicImport untyped string
-  const internal/model/diagnostic.DynamicImportKindImportlib untyped string
-  const internal/model/diagnostic.DynamicImportKindLazyImport untyped string
-  const internal/model/diagnostic.DynamicImportKindRequire untyped string
-  type internal/model/diagnostic.DynamicImportSite struct{File string "json:\"file\""; Line int "json:\"line\""; Kind string "json:\"kind\""; Language string "json:\"language\""}
-  type internal/model/diagnostic.FileFact struct{Module string "json:\"module\""; Files []string "json:\"files\""; InboundModuleFanIn int "json:\"inbound_module_fanin\""; OutboundDestinations int "json:\"outbound_destinations\""; LOC int "json:\"loc\""}
-  const internal/model/diagnostic.GitComparisonComparable untyped string
-  const internal/model/diagnostic.GitComparisonUnknown untyped string
-  type internal/model/diagnostic.GitFindingDelta struct{BaseRef string "json:\"base_ref\""; ComparisonStatus string "json:\"comparison_status\""; IntroducedFindingIDs []string "json:\"introduced_finding_ids\""; PreExistingFindingIDs []string "json:\"pre_existing_finding_ids\""; UnknownOriginFindingIDs []string "json:\"unknown_origin_finding_ids\""; ComparisonReasons []string "json:\"comparison_reasons\""}
-  type internal/model/diagnostic.LocalCouplingEdge struct{From string "json:\"from\""; To string "json:\"to\""; Strength string "json:\"strength\""; Balance int "json:\"balance\""; Band string "json:\"band\""; File string "json:\"file,omitempty\""; Line int "json:\"line,omitempty\""}
-  type internal/model/diagnostic.LocalCouplingModule struct{Module string "json:\"module\""; ScoredEdges int "json:\"scored_edges\""; AbstainedEdges int "json:\"abstained_edges,omitempty\""; ComplexityEdges int "json:\"complexity_edges\""; ComplexitySharePct int "json:\"complexity_share_pct\""; MeanBalance float64 "json:\"mean_balance\""; WorstOffenders []internal/model/diagnostic.LocalCouplingEdge "json:\"worst_offenders,omitempty\""}
-  type internal/model/diagnostic.MetricResult struct{Name string "json:\"name\""; Value float64 "json:\"value\""; Display string "json:\"display\""; Band string "json:\"band\""; Confidence string "json:\"confidence\""; Version string "json:\"metric_version\""; Mode string "json:\"mode\""; Definition string "json:\"definition\""; Delta *float64 "json:\"delta,omitempty\""; Direction internal/model/diagnostic.Direction "json:\"direction,omitempty\""}
-  type internal/model/diagnostic.MetricSnapshot map[string]struct{Value float64 "json:\"value\""; Version string "json:\"version\""}
-  func internal/model/diagnostic.New() internal/model/diagnostic.Diagnostic
-  type internal/model/diagnostic.RuntimeAsyncEdge struct{FromModule string "json:\"from_module\""; Target string "json:\"target\""; IntegrationKind string "json:\"integration_kind\""; Count int "json:\"count\""; Confidence string "json:\"confidence\""; Sites []internal/model/diagnostic.RuntimeAsyncSite "json:\"sites,omitempty\""}
-  type internal/model/diagnostic.RuntimeAsyncModule struct{Module string "json:\"module\""; IntegrationKind string "json:\"integration_kind\""; Count int "json:\"count\""; Confidence string "json:\"confidence\""}
-  type internal/model/diagnostic.RuntimeAsyncSite struct{File string "json:\"file\""; Line int "json:\"line\""; Library string "json:\"library\""; IntegrationKind string "json:\"integration_kind\""; Language string "json:\"language\""}
-  const internal/model/diagnostic.SchemaVersion untyped string
-  type internal/model/diagnostic.SemanticStrengthOverlay struct{ByLanguage map[string]internal/model/diagnostic.SemanticStrengthOverlayStats "json:\"by_language,omitempty\""}
-  type internal/model/diagnostic.SemanticStrengthOverlayStats struct{CandidateEdges int "json:\"candidate_edges\""; Applied int "json:\"applied\""; Missed int "json:\"missed\""; Before map[string]int "json:\"before,omitempty\""; After map[string]int "json:\"after,omitempty\""}
-  func internal/model/diagnostic.SortSyntaxFacts(facts []internal/model/diagnostic.SyntaxFact)
-  const internal/model/diagnostic.StatusAbsent untyped string
-  const internal/model/diagnostic.StatusDisabled untyped string
-  const internal/model/diagnostic.StatusOK untyped string
-  const internal/model/diagnostic.StatusPartial untyped string
-  const internal/model/diagnostic.StatusTimedOut untyped string
-  type internal/model/diagnostic.Summary struct{GateFindings int "json:\"gate_findings\""; Warnings int "json:\"warnings\""; WaiversUsed int "json:\"waivers_used\""}
-  type internal/model/diagnostic.SyntaxFact struct{Language string "json:\"language\""; File string "json:\"file\""; Module string "json:\"module,omitempty\""; Kind string "json:\"kind\""; Name string "json:\"name\""; Exported bool "json:\"exported,omitempty\""; StartLine int "json:\"start_line\""; EndLine int "json:\"end_line,omitempty\""; Count int "json:\"count,omitempty\""; Framework string "json:\"framework,omitempty\""; FrameworkConfirmed bool "json:\"-\""}
-  type internal/model/diagnostic.Verdict string
-  const internal/model/diagnostic.VerdictFail internal/model/diagnostic.Verdict
-  const internal/model/diagnostic.VerdictPass internal/model/diagnostic.Verdict
-  const internal/model/diagnostic.VerdictWarn internal/model/diagnostic.Verdict
-  type internal/model/diagnostic.VolatilityCorroboration struct{Source string "json:\"source\""; Status string "json:\"status\""; CommitWindow int "json:\"commit_window,omitempty\""; FullHistory bool "json:\"full_history,omitempty\""; CommitsScanned int "json:\"commits_scanned,omitempty\""; ModulesTouched int "json:\"modules_touched,omitempty\""; TopTouched []internal/model/diagnostic.VolatilityTouch "json:\"top_touched,omitempty\""; Caveat string "json:\"caveat,omitempty\""}
-  type internal/model/diagnostic.VolatilityProvenance struct{Declared int "json:\"declared\""; Inherited int "json:\"inherited\""; Cascade int "json:\"cascade\""; Undeclared int "json:\"undeclared\""}
-  type internal/model/diagnostic.VolatilityTouch struct{Module string "json:\"module\""; TouchCommits int "json:\"touch_commits\""; DeclaredVolatility string "json:\"declared_volatility,omitempty\""}
+package internal/model/evidence
+  type internal/model/evidence.ConnascenceReport struct{EdgesWithEvidence int "json:\"edges_with_evidence\""; AbstainedEdges int "json:\"abstained_edges\""; TotalEvidence int "json:\"total_evidence\""; StrengthInferredEdges int "json:\"strength_inferred_edges,omitempty\""; ByKind map[string]int "json:\"by_kind,omitempty\""; BySource map[string]int "json:\"by_source,omitempty\""; Unmeasured []string "json:\"unmeasured,omitempty\""; Roadmap []internal/model/evidence.ConnascenceRoadmapItem "json:\"roadmap,omitempty\""}
+  type internal/model/evidence.ConnascenceRoadmapItem struct{Kind string "json:\"kind\""; CurrentStatus string "json:\"current_status\""; Sources []string "json:\"sources,omitempty\""; RelatedSignals []string "json:\"related_signals,omitempty\""; UpgradeTrigger string "json:\"upgrade_trigger,omitempty\""}
+  type internal/model/evidence.Coverage struct{Tool string "json:\"tool\""; Version string "json:\"version\""; FilesSeen int "json:\"files_seen\""; FilesApplicable int "json:\"files_applicable\""; Unresolved int "json:\"unresolved\""; SpecifiersSeen int "json:\"specifiers_seen,omitempty\""; UnresolvedInputsMissing int "json:\"unresolved_inputs_missing,omitempty\""; UnresolvedPrecisionOnly int "json:\"unresolved_precision_only,omitempty\""; Status string "json:\"status\""; Reason string "json:\"reason,omitempty\""}
+  type internal/model/evidence.CoverageGap struct{Tool string "json:\"tool\""; InstallCmd string "json:\"install_cmd\""; AffectedMetrics []string "json:\"affected_metrics\""; Gate string "json:\"gate\""}
+  type internal/model/evidence.DeprecatedDep struct{File string "json:\"file\""; Kind string "json:\"kind\""; Subject string "json:\"subject\""; Note string "json:\"note,omitempty\""}
+  type internal/model/evidence.DistanceConfigCandidate struct{SourceBlock string "json:\"source_block\""; Module string "json:\"module\""; Target string "json:\"target\""; IntegrationKind string "json:\"integration_kind\""; Count int "json:\"count\""; EvidenceSites []internal/model/evidence.DistanceConfigEvidenceSite "json:\"evidence_sites,omitempty\""; SuggestedReviewAction string "json:\"suggested_review_action\""}
+  type internal/model/evidence.DistanceConfigEvidenceSite struct{File string "json:\"file\""; Line int "json:\"line\""; Kind string "json:\"kind\""; Language string "json:\"language\""; Target string "json:\"target,omitempty\""}
+  type internal/model/evidence.DistanceContext struct{OwnerModel string "json:\"owner_model\""; DistanceBasis map[string]int "json:\"distance_basis,omitempty\""; DeployUnitDetectedModules int "json:\"deploy_unit_detected_modules,omitempty\""; DeclaredExternalSystems int "json:\"declared_external_systems,omitempty\""; RuntimeAsyncRelations int "json:\"runtime_async_relations,omitempty\""; RuntimeAsyncKinds map[string]int "json:\"runtime_async_kinds,omitempty\""; Interpretation string "json:\"interpretation\""; RuntimeInterpretation string "json:\"runtime_interpretation,omitempty\""}
+  type internal/model/evidence.DynamicConnascenceSignal struct{Kind string "json:\"kind\""; RelatedConnascence []string "json:\"related_connascence\""; Measured bool "json:\"measured\""; ReportOnlyReason string "json:\"report_only_reason\""; Module string "json:\"module\""; Target string "json:\"target,omitempty\""; IntegrationKind string "json:\"integration_kind,omitempty\""; Count int "json:\"count\""; Sites []internal/model/evidence.DynamicConnascenceSite "json:\"sites,omitempty\""}
+  type internal/model/evidence.DynamicConnascenceSignals struct{Signals []internal/model/evidence.DynamicConnascenceSignal "json:\"signals\""; Unmeasured []string "json:\"unmeasured,omitempty\""; ReportOnlyReason string "json:\"report_only_reason\""}
+  type internal/model/evidence.DynamicConnascenceSite struct{File string "json:\"file\""; Line int "json:\"line\""; Kind string "json:\"kind\""; Language string "json:\"language\""; Target string "json:\"target,omitempty\""}
+  type internal/model/evidence.DynamicImport struct{Module string "json:\"module\""; Count int "json:\"count\""; Sites []internal/model/evidence.DynamicImportSite "json:\"sites\""}
+  const internal/model/evidence.DynamicImportKindDynamicImport untyped string
+  const internal/model/evidence.DynamicImportKindImportlib untyped string
+  const internal/model/evidence.DynamicImportKindLazyImport untyped string
+  const internal/model/evidence.DynamicImportKindRequire untyped string
+  type internal/model/evidence.DynamicImportSite struct{File string "json:\"file\""; Line int "json:\"line\""; Kind string "json:\"kind\""; Language string "json:\"language\""}
+  type internal/model/evidence.FileFact struct{Module string "json:\"module\""; Files []string "json:\"files\""; InboundModuleFanIn int "json:\"inbound_module_fanin\""; OutboundDestinations int "json:\"outbound_destinations\""; LOC int "json:\"loc\""}
+  type internal/model/evidence.LocalCouplingEdge struct{From string "json:\"from\""; To string "json:\"to\""; Strength string "json:\"strength\""; Balance int "json:\"balance\""; Band string "json:\"band\""; File string "json:\"file,omitempty\""; Line int "json:\"line,omitempty\""}
+  type internal/model/evidence.LocalCouplingModule struct{Module string "json:\"module\""; ScoredEdges int "json:\"scored_edges\""; AbstainedEdges int "json:\"abstained_edges,omitempty\""; ComplexityEdges int "json:\"complexity_edges\""; ComplexitySharePct int "json:\"complexity_share_pct\""; MeanBalance float64 "json:\"mean_balance\""; WorstOffenders []internal/model/evidence.LocalCouplingEdge "json:\"worst_offenders,omitempty\""}
+  type internal/model/evidence.RuntimeAsyncEdge struct{FromModule string "json:\"from_module\""; Target string "json:\"target\""; IntegrationKind string "json:\"integration_kind\""; Count int "json:\"count\""; Confidence string "json:\"confidence\""; Sites []internal/model/evidence.RuntimeAsyncSite "json:\"sites,omitempty\""}
+  type internal/model/evidence.RuntimeAsyncModule struct{Module string "json:\"module\""; IntegrationKind string "json:\"integration_kind\""; Count int "json:\"count\""; Confidence string "json:\"confidence\""}
+  type internal/model/evidence.RuntimeAsyncSite struct{File string "json:\"file\""; Line int "json:\"line\""; Library string "json:\"library\""; IntegrationKind string "json:\"integration_kind\""; Language string "json:\"language\""}
+  type internal/model/evidence.SemanticStrengthOverlay struct{ByLanguage map[string]internal/model/evidence.SemanticStrengthOverlayStats "json:\"by_language,omitempty\""}
+  type internal/model/evidence.SemanticStrengthOverlayStats struct{CandidateEdges int "json:\"candidate_edges\""; Applied int "json:\"applied\""; Missed int "json:\"missed\""; Before map[string]int "json:\"before,omitempty\""; After map[string]int "json:\"after,omitempty\""}
+  func internal/model/evidence.SortSyntaxFacts(facts []internal/model/evidence.SyntaxFact)
+  const internal/model/evidence.StatusAbsent untyped string
+  const internal/model/evidence.StatusDisabled untyped string
+  const internal/model/evidence.StatusOK untyped string
+  const internal/model/evidence.StatusPartial untyped string
+  const internal/model/evidence.StatusTimedOut untyped string
+  type internal/model/evidence.SyntaxFact struct{Language string "json:\"language\""; File string "json:\"file\""; Module string "json:\"module,omitempty\""; Kind string "json:\"kind\""; Name string "json:\"name\""; Exported bool "json:\"exported,omitempty\""; StartLine int "json:\"start_line\""; EndLine int "json:\"end_line,omitempty\""; Count int "json:\"count,omitempty\""; Framework string "json:\"framework,omitempty\""; FrameworkConfirmed bool "json:\"-\""}
+  type internal/model/evidence.VolatilityCorroboration struct{Source string "json:\"source\""; Status string "json:\"status\""; CommitWindow int "json:\"commit_window,omitempty\""; FullHistory bool "json:\"full_history,omitempty\""; CommitsScanned int "json:\"commits_scanned,omitempty\""; ModulesTouched int "json:\"modules_touched,omitempty\""; TopTouched []internal/model/evidence.VolatilityTouch "json:\"top_touched,omitempty\""; Caveat string "json:\"caveat,omitempty\""}
+  type internal/model/evidence.VolatilityTouch struct{Module string "json:\"module\""; TouchCommits int "json:\"touch_commits\""; DeclaredVolatility string "json:\"declared_volatility,omitempty\""}
 package internal/model/fileclass
   type internal/model/fileclass.FileClass string
   const internal/model/fileclass.Generated internal/model/fileclass.FileClass
@@ -137,24 +44,6 @@ package internal/model/fileclass
   const internal/model/fileclass.Production internal/model/fileclass.FileClass
   const internal/model/fileclass.Test internal/model/fileclass.FileClass
   const internal/model/fileclass.Vendor internal/model/fileclass.FileClass
-package internal/model/finding
-  type internal/model/finding.EdgeEvidence struct{From internal/model/finding.Endpoint "json:\"from\""; To internal/model/finding.Endpoint "json:\"to\""; Kind string "json:\"kind\""}
-  type internal/model/finding.Endpoint struct{Module string "json:\"module\""; Path string "json:\"path\""}
-  type internal/model/finding.Finding struct{ID string "json:\"id\""; Kind string "json:\"kind\""; RuleID string "json:\"rule_id\""; Status internal/model/finding.Status "json:\"status\""; Severity internal/model/finding.Severity "json:\"severity\""; Confidence string "json:\"confidence\""; Edge internal/model/finding.EdgeEvidence "json:\"edge\""; MatchedBy map[string]string "json:\"matched_by\""; Locations []internal/model/graph.Location "json:\"locations\""; Why string "json:\"why\""; Constraint string "json:\"constraint\""; Alternatives []string "json:\"allowed_alternatives,omitempty\""}
-  const internal/model/finding.KindAdvisory untyped string
-  const internal/model/finding.KindGate untyped string
-  func internal/model/finding.New(ruleID string, e internal/model/graph.Edge, locs []internal/model/graph.Location) internal/model/finding.Finding
-  type internal/model/finding.Severity string
-  const internal/model/finding.SeverityCritical internal/model/finding.Severity
-  const internal/model/finding.SeverityHigh internal/model/finding.Severity
-  const internal/model/finding.SeverityLow internal/model/finding.Severity
-  const internal/model/finding.SeverityMedium internal/model/finding.Severity
-  type internal/model/finding.Status string
-  const internal/model/finding.StatusBaseline internal/model/finding.Status
-  const internal/model/finding.StatusExpiredWaiver internal/model/finding.Status
-  const internal/model/finding.StatusFixed internal/model/finding.Status
-  const internal/model/finding.StatusNew internal/model/finding.Status
-  const internal/model/finding.StatusWaived internal/model/finding.Status
 package internal/model/graph
   func internal/model/graph.Build(facts []internal/model/graph.Facts) *internal/model/graph.Graph
   var internal/model/graph.BuiltinConventions internal/model/graph.ConventionRegistry
@@ -204,46 +93,135 @@ package internal/model/graph
   func internal/model/graph.NodePath(id string) string
   const internal/model/graph.StrengthHintDTO untyped string
   func internal/model/graph.TypeScriptSourceExtensions() []string
-package internal/model/module
-  func internal/model/module.BuildMap(modules map[string]internal/model/module.ModuleDef) internal/model/module.Map
-  type internal/model/module.Map struct{names []string; modules map[string]internal/model/module.ModuleDef}
-  func (internal/model/module.Map).Has(name string) bool
-  func (internal/model/module.Map).ModuleFor(path string) (string, bool)
-  func (internal/model/module.Map).ModuleForFile(file string) (string, bool)
-  func (internal/model/module.Map).IsModuleRoot(dir string) bool
-  func (internal/model/module.Map).LayerFor(path string) (string, bool)
-  func (internal/model/module.Map).LayerForName(name string) (string, bool)
-  type internal/model/module.ModuleDef struct{Paths []string "yaml:\"paths\""; Public []string "yaml:\"public\""; Internal []string "yaml:\"internal\""; Layer string "yaml:\"layer\""; Subdomain string "yaml:\"subdomain\""; Volatility string "yaml:\"volatility\""; Owner string "yaml:\"owner\""; DeployUnit string "yaml:\"deploy_unit\""; Role internal/model/module.Role "yaml:\"role,omitempty\""; ReviewedAt time.Time "yaml:\"reviewed_at,omitempty\""; ReviewedBy string "yaml:\"reviewed_by\""}
-  type internal/model/module.Role string
-  const internal/model/module.RoleAdapter internal/model/module.Role
-  const internal/model/module.RoleCompositionRoot internal/model/module.Role
-  const internal/model/module.RoleCore internal/model/module.Role
-  const internal/model/module.RoleGenerated internal/model/module.Role
-  const internal/model/module.RoleSharedModel internal/model/module.Role
-  const internal/model/module.RoleTest internal/model/module.Role
-  func internal/model/module.RootDirs(modules map[string]internal/model/module.ModuleDef) map[string]string
-  func internal/model/module.ValidRole(r internal/model/module.Role) bool
 package internal/model/pattern
+  type internal/model/pattern.Config []internal/model/pattern.Def
+  type internal/model/pattern.Def struct{ID string "yaml:\"id\""; Lang string "yaml:\"lang\""; Rule string "yaml:\"rule\""}
   type internal/model/pattern.Match struct{File string; Pattern string; Text string; Node string; Line int; Column int}
 package internal/model/report
+  type internal/model/report.AdvisoryTask struct{FindingID string "json:\"finding_id\""; RuleID string "json:\"rule_id\""; Status string "json:\"status\""; Severity string "json:\"severity\""; GroupCount int "json:\"group_count\""; GroupMembers []string "json:\"group_members,omitempty\""; Goal string "json:\"goal\""; CheapestMove string "json:\"cheapest_move,omitempty\""; ScoreValue int "json:\"score_value,omitempty\""; TopFiles []string "json:\"top_files\""; Constraints []string "json:\"constraints\""; Validation []string "json:\"validation\""}
+  type internal/model/report.AgentTask struct{FindingID string "json:\"finding_id\""; RuleID string "json:\"rule_id\""; Goal string "json:\"goal\""; Constraints []string "json:\"constraints\""; Files []string "json:\"files\""; Validation []string "json:\"validation\""; Declarations []internal/model/report.SyntaxFact "json:\"declarations,omitempty\""}
+  type internal/model/report.ArchitectureState struct{SchemaVersion string "json:\"schema_version\""; Verdict internal/model/report.StateVerdict "json:\"verdict\""; Decision internal/model/report.StateDecision "json:\"decision\""; Comparison internal/model/report.StateComparison "json:\"comparison\""; Measurement internal/model/report.StateMeasurement "json:\"measurement\""; Dimensions internal/model/report.Dimensions "json:\"dimensions\""; Coverage internal/model/report.StateCoverage "json:\"coverage\""; Findings []internal/model/report.Finding "json:\"findings\""; AgentTasks []internal/model/report.AgentTask "json:\"agent_tasks\""; Seams []internal/model/report.Seam "json:\"seams\""}
+  type internal/model/report.ClassifiedEdgeSummary struct{Total int "json:\"total\""; Scored int "json:\"scored\""; Abstained int "json:\"abstained\""; SameModule int "json:\"same_module\""; MeanBalance float64 "json:\"mean_balance\""; TailRisk *internal/model/report.CouplingTailRiskSummary "json:\"tail_risk,omitempty\""; ByStrength map[string]int "json:\"by_strength,omitempty\""; ByDistance map[string]int "json:\"by_distance,omitempty\""; ByDistanceBasis map[string]int "json:\"by_distance_basis,omitempty\""; ByVolatility map[string]int "json:\"by_volatility,omitempty\""; BySeverity map[string]int "json:\"by_severity,omitempty\""; ByBalanceDriver map[string]int "json:\"by_balance_driver,omitempty\""; ByCriticalDriver map[string]int "json:\"by_critical_driver,omitempty\""; ByModulePair map[string]int "json:\"by_module_pair,omitempty\""; DistributedMonolith int "json:\"distributed_monolith,omitempty\""; External int "json:\"external,omitempty\""; DeclaredExternal int "json:\"declared_external,omitempty\""; ConnectedModules int "json:\"connected_modules,omitempty\""; CloneOnlyScored int "json:\"clone_only_scored,omitempty\""; CloneOnlyAdvisory int "json:\"clone_only_advisory,omitempty\""; LLMApproved int "json:\"llm_approved,omitempty\""; LabeledLLM int "json:\"labeled_llm,omitempty\""; LLMLowConfidenceEdges int "json:\"-\""; VolatilityProvenance *internal/model/report.VolatilityProvenance "json:\"volatility_provenance,omitempty\""; DistanceCompression *internal/model/report.DistanceCompressionSummary "json:\"distance_compression,omitempty\""}
+  const internal/model/report.ComparisonComparable internal/model/report.ComparisonStatus
+  const internal/model/report.ComparisonNonComparable internal/model/report.ComparisonStatus
+  const internal/model/report.ComparisonNotRequested internal/model/report.ComparisonStatus
+  type internal/model/report.ComparisonStatus string
   type internal/model/report.Confidence string
   const internal/model/report.ConfidenceHigh internal/model/report.Confidence
   const internal/model/report.ConfidenceLow internal/model/report.Confidence
   const internal/model/report.ConfidenceMedium internal/model/report.Confidence
+  const internal/model/report.ConfidenceUnrated internal/model/report.Confidence
+  type internal/model/report.ConnascenceReport struct{EdgesWithEvidence int "json:\"edges_with_evidence\""; AbstainedEdges int "json:\"abstained_edges\""; TotalEvidence int "json:\"total_evidence\""; StrengthInferredEdges int "json:\"strength_inferred_edges,omitempty\""; ByKind map[string]int "json:\"by_kind,omitempty\""; BySource map[string]int "json:\"by_source,omitempty\""; Unmeasured []string "json:\"unmeasured,omitempty\""; Roadmap []internal/model/report.ConnascenceRoadmapItem "json:\"roadmap,omitempty\""}
+  type internal/model/report.ConnascenceRoadmapItem struct{Kind string "json:\"kind\""; CurrentStatus string "json:\"current_status\""; Sources []string "json:\"sources,omitempty\""; RelatedSignals []string "json:\"related_signals,omitempty\""; UpgradeTrigger string "json:\"upgrade_trigger,omitempty\""}
+  type internal/model/report.CouplingTailRiskSummary struct{WorstBalance int "json:\"worst_balance\""; LowerDecileBalance int "json:\"lower_decile_balance\""; HighOrWorseEdges int "json:\"high_or_worse_edges\""; HighOrWorseSharePct int "json:\"high_or_worse_share_pct\""; CriticalEdges int "json:\"critical_edges\""; DistributedMonolithEdges int "json:\"distributed_monolith_edges\""; CloneOnlyScored int "json:\"clone_only_scored,omitempty\""; CloneOnlyHighOrWorseEdges int "json:\"clone_only_high_or_worse_edges,omitempty\""; CloneOnlyWorstBalance int "json:\"clone_only_worst_balance,omitempty\""}
+  type internal/model/report.Coverage struct{Tool string "json:\"tool\""; Version string "json:\"version\""; FilesSeen int "json:\"files_seen\""; FilesApplicable int "json:\"files_applicable\""; Unresolved int "json:\"unresolved\""; SpecifiersSeen int "json:\"specifiers_seen,omitempty\""; UnresolvedInputsMissing int "json:\"unresolved_inputs_missing,omitempty\""; UnresolvedPrecisionOnly int "json:\"unresolved_precision_only,omitempty\""; Status string "json:\"status\""; Reason string "json:\"reason,omitempty\""}
+  type internal/model/report.CoverageGap struct{Tool string "json:\"tool\""; InstallCmd string "json:\"install_cmd\""; AffectedMetrics []string "json:\"affected_metrics\""; Gate string "json:\"gate\""}
   type internal/model/report.DecisionBand string
   const internal/model/report.DecisionBandAcceptable internal/model/report.DecisionBand
   const internal/model/report.DecisionBandFail internal/model/report.DecisionBand
   const internal/model/report.DecisionBandHealthy internal/model/report.DecisionBand
   const internal/model/report.DecisionBandNeedsAttention internal/model/report.DecisionBand
   type internal/model/report.Delta struct{Overall int; Dimensions []internal/model/report.DimDelta}
+  type internal/model/report.DeltaReport struct{New []string "json:\"new,omitempty\""; Existing []string "json:\"existing,omitempty\""; Resolved []string "json:\"resolved,omitempty\""; SeverityChanged []string "json:\"severity_changed,omitempty\""; TouchedByDelta []string "json:\"touched_by_delta,omitempty\""}
+  type internal/model/report.DeprecatedDep struct{File string "json:\"file\""; Kind string "json:\"kind\""; Subject string "json:\"subject\""; Note string "json:\"note,omitempty\""}
   const internal/model/report.DimCouplingBalance untyped string
   type internal/model/report.DimDelta struct{Name string; Before int; After int; Change int}
-  type internal/model/report.DimReport struct{Name string; Value int; Band internal/model/report.ScoreBand; Confidence internal/model/report.Confidence; Meta bool; Why string; WhatMoves string}
-  type internal/model/report.Dimension struct{Name string "json:\"name\""; Value int "json:\"value\""; Band internal/model/report.ScoreBand "json:\"band\""; Confidence internal/model/report.Confidence "json:\"confidence\""; Evidence []string "json:\"evidence\""; Summary string "json:\"summary\""; Meta bool "json:\"meta,omitempty\""}
+  type internal/model/report.DimReport struct{Name string; Value int; Band internal/model/report.ScoreBand; Confidence internal/model/report.Confidence; RawValue int; CapApplied string; Meta bool; Why string; WhatMoves string}
+  type internal/model/report.Dimension struct{Name string "json:\"name\""; Value int "json:\"value\""; Band internal/model/report.ScoreBand "json:\"band\""; Confidence internal/model/report.Confidence "json:\"confidence\""; Evidence []string "json:\"evidence\""; Summary string "json:\"summary\""; RawValue int "json:\"raw_value,omitempty\""; CapApplied string "json:\"cap_applied,omitempty\""; Meta bool "json:\"meta,omitempty\""}
+  const internal/model/report.DimensionChangeLocality untyped string
+  const internal/model/report.DimensionComplexity untyped string
+  const internal/model/report.DimensionCount untyped int
+  const internal/model/report.DimensionCoupling untyped string
+  type internal/model/report.DimensionCoverage struct{Basis string "json:\"basis\""; Observed int "json:\"observed\""; Total int "json:\"total\""}
+  type internal/model/report.DimensionDelta struct{Status internal/model/report.ComparisonStatus "json:\"status\""; Reasons []string "json:\"reasons,omitempty\""; Metrics []internal/model/report.MetricDelta "json:\"metrics,omitempty\""; NewFindings []string "json:\"new_findings,omitempty\""; ResolvedFindings []string "json:\"resolved_findings,omitempty\""}
+  const internal/model/report.DimensionDrift untyped string
+  const internal/model/report.DimensionIntent untyped string
+  const internal/model/report.DimensionModularity untyped string
+  const internal/model/report.DimensionOperations untyped string
+  type internal/model/report.DimensionState struct{Name string "json:\"name\""; Owner string "json:\"owner\""; Status internal/model/report.MeasurementStatus "json:\"status\""; Confidence internal/model/report.Confidence "json:\"confidence\""; Gate internal/model/report.GateState "json:\"gate\""; Coverage internal/model/report.DimensionCoverage "json:\"coverage\""; Metrics []internal/model/report.MetricValue "json:\"metrics\""; Findings []internal/model/report.FindingRef "json:\"findings\""; Unknown []internal/model/report.UnknownFact "json:\"unknown\""; Delta *internal/model/report.DimensionDelta "json:\"delta,omitempty\""}
+  const internal/model/report.DimensionStructure untyped string
+  const internal/model/report.DimensionTestability untyped string
+  type internal/model/report.Dimensions struct{Intent internal/model/report.DimensionState "json:\"intent\""; Structure internal/model/report.DimensionState "json:\"structure\""; Modularity internal/model/report.DimensionState "json:\"modularity\""; Coupling internal/model/report.DimensionState "json:\"coupling\""; ChangeLocality internal/model/report.DimensionState "json:\"change_locality\""; Complexity internal/model/report.DimensionState "json:\"complexity\""; Testability internal/model/report.DimensionState "json:\"testability\""; Operations internal/model/report.DimensionState "json:\"operations\""; Drift internal/model/report.DimensionState "json:\"drift\""}
+  func (internal/model/report.Dimensions).All() []internal/model/report.DimensionState
+  func (internal/model/report.Dimensions).CountStatuses() (measured int, partial int, unmeasured int)
+  type internal/model/report.Direction string
+  const internal/model/report.DirectionHigherIsBetter internal/model/report.Direction
+  const internal/model/report.DirectionHigherIsWorse internal/model/report.Direction
+  type internal/model/report.DistanceCompressionSummary struct{CompressedMiddleRungs bool "json:\"compressed_middle_rungs\""; ImplementedRungs []int "json:\"implemented_rungs,omitempty\""; OmittedRungs []int "json:\"omitted_rungs,omitempty\""; OmittedRungReasons []internal/model/report.DistanceOmittedRungReason "json:\"omitted_rung_reasons,omitempty\""; DeterministicSplits []string "json:\"deterministic_splits,omitempty\""; CodeStructureBoundaryCounts []internal/model/report.DistanceCount "json:\"code_structure_boundary_counts,omitempty\""; CodeStructureAncestorDepths []internal/model/report.DistanceCount "json:\"code_structure_ancestor_depths,omitempty\""; Rationale string "json:\"rationale,omitempty\""}
+  type internal/model/report.DistanceConfigCandidate struct{SourceBlock string "json:\"source_block\""; Module string "json:\"module\""; Target string "json:\"target\""; IntegrationKind string "json:\"integration_kind\""; Count int "json:\"count\""; EvidenceSites []internal/model/report.DistanceConfigEvidenceSite "json:\"evidence_sites,omitempty\""; SuggestedReviewAction string "json:\"suggested_review_action\""}
+  type internal/model/report.DistanceConfigEvidenceSite struct{File string "json:\"file\""; Line int "json:\"line\""; Kind string "json:\"kind\""; Language string "json:\"language\""; Target string "json:\"target,omitempty\""}
+  type internal/model/report.DistanceContext struct{OwnerModel string "json:\"owner_model\""; DistanceBasis map[string]int "json:\"distance_basis,omitempty\""; DeployUnitDetectedModules int "json:\"deploy_unit_detected_modules,omitempty\""; DeclaredExternalSystems int "json:\"declared_external_systems,omitempty\""; RuntimeAsyncRelations int "json:\"runtime_async_relations,omitempty\""; RuntimeAsyncKinds map[string]int "json:\"runtime_async_kinds,omitempty\""; Interpretation string "json:\"interpretation\""; RuntimeInterpretation string "json:\"runtime_interpretation,omitempty\""}
+  type internal/model/report.DistanceCount struct{Value int "json:\"value\""; Count int "json:\"count\""}
+  type internal/model/report.DistanceOmittedRungReason struct{Rung int "json:\"rung\""; Reason string "json:\"reason\""}
+  type internal/model/report.Document struct{SchemaVersion string "json:\"schema_version\""; Verdict internal/model/report.Verdict "json:\"verdict\""; Base string "json:\"base\""; Head string "json:\"head\""; ConfigHash string "json:\"config_hash,omitempty\""; Metrics []internal/model/report.MetricResult "json:\"metrics\""; Findings []internal/model/report.Finding "json:\"findings\""; FileFacts []internal/model/report.FileFact "json:\"file_facts\""; DynamicImports []internal/model/report.DynamicImport "json:\"dynamic_imports\""; Connascence *internal/model/report.ConnascenceReport "json:\"connascence,omitempty\""; DynamicConnascenceSignals *internal/model/report.DynamicConnascenceSignals "json:\"dynamic_connascence_signals,omitempty\""; RuntimeAsync []internal/model/report.RuntimeAsyncModule "json:\"runtime_async,omitempty\""; RuntimeAsyncEdges []internal/model/report.RuntimeAsyncEdge "json:\"runtime_async_edges,omitempty\""; DeprecatedDeps []internal/model/report.DeprecatedDep "json:\"deprecated_deps,omitempty\""; SemanticStrengthOverlay *internal/model/report.SemanticStrengthOverlay "json:\"semantic_strength_overlay,omitempty\""; SyntaxFacts []internal/model/report.SyntaxFact "json:\"syntax_facts,omitempty\""; AgentTasks []internal/model/report.AgentTask "json:\"agent_tasks\""; AdvisoryTasks []internal/model/report.AdvisoryTask "json:\"advisory_tasks\""; ToolCoverage []internal/model/report.Coverage "json:\"tool_coverage\""; CoverageGaps []internal/model/report.CoverageGap "json:\"coverage_gaps,omitempty\""; OwnerSource string "json:\"owner_source,omitempty\""; PrimaryExtractorTools []string "json:\"primary_extractor_tools,omitempty\""; ConfigWarnings []string "json:\"config_warnings,omitempty\""; ClassifiedEdges *internal/model/report.ClassifiedEdgeSummary "json:\"classified_edges,omitempty\""; DistanceContext *internal/model/report.DistanceContext "json:\"distance_context,omitempty\""; DistanceConfigCandidates []internal/model/report.DistanceConfigCandidate "json:\"distance_config_candidates,omitempty\""; VolatilityCorroboration *internal/model/report.VolatilityCorroboration "json:\"volatility_corroboration,omitempty\""; LocalCoupling []internal/model/report.LocalCouplingModule "json:\"local_coupling,omitempty\""; GitFindingDelta *internal/model/report.GitFindingDelta "json:\"git_finding_delta,omitempty\""; Delta *internal/model/report.DeltaReport "json:\"delta,omitempty\""; Summary internal/model/report.Summary "json:\"summary\""; Score internal/model/report.Scorecard "json:\"-\""; BaseScore *internal/model/report.Scorecard "json:\"-\""; Decision internal/model/report.Report "json:\"-\""; State internal/model/report.ArchitectureState "json:\"-\""}
+  type internal/model/report.DynamicConnascenceSignal struct{Kind string "json:\"kind\""; RelatedConnascence []string "json:\"related_connascence\""; Measured bool "json:\"measured\""; ReportOnlyReason string "json:\"report_only_reason\""; Module string "json:\"module\""; Target string "json:\"target,omitempty\""; IntegrationKind string "json:\"integration_kind,omitempty\""; Count int "json:\"count\""; Sites []internal/model/report.DynamicConnascenceSite "json:\"sites,omitempty\""}
+  type internal/model/report.DynamicConnascenceSignals struct{Signals []internal/model/report.DynamicConnascenceSignal "json:\"signals\""; Unmeasured []string "json:\"unmeasured,omitempty\""; ReportOnlyReason string "json:\"report_only_reason\""}
+  type internal/model/report.DynamicConnascenceSite struct{File string "json:\"file\""; Line int "json:\"line\""; Kind string "json:\"kind\""; Language string "json:\"language\""; Target string "json:\"target,omitempty\""}
+  type internal/model/report.DynamicImport struct{Module string "json:\"module\""; Count int "json:\"count\""; Sites []internal/model/report.DynamicImportSite "json:\"sites\""}
+  const internal/model/report.DynamicImportKindDynamicImport untyped string
+  const internal/model/report.DynamicImportKindImportlib untyped string
+  const internal/model/report.DynamicImportKindLazyImport untyped string
+  const internal/model/report.DynamicImportKindRequire untyped string
+  type internal/model/report.DynamicImportSite struct{File string "json:\"file\""; Line int "json:\"line\""; Kind string "json:\"kind\""; Language string "json:\"language\""}
+  type internal/model/report.FileFact struct{Module string "json:\"module\""; Files []string "json:\"files\""; InboundModuleFanIn int "json:\"inbound_module_fanin\""; OutboundDestinations int "json:\"outbound_destinations\""; LOC int "json:\"loc\""}
+  type internal/model/report.Finding struct{ID string "json:\"id\""; Kind string "json:\"kind\""; RuleID string "json:\"rule_id\""; Status string "json:\"status\""; Severity string "json:\"severity\""; Confidence string "json:\"confidence\""; Edge internal/model/report.FindingEdge "json:\"edge\""; MatchedBy map[string]string "json:\"matched_by\""; Locations []internal/model/report.Location "json:\"locations\""; Why string "json:\"why\""; Constraint string "json:\"constraint\""; Alternatives []string "json:\"allowed_alternatives,omitempty\""}
+  type internal/model/report.FindingEdge struct{From internal/model/report.FindingEndpoint "json:\"from\""; To internal/model/report.FindingEndpoint "json:\"to\""; Kind string "json:\"kind\""}
+  type internal/model/report.FindingEndpoint struct{Module string "json:\"module\""; Path string "json:\"path\""}
+  const internal/model/report.FindingKindAdvisory untyped string
+  const internal/model/report.FindingKindGate untyped string
+  type internal/model/report.FindingRef struct{ID string "json:\"id\""; RuleID string "json:\"rule_id\""; Kind string "json:\"kind\""; Severity string "json:\"severity\""; Status string "json:\"status\""}
+  const internal/model/report.FindingSeverityCritical untyped string
+  const internal/model/report.FindingSeverityHigh untyped string
+  const internal/model/report.FindingSeverityLow untyped string
+  const internal/model/report.FindingSeverityMedium untyped string
+  const internal/model/report.FindingStatusBaseline untyped string
+  const internal/model/report.FindingStatusExpiredWaiver untyped string
+  const internal/model/report.FindingStatusFixed untyped string
+  const internal/model/report.FindingStatusNew untyped string
+  const internal/model/report.FindingStatusWaived untyped string
+  const internal/model/report.GateFail internal/model/report.GateState
+  const internal/model/report.GateNotApplicable internal/model/report.GateState
+  const internal/model/report.GatePass internal/model/report.GateState
+  type internal/model/report.GateState string
+  const internal/model/report.GateWarn internal/model/report.GateState
+  const internal/model/report.GitComparisonComparable untyped string
+  const internal/model/report.GitComparisonUnknown untyped string
+  type internal/model/report.GitFindingDelta struct{BaseRef string "json:\"base_ref\""; ComparisonStatus string "json:\"comparison_status\""; IntroducedFindingIDs []string "json:\"introduced_finding_ids\""; PreExistingFindingIDs []string "json:\"pre_existing_finding_ids\""; UnknownOriginFindingIDs []string "json:\"unknown_origin_finding_ids\""; ComparisonReasons []string "json:\"comparison_reasons\""}
+  const internal/model/report.HardGateFail internal/model/report.HardGateState
+  const internal/model/report.HardGatePass internal/model/report.HardGateState
+  type internal/model/report.HardGateState string
+  const internal/model/report.HardGateUnmeasured internal/model/report.HardGateState
+  type internal/model/report.LocalCouplingEdge struct{From string "json:\"from\""; To string "json:\"to\""; Strength string "json:\"strength\""; Balance int "json:\"balance\""; Band string "json:\"band\""; File string "json:\"file,omitempty\""; Line int "json:\"line,omitempty\""}
+  type internal/model/report.LocalCouplingModule struct{Module string "json:\"module\""; ScoredEdges int "json:\"scored_edges\""; AbstainedEdges int "json:\"abstained_edges,omitempty\""; ComplexityEdges int "json:\"complexity_edges\""; ComplexitySharePct int "json:\"complexity_share_pct\""; MeanBalance float64 "json:\"mean_balance\""; WorstOffenders []internal/model/report.LocalCouplingEdge "json:\"worst_offenders,omitempty\""}
+  type internal/model/report.Location struct{File string "json:\"file\""; Line int "json:\"line\""}
+  const internal/model/report.MeasurementMeasured internal/model/report.MeasurementStatus
+  const internal/model/report.MeasurementPartial internal/model/report.MeasurementStatus
+  type internal/model/report.MeasurementStatus string
+  const internal/model/report.MeasurementUnmeasured internal/model/report.MeasurementStatus
+  type internal/model/report.MetricDelta struct{Name string "json:\"name\""; Before float64 "json:\"before\""; After float64 "json:\"after\""; Change float64 "json:\"change\""}
+  type internal/model/report.MetricDenominator struct{Observed int "json:\"observed\""; Total int "json:\"total\""}
+  type internal/model/report.MetricResult struct{Name string "json:\"name\""; Value float64 "json:\"value\""; Display string "json:\"display\""; Band string "json:\"band\""; Confidence string "json:\"confidence\""; Version string "json:\"metric_version\""; Mode string "json:\"mode\""; Definition string "json:\"definition\""; Delta *float64 "json:\"delta,omitempty\""; Direction internal/model/report.Direction "json:\"direction,omitempty\""}
+  type internal/model/report.MetricSnapshot map[string]struct{Value float64 "json:\"value\""; Version string "json:\"version\""}
+  type internal/model/report.MetricValue struct{Name string "json:\"name\""; Value float64 "json:\"value\""; Unit string "json:\"unit\""; Denominator *internal/model/report.MetricDenominator "json:\"denominator,omitempty\""; Provenance []string "json:\"provenance,omitempty\""}
+  func internal/model/report.NewArchitectureState() internal/model/report.ArchitectureState
+  func internal/model/report.NewDocument() internal/model/report.Document
+  const internal/model/report.OwnerChangeLocality untyped string
+  const internal/model/report.OwnerComplexity untyped string
+  const internal/model/report.OwnerCoupling untyped string
+  const internal/model/report.OwnerDrift untyped string
+  const internal/model/report.OwnerIntent untyped string
+  const internal/model/report.OwnerModularity untyped string
+  const internal/model/report.OwnerOperations untyped string
+  const internal/model/report.OwnerStructure untyped string
+  const internal/model/report.OwnerTestability untyped string
   type internal/model/report.Rec struct{Title string; Detail string; RuleID string}
   type internal/model/report.Recommendations struct{MustFix []internal/model/report.Rec; ShouldFix []internal/model/report.Rec; Watch []internal/model/report.Rec; Calibrate []internal/model/report.Rec; Ignore []internal/model/report.Rec}
   type internal/model/report.Report struct{Band internal/model/report.DecisionBand; Headline string; Blocking int; Advisory int; Overall int; OverallBand internal/model/report.ScoreBand; Dimensions []internal/model/report.DimReport; Recommendations internal/model/report.Recommendations; Delta *internal/model/report.Delta}
   const internal/model/report.RubricVersion untyped int
+  type internal/model/report.RuntimeAsyncEdge struct{FromModule string "json:\"from_module\""; Target string "json:\"target\""; IntegrationKind string "json:\"integration_kind\""; Count int "json:\"count\""; Confidence string "json:\"confidence\""; Sites []internal/model/report.RuntimeAsyncSite "json:\"sites,omitempty\""}
+  type internal/model/report.RuntimeAsyncModule struct{Module string "json:\"module\""; IntegrationKind string "json:\"integration_kind\""; Count int "json:\"count\""; Confidence string "json:\"confidence\""}
+  type internal/model/report.RuntimeAsyncSite struct{File string "json:\"file\""; Line int "json:\"line\""; Library string "json:\"library\""; IntegrationKind string "json:\"integration_kind\""; Language string "json:\"language\""}
+  const internal/model/report.SchemaVersion untyped string
   type internal/model/report.ScoreBand string
   func (internal/model/report.ScoreBand).Unmeasured() bool
   const internal/model/report.ScoreBandCritical internal/model/report.ScoreBand
@@ -252,47 +230,39 @@ package internal/model/report
   const internal/model/report.ScoreBandPoor internal/model/report.ScoreBand
   const internal/model/report.ScoreBandServiceable internal/model/report.ScoreBand
   const internal/model/report.ScoreBandStrong internal/model/report.ScoreBand
+  const internal/model/report.ScoreVersion untyped string
   type internal/model/report.Scorecard struct{RubricVersion int "json:\"rubric_version\""; Overall int "json:\"overall\""; OverallBand internal/model/report.ScoreBand "json:\"overall_band\""; Dimensions []internal/model/report.Dimension "json:\"dimensions\""}
-package internal/model/signal
-  type internal/model/signal.CollectedSignals struct{Common internal/model/signal.CommonInput; Symbol internal/model/signal.SymbolSignals; Size internal/model/signal.SizeSignals; Duplication internal/model/signal.DuplicationSignals}
-  func (internal/model/signal.CollectedSignals).AsCommon() internal/model/signal.CommonInput
-  type internal/model/signal.CommonInput struct{Graph *internal/model/graph.Graph; Classifications internal/model/coupling.Index; Findings []internal/model/finding.Finding; Baseline internal/model/diagnostic.MetricSnapshot; ToolCoverage []internal/model/diagnostic.Coverage; ChangedFiles []string; SyntaxFacts []internal/model/diagnostic.SyntaxFact; DeprecatedDeps []internal/model/diagnostic.DeprecatedDep}
-  type internal/model/signal.DuplicationSignals struct{Clusters []internal/model/clone.Cluster}
-  type internal/model/signal.DynamicImportSignals struct{Sites []internal/model/diagnostic.DynamicImportSite}
-  type internal/model/signal.RunSignals struct{Size internal/model/signal.SizeSignals; Duplication internal/model/signal.DuplicationSignals; ExtraCoverage []internal/model/diagnostic.Coverage; DynamicImports internal/model/signal.DynamicImportSignals; RuntimeAsync internal/model/signal.RuntimeAsyncSignals; DeprecatedDeps []internal/model/diagnostic.DeprecatedDep}
-  type internal/model/signal.RuntimeAsyncSignals struct{Sites []internal/model/diagnostic.RuntimeAsyncSite; Confidence string}
-  type internal/model/signal.SizeSignals struct{FileLOC map[string]int; FileClassIndex map[string]internal/model/fileclass.FileClass}
-  type internal/model/signal.SymbolSignals struct{Graph internal/model/symbol.Graph}
+  type internal/model/report.Seam struct{ID string "json:\"id\""; FromModule string "json:\"from_module\""; ToModule string "json:\"to_module\""; Edges int "json:\"edges\""; ScoredEdges int "json:\"scored_edges\""; AbstainedEdges int "json:\"abstained_edges\""; Strength string "json:\"strength\""; Distance string "json:\"distance\""; Volatility string "json:\"volatility\""; VolatilityProvenance string "json:\"volatility_provenance,omitempty\""; Severity string "json:\"severity,omitempty\""; RawDistance internal/model/report.SeamDistance "json:\"raw_distance\""; Quadrant string "json:\"quadrant,omitempty\""; Scores internal/model/report.SeamScoreDistribution "json:\"scores\""; CriticalEdges int "json:\"critical_edges\""; HighOrWorseEdges int "json:\"high_or_worse_edges\""; CriticalSharePct int "json:\"critical_share_pct\""; HighOrWorseSharePct int "json:\"high_or_worse_share_pct\""; Labels []string "json:\"labels,omitempty\""; LabelEvidenceHash string "json:\"label_evidence_hash,omitempty\""; Confidence string "json:\"confidence\""; RoleExpectation string "json:\"role_expectation,omitempty\""; Hypothesis string "json:\"hypothesis,omitempty\""; DistributedMonolith bool "json:\"distributed_monolith,omitempty\""}
+  type internal/model/report.SeamDistance struct{Level string "json:\"level\""; Basis string "json:\"basis,omitempty\""; FromOwner string "json:\"from_owner,omitempty\""; ToOwner string "json:\"to_owner,omitempty\""; SameOwner bool "json:\"same_owner\""; FromDeployUnit string "json:\"from_deploy_unit,omitempty\""; ToDeployUnit string "json:\"to_deploy_unit,omitempty\""; SameDeployUnit bool "json:\"same_deploy_unit\""; BoundaryCrossings int "json:\"boundary_crossings\""; SharedAncestor int "json:\"shared_ancestor\""}
+  type internal/model/report.SeamScoreDistribution struct{N int "json:\"n\""; Min int "json:\"min\""; Median int "json:\"median\""; Max int "json:\"max\""; P10 *int "json:\"p10\""; P90 *int "json:\"p90\""; Mean float64 "json:\"mean\""}
+  type internal/model/report.SemanticStrengthOverlay struct{ByLanguage map[string]internal/model/report.SemanticStrengthOverlayStats "json:\"by_language,omitempty\""}
+  type internal/model/report.SemanticStrengthOverlayStats struct{CandidateEdges int "json:\"candidate_edges\""; Applied int "json:\"applied\""; Missed int "json:\"missed\""; Before map[string]int "json:\"before,omitempty\""; After map[string]int "json:\"after,omitempty\""}
+  func internal/model/report.SortSyntaxFacts(facts []internal/model/report.SyntaxFact)
+  const internal/model/report.StateBlocked internal/model/report.StateVerdict
+  type internal/model/report.StateComparison struct{Status internal/model/report.ComparisonStatus "json:\"status\""; BaseRef string "json:\"base_ref,omitempty\""; ConfigHash string "json:\"config_hash,omitempty\""; ModelHash string "json:\"model_hash,omitempty\""; LabelsHash string "json:\"labels_hash,omitempty\""; RubricVersion string "json:\"rubric_version,omitempty\""; Reasons []string "json:\"reasons\""}
+  type internal/model/report.StateCoverage struct{Measured int "json:\"measured\""; Partial int "json:\"partial\""; Unmeasured int "json:\"unmeasured\""; Tools []internal/model/report.StateToolCoverage "json:\"tools\""}
+  type internal/model/report.StateDecision struct{HardGates internal/model/report.HardGateState "json:\"hard_gates\""; ActiveBlockers int "json:\"active_blockers\""; AttentionDimensions int "json:\"attention_dimensions\""; UnknownDimensions int "json:\"unknown_dimensions\""}
+  const internal/model/report.StateHealthy internal/model/report.StateVerdict
+  type internal/model/report.StateMeasurement struct{SourceRef string "json:\"source_ref\""; HistoryDepth int "json:\"history_depth\""; HistoryWindow string "json:\"history_window\""; ToolVersions map[string]string "json:\"tool_versions\""}
+  const internal/model/report.StateNeedsAttention internal/model/report.StateVerdict
+  const internal/model/report.StateSchemaVersion untyped string
+  type internal/model/report.StateToolCoverage struct{Tool string "json:\"tool\""; Status string "json:\"status\""; Reason string "json:\"reason,omitempty\""}
+  type internal/model/report.StateVerdict string
+  const internal/model/report.StatusAbsent untyped string
+  const internal/model/report.StatusDisabled untyped string
+  const internal/model/report.StatusOK untyped string
+  const internal/model/report.StatusPartial untyped string
+  const internal/model/report.StatusTimedOut untyped string
+  type internal/model/report.Summary struct{GateFindings int "json:\"gate_findings\""; Warnings int "json:\"warnings\""; WaiversUsed int "json:\"waivers_used\""}
+  type internal/model/report.SyntaxFact struct{Language string "json:\"language\""; File string "json:\"file\""; Module string "json:\"module,omitempty\""; Kind string "json:\"kind\""; Name string "json:\"name\""; Exported bool "json:\"exported,omitempty\""; StartLine int "json:\"start_line\""; EndLine int "json:\"end_line,omitempty\""; Count int "json:\"count,omitempty\""; Framework string "json:\"framework,omitempty\""; FrameworkConfirmed bool "json:\"-\""}
+  type internal/model/report.UnknownFact struct{Fact string "json:\"fact\""; Reason string "json:\"reason\""; Owner string "json:\"owner\""}
+  type internal/model/report.Verdict string
+  const internal/model/report.VerdictFail internal/model/report.Verdict
+  const internal/model/report.VerdictPass internal/model/report.Verdict
+  const internal/model/report.VerdictWarn internal/model/report.Verdict
+  type internal/model/report.VolatilityCorroboration struct{Source string "json:\"source\""; Status string "json:\"status\""; CommitWindow int "json:\"commit_window,omitempty\""; FullHistory bool "json:\"full_history,omitempty\""; CommitsScanned int "json:\"commits_scanned,omitempty\""; ModulesTouched int "json:\"modules_touched,omitempty\""; TopTouched []internal/model/report.VolatilityTouch "json:\"top_touched,omitempty\""; Caveat string "json:\"caveat,omitempty\""}
+  type internal/model/report.VolatilityProvenance struct{Declared int "json:\"declared\""; Inherited int "json:\"inherited\""; Cascade int "json:\"cascade\""; Undeclared int "json:\"undeclared\""}
+  type internal/model/report.VolatilityTouch struct{Module string "json:\"module\""; TouchCommits int "json:\"touch_commits\""; DeclaredVolatility string "json:\"declared_volatility,omitempty\""}
 package internal/model/symbol
   type internal/model/symbol.Graph struct{Module map[string]string; Path map[string]string; FanIn map[string]int; Refs map[string]map[string]struct{}; IntraRefs map[string]map[string]struct{}}
   func (internal/model/symbol.Graph).Empty() bool
-package internal/view
-  type internal/view.ClassifyConfig struct{Modules map[string]internal/model/module.ModuleDef; Layers []string; ModuleMap internal/model/module.Map; BCAdvisoryMinSeverity string; ApprovedLabels map[string]string; LLMLabels map[string]string; LLMLabelConfidence map[string]string; Scorer internal/model/coupling.Scorer; CrossModuleClonePairs map[string]struct{}; CloneEvidence map[string][]internal/model/graph.Location; ExplicitOwners map[string]bool; VolatilityCascadeEnabled bool; ExternalSystems map[string]internal/view.ExternalSystemDef; DuplicatedKnowledgePolicy internal/view.DuplicatedKnowledgePolicy}
-  type internal/view.DuplicatedKnowledgePolicy string
-  const internal/view.DuplicatedKnowledgePolicyAdvisory internal/view.DuplicatedKnowledgePolicy
-  const internal/view.DuplicatedKnowledgePolicyScore internal/view.DuplicatedKnowledgePolicy
-  type internal/view.ExternalSystemDef struct{Targets []string "yaml:\"targets\""; Volatility string "yaml:\"volatility,omitempty\""}
-  type internal/view.ExtractConfig struct{Src string; Paths []string; Exclusions []string; Internal []string; Mode internal/view.ToolMode; BuildFlags []string; GoModuleInclude []string; GoModuleExclude []string; TSConfig string; PyPackage string; ProjectRoot string; CargoManifest string; CargoFeatures []string; IncludeDevDeps bool; ModuleGraph bool}
-  type internal/view.FileClassDef struct{GeneratedGlobs []string "yaml:\"generated_globs,omitempty\""; TestGlobs []string "yaml:\"test_globs,omitempty\""; MockFrameworks []string "yaml:\"mock_frameworks,omitempty\""}
-  const internal/view.GateFail internal/view.GateMode
-  type internal/view.GateMode string
-  const internal/view.GateOff internal/view.GateMode
-  const internal/view.GateWarn internal/view.GateMode
-  type internal/view.MetricConfig = internal/view.MetricEntry
-  type internal/view.MetricEntry struct{Enabled *bool "yaml:\"enabled\""; Gate string "yaml:\"gate\""; MinDelta *float64 "yaml:\"min_delta\""; MaxNew *int "yaml:\"max_new\""}
-  const internal/view.ModeAuto internal/view.ToolMode
-  const internal/view.ModeOff internal/view.ToolMode
-  const internal/view.ModeOn internal/view.ToolMode
-  func internal/view.NormalizeDuplicatedKnowledgePolicy(p internal/view.DuplicatedKnowledgePolicy) internal/view.DuplicatedKnowledgePolicy
-  type internal/view.OutputConfig struct{JSON bool; Markdown bool; SARIF bool}
-  type internal/view.PatternConfig []internal/view.PatternDef
-  type internal/view.PatternDef struct{ID string "yaml:\"id\""; Lang string "yaml:\"lang\""; Rule string "yaml:\"rule\""}
-  type internal/view.RuleConfig struct{Rules []internal/view.RuleDef; Layers []string; ModuleMap internal/model/module.Map}
-  type internal/view.RuleDef struct{ID string "yaml:\"id\""; Type string "yaml:\"type\""; Gate string "yaml:\"gate\""; From string "yaml:\"from\""; To string "yaml:\"to\""; Max *int "yaml:\"max,omitempty\""; Threshold *int "yaml:\"threshold,omitempty\""; Patterns []internal/view.PatternDef "yaml:\"patterns,omitempty\""}
-  type internal/view.ScopeConfig struct{Root string; Base string; Full bool; Exclusions []string; WorkDir string}
-  type internal/view.StalenessConfig struct{Enabled bool; Threshold time.Duration; Modules map[string]internal/model/module.ModuleDef}
-  type internal/view.SyntaxConfig struct{Enabled bool; Languages []string}
-  type internal/view.ToolMode string
-  func (*internal/view.ToolMode).UnmarshalYAML(unmarshal func(any) error) error
-  type internal/view.WaiverDef struct{Rule string "yaml:\"rule\""; From string "yaml:\"from\""; To string "yaml:\"to\""; Reason string "yaml:\"reason\""; ApprovedBy string "yaml:\"approved_by\""; Expires string "yaml:\"expires\""}
-  type internal/view.WaiverSet struct{Waivers []internal/view.WaiverDef}

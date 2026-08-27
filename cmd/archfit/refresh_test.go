@@ -170,12 +170,14 @@ func TestRun_Check_JSONStdoutStaysCleanWhenWarningsGoToStderr(t *testing.T) {
 
 func runRefreshCheckJSON(t *testing.T, cfgPath string, extraArgs ...string) refreshDiag {
 	t.Helper()
-	args := append([]string{cmdCheck, flagJSON, "-c", cfgPath}, extraArgs...)
+	args := append([]string{cmdCheck, fmtLegacyJSON, "-c", cfgPath}, extraArgs...)
 
 	var stdout, stderr bytes.Buffer
 	code := RunWithStderr(args, &stdout, &stderr)
-	if code != 0 && code != 1 {
-		t.Fatalf("archfit check exited %d, want 0 or 1\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	// Any verdict is fine here — this test is about cache behaviour. Only a
+	// usage/config/tool error (3) means the run produced no report to compare.
+	if code == 3 {
+		t.Fatalf("archfit check exited 3\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 	}
 
 	var diag refreshDiag
@@ -235,7 +237,7 @@ func writeCacheableRepoAt(t *testing.T, dir string) string {
 		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/impl\"\n\n" +
 			"func Use() string { return impl.Secret() }\n",
 		"pkg/b/impl/impl.go": implSource(),
-		defaultConfigPath: `version: 1
+		defaultConfigPath: `version: 2
 modules:
   a:
     paths: ["pkg/a/**"]

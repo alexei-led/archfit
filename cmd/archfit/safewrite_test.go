@@ -10,7 +10,7 @@ import (
 )
 
 // minimalValidYAML is a minimal .archfit.yaml that passes config.Load validation.
-const minimalValidYAML = "version: 1\n"
+const minimalValidYAML = "version: 2\n"
 
 func newTestDeps(t *testing.T) *appDeps {
 	t.Helper()
@@ -41,7 +41,7 @@ func TestSafeWriteConfig_OriginalNil_ConcurrentAppearance(t *testing.T) {
 func TestSafeWriteConfig_RejectsUnknownRuleType(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), ".archfit.yaml")
-	edited := []byte("version: 1\nrules:\n  - id: bad\n    type: bogus_type\n")
+	edited := []byte("version: 2\nrules:\n  - id: bad\n    type: bogus_type\n")
 
 	err := safeWriteConfig(context.Background(), newTestDeps(t), path, edited, nil)
 	if err == nil || !strings.Contains(err.Error(), "unknown rule type") {
@@ -64,12 +64,12 @@ func TestSafeWriteConfig_OriginalChangedSinceRead_Aborts(t *testing.T) {
 
 	// Mutate the on-disk file after "reading" original — simulates a concurrent
 	// writer racing safeWriteConfig between read and write.
-	mutated := []byte("version: 1\n# mutated concurrently\n")
+	mutated := []byte("version: 2\n# mutated concurrently\n")
 	if err := os.WriteFile(path, mutated, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	edited := []byte("version: 1\n# our edit\n")
+	edited := []byte("version: 2\n# our edit\n")
 	err := safeWriteConfig(context.Background(), newTestDeps(t), path, edited, original)
 	if err == nil {
 		t.Fatal("expected error when file changed since read")
@@ -106,7 +106,7 @@ func TestSafeWriteConfig_BackupClobber_TimestampedFallback(t *testing.T) {
 	}
 
 	deps := newTestDeps(t)
-	edited := []byte("version: 1\n# edited\n")
+	edited := []byte("version: 2\n# edited\n")
 	if err := safeWriteConfig(context.Background(), deps, path, edited, original); err != nil {
 		t.Fatalf("safeWriteConfig failed: %v", err)
 	}

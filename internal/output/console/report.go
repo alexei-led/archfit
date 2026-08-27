@@ -6,230 +6,320 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/alexei-led/archfit/internal/model/report"
+	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
-// labelFail is the gate/verdict fail label, shared with the legacy verdict
-// renderer so the literal is defined once.
-const labelFail = "FAIL"
+// Renderer writes a report document's architecture state as terminal text.
+type Renderer struct{}
 
-// RenderReport writes a decision.Report as terminal-native plain text: a
-// decision-led summary block, categorized recommendations, and per-dimension
-// "why low / what moves it" sections. No Markdown, no wide tables, no color —
-// scannable in a terminal and safe to pipe (timing/progress live on stderr, not
-// here). This is the default human output for `archfit analyze`.
-func RenderReport(r report.Report, w io.Writer) error {
+var _ reportports.Renderer = (*Renderer)(nil)
+
+// New returns a Renderer.
+func New() *Renderer { return &Renderer{} }
+
+// Format returns "console".
+func (r *Renderer) Format() string { return "console" }
+
+// Render writes the document's architecture state as terminal text.
+func (r *Renderer) Render(d report.Document, w io.Writer) error {
+	return RenderState(d.State, w)
+}
+
+// RenderState writes the architecture state as terminal-native plain text: the
+// headline, the nine dimension envelopes, what could not be measured, the
+// coupling seam ledger, the actionable findings, and the comparison.
+//
+// There is no repository score and no "why the score is low" section, because
+// there is no repository score: the decision is the verdict, and what a reader
+// acts on is a named blocker, a flagged dimension, or an unmeasured one. No
+// Markdown, no wide tables, no color — scannable in a terminal and safe to pipe
+// (timing and progress live on stderr, not here).
+func RenderState(s report.ArchitectureState, w io.Writer) error {
 	var b strings.Builder
 
-	b.WriteString("ARCHFIT RESULT\n\n")
-	writeResultHeader(&b, r)
-
-	if r.Headline != "" {
-		fmt.Fprintf(&b, "\n%s\n", r.Headline)
-	}
-	if r.Blocking == 0 {
-		b.WriteString("\nNo blockers. Use this run for architecture-improvement planning,\nnot to stop development.\n")
-	}
-
-	writeRecommendations(&b, r.Recommendations)
-	writeLowDimensions(&b, r.Dimensions)
-	if r.Delta != nil {
-		writeDelta(&b, *r.Delta)
-	}
-	writeTargets(&b, r)
+	b.WriteString("ARCHITECTURE STATE\n\n")
+	writeHeadline(&b, s)
+	writeDimensions(&b, s.Dimensions)
+	writeUnknowns(&b, s.Dimensions)
+	writeSeams(&b, s.Seams)
+	writeActionableFindings(&b, s)
+	writeComparison(&b, s.Comparison)
+	writeFindingIndex(&b, s.Findings)
 
 	_, err := io.WriteString(w, b.String())
 	return err
 }
 
-// resultKeyWidth aligns the header key column ("Decision", "Warnings", …).
-const resultKeyWidth = 10
+// headlineKeyWidth aligns the headline key column (VERDICT, BLOCKING, …).
+const headlineKeyWidth = 10
 
-func writeResultHeader(b *strings.Builder, r report.Report) {
-	gate := "PASS"
-	if r.Blocking > 0 {
-		gate = labelFail
-	}
-	rkv(b, "Decision", decisionLabel(r.Band))
-	rkv(b, "Gate", fmt.Sprintf("%s  ·  %d blocking", gate, r.Blocking))
-	rkv(b, "Warnings", fmt.Sprintf("%d advisory", r.Advisory))
-	if r.OverallBand.Unmeasured() {
-		rkv(b, "Score", "n/a  ·  coupling unmeasured (no scored cross-boundary edges)")
-	} else {
-		rkv(b, "Score", fmt.Sprintf("%d / 100  %s", r.Overall, r.OverallBand))
+func writeHeadline(b *strings.Builder, s report.ArchitectureState) {
+	blockers, diagnostics := findingPopulations(s.Dimensions)
+	kv(b, "VERDICT", verdictLabel(s.Verdict))
+	kv(b, "BLOCKING", fmt.Sprintf("%d active  ·  hard gates: %s", s.Decision.ActiveBlockers, s.Decision.HardGates))
+	kv(b, "ATTENTION", fmt.Sprintf("%d dimension(s) flagged  ·  %d diagnostic(s)", s.Decision.AttentionDimensions, diagnostics))
+	kv(b, "COVERAGE", fmt.Sprintf("%d measured · %d partial · %d unmeasured  (of %d)",
+		s.Coverage.Measured, s.Coverage.Partial, s.Coverage.Unmeasured, report.DimensionCount))
+	// The reassurance is keyed on the VERDICT, never on the finding count alone.
+	// A required-tool policy failure and a tripped metric ratchet both block
+	// without producing a finding, so "no blockers … not to stop development"
+	// over a BLOCKED run tells the reader to ignore the exit code the same run
+	// just returned.
+	switch {
+	case s.Verdict == report.StateBlocked && blockers == 0:
+		b.WriteString("\nBlocked by a hard gate that produces no finding — a required\nanalyzer or a metric ratchet. See the dimension(s) below reporting\ngate: fail.\n")
+	case blockers == 0:
+		b.WriteString("\nNo blockers. Use this run for architecture-improvement planning,\nnot to stop development.\n")
 	}
 }
 
-// rkv writes one aligned "Key   value" header line.
-func rkv(b *strings.Builder, k, v string) {
-	fmt.Fprintf(b, "%-*s %s\n", resultKeyWidth, k, v)
+// findingPopulations counts the two active populations from the dimension
+// envelopes. The envelopes reference only active findings, so the counts cannot
+// disagree with the decision: the renderer reads the published refs instead of
+// re-deriving the lifecycle predicate over the whole finding list.
+func findingPopulations(dims report.Dimensions) (blockers, diagnostics int) {
+	seen := map[string]struct{}{}
+	for _, dim := range dims.All() {
+		for _, ref := range dim.Findings {
+			if _, dup := seen[ref.ID]; dup {
+				continue
+			}
+			seen[ref.ID] = struct{}{}
+			if ref.Kind == report.FindingKindGate {
+				blockers++
+				continue
+			}
+			diagnostics++
+		}
+	}
+	return blockers, diagnostics
 }
 
-// decisionLabel renders the decision band as a human-readable phrase.
-func decisionLabel(band report.DecisionBand) string {
-	switch band {
-	case report.DecisionBandFail:
-		return labelFail
-	case report.DecisionBandNeedsAttention:
-		return "NEEDS ATTENTION"
-	case report.DecisionBandHealthy:
+func kv(b *strings.Builder, k, v string) {
+	fmt.Fprintf(b, "%-*s %s\n", headlineKeyWidth, k, v)
+}
+
+// verdictLabel renders the verdict for humans. JSON stores lower case; the
+// terminal displays upper case.
+func verdictLabel(v report.StateVerdict) string {
+	switch v {
+	case report.StateBlocked:
+		return "BLOCKED"
+	case report.StateHealthy:
 		return "HEALTHY"
-	default: // BandAcceptable
-		return "ACCEPTABLE WITH WATCH ITEMS"
+	case report.StateNeedsAttention:
+		return "NEEDS ATTENTION"
+	default:
+		return strings.ToUpper(strings.ReplaceAll(string(v), "_", " "))
 	}
 }
 
-// recCap bounds how many items are listed per recommendation category before a
-// "+N more" pointer; the full set is always in --json.
-const recCap = 8
+// dimensionNameWidth aligns the dimension column.
+const dimensionNameWidth = 15
 
-func writeRecommendations(b *strings.Builder, recs report.Recommendations) {
-	b.WriteString("\nRECOMMENDATIONS\n")
-	writeRecCategory(b, "MUST FIX", recs.MustFix)
-	writeRecCategory(b, "SHOULD FIX", recs.ShouldFix)
-	writeRecCategory(b, "WATCH", recs.Watch)
-	// CALIBRATE / IGNORE are populated only by the LLM layer; show when present.
-	if len(recs.Calibrate) > 0 {
-		writeRecCategory(b, "CALIBRATE", recs.Calibrate)
-	}
-	if len(recs.Ignore) > 0 {
-		writeRecCategory(b, "IGNORE", recs.Ignore)
+func writeDimensions(b *strings.Builder, dims report.Dimensions) {
+	b.WriteString("\nDIMENSIONS\n\n")
+	for _, dim := range dims.All() {
+		fmt.Fprintf(b, "  %-*s %-11s gate: %-15s confidence: %-8s %s\n",
+			dimensionNameWidth, dim.Name, dim.Status, dim.Gate, dim.Confidence, coverageLabel(dim.Coverage))
 	}
 }
 
-func writeRecCategory(b *strings.Builder, label string, recs []report.Rec) {
-	fmt.Fprintf(b, "\n  %s\n", label)
-	if len(recs) == 0 {
-		b.WriteString("    none\n")
+// coverageLabel renders a dimension's denominator. An unmeasured envelope has
+// no basis, and printing "0/0" there would read as a measured-and-empty result.
+func coverageLabel(c report.DimensionCoverage) string {
+	if c.Basis == "" {
+		return "no denominator"
+	}
+	return fmt.Sprintf("%s %d/%d", c.Basis, c.Observed, c.Total)
+}
+
+func writeUnknowns(b *strings.Builder, dims report.Dimensions) {
+	type row struct {
+		dimension string
+		fact      report.UnknownFact
+	}
+	var rows []row
+	for _, dim := range dims.All() {
+		for _, u := range dim.Unknown {
+			rows = append(rows, row{dim.Name, u})
+		}
+	}
+	if len(rows) == 0 {
 		return
 	}
-	for i, rec := range recs {
-		if i == recCap {
-			fmt.Fprintf(b, "    … +%d more (see --json)\n", len(recs)-recCap)
+	fmt.Fprintf(b, "\nNOT MEASURED (%d)\n\n", len(rows))
+	for _, r := range rows {
+		fmt.Fprintf(b, "  %s — %s\n    %s\n", r.dimension, r.fact.Fact, condense(r.fact.Reason, 140))
+	}
+}
+
+// seamCap bounds how many seams the terminal lists. The full ledger is always
+// in --format json.
+const seamCap = 8
+
+func writeSeams(b *strings.Builder, seams []report.Seam) {
+	if len(seams) == 0 {
+		return
+	}
+	ranked := rankSeams(seams)
+	fmt.Fprintf(b, "\nCOUPLING SEAMS (%d)\n\n", len(seams))
+	for i, s := range ranked {
+		if i == seamCap {
+			fmt.Fprintf(b, "  … +%d more (see --format json)\n", len(ranked)-seamCap)
 			break
 		}
-		title := rec.Title
-		if rec.RuleID != "" {
-			title = rec.RuleID
+		marker := ""
+		if s.DistributedMonolith {
+			marker = "  [distributed monolith]"
 		}
-		detail := condense(rec.Detail, 90)
-		if detail != "" {
-			fmt.Fprintf(b, "    · %s — %s\n", title, detail)
-		} else {
-			fmt.Fprintf(b, "    · %s\n", title)
+		fmt.Fprintf(b, "  %s -> %s%s\n", s.FromModule, s.ToModule, marker)
+		fmt.Fprintf(b, "    %s × %s × %s volatility · %d critical of %d scored · median balance %s\n",
+			s.Strength, s.Distance, s.Volatility, s.CriticalEdges, s.ScoredEdges, seamMedian(s.Scores))
+		if s.Hypothesis != "" {
+			fmt.Fprintf(b, "    try: %s\n", s.Hypothesis)
 		}
 	}
 }
 
-// lowBandCeiling: dimensions at or below this value (mixed or worse) get the
-// "why low / what moves it" treatment. Serviceable (61+) is healthy enough.
-const lowBandCeiling = 60
-
-// lowDimensions returns the non-meta dimensions at or below the low-band ceiling,
-// sorted by value ascending (worst first).
-func lowDimensions(dims []report.DimReport) []report.DimReport {
-	var out []report.DimReport
-	for _, d := range dims {
-		if d.Meta || d.Value > lowBandCeiling {
-			continue
-		}
-		out = append(out, d)
+// seamMedian renders the balance median. A seam whose every edge abstained has
+// no distribution at all, and printing the zero value as "0" would publish a
+// balance below the book's 1..10 range as if it had been measured.
+func seamMedian(d report.SeamScoreDistribution) string {
+	if d.N == 0 {
+		return "n/a"
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Value < out[j].Value })
+	return strconv.Itoa(d.Median)
+}
+
+// rankSeams orders the ledger worst-first for display: qualifying seams, then
+// critical edge count, then the stable seam ID. It never reorders the published
+// ledger — the caller's slice is left alone.
+func rankSeams(seams []report.Seam) []report.Seam {
+	out := append([]report.Seam(nil), seams...)
+	sort.SliceStable(out, func(i, j int) bool {
+		a, c := out[i], out[j]
+		if a.DistributedMonolith != c.DistributedMonolith {
+			return a.DistributedMonolith
+		}
+		if a.CriticalEdges != c.CriticalEdges {
+			return a.CriticalEdges > c.CriticalEdges
+		}
+		return a.ID < c.ID
+	})
 	return out
 }
 
-func writeLowDimensions(b *strings.Builder, dims []report.DimReport) {
-	low := lowDimensions(dims)
-	if len(low) == 0 {
+// findingCap bounds how many findings the terminal lists per population.
+const findingCap = 8
+
+func writeActionableFindings(b *strings.Builder, s report.ArchitectureState) {
+	blocking, advisory := splitActionable(s)
+	if len(blocking) == 0 && len(advisory) == 0 {
 		return
 	}
+	b.WriteString("\nTOP ACTIONABLE FINDINGS\n")
+	writeFindingGroup(b, "BLOCKING", blocking)
+	writeFindingGroup(b, "DIAGNOSTIC", advisory)
+}
 
-	b.WriteString("\nWHY THE SCORE IS LOW\n")
-	for _, d := range low {
-		fmt.Fprintf(b, "\n  %s  %d/100  [%s]\n", d.Name, d.Value, d.Band)
-		if d.Why != "" {
-			fmt.Fprintf(b, "    %s\n", condense(d.Why, 160))
+// splitActionable selects the findings the dimension envelopes reference, in
+// the document's own finding order. Only active findings are referenced, so a
+// baselined or waived one cannot reappear here as work to do.
+func splitActionable(s report.ArchitectureState) (blocking, advisory []report.Finding) {
+	active := map[string]string{}
+	for _, dim := range s.Dimensions.All() {
+		for _, ref := range dim.Findings {
+			active[ref.ID] = ref.Kind
 		}
 	}
-
-	b.WriteString("\nWHAT WOULD IMPROVE THE SCORE\n")
-	for _, d := range low {
-		if d.WhatMoves == "" {
+	for _, f := range s.Findings {
+		kind, ok := active[f.ID]
+		if !ok {
 			continue
 		}
-		fmt.Fprintf(b, "\n  %s\n    %s\n", d.Name, d.WhatMoves)
-	}
-}
-
-func writeDelta(b *strings.Builder, d report.Delta) {
-	fmt.Fprintf(b, "\nCHANGE VS BASE\n\n")
-	fmt.Fprintf(b, "  overall  %s\n", signedChange(d.Overall))
-	for _, dim := range d.Dimensions {
-		if dim.Change == 0 {
+		if kind == report.FindingKindGate {
+			blocking = append(blocking, f)
 			continue
 		}
-		fmt.Fprintf(b, "  %s  %d → %d  (%s)\n", dim.Name, dim.Before, dim.After, signed(dim.Change))
+		advisory = append(advisory, f)
+	}
+	return blocking, advisory
+}
+
+func writeFindingGroup(b *strings.Builder, label string, findings []report.Finding) {
+	if len(findings) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n  %s (%d)\n", label, len(findings))
+	for i, f := range findings {
+		if i == findingCap {
+			fmt.Fprintf(b, "    … +%d more (see --format json)\n", len(findings)-findingCap)
+			break
+		}
+		fmt.Fprintf(b, "    · %s [%s] — %s\n", f.RuleID, f.Severity, condense(f.Why, 100))
 	}
 }
 
-func writeTargets(b *strings.Builder, r report.Report) {
-	b.WriteString("\nTARGETS\n")
-	rkvIndent(b, "Current", fmt.Sprintf("%d  %s", r.Overall, r.OverallBand))
-	if label, rng := nextBand(r.OverallBand); label != "" {
-		rkvIndent(b, "Near-term", fmt.Sprintf("%s  %s", rng, label))
+func writeComparison(b *strings.Builder, c report.StateComparison) {
+	b.WriteString("\nCOMPARISON\n\n")
+	target := c.BaseRef
+	if target == "" {
+		target = "none"
 	}
-	rkvIndent(b, "Main goal", "keep blocking findings at 0")
-}
-
-const targetKeyWidth = 11
-
-func rkvIndent(b *strings.Builder, k, v string) {
-	fmt.Fprintf(b, "  %-*s %s\n", targetKeyWidth, k, v)
-}
-
-// nextBand returns the next-healthier band label and its 0-100 range, or "" when
-// already at the top band.
-func nextBand(b report.ScoreBand) (label, rng string) {
-	switch b {
-	case report.ScoreBandCritical:
-		return string(report.ScoreBandPoor), "21-40"
-	case report.ScoreBandPoor:
-		return string(report.ScoreBandMixed), "41-60"
-	case report.ScoreBandMixed:
-		return string(report.ScoreBandServiceable), "61-80"
-	case report.ScoreBandServiceable:
-		return string(report.ScoreBandStrong), "81-100"
-	default: // strong or unknown
-		return "", ""
+	fmt.Fprintf(b, "  status: %s  ·  reference: %s\n", c.Status, target)
+	for _, reason := range c.Reasons {
+		fmt.Fprintf(b, "    %s\n", condense(reason, 140))
 	}
 }
 
-// condense trims whitespace and caps s to maxLen runes with an ellipsis.
+// writeFindingIndex appends every finding in the document's canonical order
+// with its ID, lifecycle status, and rule. The actionable section above is
+// deliberately abbreviated for a terminal reader; this appendix is what makes
+// the abbreviation safe, because a truncated list is indistinguishable from a
+// shorter run otherwise. Every format carries the same sequence, including
+// accepted and waived findings, so no reader can pick the format that omits
+// the finding they would rather not see.
+func writeFindingIndex(b *strings.Builder, findings []report.Finding) {
+	fmt.Fprintf(b, "\nFINDING INDEX (%d)\n\n", len(findings))
+	if len(findings) == 0 {
+		b.WriteString("  none\n")
+		return
+	}
+	for _, f := range findings {
+		fmt.Fprintf(b, "  %s  %s  %s\n", f.ID, f.Status, f.RuleID)
+	}
+}
+
+// condense trims whitespace and caps s to maxLen bytes with an ellipsis.
 func condense(s string, maxLen int) string {
 	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
 	if len(s) <= maxLen {
 		return s
 	}
 	if maxLen <= 3 {
-		return s[:maxLen]
+		return cutAtRuneBoundary(s, maxLen)
 	}
-	return s[:maxLen-1] + "…"
+	return cutAtRuneBoundary(s, maxLen-1) + "…"
 }
 
-// signed renders a signed integer with an explicit + for non-negative values.
-func signed(n int) string {
-	if n >= 0 {
-		return "+" + strconv.Itoa(n)
+// cutAtRuneBoundary returns s truncated to at most n bytes, backing the cut off
+// to the nearest rune start. Slicing a UTF-8 string at an arbitrary byte index
+// splits a multi-byte rune and emits invalid UTF-8, which is not merely ugly: a
+// consumer that decodes the document strictly fails on the WHOLE document, so
+// one truncated "×" in one advisory loses the entire report.
+func cutAtRuneBoundary(s string, n int) string {
+	if n >= len(s) {
+		return s
 	}
-	return strconv.Itoa(n)
-}
-
-// signedChange renders a 0 as "no change" and non-zero as a signed delta.
-func signedChange(n int) string {
-	if n == 0 {
-		return "no change"
+	if n < 0 {
+		return ""
 	}
-	return signed(n)
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

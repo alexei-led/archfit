@@ -1,7 +1,7 @@
 // Package main — `archfit config compare <candidate>`.
 //
 // Two configurations, one source tree, two full measurements, one report-only
-// difference. The pure comparison lives in internal/decision (CompareConfigs);
+// difference. The pure comparison lives in internal/assessment/decision (CompareConfigs);
 // this file owns the composition (two pipeline runs) and the two output shapes.
 //
 // Invariants:
@@ -24,20 +24,17 @@ package main
 
 import (
 	"context"
+
 	"encoding/json"
 	"fmt"
 	"io"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/baseline"
+	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/decision"
-	"github.com/alexei-led/archfit/internal/engine"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 // configCompareSchemaVersion versions the `config compare --json` document.
@@ -76,35 +73,24 @@ func (c *CompareCmd) Run(deps *appDeps) error {
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-
-	// One run context for both sides. The candidate swaps ONLY ConfigSource:
-	// BundleDir and ScanRoot stay the current run's, so both sides measure the
-	// same tree with the same labels and fact cache even when the candidate file
-	// lives elsewhere. Sharing EvaluatedAt keeps waiver expiry and staleness from
-	// differing just because the second pipeline started later.
-	curRC := runContext{
-		ConfigSource: c.Config,
-		BundleDir:    filepath.Dir(c.Config),
-		ScanRoot:     c.Root,
-		EvaluatedAt:  time.Now(),
+	deps.refresh = false
+	evaluatedAt := time.Now()
+	// Both sides share the CURRENT config's bundle directory (pinned labels,
+	// fact cache) and run against an EMPTY accepted baseline: it records
+	// findings accepted under the current config, so applying it would silence
+	// the candidate's findings by the current config's history.
+	service := application.CompareService{
+		Current:   newReportOnlyStages(c.Config, c.Root, curCfg, deps),
+		Candidate: newReportOnlyStages(c.Candidate, c.Root, candCfg, deps),
 	}
-	candRC := curRC
-	candRC.ConfigSource = c.Candidate
-
-	current, err := runCompareSide(ctx, deps, curCfg, curRC, compareLabelCurrent)
+	cmp, err := service.Execute(ctx, application.CompareRequest{CurrentConfig: c.Config, CandidateConfig: c.Candidate, Root: c.Root, EvaluatedAt: evaluatedAt})
 	if err != nil {
-		return err
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	candidate, err := runCompareSide(ctx, deps, candCfg, candRC, compareLabelCandidate)
-	if err != nil {
-		return err
-	}
-
-	result := decision.CompareConfigs(decision.ConfigCompareInput{Current: current, Candidate: candidate})
 	if c.JSON {
-		return writeConfigCompareJSON(deps.Stdout, buildConfigCompareDoc(current, candidate, result))
+		return writeConfigCompareJSON(deps.Stdout, buildConfigCompareDoc(cmp))
 	}
-	renderConfigCompareText(deps.Stdout, c.Config, c.Candidate, current, candidate, result)
+	renderConfigCompareText(deps.Stdout, c.Config, c.Candidate, cmp)
 	return nil
 }
 
@@ -116,30 +102,10 @@ func loadCandidateConfig(ctx context.Context, path string) (config.Config, error
 	if err != nil {
 		return config.Config{}, fmt.Errorf("candidate config %s: %w", path, err)
 	}
-	if err := validateConfigRules(cfg); err != nil {
+	if err := config.ValidateRules(cfg); err != nil {
 		return config.Config{}, fmt.Errorf("candidate config %s: %w", path, err)
 	}
 	return cfg, nil
-}
-
-// runCompareSide runs one full advisory pipeline and projects it to a comparison
-// side. Progress reporting is off (two runs would overflow one phase counter,
-// see worktree.go) and warnings are labelled so a candidate-side degradation is
-// never read as a current-side one.
-func runCompareSide(ctx context.Context, deps *appDeps, cfg config.Config, rc runContext, label string) (decision.ConfigCompareSide, error) {
-	quiet := *deps
-	quiet.progress = nil
-	quiet.warnLabel = label
-	mode := engine.Mode{Full: true, Advisory: true, ReportOnly: true}
-	// Empty baseline by design: raw measurement, no accepted-finding bias.
-	diag, sc, err := runPipeline(ctx, &quiet, cfg, rc, mode, baseline.Baseline{})
-	if err != nil {
-		return decision.ConfigCompareSide{}, &exitError{
-			code: 3,
-			msg:  fmt.Sprintf("error: measuring %sconfig %s: %v", label, rc.ConfigSource, err),
-		}
-	}
-	return decision.ConfigCompareSide{Diag: diag, Score: sc}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -164,10 +130,10 @@ type configCompareDoc struct {
 
 // configCompareSideDoc is one configuration's complete measurement.
 type configCompareSideDoc struct {
-	ConfigHash string          `json:"config_hash"`
-	Scorecard  score.Scorecard `json:"scorecard"`
+	ConfigHash string           `json:"config_hash"`
+	Scorecard  report.Scorecard `json:"scorecard"`
 	// ClassifiedEdges is null when classification produced no summary at all.
-	ClassifiedEdges *diagnostic.ClassifiedEdgeSummary `json:"classified_edges"`
+	ClassifiedEdges *report.ClassifiedEdgeSummary `json:"classified_edges"`
 	// FindingCount is the number of DISTINCT observed finding IDs on this side,
 	// with fixed entries excluded — the same population the ID buckets split, so
 	// the two can never disagree. It is not len(findings).
@@ -201,7 +167,8 @@ type configCompareWarnDoc struct {
 // buildConfigCompareDoc projects the two sides and the pure result onto the wire
 // shape. Every list is a non-null array; only the two genuinely-unknown values
 // (score delta, absent edge summary) are ever null.
-func buildConfigCompareDoc(current, candidate decision.ConfigCompareSide, res decision.ConfigCompareResult) configCompareDoc {
+func buildConfigCompareDoc(res application.CompareResult) configCompareDoc {
+	current, candidate := res.Current, res.Candidate
 	curCount := len(res.Findings.CurrentOnlyIDs) + len(res.Findings.BothIDs)
 	candCount := len(res.Findings.CandidateOnlyIDs) + len(res.Findings.BothIDs)
 	details := make([]configCompareCoverageRowsDoc, 0, len(res.Coverage.Details))
@@ -210,7 +177,7 @@ func buildConfigCompareDoc(current, candidate decision.ConfigCompareSide, res de
 			Tool:      d.Tool,
 			Current:   d.Current,
 			Candidate: d.Candidate,
-			Status:    string(d.Status),
+			Status:    d.Status,
 			Reason:    d.Reason,
 		})
 	}
@@ -228,16 +195,16 @@ func buildConfigCompareDoc(current, candidate decision.ConfigCompareSide, res de
 			CandidateOnlyIDs: res.Findings.CandidateOnlyIDs,
 			BothIDs:          res.Findings.BothIDs,
 		},
-		Coverage: configCompareCoverageDoc{Status: string(res.Coverage.Status), Details: details},
+		Coverage: configCompareCoverageDoc{Status: res.Coverage.Status, Details: details},
 		Warnings: warnings,
 	}
 }
 
-func compareSideDoc(side decision.ConfigCompareSide, findingCount int) configCompareSideDoc {
+func compareSideDoc(side application.CompareSide, findingCount int) configCompareSideDoc {
 	return configCompareSideDoc{
-		ConfigHash:      side.Diag.ConfigHash,
-		Scorecard:       side.Score,
-		ClassifiedEdges: side.Diag.ClassifiedEdges,
+		ConfigHash:      side.Document.ConfigHash,
+		Scorecard:       side.Document.Score,
+		ClassifiedEdges: side.Document.ClassifiedEdges,
 		FindingCount:    findingCount,
 	}
 }
@@ -277,9 +244,9 @@ const configCompareFooter = "Report only: two measurements of one source tree. "
 func renderConfigCompareText(
 	w io.Writer,
 	currentPath, candidatePath string,
-	current, candidate decision.ConfigCompareSide,
-	res decision.ConfigCompareResult,
+	res application.CompareResult,
 ) {
+	current, candidate := res.Current, res.Candidate
 	_, _ = fmt.Fprintf(w, "config compare\n  current:   %s\n  candidate: %s\n\n", currentPath, candidatePath)
 
 	_, _ = fmt.Fprintf(w, "coverage evidence: %s\n", res.Coverage.Status)
@@ -310,9 +277,9 @@ func renderConfigCompareText(
 // configCompareDiffLines returns one line per changed measurement, in a fixed
 // order. An unchanged measurement produces no line at all — the default report
 // shows differences, not a full scorecard dump.
-func configCompareDiffLines(current, candidate decision.ConfigCompareSide, res decision.ConfigCompareResult) []string {
+func configCompareDiffLines(current, candidate application.CompareSide, res application.CompareResult) []string {
 	var lines []string
-	if line, changed := scoreCompareLine(current.Score, candidate.Score, res.ScoreDelta); changed {
+	if line, changed := scoreCompareLine(current.Document.Score, candidate.Document.Score, res.ScoreDelta); changed {
 		lines = append(lines, line)
 	}
 	if ids := res.Findings.CurrentOnlyIDs; len(ids) > 0 {
@@ -321,10 +288,10 @@ func configCompareDiffLines(current, candidate decision.ConfigCompareSide, res d
 	if ids := res.Findings.CandidateOnlyIDs; len(ids) > 0 {
 		lines = append(lines, fmt.Sprintf("findings only under the candidate config (%d): %s", len(ids), summariseIDs(ids)))
 	}
-	if line, changed := edgeCompareLine(current.Diag.ClassifiedEdges, candidate.Diag.ClassifiedEdges); changed {
+	if line, changed := edgeCompareLine(current.Document.ClassifiedEdges, candidate.Document.ClassifiedEdges); changed {
 		lines = append(lines, line)
 	}
-	return append(lines, classificationMixLines(current.Diag.ClassifiedEdges, candidate.Diag.ClassifiedEdges)...)
+	return append(lines, classificationMixLines(current.Document.ClassifiedEdges, candidate.Document.ClassifiedEdges)...)
 }
 
 // classificationMixLines renders every cross-boundary classification histogram
@@ -340,52 +307,51 @@ func configCompareDiffLines(current, candidate decision.ConfigCompareSide, res d
 // The list is the complete set of classification histograms the diagnostic
 // carries, so the identity line's claim covers the whole mix rather than a
 // chosen subset of it.
-func classificationMixLines(current, candidate *diagnostic.ClassifiedEdgeSummary) []string {
+func classificationMixLines(current, candidate *report.ClassifiedEdgeSummary) []string {
 	mixes := []struct {
 		label string
-		pick  func(*diagnostic.ClassifiedEdgeSummary) map[string]int
+		get   func(*report.ClassifiedEdgeSummary) map[string]int
 	}{
-		{"strength mix", func(s *diagnostic.ClassifiedEdgeSummary) map[string]int { return s.ByStrength }},
-		{"distance mix", func(s *diagnostic.ClassifiedEdgeSummary) map[string]int { return s.ByDistance }},
-		{"distance basis mix", func(s *diagnostic.ClassifiedEdgeSummary) map[string]int { return s.ByDistanceBasis }},
-		{"volatility mix", func(s *diagnostic.ClassifiedEdgeSummary) map[string]int { return s.ByVolatility }},
-		{"severity mix", func(s *diagnostic.ClassifiedEdgeSummary) map[string]int { return s.BySeverity }},
-		{"volatility provenance (modules)", volatilityProvenanceCounts},
+		{"strength mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByStrength }},
+		{"distance mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByDistance }},
+		{"distance basis mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByDistanceBasis }},
+		{"volatility mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByVolatility }},
+		{"severity mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.BySeverity }},
+		{"balance driver mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByBalanceDriver }},
+		{"critical driver mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByCriticalDriver }},
+		{"module pair mix", func(s *report.ClassifiedEdgeSummary) map[string]int { return s.ByModulePair }},
+		{"volatility provenance (modules)", volatilityProvenanceHistogram},
 	}
 	var lines []string
 	for _, m := range mixes {
-		if line, changed := histogramCompareLine(m.label, pickHistogram(current, m.pick), pickHistogram(candidate, m.pick)); changed {
+		cur, cand := summaryHistogram(current, m.get), summaryHistogram(candidate, m.get)
+		if line, changed := histogramCompareLine(m.label, cur, cand); changed {
 			lines = append(lines, line)
 		}
 	}
 	return lines
 }
 
-// pickHistogram reads one histogram from a side, treating a side that never
-// classified anything as an empty one.
-func pickHistogram(
-	s *diagnostic.ClassifiedEdgeSummary,
-	pick func(*diagnostic.ClassifiedEdgeSummary) map[string]int,
-) map[string]int {
-	if s == nil {
+// summaryHistogram reads one histogram off a nil-safe summary. Typed accessors,
+// not field names: renaming a field on ClassifiedEdgeSummary must break the
+// build, never silently drop the row from the comparison.
+func summaryHistogram(summary *report.ClassifiedEdgeSummary, get func(*report.ClassifiedEdgeSummary) map[string]int) map[string]int {
+	if summary == nil {
 		return nil
 	}
-	return pick(s)
+	return get(summary)
 }
 
-// volatilityProvenanceCounts flattens the provenance struct to the same
-// bucket-count shape as the other histograms. These count MODULES, not edges —
-// hence the label.
-func volatilityProvenanceCounts(s *diagnostic.ClassifiedEdgeSummary) map[string]int {
+// volatilityProvenanceHistogram flattens the provenance counters into the same
+// bucket shape as the map-valued mixes so one comparison covers both.
+func volatilityProvenanceHistogram(s *report.ClassifiedEdgeSummary) map[string]int {
 	p := s.VolatilityProvenance
 	if p == nil {
 		return nil
 	}
 	return map[string]int{
-		"declared":   p.Declared,
-		"inherited":  p.Inherited,
-		"cascade":    p.Cascade,
-		"undeclared": p.Undeclared,
+		"declared": p.Declared, "inherited": p.Inherited,
+		"cascade": p.Cascade, "undeclared": p.Undeclared,
 	}
 }
 
@@ -424,7 +390,7 @@ func histogramCompareLine(label string, cur, cand map[string]int) (string, bool)
 // a candidate that scores the same edges differently, or measures more of the
 // tree, is still a changed measurement, and the identity line must not claim
 // otherwise.
-func edgeCompareLine(current, candidate *diagnostic.ClassifiedEdgeSummary) (string, bool) {
+func edgeCompareLine(current, candidate *report.ClassifiedEdgeSummary) (string, bool) {
 	if current == nil && candidate == nil {
 		return "", false
 	}
@@ -435,7 +401,7 @@ func edgeCompareLine(current, candidate *diagnostic.ClassifiedEdgeSummary) (stri
 	return fmt.Sprintf("classified edges: %s → %s", cur, cand), true
 }
 
-func edgeCountsText(s *diagnostic.ClassifiedEdgeSummary) string {
+func edgeCountsText(s *report.ClassifiedEdgeSummary) string {
 	if s == nil {
 		return scoreUnmeasured
 	}
@@ -464,7 +430,7 @@ func summariseIDs(ids []string) string {
 // "change" would invent one. Unmeasured on exactly ONE side IS a difference, and
 // an important one: a configuration that stopped measuring coupling entirely is
 // exactly what this command exists to expose.
-func scoreCompareLine(current, candidate score.Scorecard, delta *int) (string, bool) {
+func scoreCompareLine(current, candidate report.Scorecard, delta *int) (string, bool) {
 	switch {
 	case delta != nil && *delta != 0:
 		return fmt.Sprintf("score: %s → %s (%+d)", scoreText(current), scoreText(candidate), *delta), true
@@ -478,7 +444,7 @@ func scoreCompareLine(current, candidate score.Scorecard, delta *int) (string, b
 	}
 }
 
-func scoreText(sc score.Scorecard) string {
+func scoreText(sc report.Scorecard) string {
 	if sc.OverallBand.Unmeasured() {
 		return scoreUnmeasured
 	}

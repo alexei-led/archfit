@@ -146,18 +146,8 @@ type appDeps struct {
 	warnLabel string
 
 	// refresh bypasses cache reads but still records fresh extractor facts.
-	// Set by each pipeline command from its --refresh flag before runPipeline.
+	// Set by each pipeline command from its --refresh flag before the analysis pipeline.
 	refresh bool
-
-	// scanRoot is the effective root the current analyze/check run scans. It is
-	// populated by runScan so post-pipeline warnings can re-check module globs
-	// against the same tree without changing emitHealthWarnings' public contract.
-	scanRoot string
-}
-
-// warn writes a labeled pipeline warning to stderr.
-func (d *appDeps) warn(w string) {
-	_, _ = fmt.Fprintln(d.stderr(), "warning: "+d.warnLabel+w)
 }
 
 // stderr returns the configured stderr writer, falling back to os.Stderr.
@@ -166,14 +156,6 @@ func (d *appDeps) stderr() io.Writer {
 		return d.Stderr
 	}
 	return os.Stderr
-}
-
-// reportPhase advances the attached progress reporter, if any (no-op otherwise).
-// The pipeline calls this at phase boundaries; only AnalyzeCmd attaches a reporter.
-func (d *appDeps) reportPhase(stage string) {
-	if d.progress != nil {
-		d.progress(stage)
-	}
 }
 
 // exitError carries an exit code through the Run return path.
@@ -258,6 +240,14 @@ func RunWithStderr(args []string, stdout, stderr io.Writer) (exitStatus int) {
 			_, _ = fmt.Fprintln(stderr, ee.msg)
 		}
 		return ee.ExitCode()
+	}
+	var coded interface{ ExitCode() int }
+	if errors.As(runErr, &coded) {
+		msg := runErr.Error()
+		if msg != fmt.Sprintf("exit %d", coded.ExitCode()) {
+			_, _ = fmt.Fprintln(stderr, msg)
+		}
+		return coded.ExitCode()
 	}
 
 	_, _ = fmt.Fprintf(stderr, "error: %v\n", runErr)

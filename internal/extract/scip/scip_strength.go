@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -81,7 +81,7 @@ type readerOutput struct {
 // "<fromModulePath>\x00<toModulePath>". A missing toolchain (no indexer, no uv) or
 // any non-fatal failure yields an empty map with an absent/partial coverage record,
 // never an error — strength enrichment is best-effort on top of the import graph.
-func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error) {
+func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]string, evidence.Coverage, error) {
 	ro, partial, ok := a.runSCIPPipeline(ctx, s.Root, toolName)
 	if !ok {
 		return nil, partial, nil
@@ -98,26 +98,26 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 		var out readerOutput
 		_ = json.Unmarshal(ro.raw, &out)
 		if len(out.Symbols) == 0 {
-			return m, diagnostic.Coverage{
+			return m, evidence.Coverage{
 				Tool:    toolName,
 				Version: ro.indexer,
-				Status:  diagnostic.StatusPartial,
+				Status:  evidence.StatusPartial,
 				Reason:  "empty index (0 occurrences) — check path case / indexer version",
 			}, nil
 		}
 		// Index is valid but has no cross-module edges — return OK with 0 files.
-		return m, diagnostic.Coverage{
+		return m, evidence.Coverage{
 			Tool:    toolName,
 			Version: ro.indexer,
-			Status:  diagnostic.StatusOK,
+			Status:  evidence.StatusOK,
 		}, nil
 	}
-	return m, diagnostic.Coverage{
+	return m, evidence.Coverage{
 		Tool:            toolName,
 		Version:         ro.indexer,
 		FilesSeen:       len(m),
 		FilesApplicable: len(m),
-		Status:          diagnostic.StatusOK,
+		Status:          evidence.StatusOK,
 	}, nil
 }
 
@@ -132,7 +132,7 @@ type pipelineResult struct {
 // repo twice per run. cov.Tool is a template — rewrapped per caller.
 type pipeCacheEntry struct {
 	ro  pipelineResult
-	cov diagnostic.Coverage
+	cov evidence.Coverage
 	ok  bool
 }
 
@@ -141,7 +141,7 @@ type pipeCacheEntry struct {
 // non-fatal failure it returns ok=false and a partial/absent coverage record. The
 // caller is responsible for parsing ro.raw into its own typed result and
 // constructing a final Coverage with the correct tool name.
-func (a *Adapter) runSCIPPipeline(ctx context.Context, root, covTool string) (pipelineResult, diagnostic.Coverage, bool) {
+func (a *Adapter) runSCIPPipeline(ctx context.Context, root, covTool string) (pipelineResult, evidence.Coverage, bool) {
 	a.pipeMu.Lock()
 	entry, hit := a.pipeCache[root]
 	a.pipeMu.Unlock()
@@ -161,8 +161,8 @@ func (a *Adapter) runSCIPPipeline(ctx context.Context, root, covTool string) (pi
 
 // runSCIPPipelineUncached executes the actual detect → index → read pipeline.
 // The returned Coverage carries Status/Version only; Tool is set by the wrapper.
-func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro pipelineResult, cov diagnostic.Coverage, ok bool) {
-	absent := diagnostic.Coverage{Status: diagnostic.StatusAbsent}
+func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro pipelineResult, cov evidence.Coverage, ok bool) {
+	absent := evidence.Coverage{Status: evidence.StatusAbsent}
 
 	// Apply per-analyzer watchdog before any subprocess call. detectIndexer may
 	// run `cargo metadata` for Rust virtual workspaces; that call must be
@@ -177,7 +177,7 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		// report StatusTimedOut rather than StatusAbsent so the caller knows the
 		// tool was present but the detection phase hit a time limit.
 		if errors.Is(detectErr, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return ro, diagnostic.Coverage{Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, false
+			return ro, evidence.Coverage{Status: evidence.StatusTimedOut, Reason: reasonTimedOut}, false
 		}
 		absent.Reason = scipAbsentReason(root)
 		return ro, absent, false
@@ -206,12 +206,12 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 			var ce scipCacheEntry
 			if json.Unmarshal(blob, &ce) == nil && ce.Indexer == indexer {
 				return pipelineResult{raw: ce.Raw, indexer: indexer},
-					diagnostic.Coverage{Version: indexer, Status: diagnostic.StatusPartial}, true
+					evidence.Coverage{Version: indexer, Status: evidence.StatusPartial}, true
 			}
 		}
 	}
 
-	timedOut := diagnostic.Coverage{Version: indexer, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}
+	timedOut := evidence.Coverage{Version: indexer, Status: evidence.StatusTimedOut, Reason: reasonTimedOut}
 
 	tmp, err := os.MkdirTemp("", "archfit-scip-")
 	if err != nil {
@@ -227,7 +227,7 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		return ro, absent, false
 	}
 
-	partial := diagnostic.Coverage{Version: indexer, Status: diagnostic.StatusPartial}
+	partial := evidence.Coverage{Version: indexer, Status: evidence.StatusPartial}
 
 	// innerTimeout returns the configured per-analyzer timeout when set, else
 	// the built-in constant. This lets analyzers.scip.timeout extend the per-phase
@@ -394,7 +394,7 @@ func parseReaderEdges(stdout []byte) (map[string]string, error) {
 // Connascence returns deterministic static connascence hints per SCIP edge,
 // keyed by "<from>\x00<to>". It shares the same index+reader pipeline cache as
 // Strengths and Symbols, so callers may ask for all three without re-indexing.
-func (a *Adapter) Connascence(ctx context.Context, s scope.Scope) (map[string][]graph.ConnascenceHint, diagnostic.Coverage, error) {
+func (a *Adapter) Connascence(ctx context.Context, s scope.Scope) (map[string][]graph.ConnascenceHint, evidence.Coverage, error) {
 	ro, partial, ok := a.runSCIPPipeline(ctx, s.Root, toolName)
 	if !ok {
 		return nil, partial, nil
@@ -403,7 +403,7 @@ func (a *Adapter) Connascence(ctx context.Context, s scope.Scope) (map[string][]
 	if perr != nil {
 		return nil, partial, nil
 	}
-	return m, diagnostic.Coverage{Tool: toolName, Version: ro.indexer, Status: diagnostic.StatusOK}, nil
+	return m, evidence.Coverage{Tool: toolName, Version: ro.indexer, Status: evidence.StatusOK}, nil
 }
 
 func parseReaderConnascence(stdout []byte) (map[string][]graph.ConnascenceHint, error) {

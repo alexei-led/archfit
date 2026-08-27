@@ -7,14 +7,15 @@ import (
 	"sort"
 	"strings"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // BC integration-strength labels used for StrengthHint on Go edges.
@@ -54,9 +55,9 @@ var goStrengthRank = map[string]int{
 
 // GoExtractor is the native Go import extractor using go/packages.
 // It is in-process (no subprocess) and satisfies the engine.Extractor interface
-// structurally: Name() string and Extract(ctx, scope.Scope) (graph.Facts, diagnostic.Coverage, error).
+// structurally: Name() string and Extract(ctx, scope.Scope) (graph.Facts, evidence.Coverage, error).
 type GoExtractor struct {
-	cfg view.ExtractConfig
+	cfg evidenceports.ExtractConfig
 	// Runner probes the go-toolchain version for the fact-cache key; nil
 	// (tests) yields an empty version component, never an error.
 	Runner toolrun.Runner
@@ -68,7 +69,7 @@ type GoExtractor struct {
 }
 
 // New returns a GoExtractor configured with the given ExtractConfig.
-func New(cfg view.ExtractConfig) *GoExtractor {
+func New(cfg evidenceports.ExtractConfig) *GoExtractor {
 	return &GoExtractor{cfg: cfg}
 }
 
@@ -105,21 +106,21 @@ func (e *GoExtractor) CoverageTool() string {
 // score with real compiler-grade strength instead of abstaining. Undeclared
 // external edges are excluded from scoring by distance, so their hints are
 // report-only.
-func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-	if e.cfg.Mode == view.ModeOff {
-		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
+func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error) {
+	if e.cfg.Mode == evidenceports.ModeOff {
+		return graph.Facts{}, evidence.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
 	}
 
 	// Discover the members this run will load: go.work → per-member dirs (or a
 	// single go.mod, or a walk), then the tools.go.modules include/exclude filter.
 	members, err := AnalysableMembers(s.Root, e.cfg.Exclusions, e.cfg.GoModuleInclude, e.cfg.GoModuleExclude)
 	if err != nil {
-		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/golang: discover members: %w", err)
+		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/golang: discover members: %w", err)
 	}
 	memberDirs := members.Dirs
 
 	if len(memberDirs) == 0 {
-		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
+		return graph.Facts{}, evidence.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
 	}
 
 	// Load per-member facts — from the fact cache where the member's input
@@ -130,10 +131,10 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		// go.mod or an unresolvable build constraint. This is a coverage gap, not a
 		// run-level failure (the "warn-loud, don't block" contract); only an
 		// explicitly required analyzer (ModeOn) hard-errors.
-		if e.cfg.Mode == view.ModeOn {
-			return graph.Facts{}, diagnostic.Coverage{}, err
+		if e.cfg.Mode == evidenceports.ModeOn {
+			return graph.Facts{}, evidence.Coverage{}, err
 		}
-		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusPartial, Reason: err.Error()}, nil
+		return graph.Facts{}, evidence.Coverage{Tool: toolGoPackages, Status: statusPartial, Reason: err.Error()}, nil
 	}
 
 	// Build the module map from the per-member facts (derived from pkg.Module —
@@ -273,7 +274,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		Unresolved: unresolved,
 		GoModules:  goModules,
 	}
-	cov := diagnostic.Coverage{
+	cov := evidence.Coverage{
 		Tool:                    toolGoPackages,
 		FilesSeen:               filesSeen,
 		FilesApplicable:         filesSeen,

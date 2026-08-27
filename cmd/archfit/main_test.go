@@ -10,7 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -81,18 +82,24 @@ func TestRun_Analyze_GateVsReportOnly(t *testing.T) {
 }
 
 const (
-	flagRefresh       = "--refresh"
-	flagRoot          = "--root"
-	flagJSON          = "--json"
-	flagNoAdvisories  = "--no-advisories"
-	goModStub         = "module example.com/test\n\ngo 1.21\n" // minimal go.mod shared by fixture repos
-	cmdAnalyze        = "analyze"
-	cmdCheck          = "check"
-	cmdBaseline       = "baseline"
-	cmdConfig         = "config" // config subcommand group (config init / config enrich …)
-	cmdEnrich         = "enrich" // config enrich subcommand (config enrich owner / subdomain / …)
-	cmdExplain        = "explain"
-	fmtJSON           = "--format=json"
+	flagRefresh      = "--refresh"
+	flagRoot         = "--root"
+	flagJSON         = "--json"
+	flagNoAdvisories = "--no-advisories"
+	goModStub        = "module example.com/test\n\ngo 1.21\n" // minimal go.mod shared by fixture repos
+	cmdAnalyze       = "analyze"
+	cmdCheck         = "check"
+	cmdBaseline      = "baseline"
+	cmdConfig        = "config" // config subcommand group (config init / config enrich …)
+	cmdEnrich        = "enrich" // config enrich subcommand (config enrich owner / subdomain / …)
+	cmdExplain       = "explain"
+	fmtJSON          = "--format=json"
+	// fmtLegacyJSON selects the pre-cutover diagnostic envelope. Tests that
+	// assert on a diagnostic-only block (tool_coverage detail, owner_source,
+	// config_warnings, git_finding_delta) name it explicitly rather than
+	// reading those keys out of the architecture-state contract, which does not
+	// carry them.
+	fmtLegacyJSON     = "--format=legacy-json"
 	flagVersion       = "--version"
 	filePkgAA         = "pkg/a/a.go" // the gate-violating source file used across fixtures
 	filePkgBImpl      = "pkg/b/internal/impl/impl.go"
@@ -131,8 +138,8 @@ func writeNonGoRepo(t *testing.T, cfgBody string) string {
 func writeGapRepo(t *testing.T, extraCfg string) string {
 	t.Helper()
 	// An explicit languages.go.gate bypasses the "no go.mod → suppress gap" logic
-	// in buildCoverageGaps, making the go/packages absence a deterministic gap.
-	cfg := "version: 1\nlanguages:\n  go:\n    gate: warn\n" + extraCfg
+	// in coverage-gap derivation, making the go/packages absence a deterministic gap.
+	cfg := "version: 2\nlanguages:\n  go:\n    gate: warn\n" + extraCfg
 	return writeNonGoRepo(t, cfg)
 }
 
@@ -154,7 +161,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		t.Parallel()
 		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
+		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
 		if code != 0 {
 			t.Fatalf("default check: exit = %d, want 0\noutput:\n%s", code, buf.String())
 		}
@@ -176,7 +183,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		t.Parallel()
 		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, "--require-tools", fmtJSON}, &buf)
+		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, "--require-tools", fmtLegacyJSON}, &buf)
 		if code != 1 {
 			t.Fatalf("check --require-tools: exit = %d, want 1\noutput:\n%s", code, buf.String())
 		}
@@ -184,7 +191,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
 			t.Fatalf("invalid JSON: %v", err)
 		}
-		if d.Verdict != string(diagnostic.VerdictFail) {
+		if d.Verdict != string(result.VerdictFail) {
 			t.Errorf("verdict = %q, want fail", d.Verdict)
 		}
 		for _, g := range d.CoverageGaps {
@@ -198,10 +205,10 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		t.Parallel()
 		// go is disabled so go/packages reports absent (a gap) deterministically,
 		// regardless of whether a Go toolchain happens to half-load a non-Go tree.
-		cfg := "version: 1\nlanguages:\n  go:\n    enabled: false\n    gate: fail\n"
+		cfg := "version: 2\nlanguages:\n  go:\n    enabled: false\n    gate: fail\n"
 		cfgPath := writeNonGoRepo(t, cfg)
 		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
+		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
 		if code != 1 {
 			t.Fatalf("tools.go.gate: fail → exit = %d, want 1\noutput:\n%s", code, buf.String())
 		}
@@ -269,7 +276,7 @@ func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 		t.Fatal(err)
 	}
 	cfgPath = filepath.Join(cfgDir, defaultConfigPath)
-	cfgBody := `version: 1
+	cfgBody := `version: 2
 modules:
   a:
     paths: ["pkg/a/**"]
@@ -717,7 +724,7 @@ func TestRun_Check_LabelsFileDeterministic(t *testing.T) {
 	cfgPath := writeViolatingRepo(t)
 	dir := filepath.Dir(cfgPath)
 
-	labelsYAML := `version: 1
+	labelsYAML := `version: 2
 labels:
   - from: a
     to: b
@@ -782,7 +789,7 @@ func TestRun_Analyze_ScipDisabledCoverageRow(t *testing.T) {
 
 	var buf bytes.Buffer
 	// Report-only mode (exit 0) so we can parse the JSON regardless of gate verdict.
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf); code == 3 {
 		t.Fatalf("analyze exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
 	}
 
@@ -800,8 +807,8 @@ func TestRun_Analyze_ScipDisabledCoverageRow(t *testing.T) {
 	for _, c := range out.ToolCoverage {
 		if c.Tool == toolScip {
 			found = true
-			if c.Status != string(diagnostic.StatusDisabled) {
-				t.Errorf("scip coverage status = %q, want %q", c.Status, diagnostic.StatusDisabled)
+			if c.Status != string(evidence.StatusDisabled) {
+				t.Errorf("scip coverage status = %q, want %q", c.Status, evidence.StatusDisabled)
 			}
 			break
 		}
@@ -818,7 +825,7 @@ func TestRun_Analyze_DeployUnitCoverageRowIsDiagnosticOnly(t *testing.T) {
 	files := map[string]string{
 		markerGoMod:       "module example.com/deploycov\n\ngo 1.21\n",
 		"cmd/api/main.go": goMainSrc,
-		defaultConfigPath: `version: 1
+		defaultConfigPath: `version: 2
 modules:
   cmd/api:
     paths: ["cmd/api/**"]
@@ -837,7 +844,7 @@ modules:
 
 	var buf bytes.Buffer
 	cfgPath := filepath.Join(dir, defaultConfigPath)
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf); code == 3 {
 		t.Fatalf("analyze exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
 	}
 
@@ -877,8 +884,8 @@ modules:
 	for _, c := range out.ToolCoverage {
 		if c.Tool == toolDeployUnit {
 			deployCoverageFound = true
-			if c.Status != string(diagnostic.StatusOK) {
-				t.Errorf("deploy-unit coverage status = %q, want %q", c.Status, diagnostic.StatusOK)
+			if c.Status != string(evidence.StatusOK) {
+				t.Errorf("deploy-unit coverage status = %q, want %q", c.Status, evidence.StatusOK)
 			}
 			if c.FilesSeen == 0 {
 				t.Errorf("deploy-unit files_seen = 0, want detected evidence")
@@ -914,7 +921,7 @@ func TestRun_Check_FileClassConfigWiredToPipeline(t *testing.T) {
 		// Custom generated file — NOT matched by built-in filename heuristics.
 		// Only config-supplied generated_globs should catch it.
 		"codegen/mycodegen_output.go": "package codegen\n\nfunc Generated() {}\n",
-		defaultConfigPath: `version: 1
+		defaultConfigPath: `version: 2
 file_class:
   generated_globs:
     - "codegen/**"
@@ -933,7 +940,7 @@ file_class:
 
 	cfgPath := filepath.Join(dir, defaultConfigPath)
 	var buf bytes.Buffer
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf); code == 3 {
 		t.Fatalf("check exited 3 (pipeline error)\noutput:\n%s", buf.String())
 	}
 
@@ -951,7 +958,7 @@ file_class:
 	for _, c := range out.ToolCoverage {
 		if c.Tool == toolLoc {
 			found = true
-			if c.Status != string(diagnostic.StatusOK) {
+			if c.Status != string(evidence.StatusOK) {
 				t.Errorf("loc coverage status = %q, want ok", c.Status)
 			}
 			break

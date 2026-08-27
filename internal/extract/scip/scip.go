@@ -1,4 +1,4 @@
-// Package scip implements the ports.SymbolResolver port using SCIP indexers.
+// Package scip implements the evidenceports.SymbolResolver port using SCIP indexers.
 //
 // # SCIP Go bindings availability
 //
@@ -27,8 +27,8 @@ import (
 	"sync"
 	"time"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -42,7 +42,7 @@ const toolNameSymbols = "scip-symbols"
 // scipTools are the SCIP indexers checked in preference order.
 var scipTools = []string{indexerTS, indexerPython, indexerGo, indexerRust}
 
-// Adapter satisfies ports.SymbolResolver using SCIP indexers.
+// Adapter satisfies evidenceports.SymbolResolver using SCIP indexers.
 // It detects available SCIP tools once (via sync.Once) and, when any are
 // present, is ready to run an indexer on first Resolve call.
 type Adapter struct {
@@ -73,7 +73,7 @@ type Adapter struct {
 	pipeCache map[string]pipeCacheEntry
 }
 
-var _ ports.SymbolResolver = (*Adapter)(nil)
+var _ evidenceports.SymbolResolver = (*Adapter)(nil)
 
 // New returns an Adapter backed by the given runner.
 // timeout is the per-analyzer outer watchdog; 0 uses the built-in default (20 min).

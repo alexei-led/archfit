@@ -5,7 +5,7 @@
 # owner and a subdomain/volatility — so distance and volatility classify cleanly.
 # Replace the module paths and owners with your own, then run:
 #   archfit analyze --config .archfit.yaml
-version: 1
+version: 2
 coupling:
   min_severity: medium
 languages:

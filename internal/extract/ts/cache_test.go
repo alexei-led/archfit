@@ -8,11 +8,12 @@ import (
 	"slices"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // cacheFixtureRunner fakes bunx: --version calls return a pinned version,
@@ -61,7 +62,7 @@ func TestFactCache_HitAndTSConfigInvalidation(t *testing.T) {
 	})
 	calls := 0
 	runner := cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[]}]}`, &calls)
-	ex := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto, Src: "."})
+	ex := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: "."})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
 	s := scope.Scope{Root: root}
@@ -99,7 +100,7 @@ func TestFactCache_NodeModulesMetadataInvalidates(t *testing.T) {
 	})
 	calls := 0
 	runner := cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[{"module":"left-pad","resolved":"node_modules/left-pad/index.js"}]}]}`, &calls)
-	ex := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto, Src: "."})
+	ex := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: "."})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
 	s := scope.Scope{Root: root}
@@ -135,7 +136,7 @@ func TestFactCache_ExcludedFileEditInvalidates(t *testing.T) {
 	})
 	calls := 0
 	runner := cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[]}]}`, &calls)
-	ex := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto, Src: ".", Exclusions: []string{"legacy/**"}})
+	ex := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: ".", Exclusions: []string{"legacy/**"}})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
 	s := scope.Scope{Root: root}
@@ -168,7 +169,7 @@ func TestFactCache_UnresolvedNotCached(t *testing.T) {
 	calls := 0
 	unresolvedJSON := `{"modules":[{"source":"a.ts","dependencies":[{"module":"left-pad","couldNotResolve":true}]}]}`
 	runner := cacheFixtureRunner(unresolvedJSON, &calls)
-	ex := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto, Src: "."})
+	ex := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: "."})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
 	s := scope.Scope{Root: root}
@@ -207,7 +208,7 @@ func TestFactCache_SubtreeRootManifestInvalidates(t *testing.T) {
 	}
 	calls := 0
 	runner := cacheFixtureRunner(`{"modules":[{"source":"packages/pkg/a.ts","dependencies":[]}]}`, &calls)
-	ex := ts.New(runner, view.ExtractConfig{Mode: view.ModeAuto, Src: "."})
+	ex := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: "."})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
 	s := scope.Scope{Root: sub, GitRoot: repo, SubtreePrefix: "packages/pkg"}

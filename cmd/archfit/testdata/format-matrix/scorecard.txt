@@ -1,0 +1,106 @@
+# archfit architecture state
+
+**Verdict:** BLOCKED
+**Hard gates:** fail — 1 active blocker(s)
+**Attention:** 2 dimension(s) flagged
+**Coverage:** 4 measured / 3 partial / 2 unmeasured (of 9)
+**Rubric version:** bc_score.v6
+**Config hash:** `0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6`
+
+## Dimensions
+
+### intent — measured · gate: pass · confidence: high
+owner: policy+assessment/evaluation
+denominator: declared rules evaluated 1/1
+- declared_modules: 2 count
+- declared_layers: 0 count
+- declared_rules: 1 count (1/1)
+- declared_waivers: 0 count
+- waivers_used: 0 count
+- expired_waivers: 0 count
+
+### structure — measured · gate: fail · confidence: high
+owner: relationship/facts
+denominator: discovered edges resolved to a declared module 1/1
+- internal_edges: 1 count
+- external_edges: 0 count
+- same_module_edges: 0 count
+- connected_modules: 2 count
+- cycle: 0 count
+
+### modularity — measured · gate: pass · confidence: low
+owner: assessment/metrics
+denominator: declared modules with a declared public surface 0/2
+- declared_modules: 2 count
+- public_surface_entries: 0 count (0/2)
+- local_coupling_modules: 0 count
+- blast_radius: 1 count
+- not measured — public surface: no declared module states a public surface, so every symbol reads as equally public
+
+### coupling — measured · gate: warn · confidence: high
+owner: relationship/analysis
+denominator: cross-boundary edges scored 1/1
+- scored_edges: 1 count (1/1)
+- abstained_edges: 0 count
+- declared_external_edges: 0 count
+- clone_only_seams: 0 count
+- critical_band_edges: 0 count
+- high_or_worse_edges: 0 count
+- critical_high_distance_edges: 0 count
+- seams: 1 count
+- distributed_monolith_seams: 0 count (1/1)
+- tight_seams: 1 count
+- unrated_seams: 0 count
+- unbalanced_edge: 0 count
+
+### change_locality — unmeasured · gate: not_applicable · confidence: unrated
+owner: history/git
+denominator: none — this dimension measured nothing
+- not measured — change locality: git history is unavailable: the tree is not a repository, or no module was declared to attribute commits to
+
+### complexity — partial · gate: pass · confidence: medium
+owner: syntax+evidence/acquisition
+denominator: production files in the source walk 2/2
+- production_files: 2 count
+- production_loc: 10 count
+- largest_production_file_loc: 6 count
+- not measured — cognitive complexity: v1 ships no cognitive-complexity analyzer; only the size tail is measured
+
+### testability — partial · gate: pass · confidence: medium
+owner: syntax/fileclass
+denominator: classified source files 2/2
+- test_files: 0 count
+- production_files: 2 count
+- test_to_production_files: 0 ratio (0/2)
+- not measured — executed test coverage: v1 does not run a target repository's test suite; supplied coverage is not yet an input
+- not measured — boundary test coverage: which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
+
+### operations — partial · gate: pass · confidence: medium
+owner: policy+evidence/acquisition
+denominator: applicable analyzers reporting coverage 4/4
+- modules_with_owner: 2 count (2/2)
+- distinct_owners: 2 count
+- deploy_units: 0 count
+- declared_external_systems: 0 count
+- coverage_gaps: 0 count
+- analyzers_not_applicable: 7 count
+- coverage: 1 ratio
+- not measured — observed runtime topology: v1 reports declared owners and deploy units only; nothing observes what actually runs
+- not measured — supply-chain inventory: SBOM and vulnerability facts have no collector in v1
+
+### drift — unmeasured · gate: not_applicable · confidence: unrated
+owner: assessment/decision
+denominator: none — this dimension measured nothing
+- not measured — architecture drift: no comparable architecture-state reference is stored
+- delta: non_comparable
+  - no comparable architecture-state reference is stored
+
+## Comparison
+
+- status: not_requested
+- reference: none
+
+## Finding index (2)
+
+- `ba3803eca947bf3c1b7efa8f37854d5e` new no_direct_b_dependency
+- `07af466df8bfd6e77ee485ac01c50a17` new bc/imbalanced_coupling

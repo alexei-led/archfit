@@ -10,11 +10,11 @@ import (
 	"runtime"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
-	"github.com/alexei-led/archfit/internal/ports"
+	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -100,7 +100,7 @@ func absentRunner() *toolrun.RunnerMock {
 
 var testScope = scope.Scope{Root: "/repo", Mode: scope.ModeFull}
 
-var singlePatternCfg = view.PatternConfig{
+var singlePatternCfg = pattern.Config{
 	{ID: patternUnsafe, Lang: "go", Rule: "unsafe.Pointer($X)"},
 }
 
@@ -190,7 +190,7 @@ func TestFind_MultiPattern_MergesResults(t *testing.T) {
 		},
 	}
 
-	cfg := view.PatternConfig{
+	cfg := pattern.Config{
 		{ID: patternReflect, Lang: "go", Rule: "reflect.TypeOf($X)"},
 		{ID: patternUnsafe, Lang: "go", Rule: "unsafe.Pointer($X)"},
 	}
@@ -286,4 +286,4 @@ func TestAdapter_Name(t *testing.T) {
 }
 
 // Compile-time interface check.
-var _ ports.PatternProvider = (*astgrep.Adapter)(nil)
+var _ evidenceports.PatternProvider = (*astgrep.Adapter)(nil)

@@ -8,10 +8,12 @@ behind the strength / distance / volatility vocabulary used throughout, read
 `archfit` measures **Balanced Coupling** (`coupling_balance`) plus a minimal set of
 complementary metrics. They split into three roles:
 
-- **Headline (1):** `coupling_balance` (scored 0–100, linearly rescaled from
-  the book's 1–10 per-edge balance). Report-only unless you
-  configure the opt-in [`coupling.gate`](configuration-reference.md#couplinggate)
-  block, which fails the build on a band floor or a score drop.
+- **Diagnostic (1):** `coupling_balance` (scored 0–100, linearly rescaled from
+  the book's 1–10 per-edge balance). It feeds the `coupling` dimension envelope
+  and the per-seam ledger, and it **never gates**. The only coupling gate is
+  [`coupling.gate.distributed_monolith`](configuration-reference.md#couplinggate),
+  which counts seams newly introduced against a comparable reference. The
+  retired `min_band` / `max_drop` knobs are a config error in schema v2.
 - **Baseline-delta gated (4):** `unbalanced_edge`, `cycle`, `encapsulation`,
   `coverage`. Each is compared against the committed baseline; a worsening
   delta **fails the build by default** (`metrics.<name>.gate` unset = `fail`;
@@ -33,15 +35,17 @@ See [Concepts → How archfit operationalizes the model](concepts.md#how-archfit
 
 ## The verdict
 
-After all metrics run, the run gets one verdict
-(`internal/engine/engine.go`, `computeVerdict`):
+Metrics do not produce the verdict. They fill the nine architecture-state
+dimension envelopes, and the run's verdict is aggregated from those envelopes
+alone (`internal/assessment/evaluation/state.go`):
 
 ```text
-fail  → any gate finding with status "new" or "expired_waiver", or any metric
-        delta that worsens past its threshold with gate fail/unset
-warn  → otherwise, any worsening metric delta capped by gate: warn, or any
-        active gate:warn rule advisory
-pass  → otherwise
+blocked         → any active hard-gate finding (status "new" or "expired_waiver"),
+                  or a metric delta that worsens past its threshold with gate
+                  fail/unset
+needs_attention → otherwise, any active diagnostic, or any dimension reporting
+                  partial or unmeasured
+healthy         → otherwise
 ```
 
 "Worsens" is direction-aware: count metrics (`cycle`, `unbalanced_edge`) worsen
@@ -49,15 +53,19 @@ upward (delta > `max_new`), ratio metrics (`encapsulation`, `coverage`) worsen
 downward (drop > `min_delta`). Per-metric `gate`/threshold knobs are documented
 in the [configuration reference](configuration-reference.md#metrics).
 
-Exit codes: `0` pass, `1` gate failed, `2` warnings/regressions, `3` tool/config
-error. `archfit analyze` is report-only and exits `0` on any verdict; use
-`archfit check` when findings or regressions should fail the run.
+`archfit check`'s exit code IS this verdict: `0` healthy, `2` needs_attention,
+`1` blocked, `3` tool/config error. **Expect `2`, not `0`, on a healthy repo in
+v1** — complexity, testability, and operations report `partial` by contract, so
+gate on `1`. `archfit analyze` is report-only and exits `0` on any verdict.
 
 ---
 
 ## Scoring model
 
-The scorecard dimension produces a 0–100 value, a band, and a confidence.
+Each scorecard dimension produces a 0–100 value, a band, and a confidence.
+A band applies only to that dimension. `coupling_balance: poor` is not an
+overall architecture-quality verdict; use the gate findings and the evidence
+blocks to judge the design.
 
 ### Bands
 
@@ -81,7 +89,7 @@ evidence is a false alarm the tool refuses to raise.
 Confidence (`high` / `medium` / `low`) reflects how much of the needed evidence
 was actually available (coverage, classified fraction, sample size). It can only
 _lower_ the reported band, never raise it
-(`internal/metrics/internal/result`, `ApplyConfidenceCap`):
+(`internal/assessment/metrics/internal/result`, `ApplyConfidenceCap`):
 
 ```text
 high   → band may reach "strong"
@@ -101,7 +109,7 @@ internal cross-boundary facts, then applies evidence caps:
 - fewer than **3** connected modules in the scored/abstained coupling sample ⇒
   high confidence is disallowed;
 - `dependency-cruiser` `partial` with unresolved-specifier ratio above **10%**
-  (`tsUnresolvedRatioCeiling`, `internal/score/score.go`) ⇒ high confidence is
+  (`tsUnresolvedRatioCeiling`, `internal/assessment/score/score.go`) ⇒ high confidence is
   disallowed, because unresolved specifiers land in the `external` bucket,
   outside `coupling_balance`'s denominator;
 - `cargo-modules` `partial` on Rust ⇒ high confidence is disallowed.
@@ -125,7 +133,7 @@ metric scores against a git ref.
 
 ## Verdict-affecting metrics
 
-### `coupling_balance` (headline metric)
+### `coupling_balance` (diagnostic; never gates)
 
 > **Scorer version:** `bc_score.v6` — Khononov Ch10 book formula, with clone-only duplicated knowledge scored by default and transitive inferred-volatility cascade when enabled.
 
@@ -137,10 +145,12 @@ metric scores against a git ref.
   see [Concepts → The balance rule](concepts.md#the-balance-rule) for ordinals,
   abstain semantics, and confidence. `coupling.volatility_cascade: true` enables
   a deterministic fixpoint cascade (book Ch9).
-- **Affects verdict:** only through the opt-in
-  [`coupling.gate`](configuration-reference.md#couplinggate) block — `min_band`
-  (band floor) and `max_drop` (points below the baselined score) fail the run.
-  No block ⇒ report-only. Band `n/a` never trips (abstain ≠ fail).
+- **Affects verdict:** never directly. It is a diagnostic: it sets the `coupling`
+  dimension's envelope, which can make the verdict `needs_attention`, and it can
+  never make it `blocked`. The only coupling gate is
+  [`coupling.gate.distributed_monolith`](configuration-reference.md#couplinggate),
+  which counts seams newly introduced against a comparable reference and names
+  its own seams. A `metrics.coupling_balance:` key is a config error.
 - **Denominator:** cross-module coupling facts only. Same-module edges score into
   the report-only [`local_coupling`](#local_coupling) block and never enter this
   metric. Clone-only duplicated-knowledge pairs (cross-module clones with no
@@ -162,9 +172,14 @@ inherited: M, cascade: K` (plus `undeclared: U` when nonzero; JSON:
   missing ownership. `distance_context.distance_basis` and
   `classified_edges.by_distance_basis` show which deterministic signal selected
   each rung, which middle Ch8 rungs remain compressed, and whether the mean hides
-  a lower-tail hot spot. Tail risk reports worst balance, lower-decile balance,
-  high-or-worse share, critical and distributed-monolith counts, plus clone-only
-  subcounts when scored clone-only duplicated knowledge contributes to the tail.
+  a lower-tail hot spot. `classified_edges.by_balance_driver` and
+  `classified_edges.by_critical_driver` show whether `|S-D|` or `10-V` drove the
+  result. `classified_edges.by_module_pair` shows concentration by boundary.
+  The score dimension also reports `raw_value` and `cap_applied` when a cap
+  changes the normalized mean. Tail risk reports worst balance, lower-decile
+  balance, high-or-worse share, critical and distributed-monolith counts, plus
+  clone-only subcounts when scored clone-only duplicated knowledge contributes
+  to the tail.
 
 ### `unbalanced_edge`
 
@@ -404,7 +419,8 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 ## Coupling classification reference
 
 Every cross-boundary edge is classified on the four lenses below
-(`internal/model/coupling/coupling.go`). These power the
+(`internal/relationship/coupling/coupling.go`). Scoring behavior lives in
+`internal/relationship/scoring`. These power the
 `bc/imbalanced_coupling` advisories and feed `encapsulation` and
 `unbalanced_edge`.
 

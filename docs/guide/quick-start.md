@@ -35,7 +35,7 @@ This writes a starter `.archfit.yaml` for the current repo. Review the generated
 Sample output:
 
 ```yaml
-version: 1
+version: 2
 languages:
   go:
     enabled: true
@@ -60,21 +60,37 @@ rules:
 archfit analyze -c .archfit.yaml
 ```
 
-This is the report-only readout. `Decision` is the headline judgment, `Score` is the 0-100 health signal, findings appear in the sections below, and `Warnings` tells you how much advisory noise or degraded coverage the run found.
+This is the report-only readout. `VERDICT` is the headline judgment, `COVERAGE`
+says how many of the nine dimensions were actually measured, and each dimension
+states its own denominator. There is no repository score.
 
 Sample output:
 
 ```text
-ARCHFIT RESULT
+ARCHITECTURE STATE
 
-Decision   ACCEPTABLE WITH WATCH ITEMS
-Gate       PASS  ·  0 blocking
-Warnings   38 advisory
-Score      71 / 100  serviceable
+VERDICT    NEEDS ATTENTION
+BLOCKING   0 active  ·  hard gates: pass
+ATTENTION  2 dimension(s) flagged  ·  55 diagnostic(s)
+COVERAGE   5 measured · 3 partial · 1 unmeasured  (of 9)
 
-RECOMMENDATIONS
-  WATCH
-    · bc/duplicated_knowledge — duplicated knowledge: cross-module code clones ...
+DIMENSIONS
+
+  intent          measured    gate: pass            confidence: high     declared rules evaluated 60/60
+  structure       measured    gate: pass            confidence: high     discovered edges resolved to a declared module 544/1255
+  ...
+  drift           unmeasured  gate: not_applicable  confidence: unrated  no denominator
+
+NOT MEASURED (5)
+
+  complexity — cognitive complexity
+    v1 ships no cognitive-complexity analyzer; only the size tail is measured
+
+COUPLING SEAMS (67)
+
+  assessment-repair -> relationship-analysis
+    functional × cross_module_same_owner × high volatility · 12 critical of 34 scored · median balance 7
+    try: reduce_strength
 ```
 
 **If something looks wrong:** Do not baseline or gate a run you do not trust. Fix config path globs, language settings, or missing analyzer tools first, then rerun until the findings match the repo you meant to analyze.
@@ -101,17 +117,27 @@ baseline saved: .archfit-baseline.json
 archfit check -c .archfit.yaml
 ```
 
-This is the command to put in CI and local validation loops. Exit code `0` means pass, `1` means blocking violations or enforced regressions, `2` means a warning-level policy result, and `3` means config, tool, or runtime error.
+This is the command to put in CI and local validation loops. The exit code IS the
+verdict: `0` is `healthy`, `1` is `blocked`, `2` is `needs_attention`, and `3` is
+a config, tool, or runtime error.
+
+**Expect `2`, not `0`, on a healthy repo in v1.** Complexity, testability, and
+operations report `partial` by contract, and any partial dimension flags the
+verdict. Gate on `1`:
+
+```sh
+archfit check -c .archfit.yaml || [ $? -eq 2 ]
+```
 
 Sample output:
 
 ```text
-ARCHFIT RESULT
+ARCHITECTURE STATE
 
-Decision   ACCEPTABLE WITH WATCH ITEMS
-Gate       PASS  ·  0 blocking
-Warnings   38 advisory
-Score      71 / 100  serviceable
+VERDICT    NEEDS ATTENTION
+BLOCKING   0 active  ·  hard gates: pass
+ATTENTION  2 dimension(s) flagged  ·  55 diagnostic(s)
+COVERAGE   5 measured · 3 partial · 1 unmeasured  (of 9)
 ```
 
 **If something looks wrong:** If the first gate run fails on already-known issues, you probably need to finish step 4 or narrow the policy. If it exits `3`, fix the config or toolchain problem before wiring it into CI.

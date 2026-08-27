@@ -9,7 +9,6 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -51,7 +50,7 @@ func (f fakeResolver) Changed(_ context.Context, _, _ string) ([]string, error) 
 func TestResolve_Full(t *testing.T) {
 	r := fakeResolver{root: fakeRoot}
 
-	s, err := scope.Resolve(context.Background(), view.ScopeConfig{Full: true}, r)
+	s, err := scope.Resolve(context.Background(), scope.Config{Full: true}, r)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -78,7 +77,7 @@ func TestResolve_FullWithBase(t *testing.T) {
 	// sorts the changed list.
 	r := fakeResolver{root: fakeRoot, changed: []string{"two.go", "one.go"}}
 
-	s, err := scope.Resolve(context.Background(), view.ScopeConfig{Full: true, Base: baseBranch}, r)
+	s, err := scope.Resolve(context.Background(), scope.Config{Full: true, Base: baseBranch}, r)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -98,7 +97,7 @@ func TestResolve_Delta(t *testing.T) {
 	// determinism contract does not depend on resolver discipline.
 	r := fakeResolver{root: fakeRoot, head: "abc123", changed: []string{"z.go", "a.go"}}
 
-	s, err := scope.Resolve(context.Background(), view.ScopeConfig{Base: baseBranch}, r)
+	s, err := scope.Resolve(context.Background(), scope.Config{Base: baseBranch}, r)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -133,7 +132,7 @@ func TestResolve_Delta(t *testing.T) {
 func TestResolve_ResolverError_DeltaMode(t *testing.T) {
 	r := fakeResolver{err: errors.New("not a git repo")}
 
-	_, err := scope.Resolve(context.Background(), view.ScopeConfig{Base: baseBranch}, r)
+	_, err := scope.Resolve(context.Background(), scope.Config{Base: baseBranch}, r)
 	if err == nil {
 		t.Fatal("expected error in delta mode with no git, got nil")
 	}
@@ -145,7 +144,7 @@ func TestResolve_NonGitFullMode(t *testing.T) {
 	r := fakeResolver{err: errors.New("not a git repo")}
 
 	// WorkDir acts as the fallback scan root when both cfg.Root and gitRoot are empty.
-	s, err := scope.Resolve(context.Background(), view.ScopeConfig{Full: true, WorkDir: "/some/dir"}, r)
+	s, err := scope.Resolve(context.Background(), scope.Config{Full: true, WorkDir: "/some/dir"}, r)
 	if err != nil {
 		t.Fatalf("full mode with non-git dir must not error; got: %v", err)
 	}
@@ -171,7 +170,7 @@ func TestResolve_ScanRootVsGitRoot(t *testing.T) {
 	subdir := fakeGitRoot + "/services/api"
 	r := fakeResolver{root: gitTop}
 
-	s, err := scope.Resolve(context.Background(), view.ScopeConfig{
+	s, err := scope.Resolve(context.Background(), scope.Config{
 		Full: true,
 		Root: subdir,
 	}, r)
@@ -195,7 +194,7 @@ func TestResolve_ScanRootVsGitRoot(t *testing.T) {
 func TestResolve_RootAbsent_PrefixEmpty(t *testing.T) {
 	r := fakeResolver{root: fakeRoot}
 
-	s, err := scope.Resolve(context.Background(), view.ScopeConfig{Full: true}, r)
+	s, err := scope.Resolve(context.Background(), scope.Config{Full: true}, r)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -217,7 +216,7 @@ func TestResolve_ScanRootVsGitRoot_Delta(t *testing.T) {
 	subdir := fakeGitRoot + "/cmd"
 	r := fakeResolver{root: gitTop, head: "deadbeef", changed: []string{"cmd/main.go"}}
 
-	s, err := scope.Resolve(context.Background(), view.ScopeConfig{
+	s, err := scope.Resolve(context.Background(), scope.Config{
 		Root: subdir,
 		Base: baseBranch,
 	}, r)
@@ -246,7 +245,7 @@ func TestSubtreePrefix_NotUnderGitRoot(t *testing.T) {
 	outside := "/other/project"
 	r := fakeResolver{root: gitTop}
 
-	s, err := scope.Resolve(context.Background(), view.ScopeConfig{
+	s, err := scope.Resolve(context.Background(), scope.Config{
 		Full: true,
 		Root: outside,
 	}, r)
@@ -267,7 +266,7 @@ func TestResolve_Delta_SubtreeRebase(t *testing.T) {
 		changed: []string{"services/api/handler.go", "services/api/routes.go", "other/main.go"},
 	}
 
-	s, err := scope.Resolve(context.Background(), view.ScopeConfig{
+	s, err := scope.Resolve(context.Background(), scope.Config{
 		Root: fakeGitRoot + "/services/api",
 		Base: baseBranch,
 	}, r)
@@ -297,7 +296,7 @@ func TestResolve_Delta_OutsideSubtreeExcluded(t *testing.T) {
 		changed: []string{"completely/different.go"},
 	}
 
-	s, err := scope.Resolve(context.Background(), view.ScopeConfig{
+	s, err := scope.Resolve(context.Background(), scope.Config{
 		Root: fakeGitRoot + "/myapp",
 		Base: baseBranch,
 	}, r)
@@ -318,7 +317,7 @@ func TestResolve_Delta_EmptyPrefix_Unchanged(t *testing.T) {
 		changed: []string{"pkg/y.go", "pkg/x.go"},
 	}
 
-	s, err := scope.Resolve(context.Background(), view.ScopeConfig{
+	s, err := scope.Resolve(context.Background(), scope.Config{
 		Base: baseBranch,
 	}, r)
 	if err != nil {

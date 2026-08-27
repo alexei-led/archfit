@@ -1,5 +1,5 @@
 // Package main is a standalone scorer-calibration tool.
-// It compares coupling.AdditiveScorer and coupling.MultiplicativeScorer over
+// It compares scoring.AdditiveScorer and scoring.MultiplicativeScorer over
 // real or synthetic repos and writes a per-repo agreement report to JSON.
 // This binary is never shipped to users; it is a scorer-development tool.
 //
@@ -18,11 +18,11 @@ import (
 	"path/filepath"
 
 	"github.com/alexei-led/archfit/internal/calibrate"
-	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/golang"
-	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/relationship/classify"
+	"github.com/alexei-led/archfit/internal/relationship/scoring"
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
@@ -113,8 +113,8 @@ func calibrateRepo(ctx context.Context, absPath string) (calibrate.Report, error
 	return calibrate.Compare(
 		absPath,
 		idx,
-		coupling.AdditiveScorer{},
-		coupling.MultiplicativeScorer{},
+		scoring.AdditiveScorer{},
+		scoring.MultiplicativeScorer{},
 	), nil
 }
 

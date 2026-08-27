@@ -1,4 +1,4 @@
-// Package astgrep implements the ports.PatternProvider port for ast-grep.
+// Package astgrep implements the evidenceports.PatternProvider port for ast-grep.
 // It shells out to the "sg" binary and parses its JSON output.
 // If "sg" is absent and mode is ModeAuto, Find returns empty matches with
 // coverage status "absent" — it never returns an error for a missing tool.
@@ -12,19 +12,18 @@ import (
 	"strings"
 	"time"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/pattern"
-	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // toolName is the coverage/name identifier for this adapter.
 const toolName = "ast-grep"
 
-// Adapter satisfies ports.PatternProvider using the "sg" (ast-grep) binary.
+// Adapter satisfies evidenceports.PatternProvider using the "sg" (ast-grep) binary.
 type Adapter struct {
 	runner toolrun.Runner
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
@@ -108,10 +107,10 @@ type dedupeKey struct {
 // Find runs all patterns against the given scope and returns deduplicated,
 // sorted matches plus a Coverage record. A missing "sg" binary returns empty
 // matches with status "absent" — never an error.
-func (a *Adapter) Find(ctx context.Context, s scope.Scope, c view.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
+func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]pattern.Match, evidence.Coverage, error) {
 	_, ok := a.runner.Detect(ctx, "sg")
 	if !ok {
-		return nil, diagnostic.Coverage{Tool: toolName, Status: "absent"}, nil
+		return nil, evidence.Coverage{Tool: toolName, Status: "absent"}, nil
 	}
 
 	seen := make(map[dedupeKey]struct{})
@@ -126,7 +125,7 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c view.PatternConfig)
 			WorkDir: s.Root,
 		})
 		if err != nil {
-			return nil, diagnostic.Coverage{}, fmt.Errorf("astgrep: run sg for pattern %q: %w", def.ID, err)
+			return nil, evidence.Coverage{}, fmt.Errorf("astgrep: run sg for pattern %q: %w", def.ID, err)
 		}
 		if len(out.Stdout) == 0 {
 			continue
@@ -134,7 +133,7 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c view.PatternConfig)
 
 		var raw []sgMatch
 		if err := json.Unmarshal(out.Stdout, &raw); err != nil {
-			return nil, diagnostic.Coverage{}, fmt.Errorf("astgrep: parse sg output for pattern %q: %w", def.ID, err)
+			return nil, evidence.Coverage{}, fmt.Errorf("astgrep: parse sg output for pattern %q: %w", def.ID, err)
 		}
 
 		for _, m := range raw {
@@ -168,7 +167,7 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c view.PatternConfig)
 		return a.Line - b.Line
 	})
 
-	cov := diagnostic.Coverage{
+	cov := evidence.Coverage{
 		Tool:      "ast-grep",
 		FilesSeen: len(fileSet),
 		Status:    "ok",
@@ -177,4 +176,4 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c view.PatternConfig)
 }
 
 // Compile-time interface check.
-var _ ports.PatternProvider = (*Adapter)(nil)
+var _ evidenceports.PatternProvider = (*Adapter)(nil)

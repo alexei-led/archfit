@@ -1,0 +1,216 @@
+// Package evaluation owns assessment decisions after relationship analysis.
+// It consumes only the relationship contract and gathered signals; raw graph
+// and coupling classifier internals never cross this boundary.
+package evaluation
+
+import (
+	"time"
+
+	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/assessment/rules"
+	signal "github.com/alexei-led/archfit/internal/assessment/signals"
+	"github.com/alexei-led/archfit/internal/assessment/staleness"
+	"github.com/alexei-led/archfit/internal/assessment/status"
+	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/symbol"
+	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship"
+)
+
+// Input is the assessment stage boundary. Every value is an assessment or
+// relationship contract; adapters and graph internals stay outside this package.
+type Input struct {
+	Relationships      relationship.Set
+	Evidence           RuleEvidence
+	Rules              Ruleset
+	Metrics            Metricset
+	Signals            signal.RunSignals
+	Symbols            symbol.Graph
+	Coverage           []evidence.Coverage
+	ChangedFiles       []string
+	Baseline           result.MetricSnapshot
+	Accepted           status.AcceptedSet
+	Policy             policy.AssessmentPolicy
+	Gates              map[string]policy.MetricConfig
+	Now                time.Time
+	AdvisoryCandidates []relationship.AdvisoryCandidate
+	StaleLabelKeys     []string
+	IncludeAdvisories  bool
+	Delta              bool
+}
+
+// Result contains gate findings, metric values, and the verdict inputs produced
+// by assessment. Report assembly is deliberately left to the pipeline.
+type Result struct {
+	Findings     []finding.Finding
+	Metrics      []result.MetricResult
+	Verdict      result.Verdict
+	GateFindings int
+	Warnings     int
+	WaiversUsed  int
+	Delta        *result.DeltaReport
+}
+
+// evaluate applies rules, statuses, and metrics in their domain order.
+func evaluate(in Input) Result {
+	raw := make([]finding.Finding, 0, in.Rules.Len())
+	for _, rule := range in.Rules.rules {
+		raw = append(raw, rule.Check(in.Relationships, rules.Evidence{PatternMatches: in.Evidence.PatternMatches, SyntaxFacts: in.Evidence.SyntaxFacts})...)
+	}
+	tagged := status.Assign(raw, in.Accepted, in.Policy.Waivers, in.Now, finding.KindGate)
+	collected := signal.CollectedSignals{
+		Common: signal.CommonInput{Relationships: in.Relationships, Findings: tagged, Baseline: in.Baseline, Coverage: signal.NewCoverageView(in.Coverage), ChangedFiles: in.ChangedFiles, Symbols: signal.SymbolSignals{Graph: in.Symbols}},
+		Symbol: signal.SymbolSignals{Graph: in.Symbols}, Size: in.Signals.Size, Duplication: in.Signals.Duplication,
+	}
+	calculated := make([]result.MetricResult, 0, in.Metrics.Len())
+	for _, metric := range in.Metrics.metrics {
+		calculated = append(calculated, metric.Calculate(collected))
+	}
+	gates := make([]finding.Finding, 0, len(tagged))
+	advisories := 0
+	for _, f := range tagged {
+		if f.Kind == finding.KindGate && f.Status != finding.StatusFixed {
+			gates = append(gates, f)
+		}
+		if f.Kind == finding.KindAdvisory && f.Status != finding.StatusFixed {
+			advisories++
+		}
+	}
+	adv := candidateFindings(in.AdvisoryCandidates)
+	adv = append(adv, staleness.Check(in.Relationships, in.Policy, in.Now)...)
+	adv = append(adv, staleLabelFindings(in.StaleLabelKeys)...)
+	taggedAdvisories := status.Assign(adv, in.Accepted, in.Policy.Waivers, in.Now, finding.KindAdvisory)
+	adv = adv[:0]
+	for _, f := range taggedAdvisories {
+		if f.Kind == finding.KindAdvisory {
+			adv = append(adv, f)
+		}
+	}
+	adv = groupBCAdvisories(adv)
+	tagged = resolveEvidence(in.Relationships, in.Policy.Topology.ModuleMap, tagged)
+	// Split the rule pass: gatedRule stamps KindAdvisory on findings from a
+	// `gate: warn` rule. Those are advisories, not gate findings — they are
+	// hidden with --no-advisories and counted in summary.warnings, exactly like
+	// the coupling/staleness advisories collected above.
+	base := make([]finding.Finding, 0, len(tagged))
+	ruleAdv := make([]finding.Finding, 0)
+	for _, f := range tagged {
+		if f.Kind == finding.KindAdvisory {
+			ruleAdv = append(ruleAdv, f)
+			continue
+		}
+		base = append(base, f)
+	}
+	gateNew, waiversUsed := 0, 0
+	for _, f := range base {
+		if f.Status == finding.StatusWaived {
+			waiversUsed++
+		}
+		if f.Kind == finding.KindGate && f.Status != finding.StatusFixed && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver) {
+			gateNew++
+		}
+	}
+	visible := base
+	warnings := 0
+	if in.IncludeAdvisories {
+		visible = append(append(append([]finding.Finding(nil), base...), adv...), ruleAdv...)
+		warnings = countActive(adv) + countActive(ruleAdv)
+	}
+	var delta *result.DeltaReport
+	if in.Delta {
+		buckets := status.DeltaBuckets(visible, in.Accepted, in.ChangedFiles)
+		if !buckets.Empty() {
+			delta = &result.DeltaReport{New: buckets.New, Existing: buckets.Existing, Resolved: buckets.Resolved, SeverityChanged: buckets.SeverityChanged, TouchedByDelta: buckets.TouchedByDelta}
+		}
+	}
+	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, calculated, in.Gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed, Delta: delta}
+}
+
+func countActive(in []finding.Finding) int {
+	n := 0
+	for _, f := range in {
+		if f.Status != finding.StatusFixed {
+			n++
+		}
+	}
+	return n
+}
+
+func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[string]policy.MetricConfig, advisories int) result.Verdict {
+	for _, f := range gates {
+		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
+			return result.VerdictFail
+		}
+	}
+	verdict := result.VerdictPass
+	for _, m := range ms {
+		c := cfg[m.Name]
+		if !metricBreach(m, c) {
+			continue
+		}
+		if c.Gate == string(policy.GateWarn) {
+			verdict = result.VerdictWarn
+			continue
+		}
+		return result.VerdictFail
+	}
+	if verdict == result.VerdictPass && advisories > 0 {
+		return result.VerdictWarn
+	}
+	return verdict
+}
+
+// metricBreach reports whether a metric's accepted-baseline delta worsened past
+// its configured threshold. It is the single breach predicate: the legacy
+// verdict and the architecture state's hard-gate result read the same rule, so
+// they can never disagree about whether a ratchet was tripped.
+//
+// Direction is the metric's own: a count metric worsens upward past `max_new`,
+// a ratio metric worsens downward past `min_delta`. A metric with no delta was
+// never compared, and `gate: off` opted out of the comparison entirely.
+func metricBreach(m result.MetricResult, c policy.MetricConfig) bool {
+	if m.Delta == nil || c.Gate == string(policy.GateOff) {
+		return false
+	}
+	if m.Direction == result.DirectionHigherIsWorse {
+		return *m.Delta > float64(metricMaxNew(c))
+	}
+	return *m.Delta < -metricMinDelta(c)
+}
+
+// blockingMetricRegressions names the metrics whose baseline delta worsened
+// past a threshold whose gate BLOCKS — `fail`, or unset, which is the
+// documented default. A `warn` gate is diagnostic and never appears here.
+//
+// A tripped ratchet produces no finding, so — exactly like the required-tool
+// policy failure — it cannot be inferred from the finding populations and has
+// to be carried into the architecture state explicitly. Without it the
+// documented `metrics.<name>.gate` contract is a knob that decodes, validates,
+// and decides nothing.
+//
+// Names are returned in the caller's metric order, which is the metric
+// registration order, so the disclosure is deterministic.
+func blockingMetricRegressions(ms []result.MetricResult, cfg map[string]policy.MetricConfig) []string {
+	out := make([]string, 0, len(ms))
+	for _, m := range ms {
+		c := cfg[m.Name]
+		if c.Gate == string(policy.GateWarn) || !metricBreach(m, c) {
+			continue
+		}
+		out = append(out, m.Name)
+	}
+	return out
+}
+func metricMinDelta(c policy.MetricConfig) float64 {
+	if c.MinDelta != nil {
+		return *c.MinDelta
+	}
+	return 0
+}
+func metricMaxNew(c policy.MetricConfig) int {
+	if c.MaxNew != nil {
+		return *c.MaxNew
+	}
+	return 0
+}

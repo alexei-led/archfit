@@ -23,8 +23,10 @@ helper script.
 
 - Use the current branch binary: `.bin/archfit`.
 - Run archfit commands from the archfit repo root so `.env` loading is stable.
-- Use temp configs and temp reports during corpus sweeps. Do not overwrite
-  target-repo configs just to run an evaluation.
+- Corpus repos are read-only. Stage a candidate config outside the target and
+  migrate THAT; never overwrite a target-repo config to run an evaluation.
+- Run `.bin/archfit doctor` first. A missing toolchain changes what a sweep can
+  prove, and blaming the code under test for it wastes the run.
 - Treat config-update failures, missing tools, AI-key issues, noisy progress,
   stale docs, and unclear errors as findings — not as reasons to quietly skip.
 
@@ -50,22 +52,49 @@ helper script.
    - `.bin/archfit doctor`
    - `make test`
 2. Run the self-check commands from `references/book-alignment.md`.
-3. Run the deterministic corpus sweep with the helper script or equivalent:
-   `python3 scripts/eval/corpus_sweep.py ...`
-4. Re-run at least one representative repo with the same temp config and compare
-   JSON output. If it changes, treat that as a determinism finding.
+3. Test the harness itself, then run the deterministic corpus sweep:
+   `python3 -m unittest discover -s scripts/eval -p '*corpus_sweep_test.py'`
+   `python3 scripts/eval/corpus_sweep.py ... --strict`
+   The mandatory fast matrix is one representative per supported adapter:
+   spotinfo (Go), storybook (TypeScript), ccgram (Python), herdr (Rust).
+4. Re-run every mandatory representative with the same candidate and compare
+   `analyze --json` BYTE for byte. The v1 state carries no wall-clock or
+   run-local field, so a byte difference is a determinism defect, not noise.
 5. Run semantic architecture quick sweeps on representative repos. Compare only
    like-for-like: deterministic boundary drift vs semantic/runtime/ownership
    concerns.
-6. Update stale docs, skills, prompts, or scripts in the same pass if the eval
+6. Classify every anomaly — product defect, config migration defect, target
+   architecture finding, optional/required tool gap, environment failure, or
+   docs/UX defect. Leave nothing `unknown`.
+7. Update stale docs, skills, prompts, or scripts in the same pass if the eval
    proves they are wrong.
+
+## What v1 output looks like
+
+`analyze --json` emits `archfit.architecture-state.v1`: a verdict, nine named
+dimension envelopes, a coverage split that sums to nine, findings, agent tasks,
+and the coupling seam ledger. There is **no repository score** — an eval that
+reads `score.overall` is reading a field the cutover deleted, and an eval that
+asks "what did it score" is asking the wrong question.
+
+`check` exit IS the verdict: healthy 0, needs-attention 2, blocked 1, error 3.
+**Expect 2, not 0, on a clean repository**: complexity, testability, and
+operations report `partial` by contract in v1, and any partial dimension is
+`needs_attention`. Only exit 1 means a hard gate blocked.
+
+Every format reports the same verdict, dimension statuses, coverage split,
+comparison state, and canonical finding sequence. Text, Markdown, and the
+scorecard close with a finding index listing every finding ID in canonical
+order; SARIF carries the state in `run.properties`.
 
 ## Output contract
 
 Return one concise evaluation report with:
 
 - book-alignment verdict and score
-- corpus results by repo
+- corpus results by repo: status, migrated config version and idempotence,
+  analyze/check exits and verdict, dimension statuses, coverage split, format
+  parity, byte determinism
 - semantic-vs-deterministic comparison notes
 - UX/docs/skill findings
 - exact commands run
@@ -77,8 +106,12 @@ Return one concise evaluation report with:
   was skipped, and lower confidence.
 - If a target repo config is missing or broken, use a temp config and report
   the failure as part of UX/config findings.
-- If `config update --apply` fails on a copied config, keep the copied temp
-  config, continue the run if possible, and record the update failure.
+- If `config update --migration-only --apply` fails on a candidate, keep the
+  candidate, continue the run if possible, and record the update failure. Never
+  substitute the full `config update --apply`: it proposes structural edits and
+  would hide whether the migration itself settles.
+- If a corpus repo is missing, record it as `unverified` with a reason. It is
+  never a pass, and strict mode blocks until an owner accepts it by name.
 - If AI summary fails, separate AI setup issues from deterministic gate issues.
 - If semantic review finds something archfit does not, first decide whether that
   is a real archfit miss, a config-granularity choice, or intentionally

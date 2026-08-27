@@ -4,23 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/baseline"
+	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/decision"
-	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/report"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
 	"github.com/alexei-led/archfit/internal/output/sarif"
 	"github.com/alexei-led/archfit/internal/output/scorecard"
-	"github.com/alexei-led/archfit/internal/score"
+	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
 // AnalyzeCmd is the local, report-only analysis command. It runs the same scan
@@ -41,8 +37,9 @@ type AnalyzeCmd struct {
 	Sarif    bool `name:"sarif"    help:"Output format: SARIF (shorthand for --format sarif)."`
 
 	// Format is the advanced repeatable form. Default is text when no shorthand
-	// flag is set. Valid values: json, text, markdown, md, sarif, scorecard.
-	Format []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard"`
+	// flag is set. Valid values: json, text, markdown, md, sarif, scorecard,
+	// legacy-json.
+	Format []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard, legacy-json. Repeatable." enum:"json,text,markdown,md,sarif,scorecard,legacy-json"`
 
 	NoAdvisories bool     `name:"no-advisories" help:"Hide informational Balanced-Coupling advisories from the output."`
 	MinSeverity  string   `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
@@ -59,18 +56,25 @@ type AnalyzeCmd struct {
 }
 
 func (*AnalyzeCmd) Help() string {
-	return `Analyze architecture locally: run the full pipeline, print a verdict, scorecard, and findings.
+	return `Analyze architecture locally: run the full pipeline and print the architecture state — verdict, nine dimensions, evidence coverage, seams, and findings.
 
-This command is report-only: it always exits 0 on success. Use ` + "`archfit check`" + ` in CI when findings or warnings should fail the run.
+This command is report-only: it always exits 0 on success, whatever the verdict.
+Use ` + "`archfit check`" + ` in CI when a blocked or needs-attention state should fail the run.
 
 Common runs:
   archfit analyze                               # local text report
   archfit analyze --markdown -c .archfit.yaml   # Markdown audit report
   archfit analyze --json -c .archfit.yaml | jq .
   archfit analyze --format sarif > archfit.sarif
-  archfit analyze --format scorecard            # banded scorecard only
-  archfit analyze --base origin/main            # add a base-vs-head delta
+  archfit analyze --format scorecard            # nine-dimension state scorecard
+  archfit analyze --base origin/main            # add a base-vs-head comparison
   archfit analyze --ai-summary -c .archfit.yaml # add AI narrative section
+
+--format json emits archfit.architecture-state.v1: verdict, decision,
+dimensions, coverage, findings, agent_tasks, and the coupling seam ledger, with
+no repository score. --format legacy-json emits the pre-cutover diagnostic
+envelope; it is retained for one release, must be selected explicitly, and never
+affects the verdict or the exit code.
 
 AI agents should read agent_tasks[] from JSON output, make the constrained
 repair, then rerun the validation command in that task.
@@ -127,159 +131,57 @@ type scanRequest struct {
 	providerOverride llm.Provider
 }
 
-// resolveScanFormats merges the shorthand flags (--json/--markdown/--sarif)
-// with the repeatable --format flag. Returns an error when multiple
-// shorthands are set or shorthand and --format are mixed. Falls back to
-// ["text"] when nothing is specified.
-func resolveScanFormats(jsonFlag, markdownFlag, sarifFlag bool, formats []string) ([]string, error) {
-	shorthands := 0
-	if jsonFlag {
-		shorthands++
-	}
-	if markdownFlag {
-		shorthands++
-	}
-	if sarifFlag {
-		shorthands++
-	}
-	if shorthands > 1 {
-		return nil, &exitError{code: 3, msg: "error: --json, --markdown, and --sarif are mutually exclusive; use at most one"}
-	}
-	if shorthands > 0 && len(formats) > 0 {
-		return nil, &exitError{code: 3, msg: "error: --json/--markdown/--sarif and --format are mutually exclusive"}
-	}
-	switch {
-	case jsonFlag:
-		return []string{formatJSON}, nil
-	case markdownFlag:
-		return []string{formatMarkdown}, nil
-	case sarifFlag:
-		return []string{formatSarif}, nil
-	case len(formats) > 0:
-		return formats, nil
-	default:
-		return []string{formatText}, nil
-	}
-}
-
-// runScan runs the shared analysis pipeline for both `archfit analyze` and
-// `archfit check`. reportOnly=true keeps the run local/reporting-only: exit 0 on
-// success. reportOnly=false applies CI gate exit codes: 0 clean, 1 violations,
-// 2 warnings, 3 config/tool error.
+// runScan invokes the application-owned Analyze/Check use case, then renders
+// the returned report document and maps the application exit decision to the
+// CLI error contract.
 func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
-	formats, err := resolveScanFormats(req.json, req.markdown, req.sarif, req.formats)
-	if err != nil {
-		return err
+	// A conflicting output-format combination is a usage error: decide it before
+	// the progress banner and the config read, so `--json --markdown -c
+	// missing.yaml` names the flag conflict instead of a config the run never
+	// needed. Format semantics stay owned by the application; cmd only decides
+	// when the check runs.
+	if err := application.ValidateFormats(req.json, req.markdown, req.sarif, req.formats); err != nil {
+		return applicationExitError(err)
 	}
 
 	rep := newProgressReporter(deps.stderr(), analyzePhaseTotal(req.aiSummary, req.baseRef != ""), req.progress, req.quiet, time.Now())
 	rep.banner("Archfit analyzing " + analyzeTarget(req.configPath, req.root))
-	deps.progress = rep.advance
-	deps.refresh = req.refresh
 	defer rep.finish()
+
+	// Runtime flags and stage progress belong to this invocation. Wire them
+	// before config preparation so the technical stage cannot silently fall
+	// back to cache reads or a nil progress callback.
+	deps.refresh = req.refresh
+	deps.progress = rep.advance
 
 	rep.advance("Loading config")
 	cfg, err := loadAnalysisConfig(ctx, req.configPath)
 	if err != nil {
 		return configLoadError(err)
 	}
-	if err := applyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
+	if err := config.ApplyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	printConfigLint(deps.stderr(), cfg.Lint())
-
-	// Snapshot the EFFECTIVE config for the --base sub-run before the head
-	// pipeline touches it. runPipeline's owner and deploy-unit backfill
-	// (FillMissingOwners / FillMissingDeployUnits) writes through the shared
-	// cfg.Modules map, so without an independent map the base side would inherit
-	// head-tree owners, skip its own resolution, and classify distance against
-	// evidence its own tree never produced.
-	baseCfg := cfg
-	if req.baseRef != "" {
-		baseCfg = withIndependentModules(cfg)
-	}
-
-	configDir := filepath.Dir(req.configPath)
-	deps.scanRoot = req.root
-	if deps.scanRoot == "" {
-		deps.scanRoot = configDir
-	}
-	defer func() { deps.scanRoot = "" }()
-
-	base, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
+	resp, err := application.Service{Stages: newAnalyzeStages(req.configPath, req.root, cfg, deps)}.Execute(ctx, application.Request{
+		BaseRef:      req.baseRef,
+		JSON:         req.json,
+		Markdown:     req.markdown,
+		SARIF:        req.sarif,
+		Formats:      req.formats,
+		NoAdvisories: req.noAdvisories,
+		RequireTools: req.requireTools,
+	})
 	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+		return applicationExitError(err)
 	}
 
-	// --no-advisories has one meaning for every requested format: the scorecard
-	// value is synthesised from ClassifiedEdges (before advisory filtering), so
-	// suppressing advisory findings never moves the score and the format no
-	// longer needs to force them back on.
-	advisory := !req.noAdvisories
-
-	mode := engine.Mode{
-		Base:       req.baseRef,
-		Full:       true,
-		Advisory:   advisory,
-		ReportOnly: req.reportOnly,
-		Formats:    formats,
-	}
-
-	// One run context for the whole comparison: the head run and the --base
-	// sub-run share the config source, the config bundle directory, and one
-	// sampled evaluation instant. Only the scan root differs (the base side
-	// swaps in its worktree), so a finding never ages differently between the
-	// two sides just because the second pipeline started later.
-	rc := newRunContext(req.configPath, req.root)
-	rc.EvaluatedAt = time.Now()
-
-	diag, sc, err := runPipeline(ctx, deps, cfg, rc, mode, base)
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-	emitHealthWarnings(deps, diag, cfg, deps.scanRoot, req.configPath)
-
-	gateView := couplingGateView(cfg)
-	for _, reason := range score.EvaluateCouplingGate(sc, gateView, base.CouplingScore()).Reasons {
-		_, _ = fmt.Fprintln(deps.stderr(), "coupling gate: "+reason)
-	}
-	if gateView.Enabled && gateView.MaxDrop != nil {
-		if mismatches := base.ScoreSnapshotMismatches(); len(mismatches) > 0 {
-			_, _ = fmt.Fprintf(deps.stderr(),
-				"coupling gate: max_drop skipped — baseline score snapshot is incompatible (%s); run `archfit baseline` to re-anchor\n",
-				strings.Join(scoreSnapshotMismatchDetails(base, mismatches), ", "))
-		}
-	}
-
-	hardGate := applyToolGate(&diag, req.requireTools)
-
-	var baseSC *score.Scorecard
-	if req.baseRef != "" {
-		rep.advance("Comparing against base")
-		bsc, bev, berr := scoreBaseRef(ctx, deps, req.baseRef, rc, baseCfg, advisory)
-		if berr != nil {
-			return berr
-		}
-		baseSC = &bsc
-		// Report-only: the origin block is attached after the verdict and the
-		// tool gate are final, so it can never change either.
-		diag.GitFindingDelta = buildGitFindingDelta(gitDeltaInput{
-			BaseRef:        req.baseRef,
-			Tasks:          diag.AgentTasks,
-			BaseFindingIDs: bev.FindingIDs,
-			Head:           analyzerEvidence{Coverage: diag.ToolCoverage, Gaps: diag.CoverageGaps, Hash: diag.ConfigHash},
-			Base:           analyzerEvidence{Coverage: bev.Coverage, Gaps: bev.CoverageGaps, Hash: bev.ConfigHash},
-			Families:       analyzerFamilies(cfg),
-		})
-	}
-
-	if err := analyzeRender(deps, diag, sc, baseSC, formats, hardGate); err != nil {
+	if err := analyzeRender(deps, resp); err != nil {
 		return err
 	}
 
 	if req.aiSummary {
 		rep.advance("Asking AI for interpretation")
-		if err := appendAISummary(ctx, deps, cfg, req.configPath, req.root, req.refresh, req.providerOverride, diag, sc, formats); err != nil {
+		if err := appendAISummary(ctx, deps, cfg, req.configPath, req.root, req.refresh, req.providerOverride, resp.Document, resp.Formats); err != nil {
 			_, _ = fmt.Fprintf(deps.stderr(), "archfit: AI narrative unavailable (off-gate, ignored): %v\n", err)
 		}
 	}
@@ -287,68 +189,55 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	if req.reportOnly {
 		return nil
 	}
-	if hardGate {
-		return &exitError{code: 1}
+	if code := outcomeExitCode(resp.Outcome); code != 0 {
+		return &exitError{code: code}
 	}
-	return verdictToError(diag.Verdict)
+	return nil
 }
 
-// loadAnalysisConfig loads the config for analyze/check. Config is always
-// required: unlike loadConfig, it does NOT fall back to config.Default() when
-// .archfit.yaml is absent. Call loadConfig directly only for commands that
-// tolerate a missing config (doctor, explain).
-func loadAnalysisConfig(ctx context.Context, path string) (config.Config, error) {
-	cfg, err := config.Load(ctx, path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return config.Config{}, &exitError{code: 3, msg: fmt.Sprintf("error: config not found: %s\n\u2192 run: archfit config init --root .", path)}
+// applicationExitError maps a controlled use-case failure onto the CLI exit
+// contract. The use case names the failure; cmd owns the exit code and the one
+// "error: " prefix, so main.go's uncoded fallback cannot add a second one.
+func applicationExitError(err error) error {
+	var formats *application.InvalidFormatsError
+	var exec *application.ExecutionError
+	if errors.As(err, &formats) || errors.As(err, &exec) {
+		return &exitError{code: 3, msg: "error: " + err.Error()}
+	}
+	return err
+}
+
+func outcomeExitCode(outcome application.Outcome) int {
+	switch outcome {
+	case application.OutcomeFail:
+		return 1
+	case application.OutcomeWarn:
+		return 2
+	default:
+		return 0
+	}
+}
+
+// analyzeRender writes the document to deps.Stdout in each requested format.
+// Every adapter implements the report rendering port (Document + io.Writer);
+// cmd only selects the adapter for the resolved format name.
+func analyzeRender(deps *appDeps, resp application.Response) error {
+	renderers := map[string]reportports.Renderer{
+		formatJSON:       jsonout.NewState(),
+		formatLegacyJSON: jsonout.New(),
+		formatText:       console.New(),
+		formatMarkdown:   markdown.New(),
+		formatMD:         markdown.New(),
+		formatSarif:      sarif.New(),
+		formatScorecard:  scorecard.New(),
+	}
+	for _, format := range resp.Formats {
+		r, ok := renderers[format]
+		if !ok {
+			return &exitError{code: 3, msg: fmt.Sprintf("render %s: unknown format", format)}
 		}
-		return config.Config{}, err
-	}
-	if err := validateConfigRules(cfg); err != nil {
-		return config.Config{}, err
-	}
-	return cfg, nil
-}
-
-// configLoadError normalises a config-load failure into an exit-3 error.
-// loadAnalysisConfig already returns an *exitError for the missing-config case,
-// and that message carries its own "error: " prefix plus a next-step hint —
-// wrapping it a second time prints the prefix twice.
-func configLoadError(err error) error {
-	var already *exitError
-	if errors.As(err, &already) {
-		return already
-	}
-	return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-}
-
-// analyzeRender writes the diagnostic to deps.Stdout in each requested format.
-// The text format is the terminal-native decision report (decision.Build →
-// console.RenderReport); JSON/SARIF/markdown/scorecard keep their existing
-// machine/artifact renderers (unchanged contract). hardGate feeds the decision
-// band so a tripped tool-gate reads as FAIL even in report-only mode.
-func analyzeRender(deps *appDeps, diag diagnostic.Diagnostic, sc score.Scorecard, base *score.Scorecard, formats []string, hardGate bool) error {
-	for _, format := range formats {
-		var renderErr error
-		switch format {
-		case formatJSON:
-			renderErr = jsonout.New().Render(diag, sc, base, deps.Stdout)
-		case formatText:
-			renderErr = console.RenderReport(decision.Build(diag, sc, base, hardGate), deps.Stdout)
-		case formatMD, formatMarkdown:
-			if rerr := markdown.RenderReport(decision.Build(diag, sc, base, hardGate), deps.Stdout); rerr != nil {
-				renderErr = rerr
-			} else {
-				renderErr = markdown.New().Render(diag, deps.Stdout)
-			}
-		case formatSarif:
-			renderErr = sarif.New().Render(diag, deps.Stdout)
-		case formatScorecard:
-			renderErr = scorecard.New().Render(diag, sc, deps.Stdout)
-		}
-		if renderErr != nil {
-			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
+		if err := r.Render(resp.Document, deps.Stdout); err != nil {
+			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, err)}
 		}
 	}
 	return nil
@@ -357,20 +246,20 @@ func analyzeRender(deps *appDeps, diag diagnostic.Diagnostic, sc score.Scorecard
 // appendAISummary emits the off-gate AI narrative after the deterministic
 // report. Text/Markdown runs append to stdout; machine-only formats route the
 // review to stderr so stdout remains parseable JSON/SARIF/scorecard output.
-func appendAISummary(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag diagnostic.Diagnostic, sc score.Scorecard, formats []string) error {
+func appendAISummary(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, doc report.Document, formats []string) error {
 	reviewDeps := deps
 	if !llmReviewCanUseStdout(formats) {
 		copyDeps := *deps
 		copyDeps.Stdout = deps.stderr()
 		reviewDeps = &copyDeps
 	}
-	return runLLMReview(ctx, reviewDeps, cfg, configPath, root, refresh, providerOverride, diag, sc)
+	return runLLMReview(ctx, reviewDeps, cfg, configPath, root, refresh, providerOverride, doc)
 }
 
 func llmReviewCanUseStdout(formats []string) bool {
 	for _, format := range formats {
 		switch format {
-		case formatJSON, formatSarif, formatScorecard:
+		case formatJSON, formatLegacyJSON, formatSarif, formatScorecard:
 			return false
 		}
 	}

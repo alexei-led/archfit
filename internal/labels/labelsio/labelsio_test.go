@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
+	"github.com/alexei-led/archfit/internal/relationship/labels"
 )
 
 func write(t *testing.T, content string) string {
@@ -176,5 +177,38 @@ labels:
 				}
 			}
 		})
+	}
+}
+
+func TestWriteGoldenSchemaAndRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".archfit-labels.yaml")
+	input := []labels.Label{{From: "a", To: "b", Strength: "model", Rationale: "types cross", EvidenceRefs: []string{"api:a"}, Basis: "semantic_judgment", EvidenceHash: "hash", Status: labels.StatusDraft, Confidence: labels.ConfidenceMedium, Provenance: labels.ProvenanceLLM}}
+	if err := labelsio.Write(path, input); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path) //nolint:gosec // test path is created in t.TempDir
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `version: 1
+labels:
+- from: a
+  to: b
+  strength: model
+  rationale: types cross
+  evidence_refs:
+  - api:a
+  basis: semantic_judgment
+  evidence_hash: hash
+  status: draft
+  confidence: medium
+  provenance: llm
+`
+	if string(data) != want {
+		t.Fatalf("YAML changed:\n got:\n%s\nwant:\n%s", data, want)
+	}
+	got, err := labelsio.Load(path)
+	if err != nil || len(got) != 1 || got[0].EvidenceHash != "hash" || got[0].Provenance != labels.ProvenanceLLM {
+		t.Fatalf("round trip = %+v, err=%v", got, err)
 	}
 }

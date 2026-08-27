@@ -3,164 +3,222 @@ package console
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
-	"github.com/alexei-led/archfit/internal/decision"
-	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 const (
-	dimCouplingBalance = "coupling_balance"
-	recCouplingSeam    = "coupling_seam"
-	recLazyCycle       = "lazy_cycle"
+	confHigh     = "high"
+	confMedium   = "medium"
+	statusNew    = "new"
+	ruleInternal = "no_internal_access"
 )
 
-// acceptableReport is a representative report: passing gate, advisory warnings,
-// a mixed overall score, one low dimension, and recommendations.
-func acceptableReport() decision.Report {
-	return decision.Report{
-		Band:        decision.BandAcceptable,
-		Headline:    "Acceptable with watch items. Monitor flagged areas.",
-		Blocking:    0,
-		Advisory:    55,
-		Overall:     43,
-		OverallBand: score.BandMixed,
-		Dimensions: []decision.DimReport{
-			{Name: dimCouplingBalance, Value: 40, Band: score.BandPoor, Confidence: score.ConfidenceMedium,
-				Why: "304 warning edges, mostly functional + high volatility.", WhatMoves: "Reduce high-fan-in functional edges."},
-		},
-		Recommendations: decision.Recommendations{
-			MustFix:   []decision.Rec{},
-			ShouldFix: []decision.Rec{{Title: recCouplingSeam, RuleID: recCouplingSeam, Detail: "high fan-in into session state"}},
-			Watch:     []decision.Rec{{Title: recLazyCycle, RuleID: recLazyCycle, Detail: "lazy import SCC"}},
-			Calibrate: []decision.Rec{},
-			Ignore:    []decision.Rec{},
-		},
+// stateWith returns a populated architecture state: one flagged dimension, one
+// blocker, one diagnostic, one seam, and one unmeasured envelope.
+func stateWith() report.ArchitectureState {
+	s := report.NewArchitectureState()
+	s.Verdict = report.StateBlocked
+	s.Decision = report.StateDecision{
+		HardGates: report.HardGateFail, ActiveBlockers: 1, AttentionDimensions: 2, UnknownDimensions: 1,
 	}
+	s.Dimensions.Structure = report.DimensionState{
+		Name: report.DimensionStructure, Owner: report.OwnerStructure,
+		Status: report.MeasurementMeasured, Confidence: confHigh, Gate: report.GateFail,
+		Coverage: report.DimensionCoverage{Basis: "classified edges", Observed: 7, Total: 9},
+		Findings: []report.FindingRef{{ID: "gate-1", RuleID: ruleInternal, Kind: report.FindingKindGate, Severity: confHigh, Status: statusNew}},
+	}
+	s.Dimensions.Coupling = report.DimensionState{
+		Name: report.DimensionCoupling, Owner: report.OwnerCoupling,
+		Status: report.MeasurementPartial, Confidence: confMedium, Gate: report.GateWarn,
+		Coverage: report.DimensionCoverage{Basis: "scored edges", Observed: 4, Total: 6},
+		Findings: []report.FindingRef{{ID: "adv-1", RuleID: "bc/imbalanced_coupling", Kind: report.FindingKindAdvisory, Severity: confMedium, Status: statusNew}},
+	}
+	s.Dimensions.Drift.Unknown = []report.UnknownFact{{
+		Fact: "architecture drift", Reason: "no comparable architecture-state reference is stored", Owner: report.OwnerDrift,
+	}}
+	s.Findings = []report.Finding{
+		{ID: "gate-1", RuleID: ruleInternal, Kind: report.FindingKindGate, Severity: confHigh, Status: statusNew, Why: "pkg/a reaches into pkg/b/internal"},
+		{ID: "adv-1", RuleID: "bc/imbalanced_coupling", Kind: report.FindingKindAdvisory, Severity: confMedium, Status: statusNew, Why: "functional coupling across owners"},
+		{ID: "accepted-1", RuleID: ruleInternal, Kind: report.FindingKindGate, Severity: confHigh, Status: "baseline", Why: "already accepted"},
+	}
+	s.Seams = []report.Seam{{
+		ID: "seam-a", FromModule: "a", ToModule: "b", Strength: "functional", Distance: "different_owner",
+		Volatility: confHigh, ScoredEdges: 6, CriticalEdges: 3, DistributedMonolith: true,
+		Scores:     report.SeamScoreDistribution{N: 6, Median: 8},
+		Hypothesis: "reduce_distance",
+	}}
+	s.Coverage = report.StateCoverage{Measured: 1, Partial: 1, Unmeasured: 7}
+	return s
 }
 
-func TestRenderReport_Acceptable(t *testing.T) {
+func render(t *testing.T, s report.ArchitectureState) string {
+	t.Helper()
 	var b strings.Builder
-	if err := RenderReport(acceptableReport(), &b); err != nil {
-		t.Fatalf("RenderReport: %v", err)
+	if err := RenderState(s, &b); err != nil {
+		t.Fatalf("RenderState: %v", err)
 	}
-	out := b.String()
+	return b.String()
+}
 
-	wantContains := []string{
-		"ARCHFIT RESULT",
-		"Decision   ACCEPTABLE WITH WATCH ITEMS",
-		"PASS  ·  0 blocking",
-		"55 advisory",
-		"43 / 100  mixed",
-		"No blockers.",
-		"RECOMMENDATIONS",
-		"MUST FIX",
-		"none",
-		"SHOULD FIX",
-		"coupling_seam",
-		"WATCH",
-		"lazy_cycle",
-		"WHY THE SCORE IS LOW",
-		"coupling_balance  40/100",
-		"WHAT WOULD IMPROVE THE SCORE",
-		"Reduce high-fan-in functional edges.",
-		"TARGETS",
-		"Near-term", // mixed → serviceable target exists
-	}
-	for _, w := range wantContains {
-		if !strings.Contains(out, w) {
-			t.Errorf("output missing %q\n---\n%s", w, out)
+// TestRenderState_Headline pins the five headline lines the state contract
+// requires, and that the verdict displays upper case while JSON stores lower.
+func TestRenderState_Headline(t *testing.T) {
+	out := render(t, stateWith())
+	for _, want := range []string{
+		"ARCHITECTURE STATE",
+		"VERDICT    BLOCKED",
+		"BLOCKING   1 active  ·  hard gates: fail",
+		"ATTENTION  2 dimension(s) flagged  ·  1 diagnostic(s)",
+		"COVERAGE   1 measured · 1 partial · 7 unmeasured  (of 9)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("headline is missing %q:\n%s", want, out)
 		}
 	}
+}
 
-	// coupling_balance is the sole low dimension and must appear in why-low.
-	if !strings.Contains(out, "coupling_balance  40/100") {
-		t.Errorf("coupling_balance missing from why-low section:\n%s", out)
+// TestRenderState_ListsEveryDimension: all nine envelopes are always shown with
+// their status, gate, confidence, and denominator. Omitting an unmeasured one
+// would make missing evidence invisible.
+func TestRenderState_ListsEveryDimension(t *testing.T) {
+	out := render(t, stateWith())
+	for _, name := range []string{
+		report.DimensionIntent, report.DimensionStructure, report.DimensionModularity,
+		report.DimensionCoupling, report.DimensionChangeLocality, report.DimensionComplexity,
+		report.DimensionTestability, report.DimensionOperations, report.DimensionDrift,
+	} {
+		if !strings.Contains(out, name) {
+			t.Errorf("dimension %q missing from the report:\n%s", name, out)
+		}
 	}
-	// CALIBRATE/IGNORE are empty here and must not render.
-	if strings.Contains(out, "CALIBRATE") || strings.Contains(out, "IGNORE") {
-		t.Errorf("empty LLM categories should not render:\n%s", out)
+	if !strings.Contains(out, "classified edges 7/9") {
+		t.Errorf("a measured dimension must print its denominator:\n%s", out)
+	}
+	if !strings.Contains(out, "no denominator") {
+		t.Errorf("an unmeasured dimension must say it has no denominator rather than print 0/0:\n%s", out)
 	}
 }
 
-func TestRenderReport_Fail(t *testing.T) {
-	r := decision.Report{
-		Band:        decision.BandFail,
-		Headline:    "Gate violations. Fix before merge.",
-		Blocking:    2,
-		Advisory:    3,
-		Overall:     30,
-		OverallBand: score.BandPoor,
-		Dimensions:  nil,
-		Recommendations: decision.Recommendations{
-			MustFix:   []decision.Rec{{Title: "forbidden_dependency", RuleID: "forbidden_dependency", Detail: "a -> b"}},
-			ShouldFix: []decision.Rec{},
-			Watch:     []decision.Rec{},
-		},
-	}
-	var b strings.Builder
-	if err := RenderReport(r, &b); err != nil {
-		t.Fatalf("RenderReport: %v", err)
-	}
-	out := b.String()
-
-	if !strings.Contains(out, "Decision   FAIL") {
-		t.Errorf("missing FAIL decision:\n%s", out)
-	}
-	if !strings.Contains(out, "FAIL  ·  2 blocking") {
-		t.Errorf("missing gate line:\n%s", out)
-	}
-	if strings.Contains(out, "No blockers.") {
-		t.Errorf("FAIL run must not show the no-blockers line:\n%s", out)
-	}
-	if !strings.Contains(out, "forbidden_dependency") {
-		t.Errorf("MUST FIX should list the gate rule:\n%s", out)
+// TestRenderState_CarriesNoRepositoryScore is the presentation half of the
+// migration contract: the terminal report must not regrow a 0-100 headline or a
+// "why the score is low" section.
+func TestRenderState_CarriesNoRepositoryScore(t *testing.T) {
+	out := render(t, stateWith())
+	for _, forbidden := range []string{"/ 100", "WHY THE SCORE IS LOW", "WHAT WOULD IMPROVE THE SCORE", "Score", "TARGETS"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("terminal report carries %q: the architecture state has no repository score:\n%s", forbidden, out)
+		}
 	}
 }
 
-func TestRenderReport_DeltaAndHealthy(t *testing.T) {
-	r := decision.Report{
-		Band:        decision.BandHealthy,
-		Headline:    "Architecture is healthy. No action required.",
-		Blocking:    0,
-		Advisory:    0,
-		Overall:     85,
-		OverallBand: score.BandStrong,
-		Dimensions: []decision.DimReport{
-			{Name: dimCouplingBalance, Value: 88, Band: score.BandStrong, Confidence: score.ConfidenceHigh},
-		},
-		Recommendations: decision.Recommendations{MustFix: []decision.Rec{}, ShouldFix: []decision.Rec{}, Watch: []decision.Rec{}},
-		Delta: &decision.Delta{
-			Overall: 5,
-			Dimensions: []decision.DimDelta{
-				{Name: dimCouplingBalance, Before: 83, After: 88, Change: 5},
-			},
-		},
+// TestRenderState_ShowsOnlyActiveFindings: an accepted finding was already
+// decided, so it must not reappear as work to do.
+func TestRenderState_ShowsOnlyActiveFindings(t *testing.T) {
+	out := render(t, stateWith())
+	if !strings.Contains(out, "pkg/a reaches into pkg/b/internal") {
+		t.Errorf("the active blocker is missing:\n%s", out)
 	}
-	var b strings.Builder
-	if err := RenderReport(r, &b); err != nil {
-		t.Fatalf("RenderReport: %v", err)
+	if !strings.Contains(out, "functional coupling across owners") {
+		t.Errorf("the active diagnostic is missing:\n%s", out)
 	}
-	out := b.String()
+	if strings.Contains(out, "already accepted") {
+		t.Errorf("a baselined finding reappeared as actionable work:\n%s", out)
+	}
+}
 
-	if !strings.Contains(out, "CHANGE VS BASE") {
-		t.Errorf("missing delta section:\n%s", out)
+// TestRenderState_SeamsAndUnknowns: the coupling ledger and the honest
+// not-measured list both reach the terminal.
+func TestRenderState_SeamsAndUnknowns(t *testing.T) {
+	out := render(t, stateWith())
+	for _, want := range []string{
+		"COUPLING SEAMS (1)",
+		"a -> b",
+		"[distributed monolith]",
+		"functional × different_owner × high volatility · 3 critical of 6 scored · median balance 8",
+		"try: reduce_distance",
+		"NOT MEASURED (1)",
+		"drift — architecture drift",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
 	}
-	if !strings.Contains(out, "overall  +5") {
-		t.Errorf("missing signed overall delta:\n%s", out)
+}
+
+// TestRenderState_CleanRunSaysSo: with no blocker the report says the run is
+// planning input, not a stop signal, and still prints the comparison status.
+func TestRenderState_CleanRunSaysSo(t *testing.T) {
+	s := report.NewArchitectureState()
+	s.Verdict = report.StateNeedsAttention
+	out := render(t, s)
+	if !strings.Contains(out, "No blockers.") {
+		t.Errorf("a run with no blocker must say so:\n%s", out)
 	}
-	if !strings.Contains(out, "coupling_balance  83 → 88  (+5)") {
-		t.Errorf("missing dimension delta:\n%s", out)
+	if !strings.Contains(out, "status: not_requested  ·  reference: none") {
+		t.Errorf("the comparison block must state that nothing was compared:\n%s", out)
 	}
-	// Zero-change dimension is omitted from the delta block.
-	// Only coupling_balance changed; its delta must be present.
-	if !strings.Contains(out, "coupling_balance") {
-		t.Errorf("coupling_balance delta missing from output:\n%s", out)
+	if strings.Contains(out, "COUPLING SEAMS") {
+		t.Errorf("an empty ledger must not print a seam section:\n%s", out)
 	}
-	// Healthy + all dims serviceable+ → no why-low section, no near-term target.
-	if strings.Contains(out, "WHY THE SCORE IS LOW") {
-		t.Errorf("healthy run should have no why-low section:\n%s", out)
+}
+
+// TestRenderState_BlockedWithoutAFindingSaysWhy pins the one case where the
+// blocker COUNT and the verdict disagree: a required-tool failure and a tripped
+// metric ratchet both block without producing a finding. Printing "not to stop
+// development" there tells the reader to ignore the exit code the same run
+// returned.
+func TestRenderState_BlockedWithoutAFindingSaysWhy(t *testing.T) {
+	s := report.NewArchitectureState()
+	s.Verdict = report.StateBlocked
+	s.Decision.HardGates = report.HardGateFail
+	out := render(t, s)
+	if strings.Contains(out, "not to stop development") {
+		t.Errorf("a blocked run must never be described as planning-only input:\n%s", out)
 	}
-	if strings.Contains(out, "Near-term") {
-		t.Errorf("strong band should have no near-term target:\n%s", out)
+	if !strings.Contains(out, "gate: fail") {
+		t.Errorf("a blocked run with no finding must point at the failing gate:\n%s", out)
+	}
+}
+
+// TestRenderState_IsDeterministic: two renders of the same state must not
+// differ, or the format cannot carry a byte-comparable baseline.
+func TestRenderState_IsDeterministic(t *testing.T) {
+	s := stateWith()
+	if first, second := render(t, s), render(t, s); first != second {
+		t.Errorf("two renders differ:\n%s\n---\n%s", first, second)
+	}
+}
+
+// TestCondenseIsRuneSafe pins the UTF-8 contract of the terminal renderer.
+//
+// The regression: condense sliced the string by BYTES. Every coupling advisory
+// carries "×" and "→", so a cut landing inside one emitted invalid UTF-8 — and
+// a consumer decoding the document strictly loses the whole report, not one
+// line. Found by the corpus sweep on storybook.
+func TestCondenseIsRuneSafe(t *testing.T) {
+	t.Parallel()
+	// The multi-byte runes are positioned so the cut lands inside one at every
+	// budget in the loop below.
+	subject := strings.Repeat("balanced coupling × distance → volatile target ", 12)
+	for budget := 1; budget <= 200; budget++ {
+		got := condense(subject, budget)
+		if !utf8.ValidString(got) {
+			t.Fatalf("condense(_, %d) produced invalid UTF-8: %q", budget, got)
+		}
+		if len(got) > budget+len("…") {
+			t.Fatalf("condense(_, %d) returned %d bytes", budget, len(got))
+		}
+	}
+}
+
+// TestCondenseKeepsShortStringsWhole guards the other direction: the boundary
+// fix must not start trimming text that already fits.
+func TestCondenseKeepsShortStringsWhole(t *testing.T) {
+	t.Parallel()
+	const short = "a × b"
+	if got := condense(short, 100); got != short {
+		t.Fatalf("condense(%q, 100) = %q", short, got)
 	}
 }

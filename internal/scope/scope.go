@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/alexei-led/archfit/internal/view"
 )
 
 // canonicalPath returns a case- and symlink-resolved form of p.
@@ -169,7 +167,7 @@ type Resolver interface {
 // otherwise it falls back to the git root; when both are empty it falls back to
 // cfg.WorkDir. Changed files are sorted here so scope's determinism contract
 // does not depend on resolver discipline.
-func Resolve(ctx context.Context, cfg view.ScopeConfig, r Resolver) (Scope, error) {
+func Resolve(ctx context.Context, cfg Config, r Resolver) (Scope, error) {
 	gitRoot, rootErr := r.RepoRoot(ctx)
 
 	if cfg.Full {
@@ -259,7 +257,7 @@ func rebaseChangedFiles(prefix string, files []string) []string {
 // symlink form matches the gitRoot (already canonical) before subtreePrefix computes.
 // When cfg.Root is empty and gitRoot is non-empty the result equals gitRoot,
 // so --root-absent runs are byte-identical to before this change.
-func resolveScanRoot(cfg view.ScopeConfig, gitRoot string) string {
+func resolveScanRoot(cfg Config, gitRoot string) string {
 	if cfg.Root != "" {
 		return canonicalPath(cfg.Root)
 	}
@@ -333,4 +331,17 @@ func caseInsensitiveSubtreePrefix(gitRoot, scanRoot string) string {
 		segments[i], segments[j] = segments[j], segments[i]
 	}
 	return filepath.ToSlash(filepath.Join(segments...))
+}
+
+// OnDiskWithin returns the repair-task path resolver's onDisk callback and
+// rejects paths that escape the analyzed root before touching the filesystem.
+func OnDiskWithin(root string) func(string) bool {
+	return func(rel string) bool {
+		osRel := filepath.FromSlash(rel)
+		if !filepath.IsLocal(osRel) {
+			return false
+		}
+		_, err := os.Stat(filepath.Join(root, osRel))
+		return err == nil
+	}
 }

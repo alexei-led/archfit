@@ -64,13 +64,14 @@ Start with:
 - `CLAUDE.md`
 - `.archfit.yaml`
 - `cmd/archfit/`
-- `internal/model/coupling/`
-- `internal/classify/`
-- `internal/score/`
-- `internal/metrics/`
-- `internal/rules/`
+- `internal/relationship/coupling/`
+- `internal/relationship/scoring/`
+- `internal/relationship/classify/`
+- `internal/assessment/score/`
+- `internal/assessment/metrics/`
+- `internal/assessment/rules/`
 - `internal/extract/`
-- `internal/labels/`
+- `internal/relationship/labels/`
 - `.archfit-labels.yaml` handling if present
 - AI/config surfaces:
   - `config init --ai-classify`
@@ -98,10 +99,13 @@ make test
 If you evaluate corpus repos too:
 
 - run from the archfit repo root so `.env` loading is consistent,
-- use temp configs outside the target repos,
-- treat temp-config update failures as product findings,
-- repeat at least one representative repo run with the same temp config and
-  compare parsed JSON,
+- stage a candidate config outside the target repo and migrate THAT with
+  `config update --migration-only --apply`; corpus repos stay read-only,
+- treat a candidate migration failure, or a second migration that rewrites the
+  file, as product findings,
+- repeat every mandatory representative with the same candidate and compare
+  `analyze --json` byte for byte — the v1 state carries no wall-clock or
+  run-local field, so there is nothing to exclude,
 - compare deterministic archfit output with semantic architecture review on a
   few representative repos, but only score archfit down for misses it should
   reasonably catch.
@@ -157,7 +161,9 @@ For each archfit metric/formula, list:
 - purpose
 - formula or scoring rule
 - inputs/facts used
-- whether it feeds `coupling_balance`, gates, scorecard only, or report-only output
+- which architecture-state dimension envelope it reaches, and whether it feeds
+  a hard gate, the coupling seam gate, a dimension metric only, or report-only
+  output. No metric feeds a repository scalar — there is none.
 - non-contamination proof for auxiliary metrics
 - implementation files and tests
 - known limitations
@@ -190,10 +196,21 @@ deterministic input first.
 
 For each evaluated repo or workflow, capture:
 
-- config outcome: copied / generated / updated / update-failed
-- `check` verdict and exit code
-- `analyze` verdict and score band
-- missing-tool or abstention signals
+- config outcome: copied / generated, migrated schema version, and whether a
+  second `config update --migration-only --apply` changed the file
+- `check` verdict and exit code, and whether they agree — the exit IS the
+  verdict (healthy 0, needs-attention 2, blocked 1, error 3), and a clean
+  repository is expected to exit 2 because complexity, testability, and
+  operations are `partial` by contract in v1
+- `analyze` verdict, the nine dimension statuses, and the coverage split.
+  There is **no repository score band**: the v1 architecture-state contract
+  removed the scalar, and a review that reports one is reporting a field that
+  no longer exists
+- missing-tool or abstention signals, with the reason each one disclosed
+- format parity: same verdict, dimension statuses, coverage split, comparison
+  state, and canonical finding sequence in JSON, text, Markdown, SARIF, and
+  scorecard
+- byte determinism on a repeated `analyze --json`
 - AI summary value or failure
 - CLI/docs/skill issues: flags, progress, errors, confusing output, stale docs
 - whether the repo is a good future regression target

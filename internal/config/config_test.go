@@ -8,9 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/module"
-	"github.com/alexei-led/archfit/internal/view"
+	"github.com/alexei-led/archfit/internal/model/pattern"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 func TestLoad_Valid(t *testing.T) {
@@ -19,8 +21,8 @@ func TestLoad_Valid(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if cfg.Version != 1 {
-		t.Errorf("Version = %d, want 1", cfg.Version)
+	if cfg.Version != config.SchemaVersion {
+		t.Errorf("Version = %d, want %d", cfg.Version, config.SchemaVersion)
 	}
 	if len(cfg.Modules) != 2 {
 		t.Errorf("len(Modules) = %d, want 2", len(cfg.Modules))
@@ -39,14 +41,14 @@ func TestLoad_Valid(t *testing.T) {
 	}
 
 	// Verify language/analyzer modes (true→on, auto stays auto).
-	if got := cfg.Languages.Go.Enabled; got != view.ModeOn {
-		t.Errorf("languages.go.enabled = %q, want %q", got, view.ModeOn)
+	if got := cfg.Languages.Go.Enabled; got != evidenceports.ModeOn {
+		t.Errorf("languages.go.enabled = %q, want %q", got, evidenceports.ModeOn)
 	}
-	if got := cfg.Languages.TypeScript.Enabled; got != view.ModeAuto {
-		t.Errorf("languages.typescript.enabled = %q, want %q", got, view.ModeAuto)
+	if got := cfg.Languages.TypeScript.Enabled; got != evidenceports.ModeAuto {
+		t.Errorf("languages.typescript.enabled = %q, want %q", got, evidenceports.ModeAuto)
 	}
-	if got := cfg.Analyzers.Clones.Enabled; got != view.ModeAuto {
-		t.Errorf("analyzers.clones.enabled = %q, want %q", got, view.ModeAuto)
+	if got := cfg.Analyzers.Clones.Enabled; got != evidenceports.ModeAuto {
+		t.Errorf("analyzers.clones.enabled = %q, want %q", got, evidenceports.ModeAuto)
 	}
 
 	// Verify module details.
@@ -154,7 +156,7 @@ func TestModuleFor_PythonDottedGlobs(t *testing.T) {
 
 	dottedCfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			mod: {Paths: []string{"prefect.states", "prefect.states.**"}},
 		},
 	}
@@ -165,7 +167,7 @@ func TestModuleFor_PythonDottedGlobs(t *testing.T) {
 
 	slashCfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			mod: {Paths: []string{"src/prefect/states/**", "src/prefect/states.py"}},
 		},
 	}
@@ -180,7 +182,7 @@ func TestModuleFor_PythonDottedGlobs(t *testing.T) {
 // (internal/classify/classify.go, via pathFromID) resolve a Python edge
 // endpoint's DOTTED node ID through ModuleFor — that entry point is
 // unchanged. File-path-based consumers (internal/ownership CODEOWNERS
-// resolution, internal/rules public_api_* attribution, internal/engine
+// resolution, internal/assessment/rules public_api_* attribution, internal/engine
 // clone-pairing) resolve the SAME underlying source file's real
 // repo-relative path through ModuleForFile, which normalizes the file into
 // the language's node-key form (dotted for Python) before delegating to
@@ -194,7 +196,7 @@ func TestModuleFor_ConsumerConsistency(t *testing.T) {
 	// Mirrors testdata/fixture-py/.archfit.yaml's module "b".
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"b": {Paths: []string{"fixture_py.b", "fixture_py.b.**"}},
 		},
 	}
@@ -221,7 +223,7 @@ func TestModuleFor_ConsumerConsistency(t *testing.T) {
 func TestModuleMap_IsModuleRoot(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"promqltest": {Paths: []string{"promql/promqltest/**"}},
 			"literal":    {Paths: []string{"cmd/tool"}}, // no wildcard: pattern is itself a literal path
 		},
@@ -259,13 +261,13 @@ func TestModuleRootDirs(t *testing.T) {
 		literalPath  = "cmd/tool"
 		pyDottedGlob = "myapp.domain.**"
 	)
-	modules := map[string]module.ModuleDef{
+	modules := map[string]policy.ModuleDef{
 		modDomain:   {Paths: []string{modDomain + "/**"}},
 		modLiteral:  {Paths: []string{literalPath}},
 		modPyDotted: {Paths: []string{pyDottedGlob}}, // Python dotted glob: no "/" wildcard prefix
 		modNoPaths:  {},
 	}
-	got := module.RootDirs(modules)
+	got := policy.ModuleRootDirs(modules)
 
 	want := map[string]string{
 		modDomain:   modDomain,
@@ -273,15 +275,15 @@ func TestModuleRootDirs(t *testing.T) {
 		modPyDotted: "myapp.domain", // globRoot cuts at the first "*"; the trailing separator dot is trimmed so the resolver's dotted-module probe can turn it into a real path
 	}
 	if len(got) != len(want) {
-		t.Fatalf("module.RootDirs = %+v, want %+v", got, want)
+		t.Fatalf("policy.ModuleRootDirs = %+v, want %+v", got, want)
 	}
 	for name, dir := range want {
 		if got[name] != dir {
-			t.Errorf("module.RootDirs[%q] = %q, want %q", name, got[name], dir)
+			t.Errorf("policy.ModuleRootDirs[%q] = %q, want %q", name, got[name], dir)
 		}
 	}
 	if _, ok := got[modNoPaths]; ok {
-		t.Error("module.RootDirs should omit a module with no Paths")
+		t.Error("policy.ModuleRootDirs should omit a module with no Paths")
 	}
 }
 
@@ -290,7 +292,7 @@ func TestModuleFor_Deterministic(t *testing.T) {
 	// same (alphabetically-first) module name.
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"beta":  {Paths: []string{"shared/**"}},
 			"alpha": {Paths: []string{"shared/**"}},
 		},
@@ -320,7 +322,7 @@ func TestModuleFor_MostSpecific(t *testing.T) {
 	const catchAll = "internal" // broad fallback stanza; repeated below
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			catchAll:          {Paths: []string{"internal/**"}},
 			"internal/model":  {Paths: []string{"internal/model/**"}},
 			"internal/engine": {Paths: []string{"internal/engine/**"}},
@@ -332,10 +334,10 @@ func TestModuleFor_MostSpecific(t *testing.T) {
 		path string
 		want string
 	}{
-		{"internal/model/diagnostic/x.go", "internal/model"}, // specific beats catch-all
-		{"internal/engine/run.go", "internal/engine"},        // specific beats catch-all
-		{"internal/arch_test.go", catchAll},                  // only the catch-all matches
-		{"internal/scope/scope.go", catchAll},                // no specific stanza → catch-all
+		{"internal/model/evidence/evidence.go", "internal/model"}, // specific beats catch-all
+		{"internal/engine/run.go", "internal/engine"},             // specific beats catch-all
+		{"internal/arch_test.go", catchAll},                       // only the catch-all matches
+		{"internal/scope/scope.go", catchAll},                     // no specific stanza → catch-all
 	}
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
@@ -366,7 +368,7 @@ func TestForExtract(t *testing.T) {
 
 	t.Run("typescript_mode_auto", func(t *testing.T) {
 		ec := cfg.ForExtract("typescript")
-		if ec.Mode != view.ModeAuto {
+		if ec.Mode != evidenceports.ModeAuto {
 			t.Errorf("ForExtract(typescript).Mode = %q, want auto", ec.Mode)
 		}
 	})
@@ -374,7 +376,7 @@ func TestForExtract(t *testing.T) {
 	t.Run("go_mode_on", func(t *testing.T) {
 		// testdata/valid.yaml sets languages.go.enabled: true → ModeOn
 		ec := cfg.ForExtract("go")
-		if ec.Mode != view.ModeOn {
+		if ec.Mode != evidenceports.ModeOn {
 			t.Errorf("ForExtract(go).Mode = %q, want on", ec.Mode)
 		}
 	})
@@ -397,7 +399,7 @@ func TestForExtract(t *testing.T) {
 	t.Run("rust_mode_default_auto", func(t *testing.T) {
 		// rust tool not in testdata/valid.yaml → defaults to auto
 		ec := cfg.ForExtract("rust")
-		if ec.Mode != view.ModeAuto {
+		if ec.Mode != evidenceports.ModeAuto {
 			t.Errorf("ForExtract(rust).Mode = %q, want auto", ec.Mode)
 		}
 	})
@@ -437,7 +439,7 @@ func TestForExtract(t *testing.T) {
 		gc := config.Config{
 			Version: 1,
 			Languages: config.LanguagesConfig{Go: config.GoLanguage{
-				Enabled: view.ModeAuto,
+				Enabled: evidenceports.ModeAuto,
 				Modules: config.GoModuleFilter{
 					Include: []string{globSvcAll},
 					Exclude: []string{"svc/legacy"},
@@ -482,14 +484,14 @@ func TestForExtract_SrcNotModuleDerived(t *testing.T) {
 
 	cfgAddonsFirst := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"addons": {Paths: []string{"addons/**"}},
 			"web":    {Paths: []string{webGlob}},
 		},
 	}
 	cfgWebFirst := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"web": {Paths: []string{webGlob}},
 			"zzz": {Paths: []string{"zzz/**"}},
 		},
@@ -513,11 +515,11 @@ func TestForExtract_SrcNotModuleDerived(t *testing.T) {
 
 func TestDefaultIncludesRust(t *testing.T) {
 	cfg := config.Default()
-	if got := cfg.Languages.Rust.Enabled; got != view.ModeAuto {
+	if got := cfg.Languages.Rust.Enabled; got != evidenceports.ModeAuto {
 		t.Errorf("Default rust mode = %q, want auto", got)
 	}
-	if got := cfg.ForClassify().DuplicatedKnowledgePolicy; got != view.DuplicatedKnowledgePolicyScore {
-		t.Errorf("Default duplicated knowledge policy = %q, want %q", got, view.DuplicatedKnowledgePolicyScore)
+	if got := cfg.ForClassify().DuplicatedKnowledgePolicy; got != policy.DuplicatedKnowledgePolicyScore {
+		t.Errorf("Default duplicated knowledge policy = %q, want %q", got, policy.DuplicatedKnowledgePolicyScore)
 	}
 }
 
@@ -531,7 +533,7 @@ const (
 var rustFeatures = []string{"serde", "tokio"}
 
 func TestLoadRustFields(t *testing.T) {
-	yaml := "version: 1\n" +
+	yaml := "version: 2\n" +
 		"languages:\n" +
 		"  rust:\n" +
 		"    manifest: " + rustManifestPath + "\n" +
@@ -577,7 +579,7 @@ func TestForClassify(t *testing.T) {
 func TestWithExplicitOwners(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]module.ModuleDef{
+		Modules: map[string]policy.ModuleDef{
 			"a": {Owner: "x"},
 			"b": {Owner: "x"},
 		},
@@ -599,7 +601,7 @@ func TestWithExplicitOwners(t *testing.T) {
 // any resolver fill.
 func TestLoad_PopulatesExplicitOwners(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".archfit.yaml")
-	yaml := "version: 1\n" +
+	yaml := "version: 2\n" +
 		"modules:\n" +
 		"  owned:\n    paths: [\"owned/**\"]\n    owner: team-x\n" +
 		"  bare:\n    paths: [\"bare/**\"]\n"
@@ -689,36 +691,22 @@ func TestForStatus(t *testing.T) {
 	}
 }
 
-func TestForOutput(t *testing.T) {
-	cfg, err := config.Load(context.Background(), "testdata/valid.yaml")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	oc := cfg.ForOutput()
-	if !oc.JSON {
-		t.Error("ForOutput().JSON = false, want true")
-	}
-	if oc.Markdown {
-		t.Error("ForOutput().Markdown = true, want false")
-	}
-}
-
 func TestToolMode_UnmarshalYAML(t *testing.T) {
 	// Inline config struct to test ToolMode decoding directly via Load.
 	tests := []struct {
 		name    string
 		yaml    string
 		wantErr bool
-		want    view.ToolMode
+		want    evidenceports.ToolMode
 	}{
-		{"bool_true", "version: 1\nanalyzers:\n  clones:\n    enabled: true\n", false, view.ModeOn},
-		{"bool_false", "version: 1\nanalyzers:\n  clones:\n    enabled: false\n", false, view.ModeOff},
-		{"string_auto", "version: 1\nanalyzers:\n  clones:\n    enabled: auto\n", false, view.ModeAuto},
+		{"bool_true", "version: 2\nanalyzers:\n  clones:\n    enabled: true\n", false, evidenceports.ModeOn},
+		{"bool_false", "version: 2\nanalyzers:\n  clones:\n    enabled: false\n", false, evidenceports.ModeOff},
+		{"string_auto", "version: 2\nanalyzers:\n  clones:\n    enabled: auto\n", false, evidenceports.ModeAuto},
 		// on/off are no longer accepted — canonical vocabulary is true|false|auto.
-		{"bare_on_rejected", "version: 1\nanalyzers:\n  clones:\n    enabled: on\n", true, ""},
-		{"quoted_on_rejected", "version: 1\nanalyzers:\n  clones:\n    enabled: \"on\"\n", true, ""},
-		{"quoted_off_rejected", "version: 1\nanalyzers:\n  clones:\n    enabled: \"off\"\n", true, ""},
-		{"invalid", "version: 1\nanalyzers:\n  clones:\n    enabled: maybe\n", true, ""},
+		{"bare_on_rejected", "version: 2\nanalyzers:\n  clones:\n    enabled: on\n", true, ""},
+		{"quoted_on_rejected", "version: 2\nanalyzers:\n  clones:\n    enabled: \"on\"\n", true, ""},
+		{"quoted_off_rejected", "version: 2\nanalyzers:\n  clones:\n    enabled: \"off\"\n", true, ""},
+		{"invalid", "version: 2\nanalyzers:\n  clones:\n    enabled: maybe\n", true, ""},
 	}
 
 	for _, tc := range tests {
@@ -789,7 +777,7 @@ func TestLoad_Patterns(t *testing.T) {
 func TestForPatterns(t *testing.T) {
 	tests := []struct {
 		name    string
-		rules   []view.RuleDef
+		rules   []policy.RuleDef
 		wantLen int
 		wantIDs []string
 	}{
@@ -800,7 +788,7 @@ func TestForPatterns(t *testing.T) {
 		},
 		{
 			name: "rules_without_patterns",
-			rules: []view.RuleDef{
+			rules: []policy.RuleDef{
 				{ID: "r1", Type: "forbidden_dependency"},
 				{ID: "r2", Type: "public_api_only"},
 			},
@@ -808,11 +796,11 @@ func TestForPatterns(t *testing.T) {
 		},
 		{
 			name: "one_rule_with_patterns",
-			rules: []view.RuleDef{
+			rules: []policy.RuleDef{
 				{
 					ID:   "r1",
 					Type: "forbidden_dependency",
-					Patterns: []view.PatternDef{
+					Patterns: []pattern.Def{
 						{ID: "p1", Lang: "go", Rule: "unsafe.Pointer($X)"},
 						{ID: "p2", Lang: "go", Rule: "reflect.ValueOf($X)"},
 					},
@@ -823,17 +811,17 @@ func TestForPatterns(t *testing.T) {
 		},
 		{
 			name: "multiple_rules_with_patterns",
-			rules: []view.RuleDef{
+			rules: []policy.RuleDef{
 				{
 					ID: "r1",
-					Patterns: []view.PatternDef{
+					Patterns: []pattern.Def{
 						{ID: "p1", Lang: "go", Rule: "foo($X)"},
 					},
 				},
 				{ID: "r2"}, // no patterns
 				{
 					ID: "r3",
-					Patterns: []view.PatternDef{
+					Patterns: []pattern.Def{
 						{ID: "p2", Lang: langTypeScript, Rule: "bar($X)"},
 						{ID: "p3", Lang: langTypeScript, Rule: "baz($X)"},
 					},
@@ -880,9 +868,9 @@ func loadInline(t *testing.T, body string) error {
 }
 
 func TestLoad_ExternalSystems(t *testing.T) {
-	t.Run("valid entry decodes and projects into view.ClassifyConfig", func(t *testing.T) {
+	t.Run("valid entry decodes and projects into classify.Config", func(t *testing.T) {
 		p := filepath.Join(t.TempDir(), ".archfit.yaml")
-		body := "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/aws-sdk-go-v2/**\"]\n    volatility: medium\n  payment-gateway:\n    targets: [\"node_modules/@stripe/**\", \"stripe\"]\n"
+		body := "version: 2\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/aws-sdk-go-v2/**\"]\n    volatility: medium\n  payment-gateway:\n    targets: [\"node_modules/@stripe/**\", \"stripe\"]\n"
 		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -903,35 +891,35 @@ func TestLoad_ExternalSystems(t *testing.T) {
 	})
 
 	t.Run("entry without targets is rejected", func(t *testing.T) {
-		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    volatility: low\n")
+		err := loadInline(t, "version: 2\nexternal_systems:\n  aws:\n    volatility: low\n")
 		if err == nil || !strings.Contains(err.Error(), "external_systems.aws requires at least one targets glob") {
 			t.Errorf("got %v, want 'requires at least one targets glob' error", err)
 		}
 	})
 
 	t.Run("case-variant volatility is accepted", func(t *testing.T) {
-		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/**\"]\n    volatility: High\n")
+		err := loadInline(t, "version: 2\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/**\"]\n    volatility: High\n")
 		if err != nil {
 			t.Errorf("got %v, want High accepted (classify matches case-insensitively)", err)
 		}
 	})
 
 	t.Run("invalid volatility is rejected", func(t *testing.T) {
-		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/**\"]\n    volatility: sometimes\n")
+		err := loadInline(t, "version: 2\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/**\"]\n    volatility: sometimes\n")
 		if err == nil || !strings.Contains(err.Error(), `external_systems.aws.volatility "sometimes"`) {
 			t.Errorf("got %v, want volatility enum error", err)
 		}
 	})
 
 	t.Run("empty target glob is rejected", func(t *testing.T) {
-		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"\"]\n")
+		err := loadInline(t, "version: 2\nexternal_systems:\n  aws:\n    targets: [\"\"]\n")
 		if err == nil || !strings.Contains(err.Error(), "external_systems.aws.targets[0] must not be empty") {
 			t.Errorf("got %v, want empty-target error", err)
 		}
 	})
 
 	t.Run("malformed glob is rejected", func(t *testing.T) {
-		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/[aws/**\"]\n")
+		err := loadInline(t, "version: 2\nexternal_systems:\n  aws:\n    targets: [\"github.com/[aws/**\"]\n")
 		if err == nil || !strings.Contains(err.Error(), "is not a valid glob pattern") {
 			t.Errorf("got %v, want invalid-glob error", err)
 		}
@@ -939,7 +927,7 @@ func TestLoad_ExternalSystems(t *testing.T) {
 }
 
 func TestLoad_UnknownMetricKey_IsError(t *testing.T) {
-	err := loadInline(t, "version: 1\nmetrics:\n  bogus:\n    enabled: true\n")
+	err := loadInline(t, "version: 2\nmetrics:\n  bogus:\n    enabled: true\n")
 	if err == nil || !strings.Contains(err.Error(), "metrics.bogus is not a known metric") {
 		t.Errorf("unknown metric: got %v, want 'not a known metric' error", err)
 	}
@@ -947,7 +935,7 @@ func TestLoad_UnknownMetricKey_IsError(t *testing.T) {
 
 func TestLoad_RemovedMetricKey_IsActionableError(t *testing.T) {
 	for _, key := range []string{"risk_hub", "functional_candidates"} {
-		err := loadInline(t, "version: 1\nmetrics:\n  "+key+":\n    enabled: true\n")
+		err := loadInline(t, "version: 2\nmetrics:\n  "+key+":\n    enabled: true\n")
 		if err == nil || !strings.Contains(err.Error(), "removed in v1.0") {
 			t.Errorf("removed metric %q: got %v, want 'removed in v1.0'", key, err)
 		}
@@ -955,7 +943,7 @@ func TestLoad_RemovedMetricKey_IsActionableError(t *testing.T) {
 }
 
 func TestLoad_DeprecatedToolsKey_IsActionableError(t *testing.T) {
-	err := loadInline(t, "version: 1\ntools:\n  scip:\n    enabled: true\n")
+	err := loadInline(t, "version: 2\ntools:\n  scip:\n    enabled: true\n")
 	if err == nil || !strings.Contains(err.Error(), "renamed to `analyzers:`") {
 		t.Errorf("tools key: got %v, want 'renamed to analyzers:' hint", err)
 	}
@@ -988,7 +976,7 @@ func TestLoad_NewToolsAndMetrics(t *testing.T) {
 	}
 
 	// analyzers.clones.enabled: true
-	if got := cfg.Analyzers.Clones.Enabled; got != view.ModeOn {
+	if got := cfg.Analyzers.Clones.Enabled; got != evidenceports.ModeOn {
 		t.Errorf("analyzers.clones.enabled = %q, want on", got)
 	}
 	if !cfg.ClonesEnabled() {
@@ -1043,7 +1031,7 @@ func TestNewMetricsDefaultZero(t *testing.T) {
 
 // TestNewToolInvalidMode verifies that an invalid mode value for an analyzer key is rejected.
 func TestNewToolInvalidMode(t *testing.T) {
-	yaml := "version: 1\nanalyzers:\n  clones:\n    enabled: maybe\n"
+	yaml := "version: 2\nanalyzers:\n  clones:\n    enabled: maybe\n"
 	tmp := t.TempDir() + "/cfg.yaml"
 	if err := writeFile(tmp, yaml); err != nil {
 		t.Fatalf("write temp: %v", err)
@@ -1083,23 +1071,63 @@ func TestSelfConfig_CapabilityModuleMap(t *testing.T) {
 	tests := []struct {
 		name      string
 		layer     string
-		role      module.Role
+		role      policy.Role
 		wantPaths []string
 	}{
 		{
-			name: "fact-adapters", layer: layerAdapter, role: module.RoleAdapter,
-			wantPaths: []string{"internal/extract/**", "internal/toolrun/**", "internal/factcache/**", "internal/history/**", "internal/ownership/**"},
+			name: "evidence-contracts", layer: layerModel, role: policy.RoleSharedModel,
+			wantPaths: []string{"internal/model/evidence/**", "internal/evidence", "internal/evidence/*.go"},
 		},
 		{
-			name: "evaluation-core", layer: layerCore, role: module.RoleCore,
-			wantPaths: []string{"internal/classify/**", "internal/rules/**", "internal/metrics/**", "internal/score/**", "internal/decision/**"},
+			name: "analysis-scope", layer: layerSupport, role: policy.RoleSharedModel,
+			wantPaths: []string{"internal/scope/**"},
 		},
 		{
-			name: "pipeline-engine", layer: "engine", role: module.RoleCore,
-			wantPaths: []string{"internal/engine/**"},
+			name: "evidence-analysis", layer: layerCore, role: policy.RoleCore,
+			wantPaths: []string{"internal/syntax/**"},
 		},
 		{
-			name: "archfit-cli", layer: "cmd", role: module.RoleCompositionRoot,
+			name: "evidence-adapters", layer: layerAdapter, role: policy.RoleAdapter,
+			wantPaths: []string{"internal/extract/**", "internal/toolrun/**", "internal/evidence/ports/**"},
+		},
+		{
+			name: "persistence-adapters", layer: layerAdapter, role: policy.RoleAdapter,
+			wantPaths: []string{"internal/factcache/**", "internal/history/**", "internal/ownership/**", "internal/baseline/**", "internal/labels/**"},
+		},
+		{
+			name: "provider-adapters", layer: layerAdapter, role: policy.RoleAdapter,
+			wantPaths: []string{"internal/llm/**"},
+		},
+		{
+			name: "report-adapters", layer: layerAdapter, role: policy.RoleAdapter,
+			wantPaths: []string{"internal/output/**"},
+		},
+		{
+			name: "architecture-policy", layer: layerCore, role: policy.RoleCore,
+			wantPaths: []string{"internal/policy/**"},
+		},
+		{
+			name: "relationship-analysis", layer: layerCore, role: policy.RoleCore,
+			wantPaths: []string{"internal/relationship/**"},
+		},
+		{
+			name: "assessment-repair", layer: layerCore, role: policy.RoleCore,
+			wantPaths: []string{"internal/assessment/**"},
+		},
+		{
+			name: "analysis-application", layer: "application",
+			wantPaths: []string{"internal/application/**"},
+		},
+		{
+			name: "report-contract", layer: layerModel, role: policy.RoleSharedModel,
+			wantPaths: []string{"internal/model/report/**"},
+		},
+		{
+			name: "evidence-acquisition", layer: layerAdapter, role: policy.RoleAdapter,
+			wantPaths: []string{"internal/evidence/acquisition/**"},
+		},
+		{
+			name: "cli-composition", layer: "cmd", role: policy.RoleCompositionRoot,
 			wantPaths: []string{"cmd/archfit/**"},
 		},
 	}
@@ -1141,19 +1169,19 @@ func TestSelfConfig_RoleLayerConformance(t *testing.T) {
 		def := cfg.Modules[name]
 		switch def.Role {
 		case "":
-		case module.RoleAdapter:
+		case policy.RoleAdapter:
 			if def.Layer != layerAdapter {
 				t.Errorf("module %q: role=adapter but layer=%q (want adapter)", name, def.Layer)
 			}
-		case module.RoleCompositionRoot, module.RoleTest:
+		case policy.RoleCompositionRoot, policy.RoleTest:
 			if def.Layer != "cmd" {
 				t.Errorf("module %q: role=%s but layer=%q (want cmd)", name, def.Role, def.Layer)
 			}
-		case module.RoleCore:
-			if def.Layer != layerCore && def.Layer != "engine" {
-				t.Errorf("module %q: role=core but layer=%q (want core or engine)", name, def.Layer)
+		case policy.RoleCore:
+			if def.Layer != layerCore {
+				t.Errorf("module %q: role=core but layer=%q (want core)", name, def.Layer)
 			}
-		case module.RoleSharedModel:
+		case policy.RoleSharedModel:
 			if def.Layer != "model" && def.Layer != "support" {
 				t.Errorf("module %q: role=shared_model but layer=%q (want model or support)", name, def.Layer)
 			}
@@ -1176,13 +1204,13 @@ func TestFillMissingOwners(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		modules  map[string]module.ModuleDef
+		modules  map[string]policy.ModuleDef
 		resolved map[string]string
 		want     map[string]string // module name → expected Owner after call
 	}{
 		{
 			name: "fills modules with no owner",
-			modules: map[string]module.ModuleDef{
+			modules: map[string]policy.ModuleDef{
 				"a": {Paths: []string{pathPkgA}},
 				"b": {Paths: []string{pathPkgB}},
 			},
@@ -1197,7 +1225,7 @@ func TestFillMissingOwners(t *testing.T) {
 		},
 		{
 			name: "config owner wins over resolver",
-			modules: map[string]module.ModuleDef{
+			modules: map[string]policy.ModuleDef{
 				"a": {Paths: []string{pathPkgA}, Owner: configOwnerX},
 				"b": {Paths: []string{pathPkgB}},
 			},
@@ -1212,7 +1240,7 @@ func TestFillMissingOwners(t *testing.T) {
 		},
 		{
 			name: "module absent from resolved stays unchanged",
-			modules: map[string]module.ModuleDef{
+			modules: map[string]policy.ModuleDef{
 				"a": {Paths: []string{pathPkgA}},
 				"b": {Paths: []string{pathPkgB}},
 			},
@@ -1227,7 +1255,7 @@ func TestFillMissingOwners(t *testing.T) {
 		},
 		{
 			name: "empty resolved map — no change",
-			modules: map[string]module.ModuleDef{
+			modules: map[string]policy.ModuleDef{
 				"a": {Paths: []string{pathPkgA}},
 			},
 			resolved: map[string]string{},
@@ -1237,7 +1265,7 @@ func TestFillMissingOwners(t *testing.T) {
 		},
 		{
 			name: "empty resolved owner string — no change",
-			modules: map[string]module.ModuleDef{
+			modules: map[string]policy.ModuleDef{
 				"a": {Paths: []string{pathPkgA}},
 			},
 			resolved: map[string]string{
@@ -1281,7 +1309,7 @@ func TestLoad_ValidateEnums(t *testing.T) {
 	}{
 		{
 			name:    "valid bc severity",
-			yaml:    "version: 1\ncoupling:\n  min_severity: critical\n",
+			yaml:    "version: 2\ncoupling:\n  min_severity: critical\n",
 			wantErr: "",
 		},
 		{
@@ -1291,237 +1319,250 @@ func TestLoad_ValidateEnums(t *testing.T) {
 		},
 		{
 			name:    "invalid bc severity",
-			yaml:    "version: 1\ncoupling:\n  min_severity: severe\n",
+			yaml:    "version: 2\ncoupling:\n  min_severity: severe\n",
 			wantErr: "coupling.min_severity",
 		},
 		{
 			name:    "duplicated knowledge score policy loads clean",
-			yaml:    "version: 1\ncoupling:\n  duplicated_knowledge: score\n",
+			yaml:    "version: 2\ncoupling:\n  duplicated_knowledge: score\n",
 			wantErr: "",
 		},
 		{
 			name:    "duplicated knowledge advisory policy loads clean",
-			yaml:    "version: 1\ncoupling:\n  duplicated_knowledge: advisory\n",
+			yaml:    "version: 2\ncoupling:\n  duplicated_knowledge: advisory\n",
 			wantErr: "",
 		},
 		{
 			name:    "invalid duplicated knowledge policy rejected",
-			yaml:    "version: 1\ncoupling:\n  duplicated_knowledge: maybe\n",
+			yaml:    "version: 2\ncoupling:\n  duplicated_knowledge: maybe\n",
 			wantErr: "coupling.duplicated_knowledge",
 		},
 		{
-			name:    "coupling.gate with min_band loads clean",
-			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: mixed\n",
+			name:    "coupling.gate with distributed_monolith warn loads clean",
+			yaml:    "version: 2\ncoupling:\n  gate:\n    distributed_monolith:\n      mode: warn\n",
 			wantErr: "",
 		},
 		{
-			name:    "coupling.gate with max_drop only loads clean",
-			yaml:    "version: 1\ncoupling:\n  gate:\n    max_drop: 5\n",
+			name:    "coupling.gate with distributed_monolith fail and a tolerance loads clean",
+			yaml:    "version: 2\ncoupling:\n  gate:\n    distributed_monolith:\n      mode: fail\n      max_new_seams: 2\n",
 			wantErr: "",
 		},
 		{
-			name:    "coupling.gate with max_drop 0 only (no min_band) loads clean",
-			yaml:    "version: 1\ncoupling:\n  gate:\n    max_drop: 0\n",
-			wantErr: "",
-		},
-		{
-			name:    "coupling.gate with both knobs loads clean",
-			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: poor\n    max_drop: 0\n",
+			name:    "coupling.gate with an empty distributed_monolith block takes the warn default",
+			yaml:    "version: 2\ncoupling:\n  gate:\n    distributed_monolith: {}\n",
 			wantErr: "",
 		},
 		{
 			name:    "empty coupling.gate block rejected",
-			yaml:    "version: 1\ncoupling:\n  gate: {}\n",
-			wantErr: "coupling.gate requires min_band and/or max_drop",
+			yaml:    "version: 2\ncoupling:\n  gate: {}\n",
+			wantErr: "coupling.gate requires distributed_monolith",
 		},
 		{
-			name:    "invalid coupling.gate.min_band rejected",
-			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: great\n",
-			wantErr: "coupling.gate.min_band",
+			name:    "invalid distributed_monolith mode rejected",
+			yaml:    "version: 2\ncoupling:\n  gate:\n    distributed_monolith:\n      mode: block\n",
+			wantErr: "distributed_monolith.mode",
 		},
 		{
-			name:    "critical coupling.gate.min_band rejected as inert",
-			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: critical\n",
-			wantErr: "coupling.gate.min_band",
+			name:    "negative max_new_seams rejected",
+			yaml:    "version: 2\ncoupling:\n  gate:\n    distributed_monolith:\n      max_new_seams: -1\n",
+			wantErr: "max_new_seams must be >= 0",
 		},
 		{
-			name:    "negative coupling.gate.max_drop rejected",
-			yaml:    "version: 1\ncoupling:\n  gate:\n    max_drop: -1\n",
-			wantErr: "coupling.gate.max_drop must be >= 0",
+			// The retired knobs still DECODE — config update --migration-only
+			// has to read a v1 file — so the refusal has to come from
+			// validation, and it has to name the one supported way out.
+			name:    "retired coupling.gate.min_band rejected with the migration command",
+			yaml:    "version: 2\ncoupling:\n  gate:\n    min_band: mixed\n",
+			wantErr: config.MigrationHint,
+		},
+		{
+			name:    "retired coupling.gate.max_drop rejected with the migration command",
+			yaml:    "version: 2\ncoupling:\n  gate:\n    max_drop: 5\n",
+			wantErr: config.MigrationHint,
+		},
+		{
+			name:    "config schema v1 rejected with the migration command",
+			yaml:    "version: 1\n",
+			wantErr: config.MigrationHint,
+		},
+		{
+			name:    "config schema newer than this binary rejected",
+			yaml:    "version: 3\n",
+			wantErr: "newer than this binary understands",
 		},
 		{
 			name:    "unknown coupling.gate key rejected at decode",
-			yaml:    "version: 1\ncoupling:\n  gate:\n    band_floor: mixed\n",
+			yaml:    "version: 2\ncoupling:\n  gate:\n    band_floor: mixed\n",
 			wantErr: "band_floor",
 		},
 		{
 			name:    "metrics.coupling_balance points at coupling.gate",
-			yaml:    "version: 1\nmetrics:\n  coupling_balance:\n    enabled: true\n",
+			yaml:    "version: 2\nmetrics:\n  coupling_balance:\n    enabled: true\n",
 			wantErr: "coupling.gate",
 		},
 		{
 			name:    "valid rule gates",
-			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    gate: fail\n  - id: r2\n    type: cycle\n    gate: warn\n",
+			yaml:    "version: 2\nrules:\n  - id: r1\n    type: cycle\n    gate: fail\n  - id: r2\n    type: cycle\n    gate: warn\n",
 			wantErr: "",
 		},
 		{
 			name:    "empty rule gate is allowed",
-			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n",
+			yaml:    "version: 2\nrules:\n  - id: r1\n    type: cycle\n",
 			wantErr: "",
 		},
 		{
 			name:    "invalid rule gate names the rule id",
-			yaml:    "version: 1\nrules:\n  - id: nocycle\n    type: cycle\n    gate: block\n",
+			yaml:    "version: 2\nrules:\n  - id: nocycle\n    type: cycle\n    gate: block\n",
 			wantErr: "rules[nocycle]",
 		},
 		{
 			name:    "missing rule id rejected",
-			yaml:    "version: 1\nrules:\n  - type: cycle\n    gate: block\n",
+			yaml:    "version: 2\nrules:\n  - type: cycle\n    gate: block\n",
 			wantErr: "rules[#0].id is required",
 		},
 		{
 			name:    "empty rule id rejected",
-			yaml:    "version: 1\nrules:\n  - id: \"\"\n    type: cycle\n",
+			yaml:    "version: 2\nrules:\n  - id: \"\"\n    type: cycle\n",
 			wantErr: "rules[#0].id is required",
 		},
 		{
 			name:    "pattern entry missing rule rejected",
-			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        lang: go\n",
+			yaml:    "version: 2\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        lang: go\n",
 			wantErr: "rules[r1].patterns[0]",
 		},
 		{
 			name:    "pattern entry missing lang rejected",
-			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        rule: unsafe.Pointer($X)\n",
+			yaml:    "version: 2\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        rule: unsafe.Pointer($X)\n",
 			wantErr: "rules[r1].patterns[0]",
 		},
 		{
 			name:    "complete pattern entry loads clean",
-			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        lang: go\n        rule: unsafe.Pointer($X)\n",
+			yaml:    "version: 2\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        lang: go\n        rule: unsafe.Pointer($X)\n",
 			wantErr: "",
 		},
 		{
 			name:    "invalid metric gate names the metric",
-			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    gate: nope\n",
+			yaml:    "version: 2\nmetrics:\n  cycle:\n    enabled: true\n    gate: nope\n",
 			wantErr: "metrics.cycle",
 		},
 		{
 			name:    "metric knobs matching the metric kind load clean",
-			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    gate: fail\n    max_new: 2\n  encapsulation:\n    enabled: true\n    gate: warn\n    min_delta: 0.05\n",
+			yaml:    "version: 2\nmetrics:\n  cycle:\n    enabled: true\n    gate: fail\n    max_new: 2\n  encapsulation:\n    enabled: true\n    gate: warn\n    min_delta: 0.05\n",
 			wantErr: "",
 		},
 		{
 			name:    "negative min_delta rejected",
-			yaml:    "version: 1\nmetrics:\n  encapsulation:\n    enabled: true\n    min_delta: -0.1\n",
+			yaml:    "version: 2\nmetrics:\n  encapsulation:\n    enabled: true\n    min_delta: -0.1\n",
 			wantErr: "metrics.encapsulation.min_delta must be >= 0",
 		},
 		{
 			name:    "negative max_new rejected",
-			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    max_new: -1\n",
+			yaml:    "version: 2\nmetrics:\n  cycle:\n    enabled: true\n    max_new: -1\n",
 			wantErr: "metrics.cycle.max_new must be >= 0",
 		},
 		{
 			name:    "max_new on a ratio metric rejected",
-			yaml:    "version: 1\nmetrics:\n  encapsulation:\n    enabled: true\n    max_new: 1\n",
+			yaml:    "version: 2\nmetrics:\n  encapsulation:\n    enabled: true\n    max_new: 1\n",
 			wantErr: "metrics.encapsulation.max_new applies only to count metrics",
 		},
 		{
 			name:    "min_delta on a count metric rejected",
-			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    min_delta: 0.1\n",
+			yaml:    "version: 2\nmetrics:\n  cycle:\n    enabled: true\n    min_delta: 0.1\n",
 			wantErr: "metrics.cycle.min_delta applies only to ratio metrics",
 		},
 		{
 			name:    "zero max_new on a ratio metric still rejected",
-			yaml:    "version: 1\nmetrics:\n  encapsulation:\n    enabled: true\n    max_new: 0\n",
+			yaml:    "version: 2\nmetrics:\n  encapsulation:\n    enabled: true\n    max_new: 0\n",
 			wantErr: "metrics.encapsulation.max_new applies only to count metrics",
 		},
 		{
 			name:    "zero min_delta on a count metric still rejected",
-			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    min_delta: 0\n",
+			yaml:    "version: 2\nmetrics:\n  cycle:\n    enabled: true\n    min_delta: 0\n",
 			wantErr: "metrics.cycle.min_delta applies only to ratio metrics",
 		},
 		{
 			name:    "gate on informational blast_radius rejected",
-			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    gate: warn\n",
+			yaml:    "version: 2\nmetrics:\n  blast_radius:\n    enabled: true\n    gate: warn\n",
 			wantErr: errBlastRadiusInformational,
 		},
 		{
 			name:    "zero threshold on informational blast_radius rejected",
-			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    max_new: 0\n",
+			yaml:    "version: 2\nmetrics:\n  blast_radius:\n    enabled: true\n    max_new: 0\n",
 			wantErr: errBlastRadiusInformational,
 		},
 		{
 			name:    "min_delta on informational blast_radius rejected",
-			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    min_delta: 0.1\n",
+			yaml:    "version: 2\nmetrics:\n  blast_radius:\n    enabled: true\n    min_delta: 0.1\n",
 			wantErr: errBlastRadiusInformational,
 		},
 		{
 			name:    "enabled toggle on blast_radius is allowed",
-			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: false\n",
+			yaml:    "version: 2\nmetrics:\n  blast_radius:\n    enabled: false\n",
 			wantErr: "",
 		},
 		{
 			name:    "removed max_new_high field rejected at decode",
-			yaml:    "version: 1\nmetrics:\n  unbalanced_edge:\n    enabled: true\n    max_new_high: 0\n",
+			yaml:    "version: 2\nmetrics:\n  unbalanced_edge:\n    enabled: true\n    max_new_high: 0\n",
 			wantErr: "max_new_high",
 		},
 		{
 			name:    "invalid module_review gate",
-			yaml:    "version: 1\nmodule_review:\n  gate: maybe\n",
+			yaml:    "version: 2\nmodule_review:\n  gate: maybe\n",
 			wantErr: "module_review",
 		},
 		{
 			name:    "valid language gate",
-			yaml:    "version: 1\nlanguages:\n  go:\n    enabled: auto\n    gate: fail\n",
+			yaml:    "version: 2\nlanguages:\n  go:\n    enabled: auto\n    gate: fail\n",
 			wantErr: "",
 		},
 		{
 			name:    "empty language gate is allowed",
-			yaml:    "version: 1\nlanguages:\n  go:\n    enabled: auto\n",
+			yaml:    "version: 2\nlanguages:\n  go:\n    enabled: auto\n",
 			wantErr: "",
 		},
 		{
 			name:    "invalid language gate names the language",
-			yaml:    "version: 1\nlanguages:\n  go:\n    enabled: auto\n    gate: block\n",
+			yaml:    "version: 2\nlanguages:\n  go:\n    enabled: auto\n    gate: block\n",
 			wantErr: "languages.go",
 		},
 		{
 			name:    "off is a valid gate",
-			yaml:    "version: 1\nmodule_review:\n  gate: off\n",
+			yaml:    "version: 2\nmodule_review:\n  gate: off\n",
 			wantErr: "",
 		},
 		{
 			name:    "invalid stale_after duration",
-			yaml:    "version: 1\nmodule_review:\n  stale_after: \"180 days\"\n",
+			yaml:    "version: 2\nmodule_review:\n  stale_after: \"180 days\"\n",
 			wantErr: "module_review.stale_after",
 		},
 		{
 			name:    "valid stale_after duration",
-			yaml:    "version: 1\nmodule_review:\n  stale_after: 720h\n",
+			yaml:    "version: 2\nmodule_review:\n  stale_after: 720h\n",
 			wantErr: "",
 		},
 		{
 			name:    "invalid analyzer timeout rejected",
-			yaml:    "version: 1\nanalyzers:\n  scip:\n    timeout: \"5min\"\n",
+			yaml:    "version: 2\nanalyzers:\n  scip:\n    timeout: \"5min\"\n",
 			wantErr: "analyzers.scip.timeout",
 		},
 		{
 			name:    "valid analyzer timeout accepted",
-			yaml:    "version: 1\nanalyzers:\n  scip:\n    timeout: \"5m\"\n",
+			yaml:    "version: 2\nanalyzers:\n  scip:\n    timeout: \"5m\"\n",
 			wantErr: "",
 		},
 		{
 			name:    "valid module role",
-			yaml:    "version: 1\nmodules:\n  cmd:\n    paths: [\"cmd/**\"]\n    role: composition_root\n",
+			yaml:    "version: 2\nmodules:\n  cmd:\n    paths: [\"cmd/**\"]\n    role: composition_root\n",
 			wantErr: "",
 		},
 		{
 			name:    "empty module role is allowed",
-			yaml:    "version: 1\nmodules:\n  cmd:\n    paths: [\"cmd/**\"]\n",
+			yaml:    "version: 2\nmodules:\n  cmd:\n    paths: [\"cmd/**\"]\n",
 			wantErr: "",
 		},
 		{
 			name:    "invalid module role names the module",
-			yaml:    "version: 1\nmodules:\n  cmd:\n    paths: [\"cmd/**\"]\n    role: wiring\n",
+			yaml:    "version: 2\nmodules:\n  cmd:\n    paths: [\"cmd/**\"]\n    role: wiring\n",
 			wantErr: "modules.cmd.role",
 		},
 	}
@@ -1555,22 +1596,22 @@ func TestForClassify_DuplicatedKnowledgePolicy(t *testing.T) {
 	tests := []struct {
 		name string
 		yaml string
-		want view.DuplicatedKnowledgePolicy
+		want policy.DuplicatedKnowledgePolicy
 	}{
 		{
 			name: "omitted defaults to score",
 			yaml: yamlV1,
-			want: view.DuplicatedKnowledgePolicyScore,
+			want: policy.DuplicatedKnowledgePolicyScore,
 		},
 		{
 			name: "score preserved",
-			yaml: "version: 1\ncoupling:\n  duplicated_knowledge: score\n",
-			want: view.DuplicatedKnowledgePolicyScore,
+			yaml: "version: 2\ncoupling:\n  duplicated_knowledge: score\n",
+			want: policy.DuplicatedKnowledgePolicyScore,
 		},
 		{
 			name: "advisory preserved",
-			yaml: "version: 1\ncoupling:\n  duplicated_knowledge: advisory\n",
-			want: view.DuplicatedKnowledgePolicyAdvisory,
+			yaml: "version: 2\ncoupling:\n  duplicated_knowledge: advisory\n",
+			want: policy.DuplicatedKnowledgePolicyAdvisory,
 		},
 	}
 
@@ -1596,7 +1637,7 @@ func TestForClassify_DuplicatedKnowledgePolicy(t *testing.T) {
 // GateMode and that an omitted gate is the empty value (callers default it to warn).
 func TestLoad_ToolGate(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "cfg.yaml")
-	yaml := "version: 1\n" +
+	yaml := "version: 2\n" +
 		"languages:\n" +
 		"  go:\n" +
 		"    enabled: auto\n" +
@@ -1628,59 +1669,62 @@ const (
 	// Layer name constants used in self-config conformance tests.
 	layerAdapter = "adapter"
 	layerCore    = "core"
+	layerEngine  = "engine"
+	layerModel   = "model"
+	layerSupport = "support"
 
 	// langTypeScript and yamlV1 appear in many tests; kept as constants to
 	// satisfy the goconst linter.
 	langTypeScript = "typescript"
-	yamlV1         = "version: 1\n"
+	yamlV1         = "version: 2\n"
 )
 
 func TestLint(t *testing.T) {
 	tests := []struct {
 		name string
-		mod  module.ModuleDef
+		mod  policy.ModuleDef
 		want []string // expected Missing tokens; nil = no warning for this module
 	}{
 		{
 			name: "fully specified",
-			mod:  module.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: layerCore, Volatility: "high"},
+			mod:  policy.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: layerCore, Volatility: "high"},
 			want: nil,
 		},
 		{
 			name: "missing owner only",
-			mod:  module.ModuleDef{Paths: []string{lintPath}, Subdomain: layerCore},
+			mod:  policy.ModuleDef{Paths: []string{lintPath}, Subdomain: layerCore},
 			want: []string{lintOwner},
 		},
 		{
 			name: "missing subdomain and volatility only",
-			mod:  module.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam},
+			mod:  policy.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam},
 			want: []string{lintVol},
 		},
 		{
 			name: "missing all three",
-			mod:  module.ModuleDef{Paths: []string{lintPath}},
+			mod:  policy.ModuleDef{Paths: []string{lintPath}},
 			want: []string{lintOwner, lintVol},
 		},
 		{
 			name: "subdomain alone resolves volatility",
-			mod:  module.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: "generic"},
+			mod:  policy.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: "generic"},
 			want: nil,
 		},
 		{
 			name: "volatility alone resolves volatility",
-			mod:  module.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Volatility: "low"},
+			mod:  policy.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Volatility: "low"},
 			want: nil,
 		},
 		{
 			name: "pathless module is not linted",
-			mod:  module.ModuleDef{Owner: ""}, // no paths → classifies nothing
+			mod:  policy.ModuleDef{Owner: ""}, // no paths → classifies nothing
 			want: nil,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := config.Config{Modules: map[string]module.ModuleDef{"m": tc.mod}}
+			cfg := config.Config{Modules: map[string]policy.ModuleDef{"m": tc.mod}}
 			got := cfg.Lint()
 			if tc.want == nil {
 				if len(got) != 0 {
@@ -1703,8 +1747,8 @@ func TestLint(t *testing.T) {
 
 func TestLint_DeterministicModuleOrder(t *testing.T) {
 	// Map iteration is random; Lint must return modules in sorted name order.
-	bare := module.ModuleDef{Paths: []string{"x/**"}}
-	cfg := config.Config{Modules: map[string]module.ModuleDef{
+	bare := policy.ModuleDef{Paths: []string{"x/**"}}
+	cfg := config.Config{Modules: map[string]policy.ModuleDef{
 		"mod-z": bare,
 		"mod-a": bare,
 		"mod-m": bare,
@@ -1760,9 +1804,9 @@ func TestSyntaxEnabled(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var yamlBody string
 			if tc.mode == "" {
-				yamlBody = "version: 1\n"
+				yamlBody = "version: 2\n"
 			} else {
-				yamlBody = "version: 1\nanalyzers:\n  syntax:\n    enabled: " + tc.mode + "\n"
+				yamlBody = "version: 2\nanalyzers:\n  syntax:\n    enabled: " + tc.mode + "\n"
 			}
 			dir := t.TempDir()
 			path := filepath.Join(dir, ".archfit.yaml")
@@ -1788,22 +1832,22 @@ func TestForSyntax_Mode(t *testing.T) {
 	}{
 		{
 			name:    "enabled when true",
-			yaml:    "version: 1\nanalyzers:\n  syntax:\n    enabled: true\n",
+			yaml:    "version: 2\nanalyzers:\n  syntax:\n    enabled: true\n",
 			enabled: true,
 		},
 		{
 			name:    "disabled when auto",
-			yaml:    "version: 1\nanalyzers:\n  syntax:\n    enabled: auto\n",
+			yaml:    "version: 2\nanalyzers:\n  syntax:\n    enabled: auto\n",
 			enabled: false,
 		},
 		{
 			name:    "disabled when false",
-			yaml:    "version: 1\nanalyzers:\n  syntax:\n    enabled: false\n",
+			yaml:    "version: 2\nanalyzers:\n  syntax:\n    enabled: false\n",
 			enabled: false,
 		},
 		{
 			name:    "disabled when absent",
-			yaml:    "version: 1\n",
+			yaml:    "version: 2\n",
 			enabled: false,
 		},
 	}
@@ -1832,7 +1876,7 @@ func TestForSyntax_Languages(t *testing.T) {
 	t.Run("all four when no tools configured", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, ".archfit.yaml")
-		if err := writeFile(path, "version: 1\n"); err != nil {
+		if err := writeFile(path, "version: 2\n"); err != nil {
 			t.Fatalf("writeFile: %v", err)
 		}
 		cfg, _ := config.Load(context.Background(), path)
@@ -1843,7 +1887,7 @@ func TestForSyntax_Languages(t *testing.T) {
 	})
 
 	t.Run("excludes language set to off", func(t *testing.T) {
-		yaml := "version: 1\nlanguages:\n  rust:\n    enabled: false\n"
+		yaml := "version: 2\nlanguages:\n  rust:\n    enabled: false\n"
 		dir := t.TempDir()
 		path := filepath.Join(dir, ".archfit.yaml")
 		if err := writeFile(path, yaml); err != nil {
@@ -1858,7 +1902,7 @@ func TestForSyntax_Languages(t *testing.T) {
 	})
 
 	t.Run("includes language set to auto", func(t *testing.T) {
-		yaml := "version: 1\nlanguages:\n  python:\n    enabled: auto\n"
+		yaml := "version: 2\nlanguages:\n  python:\n    enabled: auto\n"
 		dir := t.TempDir()
 		path := filepath.Join(dir, ".archfit.yaml")
 		if err := writeFile(path, yaml); err != nil {
@@ -1872,7 +1916,7 @@ func TestForSyntax_Languages(t *testing.T) {
 	})
 
 	t.Run("all off yields empty languages", func(t *testing.T) {
-		yaml := "version: 1\nlanguages:\n  go:\n    enabled: false\n  typescript:\n    enabled: false\n  python:\n    enabled: false\n  rust:\n    enabled: false\n"
+		yaml := "version: 2\nlanguages:\n  go:\n    enabled: false\n  typescript:\n    enabled: false\n  python:\n    enabled: false\n  rust:\n    enabled: false\n"
 		dir := t.TempDir()
 		path := filepath.Join(dir, ".archfit.yaml")
 		if err := writeFile(path, yaml); err != nil {

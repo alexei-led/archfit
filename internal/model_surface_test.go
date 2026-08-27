@@ -1,5 +1,5 @@
-// Model compat gate (CI): the shared kernel (internal/model/*, internal/view)
-// is a frozen published contract — its declared volatility in .archfit.yaml is
+// Model compat gate (CI): the shared kernel (internal/model/*)
+// is a pinned published contract — its declared volatility in .archfit.yaml is
 // `low`, and this test is what makes that label true. Any change to the
 // kernel's exported surface (removed/renamed symbols, changed signatures)
 // fails CI until the golden file is deliberately regenerated:
@@ -50,7 +50,7 @@ func TestModelSurfaceNoDrift(t *testing.T) {
 func renderKernelSurface(t *testing.T) string {
 	t.Helper()
 	cfg := &packages.Config{Mode: packages.NeedName | packages.NeedTypes, Dir: "."}
-	pkgs, err := packages.Load(cfg, modulePrefix+"internal/model/...", modulePrefix+"internal/view")
+	pkgs, err := packages.Load(cfg, modulePrefix+"internal/model/...")
 	if err != nil {
 		t.Fatalf("packages.Load: %v", err)
 	}

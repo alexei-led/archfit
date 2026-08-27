@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/extract/scip"
-	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -111,4 +111,4 @@ func TestResolve_DetectCalledOnce(t *testing.T) {
 }
 
 // Compile-time interface check.
-var _ ports.SymbolResolver = (*scip.Adapter)(nil)
+var _ evidenceports.SymbolResolver = (*scip.Adapter)(nil)

@@ -3,7 +3,8 @@ package main
 import "context"
 
 // CheckCmd is the CI gate command. It runs the same scan pipeline as analyze
-// but returns non-zero exit codes for violations and warnings.
+// but maps the architecture verdict onto the process exit code: healthy 0,
+// needs_attention 2, blocked 1.
 type CheckCmd struct {
 	Config string `short:"c" help:"Path to config file." default:".archfit.yaml"`
 	Root   string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
@@ -18,7 +19,7 @@ type CheckCmd struct {
 	JSON     bool     `name:"json" help:"Output format: JSON (shorthand for --format json)."`
 	Markdown bool     `name:"markdown" help:"Output format: Markdown (shorthand for --format markdown)."`
 	Sarif    bool     `name:"sarif" help:"Output format: SARIF (shorthand for --format sarif)."`
-	Format   []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard"`
+	Format   []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard, legacy-json. Repeatable." enum:"json,text,markdown,md,sarif,scorecard,legacy-json"`
 
 	Progress string `name:"progress" help:"Progress reporting on stderr: auto, plain, none." enum:"auto,plain,none," default:""`
 	Quiet    bool   `short:"q" help:"Suppress progress output."`
@@ -26,6 +27,16 @@ type CheckCmd struct {
 
 func (*CheckCmd) Help() string {
 	return `Use this command in CI and agent validation loops.
+
+Exit codes follow the architecture verdict:
+  0  healthy         — every dimension measured, every hard gate passing, nothing active
+  2  needs_attention — no blocker, but an active diagnostic or an unmeasured dimension
+  1  blocked         — an active hard-gate finding, or a required analyzer that did not run
+  3  usage, config, or tool error — no valid report was produced
+
+A coupling advisory is a diagnostic, never a blocker: it can reach exit 2, never
+exit 1. The only coupling gate is coupling.gate.distributed_monolith, and it
+blocks only in mode: fail against a comparable reference.
 
 Common runs:
   archfit check -c .archfit.yaml
