@@ -1,0 +1,1344 @@
+# Archfit language-evidence improvements
+
+Date: 2026-08-27
+Status: PLANNED — awaiting owner review, not started.
+Branch: `plan/archfit-language-evidence-improvements` (base `733b36c`).
+Contract under change: `archfit.architecture-state.v1`
+(`docs/design/architecture-state-reporting.md`).
+Design review: Fusion run `7bb04756-4400-465a-8f45-4b1ae34d5cd7` (2026-08-27),
+NO-GO on the first draft. Its corrections are folded into §2 and the task list;
+§8 records what changed and why.
+
+---
+
+## 1. The problem
+
+`archfit check` cannot return `HEALTHY` on any repository, however good its
+architecture is.
+
+`internal/assessment/state/decision.go` `Decide` returns `Healthy` only when all
+nine dimensions are `Measured`. Three collectors in
+`internal/assessment/evaluation/dimensions.go` assign `state.Partial`
+**unconditionally** — verified by scanning every `dim.Status` assignment in the
+file:
+
+| Collector              | Line | Reason recorded in source                              |
+| ---------------------- | ---: | ------------------------------------------------------ |
+| `complexityDimension`  |  422 | "v1 ships no cognitive-complexity analyzer"            |
+| `testabilityDimension` |  460 | "v1 does not execute a target repository's test suite" |
+| `operationsDimension`  |  524 | "nothing observes what actually runs"                  |
+
+Measured on this branch, on archfit's own repository — 0 blockers, hard gates
+passing, the most favourable possible input:
+
+```
+verdict: needs_attention
+decision: {"hard_gates":"pass","active_blockers":0,"attention_dimensions":2,"unknown_dimensions":4}
+coverage: {"measured":5,"partial":3,"unmeasured":1}
+
+intent  measured   structure measured   modularity measured
+coupling measured   change_locality measured
+complexity partial ←  testability partial ←  operations partial ←
+drift    unmeasured ←  (comparison not requested)
+```
+
+`check` exits 2 here and on every repository. The exit-0 branch of the frozen
+exit table is dead code in production; only synthetic unit tests that construct
+a state directly (`internal/assessment/state/decision_test.go:40`) reach it.
+
+Consequences: the verdict carries no information (a clean repo and a broken one
+both print `NEEDS_ATTENTION`); CI adoption is blocked because the success exit
+code is unreachable; and the honesty contract inverts — "never false green"
+became "permanent false amber", which trains readers to ignore the field that
+matters.
+
+### 1.1 Three hardcoded collectors are necessary but not sufficient
+
+Fusion review found the first draft of this plan too narrow, and the objection
+verified. Closing the three hardcoded collectors does **not** by itself make
+`HEALTHY` reachable, because two other dimensions have their own gates:
+
+- **drift** returns `Unmeasured` whenever `!ref.SeamsComparable`
+  (`dimensions.go:571-581`), which includes the ordinary "no baseline stored"
+  and "comparison not requested" cases. Confirmed above: archfit's own repo
+  reports drift `unmeasured` with `comparison.status: not_requested`.
+- **coupling** is forced to `Partial` when any edge abstains
+  (`dimensions.go:265-275`) or when TypeScript import resolution is materially
+  incomplete (`dimensions.go:302-310`).
+
+Coupling's behaviour is correct and evidence-dependent — it reports `measured`
+on archfit's own repo because nothing abstained there. Drift's is a **product
+lifecycle gap**: on a first run there is nothing to compare against, and calling
+that "unmeasured evidence" is different from "no comparison was requested".
+Task 4 resolves it as an explicit policy decision, not a collector change.
+
+### 1.2 `Measured` currently means two different things
+
+The deeper defect, and the reason no collector should be written first. Measured
+on archfit's own repo:
+
+```
+structure        measured  + unknown: "structure of 719 edges leaving the module map"
+change_locality  measured  + unknown: "essential vs accidental volatility"
+coupling         measured  + (no unknowns in this run)
+complexity       partial   + unknown: (hardcoded)
+```
+
+`intent`, `structure`, `modularity`, and `change_locality` report `Measured`
+while naming an `UnknownFact` — a *lenient* reading: "the denominator is
+complete; these are footnotes." `coupling` reports `Partial` for the structurally
+identical situation (denominator measured, unknowns inside it) — a *strict*
+reading. Verified by counting status assignments per collector:
+
+```
+intent          Measured=1 Partial=0 AppendsUnknown=1
+structure       Measured=1 Partial=0 AppendsUnknown=1
+modularity      Measured=1 Partial=0 AppendsUnknown=1
+coupling        Measured=1 Partial=2 AppendsUnknown=2
+changeLocality  Measured=1 Partial=1 AppendsUnknown=2
+```
+
+Any new collector must answer "do I report `Measured`+unknown, or `Partial`?"
+and today there is no contract to answer it. Writing three collectors against an
+undefined term would triple the inconsistency. **Task 1 fixes the term before
+any collector is touched.**
+
+### 1.3 What this plan is not
+
+Not "lower the bar so the tool shows green." The governing rule stays: missing
+evidence is `partial`/`unmeasured`, never a healthy zero. Task 1 fixes a
+definition; it does not weaken one. Every promotion added later is gated by that
+definition and by a test that fails if a collector promotes while a required
+fact is missing. A repository with no coverage file keeps `testability` partial
+and keeps exiting 2 — by design.
+
+---
+
+## 2. Evidence-source matrix
+
+Candidate → dimension → fact → value → cost → default → failure semantics.
+`native` means the fact is already computed inside archfit today.
+
+### Stage A — already computed, zero new tools, zero new subprocesses
+
+| Source                                                                                              | Dimension    | Fact produced                                                              | Decision value                                                                         | Cost   | Default | Failure semantics                                   |
+| --------------------------------------------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------ | ------- | --------------------------------------------------- |
+| `deployunit.Detect` (Dockerfiles `:335`, k8s manifests `:364`, TS workspaces `:213`, `pyproject.toml` `:267`, Go mains `:134`) — **already runs** | `operations` | corroborated deploy units per path; declared-vs-corroborated reconciliation | separates "a module declares a deploy unit" from "a manifest for it exists in the tree" | native | on      | no manifest → `partial`, fact named                  |
+| `ownership.Resolve` (CODEOWNERS, `:56-60`) — **already runs**                                       | `operations` | owner provenance per module (`codeowners` \| `git-author` \| `declared`)    | a git-author fallback owner is not an ownership statement, yet distance depends on it   | native | on      | no CODEOWNERS → provenance `git_author`, fact named  |
+| `evidence.SyntaxFact.StartLine/EndLine` (`evidence.go:64-76`) — **already collected**                | `complexity` | function/method length distribution: count, p50, p90, max, over-threshold tail, per module | locates god-functions at seams; diagnostic only, does not promote on its own            | native | on      | no syntax facts → `partial`, fact named              |
+| module-graph shape (existing relationship facts)                                                    | `complexity` | dependency-chain depth and degree tail per module                          | the architecture-level complexity claim; this is what promotes the dimension            | native | on      | graph incomplete → `partial`, fact named             |
+
+### Stage B — supplied coverage, opt-in, parsed not executed
+
+| Source                                                            | Dimension     | Fact produced                                | Decision value                                              | Cost           | Default | Failure semantics                                  |
+| ----------------------------------------------------------------- | ------------- | -------------------------------------------- | ------------------------------------------------------------ | -------------- | ------- | -------------------------------------------------- |
+| Go coverprofile (`go test -coverprofile`)                         | `testability` | covered/total statements per file → per module | whether the modules archfit judges are actually exercised     | file read (ms) | opt-in  | absent/unparsable/stale/unmapped → `partial` + named unknown |
+| LCOV (`c8`, `vitest`, `jest`, `cargo llvm-cov --lcov`)            | `testability` | covered/total lines per file → per module     | same, TS/JS and Rust                                          | file read (ms) | opt-in  | same                                               |
+| coverage.py JSON (`pytest-cov --cov-report=json`)                 | `testability` | covered/total statements per file → per module | same, Python                                                  | file read (ms) | opt-in  | same                                               |
+| `cargo llvm-cov --json --summary-only`                            | `testability` | per-file summary counts                       | same, Rust when LCOV is not produced                          | file read (ms) | opt-in  | same                                               |
+
+**Coverage is ingested, never executed.** See §3.2.
+
+### Stage C — deferred, explicitly not in this plan
+
+| Candidate                                              | Dimension     | Why deferred                                                                                                                                                    |
+| ------------------------------------------------------ | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| archfit executing `go test` / `pytest` / `cargo test`  | `testability` | arbitrary code execution in a tree the user may not own; non-hermetic; network/DB dependent; not byte-reproducible. Violates the approved v1 decision. Panel consensus: reject from `analyze` and `check`. A separate future command could produce an artifact that `analyze` then reads. |
+| `gocognit` / `lizard` cognitive complexity             | `complexity`  | Stage A module-graph evidence is native and states an architecture claim. Revisit only if corpus evidence shows graph shape ranks a seam materially worse than a code-level metric. |
+| `knip` (ISC, maintained)                               | `modularity`  | overlaps `scip-typescript` unused-export facts already collected; no non-duplicated evidence demonstrated.                                                        |
+| `import-linter`                                        | `intent`      | duplicates archfit's own `rules:` engine; two rule languages in one report is a UX regression.                                                                    |
+| `cargo audit` / `cargo deny`, SBOM                     | `operations`  | security/supply-chain is a separate report family. CVEs in an architecture verdict is the "do not blur concerns" failure.                                          |
+| `tsc --noEmit`, `pyright --outputjson` as findings     | —             | compiler/type correctness is not architecture. Keep as tool-health signals only.                                                                                   |
+| Observed **runtime** topology (live cluster, applied state) | `operations` | requires cluster credentials; out of scope for a static CLI. This is why Task 5 claims *declared-topology completeness*, not observation.                          |
+
+---
+
+## 3. Design decisions
+
+### 3.1 The promotion criterion (the abstain-vs-fake line)
+
+Each dimension declares a fixed **required-fact set**. A collector may report
+`measured` **iff every required fact is either observed, or provably
+not-applicable to this tree**:
+
+```
+measured   ⟺  required ∖ (observed ∪ not_applicable) = ∅
+partial    ⟺  otherwise, and at least one required fact observed
+unmeasured ⟺  no required fact observed
+```
+
+`UnknownFact` entries remain permitted alongside `measured` **only** for facts
+declared out-of-claim in the contract (Task 1) — e.g. structure's "edges leaving
+the module map" is outside structure's claim about *declared* modules. Anything
+inside the claim that is missing forces `partial`. This is what makes the
+lenient and strict readings in §1.2 one rule instead of two.
+
+Three properties make it testable, not aspirational:
+
+1. The required-fact set is a compile-time constant per dimension, not a runtime
+   count, so a fact cannot be quietly dropped from the denominator.
+2. `TestPromotionIsMonotonic` (Task 2) asserts, per dimension, that removing any
+   single required fact flips `measured` → `partial`.
+3. `TestNoMeasuredDimensionHasInClaimUnknowns` (Task 2) asserts every
+   `UnknownFact` carried by a `measured` dimension is declared out-of-claim.
+
+"Not applicable" is deliberately narrow and must be established by the
+producer's own probe — the discipline `registry.ProjectPresent` already enforces
+for language analyzers. A tree with no Rust crate is not missing Rust coverage. A
+tree with a Rust crate and no coverage file is. Per panel: in a monorepo,
+denominators stay per module and per language; a supported language's evidence is
+never averaged over an unsupported one.
+
+### 3.2 Coverage is supplied, not executed
+
+`docs/design/architecture-state-reporting.md` records as approved: *"V1 does not
+execute a target repository's test suite as measurement evidence."* This plan
+keeps that decision and builds the supplied-input path it implies but which does
+not exist (verified: no `CoverageFile`, `SuppliedCoverage`, or `lcov` symbol
+exists anywhere in `internal/` or `cmd/`).
+
+Executing a target's tests would be non-hermetic, slow, non-reproducible, and an
+arbitrary-code-execution surface. Ingesting a file the user's CI already produced
+is deterministic, hermetic, cacheable by content hash, and honest.
+
+Panel correction — **freshness must bind to a commit, not a timestamp.** Coverage
+formats carry no content hash of the sources they describe, so file mtime proves
+nothing: a profile from a different commit can be newer than the checkout. The
+contract is therefore:
+
+- the coverage source is accepted only when accompanied by the commit SHA it was
+  produced from (config `source_ref`, or a sidecar `<file>.ref`);
+- a profile whose SHA ≠ the analyzed `source_ref` is reported `stale` and forces
+  `partial`, regardless of mtime;
+- when no SHA is available, the source is `unverified` and forces `partial` — it
+  is reported and used for diagnostics, never for promotion.
+
+Config shape (new `coverage:` block, schema additive):
+
+```yaml
+coverage:
+  enabled: true          # default false — opt-in
+  gate: warn             # off | warn | fail, reusing the analyzer GateMode
+  require_ref: true      # a profile without a matching commit SHA cannot promote
+  sources:
+    - path: coverage.out
+      format: go-coverprofile   # auto | go-coverprofile | lcov | coverage-py-json | llvm-cov-json
+      ref_file: coverage.out.ref
+    - path: coverage/lcov.info
+      format: lcov
+```
+
+### 3.3 Path normalization is the load-bearing risk
+
+Coverage formats disagree on path shape and two are documented to emit absolute
+paths. A path that fails to normalize yields zero covered files, which a naive
+implementation reads as "nothing is tested" — the worst failure mode here.
+
+Verified upstream behaviour:
+
+- **Go coverprofile** prefixes blocks with the *import path* plus filename for
+  non-local packages but the *full file path* for local packages
+  (golang/go#40251); one profile can contain both shapes.
+- **coverage.py** stores **absolute** paths by default; relative only with
+  `[run] relative_files = True`.
+- **LCOV** `SF:` records are whatever the producer wrote — absolute under most
+  Node runners.
+- **llvm-cov JSON** filenames are absolute.
+
+Contract (Task 7): every ingested path is reduced to a ScanRoot-relative slash
+path using the module-prefix strip `internal/extract/golang` already applies via
+`pkg.Module.Dir`. A path that cannot be reduced is **not** dropped silently — it
+increments `unresolved_coverage_paths`, which is published as a metric and forces
+`partial` when non-zero.
+
+### 3.4 What must not change
+
+`gitnexus_impact(target="Decide", direction="upstream", depth=3, repo="archfit")`
+reports **CRITICAL**: 5 impacted symbols across 6 execution flows
+(`application.Execute` ×3, `scoreBaseTree`, `attachBaseComparison`, `assess`).
+
+**No task modifies `Decide`, its signature, or its semantics.** The verdict
+aggregator stays metric-blind and rule-identical; only what the collectors
+legitimately report changes. By contrast
+`gitnexus_impact(target="testabilityDimension", …)` reports **LOW** — 3 impacted
+symbols contained inside `Evaluation` → `State`. The blast radius of this plan is
+deliberately kept on the low-risk side of that boundary.
+
+Also unchanged: finding IDs and statuses, baseline behaviour, `--base`,
+deterministic serialization, five-format parity, comparability rules, the exit
+table 0/1/2/3, and the absence of any repository-level scalar.
+
+---
+
+## 4. Staging and rollback
+
+Each task is one commit and is independently revertible.
+
+| Stage | Tasks | Ships                                                                        | Revert boundary                                                    |
+| ----- | ----- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 0     | 1–3   | contract, audit, and reachability characterization; no code changes yet     | revert commits; specifications and test disappear, no behaviour change |
+| 1     | 4     | implement Task 2 audit decisions (status semantics and implementation fixes) | revert commit; Task 3 reachability outcome may change              |
+| A     | 5–7   | drift lifecycle policy; `operations` and `complexity` reach `measured`      | revert commit; dimensions return to current state                   |
+| B     | 8–10  | supplied-coverage ingestion; `testability` reaches `measured`               | revert commit; `coverage.enabled` defaults false, no behaviour change |
+| C     | 11–13 | renderers, docs/schema, corpus + baseline gate                             | revert commit                                                       |
+
+Stage 0 must complete before Stage 1: Task 3 characterizes reachability (Outcome
+A or B), and the owner decides from the Task 2 audit whether to attempt the
+status-semantics changes that might unlock Outcome A. If Outcome B is permanent
+(required by product constraints), Stage 1 is skipped and the plan is closed as
+"informed decision: HEALTHY is not reachable, by design".
+
+---
+
+## 5. Tasks
+
+### Task 1: Define the nine-dimension evidence contract
+
+- [ ] Write the contract: claim, applicable-when, denominator, in-claim vs out-of-claim facts, and the exact measured/partial/unmeasured conditions per dimension
+- [ ] Record the lenient-vs-strict decision from §1.2 explicitly
+- [ ] Record the drift "comparison not requested" decision (input to Task 4)
+- [ ] Reconcile the contract against current behaviour and list every deviation
+
+Justification: §1.2. `Measured` currently means "denominator complete, footnotes
+allowed" in four collectors and "denominator complete and nothing unknown" in
+another. Three new collectors written against an undefined term would triple the
+inconsistency. This task writes no code and changes no output; it produces the
+definition every later task is tested against. Panel consensus recommendation #1.
+
+Files:
+
+- `docs/design/evidence-contract.md` (new) — one section per dimension with the
+  eight fields above, plus a deviation table listing, for each of the nine, where
+  today's behaviour differs from the contract and whether Task 2 ratifies it or
+  Task 3 changes it.
+
+Preconditions: none — this is the entry point.
+
+Postconditions: a single definition of `Measured` exists. For every dimension it
+is decidable, from the document alone, whether a given run should report
+measured, partial, or unmeasured. Every deviation is listed with an owner task.
+
+Fitness gate:
+
+- No two dimensions carry contradictory `Measured` definitions.
+- Every `Measured` condition is stated as a predicate over facts, not prose
+  judgement.
+- Every `UnknownFact` that a `measured` dimension may carry is explicitly marked
+  out-of-claim, with the reason.
+- The deviation table accounts for all nine dimensions — none omitted.
+- The drift decision is stated with its consequence for the exit table.
+
+Impact commands:
+
+- `gitnexus_context(name="Dimension", file="internal/assessment/state/state.go", repo="archfit")`
+- `gitnexus_impact(target="buildDimensions", direction="downstream", depth=2, repo="archfit")`
+
+Verification commands:
+
+```sh
+test -f docs/design/evidence-contract.md
+for d in intent structure modularity coupling change_locality complexity testability operations drift; do
+  grep -q "^## $d" docs/design/evidence-contract.md || echo "MISSING SECTION: $d"
+done
+grep -c "Measured when:" docs/design/evidence-contract.md   # expect 9
+grep -c "Out-of-claim:" docs/design/evidence-contract.md    # expect 9
+npx --yes markdownlint-cli2 'docs/design/evidence-contract.md' || true
+```
+
+Manual checks: for each of the nine, read the contract next to the collector body
+and confirm the contract describes the collector's *intent*, not merely its
+current code. Confirm the four lenient collectors' unknown facts are genuinely
+out-of-claim and not an excuse.
+
+Rollback: delete the document; nothing depends on it yet.
+
+---
+
+### Task 2: Characterize current behaviour against the contract
+
+- [ ] Audit all nine dimensions against their Task 1 contract definitions
+- [ ] Record every mismatch between contract and current code
+- [ ] Classify each mismatch: status-semantics change, implementation fix, or new collector required
+- [ ] Do not assume current behaviour satisfies the contract — assume it does not
+
+Justification: Task 1 is prose; this measures reality against it. The first draft
+of this plan assumed the six evidence-dependent collectors already satisfied the
+contract and could be routed through a shared `Promote` with byte-identical
+output. Fusion review rejected that: the audit must come first, because the
+mismatch set determines whether Task 4 onward needs status changes, code fixes,
+or genuinely new evidence. Writing the shared promotion helper before knowing the
+gap would bake in an unvalidated contract.
+
+**Status reclassification is a verdict change.** If the audit concludes a
+dimension's status semantics must change, that changes verdicts, five-format
+output, exit behaviour, schema, and goldens — even though `Decide` is untouched.
+That is honest and expected, not a defect, but it is an owner decision recorded
+here rather than an implementation detail buried in a later task.
+
+Files:
+
+- `docs/design/evidence-contract-audit.md` (new) — nine rows, one per dimension:
+  contract definition (Task 1), current behaviour with the symbol and branch that
+  produces it, mismatch description, and classification.
+- No code changes in this task.
+
+Preconditions: Task 1 merged; contract locked.
+
+Postconditions: a complete mismatch table exists. Every dimension is classified.
+The owner can decide, from this table alone, which mismatches are ratified and
+which are fixed, before any code is written.
+
+Fitness gate:
+
+- All nine dimensions have a row; none omitted.
+- Each row cites the symbol and branch producing current behaviour, not a bare
+  line number — line citations drift, symbols do not.
+- Each mismatch carries exactly one classification.
+- The three hardcoded-`Partial` collectors are confirmed to have no code path
+  reaching `Measured`, and are classified as "new collector required".
+- No code changes: `git diff --stat` touches only the new document.
+
+Impact commands:
+
+- `gitnexus_context(name="buildDimensions", file="internal/assessment/evaluation/dimensions.go", repo="archfit")`
+- `gitnexus_impact(target="Decide", direction="upstream", depth=3, repo="archfit")` — record the CRITICAL blast radius in the audit so any proposed status change is reviewed against it
+
+Verification commands:
+
+```sh
+test -f docs/design/evidence-contract-audit.md
+grep -c '^## ' docs/design/evidence-contract-audit.md              # expect 9
+grep -c 'Mismatch classification:' docs/design/evidence-contract-audit.md  # expect 9
+git diff --stat                                                    # expect only the new doc
+make build && make test-fast                                       # unchanged behaviour
+```
+
+Manual checks: for each of the nine, read the contract next to the collector body
+and confirm the classification is right. An easy classification is not an excuse
+for missing a real gap.
+
+Rollback: delete the audit document; no code was changed.
+
+---
+
+### Task 3: Characterize `HEALTHY` reachability with a hermetic fixture
+
+- [ ] Build a minimal, hermetic, Go-only fixture
+- [ ] Run `analyze` and `check` against it and record the outcome
+- [ ] Outcome A: `healthy` reached — assert it, with parity and determinism
+- [ ] Outcome B: not reached — emit an impossibility report naming each blocker and its remedy
+
+Justification: the exit-0 branch has never executed end-to-end. This task
+establishes ground truth for Stages A and B.
+
+**Dual-outcome gate.** Fusion review found the first draft's gate impossible:
+it asserted a blocking set of exactly `{complexity, testability, operations,
+drift}`, but a fixture alone cannot change those, so a success-only gate would
+never pass and would pressure an executor to weaken the contract to force green.
+Both outcomes below are valid completions:
+
+- **A:** the fixture reaches `healthy` and `check` exits 0.
+- **B:** it does not, and the test emits a report naming each blocking dimension,
+  the symbol that blocks it, and whether the remedy is a contract revision or a
+  new collector.
+
+Outcome B is the expected result before Tasks 4–9 land. Task 12 flips the test to
+require Outcome A once the collectors exist.
+
+**Hermeticity.** Fusion flagged that a multi-language fixture pulls in tool and
+portability dependencies before basic reachability is established. The fixture is
+therefore Go-only, needs no network, no language servers, and no tools beyond the
+Go toolchain. Git history and CODEOWNERS are created deterministically by the
+test's setup helper, not assumed from the developer's environment.
+
+Files:
+
+- `testdata/fixtures/reachability/` (new) — minimal Go module: two declared
+  modules with owners, `CODEOWNERS`, `Dockerfile`, one enabled rule that passes,
+  no abstained edges.
+- `testdata/fixtures/reachability/README.md` (new) — every file, the dimension it
+  serves, and the contract fact it satisfies.
+- `cmd/archfit/integration_reachability_test.go` (new) — deterministic git init
+  and commit for the fixture, baseline creation via the `baseline` command, then
+  the dual-outcome assertion. Reuses the existing parity and byte-stability
+  harnesses rather than adding a third.
+
+Preconditions: Tasks 1–2 merged; audit table reviewed and its classifications
+accepted by the owner.
+
+Postconditions: reachability is established as fact, not hypothesis. Either the
+exit-0 branch is proven to run, or every blocker is named with a remedy that
+Stages A and B must deliver.
+
+Fitness gate:
+
+- Exactly one of Outcome A or Outcome B holds; the test neither hangs nor panics.
+- Outcome B's report names, per blocking dimension, the blocking symbol and the
+  remedy class from the Task 2 audit.
+- The fixture is hermetic: no absolute paths, no environment variables, no tool
+  beyond the Go toolchain, and a fresh clone reproduces the same result.
+- Two consecutive runs are byte-identical.
+- Format parity is asserted through the existing harnesses:
+  `cmd/archfit/format_matrix_test.go` for the non-JSON formats and
+  `cmd/archfit/byteidentical_test.go` for JSON. Fusion verified these are two
+  separate harnesses, not one.
+- Baseline setup uses the `baseline` command (`cmd/archfit/baseline.go`). The
+  first draft wrongly cited `ARCHFIT_UPDATE_SURFACE`, which regenerates the Go
+  model-surface golden (`internal/model_surface_test.go`) and has nothing to do
+  with drift.
+- Drift comparability is verified by fingerprint, not by file existence: the test
+  asserts `SeamsComparable == true` after baseline creation, since drift requires
+  matching config, module-map, label-set, and rubric fingerprints.
+
+Impact commands:
+
+- No production symbol is modified in this task; fixture and test only.
+- `gitnexus_detect_changes(scope="all", repo="archfit")` to confirm no production
+  symbol was touched.
+
+Verification commands:
+
+```sh
+make build
+go test ./cmd/archfit/ -run IntegrationReachability -count=1 -v
+.bin/archfit analyze --config testdata/fixtures/reachability/.archfit.yaml --format json > /tmp/r1.json
+.bin/archfit analyze --config testdata/fixtures/reachability/.archfit.yaml --format json > /tmp/r2.json
+diff /tmp/r1.json /tmp/r2.json && echo "DETERMINISTIC OK"
+python3 - <<'PY'
+import json
+d = json.load(open("/tmp/r1.json"))
+st = d["architecture_state"]
+print("verdict:", st["verdict"])
+for k, v in sorted(st["dimensions"].items()):
+    print(f"  {k:16} {v['status']}")
+PY
+.bin/archfit check --config testdata/fixtures/reachability/.archfit.yaml; echo "exit=$?"
+go test ./cmd/archfit/ -run 'TestFormatMatrix|ByteIdentical' -count=1
+```
+
+Manual checks: confirm the fixture contains only files justified in its README.
+Confirm the test creates git history itself rather than depending on the
+developer's checkout. Confirm no `--format console` appears anywhere — the
+supported values are `text`, `json`, `markdown`, `sarif`, `scorecard`
+(`cmd/archfit/check.go`); the first draft wrongly used `console`.
+
+Rollback: delete the fixture directory and the test file.
+
+---
+
+### Task 4: Implement the Task 2 audit decisions
+
+- [ ] For each mismatch classified as "status-semantics change", implement the decision
+- [ ] For each classified as "implementation fix", make the fix
+- [ ] Leave the "new collector required" items for Tasks 5–12
+- [ ] Keep the three hardcoded-`Partial` collectors unchanged in this task
+
+Justification: Task 2 has determined what needs to change and which changes are
+outside the scope of static evidence and existing collectors. This task implements
+the decided changes. It is deliberately split from Tasks 5–12 (new collectors)
+so the owner can approve status semantics separately from collector work.
+
+Files: per the Task 2 audit classified "status-semantics change" and
+"implementation fix" rows. Do not edit symbols classified "new collector
+required".
+
+Preconditions: Tasks 1–3 merged; audit reviewed and owner-approved.
+
+Postconditions: every decided mismatch is implemented. The tests from Task 3 show
+the new outcome.
+
+Fitness gate:
+
+- No symbols classified as "new collector required" are edited in this task.
+- All output changes from this task trace back to a specific row in the Task 2
+  audit with the "status-semantics change" or "implementation fix" label.
+- `gitnexus_detect_changes` output exactly matches the audit's scope.
+
+Impact commands:
+
+- `gitnexus_detect_changes(scope="all", repo="archfit")`
+- Per symbol changed: `gitnexus_impact(target="<symbol>", direction="upstream", depth=3, include_tests=true, repo="archfit")`
+
+Verification commands:
+
+```sh
+go test ./cmd/archfit/ -run IntegrationReachability -count=1 -v   # outcome may change
+git diff --name-only | while read f; do
+  grep -q "$f" /tmp/audit-scope.txt || echo "UNPLANNED FILE: $f"
+done
+make test-fast && make lint
+```
+
+Manual checks: for each changed symbol, confirm the change was explicitly
+approved in the Task 2 audit, not inferred from it.
+
+Rollback: revert per approval row; each mismatch fix is independent.
+
+---
+
+### Task 5: Implement drift lifecycle policy (stage A, task 1)
+
+- [ ] Implement the Task 1 decision for "comparison not requested"
+- [ ] Keep "baseline requested but missing/incomparable" as `unmeasured`
+- [ ] Cover both paths with tests
+
+Justification: §1.1. Drift is `unmeasured` on every first run, so `HEALTHY` is
+unreachable regardless of the three hardcoded collectors. Panel: this is a
+product-contract decision, not a collector detail — hence decided in Task 1 and
+merely executed here.
+
+The distinction the implementation must preserve: *no comparison was requested*
+is not the same as *comparison was requested and the evidence is missing*. The
+former is a scope statement; the latter is an evidence gap. Conflating them is
+what makes today's output misleading. Whichever way Task 1 decides, the two cases
+must remain separately reportable.
+
+Files:
+
+- `internal/assessment/evaluation/dimensions.go` — `driftDimension` branches on
+  `comparison.status == not_requested` distinctly from
+  `SeamsComparable == false`.
+- `internal/assessment/state/state.go` — if Task 1 chose a not-applicable
+  concept, add it as a `RequiredFact` not-applicable marker; **do not** add a
+  fourth `MeasurementStatus` value, which would change the wire contract and all
+  five renderers.
+- `internal/assessment/evaluation/dimensions_test.go` — both paths.
+
+Preconditions: Tasks 1–3 merged; drift decision recorded.
+
+Postconditions: a first run with no comparison requested no longer reports an
+evidence gap it does not have. A requested-but-incomparable baseline still
+reports `unmeasured` with its reason.
+
+Fitness gate:
+
+- No comparison requested → the Task 1 decision, with reason text distinct from
+  the incomparable-baseline case.
+- `--base` given but baseline missing/stale/rubric-mismatched → `unmeasured`,
+  reason unchanged from today.
+- `MeasurementStatus` still has exactly three values; schema version unchanged.
+- The Task 3 fixture's blocking set loses `drift`.
+
+Impact commands:
+
+- `gitnexus_impact(target="driftDimension", direction="upstream", depth=3, include_tests=true, repo="archfit")`
+- `gitnexus_impact(target="attachBaseComparison", direction="upstream", depth=3, include_tests=true, repo="archfit")`
+- `gitnexus_detect_changes(scope="all", repo="archfit")`
+
+Verification commands:
+
+```sh
+go test ./internal/assessment/evaluation/ -run 'TestDrift' -count=1 -v
+go test ./internal/application/ -count=1
+make build
+.bin/archfit analyze --config testdata/fixtures/healthy/.archfit.yaml --json \
+  | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d["comparison"]["status"], d["dimensions"]["drift"]["status"])'
+make lint
+```
+
+Manual checks: confirm the two reason strings are distinguishable by a reader who
+does not know the codebase.
+
+Rollback: single commit revert; drift returns to unconditional `unmeasured`.
+
+---
+
+### Task 6: Give `operations` declared-topology completeness
+
+- [ ] Surface corroborated deploy units from `deployunit.Detect`
+- [ ] Surface owner provenance (`codeowners` | `git_author` | `declared`)
+- [ ] Reconcile declared vs corroborated; publish both, never merge
+- [ ] Promote via `Promote` under the *declared-topology* claim only
+
+Justification: `operationsDimension` says "nothing observes what actually runs"
+while archfit already parses Dockerfiles (`deployunit.go:335`), k8s manifests
+(`:364`), workspaces (`:213`), `pyproject.toml` (`:267`), Go mains (`:134`), and
+CODEOWNERS (`ownership.go:56-60`). Those results reach `acquire.go:96-97`, fill
+the topology, and are then discarded as evidence. Surfacing them costs no new
+tool, no new subprocess, and no new walk.
+
+**Panel correction, applied.** Parsing a manifest is *not* observing runtime. A
+committed Dockerfile may never be built; a Helm chart may never be applied. This
+task therefore narrows the dimension's claim to **declared operational topology
+completeness** — "every declared module has a corroborating manifest and a real
+owner" — and Task 1 must state that claim. Runtime and supply-chain facts stay
+out-of-claim and remain named unknowns. The dimension is renamed in the contract,
+not in the wire format.
+
+It also fixes a correctness gap: distance depends on owner and deploy unit
+(`coupling.DistanceIsHigh`), so a git-author fallback owner silently behaves like
+a real ownership boundary. Publishing provenance makes that visible.
+
+Files:
+
+- `internal/model/evidence/evidence.go` — `CorroboratedDeployUnit{Path, Unit,
+  Source}` and `OwnerProvenance{Module, Owner, Source}`; `Source` a closed enum
+  (`dockerfile`, `k8s_manifest`, `workspace`, `pyproject`, `go_main`,
+  `codeowners`, `git_author`, `declared`).
+- `internal/extract/acquire/acquire.go` — retain the detection and provenance
+  results instead of discarding them after topology fill.
+- `internal/extract/deployunit/deployunit.go` — add a sibling of `Detect`
+  returning the matched source kind; existing signature preserved so
+  `cmd/archfit/config_update_adapters.go:453` is untouched.
+- `internal/ownership/ownership.go` — return provenance alongside the owner map.
+- `internal/assessment/evaluation/assess.go` — carry both on `Observations`.
+- `internal/assessment/evaluation/dimensions.go` — `operationsDimension` gains
+  `corroborated_deploy_units`, `modules_with_corroborated_deploy_unit`,
+  `owners_from_codeowners`, `owners_from_git_author_fallback`; in-claim required
+  facts are declared topology + corroboration + owner provenance; runtime and
+  SBOM facts declared out-of-claim.
+- Tests in `deployunit_test.go`, `ownership_test.go`, `dimensions_test.go`.
+
+Preconditions: Tasks 1–4 merged.
+
+Postconditions: declared and corroborated topology are separate metric families
+with provenance. A tree with a Dockerfile and CODEOWNERS reaches `measured` under
+the declared-topology claim. A tree with neither stays `partial` naming which.
+
+Fitness gate:
+
+- Dockerfile + CODEOWNERS fixture → `measured`, `owners_from_codeowners > 0`,
+  `owners_from_git_author_fallback == 0`.
+- Neither → `partial`, unknown names "corroborating deploy manifest".
+- Declared `deploy_unit:` with no corroborating manifest → both metrics
+  published, values differ, status `partial`. A declared unit must never be
+  counted as corroborated.
+- No CODEOWNERS → provenance `git_author`, distance behaviour unchanged.
+- The `measured` state still carries the runtime/SBOM unknown facts, marked
+  out-of-claim — proving the narrowed claim is explicit, not hidden.
+
+Impact commands:
+
+- `gitnexus_impact(target="Detect", file_path="internal/extract/deployunit/deployunit.go", direction="upstream", depth=4, include_tests=true, repo="archfit")`
+- `gitnexus_impact(target="Resolve", file_path="internal/ownership/ownership.go", direction="upstream", depth=4, include_tests=true, repo="archfit")`
+- `gitnexus_impact(target="operationsDimension", direction="upstream", depth=3, include_tests=true, repo="archfit")`
+- `gitnexus_detect_changes(scope="all", repo="archfit")`
+
+Verification commands:
+
+```sh
+go test ./internal/extract/deployunit/ ./internal/ownership/ ./internal/extract/acquire/ -count=1
+go test ./internal/assessment/evaluation/ -run 'TestOperations' -count=1 -v
+make build
+.bin/archfit analyze --config .archfit.yaml --json \
+  | python3 -c 'import json,sys;s=json.load(sys.stdin)["dimensions"]["operations"];print(s["status"],[m["name"] for m in s["metrics"]],[u["fact"] for u in s.get("unknown",[])])'
+make lint && make archfit
+```
+
+Manual checks: confirm declared and corroborated counts are separate JSON keys
+and no code path adds one into the other. Confirm the `Source` enum is closed and
+every producer sets it.
+
+Rollback: single commit revert.
+
+---
+
+### Task 7: Give `complexity` an architecture-level claim
+
+- [ ] State the architecture claim in the contract (Task 1) before coding
+- [ ] Promote on module-graph complexity: dependency-chain depth and degree tail
+- [ ] Publish function-size distribution as an out-of-claim diagnostic
+- [ ] Promote via `Promote`
+
+Justification: `complexityDimension` publishes file LOC only. Two native facts
+are already available: module-graph shape from existing relationship facts, and
+per-function extents from `SyntaxFact.StartLine`/`EndLine`
+(`evidence.go:64-76`, syntax analyzer on by default at `.archfit.yaml:694`).
+
+**Panel correction, applied.** The panel split on whether per-function complexity
+belongs in an architecture verdict at all, and the majority position was that it
+risks code-quality scope creep — one complicated function should not decide
+architecture health. So the promoting evidence is **module-graph complexity**
+(chain depth, degree tail), which is an architecture claim; function-size
+distribution ships as an out-of-claim diagnostic that locates hotspots but cannot
+by itself move the dimension.
+
+Deliberate ceiling, recorded: neither metric is cognitive complexity. Accepted
+because both are native, deterministic, and architecture-scoped. Upgrade trigger:
+corpus evidence that graph shape ranks a seam materially differently from a
+code-level metric — then reconsider `gocognit`/`lizard` (§2 Stage C).
+
+Files:
+
+- `internal/assessment/evaluation/complexity.go` (new) — pure helpers: graph
+  depth/degree distribution over existing relationship facts; function-length
+  distribution over `[]SyntaxFact`. Deterministic ordering; a fact with
+  `EndLine == 0` counts as unobserved, never as length zero.
+- `internal/assessment/evaluation/dimensions.go` — `complexityDimension` gains
+  `max_dependency_chain`, `module_fan_in_p90`, `module_fan_out_p90`
+  (in-claim) and `function_loc_p50/p90/max`, `functions_over_threshold`
+  (out-of-claim diagnostics), each with denominator and provenance.
+- `internal/config/config.go`, `archfit.schema.json` — optional
+  `metrics.function_loc_threshold` (default 60), tail counter only, never a gate.
+- `internal/assessment/evaluation/complexity_test.go` (new).
+
+Preconditions: Tasks 1–5 merged; complexity claim recorded in the contract.
+
+Postconditions: `complexity` reports an architecture-level distribution and
+reaches `measured` when the module graph is complete. Absent syntax facts leave
+the diagnostics unobserved without blocking promotion; an incomplete module graph
+does block it.
+
+Fitness gate:
+
+- Fixture with known graph shape → exact chain depth and p90 values, asserted
+  numerically.
+- Fixture with known function lengths → exact p50/p90/max.
+- `EndLine == 0` excluded from the denominator, not counted as 0 LOC.
+- ast-grep disabled → diagnostics absent (not 0), dimension still `measured` if
+  the graph is complete — proving the in-claim/out-of-claim split works.
+- Incomplete module graph → `partial` naming the graph fact.
+- Two identical runs produce byte-identical values.
+
+Impact commands:
+
+- `gitnexus_impact(target="complexityDimension", direction="upstream", depth=3, include_tests=true, repo="archfit")`
+- `gitnexus_impact(target="Syntax", file_path="internal/extract/astgrep/syntax.go", direction="upstream", depth=3, include_tests=true, repo="archfit")`
+- `gitnexus_detect_changes(scope="all", repo="archfit")`
+
+Verification commands:
+
+```sh
+go test ./internal/assessment/evaluation/ -run 'TestComplexity' -count=1 -v
+make build
+.bin/archfit analyze --config .archfit.yaml --json > /tmp/c1.json
+.bin/archfit analyze --config .archfit.yaml --json > /tmp/c2.json
+diff /tmp/c1.json /tmp/c2.json && echo "DETERMINISTIC OK"
+ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
+go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
+make lint && make archfit
+```
+
+Manual checks: verify percentile computation on an even-length input. Grep that
+`function_loc_threshold` reaches no gate or finding constructor.
+
+Rollback: single commit revert.
+
+---
+
+### Task 8: Supplied-coverage ingestion contract and path normalization
+
+- [ ] Add the `coverage:` config block (opt-in, default disabled)
+- [ ] Add the normalized internal coverage fact, before any renderer work
+- [ ] Implement ScanRoot-relative normalization with explicit unresolved counting
+- [ ] Implement commit-SHA freshness binding per §3.2
+- [ ] Cache by content hash through the existing fact-cache discipline
+
+Justification: §3.2, §3.3. This builds the ingestion spine and the normalization
+contract with **no format parsers** — parsers land in Task 8 against a contract
+that is already tested. A bug here silently produces zero coverage, the worst
+failure mode in this plan, so it is reviewed on its own.
+
+Files:
+
+- `internal/config/config.go`, `internal/configschema/**`, `archfit.schema.json`,
+  `.archfit.yaml` — additive `coverage:` block per §3.2, `enabled: false`
+  default, reusing the existing `GateMode`.
+- `internal/model/evidence/coverage_facts.go` (new) — `CoverageFact{File,
+  CoveredUnits, TotalUnits, Unit, Format, SourcePath, ToolVersion, SourceRef}`;
+  `CoverageIngest{Facts, UnresolvedPaths, Freshness, Format, ToolVersion,
+  Reason}` where `Freshness ∈ {matched, stale, unverified}`.
+- `internal/extract/coverage/coverage.go` (new) — locate, read, normalize, count
+  unresolved, resolve freshness. Parsing delegated via a `Parser` interface with
+  one registered stub here.
+- `internal/extract/coverage/normalize.go` (new) — the path contract.
+- `internal/factcache/**` — key covers source content hash + format + parser
+  version + ScanRoot + source ref. Stale/unverified/partial ingests are never
+  cached, matching `docs/design/fact-cache.md`.
+- `internal/extract/coverage/normalize_test.go`, `coverage_test.go` (new).
+
+Preconditions: Tasks 1–6 merged. This task must not change any dimension status.
+
+Postconditions: an opt-in, cached ingestion path exists that reports unresolved
+paths and freshness explicitly. `testability` untouched, still `partial`. With
+the default `coverage.enabled: false`, `analyze --json` is byte-identical to
+Task 6 output.
+
+Fitness gate:
+
+- Path table covers: absolute POSIX; Go import-path-prefixed; Go local-package
+  absolute (both shapes in one profile, per golang/go#40251); relative; outside
+  ScanRoot; symlinked root; Windows separators in LCOV.
+- An unreducible path increments `unresolved_coverage_paths` and does not vanish;
+  the test asserts the counter, not just the mapped set.
+- Profile SHA ≠ analyzed ref → `stale`; no SHA available → `unverified`; neither
+  can promote.
+- Missing configured source with `gate: fail` → the existing required-tool
+  failure path; with `gate: warn` → reported, non-blocking.
+- Cache: identical input → hit; changed file → miss; stale/unverified/partial →
+  never written.
+- `coverage.enabled: false` → byte-identical output vs Task 6.
+
+Impact commands:
+
+- `gitnexus_impact(target="Acquire", file_path="internal/evidence/acquisition/service.go", direction="upstream", depth=4, include_tests=true, repo="archfit")`
+- `gitnexus_impact(target="Load", file_path="internal/config/config.go", direction="upstream", depth=3, include_tests=true, repo="archfit")`
+- `gitnexus_detect_changes(scope="all", repo="archfit")`
+
+Verification commands:
+
+```sh
+go test ./internal/extract/coverage/ -count=1 -v
+go test ./internal/factcache/ ./internal/config/ -count=1
+ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
+go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
+make build
+.bin/archfit analyze --config .archfit.yaml --json > /tmp/t7.json
+diff /tmp/c1.json /tmp/t7.json && echo "NO-OP WHEN DISABLED OK"
+make lint && make archfit
+```
+
+Manual checks: read `normalize.go` and confirm no branch discards an unmapped
+path. Confirm the cache key includes parser version.
+
+Rollback: single commit revert; the config key disappears unconsumed.
+
+---
+
+### Task 9: Per-language coverage format parsers
+
+- [ ] Go coverprofile parser
+- [ ] LCOV parser
+- [ ] coverage.py JSON parser
+- [ ] llvm-cov JSON parser
+- [ ] Format auto-detection with explicit ambiguity failure
+
+Justification: four formats cover all four supported languages using files CI
+already produces. Each is a pure byte→`[]CoverageFact` function behind the Task 7
+`Parser` interface, independently testable and revertible. No parser spawns a
+subprocess.
+
+Mandatory internal slices — land and verify in this order, one commit each:
+
+- **8A** Go coverprofile (`mode:` header, `file:line.col,line.col n count`), both
+  path shapes.
+- **8B** LCOV (`SF:`/`DA:`/`LF:`/`LH:`, `end_of_record`).
+- **8C** coverage.py JSON (`files.<path>.summary.{covered_lines,num_statements}`).
+- **8D** llvm-cov JSON (`data[].files[].summary.lines.{covered,count}`).
+- **8E** auto-detection by extension and magic prefix; ambiguity is a named
+  error, never a guess.
+
+Files:
+
+- `internal/extract/coverage/parse_gocover.go`, `parse_lcov.go`,
+  `parse_coveragepy.go`, `parse_llvmcov.go`, `detect.go` (new).
+- `internal/extract/coverage/testdata/` (new) — one small real sample per format,
+  provenance recorded in a `README.md` beside them.
+- One `_test.go` per parser.
+
+Preconditions: Task 7 merged; `Parser` and normalization stable.
+
+Postconditions: all four formats parse to normalized facts. Malformed input
+yields a named error, never a partial silent result.
+
+Fitness gate:
+
+- Per format: valid sample → exact expected counts, asserted numerically.
+- Per format: truncated, empty, and header-only input → named error, no panic, no
+  partial fact set.
+- Go: a profile mixing import-path and absolute blocks maps both; `set`/`count`/
+  `atomic` all parse; `count > 1` is covered once, not double-counted.
+- LCOV: `LH`/`LF` disagreeing with per-line `DA` → prefer `DA` and report the
+  discrepancy rather than trusting the summary.
+- Auto-detect: a `.json` matching neither shape → named ambiguity error.
+- Randomized-truncation/fuzz test per parser asserts no panic.
+
+Impact commands:
+
+- `gitnexus_impact(target="Parse", file_path="internal/extract/coverage/coverage.go", direction="upstream", depth=3, include_tests=true, repo="archfit")`
+- `gitnexus_detect_changes(scope="all", repo="archfit")`
+
+Verification commands:
+
+```sh
+go test ./internal/extract/coverage/ -count=1 -v
+go test ./internal/extract/coverage/ -run Fuzz -count=1
+gofmt -l internal/extract/coverage/
+make lint
+```
+
+Manual checks: grep the package for `exec.`, `http.`, `os.Getenv` — there must be
+none. Confirm testdata samples are small and their origin documented.
+
+Rollback: revert per slice; parsers register independently.
+
+---
+
+### Task 10: Promote `testability` on genuine coverage evidence
+
+- [ ] Attribute coverage facts to declared modules
+- [ ] Publish covered/total with a real denominator and provenance
+- [ ] Promote only when attribution is complete and the ref matches
+- [ ] Keep the static file-split metrics alongside
+
+Justification: this makes `testability` capable of `measured`, deliberately last
+among evidence tasks so it inherits a tested ingestion path, normalization
+contract, and parsers.
+
+Panel correction, recorded in the contract: coverage proves instrumentation
+points were exercised, not that assertions are meaningful. The dimension's claim
+is therefore *exercised-code attribution*, not test quality; mutation resistance
+and assertion strength stay out-of-claim named unknowns.
+
+Files:
+
+- `internal/assessment/evaluation/assess.go` — carry `CoverageIngest` on
+  `Observations`.
+- `internal/assessment/evaluation/dimensions.go` — `testabilityDimension` gains
+  `covered_units`, `total_units`, `coverage_ratio`, `modules_with_coverage`
+  (denominator = declared modules), `unresolved_coverage_paths`; provenance
+  carries format + tool version + freshness. Existing `test_files`,
+  `production_files`, `test_to_production_files` retained unchanged.
+- `internal/assessment/evaluation/testability_test.go` (new).
+
+Preconditions: Tasks 7–8 merged.
+
+Postconditions: with a fresh, ref-matched, fully-mapped source, `testability`
+reports `measured`. Without one it reports `partial` exactly as today. On a
+repository with no coverage configured, output is byte-identical to Task 6.
+
+Fitness gate:
+
+- Fresh ref-matched profile covering every declared module → `measured`,
+  `unresolved_coverage_paths == 0`.
+- Profile covering 3 of 5 declared modules → `partial`; unknown names the two
+  unmapped modules; `modules_with_coverage` denominator is 5, not 3.
+- `unresolved_coverage_paths > 0` → `partial` regardless of ratio.
+- `stale` or `unverified` freshness → `partial`; ratio still published, marked.
+- Coverage disabled → status, metrics, and bytes identical to Task 6.
+- Zero test files with coverage present → `measured` with ratio 0, not
+  `unmeasured`. A tested-nothing repo is a measured fact, not missing evidence.
+- Coverage ratio never influences the verdict: assert no finding or gate reads
+  `coverage_ratio`. A low ratio makes the dimension `measured`, not `blocked`.
+
+Impact commands:
+
+- `gitnexus_impact(target="testabilityDimension", direction="upstream", depth=3, include_tests=true, repo="archfit")`
+- `gitnexus_impact(target="Score", file_path="internal/assessment/evaluation/assess.go", direction="upstream", depth=4, include_tests=true, repo="archfit")`
+- `gitnexus_detect_changes(scope="all", repo="archfit")`
+
+Verification commands:
+
+```sh
+go test ./internal/assessment/evaluation/ -run 'TestTestability' -count=1 -v
+make test
+make build
+go test -coverprofile=/tmp/self.out ./... > /dev/null 2>&1
+git rev-parse HEAD > /tmp/self.out.ref
+.bin/archfit analyze --config .archfit.yaml --json > /tmp/t9-off.json
+diff /tmp/c1.json /tmp/t9-off.json && echo "DISABLED PATH UNCHANGED OK"
+.bin/archfit analyze --config /tmp/archfit-cov.yaml --json \
+  | python3 -c 'import json,sys;s=json.load(sys.stdin)["dimensions"]["testability"];print(s["status"],{m["name"]:m["value"] for m in s["metrics"]})'
+make lint && make archfit
+```
+
+Manual checks: confirm the denominator is the declared module set, not the
+covered set. Confirm no path lets a high ratio suppress a finding.
+
+Rollback: single commit revert.
+
+---
+
+### Task 11: Renderers, five-format parity, and SARIF
+
+- [ ] Console, Markdown, JSON, scorecard render the new metric families
+- [ ] SARIF carries them in run properties
+- [ ] Format-matrix baselines regenerated deliberately
+- [ ] Determinism re-pinned
+
+Justification: the state contract requires five-format parity on facts. New
+metrics must appear consistently or the formats disagree about what was measured.
+Renderer work is last among implementation tasks so it renders a settled fact set.
+
+Files:
+
+- `internal/output/console/report.go`,
+  `internal/output/markdown/markdown_metrics.go`,
+  `internal/output/markdown/report.go`, `internal/output/jsonout/jsonout.go`,
+  `internal/output/scorecard/scorecard.go`, `internal/output/sarif/sarif.go`.
+- `cmd/archfit/testdata/format-matrix/**` — regenerate baselines.
+- `cmd/archfit/format_matrix_test.go` — extend parity to the new families,
+  including the in-claim/out-of-claim unknown distinction.
+
+Preconditions: Tasks 1–9 merged; fact set frozen.
+
+Postconditions: all five formats report the same statuses, coverage split, and
+metric families. SARIF keeps finding compatibility; state stays in run properties
+per the approved decision and SARIF 2.1.0 property-bag rules.
+
+Fitness gate:
+
+- `TestFormatMatrix_CrossFormatParity` passes with the new families.
+- `TestFormatMatrix_DoubleRunIsStable` passes.
+- `TestFormatMatrix_ExitCodesUnchanged` passes.
+- `TestFormatMatrix_SarifCarriesTheState` passes.
+- Baseline regeneration is a reviewed diff called out in the commit message,
+  never an incidental update.
+
+Impact commands:
+
+- `gitnexus_impact(target="Render", file_path="internal/output/console/report.go", direction="upstream", depth=3, include_tests=true, repo="archfit")`
+- `gitnexus_impact(target="Render", file_path="internal/output/sarif/sarif.go", direction="upstream", depth=3, include_tests=true, repo="archfit")`
+- `gitnexus_detect_changes(scope="all", repo="archfit")`
+
+Verification commands:
+
+```sh
+go test ./cmd/archfit/ -run TestFormatMatrix -count=1 -v
+go test ./internal/output/... -count=1
+make build
+for f in console json markdown sarif scorecard; do
+  .bin/archfit analyze --config .archfit.yaml --format "$f" > "/tmp/fmt-$f.a"
+  .bin/archfit analyze --config .archfit.yaml --format "$f" > "/tmp/fmt-$f.b"
+  diff "/tmp/fmt-$f.a" "/tmp/fmt-$f.b" || echo "NONDETERMINISM IN $f"
+done
+make lint
+```
+
+Manual checks: review the regenerated baseline diff line by line; every change
+must trace to a Task 4/5/6/9 metric. An unexplained line is a defect.
+
+Rollback: single commit revert including baselines.
+
+---
+
+### Task 12: Documentation, schema, and config reference
+
+- [ ] Document the `coverage:` block and the supplied-not-executed rationale
+- [ ] Publish the evidence contract as user-facing reference
+- [ ] Update dimension docs for `operations`, `complexity`, `testability`, `drift`
+- [ ] Record the accepted ceilings and their upgrade triggers
+
+Justification: the contract doc states three dimensions are "always partial in
+v1" and that v1 "does not execute a target repository's test suite". The first
+becomes false; the second stays true and now has an implementation. Leaving
+either unstated makes shipped behaviour contradict its own reference.
+
+Files:
+
+- `docs/design/architecture-state-reporting.md` — replace the "always partial"
+  statements; link the evidence contract; keep and sharpen the no-execution
+  decision.
+- `docs/design/evidence-contract.md` — promote from decision record to reference.
+- `docs/guide/configuration-reference.md` — the `coverage:` block.
+- `docs/guide/metrics.md` — new metric families with denominators, provenance,
+  and in-claim/out-of-claim marking.
+- `docs/guide/languages.md` — the concrete coverage command per language.
+- `docs/guide/tooling.md` — no new binary is required; coverage tools are the
+  user's existing CI tools.
+- `CLAUDE.md` — invariants: promotion criterion, coverage-is-supplied,
+  declared-topology claim.
+- `archfit.schema.json` — regenerated, not hand-edited.
+
+Preconditions: Tasks 1–10 merged; behaviour final.
+
+Postconditions: docs match behaviour. A reader can determine from docs alone what
+makes each dimension `measured`.
+
+Fitness gate:
+
+- `make schema` produces no drift.
+- Every command shown in docs is executed once and exits as documented.
+- `docs/guide/languages.md` names a concrete coverage command per language.
+- No doc still claims a dimension is permanently partial.
+
+Impact commands:
+
+- `gitnexus_detect_changes(scope="all", repo="archfit")`
+
+Verification commands:
+
+```sh
+ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
+go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
+npx --yes markdownlint-cli2 'docs/**/*.md' 'CLAUDE.md' || true
+grep -rn "always partial in v1" docs/ internal/ && echo "STALE CLAIM REMAINS" || echo "CLEAN"
+```
+
+Manual checks: read the `coverage:` reference as a new user and confirm it says
+plainly that archfit does not run your tests.
+
+Rollback: single commit revert.
+
+---
+
+### Task 13: Full corpus, reachability confirmation, and baseline gate
+
+- [ ] If Task 3 Outcome A (healthy reached): flip the test to assert `healthy` and `check` exit 0
+- [ ] If Task 3 Outcome B (not reached): record why, accept the constraint, and close the plan
+- [ ] Extend `corpus_sweep.py` with the promotion-contract assertion (if collectors were added)
+- [ ] Run the full 11-repository sweep in strict mode (if collectors were added)
+- [ ] Refresh the self-baseline and dogfood gate (if status changed)
+- [ ] Record residual coverage gaps honestly
+
+Justification: unit fixtures and the three hardcoded dimensions limit reachability
+in Stages A and B. This task confirms whether Task 3's reachability characterization
+hold true across the corpus. If the fixture proved `HEALTHY` unreachable by
+design (`Outcome B`), this task is a no-op that ratifies the design decision.
+If collectors in Stages A and B delivered Outcome A, this task verifies it at
+scale. `scripts/eval/corpus_sweep.py` already asserts nine dimensions, coverage
+counts summing to nine, exit-code agreement, format parity, and byte determinism.
+
+Files:
+
+- `cmd/archfit/integration_healthy_test.go` — flip to assert `verdict == healthy`
+  and `check` exit 0.
+- `scripts/eval/corpus_sweep.py` — per-repo assertion: every `measured` dimension
+  carries no *in-claim* unknown; every `partial` dimension carries at least one.
+- `scripts/eval/corpus_sweep_test.py` — cover the new assertion.
+- `.archfit-baseline.json` — refreshed after the dimension changes.
+- `docs/reports/` — sweep record including repos that remain partial and why.
+
+Preconditions: Tasks 1–11 merged. Corpus repos present under `~/workspace`. Rust
+toolchain available for the Rust members.
+
+Postconditions: strict sweep passes across all 11 repositories. Repos that remain
+`NEEDS_ATTENTION` do so for a named, correct reason. The healthy fixture
+demonstrates a genuine exit-0 run, exercising the branch that is dead today.
+
+Fitness gate:
+
+- `python3 scripts/eval/corpus_sweep.py --strict` exits 0 across the full corpus
+  (spotinfo, pumba, omni/scheduled-tasks, prometheus, ccgram, prefect, storybook,
+  yazi, herdr, ruff, tokio).
+- No repository reports `measured` with an in-claim unknown.
+- No verdict improves without a corresponding evidence gain — for each change the
+  record names which dimension became measured and from which fact.
+- Known-partial cases stay explicit: yazi `cargo-modules` disabled by config,
+  ruff SCIP partial, tokio `cargo-modules` partial for benches/examples/stress-
+  test, Python and TS unresolved imports and SCIP timeouts. Disclosed coverage
+  gaps, not silent successes.
+- `bash scripts/tests/cli_exit_contract_test.sh` passes including the `HEALTHY`
+  → 0 row, now reachable end-to-end.
+- `make all` green; `make archfit` green on the refreshed baseline.
+- No corpus repository is modified.
+
+Impact commands:
+
+- `gitnexus_detect_changes(scope="compare", base_ref="main", repo="archfit")`
+
+Verification commands:
+
+```sh
+make build
+go test ./cmd/archfit/ -run IntegrationHealthy -count=1 -v
+.bin/archfit check --config testdata/fixtures/healthy/.archfit.yaml; echo "exit=$?"   # expect 0
+python3 scripts/eval/corpus_sweep_test.py
+python3 scripts/eval/corpus_sweep.py --strict \
+  --repeat-repos spotinfo,ccgram,storybook,yazi \
+  --format-repos spotinfo,ccgram \
+  --summary-file /tmp/archfit-corpus-results.json
+bash scripts/tests/cli_exit_contract_test.sh
+make all
+.bin/archfit baseline --config .archfit.yaml
+make archfit
+for r in spotinfo pumba prometheus ccgram prefect storybook yazi herdr ruff tokio; do
+  git -C ~/workspace/$r status --porcelain 2>/dev/null | head -1
+done   # expect no output — corpus untouched
+```
+
+Manual checks: read the sweep summary and confirm every verdict change is
+explained by a named evidence gain.
+
+Rollback: revert the baseline refresh and the sweep assertion independently; the
+sweep change is test-only.
+
+---
+
+## 6. Explicitly not included
+
+- Archfit executing a target repository's test suite, build, or coverage command.
+- Any change to `Decide`, the verdict rules, the exit table, or the four
+  comparability hashes. (`Decide` is CRITICAL blast radius; §3.4.)
+- A fourth `MeasurementStatus` value.
+- Any repository-level scalar, band, or averaged score.
+- Cognitive/cyclomatic complexity analyzers (`gocognit`, `lizard`).
+- `knip`, `import-linter`, `cargo audit`, `cargo deny`, SBOM, vulnerability
+  scanning.
+- Compiler and lint diagnostics (`tsc --noEmit`, `pyright`, `ruff`) as
+  architecture findings.
+- Runtime/cluster topology observation, and any claim that a parsed manifest is
+  an observation of what runs.
+- Any change to Balanced Coupling scoring, `ScoreVersion`, seam-gate semantics,
+  or LLM enrichment.
+- New language support.
+
+---
+
+## 7. Research appendix
+
+Primary sources consulted 2026-08-27.
+
+| Fact                                                                                                                   | Source                                                                                                      | Used by            |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------ |
+| Go coverprofile records a full file path for local packages and an import path for non-local ones; profiles can mix both | golang/go issue #40251 "cmd/cover: clarify the format of cover profile"; `cmd/cover` source                  | §3.3, Tasks 7, 8A  |
+| Profile line format is `name.go:line.col,line.col numStmt count` after a leading `mode:` line                             | Go blog "The cover story" <https://go.dev/blog/cover>; `golang.org/x/tools/cover` `Profile`/`ProfileBlock`   | Task 8A            |
+| Coverage modes are `set`, `count`, `atomic`                                                                              | Go blog "The cover story"                                                                                   | Task 8A gate       |
+| coverage.py stores **absolute** paths by default; relative only with `[run] relative_files = True`                       | Coverage.py configuration reference <https://coverage.readthedocs.io/en/latest/config.html>                 | §3.3, Task 8C      |
+| pytest-cov exposes coverage.py's JSON reporter via `--cov-report=json`                                                   | pytest-cov reporting docs <https://pytest-cov.readthedocs.io/en/latest/reporting.html>                      | §2 Stage B         |
+| `cargo llvm-cov --json` calls `llvm-cov export -format=text`; `--summary-only` emits per-file summaries                  | taiki-e/cargo-llvm-cov README                                                                               | Task 8D            |
+| cargo-llvm-cov is actively maintained (0.8.x–0.9.x in 2026), dual-licensed Apache-2.0 OR MIT                             | crates.io, docs.rs, Homebrew formula                                                                        | §2 Stage B         |
+| Vitest supports `json-summary` and `lcov` reporters via v8 or istanbul providers                                         | Vitest coverage config <https://vitest.dev/config/coverage>                                                 | §2 Stage B         |
+| SARIF property bags are the sanctioned place for tool-specific run data                                                  | OASIS SARIF v2.1.0 §3.8                                                                                     | Task 10            |
+| CODEOWNERS resolves from `.github/CODEOWNERS`, `CODEOWNERS`, or `docs/CODEOWNERS`                                        | GitHub Docs "About code owners"                                                                             | Task 5 (matches `ownership.go:56-60`) |
+| knip is maintained and ISC-licensed                                                                                      | webpro-nl/knip; npm registry                                                                                | §2 Stage C (deferred) |
+| import-linter provides `layers` contracts for Python import direction                                                    | import-linter docs <https://import-linter.readthedocs.io>                                                   | §2 Stage C (deferred) |
+| lizard computes CCN across 20+ languages with `--csv`; gocognit computes cognitive complexity for Go                     | terryyin/lizard; uudashr/gocognit                                                                           | §2 Stage C (deferred) |
+
+Repository facts verified by direct measurement on `733b36c`, not from docs:
+
+- The 5/3/1 dimension split and `needs_attention` verdict (§1), from a binary
+  built on this worktree.
+- `dim.Status = state.Partial` is unconditional at `dimensions.go:422`, `:460`,
+  `:524` — full scan of every `dim.Status` assignment in the file.
+- Status-assignment counts per collector proving the lenient/strict split (§1.2).
+- `structure` and `change_locality` emit `measured` alongside a named
+  `UnknownFact` on archfit's own repo.
+- drift reports `unmeasured` with `comparison.status: not_requested` (§1.1).
+- No `CoverageFile`/`SuppliedCoverage`/`lcov` symbol exists in `internal/` or
+  `cmd/` — the supplied-coverage path is genuinely absent.
+- `deployunit.Detect` reads Dockerfiles (`:335`) and k8s manifests (`:364`); its
+  result reaches only `acquire.go:96-97` for topology fill.
+- `SyntaxFact` carries `StartLine`/`EndLine` (`evidence.go:64-76`); the syntax
+  analyzer is on by default (`.archfit.yaml:694`).
+- `gitnexus_impact`: `Decide` CRITICAL (5 impacted, 6 processes);
+  `testabilityDimension` LOW (3 impacted).
+- Corpus labels available to `corpus_sweep.py`: spotinfo, pumba,
+  omni/scheduled-tasks, prometheus, ccgram, prefect, storybook, yazi, herdr,
+  ruff, tokio.
+
+---
+
+## 8. Fusion review record
+
+Fusion run `7bb04756-4400-465a-8f45-4b1ae34d5cd7`, profile `quality`, 3 of 4
+panelists completing (one timed out; coverage noted as partial).
+
+Verdict on the first draft: **NO-GO — "the defect is real, but the proposed
+framing is too narrow."** Corrections applied:
+
+| Panel finding                                                                     | Where applied                                                       |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Closing three collectors is insufficient; drift and coupling have their own gates  | §1.1; Task 4 (drift lifecycle); Task 3 fixture requires no abstained edges |
+| `Measured` has two contradictory definitions across the nine collectors            | §1.2; Tasks 1–2 now precede all collector work                       |
+| Define the evidence contract before implementing collectors                        | Task 1 is the entry point; Task 2 makes it executable                |
+| Build one end-to-end healthy fixture and prove exit 0                              | Task 3 ships it; Task 12 flips it to assert healthy                  |
+| Do not execute target tests from `analyze`/`check`                                 | §3.2; §2 Stage C rejects it explicitly                               |
+| Coverage freshness needs commit binding, not timestamps                            | §3.2 `require_ref`, `Freshness ∈ {matched, stale, unverified}`       |
+| Parsed manifests are declarations, not observed runtime                            | Task 5 narrowed to *declared-topology completeness*; §2 Stage C      |
+| Per-function complexity risks code-quality scope creep                             | Task 6 promotes on module-graph shape; function size is out-of-claim |
+| Coverage proves exercise, not test quality                                         | Task 9 claim narrowed; mutation/assertion strength out-of-claim      |
+| Monorepo denominators must stay per module and language                            | §3.1                                                                 |
+| Preserve default behaviour with a byte-identical pre/post check                    | Tasks 2, 7, 9 fitness gates                                          |
+| Resolve what zero test files means                                                 | Task 9 gate: measured with ratio 0, not unmeasured                   |
+
+Panel disagreements left open for the owner, and this plan's position:
+
+- **Which collector first.** No consensus. This plan sequences contract → fixture
+  → drift → operations → complexity → coverage, on the grounds that drift blocks
+  healthy for every first run and is the cheapest to resolve.
+- **What complexity should mean.** Split. This plan takes the majority
+  architecture-level position and keeps function size as a diagnostic.
+- **Whether static files can make operations measured.** Split. This plan adopts
+  the position that they can *only* under an explicitly narrowed
+  declared-topology claim, which Task 1 must state.
