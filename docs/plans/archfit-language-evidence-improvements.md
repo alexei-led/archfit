@@ -1271,11 +1271,11 @@ Rollback: single commit revert; the config key disappears unconsumed.
 
 ### Task 9: Per-language coverage format parsers
 
-- [ ] Go coverprofile parser
-- [ ] LCOV parser
-- [ ] coverage.py JSON parser
-- [ ] llvm-cov JSON parser
-- [ ] Format auto-detection with explicit ambiguity failure
+- [x] Go coverprofile parser
+- [x] LCOV parser
+- [x] coverage.py JSON parser
+- [x] llvm-cov JSON parser
+- [x] Format auto-detection with explicit ambiguity failure
 
 Justification: four formats cover all four supported languages using files CI
 already produces. Each is a pure byte→`[]CoverageFact` function behind the Task 8
