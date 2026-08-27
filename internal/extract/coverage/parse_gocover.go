@@ -36,13 +36,15 @@ var (
 
 var goCoverBlockPattern = regexp.MustCompile(`^(.+):([0-9]+)\.([0-9]+),([0-9]+)\.([0-9]+) ([0-9]+) ([0-9]+)$`)
 
-// GoCoverProfileParser parses the output of go test -coverprofile.
-type GoCoverProfileParser struct{}
+const coverageUnitStatements = "statements"
 
-func (GoCoverProfileParser) Format() string  { return FormatGoCoverProfile }
-func (GoCoverProfileParser) Version() string { return "coverage-parser.go-coverprofile.v1" }
+// goCoverProfileParser parses the output of go test -coverprofile.
+type goCoverProfileParser struct{}
 
-func (GoCoverProfileParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
+func (goCoverProfileParser) Format() string  { return FormatGoCoverProfile }
+func (goCoverProfileParser) Version() string { return "coverage-parser.go-coverprofile.v1" }
+
+func (goCoverProfileParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return nil, fmt.Errorf("%w: empty input", ErrMalformedGoCoverProfile)
 	}
@@ -89,8 +91,8 @@ func (GoCoverProfileParser) Parse(data []byte) ([]evidence.CoverageFact, error) 
 		if err != nil || numStatements <= 0 {
 			return nil, fmt.Errorf("%w: invalid statement count at line %d", ErrMalformedGoCoverProfile, lineNumber)
 		}
-		count, err := strconv.ParseUint(match[7], 10, 64)
-		if err != nil || uint64(int(count)) != count {
+		count, err := strconv.Atoi(match[7])
+		if err != nil || count < 0 {
 			return nil, fmt.Errorf("%w: invalid count at line %d", ErrMalformedGoCoverProfile, lineNumber)
 		}
 		stat := stats[match[1]]
@@ -106,7 +108,7 @@ func (GoCoverProfileParser) Parse(data []byte) ([]evidence.CoverageFact, error) 
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrMalformedGoCoverProfile, err)
+		return nil, fmt.Errorf("%w: %w", ErrMalformedGoCoverProfile, err)
 	}
 	if !modeSeen || len(stats) == 0 {
 		return nil, fmt.Errorf("%w: profile contains no coverage blocks", ErrMalformedGoCoverProfile)
@@ -119,11 +121,9 @@ func (GoCoverProfileParser) Parse(data []byte) ([]evidence.CoverageFact, error) 
 	facts := make([]evidence.CoverageFact, 0, len(files))
 	for _, file := range files {
 		stat := stats[file]
-		facts = append(facts, evidence.CoverageFact{File: file, CoveredUnits: stat.covered, TotalUnits: stat.total, Unit: "statements", Format: FormatGoCoverProfile})
+		facts = append(facts, evidence.CoverageFact{File: file, CoveredUnits: stat.covered, TotalUnits: stat.total, Unit: coverageUnitStatements, Format: FormatGoCoverProfile})
 	}
 	return facts, nil
 }
 
 type goCoverStats struct{ covered, total int }
-
-func NewGoCoverProfileParser() Parser { return GoCoverProfileParser{} }

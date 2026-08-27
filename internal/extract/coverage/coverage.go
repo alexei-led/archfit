@@ -76,10 +76,10 @@ type Ingestor struct {
 func New(store *factcache.Store, supplied ...Parser) *Ingestor {
 	parsers := map[string]Parser{
 		FormatAuto:           autoParser{},
-		FormatGoCoverProfile: GoCoverProfileParser{},
-		FormatLCOV:           LCOVParser{},
-		FormatCoveragePyJSON: CoveragePyJSONParser{},
-		FormatLLVMCovJSON:    LLVMCovJSONParser{},
+		FormatGoCoverProfile: goCoverProfileParser{},
+		FormatLCOV:           lcovParser{},
+		FormatCoveragePyJSON: coveragePyJSONParser{},
+		FormatLLVMCovJSON:    llvmCovJSONParser{},
 	}
 	for _, parser := range supplied {
 		if parser != nil {
@@ -141,18 +141,12 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		return out
 	}
 
-	if format == FormatAuto {
-		detected, detectErr := detectFormat(source.Path, data)
-		if detectErr != nil {
-			out.Reason = joinReasons("coverage_parse_failed", detectErr.Error())
-			return out
-		}
-		format = detected
-		out.Format = format
-		if detectedParser, found := i.parsers[format]; found && detectedParser != nil {
-			parser = detectedParser
-		}
+	format, parser, err = i.selectParser(format, source.Path, data, parser)
+	if err != nil {
+		out.Reason = joinReasons("coverage_parse_failed", err.Error())
+		return out
 	}
+	out.Format = format
 	out.ToolVersion = parser.Version()
 
 	sidecarPath := source.SidecarPath
@@ -226,6 +220,20 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		}
 	}
 	return out
+}
+
+func (i *Ingestor) selectParser(format, sourcePath string, data []byte, parser Parser) (string, Parser, error) {
+	if format != FormatAuto {
+		return format, parser, nil
+	}
+	detected, err := detectFormat(sourcePath, data)
+	if err != nil {
+		return "", nil, err
+	}
+	if detectedParser, found := i.parsers[detected]; found && detectedParser != nil {
+		return detected, detectedParser, nil
+	}
+	return detected, parser, nil
 }
 
 type cachedFacts struct {
@@ -364,12 +372,4 @@ func joinReasons(reasons ...string) string {
 		}
 	}
 	return strings.Join(nonempty, "; ")
-}
-
-type unavailableParser struct{ format string }
-
-func (p unavailableParser) Format() string { return p.format }
-func (unavailableParser) Version() string  { return "coverage-parser.v1" }
-func (unavailableParser) Parse([]byte) ([]evidence.CoverageFact, error) {
-	return nil, errors.New(reasonCoverageParserUnavailable)
 }

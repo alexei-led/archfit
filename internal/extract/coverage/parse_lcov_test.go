@@ -25,13 +25,13 @@ LF:1
 LH:1
 end_of_record
 `)
-	facts, err := (LCOVParser{}).Parse(data)
+	facts, err := (lcovParser{}).Parse(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []evidence.CoverageFact{
-		{File: "src/a.ts", CoveredUnits: 1, TotalUnits: 2, Unit: "lines", Format: FormatLCOV},
-		{File: "src/b.ts", CoveredUnits: 1, TotalUnits: 1, Unit: "lines", Format: FormatLCOV},
+		{File: "src/a.ts", CoveredUnits: 1, TotalUnits: 2, Unit: coverageUnitLines, Format: FormatLCOV},
+		{File: "src/b.ts", CoveredUnits: 1, TotalUnits: 1, Unit: coverageUnitLines, Format: FormatLCOV},
 	}
 	if len(facts) != len(want) {
 		t.Fatalf("facts = %+v, want %+v", facts, want)
@@ -44,7 +44,7 @@ end_of_record
 }
 
 func TestLCOVParserReportsSummaryDiscrepancyButKeepsDAFacts(t *testing.T) {
-	facts, err := (LCOVParser{}).Parse([]byte("SF:file.ts\nDA:1,1\nDA:2,0\nLF:9\nLH:9\nend_of_record\n"))
+	facts, err := (lcovParser{}).Parse([]byte("SF:file.ts\nDA:1,1\nDA:2,0\nLF:9\nLH:9\nend_of_record\n"))
 	if !errors.Is(err, ErrLCOVSummaryDiscrepancy) || len(facts) != 1 {
 		t.Fatalf("facts=%+v err=%v, want DA facts plus discrepancy", facts, err)
 	}
@@ -55,7 +55,7 @@ func TestLCOVParserReportsSummaryDiscrepancyButKeepsDAFacts(t *testing.T) {
 
 func TestLCOVParserRejectsTruncatedAndMalformed(t *testing.T) {
 	for _, data := range [][]byte{nil, []byte("TN:\n"), []byte("SF:file.ts\nDA:1,1\n"), []byte("SF:file.ts\nnot-a-record\nend_of_record\n")} {
-		facts, err := (LCOVParser{}).Parse(data)
+		facts, err := (lcovParser{}).Parse(data)
 		if err == nil || facts != nil || !errors.Is(err, ErrMalformedLCOV) {
 			t.Fatalf("data %q: facts=%+v err=%v", data, facts, err)
 		}
@@ -64,7 +64,7 @@ func TestLCOVParserRejectsTruncatedAndMalformed(t *testing.T) {
 
 func FuzzLCOVParser(f *testing.F) {
 	f.Add([]byte("SF:file.ts\nDA:1,1\nend_of_record\n"))
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = (LCOVParser{}).Parse(data)
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		_, _ = (lcovParser{}).Parse(data)
 	})
 }

@@ -8,14 +8,14 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-// LLVMCovJSONParser parses llvm-cov export JSON. Per-file line summaries are
+// llvmCovJSONParser parses llvm-cov export JSON. Per-file line summaries are
 // used instead of the aggregate totals so facts can be attributed to modules.
-type LLVMCovJSONParser struct{}
+type llvmCovJSONParser struct{}
 
-func (LLVMCovJSONParser) Format() string  { return FormatLLVMCovJSON }
-func (LLVMCovJSONParser) Version() string { return "coverage-parser.llvm-cov-json.v1" }
+func (llvmCovJSONParser) Format() string  { return FormatLLVMCovJSON }
+func (llvmCovJSONParser) Version() string { return "coverage-parser.llvm-cov-json.v1" }
 
-func (LLVMCovJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
+func (llvmCovJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return nil, fmt.Errorf("%w: empty input", ErrMalformedLLVMCovJSON)
 	}
@@ -33,7 +33,7 @@ func (LLVMCovJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 		} `json:"data"`
 	}
 	if err := decodeJSON(data, &document); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrMalformedLLVMCovJSON, err)
+		return nil, fmt.Errorf("%w: %w", ErrMalformedLLVMCovJSON, err)
 	}
 	if len(document.Data) == 0 {
 		return nil, fmt.Errorf("%w: data is empty", ErrMalformedLLVMCovJSON)
@@ -79,9 +79,7 @@ func (LLVMCovJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 	facts := make([]evidence.CoverageFact, 0, len(paths))
 	for _, path := range paths {
 		value := files[path]
-		facts = append(facts, evidence.CoverageFact{File: path, CoveredUnits: value.covered, TotalUnits: value.count, Unit: "lines", Format: FormatLLVMCovJSON})
+		facts = append(facts, evidence.CoverageFact{File: path, CoveredUnits: value.covered, TotalUnits: value.count, Unit: coverageUnitLines, Format: FormatLLVMCovJSON})
 	}
 	return facts, nil
 }
-
-func NewLLVMCovJSONParser() Parser { return LLVMCovJSONParser{} }

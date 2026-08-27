@@ -2,6 +2,7 @@ package coverage
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -10,15 +11,15 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-// CoveragePyJSONParser parses coverage.py's --cov-report=json output. The
+// coveragePyJSONParser parses coverage.py's --cov-report=json output. The
 // summary's covered_lines and num_statements are the only per-file values used;
 // aggregate totals are deliberately ignored.
-type CoveragePyJSONParser struct{}
+type coveragePyJSONParser struct{}
 
-func (CoveragePyJSONParser) Format() string  { return FormatCoveragePyJSON }
-func (CoveragePyJSONParser) Version() string { return "coverage-parser.coverage-py-json.v1" }
+func (coveragePyJSONParser) Format() string  { return FormatCoveragePyJSON }
+func (coveragePyJSONParser) Version() string { return "coverage-parser.coverage-py-json.v1" }
 
-func (CoveragePyJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
+func (coveragePyJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return nil, fmt.Errorf("%w: empty input", ErrMalformedCoveragePyJSON)
 	}
@@ -31,7 +32,7 @@ func (CoveragePyJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) 
 		} `json:"files"`
 	}
 	if err := decodeJSON(data, &document); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrMalformedCoveragePyJSON, err)
+		return nil, fmt.Errorf("%w: %w", ErrMalformedCoveragePyJSON, err)
 	}
 	if len(document.Files) == 0 {
 		return nil, fmt.Errorf("%w: files is empty", ErrMalformedCoveragePyJSON)
@@ -54,12 +55,10 @@ func (CoveragePyJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) 
 	facts := make([]evidence.CoverageFact, 0, len(paths))
 	for _, path := range paths {
 		summary := document.Files[path].Summary
-		facts = append(facts, evidence.CoverageFact{File: path, CoveredUnits: *summary.CoveredLines, TotalUnits: *summary.NumStatements, Unit: "statements", Format: FormatCoveragePyJSON})
+		facts = append(facts, evidence.CoverageFact{File: path, CoveredUnits: *summary.CoveredLines, TotalUnits: *summary.NumStatements, Unit: coverageUnitStatements, Format: FormatCoveragePyJSON})
 	}
 	return facts, nil
 }
-
-func NewCoveragePyJSONParser() Parser { return CoveragePyJSONParser{} }
 
 func decodeJSON(data []byte, target any) error {
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
@@ -68,7 +67,7 @@ func decodeJSON(data []byte, target any) error {
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err == nil {
-		return fmt.Errorf("trailing JSON value")
+		return errors.New("trailing JSON value")
 	} else if err != io.EOF {
 		return err
 	}

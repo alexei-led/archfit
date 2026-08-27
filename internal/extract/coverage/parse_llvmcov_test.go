@@ -18,13 +18,13 @@ func TestLLVMCovJSONParser(t *testing.T) {
     ]
   }]
 }`)
-	facts, err := (LLVMCovJSONParser{}).Parse(data)
+	facts, err := (llvmCovJSONParser{}).Parse(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []evidence.CoverageFact{
-		{File: "src/a.rs", CoveredUnits: 0, TotalUnits: 2, Unit: "lines", Format: FormatLLVMCovJSON},
-		{File: "src/z.rs", CoveredUnits: 6, TotalUnits: 8, Unit: "lines", Format: FormatLLVMCovJSON},
+		{File: "src/a.rs", CoveredUnits: 0, TotalUnits: 2, Unit: coverageUnitLines, Format: FormatLLVMCovJSON},
+		{File: "src/z.rs", CoveredUnits: 6, TotalUnits: 8, Unit: coverageUnitLines, Format: FormatLLVMCovJSON},
 	}
 	if len(facts) != len(want) {
 		t.Fatalf("facts = %+v, want %+v", facts, want)
@@ -38,7 +38,7 @@ func TestLLVMCovJSONParser(t *testing.T) {
 
 func TestLLVMCovJSONParserRejectsTruncatedEmptyAndHeaderOnly(t *testing.T) {
 	for _, data := range [][]byte{nil, []byte("{}"), []byte(`{"data":[]}`), []byte(`{"data":[{}]}`), []byte(`{"data":[{"files":[{"filename":"x.rs","summary":{"lines":{"covered":1}}}]}]}`)} {
-		facts, err := (LLVMCovJSONParser{}).Parse(data)
+		facts, err := (llvmCovJSONParser{}).Parse(data)
 		if err == nil || facts != nil || !errors.Is(err, ErrMalformedLLVMCovJSON) {
 			t.Fatalf("data %q: facts=%+v err=%v", data, facts, err)
 		}
@@ -47,7 +47,7 @@ func TestLLVMCovJSONParserRejectsTruncatedEmptyAndHeaderOnly(t *testing.T) {
 
 func FuzzLLVMCovJSONParser(f *testing.F) {
 	f.Add([]byte(`{"data":[{"files":[{"filename":"x.rs","summary":{"lines":{"covered":1,"count":1}}}]}]}`))
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = (LLVMCovJSONParser{}).Parse(data)
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		_, _ = (llvmCovJSONParser{}).Parse(data)
 	})
 }

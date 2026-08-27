@@ -26,20 +26,20 @@ func (autoParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 	return parseFormat(format, data)
 }
 
-// AutoParser returns the built-in content-detecting parser.
+// NewAutoParser returns the built-in content-detecting parser.
 func NewAutoParser() Parser { return autoParser{} }
 
 func parseFormat(format string, data []byte) ([]evidence.CoverageFact, error) {
 	var parser Parser
 	switch format {
 	case FormatGoCoverProfile:
-		parser = GoCoverProfileParser{}
+		parser = goCoverProfileParser{}
 	case FormatLCOV:
-		parser = LCOVParser{}
+		parser = lcovParser{}
 	case FormatCoveragePyJSON:
-		parser = CoveragePyJSONParser{}
+		parser = coveragePyJSONParser{}
 	case FormatLLVMCovJSON:
-		parser = LLVMCovJSONParser{}
+		parser = llvmCovJSONParser{}
 	default:
 		return nil, fmt.Errorf("%w: unsupported format %q", ErrAmbiguousCoverageFormat, format)
 	}

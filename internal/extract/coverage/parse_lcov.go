@@ -2,6 +2,7 @@ package coverage
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -10,15 +11,17 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-// LCOVParser parses LCOV tracefiles. Line-level DA records are authoritative;
+const coverageUnitLines = "lines"
+
+// lcovParser parses LCOV tracefiles. Line-level DA records are authoritative;
 // LF/LH summaries are intentionally not used for the fact counts because they
 // can be stale or produced by a different tool version.
-type LCOVParser struct{}
+type lcovParser struct{}
 
-func (LCOVParser) Format() string  { return FormatLCOV }
-func (LCOVParser) Version() string { return "coverage-parser.lcov.v1" }
+func (lcovParser) Format() string  { return FormatLCOV }
+func (lcovParser) Version() string { return "coverage-parser.lcov.v1" }
 
-func (LCOVParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
+func (lcovParser) Parse(data []byte) ([]evidence.CoverageFact, error) { //nolint:gocyclo // LCOV tags form one explicit state machine.
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return nil, fmt.Errorf("%w: empty input", ErrMalformedLCOV)
 	}
@@ -42,11 +45,10 @@ func (LCOVParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 		}
 		key, value, ok := strings.Cut(line, ":")
 		if !ok {
-			if line == "end_of_record" {
-				key, value, ok = line, "", true
-			} else {
+			if line != "end_of_record" {
 				return nil, lcovError(lineNumber, "missing record separator")
 			}
+			key, value = line, ""
 		}
 		switch key {
 		case "TN":
@@ -119,7 +121,7 @@ func (LCOVParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrMalformedLCOV, err)
+		return nil, fmt.Errorf("%w: %w", ErrMalformedLCOV, err)
 	}
 	if current != nil {
 		return nil, fmt.Errorf("%w: missing end_of_record", ErrMalformedLCOV)
@@ -141,7 +143,7 @@ func (LCOVParser) Parse(data []byte) ([]evidence.CoverageFact, error) {
 				covered++
 			}
 		}
-		facts = append(facts, evidence.CoverageFact{File: path, CoveredUnits: covered, TotalUnits: total, Unit: "lines", Format: FormatLCOV})
+		facts = append(facts, evidence.CoverageFact{File: path, CoveredUnits: covered, TotalUnits: total, Unit: coverageUnitLines, Format: FormatLCOV})
 	}
 	if len(discrepancies) > 0 {
 		return facts, fmt.Errorf("%w: %s", ErrLCOVSummaryDiscrepancy, strings.Join(discrepancies, "; "))
@@ -179,7 +181,7 @@ func lcovError(line int, reason string) error {
 func positiveInteger(raw string) (int, error) {
 	value, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil || value <= 0 {
-		return 0, fmt.Errorf("not positive")
+		return 0, errors.New("not positive")
 	}
 	return value, nil
 }
@@ -187,9 +189,7 @@ func positiveInteger(raw string) (int, error) {
 func nonNegativeInteger(raw string) (int, error) {
 	value, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil || value < 0 {
-		return 0, fmt.Errorf("not non-negative")
+		return 0, errors.New("not non-negative")
 	}
 	return value, nil
 }
-
-func NewLCOVParser() Parser { return LCOVParser{} }

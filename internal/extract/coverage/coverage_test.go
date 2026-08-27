@@ -14,10 +14,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-const (
-	fixtureCoveragePath = "coverage.info"
-	coverageUnitLines   = "lines"
-)
+const fixtureCoveragePath = "coverage.info"
 
 type fixtureParser struct {
 	format string

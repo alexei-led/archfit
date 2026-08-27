@@ -16,13 +16,13 @@ func TestCoveragePyJSONParser(t *testing.T) {
   },
   "totals": {"covered_lines": 1, "num_statements": 6}
 }`)
-	facts, err := (CoveragePyJSONParser{}).Parse(data)
+	facts, err := (coveragePyJSONParser{}).Parse(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []evidence.CoverageFact{
-		{File: "src/a.py", CoveredUnits: 0, TotalUnits: 4, Unit: "statements", Format: FormatCoveragePyJSON},
-		{File: "src/z.py", CoveredUnits: 1, TotalUnits: 2, Unit: "statements", Format: FormatCoveragePyJSON},
+		{File: "src/a.py", CoveredUnits: 0, TotalUnits: 4, Unit: coverageUnitStatements, Format: FormatCoveragePyJSON},
+		{File: "src/z.py", CoveredUnits: 1, TotalUnits: 2, Unit: coverageUnitStatements, Format: FormatCoveragePyJSON},
 	}
 	if len(facts) != len(want) {
 		t.Fatalf("facts = %+v, want %+v", facts, want)
@@ -36,7 +36,7 @@ func TestCoveragePyJSONParser(t *testing.T) {
 
 func TestCoveragePyJSONParserRejectsTruncatedEmptyAndHeaderOnly(t *testing.T) {
 	for _, data := range [][]byte{nil, []byte("{}"), []byte(`{"files":{}}`), []byte(`{"files":{"x.py":{"summary":{"covered_lines":1}}}}`), []byte(`{"files":{"x.py":{"summary":{"covered_lines":1,"num_statements":1}}}`)} {
-		facts, err := (CoveragePyJSONParser{}).Parse(data)
+		facts, err := (coveragePyJSONParser{}).Parse(data)
 		if err == nil || facts != nil || !errors.Is(err, ErrMalformedCoveragePyJSON) {
 			t.Fatalf("data %q: facts=%+v err=%v", data, facts, err)
 		}
@@ -45,7 +45,7 @@ func TestCoveragePyJSONParserRejectsTruncatedEmptyAndHeaderOnly(t *testing.T) {
 
 func FuzzCoveragePyJSONParser(f *testing.F) {
 	f.Add([]byte(`{"files":{"x.py":{"summary":{"covered_lines":1,"num_statements":1}}}}`))
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = (CoveragePyJSONParser{}).Parse(data)
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		_, _ = (coveragePyJSONParser{}).Parse(data)
 	})
 }
