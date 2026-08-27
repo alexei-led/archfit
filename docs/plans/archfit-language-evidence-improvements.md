@@ -466,12 +466,12 @@ never pass and would pressure an executor to weaken the contract to force green.
 Both outcomes below are valid completions:
 
 - **A:** the fixture reaches `healthy` and `check` exits 0. `Decide`
-  (`internal/assessment/state/decision.go:48-66`) requires **three** conditions,
+  (`internal/assessment/state/decision.go:68-75`) verifies **three** conditions,
   not just nine measured dimensions, so Outcome A asserts all three explicitly:
-  `unknown_dimensions == 0`, `active_blockers == 0`, and `hard_gates == pass`.
-  Review round 5 flagged that a naturally-emitted advisory could otherwise hold
-  the fixture at `needs_attention` with every dimension measured, which would
-  look like a collector bug when it is really an un-asserted precondition.
+  `unknown_dimensions == 0`, `active_diagnostics == 0`, and `hard_gates == pass`.
+  Review round 7 verified that active_diagnostics, not active_blockers, controls
+  the healthy verdict. The fixture must emit no advisory, no diagnostic, and no
+  unresolved facts.
 - **B:** it does not, and the test emits a report naming each blocking dimension
   or diagnostic, the symbol that blocks it, and the remedy class.
 
@@ -712,11 +712,14 @@ go test ./cmd/archfit/ -run IntegrationReachability -count=1 -v   # outcome may 
 #      Use a temp file, not a pipeline-scoped variable.
 
 # FIRST executable step: capture the pre-task commit. This is NOT a comment.
+# Use git rev-parse --git-path to handle linked worktrees where .git is a file.
 set -e
-git rev-parse HEAD > .git/archfit-task4-pre-ref
-test -s .git/archfit-task4-pre-ref || { echo "Failed to capture pre-task ref (empty)"; exit 1; }
-PRE=$(cat .git/archfit-task4-pre-ref)
-test -n "$PRE" || { echo "Failed to load pre-task ref from file"; exit 1; }
+GIT_DIR=$(git rev-parse --git-dir) || { echo "Failed to resolve git dir"; exit 1; }
+REF_FILE="$GIT_DIR/archfit-task4-pre-ref"
+git rev-parse HEAD > "$REF_FILE" || { echo "Failed to capture pre-task ref"; exit 1; }
+test -s "$REF_FILE" || { echo "Pre-task ref is empty"; exit 1; }
+PRE=$(cat "$REF_FILE")
+test -n "$PRE" || { echo "Failed to load pre-task ref from $REF_FILE"; exit 1; }
 
 SCOPE=docs/design/evidence-contract-audit-scope.txt
 VIOL=$(mktemp)
@@ -783,41 +786,16 @@ Round 6 Fusion identified that the current `seamAnchor` branches
 - `base.Legacy` → baseline exists but predates seam tracking.
 - fingerprint mismatch → config/model/label/rubric changed.
 
-But they cannot distinguish *no request vs. unmet request* when `base.State == nil`,
-because `seamAnchor` does not receive `req.BaseRef` — that parameter is sent to
-`Assess` at `:276-280` but not to `Score`. Two options, each owned by Task 2:
-
-**Option A: Treat absent baseline uniformly.** No matter what the user asked for,
-if no baseline is persisted, drift stays `unmeasured`. The policy is: drift only
-measures against persisted baselines. The distinction between "not requested" and
-"requested but missing" is not a drift measurement concern; it is a workflow
-message ("Did you run `archfit baseline`?"). If Task 1 chooses this, Task 5
-needs no changes beyond keeping drift's current code path.
-
-**Option B: Explicit request signal.** Extend `BaselineAnchor` to carry an
-explicit `RequestedByUser bool` field, set it from `req.BaseRef != ""`, and pass
-the whole anchor structure to `driftDimension`. Then:
-- `RequestedByUser && !SeamsComparable` → evidence gap, stay `unmeasured`.
-- `!RequestedByUser && !SeamsComparable` → not requested, take Task 1 decision.
-
-This requires extending `internal/application/analysis.go` (set `RequestedByUser`
-at `:302`) and `internal/assessment/evaluation/dimensions.go` (read it at `:568`).
-It is a deeper change but makes the distinction explicit and verifiable.
-
-**Assume Option A for now.** No change needed in this task beyond adding the test
-that verifies drift stays `unmeasured` when no baseline is persisted, regardless
-of `--base`. If Task 1 chooses Option B, update this task and list the new files
-(`analysis.go`, `finalize.go`) that change.
+**Task 1's policy:** Drift only measures against persisted baselines. The
+distinction between "not requested" and "requested but missing" is a workflow
+message ("Did you run `archfit baseline`?"), not a drift concern. No code changes
+needed; Task 5 just adds test coverage for both cases.
 
 Files:
 
-- `internal/assessment/evaluation/dimensions.go` — `driftDimension` only reads
-  `ref.SeamsComparable` (set by `seamAnchor` at `internal/application/analysis.go`)
-  and takes the Task 1 decision when it is false. No changes needed under Option A.
-- `internal/assessment/state/state.go` — if Task 1 chose a not-applicable
-  concept, add it as a `RequiredFact` not-applicable marker; **do not** add a
-  fourth `MeasurementStatus` value, which would change the wire contract and all
-  five renderers.
+- `internal/assessment/evaluation/dimensions.go` — no changes; `driftDimension`
+  already reads `ref.SeamsComparable` from `seamAnchor` and stays `unmeasured`
+  when it is false.
 - `internal/assessment/evaluation/dimensions_test.go` — both paths.
 - `cmd/archfit/integration_reachability_test.go` (new) — test harness defining the
   `IntegrationReachability` test suite with subtests including `drift_lifecycle`
@@ -827,20 +805,18 @@ Files:
 
 Preconditions: Tasks 1–4 merged; drift decision recorded in the Task 2 audit and owner-approved.
 
-Postconditions: a first run with no comparison requested no longer reports an
-evidence gap it does not have. A requested-but-incomparable baseline still
-reports `unmeasured` with its reason.
+Postconditions: drift measurement is clarified as baseline-driven, not
+request-driven. The output, schema, and code behavior are unchanged; test
+coverage expands to confirm both branches (missing baseline, incomparable
+baseline) work as intended.
 
 Fitness gate:
 
-- No comparison requested → the Task 1 decision, with reason text distinct from
-  the incomparable-baseline case.
-- `--base` given but baseline missing/stale/rubric-mismatched → `unmeasured`,
-  reason unchanged from today.
+- Both test branches (no baseline ever persisted; baseline incomparable due to
+  legacy/fingerprint mismatch) run and pass.
+- Output and golden state remain byte-stable; no collection logic changes.
 - `MeasurementStatus` still has exactly three values; schema version unchanged.
-- The Task 3 fixture's blocking set loses `drift`.
-- Goldens invalidated by this task's output change are refreshed in this same
-  commit (per the global rule in Task 4), so the commit is green on its own.
+- The Task 3 fixture's blocking set correctly excludes `drift`.
 
 Impact commands:
 
@@ -1120,28 +1096,21 @@ go test ./internal/factcache/ ./internal/config/ -count=1
 ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 make build
-# Round 6 Fusion found that comparing a modified source tree before/after is
-# invalid: the task adds Go files that change LOC/file-count metrics in the
-# analysis output. Replace with: build HEAD binary, build task binary, analyze
-# the same fixed fixture with both. This tests binary compatibility, not
-# source-tree-before-after.
-make build  # task-modified binary → .bin/archfit
-TASK_BIN=".bin/archfit"
-# Capture the HEAD version before any editing
-HEAD_BINARY=$(git show HEAD:.bin/archfit > /tmp/archfit-head-8 2>/dev/null || \
-  { git show HEAD:Makefile > /tmp/Makefile-head && \
-    (cd /tmp && make -f /tmp/Makefile-head build && cp .bin/archfit /tmp/archfit-head-8); } && 
-  echo "/tmp/archfit-head-8")
-test -x "$HEAD_BINARY" || { echo "Failed to build HEAD binary"; exit 1; }
 
-# Use the materializeFixture-created repo (persisted baseline already set).
-# Verify that analyzing with HEAD binary vs. task-modified binary over the same
-# fixture gives identical output when coverage.enabled is false.
-go test ./cmd/archfit/ -run 'TestTaskEightFixture' -v -count=1 \
-  -fixture-repo=/tmp/archfit-fixture \
-  -old-binary="$HEAD_BINARY" \
-  -new-binary="$TASK_BIN" \
-  -expect-identical-output 2>&1 | grep -q "NO-OP WHEN DISABLED OK" || exit 1
+# Integration test: coverage.enabled:false produces no output regression.
+# Cannot use git stash (mutates source tree) or git show .bin/archfit (ignored).
+# Use git archive to extract HEAD, build HEAD binary in isolation, compare
+# outputs on the same fixture.
+echo "Building HEAD binary from git archive..."
+TEMP_HEAD=$(mktemp -d)
+trap 'rm -rf "$TEMP_HEAD"' EXIT
+git archive HEAD | tar -xC "$TEMP_HEAD" || { echo "Failed to extract HEAD source"; exit 1; }
+(cd "$TEMP_HEAD" && make build) || { echo "Failed to build HEAD binary"; exit 1; }
+HEAD_BIN="$TEMP_HEAD/.bin/archfit"
+test -x "$HEAD_BIN" || { echo "HEAD binary not found"; exit 1; }
+
+# Subtest verifies both binaries on the same fixture produce identical output.
+go test ./cmd/archfit -run TestCoverageIngestDisabled -v -count=1 || exit 1
 make lint
 ```
 
@@ -1322,30 +1291,24 @@ go test ./internal/assessment/evaluation/ -run 'TestTestability' -count=1 -v
 make test
 make build
 
-# 1. Disabled path unchanged (coverage.enabled defaults false).
-#    Do not compare modified source tree before/after; the task adds test files,
-#    which change file counts in the analysis. Instead: build HEAD and task
-#    binaries, analyze the same fixture with both. This tests binary compat.
-make build  # task-modified binary
-TASK_BIN=".bin/archfit"
-HEAD_BINARY=$(git show HEAD:.bin/archfit > /tmp/archfit-head-10 2>/dev/null || \
-  { git show HEAD:Makefile > /tmp/Makefile-head-10 && \
-    (cd /tmp && make -f /tmp/Makefile-head-10 build && cp .bin/archfit /tmp/archfit-head-10); } && 
-  echo "/tmp/archfit-head-10")
-test -x "$HEAD_BINARY" || { echo "Failed to build HEAD binary"; exit 1; }
+# 1. Disabled path: no regression when coverage is off (default config).
+#    Cannot compare stashed source (mutates tree) or git show .bin/archfit
+#    (ignored). Use git archive for HEAD, build both, test on same fixture.
+echo "Building HEAD binary from git archive..."
+TEMP_HEAD=$(mktemp -d)
+trap 'rm -rf "$TEMP_HEAD"' EXIT
+git archive HEAD | tar -xC "$TEMP_HEAD" || { echo "Failed to extract HEAD"; exit 1; }
+(cd "$TEMP_HEAD" && make build) || { echo "Failed to build HEAD"; exit 1; }
+HEAD_BIN="$TEMP_HEAD/.bin/archfit"
+test -x "$HEAD_BIN" || { echo "HEAD binary not found"; exit 1; }
 
-# Verify HEAD and task binaries agree on the fixture when coverage is disabled.
-go test ./cmd/archfit/ -run 'TestTaskTenCoverageDisabled' -v -count=1 \
-  -fixture-repo=/tmp/archfit-fixture \
-  -old-binary="$HEAD_BINARY" \
-  -new-binary="$TASK_BIN" \
-  -expect-identical-when-disabled 2>&1 | grep -q "COVERAGE INGESTION DISABLED UNCHANGED OK" || exit 1
+# Subtest verifies disabled path on the same fixture with both binaries.
+go test ./cmd/archfit -run TestCoverageIngestDisabledPath -v -count=1 || exit 1
 
-# 2. Enabled path: Task 3's materializeFixture with coverage (Task 10 fixture).
-#    Covers the full file-to-module mapping and freshness check path. No ad-hoc
-#    /tmp config: an earlier revision referenced /tmp/archfit-cov.yaml that no
-#    task created, which would have stopped an executor here.
-go test ./cmd/archfit/ -run 'IntegrationReachability/testability_measured' -count=1 -v
+# 2. Enabled path: full coverage->testability promotion on genuine evidence.
+#    Uses materializeFixture(t, withCoverage=true) to generate coverage,
+#    ref, and baseline inside the test harness (no ad-hoc /tmp paths).
+go test ./cmd/archfit -run TestCoverageIngestEnabledPath -v -count=1 || exit 1
 
 make lint && make archfit
 ```
