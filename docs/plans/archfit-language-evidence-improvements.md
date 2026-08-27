@@ -203,21 +203,13 @@ is deterministic, hermetic, cacheable by content hash, and honest.
 
 Panel correction — **freshness must bind to a commit, not a timestamp.** Coverage
 formats carry no content hash of the sources they describe, so file mtime proves
-nothing: a profile from a different commit can be newer than the checkout. The
-contract is therefore:
-
-- the coverage source is accepted only when accompanied by the commit SHA it was
-  produced from (config `source_ref`, or a sidecar `<file>.ref`);
-- a profile whose SHA ≠ the analyzed commit is reported `stale` and forces
-  `partial`, regardless of mtime;
-- when no SHA is available, the source is `unverified` and forces `partial` — it
-  is reported and used for diagnostics, never for promotion;
-- **the scanned bytes must equal that commit.** `archfit` scans the working
-  tree, not a git object, and deliberately reports `source_ref: "worktree"`
-  (`internal/application/report.go:65`, asserted in
-  `internal/application/report_measurement_test.go:72-74`). Matching a sidecar
-  SHA against `HEAD` therefore proves nothing about the files actually measured:
-  any edit after the profile was produced still matches.
+nothing: a profile from a different commit can be newer than the checkout.
+The contract for freshness is defined in §2.2 below: freshness depends on
+whether a valid sidecar exists and whether its content hashes match the scanned
+bytes. Archfit deliberately reports `source_ref: "worktree"`
+(`internal/application/report.go:65`, asserted in
+`internal/application/report_measurement_test.go:72-74`) because it scans
+the working tree, not a git object.
 
   **Scope of this claim (round 19 narrowing).** Coverage freshness is a claim
   about the **source bytes represented by the coverage artifact** — the covered
@@ -1167,23 +1159,23 @@ Files:
 
 - `internal/config/config.go`, `internal/configschema/**`, `archfit.schema.json`,
   `.archfit.yaml` — additive `coverage:` block per §3.2, `enabled: false`
-  default, reusing the existing `GateMode`.
+  default, reusing the existing `GateMode`. Config includes `sidecar_path` (default
+  `<coverage-file>.sidecar.json`) and `sources` (array of coverage file paths).
 - `internal/model/evidence/coverage_facts.go` (new) — `CoverageFact{File,
   CoveredUnits, TotalUnits, Unit, Format, SourcePath, ToolVersion, SourceRef}`;
   `CoverageIngest{Facts, UnresolvedPaths, Freshness, Format, ToolVersion,
-  Reason}` where `Freshness ∈ {matched, stale, unverified}`.
+  Reason}` where `Freshness ∈ {matched, stale, unverified}`. No fourth value.
 - `internal/extract/coverage/coverage.go` (new) — locate, read, normalize, count
   unresolved, resolve freshness. Parsing delegated via a `Parser` interface with
   one registered stub here.
 - `internal/extract/coverage/normalize.go` (new) — the path contract.
 - `internal/extract/coverage/attest.go` (new) — the coverage attestation
-  sidecar of §2.2. Locates the sidecar beside the coverage artifact, rejects an
-  unrecognized `schema_version` as absent, hashes each covered source as
-  scanned, and compares. Returns `matched`, `stale` (`worktree_differs_from_ref`),
-  or `unverified` (`freshness_unverified`) — the three enum values of
-  `CoverageIngest.Freshness`. It reads only the covered source universe the
-  sidecar enumerates — it does not walk the repository, consult git, or ask
-  extractors anything.
+  sidecar of §2.2. Locates the sidecar via `coverage.sidecar_path` config, rejects
+  an unrecognized `schema_version` as absent, hashes each covered source as
+  scanned, and compares. Returns exactly one of: `matched`, `stale`
+  (`worktree_differs_from_ref`), or `unverified` (`freshness_unverified`). It
+  reads only the covered source universe the sidecar enumerates — it does not
+  walk the repository, consult git, or ask extractors anything.
 - `internal/factcache/**` — key covers source content hash + format + parser
   version + ScanRoot + source ref. Stale and unverified ingests are never
   cached, matching `docs/design/fact-cache.md`.
@@ -1448,7 +1440,6 @@ Fitness gate:
     git, so ignored status is irrelevant by construction — this is the round-12
     case, closed structurally rather than by a detector rule.
   - **delete a source the sidecar lists** → `partial`, same reason.
-
   - **no sidecar present** → `partial`, reason `freshness_unverified`. A missing
     or misconfigured sidecar path is unverified, never permitted for promotion.
   - **sidecar with an unrecognized `schema_version`** → `partial`, reason
