@@ -416,10 +416,10 @@ status-semantics changes that might unlock Outcome A. If Outcome B is permanent
 
 ### Task 1: Define the nine-dimension evidence contract
 
-- [ ] Write the contract: claim, applicable-when, denominator, in-claim vs out-of-claim facts, and the exact measured/partial/unmeasured conditions per dimension
-- [ ] Record the lenient-vs-strict decision from §1.2 explicitly
-- [ ] Record the drift "comparison not requested" decision (input to Task 4)
-- [ ] Reconcile the contract against current behaviour and list every deviation
+- [x] Write the contract: claim, applicable-when, denominator, in-claim vs out-of-claim facts, and the exact measured/partial/unmeasured conditions per dimension
+- [x] Record the lenient-vs-strict decision from §1.2 explicitly
+- [x] Record the drift "comparison not requested" decision (input to Task 4)
+- [x] Reconcile the contract against current behaviour and list every deviation
 
 Justification: §1.2. `Measured` currently means "denominator complete, footnotes
 allowed" in four collectors and "denominator complete and nothing unknown" in
