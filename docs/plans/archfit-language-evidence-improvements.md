@@ -1145,7 +1145,7 @@ Rollback: single commit revert.
 - [ ] Add the `coverage:` config block (opt-in, default disabled)
 - [ ] Add the normalized internal coverage fact, before any renderer work
 - [ ] Implement ScanRoot-relative normalization with explicit unresolved counting
-- [ ] Implement commit-SHA freshness binding per §3.2
+- [ ] Implement sidecar-based freshness per §3.2
 - [ ] Cache by content hash through the existing fact-cache discipline
 
 Justification: §3.2, §3.3. This builds the ingestion spine and the normalization
@@ -1195,8 +1195,7 @@ Fitness gate:
   ScanRoot; symlinked root; Windows separators in LCOV.
 - An unreducible path increments `unresolved_coverage_paths` and does not vanish;
   the test asserts the counter, not just the mapped set.
-- Profile SHA ≠ analyzed ref → `stale`; no SHA available → `unverified`; neither
-  can promote.
+- Freshness decided by sidecar hash comparison only; SHA is metadata.
 - Missing configured source with `gate: fail` → the existing required-tool
   failure path; with `gate: warn` → reported, non-blocking.
 - Cache: identical input → hit; changed file → miss; stale/unverified/partial →
@@ -1377,7 +1376,7 @@ Rollback: revert per slice; parsers register independently.
 
 - [ ] Attribute coverage facts to declared modules
 - [ ] Publish covered/total with a real denominator and provenance
-- [ ] Promote only when attribution is complete and the ref matches
+- [ ] Promote only when attribution is complete and freshness is matched
 - [ ] Keep the static file-split metrics alongside
 
 Justification: this makes `testability` capable of `measured`, deliberately last
@@ -1414,12 +1413,12 @@ repository with no coverage configured, output is byte-identical to the
 
 Fitness gate:
 
-- Fresh ref-matched profile covering every declared module → `measured`,
+- Fresh, sidecar-validated profile covering every declared module → `measured`,
   `unresolved_coverage_paths == 0`.
 - Profile covering 3 of 5 declared modules → `partial`; unknown names the two
   unmapped modules; `modules_with_coverage` denominator is 5, not 3.
 - `unresolved_coverage_paths > 0` → `partial` regardless of ratio.
-- `stale` or `unverified` freshness → `partial`; ratio still published, marked.
+- `stale` or `unverified` `Freshness` → `partial`; ratio still published, marked.
 - Coverage disabled → status, metrics, and bytes identical to
   `.archfit-task10-ref.json`, the reference this task captures before its first
   edit. Never compared against Task 6.
