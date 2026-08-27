@@ -274,6 +274,22 @@ contract is therefore:
   yields `stale` with reason `worktree_changed_during_run`. This needs no
   analyzer changes and no tree copy.
 
+  **Inventory scope (round 15).** The inventory must enumerate all supported
+  source files under covered modules that *any* analyzer might read, not just
+  those that LOC reads. LOC's walk excludes `node_modules`, `dist`, `vendor`,
+  `build`, `testdata`, `mocks`, `target`, and dot-directories
+  (`internal/extract/loc/loc.go:64-70,96-107`), but Go's `members.go` module
+  discovery prunes fewer paths (`internal/extract/golang/members.go:190-207`)
+  and TypeScript deliberately enters `node_modules`
+  (`internal/extract/ts/ts.go:434-462`). A gitignored `.go` file under `mocks/`
+  can be analyzed and covered while absent from a LOC-based inventory.
+
+  `inventory.go` therefore walks each covered module without skipDirs or
+  dot-directory pruning, and hashes only the paths and file content, not the
+  walk order or entry metadata. The inventory is unordered and deterministic
+  per commit SHA. The bracket comparison holds if and only if the worktree's
+  enumerable set matches the referenced commit's at byte level.
+
   *Accepted ceiling:* a mutation that occurs **and is reverted** entirely inside
   the analysis window is not detectable by bracketing. That is a deliberately
   narrower hole than the current one and is accepted, not fixed. Upgrade
@@ -1136,11 +1152,19 @@ Files:
   one registered stub here.
 - `internal/extract/coverage/normalize.go` (new) — the path contract.
 - `internal/extract/coverage/inventory.go` (new) — the scanner inventory hash of
-  §2.2. Enumerates covered-module files using the analyzers' own filesystem walk
-  (no gitignore filter, matching `internal/extract/loc/loc.go:92`), hashes path
-  set plus contents, and reproduces the same inventory from the referenced
-  commit for comparison. This is where ignored-file staleness is caught; it is
-  not a test-only concern.
+  §2.2. Enumerates all covered-module files that any supported analyzer might
+  read (no skipDirs or dot-directory pruning), hashes path set plus contents,
+  and reproduces the same inventory from the referenced commit for comparison.
+  Bracketed pre/post captures are owned by this file's scope, and production
+  placement is tested by Task 10's deterministic mid-run mutation gate driving
+  the full pipeline through `internal/evidence/acquisition/service.Acquire`
+  (§3.2).
+- `internal/evidence/acquisition/service.go` (modify) — coordinates the
+  sequential analyzer pipeline. `Service.Acquire` must invoke
+  `coverage.Freshness.Before()` before the first analyzer read and
+  `.After()` after the last, with the brackets framing the entire sequence
+  (§2.2). Direct-call fallback in tests is insufficient; the full pipeline must
+  be driven.
 - `internal/factcache/**` — key covers source content hash + format + parser
   version + ScanRoot + source ref. Stale/unverified/partial ingests are never
   cached, matching `docs/design/fact-cache.md`.
@@ -1394,16 +1418,20 @@ Fitness gate:
   - **add or modify a gitignored `.go` file under a covered module** → `partial`,
     same reason. The fixture writes a `.gitignore` covering that path, so `git
     status --porcelain` reports a clean tree while the scanner still walks the
-    file. This case fails any porcelain-based implementation and passes only
-    with the §2.2 scanner inventory hash, which is why the mechanism is owned by
-    `internal/extract/coverage/inventory.go` in Task 8 rather than asserted only
-    here.
+    file.
+  - **add or modify a gitignored `.go` file under `mocks/`** (which LOC excludes
+    but Go's members discovery does not per round 15) → `partial`, same reason.
+    A narrower inventory that only enumerates LOC-walked files would miss this
+    and incorrectly promote it. Proves the inventory is not narrower than the
+    broadest analyzer scope.
   - **mutate a covered file mid-run** → `partial`, reason
     `worktree_changed_during_run`. Deterministic, not a sleep race: the test
-    injects a hook between the pre-inventory capture and the post-inventory
-    capture (or, if no hook exists, drives the two capture calls directly) and
-    writes to a covered `.go` file in between. Proves the brackets are compared
-    and that a single-inventory implementation fails.
+    drives the full production analysis pipeline through `Service.Acquire` and
+    injects a file write between the pre-inventory and post-inventory captures.
+    Proves the brackets are computed and compared, and that a
+    single-inventory implementation fails.
+  Only the unmodified fixture may reach `measured`. All six mutation cases must
+  reduce testability below `measured` to close the false-green surface.
   - **warm cache, then add a gitignored `.go` file** under a covered module and
     rerun with the *same* profile and source ref → `partial`, reason
     `worktree_differs_from_ref`. The first run must be asserted `measured` with
