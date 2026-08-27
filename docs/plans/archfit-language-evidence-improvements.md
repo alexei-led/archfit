@@ -238,12 +238,15 @@ contract is therefore:
   is the only party that knows which sources the artifact represents, and it can
   say so at production time.
 
-  **`source_ref` alone can never yield `verified`/`matched`.** A commit SHA
-  attests to a tree; Archfit scans a worktree and deliberately reports
-  `source_ref: "worktree"` (`internal/application/report.go:65`, asserted in
-  `internal/application/report_measurement_test.go:72-74`). A SHA therefore
-  proves nothing about the measured bytes, and no amount of git-side checking
-  repairs that. This is the round-11 finding, retained.
+  **SHA precedence: a matching sidecar overrides a mismatched or missing SHA.**
+  A commit SHA attests to a tree; Archfit scans a worktree and deliberately
+  reports `source_ref: "worktree"` (`internal/application/report.go:65`,
+  asserted in `internal/application/report_measurement_test.go:72-74`). A SHA
+  alone proves nothing about the measured bytes. This is the round-11 finding,
+  retained. However, when a valid sidecar's content hashes match the scanned
+  bytes, that match is evidence of bytes, not of tree identity. A matching
+  sidecar therefore permits promotion even if the referenced SHA is missing or
+  does not equal `HEAD`. The sidecar overrides the SHA gate.
 
   **Coverage attestation sidecar (optional, versioned).** A coverage artifact
   may be accompanied by a sidecar produced *alongside* it, by whatever step
@@ -337,7 +340,7 @@ Verified upstream behaviour:
   Node runners.
 - **llvm-cov JSON** filenames are absolute.
 
-Contract (Task 7): every ingested path is reduced to a ScanRoot-relative slash
+Contract (Task 8): every ingested path is reduced to a ScanRoot-relative slash
 path using the module-prefix strip `internal/extract/golang` already applies via
 `pkg.Module.Dir`. A path that cannot be reduced is **not** dropped silently — it
 increments `unresolved_coverage_paths`, which is published as a metric and forces
@@ -612,11 +615,14 @@ Files:
   and the rendered config path.
 
   When `withCoverage` is true it additionally generates `coverage.out` via `go
-  test -coverprofile` inside the temp repo, writes `coverage.out.ref` from that
-  repo's `HEAD`, and renders the config with `coverage.enabled: true`. **Task 3
-  calls it with `withCoverage=false`**: the `coverage:` config block does not
-  exist until Task 8, so rendering that key earlier risks failing config load.
-  Task 10 is the first caller to pass `true`.
+  test -coverprofile` inside the temp repo, emits a **versioned attestation
+  sidecar** (e.g., `coverage.out.sidecar.json`) with schema_version, source_ref,
+  covered modules, and per-file content hashes of the covered source universe,
+  and renders the config with `coverage.enabled: true`. **Task 3 calls it with
+  `withCoverage=false`**: the `coverage:` config block does not exist until
+  Task 8, so rendering that key earlier risks failing config load. Task 10 is
+  the first caller to pass `true` and must exercise the sidecar comparison path
+  to validate promotion.
 
 **Why a temp repo and not committed artifacts.** Fusion review established two
 facts that make committed coverage impossible: a tracked `coverage.out.ref`
@@ -1150,12 +1156,13 @@ Files:
 - `internal/extract/coverage/attest.go` (new) — the coverage attestation
   sidecar of §2.2. Locates the sidecar beside the coverage artifact, rejects an
   unrecognized `schema_version` as absent, hashes each covered source as
-  scanned, and compares. Returns `matched`, `stale`
-  (`worktree_differs_from_ref`), or `partial` (`freshness_unverified`). It reads
-  only the covered source universe the sidecar enumerates — it does not walk the
-  repository, consult git, or ask extractors anything.
+  scanned, and compares. Returns `matched`, `stale` (`worktree_differs_from_ref`),
+  or `unverified` (`freshness_unverified`) — the three enum values of
+  `CoverageIngest.Freshness`. It reads only the covered source universe the
+  sidecar enumerates — it does not walk the repository, consult git, or ask
+  extractors anything.
 - `internal/factcache/**` — key covers source content hash + format + parser
-  version + ScanRoot + source ref. Stale/unverified/partial ingests are never
+  version + ScanRoot + source ref. Stale and unverified ingests are never
   cached, matching `docs/design/fact-cache.md`.
 - `internal/extract/coverage/normalize_test.go`, `coverage_test.go` (new).
 
