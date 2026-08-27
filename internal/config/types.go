@@ -121,6 +121,23 @@ func (m MetricsConfig) FunctionLOCThresholdValue() int {
 	return *m.FunctionLOCThreshold
 }
 
+// CoverageConfig configures opt-in ingestion of coverage artifacts produced by
+// the caller's CI. Archfit reads these files; it never executes the target
+// repository's tests.
+type CoverageConfig struct {
+	Enabled bool             `yaml:"enabled,omitempty" jsonschema:"default=false"`
+	Gate    GateMode         `yaml:"gate,omitempty"`
+	Sources []CoverageSource `yaml:"sources,omitempty"`
+}
+
+// CoverageSource is one supplied coverage artifact. Format defaults to auto;
+// SidecarPath defaults to <path>.sidecar.json when omitted.
+type CoverageSource struct {
+	Path        string `yaml:"path" jsonschema:"required"`
+	Format      string `yaml:"format,omitempty" jsonschema:"enum=auto,enum=go-coverprofile,enum=lcov,enum=coverage-py-json,enum=llvm-cov-json"`
+	SidecarPath string `yaml:"sidecar_path,omitempty"`
+}
+
 // ModuleReviewConfig configures staleness gating of the module declarations:
 // archfit warns (or fails) when a module's `reviewed_at` is older than
 // stale_after, nudging a periodic re-check of the architecture map.

@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/evidence/acquisition"
 	"github.com/alexei-led/archfit/internal/extract/acquire"
+	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -63,6 +64,7 @@ func (c Config) CoverageOptions() acquisition.CoverageOptions {
 	}
 	gates[ToolClones] = string(c.ToolGate(ToolClones))
 	gates[ToolCargoModules] = string(c.ToolGate(ToolCargoModules))
+	gates[suppliedcoverage.ToolName] = string(c.Coverage.Gate)
 	probes := make(map[string]func(string) bool)
 	for _, lang := range registry.All() {
 		probe := lang.ProjectPresent
@@ -73,6 +75,20 @@ func (c Config) CoverageOptions() acquisition.CoverageOptions {
 		}
 	}
 	return acquisition.CoverageOptions{Gates: gates, Modes: modes, ProjectPresent: probes}
+}
+
+// SuppliedCoverageOptions projects only the artifact-ingestion contract into
+// its filesystem adapter. The adapter receives no architecture policy.
+func (c Config) SuppliedCoverageOptions() suppliedcoverage.Options {
+	sources := make([]suppliedcoverage.Source, len(c.Coverage.Sources))
+	for i, source := range c.Coverage.Sources {
+		format := source.Format
+		if format == "" {
+			format = suppliedcoverage.FormatAuto
+		}
+		sources[i] = suppliedcoverage.Source{Path: source.Path, Format: format, SidecarPath: source.SidecarPath}
+	}
+	return suppliedcoverage.Options{Enabled: c.Coverage.Enabled, Gate: string(c.Coverage.Gate), Sources: sources}
 }
 
 // RunOptions projects decoded config into the non-policy acquisition inputs.
@@ -86,7 +102,7 @@ func (c Config) RunOptions() acquisition.RunOptions {
 	acquisitionOpts.Exclusions = exclusions
 	scopeConfig := c.ForScope()
 	scopeConfig.Exclusions = exclusions
-	return acquisition.RunOptions{Exclusions: exclusions, Scope: scopeConfig, Extractors: c.ExtractConfigs(), Acquisition: acquisitionOpts, Syntax: c.ForSyntax(), Patterns: c.ForPatterns(), Lint: lintWarningStrings, Coverage: c.CoverageOptions()}
+	return acquisition.RunOptions{Exclusions: exclusions, Scope: scopeConfig, Extractors: c.ExtractConfigs(), Acquisition: acquisitionOpts, Syntax: c.ForSyntax(), Patterns: c.ForPatterns(), Lint: lintWarningStrings, Coverage: c.CoverageOptions(), SuppliedCoverage: c.SuppliedCoverageOptions()}
 }
 
 // lintWarningStrings renders LintModules for a resolved module set. Acquisition

@@ -1143,11 +1143,11 @@ Rollback: single commit revert.
 
 ### Task 8: Supplied-coverage ingestion contract and path normalization
 
-- [ ] Add the `coverage:` config block (opt-in, default disabled)
-- [ ] Add the normalized internal coverage fact, before any renderer work
-- [ ] Implement ScanRoot-relative normalization with explicit unresolved counting
-- [ ] Implement sidecar-based freshness per §3.2
-- [ ] Cache by content hash through the existing fact-cache discipline
+- [x] Add the `coverage:` config block (opt-in, default disabled)
+- [x] Add the normalized internal coverage fact, before any renderer work
+- [x] Implement ScanRoot-relative normalization with explicit unresolved counting
+- [x] Implement sidecar-based freshness per §3.2
+- [x] Cache by content hash through the existing fact-cache discipline
 
 Justification: §3.2, §3.3. This builds the ingestion spine and the normalization
 contract with **no format parsers** — parsers land in Task 8 against a contract

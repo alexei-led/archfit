@@ -46,6 +46,46 @@ func TestSchemaNoDrift(t *testing.T) {
 	}
 }
 
+func TestSchemaSuppliedCoverageContract(t *testing.T) {
+	got, err := configschema.Generate("../config")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	var schema struct {
+		Defs map[string]struct {
+			Required   []string `json:"required"`
+			Properties map[string]struct {
+				Enum    []any `json:"enum"`
+				Default any   `json:"default"`
+			} `json:"properties"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(got, &schema); err != nil {
+		t.Fatalf("unmarshal generated schema: %v", err)
+	}
+	coverageDef, ok := schema.Defs["CoverageConfig"]
+	if !ok {
+		t.Fatal("CoverageConfig definition missing from generated schema")
+	}
+	if got := coverageDef.Properties["enabled"].Default; got != false {
+		t.Errorf("CoverageConfig.enabled default = %#v, want false", got)
+	}
+	if got := coverageDef.Properties["gate"].Enum; !slices.Equal(got, []any{"off", "warn", "fail"}) {
+		t.Errorf("CoverageConfig.gate enum = %v", got)
+	}
+	coverageSourceDef, ok := schema.Defs["CoverageSource"]
+	if !ok {
+		t.Fatal("CoverageSource definition missing from generated schema")
+	}
+	if !slices.Equal(coverageSourceDef.Required, []string{"path"}) {
+		t.Errorf("CoverageSource.required = %v, want [path]", coverageSourceDef.Required)
+	}
+	wantFormats := []any{"auto", "go-coverprofile", "lcov", "coverage-py-json", "llvm-cov-json"}
+	if got := coverageSourceDef.Properties["format"].Enum; !slices.Equal(got, wantFormats) {
+		t.Errorf("CoverageSource.format enum = %v, want %v", got, wantFormats)
+	}
+}
+
 // TestSchemaPatchedDefinitions asserts the patchDefinitions semantics directly,
 // so a silently no-op'ed patch (typo'd definition name, library rename) fails
 // here instead of being "fixed" by regenerating the drift snapshot.

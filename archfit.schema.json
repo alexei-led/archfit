@@ -105,6 +105,58 @@
       ],
       "description": "CouplingGateDef configures the coupling verdict gate (`coupling.gate:`)."
     },
+    "CoverageConfig": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/CoverageSource"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "CoverageConfig configures opt-in ingestion of coverage artifacts produced by the caller's CI."
+    },
+    "CoverageSource": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "go-coverprofile",
+            "lcov",
+            "coverage-py-json",
+            "llvm-cov-json"
+          ]
+        },
+        "sidecar_path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "description": "CoverageSource is one supplied coverage artifact."
+    },
     "DistributedMonolithDef": {
       "properties": {
         "mode": {
@@ -620,6 +672,9 @@
     },
     "analyzers": {
       "$ref": "#/$defs/AnalyzersConfig"
+    },
+    "coverage": {
+      "$ref": "#/$defs/CoverageConfig"
     },
     "ai": {
       "$ref": "#/$defs/AIConfig"

@@ -15,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	evidencecontract "github.com/alexei-led/archfit/internal/evidence"
 	"github.com/alexei-led/archfit/internal/extract/acquire"
+	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/history/git"
@@ -97,6 +98,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	store := factcache.NewStore(factsCacheDir(bundleDir))
 	store.RefreshMode = s.Refresh
 	extractors := registry.Build(s.Runner, s.Options.Extractors, store)
+	suppliedCoverage, suppliedCoverageRow := suppliedcoverage.New(store).IngestAll(resolved.Root, s.Options.SuppliedCoverage)
 
 	var warnings []string
 	warnLabel := s.WarnLabel
@@ -168,6 +170,9 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	// `coverage` metric would otherwise divide crate counts by file counts and can
 	// exceed the 1.0 ceiling its own contract calls impossible.
 	var reportOnlyCoverage []evidence.Coverage
+	if suppliedCoverageRow.Tool != "" {
+		reportOnlyCoverage = append(reportOnlyCoverage, suppliedCoverageRow)
+	}
 	if ex := registry.RustExtractor(extractors); ex != nil {
 		reportOnlyCoverage = append(reportOnlyCoverage, ex.LastModuleGraphCoverage())
 		for _, cr := range ex.LastCrateRoots() {
@@ -186,7 +191,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	// report evidence only, so a config opt-out can never move a measured metric.
 	marked := markDisabledPrimaries(append(append([]evidence.Coverage(nil), coverage...), reportOnlyCoverage...), s.Options.Coverage, resolved.Root)
 	snapshot := evidencecontract.Facts{
-		Graph: graphResult.Graph, Coverage: coverage,
+		Graph: graphResult.Graph, Coverage: coverage, SuppliedCoverage: suppliedCoverage,
 		Symbols: graphResult.SCIPSymbols, PatternMatches: patternMatches,
 		SyntaxFacts: syntaxFacts, FileLOC: collected.FileLOC,
 		FileClassIndex: collected.FileClassIndex,

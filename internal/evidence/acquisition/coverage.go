@@ -3,6 +3,7 @@ package acquisition
 import (
 	"sort"
 
+	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
@@ -29,6 +30,7 @@ func buildCoverageToolConfigKey() map[string]string {
 	m := map[string]string{
 		toolJscpd:                 "clones",
 		registry.ToolCargoModules: "cargo-modules",
+		suppliedcoverage.ToolName: suppliedcoverage.ToolName,
 	}
 	for _, lang := range registry.All() {
 		m[lang.PrimaryTool] = lang.ID
@@ -59,6 +61,7 @@ func buildToolAffectedMetrics() map[string]affectedMetrics {
 	m := map[string]affectedMetrics{
 		toolJscpd:                 {"npm install -g jscpd", []string{"coupling_balance"}},
 		registry.ToolCargoModules: {"cargo install cargo-modules (analyzers.cargo_modules.enabled: true)", []string{metricCycle, metricBlastRadius, metricEncapsulation}},
+		suppliedcoverage.ToolName: {"provide the configured coverage artifact", []string{"testability"}},
 	}
 	for _, lang := range registry.All() {
 		m[lang.PrimaryTool] = affectedMetrics{lang.InstallHint, primaryGraphMetrics}

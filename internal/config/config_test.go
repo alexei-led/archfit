@@ -932,6 +932,59 @@ func loadConfigInline(t *testing.T, body string) (config.Config, error) {
 	return config.Load(context.Background(), p)
 }
 
+func TestLoad_SuppliedCoverage(t *testing.T) {
+	t.Run("absent block defaults disabled", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Coverage.Enabled || cfg.SuppliedCoverageOptions().Enabled {
+			t.Fatal("absent coverage block must default disabled")
+		}
+	})
+
+	t.Run("explicit false decodes disabled", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\ncoverage:\n  enabled: false\n  gate: warn\n  sources:\n    - path: coverage.out\n      format: go-coverprofile\n      sidecar_path: evidence/coverage.sidecar.json\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := cfg.SuppliedCoverageOptions()
+		if got.Enabled || got.Gate != string(config.GateWarn) || len(got.Sources) != 1 {
+			t.Fatalf("coverage projection = %+v", got)
+		}
+		if got.Sources[0].Path != "coverage.out" || got.Sources[0].Format != "go-coverprofile" || got.Sources[0].SidecarPath != "evidence/coverage.sidecar.json" {
+			t.Fatalf("coverage source projection = %+v", got.Sources[0])
+		}
+	})
+
+	t.Run("omitted format projects auto", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\ncoverage:\n  enabled: true\n  sources:\n    - path: coverage.out\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cfg.SuppliedCoverageOptions().Sources[0].Format; got != "auto" {
+			t.Fatalf("format = %q, want auto", got)
+		}
+	})
+
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "enabled without sources", body: "version: 2\ncoverage:\n  enabled: true\n", want: "coverage.sources requires at least one source"},
+		{name: "invalid gate", body: "version: 2\ncoverage:\n  gate: block\n", want: "coverage.gate"},
+		{name: "missing path", body: "version: 2\ncoverage:\n  sources:\n    - format: lcov\n", want: "coverage.sources[0].path is required"},
+		{name: "invalid format", body: "version: 2\ncoverage:\n  sources:\n    - path: coverage.out\n      format: cobertura\n", want: "is not one of"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := loadInline(t, tc.body); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load error = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestLoad_ExternalSystems(t *testing.T) {
 	t.Run("valid entry decodes and projects into classify.Config", func(t *testing.T) {
 		p := filepath.Join(t.TempDir(), ".archfit.yaml")
