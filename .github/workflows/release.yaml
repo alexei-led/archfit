@@ -162,7 +162,9 @@ jobs:
           # message is the curated release notes; %(contents) is empty for a
           # lightweight tag, which triggers the commit-log fallback below.
           git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}" || true
-          git for-each-ref "refs/tags/${TAG}" --format='%(contents)' > RELEASE_NOTES.md
+          git for-each-ref "refs/tags/${TAG}" --format='%(contents)' \
+            | sed '/^-----BEGIN PGP SIGNATURE-----$/,$d' \
+            > RELEASE_NOTES.md
           if [ ! -s RELEASE_NOTES.md ]; then
             PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -1)
             if [ -n "${PREV_TAG}" ]; then
