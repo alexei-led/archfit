@@ -11,13 +11,13 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - `make test` — `go test -race -coverprofile=coverage.out ./...` + `python3 internal/extract/scip/scip_reader_test.py` + `bash scripts/tests/cli_exit_contract_test.sh` (CI runs both non-Go steps too)
 - `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.1.6)
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
-- `make archfit` — dogfood architecture-drift gate: `.bin/archfit check --config .archfit.yaml`
-- `make arch-lint` — architecture drift linter (alias for `make archfit`); wired into the pre-push hook
+- `make arch-lint` — v2 architecture-state gate: `.bin/archfit check --config .archfit.yaml`; accepts `healthy` (0) and `needs_attention` (2), and fails on `blocked` (1) or `error` (3)
+- `make archfit` — compatibility alias for `make arch-lint`
 - `make archfit-report` — write `docs/reports/archfit-report.md` via `archfit analyze --markdown`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
 - `make test-fast` — `go test -race -short ./...` (skips slow subprocess/ast-grep integration tests; for inner-loop speed)
 - `make bench-gate` — cold vs warm fact-cache gate timing on this repo (reported number, not a CI assert; `scripts/bench-gate.sh`)
-- `make all` — fmt → lint → test → archfit
+- `make all` — fmt → lint → test → arch-lint
 - One test: `go test ./internal/<pkg>/ -run TestName`
 
 ## Structural gates (CI runs these explicitly — keep green)

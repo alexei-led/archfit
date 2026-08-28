@@ -2,13 +2,14 @@
 
 Thanks for improving `archfit`.
 
-Keep changes small, deterministic, and documented. `archfit analyze` is a gate:
-it must stay reproducible and must not require network access or an LLM. Optional
-LLM features belong behind explicit commands or config and stay off the gate.
+Keep changes small, deterministic, and documented. `archfit check` is the gate:
+it must stay reproducible and must not require network access or an LLM. Use
+`archfit analyze` for reports. Optional LLM features belong behind explicit
+commands or config and stay off the gate.
 
 ## Prerequisites
 
-- Go 1.26+
+- Go 1.27.0
 - Git
 - `pre-commit`
 - Python 3.12+ — `make test` (and CI) runs `python3
@@ -72,12 +73,12 @@ go test ./internal/ -run TestSelfModel          # .archfit.yaml describes real s
 go test ./internal/ -run TestModelSurfaceNoDrift # published model contract
 go test ./internal/application/ -run TestGolden # output fixtures
 go test ./internal/ ./cmd/archfit/ -run TestErosion_ # architecture-state erosion gates
-make archfit                                    # dogfood the configured gate
+make arch-lint                                 # run the configured v2 gate
 pre-commit run --all-files
 ```
 
-`make archfit` runs `archfit check` and accepts exit `0` (healthy) or `2`
-(needs attention); only exit `1` (blocked) fails it. Exit `0` is reachable with
+`make arch-lint` runs `archfit check` and accepts exit `0` (healthy) or `2`
+(needs attention); exit `1` (blocked) and exit `3` (error) fail it. Exit `0` is reachable with
 complete evidence. This repo may report `2` while supplied coverage,
 operational corroboration, or a comparable persisted baseline is missing; no
 evidence gap is reported as healthy.

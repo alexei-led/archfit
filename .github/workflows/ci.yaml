@@ -81,7 +81,7 @@ jobs:
           go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: CI gate — architecture drift
-        run: make archfit
+        run: make arch-lint
       - name: Upload coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

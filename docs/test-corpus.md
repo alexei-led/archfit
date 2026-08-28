@@ -15,7 +15,7 @@ technical owner-distance, CODEOWNERS resolution, and coupling at scale).
 
 | Repo                 | Lang                  | Owner model                 | CODEOWNERS           | Delta base (prev minor) | Why                                                        |
 | -------------------- | --------------------- | --------------------------- | -------------------- | ----------------------- | ---------------------------------------------------------- |
-| archfit              | Go                    | solo (mine)                 | no                   | `v0.13.0`               | self-dogfood; gates its own architecture (`make archfit`)  |
+| archfit              | Go                    | solo (mine)                 | no                   | `v0.13.0`               | self-dogfood; runs its own v2 gate (`make arch-lint`)       |
 | spotinfo             | Go                    | solo (mine)                 | no                   | `v2.2.1`                | tiny CLI; thin-graph baseline                              |
 | pumba                | Go                    | solo (mine)                 | yes (`@alexei-led`)  | `1.0.6`                 | small Go, forbidden-dep rules                              |
 | ccgram               | Python                | solo (mine)                 | no                   | `v4.2.0`                | richest single-owner: encapsulation + cycles fire          |
