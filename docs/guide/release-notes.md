@@ -1,9 +1,34 @@
 # Release notes
 
-## Unreleased — architecture-state reporting
+## v2.1.0 — architecture-state reporting
 
-This release retires the repository score. Read the breaking changes before
-upgrading.
+Release date: 2026-08-28
+
+Archfit now reports architecture state instead of one repository score. It
+measures nine dimensions and shows the evidence that supports each result.
+
+### Main changes
+
+- Report structure, coupling, complexity, testability, operations, drift, and
+  five related dimensions with explicit status and evidence.
+- Add module-graph complexity, dependency-chain depth, fan-in, and fan-out
+  metrics.
+- Add declared deployment topology and owner provenance metrics.
+- Read Go, LCOV, coverage.py, and llvm-cov coverage artifacts with source-hash
+  freshness checks.
+- Keep missing or stale evidence as `partial` or `unmeasured`. Do not report a
+  healthy result without the required producer evidence.
+- Keep text, Markdown, SARIF, scorecard, and JSON results aligned.
+
+### Upgrade impact
+
+This release changes the JSON state contract and requires configuration schema
+v2. Read the breaking changes and follow the upgrade checklist before you
+upgrade a CI or agent integration.
+
+This release was tested against 11 repositories. All strict corpus records
+passed. The reachability fixture measured all nine dimensions and returned
+`healthy` with check exit `0`.
 
 Breaking changes:
 

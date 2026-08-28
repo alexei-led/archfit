@@ -1,8 +1,8 @@
 # Archfit language-evidence improvements
 
-Date: 2026-08-27
-Status: PLANNED — awaiting owner review, not started.
-Branch: `plan/archfit-language-evidence-improvements` (base `733b36c`).
+Date: 2026-08-27–2026-08-28
+Status: COMPLETED WITH FINDINGS — all 13 tasks complete; final corpus verification refreshed at `823aab6`.
+Branch: `archfit-language-evidence-improvements-470edda8` (base `306e5658`).
 Contract under change: `archfit.architecture-state.v1`
 (`docs/design/architecture-state-reporting.md`).
 Design review: Fusion run `7bb04756-4400-465a-8f45-4b1ae34d5cd7` (2026-08-27),
@@ -265,27 +265,27 @@ the working tree, not a git object.
   }
   ```
 
-  - `schema_version` — must be exactly `1` for this contract. Unrecognized
-    versions are treated as absent.
-  - `source_ref` — the commit the producer believed it measured, for metadata.
-    Not a gate; sidecar-to-bytes match decides promotion.
-  - `modules` — the covered module identities the artifact represents.
-  - `sources` — a JSON object mapping repo-relative paths to SHA256 hashes
-    (lowercase hex). Paths are normalized per Task 8 contract; hashes are
-    computed as sha256(file_content).
+- `schema_version` — must be exactly `1` for this contract. Unrecognized
+  versions are treated as absent.
+- `source_ref` — the commit the producer believed it measured, for metadata.
+  Not a gate; sidecar-to-bytes match decides promotion.
+- `modules` — the covered module identities the artifact represents.
+- `sources` — a JSON object mapping repo-relative paths to SHA256 hashes
+  (lowercase hex). Paths are normalized per Task 8 contract; hashes are
+  computed as sha256(file_content).
 
-  Freshness is then decided by comparing the sidecar's `sources` against the
-  same files as scanned:
+Freshness is then decided by comparing the sidecar's `sources` against the same
+files as scanned:
 
-  - **valid sidecar, non-empty `sources`, every normalized covered fact path is
-    listed, and every covered source hash matches** → `Freshness = matched`.
-    This is the only value that permits promotion.
-  - **valid sidecar, any covered source hash differs, a listed path is missing,
-    or a normalized covered fact path is omitted** → `Freshness = stale`, reason
-    `worktree_differs_from_ref`.
-  - **no sidecar, unreadable sidecar, unrecognized `schema_version`, or empty or
-    missing `sources`** → `Freshness = unverified`, reason
-    `freshness_unverified`.
+- **valid sidecar, non-empty `sources`, every normalized covered fact path is
+  listed, and every covered source hash matches** → `Freshness = matched`.
+  This is the only value that permits promotion.
+- **valid sidecar, any covered source hash differs, a listed path is missing,
+  or a normalized covered fact path is omitted** → `Freshness = stale`, reason
+  `worktree_differs_from_ref`.
+- **no sidecar, unreadable sidecar, unrecognized `schema_version`, or empty or
+  missing `sources`** → `Freshness = unverified`, reason
+  `freshness_unverified`.
 
   `Freshness` keeps its existing three values — `{matched, stale, unverified}` —
   and no fourth is added. Both `stale` and `unverified` force the dimension to
@@ -899,6 +899,7 @@ them is what makes today's output misleading.
 
 Round 6 Fusion identified that the current `seamAnchor` branches
 (`internal/application/analysis.go:336-354`) distinguish:
+
 - `base.State == nil` and not legacy → no baseline persisted.
 - `base.Legacy` → baseline exists but predates seam tracking.
 - fingerprint mismatch → config/model/label/rubric changed.
@@ -1295,7 +1296,6 @@ Mandatory internal slices — land and verify in this order, one commit each. Th
 is the single documented exception to the "one task, one commit" rule in §4:
 five parsers in one commit would be unreviewable, and each slice is independently
 revertible because parsers register independently.
-
 
 - **9A** Go coverprofile (`mode:` header, `file:line.col,line.col n count`), both
   path shapes.
