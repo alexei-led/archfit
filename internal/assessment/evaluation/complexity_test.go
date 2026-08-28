@@ -152,7 +152,9 @@ func completeComplexityFixture() (*result.Result, stateInput) {
 	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
 	p := policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{FunctionLOCThreshold: 60}, policy.GatePolicy{}, nil, nil)
 	return &result.Result{
-		ModuleGraphComplexity: &result.ModuleGraphComplexity{Modules: 2, MaxDependencyChain: 1, FanInP90: 1, FanOutP90: 1},
+		ModuleGraphComplexity: &result.ModuleGraphComplexity{
+			Modules: 2, MaxDependencyChain: 1, FanInP90: 1, FanOutP90: 1,
+		},
 		PrimaryExtractorTools: []string{toolGoPackages},
 		ToolCoverage:          []modevidence.Coverage{{Tool: toolGoPackages, Status: modevidence.StatusOK}},
 		ClassifiedEdges: &result.ClassifiedEdgeSummary{
