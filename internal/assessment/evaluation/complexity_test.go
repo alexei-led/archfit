@@ -151,7 +151,10 @@ func completeComplexityFixture() (*result.Result, stateInput) {
 	modules := complexityModules("a", "b")
 	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
 	p := policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{FunctionLOCThreshold: 60}, policy.GatePolicy{}, nil, nil)
-	return &result.Result{
+	// Bound to locals: gofmt before Go 1.27 indents multi-line composite
+	// literals in a multi-value return differently, so the inline form cannot
+	// satisfy both toolchains at once.
+	res := &result.Result{
 		ModuleGraphComplexity: &result.ModuleGraphComplexity{
 			Modules: 2, MaxDependencyChain: 1, FanInP90: 1, FanOutP90: 1,
 		},
@@ -160,7 +163,8 @@ func completeComplexityFixture() (*result.Result, stateInput) {
 		ClassifiedEdges: &result.ClassifiedEdgeSummary{
 			InternalDependencies: 1, ClassifiedInternalDependencies: 1, FirstPartyNodes: 2, AttributedFirstPartyNodes: 2,
 		},
-	}, stateInput{Policy: p, Facts: Observations{
+	}
+	in := stateInput{Policy: p, Facts: Observations{
 		FileLOC:        map[string]int{"a/a.go": 10, "b/b.go": 100},
 		FileClassIndex: map[string]fileclass.FileClass{"a/a.go": fileclass.Production, "b/b.go": fileclass.Production},
 		SyntaxFacts: []modevidence.SyntaxFact{
@@ -168,6 +172,8 @@ func completeComplexityFixture() (*result.Result, stateInput) {
 			{Kind: syntaxKindMethod, StartLine: 1, EndLine: 100},
 		},
 	}}
+
+	return res, in
 }
 
 func complexityModules(names ...string) map[string]policy.ModuleDef {
