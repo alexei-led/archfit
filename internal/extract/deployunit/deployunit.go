@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -33,6 +34,18 @@ const (
 // Priority order (highest first): Go main pkg, TS workspace, Python pyproject,
 // Dockerfile, k8s manifest. Only the first match per relative path is recorded.
 func Detect(ctx context.Context, root string, mm policy.ModuleMap, runner toolrun.Runner) map[string]string {
+	corroborated := DetectCorroborated(ctx, root, mm, runner)
+	out := make(map[string]string, len(corroborated))
+	for path, fact := range corroborated {
+		out[path] = fact.Unit
+	}
+	return out
+}
+
+// DetectCorroborated is Detect with the source kind retained for each match.
+// Detect remains the compatibility surface used by config update; both paths
+// execute the same single detector pass.
+func DetectCorroborated(ctx context.Context, root string, mm policy.ModuleMap, runner toolrun.Runner) map[string]evidence.CorroboratedDeployUnit {
 	r := &detector{root: root, mm: mm, runner: runner}
 	return r.detect(ctx)
 }
@@ -78,14 +91,46 @@ func KeyByModule(detected map[string]string, mm policy.ModuleMap) map[string]str
 	return out
 }
 
+// KeyCorroboratedByModule retains provenance while applying KeyByModule's
+// deterministic path-to-module attribution rules.
+func KeyCorroboratedByModule(detected map[string]evidence.CorroboratedDeployUnit, mm policy.ModuleMap) map[string]evidence.CorroboratedDeployUnit {
+	out := make(map[string]evidence.CorroboratedDeployUnit, len(detected))
+	paths := make([]string, 0, len(detected))
+	for p := range detected {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		mod, ok := moduleForDetectedPath(p, mm)
+		if !ok {
+			continue
+		}
+		if _, exists := out[mod]; exists {
+			continue
+		}
+		out[mod] = detected[p]
+	}
+	return out
+}
+
+func moduleForDetectedPath(detectedPath string, mm policy.ModuleMap) (string, bool) {
+	if mod, ok := mm.ModuleForFile(detectedPath); ok {
+		return mod, true
+	}
+	if mm.Has(detectedPath) {
+		return detectedPath, true
+	}
+	return "", false
+}
+
 type detector struct {
 	root   string
 	mm     policy.ModuleMap
 	runner toolrun.Runner
 }
 
-func (d *detector) detect(ctx context.Context) map[string]string {
-	result := make(map[string]string)
+func (d *detector) detect(ctx context.Context) map[string]evidence.CorroboratedDeployUnit {
+	result := make(map[string]evidence.CorroboratedDeployUnit)
 
 	// Each source appends into result; first write wins per key.
 	d.detectGoMain(ctx, result)
@@ -108,12 +153,12 @@ func (d *detector) relPath(abs string) string {
 }
 
 // set records unit for relDir only if not already present (first write wins).
-func set(result map[string]string, relDir, unitName string) {
-	if relDir == "" || unitName == "" {
+func set(result map[string]evidence.CorroboratedDeployUnit, relDir, unitName string, source evidence.TopologySource) {
+	if relDir == "" || unitName == "" || source == "" {
 		return
 	}
 	if _, exists := result[relDir]; !exists {
-		result[relDir] = unitName
+		result[relDir] = evidence.CorroboratedDeployUnit{Path: filepath.ToSlash(relDir), Unit: unitName, Source: source}
 	}
 }
 
@@ -131,7 +176,7 @@ func skipDir(name string) bool {
 // 1. Go main packages via go list.
 // ---------------------------------------------------------------------------
 
-func (d *detector) detectGoMain(ctx context.Context, result map[string]string) {
+func (d *detector) detectGoMain(ctx context.Context, result map[string]evidence.CorroboratedDeployUnit) {
 	if _, ok := d.runner.Detect(ctx, "go"); !ok {
 		return
 	}
@@ -173,7 +218,7 @@ func (d *detector) detectGoMain(ctx context.Context, result map[string]string) {
 			}
 			name = modName
 		}
-		set(result, rel, name)
+		set(result, rel, name, evidence.TopologySourceGoMain)
 	}
 }
 
@@ -210,7 +255,7 @@ func workspacePatterns(raw json.RawMessage) []string {
 	return nil
 }
 
-func (d *detector) detectTSWorkspaces(result map[string]string) {
+func (d *detector) detectTSWorkspaces(result map[string]evidence.CorroboratedDeployUnit) {
 	data, err := os.ReadFile(filepath.Join(d.root, "package.json"))
 	if err != nil {
 		return
@@ -226,7 +271,7 @@ func (d *detector) detectTSWorkspaces(result map[string]string) {
 		if name == "" {
 			name = dirName(".")
 		}
-		set(result, ".", name)
+		set(result, ".", name, evidence.TopologySourceWorkspace)
 	}
 
 	// Each workspace path is a potential deploy unit.
@@ -255,7 +300,7 @@ func (d *detector) detectTSWorkspaces(result map[string]string) {
 			if name == "" {
 				name = dirName(rel)
 			}
-			set(result, rel, name)
+			set(result, rel, name, evidence.TopologySourceWorkspace)
 		}
 	}
 }
@@ -264,7 +309,7 @@ func (d *detector) detectTSWorkspaces(result map[string]string) {
 // 3. Python pyproject.toml (TOML line-scanner; no external dependency).
 // ---------------------------------------------------------------------------
 
-func (d *detector) detectPyProject(result map[string]string) {
+func (d *detector) detectPyProject(result map[string]evidence.CorroboratedDeployUnit) {
 	_ = filepath.Walk(d.root, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -289,7 +334,7 @@ func (d *detector) detectPyProject(result map[string]string) {
 		if name == "" {
 			name = dirName(rel)
 		}
-		set(result, rel, name)
+		set(result, rel, name, evidence.TopologySourcePyproject)
 		return nil
 	})
 }
@@ -332,7 +377,7 @@ func parsePyprojectName(data []byte) string {
 // 4. Dockerfiles.
 // ---------------------------------------------------------------------------
 
-func (d *detector) detectDockerfiles(result map[string]string) {
+func (d *detector) detectDockerfiles(result map[string]evidence.CorroboratedDeployUnit) {
 	_ = filepath.Walk(d.root, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -351,7 +396,7 @@ func (d *detector) detectDockerfiles(result map[string]string) {
 			if rel == "." {
 				unitName = filepath.Base(d.root)
 			}
-			set(result, rel, unitName)
+			set(result, rel, unitName, evidence.TopologySourceDockerfile)
 		}
 		return nil
 	})
@@ -361,7 +406,7 @@ func (d *detector) detectDockerfiles(result map[string]string) {
 // 5. Kubernetes Deployment / StatefulSet manifests (line-scanner; no yaml dep).
 // ---------------------------------------------------------------------------
 
-func (d *detector) detectK8sManifests(result map[string]string) {
+func (d *detector) detectK8sManifests(result map[string]evidence.CorroboratedDeployUnit) {
 	_ = filepath.Walk(d.root, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -396,7 +441,7 @@ func (d *detector) detectK8sManifests(result map[string]string) {
 					name = filepath.Base(d.root)
 				}
 			}
-			set(result, rel, name)
+			set(result, rel, name, evidence.TopologySourceK8s)
 			break // one match per file is enough
 		}
 		return nil

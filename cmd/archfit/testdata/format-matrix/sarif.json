@@ -14,8 +14,8 @@
           "status": "not_requested"
         },
         "coverage": {
-          "measured": 4,
-          "partial": 3,
+          "measured": 5,
+          "partial": 2,
           "tools": [
             {
               "status": "ok",
@@ -71,7 +71,7 @@
           "active_blockers": 1,
           "attention_dimensions": 2,
           "hard_gates": "fail",
-          "unknown_dimensions": 5
+          "unknown_dimensions": 4
         },
         "dimensions": [
           {
@@ -82,23 +82,119 @@
               "total": 1
             },
             "gate": "pass",
+            "metrics": [
+              {
+                "name": "declared_modules",
+                "provenance": [
+                  "policy"
+                ],
+                "unit": "count",
+                "value": 2
+              },
+              {
+                "name": "declared_layers",
+                "provenance": [
+                  "policy"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "denominator": {
+                  "observed": 1,
+                  "total": 1
+                },
+                "name": "declared_rules",
+                "provenance": [
+                  "policy"
+                ],
+                "unit": "count",
+                "value": 1
+              },
+              {
+                "name": "declared_waivers",
+                "provenance": [
+                  "policy"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "waivers_used",
+                "provenance": [
+                  "assessment/evaluation"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "expired_waivers",
+                "provenance": [
+                  "assessment/evaluation"
+                ],
+                "unit": "count",
+                "value": 0
+              }
+            ],
             "name": "intent",
             "owner": "policy+assessment/evaluation",
             "status": "measured",
-            "unknown": 0
+            "unknown": []
           },
           {
             "confidence": "high",
             "coverage": {
-              "basis": "discovered edges resolved to a declared module",
+              "basis": "discovered dependencies resolved inside the declared module map",
               "observed": 1,
               "total": 1
             },
             "gate": "fail",
+            "metrics": [
+              {
+                "name": "internal_edges",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 1
+              },
+              {
+                "name": "external_edges",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "same_module_edges",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "connected_modules",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 2
+              },
+              {
+                "name": "cycle",
+                "provenance": [
+                  "assessment/metrics/cycle.v1"
+                ],
+                "unit": "count",
+                "value": 0
+              }
+            ],
             "name": "structure",
             "owner": "relationship/facts",
             "status": "measured",
-            "unknown": 0
+            "unknown": []
           },
           {
             "confidence": "low",
@@ -108,10 +204,54 @@
               "total": 2
             },
             "gate": "pass",
+            "metrics": [
+              {
+                "name": "declared_modules",
+                "provenance": [
+                  "policy"
+                ],
+                "unit": "count",
+                "value": 2
+              },
+              {
+                "denominator": {
+                  "observed": 0,
+                  "total": 2
+                },
+                "name": "public_surface_entries",
+                "provenance": [
+                  "policy"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "local_coupling_modules",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "blast_radius",
+                "provenance": [
+                  "assessment/metrics/blast_radius.v2"
+                ],
+                "unit": "count",
+                "value": 1
+              }
+            ],
             "name": "modularity",
             "owner": "assessment/metrics",
             "status": "measured",
-            "unknown": 1
+            "unknown": [
+              {
+                "fact": "inferred public surface",
+                "owner": "assessment/metrics",
+                "reason": "no declared module states a public surface, so inferring one is outside this claim"
+              }
+            ]
           },
           {
             "confidence": "high",
@@ -121,10 +261,116 @@
               "total": 1
             },
             "gate": "warn",
+            "metrics": [
+              {
+                "denominator": {
+                  "observed": 1,
+                  "total": 1
+                },
+                "name": "scored_edges",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 1
+              },
+              {
+                "name": "abstained_edges",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "declared_external_edges",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "clone_only_seams",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "critical_band_edges",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "high_or_worse_edges",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "critical_high_distance_edges",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "seams",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 1
+              },
+              {
+                "denominator": {
+                  "observed": 1,
+                  "total": 1
+                },
+                "name": "distributed_monolith_seams",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "tight_seams",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 1
+              },
+              {
+                "name": "unrated_seams",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "unbalanced_edge",
+                "provenance": [
+                  "assessment/metrics/unbalanced_edge.v2"
+                ],
+                "unit": "count",
+                "value": 0
+              }
+            ],
             "name": "coupling",
             "owner": "relationship/analysis",
             "status": "measured",
-            "unknown": 0
+            "unknown": []
           },
           {
             "confidence": "unrated",
@@ -134,23 +380,108 @@
               "total": 0
             },
             "gate": "not_applicable",
+            "metrics": [],
             "name": "change_locality",
             "owner": "history/git",
             "status": "unmeasured",
-            "unknown": 1
+            "unknown": [
+              {
+                "fact": "eligible commit sample",
+                "owner": "history/git",
+                "reason": "git history is unavailable or the history scan returned no eligible commit"
+              },
+              {
+                "fact": "commit-to-module attribution",
+                "owner": "history/git",
+                "reason": "the history scan is incomplete, so not every eligible commit has a complete module attribution"
+              }
+            ]
           },
           {
-            "confidence": "medium",
+            "confidence": "high",
             "coverage": {
-              "basis": "production files in the source walk",
+              "basis": "declared modules with complete dependency-chain and degree values",
               "observed": 2,
               "total": 2
             },
             "gate": "pass",
+            "metrics": [
+              {
+                "denominator": {
+                  "observed": 2,
+                  "total": 2
+                },
+                "name": "max_dependency_chain",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 1
+              },
+              {
+                "denominator": {
+                  "observed": 2,
+                  "total": 2
+                },
+                "name": "module_fan_in_p90",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 1
+              },
+              {
+                "denominator": {
+                  "observed": 2,
+                  "total": 2
+                },
+                "name": "module_fan_out_p90",
+                "provenance": [
+                  "relationship/analysis"
+                ],
+                "unit": "count",
+                "value": 1
+              },
+              {
+                "name": "production_files",
+                "provenance": [
+                  "syntax/fileclass"
+                ],
+                "unit": "count",
+                "value": 2
+              },
+              {
+                "name": "production_loc",
+                "provenance": [
+                  "syntax/fileclass"
+                ],
+                "unit": "count",
+                "value": 10
+              },
+              {
+                "name": "largest_production_file_loc",
+                "provenance": [
+                  "syntax/fileclass"
+                ],
+                "unit": "count",
+                "value": 6
+              }
+            ],
             "name": "complexity",
-            "owner": "syntax+evidence/acquisition",
-            "status": "partial",
-            "unknown": 1
+            "owner": "relationship/analysis+syntax+evidence/acquisition",
+            "status": "measured",
+            "unknown": [
+              {
+                "fact": "function length distribution",
+                "owner": "syntax+evidence/acquisition",
+                "reason": "ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution"
+              },
+              {
+                "fact": "cognitive complexity",
+                "owner": "syntax+evidence/acquisition",
+                "reason": "no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure"
+              }
+            ]
           },
           {
             "confidence": "medium",
@@ -160,23 +491,228 @@
               "total": 2
             },
             "gate": "pass",
+            "metrics": [
+              {
+                "name": "test_files",
+                "provenance": [
+                  "syntax/fileclass"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "production_files",
+                "provenance": [
+                  "syntax/fileclass"
+                ],
+                "unit": "count",
+                "value": 2
+              },
+              {
+                "denominator": {
+                  "observed": 0,
+                  "total": 2
+                },
+                "name": "test_to_production_files",
+                "provenance": [
+                  "syntax/fileclass"
+                ],
+                "unit": "ratio",
+                "value": 0
+              }
+            ],
             "name": "testability",
             "owner": "syntax/fileclass",
             "status": "partial",
-            "unknown": 2
+            "unknown": [
+              {
+                "fact": "supplied coverage units",
+                "owner": "syntax/fileclass",
+                "reason": "coverage is disabled, so no supplied coverage units were observed"
+              },
+              {
+                "fact": "coverage path resolution",
+                "owner": "syntax/fileclass",
+                "reason": "coverage is disabled, so no supplied coverage paths were available to resolve"
+              },
+              {
+                "fact": "coverage module attribution",
+                "owner": "syntax/fileclass",
+                "reason": "coverage is disabled, so no supplied coverage was available to attribute to declared modules"
+              },
+              {
+                "fact": "coverage freshness",
+                "owner": "syntax/fileclass",
+                "reason": "coverage is disabled, so no supplied coverage freshness could be established"
+              }
+            ]
           },
           {
             "confidence": "medium",
             "coverage": {
-              "basis": "applicable analyzers reporting coverage",
-              "observed": 4,
-              "total": 4
+              "basis": "declared modules with a corroborated deploy unit and qualifying owner",
+              "observed": 0,
+              "total": 2
             },
             "gate": "pass",
+            "metrics": [
+              {
+                "denominator": {
+                  "observed": 2,
+                  "total": 2
+                },
+                "name": "modules_with_owner",
+                "provenance": [
+                  "policy",
+                  "evidence/acquisition"
+                ],
+                "unit": "count",
+                "value": 2
+              },
+              {
+                "name": "distinct_owners",
+                "provenance": [
+                  "policy",
+                  "evidence/acquisition"
+                ],
+                "unit": "count",
+                "value": 2
+              },
+              {
+                "name": "owners_from_declared",
+                "provenance": [
+                  "policy"
+                ],
+                "unit": "count",
+                "value": 2
+              },
+              {
+                "name": "owners_from_codeowners",
+                "provenance": [
+                  "evidence/acquisition"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "owners_from_git_author_fallback",
+                "provenance": [
+                  "evidence/acquisition"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "declared_deploy_units",
+                "provenance": [
+                  "policy"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "corroborated_deploy_units",
+                "provenance": [
+                  "evidence/acquisition"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "denominator": {
+                  "observed": 0,
+                  "total": 2
+                },
+                "name": "modules_with_corroborated_deploy_unit",
+                "provenance": [
+                  "evidence/acquisition"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "matching_declared_deploy_units",
+                "provenance": [
+                  "policy",
+                  "evidence/acquisition"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "mismatched_declared_deploy_units",
+                "provenance": [
+                  "policy",
+                  "evidence/acquisition"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "declared_external_systems",
+                "provenance": [
+                  "policy"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "denominator": {
+                  "observed": 4,
+                  "total": 4
+                },
+                "name": "analyzers_reporting_coverage",
+                "provenance": [
+                  "evidence/acquisition"
+                ],
+                "unit": "count",
+                "value": 4
+              },
+              {
+                "name": "coverage_gaps",
+                "provenance": [
+                  "evidence/acquisition"
+                ],
+                "unit": "count",
+                "value": 0
+              },
+              {
+                "name": "analyzers_not_applicable",
+                "provenance": [
+                  "evidence/acquisition"
+                ],
+                "unit": "count",
+                "value": 7
+              },
+              {
+                "name": "coverage",
+                "provenance": [
+                  "assessment/metrics/coverage.v1"
+                ],
+                "unit": "ratio",
+                "value": 1
+              }
+            ],
             "name": "operations",
             "owner": "policy+evidence/acquisition",
             "status": "partial",
-            "unknown": 2
+            "unknown": [
+              {
+                "fact": "corroborated deploy unit",
+                "owner": "policy+evidence/acquisition",
+                "reason": "one or more declared modules have no independently corroborating deploy manifest"
+              },
+              {
+                "fact": "observed runtime topology",
+                "owner": "policy+evidence/acquisition",
+                "reason": "committed manifests corroborate declared deploy units; they do not observe what is actually running"
+              },
+              {
+                "fact": "supply-chain inventory",
+                "owner": "policy+evidence/acquisition",
+                "reason": "SBOM and vulnerability facts are a separate report family and have no collector in v1"
+              }
+            ]
           },
           {
             "confidence": "unrated",
@@ -186,10 +722,22 @@
               "total": 0
             },
             "gate": "not_applicable",
+            "metrics": [],
             "name": "drift",
             "owner": "assessment/decision",
             "status": "unmeasured",
-            "unknown": 1
+            "unknown": [
+              {
+                "fact": "admissible persisted reference",
+                "owner": "assessment/decision",
+                "reason": "no comparable architecture-state reference is stored"
+              },
+              {
+                "fact": "complete two-sided seam identity",
+                "owner": "assessment/decision",
+                "reason": "two-sided seam identity cannot be compared without an admissible persisted reference"
+              }
+            ]
           }
         ],
         "measurement": {
@@ -248,8 +796,8 @@
             "confidence": "low",
             "definition": "modules whose transitive reverse-dependencies exceed 30% of the codebase (change-impact hubs)",
             "direction": "higher_is_worse",
-            "display": "1 of 2 modules are change-impact hubs: pkg/b (100%, 1 deps)",
-            "metric_version": "blast_radius.v1",
+            "display": "1 of 2 modules are change-impact hubs: b (100%, 1 deps)",
+            "metric_version": "blast_radius.v2",
             "mode": "count",
             "name": "blast_radius",
             "value": 1

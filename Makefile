@@ -30,9 +30,9 @@ help: ## show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-## all: fmt lint test archfit
+## all: fmt lint test arch-lint
 .PHONY: all
-all: fmt lint test archfit ## fmt + lint + test + architecture drift gate
+all: fmt lint test arch-lint ## fmt + lint + v2 architecture-state gate
 
 ## build: compile the archfit binary
 .PHONY: build
@@ -71,12 +71,11 @@ archfit: build ## run archfit check against this repo's architecture policy
 	if [ $$rc -eq 0 ] || [ $$rc -eq 2 ]; then exit 0; fi; \
 	exit $$rc
 
-## arch-lint: architecture drift linter — fails on any blocking architecture
-## violation (forbidden dependency, layer inversion, god-struct ceiling). Alias
-## for the archfit dogfood gate; wired into the pre-push hook so drift is caught
-## before it reaches CI. `make all` runs this too.
+## arch-lint: run the v2 architecture-state gate
+## It accepts healthy (0) and needs_attention (2). It fails on blocked (1) and
+## error (3). It is the CI and pre-push entry point for the archfit check.
 .PHONY: arch-lint
-arch-lint: archfit ## architecture drift linter (alias for the archfit dogfood gate)
+arch-lint: archfit ## run the v2 architecture-state gate
 
 ## archfit-report: write a Markdown architecture audit report
 .PHONY: archfit-report

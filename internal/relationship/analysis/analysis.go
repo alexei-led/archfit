@@ -62,7 +62,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 		cfg.CrossModuleClonePairs, cfg.CloneEvidence = clonePairs(in.CloneClusters, cfg.ModuleMap, in.FileClassIndex)
 	}
 	idx := classify.Run(in.Graph, cfg)
-	set := buildSet(in.Graph, idx, cfg.ModuleMap)
+	set := buildSet(in.Graph, idx, cfg.ModuleMap, cfg.Modules)
 	clones := cloneOnlyPairs(in.Graph, cfg)
 	runtimeAsyncEdges := runtimeEdges(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap)
 	// Dynamic/lazy imports are invisible to the static graph, so they hide cycles
@@ -278,14 +278,25 @@ func cloneLanguage(path string) string {
 
 var cloneTypeScriptSourceExts = graph.TypeScriptSourceExtensions()
 
-func buildSet(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap) relationship.Set {
+func buildSet(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap, modules map[string]policy.ModuleDef) relationship.Set {
 	if g == nil {
 		return relationship.Set{}
 	}
 	set := relationship.Set{Nodes: make([]relationship.Node, 0, len(g.Nodes())), Edges: make([]relationship.Edge, 0, len(g.Edges()))}
 	for _, n := range g.Nodes() {
 		id := n.ID()
-		set.Nodes = append(set.Nodes, relationship.Node{ID: id, Path: n.Path, Kind: string(n.Kind), Language: n.Language, Module: relationship.ModuleKey(id), FirstParty: n.Kind != graph.NodeKindExternal})
+		firstParty := n.Kind != graph.NodeKindExternal
+		module := ""
+		if firstParty {
+			// An empty result is still an explicit outside-map attribution. The
+			// separate BoundaryClassified bit prevents consumers from confusing
+			// that result with a node this projection never examined.
+			module, _ = moduleForNode(id, mm)
+		}
+		set.Nodes = append(set.Nodes, relationship.Node{
+			ID: id, Path: n.Path, Kind: string(n.Kind), Language: n.Language,
+			Module: module, FirstParty: firstParty, BoundaryClassified: firstParty,
+		})
 	}
 	for _, e := range g.Edges() {
 		key := e.From + "\x00" + e.To + "\x00" + string(e.Kind)
@@ -294,9 +305,11 @@ func buildSet(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap) relations
 			continue
 		}
 		fp, tp := relationship.NodePath(e.From), relationship.NodePath(e.To)
-		fm, _ := mm.ModuleFor(fp)
-		tm, _ := mm.ModuleFor(tp)
-		set.Edges = append(set.Edges, relationship.Edge{FromID: e.From, ToID: e.To, FromPath: fp, ToPath: tp, FromModule: fm, ToModule: tm, Kind: string(e.Kind), Language: e.Language, Strength: cl.Strength, Distance: cl.Distance, Volatility: cl.Volatility, Severity: cl.Severity, Locations: locations(e.Locations), Provenance: relationship.Provenance{ClassificationKey: key, DistanceBasis: string(cl.DistanceBasis), StrengthFromLLM: cl.StrengthFromLLM, StrengthFromNonHighLLM: cl.StrengthFromNonHighLLM, StrengthFromConnascence: cl.StrengthFromConnascence, ConnascenceKinds: connascenceKinds(cl.Connascence), CloneLocationCount: len(cl.CloneLocations)}, Classified: classification(cl)})
+		fm, _ := moduleForNode(e.From, mm)
+		tm, _ := moduleForNode(e.To, mm)
+		fromDef, fromClassified := modules[fm]
+		toDef, toClassified := modules[tm]
+		set.Edges = append(set.Edges, relationship.Edge{FromID: e.From, ToID: e.To, FromPath: fp, ToPath: tp, FromModule: fm, ToModule: tm, FromLayer: fromDef.Layer, ToLayer: toDef.Layer, StructureClassified: fromClassified && toClassified, Kind: string(e.Kind), Language: e.Language, Strength: cl.Strength, Distance: cl.Distance, Volatility: cl.Volatility, Severity: cl.Severity, Locations: locations(e.Locations), Provenance: relationship.Provenance{ClassificationKey: key, DistanceBasis: string(cl.DistanceBasis), StrengthFromLLM: cl.StrengthFromLLM, StrengthFromNonHighLLM: cl.StrengthFromNonHighLLM, StrengthFromConnascence: cl.StrengthFromConnascence, ConnascenceKinds: connascenceKinds(cl.Connascence), CloneLocationCount: len(cl.CloneLocations)}, Classified: classification(cl)})
 	}
 	return set
 }

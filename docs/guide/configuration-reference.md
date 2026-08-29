@@ -13,12 +13,13 @@ archfit analyze --config .archfit.yaml
 ## Top-level layout
 
 ```
-version         — required; must be 1
+version         — required; must be 2
 exclude         — path globs to skip during scanning
 languages       — per-language extractor settings (go/typescript/python/rust)
 analyzers       — opt-in deeper analysis backends (syntax/scip/clones/cargo_modules)
+coverage        — opt-in ingestion of caller-supplied test coverage
 ai              — off-gate AI provider for enrich/explain/analyze --ai-summary
-coupling        — Balanced-Coupling advisory tuning + coupling_balance gate
+coupling        — Balanced-Coupling advisory tuning + distributed-monolith seam gate
 layers          — ordered architecture layers, inner to outer
 modules         — path ownership map
 external_systems — declared external integration seams scored at D=10
@@ -252,6 +253,143 @@ languages:
 See [Language support](languages.md) for per-language setup and
 [Tooling reference](tooling.md) for platform-specific install commands, versions,
 home pages, and PATH checks.
+
+## `coverage`
+
+`coverage` supplies test-execution evidence that another step already produced.
+It is opt-in and disabled by default:
+
+```yaml
+coverage:
+  enabled: true
+  gate: warn
+  sources:
+    - path: coverage.out
+      format: go-coverprofile
+      sidecar_path: coverage.out.sidecar.json
+      max_bytes: 67108864
+      max_facts: 1000000
+    - path: coverage/lcov.info
+      format: lcov
+```
+
+**Archfit never runs the target repository's tests.** `analyze` and `check` only
+read the configured artifacts and their attestation sidecars. Running foreign
+tests inside architecture analysis would execute arbitrary repository code, make
+the result depend on network/database/runtime state, and make repeated analysis
+non-hermetic. Generate coverage in the repository's existing test job, then run
+Archfit against those files.
+
+Fields:
+
+- `enabled` — `false` by default. When false or absent, Archfit does not read any
+  coverage artifact and emits no `supplied-coverage` tool row. Production source
+  still leaves the testability dimension `partial`; disabled measurement is not
+  evidence of zero coverage.
+- `gate` — `off`, `warn` (default), or `fail`. It controls the required-tool
+  posture when none of the configured artifacts can be read. `fail` can block
+  `check`; `warn` and `off` do not. `--require-tools` escalates an unset/warn gap
+  but never overrides explicit `off`. A partially usable, invalid, stale, or
+  unattributed input keeps testability `partial` but does not become this hard
+  gate. This is an evidence-availability gate, not a minimum coverage-ratio
+  threshold.
+- `sources` — one or more artifacts; required when `enabled: true`. Artifact and
+  sidecar paths are resolved under the analysis root and may not escape it.
+- `path` — artifact path relative to the analysis root.
+- `format` — `auto` (the default), `go-coverprofile`, `lcov`,
+  `coverage-py-json`, or `llvm-cov-json`. `auto` requires one unambiguous match
+  between the extension and file content; set an explicit format when a generic
+  filename could be ambiguous.
+- `sidecar_path` — optional path to the versioned freshness sidecar. The default
+  is `<path>.sidecar.json`.
+- `max_bytes` — positive per-source byte limit for the artifact, sidecar, and
+  producer-enumerated source files read for freshness verification. The default
+  is `67108864` (64 MiB). Exceeding it rejects the input; Archfit never truncates
+  coverage evidence.
+- `max_facts` — positive per-source limit on normalized coverage facts. The
+  default is `1000000`. Exceeding it rejects the whole artifact before caching
+  or module attribution rather than returning an incomplete prefix.
+
+Supported formats and units:
+
+| Format | Typical producer | Unit read by Archfit |
+| --- | --- | --- |
+| `go-coverprofile` | `go test -coverprofile` | statements |
+| `lcov` | c8, Vitest/Jest, or `cargo llvm-cov --lcov` | lines |
+| `coverage-py-json` | coverage.py / pytest-cov JSON | statements |
+| `llvm-cov-json` | `cargo llvm-cov --json --summary-only` | lines |
+
+Archfit normalizes every parsed file to a slash-separated, analysis-root-relative
+path before module attribution. Absolute paths inside the root and Go import-path
+prefixes are normalized; paths outside the root, missing files, or escaping
+symlinks increment `unresolved_coverage_paths` and keep testability `partial`.
+Nothing is silently discarded as uncovered.
+
+### Coverage freshness sidecar
+
+A coverage artifact cannot prove which worktree bytes it measured. Its producer
+must write a JSON sidecar alongside the artifact (or at `sidecar_path`) with this
+version 1 shape:
+
+```json
+{
+  "schema_version": 1,
+  "source_ref": "0123456789abcdef",
+  "modules": ["api", "worker"],
+  "sources": {
+    "internal/api/handler.go": "<lowercase-sha256-of-file-bytes>",
+    "internal/worker/job.go": "<lowercase-sha256-of-file-bytes>"
+  }
+}
+```
+
+- `schema_version` must be exactly `1`.
+- `source_ref` is producer metadata, usually a commit SHA. It is not a freshness
+  gate because Archfit scans a worktree, which may be dirty or contain untracked
+  files.
+- `modules` names the declared modules the producer intended to represent. Each
+  value must be non-empty; Archfit independently attributes parsed source paths
+  to the current module map.
+- `sources` enumerates the covered source universe with lowercase SHA256 hashes
+  of the exact file bytes. Include every source represented by the artifact.
+
+Freshness is `matched` when `sources` is non-empty, every normalized file fact
+parsed from the artifact has a matching sidecar entry, and every enumerated
+source exists under the current analysis root with bytes hashing to the sidecar
+value. A missing or changed listed source, or a parsed covered path omitted from
+`sources`, is `stale` with reason `worktree_differs_from_ref`. Empty or missing
+`sources`, or a missing, unreadable, malformed, or unknown-version sidecar, is
+`unverified` with reason `freshness_unverified`. Only `matched` can promote
+testability; both other values keep it `partial`. The comparison runs on every
+analysis, including parsed-fact cache hits.
+
+The sidecar is producer-attested and unsigned. Cross-binding prevents an empty,
+partial, or unrelated source map from attesting the files described by the
+artifact, but Archfit cannot authenticate the producer or prove the artifact
+itself did not omit source facts. A faulty or malicious producer can alter the
+artifact and sidecar together. Signature-backed attestation remains the recorded
+upgrade trigger in the
+[evidence contract](../design/evidence-contract.md#accepted-ceilings-and-upgrade-triggers).
+
+### Testability promotion and multiple artifacts
+
+Testability becomes `measured` only when production source exists, supplied units
+are valid and compatible, every declared module is represented, every path and
+module is attributed, unresolved paths are zero, and every sidecar is `matched`.
+The numeric `coverage_ratio` may be zero: measurement status means the denominator
+is complete, not that the observed value is desirable. Assertion quality,
+mutation resistance, and meaningful boundary-test semantics remain out of claim.
+
+Multiple artifacts may be combined only when their units are compatible. For a
+duplicate file with the same unit and total, Archfit keeps the greatest covered
+count as a conservative lower bound and reports `merged_coverage_facts`.
+Differing units or totals keep the dimension `partial` and suppress an aggregate
+ratio rather than inventing a union.
+
+Concrete producer commands for all four supported languages are in
+[Language support](languages.md#supplied-test-coverage). Coverage-producer tools
+are intentionally not Archfit dependencies; see
+[Tooling reference](tooling.md#coverage-producers-are-external).
 
 ## `analyzers`
 
@@ -934,6 +1072,7 @@ Metric entry fields:
 
 ```yaml
 metrics:
+  function_loc_threshold: 60 # diagnostic only; positive integer
   encapsulation:
     enabled: true
     gate: warn
@@ -952,6 +1091,9 @@ metrics:
     min_delta: 0
 ```
 
+- `function_loc_threshold` — positive integer, default `60`. Counts functions
+  and methods whose inclusive LOC is above the threshold. It is an out-of-claim
+  complexity diagnostic, not a metric gate and never changes promotion.
 - `enabled` — `false` removes the metric from the run. Metrics absent from the
   config default to enabled, as do knob-only entries (e.g. just `gate: warn`) —
   only an explicit `enabled: false` disables.

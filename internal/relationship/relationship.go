@@ -140,37 +140,43 @@ type Classification struct {
 	Connascence         []ConnascenceEvidence
 }
 
-// Node is a relationship participant. Module is the collapsed structural module
-// key used by assessment metrics; FirstParty is false for declared external
-// graph nodes.
+// Node is a relationship participant. Module is the resolved declared-module
+// identity used by assessment metrics; it is empty when the node is explicitly
+// outside the module map. BoundaryClassified distinguishes that explicit
+// outside-map result from a node a projection failed to classify. FirstParty is
+// false for declared external graph nodes.
 type Node struct {
-	ID         string
-	Path       string
-	Kind       string
-	Language   string
-	Module     string
-	FirstParty bool
+	ID                 string
+	Path               string
+	Kind               string
+	Language           string
+	Module             string
+	FirstParty         bool
+	BoundaryClassified bool
 }
 
 // Edge is one classified directed relationship. It contains only the facts the
 // assessment seam needs: endpoint identity, configured module labels,
 // classification, risk, and provenance.
 type Edge struct {
-	FromID     string
-	ToID       string
-	FromPath   string
-	ToPath     string
-	FromModule string
-	ToModule   string
-	Kind       string
-	Language   string
-	Strength   Strength
-	Distance   Distance
-	Volatility Volatility
-	Severity   Severity
-	Locations  []Location
-	Provenance Provenance
-	Classified Classification
+	FromID              string
+	ToID                string
+	FromPath            string
+	ToPath              string
+	FromModule          string
+	ToModule            string
+	FromLayer           string
+	ToLayer             string
+	StructureClassified bool
+	Kind                string
+	Language            string
+	Strength            Strength
+	Distance            Distance
+	Volatility          Volatility
+	Severity            Severity
+	Locations           []Location
+	Provenance          Provenance
+	Classified          Classification
 }
 
 // CloneOnlyPair is relationship-owned duplicated-knowledge provenance.

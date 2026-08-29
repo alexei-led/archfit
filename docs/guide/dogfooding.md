@@ -92,8 +92,9 @@ archfit check --config .archfit.yaml                  # gates only: the verdict
 archfit analyze --markdown --config .archfit.yaml   # gates + signals, as Markdown
 ```
 
-The expected result on a clean checkout is **`NEEDS ATTENTION`, exit 2** — no
-violations or metric regressions, but complexity, testability, and operations
-report `partial` by contract in v1, and any partial dimension flags the verdict.
-`make archfit` accepts `0` or `2`; only `1` fails it. That is the normal steady
-state: signals are information, not debt to chase to zero.
+The current self-config may report **`NEEDS ATTENTION`, exit 2** because supplied
+coverage is opt-in and some declared modules may lack independent operational
+corroboration. Those current evidence gaps can be closed: a fully evidenced
+repository can reach `HEALTHY`. `make arch-lint`
+accepts `0` or `2`; `1` and `3` fail it, so dogfooding exposes evidence gaps
+without turning every yellow signal into blocking debt.

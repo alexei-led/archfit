@@ -3,7 +3,7 @@
 **Verdict:** BLOCKED
 **Hard gates:** fail — 1 active blocker(s)
 **Attention:** 2 dimension(s) flagged
-**Coverage:** 4 measured / 3 partial / 2 unmeasured (of 9)
+**Coverage:** 5 measured / 2 partial / 2 unmeasured (of 9)
 **Rubric version:** bc_score.v6
 **Config hash:** `0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6`
 
@@ -21,7 +21,7 @@ denominator: declared rules evaluated 1/1
 
 ### structure — measured · gate: fail · confidence: high
 owner: relationship/facts
-denominator: discovered edges resolved to a declared module 1/1
+denominator: discovered dependencies resolved inside the declared module map 1/1
 - internal_edges: 1 count
 - external_edges: 0 count
 - same_module_edges: 0 count
@@ -35,7 +35,7 @@ denominator: declared modules with a declared public surface 0/2
 - public_surface_entries: 0 count (0/2)
 - local_coupling_modules: 0 count
 - blast_radius: 1 count
-- not measured — public surface: no declared module states a public surface, so every symbol reads as equally public
+- not measured — inferred public surface: no declared module states a public surface, so inferring one is outside this claim
 
 ### coupling — measured · gate: warn · confidence: high
 owner: relationship/analysis
@@ -56,15 +56,20 @@ denominator: cross-boundary edges scored 1/1
 ### change_locality — unmeasured · gate: not_applicable · confidence: unrated
 owner: history/git
 denominator: none — this dimension measured nothing
-- not measured — change locality: git history is unavailable: the tree is not a repository, or no module was declared to attribute commits to
+- not measured — eligible commit sample: git history is unavailable or the history scan returned no eligible commit
+- not measured — commit-to-module attribution: the history scan is incomplete, so not every eligible commit has a complete module attribution
 
-### complexity — partial · gate: pass · confidence: medium
-owner: syntax+evidence/acquisition
-denominator: production files in the source walk 2/2
+### complexity — measured · gate: pass · confidence: high
+owner: relationship/analysis+syntax+evidence/acquisition
+denominator: declared modules with complete dependency-chain and degree values 2/2
+- max_dependency_chain: 1 count (2/2)
+- module_fan_in_p90: 1 count (2/2)
+- module_fan_out_p90: 1 count (2/2)
 - production_files: 2 count
 - production_loc: 10 count
 - largest_production_file_loc: 6 count
-- not measured — cognitive complexity: v1 ships no cognitive-complexity analyzer; only the size tail is measured
+- not measured — function length distribution: ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution
+- not measured — cognitive complexity: no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
 
 ### testability — partial · gate: pass · confidence: medium
 owner: syntax/fileclass
@@ -72,26 +77,38 @@ denominator: classified source files 2/2
 - test_files: 0 count
 - production_files: 2 count
 - test_to_production_files: 0 ratio (0/2)
-- not measured — executed test coverage: v1 does not run a target repository's test suite; supplied coverage is not yet an input
-- not measured — boundary test coverage: which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
+- not measured — supplied coverage units: coverage is disabled, so no supplied coverage units were observed
+- not measured — coverage path resolution: coverage is disabled, so no supplied coverage paths were available to resolve
+- not measured — coverage module attribution: coverage is disabled, so no supplied coverage was available to attribute to declared modules
+- not measured — coverage freshness: coverage is disabled, so no supplied coverage freshness could be established
 
 ### operations — partial · gate: pass · confidence: medium
 owner: policy+evidence/acquisition
-denominator: applicable analyzers reporting coverage 4/4
+denominator: declared modules with a corroborated deploy unit and qualifying owner 0/2
 - modules_with_owner: 2 count (2/2)
 - distinct_owners: 2 count
-- deploy_units: 0 count
+- owners_from_declared: 2 count
+- owners_from_codeowners: 0 count
+- owners_from_git_author_fallback: 0 count
+- declared_deploy_units: 0 count
+- corroborated_deploy_units: 0 count
+- modules_with_corroborated_deploy_unit: 0 count (0/2)
+- matching_declared_deploy_units: 0 count
+- mismatched_declared_deploy_units: 0 count
 - declared_external_systems: 0 count
+- analyzers_reporting_coverage: 4 count (4/4)
 - coverage_gaps: 0 count
 - analyzers_not_applicable: 7 count
 - coverage: 1 ratio
-- not measured — observed runtime topology: v1 reports declared owners and deploy units only; nothing observes what actually runs
-- not measured — supply-chain inventory: SBOM and vulnerability facts have no collector in v1
+- not measured — corroborated deploy unit: one or more declared modules have no independently corroborating deploy manifest
+- not measured — observed runtime topology: committed manifests corroborate declared deploy units; they do not observe what is actually running
+- not measured — supply-chain inventory: SBOM and vulnerability facts are a separate report family and have no collector in v1
 
 ### drift — unmeasured · gate: not_applicable · confidence: unrated
 owner: assessment/decision
 denominator: none — this dimension measured nothing
-- not measured — architecture drift: no comparable architecture-state reference is stored
+- not measured — admissible persisted reference: no comparable architecture-state reference is stored
+- not measured — complete two-sided seam identity: two-sided seam identity cannot be compared without an admissible persisted reference
 - delta: non_comparable
   - no comparable architecture-state reference is stored
 

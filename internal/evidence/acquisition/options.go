@@ -3,6 +3,7 @@ package acquisition
 import (
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/extract/acquire"
+	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/policy"
@@ -51,6 +52,7 @@ type RunOptions struct {
 	// RESOLVED modules: a module whose owner CODEOWNERS filled is not missing an
 	// owner, and a warning frozen at wiring time contradicts the owner_source
 	// reported in the same document.
-	Lint     func(map[string]policy.ModuleDef) []string
-	Coverage CoverageOptions
+	Lint             func(map[string]policy.ModuleDef) []string
+	Coverage         CoverageOptions
+	SuppliedCoverage suppliedcoverage.Options
 }

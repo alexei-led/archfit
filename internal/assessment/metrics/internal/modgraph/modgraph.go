@@ -6,13 +6,14 @@ package modgraph
 
 import "github.com/alexei-led/archfit/internal/relationship"
 
-// FirstPartyModules returns the set of module keys for the nodes archfit actually
-// parsed, excluding external nodes. External dependencies must never be treated as
-// owned modules, or the blast-radius metric flags them as first-party.
+// FirstPartyModules returns the resolved declared-module identities for nodes
+// archfit actually parsed, excluding external and explicitly outside-map nodes.
+// Metrics must use the architecture boundaries from policy, not re-collapse node
+// IDs with extractor-specific conventions.
 func FirstPartyModules(set relationship.Set) map[string]struct{} {
 	fp := make(map[string]struct{})
 	for _, n := range set.Nodes {
-		if !n.FirstParty {
+		if !n.FirstParty || n.Module == "" {
 			continue
 		}
 		fp[n.Module] = struct{}{}
@@ -20,13 +21,12 @@ func FirstPartyModules(set relationship.Set) map[string]struct{} {
 	return fp
 }
 
-// BlastRadius returns, per first-party module, the number of other first-party
-// modules that transitively depend on it. The graph is collapsed to module units
-// (ModuleKey), restricted to first-party modules (those that import something — a
-// node that only ever appears as an import target is an external dependency, since
-// archfit never parses its source), and SCC-condensed so import cycles do not
-// inflate the count (Martin's metrics and blast radius assume a DAG). Returns the
-// per-module blast and the count of first-party modules.
+// BlastRadius returns, per first-party declared module, the number of other
+// first-party declared modules that transitively depend on it. The relationship
+// stage has already resolved node and edge module identity through policy; this
+// metric must not re-collapse IDs at package/crate granularity. The graph is
+// SCC-condensed so import cycles do not inflate the count (Martin's metrics and
+// blast radius assume a DAG). Returns the per-module blast and module count.
 func BlastRadius(set relationship.Set) (map[string]int, int) {
 	// First-party = the nodes archfit actually parsed, minus external nodes. Most
 	// external dependencies appear only as edge targets, never as nodes; the TS
@@ -42,12 +42,15 @@ func BlastRadius(set relationship.Set) (map[string]int, int) {
 	// Every edge, not just the dependency kinds: blast radius answers "what can
 	// this change reach", and a containment edge (Rust `belongs_to`) reaches too.
 	for _, e := range set.Edges {
-		from, to := relationship.ModuleKey(e.FromID), relationship.ModuleKey(e.ToID)
-		if from == to {
+		from, to := e.FromModule, e.ToModule
+		if from == "" || to == "" || from == to {
 			continue
 		}
+		if _, ok := firstParty[from]; !ok {
+			continue // edge from an external or outside-map node
+		}
 		if _, ok := firstParty[to]; !ok {
-			continue // edge into an external dependency
+			continue // edge into an external or outside-map node
 		}
 		adj[from][to] = struct{}{}
 	}

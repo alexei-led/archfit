@@ -479,6 +479,35 @@ rules:
 	}
 }
 
+func TestUpdateCmd_Apply_PreservesSuppliedCoverageLimits(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := writeConfig(t, dir, `version: 2
+coverage:
+  enabled: true
+  sources:
+    - path: coverage.lcov
+      format: lcov
+      max_bytes: 12345
+      max_facts: 678
+modules: {}
+`)
+	if _, err := runUpdateCmd(t, &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}, emptyRunner()); err != nil {
+		t.Fatalf("config update: %v", err)
+	}
+	updated, err := config.Load(context.Background(), cfgPath)
+	if err != nil {
+		t.Fatalf("load updated config: %v", err)
+	}
+	got := updated.SuppliedCoverageOptions().Sources[0]
+	if got.MaxBytes != 12345 || got.MaxFacts != 678 {
+		t.Fatalf("coverage limits after config update = %d/%d, want 12345/678", got.MaxBytes, got.MaxFacts)
+	}
+}
+
 func TestEnsureRustDeepAnalysisConfig_PreservesExplicitAnalyzerOff(t *testing.T) {
 	cfg := config.Config{
 		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: evidenceports.ModeOn}},

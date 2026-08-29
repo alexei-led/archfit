@@ -90,7 +90,7 @@ owner: history/git
 denominator: none — this dimension measured nothing
 
 ### complexity — unmeasured · gate: not_applicable · confidence: unrated
-owner: syntax+evidence/acquisition
+owner: relationship/analysis+syntax+evidence/acquisition
 denominator: none — this dimension measured nothing
 
 ### testability — unmeasured · gate: not_applicable · confidence: unrated

@@ -3,21 +3,95 @@
 - **Verdict:** BLOCKED
 - **Blocking:** 1 active — hard gates: fail
 - **Attention:** 2 dimension(s) flagged — 1 diagnostic(s)
-- **Coverage:** 4 measured / 3 partial / 2 unmeasured (of 9)
+- **Coverage:** 5 measured / 2 partial / 2 unmeasured (of 9)
 
 ## Dimensions
 
 | Dimension | Status | Gate | Confidence | Denominator | Findings |
 | --- | --- | --- | --- | --- | ---: |
 | intent | measured | pass | high | declared rules evaluated 1/1 | 0 |
-| structure | measured | fail | high | discovered edges resolved to a declared module 1/1 | 1 |
+| structure | measured | fail | high | discovered dependencies resolved inside the declared module map 1/1 | 1 |
 | modularity | measured | pass | low | declared modules with a declared public surface 0/2 | 0 |
 | coupling | measured | warn | high | cross-boundary edges scored 1/1 | 1 |
 | change_locality | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
-| complexity | partial | pass | medium | production files in the source walk 2/2 | 0 |
+| complexity | measured | pass | high | declared modules with complete dependency-chain and degree values 2/2 | 0 |
 | testability | partial | pass | medium | classified source files 2/2 | 0 |
-| operations | partial | pass | medium | applicable analyzers reporting coverage 4/4 | 0 |
+| operations | partial | pass | medium | declared modules with a corroborated deploy unit and qualifying owner 0/2 | 0 |
 | drift | unmeasured | not_applicable | unrated | _no denominator_ | 0 |
+
+## Dimension metrics
+
+### intent
+
+- `declared_modules`: 2 count
+- `declared_layers`: 0 count
+- `declared_rules`: 1 count (1/1)
+- `declared_waivers`: 0 count
+- `waivers_used`: 0 count
+- `expired_waivers`: 0 count
+
+### structure
+
+- `internal_edges`: 1 count
+- `external_edges`: 0 count
+- `same_module_edges`: 0 count
+- `connected_modules`: 2 count
+- `cycle`: 0 count
+
+### modularity
+
+- `declared_modules`: 2 count
+- `public_surface_entries`: 0 count (0/2)
+- `local_coupling_modules`: 0 count
+- `blast_radius`: 1 count
+
+### coupling
+
+- `scored_edges`: 1 count (1/1)
+- `abstained_edges`: 0 count
+- `declared_external_edges`: 0 count
+- `clone_only_seams`: 0 count
+- `critical_band_edges`: 0 count
+- `high_or_worse_edges`: 0 count
+- `critical_high_distance_edges`: 0 count
+- `seams`: 1 count
+- `distributed_monolith_seams`: 0 count (1/1)
+- `tight_seams`: 1 count
+- `unrated_seams`: 0 count
+- `unbalanced_edge`: 0 count
+
+### complexity
+
+- `max_dependency_chain`: 1 count (2/2)
+- `module_fan_in_p90`: 1 count (2/2)
+- `module_fan_out_p90`: 1 count (2/2)
+- `production_files`: 2 count
+- `production_loc`: 10 count
+- `largest_production_file_loc`: 6 count
+
+### testability
+
+- `test_files`: 0 count
+- `production_files`: 2 count
+- `test_to_production_files`: 0 ratio (0/2)
+
+### operations
+
+- `modules_with_owner`: 2 count (2/2)
+- `distinct_owners`: 2 count
+- `owners_from_declared`: 2 count
+- `owners_from_codeowners`: 0 count
+- `owners_from_git_author_fallback`: 0 count
+- `declared_deploy_units`: 0 count
+- `corroborated_deploy_units`: 0 count
+- `modules_with_corroborated_deploy_unit`: 0 count (0/2)
+- `matching_declared_deploy_units`: 0 count
+- `mismatched_declared_deploy_units`: 0 count
+- `declared_external_systems`: 0 count
+- `analyzers_reporting_coverage`: 4 count (4/4)
+- `coverage_gaps`: 0 count
+- `analyzers_not_applicable`: 7 count
+- `coverage`: 1 ratio
 
 ## Evidence coverage
 
@@ -56,16 +130,22 @@
 - **Status:** not_requested
 - **Reference:** none
 
-## Not measured (8)
+## Not measured (14)
 
-- **modularity — public surface** (owner: assessment/metrics): no declared module states a public surface, so every symbol reads as equally public
-- **change_locality — change locality** (owner: history/git): git history is unavailable: the tree is not a repository, or no module was declared to attribute commits to
-- **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): v1 ships no cognitive-complexity analyzer; only the size tail is measured
-- **testability — executed test coverage** (owner: syntax/fileclass): v1 does not run a target repository's test suite; supplied coverage is not yet an input
-- **testability — boundary test coverage** (owner: syntax/fileclass): which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
-- **operations — observed runtime topology** (owner: policy+evidence/acquisition): v1 reports declared owners and deploy units only; nothing observes what actually runs
-- **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts have no collector in v1
-- **drift — architecture drift** (owner: assessment/decision): no comparable architecture-state reference is stored
+- **modularity — inferred public surface** (owner: assessment/metrics): no declared module states a public surface, so inferring one is outside this claim
+- **change_locality — eligible commit sample** (owner: history/git): git history is unavailable or the history scan returned no eligible commit
+- **change_locality — commit-to-module attribution** (owner: history/git): the history scan is incomplete, so not every eligible commit has a complete module attribution
+- **complexity — function length distribution** (owner: syntax+evidence/acquisition): ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution
+- **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
+- **testability — supplied coverage units** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage units were observed
+- **testability — coverage path resolution** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage paths were available to resolve
+- **testability — coverage module attribution** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage was available to attribute to declared modules
+- **testability — coverage freshness** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage freshness could be established
+- **operations — corroborated deploy unit** (owner: policy+evidence/acquisition): one or more declared modules have no independently corroborating deploy manifest
+- **operations — observed runtime topology** (owner: policy+evidence/acquisition): committed manifests corroborate declared deploy units; they do not observe what is actually running
+- **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts are a separate report family and have no collector in v1
+- **drift — admissible persisted reference** (owner: assessment/decision): no comparable architecture-state reference is stored
+- **drift — complete two-sided seam identity** (owner: assessment/decision): two-sided seam identity cannot be compared without an admissible persisted reference
 # archfit report
 
 **Config hash:** `0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6`
@@ -124,7 +204,7 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 
 - **cycle**: 0 import cycles — strong
 - **coverage**: 100% coverage — strong
-- **blast_radius**: 1 of 2 modules are change-impact hubs: pkg/b (100%, 1 deps) — info (low confidence)
+- **blast_radius**: 1 of 2 modules are change-impact hubs: b (100%, 1 deps) — info (low confidence)
 
 ## Distance confidence
 

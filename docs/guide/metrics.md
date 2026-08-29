@@ -54,71 +54,135 @@ downward (drop > `min_delta`). Per-metric `gate`/threshold knobs are documented
 in the [configuration reference](configuration-reference.md#metrics).
 
 `archfit check`'s exit code IS this verdict: `0` healthy, `2` needs_attention,
-`1` blocked, `3` tool/config error. **Expect `2`, not `0`, on a healthy repo in
-v1** — complexity, testability, and operations report `partial` by contract, so
-gate on `1`. `archfit analyze` is report-only and exits `0` on any verdict.
+`1` blocked, `3` tool/config error. Exit 0 is reachable when all nine dimensions
+are measured, all hard gates pass, and no active diagnostic remains. A run with
+no supplied coverage or no comparable persisted baseline normally exits 2
+because `testability` is partial or `drift` is unmeasured; neither gap is treated
+as a healthy zero. `archfit analyze` is report-only and exits 0 on any verdict.
 
 ---
 
-## Scoring model
+## Architecture-state dimension metrics
 
-Each scorecard dimension produces a 0–100 value, a band, and a confidence.
-A band applies only to that dimension. `coupling_balance: poor` is not an
-overall architecture-quality verdict; use the gate findings and the evidence
-blocks to judge the design.
+The primary report stores dimension facts in each envelope's `metrics` array.
+These facts are separate from the baseline-delta metrics described later on this
+page: their values diagnose the tree, while the dimension's fixed required-fact
+set decides `measured`, `partial`, or `unmeasured`. A low observed value does not
+by itself prevent promotion, and a high value cannot hide incomplete evidence.
+The complete nine-dimension predicates are the
+[evidence contract](../design/evidence-contract.md).
 
-### Bands
+The four evidence families below are the ones that can now promote from native
+or supplied facts.
 
-| Band          | Score  | Meaning                                                                                   |
-| ------------- | ------ | ----------------------------------------------------------------------------------------- |
-| `strong`      | 81–100 | Healthy.                                                                                  |
-| `serviceable` | 61–80  | Acceptable.                                                                               |
-| `mixed`       | 41–60  | Watch.                                                                                    |
-| `poor`        | 21–40  | Problem.                                                                                  |
-| `critical`    | 0–20   | Measured and bad.                                                                         |
-| `n/a`         | —      | No signal to measure. Not good, not bad — _no evidence_. Never conflated with `critical`. |
-| `info`        | —      | Report-only fact; asserts no quality verdict.                                             |
+### `complexity` dimension
 
-The `n/a` vs `critical` distinction is load-bearing. A repo that declares no
-public/internal API surface has nothing to score for encapsulation; that is
-`n/a`, not a `critical` failure. Reporting a confident bad score on absent
-evidence is a false alarm the tool refuses to raise.
+The in-claim architecture measure is the complete declared-module dependency
+graph. It is `measured` only when every declared module has a chain-depth,
+fan-in, and fan-out value and the applicable primary dependency inventories and
+internal classifications completed.
 
-### Confidence caps the band
+| Metric | Meaning and denominator | Provenance | Claim |
+| --- | --- | --- | --- |
+| `max_dependency_chain` | Longest path through the SCC-condensation DAG; all declared modules | `relationship/analysis` | in claim |
+| `module_fan_in_p90` | Nearest-rank p90 distinct incoming-module degree; all declared modules | `relationship/analysis` | in claim |
+| `module_fan_out_p90` | Nearest-rank p90 distinct outgoing-module degree; all declared modules | `relationship/analysis` | in claim |
+| `production_files`, `production_loc`, `largest_production_file_loc` | Production-only source-size diagnostics | `syntax/fileclass` | out of claim |
+| `function_loc_p50`, `function_loc_p90`, `function_loc_max`, `functions_over_threshold` | Inclusive function/method LOC over declarations with complete extents | `evidence/acquisition` | out of claim |
 
-Confidence (`high` / `medium` / `low`) reflects how much of the needed evidence
-was actually available (coverage, classified fraction, sample size). It can only
-_lower_ the reported band, never raise it
-(`internal/assessment/metrics/internal/result`, `ApplyConfidenceCap`):
+The function threshold defaults to 60 lines and is configurable with
+`metrics.function_loc_threshold`. Function size and cognitive complexity may be
+unknown while the architecture-level dimension remains measured. Cognitive
+complexity has no claimed analyzer; see
+[accepted ceilings](../design/evidence-contract.md#accepted-ceilings-and-upgrade-triggers).
 
-```text
-high   → band may reach "strong"
-medium → band capped at "serviceable"
-low    → band capped at "mixed"
-```
+### `testability` dimension
 
-So a metric cannot claim `strong` on thin evidence. This is why low extraction
-coverage quietly pulls every dependent metric's ceiling down instead of letting
-the tool over-claim.
+Testability claims exercised-code attribution, not test quality. With top-level
+`coverage:` disabled or absent, the static file split remains partial. With it
+enabled, the dimension is `measured` only when supplied facts use compatible
+units, every coverage path resolves inside the scan root, every declared module
+is represented, and every configured source has `freshness: matched`.
 
-`coupling_balance` confidence starts with the scored fraction of classified
-internal cross-boundary facts, then applies evidence caps:
+| Metric | Meaning and denominator | Provenance | Claim |
+| --- | --- | --- | --- |
+| `test_files`, `production_files`, `test_to_production_files` | Static file-class split retained beside execution coverage | `syntax/fileclass` | supporting, not sufficient to promote |
+| `covered_units`, `total_units`, `coverage_ratio` | Covered over total statements or lines in one compatible unit family | `extract/coverage/<format>@<parser-version>` plus `coverage/freshness/<status>` | in claim |
+| `modules_with_coverage` | Declared modules represented by attributed supplied coverage / all declared modules | coverage parser plus `policy` | in claim |
+| `unresolved_coverage_paths` | Parser paths that could not resolve to a regular file inside the scan root; must be zero | coverage parser | in claim |
+| `merged_coverage_facts` | Duplicate per-file aggregate facts merged by the documented lower-bound rule; omitted when zero | coverage parser | diagnostic |
 
-- fewer than **5** scored internal cross-boundary facts ⇒ high confidence is
-  disallowed;
-- fewer than **3** connected modules in the scored/abstained coupling sample ⇒
-  high confidence is disallowed;
-- `dependency-cruiser` `partial` with unresolved-specifier ratio above **10%**
-  (`tsUnresolvedRatioCeiling`, `internal/assessment/score/score.go`) ⇒ high confidence is
-  disallowed, because unresolved specifiers land in the `external` bucket,
-  outside `coupling_balance`'s denominator;
-- `cargo-modules` `partial` on Rust ⇒ high confidence is disallowed.
+Coverage ratio is diagnostic only: 5% fresh coverage over every declared module
+is complete evidence with a low measured value, not a gate failure; 95% stale or
+unattributed coverage is partial. Assertion strength, mutation resistance, and
+whether tests meaningfully exercise module boundaries remain out of claim.
+Languages determine parser format and unit compatibility, but they are not a
+separate completeness denominator.
 
-These caps lower `high` to `medium` and append evidence lines. They do not lower
-the numeric score or trip `coupling.gate` by themselves. Existing low confidence
-from a poor scored fraction remains low. Confidence downgrades (provenance,
-coverage, per-language partial extraction, sample size) compose by taking the
-minimum confidence — they never stack.
+### `operations` dimension
+
+Operations claims **declared-topology completeness**, not live runtime state. It
+is `measured` only when every declared module has both an ownership statement
+(`owner:` or CODEOWNERS, never git-author fallback) and an independently detected
+deploy unit, with declared and corroborated values reconciled.
+
+| Metric family | Meaning and denominator | Provenance | Claim |
+| --- | --- | --- | --- |
+| `modules_with_owner`, `distinct_owners` | Resolved ownership inventory; modules with any owner / declared modules | `policy`, `evidence/acquisition` | supporting |
+| `owners_from_declared`, `owners_from_codeowners`, `owners_from_git_author_fallback` | Owner provenance; git-author remains visible but does not qualify | `policy`, `evidence/acquisition` | in claim |
+| `declared_deploy_units`, `corroborated_deploy_units` | Declared module values kept separate from distinct detected unit values | `policy`, `evidence/acquisition` | in claim |
+| `modules_with_corroborated_deploy_unit` | Modules with independent deploy evidence / declared modules | `evidence/acquisition` | in claim |
+| `matching_declared_deploy_units`, `mismatched_declared_deploy_units` | Reconciliation of declared and detected unit identities | `policy`, `evidence/acquisition` | in claim |
+| `analyzers_reporting_coverage`, `coverage_gaps`, `analyzers_not_applicable` | Applicable analyzer health | `evidence/acquisition` | out of claim |
+
+Dockerfiles, Kubernetes manifests, TypeScript workspaces, `pyproject.toml`, and Go
+mains can corroborate deploy units. They prove what the repository declares and
+contains, not what is currently running. Live runtime topology and SBOM or
+vulnerability state remain separate, out-of-claim report families.
+
+### `drift` dimension
+
+Drift is baseline-driven. A persisted `archfit.baseline.v2` state reference must
+match `config_hash`, resolved `model_hash`, approved `labels_hash`, and
+`rubric_version`. When comparable, the denominator is the union of qualifying
+distributed-monolith seam identities on the current and stored sides; the metrics
+`new_seams` and `resolved_seams` have provenance `assessment/evaluation`.
+
+No baseline, a legacy baseline, or any fingerprint mismatch makes drift
+`unmeasured`, never stable-by-default. Root `comparison.status: not_requested`
+only says no separate `--base` report was requested; it does not affect drift.
+Run `archfit baseline` after reviewing a topology or policy change to establish a
+new comparable persisted reference.
+
+---
+
+## Legacy per-metric scoring
+
+The nine architecture-state dimensions do **not** produce 0–100 scores or
+quality bands. The primary scorecard (`--format scorecard`) renders each
+dimension's evidence-completeness status, gate posture, confidence, denominator,
+metrics, and unknown facts. A dimension's `measured`, `partial`, or `unmeasured`
+status comes only from the fixed required-fact contract described above.
+
+The pre-cutover diagnostic, available as `--format legacy-json`, still carries
+bands and confidence for individual metrics and for its single synthesized
+`coupling_balance` score. That metadata is per metric: ratio metrics derive a
+band from their own normalized score, while count metrics such as `cycle` use
+their documented categorical rules. It must not be read as a nine-dimension or
+repository-wide architecture score.
+
+`coupling_balance` alone uses the legacy 0–100 ranges: `strong` (81–100),
+`serviceable` (61–80), `mixed` (41–60), `poor` (21–40), and `critical` (0–20).
+For all legacy metrics, `n/a` means the underlying signal was absent and `info`
+means the metric asserts no quality verdict. Neither is a numeric band.
+
+Legacy metric confidence (`high` / `medium` / `low`) can cap a metric band at
+`strong` / `serviceable` / `mixed`, respectively; it never raises a band. These
+caps belong to the legacy metric result and do not decide an architecture-state
+dimension's measurement status. `coupling_balance` additionally disallows high
+confidence for fewer than five scored internal cross-boundary facts, fewer than
+three connected modules, materially unresolved TypeScript specifiers, or a
+partial Rust module graph.
 
 ### Deltas
 

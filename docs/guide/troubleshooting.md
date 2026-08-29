@@ -239,16 +239,16 @@ repo from a config that lives elsewhere.
 
 That is expected. `archfit analyze` is report-only by design. It runs the same
 scan pipeline as `archfit check`, but a successful analysis still exits `0` even
-when the rendered verdict is FAIL.
+when the rendered verdict is `BLOCKED` or `NEEDS_ATTENTION`.
 
 Use `archfit check` in CI, pre-push hooks, and agent repair loops. It is the gate
 command. Current exit codes are:
 
 - `0` — `healthy`
 - `1` — `blocked` (a hard gate failed) — this is the one to fail CI on
-- `2` — `needs_attention`. **Normal on a healthy repo in v1**: complexity,
-  testability, and operations report `partial` by contract, and any partial
-  dimension flags the verdict
+- `2` — `needs_attention`: no blocker, but a diagnostic is active or at least
+  one dimension lacks complete evidence (for example supplied coverage or a
+  comparable persisted baseline)
 - `3` — config or tool error
 
 Use `archfit analyze` for local reports, markdown output, SARIF exports, scorecard

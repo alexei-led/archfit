@@ -3,10 +3,48 @@ package markdown
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/report"
 )
+
+// writeDimensionMetrics renders every typed architecture-state metric in the
+// same dimension order used by the JSON contract. Keeping this separate from
+// the summary table makes the metric families readable without turning a
+// denominator or a long metric list into a wide Markdown cell.
+func writeDimensionMetrics(b *strings.Builder, dims report.Dimensions) {
+	hasMetrics := false
+	for _, dim := range dims.All() {
+		if len(dim.Metrics) > 0 {
+			hasMetrics = true
+			break
+		}
+	}
+	if !hasMetrics {
+		return
+	}
+
+	b.WriteString("\n## Dimension metrics\n")
+	for _, dim := range dims.All() {
+		if len(dim.Metrics) == 0 {
+			continue
+		}
+		fmt.Fprintf(b, "\n### %s\n\n", dim.Name)
+		for _, metric := range dim.Metrics {
+			fmt.Fprintf(b, "- `%s`: %s %s%s\n", metric.Name,
+				strconv.FormatFloat(metric.Value, 'f', -1, 64), metric.Unit,
+				stateMetricDenominator(metric.Denominator))
+		}
+	}
+}
+
+func stateMetricDenominator(d *report.MetricDenominator) string {
+	if d == nil {
+		return ""
+	}
+	return fmt.Sprintf(" (%d/%d)", d.Observed, d.Total)
+}
 
 // writeBeyondBCMetrics renders the "Supporting structural metrics (beyond Balanced
 // Coupling)" section. These are report-only and never gate.

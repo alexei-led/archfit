@@ -36,6 +36,8 @@ small references while configuring a repo.
 
 ## Related docs
 
+- [Nine-dimension evidence contract](../design/evidence-contract.md) — exact
+  measured/partial/unmeasured predicates, denominators, and claim boundaries.
 - [Contributing](../../CONTRIBUTING.md) — local development and release process.
 
 Add future long-form reference pages only when the project needs more detail.

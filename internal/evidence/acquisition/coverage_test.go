@@ -30,6 +30,7 @@ const (
 	toolLoc           = "loc"
 	toolScip          = "scip"
 	toolAstGrepSyntax = "ast-grep/syntax"
+	toolSupplied      = "supplied-coverage"
 
 	gateOff  = "off"
 	gateWarn = "warn"
@@ -153,6 +154,31 @@ func TestBuildCoverageGaps(t *testing.T) {
 			}
 			if tc.wantGate != "" && len(gaps) > 0 && gaps[0].Gate != tc.wantGate {
 				t.Errorf("gap[0].Gate = %q, want %q", gaps[0].Gate, tc.wantGate)
+			}
+		})
+	}
+}
+
+func TestBuildCoverageGaps_SuppliedCoverageUsesExistingToolGate(t *testing.T) {
+	t.Parallel()
+	row := []evidence.Coverage{{Tool: toolSupplied, Status: evidence.StatusAbsent, Reason: "coverage_source_unavailable"}}
+	for _, tc := range []struct {
+		name string
+		gate config.GateMode
+		want string
+	}{
+		{name: "warn is non-blocking", gate: config.GateWarn, want: gateWarn},
+		{name: "fail reaches required-tool gate", gate: config.GateFail, want: "fail"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := config.Config{Coverage: config.CoverageConfig{Enabled: true, Gate: tc.gate}}
+			gaps := acquisition.BuildCoverageGaps(row, cfg.CoverageOptions(), "")
+			if len(gaps) != 1 || gaps[0].Tool != toolSupplied || gaps[0].Gate != tc.want {
+				t.Fatalf("gaps = %+v, want supplied-coverage gate %q", gaps, tc.want)
+			}
+			if len(gaps[0].AffectedMetrics) != 1 || gaps[0].AffectedMetrics[0] != "testability" {
+				t.Fatalf("affected metrics = %v, want testability", gaps[0].AffectedMetrics)
 			}
 		})
 	}

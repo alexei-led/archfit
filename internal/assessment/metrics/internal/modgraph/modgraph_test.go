@@ -1,5 +1,5 @@
 // Behavior tests for the shared module graph the modularity metrics compute
-// over. blast_radius is a versioned metric (blast_radius.v1) that baselines
+// over. blast_radius is a versioned metric (blast_radius.v2) that baselines
 // compare against, so its edge set is part of the contract.
 package modgraph
 
@@ -16,18 +16,21 @@ const (
 )
 
 func node(id string) relationship.Node {
-	return relationship.Node{ID: id, Path: id, Module: relationship.ModuleKey(id), FirstParty: true}
+	return relationship.Node{ID: id, Path: id, Module: relationship.ModuleKey(id), FirstParty: true, BoundaryClassified: true}
 }
 
 func edge(from, to, kind string) relationship.Edge {
-	return relationship.Edge{FromID: from, ToID: to, FromPath: from, ToPath: to, Kind: kind}
+	return relationship.Edge{
+		FromID: from, ToID: to, FromPath: from, ToPath: to,
+		FromModule: relationship.ModuleKey(from), ToModule: relationship.ModuleKey(to), Kind: kind,
+	}
 }
 
 // TestBlastRadiusCountsEveryEdgeKind pins that blast radius reaches through
 // non-dependency edges too. Narrowing it to imports/depends_on/uses_internal
 // silently changed per-module values on Rust repos with
 // analyzers.cargo_modules enabled — whose extractor emits belongs_to — while
-// Version() still reported blast_radius.v1, so existing baselines saw a
+// Version() still reported the same metric version, so existing baselines saw a
 // phantom improving delta.
 func TestBlastRadiusCountsEveryEdgeKind(t *testing.T) {
 	tests := []struct {
@@ -80,5 +83,29 @@ func TestBlastRadiusExcludesExternalTargets(t *testing.T) {
 	}
 	if _, ok := blast["ext"]; ok {
 		t.Errorf("blast = %v, want no entry for the external target", blast)
+	}
+}
+
+// TestBlastRadiusUsesDeclaredModuleIdentity pins MOD-2. Two extractor packages
+// inside one declared capability remain one module; re-collapsing their IDs
+// would fabricate a third architecture boundary.
+func TestBlastRadiusUsesDeclaredModuleIdentity(t *testing.T) {
+	set := relationship.Set{
+		Nodes: []relationship.Node{
+			{ID: "file:services/a/one.go", Module: modA, FirstParty: true, BoundaryClassified: true},
+			{ID: "file:services/a/two/two.go", Module: modA, FirstParty: true, BoundaryClassified: true},
+			{ID: "file:services/b/one.go", Module: modB, FirstParty: true, BoundaryClassified: true},
+		},
+		Edges: []relationship.Edge{{
+			FromID: "file:services/a/two/two.go", ToID: "file:services/b/one.go",
+			FromModule: modA, ToModule: modB, Kind: "imports",
+		}},
+	}
+	blast, modules := BlastRadius(set)
+	if modules != 2 {
+		t.Fatalf("first-party modules = %d, want the two declared modules", modules)
+	}
+	if blast[modB] != 1 {
+		t.Errorf("blast[%s] = %d, want one declared-module dependent", modB, blast[modB])
 	}
 }

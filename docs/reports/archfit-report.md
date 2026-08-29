@@ -95,13 +95,15 @@ _… +89 more (see `--format json`)_
 - **Status:** not_requested
 - **Reference:** none
 
-## Not measured (8)
+## Not measured (10)
 
 - **structure — structure of 718 edges leaving the module map** (owner: relationship/facts): the target is not a declared module, so its direction and layer cannot be judged
 - **change_locality — essential vs accidental volatility** (owner: history/git): commit frequency corroborates a declared volatility; it cannot establish one
 - **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): v1 ships no cognitive-complexity analyzer; only the size tail is measured
-- **testability — executed test coverage** (owner: syntax/fileclass): v1 does not run a target repository's test suite; supplied coverage is not yet an input
-- **testability — boundary test coverage** (owner: syntax/fileclass): which module boundaries a test actually exercises needs test-to-production import resolution, which v1 does not collect
+- **testability — supplied coverage units** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage units were observed
+- **testability — coverage path resolution** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage paths were available to resolve
+- **testability — coverage module attribution** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage was available to attribute to declared modules
+- **testability — coverage freshness** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage freshness could be established
 - **operations — observed runtime topology** (owner: policy+evidence/acquisition): v1 reports declared owners and deploy units only; nothing observes what actually runs
 - **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts have no collector in v1
 - **drift — architecture drift** (owner: assessment/decision): legacy_score_snapshot_ignored: the stored baseline predates the architecture-state contract

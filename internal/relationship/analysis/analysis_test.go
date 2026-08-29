@@ -84,6 +84,10 @@ func TestAnalyzeResolvesModulesAndDistance(t *testing.T) {
 	if edge.FromModule != moduleA || edge.ToModule != moduleB {
 		t.Fatalf("edge modules = %s -> %s, want a -> b", edge.FromModule, edge.ToModule)
 	}
+	if !edge.StructureClassified || edge.FromLayer != "" || edge.ToLayer != "" {
+		t.Errorf("edge structure = classified:%t layers:%q->%q, want known unlayered modules",
+			edge.StructureClassified, edge.FromLayer, edge.ToLayer)
+	}
 	if edge.FromPath != fileA || edge.ToPath != fileB {
 		t.Errorf("edge paths = %s -> %s, want %s -> %s", edge.FromPath, edge.ToPath, fileA, fileB)
 	}
@@ -102,6 +106,16 @@ func TestAnalyzeResolvesModulesAndDistance(t *testing.T) {
 	for _, n := range got.Relationships.Nodes {
 		if !n.FirstParty {
 			t.Errorf("node %s FirstParty = false, want true for a file node", n.ID)
+		}
+		if !n.BoundaryClassified {
+			t.Errorf("node %s BoundaryClassified = false, want an explicit module-map attribution", n.ID)
+		}
+		wantModule := moduleA
+		if n.Path == fileB {
+			wantModule = moduleB
+		}
+		if n.Module != wantModule {
+			t.Errorf("node %s module = %q, want declared module %q", n.ID, n.Module, wantModule)
 		}
 	}
 }

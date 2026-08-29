@@ -10,8 +10,8 @@ output.
 ```text
 agent edits code
   → archfit check --json
-  → exit 0 or 2?  done. (2 = needs_attention, the normal healthy-repo result
-     in v1: complexity, testability, and operations are partial by contract.)
+  → exit 0 or 2?  no blocker remains. (2 = needs_attention: read the active
+     diagnostic or named missing evidence; never fabricate it to force 0.)
   → exit 1?  read agent_tasks[] — goal, constraints, files, validation
   → fix within the constraints, touching only the listed files where possible
   → run the task's validation command verbatim

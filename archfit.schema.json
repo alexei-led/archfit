@@ -105,6 +105,68 @@
       ],
       "description": "CouplingGateDef configures the coupling verdict gate (`coupling.gate:`)."
     },
+    "CoverageConfig": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/CoverageSource"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "CoverageConfig configures opt-in ingestion of coverage artifacts produced by the caller's CI."
+    },
+    "CoverageSource": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "go-coverprofile",
+            "lcov",
+            "coverage-py-json",
+            "llvm-cov-json"
+          ]
+        },
+        "sidecar_path": {
+          "type": "string"
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 67108864
+        },
+        "max_facts": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1000000
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "description": "CoverageSource is one supplied coverage artifact."
+    },
     "DistributedMonolithDef": {
       "properties": {
         "mode": {
@@ -278,11 +340,21 @@
       "description": "MetricEntry holds the settings for a single metric inside the metrics map."
     },
     "MetricsConfig": {
-      "additionalProperties": {
-        "$ref": "#/$defs/MetricEntry"
+      "properties": {
+        "function_loc_threshold": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60
+        }
       },
+      "patternProperties": {
+        "^(?!function_loc_threshold$).+$": {
+          "$ref": "#/$defs/MetricEntry"
+        }
+      },
+      "additionalProperties": false,
       "type": "object",
-      "description": "MetricsConfig holds settings for all metrics, keyed by metric name."
+      "description": "MetricsConfig holds gate settings for computed metrics plus diagnostic-only complexity settings."
     },
     "ModuleDef": {
       "properties": {
@@ -610,6 +682,9 @@
     },
     "analyzers": {
       "$ref": "#/$defs/AnalyzersConfig"
+    },
+    "coverage": {
+      "$ref": "#/$defs/CoverageConfig"
     },
     "ai": {
       "$ref": "#/$defs/AIConfig"

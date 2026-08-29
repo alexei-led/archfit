@@ -163,7 +163,11 @@ func runProperties(d report.Document) map[string]any {
 			"name": dim.Name, "owner": dim.Owner, "status": dim.Status,
 			"confidence": dim.Confidence, "gate": dim.Gate,
 			"coverage": map[string]any{"basis": dim.Coverage.Basis, "observed": dim.Coverage.Observed, "total": dim.Coverage.Total},
-			"unknown":  len(dim.Unknown),
+			// Metrics and unknown facts are state evidence, not SARIF findings.
+			// Keep both complete typed lists in the property bag so consumers do
+			// not have to infer metric families from a human renderer or a count.
+			"metrics": dim.Metrics,
+			"unknown": dim.Unknown,
 		})
 	}
 	return map[string]any{

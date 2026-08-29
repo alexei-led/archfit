@@ -365,7 +365,7 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Result {
 	runPolicy := policy.New(
 		policy.TopologyView{Modules: classifyCfg.Modules, Layers: classifyCfg.Layers, ModuleMap: classifyCfg.ModuleMap, ExternalSystems: classifyCfg.ExternalSystems, ExplicitOwners: classifyCfg.ExplicitOwners},
 		policy.RelationshipPolicy{MinimumSeverity: classifyCfg.BCAdvisoryMinSeverity, VolatilityCascadeEnabled: classifyCfg.VolatilityCascadeEnabled, DuplicatedKnowledge: classifyCfg.DuplicatedKnowledgePolicy},
-		policy.AssessmentPolicy{}, policy.GatePolicy{Rules: cfg.ForRules(), Metrics: cfg.Metrics}, nil, nil)
+		policy.AssessmentPolicy{}, policy.GatePolicy{Rules: cfg.ForRules(), Metrics: cfg.Metrics.MetricEntries()}, nil, nil)
 
 	collected, err := acquisition.Collect(context.Background(), acquisition.Input{
 		Scope: s, Extractors: []evidenceports.Extractor{extractor}, Resolver: evidenceports.NopSymbolResolver{},

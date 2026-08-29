@@ -11,13 +11,13 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - `make test` — `go test -race -coverprofile=coverage.out ./...` + `python3 internal/extract/scip/scip_reader_test.py` + `bash scripts/tests/cli_exit_contract_test.sh` (CI runs both non-Go steps too)
 - `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.1.6)
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
-- `make archfit` — dogfood architecture-drift gate: `.bin/archfit check --config .archfit.yaml`
-- `make arch-lint` — architecture drift linter (alias for `make archfit`); wired into the pre-push hook
+- `make arch-lint` — v2 architecture-state gate: `.bin/archfit check --config .archfit.yaml`; accepts `healthy` (0) and `needs_attention` (2), and fails on `blocked` (1) or `error` (3)
+- `make archfit` — compatibility alias for `make arch-lint`
 - `make archfit-report` — write `docs/reports/archfit-report.md` via `archfit analyze --markdown`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
 - `make test-fast` — `go test -race -short ./...` (skips slow subprocess/ast-grep integration tests; for inner-loop speed)
 - `make bench-gate` — cold vs warm fact-cache gate timing on this repo (reported number, not a CI assert; `scripts/bench-gate.sh`)
-- `make all` — fmt → lint → test → archfit
+- `make all` — fmt → lint → test → arch-lint
 - One test: `go test ./internal/<pkg>/ -run TestName`
 
 ## Structural gates (CI runs these explicitly — keep green)
@@ -83,13 +83,37 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 - **No gitnexus.** The `.gitnexus`/`.codegraph` index dirs are excluded from file
   walks (`scope.go`), but archfit does not run the tool and does not derive any
   per-module fact from it.
-- **The `operations` denominator counts APPLICABLE analyzers only**
-  (`operationsDimension`, `internal/assessment/evaluation/dimensions.go`). Rows
-  with `StatusAbsent` (the extractor's own probe says the language is not in the
-  tree) and `StatusDisabled` (the config opted out) are excluded and disclosed as
-  the `analyzers_not_applicable` metric. Counting all rows read as "7 analyzers
-  failed to report" on a single-language repo where 7 were never asked — the
-  overstated gap the coverage contract exists to prevent.
+- **Dimension promotion is required-fact completeness, never metric quality.**
+  `state.RequiredFacts` is a fixed set per dimension and `state.Promote` applies
+  the shared rule in `docs/design/evidence-contract.md`: measured only when every
+  in-claim fact is observed or producer-proved not applicable; partial when some
+  in-claim fact is observed and another is missing; unmeasured when none is
+  observed or the dimension does not apply. A measured dimension may carry only
+  out-of-claim unknowns. Never infer completion from a high metric value or treat
+  an absent producer as an observed zero.
+- **Coverage is supplied, never executed.** Top-level `coverage:` is opt-in and
+  default-disabled. `analyze`/`check` parse caller-produced Go coverprofile,
+  LCOV, coverage.py JSON, or llvm-cov JSON; they never run the target's test
+  command. Testability promotes only with compatible units, complete declared-
+  module attribution, zero unresolved paths, and a version-1 sidecar whose
+  producer-enumerated source hashes match current ScanRoot bytes. `source_ref`
+  is metadata, not a freshness gate. Freshness is recomputed even on fact-cache
+  hits. Duplicate equal-denominator facts use the greatest covered count as a
+  lower bound; unit/denominator conflicts suppress the ratio and force partial.
+  The sidecar is unsigned producer attestation: Archfit cross-binds every
+  normalized covered fact path to a listed path/hash and verifies the current
+  bytes. Empty/missing `sources` is unverified; omitting a covered fact path is
+  stale. Archfit still cannot authenticate the producer or prove the artifact
+  itself did not omit source facts; upgrade via authenticated trusted producers
+  as documented in `docs/design/evidence-contract.md`.
+- **`operations` claims declared topology, not runtime topology.** Every declared
+  module needs an independently corroborated deploy unit plus a declared or
+  CODEOWNERS-backed owner; git-author fallback is visible but does not qualify.
+  Declared and corroborated deploy-unit metrics stay separate. Analyzer health,
+  runtime topology, and SBOM/vulnerability state are out of claim. Within the
+  out-of-claim analyzer-health metrics, only applicable rows enter
+  `analyzers_reporting_coverage`; absent/disabled rows are disclosed as
+  `analyzers_not_applicable` rather than overstating a single-language gap.
 - **Severity source is `cl.Score.Band`** (`classify.go`, `Run`). `cl.Severity =
 cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   old discrete severity table and is no longer called anywhere. Do not re-introduce
@@ -518,10 +542,11 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   participates — a required-analyzer gate and a failing hard rule both reach the
   verdict through the state's own hard-gate result, so a second condition at the
   application layer could only disagree with the report the same run printed.
-  **Expect 2, not 0, on a clean repo in v1**: complexity, testability, and
-  operations report `partial` by contract, and any partial dimension is
-  `needs_attention`. `make archfit` accepts 0 or 2; only 1 fails it. A coupling
-  advisory is a diagnostic and can never reach exit 1.
+  Exit 0 is reachable when all nine dimensions are measured, hard gates pass,
+  and no active diagnostic remains. Missing supplied coverage, operational
+  corroboration, or a comparable persisted baseline honestly produces exit 2;
+  none is a permanent dimension status. `make archfit` accepts 0 or 2; only 1
+  fails it. A coupling advisory is a diagnostic and can never reach exit 1.
 - **Six named erosion gates** hold the architecture-state contract against decay
   back into the averaged score it replaced. Each has ONE executable owner and a
   PAIRED fixture proving it fires on a violating input — a structural rule nobody

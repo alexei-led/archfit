@@ -196,6 +196,25 @@ func TestDriverHistogramsCountCrossBoundaryEdgesOnly(t *testing.T) {
 	}
 }
 
+// TestStructureSummaryKeepsDependencyAndBoundaryDenominators pins STR-3/4 and
+// MOD-2 at their producer: coupling's all-edge total remains unchanged while
+// structure receives dependency-only counts and modularity receives explicit
+// first-party boundary attribution.
+func TestStructureSummaryKeepsDependencyAndBoundaryDenominators(t *testing.T) {
+	got := analysis.Analyze(analysis.Input{Graph: mixedGraph(), Policy: relationshipPolicy(twoModules())})
+	s := got.Assessment.ClassifiedEdges
+	if s.DependencyEdges != 2 || s.InternalDependencies != 2 || s.ClassifiedInternalDependencies != 2 {
+		t.Errorf("dependency/internal/classified = %d/%d/%d, want 2/2/2",
+			s.DependencyEdges, s.InternalDependencies, s.ClassifiedInternalDependencies)
+	}
+	if s.SameModuleDependencies != 1 || s.DependencyModules != 2 {
+		t.Errorf("same-module/dependency-modules = %d/%d, want 1/2", s.SameModuleDependencies, s.DependencyModules)
+	}
+	if s.FirstPartyNodes != 3 || s.AttributedFirstPartyNodes != 3 {
+		t.Errorf("first-party attribution = %d/%d, want 3/3", s.AttributedFirstPartyNodes, s.FirstPartyNodes)
+	}
+}
+
 func sumCounts(m map[string]int) int {
 	total := 0
 	for _, n := range m {

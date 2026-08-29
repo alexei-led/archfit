@@ -179,9 +179,10 @@ The exit code IS the architecture-state verdict; nothing else participates.
 - `0` — `healthy`.
 - `1` — `blocked`: active gate finding, or missing required tool under
   `--require-tools` / `analyzers.<x>.gate: fail`. **Gate on this one.**
-- `2` — `needs_attention`. **This is the normal result on a healthy repo in v1**:
-  complexity, testability, and operations report `partial` by contract, and any
-  partial dimension flags the verdict. Do not treat it as a failure.
+- `2` — `needs_attention`: no blocker, but an active diagnostic or incomplete
+  dimension evidence remains. Read the named missing fact; do not treat it as a
+  failure or fabricate evidence to force exit 0. Exit 0 is reachable when every
+  required fact is genuinely supplied.
 - `3` — usage, config, or runtime error (includes a v1 config under schema v2,
   malformed labels, or missing required AI config for off-gate AI commands).
 

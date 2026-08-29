@@ -58,33 +58,50 @@ type DeltaReport struct {
 	TouchedByDelta  []string `json:"touched_by_delta,omitempty"`
 }
 
+// ModuleGraphComplexity is the architecture-level distribution over the
+// declared module graph. It stays internal to assessment; the architecture-state
+// envelope publishes the individual metrics.
+type ModuleGraphComplexity struct {
+	Modules            int
+	MaxDependencyChain int
+	FanInP90           int
+	FanOutP90          int
+}
+
 // ClassifiedEdgeSummary is the assessment distribution over classified relationships.
 type ClassifiedEdgeSummary struct {
-	Total                 int                         `json:"total"`
-	Scored                int                         `json:"scored"`
-	Abstained             int                         `json:"abstained"`
-	SameModule            int                         `json:"same_module"`
-	MeanBalance           float64                     `json:"mean_balance"`
-	TailRisk              *CouplingTailRiskSummary    `json:"tail_risk,omitempty"`
-	ByStrength            map[string]int              `json:"by_strength,omitempty"`
-	ByDistance            map[string]int              `json:"by_distance,omitempty"`
-	ByDistanceBasis       map[string]int              `json:"by_distance_basis,omitempty"`
-	ByVolatility          map[string]int              `json:"by_volatility,omitempty"`
-	BySeverity            map[string]int              `json:"by_severity,omitempty"`
-	ByBalanceDriver       map[string]int              `json:"by_balance_driver,omitempty"`
-	ByCriticalDriver      map[string]int              `json:"by_critical_driver,omitempty"`
-	ByModulePair          map[string]int              `json:"by_module_pair,omitempty"`
-	DistributedMonolith   int                         `json:"distributed_monolith,omitempty"`
-	External              int                         `json:"external,omitempty"`
-	DeclaredExternal      int                         `json:"declared_external,omitempty"`
-	ConnectedModules      int                         `json:"connected_modules,omitempty"`
-	CloneOnlyScored       int                         `json:"clone_only_scored,omitempty"`
-	CloneOnlyAdvisory     int                         `json:"clone_only_advisory,omitempty"`
-	LLMApproved           int                         `json:"llm_approved,omitempty"`
-	LabeledLLM            int                         `json:"labeled_llm,omitempty"`
-	LLMLowConfidenceEdges int                         `json:"-"`
-	VolatilityProvenance  *VolatilityProvenance       `json:"volatility_provenance,omitempty"`
-	DistanceCompression   *DistanceCompressionSummary `json:"distance_compression,omitempty"`
+	Total                          int                         `json:"total"`
+	Scored                         int                         `json:"scored"`
+	Abstained                      int                         `json:"abstained"`
+	SameModule                     int                         `json:"same_module"`
+	DependencyEdges                int                         `json:"-"`
+	InternalDependencies           int                         `json:"-"`
+	ClassifiedInternalDependencies int                         `json:"-"`
+	SameModuleDependencies         int                         `json:"-"`
+	DependencyModules              int                         `json:"-"`
+	FirstPartyNodes                int                         `json:"-"`
+	AttributedFirstPartyNodes      int                         `json:"-"`
+	MeanBalance                    float64                     `json:"mean_balance"`
+	TailRisk                       *CouplingTailRiskSummary    `json:"tail_risk,omitempty"`
+	ByStrength                     map[string]int              `json:"by_strength,omitempty"`
+	ByDistance                     map[string]int              `json:"by_distance,omitempty"`
+	ByDistanceBasis                map[string]int              `json:"by_distance_basis,omitempty"`
+	ByVolatility                   map[string]int              `json:"by_volatility,omitempty"`
+	BySeverity                     map[string]int              `json:"by_severity,omitempty"`
+	ByBalanceDriver                map[string]int              `json:"by_balance_driver,omitempty"`
+	ByCriticalDriver               map[string]int              `json:"by_critical_driver,omitempty"`
+	ByModulePair                   map[string]int              `json:"by_module_pair,omitempty"`
+	DistributedMonolith            int                         `json:"distributed_monolith,omitempty"`
+	External                       int                         `json:"external,omitempty"`
+	DeclaredExternal               int                         `json:"declared_external,omitempty"`
+	ConnectedModules               int                         `json:"connected_modules,omitempty"`
+	CloneOnlyScored                int                         `json:"clone_only_scored,omitempty"`
+	CloneOnlyAdvisory              int                         `json:"clone_only_advisory,omitempty"`
+	LLMApproved                    int                         `json:"llm_approved,omitempty"`
+	LabeledLLM                     int                         `json:"labeled_llm,omitempty"`
+	LLMLowConfidenceEdges          int                         `json:"-"`
+	VolatilityProvenance           *VolatilityProvenance       `json:"volatility_provenance,omitempty"`
+	DistanceCompression            *DistanceCompressionSummary `json:"distance_compression,omitempty"`
 }
 
 // CouplingTailRiskSummary records lower-tail relationship statistics.

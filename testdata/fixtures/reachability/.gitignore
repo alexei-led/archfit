@@ -1,0 +1,6 @@
+.archfit.yaml
+.archfit-baseline.json
+.archfit-cache/
+coverage.out
+coverage.out.sidecar.json
+services/app/ignored.go

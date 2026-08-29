@@ -15,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	evidencecontract "github.com/alexei-led/archfit/internal/evidence"
 	"github.com/alexei-led/archfit/internal/extract/acquire"
+	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/history/git"
@@ -93,9 +94,11 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 
 	runPolicy := s.Policy.Clone()
+	declaredDeployUnits, ownerProvenance := declaredOperationsFacts(runPolicy)
 	store := factcache.NewStore(factsCacheDir(bundleDir))
 	store.RefreshMode = s.Refresh
 	extractors := registry.Build(s.Runner, s.Options.Extractors, store)
+	suppliedCoverage, suppliedCoverageRow := suppliedcoverage.New(store).IngestAll(resolved.Root, s.Options.SuppliedCoverage)
 
 	var warnings []string
 	warnLabel := s.WarnLabel
@@ -127,9 +130,14 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	var ownerWarnings []string
 	var resolvedOwners map[string]string
 	if runPolicy.NeedsOwnerResolution() {
-		owners, source := ownership.Resolve(ctx, resolved.Root, resolved.GitRoot, resolved.SubtreePrefix, runPolicy.Topology.ModuleMap, s.Runner)
+		owners, provenance, source := ownership.ResolveWithProvenance(ctx, resolved.Root, resolved.GitRoot, resolved.SubtreePrefix, runPolicy.Topology.ModuleMap, s.Runner)
 		resolvedOwners = owners
 		ownerSource = string(source)
+		for module, fact := range provenance {
+			if _, declared := ownerProvenance[module]; !declared {
+				ownerProvenance[module] = fact
+			}
+		}
 		if warning := ownerDegradationWarning(source); warning != "" {
 			ownerWarnings = append(ownerWarnings, warning)
 			note(warning)
@@ -162,6 +170,9 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	// `coverage` metric would otherwise divide crate counts by file counts and can
 	// exceed the 1.0 ceiling its own contract calls impossible.
 	var reportOnlyCoverage []evidence.Coverage
+	if suppliedCoverageRow.Tool != "" {
+		reportOnlyCoverage = append(reportOnlyCoverage, suppliedCoverageRow)
+	}
 	if ex := registry.RustExtractor(extractors); ex != nil {
 		reportOnlyCoverage = append(reportOnlyCoverage, ex.LastModuleGraphCoverage())
 		for _, cr := range ex.LastCrateRoots() {
@@ -180,7 +191,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	// report evidence only, so a config opt-out can never move a measured metric.
 	marked := markDisabledPrimaries(append(append([]evidence.Coverage(nil), coverage...), reportOnlyCoverage...), s.Options.Coverage, resolved.Root)
 	snapshot := evidencecontract.Facts{
-		Graph: graphResult.Graph, Coverage: coverage,
+		Graph: graphResult.Graph, Coverage: coverage, SuppliedCoverage: suppliedCoverage,
 		Symbols: graphResult.SCIPSymbols, PatternMatches: patternMatches,
 		SyntaxFacts: syntaxFacts, FileLOC: collected.FileLOC,
 		FileClassIndex: collected.FileClassIndex,
@@ -192,8 +203,10 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 
 	return application.Acquired{
-		Facts:        snapshot,
-		Observations: assessmentObservationsOf(snapshot),
+		Facts: snapshot,
+		Observations: assessmentObservationsOf(
+			snapshot, declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
+		),
 		Context: application.AnalysisContext{
 			Scope: resolved, BaseRef: req.BaseRef, Full: true,
 			Now: now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
@@ -212,14 +225,38 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}, nil
 }
 
-func assessmentObservationsOf(f evidencecontract.Facts) evaluation.Observations {
+func assessmentObservationsOf(
+	f evidencecontract.Facts,
+	declaredDeployUnits map[string]string,
+	corroboratedDeployUnits map[string]evidence.CorroboratedDeployUnit,
+	ownerProvenance map[string]evidence.OwnerProvenance,
+) evaluation.Observations {
 	return evaluation.Observations{
-		Coverage: f.Coverage, Symbols: f.Symbols, PatternMatches: f.PatternMatches,
+		Coverage: f.Coverage, SuppliedCoverage: f.SuppliedCoverage,
+		Symbols: f.Symbols, PatternMatches: f.PatternMatches,
 		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
 		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
 		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,
 		DeprecatedDeps: f.DeprecatedDeps, SemanticStrengthOverlay: f.SemanticStrengthOverlay,
+		DeclaredDeployUnits: declaredDeployUnits, CorroboratedDeployUnits: corroboratedDeployUnits,
+		OwnerProvenance: ownerProvenance,
 	}
+}
+
+func declaredOperationsFacts(p policy.PolicySnapshot) (map[string]string, map[string]evidence.OwnerProvenance) {
+	deployUnits := make(map[string]string)
+	owners := make(map[string]evidence.OwnerProvenance)
+	for module, def := range p.Topology.Modules {
+		if def.DeployUnit != "" {
+			deployUnits[module] = def.DeployUnit
+		}
+		if def.Owner != "" {
+			owners[module] = evidence.OwnerProvenance{
+				Module: module, Owner: def.Owner, Source: evidence.TopologySourceDeclared,
+			}
+		}
+	}
+	return deployUnits, owners
 }
 
 // configWarnings assembles the advisory config-warning block: config lint,

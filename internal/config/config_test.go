@@ -5,14 +5,18 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/policy"
+
+	"github.com/goccy/go-yaml"
 )
 
 func TestLoad_Valid(t *testing.T) {
@@ -632,6 +636,64 @@ func TestForRules(t *testing.T) {
 	}
 }
 
+func TestFunctionLOCThresholdConfig(t *testing.T) {
+	t.Run("absent uses the diagnostic default", func(t *testing.T) {
+		cfg := config.Config{Version: config.SchemaVersion}
+		if got := cfg.Metrics.FunctionLOCThresholdValue(); got != policy.DefaultFunctionLOCThreshold {
+			t.Fatalf("function LOC threshold = %d, want default %d", got, policy.DefaultFunctionLOCThreshold)
+		}
+		if got := cfg.PolicySnapshot().Assessment.FunctionLOCThreshold; got != policy.DefaultFunctionLOCThreshold {
+			t.Fatalf("projected threshold = %d, want default %d", got, policy.DefaultFunctionLOCThreshold)
+		}
+	})
+
+	t.Run("scalar coexists with object metric entries", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\nmetrics:\n  function_loc_threshold: 75\n  cycle:\n    enabled: true\n    gate: fail\n    max_new: 0\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cfg.Metrics.FunctionLOCThresholdValue(); got != 75 {
+			t.Fatalf("function LOC threshold = %d, want 75", got)
+		}
+		if cycle := cfg.ForMetric("cycle"); cycle.Enabled == nil || !*cycle.Enabled || cycle.Gate != "fail" {
+			t.Fatalf("cycle metric entry = %+v, want existing object form preserved", cycle)
+		}
+		if _, reservedEnteredGates := cfg.PolicySnapshot().Gates.Metrics["function_loc_threshold"]; reservedEnteredGates {
+			t.Fatal("function_loc_threshold entered metric gates")
+		}
+
+		encoded, err := yaml.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("marshal config: %v", err)
+		}
+		roundTrip, err := loadConfigInline(t, string(encoded))
+		if err != nil {
+			t.Fatalf("round-trip config: %v\n%s", err, encoded)
+		}
+		if roundTrip.Metrics.FunctionLOCThresholdValue() != 75 || roundTrip.ForMetric("cycle").Gate != "fail" {
+			t.Fatalf("round-trip metrics = %+v", roundTrip.Metrics)
+		}
+	})
+
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "zero", value: "0", want: "positive integer"},
+		{name: "negative", value: "-1", want: "positive integer"},
+		{name: "fraction", value: "1.5", want: "must be an integer"},
+		{name: "object", value: "{ threshold: 60 }", want: "must be an integer"},
+	} {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
+			_, err := loadConfigInline(t, "version: 2\nmetrics:\n  function_loc_threshold: "+tc.value+"\n")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestForMetric(t *testing.T) {
 	cfg, err := config.Load(context.Background(), "testdata/valid.yaml")
 	if err != nil {
@@ -858,13 +920,116 @@ func TestForPatterns(t *testing.T) {
 // loadInline writes body to a temp config file and loads it, returning the error.
 func loadInline(t *testing.T, body string) error {
 	t.Helper()
+	_, err := loadConfigInline(t, body)
+	return err
+}
+
+func loadConfigInline(t *testing.T, body string) (config.Config, error) {
+	t.Helper()
 	dir := t.TempDir()
 	p := filepath.Join(dir, ".archfit.yaml")
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := config.Load(context.Background(), p)
-	return err
+	return config.Load(context.Background(), p)
+}
+
+func TestLoad_SuppliedCoverage(t *testing.T) {
+	t.Run("absent block defaults disabled", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Coverage.Enabled || cfg.SuppliedCoverageOptions().Enabled {
+			t.Fatal("absent coverage block must default disabled")
+		}
+	})
+
+	t.Run("explicit false decodes disabled", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\ncoverage:\n  enabled: false\n  gate: warn\n  sources:\n    - path: coverage.out\n      format: go-coverprofile\n      sidecar_path: evidence/coverage.sidecar.json\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := cfg.SuppliedCoverageOptions()
+		if got.Enabled || got.Gate != string(config.GateWarn) || len(got.Sources) != 1 {
+			t.Fatalf("coverage projection = %+v", got)
+		}
+		if got.Sources[0].Path != "coverage.out" || got.Sources[0].Format != "go-coverprofile" || got.Sources[0].SidecarPath != "evidence/coverage.sidecar.json" {
+			t.Fatalf("coverage source projection = %+v", got.Sources[0])
+		}
+	})
+
+	t.Run("omitted format projects auto", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\ncoverage:\n  enabled: true\n  sources:\n    - path: coverage.out\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cfg.SuppliedCoverageOptions().Sources[0].Format; got != "auto" {
+			t.Fatalf("format = %q, want auto", got)
+		}
+	})
+
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "enabled without sources", body: "version: 2\ncoverage:\n  enabled: true\n", want: "coverage.sources requires at least one source"},
+		{name: "invalid gate", body: "version: 2\ncoverage:\n  gate: block\n", want: "coverage.gate"},
+		{name: "missing path", body: "version: 2\ncoverage:\n  sources:\n    - format: lcov\n", want: "coverage.sources[0].path is required"},
+		{name: "invalid format", body: "version: 2\ncoverage:\n  sources:\n    - path: coverage.out\n      format: cobertura\n", want: "is not one of"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := loadInline(t, tc.body); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load error = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoad_SuppliedCoverageLimits(t *testing.T) {
+	t.Run("omitted limits project bounded defaults", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\ncoverage:\n  enabled: true\n  sources:\n    - path: coverage.out\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Coverage.Sources[0].MaxBytes != nil || cfg.Coverage.Sources[0].MaxFacts != nil {
+			t.Fatalf("omitted decoded limits = %+v, want nil pointers", cfg.Coverage.Sources[0])
+		}
+		got := cfg.SuppliedCoverageOptions().Sources[0]
+		if got.MaxBytes != suppliedcoverage.DefaultMaxBytes || got.MaxFacts != suppliedcoverage.DefaultMaxFacts {
+			t.Fatalf("projected defaults = %d bytes/%d facts, want %d/%d", got.MaxBytes, got.MaxFacts, suppliedcoverage.DefaultMaxBytes, suppliedcoverage.DefaultMaxFacts)
+		}
+	})
+
+	t.Run("configured positive limits survive projection", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\ncoverage:\n  enabled: true\n  sources:\n    - path: coverage.out\n      max_bytes: 12345\n      max_facts: 678\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := cfg.SuppliedCoverageOptions().Sources[0]
+		if got.MaxBytes != 12345 || got.MaxFacts != 678 {
+			t.Fatalf("projected configured limits = %d/%d, want 12345/678", got.MaxBytes, got.MaxFacts)
+		}
+	})
+
+	for _, tc := range []struct {
+		name  string
+		field string
+		value int
+	}{
+		{name: "zero bytes", field: "max_bytes", value: 0},
+		{name: "negative bytes", field: "max_bytes", value: -1},
+		{name: "zero facts", field: "max_facts", value: 0},
+		{name: "negative facts", field: "max_facts", value: -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "version: 2\ncoverage:\n  enabled: true\n  sources:\n    - path: coverage.out\n      " + tc.field + ": " + strconv.Itoa(tc.value) + "\n"
+			if err := loadInline(t, body); err == nil || !strings.Contains(err.Error(), tc.field+" must be positive") {
+				t.Fatalf("Load error = %v, want positive %s validation", err, tc.field)
+			}
+		})
+	}
 }
 
 func TestLoad_ExternalSystems(t *testing.T) {

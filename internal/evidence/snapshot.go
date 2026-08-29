@@ -19,6 +19,7 @@ import (
 type Facts struct {
 	Graph                   *graph.Graph
 	Coverage                []modevidence.Coverage
+	SuppliedCoverage        []modevidence.CoverageIngest
 	Symbols                 symbol.Graph
 	PatternMatches          []pattern.Match
 	SyntaxFacts             []modevidence.SyntaxFact

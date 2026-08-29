@@ -26,6 +26,9 @@ func TestBlastRadius_TransitiveReverseDeps(t *testing.T) {
 	if res.Name != "blast_radius" {
 		t.Fatalf("name = %q", res.Name)
 	}
+	if res.Version != "blast_radius.v2" {
+		t.Fatalf("version = %q, want blast_radius.v2 for declared-module identity", res.Version)
+	}
 	// 3 modules, threshold 30%: C reaches 2/2=100% -> a hub; B 1/2=50% -> a hub; A 0.
 	if res.Value != 2 {
 		t.Errorf("expected 2 hubs (C,B) got %v; display=%q", res.Value, res.Display)

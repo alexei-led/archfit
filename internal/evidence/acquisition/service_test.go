@@ -155,6 +155,47 @@ func TestAcquireCarriesTheRunContextForLaterStages(t *testing.T) {
 	}
 }
 
+func TestAcquireThreadsMissingSuppliedCoverageIntoTheExistingGapGate(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ".archfit.yaml")
+	if err := os.WriteFile(cfgPath, []byte("version: 2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		Version: config.SchemaVersion,
+		Modules: map[string]policy.ModuleDef{"a": {Paths: []string{"a/**"}}},
+		Coverage: config.CoverageConfig{
+			Enabled: true,
+			Gate:    config.GateFail,
+			Sources: []config.CoverageSource{{Path: "missing.info", Format: "lcov"}},
+		},
+	}
+	svc := &acquisition.Service{
+		ConfigPath: cfgPath, Root: root, Options: cfg.RunOptions(), Policy: cfg.PolicySnapshot(),
+		Runner: &gitOnlyRunner{root: root}, Stderr: &bytes.Buffer{},
+	}
+	acquired, err := svc.Acquire(context.Background(), application.AnalysisRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(acquired.Facts.SuppliedCoverage) != 1 || acquired.Facts.SuppliedCoverage[0].Reason != "coverage_source_unavailable" {
+		t.Fatalf("supplied coverage = %+v", acquired.Facts.SuppliedCoverage)
+	}
+	found := false
+	for _, gap := range acquired.Context.CoverageGaps {
+		if gap.Tool == "supplied-coverage" {
+			found = true
+			if gap.Gate != "fail" {
+				t.Fatalf("supplied coverage gate = %q, want fail", gap.Gate)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("coverage gaps = %+v, want supplied-coverage", acquired.Context.CoverageGaps)
+	}
+}
+
 // TestAcquireRequiresARunner pins the fail-fast contract: acquisition without a
 // process boundary cannot observe anything, and must say so rather than return
 // an empty measurement that reads like a clean tree.

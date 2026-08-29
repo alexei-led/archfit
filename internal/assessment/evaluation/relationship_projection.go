@@ -9,7 +9,19 @@ func projectRelationshipSummary(in *relationship.ClassifiedEdgeSummary) *result.
 	if in == nil {
 		return nil
 	}
-	out := &result.ClassifiedEdgeSummary{Total: in.Total, Scored: in.Scored, Abstained: in.Abstained, SameModule: in.SameModule, MeanBalance: in.MeanBalance, ByStrength: in.ByStrength, ByDistance: in.ByDistance, ByDistanceBasis: in.ByDistanceBasis, ByVolatility: in.ByVolatility, BySeverity: in.BySeverity, ByBalanceDriver: in.ByBalanceDriver, ByCriticalDriver: in.ByCriticalDriver, ByModulePair: in.ByModulePair, DistributedMonolith: in.DistributedMonolith, External: in.External, DeclaredExternal: in.DeclaredExternal, ConnectedModules: in.ConnectedModules, CloneOnlyScored: in.CloneOnlyScored, CloneOnlyAdvisory: in.CloneOnlyAdvisory, LLMApproved: in.LLMApproved, LabeledLLM: in.LabeledLLM, LLMLowConfidenceEdges: in.LLMLowConfidenceEdges}
+	out := &result.ClassifiedEdgeSummary{
+		Total: in.Total, Scored: in.Scored, Abstained: in.Abstained, SameModule: in.SameModule,
+		DependencyEdges: in.DependencyEdges, InternalDependencies: in.InternalDependencies,
+		ClassifiedInternalDependencies: in.ClassifiedInternalDependencies,
+		SameModuleDependencies:         in.SameModuleDependencies, DependencyModules: in.DependencyModules,
+		FirstPartyNodes: in.FirstPartyNodes, AttributedFirstPartyNodes: in.AttributedFirstPartyNodes,
+		MeanBalance: in.MeanBalance, ByStrength: in.ByStrength, ByDistance: in.ByDistance,
+		ByDistanceBasis: in.ByDistanceBasis, ByVolatility: in.ByVolatility, BySeverity: in.BySeverity,
+		ByBalanceDriver: in.ByBalanceDriver, ByCriticalDriver: in.ByCriticalDriver, ByModulePair: in.ByModulePair,
+		DistributedMonolith: in.DistributedMonolith, External: in.External, DeclaredExternal: in.DeclaredExternal,
+		ConnectedModules: in.ConnectedModules, CloneOnlyScored: in.CloneOnlyScored, CloneOnlyAdvisory: in.CloneOnlyAdvisory,
+		LLMApproved: in.LLMApproved, LabeledLLM: in.LabeledLLM, LLMLowConfidenceEdges: in.LLMLowConfidenceEdges,
+	}
 	if in.VolatilityProvenance != nil {
 		out.VolatilityProvenance = &result.VolatilityProvenance{Declared: in.VolatilityProvenance.Declared, Inherited: in.VolatilityProvenance.Inherited, Cascade: in.VolatilityProvenance.Cascade, Undeclared: in.VolatilityProvenance.Undeclared}
 	}

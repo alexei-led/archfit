@@ -9,14 +9,16 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
+	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 const (
-	unitAPIService = "api-service"
-	unitWebApp     = "web-app"
-	unitCLI        = "cli"
+	unitAPIService   = "api-service"
+	unitWebApp       = "web-app"
+	unitCLI          = "cli"
+	workspaceWebPath = "packages/web"
 )
 
 // emptyRunner returns a RunnerMock that reports no tools available and never runs.
@@ -175,7 +177,7 @@ func TestDetect_TSWorkspaces(t *testing.T) {
 	// Write workspace package.json files.
 	for _, ws := range []struct{ path, name string }{
 		{"packages/api", unitAPIService},
-		{"packages/web", unitWebApp},
+		{workspaceWebPath, unitWebApp},
 	} {
 		dir := filepath.Join(root, ws.path)
 		mustMkdir(t, dir)
@@ -192,7 +194,7 @@ func TestDetect_TSWorkspaces(t *testing.T) {
 		name string
 	}{
 		{"packages/api", unitAPIService},
-		{"packages/web", unitWebApp},
+		{workspaceWebPath, unitWebApp},
 	} {
 		unit, ok := result[tc.path]
 		if !ok {
@@ -410,6 +412,59 @@ func TestDetect_SkipsNodeModules(t *testing.T) {
 		if strings.HasPrefix(path, "node_modules") {
 			t.Errorf("node_modules path leaked into result: %q", path)
 		}
+	}
+}
+
+// TestDetectCorroboratedSources pins the closed provenance value emitted by
+// every detector. These facts feed operations completeness; an empty source
+// must never be mistaken for independent corroboration.
+func TestDetectCorroboratedSources(t *testing.T) {
+	root := t.TempDir()
+	goMain := filepath.Join(root, "cmd", "worker")
+	mustMkdir(t, goMain)
+
+	mustWrite(t, filepath.Join(root, "package.json"), `{"workspaces":["`+workspaceWebPath+`"]}`)
+	mustMkdir(t, filepath.Join(root, "packages", "web"))
+	mustWrite(t, filepath.Join(root, "packages", "web", "package.json"), `{"name":"web"}`)
+
+	mustMkdir(t, filepath.Join(root, "services", "python"))
+	mustWrite(t, filepath.Join(root, "services", "python", "pyproject.toml"), "[project]\nname = \"python-service\"\n")
+	mustMkdir(t, filepath.Join(root, "services", "docker"))
+	mustWrite(t, filepath.Join(root, "services", "docker", "Dockerfile"), "FROM scratch\n")
+	mustMkdir(t, filepath.Join(root, "deploy", "k8s"))
+	mustWrite(t, filepath.Join(root, "deploy", "k8s", "app.yaml"), "kind: Deployment\nmetadata:\n  name: app\n")
+
+	got := deployunit.DetectCorroborated(context.Background(), root, emptyModuleMap(), goRunner([]string{goMain}))
+	want := map[string]modevidence.TopologySource{
+		"cmd/worker":      modevidence.TopologySourceGoMain,
+		workspaceWebPath:  modevidence.TopologySourceWorkspace,
+		"services/python": modevidence.TopologySourcePyproject,
+		"services/docker": modevidence.TopologySourceDockerfile,
+		"deploy/k8s":      modevidence.TopologySourceK8s,
+	}
+	for path, source := range want {
+		fact, ok := got[path]
+		if !ok {
+			t.Errorf("corroborated fact %q missing: %+v", path, got)
+			continue
+		}
+		if fact.Path != path || fact.Unit == "" || fact.Source != source {
+			t.Errorf("fact %q = %+v, want path=%q non-empty unit source=%q", path, fact, path, source)
+		}
+	}
+}
+
+// TestKeyCorroboratedByModuleRetainsSource verifies path attribution does not
+// collapse the fact to the detected unit string.
+func TestKeyCorroboratedByModuleRetainsSource(t *testing.T) {
+	const module = "service"
+	mm := singleModuleMap(module, "services/api/**")
+	fact := modevidence.CorroboratedDeployUnit{
+		Path: "services/api", Unit: unitAPIService, Source: modevidence.TopologySourceDockerfile,
+	}
+	got := deployunit.KeyCorroboratedByModule(map[string]modevidence.CorroboratedDeployUnit{fact.Path: fact}, mm)
+	if got[module] != fact {
+		t.Errorf("module-keyed corroboration = %+v, want %+v", got[module], fact)
 	}
 }
 

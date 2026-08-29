@@ -15,7 +15,7 @@ technical owner-distance, CODEOWNERS resolution, and coupling at scale).
 
 | Repo                 | Lang                  | Owner model                 | CODEOWNERS           | Delta base (prev minor) | Why                                                        |
 | -------------------- | --------------------- | --------------------------- | -------------------- | ----------------------- | ---------------------------------------------------------- |
-| archfit              | Go                    | solo (mine)                 | no                   | `v0.13.0`               | self-dogfood; gates its own architecture (`make archfit`)  |
+| archfit              | Go                    | solo (mine)                 | no                   | `v0.13.0`               | self-dogfood; runs its own v2 gate (`make arch-lint`)       |
 | spotinfo             | Go                    | solo (mine)                 | no                   | `v2.2.1`                | tiny CLI; thin-graph baseline                              |
 | pumba                | Go                    | solo (mine)                 | yes (`@alexei-led`)  | `1.0.6`                 | small Go, forbidden-dep rules                              |
 | ccgram               | Python                | solo (mine)                 | no                   | `v4.2.0`                | richest single-owner: encapsulation + cycles fire          |
@@ -83,9 +83,11 @@ cutover deleted. What a passing repo must show:
 | config     | migrated candidate       | `version: 2`, idempotent on a second migration                                   |
 | exit       | `check`                  | healthy 0, needs-attention 2, blocked 1, error 3                                 |
 
-**Expect exit 2, not 0, on a healthy repository.** Complexity, testability, and
-operations report `partial` by contract in v1, and any partial dimension is
-`needs_attention`. Only exit 1 means a hard gate blocked.
+Exit `0` is reachable only when every dimension is measured, hard gates pass,
+and no diagnostic is active. A corpus member without supplied coverage,
+operational corroboration, or a comparable persisted baseline may honestly exit
+`2` (`needs_attention`). Exit `1` means a hard gate blocked; exit `3` is a
+command/config/runtime error.
 
 Every format reports the same verdict, dimension statuses, coverage split,
 comparison state, and canonical finding sequence. Text, Markdown, and the

@@ -32,46 +32,58 @@ ARCHITECTURE STATE
 
 VERDICT    NEEDS ATTENTION
 BLOCKING   0 active  ·  hard gates: pass
-ATTENTION  2 dimension(s) flagged  ·  55 diagnostic(s)
-COVERAGE   5 measured · 3 partial · 1 unmeasured  (of 9)
+ATTENTION  1 dimension(s) flagged  ·  56 diagnostic(s)
+COVERAGE   6 measured · 3 partial · 0 unmeasured  (of 9)
 
 No blockers. Use this run for architecture-improvement planning,
 not to stop development.
 
 DIMENSIONS
 
-  intent          measured    gate: pass            confidence: high     declared rules evaluated 60/60
-  structure       measured    gate: pass            confidence: high     discovered edges resolved to a declared module 544/1255
-  modularity      measured    gate: warn            confidence: high     declared modules with a declared public surface 17/18
-  coupling        measured    gate: warn            confidence: high     cross-boundary edges scored 384/384
+  intent          partial     gate: pass            confidence: medium   declared rules evaluated 53/60
+  structure       measured    gate: pass            confidence: high     discovered dependencies resolved inside the declared module map 561/1343
+  modularity      measured    gate: pass            confidence: high     declared modules with a declared public surface 17/18
+  coupling        measured    gate: warn            confidence: high     cross-boundary edges scored 404/404
   change_locality measured    gate: pass            confidence: high     declared modules touched in the scanned history window 18/18
-  complexity      partial     gate: pass            confidence: medium   production files in the source walk 233/233
-  testability     partial     gate: pass            confidence: medium   classified source files 440/446
-  operations      partial     gate: pass            confidence: medium   applicable analyzers reporting coverage 8/8
-  drift           unmeasured  gate: not_applicable  confidence: unrated  no denominator
+  complexity      measured    gate: pass            confidence: high     declared modules with complete dependency-chain and degree values 18/18
+  testability     partial     gate: pass            confidence: medium   classified source files 463/469
+  operations      partial     gate: pass            confidence: medium   declared modules with a corroborated deploy unit and qualifying owner 3/18
+  drift           measured    gate: pass            confidence: high     distributed-monolith seams compared against the stored reference 0/0
 
-NOT MEASURED (5)
+NOT MEASURED (11)
 
+  intent — active rule conformance
+    one or more active rules lack the completed producer evidence their checks require: adapter_no_cli, extract_no_config, internal_no_labelsio…
   complexity — cognitive complexity
-    v1 ships no cognitive-complexity analyzer; only the size tail is measured
-  drift — architecture drift
-    no comparable architecture-state reference is stored
+    no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
+  operations — corroborated deploy unit
+    one or more declared modules have no independently corroborating deploy manifest
 
-COUPLING SEAMS (67)
+COUPLING SEAMS (69)
 
   assessment-repair -> relationship-analysis
-    functional × cross_module_same_owner × high volatility · 12 critical of 34 scored · median balance 7
+    symmetric × cross_module_same_owner × high volatility · 12 critical of 18 scored · median balance 2
     try: reduce_strength
 ```
+
+`complexity` measures the complete declared-module dependency graph: maximum
+chain depth plus module fan-in and fan-out tails. Function length and cognitive
+complexity remain diagnostic, out-of-claim disclosures.
+
+`operations` measures declared-topology completeness: every module needs an
+independently corroborated deploy unit and a declared or CODEOWNERS-backed owner.
+Analyzer coverage and live runtime topology are disclosures, not its denominator.
 
 Run `archfit analyze` for a human-readable review; use `archfit check` in CI for gate exit codes
 (`0` healthy, `2` needs attention, `1` blocked); add `--json` for
 `archfit.architecture-state.v1`. Progress streams to stderr, so
 `archfit check --json | jq` stays clean.
 
-Expect `2`, not `0`, on a healthy repository in v1: complexity, testability, and
-operations report `partial` by contract, and a partial dimension is never
-reported as healthy. Gate on `1`.
+Exit `0` is reachable when all nine dimensions are measured, hard gates pass,
+and no diagnostic is active. Missing supplied coverage, operational
+corroboration, or a comparable persisted baseline produces `2`, never a
+fabricated healthy zero. Gate on `1` during adoption; require `0` when complete
+evidence is your CI policy.
 
 ## Why
 

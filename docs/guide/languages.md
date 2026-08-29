@@ -20,6 +20,48 @@ languages:
 (require; missing tools are errors), or `false` (skip); legacy `"on"`/`"off"` are
 a hard error. See [configuration reference](configuration-reference.md) for details.
 
+## Supplied test coverage
+
+Archfit can attribute execution coverage to declared modules, but it does not run
+any test command. Produce the artifact in the repository's normal CI test step,
+produce its [freshness sidecar](configuration-reference.md#coverage-freshness-sidecar),
+and then enable the top-level
+[`coverage:` block](configuration-reference.md#coverage).
+
+Use one concrete producer command per language:
+
+| Language | Coverage command | Artifact and `format` |
+| --- | --- | --- |
+| Go | `go test ./... -coverprofile=coverage.out` | `coverage.out`, `go-coverprofile` |
+| TypeScript/JavaScript | `npx c8 --reporter=lcov --reports-dir=coverage npm test` | `coverage/lcov.info`, `lcov` |
+| Python | `python3 -m pytest --cov=. --cov-report=json:coverage.json` | `coverage.json`, `coverage-py-json` |
+| Rust | `cargo llvm-cov --lcov --output-path coverage.lcov` | `coverage.lcov`, `lcov` |
+
+The commands are examples for the named, established producers; keep the test
+runner and flags your repository already uses as long as the resulting format is
+one Archfit accepts. Rust may instead use
+`cargo llvm-cov --json --summary-only --output-path coverage.json` with
+`format: llvm-cov-json`. TypeScript projects using Vitest or Jest may emit LCOV
+directly instead of wrapping their test command in c8.
+
+Go coverprofiles and coverage.py/LLVM JSON can contain import-prefixed or absolute
+paths; LCOV preserves whatever its producer wrote. Archfit normalizes paths under
+the analysis root and reports every unresolved path. Every declared module must
+be represented by complete, fresh supplied coverage. Language selects the parser
+and unit; it is not a separate completeness denominator.
+
+The artifact alone is not fresh evidence. In the same CI step, write
+`<artifact>.sidecar.json` with schema version 1, declared module identities, and
+lowercase SHA256 hashes for every source represented by the artifact. A commit
+SHA in `source_ref` is metadata, not a substitute for those byte hashes. The
+producer must enumerate the complete covered universe; read the
+[producer-attestation ceiling](configuration-reference.md#coverage-freshness-sidecar)
+before enabling coverage in CI.
+
+Multiple artifacts aggregate only when their units are compatible: Go and
+coverage.py use statements, while LCOV and llvm-cov JSON use lines. Unit
+conflicts keep testability partial instead of being averaged.
+
 ## Go
 
 Requirements:

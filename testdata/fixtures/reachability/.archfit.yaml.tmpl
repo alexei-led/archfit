@@ -1,0 +1,37 @@
+version: 2
+languages:
+  go:
+    enabled: true
+  typescript:
+    enabled: false
+  python:
+    enabled: false
+  rust:
+    enabled: false
+analyzers:
+  syntax:
+    enabled: false
+  scip:
+    enabled: false
+  clones:
+    enabled: false
+  cargo_modules:
+    enabled: false
+modules:
+  app:
+    paths: ["services/app/**"]
+    public: ["services/app/app.go"]
+    deploy_unit: app
+    volatility: high
+  api:
+    paths: ["services/api/**"]
+    public: ["services/api/api.go"]
+    deploy_unit: api
+    volatility: high
+rules:
+  - id: api_must_not_depend_on_app
+    type: forbidden_dependency
+    gate: fail
+    from: "services/api/**"
+    to: "services/app/**"
+{{REACHABILITY_COVERAGE_BLOCK}}

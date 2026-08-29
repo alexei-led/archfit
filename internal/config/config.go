@@ -26,6 +26,7 @@ import (
 //   - exclude        — path globs to skip during scanning
 //   - languages      — per-language extractor settings (go/typescript/python/rust)
 //   - analyzers      — opt-in deeper analysis backends (syntax/scip/complexity/…)
+//   - coverage       — opt-in ingestion of caller-supplied coverage artifacts
 //   - ai             — off-gate LLM provider for init/update/enrich/analyze/explain LLM flows
 //   - coupling       — Balanced-Coupling advisory tuning
 //   - layers/modules — the architecture map
@@ -37,6 +38,7 @@ type Config struct {
 	Exclude   []string                    `yaml:"exclude"`
 	Languages LanguagesConfig             `yaml:"languages"`
 	Analyzers AnalyzersConfig             `yaml:"analyzers"`
+	Coverage  CoverageConfig              `yaml:"coverage,omitempty"`
 	AI        AIConfig                    `yaml:"ai"`
 	Coupling  CouplingConfig              `yaml:"coupling"`
 	Layers    []string                    `yaml:"layers"`
@@ -72,7 +74,7 @@ func Load(_ context.Context, path string) (Config, error) {
 		return Config{}, fmt.Errorf("config: decode %q: %w", path, deprecatedConfigHint(err))
 	}
 
-	if err := validate(cfg); err != nil {
+	if err := validateAll(cfg); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 
@@ -226,7 +228,11 @@ func validate(cfg Config) error {
 	if err := validateRules(cfg.Rules); err != nil {
 		return err
 	}
-	for _, name := range sortedKeys(cfg.Metrics) {
+	if threshold := cfg.Metrics.FunctionLOCThreshold; threshold != nil && *threshold <= 0 {
+		return fmt.Errorf("metrics.function_loc_threshold must be a positive integer (got %d)", *threshold)
+	}
+	metricEntries := cfg.Metrics.MetricEntries()
+	for _, name := range sortedKeys(metricEntries) {
 		if reason, removed := removedConfigKeys[name]; removed {
 			return fmt.Errorf("metrics.%s was %s — remove it", name, reason)
 		}
@@ -237,7 +243,7 @@ func validate(cfg Config) error {
 			}
 			return fmt.Errorf("metrics.%s is not a known metric (known: blast_radius, coverage, cycle, encapsulation, unbalanced_edge)", name)
 		}
-		if err := validateMetricEntry(name, knob, cfg.Metrics[name]); err != nil {
+		if err := validateMetricEntry(name, knob, metricEntries[name]); err != nil {
 			return err
 		}
 	}
@@ -260,6 +266,48 @@ func validate(cfg Config) error {
 		return err
 	}
 	return validateFileClass(cfg.FileClass)
+}
+
+func validateAll(cfg Config) error {
+	if err := validate(cfg); err != nil {
+		return err
+	}
+	return validateCoverage(cfg.Coverage)
+}
+
+var coverageFormats = map[string]struct{}{
+	"auto": {}, "go-coverprofile": {}, "lcov": {}, "coverage-py-json": {}, "llvm-cov-json": {},
+}
+
+// validateCoverage checks the opt-in supplied-coverage declaration. Paths are
+// resolved against ScanRoot during acquisition; config validation owns only the
+// shape and enum contract.
+func validateCoverage(coverage CoverageConfig) error {
+	if err := validateGate("coverage", string(coverage.Gate)); err != nil {
+		return err
+	}
+	if coverage.Enabled && len(coverage.Sources) == 0 {
+		return errors.New("coverage.sources requires at least one source when coverage.enabled is true")
+	}
+	for i, source := range coverage.Sources {
+		if strings.TrimSpace(source.Path) == "" {
+			return fmt.Errorf("coverage.sources[%d].path is required", i)
+		}
+		format := source.Format
+		if format == "" {
+			format = "auto"
+		}
+		if _, ok := coverageFormats[format]; !ok {
+			return fmt.Errorf("coverage.sources[%d].format %q is not one of: auto, go-coverprofile, lcov, coverage-py-json, llvm-cov-json", i, source.Format)
+		}
+		if source.MaxBytes != nil && *source.MaxBytes <= 0 {
+			return fmt.Errorf("coverage.sources[%d].max_bytes must be positive", i)
+		}
+		if source.MaxFacts != nil && *source.MaxFacts <= 0 {
+			return fmt.Errorf("coverage.sources[%d].max_facts must be positive", i)
+		}
+	}
+	return nil
 }
 
 // validateRules checks each rule entry's stable id, gate value, and patterns: block.

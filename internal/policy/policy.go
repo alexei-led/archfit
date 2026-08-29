@@ -34,11 +34,16 @@ type RelationshipPolicy struct {
 	DuplicatedKnowledge      DuplicatedKnowledgePolicy
 }
 
+// DefaultFunctionLOCThreshold is the diagnostic-only size-tail cutoff used
+// when metrics.function_loc_threshold is absent.
+const DefaultFunctionLOCThreshold = 60
+
 // AssessmentPolicy contains declarations needed by assessment consumers.
 type AssessmentPolicy struct {
-	Topology  TopologyView
-	Waivers   WaiverSet
-	Staleness StalenessPolicy
+	Topology             TopologyView
+	Waivers              WaiverSet
+	Staleness            StalenessPolicy
+	FunctionLOCThreshold int
 }
 
 // StalenessPolicy controls map-quality review findings.

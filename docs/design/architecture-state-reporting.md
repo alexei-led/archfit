@@ -3,11 +3,11 @@
 Status: shipped. Contract pinned, all nine collectors landed.
 Plan: `docs/plans/architecture-state-reporting.md`.
 
-Archfit's headline is being replaced. The repository-level `coupling_balance`
-scalar and its `poor/mixed/serviceable/strong` band are demoted to a per-seam
-diagnostic; the primary decision becomes `HEALTHY`, `NEEDS_ATTENTION`, or
-`BLOCKED`, derived from explicit hard gates, active diagnostics, and evidence
-coverage.
+Archfit's headline is the architecture state. The repository-level
+`coupling_balance` scalar and its `poor/mixed/serviceable/strong` band are
+demoted to a per-seam diagnostic; the primary decision is `HEALTHY`,
+`NEEDS_ATTENTION`, or `BLOCKED`, derived from explicit hard gates, active
+diagnostics, and evidence coverage.
 
 This document records the approved contract, its decision semantics, and the
 compatibility policy for the migration. It is the reference the code comments in
@@ -35,7 +35,10 @@ The state contract fixes both by construction:
 `report.ArchitectureState`, `internal/model/report/state.go`. Schema version is
 `archfit.architecture-state.v1`, pinned by `TestStateSchemaVersionIsPinned` and
 carried in `StateSchemaVersion`. It is versioned independently of the diagnostic
-envelope's `SchemaVersion`: the two cut over on different schedules.
+envelope's `SchemaVersion`: the two cut over on different schedules. The
+user-facing [nine-dimension evidence contract](evidence-contract.md) defines the
+claim, denominator, required facts, and exact promotion conditions for every
+dimension.
 
 Top-level blocks:
 
@@ -180,22 +183,25 @@ These were settled before execution. They are not open questions.
   never auto-rewritten.
 - **`agent_tasks` is projected**, not re-derived. State aggregation never builds a
   second task list.
-- **Unobservable is unobservable.** Unsupported runtime coverage, runtime
-  topology, and shallow or missing history report `partial`/`unmeasured` with
-  named missing tools. V1 does not execute a target repository's test suite as
-  measurement evidence.
+- **Unobservable is unobservable.** Unsupported runtime topology and shallow or
+  missing history report `partial`/`unmeasured` with named missing facts. V1
+  never executes a target repository's test suite. Testability ingests coverage
+  artifacts that the caller's own CI produced and sidecar-attested; `analyze`
+  and `check` only read those files.
 - **SARIF keeps finding compatibility.** Architecture state goes in run
   properties. SARIF is exempt from human-layout parity, not from fact parity.
 
-## Compatibility policy during the migration
+## Compatibility implementation
 
-The migration lands in tasks. Until the format cutover, **the current output does
-not move a byte.**
+The format cutover preserved the old diagnostic envelope as explicit
+`legacy-json` while making the architecture state the primary output.
 
-`Document.State` is tagged `json:"-"`, for the same reason `Score` and `Decision`
-are: the diagnostic envelope's wire shape is frozen until cutover, so populating
-the field cannot change existing output. `TestShadowStateIsNotOnTheDiagnosticWire`
-asserts no state key leaks into the encoded document.
+`Document.State` remains tagged `json:"-"`, for the same reason `Score` and
+`Decision` are: plain Go encoding of the diagnostic document cannot leak a
+second wire shape. Primary renderers project the finished state explicitly;
+`legacy-json` encodes the diagnostic envelope explicitly.
+`TestShadowStateIsNotOnTheDiagnosticWire` asserts no state key leaks into that
+legacy document.
 
 The compatibility matrix is five committed baselines, one per renderer:
 
@@ -207,9 +213,9 @@ The compatibility matrix is five committed baselines, one per renderer:
 | `sarif`     | `cmd/archfit/testdata/format-matrix/sarif.json`                 | `format_matrix_test.go`   |
 | `scorecard` | `cmd/archfit/testdata/format-matrix/scorecard.txt`              | `format_matrix_test.go`   |
 
-The task that cuts over must move these bytes deliberately, in the same commit
-that changes the contract. Adding a renderer without adding its matrix row leaves
-that format's cutover unwitnessed.
+The cutover moved these bytes deliberately in the contract-changing commits.
+Adding a renderer without adding its matrix row would leave that format's
+contract unwitnessed.
 
 Two capture rules, both learned the hard way:
 
@@ -260,28 +266,31 @@ in review.
 All nine collectors have landed. Each envelope reports what this run actually
 observed and names, as an `UnknownFact`, whatever it could not.
 
-| Dimension         | v1 status         | Denominator                                    | Named unknowns                                                     |
-| ----------------- | ----------------- | ---------------------------------------------- | ------------------------------------------------------------------ |
-| `intent`          | measured          | declared rules evaluated / declared rules       | conformance to rules declaring `gate: off`                          |
-| `structure`       | measured          | edges resolved to a declared module / all edges | direction and layer of edges leaving the module map                 |
-| `modularity`      | measured          | modules with a public surface / declared modules| —                                                                   |
-| `coupling`        | measured; partial while any edge abstains | scored / scored+abstained cross-boundary edges | the balance of each abstained edge  |
-| `change_locality` | measured; unmeasured with no history | declared modules touched / declared modules | essential vs accidental volatility           |
-| `complexity`      | **always partial**| production files / walked files                 | cognitive complexity — v1 ships no analyzer for it                  |
-| `testability`     | **always partial**| test+production files / classified files        | executed test coverage; which boundaries a test exercises           |
-| `operations`      | **always partial**| analyzers reporting / analyzer rows             | observed runtime topology; SBOM and vulnerability state; each gap   |
-| `drift`           | measured only against a comparable v2 reference | qualifying seams compared | everything, when the reference is non-comparable |
+| Dimension | Measured when | Envelope denominator | Out-of-claim disclosures |
+| --- | --- | --- | --- |
+| `intent` | every active declared rule was evaluated | active declared rules / declared rules | conformance to rules declaring `gate: off` |
+| `structure` | every applicable primary dependency inventory completed and every internal edge was classified | edges resolved to a declared module / all edges | direction and layer of edges leaving the module map |
+| `modularity` | the declared module inventory, boundary attribution, and applicable graph metrics are complete | modules with a declared public surface / declared modules | an inferred public surface |
+| `coupling` | every cross-boundary candidate has strength and distance and TypeScript resolution is within its ceiling | scored / scored plus abstained cross-boundary candidates | same-module and undeclared-external coupling |
+| `change_locality` | a bounded history sample completed with module attribution | declared modules touched / declared modules | essential versus accidental volatility |
+| `complexity` | the complete declared module graph has chain-depth and degree values for every declared module | modules with complete graph values / declared modules | file/function size and cognitive complexity |
+| `testability` | compatible supplied units cover every declared module, every path resolves, and every sidecar freshness result is `matched` | modules represented by attributed supplied coverage / declared modules | assertion quality and boundary-test semantics |
+| `operations` | every declared module has a qualifying owner, an independently corroborated deploy unit, and a reconciliation result | modules with qualifying owner and deploy corroboration / declared modules | observed runtime topology, supply-chain state, and analyzer health |
+| `drift` | a persisted v2 state baseline is fingerprint-comparable and every qualifying seam identity was compared | union of current and stored qualifying seam identities | the separate `--base` report request |
 
-Three dimensions are partial **by contract**, not by omission. Archfit does not
-execute a target repository's test suite, does not observe what runs, and ships
-no cognitive-complexity analyzer. Reporting those as measured-and-empty is the
-implicit green result this contract exists to prevent — so a clean repository
-lands on `NEEDS_ATTENTION` (exit 2 for `check`), and that is correct, not a bug
-to configure away. `make archfit` accepts 0 or 2; only 1 fails it.
+Every dimension now has a genuine `measured` path, but none is promoted from a
+missing fact. Coverage remains opt-in: production source with no supplied
+coverage keeps `testability` partial. A missing, legacy, or fingerprint-drifted
+baseline keeps `drift` unmeasured. Missing deploy corroboration or qualifying
+ownership keeps `operations` partial. These evidence gaps correctly produce
+`NEEDS_ATTENTION` (exit 2 for `check`) rather than a false green. A fully
+evidenced repository can reach `HEALTHY` and exit 0.
 
-A later collector enriches an existing envelope and deletes its own
-`UnknownFact`. Neither the contract nor the coverage counters change: the counts
-follow mechanically from `Dimensions.CountStatuses`.
+Out-of-claim unknowns may remain on a measured dimension because they cannot
+change that dimension's stated claim. An in-claim unknown always prevents
+promotion. Coverage counters follow mechanically from
+`Dimensions.CountStatuses`; the exact fact sets and status predicates are in the
+[evidence contract](evidence-contract.md).
 
 ### Measurement is a property of the tree, not of the run
 

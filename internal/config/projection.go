@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/evidence/acquisition"
 	"github.com/alexei-led/archfit/internal/extract/acquire"
+	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -35,7 +36,10 @@ func (c Config) PolicySnapshot() policy.PolicySnapshot {
 	topology := policy.TopologyView{Modules: c.Modules, Layers: c.Layers, ModuleMap: policy.BuildModuleMap(c.Modules), ExternalSystems: c.ExternalSystems, ExplicitOwners: c.ExplicitOwnersView()}
 	relationship := policy.RelationshipPolicy{MinimumSeverity: c.Coupling.MinSeverity, VolatilityCascadeEnabled: c.Coupling.VolatilityCascade, DuplicatedKnowledge: policy.NormalizeDuplicatedKnowledgePolicy(c.Coupling.DuplicatedKnowledge)}
 	stale := c.ForStaleness()
-	assessment := policy.AssessmentPolicy{Waivers: c.ForWaivers(), Staleness: policy.StalenessPolicy{Enabled: stale.Enabled, Threshold: stale.Threshold}}
+	assessment := policy.AssessmentPolicy{
+		Waivers: c.ForWaivers(), Staleness: policy.StalenessPolicy{Enabled: stale.Enabled, Threshold: stale.Threshold},
+		FunctionLOCThreshold: c.Metrics.FunctionLOCThresholdValue(),
+	}
 	gate := policy.CouplingGate{Mode: policy.DistributedMonolithWarn}
 	if g := c.Coupling.Gate; g != nil && g.DistributedMonolith != nil {
 		if m := g.DistributedMonolith.Mode; m != "" {
@@ -45,7 +49,7 @@ func (c Config) PolicySnapshot() policy.PolicySnapshot {
 			gate.MaxNewSeams = *n
 		}
 	}
-	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: c.ForRules(), Metrics: c.Metrics, Coupling: gate, ModuleReview: policy.GateMode(c.ModuleReview.Gate)}, owners, deployUnits)
+	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: c.ForRules(), Metrics: c.Metrics.MetricEntries(), Coupling: gate, ModuleReview: policy.GateMode(c.ModuleReview.Gate)}, owners, deployUnits)
 }
 
 // CoverageOptions projects analyzer gates and applicability probes. Every probe
@@ -60,6 +64,7 @@ func (c Config) CoverageOptions() acquisition.CoverageOptions {
 	}
 	gates[ToolClones] = string(c.ToolGate(ToolClones))
 	gates[ToolCargoModules] = string(c.ToolGate(ToolCargoModules))
+	gates[suppliedcoverage.ToolName] = string(c.Coverage.Gate)
 	probes := make(map[string]func(string) bool)
 	for _, lang := range registry.All() {
 		probe := lang.ProjectPresent
@@ -70,6 +75,31 @@ func (c Config) CoverageOptions() acquisition.CoverageOptions {
 		}
 	}
 	return acquisition.CoverageOptions{Gates: gates, Modes: modes, ProjectPresent: probes}
+}
+
+// SuppliedCoverageOptions projects only the artifact-ingestion contract into
+// its filesystem adapter. The adapter receives no architecture policy.
+func (c Config) SuppliedCoverageOptions() suppliedcoverage.Options {
+	sources := make([]suppliedcoverage.Source, len(c.Coverage.Sources))
+	for i, source := range c.Coverage.Sources {
+		format := source.Format
+		if format == "" {
+			format = suppliedcoverage.FormatAuto
+		}
+		maxBytes := suppliedcoverage.DefaultMaxBytes
+		if source.MaxBytes != nil {
+			maxBytes = *source.MaxBytes
+		}
+		maxFacts := suppliedcoverage.DefaultMaxFacts
+		if source.MaxFacts != nil {
+			maxFacts = *source.MaxFacts
+		}
+		sources[i] = suppliedcoverage.Source{
+			Path: source.Path, Format: format, SidecarPath: source.SidecarPath,
+			MaxBytes: maxBytes, MaxFacts: maxFacts,
+		}
+	}
+	return suppliedcoverage.Options{Enabled: c.Coverage.Enabled, Gate: string(c.Coverage.Gate), Sources: sources}
 }
 
 // RunOptions projects decoded config into the non-policy acquisition inputs.
@@ -83,7 +113,7 @@ func (c Config) RunOptions() acquisition.RunOptions {
 	acquisitionOpts.Exclusions = exclusions
 	scopeConfig := c.ForScope()
 	scopeConfig.Exclusions = exclusions
-	return acquisition.RunOptions{Exclusions: exclusions, Scope: scopeConfig, Extractors: c.ExtractConfigs(), Acquisition: acquisitionOpts, Syntax: c.ForSyntax(), Patterns: c.ForPatterns(), Lint: lintWarningStrings, Coverage: c.CoverageOptions()}
+	return acquisition.RunOptions{Exclusions: exclusions, Scope: scopeConfig, Extractors: c.ExtractConfigs(), Acquisition: acquisitionOpts, Syntax: c.ForSyntax(), Patterns: c.ForPatterns(), Lint: lintWarningStrings, Coverage: c.CoverageOptions(), SuppliedCoverage: c.SuppliedCoverageOptions()}
 }
 
 // lintWarningStrings renders LintModules for a resolved module set. Acquisition

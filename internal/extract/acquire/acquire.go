@@ -58,20 +58,21 @@ type Options struct {
 
 // Result contains neutral evidence and adapter ports for one pipeline run.
 type Result struct {
-	FileLOC             map[string]int
-	FileClassIndex      map[string]fileclass.FileClass
-	DynamicImports      []evidence.DynamicImportSite
-	DeprecatedDeps      []evidence.DeprecatedDep
-	RuntimeAsyncSites   []evidence.RuntimeAsyncSite
-	RuntimeConfidence   string
-	DeployUnitsByModule map[string]string
-	DuplicationClusters []clone.Cluster
-	ExtraCoverage       []evidence.Coverage
-	Resolver            evidenceports.SymbolResolver
-	Syntax              evidenceports.SyntaxProvider
-	Patterns            evidenceports.PatternProvider
-	LOCError            error
-	CloneError          error
+	FileLOC                 map[string]int
+	FileClassIndex          map[string]fileclass.FileClass
+	DynamicImports          []evidence.DynamicImportSite
+	DeprecatedDeps          []evidence.DeprecatedDep
+	RuntimeAsyncSites       []evidence.RuntimeAsyncSite
+	RuntimeConfidence       string
+	DeployUnitsByModule     map[string]string
+	CorroboratedDeployUnits map[string]evidence.CorroboratedDeployUnit
+	DuplicationClusters     []clone.Cluster
+	ExtraCoverage           []evidence.Coverage
+	Resolver                evidenceports.SymbolResolver
+	Syntax                  evidenceports.SyntaxProvider
+	Patterns                evidenceports.PatternProvider
+	LOCError                error
+	CloneError              error
 }
 
 // Collect runs auxiliary evidence adapters without leaking their concrete types to the CLI.
@@ -93,8 +94,12 @@ func Collect(ctx context.Context, root string, opts Options, runner toolrun.Runn
 	}
 	out.RuntimeConfidence = runtimeResult.Confidence
 
-	deployUnitsByPath := deployunit.Detect(ctx, root, opts.ModuleMap, runner)
-	out.DeployUnitsByModule = deployunit.KeyByModule(deployUnitsByPath, opts.ModuleMap)
+	deployUnitsByPath := deployunit.DetectCorroborated(ctx, root, opts.ModuleMap, runner)
+	out.CorroboratedDeployUnits = deployunit.KeyCorroboratedByModule(deployUnitsByPath, opts.ModuleMap)
+	out.DeployUnitsByModule = make(map[string]string, len(out.CorroboratedDeployUnits))
+	for module, fact := range out.CorroboratedDeployUnits {
+		out.DeployUnitsByModule[module] = fact.Unit
+	}
 	out.ExtraCoverage = append(out.ExtraCoverage, evidence.Coverage{
 		Tool: toolDeployUnit, FilesSeen: len(deployUnitsByPath), Status: evidence.StatusOK,
 	})
