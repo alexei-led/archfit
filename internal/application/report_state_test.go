@@ -299,10 +299,9 @@ func TestShadowStateReferencesFindingsWithoutCopyingThem(t *testing.T) {
 	}
 }
 
-// TestShadowStateIsNotOnTheDiagnosticWire is the postcondition of the
-// contract-freeze task: the state is projected but the existing JSON envelope
-// does not move. The committed byte-identical baselines are the end-to-end
-// proof; this is the unit-level guard.
+// TestShadowStateIsNotOnTheDiagnosticWire ensures generic Document marshaling
+// cannot create a second architecture-state wire format. Output adapters must
+// select the canonical State explicitly.
 func TestShadowStateIsNotOnTheDiagnosticWire(t *testing.T) {
 	document := ProjectReport(stateFixture(), score.Scorecard{})
 
@@ -312,14 +311,13 @@ func TestShadowStateIsNotOnTheDiagnosticWire(t *testing.T) {
 	}
 	for _, key := range []string{"schema_version\":\"archfit.architecture-state.v1", "\"dimensions\"", "\"hard_gates\""} {
 		if bytes.Contains(encoded, []byte(key)) {
-			t.Errorf("diagnostic envelope leaked architecture-state key %q:\n%s", key, encoded)
+			t.Errorf("internal document leaked architecture-state key %q:\n%s", key, encoded)
 		}
 	}
 }
 
 // TestShadowStateProjectionIsDeterministic asserts two projections of the same
-// result encode identically. The state must be byte-stable before any renderer
-// is allowed to depend on it.
+// result encode identically. Canonical state output must remain byte-stable.
 func TestShadowStateProjectionIsDeterministic(t *testing.T) {
 	encode := func() []byte {
 		t.Helper()

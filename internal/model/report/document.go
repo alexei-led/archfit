@@ -125,11 +125,9 @@ type Document struct {
 
 	// Score is the computed scorecard used by config comparison and the AI review.
 	Score Scorecard `json:"-"`
-	// State is the projected archfit.architecture-state.v1 contract. It is tagged
-	// json:"-" for the same reason Score and Decision are: the diagnostic
-	// envelope's wire shape is frozen until the format cutover, so populating
-	// this field may not move a byte of existing output. The cutover promotes it
-	// to the primary contract (docs/design/architecture-state-reporting.md).
+	// State is the canonical archfit.architecture-state.v1 contract. Renderers
+	// select it explicitly; json:"-" prevents generic Document marshaling from
+	// creating an accidental second output format.
 	State ArchitectureState `json:"-"`
 }
 

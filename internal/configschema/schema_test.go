@@ -211,7 +211,7 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 	}
 
 	if got := schema.Properties["version"].Enum; !slices.Equal(got, []any{float64(config.SchemaVersion)}) {
-		t.Errorf("version enum = %v, want [%d] — v1 decodes for migration but never analyses",
+		t.Errorf("version enum = %v, want [%d] — obsolete schemas must be rejected",
 			got, config.SchemaVersion)
 	}
 }

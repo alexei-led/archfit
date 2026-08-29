@@ -320,8 +320,8 @@ vacuously.
 
 `no_scalar_decision` scopes `internal/application/analysis.go` to the decision
 functions rather than the whole file, deliberately: the run result still
-**carries** the scorecard for the legacy renderers, and carrying a retired fact
-for one release is not the same defect as deciding from it. The scoped rule fails
+**carries** the scorecard for config comparison and AI review. Keeping that
+internal diagnostic is not the same defect as deciding from it. The scoped rule fails
 loudly if its target function is renamed away, so it cannot silently check
 nothing.
 

@@ -112,8 +112,7 @@ func TestRenderer_Render_EmptyDiagnostic(t *testing.T) {
 	out := buf.String()
 
 	// Required sections always present. The audit restates no verdict: the
-	// state headline above it already decided one, and the legacy
-	// pass/warn/fail vocabulary maps to a different exit table.
+	// state headline above it already owns the exit-table meaning.
 	for _, want := range []string{"# archfit — architecture state", "Verdict", "Summary"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)

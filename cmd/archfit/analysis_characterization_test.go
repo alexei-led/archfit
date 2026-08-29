@@ -120,11 +120,10 @@ func assertCharacterizationScorecard(t *testing.T, configPath string) {
 	}
 }
 
-// assertCharacterizationState pins the primary JSON contract on the same
+// assertCharacterizationState pins the canonical JSON contract on the same
 // violated fixture: the architecture state is the document root, it names a
-// blocked verdict against the gate finding the diagnostic envelope also
-// reports, all nine dimensions are present, and two identical runs emit
-// identical bytes.
+// blocked verdict and its gate finding, all nine dimensions are present, and
+// two identical runs emit identical bytes.
 func assertCharacterizationState(t *testing.T, configPath string) {
 	t.Helper()
 

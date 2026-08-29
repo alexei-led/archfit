@@ -490,8 +490,8 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   live in `cmd/archfit/erosion_test.go` and run the real command over a fixture
   repo. `no_scalar_decision` scopes `internal/application/analysis.go` to
   `outcomeFor`/`seamAnchor`, NOT the whole file: `AnalysisResult` still CARRIES
-  `score.Scorecard` for the legacy renderers, and carrying a retired fact for one
-  release is not the same defect as deciding from it. The scoped rule FAILS if its
+  `score.Scorecard` for config comparison and AI review. Keeping that internal
+  diagnostic is not the same defect as deciding from it. The scoped rule FAILS if its
   target function is renamed away, so it cannot silently check nothing.
   `label_evidence_required` is the one check whose positive case is vacuous today
   (`.archfit-labels.yaml` is `labels: []`) — its fixtures are what prove it works.
