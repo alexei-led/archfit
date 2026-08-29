@@ -13,7 +13,7 @@ func TestDetectFormatUsesExtensionAndMagic(t *testing.T) {
 	}{
 		{name: "Go magic", path: "coverage.out", input: "mode: set\nfile.go:1.1,1.2 1 1\n", want: FormatGoCoverProfile},
 		{name: "LCOV magic", path: "report", input: "TN:\nSF:file.ts\nDA:1,1\nend_of_record\n", want: FormatLCOV},
-		{name: "coverage.py JSON", path: detectJSONPath, input: `{"files":{"x.py":{"summary":{"covered_lines":1,"num_statements":1}}}}`, want: FormatCoveragePyJSON},
+		{name: "coverage.py JSON", path: detectJSONPath, input: `{"files":{"x.py":{"summary":{"covered_lines":1,"missing_lines":0,"num_statements":1}}}}`, want: FormatCoveragePyJSON},
 		{name: "llvm-cov JSON", path: detectJSONPath, input: `{"data":[{"files":[{"filename":"x.rs","summary":{"lines":{"covered":1,"count":1}}}]}]}`, want: FormatLLVMCovJSON},
 	}
 	for _, tc := range cases {
@@ -47,7 +47,7 @@ func TestDetectFormatRejectsAmbiguity(t *testing.T) {
 
 func TestIngestAutoUsesSourceExtension(t *testing.T) {
 	root, sourcePath := coverageFixture(t)
-	writeCoverageFile(t, root, "coverage.json", `{"files":{"`+sourcePath+`":{"summary":{"covered_lines":1,"num_statements":1}}}}`)
+	writeCoverageFile(t, root, "coverage.json", `{"files":{"`+sourcePath+`":{"summary":{"covered_lines":1,"missing_lines":0,"num_statements":1}}}}`)
 	writeSidecar(t, root, "coverage.json.sidecar.json", "producer-ref", map[string]string{sourcePath: fileHash(t, root, sourcePath)}, 1)
 	ingests, _ := New(nil).IngestAll(root, Options{Enabled: true, Sources: []Source{{Path: "coverage.json", Format: FormatAuto}}})
 	if len(ingests) != 1 || ingests[0].Format != FormatCoveragePyJSON || len(ingests[0].Facts) != 1 {

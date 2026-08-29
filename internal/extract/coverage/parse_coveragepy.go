@@ -11,9 +11,11 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-// coveragePyJSONParser parses coverage.py's --cov-report=json output. The
-// summary's covered_lines and num_statements are the only per-file values used;
-// aggregate totals are deliberately ignored.
+// coveragePyJSONParser parses coverage.py's --cov-report=json output.
+// covered_lines and missing_lines are used to compute line-based coverage;
+// num_statements is intentionally ignored because a single line can contain
+// multiple statements, making covered_lines/num_statements a nonsensical ratio.
+// Aggregate totals are deliberately ignored.
 type coveragePyJSONParser struct{}
 
 func (coveragePyJSONParser) Format() string  { return FormatCoveragePyJSON }
@@ -26,8 +28,8 @@ func (coveragePyJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) 
 	var document struct {
 		Files map[string]struct {
 			Summary *struct {
-				CoveredLines  *int `json:"covered_lines"`
-				NumStatements *int `json:"num_statements"`
+				CoveredLines *int `json:"covered_lines"`
+				MissingLines *int `json:"missing_lines"`
 			} `json:"summary"`
 		} `json:"files"`
 	}
@@ -43,10 +45,10 @@ func (coveragePyJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) 
 			return nil, fmt.Errorf("%w: empty file path", ErrMalformedCoveragePyJSON)
 		}
 		entry := document.Files[path]
-		if entry.Summary == nil || entry.Summary.CoveredLines == nil || entry.Summary.NumStatements == nil {
+		if entry.Summary == nil || entry.Summary.CoveredLines == nil || entry.Summary.MissingLines == nil {
 			return nil, fmt.Errorf("%w: file %q has incomplete summary", ErrMalformedCoveragePyJSON, path)
 		}
-		if *entry.Summary.CoveredLines < 0 || *entry.Summary.NumStatements < 0 || *entry.Summary.CoveredLines > *entry.Summary.NumStatements {
+		if *entry.Summary.CoveredLines < 0 || *entry.Summary.MissingLines < 0 {
 			return nil, fmt.Errorf("%w: file %q has invalid summary counts", ErrMalformedCoveragePyJSON, path)
 		}
 		paths = append(paths, path)
@@ -55,7 +57,8 @@ func (coveragePyJSONParser) Parse(data []byte) ([]evidence.CoverageFact, error) 
 	facts := make([]evidence.CoverageFact, 0, len(paths))
 	for _, path := range paths {
 		summary := document.Files[path].Summary
-		facts = append(facts, evidence.CoverageFact{File: path, CoveredUnits: *summary.CoveredLines, TotalUnits: *summary.NumStatements, Unit: coverageUnitStatements, Format: FormatCoveragePyJSON})
+		total := *summary.CoveredLines + *summary.MissingLines
+		facts = append(facts, evidence.CoverageFact{File: path, CoveredUnits: *summary.CoveredLines, TotalUnits: total, Unit: coverageUnitLines, Format: FormatCoveragePyJSON})
 	}
 	return facts, nil
 }

@@ -900,3 +900,51 @@ func TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope(t *testin
 		})
 	}
 }
+
+// TestSyntaxEvidenceRequiresPrimaryOKNotMerelyNonDisabled is a regression test
+// for the bug where syntaxEvidenceComplete checked == StatusDisabled instead of
+// != StatusOK. A primary row of StatusAbsent (gapless: the extractor ran but
+// found no applicable files for a language that is present in the topology)
+// incorrectly passed the disabled check, marking a syntax rule as evaluated
+// despite zero actual syntax evidence for that language.
+func TestSyntaxEvidenceRequiresPrimaryOKNotMerelyNonDisabled(t *testing.T) {
+	t.Parallel()
+	const toolGoPkgs = "go/packages" // local to keep the goconst literal count low
+	maxPublicAPIs := 5
+	// A Go module exists in topology and a Go file is observed, so
+	// moduleRuleScope returns {go} as applicable. The syntax aggregate tool
+	// ran successfully but the Go primary row is StatusAbsent (the extractor
+	// was excluded via config). Old code: StatusAbsent != StatusDisabled →
+	// syntaxEvidenceComplete returned true → rule counted as evaluated (bug).
+	// New code: StatusAbsent != StatusOK → returns false → partial (correct).
+	modules := map[string]policy.ModuleDef{
+		"svc": {Paths: []string{"internal/**/*.go"}, Public: []string{"internal/api"}},
+	}
+	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
+	gates := policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{
+		{ID: "api_surface_limit", Type: rulePublicAPIMax, Gate: gateWarnPosture, Max: &maxPublicAPIs},
+	}}}
+	in := evaluation.StateInput{
+		Policy: policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, gates, nil, nil),
+		Facts: evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
+			"internal/handler/handler.go": fileclass.Production,
+		}},
+	}
+	diag := &result.Result{
+		PrimaryExtractorTools: []string{toolGoPkgs},
+		ToolCoverage: []modevidence.Coverage{
+			// Syntax aggregate: OK (ran for the project).
+			{Tool: "ast-grep/syntax", Status: modevidence.StatusOK},
+			// Go primary: Absent — extractor was excluded, no applicable files.
+			// This must NOT be treated as "not disabled" and therefore passing.
+			{Tool: toolGoPkgs, Status: modevidence.StatusAbsent},
+		},
+	}
+	dim := evaluation.BuildDimensions(diag, in, nil).Intent
+	if dim.Status != state.Partial {
+		t.Fatalf("intent status = %q, want partial: syntax aggregate OK but Go primary absent should block rule evaluation", dim.Status)
+	}
+	if !hasUnknownFact(dim.Unknown, state.FactActiveRuleConformance) {
+		t.Errorf("intent unknowns = %+v, want %q", dim.Unknown, state.FactActiveRuleConformance)
+	}
+}

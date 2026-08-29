@@ -119,7 +119,7 @@ func coveragePyShape(raw json.RawMessage) bool {
 		return false
 	}
 	for path, file := range files {
-		if strings.TrimSpace(path) == "" || file.Summary == nil || file.Summary["covered_lines"] == nil || file.Summary["num_statements"] == nil {
+		if strings.TrimSpace(path) == "" || file.Summary == nil || file.Summary["covered_lines"] == nil || file.Summary["missing_lines"] == nil {
 			return false
 		}
 	}

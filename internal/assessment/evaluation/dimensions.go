@@ -209,7 +209,7 @@ func syntaxEvidenceComplete(diag *result.Result, languages map[string]struct{}) 
 			return false
 		}
 		primaryRows := coverageRows(diag.ToolCoverage, tool)
-		if len(primaryRows) != 1 || primaryRows[0].Status == modevidence.StatusDisabled {
+		if len(primaryRows) != 1 || primaryRows[0].Status != modevidence.StatusOK {
 			return false
 		}
 	}
