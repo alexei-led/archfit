@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/status"
@@ -17,8 +18,6 @@ import (
 const (
 	fpA = "aabbcc"
 	fpB = "ddeeff"
-
-	bandMixed = "mixed"
 )
 
 func TestLoad_MissingFile(t *testing.T) {
@@ -51,6 +50,9 @@ func TestLoad_SchemaMismatch(t *testing.T) {
 	_, err := baseline.Load(ctx, path)
 	if err == nil {
 		t.Fatal("expected error on schema version mismatch, got nil")
+	}
+	if !strings.Contains(err.Error(), "regenerate with `archfit baseline`") {
+		t.Fatalf("schema mismatch is not actionable: %v", err)
 	}
 }
 
@@ -214,87 +216,6 @@ func TestEntries(t *testing.T) {
 	}
 }
 
-// TestLoad_LegacySchemaStaysReadable pins the migration contract: a pre-state
-// baseline keeps its accepted fingerprints (those are acceptance decisions the
-// owner made) and is recognised as legacy so no caller can read its absent seam
-// snapshot as "there were no seams then".
-func TestLoad_LegacySchemaStaysReadable(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "baseline.json")
-	data, _ := json.Marshal(map[string]any{
-		"schema_version": baseline.LegacySchemaVersion,
-		"accepted":       []any{map[string]any{"fingerprint": fpA, "rule_id": "r1"}},
-		"score":          map[string]any{"coupling_balance": 42, "band": bandMixed},
-	})
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	b, err := baseline.Load(ctx, path)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if !b.Legacy() {
-		t.Error("Legacy() = false, want true for a v1 baseline")
-	}
-	if !b.HasFingerprint(fpA) {
-		t.Errorf("accepted fingerprint %q was dropped", fpA)
-	}
-	if b.State != nil {
-		t.Error("a legacy baseline must carry no architecture-state reference")
-	}
-}
-
-// TestLoad_NeverRewritesLegacyFile: reading must not upgrade a file its owner
-// never re-reviewed.
-func TestLoad_NeverRewritesLegacyFile(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "baseline.json")
-	raw := []byte(`{"schema_version":"` + baseline.LegacySchemaVersion + `","accepted":[],"metrics":{}}`)
-	if err := os.WriteFile(path, raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := baseline.Load(ctx, path); err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	after, err := os.ReadFile(path) //nolint:gosec // path from t.TempDir(), trusted in tests
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(raw, after) {
-		t.Errorf("Load rewrote the file:\n got %s\nwant %s", after, raw)
-	}
-}
-
-// TestSave_DropsRetiredScoreSnapshot: schema v2 has no repository scalar. A
-// carried-over snapshot would invite a consumer to gate on it again.
-func TestSave_DropsRetiredScoreSnapshot(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "baseline.json")
-	in := baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed}}
-
-	if err := baseline.Save(ctx, path, in); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-
-	raw, err := os.ReadFile(path) //nolint:gosec // path from t.TempDir(), trusted in tests
-	if err != nil {
-		t.Fatal(err)
-	}
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatal(err)
-	}
-	if _, present := m["score"]; present {
-		t.Errorf("score snapshot survived Save: %s", raw)
-	}
-	if m["schema_version"] != baseline.SchemaVersion {
-		t.Errorf("schema_version = %v, want %q", m["schema_version"], baseline.SchemaVersion)
-	}
-}
-
 // TestRoundTrip_StateSnapshot: the architecture-state reference survives a
 // write/read cycle intact — the fingerprints and the facts they qualify travel
 // together or a later delta cannot be trusted.
@@ -318,9 +239,6 @@ func TestRoundTrip_StateSnapshot(t *testing.T) {
 	got, err := baseline.Load(ctx, path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
-	}
-	if got.Legacy() {
-		t.Error("a freshly written baseline must not read as legacy")
 	}
 	if got.State == nil {
 		t.Fatal("state snapshot missing after round trip")

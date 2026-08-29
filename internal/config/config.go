@@ -68,6 +68,18 @@ func Load(_ context.Context, path string) (Config, error) {
 		return Config{}, fmt.Errorf("config: read %q: %w", path, err)
 	}
 
+	// Read only the schema declaration before strict decoding. This is not a
+	// compatibility load: it lets an obsolete schema fail with the migration
+	// guidance even when that file also contains fields absent from Config.
+	var header struct {
+		Version int `yaml:"version"`
+	}
+	if err := yaml.Unmarshal(data, &header); err == nil {
+		if err := validateSchemaVersion(header.Version); err != nil {
+			return Config{}, fmt.Errorf("config: %w", err)
+		}
+	}
+
 	var cfg Config
 	dec := yaml.NewDecoder(bytes.NewReader(data), yaml.DisallowUnknownField())
 	if err := dec.Decode(&cfg); err != nil {
@@ -104,6 +116,8 @@ func deprecatedConfigHint(err error) error {
 		return fmt.Errorf("%w\nhint: `analyzers.complexity` was removed in v1.0 (gocyclo/lizard backends dropped)", err)
 	case strings.Contains(msg, `unknown field "gitnexus"`):
 		return fmt.Errorf("%w\nhint: gitnexus integration was removed in v1.0; remove the key", err)
+	case strings.Contains(msg, `unknown field "min_band"`), strings.Contains(msg, `unknown field "max_drop"`):
+		return fmt.Errorf("%w\nhint: coupling.gate.min_band and max_drop were retired in schema v2; %s", err, manualMigrationHint)
 	}
 	return err
 }
@@ -339,19 +353,9 @@ var distributedMonolithModes = map[string]struct{}{
 }
 
 // validateCouplingGate checks the coupling.gate block.
-//
-// The retired v1 knobs are rejected here rather than at decode time on purpose:
-// `config update --migration-only` has to decode them to migrate them, so the
-// refusal belongs to analysis validation, not to the YAML reader.
 func validateCouplingGate(g *CouplingGateDef) error {
 	if g == nil {
 		return nil
-	}
-	if g.MinBand != "" {
-		return retiredCouplingKeyError("min_band")
-	}
-	if g.MaxDrop != nil {
-		return retiredCouplingKeyError("max_drop")
 	}
 	d := g.DistributedMonolith
 	if d == nil {
@@ -366,12 +370,6 @@ func validateCouplingGate(g *CouplingGateDef) error {
 		return fmt.Errorf("coupling.gate.distributed_monolith.max_new_seams must be >= 0 (a tolerated new-seam count, got %d)", *d.MaxNewSeams)
 	}
 	return nil
-}
-
-// retiredCouplingKeyError names the retired knob and the one supported way out.
-// The exact command string is part of the migration contract.
-func retiredCouplingKeyError(key string) error {
-	return fmt.Errorf("coupling.gate.%s was retired in schema v2 — the repository coupling scalar no longer gates the verdict\n%s", key, MigrationHint)
 }
 
 // externalVolatilities are the accepted external_systems.<name>.volatility
@@ -568,18 +566,12 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
-// SchemaVersion is the only config schema version this binary analyses. A v1
-// file decodes (so it can be migrated) but never analyses.
+// SchemaVersion is the only config schema version this binary analyses.
 const SchemaVersion = 2
 
-// MigrationHint is the exact, frozen instruction printed whenever a config is
-// rejected for being v1 or for carrying a retired v1 key. It names the single
-// supported migration path; tests pin the string.
-const MigrationHint = "→ run: archfit config update --migration-only --apply"
+const manualMigrationHint = "follow the Archfit skill manual migration reference (references/migration.md)"
 
-// validateSchemaVersion accepts only the current schema. A v1 file is a
-// migration, not a syntax error, so it gets the migration command rather than
-// a generic bounds complaint.
+// validateSchemaVersion accepts only the current schema.
 func validateSchemaVersion(v int) error {
 	switch {
 	case v == SchemaVersion:
@@ -587,7 +579,7 @@ func validateSchemaVersion(v int) error {
 	case v <= 0:
 		return fmt.Errorf("version must be %d (got %d)", SchemaVersion, v)
 	case v < SchemaVersion:
-		return fmt.Errorf("config schema v%d is not supported by this binary (it analyses v%d only)\n%s", v, SchemaVersion, MigrationHint)
+		return fmt.Errorf("config schema v%d is unsupported; expected v%d — %s, or regenerate it with `archfit config init`", v, SchemaVersion, manualMigrationHint)
 	default:
 		return fmt.Errorf("config schema v%d is newer than this binary understands (it analyses v%d only) — upgrade archfit", v, SchemaVersion)
 	}

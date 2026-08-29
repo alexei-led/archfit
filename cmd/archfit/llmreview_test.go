@@ -116,7 +116,7 @@ func runLLMReviewForTest(t *testing.T, cfgPath string, provider llm.Provider) (s
 	if err != nil {
 		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	doc := application.ProjectReport(diag, sc, nil, false)
+	doc := application.ProjectReport(diag, sc)
 	err = runLLMReview(ctx, deps, cfg, cfgPath, "", true, provider, doc)
 	return buf.String(), err
 }

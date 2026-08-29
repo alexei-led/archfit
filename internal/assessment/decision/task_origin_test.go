@@ -11,27 +11,27 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-// TestGitFindingDelta covers the `--base` git-origin block: how tasks are placed
+// TestTaskOriginClassification covers the `--base` task-origin classification: how tasks are placed
 // (introduced / pre-existing / unknown), which analyzer evidence is comparable,
 // which families are active for a config, and the end-to-end `check --base
 // --json` contract at every gate exit code.
 //
 // One exported test function by design — cmd/archfit sits at its public_api_max
 // ceiling, so new coverage arrives as subtests, never as new exported names.
-func TestGitFindingDelta(t *testing.T) {
+func TestTaskOriginClassification(t *testing.T) {
 	t.Parallel()
-	t.Run("origin", testGitDeltaOrigin)
-	t.Run("analyzer_evidence", testGitDeltaAnalyzerEvidence)
-	t.Run("base_finding_ids", testGitDeltaBaseFindingIDs)
-	t.Run("cross_path_agreement", testGitDeltaCrossPathAgreement)
-	t.Run("unpaired_reason", testGitDeltaUnpairedReason)
+	t.Run("origin", testTaskOriginBuckets)
+	t.Run("analyzer_evidence", testTaskOriginAnalyzerEvidence)
+	t.Run("base_finding_ids", testTaskOriginBaseFindingIDs)
+	t.Run("cross_path_agreement", testTaskOriginCrossPathAgreement)
+	t.Run("unpaired_reason", testTaskOriginUnpairedReason)
 }
 
-// testGitDeltaUnpairedReason pins the wording of the one output that explains
+// testTaskOriginUnpairedReason pins the wording of the one output that explains
 // why a delta could not be attributed. When the asymmetry that blocked pairing
 // lives BELOW the raw coverage status, printing the status twice states two
 // identical facts as the reason they could not be compared.
-func testGitDeltaUnpairedReason(t *testing.T) {
+func testTaskOriginUnpairedReason(t *testing.T) {
 	t.Parallel()
 	goFam := AnalyzerFamily{name: toolGoPackages, primary: true}
 	goGap := []evidence.CoverageGap{{Tool: toolGoPackages}}
@@ -119,7 +119,7 @@ func gitGrade(comparable bool, reasons []string) CoverageComparability {
 	}
 }
 
-// testGitDeltaCrossPathAgreement drives ONE table of coverage shapes through
+// testTaskOriginCrossPathAgreement drives ONE table of coverage shapes through
 // BOTH comparison paths — pairFamily here and gradeTool behind
 // `config compare` — and asserts they reach the same three-valued grade.
 //
@@ -132,7 +132,7 @@ func gitGrade(comparable bool, reasons []string) CoverageComparability {
 // full grade, requires a reason exactly when a grade is not `comparable`, and
 // asserts documented divergences POSITIVELY, so a row whose comment claims a
 // divergence fails once the paths converge.
-func testGitDeltaCrossPathAgreement(t *testing.T) {
+func testTaskOriginCrossPathAgreement(t *testing.T) {
 	t.Parallel()
 	partial := func(tool string, unresolved int) evidence.Coverage {
 		c := covRow(tool, evidence.StatusPartial)
@@ -302,8 +302,8 @@ func assertGradeDisclosed(t *testing.T, path string, grade CoverageComparability
 // scipFamily is the non-primary analyzer family the cross-path table compares on.
 var scipFamily = AnalyzerFamily{name: toolScip}
 
-// gitDeltaRef is the base ref label used by the pure-comparison subtests.
-const gitDeltaRef = "main"
+// taskOriginRef is the base ref label used by the pure-comparison subtests.
+const taskOriginRef = "main"
 
 // toolGoPackages is the Go primary analyzer's coverage name, restated locally:
 // assessment compares coverage rows by name and never imports the extractors.
@@ -323,10 +323,10 @@ func agentTask(findingID, ruleID string) result.AgentTask {
 }
 
 // goPrimaryFamily is the single-family fixture used by the origin table: the
-// pairing rules themselves are covered by testGitDeltaAnalyzerEvidence.
+// pairing rules themselves are covered by testTaskOriginAnalyzerEvidence.
 var goPrimaryFamily = []AnalyzerFamily{{name: toolGoPackages, primary: true}}
 
-func testGitDeltaOrigin(t *testing.T) {
+func testTaskOriginBuckets(t *testing.T) {
 	t.Parallel()
 	const hash = "cfg-hash"
 	comparableSide := AnalyzerEvidence{Coverage: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusOK)}, Hash: hash}
@@ -348,7 +348,7 @@ func testGitDeltaOrigin(t *testing.T) {
 			baseIDs:         []string{"f1"},
 			base:            comparableSide,
 			wantPreExisting: []string{"f1"},
-			wantStatus:      result.GitComparisonComparable,
+			wantStatus:      TaskOriginComparable,
 		},
 		{
 			name:           "unmatched task with comparable evidence is introduced",
@@ -356,7 +356,7 @@ func testGitDeltaOrigin(t *testing.T) {
 			baseIDs:        []string{"f1"},
 			base:           comparableSide,
 			wantIntroduced: []string{"f2"},
-			wantStatus:     result.GitComparisonComparable,
+			wantStatus:     TaskOriginComparable,
 		},
 		{
 			// A base entry the base run reported as fixed is dropped by
@@ -366,7 +366,7 @@ func testGitDeltaOrigin(t *testing.T) {
 			baseIDs:        nil,
 			base:           comparableSide,
 			wantIntroduced: []string{"f1"},
-			wantStatus:     result.GitComparisonComparable,
+			wantStatus:     TaskOriginComparable,
 		},
 		{
 			name:        "unavailable analyzer evidence makes an unmatched task unknown",
@@ -374,7 +374,7 @@ func testGitDeltaOrigin(t *testing.T) {
 			baseIDs:     []string{"f1"},
 			base:        partialSide,
 			wantUnknown: []string{"f2"},
-			wantStatus:  result.GitComparisonUnknown,
+			wantStatus:  TaskOriginUnknown,
 		},
 		{
 			// Incomplete evidence never downgrades an exact ID match.
@@ -383,7 +383,7 @@ func testGitDeltaOrigin(t *testing.T) {
 			baseIDs:         []string{"f1"},
 			base:            partialSide,
 			wantPreExisting: []string{"f1"},
-			wantStatus:      result.GitComparisonComparable,
+			wantStatus:      TaskOriginComparable,
 		},
 		{
 			name:        "synthetic coupling-gate task is unknown before ID matching",
@@ -391,7 +391,7 @@ func testGitDeltaOrigin(t *testing.T) {
 			baseIDs:     []string{couplingGateFindingID},
 			base:        comparableSide,
 			wantUnknown: []string{couplingGateFindingID},
-			wantStatus:  result.GitComparisonUnknown,
+			wantStatus:  TaskOriginUnknown,
 		},
 		{
 			name:    "config hash mismatch makes every unmatched task unknown",
@@ -403,7 +403,7 @@ func testGitDeltaOrigin(t *testing.T) {
 			},
 			wantPreExisting: []string{"f1"},
 			wantUnknown:     []string{"f2"},
-			wantStatus:      result.GitComparisonUnknown,
+			wantStatus:      TaskOriginUnknown,
 		},
 		{
 			name:            "lists use a stable sorted order",
@@ -412,20 +412,20 @@ func testGitDeltaOrigin(t *testing.T) {
 			base:            comparableSide,
 			wantIntroduced:  []string{"a", "z"},
 			wantPreExisting: []string{"b", "m"},
-			wantStatus:      result.GitComparisonComparable,
+			wantStatus:      TaskOriginComparable,
 		},
 		{
 			name:       "clean run still emits the block with empty lists",
 			base:       comparableSide,
-			wantStatus: result.GitComparisonComparable,
+			wantStatus: TaskOriginComparable,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := BuildGitFindingDelta(GitDeltaInput{
-				BaseRef:        gitDeltaRef,
+			got := ClassifyTaskOrigins(TaskOriginEvidence{
+				BaseRef:        taskOriginRef,
 				Tasks:          tc.tasks,
 				BaseFindingIDs: tc.baseIDs,
 				Head: AnalyzerEvidence{
@@ -436,10 +436,10 @@ func testGitDeltaOrigin(t *testing.T) {
 				Families: goPrimaryFamily,
 			})
 			if got == nil {
-				t.Fatal("BuildGitFindingDelta returned nil; the block must always be present with --base")
+				t.Fatal("ClassifyTaskOrigins returned nil; the block must always be present with --base")
 			}
-			if got.BaseRef != gitDeltaRef {
-				t.Errorf("base_ref = %q, want %q", got.BaseRef, gitDeltaRef)
+			if got.BaseRef != taskOriginRef {
+				t.Errorf("base_ref = %q, want %q", got.BaseRef, taskOriginRef)
 			}
 			if got.ComparisonStatus != tc.wantStatus {
 				t.Errorf("comparison_status = %q, want %q", got.ComparisonStatus, tc.wantStatus)
@@ -465,8 +465,8 @@ func testGitDeltaOrigin(t *testing.T) {
 			row.Unresolved = n
 			return AnalyzerEvidence{Coverage: []evidence.Coverage{row}, Hash: hash}
 		}
-		got := BuildGitFindingDelta(GitDeltaInput{
-			BaseRef:        gitDeltaRef,
+		got := ClassifyTaskOrigins(TaskOriginEvidence{
+			BaseRef:        taskOriginRef,
 			Tasks:          []result.AgentTask{agentTask("f2", "arch/forbidden")},
 			BaseFindingIDs: []string{"f1"},
 			Head:           unresolvedSide(4),
@@ -475,8 +475,8 @@ func testGitDeltaOrigin(t *testing.T) {
 		})
 		assertIDs(t, "introduced_finding_ids", got.IntroducedFindingIDs, []string{"f2"})
 		assertIDs(t, "unknown_origin_finding_ids", got.UnknownOriginFindingIDs, nil)
-		if got.ComparisonStatus != result.GitComparisonComparable {
-			t.Errorf("comparison_status = %q, want %q", got.ComparisonStatus, result.GitComparisonComparable)
+		if got.ComparisonStatus != TaskOriginComparable {
+			t.Errorf("comparison_status = %q, want %q", got.ComparisonStatus, TaskOriginComparable)
 		}
 		if len(got.ComparisonReasons) != 1 {
 			t.Fatalf("comparison_reasons = %v, want the degradation disclosed", got.ComparisonReasons)
@@ -500,18 +500,18 @@ func assertIDs(t *testing.T, field string, got, want []string) {
 	}
 }
 
-func assertNonNullJSONArrays(t *testing.T, d *result.GitFindingDelta) {
+func assertNonNullJSONArrays(t *testing.T, d *TaskOriginDelta) {
 	t.Helper()
 	raw, err := json.Marshal(d)
 	if err != nil {
-		t.Fatalf("marshal git_finding_delta: %v", err)
+		t.Fatalf("marshal task origin delta: %v", err)
 	}
 	if strings.Contains(string(raw), "null") {
-		t.Errorf("git_finding_delta must never serialise a null list: %s", raw)
+		t.Errorf("task origin delta must never serialise a null list: %s", raw)
 	}
 }
 
-func testGitDeltaAnalyzerEvidence(t *testing.T) {
+func testTaskOriginAnalyzerEvidence(t *testing.T) {
 	t.Parallel()
 	goFam := AnalyzerFamily{name: toolGoPackages, primary: true}
 	dcFam := AnalyzerFamily{name: toolDepCruiser, primary: true}
@@ -681,7 +681,7 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 			covRow(toolGoPackages, evidence.StatusTimedOut),
 			covRow(toolJscpd, evidence.StatusOK),
 		}}
-		delta := BuildGitFindingDelta(GitDeltaInput{BaseRef: gitDeltaRef, Head: head, Base: base, Families: fams})
+		delta := ClassifyTaskOrigins(TaskOriginEvidence{BaseRef: taskOriginRef, Head: head, Base: base, Families: fams})
 		if len(delta.ComparisonReasons) != 2 {
 			t.Fatalf("comparison_reasons = %v, want one per unavailable family", delta.ComparisonReasons)
 		}
@@ -690,7 +690,7 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 		}
 	})
 }
-func testGitDeltaBaseFindingIDs(t *testing.T) {
+func testTaskOriginBaseFindingIDs(t *testing.T) {
 	t.Parallel()
 	got := BaseFindingIDs([]finding.Finding{
 		{ID: "z", Kind: string(finding.KindAdvisory), Status: finding.StatusNew},
@@ -703,17 +703,17 @@ func testGitDeltaBaseFindingIDs(t *testing.T) {
 	}
 }
 
-// testGitDeltaEffectiveConfig covers the base sub-run's config contract: it gets
+// testTaskOriginEffectiveConfig covers the base sub-run's config contract: it gets
 // the caller's effective config (flag overrides included) through an independent
 // module map, so the head pipeline's owner and deploy-unit backfill cannot leak
 // head-tree evidence into the base measurement.
 
-// gitDeltaFixtureRepo builds a two-commit Go repo: the base commit holds only
+// taskOriginFixtureRepo builds a two-commit Go repo: the base commit holds only
 // pkg/b, the head commit adds a pkg/a → pkg/b importer. The head run therefore
 // carries a cross-module edge the base ref does not, and BOTH sides compile, so
 // go/packages reports ok on both and the evidence is genuinely comparable.
 
-// gitDeltaOwnerFixtureRepo builds a two-commit Go repo whose CODE stays put and
+// taskOriginOwnerFixtureRepo builds a two-commit Go repo whose CODE stays put and
 // whose OWNERSHIP moves: pkg/a → pkg/b exists in both commits, but the base
 // commit gives the whole tree one owner while the head commit splits it in two.
 // Neither module declares an owner, so each side must resolve its own from its

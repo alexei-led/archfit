@@ -76,6 +76,8 @@ Read the one the task needs:
   subdomain, owner, volatility), `.env`, and `explain --ai-summary`.
 - `references/agent-loop.md` — autonomous repair contract (`agent_tasks`, SARIF,
   `blast_radius`), and how coverage gaps read in the loop.
+- `references/migration.md` — exact manual config-v1-to-v2 transform and the
+  review-and-regenerate procedure for baseline v1.
 
 `archfit --help` and `archfit <cmd> --help` confirm flags. When a reference and
 the binary disagree, trust the binary, say which reference was stale, and update
@@ -103,9 +105,10 @@ Install, configure, add CI, baseline, add an exception, or fix findings.
 
 1. Inspect first: `.archfit.yaml`, `.archfit-baseline.json`, CI workflows,
    language package files, and existing generated `archfit` artifacts.
-   **Check the config schema version before editing.** `version: 1` and the
-   retired `coupling.gate.min_band` / `max_drop` keys exit `3` under schema v2;
-   migrate with `archfit config update --migration-only --apply` first.
+   **Check the config schema version before editing.** Only the current schema
+   version is accepted. For config v1 or baseline v1, read
+   `references/migration.md` before changing the file; do not change only the
+   schema-version string.
 2. Detect the repo languages and read `references/languages.md` for each one in
    scope before suggesting tool setup or config globs.
 3. Check the surface: `archfit --help`, `archfit doctor`.
@@ -134,16 +137,17 @@ missing evidence fact such as supplied coverage or a comparable baseline. Exit
 into 0; exit 0 is reachable when the repository genuinely supplies every
 required fact.
 Each `agent_tasks[]` entry has `goal`, `constraints`, `files`, and a
-`validation` command — fix within the constraints, touch only the listed files
-where possible, then re-run `validation` verbatim. Never "fix" `baseline` or
+`validation` command. With `--base`, it also has `origin` (`introduced`,
+`pre_existing`, or conservatively `unknown`). Origin is triage metadata only;
+it never changes the verdict or exit code. Fix within the constraints, touch only
+the listed files where possible, then re-run `validation` verbatim. Never "fix" `baseline` or
 `waived` findings unprompted. Full contract: `references/agent-loop.md`.
 
 ## Coverage gaps and gate promotion
 
 archfit never scores absence of evidence as healthy. A metric reading `n/a`, or a
 `## Coverage gaps` / `## Required tools missing` section (`coverage.tools[]` in
-the primary JSON; `coverage_gaps[]` + `config_warnings[]` under
-`--format legacy-json`), means an analyzer did not run — not a passing gate.
+the primary JSON), means an analyzer did not run — not a passing gate.
 Read the gap's `affected_metrics` and `install_cmd`; close it by installing the
 tool (`archfit doctor` lists them) or filling the config, not by ignoring it.
 

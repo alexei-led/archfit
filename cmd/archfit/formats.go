@@ -5,10 +5,7 @@ const (
 	formatJSON      = "json"
 	formatText      = "text"
 	formatMarkdown  = "markdown"
-	formatMD        = "md" // alias accepted alongside formatMarkdown
+	formatMD        = "md" // short alias for formatMarkdown
 	formatSarif     = "sarif"
 	formatScorecard = "scorecard"
-	// formatLegacyJSON is the pre-cutover JSON envelope, kept for one release
-	// and never selected by default: --json is the architecture state.
-	formatLegacyJSON = "legacy-json"
 )

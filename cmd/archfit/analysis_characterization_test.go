@@ -21,25 +21,6 @@ const (
 	verdictBlockedLabel = "BLOCKED"
 )
 
-type characterizationDiagnostic struct {
-	Verdict string `json:"verdict"`
-	Summary struct {
-		GateFindings int `json:"gate_findings"`
-		Warnings     int `json:"warnings"`
-	} `json:"summary"`
-	Findings []struct {
-		ID       string `json:"id"`
-		Kind     string `json:"kind"`
-		RuleID   string `json:"rule_id"`
-		Status   string `json:"status"`
-		Severity string `json:"severity"`
-	} `json:"findings"`
-	ToolCoverage []struct {
-		Tool   string `json:"tool"`
-		Status string `json:"status"`
-	} `json:"tool_coverage"`
-}
-
 func runCharacterizationFormat(t *testing.T, command, configPath, format string) (int, []byte) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
@@ -57,20 +38,19 @@ func runCharacterizationFormat(t *testing.T, command, configPath, format string)
 func TestAnalyzeCheckCharacterization(t *testing.T) {
 	configPath := writeViolatingRepo(t)
 
-	checkCode, firstJSON := runCharacterizationFormat(t, cmdCheck, configPath, formatLegacyJSON)
+	checkCode, firstJSON := runCharacterizationFormat(t, cmdCheck, configPath, formatJSON)
 	if checkCode != 1 {
 		t.Fatalf("check exit = %d, want 1", checkCode)
 	}
-	secondCode, secondJSON := runCharacterizationFormat(t, cmdCheck, configPath, formatLegacyJSON)
+	secondCode, secondJSON := runCharacterizationFormat(t, cmdCheck, configPath, formatJSON)
 	if secondCode != checkCode {
 		t.Fatalf("second check exit = %d, want %d", secondCode, checkCode)
 	}
 	if !bytes.Equal(firstJSON, secondJSON) {
 		t.Fatal("identical check runs produced different JSON")
 	}
-	assertCharacterizationJSON(t, firstJSON)
 
-	analyzeCode, analyzeJSON := runCharacterizationFormat(t, cmdAnalyze, configPath, formatLegacyJSON)
+	analyzeCode, analyzeJSON := runCharacterizationFormat(t, cmdAnalyze, configPath, formatJSON)
 	if analyzeCode != 0 {
 		t.Fatalf("analyze exit = %d, want 0", analyzeCode)
 	}
@@ -82,42 +62,6 @@ func TestAnalyzeCheckCharacterization(t *testing.T) {
 	assertCharacterizationMarkdown(t, configPath)
 	assertCharacterizationSARIF(t, configPath)
 	assertCharacterizationScorecard(t, configPath)
-}
-
-func assertCharacterizationJSON(t *testing.T, output []byte) {
-	t.Helper()
-	var diagnostic characterizationDiagnostic
-	if err := json.Unmarshal(output, &diagnostic); err != nil {
-		t.Fatalf("decode check JSON: %v", err)
-	}
-	if diagnostic.Verdict != "fail" {
-		t.Errorf("verdict = %q, want fail", diagnostic.Verdict)
-	}
-	if diagnostic.Summary.GateFindings != 1 || diagnostic.Summary.Warnings != 1 {
-		t.Errorf("summary = gates:%d warnings:%d, want gates:1 warnings:1", diagnostic.Summary.GateFindings, diagnostic.Summary.Warnings)
-	}
-	wantFindings := []struct {
-		id, kind, rule, status, severity string
-	}{
-		{characterizationGateFindingID, "gate", ruleNoInternalAcc, "new", volatilityHigh},
-		{characterizationAdvisoryFindingID, "advisory", characterizationBCRuleID, "new", volatilityHigh},
-	}
-	if len(diagnostic.Findings) != len(wantFindings) {
-		t.Fatalf("findings = %d, want %d: %+v", len(diagnostic.Findings), len(wantFindings), diagnostic.Findings)
-	}
-	for i, want := range wantFindings {
-		got := diagnostic.Findings[i]
-		if got.ID != want.id || got.Kind != want.kind || got.RuleID != want.rule || got.Status != want.status || got.Severity != want.severity {
-			t.Errorf("finding[%d] = %+v, want id=%s kind=%s rule=%s status=%s severity=%s", i, got, want.id, want.kind, want.rule, want.status, want.severity)
-		}
-	}
-	coverageTools := make([]string, 0, len(diagnostic.ToolCoverage))
-	for _, coverage := range diagnostic.ToolCoverage {
-		coverageTools = append(coverageTools, coverage.Tool)
-	}
-	if !slices.Contains(coverageTools, toolGoPackages) {
-		t.Errorf("tool_coverage = %v, want %s", coverageTools, toolGoPackages)
-	}
 }
 
 func assertCharacterizationMarkdown(t *testing.T, configPath string) {
@@ -176,11 +120,10 @@ func assertCharacterizationScorecard(t *testing.T, configPath string) {
 	}
 }
 
-// assertCharacterizationState pins the primary JSON contract on the same
+// assertCharacterizationState pins the canonical JSON contract on the same
 // violated fixture: the architecture state is the document root, it names a
-// blocked verdict against the gate finding the diagnostic envelope also
-// reports, all nine dimensions are present, and two identical runs emit
-// identical bytes.
+// blocked verdict and its gate finding, all nine dimensions are present, and
+// two identical runs emit identical bytes.
 func assertCharacterizationState(t *testing.T, configPath string) {
 	t.Helper()
 

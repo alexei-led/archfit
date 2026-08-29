@@ -56,7 +56,6 @@ func populatedResult() result.Result {
 	r.LocalCoupling = []evidence.LocalCouplingModule{{Module: "a", ScoredEdges: 4, AbstainedEdges: 1, ComplexityEdges: 2, ComplexitySharePct: 50, MeanBalance: 3.5,
 		WorstOffenders: []evidence.LocalCouplingEdge{{From: blockFileA, To: "a/b.go", Strength: mergeContract, Balance: 2, Band: "critical", File: blockFileA, Line: 3}}}}
 	r.Delta = &result.DeltaReport{New: []string{"n"}, Existing: []string{"e"}, Resolved: []string{"r"}, SeverityChanged: []string{"s"}, TouchedByDelta: []string{"t"}}
-	r.GitFindingDelta = &result.GitFindingDelta{BaseRef: blockBaseRef, ComparisonStatus: "comparable", IntroducedFindingIDs: []string{"i"}, PreExistingFindingIDs: []string{"p"}, UnknownOriginFindingIDs: []string{"u"}, ComparisonReasons: []string{"why"}}
 
 	return r
 }
@@ -121,14 +120,11 @@ func reportBlockChecks(doc report.Document) []blockCheck {
 		{"delta", func() bool {
 			return doc.Delta != nil && len(doc.Delta.TouchedByDelta) == 1 && len(doc.Delta.SeverityChanged) == 1
 		}},
-		{"git finding delta", func() bool {
-			return doc.GitFindingDelta != nil && len(doc.GitFindingDelta.ComparisonReasons) == 1
-		}},
 	}
 }
 
 func TestProjectReportCarriesEveryEvidenceBlock(t *testing.T) {
-	doc := ProjectReport(populatedResult(), score.Scorecard{RubricVersion: score.RubricVersion}, nil, false)
+	doc := ProjectReport(populatedResult(), score.Scorecard{RubricVersion: score.RubricVersion})
 	for _, test := range reportBlockChecks(doc) {
 		if !test.ok() {
 			t.Errorf("%s block lost data in projection", test.block)

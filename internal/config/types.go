@@ -172,14 +172,6 @@ type CouplingConfig struct {
 
 // CouplingGateDef configures the coupling verdict gate (`coupling.gate:`).
 type CouplingGateDef struct {
-	// MinBand and MaxDrop are RETIRED v1 knobs. They gated the verdict on the
-	// repository coupling scalar, which schema v2 removes as a decision input.
-	//
-	// They remain decodable for exactly one reason: `config update
-	// --migration-only` has to read a v1 file to migrate it. validate() rejects
-	// them with the migration command, so no analysis can consume them.
-	MinBand string `yaml:"min_band,omitempty"`
-	MaxDrop *int   `yaml:"max_drop,omitempty"`
 	// DistributedMonolith is the v2 coupling gate: it counts logical seams, not
 	// import edges, and blocks only on newly introduced qualifying seams
 	// against a comparable reference.
@@ -195,8 +187,8 @@ type CouplingGateDef struct {
 // are one seam.
 type DistributedMonolithDef struct {
 	// Mode is warn (diagnostic, the default) or fail (blocking). Fail is opt-in
-	// and is never inferred by the migration: it stays an owner decision taken
-	// after a report-only run against a comparable reference.
+	// and is never inferred automatically: it stays an owner decision taken after
+	// a report-only run against a comparable reference.
 	Mode string `yaml:"mode,omitempty"`
 	// MaxNewSeams is the tolerated number of newly introduced qualifying seams.
 	// Unset means 0. It applies only in fail mode and only when the comparison

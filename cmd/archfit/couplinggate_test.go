@@ -72,38 +72,6 @@ modules:
     deploy_unit: svc-b
 `
 
-// TestRun_Check_RejectsRetiredCouplingGateKeys pins the migration contract:
-// the retired scalar knobs still decode (config update --migration-only has to
-// read them) but no analysis accepts them, and the refusal names the one
-// supported way out verbatim.
-func TestRun_Check_RejectsRetiredCouplingGateKeys(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		cfg  string
-	}{
-		{"schema v1", strings.Replace(coupledModulesCfg, "version: 2", "version: 1", 1)},
-		{"retired min_band", coupledModulesCfg + "coupling:\n  gate:\n    min_band: strong\n"},
-		{"retired max_drop", coupledModulesCfg + "coupling:\n  gate:\n    max_drop: 0\n"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			cfgPath := writeCoupledRepo(t, tc.cfg)
-			for _, cmd := range []string{cmdCheck, cmdAnalyze} {
-				code, _, stderr := runArchfit(t, cmd, "-c", cfgPath, flagRefresh)
-				if code != 3 {
-					t.Errorf("%s: exit = %d, want 3 (config error, not a reportable state)\nstderr:\n%s",
-						cmd, code, stderr)
-				}
-				if !strings.Contains(stderr, "archfit config update --migration-only --apply") {
-					t.Errorf("%s stderr does not name the migration command:\n%s", cmd, stderr)
-				}
-			}
-		})
-	}
-}
-
 // TestRun_Check_DistributedMonolithSeamIsDiagnostic pins the default posture: a
 // genuine distributed-monolith seam is reported, but warn mode never fails the
 // run and never emits a gate finding. Blocking needs mode: fail AND a
@@ -132,7 +100,7 @@ func TestRun_Check_DistributedMonolithSeamIsDiagnostic(t *testing.T) {
 			// (exit 2), never blocked (exit 1). Exit 0 is not asserted —
 			// v1 reports several dimensions partial by contract, so a clean
 			// fixture is needs_attention, not healthy.
-			if code := Run([]string{cmdCheck, fmtLegacyJSON, "-c", cfgPath, flagRefresh}, &buf); code == 1 || code == 3 {
+			if code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh}, &buf); code == 1 || code == 3 {
 				t.Fatalf("check: exit = %d, want 0 or 2 — a coupling seam is diagnostic\noutput:\n%s", code, buf.String())
 			}
 			var diag result.Result
@@ -252,9 +220,6 @@ func TestRun_Baseline_WritesStateSnapshot(t *testing.T) {
 	}
 	if b.SchemaVersion != baseline.SchemaVersion {
 		t.Fatalf("schema_version = %q, want %q", b.SchemaVersion, baseline.SchemaVersion)
-	}
-	if b.Score != nil {
-		t.Errorf("schema v2 must not store a repository scalar, got %+v", b.Score)
 	}
 	if b.State == nil {
 		t.Fatal("baseline written without an architecture-state reference")

@@ -3,7 +3,6 @@ package application
 import (
 	"strconv"
 
-	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
@@ -12,11 +11,9 @@ import (
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
-// ProjectReport converts an assessment result plus its synthesised scorecard into
-// the single stable external report contract renderers consume. baseScore is nil
-// unless a --base delta was requested; hardGate forces a FAIL decision band even
-// when the verdict itself is not fail (a tripped opt-in tool gate).
-func ProjectReport(r result.Result, sc score.Scorecard, baseScore *score.Scorecard, hardGate bool) report.Document {
+// ProjectReport converts an assessment result plus its synthesised scorecard
+// into the single stable external report contract renderers consume.
+func ProjectReport(r result.Result, sc score.Scorecard) report.Document {
 	doc := report.Document{
 		SchemaVersion: r.SchemaVersion, Verdict: report.Verdict(r.Verdict), Base: r.Base, Head: r.Head,
 		ConfigHash: r.ConfigHash, Metrics: projectMetrics(r.Metrics), Findings: projectFindings(r.Findings),
@@ -29,14 +26,9 @@ func ProjectReport(r result.Result, sc score.Scorecard, baseScore *score.Scoreca
 		PrimaryExtractorTools: r.PrimaryExtractorTools, ConfigWarnings: r.ConfigWarnings,
 		ClassifiedEdges: projectClassifiedEdges(r.ClassifiedEdges), DistanceContext: projectDistanceContext(r.DistanceContext),
 		DistanceConfigCandidates: projectDistanceConfigCandidates(r.DistanceConfigCandidates), VolatilityCorroboration: projectVolatilityCorroboration(r.VolatilityCorroboration),
-		LocalCoupling: projectLocalCoupling(r.LocalCoupling), GitFindingDelta: projectGitFindingDelta(r.GitFindingDelta), Delta: projectDelta(r.Delta), Summary: report.Summary(r.Summary),
+		LocalCoupling: projectLocalCoupling(r.LocalCoupling), Delta: projectDelta(r.Delta), Summary: report.Summary(r.Summary),
 	}
 	doc.Score = projectScorecard(sc)
-	if baseScore != nil {
-		b := projectScorecard(*baseScore)
-		doc.BaseScore = &b
-	}
-	doc.Decision = projectDecision(decision.Build(r, sc, baseScore, hardGate))
 	doc.State = projectArchitectureState(r, doc)
 	return doc
 }
@@ -83,6 +75,8 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 		out.Comparison.Status = report.ComparisonStatus(c.Status)
 		out.Comparison.BaseRef = c.BaseRef
 		out.Comparison.Reasons = append([]string{}, c.Reasons...)
+		out.Comparison.TaskOriginStatus = c.TaskOriginStatus
+		out.Comparison.TaskOriginReasons = append([]string{}, c.TaskOriginReasons...)
 	}
 
 	out.Seams = projectStateSeams(r.Seams)
@@ -236,28 +230,6 @@ func projectScorecard(in score.Scorecard) report.Scorecard {
 	out := report.Scorecard{RubricVersion: in.RubricVersion, Overall: in.Overall, OverallBand: report.ScoreBand(in.OverallBand), Dimensions: make([]report.Dimension, len(in.Dimensions))}
 	for i, d := range in.Dimensions {
 		out.Dimensions[i] = report.Dimension{Name: d.Name, Value: d.Value, Band: report.ScoreBand(d.Band), Confidence: report.Confidence(d.Confidence), Evidence: d.Evidence, Summary: d.Summary, RawValue: d.RawValue, CapApplied: d.CapApplied, Meta: d.Meta}
-	}
-	return out
-}
-
-func projectDecision(in decision.Report) report.Report {
-	out := report.Report{Band: report.DecisionBand(in.Band), Headline: in.Headline, Blocking: in.Blocking, Advisory: in.Advisory, Overall: in.Overall, OverallBand: report.ScoreBand(in.OverallBand), Dimensions: make([]report.DimReport, len(in.Dimensions)), Recommendations: report.Recommendations{MustFix: projectRecs(in.Recommendations.MustFix), ShouldFix: projectRecs(in.Recommendations.ShouldFix), Watch: projectRecs(in.Recommendations.Watch), Calibrate: projectRecs(in.Recommendations.Calibrate), Ignore: projectRecs(in.Recommendations.Ignore)}}
-	for i, d := range in.Dimensions {
-		out.Dimensions[i] = report.DimReport{Name: d.Name, Value: d.Value, Band: report.ScoreBand(d.Band), Confidence: report.Confidence(d.Confidence), RawValue: d.RawValue, CapApplied: d.CapApplied, Meta: d.Meta, Why: d.Why, WhatMoves: d.WhatMoves}
-	}
-	if in.Delta != nil {
-		out.Delta = &report.Delta{Overall: in.Delta.Overall, Dimensions: make([]report.DimDelta, len(in.Delta.Dimensions))}
-		for i, d := range in.Delta.Dimensions {
-			out.Delta.Dimensions[i] = report.DimDelta{Name: d.Name, Before: d.Before, After: d.After, Change: d.Change}
-		}
-	}
-	return out
-}
-
-func projectRecs(in []decision.Rec) []report.Rec {
-	out := make([]report.Rec, len(in))
-	for i, r := range in {
-		out[i] = report.Rec{Title: r.Title, Detail: r.Detail, RuleID: r.RuleID}
 	}
 	return out
 }
@@ -428,13 +400,6 @@ func projectDelta(in *result.DeltaReport) *report.DeltaReport {
 	return &report.DeltaReport{New: in.New, Existing: in.Existing, Resolved: in.Resolved, SeverityChanged: in.SeverityChanged, TouchedByDelta: in.TouchedByDelta}
 }
 
-func projectGitFindingDelta(in *result.GitFindingDelta) *report.GitFindingDelta {
-	if in == nil {
-		return nil
-	}
-	return &report.GitFindingDelta{BaseRef: in.BaseRef, ComparisonStatus: in.ComparisonStatus, IntroducedFindingIDs: in.IntroducedFindingIDs, PreExistingFindingIDs: in.PreExistingFindingIDs, UnknownOriginFindingIDs: in.UnknownOriginFindingIDs, ComparisonReasons: in.ComparisonReasons}
-}
-
 func projectClassifiedEdges(in *result.ClassifiedEdgeSummary) *report.ClassifiedEdgeSummary {
 	if in == nil {
 		return nil
@@ -508,7 +473,7 @@ func projectFindings(in []finding.Finding) []report.Finding {
 func projectAgentTasks(in []result.AgentTask) []report.AgentTask {
 	out := make([]report.AgentTask, 0, len(in))
 	for _, t := range in {
-		out = append(out, report.AgentTask{FindingID: t.FindingID, RuleID: t.RuleID, Goal: t.Goal, Constraints: t.Constraints, Files: t.Files, Validation: t.Validation, Declarations: projectSyntaxFacts(t.Declarations)})
+		out = append(out, report.AgentTask{FindingID: t.FindingID, RuleID: t.RuleID, Goal: t.Goal, Constraints: t.Constraints, Files: t.Files, Validation: t.Validation, Declarations: projectSyntaxFacts(t.Declarations), Origin: string(t.Origin)})
 	}
 	return out
 }

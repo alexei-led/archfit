@@ -166,23 +166,20 @@ layers; `TestFormatMatrix_DoubleRunIsStable` pins it per renderer.
 These were settled before execution. They are not open questions.
 
 - **Primary formats cut over** to `archfit.architecture-state.v1`.
-  `legacy-json` is available for exactly one release and must be explicitly
-  selected.
-- **Score-gate fields are rejected.** `Scorecard.Overall`, `OverallBand`,
-  `coupling.gate.min_band`, and `coupling.gate.max_drop` cannot affect the
-  verdict, the exit code, gate evaluation, baseline acceptance, or a delta. The
-  scalar gate is retired and replaced by the explicit
+  The architecture-state JSON is the only supported machine-readable output.
+- **Score-gate fields are rejected.** `Scorecard.Overall` and `OverallBand` are
+  internal diagnostics only. The retired scalar gate is replaced by the explicit
   `coupling.gate.distributed_monolith` rule, default `mode: warn`,
   `max_new_seams: 0`. `TestArchitectureStateCarriesNoRepositoryScalar` is the
   structural guard: an `overall`, `overall_band`, `score`, or `band` field
   reachable from `ArchitectureState` fails the build.
 - **Diagnostics-only** means `analyze` exits 0 and `check` exits 2.
-- **Old baselines stay readable** for accepted finding fingerprints. Their scalar
-  snapshot is ignored with reason `legacy_score_snapshot_ignored`, every
-  state/dimension/seam comparison against them is `non_comparable`, and they are
-  never auto-rewritten.
+- **Baselines use one schema.** Older baseline files are rejected and must be
+  regenerated after review.
 - **`agent_tasks` is projected**, not re-derived. State aggregation never builds a
-  second task list.
+  second task list. With `--base`, the current task list carries optional
+  `origin` metadata (`introduced`, `pre_existing`, or conservative `unknown`);
+  classification never changes verdict, gates, or exit code.
 - **Unobservable is unobservable.** Unsupported runtime topology and shallow or
   missing history report `partial`/`unmeasured` with named missing facts. V1
   never executes a target repository's test suite. Testability ingests coverage
@@ -191,56 +188,12 @@ These were settled before execution. They are not open questions.
 - **SARIF keeps finding compatibility.** Architecture state goes in run
   properties. SARIF is exempt from human-layout parity, not from fact parity.
 
-## Compatibility implementation
+## JSON implementation
 
-The format cutover preserved the old diagnostic envelope as explicit
-`legacy-json` while making the architecture state the primary output.
-
-`Document.State` remains tagged `json:"-"`, for the same reason `Score` and
-`Decision` are: plain Go encoding of the diagnostic document cannot leak a
-second wire shape. Primary renderers project the finished state explicitly;
-`legacy-json` encodes the diagnostic envelope explicitly.
-`TestShadowStateIsNotOnTheDiagnosticWire` asserts no state key leaks into that
-legacy document.
-
-The compatibility matrix is five committed baselines, one per renderer:
-
-| Format      | Baseline                                                       | Owner                     |
-| ----------- | -------------------------------------------------------------- | ------------------------- |
-| `json`      | `internal/extract/golang/testdata/single-module/baseline.json`  | `byteidentical_test.go`   |
-| `text`      | `cmd/archfit/testdata/format-matrix/text.txt`                   | `format_matrix_test.go`   |
-| `markdown`  | `cmd/archfit/testdata/format-matrix/markdown.md`                | `format_matrix_test.go`   |
-| `sarif`     | `cmd/archfit/testdata/format-matrix/sarif.json`                 | `format_matrix_test.go`   |
-| `scorecard` | `cmd/archfit/testdata/format-matrix/scorecard.txt`              | `format_matrix_test.go`   |
-
-The cutover moved these bytes deliberately in the contract-changing commits.
-Adding a renderer without adding its matrix row would leave that format's
-contract unwitnessed.
-
-Two capture rules, both learned the hard way:
-
-- **Baselines live outside the analysed fixture tree.** `materializeFixtureRepo`
-  copies the whole fixture directory, so a baseline written beside the fixture
-  becomes an input to the next run that copies it — and four parallel subtests
-  bootstrapping into one shared source directory race over what each one
-  analyses. `baseline.json` predates this and is a self-referential fixed point;
-  the four format baselines are not, and sit under `cmd/archfit/testdata/`.
-- **Never capture a baseline in a degraded environment.** A sandbox that blocks
-  Go module-cache writes makes `packages.Load` fail per package, which raises
-  `Coverage.Unresolved`, which drops the `coverage` metric to low confidence,
-  which caps its band from `strong` to `mixed`. Only the scorecard carries that
-  band, so the JSON envelope stays byte-identical while every scorecard-bearing
-  renderer moves — the diff looks exactly like a rendering regression. The
-  captured "before" then encodes the sandbox, not the code.
-
-  `requireHealthyExtraction` in `format_matrix_test.go` checks the `go/packages`
-  coverage row before the matrix compares anything and fails with the
-  environmental cause named. The pre-existing `TestByteIdentical_*` baselines
-  have the same sensitivity and no such guard: run the whole `cmd/archfit`
-  baseline suite with Go module-cache writes permitted.
-
-Never delete a committed baseline to get green: that re-records whatever the code
-now emits and makes the gate vacuous.
+The architecture-state JSON contract is the only supported machine-readable
+format. `Document.State` is projected explicitly by `jsonout.Renderer`, so the
+internal report model cannot leak onto the wire. The format matrix covers
+JSON, text, Markdown, SARIF, and scorecard output.
 
 ## Report boundary
 
@@ -367,8 +320,8 @@ vacuously.
 
 `no_scalar_decision` scopes `internal/application/analysis.go` to the decision
 functions rather than the whole file, deliberately: the run result still
-**carries** the scorecard for the legacy renderers, and carrying a retired fact
-for one release is not the same defect as deciding from it. The scoped rule fails
+**carries** the scorecard for config comparison and AI review. Keeping that
+internal diagnostic is not the same defect as deciding from it. The scoped rule fails
 loudly if its target function is renamed away, so it cannot silently check
 nothing.
 

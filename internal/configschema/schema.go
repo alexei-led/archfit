@@ -200,14 +200,9 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			def.Required = []string{"id", "lang", "rule"}
 		}
 		if name == "CouplingGateDef" {
-			// Mirror validateCouplingGate (internal/config): the retired v1
-			// knobs are not offered at all (they decode only so the migration
-			// can read them), and an empty gate block gates nothing, so the
-			// distributed-monolith stanza is required when the block is
-			// present. Without this, editors show green on exactly the
-			// validated-but-inert configs the gate was built to prevent.
-			def.Properties.Delete("min_band")
-			def.Properties.Delete("max_drop")
+			// Mirror validateCouplingGate (internal/config): an empty gate block
+			// gates nothing, so the distributed-monolith stanza is required when
+			// the block is present.
 			def.Required = []string{"distributed_monolith"}
 		}
 		if name == "DistributedMonolithDef" {
@@ -221,10 +216,9 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			}
 		}
 	}
-	// The schema version is the only accepted analysis schema. A v1 file
-	// decodes for migration but never analyses, so an editor must not show it
-	// green. The root Config is inlined, not a named definition, so it is
-	// patched here rather than in the loop above.
+	// The schema version is the only accepted analysis schema. Older files are
+	// rejected, so an editor must not show them green. The root Config is inlined
+	// rather than named, so it is patched here instead of in the loop above.
 	if schema.Properties != nil {
 		if version, ok := schema.Properties.Get("version"); ok {
 			version.Enum = []any{config.SchemaVersion}

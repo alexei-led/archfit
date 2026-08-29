@@ -41,7 +41,7 @@ func (s ExplainService) Execute(ctx context.Context, req ExplainRequest) (Explai
 	if err != nil {
 		return ExplainResponse{}, fmt.Errorf("explain analysis: %w", err)
 	}
-	doc := ProjectReport(out.Diagnostic, out.Score, out.BaseScore, out.HardGate)
+	doc := ProjectReport(out.Diagnostic, out.Score)
 	matches := make([]report.Finding, 0, 1)
 	for _, f := range doc.Findings {
 		if strings.HasPrefix(f.ID, req.Fingerprint) {

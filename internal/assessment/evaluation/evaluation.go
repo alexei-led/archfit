@@ -162,7 +162,7 @@ func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[s
 }
 
 // metricBreach reports whether a metric's accepted-baseline delta worsened past
-// its configured threshold. It is the single breach predicate: the legacy
+// its configured threshold. It is the single breach predicate: the assessment
 // verdict and the architecture state's hard-gate result read the same rule, so
 // they can never disagree about whether a ratchet was tripped.
 //

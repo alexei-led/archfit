@@ -12,6 +12,18 @@ import (
 // depend on the external report DTO package.
 const SchemaVersion = "archfit.diagnostic.v2"
 
+// TaskOrigin describes where a repair task existed relative to --base.
+type TaskOrigin string
+
+const (
+	// TaskOriginIntroduced means the task has no matching base finding.
+	TaskOriginIntroduced TaskOrigin = "introduced"
+	// TaskOriginPreExisting means the stable finding was also present in base.
+	TaskOriginPreExisting TaskOrigin = "pre_existing"
+	// TaskOriginUnknown means analyzer evidence could not establish origin.
+	TaskOriginUnknown TaskOrigin = "unknown"
+)
+
 // AgentTask is the assessment repair task before report projection.
 type AgentTask struct {
 	FindingID    string                `json:"finding_id"`
@@ -21,6 +33,7 @@ type AgentTask struct {
 	Files        []string              `json:"files"`
 	Validation   []string              `json:"validation"`
 	Declarations []evidence.SyntaxFact `json:"declarations,omitempty"`
+	Origin       TaskOrigin            `json:"-"`
 }
 
 // AdvisoryTask is the assessment advisory task before report projection.
@@ -65,9 +78,8 @@ type Result struct {
 	PrimaryExtractorTools     []string                            `json:"primary_extractor_tools,omitempty"`
 	ConfigWarnings            []string                            `json:"config_warnings,omitempty"`
 	// ModelHash and LabelsHash fingerprint the module model and the approved
-	// label set. `json:"-"` for the same reason State is: the diagnostic schema
-	// is frozen, and they reach the wire through the architecture-state
-	// comparison block.
+	// label set. They reach the wire only through the architecture-state
+	// comparison projection.
 	ModelHash  string `json:"-"`
 	LabelsHash string `json:"-"`
 	// Comparison records what this run was compared against, when anything was.
@@ -79,22 +91,17 @@ type Result struct {
 	// graph. The architecture-state complexity envelope is its only wire form.
 	ModuleGraphComplexity *ModuleGraphComplexity `json:"-"`
 	// Seams is the logical coupling seam ledger, one record per ordered module
-	// pair. It is `json:"-"` for the same reason State is: the diagnostic
-	// schema is frozen, and the seam ledger reaches the wire through the
-	// architecture-state contract.
+	// pair. It reaches the wire only through the architecture-state contract.
 	Seams                    []Seam                             `json:"-"`
 	DistanceContext          *evidence.DistanceContext          `json:"distance_context,omitempty"`
 	DistanceConfigCandidates []evidence.DistanceConfigCandidate `json:"distance_config_candidates,omitempty"`
 	VolatilityCorroboration  *evidence.VolatilityCorroboration  `json:"volatility_corroboration,omitempty"`
 	LocalCoupling            []evidence.LocalCouplingModule     `json:"local_coupling,omitempty"`
-	GitFindingDelta          *GitFindingDelta                   `json:"git_finding_delta,omitempty"`
 	Delta                    *DeltaReport                       `json:"delta,omitempty"`
 	Summary                  Summary                            `json:"summary"`
-	// State is the architecture-state result. It rides the diagnostic rather
-	// than a parallel return value so every stage that already carries the
-	// diagnostic carries the state too. It is `json:"-"` because the diagnostic
-	// schema is frozen: the state reaches the wire through its own contract in
-	// the report projection, not by widening this one.
+	// State is the architecture-state result. It rides the assessment result
+	// rather than a parallel return value so every stage carries the same verdict
+	// state. The application projects it onto the canonical wire contract.
 	State state.Architecture `json:"-"`
 }
 

@@ -30,11 +30,6 @@ from stale docs or memory.
 - `archfit config update` — sync `.archfit.yaml` with current structure.
   `--ai-classify` adds review-only semantic proposals for unclassified modules;
   even `--ai-classify --apply` applies structural drift only.
-- `archfit config update --migration-only` — migrate a config to the current
-  schema version and nothing else. `--json` previews, `--apply` writes; not
-  combinable with `--ai-classify` or `--refresh`. **Run this first on any config
-  written before schema v2** — `version: 1` and the retired
-  `coupling.gate.min_band` / `max_drop` keys now exit `3`.
 - `archfit config compare <candidate>` — measure one source tree under two
   configurations and report the difference. Report-only: exit `0` on success,
   `3` on an input or runtime error; findings never move the exit code.
@@ -95,9 +90,11 @@ Shared analysis/check flags:
 - `--root` / `-r` where supported — repository root to analyze (default: config
   directory). Decouples the scanned repo from where the config lives.
 - `--base <ref>` — score a git ref in addition to HEAD; text/markdown show a
-  "CHANGE VS BASE" section. JSON/SARIF are the normal HEAD diagnostic.
-- `--format` — `text` (default), `json`, `markdown`/`md`, `sarif`, or
-  `scorecard`. Repeatable / comma-separated.
+  "CHANGE VS BASE" section. JSON/SARIF keep the normal HEAD architecture-state
+  contract; JSON also adds `origin` to current `agent_tasks[]` when task evidence
+  is comparable.
+- `--format` — `text` (default), `json`, `markdown` (`md` is an alias),
+  `sarif`, or `scorecard`. Repeatable / comma-separated.
 - `--json` / `--markdown` / `--sarif` — shorthands for
   `--format json/markdown/sarif`.
 - `--no-advisories` — hide informational Balanced Coupling advisories from
@@ -132,9 +129,8 @@ AI/config flags:
 A missing analyzer is **not** scored as healthy: dependent metrics drop to `n/a`
 (no evidence — never `strong`) and a coverage gap lists the tool, the metrics its
 absence leaves unmeasured, and an install hint. Gaps surface everywhere:
-`## Coverage gaps` (md), `## Required tools missing` (scorecard),
-`coverage_gaps[]` + `config_warnings[]` (`--format legacy-json` only; the
-primary JSON carries `coverage.tools[]`), and stderr.
+`## Coverage gaps` (Markdown), `## Required tools missing` (scorecard),
+`coverage.tools[]` in primary JSON, and stderr.
 
 Default is warn-loud. `archfit check --require-tools` or
 `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail` makes missing required
@@ -147,13 +143,8 @@ install the tool to close the gap, not to disable the gate.
   BLOCKED), the nine dimension envelopes, the coverage split, and the seam ledger.
 - `json` — `archfit.architecture-state.v1` at the document root: `verdict`,
   `decision`, `comparison`, `measurement`, `dimensions`, `coverage`, `findings`,
-  `agent_tasks`, `seams`. **No repository score.** `coverage_gaps[]` and
-  `config_warnings[]` are NOT in this contract (see `legacy-json`).
-- `legacy-json` — the pre-cutover `archfit.diagnostic.v2` envelope, kept for one
-  release and selected explicitly. This is where `tool_coverage` detail,
-  `owner_source`, `config_warnings`, `git_finding_delta`, and `advisory_tasks`
-  still live.
-- `markdown` / `md` — the same state, plus the detailed findings audit.
+  `agent_tasks`, and `seams`. **No repository score.**
+- `markdown` — the same state, plus the detailed findings audit.
 - `sarif` — SARIF 2.1.0 for code-scanning annotations; the state rides in
   `runs[0].properties`.
 - `scorecard` — the nine-dimensional state summary. It is not an architecture

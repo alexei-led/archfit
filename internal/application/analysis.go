@@ -36,15 +36,13 @@ const (
 	FormatSARIF = "sarif"
 	// FormatScorecard selects scorecard output.
 	FormatScorecard = "scorecard"
-	// FormatLegacyJSON selects the pre-cutover JSON envelope. It is retained for
-	// exactly one release, must be selected explicitly, and never drives the
-	// verdict or the exit code.
-	FormatLegacyJSON = "legacy-json"
 )
 
 // Request contains the user intent shared by analyze and check.
 type Request struct {
-	BaseRef string
+	ConfigSource string
+	BundleDir    string
+	BaseRef      string
 
 	JSON     bool
 	Markdown bool
@@ -91,8 +89,6 @@ type AnalysisRequest struct {
 type AnalysisResult struct {
 	Diagnostic         result.Result
 	Score              score.Scorecard
-	BaseScore          *score.Scorecard
-	HardGate           bool
 	EnrichmentEvidence *EnrichmentEvidence
 	relationships      relationship.Set
 }
@@ -184,17 +180,16 @@ type EvidenceStage interface {
 	Acquire(context.Context, AnalysisRequest) (Acquired, error)
 }
 
-// AnalyzerFamilies records which optional analyzer families the config
-// activated. The git-origin delta needs it to decide whether two runs compared
-// like with like.
-type AnalyzerFamilies struct {
-	Patterns, Syntax, SCIP, Clones, CargoModules bool
-}
-
 // WorktreeProvider materialises a base ref in a clean detached worktree and
 // returns the scan root mirroring headRoot inside it. cleanup always runs.
 type WorktreeProvider interface {
 	Checkout(ctx context.Context, baseRef, anchorDir, headRoot string) (root string, cleanup func(), err error)
+}
+
+// AnalyzerFamilies records which optional finding-producing analyzers the
+// config activates. Task-origin comparison uses it to compare like with like.
+type AnalyzerFamilies struct {
+	Patterns, Syntax, SCIP, Clones, CargoModules bool
 }
 
 // StageExecutor sequences one analysis run. It owns the stage order, the single
@@ -227,13 +222,13 @@ func (s StageExecutor) Execute(ctx context.Context, req AnalysisRequest) (Analys
 	if err := s.Preparer.Prepare(ctx); err != nil {
 		return AnalysisResult{}, fmt.Errorf("policy preparation: %w", err)
 	}
+	base, err := s.loadBaseline(ctx, req, AnalysisContext{ConfigSource: req.ConfigSource, BundleDir: req.BundleDir})
+	if err != nil {
+		return AnalysisResult{}, err
+	}
 	acquired, err := s.Evidence.Acquire(ctx, req)
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("evidence acquisition: %w", err)
-	}
-	base, err := s.loadBaseline(ctx, req, acquired.Context)
-	if err != nil {
-		return AnalysisResult{}, fmt.Errorf("baseline: %w", err)
 	}
 	assessed, err := s.assess(ctx, req, acquired, base)
 	if err != nil {
@@ -260,10 +255,17 @@ func (s StageExecutor) loadBaseline(ctx context.Context, req AnalysisRequest, ru
 		return Baseline{}, nil
 	}
 	bundleDir := runCtx.BundleDir
+	if bundleDir == "" && runCtx.ConfigSource == "" {
+		return Baseline{}, nil
+	}
 	if bundleDir == "" {
 		bundleDir = filepath.Dir(runCtx.ConfigSource)
 	}
-	return s.Baseline.Load(ctx, bundleDir)
+	b, err := s.Baseline.Load(ctx, bundleDir)
+	if err != nil {
+		return Baseline{}, err
+	}
+	return b, nil
 }
 
 // assess runs relationship analysis, assessment, scoring, and the base-tree
@@ -310,13 +312,11 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 	if !req.SuppressGateReasons {
 		s.discloseGate(scored)
 	}
-	out := AnalysisResult{Score: scored.Score, HardGate: scored.HardGate}
+	out := AnalysisResult{Score: scored.Score}
 	if req.BaseRef != "" {
-		baseScore, err := s.attachBaseComparison(ctx, req, runCtx, &diag)
-		if err != nil {
+		if err := s.attachBaseComparison(ctx, req, runCtx, &diag); err != nil {
 			return AnalysisResult{}, err
 		}
-		out.BaseScore = baseScore
 	}
 	out.Diagnostic = diag
 	if req.CaptureRelationships {
@@ -335,9 +335,6 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 // report every existing seam as newly introduced.
 func seamAnchor(base Baseline, runCtx AnalysisContext) evaluation.BaselineAnchor {
 	if base.State == nil {
-		if base.Legacy {
-			return evaluation.BaselineAnchor{NonComparableReason: legacyBaselineReason}
-		}
 		return evaluation.BaselineAnchor{}
 	}
 	cmp := decision.CompareFingerprints("", headFingerprints(runCtx), decision.Fingerprints{
@@ -352,15 +349,6 @@ func seamAnchor(base Baseline, runCtx AnalysisContext) evaluation.BaselineAnchor
 	}
 	return evaluation.BaselineAnchor{SeamsComparable: true, QualifyingSeamIDs: base.State.QualifyingSeamIDs}
 }
-
-// LegacyScoreIgnored is the fixed token reported when a pre-state baseline is
-// read: its scalar snapshot is ignored and no state, dimension, or seam
-// comparison against it is admissible. A bare "not comparable" with no named
-// cause is indistinguishable from a bug.
-const LegacyScoreIgnored = "legacy_score_snapshot_ignored"
-
-const legacyBaselineReason = LegacyScoreIgnored +
-	": the stored baseline predates the architecture-state contract"
 
 // headFingerprints are this run's four comparison inputs.
 func headFingerprints(runCtx AnalysisContext) decision.Fingerprints {
@@ -481,6 +469,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 		return Response{}, errors.New("analysis stages are required")
 	}
 	out, err := s.Stages.Execute(ctx, AnalysisRequest{
+		ConfigSource: req.ConfigSource, BundleDir: req.BundleDir,
 		BaseRef: req.BaseRef, NoAdvisories: req.NoAdvisories,
 		RequireTools: req.RequireTools, ApplyToolGate: true, DiscloseHealthWarnings: true,
 	})
@@ -496,7 +485,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 	}
 
 	return Response{
-		Document: ProjectReport(out.Diagnostic, out.Score, out.BaseScore, out.HardGate),
+		Document: ProjectReport(out.Diagnostic, out.Score),
 		Formats:  formats,
 		Outcome:  outcomeFor(out),
 	}, nil

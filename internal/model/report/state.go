@@ -1,10 +1,8 @@
 package report
 
-// StateSchemaVersion identifies the architecture-state report contract. It is
-// versioned independently of SchemaVersion (the diagnostic envelope) because
-// the two cut over on different schedules: the state contract is introduced
-// alongside the diagnostic envelope and becomes the primary output later in the
-// migration (docs/design/architecture-state-reporting.md).
+// StateSchemaVersion identifies the canonical architecture-state JSON contract.
+// Renderers publish this state directly; the broader Document remains an
+// internal adapter input rather than a second wire format.
 const StateSchemaVersion = "archfit.architecture-state.v1"
 
 // StateVerdict is the primary architecture decision. It replaces the banded
@@ -242,13 +240,15 @@ type StateDecision struct {
 // StateComparison records what this run was compared against and whether the
 // comparison is admissible at all.
 type StateComparison struct {
-	Status        ComparisonStatus `json:"status"`
-	BaseRef       string           `json:"base_ref,omitempty"`
-	ConfigHash    string           `json:"config_hash,omitempty"`
-	ModelHash     string           `json:"model_hash,omitempty"`
-	LabelsHash    string           `json:"labels_hash,omitempty"`
-	RubricVersion string           `json:"rubric_version,omitempty"`
-	Reasons       []string         `json:"reasons"`
+	Status            ComparisonStatus `json:"status"`
+	BaseRef           string           `json:"base_ref,omitempty"`
+	ConfigHash        string           `json:"config_hash,omitempty"`
+	ModelHash         string           `json:"model_hash,omitempty"`
+	LabelsHash        string           `json:"labels_hash,omitempty"`
+	RubricVersion     string           `json:"rubric_version,omitempty"`
+	Reasons           []string         `json:"reasons"`
+	TaskOriginStatus  string           `json:"task_origin_status,omitempty"`
+	TaskOriginReasons []string         `json:"task_origin_reasons,omitempty"`
 }
 
 // StateMeasurement holds deterministic source, history, and tool facts only. It

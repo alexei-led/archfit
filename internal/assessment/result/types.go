@@ -149,31 +149,14 @@ type VolatilityProvenance struct {
 	Undeclared int `json:"undeclared"`
 }
 
-// GitFindingDelta records repair-task origin relative to a git base.
-type GitFindingDelta struct {
-	BaseRef                 string   `json:"base_ref"`
-	ComparisonStatus        string   `json:"comparison_status"`
-	IntroducedFindingIDs    []string `json:"introduced_finding_ids"`
-	PreExistingFindingIDs   []string `json:"pre_existing_finding_ids"`
-	UnknownOriginFindingIDs []string `json:"unknown_origin_finding_ids"`
-	ComparisonReasons       []string `json:"comparison_reasons"`
-}
-
-const (
-	// GitComparisonComparable means task origins were established.
-	GitComparisonComparable = "comparable"
-	// GitComparisonUnknown means at least one task origin was uncertain.
-	GitComparisonUnknown = "unknown"
-)
-
 // Seam is the assessment-side mirror of one logical coupling seam: an ordered
 // module pair with its measured edge denominator, score distribution, raw
 // distance context, and role expectation.
 //
 // The seam replaces the repository coupling scalar as the unit of coupling
 // reporting. Every field is a fact about that one pair; there is deliberately
-// no repository-wide roll-up here, because averaging seams is exactly the
-// aggregation the migration removes.
+// no repository-wide roll-up here, because averaging seams would recreate the
+// scalar architecture decision this model replaced.
 type Seam struct {
 	ID                   string                `json:"id"`
 	FromModule           string                `json:"from_module"`
@@ -240,7 +223,9 @@ const (
 // least one reason: "not comparable" with no explanation is indistinguishable
 // from a bug.
 type StateComparison struct {
-	Status  string   `json:"status"`
-	BaseRef string   `json:"base_ref,omitempty"`
-	Reasons []string `json:"reasons"`
+	Status            string   `json:"status"`
+	BaseRef           string   `json:"base_ref,omitempty"`
+	Reasons           []string `json:"reasons"`
+	TaskOriginStatus  string   `json:"-"`
+	TaskOriginReasons []string `json:"-"`
 }

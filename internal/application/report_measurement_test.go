@@ -68,7 +68,7 @@ func TestMeasurementNamesTheTreeAndTheWindow(t *testing.T) {
 		diagnostic := stateFixture()
 		diagnostic.Head = "" // full mode never resolves HEAD
 
-		measurement := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State.Measurement
+		measurement := ProjectReport(diagnostic, score.Scorecard{}).State.Measurement
 		if measurement.SourceRef != "worktree" {
 			t.Errorf("SourceRef = %q, want worktree: a full run measures files on disk, "+
 				"and naming a commit would claim the bytes equal it even on a dirty tree", measurement.SourceRef)
@@ -76,7 +76,7 @@ func TestMeasurementNamesTheTreeAndTheWindow(t *testing.T) {
 	})
 
 	t.Run("delta run names the resolved ref", func(t *testing.T) {
-		measurement := ProjectReport(stateFixture(), score.Scorecard{}, nil, false).State.Measurement
+		measurement := ProjectReport(stateFixture(), score.Scorecard{}).State.Measurement
 		if measurement.SourceRef != stateHeadRef {
 			t.Errorf("SourceRef = %q, want %q", measurement.SourceRef, stateHeadRef)
 		}
@@ -86,7 +86,7 @@ func TestMeasurementNamesTheTreeAndTheWindow(t *testing.T) {
 		diagnostic := stateFixture()
 		diagnostic.VolatilityCorroboration = nil
 
-		state := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State
+		state := ProjectReport(diagnostic, score.Scorecard{}).State
 		if state.Measurement.HistoryWindow != "unavailable" {
 			t.Errorf("HistoryWindow = %q, want unavailable", state.Measurement.HistoryWindow)
 		}
@@ -104,7 +104,7 @@ func TestMeasurementNamesTheTreeAndTheWindow(t *testing.T) {
 			Source: gitSource, Status: evidence.StatusPartial, CommitWindow: 20, CommitsScanned: 3,
 		}
 
-		measurement := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State.Measurement
+		measurement := ProjectReport(diagnostic, score.Scorecard{}).State.Measurement
 		if measurement.HistoryWindow != "20 commits" || measurement.HistoryDepth != 3 {
 			t.Errorf("window/depth = %q/%d, want 20 commits/3", measurement.HistoryWindow, measurement.HistoryDepth)
 		}
@@ -124,7 +124,7 @@ func TestFingerprintsLiveOnlyInTheComparisonBlock(t *testing.T) {
 		ID: "seam-1", FromModule: "a", ToModule: "b", LabelEvidenceHash: "evidence-hash",
 	}}
 
-	encoded, err := json.Marshal(ProjectReport(diagnostic, score.Scorecard{}, nil, false).State)
+	encoded, err := json.Marshal(ProjectReport(diagnostic, score.Scorecard{}).State)
 	if err != nil {
 		t.Fatalf("marshal state: %v", err)
 	}

@@ -161,17 +161,14 @@ func TestServiceOutcomeFromStateVerdict(t *testing.T) {
 	}
 }
 
-// TestServiceOutcomeIgnoresTheLegacyVerdict: the architecture verdict is the
-// single source for the exit code. A stale diagnostic verdict or a hard-gate
-// flag the state already accounted for must not move it, or the process status
-// could disagree with the report the same run printed.
+// TestServiceOutcomeUsesStateVerdict verifies that the architecture state is
+// the single source for the exit code.
 func TestServiceOutcomeIgnoresTheLegacyVerdict(t *testing.T) {
 	got := outcomeFor(AnalysisResult{
 		Diagnostic: result.Result{
 			Verdict: result.VerdictFail,
 			State:   state.Architecture{Verdict: state.NeedsAttention},
 		},
-		HardGate: true,
 	})
 	if got != OutcomeWarn {
 		t.Errorf("Outcome = %q, want %q — the state verdict decides", got, OutcomeWarn)

@@ -10,7 +10,6 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	reportmodel "github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
 	"github.com/alexei-led/archfit/internal/relationship"
 	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
@@ -113,8 +112,7 @@ func TestRenderer_Render_EmptyDiagnostic(t *testing.T) {
 	out := buf.String()
 
 	// Required sections always present. The audit restates no verdict: the
-	// state headline above it already decided one, and the legacy
-	// pass/warn/fail vocabulary maps to a different exit table.
+	// state headline above it already owns the exit-table meaning.
 	for _, want := range []string{"# archfit — architecture state", "Verdict", "Summary"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)
@@ -1327,18 +1325,6 @@ func TestRenderer_Render_BeyondBCLowConfidence(t *testing.T) {
 	// No footnote block should be emitted.
 	if strings.Contains(out, "Low-confidence proxies (footnote") {
 		t.Errorf("unexpected footnote block in output\nfull output:\n%s", out)
-	}
-
-	// JSON renderer retains every metric in full.
-	var jbuf bytes.Buffer
-	if err := jsonout.New().Render(d, &jbuf); err != nil {
-		t.Fatalf("json Render() error = %v", err)
-	}
-	jout := jbuf.String()
-	for _, want := range []string{`"name":"blast_radius"`, `"confidence":"low"`} {
-		if !strings.Contains(jout, want) {
-			t.Errorf("JSON output missing %q\nfull output:\n%s", want, jout)
-		}
 	}
 }
 

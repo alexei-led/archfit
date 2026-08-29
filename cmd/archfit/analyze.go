@@ -37,9 +37,8 @@ type AnalyzeCmd struct {
 	Sarif    bool `name:"sarif"    help:"Output format: SARIF (shorthand for --format sarif)."`
 
 	// Format is the advanced repeatable form. Default is text when no shorthand
-	// flag is set. Valid values: json, text, markdown, md, sarif, scorecard,
-	// legacy-json.
-	Format []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard, legacy-json. Repeatable." enum:"json,text,markdown,md,sarif,scorecard,legacy-json"`
+	// flag is set. Valid values: json, text, markdown, md, sarif, scorecard.
+	Format []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard"`
 
 	NoAdvisories bool     `name:"no-advisories" help:"Hide informational Balanced-Coupling advisories from the output."`
 	MinSeverity  string   `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
@@ -71,10 +70,7 @@ Common runs:
   archfit analyze --ai-summary -c .archfit.yaml # add AI narrative section
 
 --format json emits archfit.architecture-state.v1: verdict, decision,
-dimensions, coverage, findings, agent_tasks, and the coupling seam ledger, with
-no repository score. --format legacy-json emits the pre-cutover diagnostic
-envelope; it is retained for one release, must be selected explicitly, and never
-affects the verdict or the exit code.
+dimensions, coverage, findings, agent_tasks, and the coupling seam ledger.
 
 AI agents should read agent_tasks[] from JSON output, make the constrained
 repair, then rerun the validation command in that task.
@@ -163,6 +159,7 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 	resp, err := application.Service{Stages: newAnalyzeStages(req.configPath, req.root, cfg, deps)}.Execute(ctx, application.Request{
+		ConfigSource: req.configPath, BundleDir: filepath.Dir(req.configPath),
 		BaseRef:      req.baseRef,
 		JSON:         req.json,
 		Markdown:     req.markdown,
@@ -223,13 +220,12 @@ func outcomeExitCode(outcome application.Outcome) int {
 // cmd only selects the adapter for the resolved format name.
 func analyzeRender(deps *appDeps, resp application.Response) error {
 	renderers := map[string]reportports.Renderer{
-		formatJSON:       jsonout.NewState(),
-		formatLegacyJSON: jsonout.New(),
-		formatText:       console.New(),
-		formatMarkdown:   markdown.New(),
-		formatMD:         markdown.New(),
-		formatSarif:      sarif.New(),
-		formatScorecard:  scorecard.New(),
+		formatJSON:      jsonout.New(),
+		formatText:      console.New(),
+		formatMarkdown:  markdown.New(),
+		formatMD:        markdown.New(),
+		formatSarif:     sarif.New(),
+		formatScorecard: scorecard.New(),
 	}
 	for _, format := range resp.Formats {
 		r, ok := renderers[format]
@@ -259,7 +255,7 @@ func appendAISummary(ctx context.Context, deps *appDeps, cfg config.Config, conf
 func llmReviewCanUseStdout(formats []string) bool {
 	for _, format := range formats {
 		switch format {
-		case formatJSON, formatLegacyJSON, formatSarif, formatScorecard:
+		case formatJSON, formatSarif, formatScorecard:
 			return false
 		}
 	}

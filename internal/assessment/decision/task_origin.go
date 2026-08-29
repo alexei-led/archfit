@@ -1,7 +1,7 @@
-// Package decision owns git-origin classification for `analyze/check --base <ref>`.
+// Package decision owns task-origin classification for `analyze/check --base <ref>`.
 //
 // The base sub-run already produces a full diagnostic; this file turns the two
-// sides into the report-only git_finding_delta block: which of the CURRENT
+// sides into report-only task metadata: which of the CURRENT
 // repair tasks the change introduced, which pre-date the base ref, and which
 // cannot be placed at all.
 //
@@ -108,8 +108,8 @@ type AnalyzerEvidence struct {
 	Hash     string
 }
 
-// GitDeltaInput is the complete input to the pure origin comparison.
-type GitDeltaInput struct {
+// TaskOriginEvidence is the complete input to the pure origin comparison.
+type TaskOriginEvidence struct {
 	BaseRef string
 	// Tasks are the CURRENT run's agent_tasks[] — the repair work being placed.
 	Tasks []result.AgentTask
@@ -139,10 +139,27 @@ func baseFindingIDs(findings []finding.Finding) []string {
 	return ids
 }
 
-// BuildGitFindingDelta places every current repair task in an origin bucket.
-// Never returns nil — the caller only invokes it when --base is set, and the
-// block must be present (with empty, non-null lists) even for a clean run.
-func BuildGitFindingDelta(in GitDeltaInput) *result.GitFindingDelta {
+// TaskOriginDelta places current repair tasks relative to the selected base.
+// It is an internal classification result; the report projection attaches each
+// origin to its canonical agent task.
+type TaskOriginDelta struct {
+	BaseRef                 string
+	ComparisonStatus        string
+	IntroducedFindingIDs    []string
+	PreExistingFindingIDs   []string
+	UnknownOriginFindingIDs []string
+	ComparisonReasons       []string
+}
+
+const (
+	// TaskOriginComparable means task origins were established.
+	TaskOriginComparable = "comparable"
+	// TaskOriginUnknown means at least one task origin was uncertain.
+	TaskOriginUnknown = "unknown"
+)
+
+// ClassifyTaskOrigins places every current repair task in an origin bucket.
+func ClassifyTaskOrigins(in TaskOriginEvidence) *TaskOriginDelta {
 	comparable, reasons := compareAnalyzerEvidence(in.Families, in.Head, in.Base)
 	// A config-hash mismatch means the two sides did not measure the same
 	// intent, so nothing unmatched can be attributed to the code change.
@@ -178,14 +195,14 @@ func BuildGitFindingDelta(in GitDeltaInput) *result.GitFindingDelta {
 	sort.Strings(preExisting)
 	sort.Strings(unknown)
 
-	status := result.GitComparisonComparable
+	status := TaskOriginComparable
 	if len(unknown) > 0 {
-		status = result.GitComparisonUnknown
+		status = TaskOriginUnknown
 	}
 	if reasons == nil {
 		reasons = []string{}
 	}
-	return &result.GitFindingDelta{
+	return &TaskOriginDelta{
 		BaseRef:                 in.BaseRef,
 		ComparisonStatus:        status,
 		IntroducedFindingIDs:    introduced,

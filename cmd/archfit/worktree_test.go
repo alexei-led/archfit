@@ -82,7 +82,7 @@ func makeDiffFixtureRepo(t *testing.T) (string, string) {
 }
 
 // TestDiffCmd_Formats covers every --base render: the text decision report, the
-// JSON diagnostic (schema parity plus the git-origin block and its path
+// JSON diagnostic (schema parity plus task-origin metadata and its path
 // isolation), and the Markdown report. One exported test with subtests —
 // cmd/archfit sits at its public_api_max ceiling.
 func TestDiffCmd_Formats(t *testing.T) {
@@ -104,60 +104,6 @@ func TestDiffCmd_Formats(t *testing.T) {
 		if !strings.Contains(out, "reference: "+diffBaseRef) {
 			t.Errorf("--base text must name the compared reference: %s", out)
 		}
-		// Text output is unchanged by the git-origin block (JSON only).
-		if strings.Contains(out, "git_finding_delta") {
-			t.Errorf("--base text must not render the JSON-only origin block: %s", out)
-		}
-	})
-
-	// --base legacy-json emits the SAME diagnostic schema as a normal run — a
-	// consistent machine contract, not a separate delta schema (regression guard
-	// for the old asymmetric diffResult output) — plus git_finding_delta. The
-	// origin block is a diagnostic fact; the primary contract reports the base
-	// comparison under `comparison`.
-	t.Run("legacy json keeps the diagnostic schema and adds the origin block", func(t *testing.T) {
-		t.Parallel()
-		_, cfgPath := makeDiffFixtureRepo(t)
-
-		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, fmtLegacyJSON}, &buf)
-		if code != 0 {
-			t.Fatalf("--base --json: exit=%d\noutput:\n%s", code, buf.String())
-		}
-
-		var diag struct {
-			SchemaVersion   string `json:"schema_version"`
-			Verdict         string `json:"verdict"`
-			GitFindingDelta *struct {
-				BaseRef       string   `json:"base_ref"`
-				Introduced    []string `json:"introduced_finding_ids"`
-				PreExisting   []string `json:"pre_existing_finding_ids"`
-				UnknownOrigin []string `json:"unknown_origin_finding_ids"`
-				Reasons       []string `json:"comparison_reasons"`
-			} `json:"git_finding_delta"`
-		}
-		if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
-			t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
-		}
-		if diag.SchemaVersion == "" || diag.Verdict == "" {
-			t.Errorf("--base --json must be the standard diagnostic schema (schema_version + verdict), got: %s", buf.String())
-		}
-		if diag.GitFindingDelta == nil {
-			t.Fatalf("--base --json must emit git_finding_delta: %s", buf.String())
-		}
-		if diag.GitFindingDelta.BaseRef != diffBaseRef {
-			t.Errorf("base_ref = %q, want %q", diag.GitFindingDelta.BaseRef, diffBaseRef)
-		}
-		if diag.GitFindingDelta.Introduced == nil || diag.GitFindingDelta.PreExisting == nil ||
-			diag.GitFindingDelta.UnknownOrigin == nil || diag.GitFindingDelta.Reasons == nil {
-			t.Errorf("git_finding_delta lists must be non-null arrays: %s", buf.String())
-		}
-		// The base side is scored inside a temp worktree that is already gone;
-		// none of its paths may reach head output. Asserted on the path SEGMENT,
-		// not on a parent the test recomputes: the parent moved from the config
-		// dir to the git root once already, and a recomputed absolute path stops
-		// matching (silently passing) the moment the code picks a different one.
-		assertNoBaseWorktreeLeak(t, buf.String())
 	})
 
 	// T1: --format=markdown produces a markdown report with expected headings.
@@ -459,7 +405,7 @@ func TestDiffCmd_BaseSideFactCacheReuse(t *testing.T) {
 		t.Helper()
 		fake := &cargoFakeRunner{real: toolrun.New()}
 		var stdout, stderr bytes.Buffer
-		cmd := AnalyzeCmd{Config: cfgPath, Base: diffBaseRef, Format: []string{formatLegacyJSON}}
+		cmd := AnalyzeCmd{Config: cfgPath, Base: diffBaseRef, Format: []string{formatJSON}}
 		err := cmd.Run(&appDeps{Runner: fake, Stdout: &stdout, Stderr: &stderr})
 		var ee *exitError
 		if err != nil && (!errors.As(err, &ee) || ee.code > 1) {

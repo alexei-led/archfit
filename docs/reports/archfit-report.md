@@ -388,7 +388,7 @@ Report-only rollups from grouped advisories; these do not affect verdict or gate
   - severity: medium; status: new; group_count: 13
   - group members: 14a18a6187471cea76c40f7707552f67, 320ae359fba984604d56d4a447acfbfe, 50cd43dbb9c1221793f6fd4c86415426, 648d97e461b0a5af85490566837fcf26, 7a646ee19e64da05e1e8601767e44263, 8ea9a6926178f36d81560ff9aa942ed3, a77354659d123f26f9337af753d719ef, aaf1d01e7cf774dd01a437340d8cb9e5
   - score: 5/10
-  - top files: internal/assessment/agenttask/agenttask.go, internal/assessment/decision/config_compare.go, internal/assessment/decision/git_finding_delta.go, internal/assessment/evaluation/assess.go, internal/assessment/evaluation/dimensions.go, internal/assessment/evaluation/evaluation.go, internal/assessment/evaluation/health_warnings.go, internal/assessment/metrics/boundary/coverage.go
+  - top files: internal/assessment/agenttask/agenttask.go, internal/assessment/decision/config_compare.go, internal/assessment/decision/task_origin.go, internal/assessment/evaluation/assess.go, internal/assessment/evaluation/dimensions.go, internal/assessment/evaluation/evaluation.go, internal/assessment/evaluation/health_warnings.go, internal/assessment/metrics/boundary/coverage.go
   - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=model, distance=cross_module_same_owner, volatility=medium

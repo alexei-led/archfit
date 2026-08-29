@@ -22,7 +22,7 @@ import (
 // syntaxToolName is the coverage name for the SYNTAX pass. It is deliberately
 // distinct from the pattern pass's toolName: both passes drive the same "sg"
 // binary, but a shared name puts two rows under one tool in tool_coverage, and
-// every consumer that pairs rows by tool (config compare, the git-origin delta)
+// every consumer that pairs rows by tool (config compare, task-origin classification)
 // then sees an unpairable duplicate instead of two independent analyzers.
 const syntaxToolName = toolName + "/syntax"
 

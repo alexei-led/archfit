@@ -54,12 +54,8 @@ Refine the exact prev-minor patch at delta-run time (`git -C <repo> tag --sort=-
 - Run from the archfit repo root so `.env` auto-loads the AI key consistently.
 - Corpus repos are **read-only**. Copy `.archfit.yaml` out and work on the copy;
   nothing in a sweep may write into a target tree.
-- Every config in the corpus was authored at schema v1. Migrate the copy with
-  `config update --migration-only --apply`, never the full `config update
---apply`: the full form also proposes structural module edits, and bundling
-  those into a schema migration hides whether the migration itself settles.
-- The migration must be byte-idempotent. A second `--migration-only --apply`
-  that rewrites the file is a defect, not noise.
+- Every config in the corpus must use schema v2. Copy it out and validate it
+  before the sweep; do not rewrite target repositories.
 - A config-update failure is a finding, never a silent skip.
 - Re-run every mandatory representative with the same candidate and compare
   `analyze --json` BYTE for byte. The v1 state carries no wall-clock or
@@ -67,7 +63,7 @@ Refine the exact prev-minor patch at delta-run time (`git -C <repo> tag --sort=-
 - Use the AI summary on selected representatives only, and always over a
   separate overlay copy of the candidate — never over the candidate itself.
 
-## v1 acceptance contract
+## Architecture-state acceptance contract
 
 `analyze --json` emits `archfit.architecture-state.v1`. There is no repository
 score to parse; a sweep that reads `score.overall` is reading a field the
@@ -128,7 +124,7 @@ Mandatory four-language fast matrix — one representative per supported adapter
 ```sh
 python3 scripts/eval/corpus_sweep.py \
   --repos spotinfo,storybook,ccgram,herdr \
-  --ai-repos '' --migration-only \
+  --ai-repos '' \
   --repeat-repos spotinfo,storybook,ccgram,herdr \
   --format-repos spotinfo,storybook,ccgram,herdr \
   --strict --max-workers 1 \
@@ -141,7 +137,7 @@ Full corpus — all eleven labels:
 ```sh
 python3 scripts/eval/corpus_sweep.py \
   --repos spotinfo,pumba,omni/scheduled-tasks,prometheus,ccgram,prefect,storybook,yazi,herdr,ruff,tokio \
-  --ai-repos spotinfo,ccgram,herdr,storybook --migration-only \
+  --ai-repos spotinfo,ccgram,herdr,storybook \
   --repeat-repos spotinfo,storybook,ccgram,herdr \
   --format-repos spotinfo,storybook,ccgram,herdr \
   --strict --max-workers 4 \
@@ -159,8 +155,7 @@ Per-repo record shape (frozen; absent values are explicit `null` or `[]`):
 
 ```
 {label, root, language, status, failures[], unverified{reason},
- config{source, source_config_sha256, candidate_sha256, target_head, version,
-        update_exit, second_update_exit, second_update_changed},
+ config{source, source_config_sha256, target_head},
  analyze{exit, schema_version, verdict, dimension_keys},
  check{exit, verdict},
  formats{json, text, markdown, sarif, scorecard},
@@ -178,7 +173,7 @@ Only the three owner-controlled dogfood repos — `spotinfo`, `pumba`, `ccgram` 
 ever receive a config back, and only as a separate, owner-gated pass after the
 sweep and the full repository validation have both passed. External corpus repos
 are never edited. The candidate delivered is the immutable
-`--migration-only` output; an AI overlay is never eligible. Require a clean
+`config update` output; an AI overlay is never eligible. Require a clean
 worktree, the exact swept HEAD, and the recorded source-config hash; stage all
 three before replacing any; restore every original if post-delivery validation
 fails.
@@ -188,7 +183,7 @@ fails.
 If you are not using the helper script, the minimum useful pattern per repo is:
 
 ```sh
-.bin/archfit config update --migration-only --apply -c <temp-config>
+.bin/archfit config update --apply -c <temp-config>
 .bin/archfit check --format=json -c <temp-config> --root <canonical-path>
 .bin/archfit analyze --format=json -c <temp-config> --root <canonical-path>
 .bin/archfit analyze --ai-summary --format=markdown -c <temp-overlay> --root <canonical-path>
@@ -252,7 +247,7 @@ four minus herdr's stand-in set and all exited 0.
 - **`languages.rust.enabled: auto` reports `cargo: absent`, `true` reports
   `cargo: partial` (open UX finding).** Same missing binary, two different rows:
   herdr and yazi (`true`) get `partial` plus the reason "cargo not found;
-  install Rust via https://rustup.rs", while ruff and tokio (`auto`) get a bare
+  install Rust via <https://rustup.rs>", while ruff and tokio (`auto`) get a bare
   `absent` with no reason. Both emit a `cargo` coverage gap, so the dangerous
   shape — gapless `absent` on a primary, which both pairing paths read as "this
   language is not in the tree" — does not occur and `analyze --base` /

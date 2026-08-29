@@ -211,9 +211,9 @@ gap. To make CI block on a missing tool instead, opt in with `--require-tools` o
 
 ## Config-quality warnings ("N modules under-specified")
 
-These appear as a `## Config warnings` section (md) and, under
-`--format legacy-json`, a `config_warnings[]` block — the primary
-`archfit.architecture-state.v1` JSON does not carry it. Most clear once modules declare `owner`, `subdomain`, and
+These appear as a `## Config warnings` section in text/Markdown and on stderr.
+The architecture-state JSON exposes coverage, not this human advisory block.
+Most clear once modules declare `owner`, `subdomain`, and
 `volatility` — draft them with `archfit config enrich owner`/`config enrich volatility` or
 `archfit config init --ai-classify -o draft.yaml`, review, then apply. Filling them improves
 ownership/volatility distance inputs and can move `coupling_balance` out of `n/a`;

@@ -1514,9 +1514,8 @@ func driftDimension(diag *result.Result, ref BaselineAnchor) state.Dimension {
 }
 
 // attachFindingBuckets carries the finding-level lifecycle buckets onto a drift
-// delta. Accepted finding fingerprints stay usable across the migration even
-// when no metric or seam is comparable, so they are real evidence in both the
-// comparable and the non-comparable case.
+// delta. Accepted finding fingerprints remain valid lifecycle evidence even
+// when fingerprint drift makes metric or seam comparisons non-comparable.
 func attachFindingBuckets(delta *state.Delta, d *result.DeltaReport) {
 	if d == nil {
 		return

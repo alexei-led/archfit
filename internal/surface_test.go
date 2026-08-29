@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -18,7 +17,6 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
@@ -180,7 +178,7 @@ func readSource(path string) (string, error) {
 // snapshot; the read path compares it against report.RubricVersion. score is a
 // core-ring package and cannot import the report contract, so the constant is
 // duplicated — a one-sided bump would make every stored baseline read as an
-// incompatible snapshot and silently skip the coupling gate's max_drop check.
+// incompatible snapshot and silently skip the coupling gate comparison.
 func TestScorecardRubricVersionsAgree(t *testing.T) {
 	t.Parallel()
 
@@ -201,40 +199,3 @@ func TestScorecardRubricVersionsAgree(t *testing.T) {
 // score_version is read here through go/types rather than an import: the
 // relationship copy is unexported, and exporting it for a test would publish a
 // symbol the surface gate would then have to justify.
-func TestPublishedVersionConstantsAgree(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range []struct {
-		name, got, want string
-	}{
-		{"decision.BandFail", string(decision.BandFail), string(report.DecisionBandFail)},
-		{"decision.BandNeedsAttention", string(decision.BandNeedsAttention), string(report.DecisionBandNeedsAttention)},
-		{"decision.BandHealthy", string(decision.BandHealthy), string(report.DecisionBandHealthy)},
-		{"decision.BandAcceptable", string(decision.BandAcceptable), string(report.DecisionBandAcceptable)},
-	} {
-		if tc.got != tc.want {
-			t.Errorf("%s = %q, report contract = %q; change both or neither", tc.name, tc.got, tc.want)
-		}
-	}
-
-	// NeedSyntax|NeedDeps forces a source typecheck; export data alone omits
-	// unexported objects, so the constant would not be in scope.
-	loaded, err := packages.Load(&packages.Config{
-		Mode: packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedDeps,
-		Dir:  "..",
-	}, modulePrefix+"internal/relationship/analysis")
-	if err != nil || len(loaded) != 1 {
-		t.Fatalf("load relationship/analysis: %v (%d packages)", err, len(loaded))
-	}
-	obj := loaded[0].Types.Scope().Lookup("relationshipScoreVersion")
-	if obj == nil {
-		t.Fatal("relationshipScoreVersion not found; update this guard if the mirror was renamed or removed")
-	}
-	got, err := strconv.Unquote(obj.(*types.Const).Val().String())
-	if err != nil {
-		t.Fatalf("unquote relationshipScoreVersion: %v", err)
-	}
-	if got != report.ScoreVersion {
-		t.Errorf("relationshipScoreVersion = %q, report.ScoreVersion = %q; bump both or neither", got, report.ScoreVersion)
-	}
-}

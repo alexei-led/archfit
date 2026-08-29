@@ -64,73 +64,6 @@ type Scorecard struct {
 	Dimensions    []Dimension `json:"dimensions"`
 }
 
-// DecisionBand is the top-level human decision for a report.
-type DecisionBand string
-
-// Decision bands combine the scorecard and active gate state.
-const (
-	DecisionBandFail           DecisionBand = "FAIL"
-	DecisionBandNeedsAttention DecisionBand = "NEEDS_ATTENTION"
-	DecisionBandHealthy        DecisionBand = "HEALTHY"
-	DecisionBandAcceptable     DecisionBand = "ACCEPTABLE_WITH_WATCH_ITEMS"
-)
-
-// Report is the human-decision view model formatted by output adapters.
-type Report struct {
-	Band            DecisionBand
-	Headline        string
-	Blocking        int
-	Advisory        int
-	Overall         int
-	OverallBand     ScoreBand
-	Dimensions      []DimReport
-	Recommendations Recommendations
-	Delta           *Delta
-}
-
-// DimReport is the presentation view of one scorecard dimension.
-type DimReport struct {
-	Name       string
-	Value      int
-	Band       ScoreBand
-	Confidence Confidence
-	RawValue   int
-	CapApplied string
-	Meta       bool
-	Why        string
-	WhatMoves  string
-}
-
-// Rec is one actionable recommendation.
-type Rec struct {
-	Title  string
-	Detail string
-	RuleID string
-}
-
-// Recommendations groups findings by urgency tier.
-type Recommendations struct {
-	MustFix   []Rec
-	ShouldFix []Rec
-	Watch     []Rec
-	Calibrate []Rec
-	Ignore    []Rec
-}
-
-// Delta holds signed score changes between a base and current scorecard.
-type Delta struct {
-	Overall    int
-	Dimensions []DimDelta
-}
-
-// DimDelta is the before, after, and signed change for one dimension.
-type DimDelta struct {
-	Name   string
-	Before int
-	After  int
-	Change int
-}
-
 // Verdict is the top-level pass/fail/warn outcome of an archfit run (spec §12).
 type Verdict string
 
@@ -372,43 +305,4 @@ type VolatilityProvenance struct {
 	// Undeclared counts modules with no volatility from any source (scored
 	// conservatively by the book scorer, never guessed).
 	Undeclared int `json:"undeclared"`
-}
-
-// GitFindingDelta records where each of the current run's repair tasks came
-// from relative to a git base ref (`--base`). It answers one question for a
-// coding agent: "which of these tasks did my change introduce?" — without
-// re-deriving anything from the base tree.
-//
-// It is report-only: the verdict, the exit code, and every non-JSON renderer
-// are unchanged by this block. The classification is deliberately conservative
-// — a task lands in IntroducedFindingIDs only when the base run's
-// finding-producing analyzers covered the same ground as the current run.
-// Missing, partial, or asymmetric analyzer evidence moves the task to
-// UnknownOriginFindingIDs instead of inventing a "new" task.
-//
-// Only finding IDs, coverage, and the config hash cross over from the base
-// sub-run. Base paths, locations, and validation commands never do: the base
-// side is scored inside a temporary worktree that is deleted before this block
-// is read.
-type GitFindingDelta struct {
-	// BaseRef is the git ref the current run was compared against.
-	BaseRef string `json:"base_ref"`
-	// ComparisonStatus is GitComparisonComparable when every task has a definite
-	// origin, GitComparisonUnknown when at least one does not.
-	ComparisonStatus string `json:"comparison_status"`
-	// IntroducedFindingIDs are current repair tasks with no matching base
-	// finding, established against comparable analyzer evidence on both sides.
-	IntroducedFindingIDs []string `json:"introduced_finding_ids"`
-	// PreExistingFindingIDs are current repair tasks whose finding ID was also
-	// observed on the base ref (lifecycle labels and gate/advisory promotion are
-	// ignored — only the stable ID matters).
-	PreExistingFindingIDs []string `json:"pre_existing_finding_ids"`
-	// UnknownOriginFindingIDs are current repair tasks whose origin could not be
-	// established: incomplete analyzer evidence, a config-hash mismatch, or a
-	// synthetic per-run task that has no stable base counterpart.
-	UnknownOriginFindingIDs []string `json:"unknown_origin_finding_ids"`
-	// ComparisonReasons names each analyzer family whose evidence was not
-	// comparable, one sorted entry per family. Empty when nothing blocked the
-	// comparison.
-	ComparisonReasons []string `json:"comparison_reasons"`
 }

@@ -29,9 +29,9 @@ import (
 // is listed here; nothing else is.
 //
 // Most entries are whole files or directories. application/analysis.go is
-// scoped to one function on purpose: the run result still CARRIES the scorecard
-// for the legacy renderers, and carrying a retired fact for one release is not
-// the same defect as deciding from it.
+// scoped to decision functions on purpose: the run result still CARRIES the
+// scorecard for config comparison and AI review. Keeping that internal
+// diagnostic is not the same defect as deciding from it.
 var decisionPath = []decisionTarget{
 	{path: "assessment/state"},                    // the metric-blind aggregator
 	{path: "assessment/evaluation/state.go"},      // the finding split feeding it
@@ -48,8 +48,8 @@ type decisionTarget struct {
 }
 
 // scalarIdents are the repository-scalar names the decision path may not touch.
-// The scalar still exists for the legacy diagnostic envelope; the point is that
-// nothing on the path from evidence to exit code can read it.
+// The internal scorecard remains available to non-verdict consumers; nothing on
+// the path from evidence to exit code may read it.
 var scalarIdents = map[string]string{
 	"Scorecard":   "the repository scorecard",
 	"Overall":     "the averaged repository score",
