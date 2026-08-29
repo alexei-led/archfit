@@ -1,6 +1,6 @@
 module github.com/alexei-led/archfit
 
-go 1.27
+go 1.26
 
 require (
 	github.com/alecthomas/kong v1.15.0

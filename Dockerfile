@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG GO_VERSION=1.27.0
+ARG GO_VERSION=1.26
 ARG UV_VERSION=0.5.0
 ARG DEPCRUISER_VERSION=17
 # 0.44.0 is the version --inline-rules (used by the syntax-facts adapter) was

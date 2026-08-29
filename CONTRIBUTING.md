@@ -9,7 +9,7 @@ commands or config and stay off the gate.
 
 ## Prerequisites
 
-- Go 1.27.0
+- Go 1.26+
 - Git
 - `pre-commit`
 - Python 3.12+ — `make test` (and CI) runs `python3
