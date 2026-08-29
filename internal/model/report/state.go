@@ -242,13 +242,15 @@ type StateDecision struct {
 // StateComparison records what this run was compared against and whether the
 // comparison is admissible at all.
 type StateComparison struct {
-	Status        ComparisonStatus `json:"status"`
-	BaseRef       string           `json:"base_ref,omitempty"`
-	ConfigHash    string           `json:"config_hash,omitempty"`
-	ModelHash     string           `json:"model_hash,omitempty"`
-	LabelsHash    string           `json:"labels_hash,omitempty"`
-	RubricVersion string           `json:"rubric_version,omitempty"`
-	Reasons       []string         `json:"reasons"`
+	Status            ComparisonStatus `json:"status"`
+	BaseRef           string           `json:"base_ref,omitempty"`
+	ConfigHash        string           `json:"config_hash,omitempty"`
+	ModelHash         string           `json:"model_hash,omitempty"`
+	LabelsHash        string           `json:"labels_hash,omitempty"`
+	RubricVersion     string           `json:"rubric_version,omitempty"`
+	Reasons           []string         `json:"reasons"`
+	TaskOriginStatus  string           `json:"task_origin_status,omitempty"`
+	TaskOriginReasons []string         `json:"task_origin_reasons,omitempty"`
 }
 
 // StateMeasurement holds deterministic source, history, and tool facts only. It

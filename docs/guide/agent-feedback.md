@@ -30,6 +30,7 @@ Every ACTIVE gate finding produces one structured repair task:
 {
   "finding_id": "8a4be7…",
   "rule_id": "no_internal_access",
+  "origin": "introduced",
   "goal": "Replace the internal-API access from pkg/a/a.go to
            pkg/b/internal/impl.go with b's public API.",
   "constraints": [
@@ -44,7 +45,11 @@ Every ACTIVE gate finding produces one structured repair task:
 Goals are deterministic templates per rule type; constraints join the rule's
 configured constraint text, allowed alternatives, and the target module's
 public globs; validation is the exact `archfit check` command that must pass.
-`agent_tasks[]` is gate-only, and advisory findings stay out of this channel.
+With `--base`, each current task also carries `origin`: `introduced`,
+`pre_existing`, or `unknown`. `unknown` means analyzer evidence was asymmetric;
+it is never upgraded to `introduced`. Origin is triage metadata and never
+changes the verdict, a gate, or the exit code. `agent_tasks[]` is gate-only, and
+advisory findings stay out of this channel.
 Advisory promotion is gone: a scalar gate had to borrow findings to point at,
 whereas
 [`coupling.gate.distributed_monolith`](configuration-reference.md#couplinggate)
@@ -79,119 +84,51 @@ Only `bc/imbalanced_coupling` findings are rolled up (cap 8 members per
 group); `bc/duplicated_knowledge` findings pass through individually and
 never carry a `group_count`.
 
-## git_finding_delta — which repair tasks this change introduced
+## Task origin with `--base`
 
-`--base <ref>` adds one report-only JSON block that sorts the CURRENT
-`agent_tasks[]` by git origin. It appears only with `--base`, only under
-`--format legacy-json`, and never changes the verdict or the exit code. It is a
-diagnostic block, not part of `archfit.architecture-state.v1`, so `--json` does
-not carry it — and `legacy-json` ships for exactly one release (see
-[release notes](release-notes.md)).
+`--base <ref>` classifies the current repair tasks in canonical JSON. It does
+not create a second task list or a separate delta schema:
 
 ```json
 {
-  "git_finding_delta": {
-    "base_ref": "main",
-    "comparison_status": "comparable",
-    "introduced_finding_ids": ["finding-a"],
-    "pre_existing_finding_ids": ["finding-b"],
-    "unknown_origin_finding_ids": [],
-    "comparison_reasons": []
-  }
+  "comparison": {
+    "task_origin_status": "comparable"
+  },
+  "agent_tasks": [
+    { "finding_id": "finding-a", "origin": "introduced" },
+    { "finding_id": "finding-b", "origin": "pre_existing" }
+  ]
 }
 ```
 
-- `introduced_finding_ids` — no matching finding on the base ref. Your change
-  brought this task in; fix it before merging.
-- `pre_existing_finding_ids` — the same stable finding ID was also observed on
-  the base ref. Pre-existing debt, not a merge blocker.
-- `unknown_origin_finding_ids` — archfit could not place the task. Treat it as
-  possibly introduced.
-- `comparison_status` — `unknown` when any task has unknown origin, otherwise
-  `comparable`.
+- `introduced` — the base run had no matching stable finding ID and all active
+  finding-producing analyzers had comparable evidence.
+- `pre_existing` — the base run observed the same stable finding ID.
+- `unknown` — evidence could not place the task. Treat it as possibly
+  introduced; missing evidence never manufactures an `introduced` result.
+- `comparison.task_origin_status` is `unknown` when at least one task is unknown.
+  When present, read `task_origin_reasons` even when the status is `comparable`:
+  with no tasks,
+  or when all tasks match the base, an analyzer difference can still be relevant
+  to the next change.
 
-All three lists are sorted, non-null arrays, and every current repair task lands
-in exactly one of them.
+A missing or duplicated coverage row, timeout, unfinished partial run, one-sided
+analyzer evidence, or config-hash mismatch makes unmatched tasks `unknown` and
+names the reason. The synthetic `bc/coupling_gate` task is per-run trip state,
+not a stable base finding, so its origin is always `unknown`.
 
-`comparison_status` reports task placement, not evidence quality, so a run can
-report `comparable` alongside a non-empty `comparison_reasons`: with zero tasks
-to place, or with every task matched on the base ref, no task ends up unknown
-even though an analyzer failed to compare. Read `comparison_reasons` whenever it
-is non-empty — a later change that adds a task would then be `unknown`.
+Three symmetric degradations remain comparable and are always disclosed:
 
-**Conservative by construction.** A task is called `introduced` only when every
-active finding-producing analyzer covered both sides equivalently. A missing or
-duplicated coverage row, a timed-out analyzer, a partial from a run that did not
-complete, one-sided evidence of any kind (absent, disabled, or unresolved on one
-side only), or a config-hash mismatch moves unmatched tasks to
-`unknown_origin_finding_ids` and names the family in `comparison_reasons`
-(`"scip: head ok, base absent"`). Missing evidence never manufactures a "new"
-task. The synthetic `bc/coupling_gate` task is per-run trip state with no stable
-counterpart, so it is always `unknown`.
+- both sides have unresolved import specifiers;
+- both sides covered every input but lost edge precision;
+- the same activated analyzer is unavailable on both sides.
 
-**Symmetric degradations pair, and say so.** Three shapes would otherwise make
-the block permanently inert on whole classes of repos and hosts, so they stay
-comparable instead:
-
-- Both sides `partial` from unresolved import specifiers — the normal steady
-  state for dependency-cruiser and grimp, so treating it as unusable disabled
-  the feature on every TypeScript and Python repo.
-- Both sides `partial` with every input covered and only edge precision
-  degraded — `go/packages` reports this when some packages fail to type-check.
-  Their imports are all in the graph; only the `go/types` strength hints are
-  missing, so nothing can hide behind them.
-- Both sides `absent` for an analyzer the config activated — typically its tool
-  is not installed on this host (archfit's own runtime image ships no Rust
-  toolchain and no SCIP indexer).
-
-The safety argument is symmetry: neither side ran what the other could hide
-behind. None is ever paired silently — each always emits a `comparison_reasons`
-entry, and both partial cases carry each side's count, so `3 unresolved` and
-`5000/6000 unresolved` are distinguishable, as are `2 degraded` and
-`900 degraded`. The two partial shapes never pair with each other:
-complete-but-imprecise is not the same evidence as incomplete. A `go/packages`
-`partial` earned by packages that failed to LOAD is the incomplete kind and
-pairs with nothing — see the known ceiling in [ci.md](ci.md#2-github-actions-recipe).
-An **asymmetric** absence or partial is still unavailable evidence.
-
-Matching uses stable finding IDs only: lifecycle labels (`new`, `waived`,
-`baseline`) and gate-vs-advisory promotion do not affect it, and a base entry
-reported as `fixed` never makes a current task pre-existing.
-
-## advisory_tasks — the report-only rollup channel
-
-Grouped `bc/imbalanced_coupling` advisories (`group_count > 1`) also produce
-`advisory_tasks[]` under `--format legacy-json`. These are deterministic rollups
-for humans and agents to triage advisory noise without changing CI semantics.
-They are never consumed by verdict, gate status, baseline deltas, or
-`agent_tasks[]`, and they are not part of `archfit.architecture-state.v1`, so
-`--json` does not carry them.
-
-```json
-{
-  "finding_id": "8a4be7…",
-  "rule_id": "bc/imbalanced_coupling",
-  "status": "new",
-  "severity": "high",
-  "group_count": 12,
-  "group_members": ["8a4be7…", "9c12d0…"],
-  "goal": "Review 12 same-shape Balanced-Coupling advisory edges...",
-  "cheapest_move": "reduce_distance",
-  "score_value": 8,
-  "top_files": ["pkg/a/a.go", "pkg/b/b.go"],
-  "constraints": [
-    "report-only advisory; do not promote to a gate unless coupling.gate policy changes",
-    "keep agent_tasks[] reserved for active gate findings"
-  ],
-  "validation": ["archfit check -c .archfit.yaml"]
-}
-```
-
-Use `advisory_tasks[]` for review/refactor planning only. If a run exits `1`,
-fix `agent_tasks[]` first; advisory tasks may be deferred. There is no score gate
-to promote them through — the only coupling gate is
-`coupling.gate.distributed_monolith`, which names its own seams and never borrows
-an advisory.
+The safety argument is symmetry: neither side ran evidence the other could hide
+behind. Asymmetric absence or partial evidence remains unknown. Matching uses
+stable finding IDs only; lifecycle labels and gate-versus-advisory promotion do
+not change origin, and a base finding reported as fixed does not make a current
+task pre-existing. Origin remains triage metadata: it never changes the verdict,
+a gate, or the exit code.
 
 ## Optional AI narrative
 

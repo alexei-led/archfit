@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -82,24 +80,18 @@ func TestRun_Analyze_GateVsReportOnly(t *testing.T) {
 }
 
 const (
-	flagRefresh      = "--refresh"
-	flagRoot         = "--root"
-	flagJSON         = "--json"
-	flagNoAdvisories = "--no-advisories"
-	goModStub        = "module example.com/test\n\ngo 1.21\n" // minimal go.mod shared by fixture repos
-	cmdAnalyze       = "analyze"
-	cmdCheck         = "check"
-	cmdBaseline      = "baseline"
-	cmdConfig        = "config" // config subcommand group (config init / config enrich …)
-	cmdEnrich        = "enrich" // config enrich subcommand (config enrich owner / subdomain / …)
-	cmdExplain       = "explain"
-	fmtJSON          = "--format=json"
-	// fmtLegacyJSON selects the pre-cutover diagnostic envelope. Tests that
-	// assert on a diagnostic-only block (tool_coverage detail, owner_source,
-	// config_warnings, git_finding_delta) name it explicitly rather than
-	// reading those keys out of the architecture-state contract, which does not
-	// carry them.
-	fmtLegacyJSON     = "--format=legacy-json"
+	flagRefresh       = "--refresh"
+	flagRoot          = "--root"
+	flagJSON          = "--json"
+	flagNoAdvisories  = "--no-advisories"
+	goModStub         = "module example.com/test\n\ngo 1.21\n" // minimal go.mod shared by fixture repos
+	cmdAnalyze        = "analyze"
+	cmdCheck          = "check"
+	cmdBaseline       = "baseline"
+	cmdConfig         = "config" // config subcommand group (config init / config enrich …)
+	cmdEnrich         = "enrich" // config enrich subcommand (config enrich owner / subdomain / …)
+	cmdExplain        = "explain"
+	fmtJSON           = "--format=json"
 	flagVersion       = "--version"
 	filePkgAA         = "pkg/a/a.go" // the gate-violating source file used across fixtures
 	filePkgBImpl      = "pkg/b/internal/impl/impl.go"
@@ -147,99 +139,6 @@ func writeGapRepo(t *testing.T, extraCfg string) string {
 // missing analyzers are warn-loud by default (exit 0 with a gaps block), but
 // --require-tools and tools.<x>.gate: fail turn a missing tool into an exit-1
 // policy failure — distinct from the exit-3 tool/config error.
-func TestRun_Check_RequireToolsHardGate(t *testing.T) {
-	t.Parallel()
-	type gapsDiag struct {
-		Verdict      string `json:"verdict"`
-		CoverageGaps []struct {
-			Tool string `json:"tool"`
-			Gate string `json:"gate"`
-		} `json:"coverage_gaps"`
-	}
-
-	t.Run("default is warn-loud: exit 0 with a gaps block", func(t *testing.T) {
-		t.Parallel()
-		cfgPath := writeGapRepo(t, "")
-		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
-		if code != 0 {
-			t.Fatalf("default check: exit = %d, want 0\noutput:\n%s", code, buf.String())
-		}
-		var d gapsDiag
-		if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
-			t.Fatalf("invalid JSON: %v", err)
-		}
-		if len(d.CoverageGaps) == 0 {
-			t.Fatalf("want a non-empty coverage_gaps block on a tool-less repo\noutput:\n%s", buf.String())
-		}
-		for _, g := range d.CoverageGaps {
-			if g.Gate != gateWarn {
-				t.Errorf("default gap %q gate = %q, want warn", g.Tool, g.Gate)
-			}
-		}
-	})
-
-	t.Run("--require-tools fails: every gap becomes a fail gate, exit 1", func(t *testing.T) {
-		t.Parallel()
-		cfgPath := writeGapRepo(t, "")
-		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, "--require-tools", fmtLegacyJSON}, &buf)
-		if code != 1 {
-			t.Fatalf("check --require-tools: exit = %d, want 1\noutput:\n%s", code, buf.String())
-		}
-		var d gapsDiag
-		if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
-			t.Fatalf("invalid JSON: %v", err)
-		}
-		if d.Verdict != string(result.VerdictFail) {
-			t.Errorf("verdict = %q, want fail", d.Verdict)
-		}
-		for _, g := range d.CoverageGaps {
-			if g.Gate != gateFail {
-				t.Errorf("gap %q gate = %q, want fail under --require-tools", g.Tool, g.Gate)
-			}
-		}
-	})
-
-	t.Run("per-tool gate: tools.go.gate fail on an absent analyzer exits 1", func(t *testing.T) {
-		t.Parallel()
-		// go is disabled so go/packages reports absent (a gap) deterministically,
-		// regardless of whether a Go toolchain happens to half-load a non-Go tree.
-		cfg := "version: 2\nlanguages:\n  go:\n    enabled: false\n    gate: fail\n"
-		cfgPath := writeNonGoRepo(t, cfg)
-		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf)
-		if code != 1 {
-			t.Fatalf("tools.go.gate: fail → exit = %d, want 1\noutput:\n%s", code, buf.String())
-		}
-		var d gapsDiag
-		if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
-			t.Fatalf("invalid JSON: %v", err)
-		}
-		var goGate string
-		for _, g := range d.CoverageGaps {
-			if g.Tool == toolGoPackages {
-				goGate = g.Gate
-			} else if g.Gate != gateWarn {
-				t.Errorf("non-go gap %q gate = %q, want warn (per-tool gate is scoped)", g.Tool, g.Gate)
-			}
-		}
-		if goGate != gateFail {
-			t.Errorf("go/packages gate = %q, want fail", goGate)
-		}
-	})
-
-	t.Run("--require-tools stays report-only under analyze", func(t *testing.T) {
-		t.Parallel()
-		cfgPath := writeGapRepo(t, "")
-		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, "--require-tools"}, &buf)
-		if code != 0 {
-			t.Fatalf("analyze --require-tools: exit = %d, want 0 (report-only)\noutput:\n%s", code, buf.String())
-		}
-	})
-}
-
 // writeRepoWithExternalConfig creates a git Go repo with one gate-failing
 // dependency (pkg/a → pkg/b/internal) and writes the archfit config that fails
 // on it into a SEPARATE directory outside the repo. It returns (repoDir,
@@ -783,126 +682,6 @@ func TestRun_Check_NoBaselineWarningAbsent(t *testing.T) {
 // absent (defaults off), the pipeline injects a StatusDisabled coverage row for
 // "scip" so that tool_coverage in JSON output reports "disabled" rather than
 // leaving the entry absent.
-func TestRun_Analyze_ScipDisabledCoverageRow(t *testing.T) {
-	t.Parallel()
-	cfgPath := writeViolatingRepo(t)
-
-	var buf bytes.Buffer
-	// Report-only mode (exit 0) so we can parse the JSON regardless of gate verdict.
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf); code == 3 {
-		t.Fatalf("analyze exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
-	}
-
-	var out struct {
-		ToolCoverage []struct {
-			Tool   string `json:"tool"`
-			Status string `json:"status"`
-		} `json:"tool_coverage"`
-	}
-	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
-		t.Fatalf("unmarshal: %v\noutput:\n%s", err, buf.String())
-	}
-
-	found := false
-	for _, c := range out.ToolCoverage {
-		if c.Tool == toolScip {
-			found = true
-			if c.Status != string(evidence.StatusDisabled) {
-				t.Errorf("scip coverage status = %q, want %q", c.Status, evidence.StatusDisabled)
-			}
-			break
-		}
-	}
-	if !found {
-		t.Errorf("no 'scip' entry in tool_coverage; got %+v", out.ToolCoverage)
-	}
-}
-
-func TestRun_Analyze_DeployUnitCoverageRowIsDiagnosticOnly(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	files := map[string]string{
-		markerGoMod:       "module example.com/deploycov\n\ngo 1.21\n",
-		"cmd/api/main.go": goMainSrc,
-		defaultConfigPath: `version: 2
-modules:
-  cmd/api:
-    paths: ["cmd/api/**"]
-`,
-	}
-	for name, content := range files {
-		path := filepath.Join(dir, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	gitInitFixtureRepo(t, dir)
-
-	var buf bytes.Buffer
-	cfgPath := filepath.Join(dir, defaultConfigPath)
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf); code == 3 {
-		t.Fatalf("analyze exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
-	}
-
-	var out struct {
-		Metrics []struct {
-			Name  string  `json:"name"`
-			Value float64 `json:"value"`
-		} `json:"metrics"`
-		ToolCoverage []struct {
-			Tool            string `json:"tool"`
-			FilesSeen       int    `json:"files_seen"`
-			FilesApplicable int    `json:"files_applicable"`
-			Status          string `json:"status"`
-		} `json:"tool_coverage"`
-		DistanceContext struct {
-			DeployUnitDetectedModules int `json:"deploy_unit_detected_modules"`
-		} `json:"distance_context"`
-	}
-	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
-		t.Fatalf("unmarshal: %v\noutput:\n%s", err, buf.String())
-	}
-
-	coverageFound := false
-	for _, m := range out.Metrics {
-		if m.Name == "coverage" {
-			coverageFound = true
-			if m.Value > 1.0 {
-				t.Fatalf("coverage metric = %v, want <= 1.0", m.Value)
-			}
-		}
-	}
-	if !coverageFound {
-		t.Fatalf("coverage metric not found in output")
-	}
-
-	deployCoverageFound := false
-	for _, c := range out.ToolCoverage {
-		if c.Tool == toolDeployUnit {
-			deployCoverageFound = true
-			if c.Status != string(evidence.StatusOK) {
-				t.Errorf("deploy-unit coverage status = %q, want %q", c.Status, evidence.StatusOK)
-			}
-			if c.FilesSeen == 0 {
-				t.Errorf("deploy-unit files_seen = 0, want detected evidence")
-			}
-			if c.FilesApplicable != 0 {
-				t.Errorf("deploy-unit files_applicable = %d, want 0 so coverage ignores it", c.FilesApplicable)
-			}
-		}
-	}
-	if !deployCoverageFound {
-		t.Fatalf("no deploy-unit entry in tool_coverage: %+v", out.ToolCoverage)
-	}
-	if out.DistanceContext.DeployUnitDetectedModules == 0 {
-		t.Fatalf("distance_context.deploy_unit_detected_modules = 0, want detected evidence")
-	}
-}
-
 // TestRun_Check_FileClassConfigWiredToPipeline verifies M1: a user-supplied
 // file_class: generated_globs pattern in .archfit.yaml reaches the FileClassIndex
 // through the pipeline (cfg.ForFileClass() → loc.RunWithConfig). The test
@@ -911,60 +690,3 @@ modules:
 // verifies the loc tool_coverage reflects a successful walk (status ok).
 // The file_class config will exclude the custom generated file from production
 // metrics, so the overall pipeline must not error or miscategorise it.
-func TestRun_Check_FileClassConfigWiredToPipeline(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	files := map[string]string{
-		markerGoMod: "module example.com/fctest\n\ngo 1.21\n",
-		"main.go":   goMainSrc,
-		// Custom generated file — NOT matched by built-in filename heuristics.
-		// Only config-supplied generated_globs should catch it.
-		"codegen/mycodegen_output.go": "package codegen\n\nfunc Generated() {}\n",
-		defaultConfigPath: `version: 2
-file_class:
-  generated_globs:
-    - "codegen/**"
-`,
-	}
-	for name, content := range files {
-		path := filepath.Join(dir, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	gitInitFixtureRepo(t, dir)
-
-	cfgPath := filepath.Join(dir, defaultConfigPath)
-	var buf bytes.Buffer
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtLegacyJSON}, &buf); code == 3 {
-		t.Fatalf("check exited 3 (pipeline error)\noutput:\n%s", buf.String())
-	}
-
-	// Verify loc ran successfully — proves RunWithConfig was called without error.
-	var out struct {
-		ToolCoverage []struct {
-			Tool   string `json:"tool"`
-			Status string `json:"status"`
-		} `json:"tool_coverage"`
-	}
-	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
-		t.Fatalf("unmarshal: %v\noutput:\n%s", err, buf.String())
-	}
-	found := false
-	for _, c := range out.ToolCoverage {
-		if c.Tool == toolLoc {
-			found = true
-			if c.Status != string(evidence.StatusOK) {
-				t.Errorf("loc coverage status = %q, want ok", c.Status)
-			}
-			break
-		}
-	}
-	if !found {
-		t.Errorf("no 'loc' entry in tool_coverage; got %+v", out.ToolCoverage)
-	}
-}

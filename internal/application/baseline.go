@@ -79,12 +79,7 @@ type BaselineLoader interface {
 type Baseline struct {
 	Accepted status.AcceptedSet
 	Metrics  report.MetricSnapshot
-	// Legacy marks a pre-state baseline. Its accepted fingerprints stay usable;
-	// its retired scalar snapshot is ignored, and it can never support a
-	// state/dimension/seam comparison.
-	Legacy bool
-	// State is the stored architecture-state reference. Nil for a legacy file
-	// or when no baseline exists.
+	// State is the stored architecture-state reference, or nil when no baseline exists.
 	State *BaselineStateSnapshot
 }
 
@@ -136,7 +131,7 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 	if err != nil {
 		return BaselineResponse{}, fmt.Errorf("baseline analysis: %w", err)
 	}
-	doc := ProjectReport(out.Diagnostic, out.Score, out.BaseScore, out.HardGate)
+	doc := ProjectReport(out.Diagnostic, out.Score)
 	snapshot := BaselineSnapshot{Metrics: documentMetrics(doc), State: baselineState(out.Diagnostic)}
 	for _, f := range doc.Findings {
 		if f.Status == report.FindingStatusFixed || f.RuleID == finding.RuleIDCouplingGate {

@@ -147,9 +147,8 @@ consequences to know when reading `cross_module_different_owner`:
 Both are faithful reflections of the repo's declared ownership, not bugs — but if
 you want cross-team coupling to register, declare `owner:` per module explicitly.
 The `owner_source` field (`config` | `codeowners` | `git` | `git_timeout` |
-`codeowners_no_match` | `none`) under `--format legacy-json` and the markdown
-"Distance confidence" section tells you which path produced the owners. It is a
-diagnostic field, not part of `archfit.architecture-state.v1`. The two degraded sources — a
+`codeowners_no_match` | `none`) in the Markdown "Distance confidence" section
+tells you which path produced the owners. The two degraded sources — a
 CODEOWNERS file that matched none of the configured modules, or a git-author
 history walk that timed out — also emit a stderr warning instead of silently
 falling back to code-structure distance.

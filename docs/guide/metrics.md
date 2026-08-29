@@ -12,8 +12,7 @@ complementary metrics. They split into three roles:
   the book's 1–10 per-edge balance). It feeds the `coupling` dimension envelope
   and the per-seam ledger, and it **never gates**. The only coupling gate is
   [`coupling.gate.distributed_monolith`](configuration-reference.md#couplinggate),
-  which counts seams newly introduced against a comparable reference. The
-  retired `min_band` / `max_drop` knobs are a config error in schema v2.
+  which counts seams newly introduced against a comparable reference.
 - **Baseline-delta gated (4):** `unbalanced_edge`, `cycle`, `encapsulation`,
   `coverage`. Each is compared against the committed baseline; a worsening
   delta **fails the build by default** (`metrics.<name>.gate` unset = `fail`;
@@ -156,7 +155,7 @@ new comparable persisted reference.
 
 ---
 
-## Legacy per-metric scoring
+## Internal per-metric scoring
 
 The nine architecture-state dimensions do **not** produce 0–100 scores or
 quality bands. The primary scorecard (`--format scorecard`) renders each
@@ -164,12 +163,11 @@ dimension's evidence-completeness status, gate posture, confidence, denominator,
 metrics, and unknown facts. A dimension's `measured`, `partial`, or `unmeasured`
 status comes only from the fixed required-fact contract described above.
 
-The pre-cutover diagnostic, available as `--format legacy-json`, still carries
-bands and confidence for individual metrics and for its single synthesized
-`coupling_balance` score. That metadata is per metric: ratio metrics derive a
-band from their own normalized score, while count metrics such as `cycle` use
-their documented categorical rules. It must not be read as a nine-dimension or
-repository-wide architecture score.
+The internal scorecard carries bands and confidence for individual metrics and
+for its synthesized `coupling_balance` score. That metadata is per metric: ratio
+metrics derive a band from their own normalized score, while count metrics such as
+`cycle` use their documented categorical rules. It must not be read as a
+nine-dimension or repository-wide architecture score.
 
 `coupling_balance` alone uses the legacy 0–100 ranges: `strong` (81–100),
 `serviceable` (61–80), `mixed` (41–60), `poor` (21–40), and `critical` (0–20).

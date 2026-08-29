@@ -7,10 +7,10 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-// GitOriginInput is the flat, adapter-facing input to `--base` origin
+// TaskOriginInput is the flat, adapter-facing input to `--base` origin
 // classification. It is flat on purpose: the stage adapter already holds every
 // value, and assessment keeps the nested comparison contract private.
-type GitOriginInput struct {
+type TaskOriginInput struct {
 	BaseRef        string
 	BaseFindingIDs []string
 
@@ -28,10 +28,10 @@ type GitOriginInput struct {
 	Patterns, Syntax, SCIP, Clones, CargoModules bool
 }
 
-// AttachGitOrigin classifies the current repair tasks by origin and attaches
-// the report-only block. It never changes the verdict or the exit code.
-func AttachGitOrigin(diag *result.Result, in GitOriginInput) {
-	diag.GitFindingDelta = decision.BuildGitFindingDelta(decision.GitDeltaInput{
+// AttachTaskOrigins classifies current repair tasks by origin. The classification
+// is report-only: it never changes the verdict or exit code.
+func AttachTaskOrigins(diag *result.Result, in TaskOriginInput) {
+	delta := decision.ClassifyTaskOrigins(decision.TaskOriginEvidence{
 		BaseRef:        in.BaseRef,
 		Tasks:          diag.AgentTasks,
 		BaseFindingIDs: in.BaseFindingIDs,
@@ -42,6 +42,26 @@ func AttachGitOrigin(diag *result.Result, in GitOriginInput) {
 			SCIP: in.SCIP, Clones: in.Clones, CargoModules: in.CargoModules,
 		}),
 	})
+
+	originByID := make(map[string]result.TaskOrigin, len(diag.AgentTasks))
+	for _, id := range delta.IntroducedFindingIDs {
+		originByID[id] = result.TaskOriginIntroduced
+	}
+	for _, id := range delta.PreExistingFindingIDs {
+		originByID[id] = result.TaskOriginPreExisting
+	}
+	for _, id := range delta.UnknownOriginFindingIDs {
+		originByID[id] = result.TaskOriginUnknown
+	}
+	for i := range diag.AgentTasks {
+		diag.AgentTasks[i].Origin = originByID[diag.AgentTasks[i].FindingID]
+	}
+
+	if diag.Comparison == nil {
+		diag.Comparison = &result.StateComparison{BaseRef: in.BaseRef, Reasons: []string{}}
+	}
+	diag.Comparison.TaskOriginStatus = delta.ComparisonStatus
+	diag.Comparison.TaskOriginReasons = append([]string{}, delta.ComparisonReasons...)
 }
 
 // BaseFindingIDs projects a base run's findings to the stable IDs that cross

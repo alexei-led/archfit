@@ -10,7 +10,6 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	reportmodel "github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
 	"github.com/alexei-led/archfit/internal/relationship"
 	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
@@ -1327,18 +1326,6 @@ func TestRenderer_Render_BeyondBCLowConfidence(t *testing.T) {
 	// No footnote block should be emitted.
 	if strings.Contains(out, "Low-confidence proxies (footnote") {
 		t.Errorf("unexpected footnote block in output\nfull output:\n%s", out)
-	}
-
-	// JSON renderer retains every metric in full.
-	var jbuf bytes.Buffer
-	if err := jsonout.New().Render(d, &jbuf); err != nil {
-		t.Fatalf("json Render() error = %v", err)
-	}
-	jout := jbuf.String()
-	for _, want := range []string{`"name":"blast_radius"`, `"confidence":"low"`} {
-		if !strings.Contains(jout, want) {
-			t.Errorf("JSON output missing %q\nfull output:\n%s", want, jout)
-		}
 	}
 }
 

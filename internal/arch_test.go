@@ -703,7 +703,6 @@ var cmdDomainAdapterFiles = map[string]string{
 	"llmreview.go":              "off-gate LLM review; initcfg supplies the draft format",
 	"draft_metadata.go":         "initcfg draft metadata translation",
 	"evidence_pack.go":          "initcfg evidence-pack translation",
-	"config_migrate.go":         "config schema migration; initcfg owns the YAML transform",
 }
 
 func TestCommandStagesDoNotImportDomainInternals(t *testing.T) {
@@ -1008,7 +1007,7 @@ func TestSeamGateIsScoreBlind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read %s: %v", gateFile, err)
 	}
-	for _, forbidden := range []string{"Scorecard", "Overall", "MinBand", "MaxDrop", "BandRank"} {
+	for _, forbidden := range []string{"Scorecard", "Overall", "BandRank"} {
 		if strings.Contains(string(src), forbidden) {
 			t.Errorf("%s references %q: the seam gate decides from the seam ledger, never from a repository score",
 				gateFile, forbidden)

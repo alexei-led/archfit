@@ -24,11 +24,8 @@ read-only document review.
   directory. That copy is the **candidate**; the target file is never written.
 - If it has no config, generate one there with `config init` (which already
   emits schema v2).
-- Migrate the candidate with `config update --migration-only --apply`. Do NOT
-  use the full `config update --apply`: it also proposes structural module
-  edits, and bundling those into a schema migration hides whether the migration
-  itself is idempotent, and can silently rewrite authored settings.
-- Run the migration twice. The second run must leave the file byte-identical.
+- Validate the candidate as schema v2 before running analysis. Do not rewrite
+  target repositories during evaluation.
 - For an AI summary, copy the candidate again and add the `ai:` block to the
   COPY. An overlay is never a delivery candidate.
 - A config-update failure is a recorded finding, never a silent skip.
@@ -45,7 +42,7 @@ the v1 cutover deleted.
 - every `dimensions.<d>.metrics` an ARRAY of `{name, value, unit}` records
 - `coverage.measured + coverage.partial + coverage.unmeasured == 9`, and equal
   to what the nine envelopes themselves report
-- the candidate at `version: 2`, idempotent on a second migration
+- the candidate at `version: 2`
 - `check` exiting exactly what its verdict says: healthy 0, needs-attention 2,
   blocked 1, error 3
 
@@ -89,7 +86,7 @@ Fast four-language matrix (one representative per supported adapter):
 ```sh
 python3 scripts/eval/corpus_sweep.py \
   --repos spotinfo,storybook,ccgram,herdr \
-  --ai-repos '' --migration-only \
+  --ai-repos '' \
   --repeat-repos spotinfo,storybook,ccgram,herdr \
   --format-repos spotinfo,storybook,ccgram,herdr \
   --strict --max-workers 1 \
@@ -113,8 +110,8 @@ frozen per-repo records to `--summary-file`. Nothing it writes belongs in git.
 ## Manual command pattern
 
 ```sh
-.bin/archfit config update --migration-only --apply -c <candidate>
-.bin/archfit config update --migration-only --apply -c <candidate>   # must not change it
+.bin/archfit config update --apply -c <candidate>
+.bin/archfit config update --apply -c <candidate>   # must not change it
 .bin/archfit check   --format=json -c <candidate> --root <repo-root>
 .bin/archfit analyze --format=json -c <candidate> --root <repo-root>
 .bin/archfit analyze --ai-summary --format=markdown -c <ai-overlay> --root <repo-root>

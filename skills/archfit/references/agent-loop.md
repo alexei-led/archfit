@@ -29,6 +29,7 @@ Every active gate finding produces one structured repair task:
 {
   "finding_id": "8a4be7…",
   "rule_id": "no_internal_access",
+  "origin": "introduced",
   "goal": "Replace the internal-API access from pkg/a/a.go with b's public API.",
   "constraints": [
     "Use only the public API of module b",
@@ -39,6 +40,9 @@ Every active gate finding produces one structured repair task:
 }
 ```
 
+- `origin` — present with `--base`: `introduced`, `pre_existing`, or `unknown`.
+  `unknown` is conservative and means the two runs did not have comparable
+  analyzer evidence for this task; it never means introduced.
 - `goal` — deterministic template per rule type.
 - `constraints` — the rule's constraint text plus allowed alternatives and the
   target module's public globs.
@@ -75,21 +79,19 @@ scanning for inline PR annotations.
 `archfit check --base <ref>` gates against a git ref in addition to HEAD.
 `archfit analyze --base <ref>` is the report-only equivalent. Text/markdown
 output adds a "CHANGE VS BASE" section. JSON/SARIF stay the normal HEAD
-diagnostic — there is no separate delta schema and no finding-delta bucket
-output. `--require-tools` applies exactly as without `--base`.
+architecture-state contract; there is no separate delta schema or parallel task
+list. With `--base`, canonical JSON classifies each current `agent_tasks[]` entry
+through its optional `origin` field. This metadata never changes the verdict,
+gates, or exit code. `--require-tools` applies exactly as without `--base`.
 
 ## Coverage gaps — missing evidence is loud, not green
 
 A metric reading `n/a` (and a `coverage.tools[]` row that is not `ok` in the
 primary JSON) means an analyzer did not run — archfit refuses to score absence as
-health, it does not fail by default. Under `--format legacy-json` each
-`coverage_gaps[]` entry carries `tool`, `install_cmd`, `affected_metrics`, and
-`gate`, and `config_warnings[]` carries under-specified-module advisories; the
-primary `archfit.architecture-state.v1` document carries neither array. An agent
-treats a gap as "install this tool / fill this config", not as a passing gate.
-Coverage gaps do **not** produce `agent_tasks` and do not fail unless the run
-opts in with `archfit check --require-tools` (or `analyzers.<x>.gate: fail`),
-which exits `1`.
+health, it does not fail by default. An agent treats a gap as "install this tool /
+fill this config", not as a passing gate. Coverage gaps do **not** produce
+`agent_tasks` and do not fail unless the run opts in with `archfit check
+--require-tools` (or `analyzers.<x>.gate: fail`), which exits `1`.
 
 ## What an agent sees
 

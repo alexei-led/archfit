@@ -9,10 +9,13 @@
 >    (candidates staged locally only);
 > 2. the final scoped architecture re-review returning GO, which the Acceptance
 >    criteria below require;
-> 3. the post-GO v2 baseline regeneration and handoff commit —
->    `.archfit-baseline.json` is still `archfit.baseline.v1`, so the drift and
->    seam-comparison path has not been exercised against a real v2 reference on
->    this repository.
+> 3. the post-GO v2 baseline regeneration and handoff commit. The repository
+>    baseline is now v2, but the owner-controlled handoff is still outstanding.
+>
+> The post-release cleanup removed the one-release `legacy-json` renderer,
+> config migration command, baseline-v1 reader, and report-only git finding
+> delta. The historical implementation details below remain as a record of the
+> delivered plan; they are not supported interfaces.
 >
 > Also disclosed: R12's four-language acceptance is partial. The run host has no
 > `cargo` / `rust-analyzer` / `cargo-modules`, so yazi, herdr, ruff, and tokio

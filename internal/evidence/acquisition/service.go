@@ -85,6 +85,12 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		now = time.Now()
 	}
 
+	runPolicy := s.Policy.Clone()
+	pinned, err := s.loadLabels(bundleDir, runPolicy.Topology.Modules)
+	if err != nil {
+		return application.Acquired{}, err
+	}
+
 	sc := s.Options.Scope
 	sc.WorkDir, sc.Root, sc.Base, sc.Full = scanDir(root, bundleDir), root, req.BaseRef, true
 	s.reportPhase("Discovering project")
@@ -93,7 +99,6 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		return application.Acquired{}, err
 	}
 
-	runPolicy := s.Policy.Clone()
 	declaredDeployUnits, ownerProvenance := declaredOperationsFacts(runPolicy)
 	store := factcache.NewStore(factsCacheDir(bundleDir))
 	store.RefreshMode = s.Refresh
@@ -145,10 +150,6 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 	runPolicy = runPolicy.WithResolvedTopology(resolvedOwners, collected.DeployUnitsByModule)
 	noteToolError(toolJscpd, collected.CloneError)
-	pinned, err := s.loadLabels(bundleDir, runPolicy.Topology.Modules)
-	if err != nil {
-		return application.Acquired{}, err
-	}
 
 	graphResult, err := Collect(ctx, Input{
 		Scope: resolved, Extractors: extractors, Resolver: collected.Resolver,
@@ -376,7 +377,7 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 
 // configHash returns the sha256 hex digest of the raw config file bytes at
 // path, or "" when the file cannot be read. It is the run's config identity:
-// two runs with the same hash analysed the same policy text, so the git-origin
+// two runs with the same hash analysed the same policy text, so the task-origin
 // delta can tell a code change from a policy change.
 func configHash(path string) string {
 	b, err := os.ReadFile(path) //#nosec G304 -- path comes from the --config CLI flag, not arbitrary user input

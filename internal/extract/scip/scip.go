@@ -81,6 +81,12 @@ func New(runner toolrun.Runner, timeout time.Duration) *Adapter {
 	return &Adapter{runner: runner, timeout: timeout}
 }
 
+// CoverageTool returns the coverage name for SCIP strength evidence.
+func (a *Adapter) CoverageTool() string { return toolName }
+
+// SymbolsCoverageTool returns the coverage name for SCIP symbol evidence.
+func (a *Adapter) SymbolsCoverageTool() string { return toolNameSymbols }
+
 // Name returns the tool identifier.
 func (a *Adapter) Name() string { return toolName }
 

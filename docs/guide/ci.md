@@ -58,37 +58,32 @@ make sure the base ref exists in the local checkout first:
 
 Use the plain gate for branch protection. Use delta mode on pull requests when
 you want the check output to show before/after drift against `origin/main`.
-
-Add `--format legacy-json` to that step to get the per-task git origin as well.
-`git_finding_delta` is a diagnostic-only block: the primary
-`archfit.architecture-state.v1` document (`--json`) does not carry it, and
-`legacy-json` ships for exactly one release — see
-[release notes](release-notes.md).
+Canonical JSON also adds `origin` to each current repair task:
 
 ```yaml
 - name: Architecture delta check (machine-readable)
-  run: archfit check -c .archfit.yaml --base origin/main --format legacy-json > archfit-delta.json
+  run: archfit check -c .archfit.yaml --base origin/main --json > archfit-state.json
 ```
 
-`git_finding_delta.introduced_finding_ids` lists the current repair tasks this
-pull request brought in; everything in `pre_existing_finding_ids` is older debt.
-When an analyzer's evidence differs between the two sides, its tasks move to
-`unknown_origin_finding_ids` instead — a missing analyzer never manufactures a
-"new" finding. The block is report-only: it changes neither the verdict nor the
-exit code. See
-[agent-feedback.md](agent-feedback.md#git_finding_delta--which-repair-tasks-this-change-introduced).
+```sh
+jq '.agent_tasks[] | select(.origin == "introduced")' archfit-state.json
+```
+
+`introduced` names work the pull request brought in; `pre_existing` is older
+debt. `unknown` means analyzer evidence differed between the two sides, so a
+missing analyzer never manufactures a new finding. The classification is
+report-only and changes neither the verdict nor the exit code. See
+[Task origin with `--base`](agent-feedback.md#task-origin-with---base).
 
 **Known ceiling — gitignored generated code.** The base side is a checkout of
-tracked files only, so a generated package that is gitignored (protoc, sqlc,
-wire, or mockgen output) is not in it. Go resolves imports inside the checkout's
-own module, so the packages importing it fail to load there, the base
-`go/packages` row reports `partial`, and every task lands in
-`unknown_origin_finding_ids` — `introduced_finding_ids` stays empty on every run.
-`comparison_reasons` names the cause each time, so this is disclosed rather than
-silent. If your build generates gitignored Go code, either commit the generated
-package or read `pre_existing_finding_ids` and the plain gate instead. Tools that
-resolve by walking UP from the file (`node_modules` for TypeScript) are
-unaffected: the checkout sits inside the analyzed repo and finds them.
+tracked files only, so a gitignored generated package (protoc, sqlc, wire, or
+mockgen output) is absent there. Go imports inside that checkout can then fail to
+load; the base `go/packages` row becomes partial and current task origins become
+`unknown`. `comparison.task_origin_reasons` discloses the cause. If a build
+requires generated Go packages, commit the generated package or treat the
+origin as unknown. Tools that resolve by
+walking up from the file, such as TypeScript through `node_modules`, are not
+affected when the checkout remains inside the analyzed repository.
 
 ## 3. SARIF upload
 

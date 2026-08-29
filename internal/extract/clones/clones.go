@@ -68,6 +68,9 @@ func effectiveTimeout(configured, fallback time.Duration) time.Duration {
 	return fallback
 }
 
+// CoverageTool returns the coverage name emitted by this detector.
+func CoverageTool() string { return toolName }
+
 // Run invokes jscpd over root and returns detected clone clusters.
 // exclusions is the effective set of glob patterns (scope.MergeExclusions result)
 // that jscpd should skip via --ignore; empty means no --ignore flag is added

@@ -17,24 +17,16 @@ type UpdateCmd struct {
 	Root       string `short:"r" help:"Project root directory (default: directory of --config)."`
 	AIClassify bool   `name:"ai-classify" help:"Run AI classification for unclassified modules (off-gate)."`
 	Apply      bool   `name:"apply" help:"Write structural changes live into .archfit.yaml (backup created; AI semantic proposals remain review-only)."`
-	//nolint:lll // kong renders the help text verbatim; wrapping it breaks the CLI output.
-	MigrationOnly bool   `name:"migration-only" help:"Migrate the config to the current schema version and nothing else. --json previews, --apply writes. Not combinable with --ai-classify or --refresh."`
-	JSON          bool   `name:"json" help:"Emit the review as a JSON document (report-only; not combinable with --apply, --ai-classify, or --refresh)."`
-	Refresh       bool   `name:"refresh" help:"Re-run the AI calls and refresh the cache."`
-	AIProvider    string `name:"ai-provider" help:"AI provider override." default:"anthropic"`
-	AIModel       string `name:"ai-model" help:"AI model override." default:"claude-opus-4-8"`
+	JSON       bool   `name:"json" help:"Emit the review as a JSON document (report-only; not combinable with --apply, --ai-classify, or --refresh)."`
+	Refresh    bool   `name:"refresh" help:"Re-run the AI calls and refresh the cache."`
+	AIProvider string `name:"ai-provider" help:"AI provider override." default:"anthropic"`
+	AIModel    string `name:"ai-model" help:"AI model override." default:"claude-opus-4-8"`
 
 	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
 	providerOverride llm.Provider
 }
 
 func (c *UpdateCmd) Run(deps *appDeps) error {
-	if c.MigrationOnly {
-		// Short-circuit before discovery, tool calls, and cache access: a
-		// schema migration is a text edit on one file and must not depend on
-		// analysing the tree it configures.
-		return c.runMigration(deps)
-	}
 	root, err := c.resolveRoot()
 	if err != nil {
 		return err

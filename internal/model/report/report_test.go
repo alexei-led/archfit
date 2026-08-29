@@ -1,7 +1,6 @@
 package report_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"testing"
 
@@ -284,59 +283,6 @@ func TestCoverageGap_JSONFieldNames(t *testing.T) {
 		if _, ok := m[f]; !ok {
 			t.Errorf("CoverageGap JSON field %q missing", f)
 		}
-	}
-}
-
-// TestGitFindingDelta_JSONContract pins the --base origin block's field names,
-// its non-null ID lists, and the pointer+omitempty rule that keeps a run without
-// --base byte-identical.
-func TestGitFindingDelta_JSONContract(t *testing.T) {
-	d := report.GitFindingDelta{
-		BaseRef:                 "main",
-		ComparisonStatus:        report.GitComparisonComparable,
-		IntroducedFindingIDs:    []string{"finding-a"},
-		PreExistingFindingIDs:   []string{"finding-b"},
-		UnknownOriginFindingIDs: []string{},
-		ComparisonReasons:       []string{},
-	}
-
-	data, err := json.Marshal(d)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(data, &m); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
-	for _, f := range []string{
-		"base_ref", "comparison_status", "introduced_finding_ids",
-		"pre_existing_finding_ids", "unknown_origin_finding_ids", "comparison_reasons",
-	} {
-		if _, ok := m[f]; !ok {
-			t.Errorf("GitFindingDelta JSON field %q missing", f)
-		}
-	}
-	if bytes.Contains(data, []byte("null")) {
-		t.Errorf("empty ID lists must serialise as [], not null: %s", data)
-	}
-
-	// The Diagnostic field is a pointer with omitempty: absent without --base.
-	plain, err := json.Marshal(report.NewDocument())
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-	if bytes.Contains(plain, []byte(`"git_finding_delta"`)) {
-		t.Errorf("git_finding_delta must be omitted when nil: %s", plain)
-	}
-
-	withDelta := report.NewDocument()
-	withDelta.GitFindingDelta = &d
-	full, err := json.Marshal(withDelta)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-	if !bytes.Contains(full, []byte(`"git_finding_delta"`)) {
-		t.Errorf("git_finding_delta must be present when set: %s", full)
 	}
 }
 

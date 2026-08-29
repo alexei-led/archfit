@@ -124,19 +124,12 @@ larger than a review fix.
   the owner set and exclude test files. Related surface hygiene: several
   `decision` helpers (`CompareAnalyzerEvidence`, `PartialFromDegradedPrecision`,
   `UnresolvedMagnitude`, `DegradedMagnitude`, `HasCoverageGap`) lost their only
-  out-of-package consumer when `git_finding_delta.go` moved in and can be
+  out-of-package consumer when the comparison implementation moved and can be
   unexported.
-- **Baseline and pinned-label validation now runs after evidence acquisition**
-  (`internal/application/analysis.go` `Execute`). A malformed
-  `.archfit-baseline.json` still exits 3, but only after the full extractor pass
-  and its fact-cache writes; `main` rejected it before any subprocess ran. The
-  error is also double-prefixed (`baseline: baseline: parse …`). Moving the load
-  ahead of `Acquire` needs the resolved bundle dir, which today only
-  `AnalysisContext` carries.
 
 ---
 
-# Deferred from the architecture-state-reporting review
+## Deferred from the architecture-state-reporting review
 
 Date: 2026-08-26
 Source: code review of `docs/plans/architecture-state-reporting.md`. Every

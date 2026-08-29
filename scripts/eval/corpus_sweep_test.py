@@ -91,22 +91,6 @@ class TestFlagParsing(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 cs.parse_allow_unverified([bad])
 
-    def test_migration_only_defaults_on_at_the_argparse_layer(self):
-        # The bug lived in the argparse-to-Sweep seam: Sweep's own default was
-        # already True while the flag was store_true, so a flagless sweep ran
-        # the full `config update --apply` that docs/test-corpus.md forbids for
-        # a schema migration. Assert the parser, not the Sweep constructor.
-        self.assertTrue(cs.build_parser().parse_args([]).migration_only)
-        self.assertTrue(cs.build_parser().parse_args(["--migration-only"]).migration_only)
-        self.assertFalse(
-            cs.build_parser().parse_args(["--no-migration-only"]).migration_only
-        )
-
-    def test_config_version(self):
-        self.assertEqual(cs.config_version("version: 2\nmodules: {}\n"), 2)
-        self.assertEqual(cs.config_version("# version: 2\nmodules: {}\n"), None)
-        self.assertEqual(cs.config_version("modules: {}\n"), None)
-
     def test_command_environment_pins_rust_without_overriding_owner_choice(self):
         self.assertEqual(
             cs.command_environment({})["RUSTUP_TOOLCHAIN"],
@@ -143,14 +127,9 @@ class TestRecordShape(unittest.TestCase):
         self.assertEqual(
             sorted(record["config"]),
             [
-                "candidate_sha256",
-                "second_update_changed",
-                "second_update_exit",
                 "source",
                 "source_config_sha256",
                 "target_head",
-                "update_exit",
-                "version",
             ],
         )
         self.assertEqual(
@@ -502,14 +481,14 @@ class TestSweepFlow(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.target = self.tmp / "target"
         self.target.mkdir()
-        (self.target / ".archfit.yaml").write_text("version: 1\nmodules: {}\n")
+        (self.target / ".archfit.yaml").write_text("version: 2\nmodules: {}\n")
         self.spec = cs.RepoSpec("target", self.target, "go")
         self.out = self.tmp / "out"
         self.out.mkdir()
         self.work = self.out / "target"
         self.work.mkdir()
 
-    def sweep(self, *, migration_only: bool = True) -> tuple[cs.Sweep, FakeRunner]:
+    def sweep(self) -> tuple[cs.Sweep, FakeRunner]:
         runner = FakeRunner([])
         return (
             cs.Sweep(
@@ -517,7 +496,6 @@ class TestSweepFlow(unittest.TestCase):
                 self.out,
                 runner=runner,
                 cwd=self.tmp,
-                migration_only=migration_only,
             ),
             runner,
         )
@@ -526,51 +504,6 @@ class TestSweepFlow(unittest.TestCase):
         cfg = sweep.prepare_config(self.spec, self.work, record)
         assert cfg is not None, record["failures"]
         return cfg
-
-    def test_migration_only_is_the_command_actually_run(self):
-        sweep, runner = self.sweep()
-        record = cs.blank_record("target", str(self.target), "go")
-        cfg = self.staged_candidate(sweep, record)
-        # Stand in for the binary's write: the version check reads the file back.
-        cfg.write_text("version: 2\nmodules: {}\n")
-        sweep.migrate_config(self.spec, cfg, self.work, record)
-
-        update_calls = [c for c in runner.calls if "update" in c]
-        self.assertEqual(len(update_calls), 2, update_calls)
-        for call in update_calls:
-            self.assertIn("--migration-only", call)
-            self.assertIn("--apply", call)
-        self.assertEqual(record["config"]["version"], 2)
-        self.assertFalse(record["config"]["second_update_changed"])
-        self.assertEqual(record["failures"], [])
-
-    def test_a_config_left_at_v1_is_a_failure(self):
-        sweep, _ = self.sweep()
-        record = cs.blank_record("target", str(self.target), "go")
-        cfg = self.staged_candidate(sweep, record)
-        sweep.migrate_config(self.spec, cfg, self.work, record)
-        self.assertEqual(record["config"]["version"], 1)
-        self.assertTrue(
-            any("want 2" in f for f in record["failures"]), record["failures"]
-        )
-
-    def test_a_non_idempotent_second_migration_is_a_failure(self):
-        sweep, _ = self.sweep()
-        record = cs.blank_record("target", str(self.target), "go")
-        cfg = self.staged_candidate(sweep, record)
-        passes = {"n": 0}
-
-        def rewriting(_cmd, _cwd):
-            passes["n"] += 1
-            cfg.write_text(f"version: 2\nmodules: {{}}\n# pass {passes['n']}\n")
-            return cs.CommandResult(0, "", "")
-
-        sweep.runner = rewriting
-        sweep.migrate_config(self.spec, cfg, self.work, record)
-        self.assertTrue(record["config"]["second_update_changed"])
-        self.assertTrue(
-            any("rewrote" in f for f in record["failures"]), record["failures"]
-        )
 
     def test_the_source_config_hash_is_the_targets_own_file(self):
         sweep, _ = self.sweep()
@@ -583,7 +516,7 @@ class TestSweepFlow(unittest.TestCase):
         self.assertEqual(record["config"]["source"], "copied-existing")
         # The target file is untouched: the sweep is read-only over corpus repos.
         self.assertEqual(
-            (self.target / ".archfit.yaml").read_text(), "version: 1\nmodules: {}\n"
+            (self.target / ".archfit.yaml").read_text(), "version: 2\nmodules: {}\n"
         )
 
     def test_a_check_exit_that_contradicts_its_verdict_is_a_failure(self):

@@ -231,9 +231,31 @@ func TestAcquireReadsPinnedLabelsFromTheRunBundle(t *testing.T) {
 	}
 }
 
+func TestAcquireRejectsInvalidPinnedLabelsBeforeDiscovery(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	runner := &gitOnlyRunner{root: root}
+	svc := acquisitionService(t, root, runner, &bytes.Buffer{})
+	svc.Labels = invalidLabelLoader{}
+
+	_, err := svc.Acquire(context.Background(), application.AnalysisRequest{})
+	if err == nil || !strings.Contains(err.Error(), `module "missing" is not declared`) {
+		t.Fatalf("Acquire error = %v, want undeclared pinned-label module", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runner calls = %v, want none before pinned-label validation", runner.calls)
+	}
+}
+
 type recordingLabelLoader struct{ path string }
 
 func (l *recordingLabelLoader) Load(path string) ([]labels.Label, error) {
 	l.path = path
 	return nil, nil
+}
+
+type invalidLabelLoader struct{}
+
+func (invalidLabelLoader) Load(string) ([]labels.Label, error) {
+	return []labels.Label{{From: "missing", To: "a"}}, nil
 }

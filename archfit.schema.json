@@ -175,7 +175,7 @@
             "warn",
             "fail"
           ],
-          "description": "Mode is warn (diagnostic, the default) or fail (blocking). Fail is opt-in\nand is never inferred by the migration: it stays an owner decision taken\nafter a report-only run against a comparable reference."
+          "description": "Mode is warn (diagnostic, the default) or fail (blocking). Fail is opt-in\nand is never inferred automatically: it stays an owner decision taken after\na report-only run against a comparable reference."
         },
         "max_new_seams": {
           "type": "integer",

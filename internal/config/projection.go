@@ -148,10 +148,16 @@ func (c Config) AcquisitionOptions() acquire.Options {
 	}
 }
 
-// AnalyzerFamilies projects config into the optional analyzer families it
-// activated. The git-origin delta compares two runs on exactly this set.
+// AnalyzerFamilies projects config into the optional finding-producing
+// analyzer families used by task-origin comparison.
 func (c Config) AnalyzerFamilies() application.AnalyzerFamilies {
-	return application.AnalyzerFamilies{Patterns: len(c.ForPatterns()) > 0, Syntax: c.ForSyntax().Enabled, SCIP: c.ScipEnabled(), Clones: c.ClonesEnabled(), CargoModules: c.CargoModulesEnabled()}
+	return application.AnalyzerFamilies{
+		Patterns:     len(c.ForPatterns()) > 0,
+		Syntax:       c.ForSyntax().Enabled,
+		SCIP:         c.ScipEnabled(),
+		Clones:       c.ClonesEnabled(),
+		CargoModules: c.CargoModulesEnabled(),
+	}
 }
 
 // WithIndependentModules returns a copy whose module map is independent of the

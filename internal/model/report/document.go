@@ -12,6 +12,8 @@ type AgentTask struct {
 	Files        []string     `json:"files"`
 	Validation   []string     `json:"validation"`
 	Declarations []SyntaxFact `json:"declarations,omitempty"`
+	// Origin is set only for --base runs.
+	Origin string `json:"origin,omitempty"`
 }
 
 // FindingStatus values describe the lifecycle state of a report finding.
@@ -118,19 +120,11 @@ type Document struct {
 	DistanceConfigCandidates  []DistanceConfigCandidate  `json:"distance_config_candidates,omitempty"`
 	VolatilityCorroboration   *VolatilityCorroboration   `json:"volatility_corroboration,omitempty"`
 	LocalCoupling             []LocalCouplingModule      `json:"local_coupling,omitempty"`
-	GitFindingDelta           *GitFindingDelta           `json:"git_finding_delta,omitempty"`
 	Delta                     *DeltaReport               `json:"delta,omitempty"`
 	Summary                   Summary                    `json:"summary"`
 
-	// Score is the projected scorecard, consumed by renderers. It is not part of
-	// the raw JSON diagnostic envelope (jsonout re-emits it under its own "score"
-	// key), so it is tagged json:"-".
+	// Score is the computed scorecard used by config comparison and the AI review.
 	Score Scorecard `json:"-"`
-	// BaseScore is the optional --base scorecard used to compute the score delta.
-	BaseScore *Scorecard `json:"-"`
-	// Decision is the projected human-decision view model consumed by the console
-	// and markdown decision renderers. It is not part of the raw JSON envelope.
-	Decision Report `json:"-"`
 	// State is the projected archfit.architecture-state.v1 contract. It is tagged
 	// json:"-" for the same reason Score and Decision are: the diagnostic
 	// envelope's wire shape is frozen until the format cutover, so populating
@@ -138,13 +132,6 @@ type Document struct {
 	// to the primary contract (docs/design/architecture-state-reporting.md).
 	State ArchitectureState `json:"-"`
 }
-
-// Git comparison statuses describe whether every current repair task has a
-// definite origin relative to the selected base.
-const (
-	GitComparisonComparable = "comparable"
-	GitComparisonUnknown    = "unknown"
-)
 
 // NewDocument returns an empty document with deterministic non-nil collections.
 func NewDocument() Document {

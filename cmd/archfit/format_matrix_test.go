@@ -13,10 +13,10 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-// Committed format-matrix fixture names, one per non-legacy renderer. The JSON
+// Committed format-matrix fixture names, one per non-JSON renderer. The JSON
 // format's byte-identical baseline is owned by byteidentical_test.go; the
-// remaining four are captured here so the architecture-state contract has a
-// reviewed baseline for every human/SARIF format.
+// remaining four are captured here so every shipped renderer has a reviewed
+// baseline.
 //
 // They live under cmd/archfit/testdata/, NOT beside the analysed fixture: a
 // baseline written into the fixture tree becomes an input to the next run that
@@ -31,10 +31,9 @@ const (
 	baselineScorecard = "scorecard.txt"
 )
 
-// formatMatrix is the compatibility matrix frozen by Task 1 of the
-// architecture-state migration (docs/design/architecture-state-reporting.md).
-// Every renderer archfit ships appears exactly once; adding a format without
-// adding its row leaves the cutover unwitnessed for that format.
+// formatMatrix freezes the reviewed output of every non-JSON renderer. Every
+// renderer archfit ships appears exactly once; adding a format without adding
+// its row leaves the output contract unwitnessed.
 var formatMatrix = []struct {
 	format   string // --format value
 	baseline string // committed fixture under formatMatrixBaselineDir
@@ -165,27 +164,28 @@ func requireHealthyExtraction(t *testing.T) {
 
 	_, root := materializeFixtureRepo(t, fixtureSingleModule)
 	var doc struct {
-		ToolCoverage []struct {
-			Tool       string `json:"tool"`
-			Status     string `json:"status"`
-			Unresolved int    `json:"unresolved"`
-		} `json:"tool_coverage"`
+		Coverage struct {
+			Tools []struct {
+				Tool   string `json:"tool"`
+				Status string `json:"status"`
+			} `json:"tools"`
+		} `json:"coverage"`
 	}
-	if err := json.Unmarshal(runAnalyzeFormat(t, root, formatLegacyJSON, true), &doc); err != nil {
+	if err := json.Unmarshal(runAnalyzeFormat(t, root, formatJSON, true), &doc); err != nil {
 		t.Fatalf("decode tool coverage: %v", err)
 	}
-	for _, c := range doc.ToolCoverage {
+	for _, c := range doc.Coverage.Tools {
 		if c.Tool != toolGoPackages {
 			continue
 		}
-		if c.Status != string(evidence.StatusOK) || c.Unresolved != 0 {
-			t.Fatalf("Go extraction is degraded in this environment (%s: status=%q unresolved=%d) — "+
+		if c.Status != string(evidence.StatusOK) {
+			t.Fatalf("Go extraction is degraded in this environment (%s: status=%q) — "+
 				"the format baselines are not comparable here; do not re-record them",
-				c.Tool, c.Status, c.Unresolved)
+				c.Tool, c.Status)
 		}
 		return
 	}
-	t.Fatalf("no %s coverage row in the fixture run: %+v", toolGoPackages, doc.ToolCoverage)
+	t.Fatalf("no %s coverage row in the fixture run: %+v", toolGoPackages, doc.Coverage.Tools)
 }
 
 // runAnalyzeFormat runs `archfit analyze --format <format>` in-process against

@@ -170,7 +170,7 @@ func TestRun_Check_JSONStdoutStaysCleanWhenWarningsGoToStderr(t *testing.T) {
 
 func runRefreshCheckJSON(t *testing.T, cfgPath string, extraArgs ...string) refreshDiag {
 	t.Helper()
-	args := append([]string{cmdCheck, fmtLegacyJSON, "-c", cfgPath}, extraArgs...)
+	args := append([]string{cmdCheck, fmtJSON, "-c", cfgPath}, extraArgs...)
 
 	var stdout, stderr bytes.Buffer
 	code := RunWithStderr(args, &stdout, &stderr)

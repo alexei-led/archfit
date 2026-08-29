@@ -30,12 +30,13 @@ func newEvidenceService(configPath, root string, cfg config.Config, deps *appDep
 // here, only the choice of concrete implementation.
 func newAnalysisStages(configPath, root string, cfg config.Config, deps *appDeps) application.StageExecutor {
 	return application.StageExecutor{
-		Preparer: config.Preparer{Config: cfg, Stderr: deps.stderr()},
-		Evidence: newEvidenceService(configPath, root, cfg, deps),
-		Baseline: baselineLoaderAdapter{},
-		Stderr:   deps.stderr(),
-		Progress: deps.progress,
-		Worktree: historygit.Worktree{Runner: deps.Runner},
+		Preparer:  config.Preparer{Config: cfg, Stderr: deps.stderr()},
+		Evidence:  newEvidenceService(configPath, root, cfg, deps),
+		Baseline:  baselineLoaderAdapter{},
+		Stderr:    deps.stderr(),
+		Progress:  deps.progress,
+		Worktree:  historygit.Worktree{Runner: deps.Runner},
+		Analyzers: cfg.AnalyzerFamilies(),
 		// The base tree is measured with the caller's EFFECTIVE head config, so
 		// config drift can never masquerade as code drift. Its module map is an
 		// independent copy: the run's owner/deploy-unit backfill writes through
@@ -46,7 +47,6 @@ func newAnalysisStages(configPath, root string, cfg config.Config, deps *appDeps
 			quiet.progress = nil
 			return newEvidenceService(configPath, baseRoot, baseCfg, &quiet)
 		},
-		Analyzers: cfg.AnalyzerFamilies(),
 	}
 }
 
@@ -76,7 +76,7 @@ func (baselineLoaderAdapter) Load(ctx context.Context, bundleDir string) (applic
 	if err != nil {
 		return application.Baseline{}, err
 	}
-	out := application.Baseline{Accepted: b, Metrics: b.Metrics, Legacy: b.Legacy()}
+	out := application.Baseline{Accepted: b, Metrics: b.Metrics}
 	if b.State != nil {
 		out.State = &application.BaselineStateSnapshot{
 			ConfigHash: b.State.ConfigHash, ModelHash: b.State.ModelHash,

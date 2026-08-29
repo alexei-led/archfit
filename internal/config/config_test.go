@@ -1533,22 +1533,14 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "max_new_seams must be >= 0",
 		},
 		{
-			// The retired knobs still DECODE — config update --migration-only
-			// has to read a v1 file — so the refusal has to come from
-			// validation, and it has to name the one supported way out.
-			name:    "retired coupling.gate.min_band rejected with the migration command",
-			yaml:    "version: 2\ncoupling:\n  gate:\n    min_band: mixed\n",
-			wantErr: config.MigrationHint,
+			name:    "config schema v1 rejected before retired fields decode",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: serviceable\n    max_drop: 5\n",
+			wantErr: "Archfit skill manual migration reference (references/migration.md)",
 		},
 		{
-			name:    "retired coupling.gate.max_drop rejected with the migration command",
-			yaml:    "version: 2\ncoupling:\n  gate:\n    max_drop: 5\n",
-			wantErr: config.MigrationHint,
-		},
-		{
-			name:    "config schema v1 rejected with the migration command",
-			yaml:    "version: 1\n",
-			wantErr: config.MigrationHint,
+			name:    "retired scalar gate in v2 points to manual migration",
+			yaml:    "version: 2\ncoupling:\n  gate:\n    min_band: serviceable\n",
+			wantErr: "references/migration.md",
 		},
 		{
 			name:    "config schema newer than this binary rejected",

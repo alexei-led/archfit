@@ -143,31 +143,8 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `cross_module_same_owner`, 78 critical, **0** at high distance → 0 qualifying
   seams, which is why the self-config stays `mode: warn`.
 - **Config schema v2 is the only analysable schema.** `config.SchemaVersion = 2`;
-  `analyze`/`check` reject `version: 1` AND the retired
-  `coupling.gate.min_band`/`max_drop` keys with the exact hint
-  `config.MigrationHint` ("→ run: archfit config update --migration-only
-  --apply"). The retired keys still DECODE on purpose — the migration has to read
-  a v1 file — so the refusal lives in `validate()`, never in the decoder.
-  `initcfg.MigrateToV2` is a LINE transform (a YAML round-trip would reflow the
-  file and drop every comment): it bumps the root `version:`, removes the retired
-  keys with the comment lines documenting them, and splices
-  `distributed_monolith: {mode: warn, max_new_seams: 0}` in at the first removed
-  key's position. It never infers `mode: fail`, it only moves the version
-  FORWARD (`from >= TargetSchemaVersion` is left alone — a newer schema means
-  "upgrade archfit", not "downgrade the file"), and running it twice is
-  byte-identical. `initcfg.TargetSchemaVersion` restates `config.SchemaVersion`
-  because initcfg may not import config (`*_no_config`); the two are pinned
-  together by `cmd/archfit.TestMigrationTargetsCurrentSchema`. The CLI path lives
-  in `cmd/archfit/config_migrate.go` (an exempt domain adapter) and
-  short-circuits BEFORE discovery, tool calls, and cache access.
-  **`--apply` writes through `safeWriteConfig`, never `os.WriteFile`.** A line
-  transform cannot see every YAML shape — a flow-mapping `gate: {min_band: …}`
-  leaves the retired keys in place, and a block scalar containing `min_band:`
-  loses that prose line — so "the migration produced a LOADABLE v2 config" has to
-  be an enforced post-condition (`config.Load` + `ValidateRules` on a temp file,
-  a `.bak`, then an atomic rename). This is the only advertised escape from a v1
-  config, so it runs on files the user cannot currently load and there is nothing
-  to restore from if it corrupts one.
+  `analyze`/`check` reject every other version and unknown config keys. `config
+  init` emits v2 directly; owners update older configs manually before analysis.
 - **Seam ledger** (`relationship.Seam`, built by `analysis.buildSeams`, carried
   on `AssessmentSignals.Seams` → `result.Result.Seams`). One record per ordered
   module pair with a stable ID (`sha256("seam.v1\x00"+from+"\x00"+to)`), the
@@ -180,7 +157,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   and the gate re-sorts by ID so a ledger reordering cannot reorder gate findings.
 - **Comparison is strict on four fingerprints** (`decision.CompareFingerprints`).
   `config_hash` + `model_hash` (`policy.ModelHash` over the RESOLVED module map)
-  + `labels_hash` (`labels.FileHash` over APPROVED entries only) +
+  `labels_hash` (`labels.FileHash` over APPROVED entries only) +
   `rubric_version`. Any mismatch is `non_comparable` with a reason NAMING the
   drifted input — never a delta with a caveat. Model hash is load-bearing: seam
   identity comes from module NAMES, so without it a rename reads as one resolved
@@ -226,45 +203,6 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   head-tree owners and skip its own resolution. The base sub-run is a SECOND
   acquisition service (`StageExecutor.NewBaseEvidence`), not a second call on
   the head one: no per-run state can leak between the two trees.
-- **`git_finding_delta`** (`internal/assessment/decision`, attached by
-  `evaluation.AttachGitOrigin`) — report-only JSON
-  block emitted only with `--base`, classifying the CURRENT `agent_tasks[]` as
-  `introduced` / `pre_existing` / `unknown` origin. Pointer + `omitempty`, so a
-  run without `--base` stays byte-identical; never changes the verdict, the exit
-  code, or text/markdown/scorecard/SARIF output. Matching uses stable finding IDs
-  only (lifecycle labels and gate/advisory promotion ignored; base `status=fixed`
-  entries dropped). An unmatched task is `introduced` ONLY when every ACTIVE
-  finding-producing analyzer family compared equivalently — otherwise `unknown`,
-  never a fabricated new task. One family = one `ToolCoverage` name: the
-  per-language primaries, the `ast-grep` pattern pass, the `ast-grep/syntax`
-  pass, and opt-in `scip`/`scip-symbols`/`jscpd`/`cargo-modules`. Pairing rules:
-  equal statuses always pair; the only cross-status pair is `ok` against a
-  gapless-`absent` PRIMARY, which means the language is not in that tree. A
-  gapless `absent` on a NON-primary analyzer is evidence about the tool, not the
-  tree, so it pairs only with itself — symmetric absence is safe (neither side
-  produced findings), asymmetric absence is not. A timeout, a missing row, and a
-  duplicate row are all unavailable evidence.
-  Isolation: only base finding IDs, coverage rows/gaps, and the config hash
-  cross over — `scoreBaseTree` projects the base Diagnostic to
-  `application.BaseEvidence` at the source, because base agent tasks carry paths
-  and a validation command rooted in a temp worktree that is deleted on return.
-  `comparison_status: comparable` can still ship with non-empty
-  `comparison_reasons`: the status reports task placement, the reasons report
-  evidence.
-  **Shared with `config compare`'s `decision.gradeTool` (keep these three in
-  step):** one row per tool per side, so a repeated coverage name is unpairable;
-  the coverage-gap condition is PER SIDE, so a gap on one side only is an
-  asymmetry; symmetric absence never blocks, gapped or not. Symmetric
-  `absent`-WITH-a-gap (an enabled analyzer whose tool is not installed) pairs on
-  BOTH paths — `comparable_with_gaps` in `decision.gradeTool`,
-  `familyPairedDegradedAbsent` in `pairFamily`, always with a disclosed reason.
-  Failing it made `--base` permanently all-`unknown` for a whole class of
-  environments, including archfit's own runtime image (no Rust toolchain) on any
-  repo carrying a `Cargo.toml`. The two paths deliberately DIFFER once, because
-  `--base` compares two trees and `config compare` compares one: `ok` vs
-  gapless-`absent` primary is comparable for `--base` (a language appearing is
-  expected) but `not_comparable` for `config compare` (a status change on one
-  tree is config-caused).
 - **`partial` means two different things and the TOOL NAME separates them, not
   `Coverage.Unresolved`** (`decision.PartialFromUnresolvedSpecifiers`, the single
   predicate both pairing paths call). dependency-cruiser and grimp mark a
@@ -338,7 +276,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
 - **One coverage name per analyzer.** `internal/extract/astgrep` drives one
   binary for two passes and they report under two names: `ast-grep` (patterns)
   and `ast-grep/syntax` (`syntaxToolName`). Both consumers that pair coverage
-  rows — `pairFamily` (git origin delta) and `decision.gradeTool` (config
+  rows — `pairFamily` (task origin) and `decision.gradeTool` (config
   compare) — read a repeated name as an unpairable duplicate and grade the pair
   unavailable/`not_comparable`. Never give two analyzers one coverage name.
 - **`archfit config compare <candidate>`** (`cmd/archfit/config_compare.go`,
@@ -523,15 +461,10 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   fails if either guard is deleted, and also if either starts matching real
   source. Moving a package means updating the owning `paths:` in the same commit.
 - **The primary output is `archfit.architecture-state.v1`** (`internal/model/report/state.go`,
-  rendered by `internal/output/jsonout.StateRenderer`). `--format json` emits the
+  rendered by `internal/output/jsonout.Renderer`). `--format json` emits the
   state AT THE DOCUMENT ROOT — `verdict`, `decision`, `comparison`, `measurement`,
   the nine `dimensions` keys, `coverage`, `findings`, `agent_tasks`, `seams` — with
-  no repository scalar. `--format legacy-json` emits the pre-cutover diagnostic
-  envelope (`jsonout.JSONRenderer`) for exactly one release; it must be selected
-  explicitly and never reaches the verdict or the exit code. Tests that assert on a
-  diagnostic-only block (`tool_coverage` detail, `owner_source`, `config_warnings`,
-  `git_finding_delta`, `advisory_tasks`) must use `legacy-json` — the state
-  contract does not carry them. Text, Markdown, SARIF, and scorecard all report the
+  no repository scalar. Text, Markdown, SARIF, and scorecard all report the
   same verdict, dimension statuses, coverage split, and finding IDs
   (`cmd/archfit.TestFormatMatrix_CrossFormatParity`,
   `TestFormatMatrix_SarifCarriesTheState`); SARIF is exempt from human LAYOUT
@@ -590,10 +523,10 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   architecture-state reference: the four comparison fingerprints (`config_hash`,
   `model_hash`, `labels_hash`, `rubric_version`) travelling with the facts they
   qualify — hard-gate finding IDs, distributed-monolith seam IDs, and the nine
-  dimension snapshots. NO repository scalar is written. A v1 file stays readable
-  for its accepted fingerprints, is never rewritten on read, and can never support
-  a state/dimension/seam comparison — the refusal is reported as
-  `application.LegacyScoreIgnored` ("legacy_score_snapshot_ignored").
+  dimension snapshots. NO repository scalar is written. Older schemas are
+  rejected; changing only `schema_version` cannot synthesize the missing state
+  reference. Preserve the old file for owner review and regenerate deliberately
+  with `archfit baseline` after reviewing current findings.
   `seamAnchor` (`internal/application/analysis.go`) is comparable only when
   `decision.CompareFingerprints` finds all four equal, and the SAME anchor feeds
   both the seam gate and the drift dimension, so the two cannot disagree about
@@ -785,32 +718,33 @@ research artifacts, and analysis notes. Only read when explicitly debugging
 history or looking up a completed plan by name.
 
 <!-- gitnexus:start -->
-# GitNexus — Code Intelligence
+## GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **archfit** (11188 symbols, 36851 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **archfit** (14346 symbols, 42693 relationships, 592 execution flows).
 
-> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
+> Index stale? Run `node .gitnexus/run.cjs analyze --index-only` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? Bootstrap with `npx`, `bunx`, or `pnpm dlx` — e.g. `bunx gitnexus@latest analyze` (npm 11 npx crash; #1939).
 
 ## Always Do
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
+- **MUST run impact analysis before editing.** Use `impact({target: "symbolName", direction: "upstream"})` (MCP) or `node .gitnexus/run.cjs impact "symbolName" --direction upstream --repo .` (CLI fallback); report callers, processes, and risk. Never substitute grep for graph analysis.
+- **MUST analyze graph changes before committing.** Use `detect_changes({scope: "all"})` (MCP) or `node .gitnexus/run.cjs detect-changes --scope all --repo .` (CLI fallback). `partial: true` or `truncated: true` is not a clean check — a zero means unseen, not unaffected; re-run it. For regression review: `detect_changes({scope: "compare", base_ref: "main"})` or `node .gitnexus/run.cjs detect-changes --scope compare --base-ref "main" --repo .`.
 - **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- **MUST treat `risk: UNKNOWN` as unresolved, not as low.** An empty caller set is not evidence the symbol is unused — it can also mean the callers are not resolvable by the index (plain-object property access, dynamic dispatch, cross-language calls). `impact` pairs `UNKNOWN` with a `riskNote` saying so. Confirm with a text search before treating the symbol as safe to change or delete; do not proceed on the strength of a zero.
 - When exploring unfamiliar code, use `query({search_query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
 - When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
 - For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
 
 ## Never Do
 
-- NEVER edit a function, class, or method without first running `impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER edit a function, class, or method before MCP/CLI impact analysis.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis, and never read `UNKNOWN` as an all-clear — it means the walk could not answer, which is the one verdict that requires confirming by other means.
 - NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
-- NEVER commit changes without running `detect_changes()` to check affected scope.
+- NEVER commit before MCP/CLI graph change analysis.
 
 ## Resources
 
 | Resource | Use for |
-|----------|---------|
+| --- | --- |
 | `gitnexus://repo/archfit/context` | Codebase overview, check index freshness |
 | `gitnexus://repo/archfit/clusters` | All functional areas |
 | `gitnexus://repo/archfit/processes` | All execution flows |
@@ -819,12 +753,12 @@ This project is indexed by GitNexus as **archfit** (11188 symbols, 36851 relatio
 ## CLI
 
 | Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+| --- | --- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->

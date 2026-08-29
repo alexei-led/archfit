@@ -82,8 +82,8 @@ func (s CompareService) Execute(ctx context.Context, req CompareRequest) (Compar
 		Candidate: decision.ConfigCompareSide{Diag: cand.Diagnostic, Score: cand.Score},
 	})
 	return CompareResult{
-		Current:    CompareSide{Document: ProjectReport(cur.Diagnostic, cur.Score, nil, cur.HardGate)},
-		Candidate:  CompareSide{Document: ProjectReport(cand.Diagnostic, cand.Score, nil, cand.HardGate)},
+		Current:    CompareSide{Document: ProjectReport(cur.Diagnostic, cur.Score)},
+		Candidate:  CompareSide{Document: ProjectReport(cand.Diagnostic, cand.Score)},
 		ScoreDelta: pure.ScoreDelta,
 		Findings:   CompareFindings{CurrentOnlyIDs: pure.Findings.CurrentOnlyIDs, CandidateOnlyIDs: pure.Findings.CandidateOnlyIDs, BothIDs: pure.Findings.BothIDs},
 		Coverage:   compareCoverage(pure.Coverage), Warnings: compareWarnings(pure.Warnings),

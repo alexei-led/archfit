@@ -2,15 +2,14 @@
 """Run archfit v1 architecture-state corpus sweeps against the branch binary.
 
 The sweep is the product-level acceptance gate for the v1 cutover: unit
-fixtures and self-dogfooding cannot prove that config migration, extraction,
+fixtures and self-dogfooding cannot prove that extraction,
 state projection, format rendering, and exit semantics work on real Go,
 TypeScript, Python, and Rust repositories.
 
 Contract this harness enforces per repo (see
 docs/plans/architecture-state-reporting.md, Task 6):
 
-- the target's config migrates to schema v2 with `config update --migration-only`,
-  loads afterwards, and a second migration is byte-idempotent;
+- the target's config is schema v2 and loads successfully;
 - `analyze --json` exits 0 and validates `archfit.architecture-state.v1`: nine
   dimensions, coverage counts summing to nine, and typed metric arrays;
 - `check` exits exactly what its own verdict says: healthy 0, needs-attention 2,
@@ -49,11 +48,10 @@ DEFAULT_SUMMARY_FILE = Path("/tmp/archfit-corpus-results.json")
 # Callers can override the pin explicitly through RUSTUP_TOOLCHAIN.
 PINNED_RUST_TOOLCHAIN = "1.98.0"
 
-# The v1 contract constants. They are duplicated from the Go model on purpose:
-# the harness is an INDEPENDENT check, and importing the value it is meant to
-# verify would make the assertion vacuous.
+# The contract constants are duplicated from the Go model on purpose: the
+# harness is an INDEPENDENT check, and importing the values it verifies would
+# make the assertions vacuous.
 STATE_SCHEMA_VERSION = "archfit.architecture-state.v1"
-TARGET_CONFIG_VERSION = 2
 DIMENSION_KEYS = (
     "intent",
     "structure",
@@ -157,12 +155,6 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def config_version(text: str) -> int | None:
-    """Read the root `version:` key from a config file's text."""
-    match = re.search(r"(?m)^version:\s*(\d+)\s*$", text)
-    return int(match.group(1)) if match else None
-
-
 def blank_record(label: str, root: str, language: str) -> dict[str, Any]:
     """Return the frozen per-repo record with every field explicitly absent.
 
@@ -180,12 +172,7 @@ def blank_record(label: str, root: str, language: str) -> dict[str, Any]:
         "config": {
             "source": None,
             "source_config_sha256": None,
-            "candidate_sha256": None,
             "target_head": None,
-            "version": None,
-            "update_exit": None,
-            "second_update_exit": None,
-            "second_update_changed": None,
         },
         "analyze": {
             "exit": None,
@@ -660,13 +647,11 @@ class Sweep:
         output_dir: Path,
         *,
         runner: Runner = subprocess_runner,
-        migration_only: bool = True,
         cwd: Path = REPO_ROOT,
     ) -> None:
         self.archfit = archfit
         self.output_dir = output_dir
         self.runner = runner
-        self.migration_only = migration_only
         self.cwd = cwd
 
     def run(self, args: list[str], log: Path | None = None) -> CommandResult:
@@ -689,11 +674,10 @@ class Sweep:
     def prepare_config(
         self, spec: RepoSpec, work: Path, record: dict[str, Any]
     ) -> Path | None:
-        """Stage the immutable migration candidate for one repo.
+        """Stage a copy of the repository config for one repo.
 
-        The target's own `.archfit.yaml` is copied out and migrated HERE. The
-        target tree is never written to; delivery is a separate, owner-gated
-        pass over the candidate this function produces.
+        The target's own `.archfit.yaml` is copied out. The target tree is
+        never written to.
         """
         cfg = work / "archfit.yaml"
         source = spec.root / ".archfit.yaml"
@@ -712,50 +696,6 @@ class Sweep:
                 record["failures"].append(f"config init exited {init.returncode}")
                 return None
         return cfg
-
-    def migrate_config(
-        self, spec: RepoSpec, cfg: Path, work: Path, record: dict[str, Any]
-    ) -> None:
-        """Migrate the candidate to schema v2 and prove the migration settles.
-
-        `--migration-only` is deliberate: a full `config update --apply` also
-        proposes structural module edits, and bundling those into a schema
-        migration would hide whether the migration itself is idempotent.
-        """
-        args = ["config", "update", "--migration-only", "--apply", "-c", str(cfg)]
-        if not self.migration_only:
-            # A full structural update must see the SOURCE tree. Pointing -r at
-            # the work directory discovered a folder holding one YAML file and
-            # proposed edits for it.
-            args = ["config", "update", "--apply", "-c", str(cfg), "-r", str(spec.root)]
-
-        first = self.run(args, log=work / "config-update")
-        record["config"]["update_exit"] = first.returncode
-        if first.returncode != 0:
-            record["failures"].append(f"config update exited {first.returncode}")
-            return
-
-        after_first = cfg.read_bytes()
-        record["config"]["candidate_sha256"] = sha256_bytes(after_first)
-        version = config_version(after_first.decode("utf-8", "replace"))
-        record["config"]["version"] = version
-        if version != TARGET_CONFIG_VERSION:
-            record["failures"].append(
-                f"config version after migration is {version!r}, want {TARGET_CONFIG_VERSION}"
-            )
-
-        second = self.run(args, log=work / "config-update-2")
-        record["config"]["second_update_exit"] = second.returncode
-        changed = cfg.read_bytes() != after_first
-        record["config"]["second_update_changed"] = changed
-        if second.returncode != 0:
-            record["failures"].append(
-                f"second config update exited {second.returncode}"
-            )
-        if changed:
-            record["failures"].append("second config update rewrote the candidate")
-
-    # -- analysis ----------------------------------------------------------
 
     def analyze_json(
         self, cfg: Path, spec: RepoSpec, work: Path, name: str
@@ -975,8 +915,6 @@ class Sweep:
         cfg = self.prepare_config(spec, work, record)
         if cfg is None:
             return record
-        self.migrate_config(spec, cfg, work, record)
-
         state = self.collect_analyze(cfg, spec, work, record)
         if state is not None:
             self.collect_check(cfg, spec, work, record, state)
@@ -1015,17 +953,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format-repos", default="", help="Labels to check format parity on"
-    )
-    # The delivery path is the DEFAULT. docs/test-corpus.md forbids the full
-    # `config update --apply` for a schema migration — it also proposes
-    # structural module edits, which hides whether the migration itself settles
-    # and makes the second-run idempotence signal meaningless. --no-migration-only
-    # opts into the structural artifact deliberately.
-    parser.add_argument(
-        "--migration-only",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Migrate the candidate with `config update --migration-only` (delivery path, default)",
     )
     parser.add_argument(
         "--allow-unverified",
@@ -1094,7 +1021,7 @@ def main(argv: list[str] | None = None) -> int:
     # every result the run had just spent hours producing.
     summary_file = Path(args.summary_file)
     summary_file.parent.mkdir(parents=True, exist_ok=True)
-    sweep = Sweep(archfit, output_dir, migration_only=args.migration_only)
+    sweep = Sweep(archfit, output_dir)
 
     specs = [CORPUS[label] for label in CORPUS if label in set(selected)]
     records: list[dict[str, Any]] = []
@@ -1122,7 +1049,6 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "label": record["label"],
                     "status": record["status"],
-                    "config_version": record["config"]["version"],
                     "analyze_exit": record["analyze"]["exit"],
                     "check_exit": record["check"]["exit"],
                     "failures": record["failures"][:5],

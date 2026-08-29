@@ -19,7 +19,7 @@ type CheckCmd struct {
 	JSON     bool     `name:"json" help:"Output format: JSON (shorthand for --format json)."`
 	Markdown bool     `name:"markdown" help:"Output format: Markdown (shorthand for --format markdown)."`
 	Sarif    bool     `name:"sarif" help:"Output format: SARIF (shorthand for --format sarif)."`
-	Format   []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard, legacy-json. Repeatable." enum:"json,text,markdown,md,sarif,scorecard,legacy-json"`
+	Format   []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard"`
 
 	Progress string `name:"progress" help:"Progress reporting on stderr: auto, plain, none." enum:"auto,plain,none," default:""`
 	Quiet    bool   `short:"q" help:"Suppress progress output."`

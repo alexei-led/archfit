@@ -150,7 +150,7 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
 
 - **Two intent-based commands.** `archfit analyze` → report-only, always exits 0;
   `archfit check` → CI gate, exits non-zero on violations.
-  Both support `--json`, `--sarif`, `--markdown`, `--format scorecard`, or `--format legacy-json`.
+  Both support `--json`, `--sarif`, `--markdown`, or `--format scorecard`.
 - **A decision, not a score** — `HEALTHY` / `NEEDS ATTENTION` / `BLOCKED`, with a
   blocking-vs-diagnostic split, nine dimension envelopes that each say what they
   measured and what they could not, and a seam ledger naming the boundaries to

@@ -3,7 +3,6 @@ package application
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
 	"github.com/alexei-led/archfit/internal/model/evidence"
@@ -26,9 +25,7 @@ func TestProjectReportPreservesAssessmentAndScorecardContracts(t *testing.T) {
 			Name: score.DimCouplingBalance, Value: 46, Band: score.BandMixed, Confidence: score.ConfidenceHigh,
 		}},
 	}
-	wantDecision := decision.Build(diagnostic, scorecard, nil, false)
-
-	document := ProjectReport(diagnostic, scorecard, nil, false)
+	document := ProjectReport(diagnostic, scorecard)
 	if string(document.Verdict) != string(OutcomeWarn) || document.Base != blockBaseRef || document.Head != stateHeadRef {
 		t.Fatalf("assessment identity projection lost data: %+v", document)
 	}
@@ -43,8 +40,5 @@ func TestProjectReportPreservesAssessmentAndScorecardContracts(t *testing.T) {
 	}
 	if document.Score.Overall != 46 || len(document.Score.Dimensions) != 1 {
 		t.Fatalf("score projection = %+v", document.Score)
-	}
-	if string(document.Decision.Band) != string(wantDecision.Band) || document.Decision.Headline != wantDecision.Headline {
-		t.Fatalf("decision projection = %+v", document.Decision)
 	}
 }

@@ -1,5 +1,17 @@
 # Release notes
 
+## Unreleased
+
+- Remove the one-release `legacy-json` output and config migration command.
+- Accept only the current JSON, baseline, and config schemas.
+- Remove the separate report-only git finding-delta block; preserve its useful
+  triage signal as optional `agent_tasks[].origin` metadata in canonical JSON.
+- Keep task-origin classification report-only: it never changes verdict, gates,
+  or exit code.
+- Keep `md` as a short alias for the canonical `markdown` output format.
+- Old config and baseline files now fail with actionable manual-migration or
+  review-and-regenerate guidance.
+
 ## v2.1.0 — architecture-state reporting
 
 Release date: 2026-08-28

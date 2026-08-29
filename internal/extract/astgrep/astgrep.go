@@ -35,6 +35,12 @@ func New(runner toolrun.Runner) *Adapter {
 	return &Adapter{runner: runner}
 }
 
+// PatternCoverageTool returns the coverage name for configured pattern rules.
+func (a *Adapter) PatternCoverageTool() string { return toolName }
+
+// SyntaxCoverageTool returns the coverage name for embedded syntax rules.
+func (a *Adapter) SyntaxCoverageTool() string { return syntaxToolName }
+
 // cachedRunner wraps the runner in a fact-cache decorator for the sg
 // invocations of one Find/Syntax call (fact-cache.md D5 seam 1). Returns the
 // plain runner when the cache is off or key material cannot be derived —

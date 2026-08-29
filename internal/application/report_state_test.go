@@ -48,7 +48,7 @@ func stateFixture() result.Result {
 // carries the facts the result already has, and claims nothing it has not
 // measured.
 func TestProjectReportPopulatesShadowState(t *testing.T) {
-	document := ProjectReport(stateFixture(), score.Scorecard{}, nil, false)
+	document := ProjectReport(stateFixture(), score.Scorecard{})
 	state := document.State
 
 	if state.SchemaVersion != report.StateSchemaVersion {
@@ -125,7 +125,7 @@ func TestShadowStateProjectsTheAssessmentVerdict(t *testing.T) {
 			diagnostic.State.Decision.HardGates = tc.hardGates
 			diagnostic.State.Decision.ActiveBlockers = tc.blockers
 
-			projected := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State
+			projected := ProjectReport(diagnostic, score.Scorecard{}).State
 			if projected.Verdict != tc.wantVerdict {
 				t.Errorf("Verdict = %q, want %q", projected.Verdict, tc.wantVerdict)
 			}
@@ -160,7 +160,7 @@ func TestShadowStateProjectsEveryEnvelopeField(t *testing.T) {
 		NewFindings: []string{"f1"}}
 	diagnostic.State.Dimensions.Structure = measured
 
-	got := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State.Dimensions.Structure
+	got := ProjectReport(diagnostic, score.Scorecard{}).State.Dimensions.Structure
 	want := report.DimensionState{
 		Name: state.DimensionStructure, Owner: state.OwnerStructure,
 		Status: report.MeasurementMeasured, Confidence: report.ConfidenceMedium, Gate: report.GateWarn,
@@ -186,7 +186,7 @@ func TestShadowStateCoverageCountsTheProjectedEnvelopes(t *testing.T) {
 	diagnostic.State.Dimensions.Structure.Status = state.Measured
 	diagnostic.State.Dimensions.Coupling.Status = state.Partial
 
-	coverage := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State.Coverage
+	coverage := ProjectReport(diagnostic, score.Scorecard{}).State.Coverage
 	if coverage.Measured != 1 || coverage.Partial != 1 || coverage.Unmeasured != report.DimensionCount-2 {
 		t.Errorf("coverage = %+v, want 1 measured, 1 partial, %d unmeasured", coverage, report.DimensionCount-2)
 	}
@@ -209,7 +209,7 @@ func TestStateComparisonIsStrictAndExplains(t *testing.T) {
 		diagnostic := stateFixture()
 		diagnostic.ModelHash, diagnostic.LabelsHash = head.ModelHash, head.LabelsHash
 
-		state := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State
+		state := ProjectReport(diagnostic, score.Scorecard{}).State
 		if state.Comparison.Status != report.ComparisonNotRequested {
 			t.Errorf("Comparison.Status = %q, want not_requested", state.Comparison.Status)
 		}
@@ -243,7 +243,7 @@ func TestStateComparisonIsStrictAndExplains(t *testing.T) {
 			diagnostic.Base = blockBaseRef
 			diagnostic.Comparison = decision.CompareFingerprints(blockBaseRef, head, tc.base)
 
-			state := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State
+			state := ProjectReport(diagnostic, score.Scorecard{}).State
 			if state.Comparison.Status != report.ComparisonNonComparable {
 				t.Errorf("Comparison.Status = %q, want non_comparable", state.Comparison.Status)
 			}
@@ -263,7 +263,7 @@ func TestStateComparisonIsStrictAndExplains(t *testing.T) {
 		diagnostic.Base = blockBaseRef
 		diagnostic.Comparison = decision.CompareFingerprints(blockBaseRef, head, head)
 
-		state := ProjectReport(diagnostic, score.Scorecard{}, nil, false).State
+		state := ProjectReport(diagnostic, score.Scorecard{}).State
 		if state.Comparison.Status != report.ComparisonComparable {
 			t.Errorf("Comparison.Status = %q, want comparable (reasons %v)",
 				state.Comparison.Status, state.Comparison.Reasons)
@@ -285,7 +285,7 @@ func TestShadowStateReferencesFindingsWithoutCopyingThem(t *testing.T) {
 	}
 	diagnostic.AgentTasks = []result.AgentTask{{FindingID: "f1", RuleID: "no_internal_access"}}
 
-	document := ProjectReport(diagnostic, score.Scorecard{}, nil, false)
+	document := ProjectReport(diagnostic, score.Scorecard{})
 	state := document.State
 
 	if len(state.Findings) != len(document.Findings) {
@@ -304,7 +304,7 @@ func TestShadowStateReferencesFindingsWithoutCopyingThem(t *testing.T) {
 // does not move. The committed byte-identical baselines are the end-to-end
 // proof; this is the unit-level guard.
 func TestShadowStateIsNotOnTheDiagnosticWire(t *testing.T) {
-	document := ProjectReport(stateFixture(), score.Scorecard{}, nil, false)
+	document := ProjectReport(stateFixture(), score.Scorecard{})
 
 	encoded, err := json.Marshal(document)
 	if err != nil {
@@ -323,7 +323,7 @@ func TestShadowStateIsNotOnTheDiagnosticWire(t *testing.T) {
 func TestShadowStateProjectionIsDeterministic(t *testing.T) {
 	encode := func() []byte {
 		t.Helper()
-		out, err := json.Marshal(ProjectReport(stateFixture(), score.Scorecard{}, nil, false).State)
+		out, err := json.Marshal(ProjectReport(stateFixture(), score.Scorecard{}).State)
 		if err != nil {
 			t.Fatalf("marshal state: %v", err)
 		}

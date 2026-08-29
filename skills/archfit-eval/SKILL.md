@@ -92,7 +92,7 @@ order; SARIF carries the state in `run.properties`.
 Return one concise evaluation report with:
 
 - book-alignment verdict and score
-- corpus results by repo: status, migrated config version and idempotence,
+- corpus results by repo: status, config version and loadability,
   analyze/check exits and verdict, dimension statuses, coverage split, format
   parity, byte determinism
 - semantic-vs-deterministic comparison notes
@@ -106,10 +106,9 @@ Return one concise evaluation report with:
   was skipped, and lower confidence.
 - If a target repo config is missing or broken, use a temp config and report
   the failure as part of UX/config findings.
-- If `config update --migration-only --apply` fails on a candidate, keep the
-  candidate, continue the run if possible, and record the update failure. Never
-  substitute the full `config update --apply`: it proposes structural edits and
-  would hide whether the migration itself settles.
+- If a candidate config is not schema v2 or fails to load, keep the candidate,
+  continue the run if possible, and record the config failure. Do not rewrite
+  target repositories during evaluation.
 - If a corpus repo is missing, record it as `unverified` with a reason. It is
   never a pass, and strict mode blocks until an owner accepts it by name.
 - If AI summary fails, separate AI setup issues from deterministic gate issues.

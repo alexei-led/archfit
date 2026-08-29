@@ -63,6 +63,21 @@ func side(rows []evidence.Coverage, gaps []evidence.CoverageGap) decision.Config
 	}
 }
 
+func bandForValue(v int) score.Band {
+	switch {
+	case v <= 20:
+		return score.BandCritical
+	case v <= 40:
+		return score.BandPoor
+	case v <= 60:
+		return score.BandMixed
+	case v <= 80:
+		return score.BandServiceable
+	default:
+		return score.BandStrong
+	}
+}
+
 func measuredCard(overall int) score.Scorecard {
 	return score.Scorecard{
 		RubricVersion: 1,
@@ -605,7 +620,7 @@ func TestCompareCoverage_RowCount(t *testing.T) {
 }
 
 // TestCompareCoverage_PrimaryAbsent pins the per-side gap condition, the same
-// rule the git-origin delta applies: a coverage gap says THIS configuration
+// rule the task-origin classifier applies: a coverage gap says THIS configuration
 // expected the analyzer to run, so a gap on one side only is an asymmetry, not
 // shared blindness. An equal primary absent pair drops out only when neither
 // side gapped; an equal gap on both sides is shared blindness.

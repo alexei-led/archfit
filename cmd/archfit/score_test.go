@@ -52,7 +52,7 @@ func TestRun_Analyze_NoAdvisoriesWithScorecardAndJSON(t *testing.T) {
 
 	run := func(t *testing.T, extra ...string) (advisoryCheckDiag, string) {
 		t.Helper()
-		args := append([]string{cmdAnalyze, fmtLegacyJSON, fmtScorecard, "-c", cfgPath}, extra...)
+		args := append([]string{cmdAnalyze, fmtJSON, fmtScorecard, "-c", cfgPath}, extra...)
 		var buf bytes.Buffer
 		if code := Run(args, &buf); code != 0 {
 			t.Fatalf("analyze %v: exit = %d\noutput:\n%s", extra, code, buf.String())

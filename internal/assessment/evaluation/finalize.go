@@ -93,9 +93,9 @@ type Finalized struct {
 // attaches repair tasks to diag. It is pure: every input is an already-resolved
 // value.
 //
-// The scorecard is still computed — it remains a per-seam diagnostic and feeds
-// the legacy output field — but it no longer reaches the gate. Only the seam
-// ledger decides the coupling gate.
+// The internal scorecard is still computed for metric diagnostics, config
+// comparison, and AI review, but it never reaches the architecture verdict.
+// Only the seam ledger decides the coupling gate.
 func finalize(diag *result.Result, in FinalizeInput) Finalized {
 	card := score.Synthesize(*diag)
 	trip := score.EvaluateSeamGate(diag.Seams, seamGateFor(in.Gate), in.Baseline.seamReference())

@@ -647,23 +647,15 @@ stderr, and the run emits one `bc/coupling_gate` gate finding **per newly
 introduced seam**, each naming its module pair, so `agent_tasks[]` points at
 the seams that blocked rather than at unrelated advisories.
 
-#### Retired in schema v2
+#### Unsupported older schemas
 
-`coupling.gate.min_band` and `coupling.gate.max_drop` gated the verdict on the
-repository `coupling_balance` scalar. They are retired: an averaged repository
-score is not an architecture decision. A config carrying either key, or
-declaring `version: 1`, is rejected by `analyze` and `check` with an exit-3
-error naming the migration:
-
-```sh
-archfit config update --migration-only --json   # preview the migration
-archfit config update --migration-only --apply  # perform it
-```
-
-The migration bumps the schema version, removes the retired knobs, and inserts
-`distributed_monolith` in **warn** mode. It never infers `fail` — that blocks a
-build, so it stays your decision. It preserves your comments and every unrelated
-key, and running it twice is byte-identical.
+A config declaring `version: 1`, `coupling.gate.min_band`, or
+`coupling.gate.max_drop` is rejected with exit `3`. Archfit does not ship a
+compatibility loader or migration command. Follow the exact manual transform in
+[`skills/archfit/references/migration.md`](../../skills/archfit/references/migration.md),
+then validate with report-only `archfit analyze --format json`. The replacement
+`distributed_monolith` rule starts in `warn`; promoting it to `fail` is an owner
+decision after comparison against a representative base.
 
 `coupling_balance` is not a `metrics:` entry; a `metrics.coupling_balance:`
 key is a config error that points here.
@@ -1276,11 +1268,10 @@ human` and `provenance: tool` do not lower confidence.
 When an edge's strength cannot be classified (`unknown`) but its distance
 resolves to an internal module, archfit **abstains** — the edge is excluded
 from the `coupling_balance` scored distribution (honest denominator) and an
-actionable `config_warnings[]` decision message is emitted in Markdown and
-under `--format legacy-json` (it is not part of
-`archfit.architecture-state.v1`) prompting the operator to add a label. The same happens for modules with
-no declared `subdomain` or `volatility`: a decision message asks for a
-declaration or suggests `archfit config enrich subdomain`.
+actionable config warning is emitted in text and Markdown, prompting the
+operator to add a label. The same happens for modules with no declared
+`subdomain` or `volatility`: a decision message asks for a declaration or
+suggests `archfit config enrich subdomain`.
 
 `agent_tasks[]` is reserved for active gate findings that need code repair.
 

@@ -192,14 +192,6 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 	if !ok {
 		t.Fatal("CouplingGateDef definition missing from generated schema")
 	}
-	// The retired v1 knobs decode only so the migration can read them. An
-	// editor that still offers them would suggest writing a config this binary
-	// refuses to analyse.
-	for _, retired := range []string{"min_band", "max_drop"} {
-		if _, present := gateDef.Properties[retired]; present {
-			t.Errorf("CouplingGateDef offers retired key %q — v2 rejects it at load", retired)
-		}
-	}
 	if !slices.Equal(gateDef.Required, []string{"distributed_monolith"}) {
 		t.Errorf("CouplingGateDef.required = %v, want [distributed_monolith] — an empty gate block gates nothing",
 			gateDef.Required)

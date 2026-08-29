@@ -99,10 +99,9 @@ make test
 If you evaluate corpus repos too:
 
 - run from the archfit repo root so `.env` loading is consistent,
-- stage a candidate config outside the target repo and migrate THAT with
-  `config update --migration-only --apply`; corpus repos stay read-only,
-- treat a candidate migration failure, or a second migration that rewrites the
-  file, as product findings,
+- stage and validate a schema-v2 candidate config outside the target repo;
+  corpus repos stay read-only,
+- treat a candidate validation failure as a product finding,
 - repeat every mandatory representative with the same candidate and compare
   `analyze --json` byte for byte — the v1 state carries no wall-clock or
   run-local field, so there is nothing to exclude,
@@ -197,7 +196,7 @@ deterministic input first.
 For each evaluated repo or workflow, capture:
 
 - config outcome: copied / generated, migrated schema version, and whether a
-  second `config update --migration-only --apply` changed the file
+  repeated evaluation changed the copied config
 - `check` verdict and exit code, and whether they agree — the exit IS the
   verdict (healthy 0, needs-attention 2, blocked 1, error 3), and a clean
   repository is expected to exit 2 because complexity, testability, and

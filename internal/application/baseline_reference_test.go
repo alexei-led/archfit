@@ -36,11 +36,6 @@ func TestSeamAnchor(t *testing.T) {
 		wantReasonHas  string
 	}{
 		{
-			name:          "a pre-state baseline names the ignored scalar snapshot",
-			base:          Baseline{Legacy: true},
-			wantReasonHas: LegacyScoreIgnored,
-		},
-		{
 			name:           "all four fingerprints match",
 			base:           Baseline{State: matchingSnapshot()},
 			wantComparable: true,

@@ -437,6 +437,9 @@ func materializeFixture(t *testing.T, withCoverage bool) (root, configPath strin
 	if err := copyFixtureIntoDir(fixture, root); err != nil {
 		t.Fatalf("copy reachability fixture: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".archfit.yaml\n.archfit-baseline.json\ncoverage.out*\nservices/app/ignored.go\n"), 0o600); err != nil {
+		t.Fatalf("write fixture gitignore: %v", err)
+	}
 
 	initReachabilityGitRepo(t, root)
 	if withCoverage {

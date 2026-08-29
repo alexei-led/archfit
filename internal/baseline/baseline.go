@@ -20,13 +20,6 @@ import (
 // dimension snapshots) and no repository scalar.
 const SchemaVersion = "archfit.baseline.v2"
 
-// LegacySchemaVersion is the pre-state baseline. It stays READABLE — its
-// accepted finding fingerprints are still the user's acceptance decisions — but
-// its scalar score snapshot is ignored and it can never support a
-// state/dimension/seam comparison. It is never auto-rewritten: a rewrite would
-// silently upgrade a file the owner never re-reviewed.
-const LegacySchemaVersion = "archfit.baseline.v1"
-
 // AcceptedFinding records a finding that has been accepted into the baseline.
 // Fingerprint is the SHA256 hex ID from finding.New; RuleID is the rule that produced it.
 // Kind distinguishes gate findings from advisory findings; empty means "gate" for
@@ -40,16 +33,6 @@ type AcceptedFinding struct {
 	// baselines written before severity tracking — treated as "unknown", never a
 	// severity change.
 	Severity string `json:"severity,omitempty"`
-}
-
-// ScoreSnapshot is the retired v1 scalar snapshot. It is decoded so a v1 file
-// round-trips through Load without data loss and is never written back: schema
-// v2 retired the scalar gate, so a stored repository score anchors nothing.
-type ScoreSnapshot struct {
-	CouplingBalance int    `json:"coupling_balance"`
-	Band            string `json:"band"`
-	ScoreVersion    string `json:"score_version,omitempty"`
-	RubricVersion   int    `json:"rubric_version,omitempty"`
 }
 
 // CoverageSnapshot is a stored dimension's denominator.
@@ -104,14 +87,9 @@ type Baseline struct {
 	SchemaVersion string                `json:"schema_version"`
 	Accepted      []AcceptedFinding     `json:"accepted"`
 	Metrics       report.MetricSnapshot `json:"metrics"`
-	// Score is the retired v1 scalar snapshot; present only in a legacy file.
-	Score *ScoreSnapshot `json:"score,omitempty"`
-	// State is the architecture-state reference. Absent in a legacy file.
+	// State is the architecture-state reference.
 	State *StateSnapshot `json:"state,omitempty"`
 }
-
-// Legacy reports that this baseline predates the architecture-state contract.
-func (b Baseline) Legacy() bool { return b.SchemaVersion == LegacySchemaVersion }
 
 // HasFingerprint reports whether the given fingerprint exists in the baseline's
 // accepted findings.
@@ -143,9 +121,7 @@ func (b Baseline) Entries() []status.AcceptedEntry {
 var _ status.AcceptedSet = Baseline{}
 
 // Load reads the baseline from path. A missing file returns an empty Baseline
-// (not an error). Both the current and the legacy schema load; any other
-// schema_version is an error. Load never writes: a legacy file stays a legacy
-// file until its owner re-baselines deliberately.
+// (not an error). Only the current schema is accepted.
 func Load(_ context.Context, path string) (Baseline, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // path comes from trusted CLI/config input
 	if err != nil {
@@ -160,21 +136,17 @@ func Load(_ context.Context, path string) (Baseline, error) {
 		return Baseline{}, fmt.Errorf("baseline: parse %s: %w", path, err)
 	}
 
-	if b.SchemaVersion != SchemaVersion && b.SchemaVersion != LegacySchemaVersion {
-		return Baseline{}, fmt.Errorf("baseline: schema version mismatch in %s: got %q, want %q or %q",
-			path, b.SchemaVersion, SchemaVersion, LegacySchemaVersion)
+	if b.SchemaVersion != SchemaVersion {
+		return Baseline{}, fmt.Errorf("schema version mismatch in %s: got %q, want %q — review accepted findings and regenerate with `archfit baseline`",
+			path, b.SchemaVersion, SchemaVersion)
 	}
 
 	return b, nil
 }
 
-// Save writes b to path as the current schema. The retired scalar snapshot is
-// dropped rather than carried forward: a v2 file that still stored a repository
-// score would invite a consumer to gate on it again.
+// Save writes b to path as the current schema.
 func Save(_ context.Context, path string, b Baseline) error {
 	b.SchemaVersion = SchemaVersion
-	b.Score = nil
-
 	// Ensure non-nil slices so JSON serializes as [] not null.
 	if b.Accepted == nil {
 		b.Accepted = []AcceptedFinding{}
