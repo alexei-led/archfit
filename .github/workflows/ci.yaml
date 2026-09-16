@@ -77,18 +77,21 @@ jobs:
         # Versions are pinned and the commands exercise Archfit's real adapters.
         # zizmor: ignore[adhoc-packages]
         run: |
-          # util-linux ships /usr/bin/sg (a setgid helper) on the runner, and the
-          # @ast-grep/cli postinstall writes that same path — it fails EEXIST and
-          # leaves `sg` pointing at util-linux. Archfit invokes ast-grep as `sg`,
-          # so without this the pattern and syntax passes silently analyze
-          # nothing. The Dockerfile frees the slot for the same reason.
+          # Precautionary, not a fix for a known break: util-linux ships
+          # /usr/bin/sg (a setgid helper) and the @ast-grep/cli postinstall
+          # cannot overwrite that path (EEXIST). On this runner npm's global bin
+          # precedes /usr/bin so `sg` already resolved to ast-grep — the gate
+          # step below proves it — but the ordering is the runner image's
+          # choice, not ours. The Dockerfile frees the slot for the same reason.
           sudo rm -f /usr/bin/sg
           npm install -g jscpd@5.0.11 @ast-grep/cli@0.44.0
           go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: CI gate — `sg` resolves to ast-grep, not util-linux
-        # A silent analyzer is worse than a missing one: coverage rows still
-        # report a tool, so nothing looks wrong. Fail loudly instead.
+        # A silent analyzer is worse than a missing one: the coverage row still
+        # names a tool, so nothing looks wrong. This is the check that answers
+        # "which sg ran" instead of leaving it to be inferred from a missing
+        # version string.
         run: |
           echo "sg -> $(command -v sg)"
           sg --version
