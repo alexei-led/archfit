@@ -30,6 +30,11 @@ const (
 	assessUnitSvc       = "svc"
 	assessUnitAPI       = "api"
 	assessTeamA         = "team-a"
+	// toolCargo/toolSyntaxAggregate/globInternalAll are repeated across the
+	// dimension tables below.
+	toolCargo           = "cargo"
+	toolSyntaxAggregate = "ast-grep/syntax"
+	globInternalAll     = "internal/**"
 )
 
 // dimensionsFixture is a run with something to measure in every dimension that
@@ -537,7 +542,7 @@ func TestIntentRequiresSyntaxEvidenceForSyntaxRules(t *testing.T) {
 func TestIntentDoesNotConformUnsupportedLanguageRules(t *testing.T) {
 	t.Parallel()
 	maxPublicAPIs := 5
-	primaryTools := []string{"go/packages", "dependency-cruiser", "grimp", "cargo"}
+	primaryTools := []string{"go/packages", "dependency-cruiser", "grimp", toolCargo}
 	absentPrimaries := []modevidence.Coverage{
 		{Tool: primaryTools[0], Status: modevidence.StatusAbsent},
 		{Tool: primaryTools[1], Status: modevidence.StatusAbsent},
@@ -574,7 +579,7 @@ func TestIntentDoesNotConformUnsupportedLanguageRules(t *testing.T) {
 			name: "syntax rule despite aggregate syntax success",
 			rule: policy.RuleDef{ID: "java_api_limit", Type: rulePublicAPIMax, Gate: gateWarnPosture, Max: &maxPublicAPIs},
 			coverage: append(append([]modevidence.Coverage(nil), absentPrimaries...),
-				modevidence.Coverage{Tool: "ast-grep/syntax", Status: modevidence.StatusOK}),
+				modevidence.Coverage{Tool: toolSyntaxAggregate, Status: modevidence.StatusOK}),
 		},
 	}
 	for _, tc := range tests {
@@ -934,7 +939,7 @@ func TestSyntaxEvidenceRequiresPrimaryOKNotMerelyNonDisabled(t *testing.T) {
 		PrimaryExtractorTools: []string{toolGoPkgs},
 		ToolCoverage: []modevidence.Coverage{
 			// Syntax aggregate: OK (ran for the project).
-			{Tool: "ast-grep/syntax", Status: modevidence.StatusOK},
+			{Tool: toolSyntaxAggregate, Status: modevidence.StatusOK},
 			// Go primary: Absent — extractor was excluded, no applicable files.
 			// This must NOT be treated as "not disabled" and therefore passing.
 			{Tool: toolGoPkgs, Status: modevidence.StatusAbsent},
@@ -946,5 +951,95 @@ func TestSyntaxEvidenceRequiresPrimaryOKNotMerelyNonDisabled(t *testing.T) {
 	}
 	if !hasUnknownFact(dim.Unknown, state.FactActiveRuleConformance) {
 		t.Errorf("intent unknowns = %+v, want %q", dim.Unknown, state.FactActiveRuleConformance)
+	}
+}
+
+// TestIntentScopesDependencyRulesByTargetVocabulary pins the boundary between
+// "no producer could express this relationship" and "a producer that could is
+// missing". The first must not hold a rule unevaluated; the second must.
+//
+// The shape is archfit's own: a Go project that ships Python helper scripts it
+// runs out-of-process, so .py files sit under a declared module while grimp is
+// legitimately absent (no Python project). A Go-targeted dependency rule cannot
+// be violated from a Python node — a dotted Python ID never matches a slash
+// path — so grimp's absence says nothing about it.
+func TestIntentScopesDependencyRulesByTargetVocabulary(t *testing.T) {
+	t.Parallel()
+	const (
+		toolGoPkgs = "go/packages"
+		toolGrimp  = "grimp"
+	)
+	maxPublicAPIs := 5
+	primaryTools := []string{toolGoPkgs, "dependency-cruiser", toolGrimp, toolCargo}
+	modules := map[string]policy.ModuleDef{
+		"adapters": {Paths: []string{"internal/extract/**"}, Public: []string{"internal/extract"}},
+	}
+	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
+	// grimp absent WITHOUT a coverage gap: the extractor's probe reports no
+	// Python project. go/packages is OK.
+	coverage := []modevidence.Coverage{
+		{Tool: toolGoPkgs, Status: modevidence.StatusOK},
+		{Tool: toolGrimp, Status: modevidence.StatusAbsent},
+		{Tool: toolSyntaxAggregate, Status: modevidence.StatusOK},
+	}
+
+	tests := []struct {
+		name       string
+		rule       policy.RuleDef
+		gaps       []modevidence.CoverageGap
+		wantStatus state.MeasurementStatus
+		why        string
+	}{
+		{
+			name: "go-targeted dependency rule ignores the stray python file",
+			rule: policy.RuleDef{ID: "extract_no_config", Type: ruleForbidden, Gate: gateWarnPosture,
+				From: globInternalAll, To: "internal/config"},
+			wantStatus: state.Measured,
+			why:        "a dotted Python node cannot address a slash path, so grimp could not have found a violation",
+		},
+		{
+			name: "python-targeted dependency rule still needs grimp",
+			rule: policy.RuleDef{ID: "py_no_internal", Type: ruleForbidden, Gate: gateWarnPosture,
+				From: globInternalAll, To: "helpers.**"},
+			wantStatus: state.Partial,
+			why:        "the target IS python vocabulary, so the absent producer leaves the rule unevaluated",
+		},
+		{
+			name: "module-wide syntax rule still spans every language in the module",
+			rule: policy.RuleDef{ID: "api_ceiling", Type: rulePublicAPIMax, Gate: gateWarnPosture,
+				Max: &maxPublicAPIs},
+			wantStatus: state.Partial,
+			why:        "the .py files are real members of the module whose API surface nobody measured",
+		},
+		{
+			name: "an absent producer WITH a gap keeps an addressable language unevaluated",
+			rule: policy.RuleDef{ID: "py_no_internal_gap", Type: ruleForbidden, Gate: gateWarnPosture,
+				From: globInternalAll, To: "helpers.**"},
+			gaps:       []modevidence.CoverageGap{{Tool: toolGrimp}},
+			wantStatus: state.Partial,
+			why:        "a missing analyzer must never be read as nothing to analyze",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gates := policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{tc.rule}}}
+			in := evaluation.StateInput{
+				Policy: policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, gates, nil, nil),
+				Facts: evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
+					"internal/extract/py/py.go":           fileclass.Production,
+					"internal/extract/py/grimp_helper.py": fileclass.Production,
+				}},
+			}
+			diag := &result.Result{
+				PrimaryExtractorTools: primaryTools,
+				ToolCoverage:          coverage,
+				CoverageGaps:          tc.gaps,
+			}
+			dim := evaluation.BuildDimensions(diag, in, nil).Intent
+			if dim.Status != tc.wantStatus {
+				t.Errorf("intent status = %q, want %q: %s", dim.Status, tc.wantStatus, tc.why)
+			}
+		})
 	}
 }

@@ -77,9 +77,22 @@ jobs:
         # Versions are pinned and the commands exercise Archfit's real adapters.
         # zizmor: ignore[adhoc-packages]
         run: |
+          # util-linux ships /usr/bin/sg (a setgid helper) on the runner, and the
+          # @ast-grep/cli postinstall writes that same path — it fails EEXIST and
+          # leaves `sg` pointing at util-linux. Archfit invokes ast-grep as `sg`,
+          # so without this the pattern and syntax passes silently analyze
+          # nothing. The Dockerfile frees the slot for the same reason.
+          sudo rm -f /usr/bin/sg
           npm install -g jscpd@5.0.11 @ast-grep/cli@0.44.0
           go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: CI gate — `sg` resolves to ast-grep, not util-linux
+        # A silent analyzer is worse than a missing one: coverage rows still
+        # report a tool, so nothing looks wrong. Fail loudly instead.
+        run: |
+          echo "sg -> $(command -v sg)"
+          sg --version
+          sg --version 2>&1 | grep -q ast-grep
       - name: CI gate — architecture drift
         run: make arch-lint
       - name: Upload coverage

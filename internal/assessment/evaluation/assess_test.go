@@ -82,7 +82,7 @@ func assessInput() evaluation.AssessInput {
 		MarkedCoverage: []modevidence.Coverage{
 			{Tool: assessGrimp, Status: modevidence.StatusDisabled, Reason: "language analysis disabled by config"},
 		},
-		CoverageGaps:            []modevidence.CoverageGap{{Tool: "cargo", Gate: "warn"}},
+		CoverageGaps:            []modevidence.CoverageGap{{Tool: toolCargo, Gate: "warn"}},
 		ConfigWarnings:          []string{"decision needed: module a has no volatility"},
 		VolatilityCorroboration: &modevidence.VolatilityCorroboration{Source: assessHistory, Status: "ok"},
 	}

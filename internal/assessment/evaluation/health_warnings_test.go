@@ -16,7 +16,7 @@ import (
 const hintNoMatchedFiles = "no source files matched declared module paths"
 
 func modulesWithPaths() map[string]policy.ModuleDef {
-	return map[string]policy.ModuleDef{assessCore: {Paths: []string{"internal/**"}}}
+	return map[string]policy.ModuleDef{assessCore: {Paths: []string{globInternalAll}}}
 }
 
 // matchedWalk is a LOC walk whose file resolves to the declared module glob,

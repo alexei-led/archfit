@@ -254,6 +254,26 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `scope.MergeExclusions` is NOT idempotent (it consumes `!` re-includes), so a
   second merge re-seeds defaults the user removed and the probe then skips trees
   the extractors analysed.
+- **A rule's producer scope is narrowed by SELECTOR VOCABULARY, never by
+  analyzer availability** (`evaluation.restrictToTargetVocabulary`,
+  `policy.ModuleMap.SelectorLanguages`). Rule selectors match graph node IDs,
+  and those are spelled per language — slash paths for Go/TS, dotted IDs for
+  Python, `crate::mod` for Rust (`NodeConvention.ModuleSegmentSep` is the single
+  source; a new language declares its vocabulary there, not here). A selector
+  the language cannot spell can never match one of its nodes, so that language
+  leaves the rule's scope. The source scope is an extension scan over the
+  `from:` glob, and a glob picks up whatever sits there: archfit ships three
+  Python helper scripts it runs through uv, so `from: internal/**` put python in
+  scope for rules whose `to:` is a Go package path, and grimp's legitimate
+  absence then marked them unevaluated — 8 of 60 rules, holding `intent` at
+  `partial` permanently and putting exit 0 out of reach. The narrowing uses only
+  availability-INDEPENDENT facts: an absent producer for a language the rule CAN
+  address still leaves the rule unevaluated, which is what keeps a missing
+  analyzer honest, and a probe-based filter is the wrong axis (`.go` files with
+  no `go.mod` yield a gapless-`absent` Go row over files that genuinely went
+  unmeasured). Module-wide rules (`public_api_max`, `forbidden_layer_direction`)
+  keep the full module scope on purpose — a helper script inside a declared
+  module is a real member of its API accounting.
 - **A language switched off over a language that IS PRESENT reports `disabled`,
   never `absent`** (`markDisabledPrimaries`, `internal/evidence/acquisition/coverage.go`,
   applied to `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode

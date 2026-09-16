@@ -71,6 +71,31 @@ func TestBuildExtractorsOrder(t *testing.T) {
 	}
 }
 
+// TestExtractConfigsCoversEveryRegisteredLanguage is the guard that
+// TestBuildExtractorsOrder cannot be: registry.Build indexes the Configs map by
+// every registered language, and a missing key yields the ZERO ExtractConfig
+// (empty mode, no exclusions) while still constructing an extractor — so a
+// newly registered language would be silently unconfigured and the build-order
+// test would still pass.
+func TestExtractConfigsCoversEveryRegisteredLanguage(t *testing.T) {
+	t.Parallel()
+	configs := config.Default().ExtractConfigs()
+	for _, lang := range registry.All() {
+		got, ok := configs[lang.ID]
+		if !ok {
+			t.Errorf("ExtractConfigs() has no entry for registered language %q", lang.ID)
+			continue
+		}
+		if want := config.Default().ForExtract(lang.ID); !reflect.DeepEqual(got, want) {
+			t.Errorf("ExtractConfigs()[%q] = %+v, want the projected config %+v", lang.ID, got, want)
+		}
+	}
+	if len(configs) != len(registry.All()) {
+		t.Errorf("ExtractConfigs() has %d entries, want one per registered language (%d)",
+			len(configs), len(registry.All()))
+	}
+}
+
 // TestLanguageByAlias covers canonical IDs, short aliases, and unknown keys.
 func TestLanguageByAlias(t *testing.T) {
 	t.Parallel()
