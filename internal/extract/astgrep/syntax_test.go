@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
@@ -95,6 +96,12 @@ func TestSyntax_DrainsStreamToEOF(t *testing.T) {
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
 			return toolrun.ToolInfo{Name: "sg", Path: "/usr/bin/sg"}, true
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("ast-grep 0.0.0-test")}, nil
+			}
+			return toolrun.Output{}, fmt.Errorf("unexpected Run: %v", cmd.Args)
 		},
 		StreamFunc: func(_ context.Context, _ toolrun.ToolCmd, consume func(io.Reader) error) (toolrun.Output, error) {
 			r := bytes.NewReader(output)

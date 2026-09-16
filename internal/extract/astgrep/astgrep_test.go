@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
@@ -181,7 +182,10 @@ func TestFind_MultiPattern_MergesResults(t *testing.T) {
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
 			return toolrun.ToolInfo{Name: "sg"}, true
 		},
-		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("ast-grep 0.0.0-test")}, nil
+			}
 			callCount++
 			if callCount == 1 {
 				return toolrun.Output{Stdout: out1}, nil

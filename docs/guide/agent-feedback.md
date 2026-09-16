@@ -22,6 +22,18 @@ agent edits code
 Use `check` inside repair loops and CI validation. Use `analyze` to generate
 reports, diffs, or a post-check narrative with `archfit analyze --ai-summary`.
 
+## The output has a published JSON Schema
+
+`archfit.state.schema.json` (repo root) describes the
+`archfit.architecture-state.v1` document that `--format json` emits. Validate
+against it, or generate your consumer types from it, instead of hand-modelling
+the output. Note that `archfit.schema.json` is a different contract — that one
+describes `.archfit.yaml`.
+
+Nullable by contract, not by accident: `seams[].scores.p10` and `p90` are `null`
+when a seam has fewer than ten scored edges. A percentile nobody can compute is
+reported as absent, never as `0`.
+
 ## agent_tasks — the gate repair channel
 
 Every ACTIVE gate finding produces one structured repair task:

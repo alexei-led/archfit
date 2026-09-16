@@ -1,0 +1,901 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.state.schema.json",
+  "$defs": {
+    "AgentTask": {
+      "properties": {
+        "finding_id": {
+          "type": "string"
+        },
+        "rule_id": {
+          "type": "string"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "constraints": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "validation": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "declarations": {
+          "items": {
+            "$ref": "#/$defs/SyntaxFact"
+          },
+          "type": "array"
+        },
+        "origin": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "finding_id",
+        "rule_id",
+        "goal",
+        "constraints",
+        "files",
+        "validation"
+      ]
+    },
+    "DimensionCoverage": {
+      "properties": {
+        "basis": {
+          "type": "string"
+        },
+        "observed": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "basis",
+        "observed",
+        "total"
+      ]
+    },
+    "DimensionDelta": {
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "metrics": {
+          "items": {
+            "$ref": "#/$defs/MetricDelta"
+          },
+          "type": "array"
+        },
+        "new_findings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resolved_findings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "status"
+      ]
+    },
+    "DimensionState": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "measured",
+            "partial",
+            "unmeasured"
+          ]
+        },
+        "confidence": {
+          "type": "string"
+        },
+        "gate": {
+          "type": "string"
+        },
+        "coverage": {
+          "$ref": "#/$defs/DimensionCoverage"
+        },
+        "metrics": {
+          "items": {
+            "$ref": "#/$defs/MetricValue"
+          },
+          "type": "array"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/FindingRef"
+          },
+          "type": "array"
+        },
+        "unknown": {
+          "items": {
+            "$ref": "#/$defs/UnknownFact"
+          },
+          "type": "array"
+        },
+        "delta": {
+          "$ref": "#/$defs/DimensionDelta"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "owner",
+        "status",
+        "confidence",
+        "gate",
+        "coverage",
+        "metrics",
+        "findings",
+        "unknown"
+      ]
+    },
+    "Dimensions": {
+      "properties": {
+        "intent": {
+          "$ref": "#/$defs/DimensionState"
+        },
+        "structure": {
+          "$ref": "#/$defs/DimensionState"
+        },
+        "modularity": {
+          "$ref": "#/$defs/DimensionState"
+        },
+        "coupling": {
+          "$ref": "#/$defs/DimensionState"
+        },
+        "change_locality": {
+          "$ref": "#/$defs/DimensionState"
+        },
+        "complexity": {
+          "$ref": "#/$defs/DimensionState"
+        },
+        "testability": {
+          "$ref": "#/$defs/DimensionState"
+        },
+        "operations": {
+          "$ref": "#/$defs/DimensionState"
+        },
+        "drift": {
+          "$ref": "#/$defs/DimensionState"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "intent",
+        "structure",
+        "modularity",
+        "coupling",
+        "change_locality",
+        "complexity",
+        "testability",
+        "operations",
+        "drift"
+      ]
+    },
+    "Finding": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "rule_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "string"
+        },
+        "edge": {
+          "$ref": "#/$defs/FindingEdge"
+        },
+        "matched_by": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "locations": {
+          "items": {
+            "$ref": "#/$defs/Location"
+          },
+          "type": "array"
+        },
+        "why": {
+          "type": "string"
+        },
+        "constraint": {
+          "type": "string"
+        },
+        "allowed_alternatives": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "rule_id",
+        "status",
+        "severity",
+        "confidence",
+        "edge",
+        "matched_by",
+        "locations",
+        "why",
+        "constraint"
+      ]
+    },
+    "FindingEdge": {
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/FindingEndpoint"
+        },
+        "to": {
+          "$ref": "#/$defs/FindingEndpoint"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "kind"
+      ]
+    },
+    "FindingEndpoint": {
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "module",
+        "path"
+      ]
+    },
+    "FindingRef": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "rule_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "rule_id",
+        "kind",
+        "severity",
+        "status"
+      ]
+    },
+    "Location": {
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "file",
+        "line"
+      ]
+    },
+    "MetricDelta": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "before": {
+          "type": "number"
+        },
+        "after": {
+          "type": "number"
+        },
+        "change": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "before",
+        "after",
+        "change"
+      ]
+    },
+    "MetricDenominator": {
+      "properties": {
+        "observed": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "observed",
+        "total"
+      ]
+    },
+    "MetricValue": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "denominator": {
+          "$ref": "#/$defs/MetricDenominator"
+        },
+        "provenance": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "value",
+        "unit"
+      ]
+    },
+    "Seam": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "from_module": {
+          "type": "string"
+        },
+        "to_module": {
+          "type": "string"
+        },
+        "edges": {
+          "type": "integer"
+        },
+        "scored_edges": {
+          "type": "integer"
+        },
+        "abstained_edges": {
+          "type": "integer"
+        },
+        "strength": {
+          "type": "string"
+        },
+        "distance": {
+          "type": "string"
+        },
+        "volatility": {
+          "type": "string"
+        },
+        "volatility_provenance": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "raw_distance": {
+          "$ref": "#/$defs/SeamDistance"
+        },
+        "quadrant": {
+          "type": "string"
+        },
+        "scores": {
+          "$ref": "#/$defs/SeamScoreDistribution"
+        },
+        "critical_edges": {
+          "type": "integer"
+        },
+        "high_or_worse_edges": {
+          "type": "integer"
+        },
+        "critical_share_pct": {
+          "type": "integer"
+        },
+        "high_or_worse_share_pct": {
+          "type": "integer"
+        },
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "label_evidence_hash": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "string"
+        },
+        "role_expectation": {
+          "type": "string"
+        },
+        "hypothesis": {
+          "type": "string"
+        },
+        "distributed_monolith": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "from_module",
+        "to_module",
+        "edges",
+        "scored_edges",
+        "abstained_edges",
+        "strength",
+        "distance",
+        "volatility",
+        "raw_distance",
+        "scores",
+        "critical_edges",
+        "high_or_worse_edges",
+        "critical_share_pct",
+        "high_or_worse_share_pct",
+        "confidence"
+      ]
+    },
+    "SeamDistance": {
+      "properties": {
+        "level": {
+          "type": "string"
+        },
+        "basis": {
+          "type": "string"
+        },
+        "from_owner": {
+          "type": "string"
+        },
+        "to_owner": {
+          "type": "string"
+        },
+        "same_owner": {
+          "type": "boolean"
+        },
+        "from_deploy_unit": {
+          "type": "string"
+        },
+        "to_deploy_unit": {
+          "type": "string"
+        },
+        "same_deploy_unit": {
+          "type": "boolean"
+        },
+        "boundary_crossings": {
+          "type": "integer"
+        },
+        "shared_ancestor": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "level",
+        "same_owner",
+        "same_deploy_unit",
+        "boundary_crossings",
+        "shared_ancestor"
+      ]
+    },
+    "SeamScoreDistribution": {
+      "properties": {
+        "n": {
+          "type": "integer"
+        },
+        "min": {
+          "type": "integer"
+        },
+        "median": {
+          "type": "integer"
+        },
+        "max": {
+          "type": "integer"
+        },
+        "p10": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Nearest-rank percentile, or null below ten scored samples."
+        },
+        "p90": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Nearest-rank percentile, or null below ten scored samples."
+        },
+        "mean": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "n",
+        "min",
+        "median",
+        "max",
+        "p10",
+        "p90",
+        "mean"
+      ]
+    },
+    "StateComparison": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "not_requested",
+            "comparable",
+            "non_comparable"
+          ]
+        },
+        "base_ref": {
+          "type": "string"
+        },
+        "config_hash": {
+          "type": "string"
+        },
+        "model_hash": {
+          "type": "string"
+        },
+        "labels_hash": {
+          "type": "string"
+        },
+        "rubric_version": {
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "task_origin_status": {
+          "type": "string"
+        },
+        "task_origin_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "status",
+        "reasons"
+      ]
+    },
+    "StateCoverage": {
+      "properties": {
+        "measured": {
+          "type": "integer"
+        },
+        "partial": {
+          "type": "integer"
+        },
+        "unmeasured": {
+          "type": "integer"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/StateToolCoverage"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "measured",
+        "partial",
+        "unmeasured",
+        "tools"
+      ]
+    },
+    "StateDecision": {
+      "properties": {
+        "hard_gates": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "unmeasured"
+          ]
+        },
+        "active_blockers": {
+          "type": "integer"
+        },
+        "attention_dimensions": {
+          "type": "integer"
+        },
+        "unknown_dimensions": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "hard_gates",
+        "active_blockers",
+        "attention_dimensions",
+        "unknown_dimensions"
+      ]
+    },
+    "StateMeasurement": {
+      "properties": {
+        "source_ref": {
+          "type": "string"
+        },
+        "history_depth": {
+          "type": "integer"
+        },
+        "history_window": {
+          "type": "string"
+        },
+        "tool_versions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "source_ref",
+        "history_depth",
+        "history_window",
+        "tool_versions"
+      ]
+    },
+    "StateToolCoverage": {
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "tool",
+        "status"
+      ]
+    },
+    "SyntaxFact": {
+      "properties": {
+        "language": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "exported": {
+          "type": "boolean"
+        },
+        "start_line": {
+          "type": "integer"
+        },
+        "end_line": {
+          "type": "integer"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "framework": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "language",
+        "file",
+        "kind",
+        "name",
+        "start_line"
+      ]
+    },
+    "UnknownFact": {
+      "properties": {
+        "fact": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "fact",
+        "reason",
+        "owner"
+      ]
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "archfit.architecture-state.v1"
+      ],
+      "description": "The only architecture-state contract this binary emits."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "healthy",
+        "needs_attention",
+        "blocked"
+      ]
+    },
+    "decision": {
+      "$ref": "#/$defs/StateDecision"
+    },
+    "comparison": {
+      "$ref": "#/$defs/StateComparison"
+    },
+    "measurement": {
+      "$ref": "#/$defs/StateMeasurement"
+    },
+    "dimensions": {
+      "$ref": "#/$defs/Dimensions"
+    },
+    "coverage": {
+      "$ref": "#/$defs/StateCoverage"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "type": "array"
+    },
+    "agent_tasks": {
+      "items": {
+        "$ref": "#/$defs/AgentTask"
+      },
+      "type": "array"
+    },
+    "seams": {
+      "items": {
+        "$ref": "#/$defs/Seam"
+      },
+      "type": "array"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "schema_version",
+    "verdict",
+    "decision",
+    "comparison",
+    "measurement",
+    "dimensions",
+    "coverage",
+    "findings",
+    "agent_tasks",
+    "seams"
+  ]
+}

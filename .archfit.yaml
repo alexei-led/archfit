@@ -234,18 +234,24 @@ modules:
     layer: adapter
     subdomain: generic
     volatility: medium
+  # Projections of the report contract onto wire formats. internal/reportschema
+  # belongs here rather than beside the config schema: it projects the same
+  # internal/model/report types the renderers do, one step further out — to the
+  # published JSON Schema a consumer generates its own types from.
   report-adapters:
     owner: alexei-led
     deploy_unit: archfit-cli
     role: adapter
     paths:
       - internal/output/**
+      - internal/reportschema/**
     public:
       - internal/output/console
       - internal/output/jsonout
       - internal/output/markdown
       - internal/output/sarif
       - internal/output/scorecard
+      - internal/reportschema
     layer: adapter
     subdomain: supporting
     volatility: medium

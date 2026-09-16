@@ -6,6 +6,7 @@ import (
 	"go/types"
 	"sort"
 	"strings"
+	"sync"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 
@@ -66,6 +67,9 @@ type GoExtractor struct {
 	Cache *factcache.Store
 	// load is the packages.Load test seam; nil = packages.Load.
 	load loadFunc
+	// versionOnce/versionValue memoize the toolchain probe; see goVersion.
+	versionOnce  sync.Once
+	versionValue string
 }
 
 // New returns a GoExtractor configured with the given ExtractConfig.
@@ -276,6 +280,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	}
 	cov := evidence.Coverage{
 		Tool:                    toolGoPackages,
+		Version:                 e.goVersion(ctx),
 		FilesSeen:               filesSeen,
 		FilesApplicable:         filesSeen,
 		Unresolved:              unresolved,

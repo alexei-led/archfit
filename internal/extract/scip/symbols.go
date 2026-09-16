@@ -31,14 +31,14 @@ func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, evi
 		// and callers can surface an actionable note.
 		return empty, evidence.Coverage{
 			Tool:    toolNameSymbols,
-			Version: ro.indexer,
+			Version: scipIdentity(ro.indexer, ro.version),
 			Status:  evidence.StatusPartial,
 			Reason:  "scip indexer produced an empty symbol index — if this is a Python project, scip-python may not support the current Python version; try Python 3.12 or 3.13",
 		}, nil
 	}
 	return g, evidence.Coverage{
 		Tool:            toolNameSymbols,
-		Version:         ro.indexer,
+		Version:         scipIdentity(ro.indexer, ro.version),
 		FilesSeen:       len(g.Module),
 		FilesApplicable: len(g.Module),
 		Status:          evidence.StatusOK,

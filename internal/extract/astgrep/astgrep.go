@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
@@ -28,6 +29,9 @@ type Adapter struct {
 	runner toolrun.Runner
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
 	Cache *factcache.Store
+	// versionOnce/versionValue memoize the `sg --version` probe; see sgVersion.
+	versionOnce  sync.Once
+	versionValue string
 }
 
 // New returns an Adapter configured with the given runner.
@@ -73,16 +77,40 @@ func (a *Adapter) cachedRunner(ctx context.Context, root string) toolrun.Runner 
 }
 
 // sgVersion probes `sg --version`. Best-effort: "" on any failure.
+//
+// Memoized: the same value keys the fact cache AND stamps both Coverage rows
+// (patterns and syntax), so an un-memoized probe would shell out up to three
+// times per run — and would not run at all when the cache is off, leaving the
+// coverage row's version empty for a reason that has nothing to do with sg.
 func (a *Adapter) sgVersion(ctx context.Context) string {
-	out, err := a.runner.Run(ctx, toolrun.ToolCmd{
-		Name:    "sg",
-		Args:    []string{"--version"},
-		Timeout: 30 * time.Second,
+	a.versionOnce.Do(func() {
+		out, err := a.runner.Run(ctx, toolrun.ToolCmd{
+			Name:    "sg",
+			Args:    []string{"--version"},
+			Timeout: 30 * time.Second,
+		})
+		if err != nil || out.ExitCode != 0 {
+			return
+		}
+		a.versionValue = lastNonEmptyLine(string(out.Stdout))
 	})
-	if err != nil || out.ExitCode != 0 {
-		return ""
+	return a.versionValue
+}
+
+// lastNonEmptyLine returns the final non-blank line of s, trimmed.
+//
+// `sg --version` prints a multi-line banner telling the caller to use the
+// `ast-grep` name instead, ABOVE the version, so the whole stdout is not a
+// version: it would put ~200 bytes of prose into the fact-cache key and, since
+// the value now also stamps Coverage.Version, into the published report. The
+// version is the last line in both the banner and the bare form.
+func lastNonEmptyLine(s string) string {
+	for _, line := range slices.Backward(strings.Split(s, "\n")) {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			return trimmed
+		}
 	}
-	return strings.TrimSpace(string(out.Stdout))
+	return ""
 }
 
 // Name returns the tool identifier.
@@ -174,7 +202,8 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]
 	})
 
 	cov := evidence.Coverage{
-		Tool:      "ast-grep",
+		Tool:      toolName,
+		Version:   a.sgVersion(ctx),
 		FilesSeen: len(fileSet),
 		Status:    "ok",
 	}
