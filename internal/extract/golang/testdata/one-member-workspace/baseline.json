@@ -857,10 +857,7 @@
     "history_depth": 0,
     "history_window": "unavailable",
     "source_ref": "worktree",
-    "tool_versions": {
-      "ast-grep": "\u003cVERSION\u003e",
-      "go/packages": "\u003cVERSION\u003e"
-    }
+    "tool_versions": {}
   },
   "schema_version": "archfit.architecture-state.v1",
   "seams": [

@@ -15,12 +15,9 @@ import (
 // envUpdateBaselines gates regeneration of the committed JSON baselines.
 const envUpdateBaselines = "ARCHFIT_UPDATE_BASELINES"
 
-const (
-	// keyToolVersions is the report field whose values are machine state, not
-	// tree state; placeholderVersion is what the baselines record instead.
-	keyToolVersions    = "tool_versions"
-	placeholderVersion = "<VERSION>"
-)
+// keyToolVersions is the report field whose entire contents are machine state
+// rather than tree state, so the baselines record it empty.
+const keyToolVersions = "tool_versions"
 
 // Fixture dirs relative to this source file (cmd/archfit/).
 const (
@@ -199,24 +196,29 @@ func normalizeArchfitJSON(data []byte, root string) ([]byte, error) {
 	return append(out, '\n'), nil
 }
 
-// normalizeToolVersions replaces every tool_versions VALUE with a placeholder,
-// keeping the keys. It walks the whole document because the state is not always
-// at the root: SARIF carries it under run.properties.
+// normalizeToolVersions empties every tool_versions map, keeping the field. It
+// walks the whole document because the state is not always at the root: SARIF
+// carries it under run.properties.
 //
-// The keys are a fact about the tree — which analyzers ran and identified
-// themselves — and stay pinned, so an analyzer that silently stops reporting
-// its version still fails this test. The values are a fact about the machine:
-// CI pins jscpd 5.0.11 and ast-grep 0.44.0 while a developer box has whatever
-// brew installed, and `go version` follows the local toolchain. Committing
-// those would make the baseline pass only on the host that generated it, which
-// is the same reason the temp root is replaced with <ROOT> above.
+// The whole map is machine state — keys included. A first attempt kept the keys
+// on the theory that "which analyzers identified themselves" is a fact about the
+// tree; CI falsified it, because a key exists only when that analyzer is both
+// installed and able to answer its version probe, and the runner's tool set is
+// not the developer's. The values are host state just as plainly: CI pins jscpd
+// 5.0.11 and ast-grep 0.44.0 while a developer box has whatever brew installed,
+// and `go version` follows the local toolchain.
+//
+// So the baseline asserts the field EXISTS and nothing about its contents: a
+// rename or removal of tool_versions still fails this test, while the analyzer
+// inventory of whoever ran it does not. Same rule as the <ROOT> substitution
+// above — a golden may pin only what the tree determines.
 func normalizeToolVersions(node interface{}) {
 	switch v := node.(type) {
 	case map[string]interface{}:
 		for key, child := range v {
 			if versions, ok := child.(map[string]interface{}); ok && key == keyToolVersions {
 				for tool := range versions {
-					versions[tool] = placeholderVersion
+					delete(versions, tool)
 				}
 				continue
 			}

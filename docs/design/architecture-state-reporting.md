@@ -286,16 +286,23 @@ distinguishable from "nobody wired the scan up".
 
 `tool_versions` is the one exception to the heading, and it is deliberate: it
 describes the environment that did the measuring, because a reader cannot judge
-a fact without knowing which analyzer produced it. Its KEYS are a tree fact
-(which analyzers were applicable and identified themselves); its VALUES are host
-state. Two consequences. A version is reduced to tool identity only — `go
+a fact without knowing which analyzer produced it.
+
+Two consequences follow. A version is reduced to tool identity only — `go
 version go1.27.1 darwin/arm64` is published as `go1.27.1`, since GOOS/GOARCH
 describes the platform rather than the tool, and platform pinning belongs to
 whoever pins the execution environment. And the byte-identical baselines record
-`<VERSION>` placeholders while pinning the keys: CI pins jscpd 5.0.11 and
-ast-grep 0.44.0, so a baseline carrying real versions would pass only on the
-host that generated it, while an analyzer that silently stopped reporting its
-version would still fail the test.
+the map EMPTY: they assert that the field exists and nothing about its contents,
+so a rename or removal of `tool_versions` still fails the golden while the
+analyzer inventory of whoever ran it does not.
+
+The map is machine state in full — keys included. A first attempt kept the keys
+on the theory that "which analyzers identified themselves" is a property of the
+tree. CI falsified it within one run: a key exists only when that analyzer is
+both installed and able to answer its version probe, and a runner's tool set is
+not a developer's. That is the rule for every golden in this repo — it may pin
+only what the tree determines — and `tool_versions` is precisely the field that
+does not qualify.
 
 The four comparability fingerprints live **only** in the root `comparison` block.
 A second copy anywhere in the document is a second answer to "may these two runs
