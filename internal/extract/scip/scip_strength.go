@@ -100,7 +100,7 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 		if len(out.Symbols) == 0 {
 			return m, evidence.Coverage{
 				Tool:    toolName,
-				Version: ro.indexer,
+				Version: scipIdentity(ro.indexer, ro.version),
 				Status:  evidence.StatusPartial,
 				Reason:  "empty index (0 occurrences) — check path case / indexer version",
 			}, nil
@@ -108,13 +108,13 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 		// Index is valid but has no cross-module edges — return OK with 0 files.
 		return m, evidence.Coverage{
 			Tool:    toolName,
-			Version: ro.indexer,
+			Version: scipIdentity(ro.indexer, ro.version),
 			Status:  evidence.StatusOK,
 		}, nil
 	}
 	return m, evidence.Coverage{
 		Tool:            toolName,
-		Version:         ro.indexer,
+		Version:         scipIdentity(ro.indexer, ro.version),
 		FilesSeen:       len(m),
 		FilesApplicable: len(m),
 		Status:          evidence.StatusOK,
@@ -125,6 +125,31 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 type pipelineResult struct {
 	raw     []byte
 	indexer string
+	// version is the indexer's own version, probed once per pipeline run. The
+	// indexer NAME alone is not an identity an upgrade can move, and
+	// Coverage.Version is published — so the name is a fallback, not the answer.
+	version string
+}
+
+// scipIdentity is the analyzer identity stamped on Coverage.Version: the
+// indexer name plus its version, or the bare name when the probe failed (some
+// indexers do not support --version, and a name still narrows it more than "").
+func scipIdentity(indexer, version string) string {
+	if version == "" {
+		return indexer
+	}
+	// Indexers disagree on shape: `scip-go --version` prints a bare "0.2.7",
+	// rust-analyzer prints "rust-analyzer 1.98.0 (88d9e12a 2026-08-18)". Emit
+	// one "<name> <version>" form either way — a doubled name reads as a bug,
+	// and the commit+date parenthetical is build metadata that moves without
+	// the version moving.
+	if v, _, found := strings.Cut(version, " ("); found {
+		version = strings.TrimSpace(v)
+	}
+	if strings.HasPrefix(version, indexer) {
+		return version
+	}
+	return indexer + " " + version
 }
 
 // pipeCacheEntry memoizes one pipeline execution per project root so that
@@ -200,18 +225,22 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 	// warm and cold. Key "" ⇒ cache off or key material underivable. The
 	// returned Coverage matches the miss path's success return (the partial
 	// template — callers construct their own final Coverage from ro).
-	key := a.cacheKey(ctx, root, indexer, pkg, lang)
+	// Probed once here: the same value feeds the cache key AND every Coverage
+	// row below, so probing inside cacheKey would skip it on a cache-off run.
+	version := a.indexerVersion(ctx, indexer)
+
+	key := a.cacheKey(root, indexer, pkg, lang, version)
 	if key != "" {
 		if blob, hit := a.Cache.Get(toolName, key); hit {
 			var ce scipCacheEntry
 			if json.Unmarshal(blob, &ce) == nil && ce.Indexer == indexer {
-				return pipelineResult{raw: ce.Raw, indexer: indexer},
-					evidence.Coverage{Version: indexer, Status: evidence.StatusPartial}, true
+				return pipelineResult{raw: ce.Raw, indexer: indexer, version: version},
+					evidence.Coverage{Version: scipIdentity(indexer, version), Status: evidence.StatusPartial}, true
 			}
 		}
 	}
 
-	timedOut := evidence.Coverage{Version: indexer, Status: evidence.StatusTimedOut, Reason: reasonTimedOut}
+	timedOut := evidence.Coverage{Version: scipIdentity(indexer, version), Status: evidence.StatusTimedOut, Reason: reasonTimedOut}
 
 	tmp, err := os.MkdirTemp("", "archfit-scip-")
 	if err != nil {
@@ -227,7 +256,7 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		return ro, absent, false
 	}
 
-	partial := evidence.Coverage{Version: indexer, Status: evidence.StatusPartial}
+	partial := evidence.Coverage{Version: scipIdentity(indexer, version), Status: evidence.StatusPartial}
 
 	// innerTimeout returns the configured per-analyzer timeout when set, else
 	// the built-in constant. This lets analyzers.scip.timeout extend the per-phase
@@ -287,7 +316,7 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		}
 	}
 
-	return pipelineResult{raw: rdOut.Stdout, indexer: indexer}, partial, true
+	return pipelineResult{raw: rdOut.Stdout, indexer: indexer, version: version}, partial, true
 }
 
 // scipCacheEntry is the stored fact-cache envelope: the reader JSON plus the
@@ -332,7 +361,7 @@ var scipLangInputs = map[string]struct {
 // the scan root, the GOWORK decision (it changes what the indexer can see and
 // is derived from a go.work OUTSIDE the hashed tree), and the content hash of
 // the detected language's source tree.
-func (a *Adapter) cacheKey(ctx context.Context, root, indexer, pkg, lang string) string {
+func (a *Adapter) cacheKey(root, indexer, pkg, lang, version string) string {
 	if a.Cache == nil {
 		return ""
 	}
@@ -354,7 +383,7 @@ func (a *Adapter) cacheKey(ctx context.Context, root, indexer, pkg, lang string)
 	if err != nil {
 		return ""
 	}
-	return factcache.Key(toolName, indexer+"\x00"+a.indexerVersion(ctx, indexer), cfgHash, treeHash)
+	return factcache.Key(toolName, indexer+"\x00"+version, cfgHash, treeHash)
 }
 
 // indexerVersion probes `<indexer> --version`. Best-effort: "" on any failure
@@ -403,7 +432,7 @@ func (a *Adapter) Connascence(ctx context.Context, s scope.Scope) (map[string][]
 	if perr != nil {
 		return nil, partial, nil
 	}
-	return m, evidence.Coverage{Tool: toolName, Version: ro.indexer, Status: evidence.StatusOK}, nil
+	return m, evidence.Coverage{Tool: toolName, Version: scipIdentity(ro.indexer, ro.version), Status: evidence.StatusOK}, nil
 }
 
 func parseReaderConnascence(stdout []byte) (map[string][]graph.ConnascenceHint, error) {

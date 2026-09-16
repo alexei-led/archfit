@@ -20,7 +20,7 @@ An averaged number answers the wrong question. `coupling_balance` folds a
 mean-of-seams into one 0–100 value, so a repository with one catastrophic seam
 and ninety healthy ones reports the same headline as one with ninety mediocre
 seams. Worse, the average is defined over whatever was measured, so a missing
-extractor silently shrinks the denominator and the number goes *up*. A reader
+extractor silently shrinks the denominator and the number goes _up_. A reader
 cannot tell a green result from an unlooked-at one.
 
 The state contract fixes both by construction:
@@ -42,16 +42,16 @@ dimension.
 
 Top-level blocks:
 
-| Block         | Holds                                                           |
-| ------------- | --------------------------------------------------------------- |
-| `verdict`     | `healthy` \| `needs_attention` \| `blocked`                      |
-| `decision`    | the explicit inputs to the verdict, and nothing else             |
-| `comparison`  | what this run was compared against, and whether that is legal    |
-| `measurement` | deterministic source, history, and tool-version facts            |
-| `dimensions`  | the nine envelopes                                               |
-| `coverage`    | measured/partial/unmeasured counts plus per-tool coverage rows   |
-| `findings`    | the run's findings, unchanged                                    |
-| `agent_tasks` | the Assessment-owned task list, projected verbatim               |
+| Block         | Holds                                                          |
+| ------------- | -------------------------------------------------------------- |
+| `verdict`     | `healthy` \| `needs_attention` \| `blocked`                    |
+| `decision`    | the explicit inputs to the verdict, and nothing else           |
+| `comparison`  | what this run was compared against, and whether that is legal  |
+| `measurement` | deterministic source, history, and tool-version facts          |
+| `dimensions`  | the nine envelopes                                             |
+| `coverage`    | measured/partial/unmeasured counts plus per-tool coverage rows |
+| `findings`    | the run's findings, unchanged                                  |
+| `agent_tasks` | the Assessment-owned task list, projected verbatim             |
 
 ### The nine dimensions
 
@@ -60,17 +60,17 @@ deliberate: each dimension has a compile-time name and evidence owner, and the
 wire order is fixed by declaration order instead of by map iteration — so the
 encoding is byte-stable without a sorting pass.
 
-| Dimension        | Evidence owner                  |
-| ---------------- | ------------------------------- |
-| `intent`         | `policy+assessment/evaluation`  |
-| `structure`      | `relationship/facts`            |
-| `modularity`     | `assessment/metrics`            |
-| `coupling`       | `relationship/analysis`         |
-| `change_locality`| `history/git`                   |
-| `complexity`     | `syntax+evidence/acquisition`   |
-| `testability`    | `syntax/fileclass`              |
-| `operations`     | `policy+evidence/acquisition`   |
-| `drift`          | `assessment/decision`           |
+| Dimension         | Evidence owner                 |
+| ----------------- | ------------------------------ |
+| `intent`          | `policy+assessment/evaluation` |
+| `structure`       | `relationship/facts`           |
+| `modularity`      | `assessment/metrics`           |
+| `coupling`        | `relationship/analysis`        |
+| `change_locality` | `history/git`                  |
+| `complexity`      | `syntax+evidence/acquisition`  |
+| `testability`     | `syntax/fileclass`             |
+| `operations`      | `policy+evidence/acquisition`  |
+| `drift`           | `assessment/decision`          |
 
 Every envelope is the same `DimensionState`: name, owner, measurement status,
 confidence, gate posture, coverage denominator, typed metrics, finding
@@ -113,13 +113,13 @@ JSON stores lower case; human formats display upper case.
 
 Frozen exit table:
 
-| Command / result                                        | Exit |
-| ------------------------------------------------------- | ---: |
-| `analyze` produced a valid report, whatever the state   |    0 |
-| `check`: `HEALTHY`                                      |    0 |
-| `check`: `NEEDS_ATTENTION`                              |    2 |
-| `check`: `BLOCKED`                                      |    1 |
-| parser / config / tool execution error                  |    3 |
+| Command / result                                      | Exit |
+| ----------------------------------------------------- | ---: |
+| `analyze` produced a valid report, whatever the state |    0 |
+| `check`: `HEALTHY`                                    |    0 |
+| `check`: `NEEDS_ATTENTION`                            |    2 |
+| `check`: `BLOCKED`                                    |    1 |
+| parser / config / tool execution error                |    3 |
 
 `scripts/tests/cli_exit_contract_test.sh` stays the executable authority for the
 0/1/2/3 table.
@@ -219,17 +219,17 @@ in review.
 All nine collectors have landed. Each envelope reports what this run actually
 observed and names, as an `UnknownFact`, whatever it could not.
 
-| Dimension | Measured when | Envelope denominator | Out-of-claim disclosures |
-| --- | --- | --- | --- |
-| `intent` | every active declared rule was evaluated | active declared rules / declared rules | conformance to rules declaring `gate: off` |
-| `structure` | every applicable primary dependency inventory completed and every internal edge was classified | edges resolved to a declared module / all edges | direction and layer of edges leaving the module map |
-| `modularity` | the declared module inventory, boundary attribution, and applicable graph metrics are complete | modules with a declared public surface / declared modules | an inferred public surface |
-| `coupling` | every cross-boundary candidate has strength and distance and TypeScript resolution is within its ceiling | scored / scored plus abstained cross-boundary candidates | same-module and undeclared-external coupling |
-| `change_locality` | a bounded history sample completed with module attribution | declared modules touched / declared modules | essential versus accidental volatility |
-| `complexity` | the complete declared module graph has chain-depth and degree values for every declared module | modules with complete graph values / declared modules | file/function size and cognitive complexity |
-| `testability` | compatible supplied units cover every declared module, every path resolves, and every sidecar freshness result is `matched` | modules represented by attributed supplied coverage / declared modules | assertion quality and boundary-test semantics |
-| `operations` | every declared module has a qualifying owner, an independently corroborated deploy unit, and a reconciliation result | modules with qualifying owner and deploy corroboration / declared modules | observed runtime topology, supply-chain state, and analyzer health |
-| `drift` | a persisted v2 state baseline is fingerprint-comparable and every qualifying seam identity was compared | union of current and stored qualifying seam identities | the separate `--base` report request |
+| Dimension         | Measured when                                                                                                               | Envelope denominator                                                      | Out-of-claim disclosures                                           |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `intent`          | every active declared rule was evaluated                                                                                    | active declared rules / declared rules                                    | conformance to rules declaring `gate: off`                         |
+| `structure`       | every applicable primary dependency inventory completed and every internal edge was classified                              | edges resolved to a declared module / all edges                           | direction and layer of edges leaving the module map                |
+| `modularity`      | the declared module inventory, boundary attribution, and applicable graph metrics are complete                              | modules with a declared public surface / declared modules                 | an inferred public surface                                         |
+| `coupling`        | every cross-boundary candidate has strength and distance and TypeScript resolution is within its ceiling                    | scored / scored plus abstained cross-boundary candidates                  | same-module and undeclared-external coupling                       |
+| `change_locality` | a bounded history sample completed with module attribution                                                                  | declared modules touched / declared modules                               | essential versus accidental volatility                             |
+| `complexity`      | the complete declared module graph has chain-depth and degree values for every declared module                              | modules with complete graph values / declared modules                     | file/function size and cognitive complexity                        |
+| `testability`     | compatible supplied units cover every declared module, every path resolves, and every sidecar freshness result is `matched` | modules represented by attributed supplied coverage / declared modules    | assertion quality and boundary-test semantics                      |
+| `operations`      | every declared module has a qualifying owner, an independently corroborated deploy unit, and a reconciliation result        | modules with qualifying owner and deploy corroboration / declared modules | observed runtime topology, supply-chain state, and analyzer health |
+| `drift`           | a persisted v2 state baseline is fingerprint-comparable and every qualifying seam identity was compared                     | union of current and stored qualifying seam identities                    | the separate `--base` report request                               |
 
 Every dimension now has a genuine `measured` path, but none is promoted from a
 missing fact. Coverage remains opt-in: production source with no supplied
@@ -256,6 +256,19 @@ really did diff against a resolved SHA, publishes one.
 A run that scanned no history records `history_window: unavailable` with depth 0
 rather than leaving both blank, so "there is no history here" stays
 distinguishable from "nobody wired the scan up".
+
+`tool_versions` is the one exception to the heading, and it is deliberate: it
+describes the environment that did the measuring, because a reader cannot judge
+a fact without knowing which analyzer produced it. Its KEYS are a tree fact
+(which analyzers were applicable and identified themselves); its VALUES are host
+state. Two consequences. A version is reduced to tool identity only — `go
+version go1.27.1 darwin/arm64` is published as `go1.27.1`, since GOOS/GOARCH
+describes the platform rather than the tool, and platform pinning belongs to
+whoever pins the execution environment. And the byte-identical baselines record
+`<VERSION>` placeholders while pinning the keys: CI pins jscpd 5.0.11 and
+ast-grep 0.44.0, so a baseline carrying real versions would pass only on the
+host that generated it, while an analyzer that silently stopped reporting its
+version would still fail the test.
 
 The four comparability fingerprints live **only** in the root `comparison` block.
 A second copy anywhere in the document is a second answer to "may these two runs
@@ -309,14 +322,14 @@ replaced. CI runs them as an explicit gate step; each has one executable owner
 and each owner proves it fires on a fixture that violates it, so none can pass
 vacuously.
 
-| Check                       | Owner                                 | What it prevents                                                   |
-| --------------------------- | ------------------------------------- | ------------------------------------------------------------------ |
-| `no_scalar_decision`        | `internal.TestErosion_NoScalarDecision` | an averaged score re-entering the path from evidence to exit code |
-| `no_dead_archfit_rule`      | `internal.TestErosion_NoDeadArchfitRule` | a rule reporting "0 violations" for a boundary nobody checks     |
-| `dimension_status_required` | `cmd/archfit.TestErosion_DimensionStatusRequired` | an envelope with no status reading as an empty, healthy result |
-| `config_hash_required`      | `cmd/archfit.TestErosion_ConfigHashRequired` | a delta taken across a config edit blaming the code           |
-| `label_evidence_required`   | `cmd/archfit.TestErosion_LabelEvidenceRequired` | an unevidenced approval silencing a seam permanently       |
-| `baseline_idempotent`       | `cmd/archfit.TestErosion_BaselineIdempotent` | a self-referential capture reporting drift that is not there  |
+| Check                       | Owner                                             | What it prevents                                                  |
+| --------------------------- | ------------------------------------------------- | ----------------------------------------------------------------- |
+| `no_scalar_decision`        | `internal.TestErosion_NoScalarDecision`           | an averaged score re-entering the path from evidence to exit code |
+| `no_dead_archfit_rule`      | `internal.TestErosion_NoDeadArchfitRule`          | a rule reporting "0 violations" for a boundary nobody checks      |
+| `dimension_status_required` | `cmd/archfit.TestErosion_DimensionStatusRequired` | an envelope with no status reading as an empty, healthy result    |
+| `config_hash_required`      | `cmd/archfit.TestErosion_ConfigHashRequired`      | a delta taken across a config edit blaming the code               |
+| `label_evidence_required`   | `cmd/archfit.TestErosion_LabelEvidenceRequired`   | an unevidenced approval silencing a seam permanently              |
+| `baseline_idempotent`       | `cmd/archfit.TestErosion_BaselineIdempotent`      | a self-referential capture reporting drift that is not there      |
 
 `no_scalar_decision` scopes `internal/application/analysis.go` to the decision
 functions rather than the whole file, deliberately: the run result still

@@ -275,7 +275,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		// report status=ok — a false green. Surface it as a partial/degraded result.
 		if out.ExitCode != 0 && len(raw) == 0 {
 			reason := fmt.Sprintf("sg rejected rule file for %q (exit %d): %s", lang, out.ExitCode, strings.TrimSpace(string(out.Stderr)))
-			return nil, evidence.Coverage{Tool: syntaxToolName, Status: evidence.StatusPartial, Reason: reason}, nil
+			return nil, evidence.Coverage{Tool: syntaxToolName, Version: a.sgVersion(ctx), Status: evidence.StatusPartial, Reason: reason}, nil
 		}
 		if len(raw) == 0 {
 			continue
@@ -344,7 +344,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 	for i := range facts {
 		seen[facts[i].File] = struct{}{}
 	}
-	cov := evidence.Coverage{Tool: syntaxToolName, Status: evidence.StatusOK, FilesSeen: len(seen)}
+	cov := evidence.Coverage{Tool: syntaxToolName, Version: a.sgVersion(ctx), Status: evidence.StatusOK, FilesSeen: len(seen)}
 	return facts, cov, nil
 }
 

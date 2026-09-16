@@ -632,19 +632,52 @@ func effectiveGoWorkPath(scanRoot string, env map[string]string) (string, bool) 
 // go/packages shells out to the PATH toolchain, so runtime.Version() (the
 // version archfit was BUILT with) would be the wrong key input. Best-effort:
 // "" when no Runner is wired (tests) or the probe fails.
+// Memoized: members load concurrently and each derives a cache key, and the
+// value also stamps the Coverage row, so an un-memoized probe would shell out
+// once per member plus once more for the report.
 func (e *GoExtractor) goVersion(ctx context.Context) string {
 	if e.Runner == nil {
 		return ""
 	}
-	out, err := e.Runner.Run(ctx, toolrun.ToolCmd{
-		Name:    "go",
-		Args:    []string{"version"},
-		Timeout: 30 * time.Second,
+	e.versionOnce.Do(func() {
+		out, err := e.Runner.Run(ctx, toolrun.ToolCmd{
+			Name:    "go",
+			Args:    []string{"version"},
+			Timeout: 30 * time.Second,
+		})
+		if err != nil || out.ExitCode != 0 {
+			return
+		}
+		e.versionValue = goToolchainToken(string(out.Stdout))
 	})
-	if err != nil || out.ExitCode != 0 {
-		return ""
+	return e.versionValue
+}
+
+// goToolchainToken reduces `go version` output to the toolchain token.
+//
+// `go version go1.27.1 darwin/arm64` identifies two different things: the
+// toolchain (a tool-identity fact) and GOOS/GOARCH (a platform fact, which
+// belongs to whoever pins the execution environment). Keeping the platform
+// here would put the host into the published report and into every golden, so
+// a linux runner and a darwin laptop could never agree on a byte for reasons
+// that are not about the tool. Build constraints do make the platform change
+// which FILES are analysed — that is a scope fact, disclosed elsewhere.
+// Unrecognised output is returned trimmed rather than dropped: an unknown
+// shape is still an identity, and "" would claim we never looked.
+func goToolchainToken(stdout string) string {
+	trimmed := strings.TrimSpace(stdout)
+	fields := strings.Fields(trimmed)
+	if len(fields) < 3 || fields[0] != "go" || fields[1] != "version" {
+		return trimmed
 	}
-	return strings.TrimSpace(string(out.Stdout))
+	// Everything after "go version" except a trailing GOOS/GOARCH. Taking only
+	// the first token would report a development toolchain as just "devel",
+	// which is not an identity an upgrade can move.
+	rest := fields[2:]
+	if len(rest) > 1 && strings.Contains(rest[len(rest)-1], "/") {
+		rest = rest[:len(rest)-1]
+	}
+	return strings.Join(rest, " ")
 }
 
 var goCacheEnvKeys = []string{

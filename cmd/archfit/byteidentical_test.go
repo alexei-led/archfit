@@ -15,6 +15,13 @@ import (
 // envUpdateBaselines gates regeneration of the committed JSON baselines.
 const envUpdateBaselines = "ARCHFIT_UPDATE_BASELINES"
 
+const (
+	// keyToolVersions is the report field whose values are machine state, not
+	// tree state; placeholderVersion is what the baselines record instead.
+	keyToolVersions    = "tool_versions"
+	placeholderVersion = "<VERSION>"
+)
+
 // Fixture dirs relative to this source file (cmd/archfit/).
 const (
 	fixtureSingleModule       = "../../internal/extract/golang/testdata/single-module"
@@ -184,11 +191,42 @@ func normalizeArchfitJSON(data []byte, root string) ([]byte, error) {
 	if err := json.Unmarshal([]byte(normalized), &m); err != nil {
 		return nil, fmt.Errorf("unmarshal: %w", err)
 	}
+	normalizeToolVersions(m)
 	out, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
 	return append(out, '\n'), nil
+}
+
+// normalizeToolVersions replaces every tool_versions VALUE with a placeholder,
+// keeping the keys. It walks the whole document because the state is not always
+// at the root: SARIF carries it under run.properties.
+//
+// The keys are a fact about the tree — which analyzers ran and identified
+// themselves — and stay pinned, so an analyzer that silently stops reporting
+// its version still fails this test. The values are a fact about the machine:
+// CI pins jscpd 5.0.11 and ast-grep 0.44.0 while a developer box has whatever
+// brew installed, and `go version` follows the local toolchain. Committing
+// those would make the baseline pass only on the host that generated it, which
+// is the same reason the temp root is replaced with <ROOT> above.
+func normalizeToolVersions(node interface{}) {
+	switch v := node.(type) {
+	case map[string]interface{}:
+		for key, child := range v {
+			if versions, ok := child.(map[string]interface{}); ok && key == keyToolVersions {
+				for tool := range versions {
+					versions[tool] = placeholderVersion
+				}
+				continue
+			}
+			normalizeToolVersions(child)
+		}
+	case []interface{}:
+		for _, child := range v {
+			normalizeToolVersions(child)
+		}
+	}
 }
 
 // copyFixtureIntoDir recursively copies the fixture directory into dst.

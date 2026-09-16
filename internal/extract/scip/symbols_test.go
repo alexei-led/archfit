@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	reportmodel "github.com/alexei-led/archfit/internal/model/report"
@@ -255,9 +256,12 @@ func TestAdapter_SinglePass(t *testing.T) {
 		t.Errorf("Module len = %d, want 2 (cached pipeline must yield full output)", len(g.Module))
 	}
 
+	// Count index passes, not process spawns: the pipeline also runs
+	// `<indexer> --version` once to stamp the analyzer identity on Coverage,
+	// and that probe is not a second pass over the tree.
 	indexerRuns := 0
 	for _, call := range runner.RunCalls() {
-		if call.Cmd.Name == indexerGo {
+		if call.Cmd.Name == indexerGo && !slices.Contains(call.Cmd.Args, "--version") {
 			indexerRuns++
 		}
 	}
