@@ -248,7 +248,9 @@ func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observati
 		if unsupportedOrAmbiguousSourcePattern(p.Topology.ModuleMap, rule.To) {
 			return ruleScope{status: ruleScopeUnknown}
 		}
-		return patternRuleScope(p.Topology.ModuleMap, rule.From, files)
+		return restrictToTargetVocabulary(
+			patternRuleScope(p.Topology.ModuleMap, rule.From, files),
+			p.Topology.ModuleMap.SelectorLanguages(rule.To))
 	case "forbidden_layer_direction":
 		return moduleRuleScope(p.Topology, files)
 	case "new_cross_module_dependency":
@@ -404,6 +406,46 @@ func explicitlySupportedSourcePattern(moduleMap policy.ModuleMap, pattern string
 func unsupportedOrAmbiguousSourcePattern(moduleMap policy.ModuleMap, pattern string) bool {
 	ext := path.Ext(pattern)
 	return ext != "" && !explicitlySupportedSourcePattern(moduleMap, pattern)
+}
+
+// restrictToTargetVocabulary drops languages whose node vocabulary the rule's
+// TARGET selector cannot address.
+//
+// This extends the reasoning one line above — "no producer can emit a
+// relationship to that source-file vocabulary" — from the target side to the
+// source side. The source scope is derived from file extensions found under the
+// `from:` glob, and a glob picks up whatever happens to sit there: archfit
+// itself ships three Python helper scripts it runs through uv
+// (internal/extract/scip/scip_reader.py, internal/extract/py/grimp_helper.py),
+// so `from: internal/**` put python in scope for rules whose `to:` is a Go
+// package path. grimp is legitimately absent on a repository with no Python
+// project, so those rules were then reported unevaluated for want of evidence
+// that could not have changed their outcome: no Python edge can target a slash
+// path. On this repository that was 8 of 60 rules, holding `intent` at
+// `partial` permanently and putting exit 0 out of reach.
+//
+// Only availability-independent facts are used. A language is dropped because
+// its vocabulary cannot express the relationship, never because its analyzer
+// did not run — an absent producer for a language the rule CAN address still
+// leaves the rule unevaluated, which is what keeps a missing analyzer honest.
+//
+// An empty intersection is not applicable rather than unknown: every language
+// the `from:` glob selected is one whose nodes cannot address the target, so no
+// producer could have found a violation to begin with.
+func restrictToTargetVocabulary(s ruleScope, addressable map[string]struct{}) ruleScope {
+	if s.status != ruleScopeApplicable || len(addressable) == 0 {
+		return s
+	}
+	kept := make(map[string]struct{}, len(s.languages))
+	for language := range s.languages {
+		if _, ok := addressable[language]; ok {
+			kept[language] = struct{}{}
+		}
+	}
+	if len(kept) == 0 {
+		return ruleScope{status: ruleScopeNotApplicable}
+	}
+	return ruleScope{status: ruleScopeApplicable, languages: kept}
 }
 
 func primaryToolForLanguage(diag *result.Result, language string) (string, bool) {

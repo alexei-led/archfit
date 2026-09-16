@@ -174,6 +174,47 @@ func (mm ModuleMap) RuleSelectorForFile(file string) (language, selector string,
 	return language, graph.BuiltinConventions.Lookup(language).FileToModuleKey(file), true
 }
 
+// SelectorLanguages returns the languages whose module-node vocabulary the rule
+// selector pattern is able to address.
+//
+// A rule selector is matched against graph node IDs, and those IDs are spelled
+// differently per language: Go and TypeScript use slash paths, Python uses
+// dotted module IDs, Rust uses `crate::mod`. A selector therefore excludes
+// languages by its own shape, independently of which analyzers ran — a slash
+// glob can never match a dotted Python node ID, which is why the configuration
+// reference insists Python globs are written `prefect.**` and not
+// `src/prefect/**`.
+//
+// The separators come from the shipped conventions (NodeConvention.
+// ModuleSegmentSep), so a new language declares its vocabulary once rather than
+// teaching this function about itself.
+//
+// An explicit supported extension names exactly one language and wins. A
+// pattern carrying no separator at all ("**") addresses every language, which
+// is the conservative answer.
+func (mm ModuleMap) SelectorLanguages(pattern string) map[string]struct{} {
+	if ext := gopath.Ext(pattern); ext != "" && !strings.ContainsAny(ext, "*?[{") {
+		if language, ok := extToLang[ext]; ok {
+			return map[string]struct{}{language: {}}
+		}
+	}
+	anySeparator := false
+	for _, conv := range graph.BuiltinConventions {
+		if conv.ModuleSegmentSep != "" && strings.Contains(pattern, conv.ModuleSegmentSep) {
+			anySeparator = true
+			break
+		}
+	}
+	out := make(map[string]struct{}, len(graph.BuiltinConventions))
+	for language, conv := range graph.BuiltinConventions {
+		sep := conv.ModuleSegmentSep
+		if sep == "" || !anySeparator || strings.Contains(pattern, sep) {
+			out[language] = struct{}{}
+		}
+	}
+	return out
+}
+
 // ModuleForFile returns the module name owning file, a repo-relative REAL
 // source file path (as opposed to ModuleFor's graph-node-ID space, which is
 // dotted for Python and crate-relative for Rust). It tries the raw file path

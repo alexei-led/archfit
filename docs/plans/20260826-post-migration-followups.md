@@ -95,21 +95,18 @@ fails a test instead of shipping an empty JSON block.
 Each is a real weakening of a guard rather than a live defect, and each is
 larger than a review fix.
 
-- **Coverage names have two independent copies.** The emitters
-  (`internal/extract/{astgrep,scip,clones,rust}`) and the consumer
-  (`internal/assessment/decision.AnalyzerFamilies`) no longer share one constant
-  set — the move out of `cmd/archfit` split them into non-importing packages.
-  `internal/coverage_names_test.go` pins only `dependency-cruiser`, `grimp`, and
-  `go/packages`. Renaming `ast-grep/syntax`, `scip`, `scip-symbols`, `jscpd`, or
-  `cargo-modules` in an adapter compiles and passes, while every
-  `analyze --base` task silently degrades to `unknown` origin. Extend the test
-  with the same adapter-driven pattern for the other five.
-- **`Config.ExtractConfigs()` hand-lists the four languages**
-  (`internal/config/projection.go`) while `registry.Build` iterates the
-  registry, so a fifth registered language would receive a zero `ExtractConfig`
-  (`Mode ""`, no exclusions) and `TestBuildExtractorsOrder` would still pass.
-  `CoverageOptions()` already iterates `registry.All()` correctly. Build the map
-  the same way, or assert a key per registry ID.
+- ~~**Coverage names have two independent copies.**~~ CLOSED 2026-09-16 —
+  the entry was stale when re-checked. `TestAnalyzerCoverageNamesRemainStable`
+  (`internal/coverage_names_test.go`) already sources all ten names from the
+  adapters and asserts each is represented in `decision.AnalyzerFamilies`'
+  output, so an adapter-side rename fails the test. The three-name list in the
+  entry describes `TestPartialFromUnresolvedSpecifiers_AdapterCoverageNames`,
+  where three is correct: that predicate keys on those names alone.
+- ~~**`Config.ExtractConfigs()` hand-lists the four languages**~~ FIXED
+  2026-09-16 — it now iterates `registry.All()`, and
+  `TestExtractConfigsCoversEveryRegisteredLanguage` (`cmd/archfit`) asserts one
+  entry per registry ID with the projected value, which is the guard
+  `TestBuildExtractorsOrder` could never be.
 - **Two dead slots on `relationship.ClassifiedEdgeSummary`**
   (`internal/relationship/advisory.go` `LLMApproved`, `VolatilityProvenance`):
   never written by `buildClassifiedSummary`, always overwritten downstream by

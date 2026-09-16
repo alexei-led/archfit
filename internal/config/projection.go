@@ -130,12 +130,18 @@ func lintWarningStrings(modules map[string]policy.ModuleDef) []string {
 
 // ExtractConfigs projects config into registry extractor configs.
 func (c Config) ExtractConfigs() registry.Configs {
-	return registry.Configs{
-		LangGo:         c.ForExtract(LangGo),
-		LangTypeScript: c.ForExtract(LangTypeScript),
-		LangPython:     c.ForExtract(LangPython),
-		LangRust:       c.ForExtract(LangRust),
+	// Iterated from the registry, not hand-listed: registry.Build indexes this
+	// map by every registered language, so a language added there but missed
+	// here would receive the ZERO ExtractConfig — empty mode, no exclusions —
+	// and still construct an extractor. CoverageOptions() already iterates
+	// registry.All() for exactly this reason; the two must not disagree about
+	// which languages exist.
+	all := registry.All()
+	out := make(registry.Configs, len(all))
+	for _, lang := range all {
+		out[lang.ID] = c.ForExtract(lang.ID)
 	}
+	return out
 }
 
 // AcquisitionOptions projects config into external acquisition options.
