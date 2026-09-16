@@ -245,6 +245,33 @@ promotion. Coverage counters follow mechanically from
 `Dimensions.CountStatuses`; the exact fact sets and status predicates are in the
 [evidence contract](evidence-contract.md).
 
+### The contract has a published schema
+
+`archfit.state.schema.json` at the repo root is the machine-readable form of
+this contract, generated from the Go structs in `internal/model/report` by
+`internal/reportschema` and regenerated with `make schema`. It is a different
+document from `archfit.schema.json`, which describes the CONFIG and cannot
+stand in for it — until this schema existed, a consumer had prose here and
+nothing to validate against or generate types from.
+
+Two tests hold it, and they cover different failures. `TestStateSchemaNoDrift`
+proves the schema still describes the emitting types. That is not enough on its
+own: it cannot catch a schema that fails to ACCEPT what archfit writes, which is
+what a wrongly required field or a mis-rendered nullable produces. So
+`TestStateSchemaAcceptsEveryCommittedStateDocument` validates every committed
+document whose ROOT declares this contract — discovered by walking the repo, not
+by a list, so a baseline added later is covered without editing the test. It
+found exactly that bug on its first run: `seams[].scores.p10`/`p90` are `*int`
+and are `null` below ten scored samples, which the reflector had published as
+plain integers.
+
+Known ceiling: the conformance corpus is made of real emitted documents, so it
+covers the shapes those runs reach — today `verdict: blocked` with
+`hard_gates: fail`, `comparison: not_requested`, and all three dimension
+statuses. `healthy` and a populated `comparison` block are not represented yet.
+They must come from real runs; hand-authoring a document that was never emitted
+would put a plausible-looking fake in the place reserved for evidence.
+
 ### Measurement is a property of the tree, not of the run
 
 `StateMeasurement` publishes `source_ref`, `history_depth`, `history_window`, and
