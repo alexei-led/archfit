@@ -165,11 +165,26 @@ func buildExtToLang() map[string]string {
 
 // RuleSelectorForFile returns the supported language and graph-node path that
 // policy rule selectors evaluate for a real source file. False means no
-// registered source convention owns the extension.
-func (mm ModuleMap) RuleSelectorForFile(file string) (language, selector string, ok bool) {
+// registered source convention owns the extension. Supplied crate roots replace
+// directory conventions with Cargo's crate identities; unmatched Rust files
+// retain their language but have an unknown selector.
+func (mm ModuleMap) RuleSelectorForFile(file string, roots ...graph.CrateRoot) (language, selector string, ok bool) {
 	language, ok = extToLang[gopath.Ext(file)]
 	if !ok {
 		return "", "", false
+	}
+	if language == graph.LangRust && len(roots) > 0 {
+		best := -1
+		for _, root := range roots {
+			dir := strings.Trim(gopath.Clean(root.Dir), "/")
+			if dir == "." {
+				dir = ""
+			}
+			if (dir == "" || strings.HasPrefix(file, dir+"/")) && len(dir) > best {
+				selector, best = root.Name, len(dir)
+			}
+		}
+		return language, selector, true
 	}
 	return language, graph.BuiltinConventions.Lookup(language).FileToModuleKey(file), true
 }
@@ -235,15 +250,15 @@ func (mm ModuleMap) SelectorLanguages(pattern string) map[string]struct{} {
 // the raw path first preserves ModuleFor's existing, tested resolution for
 // every language whose configs are already glob-compatible with real file
 // paths, and only reaches for language-specific normalization as a fallback.
-func (mm ModuleMap) ModuleForFile(file string) (string, bool) {
+// Supplied crate roots use Cargo's identities for the Rust fallback.
+func (mm ModuleMap) ModuleForFile(file string, roots ...graph.CrateRoot) (string, bool) {
 	if mod, ok := mm.ModuleFor(file); ok {
 		return mod, true
 	}
-	lang, ok := extToLang[gopath.Ext(file)]
+	_, key, ok := mm.RuleSelectorForFile(file, roots...)
 	if !ok {
 		return "", false
 	}
-	key := graph.BuiltinConventions.Lookup(lang).FileToModuleKey(file)
 	if key == "" || key == file {
 		return "", false
 	}

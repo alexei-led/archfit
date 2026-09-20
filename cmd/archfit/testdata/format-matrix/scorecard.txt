@@ -56,7 +56,7 @@ denominator: cross-boundary edges scored 1/1
 ### change_locality — unmeasured · gate: not_applicable · confidence: unrated
 owner: history/git
 denominator: none — this dimension measured nothing
-- not measured — eligible commit sample: git history is unavailable or the history scan returned no eligible commit
+- not measured — eligible commit sample: the history scan returned no eligible commit (ok), so co-change cannot be distinguished from a stable tree
 - not measured — commit-to-module attribution: the history scan is incomplete, so not every eligible commit has a complete module attribution
 
 ### complexity — measured · gate: pass · confidence: high

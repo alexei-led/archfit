@@ -15,7 +15,7 @@ technical owner-distance, CODEOWNERS resolution, and coupling at scale).
 
 | Repo                 | Lang                  | Owner model                 | CODEOWNERS           | Delta base (prev minor) | Why                                                        |
 | -------------------- | --------------------- | --------------------------- | -------------------- | ----------------------- | ---------------------------------------------------------- |
-| archfit              | Go                    | solo (mine)                 | no                   | `v0.13.0`               | self-dogfood; runs its own v2 gate (`make arch-lint`)       |
+| archfit              | Go                    | solo (mine)                 | no                   | `v0.13.0`               | self-dogfood; runs its own v2 gate (`make arch-lint`)      |
 | spotinfo             | Go                    | solo (mine)                 | no                   | `v2.2.1`                | tiny CLI; thin-graph baseline                              |
 | pumba                | Go                    | solo (mine)                 | yes (`@alexei-led`)  | `1.0.6`                 | small Go, forbidden-dep rules                              |
 | ccgram               | Python                | solo (mine)                 | no                   | `v4.2.0`                | richest single-owner: encapsulation + cycles fire          |
@@ -52,8 +52,11 @@ Refine the exact prev-minor patch at delta-run time (`git -C <repo> tag --sort=-
 ## Workflow rules
 
 - Run from the archfit repo root so `.env` auto-loads the AI key consistently.
-- Corpus repos are **read-only**. Copy `.archfit.yaml` out and work on the copy;
-  nothing in a sweep may write into a target tree.
+- Original corpus repos are **read-only**. Run against disposable checkouts
+  selected with `--workspace-root`; external analyzers can create build and
+  cache artifacts in their working trees. Preserve the intended HEAD and
+  configuration in each disposable checkout. The harness copies its config
+  into the output directory and never edits the original repositories.
 - Every config in the corpus must use schema v2. Copy it out and validate it
   before the sweep; do not rewrite target repositories.
 - A config-update failure is a finding, never a silent skip.
@@ -115,14 +118,28 @@ Do not leave an anomaly unclassified.
 ## Helper script
 
 ```sh
-python3 scripts/eval/corpus_sweep.py --help
-python3 -m unittest discover -s scripts/eval -p '*corpus_sweep_test.py'
+uv run --with jsonschema python scripts/eval/corpus_sweep.py --help
+uv run --with jsonschema python -m unittest discover -s scripts/eval -p '*_test.py'
+make language-contracts
 ```
+
+`language-contracts` runs mandatory real-tool fixtures for Go, TypeScript,
+JavaScript, Python and Rust. It checks schema validity, finding identity and
+lifecycle, required-rule evidence, cache equality, baseline/waiver behavior,
+physical Python locations and replayed repairs. Missing required tools fail
+the gate; optional analyzers are explicitly disabled in these bounded fixtures.
+
+The full corpus CLI additionally validates every state document against the
+published JSON schema and rejects duplicate or contradictory finding IDs.
+Install the `jsonschema` runtime through the `uv run --with jsonschema` commands
+below. Prepare schema-v2 configurations in disposable checkouts first; the
+harness does not silently migrate legacy configurations.
 
 Mandatory four-language fast matrix — one representative per supported adapter:
 
 ```sh
-python3 scripts/eval/corpus_sweep.py \
+uv run --with jsonschema python scripts/eval/corpus_sweep.py \
+  --workspace-root /tmp/archfit-corpus-workspace \
   --repos spotinfo,storybook,ccgram,herdr \
   --ai-repos '' \
   --repeat-repos spotinfo,storybook,ccgram,herdr \
@@ -135,12 +152,13 @@ python3 scripts/eval/corpus_sweep.py \
 Full corpus — all eleven labels:
 
 ```sh
-python3 scripts/eval/corpus_sweep.py \
+uv run --with jsonschema python scripts/eval/corpus_sweep.py \
+  --workspace-root /tmp/archfit-corpus-workspace \
   --repos spotinfo,pumba,omni/scheduled-tasks,prometheus,ccgram,prefect,storybook,yazi,herdr,ruff,tokio \
   --ai-repos spotinfo,ccgram,herdr,storybook \
   --repeat-repos spotinfo,storybook,ccgram,herdr \
   --format-repos spotinfo,storybook,ccgram,herdr \
-  --strict --max-workers 4 \
+  --strict --max-workers 2 \
   --output-dir /tmp/archfit-corpus-eval \
   --summary-file /tmp/archfit-corpus-results.json
 ```
@@ -218,19 +236,19 @@ second migration. Every repo verdict is `needs_attention` and every `check`
 exits 2 — the expected v1 result, because complexity, testability, and
 operations are `partial` by contract.
 
-| Repo | Lang | Coverage (M/P/U) | Findings | Seams |
-| --- | --- | --- | ---: | ---: |
-| spotinfo | Go | 5/3/1 | 32 | 29 |
-| pumba | Go | 5/3/1 | 12 | 7 |
-| omni/scheduled-tasks | Go | 5/3/1 | 1782 | 1574 |
-| prometheus | Go | 5/3/1 | 361 | 487 |
-| ccgram | Python | 3/4/2 | 59 | 75 |
-| prefect | Python | 3/4/2 | 116 | 438 |
-| storybook | TS | 4/4/1 | 73 | 73 |
-| yazi | Rust | 4/3/2 | 3 | 0 |
-| herdr | Rust | 3/3/3 | 0 | 0 |
-| ruff | Rust | 2/3/4 | 0 | 0 |
-| tokio | Rust | 2/3/4 | 0 | 0 |
+| Repo                 | Lang   | Coverage (M/P/U) | Findings | Seams |
+| -------------------- | ------ | ---------------- | -------: | ----: |
+| spotinfo             | Go     | 5/3/1            |       32 |    29 |
+| pumba                | Go     | 5/3/1            |       12 |     7 |
+| omni/scheduled-tasks | Go     | 5/3/1            |     1782 |  1574 |
+| prometheus           | Go     | 5/3/1            |      361 |   487 |
+| ccgram               | Python | 3/4/2            |       59 |    75 |
+| prefect              | Python | 3/4/2            |      116 |   438 |
+| storybook            | TS     | 4/4/1            |       73 |    73 |
+| yazi                 | Rust   | 4/3/2            |        3 |     0 |
+| herdr                | Rust   | 3/3/3            |        0 |     0 |
+| ruff                 | Rust   | 2/3/4            |        0 |     0 |
+| tokio                | Rust   | 2/3/4            |        0 |     0 |
 
 Byte determinism and five-format parity were checked on the four mandatory
 representatives (spotinfo, storybook, ccgram, herdr); AI summaries ran on those
@@ -279,12 +297,12 @@ harness, migrated to v2 idempotently, and had byte-identical repeated JSON. The
 owned harness now sets `RUSTUP_TOOLCHAIN=1.98.0` by default; callers may override
 it explicitly, and third-party repositories remain unchanged.
 
-| Repo | Coverage (M/P/U) | Findings | Seams | Rust analyzer result |
-| --- | --- | ---: | ---: | --- |
-| yazi | 3/4/2 | 22 | 210 | cargo ok; cargo-modules disabled by config |
-| herdr | 4/4/1 | 686 | 704 | cargo and cargo-modules ok |
-| ruff | 3/4/2 | 55 | 7175 | cargo ok; SCIP partial |
-| tokio | 3/4/2 | 916 | 979 | cargo ok; cargo-modules partial for benches/examples/stress-test |
+| Repo  | Coverage (M/P/U) | Findings | Seams | Rust analyzer result                                             |
+| ----- | ---------------- | -------: | ----: | ---------------------------------------------------------------- |
+| yazi  | 3/4/2            |       22 |   210 | cargo ok; cargo-modules disabled by config                       |
+| herdr | 4/4/1            |      686 |   704 | cargo and cargo-modules ok                                       |
+| ruff  | 3/4/2            |       55 |  7175 | cargo ok; SCIP partial                                           |
+| tokio | 3/4/2            |      916 |   979 | cargo ok; cargo-modules partial for benches/examples/stress-test |
 
 Every run had `analyze=0`, `check=2`, verdict `needs_attention`, and no Archfit
 execution failures. The earlier Rust rows above are retained as the historical

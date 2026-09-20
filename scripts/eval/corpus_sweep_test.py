@@ -97,9 +97,7 @@ class TestFlagParsing(unittest.TestCase):
             cs.PINNED_RUST_TOOLCHAIN,
         )
         self.assertEqual(
-            cs.command_environment({"RUSTUP_TOOLCHAIN": "nightly"})[
-                "RUSTUP_TOOLCHAIN"
-            ],
+            cs.command_environment({"RUSTUP_TOOLCHAIN": "nightly"})["RUSTUP_TOOLCHAIN"],
             "nightly",
         )
 
@@ -233,6 +231,59 @@ class TestStateValidation(unittest.TestCase):
         failures = cs.validate_state(doc)
         self.assertTrue(any("partial without" in f for f in failures), failures)
 
+    def test_rejects_duplicate_finding_identity(self):
+        doc = state_doc()
+        doc["findings"][1]["id"] = doc["findings"][0]["id"]
+        failures = cs.validate_state(doc)
+        self.assertTrue(any("duplicated" in f for f in failures), failures)
+
+    def test_rejects_fixed_and_live_status_for_one_identity(self):
+        doc = state_doc()
+        doc["findings"].append({"id": "aaa", "status": "fixed"})
+        failures = cs.validate_state(doc)
+        self.assertTrue(any("contradictory lifecycle" in f for f in failures), failures)
+
+    def test_rejects_duplicate_seam_identity(self):
+        doc = state_doc()
+        doc["seams"] = [{"id": "seam-1"}, {"id": "seam-1"}]
+        failures = cs.validate_state(doc)
+        self.assertTrue(
+            any("seam ID" in f and "duplicated" in f for f in failures), failures
+        )
+
+    def test_published_schema_rejects_null_locations(self):
+        try:
+            import jsonschema  # noqa: F401
+        except ModuleNotFoundError:
+            self.skipTest("jsonschema is installed only for the real acceptance gate")
+        doc = state_doc()
+        doc["decision"]["unknown_dimensions"] = 1
+        doc["measurement"] = {
+            "source_ref": "fixture",
+            "history_depth": 0,
+            "history_window": "0 commits",
+            "tool_versions": {},
+        }
+        finding = doc["findings"][0]
+        finding.update(
+            {
+                "kind": "gate",
+                "severity": "high",
+                "confidence": "high",
+                "edge": {
+                    "from": {"module": "core", "path": "core.go"},
+                    "to": {"module": "adapter", "path": "adapter.go"},
+                    "kind": "imports",
+                },
+                "matched_by": {},
+                "locations": None,
+                "why": "fixture",
+                "constraint": "fixture",
+            }
+        )
+        failures = cs.validate_state(doc, schema_path=cs.STATE_SCHEMA_PATH)
+        self.assertTrue(any("locations" in f for f in failures), failures)
+
 
 class TestExitContract(unittest.TestCase):
     def test_verdict_maps_to_the_frozen_exit(self):
@@ -314,15 +365,21 @@ class TestFormatParity(unittest.TestCase):
             )
         )
         self.assertEqual(
-            cs.rendered_coverage_triple("COVERAGE 5 measured · 3 partial · 1 unmeasured"),
+            cs.rendered_coverage_triple(
+                "COVERAGE 5 measured · 3 partial · 1 unmeasured"
+            ),
             (5, 3, 1),
         )
 
     def test_a_wrong_dimension_gate_fails_parity(self):
         state, out = self.rendered()
-        out = out.replace("  coupling  measured  gate: pass", "  coupling  measured  gate: fail")
+        out = out.replace(
+            "  coupling  measured  gate: pass", "  coupling  measured  gate: fail"
+        )
         failures = cs.check_text_parity("text", out, state)
-        self.assertTrue(any("coupling" in f and "gate" in f for f in failures), failures)
+        self.assertTrue(
+            any("coupling" in f and "gate" in f for f in failures), failures
+        )
 
     def test_a_status_borrowed_from_another_row_fails_parity(self):
         # Every status word appears in the coverage headline, so a
@@ -331,7 +388,9 @@ class TestFormatParity(unittest.TestCase):
         state, out = self.rendered()
         out = out.replace("  coupling  measured  gate: pass", "  coupling  gate: pass")
         failures = cs.check_text_parity("text", out, state)
-        self.assertTrue(any("coupling" in f and "status" in f for f in failures), failures)
+        self.assertTrue(
+            any("coupling" in f and "status" in f for f in failures), failures
+        )
 
     def test_bare_numbers_are_not_a_coverage_triple(self):
         self.assertIsNone(cs.rendered_coverage_triple("total 5 3 1"))
@@ -620,6 +679,25 @@ class TestSweepFlow(unittest.TestCase):
 
 
 class TestCorpusInventory(unittest.TestCase):
+    def test_workspace_root_remaps_the_fixed_layout_without_changing_labels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            remapped = cs.corpus_for_workspace(workspace)
+            self.assertEqual(remapped["spotinfo"].root, workspace / "spotinfo")
+            self.assertEqual(
+                remapped["omni/scheduled-tasks"].root,
+                workspace / "omni/server/services/scheduled-tasks",
+            )
+            self.assertEqual(sorted(remapped), sorted(cs.CORPUS))
+            self.assertEqual(cs.CORPUS["spotinfo"].root, cs.WORKSPACE_ROOT / "spotinfo")
+
+    def test_parser_accepts_workspace_root_and_keeps_current_default(self):
+        parser = cs.build_parser()
+        default = parser.parse_args([])
+        custom = parser.parse_args(["--workspace-root", "/tmp/disposable-corpus"])
+        self.assertEqual(default.workspace_root, str(cs.WORKSPACE_ROOT))
+        self.assertEqual(custom.workspace_root, "/tmp/disposable-corpus")
+
     def test_the_full_corpus_is_the_eleven_labels_the_plan_names(self):
         self.assertEqual(
             sorted(cs.CORPUS),
@@ -650,8 +728,6 @@ class TestCorpusInventory(unittest.TestCase):
             ("herdr", "rust"),
         ):
             self.assertEqual(cs.CORPUS[label].language, language)
-
-
 
 
 class TestHarnessGuards(unittest.TestCase):
@@ -687,7 +763,9 @@ class TestHarnessGuards(unittest.TestCase):
             root.mkdir()
             out = Path(tmp) / "out"
             (out / "target").mkdir(parents=True)
-            sweep = cs.Sweep(Path("/bin/true"), out, runner=FakeRunner([]), cwd=Path(tmp))
+            sweep = cs.Sweep(
+                Path("/bin/true"), out, runner=FakeRunner([]), cwd=Path(tmp)
+            )
             record = sweep.process(
                 cs.RepoSpec("target", root, "go"),
                 want_ai=False,
@@ -708,7 +786,9 @@ class TestHarnessGuards(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out"
             out.mkdir()
-            sweep = cs.Sweep(Path("/bin/true"), out, runner=FakeRunner([]), cwd=Path(tmp))
+            sweep = cs.Sweep(
+                Path("/bin/true"), out, runner=FakeRunner([]), cwd=Path(tmp)
+            )
             record = sweep.process(
                 cs.RepoSpec("target", Path(tmp) / "absent", "go"),
                 want_ai=False,

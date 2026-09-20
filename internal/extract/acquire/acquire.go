@@ -26,7 +26,6 @@ import (
 
 const (
 	toolAstGrepSyntax = "ast-grep/syntax"
-	toolDeployUnit    = "deploy-unit"
 )
 
 // ReasonSCIPDisabled is the published Reason on the StatusDisabled coverage row
@@ -94,15 +93,14 @@ func Collect(ctx context.Context, root string, opts Options, runner toolrun.Runn
 	}
 	out.RuntimeConfidence = runtimeResult.Confidence
 
-	deployUnitsByPath := deployunit.DetectCorroborated(ctx, root, opts.ModuleMap, runner)
+	deployResult := deployunit.Discover(ctx, root, opts.ModuleMap, runner, opts.GoExtract)
+	deployUnitsByPath := deployResult.Units
 	out.CorroboratedDeployUnits = deployunit.KeyCorroboratedByModule(deployUnitsByPath, opts.ModuleMap)
 	out.DeployUnitsByModule = make(map[string]string, len(out.CorroboratedDeployUnits))
 	for module, fact := range out.CorroboratedDeployUnits {
 		out.DeployUnitsByModule[module] = fact.Unit
 	}
-	out.ExtraCoverage = append(out.ExtraCoverage, evidence.Coverage{
-		Tool: toolDeployUnit, FilesSeen: len(deployUnitsByPath), Status: evidence.StatusOK,
-	})
+	out.ExtraCoverage = append(out.ExtraCoverage, deployResult.Coverage)
 
 	cloneExclusions := append(append([]string(nil), opts.Exclusions...), cloneTestGenGlobs...)
 	var cloneCoverage evidence.Coverage

@@ -465,15 +465,13 @@ func projectDistanceCompression(in *result.DistanceCompressionSummary) *report.D
 func projectFindings(in []finding.Finding) []report.Finding {
 	out := make([]report.Finding, 0, len(in))
 	for _, f := range in {
-		// nil in, nil out: report.Finding.Locations has no omitempty, so a
-		// zero-length slice would publish `[]` where the schema has always
-		// carried `null` for a finding with no locations.
-		var locations []report.Location
-		if len(f.Locations) > 0 {
-			locations = make([]report.Location, 0, len(f.Locations))
-			for _, loc := range f.Locations {
-				locations = append(locations, report.Location{File: loc.File, Line: loc.Line})
-			}
+		locations := make([]report.Location, 0, len(f.Locations))
+		for _, loc := range f.Locations {
+			locations = append(locations, report.Location{File: loc.File, Line: loc.Line})
+		}
+		matchedBy := f.MatchedBy
+		if matchedBy == nil {
+			matchedBy = map[string]string{}
 		}
 		out = append(out, report.Finding{
 			ID: f.ID, Kind: f.Kind, RuleID: f.RuleID, Status: string(f.Status), Severity: string(f.Severity),
@@ -482,7 +480,7 @@ func projectFindings(in []finding.Finding) []report.Finding {
 				From: report.FindingEndpoint{Module: f.Edge.From.Module, Path: f.Edge.From.Path},
 				To:   report.FindingEndpoint{Module: f.Edge.To.Module, Path: f.Edge.To.Path}, Kind: f.Edge.Kind,
 			},
-			MatchedBy: f.MatchedBy, Locations: locations, Why: f.Why, Constraint: f.Constraint, Alternatives: f.Alternatives,
+			MatchedBy: matchedBy, Locations: locations, Why: f.Why, Constraint: f.Constraint, Alternatives: f.Alternatives,
 		})
 	}
 	return out

@@ -89,6 +89,7 @@ func mustWrite(t *testing.T, path string, content string) {
 // are recorded as deploy units.
 func TestDetect_GoMain(t *testing.T) {
 	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "go.mod"), "module example.com/app\n\ngo 1.26\n")
 	mainDir := filepath.Join(root, "cmd", "myapp")
 	mustMkdir(t, mainDir)
 
@@ -111,6 +112,7 @@ func TestDetect_GoMain(t *testing.T) {
 // the detected main package path, the module name is used as the unit name.
 func TestDetect_GoMain_ModuleNamePreferred(t *testing.T) {
 	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "go.mod"), "module example.com/app\n\ngo 1.26\n")
 	mainDir := filepath.Join(root, "cmd", "server")
 	mustMkdir(t, mainDir)
 
@@ -136,6 +138,7 @@ func TestDetect_GoMain_ModuleNamePreferred(t *testing.T) {
 // distance against every other module in the repo.
 func TestDetect_GoMain_NestedInModule_NotDeployUnit(t *testing.T) {
 	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "go.mod"), "module example.com/app\n\ngo 1.26\n")
 	mainDir := filepath.Join(root, "promql", "promqltest", "cmd", "migrate")
 	mustMkdir(t, mainDir)
 
@@ -381,6 +384,7 @@ func TestDetect_K8sStatefulSet(t *testing.T) {
 // wins over Dockerfile in the same directory.
 func TestDetect_GoWins(t *testing.T) {
 	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "go.mod"), "module example.com/app\n\ngo 1.26\n")
 	appDir := filepath.Join(root, "cmd", "app")
 	mustMkdir(t, appDir)
 	// Dockerfile is also present in the same dir — Go detection runs first and wins.
@@ -420,6 +424,7 @@ func TestDetect_SkipsNodeModules(t *testing.T) {
 // must never be mistaken for independent corroboration.
 func TestDetectCorroboratedSources(t *testing.T) {
 	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "go.mod"), "module example.com/app\n\ngo 1.26\n")
 	goMain := filepath.Join(root, "cmd", "worker")
 	mustMkdir(t, goMain)
 

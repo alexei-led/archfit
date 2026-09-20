@@ -237,27 +237,28 @@ func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observati
 	files := sourceInventoryFiles(f)
 	switch rule.Type {
 	case ruleTypePublicAPIMax, ruleTypePublicAPIChange:
-		return moduleRuleScope(p.Topology, files)
+		return moduleRuleScope(p.Topology, files, f.SourceSelectors)
 	case ruleTypePublicAPILeak:
 		// The current type-leak producer is explicitly Go-only.
-		return restrictRuleScopeLanguages(moduleRuleScope(p.Topology, files), "go")
+		return restrictRuleScopeLanguages(moduleRuleScope(p.Topology, files, f.SourceSelectors), "go")
 	case "forbidden_dependency", "public_api_only", "internal_api_access":
 		// Dependency producers are selected by the source endpoint language, but
 		// an explicitly unsupported target scope is still unevaluated: no
 		// producer can emit a relationship to that source-file vocabulary.
-		if unsupportedOrAmbiguousSourcePattern(p.Topology.ModuleMap, rule.To) {
+		if unsupportedOrAmbiguousSourcePattern(p.Topology.ModuleMap, rule.To) &&
+			!knownSourceVocabulary(p.Topology.ModuleMap, rule.To, files, f.SourceSelectors) {
 			return ruleScope{status: ruleScopeUnknown}
 		}
 		return restrictToTargetVocabulary(
-			patternRuleScope(p.Topology.ModuleMap, rule.From, files),
+			patternRuleScope(p.Topology.ModuleMap, rule.From, files, f.SourceSelectors),
 			p.Topology.ModuleMap.SelectorLanguages(rule.To))
 	case "forbidden_layer_direction":
-		return moduleRuleScope(p.Topology, files)
+		return moduleRuleScope(p.Topology, files, f.SourceSelectors)
 	case "new_cross_module_dependency":
 		if len(p.Topology.Modules) < 2 {
 			return ruleScope{status: ruleScopeNotApplicable}
 		}
-		return moduleRuleScope(p.Topology, files)
+		return moduleRuleScope(p.Topology, files, f.SourceSelectors)
 	case "cycle":
 		return allSourceScope(p.Topology.ModuleMap, files)
 	default:
@@ -296,19 +297,22 @@ func allSourceScope(moduleMap policy.ModuleMap, files []string) ruleScope {
 	return ruleScope{status: ruleScopeApplicable, languages: languages}
 }
 
-func moduleRuleScope(topology policy.TopologyView, files []string) ruleScope {
+func moduleRuleScope(topology policy.TopologyView, files []string, selectors map[string]string) ruleScope {
 	if len(topology.Modules) == 0 {
 		return ruleScope{status: ruleScopeNotApplicable}
 	}
 	languages := make(map[string]struct{})
 	modulesWithFiles := make(map[string]struct{})
 	for _, file := range files {
-		module, owned := topology.ModuleMap.ModuleForFile(file)
+		language, selector, supported := ruleFileSelector(topology.ModuleMap, file, selectors)
+		module, owned := topology.ModuleMap.ModuleFor(file)
+		if !owned && selector != "" {
+			module, owned = topology.ModuleMap.ModuleFor(selector)
+		}
 		if !owned {
 			continue
 		}
 		modulesWithFiles[module] = struct{}{}
-		language, _, supported := topology.ModuleMap.RuleSelectorForFile(file)
 		if !supported {
 			return ruleScope{status: ruleScopeUnknown}
 		}
@@ -357,13 +361,13 @@ func restrictRuleScopeLanguages(scope ruleScope, allowed ...string) ruleScope {
 	return ruleScope{status: ruleScopeApplicable, languages: languages}
 }
 
-func patternRuleScope(moduleMap policy.ModuleMap, pattern string, files []string) ruleScope {
+func patternRuleScope(moduleMap policy.ModuleMap, pattern string, files []string, selectors map[string]string) ruleScope {
 	if pattern == "" {
 		return allSourceScope(moduleMap, files)
 	}
 	languages := make(map[string]struct{})
 	for _, file := range files {
-		language, selector, supported := moduleMap.RuleSelectorForFile(file)
+		language, selector, supported := ruleFileSelector(moduleMap, file, selectors)
 		if !supported {
 			if matched, _ := doublestar.Match(pattern, file); matched {
 				return ruleScope{status: ruleScopeUnknown}
@@ -381,6 +385,34 @@ func patternRuleScope(moduleMap policy.ModuleMap, pattern string, files []string
 		return ruleScope{status: ruleScopeUnknown}
 	}
 	return ruleScope{status: ruleScopeNotApplicable}
+}
+
+func ruleFileSelector(moduleMap policy.ModuleMap, file string, selectors map[string]string) (string, string, bool) {
+	language, selector, supported := moduleMap.RuleSelectorForFile(file)
+	if projected, ok := selectors[file]; ok {
+		selector = projected
+	}
+	return language, selector, supported
+}
+
+func knownSourceVocabulary(moduleMap policy.ModuleMap, pattern string, files []string, selectors map[string]string) bool {
+	for _, file := range files {
+		language, selector, supported := ruleFileSelector(moduleMap, file, selectors)
+		if !supported || selector == "" {
+			continue
+		}
+		if rulePatternMatches(pattern, file, selector) {
+			return true
+		}
+		if language == "python" && !strings.ContainsAny(pattern, "/:") {
+			root, _, _ := strings.Cut(selector, ".")
+			patternRoot, _, dotted := strings.Cut(pattern, ".")
+			if dotted && root == patternRoot {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func rulePatternMatches(pattern, file, selector string) bool {
@@ -1289,15 +1321,20 @@ func operationsDimension(diag *result.Result, p policy.PolicySnapshot, f Observa
 	completeModules, matchingUnits, mismatchedUnits := reconcileOperationalTopology(
 		p.Topology.Modules, f.DeclaredDeployUnits, corroboratedModules, qualifyingOwners,
 	)
+	discoveryComplete, discoveryReason := deployDiscoveryComplete(diag.ToolCoverage)
+	if !discoveryComplete {
+		reasons[state.FactCorroboratedDeployUnit] = discoveryReason
+		reasons[state.FactTopologyReconciliation] = discoveryReason
+	}
 
 	observed := []string{state.FactDeclaredOperationalTopology}
-	if len(corroboratedModules) == modules {
+	if discoveryComplete && len(corroboratedModules) == modules {
 		observed = append(observed, state.FactCorroboratedDeployUnit)
 	}
 	if len(qualifyingOwners) == modules {
 		observed = append(observed, state.FactOwnerProvenance)
 	}
-	if f.DeclaredDeployUnits != nil && f.CorroboratedDeployUnits != nil {
+	if discoveryComplete && f.DeclaredDeployUnits != nil && f.CorroboratedDeployUnits != nil {
 		observed = append(observed, state.FactTopologyReconciliation)
 	}
 	applyPromotion(&dim, observed, nil, reasons)
@@ -1357,6 +1394,20 @@ func operationsDimension(diag *result.Result, p policy.PolicySnapshot, f Observa
 		dim.Gate = state.GateFail
 	}
 	return dim
+}
+
+func deployDiscoveryComplete(rows []modevidence.Coverage) (bool, string) {
+	discovery := coverageRows(rows, "deploy-unit")
+	if len(discovery) == 1 && discovery[0].Status == modevidence.StatusOK {
+		return true, ""
+	}
+	reasons := []string{"deploy-unit discovery did not complete, so operational topology cannot be fully reconciled"}
+	for _, row := range discovery {
+		if row.Reason != "" {
+			reasons = append(reasons, row.Reason)
+		}
+	}
+	return false, strings.Join(reasons, ": ")
 }
 
 func resolvedOwnerCounts(modules map[string]policy.ModuleDef) (withOwner, distinct int) {

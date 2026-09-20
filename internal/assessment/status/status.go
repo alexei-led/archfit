@@ -50,6 +50,8 @@ func (Empty) Entries() []AcceptedEntry { return nil }
 // forKind scopes fixed-finding emission: only baseline entries whose Kind field
 // matches forKind are emitted as fixed. Entries with an empty Kind field are
 // treated as "gate" (backward compatibility with pre-Kind baseline files).
+// otherCurrent supplies findings from other passes for disappearance detection;
+// they are not classified or included in the returned findings.
 //
 // Algorithm per finding f:
 //  1. Fingerprint in base.Accepted → StatusBaseline
@@ -64,10 +66,14 @@ func Assign(
 	waivers policy.WaiverSet,
 	now time.Time,
 	forKind string,
+	otherCurrent ...finding.Finding,
 ) []finding.Finding {
 	// Build a set of current fingerprints for fixed-finding detection.
-	current := make(map[string]struct{}, len(findings))
+	current := make(map[string]struct{}, len(findings)+len(otherCurrent))
 	for _, f := range findings {
+		current[f.ID] = struct{}{}
+	}
+	for _, f := range otherCurrent {
 		current[f.ID] = struct{}{}
 	}
 

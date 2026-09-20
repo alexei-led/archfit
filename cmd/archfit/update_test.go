@@ -229,6 +229,12 @@ func TestDeployUnitSuggestions_DeterministicHintsOnlyForMissingConfig(t *testing
 	if err := os.MkdirAll(filepath.Join(dir, "cmd", testUpdateWebModule), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/project\n\ngo 1.26\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cmd", testUpdateWebModule, "main.go"), []byte("package main\nfunc main() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, name string) (toolrun.ToolInfo, bool) {
 			return toolrun.ToolInfo{}, name == "go"
@@ -256,6 +262,12 @@ func TestDeployUnitSuggestions_UsesDiscoveredModuleMap(t *testing.T) {
 
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "cmd", testUpdateWebModule), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/project\n\ngo 1.26\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cmd", testUpdateWebModule, "main.go"), []byte("package main\nfunc main() {}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	runner := &toolrun.RunnerMock{

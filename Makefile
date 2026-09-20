@@ -45,8 +45,13 @@ build: ## compile the archfit binary
 test: ## run tests with race detector and coverage
 	go test -race -coverprofile=coverage.out $(if $(TEST_PKGS),$(TEST_PKGS),./...)
 	python3 internal/extract/scip/scip_reader_test.py
-	python3 scripts/eval/corpus_sweep_test.py
+	uv run --with jsonschema python -m unittest discover -s scripts/eval -p '*_test.py'
 	bash scripts/tests/cli_exit_contract_test.sh
+
+## language-contracts: run the bounded real-tool acceptance gate
+.PHONY: language-contracts
+language-contracts: build ## validate Go, TypeScript, JavaScript, Python, and Rust with real producers
+	uv run --with jsonschema python scripts/eval/language_contracts.py --archfit $(BIN_DIR)/$(BINARY)
 
 ifeq ($(firstword $(MAKECMDGOALS)),test)
 .PHONY: $(RAW_TEST_PKGS)

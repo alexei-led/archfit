@@ -6,6 +6,7 @@ import (
 
 	historygit "github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -29,18 +30,32 @@ const (
 )
 
 // buildVolatilityCorroboration summarizes git-history touches as report-only evidence.
-func buildVolatilityCorroboration(ctx context.Context, gitRoot, subtreePrefix string, p policy.PolicySnapshot, runner toolrun.Runner) *evidence.VolatilityCorroboration {
+func buildVolatilityCorroboration(ctx context.Context, gitRoot, subtreePrefix string, p policy.PolicySnapshot, runner toolrun.Runner, roots ...graph.CrateRoot) *evidence.VolatilityCorroboration {
 	if gitRoot == "" || len(p.Topology.Modules) == 0 {
 		return nil
 	}
 	mm := p.Topology.ModuleMap
-	touches := historygit.TouchCounts(ctx, gitRoot, subtreePrefix, mm.ModuleFor, runner)
-	if touches.Status == historygit.ModuleTouchStatusUnavailable {
-		return nil
+	missingCrateIdentity := false
+	needsCrateIdentity := historyUsesCrateSelectors(p.Topology)
+	moduleFor := func(file string) (string, bool) {
+		if module, ok := mm.ModuleFor(file); ok {
+			return module, true
+		}
+		language, _, _ := mm.RuleSelectorForFile(file, roots...)
+		if language == graph.LangRust && len(roots) == 0 {
+			missingCrateIdentity = missingCrateIdentity || needsCrateIdentity
+			return "", false
+		}
+		return mm.ModuleForFile(file, roots...)
+	}
+	touches := historygit.TouchCounts(ctx, gitRoot, subtreePrefix, moduleFor, runner)
+	status := string(touches.Status)
+	if missingCrateIdentity && touches.Status == historygit.ModuleTouchStatusOK {
+		status = evidence.StatusPartial
 	}
 	out := &evidence.VolatilityCorroboration{
 		Source:         volatilityCorroborationSrc,
-		Status:         string(touches.Status),
+		Status:         status,
 		CommitWindow:   touches.CommitWindow,
 		FullHistory:    touches.FullHistory,
 		CommitsScanned: touches.CommitsScanned,
@@ -58,6 +73,17 @@ func buildVolatilityCorroboration(ctx context.Context, gitRoot, subtreePrefix st
 		})
 	}
 	return out
+}
+
+func historyUsesCrateSelectors(topology policy.TopologyView) bool {
+	for _, module := range topology.Modules {
+		for _, pattern := range module.Paths {
+			if _, rust := topology.ModuleMap.SelectorLanguages(pattern)[graph.LangRust]; rust {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func declaredVolatilityLabel(def policy.ModuleDef) string {

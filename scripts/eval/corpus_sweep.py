@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+STATE_SCHEMA_PATH = REPO_ROOT / "archfit.state.schema.json"
 WORKSPACE_ROOT = Path.home() / "workspace"
 DEFAULT_ARCHFIT = REPO_ROOT / ".bin" / "archfit"
 DEFAULT_OUTPUT_DIR = Path("/tmp/archfit-corpus-eval")
@@ -90,6 +91,9 @@ STATUS_PASS = "pass"
 STATUS_FAIL = "fail"
 STATUS_UNVERIFIED = "unverified"
 STATUS_ACCEPTED_UNVERIFIED = "accepted_unverified"
+FINDING_STATUSES = frozenset(
+    {"new", "baseline", "waived", "expired_waiver", "fixed", "accepted"}
+)
 
 
 @dataclass(frozen=True)
@@ -116,6 +120,24 @@ CORPUS: dict[str, RepoSpec] = {
     "ruff": RepoSpec("ruff", WORKSPACE_ROOT / "ruff", "rust"),
     "tokio": RepoSpec("tokio", WORKSPACE_ROOT / "tokio", "rust"),
 }
+
+
+def corpus_for_workspace(workspace_root: Path = WORKSPACE_ROOT) -> dict[str, RepoSpec]:
+    """Return the fixed corpus labels rooted below one workspace directory.
+
+    The corpus topology is part of the harness contract. Only its checkout
+    root is configurable so disposable clones can be supplied without
+    changing labels or mutating the default workspace.
+    """
+    workspace_root = workspace_root.expanduser()
+    return {
+        label: RepoSpec(
+            spec.label,
+            workspace_root / spec.root.relative_to(WORKSPACE_ROOT),
+            spec.language,
+        )
+        for label, spec in CORPUS.items()
+    }
 
 
 # --------------------------------------------------------------------------
@@ -187,8 +209,14 @@ def blank_record(label: str, root: str, language: str) -> dict[str, Any]:
     }
 
 
-def validate_state(doc: Any) -> list[str]:
-    """Validate one `analyze --json` document against the v1 state contract."""
+def validate_state(doc: Any, *, schema_path: Path | None = None) -> list[str]:
+    """Validate one state document and optionally the published JSON Schema.
+
+    The lightweight checks remain available to the stdlib-only harness tests.
+    A real corpus run passes ``schema_path`` so the checked-in schema is also
+    exercised; this keeps a schema dependency out of ordinary Go tests while
+    making the acceptance command fail loudly when it is not installed.
+    """
     failures: list[str] = []
     if not isinstance(doc, dict):
         return [f"analyze json is {type(doc).__name__}, want an object"]
@@ -212,12 +240,12 @@ def validate_state(doc: Any) -> list[str]:
     dims = doc.get("dimensions")
     if not isinstance(dims, dict):
         failures.append("dimensions is missing or not an object")
-        return failures
-    if list(dims.keys()) != list(DIMENSION_KEYS):
-        failures.append(
-            f"dimension keys are {list(dims.keys())}, want {list(DIMENSION_KEYS)}"
-        )
-    failures.extend(_validate_dimensions(dims))
+    else:
+        if list(dims.keys()) != list(DIMENSION_KEYS):
+            failures.append(
+                f"dimension keys are {list(dims.keys())}, want {list(DIMENSION_KEYS)}"
+            )
+        failures.extend(_validate_dimensions(dims))
 
     coverage = doc.get("coverage")
     if not isinstance(coverage, dict):
@@ -228,7 +256,9 @@ def validate_state(doc: Any) -> list[str]:
         # count entirely — an independent harness cannot supply the value it
         # exists to verify.
         missing = [
-            k for k in ("measured", "partial", "unmeasured") if not isinstance(coverage.get(k), int)
+            k
+            for k in ("measured", "partial", "unmeasured")
+            if not isinstance(coverage.get(k), int)
         ]
         if missing:
             failures.append(f"coverage block is missing integer counts for {missing}")
@@ -243,15 +273,18 @@ def validate_state(doc: Any) -> list[str]:
                 failures.append(
                     f"coverage counts sum to {counted}, want {len(DIMENSION_KEYS)}"
                 )
-            observed = _status_counts(dims)
-            if observed != declared:
-                failures.append(
-                    f"coverage block says {declared} but the dimensions are {observed}"
-                )
+            if isinstance(dims, dict):
+                observed = _status_counts(dims)
+                if observed != declared:
+                    failures.append(
+                        f"coverage block says {declared} but the dimensions are {observed}"
+                    )
 
     for key in ("findings", "agent_tasks", "seams"):
         if not isinstance(doc.get(key), list):
             failures.append(f"{key} is missing or not an array")
+
+    failures.extend(validate_identity_lifecycle(doc))
 
     comparison = doc.get("comparison")
     if not isinstance(comparison, dict):
@@ -265,7 +298,138 @@ def validate_state(doc: Any) -> list[str]:
             f"comparison.status={comparison.get('status')!r} is not a known status"
         )
 
+    if schema_path is not None:
+        failures.extend(validate_published_schema(doc, schema_path))
     return failures
+
+
+def validate_identity_lifecycle(doc: dict[str, Any]) -> list[str]:
+    """Check finding/seam identity and reject contradictory lifecycle rows."""
+    failures: list[str] = []
+    findings = doc.get("findings")
+    if not isinstance(findings, list):
+        return failures
+
+    finding_ids: set[str] = set()
+    statuses: dict[str, set[str]] = {}
+    for index, finding in enumerate(findings):
+        if not isinstance(finding, dict):
+            continue
+        finding_id = finding.get("id")
+        if not isinstance(finding_id, str) or not finding_id.strip():
+            failures.append(f"finding[{index}] has an empty identity")
+            continue
+        if finding_id in finding_ids:
+            failures.append(f"finding ID {finding_id!r} is duplicated")
+        finding_ids.add(finding_id)
+        status = finding.get("status")
+        if status not in FINDING_STATUSES:
+            failures.append(
+                f"finding {finding_id!r} has unknown lifecycle status {status!r}"
+            )
+        statuses.setdefault(finding_id, set()).add(str(status))
+
+    for finding_id, values in statuses.items():
+        if "fixed" in values and len(values) > 1:
+            failures.append(
+                f"finding ID {finding_id!r} has contradictory lifecycle statuses {sorted(values)}"
+            )
+
+    seams = doc.get("seams")
+    if isinstance(seams, list):
+        seam_ids: set[str] = set()
+        for index, seam in enumerate(seams):
+            if not isinstance(seam, dict):
+                continue
+            seam_id = seam.get("id")
+            if not isinstance(seam_id, str) or not seam_id.strip():
+                failures.append(f"seam[{index}] has an empty identity")
+            elif seam_id in seam_ids:
+                failures.append(f"seam ID {seam_id!r} is duplicated")
+            else:
+                seam_ids.add(seam_id)
+
+    dimensions = doc.get("dimensions")
+    if not isinstance(dimensions, dict):
+        return failures
+    for dimension_name, dimension in dimensions.items():
+        if not isinstance(dimension, dict) or not isinstance(
+            dimension.get("findings"), list
+        ):
+            continue
+        seen: set[str] = set()
+        for ref in dimension["findings"]:
+            if not isinstance(ref, dict):
+                continue
+            finding_id = ref.get("id")
+            if not isinstance(finding_id, str):
+                continue
+            if finding_id in seen:
+                failures.append(
+                    f"dimension {dimension_name} repeats finding ID {finding_id!r}"
+                )
+            seen.add(finding_id)
+            if finding_id not in finding_ids:
+                failures.append(
+                    f"dimension {dimension_name} references unknown finding ID {finding_id!r}"
+                )
+
+    tasks = doc.get("agent_tasks")
+    if isinstance(tasks, list):
+        task_ids: set[str] = set()
+        for index, task in enumerate(tasks):
+            if not isinstance(task, dict):
+                continue
+            finding_id = task.get("finding_id")
+            if not isinstance(finding_id, str):
+                continue
+            if finding_id in task_ids:
+                failures.append(
+                    f"agent task[{index}] repeats finding ID {finding_id!r}"
+                )
+            task_ids.add(finding_id)
+            if finding_id not in finding_ids:
+                failures.append(
+                    f"agent task[{index}] references unknown finding ID {finding_id!r}"
+                )
+            if "fixed" in statuses.get(finding_id, set()):
+                failures.append(
+                    f"agent task[{index}] references fixed finding ID {finding_id!r}"
+                )
+    return failures
+
+
+def validate_published_schema(
+    doc: Any, schema_path: Path = STATE_SCHEMA_PATH
+) -> list[str]:
+    """Validate a state document against the checked-in Draft 2020-12 schema."""
+    try:
+        import jsonschema
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "published schema validation requires Python package 'jsonschema'; "
+            "run `uv run --with jsonschema python scripts/eval/corpus_sweep.py ...`"
+        ) from exc
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"cannot load published state schema {schema_path}: {exc}"
+        ) from exc
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = sorted(
+        validator.iter_errors(doc), key=lambda error: list(error.absolute_path)
+    )
+    return [
+        "published schema at "
+        + (
+            "/" + "/".join(str(part) for part in error.absolute_path)
+            if error.absolute_path
+            else "/"
+        )
+        + f": {error.message}"
+        for error in errors
+    ]
 
 
 def _status_counts(dims: dict[str, Any]) -> tuple[int, int, int]:
@@ -465,16 +629,16 @@ def check_text_parity(name: str, out: str, state: dict[str, Any]) -> list[str]:
         if rendered is None:
             failures.append(f"{name} renders no coverage split, want {triple}")
         elif rendered != triple:
-            failures.append(f"{name} reports the coverage split {rendered}, want {triple}")
+            failures.append(
+                f"{name} reports the coverage split {rendered}, want {triple}"
+            )
 
     comparison_status = (state.get("comparison") or {}).get("status")
     # Word-boundary match, not `in`: "comparable" is a substring of
     # "non_comparable", so a plain containment test passes when the renderer
     # prints the OPPOSITE status — exactly the contradiction this check exists
     # to catch. `_` is a word character, so \b does not fire mid-token.
-    if comparison_status and not re.search(
-        rf"\b{re.escape(comparison_status)}\b", out
-    ):
+    if comparison_status and not re.search(rf"\b{re.escape(comparison_status)}\b", out):
         failures.append(f"{name} omits the comparison status {comparison_status!r}")
 
     failures.extend(
@@ -648,11 +812,13 @@ class Sweep:
         *,
         runner: Runner = subprocess_runner,
         cwd: Path = REPO_ROOT,
+        validate_schema: bool = False,
     ) -> None:
         self.archfit = archfit
         self.output_dir = output_dir
         self.runner = runner
         self.cwd = cwd
+        self.validate_schema = validate_schema
 
     def run(self, args: list[str], log: Path | None = None) -> CommandResult:
         result = self.runner([str(self.archfit), *args], self.cwd)
@@ -743,7 +909,8 @@ class Sweep:
         record["analyze"]["dimension_keys"] = (
             list(dims.keys()) if isinstance(dims, dict) else []
         )
-        failures = validate_state(state)
+        schema_path = STATE_SCHEMA_PATH if self.validate_schema else None
+        failures = validate_state(state, schema_path=schema_path)
         record["failures"].extend(failures)
         record["formats"]["json"]["parity"] = not failures
         return state
@@ -776,7 +943,15 @@ class Sweep:
         # `null`, an array, and a scalar all decode cleanly; .get on any of them
         # raises past the decode guard and is recorded as a harness error,
         # masking the real defect.
-        record["check"]["verdict"] = doc.get("verdict") if isinstance(doc, dict) else None
+        record["check"]["verdict"] = (
+            doc.get("verdict") if isinstance(doc, dict) else None
+        )
+        if isinstance(doc, dict):
+            record["failures"].extend(validate_identity_lifecycle(doc))
+            if self.validate_schema:
+                record["failures"].extend(
+                    validate_published_schema(doc, STATE_SCHEMA_PATH)
+                )
 
         verdict = record["check"]["verdict"]
         if verdict is None:
@@ -943,6 +1118,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--archfit", default=str(DEFAULT_ARCHFIT), help="Path to the archfit binary"
     )
     parser.add_argument(
+        "--workspace-root",
+        default=str(WORKSPACE_ROOT),
+        help="Workspace containing the fixed corpus checkout layout",
+    )
+    parser.add_argument(
         "--repos", default=",".join(CORPUS), help="Comma-separated corpus labels"
     )
     parser.add_argument(
@@ -972,8 +1152,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    try:
+        import jsonschema  # noqa: F401
+    except ModuleNotFoundError:
+        print(
+            "error: published schema validation requires Python package "
+            "'jsonschema'; run `uv run --with jsonschema python scripts/eval/corpus_sweep.py ...`",
+            file=sys.stderr,
+        )
+        return 1
 
     archfit = Path(args.archfit).resolve()
+    corpus = corpus_for_workspace(Path(args.workspace_root).resolve())
     if not archfit.exists():
         print(f"error: archfit binary not found at {archfit}", file=sys.stderr)
         return 1
@@ -984,7 +1174,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     selected = parse_csv_list(args.repos)
-    unknown = sorted(set(selected) - set(CORPUS))
+    unknown = sorted(set(selected) - set(corpus))
     if unknown:
         print(f"error: unknown repo label(s): {', '.join(unknown)}", file=sys.stderr)
         return 1
@@ -1021,9 +1211,9 @@ def main(argv: list[str] | None = None) -> int:
     # every result the run had just spent hours producing.
     summary_file = Path(args.summary_file)
     summary_file.parent.mkdir(parents=True, exist_ok=True)
-    sweep = Sweep(archfit, output_dir)
+    sweep = Sweep(archfit, output_dir, validate_schema=True)
 
-    specs = [CORPUS[label] for label in CORPUS if label in set(selected)]
+    specs = [corpus[label] for label in corpus if label in set(selected)]
     records: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=max(args.max_workers, 1)) as pool:
         futures = {
