@@ -17,9 +17,9 @@ type ModuleTouchStatus string
 
 // ModuleTouchStatus values.
 const (
-	ModuleTouchStatusOK          ModuleTouchStatus = "ok"
-	ModuleTouchStatusTimeout     ModuleTouchStatus = "timeout"
-	ModuleTouchStatusUnavailable ModuleTouchStatus = "unavailable"
+	ModuleTouchStatusOK      ModuleTouchStatus = "ok"
+	ModuleTouchStatusTimeout ModuleTouchStatus = "timeout"
+	ModuleTouchStatusError   ModuleTouchStatus = "error"
 )
 
 // ModuleTouches summarizes module-level touch frequency from git history.
@@ -36,31 +36,27 @@ type ModuleTouches struct {
 // TouchCounts summarizes recent git-history touch frequency for declared
 // modules. It uses a bounded recent-history pass first and falls back to full
 // history only when the bounded pass found no module data. Failures are
-// report-only: unavailable or timed-out history never breaks analysis.
+// report-only: failed or timed-out history never breaks analysis.
 func TouchCounts(ctx context.Context, workDir, subtreePrefix string, moduleFor func(string) (string, bool), runner toolrun.Runner) ModuleTouches {
-	result, timedOut := runTouchCounts(ctx, workDir, subtreePrefix, moduleFor, runner, maxCommitsModuleTouches)
-	if timedOut {
-		return ModuleTouches{Status: ModuleTouchStatusTimeout}
-	}
-	if len(result.TouchedByModule) > 0 {
-		result.Status = ModuleTouchStatusOK
-		result.CommitWindow = maxCommitsModuleTouches
+	result := runTouchCounts(ctx, workDir, subtreePrefix, moduleFor, runner, maxCommitsModuleTouches)
+	if result.Status != ModuleTouchStatusOK || result.CommitsScanned == 0 {
 		return result
 	}
-	fallback, timedOut := runTouchCounts(ctx, workDir, subtreePrefix, moduleFor, runner, 0)
-	if timedOut {
-		return ModuleTouches{Status: ModuleTouchStatusTimeout}
+	result.CommitWindow = maxCommitsModuleTouches
+	if len(result.TouchedByModule) > 0 {
+		return result
 	}
-	if len(fallback.TouchedByModule) == 0 {
-		return ModuleTouches{Status: ModuleTouchStatusUnavailable}
+	fallback := runTouchCounts(ctx, workDir, subtreePrefix, moduleFor, runner, 0)
+	if fallback.Status != ModuleTouchStatusOK {
+		result.Status = fallback.Status
+		return result
 	}
-	fallback.Status = ModuleTouchStatusOK
-	fallback.FullHistory = true
+	fallback.FullHistory = fallback.CommitsScanned > 0
 	return fallback
 }
 
-func runTouchCounts(ctx context.Context, workDir, subtreePrefix string, moduleFor func(string) (string, bool), runner toolrun.Runner, maxCommits int) (ModuleTouches, bool) {
-	args := []string{"log", "--format=%H", "--name-only"}
+func runTouchCounts(ctx context.Context, workDir, subtreePrefix string, moduleFor func(string) (string, bool), runner toolrun.Runner, maxCommits int) ModuleTouches {
+	args := []string{"log", "--format=%x00%H", "--name-only", "-z"}
 	if maxCommits > 0 {
 		args = append(args, "-n", strconv.Itoa(maxCommits))
 	}
@@ -74,16 +70,22 @@ func runTouchCounts(ctx context.Context, workDir, subtreePrefix string, moduleFo
 		WorkDir: workDir,
 	})
 	if errors.Is(err, context.DeadlineExceeded) {
-		return ModuleTouches{}, true
+		return ModuleTouches{Status: ModuleTouchStatusTimeout}
 	}
-	if err != nil || out.ExitCode != 0 {
-		return ModuleTouches{}, false
+	if err != nil {
+		return ModuleTouches{Status: ModuleTouchStatusError}
+	}
+	if out.ExitCode != 0 {
+		if out.ExitCode == 128 {
+			return ModuleTouches{Status: unbornHistoryStatus(ctx, workDir, runner)}
+		}
+		return ModuleTouches{Status: ModuleTouchStatusError}
 	}
 
 	counts := make(map[string]int)
 	currentTouched := map[string]struct{}{}
 	commits := 0
-	sawCommit := false
+	expectCommit, firstFile := false, false
 	flush := func() {
 		if len(currentTouched) == 0 {
 			return
@@ -94,20 +96,23 @@ func runTouchCounts(ctx context.Context, workDir, subtreePrefix string, moduleFo
 		clear(currentTouched)
 	}
 
-	for _, raw := range strings.Split(string(out.Stdout), "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" {
+	// The extra NUL before each header distinguishes commits from filenames.
+	for _, field := range strings.Split(string(out.Stdout), "\x00") {
+		if field == "" {
+			expectCommit = true
 			continue
 		}
-		if isCommitHash(line) {
-			if sawCommit {
-				flush()
-			}
-			sawCommit = true
+		if expectCommit {
+			flush()
 			commits++
+			expectCommit, firstFile = false, true
 			continue
 		}
-		gitRel := line
+		gitRel := field
+		if firstFile {
+			gitRel = strings.TrimPrefix(gitRel, "\n")
+			firstFile = false
+		}
 		scanRel := gitRel
 		if subtreePrefix != "" {
 			trimmed := strings.TrimPrefix(gitRel, subtreePrefix+"/")
@@ -122,19 +127,32 @@ func runTouchCounts(ctx context.Context, workDir, subtreePrefix string, moduleFo
 	}
 	flush()
 
-	return ModuleTouches{TouchedByModule: counts, CommitsScanned: commits}, false
+	return ModuleTouches{Status: ModuleTouchStatusOK, TouchedByModule: counts, CommitsScanned: commits}
 }
 
-func isCommitHash(line string) bool {
-	if len(line) != 40 {
-		return false
+func unbornHistoryStatus(ctx context.Context, workDir string, runner toolrun.Runner) ModuleTouchStatus {
+	out, err := runner.Run(ctx, toolrun.ToolCmd{
+		Name: gitTool, Args: []string{"symbolic-ref", "--quiet", "HEAD"},
+		WorkDir: workDir, Timeout: gitTimeout,
+	})
+	if errors.Is(err, context.DeadlineExceeded) {
+		return ModuleTouchStatusTimeout
 	}
-	for _, r := range line {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return false
-		}
+	branch := strings.TrimSpace(string(out.Stdout))
+	if err != nil || out.ExitCode != 0 || !strings.HasPrefix(branch, "refs/heads/") {
+		return ModuleTouchStatusError
 	}
-	return true
+	out, err = runner.Run(ctx, toolrun.ToolCmd{
+		Name: gitTool, Args: []string{"show-ref", "--verify", "--quiet", branch},
+		WorkDir: workDir, Timeout: gitTimeout,
+	})
+	if errors.Is(err, context.DeadlineExceeded) {
+		return ModuleTouchStatusTimeout
+	}
+	if err == nil && out.ExitCode == 1 {
+		return ModuleTouchStatusOK
+	}
+	return ModuleTouchStatusError
 }
 
 // RankedModules returns the touched modules sorted by descending commit count,

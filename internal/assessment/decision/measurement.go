@@ -67,8 +67,11 @@ func profileUnknowns(side string, p *evidence.MeasurementProfile) []string {
 	seen := make(map[string]bool)
 	for _, producer := range p.Producers {
 		semantics, external := evidence.MeasurementContract(producer.Tool)
-		if semantics == "" || producer.SemanticsVersion != semantics || seen[producer.Tool] {
+		if semantics == "" || seen[producer.Tool] {
 			reasons = append(reasons, fmt.Sprintf("measurement_profile producer %q is incomplete or duplicated in %s", producer.Tool, side))
+		}
+		if semantics != "" && producer.SemanticsVersion != semantics {
+			reasons = append(reasons, fmt.Sprintf("measurement_profile producer %s semantics_version %q is unsupported in %s; expected %q", producer.Tool, producer.SemanticsVersion, side, semantics))
 		}
 		if external && (producer.Status == evidence.StatusOK || producer.Status == evidence.StatusPartial) && !knownProducerVersion(producer.Tool, producer.ToolVersion) {
 			reasons = append(reasons, fmt.Sprintf("measurement_profile producer %s tool_version is unknown in %s", producer.Tool, side))

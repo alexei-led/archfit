@@ -29,12 +29,12 @@ func TestBuildVolatilityCorroboration_RankedTouches(t *testing.T) {
 	runner := &toolrun.RunnerMock{
 		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
 			return toolrun.Output{Stdout: []byte(
-				"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n" +
-					"internal/core/a.go\n" +
-					"internal/util/u.go\n" +
-					"\n" +
-					"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n" +
-					"internal/core/b.go\n"), ExitCode: 0}, nil
+				"\x00aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\x00\n" +
+					"internal/core/a.go\x00" +
+					"internal/util/u.go\x00" +
+					"\x00" +
+					"\x00bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\x00\n" +
+					"internal/core/b.go\x00"), ExitCode: 0}, nil
 		},
 	}
 

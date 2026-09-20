@@ -9,12 +9,16 @@ package deployunit
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -46,8 +50,19 @@ func Detect(ctx context.Context, root string, mm policy.ModuleMap, runner toolru
 // Detect remains the compatibility surface used by config update; both paths
 // execute the same single detector pass.
 func DetectCorroborated(ctx context.Context, root string, mm policy.ModuleMap, runner toolrun.Runner) map[string]evidence.CorroboratedDeployUnit {
+	return Discover(ctx, root, mm, runner, evidenceports.ExtractConfig{}).Units
+}
+
+// Result retains discovered units alongside discovery completeness.
+type Result struct {
+	Units    map[string]evidence.CorroboratedDeployUnit
+	Coverage evidence.Coverage
+}
+
+// Discover scans deployment sources, retaining failures from applicable Go members.
+func Discover(ctx context.Context, root string, mm policy.ModuleMap, runner toolrun.Runner, goConfig evidenceports.ExtractConfig) Result {
 	r := &detector{root: root, mm: mm, runner: runner}
-	return r.detect(ctx)
+	return r.detect(ctx, goConfig)
 }
 
 // KeyByModule converts the path-keyed map returned by Detect (repo-relative
@@ -129,17 +144,22 @@ type detector struct {
 	runner toolrun.Runner
 }
 
-func (d *detector) detect(ctx context.Context) map[string]evidence.CorroboratedDeployUnit {
+func (d *detector) detect(ctx context.Context, goConfig evidenceports.ExtractConfig) Result {
 	result := make(map[string]evidence.CorroboratedDeployUnit)
 
 	// Each source appends into result; first write wins per key.
-	d.detectGoMain(ctx, result)
+	coverage := d.detectGoMain(ctx, result, goConfig)
 	d.detectTSWorkspaces(result)
 	d.detectPyProject(result)
 	d.detectDockerfiles(result)
 	d.detectK8sManifests(result)
 
-	return result
+	coverage.Tool = "deploy-unit"
+	coverage.FilesSeen = len(result)
+	if coverage.Status == evidence.StatusAbsent && len(result) > 0 {
+		coverage.Status = evidence.StatusPartial
+	}
+	return Result{Units: result, Coverage: coverage}
 }
 
 // relPath converts an absolute path to a repo-relative path.
@@ -176,19 +196,53 @@ func skipDir(name string) bool {
 // 1. Go main packages via go list.
 // ---------------------------------------------------------------------------
 
-func (d *detector) detectGoMain(ctx context.Context, result map[string]evidence.CorroboratedDeployUnit) {
+func (d *detector) detectGoMain(ctx context.Context, result map[string]evidence.CorroboratedDeployUnit, cfg evidenceports.ExtractConfig) evidence.Coverage {
+	members, err := golang.AnalysableMembers(d.root, cfg.Exclusions, cfg.GoModuleInclude, cfg.GoModuleExclude)
+	if err != nil {
+		return evidence.Coverage{Status: evidence.StatusPartial, Reason: "Go member discovery: " + err.Error()}
+	}
+	if len(members.Dirs) == 0 {
+		return evidence.Coverage{Status: evidence.StatusOK}
+	}
 	if _, ok := d.runner.Detect(ctx, "go"); !ok {
-		return
+		return evidence.Coverage{Status: evidence.StatusAbsent, Reason: "Go toolchain unavailable for deploy-unit discovery"}
 	}
 
+	coverage := evidence.Coverage{Status: evidence.StatusOK}
+	var reasons []string
+	for _, member := range members.Dirs {
+		if err := d.detectGoMember(ctx, member, members.GoWorkOff, cfg.BuildFlags, result); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				coverage.Status = evidence.StatusTimedOut
+			} else if coverage.Status != evidence.StatusTimedOut {
+				coverage.Status = evidence.StatusPartial
+			}
+			reasons = append(reasons, err.Error())
+		}
+	}
+	coverage.Reason = strings.Join(reasons, "; ")
+	return coverage
+}
+
+func (d *detector) detectGoMember(ctx context.Context, member string, workOff bool, buildFlags []string, result map[string]evidence.CorroboratedDeployUnit) error {
+	args := append([]string{"list", "-find", "-f", "{{if eq .Name \"main\"}}{{.Dir}}{{end}}"}, buildFlags...)
+	args = append(args, "./...")
+	var env []string
+	if workOff {
+		env = []string{"GOWORK=off"}
+	}
 	out, err := d.runner.Run(ctx, toolrun.ToolCmd{
 		Name:    "go",
-		Args:    []string{"list", "-f", "{{if eq .Name \"main\"}}{{.Dir}}{{end}}", "./..."},
-		WorkDir: d.root,
+		Args:    args,
+		Env:     env,
+		WorkDir: member,
 		Timeout: goListTimeout,
 	})
-	if err != nil || out.ExitCode != 0 {
-		return
+	if err != nil {
+		return fmt.Errorf("go list deploy units in %s: %w", d.relPath(member), err)
+	}
+	if out.ExitCode != 0 {
+		return fmt.Errorf("go list deploy units in %s: exit %d", d.relPath(member), out.ExitCode)
 	}
 
 	for _, line := range strings.Split(strings.TrimSpace(string(out.Stdout)), "\n") {
@@ -220,6 +274,7 @@ func (d *detector) detectGoMain(ctx context.Context, result map[string]evidence.
 		}
 		set(result, rel, name, evidence.TopologySourceGoMain)
 	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

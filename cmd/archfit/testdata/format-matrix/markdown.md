@@ -139,7 +139,7 @@
 ## Not measured (14)
 
 - **modularity — inferred public surface** (owner: assessment/metrics): no declared module states a public surface, so inferring one is outside this claim
-- **change_locality — eligible commit sample** (owner: history/git): git history is unavailable or the history scan returned no eligible commit
+- **change_locality — eligible commit sample** (owner: history/git): the history scan returned no eligible commit (ok), so co-change cannot be distinguished from a stable tree
 - **change_locality — commit-to-module attribution** (owner: history/git): the history scan is incomplete, so not every eligible commit has a complete module attribution
 - **complexity — function length distribution** (owner: syntax+evidence/acquisition): ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution
 - **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
@@ -178,6 +178,14 @@ Report-only. Static facts only; semantic and dynamic categories without determin
 - by source: go/types=2
 - unmeasured: position, execution, timing, value, identity
 - roadmap: name=deterministic_static, type=deterministic_static, meaning=deterministic_static, algorithm=deterministic_static, position=unmeasured_static, execution=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges), timing=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges), value=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges), identity=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges)
+
+## Volatility corroboration (report-only)
+
+Report-only. Source-control touch frequency is supporting evidence for Ch9 volatility judgments and never changes score or gate verdicts.
+
+- source: git_history
+- status: ok
+- caveat: Supporting evidence only. Git history can reflect both essential and accidental volatility and never changes scoring or gate verdicts.
 
 ## Gate findings (1)
 

@@ -35,6 +35,7 @@ const (
 	toolCargo           = "cargo"
 	toolSyntaxAggregate = "ast-grep/syntax"
 	globInternalAll     = "internal/**"
+	toolDeployDiscovery = "deploy-unit"
 )
 
 // dimensionsFixture is a run with something to measure in every dimension that
@@ -62,6 +63,7 @@ func dimensionsFixture() (*result.Result, evaluation.StateInput) {
 		ToolCoverage: []modevidence.Coverage{
 			{Tool: primaryTool, Status: modevidence.StatusOK},
 			{Tool: "scip", Status: modevidence.StatusAbsent},
+			{Tool: toolDeployDiscovery, Status: modevidence.StatusOK},
 		},
 		PrimaryExtractorTools: []string{primaryTool},
 	}
@@ -482,7 +484,8 @@ func TestOperationsDeclaredTopologyCompleteness(t *testing.T) {
 func operationsDimensionForTest(modules map[string]policy.ModuleDef, facts evaluation.Observations) state.Dimension {
 	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
 	input := evaluation.StateInput{Policy: policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, policy.GatePolicy{}, nil, nil), Facts: facts}
-	return evaluation.BuildDimensions(&result.Result{}, input, nil).Operations
+	diag := &result.Result{ToolCoverage: []modevidence.Coverage{{Tool: toolDeployDiscovery, Status: modevidence.StatusOK}}}
+	return evaluation.BuildDimensions(diag, input, nil).Operations
 }
 
 // TestEvidenceDependentDimensionsRequireCompletedProducers pins the Task 2

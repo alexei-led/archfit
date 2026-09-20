@@ -58,7 +58,10 @@ func evaluate(in Input) Result {
 	for _, rule := range in.Rules.rules {
 		raw = append(raw, rule.Check(in.Relationships, rules.Evidence{PatternMatches: in.Evidence.PatternMatches, SyntaxFacts: in.Evidence.SyntaxFacts})...)
 	}
-	tagged := status.Assign(raw, in.Accepted, in.Policy.Waivers, in.Now, finding.KindGate)
+	adv := candidateFindings(in.AdvisoryCandidates)
+	adv = append(adv, staleness.Check(in.Relationships, in.Policy, in.Now)...)
+	adv = append(adv, staleLabelFindings(in.StaleLabelKeys)...)
+	tagged := status.Assign(raw, in.Accepted, in.Policy.Waivers, in.Now, finding.KindGate, adv...)
 	collected := signal.CollectedSignals{
 		Common: signal.CommonInput{Relationships: in.Relationships, Findings: tagged, Baseline: in.Baseline, Coverage: signal.NewCoverageView(in.Coverage), ChangedFiles: in.ChangedFiles, Symbols: signal.SymbolSignals{Graph: in.Symbols}},
 		Symbol: signal.SymbolSignals{Graph: in.Symbols}, Size: in.Signals.Size, Duplication: in.Signals.Duplication,
@@ -77,10 +80,7 @@ func evaluate(in Input) Result {
 			advisories++
 		}
 	}
-	adv := candidateFindings(in.AdvisoryCandidates)
-	adv = append(adv, staleness.Check(in.Relationships, in.Policy, in.Now)...)
-	adv = append(adv, staleLabelFindings(in.StaleLabelKeys)...)
-	taggedAdvisories := status.Assign(adv, in.Accepted, in.Policy.Waivers, in.Now, finding.KindAdvisory)
+	taggedAdvisories := status.Assign(adv, in.Accepted, in.Policy.Waivers, in.Now, finding.KindAdvisory, raw...)
 	adv = adv[:0]
 	for _, f := range taggedAdvisories {
 		if f.Kind == finding.KindAdvisory {

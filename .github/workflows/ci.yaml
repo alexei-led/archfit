@@ -58,7 +58,7 @@ jobs:
       - name: SCIP reader tests (python)
         run: python3 internal/extract/scip/scip_reader_test.py
       - name: Corpus sweep harness tests (python)
-        run: python3 scripts/eval/corpus_sweep_test.py
+        run: uv run --with jsonschema python -m unittest discover -s scripts/eval -p '*_test.py'
       - name: CLI exit-contract tests (shell)
         run: bash scripts/tests/cli_exit_contract_test.sh
       - name: CI gate — arch imports
@@ -84,7 +84,8 @@ jobs:
           # step below proves it — but the ordering is the runner image's
           # choice, not ours. The Dockerfile frees the slot for the same reason.
           sudo rm -f /usr/bin/sg
-          npm install -g jscpd@5.0.11 @ast-grep/cli@0.44.0
+          npm install -g jscpd@5.0.11 @ast-grep/cli@0.44.0 dependency-cruiser@17.4.3
+          rustup toolchain install 1.98.0 --profile minimal
           go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: CI gate — `sg` resolves to ast-grep, not util-linux
@@ -96,6 +97,10 @@ jobs:
           echo "sg -> $(command -v sg)"
           sg --version
           sg --version 2>&1 | grep -q ast-grep
+      - name: CI gate — real supported-language contracts
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.0
+        run: make language-contracts
       - name: CI gate — architecture drift
         run: make arch-lint
       - name: Upload coverage

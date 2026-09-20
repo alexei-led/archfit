@@ -203,7 +203,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		SemanticStrengthOverlay: graphResult.SemanticStrengthOverlay,
 	}
 
-	history := buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner)
+	history := buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner, graphResult.Graph.CrateRoots()...)
 	return application.Acquired{
 		Facts: snapshot,
 		Observations: assessmentObservationsOf(
@@ -236,7 +236,8 @@ func assessmentObservationsOf(
 ) evaluation.Observations {
 	return evaluation.Observations{
 		Coverage: f.Coverage, SuppliedCoverage: f.SuppliedCoverage,
-		Symbols: f.Symbols, PatternMatches: f.PatternMatches,
+		SourceSelectors: sourceSelectorsOf(f),
+		Symbols:         f.Symbols, PatternMatches: f.PatternMatches,
 		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
 		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
 		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,

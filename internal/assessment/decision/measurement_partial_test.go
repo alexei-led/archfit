@@ -23,7 +23,8 @@ func TestCompletedPartialMeasurementRemainsComparable(t *testing.T) {
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			p := measurementFixture()
-			p.Producers = []evidence.MeasurementProducer{{Tool: tc.tool, SemanticsVersion: tc.tool + ".v1", ToolVersion: tc.version, Status: evidence.StatusPartial, PartialBasis: tc.basis}}
+			semantics, _ := evidence.MeasurementContract(tc.tool)
+			p.Producers = []evidence.MeasurementProducer{{Tool: tc.tool, SemanticsVersion: semantics, ToolVersion: tc.version, Status: evidence.StatusPartial, PartialBasis: tc.basis}}
 			f := fingerprints()
 			f.MeasurementProfile = p
 			if got := decision.CompareFingerprints("base", f, f); got.Status != result.StateComparisonComparable {

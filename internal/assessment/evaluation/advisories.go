@@ -113,7 +113,7 @@ func groupBCAdvisories(in []finding.Finding) []finding.Finding {
 	keys := make([]key, 0)
 	passthrough := make([]finding.Finding, 0)
 	for _, f := range in {
-		if f.RuleID != finding.RuleIDBCImbalanced {
+		if f.RuleID != finding.RuleIDBCImbalanced || f.Status == finding.StatusFixed {
 			passthrough = append(passthrough, f)
 			continue
 		}

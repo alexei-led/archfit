@@ -45,11 +45,15 @@ const MeasurementProfileVersion = "archfit.measurement.v1"
 // normalization require a semantics bump; external versions remain exact-match.
 func MeasurementContract(tool string) (semantics string, external bool) {
 	switch tool {
-	case "go/packages", "dependency-cruiser", "grimp", "cargo", "cargo-modules", "scip", "scip-symbols", "ast-grep", "ast-grep/syntax", "jscpd":
+	case "go/packages", "dependency-cruiser", "cargo", "cargo-modules", "scip", "scip-symbols", "ast-grep", "ast-grep/syntax", "jscpd":
 		return tool + ".v1", true
+	case "grimp":
+		return "grimp.v2", true
 	case "git-history":
-		return "git-history.recent500-full-fallback.v1", true
-	case "loc", "deploy-unit", "supplied-coverage", "runtime", "dynamic-imports", "manifests", "ownership", "history":
+		return "git-history.recent500-full-fallback.v2", true
+	case "deploy-unit":
+		return "deploy-unit.v2", false
+	case "loc", "supplied-coverage", "runtime", "dynamic-imports", "manifests", "ownership", "history":
 		return tool + ".v1", false
 	default:
 		return "", false

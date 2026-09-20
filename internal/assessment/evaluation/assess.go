@@ -30,6 +30,7 @@ type Observations struct {
 	SyntaxFacts             []modevidence.SyntaxFact
 	FileLOC                 map[string]int
 	FileClassIndex          map[string]fileclass.FileClass
+	SourceSelectors         map[string]string
 	FileFacts               []modevidence.FileFact
 	Clones                  []clone.Cluster
 	DynamicImports          []modevidence.DynamicImportSite

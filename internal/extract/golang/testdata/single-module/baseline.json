@@ -47,14 +47,15 @@
           "tool": "dependency-cruiser"
         },
         {
-          "semantics_version": "deploy-unit.v1",
+          "semantics_version": "deploy-unit.v2",
           "status": "ok",
           "tool": "deploy-unit"
         },
         {
-          "semantics_version": "git-history.recent500-full-fallback.v1",
-          "status": "absent",
-          "tool": "git-history"
+          "semantics_version": "git-history.recent500-full-fallback.v2",
+          "status": "ok",
+          "tool": "git-history",
+          "tool_version": "\u003cTOOL_VERSION\u003e"
         },
         {
           "semantics_version": "go/packages.v1",
@@ -63,7 +64,7 @@
           "tool_version": "\u003cTOOL_VERSION\u003e"
         },
         {
-          "semantics_version": "grimp.v1",
+          "semantics_version": "grimp.v2",
           "status": "absent",
           "tool": "grimp"
         },
@@ -170,7 +171,7 @@
         {
           "fact": "eligible commit sample",
           "owner": "history/git",
-          "reason": "git history is unavailable or the history scan returned no eligible commit"
+          "reason": "the history scan returned no eligible commit (ok), so co-change cannot be distinguished from a stable tree"
         },
         {
           "fact": "commit-to-module attribution",

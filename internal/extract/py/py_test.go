@@ -166,8 +166,8 @@ func TestExtract_WithUnresolved(t *testing.T) {
 		if edge.Confidence != confidenceLow {
 			t.Fatalf("edge %v: confidence = %q, want %q", want.key, edge.Confidence, confidenceLow)
 		}
-		if len(edge.Locations) != 1 || edge.Locations[0].File != "myapp/a" || edge.Locations[0].Line != want.line {
-			t.Fatalf("edge %v: locations = %+v, want myapp/a:%d", want.key, edge.Locations, want.line)
+		if len(edge.Locations) != 1 || edge.Locations[0].File != "myapp/a.py" || edge.Locations[0].Line != want.line {
+			t.Fatalf("edge %v: locations = %+v, want myapp/a.py:%d", want.key, edge.Locations, want.line)
 		}
 	}
 }

@@ -1,5 +1,37 @@
 # Release notes
 
+## v2.3.1 — corpus correctness
+
+Release date: 2026-09-20
+
+This patch fixes report-contract and evidence-attribution defects reproduced
+with the published v2.3.0 binary across the real repository corpus.
+
+- Finding lifecycle reconciliation considers every live finding before
+  declaring an accepted ID fixed. Accepted warning-rule findings no longer
+  appear as both `baseline` and `fixed` in the same report.
+- Findings without locations emit `locations: []`; findings without matching
+  details emit `matched_by: {}`. Both follow the existing state schema.
+- Rule applicability recognizes Python dotted selectors and Rust crate names
+  independently of source directory names. Completed zero-violation checks
+  remain distinguishable from missing evidence.
+- Go deployment discovery uses static main-package discovery without resolving
+  imported dependencies, and propagates failed or incomplete discovery instead
+  of reporting it as completed. Successful facts from other members remain
+  available when one workspace member fails.
+- Git history maps source paths through language/module identities and keeps
+  timeout, execution failure, and successful no-match outcomes distinct.
+- Python finding locations resolve actual module, package and src-layout files
+  rather than publishing extensionless guesses.
+
+Existing accepted debt remains readable. More accurate source attribution or
+newly disclosed incomplete evidence can change findings, dimensions, or baseline
+comparability. The deployment, Git-history, and Python normalization producer
+contracts advance to v2; v2.3.0 numerical snapshots therefore require a reviewed
+replacement before comparisons resume. Accepted finding fingerprints keep applying.
+Review current debt before capturing that replacement. Optional analyzer gaps remain explicit; this patch does not require
+every repository to report `healthy`.
+
 ## v2.3.0 — architecture guardrails
 
 Release date: 2026-09-20

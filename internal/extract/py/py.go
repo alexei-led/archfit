@@ -171,7 +171,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		return graph.Facts{}, evidence.Coverage{Tool: toolGrimp, Version: version, Status: statusPartial, Reason: reason}, nil
 	}
 
-	facts, cov, err := e.parseAndNormalize(out.Stdout, version)
+	facts, cov, err := e.parseAndNormalize(out.Stdout, s.Root)
 	if err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/py: parse output: %w", err)
 	}
@@ -374,7 +374,7 @@ type helperEdge struct {
 // ---------------------------------------------------------------------------
 
 // parseAndNormalize parses grimp_helper JSON and builds graph.Facts.
-func (e *Extractor) parseAndNormalize(data []byte, _ string) (graph.Facts, evidence.Coverage, error) {
+func (e *Extractor) parseAndNormalize(data []byte, root string) (graph.Facts, evidence.Coverage, error) {
 	var h helperOutput
 	if err := json.Unmarshal(data, &h); err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("unmarshal: %w", err)
@@ -386,6 +386,7 @@ func (e *Extractor) parseAndNormalize(data []byte, _ string) (graph.Facts, evide
 	var nodes []graph.Node
 	var edges []graph.Edge
 	seenNodes := make(map[string]struct{})
+	locationFiles := pythonSourceLocations(root, h, e.cfg.Exclusions)
 
 	emitNode := func(dotted string) {
 		id := "module:" + dotted
@@ -403,9 +404,6 @@ func (e *Extractor) parseAndNormalize(data []byte, _ string) (graph.Facts, evide
 		if e.matchesInternal(he.Imported) {
 			edgeKind = graph.EdgeKindUsesInternal
 		}
-
-		// Location file: dotted module name converted to path (dots → slashes).
-		locFile := strings.ReplaceAll(he.Importer, ".", "/")
 
 		// Strength hint: intrusive is assigned when the edge reaches into PEP 8-private
 		// internals — either via a private module name ("pkg._internal") or via an
@@ -435,23 +433,18 @@ func (e *Extractor) parseAndNormalize(data []byte, _ string) (graph.Facts, evide
 			Confidence:       "high",
 			StrengthHint:     strengthHint,
 			ConnascenceHints: connascenceHints,
-			Locations: []graph.Location{
-				{File: locFile, Line: he.Line},
-			},
+			Locations:        pythonEdgeLocations(locationFiles, he),
 		})
 	}
 	for _, he := range h.UnresolvedImports {
 		emitNode(he.Importer)
-		locFile := strings.ReplaceAll(he.Importer, ".", "/")
 		edges = append(edges, graph.Edge{
 			From:       "module:" + he.Importer,
 			To:         "external:" + he.Imported,
 			Kind:       graph.EdgeKindImports,
 			Language:   langPython,
 			Confidence: "low",
-			Locations: []graph.Location{
-				{File: locFile, Line: he.Line},
-			},
+			Locations:  pythonEdgeLocations(locationFiles, he),
 		})
 	}
 
