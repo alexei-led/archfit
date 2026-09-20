@@ -14,6 +14,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
+	modelrule "github.com/alexei-led/archfit/internal/model/rule"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
@@ -53,7 +54,7 @@ func uncoveredPaths(s relationship.Set, modules map[string]policy.ModuleDef) []f
 		}
 		if !claimedByAnyModule(n.Path, modules) {
 			f := advisoryFinding(
-				"map/uncovered_path",
+				modelrule.RuleIDMapUncoveredPath,
 				fmt.Sprintf("node %q is not covered by any module paths glob", n.Path),
 				n.Path,
 			)
@@ -78,7 +79,7 @@ func deadRules(s relationship.Set, modules map[string]policy.ModuleDef) []findin
 		for _, pattern := range def.Paths {
 			if !patternMatchesAnyNode(pattern, nodes) {
 				f := advisoryFinding(
-					"map/dead_rule",
+					modelrule.RuleIDMapDeadRule,
 					fmt.Sprintf("module %q paths glob %q matches no graph nodes", modName, pattern),
 					pattern,
 				)
@@ -106,7 +107,7 @@ func staleReviews(modules map[string]policy.ModuleDef, threshold time.Duration, 
 		age := now.Sub(def.ReviewedAt)
 		if age > threshold {
 			f := advisoryFinding(
-				"map/stale_review",
+				modelrule.RuleIDMapStaleReview,
 				fmt.Sprintf(
 					"module %q was last reviewed %.0f days ago (threshold %.0f days)",
 					modName,

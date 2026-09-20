@@ -21,6 +21,8 @@ a grimp limitation; archfit does not promise cross-service analysis in that setu
 
 import argparse
 import ast
+import importlib.machinery
+import importlib.metadata
 import importlib.util
 import json
 import os
@@ -42,9 +44,8 @@ def _ensure_importable(root: str, package: str) -> None:
     if os.path.isdir(src_pkg):
         if src not in sys.path:
             sys.path.insert(0, src)
-    elif os.path.isdir(flat):
-        if root not in sys.path:
-            sys.path.insert(0, root)
+    elif os.path.isdir(flat) and root not in sys.path:
+        sys.path.insert(0, root)
 
 
 def _package_dir(root: str, package: str) -> str:
@@ -59,8 +60,7 @@ def _module_name(package: str, package_dir: str, path: str) -> str:
     mod = rel[:-3].replace(os.sep, ".")
     if mod == "__init__":
         return package
-    if mod.endswith(".__init__"):
-        mod = mod[: -len(".__init__")]
+    mod = mod.removesuffix(".__init__")
     return f"{package}.{mod}"
 
 
@@ -75,7 +75,7 @@ class _ImportCollector(ast.NodeVisitor):
         self.imports: list[tuple[str, int]] = []
         self._type_checking_depth = 0
 
-    def visit_If(self, node: ast.If) -> None:  # noqa: N802
+    def visit_If(self, node: ast.If) -> None:
         if _is_type_checking_test(node.test):
             self._type_checking_depth += 1
             for stmt in node.body:
@@ -86,14 +86,14 @@ class _ImportCollector(ast.NodeVisitor):
             return
         self.generic_visit(node)
 
-    def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
+    def visit_Import(self, node: ast.Import) -> None:
         if self._type_checking_depth > 0:
             return
         for alias in node.names:
             if alias.name:
                 self.imports.append((alias.name, node.lineno))
 
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         if self._type_checking_depth > 0 or node.level > 0 or not node.module:
             return
         self.imports.append((node.module, node.lineno))
@@ -147,7 +147,9 @@ def _scan_unresolved_imports(
                     if key in seen:
                         continue
                     seen.add(key)
-                    line_contents = lines[lineno - 1].strip() if 0 < lineno <= len(lines) else ""
+                    line_contents = (
+                        lines[lineno - 1].strip() if 0 < lineno <= len(lines) else ""
+                    )
                     unresolved.append(
                         {
                             "importer": importer,
@@ -221,6 +223,7 @@ def main() -> None:
                 "edges": edges,
                 "unresolved": unresolved,
                 "unresolved_imports": unresolved_imports,
+                "producer_version": f"grimp {importlib.metadata.version('grimp')}; python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
             }
         )
     )

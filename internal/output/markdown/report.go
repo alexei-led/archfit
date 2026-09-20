@@ -28,10 +28,21 @@ func RenderState(s report.ArchitectureState, w io.Writer) error {
 	writeSeamLedger(&b, s.Seams)
 	writeActionableFindings(&b, s)
 	writeStateComparison(&b, s.Comparison)
+	writeGateReference(&b, s.GateReference)
 	writeStateUnknowns(&b, s.Dimensions)
 
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+func writeGateReference(b *strings.Builder, c *report.StateComparison) {
+	if c == nil {
+		return
+	}
+	fmt.Fprintf(b, "\n## Gate reference\n\n- **Status:** %s\n- **Reference:** `%s`\n", c.Status, c.BaseRef)
+	for _, reason := range c.Reasons {
+		fmt.Fprintf(b, "- %s\n", reason)
+	}
 }
 
 func writeStateHeadline(b *strings.Builder, s report.ArchitectureState) {
@@ -41,6 +52,9 @@ func writeStateHeadline(b *strings.Builder, s report.ArchitectureState) {
 	fmt.Fprintf(b, "- **Attention:** %d dimension(s) flagged — %d diagnostic(s)\n", s.Decision.AttentionDimensions, diagnostics)
 	fmt.Fprintf(b, "- **Coverage:** %d measured / %d partial / %d unmeasured (of %d)\n",
 		s.Coverage.Measured, s.Coverage.Partial, s.Coverage.Unmeasured, report.DimensionCount)
+	for _, rule := range s.Decision.UnevaluatedRequiredRules {
+		fmt.Fprintf(b, "- **Required rule not evaluated:** `%s` — %s\n", rule.RuleID, rule.Reason)
+	}
 }
 
 // statePopulations counts the two active populations from the dimension

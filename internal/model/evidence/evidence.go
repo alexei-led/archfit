@@ -15,6 +15,8 @@ type Coverage struct {
 	UnresolvedPrecisionOnly int    `json:"unresolved_precision_only,omitempty"`
 	Status                  string `json:"status"`
 	Reason                  string `json:"reason,omitempty"`
+	// MeasurementSettingsHash identifies configuration consumed by this run.
+	MeasurementSettingsHash string `json:"measurement_settings_hash,omitempty"`
 }
 
 // Coverage status constants are shared by extractor adapters.

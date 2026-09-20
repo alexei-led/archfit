@@ -38,7 +38,7 @@
             "warn",
             "fail"
           ],
-          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
         }
       },
       "additionalProperties": false,
@@ -118,7 +118,7 @@
             "warn",
             "fail"
           ],
-          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
         },
         "sources": {
           "items": {
@@ -263,7 +263,7 @@
             "warn",
             "fail"
           ],
-          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
         },
         "modules": {
           "$ref": "#/$defs/GoModuleFilter"
@@ -326,7 +326,7 @@
             "warn",
             "fail"
           ],
-          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
         },
         "min_delta": {
           "type": "number"
@@ -418,7 +418,7 @@
             "warn",
             "fail"
           ],
-          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
         }
       },
       "additionalProperties": false,
@@ -482,7 +482,7 @@
             "warn",
             "fail"
           ],
-          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
         },
         "package": {
           "type": "string",
@@ -508,7 +508,7 @@
             "warn",
             "fail"
           ],
-          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
         },
         "from": {
           "type": "string"
@@ -559,7 +559,7 @@
             "warn",
             "fail"
           ],
-          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
         },
         "manifest": {
           "type": "string",
@@ -601,7 +601,7 @@
             "warn",
             "fail"
           ],
-          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
         },
         "timeout": {
           "type": "string"
@@ -631,7 +631,7 @@
             "warn",
             "fail"
           ],
-          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+          "description": "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric"
         }
       },
       "additionalProperties": false,
@@ -641,7 +641,8 @@
     "WaiverDef": {
       "properties": {
         "rule": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "from": {
           "type": "string"
@@ -650,17 +651,27 @@
           "type": "string"
         },
         "reason": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "approved_by": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "expires": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "format": "date"
         }
       },
       "additionalProperties": false,
       "type": "object",
+      "required": [
+        "rule",
+        "reason",
+        "approved_by",
+        "expires"
+      ],
       "description": "WaiverDef grants an approved, time-boxed deviation from a rule (`waivers:`)."
     }
   },

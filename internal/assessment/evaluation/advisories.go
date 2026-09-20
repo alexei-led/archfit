@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
+	modelrule "github.com/alexei-led/archfit/internal/model/rule"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
@@ -19,7 +20,7 @@ const bcRollupCap = 8
 
 // ruleIDStaleLabel is the stale pinned-label advisory. Assessment emits it
 // itself, so it has no declared rule type and is routed by ID.
-const ruleIDStaleLabel = "labels/stale"
+const ruleIDStaleLabel = modelrule.RuleIDLabelsStale
 
 func candidateFindings(candidates []relationship.AdvisoryCandidate) []finding.Finding {
 	out := make([]finding.Finding, 0, len(candidates))
@@ -200,7 +201,9 @@ func groupEdgePaths(members []finding.Finding, locs []relationship.Location) (fr
 	return members[0].Edge.From.Path, members[0].Edge.To.Path
 }
 
-func staleLabelID(from, to string) string { return fingerprint("labels/stale", from+"\x00"+to) }
+func staleLabelID(from, to string) string {
+	return fingerprint(modelrule.RuleIDLabelsStale, from+"\x00"+to)
+}
 func fingerprint(rule, subject string) string {
 	h := sha256.Sum256([]byte(rule + "\x00" + subject))
 	return hex.EncodeToString(h[:16])

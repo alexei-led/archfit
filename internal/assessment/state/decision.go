@@ -28,9 +28,9 @@ func (d Dimensions) Signals() []DimensionSignal {
 // per-dimension signals. Nothing else may influence the decision.
 type DecisionInput struct {
 	// HardGates is the repository hard-gate result the classifier already
-	// decided. Unmeasured means no gate was evaluated, which can never be
-	// healthy.
-	HardGates HardGateState
+	// decided. Unmeasured means a required rule lacks sufficient evidence.
+	HardGates                HardGateState
+	UnevaluatedRequiredRules []UnevaluatedRule
 	// ActiveBlockers counts active hard-gate findings. A required-tool policy
 	// failure blocks without one, which is why HardGates is carried separately.
 	ActiveBlockers int
@@ -64,15 +64,19 @@ func Decide(in DecisionInput) (Verdict, Decision) {
 		}
 	}
 	decision := Decision{
-		HardGates:           in.HardGates,
-		ActiveBlockers:      in.ActiveBlockers,
-		AttentionDimensions: attention,
-		UnknownDimensions:   unknown,
+		HardGates:                in.HardGates,
+		UnevaluatedRequiredRules: append([]UnevaluatedRule(nil), in.UnevaluatedRequiredRules...),
+		ActiveBlockers:           in.ActiveBlockers,
+		AttentionDimensions:      attention,
+		UnknownDimensions:        unknown,
+	}
+	if decision.HardGates != HardGateFail && len(decision.UnevaluatedRequiredRules) > 0 {
+		decision.HardGates = HardGateUnmeasured
 	}
 	switch {
-	case in.HardGates == HardGateFail:
+	case decision.HardGates == HardGateFail:
 		return Blocked, decision
-	case in.ActiveDiagnostics > 0 || unknown > 0 || in.HardGates != HardGatePass:
+	case in.ActiveDiagnostics > 0 || unknown > 0 || decision.HardGates != HardGatePass:
 		return NeedsAttention, decision
 	default:
 		return Healthy, decision

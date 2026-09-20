@@ -1,11 +1,15 @@
 package configschema_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+
+	reflectjsonschema "github.com/invopop/jsonschema"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/configschema"
@@ -15,7 +19,13 @@ import (
 
 // schemaFile is the committed schema path, relative to the repo root.
 // The test is run with cwd = internal/configschema, so ../../ reaches the root.
-const schemaFile = "../../archfit.schema.json"
+const (
+	schemaFile            = "../../archfit.schema.json"
+	waiverRuleField       = "rule"
+	waiverReasonField     = "reason"
+	waiverApprovedByField = "approved_by"
+	waiverExpiresField    = "expires"
+)
 
 // TestSchemaNoDrift verifies that the committed archfit.schema.json is in sync
 // with what Generate produces from the current internal/config structs.
@@ -127,9 +137,12 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 			PatternProperties    map[string]map[string]any `json:"patternProperties"`
 			AdditionalProperties any                       `json:"additionalProperties"`
 			Properties           map[string]struct {
-				Enum    []any       `json:"enum"`
-				Minimum json.Number `json:"minimum"`
-				Default any         `json:"default"`
+				Enum        []any       `json:"enum"`
+				Minimum     json.Number `json:"minimum"`
+				Default     any         `json:"default"`
+				MinLength   json.Number `json:"minLength"`
+				Format      string      `json:"format"`
+				Description string      `json:"description"`
 			} `json:"properties"`
 		} `json:"$defs"`
 		Properties map[string]struct {
@@ -213,5 +226,72 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 	if got := schema.Properties["version"].Enum; !slices.Equal(got, []any{float64(config.SchemaVersion)}) {
 		t.Errorf("version enum = %v, want [%d] — obsolete schemas must be rejected",
 			got, config.SchemaVersion)
+	}
+}
+
+func TestSchemaWaiverContract(t *testing.T) {
+	raw, err := configschema.Generate("../config")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	var reflected reflectjsonschema.Schema
+	if err := json.Unmarshal(raw, &reflected); err != nil {
+		t.Fatalf("decode reflected schema: %v", err)
+	}
+	waiverDef := reflected.Definitions["WaiverDef"]
+	if waiverDef == nil {
+		t.Fatal("WaiverDef definition missing from generated schema")
+	}
+	if !slices.Equal(waiverDef.Required, []string{waiverRuleField, waiverReasonField, waiverApprovedByField, waiverExpiresField}) {
+		t.Errorf("WaiverDef.required = %v, want metadata fields", waiverDef.Required)
+	}
+	expires, ok := waiverDef.Properties.Get(waiverExpiresField)
+	if !ok || expires.MinLength == nil || *expires.MinLength != 1 || expires.Format != "date" {
+		t.Errorf("WaiverDef.expires schema = %+v, want non-empty date", expires)
+	}
+	if slices.Contains(waiverDef.Required, "from") || slices.Contains(waiverDef.Required, "to") {
+		t.Errorf("WaiverDef scope fields must remain conditional: required = %v", waiverDef.Required)
+	}
+	ruleDef := reflected.Definitions["RuleDef"]
+	if ruleDef == nil {
+		t.Fatal("RuleDef definition missing from generated schema")
+	}
+	gate, ok := ruleDef.Properties.Get("gate")
+	if !ok || gate.Description != "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric" {
+		t.Errorf("RuleDef.gate description = %q", gate.Description)
+	}
+	waiverRaw, err := json.Marshal(waiverDef)
+	if err != nil {
+		t.Fatalf("marshal WaiverDef schema: %v", err)
+	}
+	waiverDoc, err := jsonschema.UnmarshalJSON(bytes.NewReader(waiverRaw))
+	if err != nil {
+		t.Fatalf("unmarshal WaiverDef schema: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	const resource = "waiver.schema.json"
+	if err := compiler.AddResource(resource, waiverDoc); err != nil {
+		t.Fatalf("add schema resource: %v", err)
+	}
+	compiled, err := compiler.Compile(resource)
+	if err != nil {
+		t.Fatalf("compile schema: %v", err)
+	}
+	baseWaiver := map[string]any{
+		waiverRuleField: "map/uncovered_path", waiverReasonField: "module migration",
+		waiverApprovedByField: "@owner", waiverExpiresField: "2099-01-01",
+	}
+	if err := compiled.Validate(baseWaiver); err != nil {
+		t.Fatalf("valid edge-less waiver rejected: %v", err)
+	}
+	for _, field := range []string{waiverRuleField, waiverReasonField, waiverApprovedByField, waiverExpiresField} {
+		candidate := map[string]any{
+			waiverRuleField: "map/uncovered_path", waiverReasonField: "module migration",
+			waiverApprovedByField: "@owner", waiverExpiresField: "2099-01-01",
+		}
+		delete(candidate, field)
+		if err := compiled.Validate(candidate); err == nil {
+			t.Errorf("waiver missing %q was accepted", field)
+		}
 	}
 }

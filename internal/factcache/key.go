@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -32,25 +33,36 @@ func HashJSON(v any) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+const maxInputBytes = 32 << 20
+
 // HashTree returns the input-tree hash for Key: sha256 over the sorted
 // (relpath, content-hash) pairs of relPaths under root. Content hashes, not
-// mtimes — mtime invalidation breaks under git checkout/rebase, and hashing
-// a whole repo is sub-second next to the subprocess runs the cache guards.
-// Enumeration order does not matter; a missing or unreadable file is an
-// error and the caller falls back to an uncached run.
+// mtimes — mtime invalidation breaks under git checkout/rebase. Reads are
+// streamed and capped at 32 MiB per tree. Missing, unreadable, or over-budget
+// inputs return an error; callers run uncached and never use a partial hash.
 func HashTree(root string, relPaths []string) (string, error) {
 	sorted := slices.Clone(relPaths)
 	slices.Sort(sorted)
 	h := sha256.New()
+	remaining := int64(maxInputBytes)
 	for _, rel := range sorted {
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))) //nolint:gosec // callers enumerate rel from their own scope walk
+		file, err := os.Open(filepath.Join(root, filepath.FromSlash(rel))) //nolint:gosec // paths enumerated from analyzer input scope
 		if err != nil {
 			return "", fmt.Errorf("factcache: hash tree: %w", err)
 		}
-		sum := sha256.Sum256(data)
+		content := sha256.New()
+		n, readErr := io.Copy(content, io.LimitReader(file, remaining+1))
+		_ = file.Close()
+		if readErr != nil {
+			return "", fmt.Errorf("factcache: hash tree: %w", readErr)
+		}
+		remaining -= n
+		if remaining < 0 {
+			return "", fmt.Errorf("factcache: input tree exceeds %d bytes", maxInputBytes)
+		}
 		h.Write([]byte(rel))
 		h.Write([]byte{0})
-		h.Write(sum[:])
+		h.Write(content.Sum(nil))
 		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil

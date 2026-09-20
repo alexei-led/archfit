@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -188,7 +187,8 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		WorkDir: workDir,
 		Timeout: runTimeout,
 	}
-	out, err := e.cachedRunner(s, version, e.resolveTSConfig(s.Root, workDir), workDir).Run(ctx, cmd)
+	out, measurementHash, measuredVersion, err := e.runWithConfigSnapshot(ctx, s, version, e.resolveTSConfig(s.Root, workDir), workDir, cmd)
+	version = measuredVersion
 	if err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: run dependency-cruiser: %w", err)
 	}
@@ -209,6 +209,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	if err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: parse output: %w", err)
 	}
+	cov.MeasurementSettingsHash = measurementHash
 	return facts, cov, nil
 }
 
@@ -332,24 +333,20 @@ func (e *Extractor) detectVersion(ctx context.Context, launcher string) string {
 //
 // Key inputs: depcruise version, the ExtractConfig view, the scan root (the
 // blob may embed tree-specific paths, so entries are per-checkout), the
-// resolved tsconfig content (it may live ABOVE s.Root in subtree mode, outside
-// the tree walk), root-level resolution manifests when depcruise runs from a
+// resolved tsconfig and its complete supported extends chain (including files
+// outside s.Root), root-level resolution manifests when depcruise runs from a
 // git root, package metadata under node_modules when present, and the content
 // hash of every TS/JS source + manifest file under s.Root.
 func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir string) toolrun.Runner {
 	if e.Cache == nil {
 		return e.runner
 	}
-	tsConfigHash := ""
-	if tsConfigPath != "" {
-		full := tsConfigPath
-		if !filepath.IsAbs(full) {
-			full = filepath.Join(s.Root, full)
-		}
-		if data, err := os.ReadFile(full); err == nil { //nolint:gosec // resolved tsconfig path from own discovery
-			h, _ := factcache.HashJSON(string(data))
-			tsConfigHash = h
-		}
+	if _, err := MeasurementConfigHash(s, e.cfg); err != nil {
+		return e.runner
+	}
+	tsConfigHash, err := tsConfigInputsHash(tsConfigPath, workDir)
+	if err != nil {
+		return e.runner
 	}
 	workDirManifestHash := ""
 	if s.SubtreePrefix != "" && workDir != "" && workDir != s.Root {
@@ -381,11 +378,14 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir s
 	if err != nil {
 		return e.runner
 	}
-	// Config exclusions deliberately do NOT filter the hash: depcruise skips only
-	// node_modules (ListInputs prunes it), not `exclude:` globs, so editing an
-	// excluded-but-cruised file must still invalidate. Exclusion-config changes
-	// invalidate via cfgHash (e.cfg embeds Exclusions).
-	files := factcache.ListInputs(s.Root, factcache.MatchExts(tsSourceExts, tsManifestNames), nil)
+	// Match the CLI's root-only node_modules exclusion; resolution still keys
+	// every dependency filename and resolver manifest, including symlink targets.
+	// Application exclusions do not constrain the tool's source inputs.
+	var excludes []string
+	if s.Root == workDir {
+		excludes = []string{"node_modules/**"}
+	}
+	files := factcache.ListInputs(s.Root, factcache.MatchExts(tsSourceExts, tsManifestNames), excludes)
 	treeHash, err := factcache.HashTree(s.Root, files)
 	if err != nil {
 		return e.runner
@@ -418,11 +418,25 @@ func tsResolverStateHash(roots ...string) (string, error) {
 		if len(files) == 0 {
 			continue
 		}
-		h, err := factcache.HashTree(abs, files)
+		var metadata []string
+		for _, file := range files {
+			if file == "node_modules" {
+				return "", errors.New("node resolution inventory exceeds cache scope")
+			}
+			switch filepath.Base(file) {
+			case "package.json", ".package-lock.json", ".modules.yaml":
+				metadata = append(metadata, file)
+			}
+		}
+		names, err := factcache.HashJSON(files)
 		if err != nil {
 			return "", err
 		}
-		parts[abs] = h
+		h, err := factcache.HashTree(abs, metadata)
+		if err != nil {
+			return "", err
+		}
+		parts[abs] = names + ":" + h
 	}
 	if len(parts) == 0 {
 		return "", nil
@@ -433,29 +447,15 @@ func tsResolverStateHash(roots ...string) (string, error) {
 func nodeResolverInputs(root string) []string {
 	base := filepath.Join(root, "node_modules")
 	if _, err := os.Stat(base); err != nil {
-		return nil
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return []string{"node_modules"}
 	}
-	var files []string
-	_ = filepath.WalkDir(base, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return nil
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".bin", ".cache":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		switch filepath.Base(path) {
-		case "package.json", ".package-lock.json", ".modules.yaml":
-			rel, err := filepath.Rel(root, path)
-			if err == nil {
-				files = append(files, filepath.ToSlash(rel))
-			}
-		}
-		return nil
-	})
+	files := factcache.ListInputs(base, factcache.MatchAll, nil)
+	for i, file := range files {
+		files[i] = filepath.ToSlash(filepath.Join("node_modules", file))
+	}
 	return files
 }
 

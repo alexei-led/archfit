@@ -47,6 +47,7 @@ func RenderState(s report.ArchitectureState, w io.Writer) error {
 	writeSeams(&b, s.Seams)
 	writeActionableFindings(&b, s)
 	writeComparison(&b, s.Comparison)
+	writeGateReference(&b, s.GateReference)
 	writeFindingIndex(&b, s.Findings)
 
 	_, err := io.WriteString(w, b.String())
@@ -55,6 +56,16 @@ func RenderState(s report.ArchitectureState, w io.Writer) error {
 
 // headlineKeyWidth aligns the headline key column (VERDICT, BLOCKING, …).
 const headlineKeyWidth = 10
+
+func writeGateReference(b *strings.Builder, c *report.StateComparison) {
+	if c == nil {
+		return
+	}
+	fmt.Fprintf(b, "\nGATE REFERENCE\n\n  status: %s  ·  reference: %s\n", c.Status, c.BaseRef)
+	for _, reason := range c.Reasons {
+		fmt.Fprintf(b, "    %s\n", condense(reason, 140))
+	}
+}
 
 func writeHeadline(b *strings.Builder, s report.ArchitectureState) {
 	blockers, diagnostics := findingPopulations(s.Dimensions)
@@ -71,8 +82,13 @@ func writeHeadline(b *strings.Builder, s report.ArchitectureState) {
 	switch {
 	case s.Verdict == report.StateBlocked && blockers == 0:
 		b.WriteString("\nBlocked by a hard gate that produces no finding — a required\nanalyzer or a metric ratchet. See the dimension(s) below reporting\ngate: fail.\n")
+	case s.Decision.HardGates == report.HardGateUnmeasured:
+		b.WriteString("\nRequired architecture checks could not be completed. Supply the\nmissing evidence before treating this run as a passed gate.\n")
 	case blockers == 0:
 		b.WriteString("\nNo blockers. Use this run for architecture-improvement planning,\nnot to stop development.\n")
+	}
+	for _, rule := range s.Decision.UnevaluatedRequiredRules {
+		fmt.Fprintf(b, "  not evaluated: %s — %s\n", rule.RuleID, rule.Reason)
 	}
 }
 

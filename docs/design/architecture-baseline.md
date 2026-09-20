@@ -1,6 +1,6 @@
 # Archfit architecture baseline
 
-Date: 2026-08-26
+Date: 2026-09-20
 Status: IMPLEMENTED — this describes the source tree as it is, not a target.
 Branch: `refactor/capability-contract-boundaries` (PR #33), measured against
 `main`.
@@ -16,14 +16,14 @@ Six capability layers, innermost first. `.archfit.yaml` declares them under
 `layers:` and `forbidden_layer_direction` fires whenever an inner layer imports
 an outer one.
 
-| Layer | Rank | Modules | Packages |
-| --- | --- | --- | --- |
-| `model` | 0 | `evidence-contracts`, `report-contract` | `internal/model/{evidence,graph,symbol,fileclass,clone,pattern,report}`, `internal/evidence`, `internal/report/ports` |
-| `support` | 1 | `analysis-scope` | `internal/scope` |
-| `core` | 2 | `architecture-policy`, `relationship-analysis`, `assessment-repair`, `evidence-analysis` | `internal/policy`, `internal/relationship/**`, `internal/assessment/**`, `internal/syntax` |
-| `application` | 3 | `analysis-application` | `internal/application` |
-| `adapter` | 4 | `policy-config-adapter`, `evidence-acquisition`, `evidence-adapters`, `persistence-adapters`, `provider-adapters`, `report-adapters`, `config-lifecycle` | `internal/config`, `internal/evidence/acquisition`, `internal/extract/**`, `internal/toolrun`, `internal/evidence/ports`, `internal/{factcache,history,ownership,baseline,labels}`, `internal/llm`, `internal/output/**`, `internal/{initcfg,configschema}` |
-| `cmd` | 5 | `cli-composition`, `development-tools`, `architecture-tests` | `cmd/archfit`, `cmd/calibrate`, `internal/calibrate`, `scripts/eval`, `internal`, `internal/testutil` |
+| Layer         | Rank | Modules                                                                                                                                                  | Packages                                                                                                                                                                                                                                                    |
+| ------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`       | 0    | `evidence-contracts`, `report-contract`                                                                                                                  | `internal/model/{evidence,graph,symbol,fileclass,clone,pattern,report}`, `internal/evidence`, `internal/report/ports`                                                                                                                                       |
+| `support`     | 1    | `analysis-scope`                                                                                                                                         | `internal/scope`                                                                                                                                                                                                                                            |
+| `core`        | 2    | `architecture-policy`, `relationship-analysis`, `assessment-repair`, `evidence-analysis`                                                                 | `internal/policy`, `internal/relationship/**`, `internal/assessment/**`, `internal/syntax`                                                                                                                                                                  |
+| `application` | 3    | `analysis-application`                                                                                                                                   | `internal/application`                                                                                                                                                                                                                                      |
+| `adapter`     | 4    | `policy-config-adapter`, `evidence-acquisition`, `evidence-adapters`, `persistence-adapters`, `provider-adapters`, `report-adapters`, `config-lifecycle` | `internal/config`, `internal/evidence/acquisition`, `internal/extract/**`, `internal/toolrun`, `internal/evidence/ports`, `internal/{factcache,history,ownership,baseline,labels}`, `internal/llm`, `internal/output/**`, `internal/{initcfg,configschema}` |
+| `cmd`         | 5    | `cli-composition`, `development-tools`, `architecture-tests`                                                                                             | `cmd/archfit`, `cmd/calibrate`, `internal/calibrate`, `scripts/eval`, `internal`, `internal/testutil`                                                                                                                                                       |
 
 ```text
 cmd/archfit  (flags, concrete wiring, exit translation)
@@ -44,30 +44,37 @@ package imports an adapter or cmd.
 
 ## Bounded contexts and what each owns
 
-| Context | Owns | Never owns |
-| --- | --- | --- |
-| Architecture Policy (`internal/policy`) | Module and layer semantics, ownership, deploy units, gates, rule definitions, waivers, approved labels | YAML decoding, defaults, migration (that is `internal/config`) |
-| Evidence Acquisition (`internal/evidence`, `internal/evidence/acquisition`, `internal/extract/**`) | Source and tool observations, coverage rows, coverage gaps | Relationships, findings, scores, verdicts |
-| Relationship Analysis (`internal/relationship/**`) | Strength, distance, volatility, connascence, provenance, relationship scoring, relationship advisories | Rule evaluation, metrics, statuses, verdicts |
-| Assessment and Repair (`internal/assessment/**`) | Rule and metric evaluation, findings, lifecycle status, scorecard, verdict, deltas, repair tasks | The dependency graph, report DTOs |
-| Analysis Application (`internal/application`) | Stage order, the single baseline read, cancellation, base-tree comparison, report projection | Concrete adapters, YAML, subprocess execution |
-| Report Contract and Adapters (`internal/model/report`, `internal/report/ports`, `internal/output/**`) | Stable external DTOs and rendering | Any domain decision |
-| CLI Composition (`cmd/archfit`) | Flags, concrete construction, renderer selection, exit codes | Rules, metrics, scorers, statuses, decisions, classifiers |
+| Context                                                                                               | Owns                                                                                                   | Never owns                                                     |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Architecture Policy (`internal/policy`)                                                               | Module and layer semantics, ownership, deploy units, gates, rule definitions, waivers, approved labels | YAML decoding, defaults, migration (that is `internal/config`) |
+| Evidence Acquisition (`internal/evidence`, `internal/evidence/acquisition`, `internal/extract/**`)    | Source and tool observations, coverage rows, coverage gaps                                             | Relationships, findings, scores, verdicts                      |
+| Relationship Analysis (`internal/relationship/**`)                                                    | Strength, distance, volatility, connascence, provenance, relationship scoring, relationship advisories | Rule evaluation, metrics, statuses, verdicts                   |
+| Assessment and Repair (`internal/assessment/**`)                                                      | Rule and metric evaluation, findings, lifecycle status, scorecard, verdict, deltas, repair tasks       | The dependency graph, report DTOs                              |
+| Analysis Application (`internal/application`)                                                         | Stage order, the single baseline read, cancellation, base-tree comparison, report projection           | Concrete adapters, YAML, subprocess execution                  |
+| Report Contract and Adapters (`internal/model/report`, `internal/report/ports`, `internal/output/**`) | Stable external DTOs and rendering                                                                     | Any domain decision                                            |
+| CLI Composition (`cmd/archfit`)                                                                       | Flags, concrete construction, renderer selection, exit codes                                           | Rules, metrics, scorers, statuses, decisions, classifiers      |
+
+The v2.3.0 guardrails extend these ownership boundaries. Acquisition publishes a
+deterministic measurement profile for the producers and settings behind a run;
+assessment decides whether required fail-gated rules were actually evaluated and
+publishes structured reasons; application keeps the persisted gate reference
+separate from an optional `--base` comparison; and baseline capture reports
+temporary findings it deliberately skips.
 
 ## Allowed dependency direction
 
 Measured module-to-module edges on this commit (cross-module only, edge counts
 from `archfit analyze --json`, `classified_edges.by_module_pair`):
 
-| From | To |
-| --- | --- |
-| `cli-composition` | `policy-config-adapter` (16), `analysis-application` (12), `provider-adapters` (10), `evidence-adapters` (8), `config-lifecycle` (6), `report-adapters` (5), `report-contract` (5), `persistence-adapters` (4), `evidence-contracts` (2), `analysis-scope` (1), `evidence-acquisition` (1), `relationship-analysis` (1) |
-| `analysis-application` | `assessment-repair` (13), `relationship-analysis` (6), `report-contract` (5), `evidence-contracts` (4), `analysis-scope` (1), `architecture-policy` (1) |
-| `assessment-repair` | `evidence-contracts` (23), `relationship-analysis` (17), `architecture-policy` (12), `analysis-scope` (2), `report-contract` (1) |
-| `relationship-analysis` | `evidence-contracts` (18), `architecture-policy` (10), `evidence-analysis` (1) |
-| `evidence-acquisition` | `evidence-contracts` (12), `evidence-adapters` (10), `persistence-adapters` (5), `analysis-scope` (3), `architecture-policy` (3), `relationship-analysis` (3), `analysis-application` (1) |
-| `evidence-adapters` | `evidence-contracts` (41), `analysis-scope` (13), `persistence-adapters` (11), `evidence-analysis` (4), `architecture-policy` (2), `relationship-analysis` (2) |
-| `report-adapters` | `report-contract` (14) — and nothing else |
+| From                    | To                                                                                                                                                                                                                                                                                                                      |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cli-composition`       | `policy-config-adapter` (16), `analysis-application` (12), `provider-adapters` (10), `evidence-adapters` (8), `config-lifecycle` (6), `report-adapters` (5), `report-contract` (5), `persistence-adapters` (4), `evidence-contracts` (2), `analysis-scope` (1), `evidence-acquisition` (1), `relationship-analysis` (1) |
+| `analysis-application`  | `assessment-repair` (13), `relationship-analysis` (6), `report-contract` (5), `evidence-contracts` (4), `analysis-scope` (1), `architecture-policy` (1)                                                                                                                                                                 |
+| `assessment-repair`     | `evidence-contracts` (23), `relationship-analysis` (17), `architecture-policy` (12), `analysis-scope` (2), `report-contract` (1)                                                                                                                                                                                        |
+| `relationship-analysis` | `evidence-contracts` (18), `architecture-policy` (10), `evidence-analysis` (1)                                                                                                                                                                                                                                          |
+| `evidence-acquisition`  | `evidence-contracts` (12), `evidence-adapters` (10), `persistence-adapters` (5), `analysis-scope` (3), `architecture-policy` (3), `relationship-analysis` (3), `analysis-application` (1)                                                                                                                               |
+| `evidence-adapters`     | `evidence-contracts` (41), `analysis-scope` (13), `persistence-adapters` (11), `evidence-analysis` (4), `architecture-policy` (2), `relationship-analysis` (2)                                                                                                                                                          |
+| `report-adapters`       | `report-contract` (14) — and nothing else                                                                                                                                                                                                                                                                               |
 
 Adapter-to-application edges (`evidence-acquisition`, `persistence-adapters`,
 `policy-config-adapter` → `analysis-application`) are port implementations:
@@ -84,32 +91,37 @@ Cycles: 0 package cycles, 0 module cycles (`cycle` metric).
 
 ## Enforcement — which check catches which regression
 
-| Invariant | Enforced by |
-| --- | --- |
-| Core ring imports no `os`, `os/exec`, YAML, or adapter | `TestArchImports` (`internal/arch_test.go`) |
-| `internal/model/**` is stdlib-only, discovered dynamically | `TestArchImports` → `checkModelStdlibOnly` (walks every loaded `internal/model` package; no hardcoded list) |
-| `internal/policy` imports stdlib, the model kernel, and one vetted pure matcher (doublestar, via `contractThirdPartyAllowed`) | `TestArchImports` → `checkPolicyContractPurity` |
-| Published model surface does not drift | `TestModelSurfaceNoDrift` (golden `internal/testdata/model_surface.golden`) |
-| Assessment sees no raw graph or coupling internals | `TestAssessmentProductionDoesNotImportRawGraphOrCoupling`, `assessment_no_raw_graph`, `assessment_no_coupling_internals` |
-| Assessment consumes only the public relationship contract | `TestAssessmentConsumesOnlyThePublicRelationshipContract`, `assessment_no_relationship_internals` |
-| Relationship never imports Assessment | `relationship_no_assessment` |
-| Neither imports report DTOs | `TestDomainPackagesDoNotImportReportDTOs`, `assessment_no_report_dtos`, `relationship_no_report_dtos` |
-| One report projector | `TestReportProjectionHasOneOwner`, `projector_no_domain_internals` |
-| Renderers consume only the report contract | `renderer_no_{assessment,relationship,evidence}`, `output_no_{config,score,decision}`, `report_adapters_no_application` |
-| Application imports no concrete adapter | `TestApplicationImportsNoConcreteAdapters` plus nine `application_no_*` rules |
-| CLI imports no domain implementation | `TestCLIImportsNoDomainImplementation`, `cli_no_domain_implementation` |
-| Acquisition never judges | `TestAcquisitionDelegatesAssessmentJudgment`, `acquisition_no_assessment_judgment` |
-| Only composition roots import `internal/config` | the `*_no_config` rule family, `TestPolicyDoesNotImportConfig` |
-| `internal/view` and `internal/analysispipeline` stay dead | `TestNoAnalysisPipelinePackage`, `TestSelfModelDeclaresNoDissolvedPackage`, guard rules `no_stage_view` and `no_analysispipeline` |
-| Layer direction | `layer_inversion` (`forbidden_layer_direction`, gate `fail`) |
-| The self-model describes real source | `TestSelfModel*` (`internal/selfmodel_test.go`): no dead path glob, no unowned Go package, no equal-specificity ownership tie, no dead rule, public entries real and owned, every declared layer used |
-| Output/exit contracts | `TestGolden` (`internal/application`), `scripts/tests/cli_exit_contract_test.sh` |
-| No averaged score reaches the verdict or the exit code | `TestErosion_NoScalarDecision`, `TestStateDecisionIsMetricBlind`, `TestSeamGateIsScoreBlind` |
-| Every dimension envelope states a status, owner, confidence, and denominator | `TestErosion_DimensionStatusRequired` |
-| Every run publishes the comparability fingerprints | `TestErosion_ConfigHashRequired` |
-| An approved label carries the evidence it rests on | `TestErosion_LabelEvidenceRequired` |
-| A baseline capture is a function of tree and config alone | `TestErosion_BaselineIdempotent` |
-| No rule aims at source that does not exist | `TestErosion_NoDeadArchfitRule` |
+| Invariant                                                                                                                     | Enforced by                                                                                                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core ring imports no `os`, `os/exec`, YAML, or adapter                                                                        | `TestArchImports` (`internal/arch_test.go`)                                                                                                                                                           |
+| `internal/model/**` is stdlib-only, discovered dynamically                                                                    | `TestArchImports` → `checkModelStdlibOnly` (walks every loaded `internal/model` package; no hardcoded list)                                                                                           |
+| `internal/policy` imports stdlib, the model kernel, and one vetted pure matcher (doublestar, via `contractThirdPartyAllowed`) | `TestArchImports` → `checkPolicyContractPurity`                                                                                                                                                       |
+| Published model surface does not drift                                                                                        | `TestModelSurfaceNoDrift` (golden `internal/testdata/model_surface.golden`)                                                                                                                           |
+| Assessment sees no raw graph or coupling internals                                                                            | `TestAssessmentProductionDoesNotImportRawGraphOrCoupling`, `assessment_no_raw_graph`, `assessment_no_coupling_internals`                                                                              |
+| Assessment consumes only the public relationship contract                                                                     | `TestAssessmentConsumesOnlyThePublicRelationshipContract`, `assessment_no_relationship_internals`                                                                                                     |
+| Relationship never imports Assessment                                                                                         | `relationship_no_assessment`                                                                                                                                                                          |
+| Neither imports report DTOs                                                                                                   | `TestDomainPackagesDoNotImportReportDTOs`, `assessment_no_report_dtos`, `relationship_no_report_dtos`                                                                                                 |
+| One report projector                                                                                                          | `TestReportProjectionHasOneOwner`, `projector_no_domain_internals`                                                                                                                                    |
+| Renderers consume only the report contract                                                                                    | `renderer_no_{assessment,relationship,evidence}`, `output_no_{config,score,decision}`, `report_adapters_no_application`                                                                               |
+| Application imports no concrete adapter                                                                                       | `TestApplicationImportsNoConcreteAdapters` plus nine `application_no_*` rules                                                                                                                         |
+| CLI imports no domain implementation                                                                                          | `TestCLIImportsNoDomainImplementation`, `cli_no_domain_implementation`                                                                                                                                |
+| Acquisition never judges                                                                                                      | `TestAcquisitionDelegatesAssessmentJudgment`, `acquisition_no_assessment_judgment`                                                                                                                    |
+| Only composition roots import `internal/config`                                                                               | the `*_no_config` rule family, `TestPolicyDoesNotImportConfig`                                                                                                                                        |
+| `internal/view` and `internal/analysispipeline` stay dead                                                                     | `TestNoAnalysisPipelinePackage`, `TestSelfModelDeclaresNoDissolvedPackage`, guard rules `no_stage_view` and `no_analysispipeline`                                                                     |
+| Layer direction                                                                                                               | `layer_inversion` (`forbidden_layer_direction`, gate `fail`)                                                                                                                                          |
+| The self-model describes real source                                                                                          | `TestSelfModel*` (`internal/selfmodel_test.go`): no dead path glob, no unowned Go package, no equal-specificity ownership tie, no dead rule, public entries real and owned, every declared layer used |
+| Output/exit contracts                                                                                                         | `TestGolden` (`internal/application`), `scripts/tests/cli_exit_contract_test.sh`                                                                                                                      |
+| No averaged score reaches the verdict or the exit code                                                                        | `TestErosion_NoScalarDecision`, `TestStateDecisionIsMetricBlind`, `TestSeamGateIsScoreBlind`                                                                                                          |
+| Every dimension envelope states a status, owner, confidence, and denominator                                                  | `TestErosion_DimensionStatusRequired`                                                                                                                                                                 |
+| Every run publishes the comparability fingerprints                                                                            | `TestErosion_ConfigHashRequired`                                                                                                                                                                      |
+| Every run publishes measurement producer/settings identity, and incompatible profiles refuse comparison                       | measurement-profile comparison tests in `internal/assessment/decision` and application/report projection                                                                                              |
+| A required fail-gated rule without sufficient producer evidence is explicit and cannot produce a healthy pass                 | required-evidence tests in `internal/assessment/evaluation` and `cmd/archfit`                                                                                                                         |
+| Waiver metadata is valid, expiry matching is order-independent, and temporary findings are not captured as permanent debt     | waiver contract tests in `internal/config`, `internal/assessment/status`, and `cmd/archfit`                                                                                                           |
+| Agent repair goals respect rule policy and replay effective validation flags                                                  | repair-task and validation replay tests in `internal/assessment/agenttask` and `cmd/archfit`                                                                                                          |
+| Fact-cache keys cover each extractor's real input set, including inherited TypeScript config                                  | cache input tests in `internal/factcache`, `internal/extract/golang`, and `internal/extract/ts`                                                                                                       |
+| An approved label carries the evidence it rests on                                                                            | `TestErosion_LabelEvidenceRequired`                                                                                                                                                                   |
+| A baseline capture is a function of tree and config alone                                                                     | `TestErosion_BaselineIdempotent`                                                                                                                                                                      |
+| No rule aims at source that does not exist                                                                                    | `TestErosion_NoDeadArchfitRule`                                                                                                                                                                       |
 
 `make archfit` runs the configured gate over archfit itself; CI runs it after
 tests and goldens, and the `arch-lint` pre-push hook runs it locally.
@@ -123,15 +135,17 @@ directory.
 
 - **Relationship and Assessment are adjacent on purpose.** Both are core, both
   are high-volatility, and they co-change. `assessment-repair →
-  relationship-analysis` is 17 edges at `cross_module_same_owner` distance —
+relationship-analysis` is 17 edges at `cross_module_same_owner` distance —
   strong coupling at short distance, which is balanced. Widening that distance
   with an event bus or a service seam would make the number look better and the
   system worse. Do not do it.
-- **The score is 41/`mixed` and that is the honest read.** 363 scored
-  cross-boundary edges, mean book balance 4.7/10, 70 critical-band edges, all
-  at `cross_module_same_owner`. archfit has one owner and one deploy unit, so
-  the distance dimension is degenerate by construction: every internal seam sits
-  on the same rung and the balance formula is driven almost entirely by
+- **Historical measurement (2026-08-26): the score was 41/`mixed`.** This
+  snapshot had 363 scored cross-boundary edges, mean book balance 4.7/10, and
+  70 critical-band edges, all at `cross_module_same_owner`. It predates the
+  v2.3.0 guardrails and is retained as architecture history, not as a current
+  release claim. archfit has one owner and one deploy unit, so the distance
+  dimension is degenerate by construction: every internal seam sits on the same
+  rung and the balance formula is driven almost entirely by
   strength-vs-distance. A single-binary, sole-owner tool cannot score `strong`
   on this rubric without fabricating ownership or deploy-unit boundaries.
 - **Volatility is declared from domain change pressure**, not commit count and
@@ -245,9 +259,13 @@ top-level state field is a published-contract change: see the recipe below and
 inspect the golden diff, and call the contract change out in review. It is a
 published contract, not an implementation detail.
 
-**Re-baseline.** Prefer not to. The baseline is empty on purpose (accepted risk
-5) and the gate passes without it. If you do re-baseline: only after
+**Re-baseline.** Prefer not to. The baseline is empty on purpose (accepted risk 5) and the gate passes without it. If you do re-baseline: only after
 `make archfit` passes with zero blocking findings, inspect the semantic diff,
 and re-run `analyze` to confirm the finding set converges — re-baselining has
 previously introduced a phantom negative metric delta that turned a PASS into
-exit 2. Never baseline to silence an architecture rule.
+exit 2. A measurement-profile mismatch or missing seam snapshot is a named
+`gate_reference` comparability failure, not a migration instruction. Do not
+blanket re-baseline after a producer/tool change; review current findings and
+capture only after an owner accepts the resulting debt. Capture skips findings
+covered by temporary waivers, including expired waivers, and reports the count.
+Never baseline to silence an architecture rule.

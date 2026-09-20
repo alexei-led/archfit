@@ -1,11 +1,14 @@
 # Caching
 
-archfit caches the expensive out-of-process extractor work (`go list`/packages.Load,
-dependency-cruiser, grimp, cargo metadata, cargo-modules, SCIP, jscpd, ast-grep) so
-a warm run skips subprocesses. Measured on real repos, a warm gate is typically
-3–5× faster than cold (archfit itself: ~8 s → ~3 s). Compare on your repo with
-`make bench-gate` (in the archfit source tree) or by timing a run before and after
-deleting the cache.
+archfit caches expensive extractor work when its inputs can be identified safely
+and within a bounded cost. A warm run can skip extraction, while version probes
+and producers without a reliable cache identity still run. Measure your workload
+with `make bench-gate` in the archfit source tree.
+
+Python/grimp currently runs fresh: the `uv` launcher version does not identify
+the transient Python/grimp environment. Replaying cached helper output could
+replay both stale facts and their old version. This does not disable uv's own
+package cache.
 
 **Correctness contract:** a cached run is byte-identical to an uncached run on the
 same tree. The cache stores extractor **facts** (dependency graphs, metadata), never
@@ -31,29 +34,58 @@ analysis.
 Cache keys are content hashes — there is no time-based expiry. An entry is reused
 only when **all** of these are unchanged:
 
-- the analyzer's tool version (probed each run: `go version`, depcruise, grimp,
+- the analyzer's tool version (probed each run: `go version`, depcruise,
   cargo, ast-grep, jscpd, SCIP indexer);
 - the slice of `.archfit.yaml` that analyzer consumes (editing an unrelated rule
   does not invalidate extractor facts);
 - the analyzer's input files, by content hash:
 
-| Analyzer                  | Keyed on                                                                                                                                          |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Go                        | per workspace member: member sources + `go.mod`/`go.sum` + intra-workspace deps — editing one member re-loads only that member and its dependents |
-| TypeScript (depcruise)    | source tree + `tsconfig.json` (resolved) + `package.json` + lockfile                                                                              |
-| Python (grimp)            | `.py` tree + manifests                                                                                                                            |
-| Rust `cargo metadata`     | manifests only (`Cargo.toml`/`Cargo.lock`) — a `.rs` edit does not re-run it                                                                      |
-| Rust cargo-modules / SCIP | `.rs` tree (+ manifests); SCIP caches the parsed edge/symbol output, not the raw index                                                            |
-| clones (jscpd), ast-grep  | their source-file scope                                                                                                                           |
+| Analyzer                  | Keyed on                                                                                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Go                        | per workspace member: every source file the member load can reach + `go.mod`/`go.sum` + intra-workspace deps — editing one member re-loads only that member and its dependents |
+| TypeScript (depcruise)    | source tree + `tsconfig.json` and its complete supported `extends` chain (including files outside `--root`) + `package.json` + lockfile                                        |
+| Python (grimp)            | Not fact-cached; the helper runs on every analysis                                                                                                                             |
+| Rust `cargo metadata`     | manifests only (`Cargo.toml`/`Cargo.lock`) — a `.rs` edit does not re-run it                                                                                                   |
+| Rust cargo-modules / SCIP | `.rs` tree (+ manifests); SCIP caches the parsed edge/symbol output, not the raw index                                                                                         |
+| clones (jscpd), ast-grep  | their source-file scope                                                                                                                                                        |
 
 Never cached: timed-out runs, partial-status results, and tool failures — a cached
 degradation would be sticky. A corrupted cache entry is treated as a miss, never an
 error. A Go workspace member whose build reaches source the key cannot see — a
 `replace` pointing at a local directory, or a dependency on a go.work member
-filtered out by exclusions or `tools.go.modules` — always runs fresh; unaffected
-members still cache. Config `exclude:` globs never shrink the key's input hash:
-the underlying tools analyze excluded files anyway, so their edits still
-invalidate.
+filtered out by exclusions or `languages.go.modules` — always runs fresh;
+unaffected members still cache. Config `exclude:` globs never shrink the key's
+input hash: the underlying tools analyze excluded files anyway, so their edits
+still invalidate.
+
+The shared input walker skips only Archfit metadata (`.archfit-cache` and `.git`).
+Names such as `target`, `venv`, `node_modules`, and `__pycache__` do not prove
+that an analyzer ignores source there; an analyzer-specific input set must opt
+out explicitly. This conservative rule keeps a source file in a tool-readable
+directory from becoming an invisible cache dependency. For TypeScript, Archfit
+hashes the complete supported `extends` chain; if an inherited config cannot be
+resolved, it bypasses the fact cache for that run instead of reusing an
+unverifiable entry. Dynamic dependency-cruiser configurations do not use fact
+caching. For supported JS configurations, the native dependency-cruiser loader
+evaluates the configuration once and the graph invocation consumes that frozen
+snapshot, so measurement identity records the actual settings. Unsupported
+integrations (such as opaque webpack/Babel/plugin settings) and unsupported
+compiler-config resolution retain facts but have an unknown identity. Unknown
+inputs prevent numerical comparisons; repeating the same warning does not make
+them trustworthy.
+
+Cache-key work is bounded: at most 20,000 enumerated entries, 64 directory levels,
+and 32 MiB of hashed file content. Exhausting a budget produces no usable key
+and the analyzer runs fresh. Directory symlinks are followed within these
+bounds; cycles and read failures also bypass caching. No partial hash is reused.
+
+TypeScript excludes root `node_modules` source bytes, matching the tool's
+exclusion, but includes a bounded inventory of dependency filenames and resolver
+metadata so file-presence and package-resolution changes invalidate entries.
+AST keys use the requested language's source extensions and ignore/config
+inputs; a build binary is not parsed as source. Rust `.rs` files under `target`
+remain eligible inputs because generated or explicitly configured source may
+be analyzed there. Large or unsupported scopes run fresh.
 
 ## `--refresh`
 
@@ -74,9 +106,10 @@ first with `archfit analyze --refresh -c <current>`, or delete
 ## `--base` and the cache
 
 `analyze --base <ref>` checks the base ref out at a deterministic per-commit path
-under `.archfit-cache/worktrees/<sha>`, so base-side facts are keyed by commit and
-reused forever: the second run against the same ref does zero base-side subprocess
-work. The checkout itself is removed after each run; only fact blobs persist.
+under `.archfit-cache/worktrees/<sha>`. Repeated runs can reuse base-side facts
+when their tool and input identities match. Version probes and uncached
+producers still run. The checkout itself is removed after each run; only fact
+blobs persist.
 
 ## Eviction
 

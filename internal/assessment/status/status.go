@@ -116,14 +116,19 @@ func assignOne(
 	}
 
 	// 2–3. Waiver check.
+	hasExpiredMatch := false
 	for _, w := range waivers.Waivers {
 		if !matchWaiver(w, f) {
 			continue
 		}
 		if isExpired(w, now) {
-			return finding.StatusExpiredWaiver
+			hasExpiredMatch = true
+			continue
 		}
 		return finding.StatusWaived
+	}
+	if hasExpiredMatch {
+		return finding.StatusExpiredWaiver
 	}
 
 	// 4. Default.
@@ -131,7 +136,8 @@ func assignOne(
 }
 
 // matchWaiver reports whether w applies to f, regardless of expiry.
-// An empty Rule, From, or To field matches any value.
+// An empty Rule, From, or To field matches any value. Synthetic module-only
+// findings use the endpoint module when no endpoint path is available.
 func matchWaiver(w policy.WaiverDef, f *finding.Finding) bool {
 	// Rule ID match.
 	if w.Rule != "" && w.Rule != f.RuleID {
@@ -139,22 +145,31 @@ func matchWaiver(w policy.WaiverDef, f *finding.Finding) bool {
 	}
 
 	// From glob match against Edge.From.Path.
-	if w.From != "" {
-		matched, _ := doublestar.Match(w.From, f.Edge.From.Path)
-		if !matched {
-			return false
-		}
+	if !matchEndpoint(w.From, f.Edge.From) {
+		return false
 	}
 
 	// To glob match against Edge.To.Path.
-	if w.To != "" {
-		matched, _ := doublestar.Match(w.To, f.Edge.To.Path)
-		if !matched {
-			return false
-		}
+	if !matchEndpoint(w.To, f.Edge.To) {
+		return false
 	}
 
 	return true
+}
+
+func matchEndpoint(glob string, endpoint finding.Endpoint) bool {
+	if glob == "" {
+		return true
+	}
+	value := endpoint.Path
+	if value == "" {
+		value = endpoint.Module
+	}
+	if value == "" {
+		return false
+	}
+	matched, _ := doublestar.Match(glob, value)
+	return matched
 }
 
 // isExpired reports whether w has an expiry date that has passed relative to now.
@@ -169,9 +184,9 @@ func isExpired(w policy.WaiverDef, now time.Time) bool {
 		// suppress findings with an unenforceable expiry.
 		return true
 	}
-	// Expiry is end-of-day: the waiver is valid on the expiry date itself,
-	// expired the day after. Add 24 hours so "expires: 2025-01-31" covers all of Jan 31.
-	return now.After(expiry.Add(24 * time.Hour))
+	// Expiry is end-of-day: the waiver is valid on the expiry date itself and
+	// expired at midnight on the following day.
+	return !now.Before(expiry.Add(24 * time.Hour))
 }
 
 // DeltaResult groups finding IDs by delta bucket. Buckets are mutually exclusive

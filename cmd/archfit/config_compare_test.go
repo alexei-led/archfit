@@ -236,9 +236,6 @@ func testCompareIdentity(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("config compare: exit = %d, want 0\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 	}
-	if !strings.Contains(stdout, configCompareIdentityLine) {
-		t.Errorf("identity run must say %q:\n%s", configCompareIdentityLine, stdout)
-	}
 	if !strings.Contains(stdout, "coverage evidence: ") {
 		t.Errorf("text report must carry a coverage-evidence grade:\n%s", stdout)
 	}
@@ -254,6 +251,12 @@ func testCompareIdentity(t *testing.T) {
 	}
 
 	doc := runCompareJSON(t, cfgPath, cfgPath)
+	if !strings.Contains(stdout, configCompareIdentityLine) {
+		t.Errorf("comparable identity run must say %q:\n%s", configCompareIdentityLine, stdout)
+	}
+	if doc.Coverage.Status == "not_comparable" {
+		t.Fatalf("same complete-input measurement must compare with disclosed gaps: %+v", doc.Coverage)
+	}
 	if doc.SchemaVersion != configCompareSchemaVersion {
 		t.Errorf("schema_version = %q, want %q", doc.SchemaVersion, configCompareSchemaVersion)
 	}
@@ -275,7 +278,7 @@ func testCompareIdentity(t *testing.T) {
 			doc.Current.ConfigHash, doc.Candidate.ConfigHash)
 	}
 	if doc.ScoreDelta == nil || *doc.ScoreDelta != 0 {
-		t.Errorf("score_delta = %v, want 0 for a measured identity run", doc.ScoreDelta)
+		t.Errorf("score_delta = %v, want 0 for a comparable identity run", doc.ScoreDelta)
 	}
 	// finding_count is the distinct observed population, i.e. the buckets. The
 	// fixture must actually produce shared findings, or an empty BothIDs would
@@ -407,6 +410,9 @@ func testCompareBaselineIsolation(t *testing.T) {
 func testCompareAdvisoryPromotion(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+forbiddenEdgeRule)
+	root := filepath.Dir(cfgPath)
+	writeFileAt(t, root, filePkgAA, "package a\n\nimport \"example.com/test/pkg/b\"\n\nfunc UseSecret() string { return b.Secret() }\n")
+	writeFileAt(t, root, "pkg/b/api.go", "package b\n\nfunc Secret() string { return \"value\" }\n")
 	candidatePath := writeCandidateCfg(t, coupledModulesCfg+
 		strings.Replace(forbiddenEdgeRule, "gate: fail", "gate: warn", 1))
 

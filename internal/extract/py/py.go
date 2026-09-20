@@ -2,12 +2,9 @@ package py
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,7 +15,6 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
@@ -42,15 +38,6 @@ const (
 type Extractor struct {
 	runner toolrun.Runner
 	cfg    evidenceports.ExtractConfig
-	// Cache is the extractor fact cache; nil disables caching (--no-cache).
-	Cache *factcache.Store
-}
-
-// pyManifestNames are the resolution-affecting manifests hashed into the
-// fact-cache key alongside the .py tree: project metadata and lockfiles that
-// change what grimp can import.
-var pyManifestNames = []string{
-	"pyproject.toml", "setup.py", "setup.cfg", "uv.lock", "requirements.txt",
 }
 
 // New returns an Extractor configured with the given runner and config.
@@ -160,7 +147,10 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		}
 	}
 
-	out, err := e.cachedRunner(s, tool, version, pkgs, firstPartyPkgs).Run(ctx, cmd)
+	// Python fact caching is intentionally bypassed. The effective environment
+	// used by uv (including the resolved grimp and Python versions) is outside
+	// the repository tree and cannot be identified reliably before lookup.
+	out, err := e.runner.Run(ctx, cmd)
 	if err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/py: run helper: %w", err)
 	}
@@ -186,110 +176,6 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/py: parse output: %w", err)
 	}
 	return facts, cov, nil
-}
-
-// cachedRunner wraps the runner in a fact-cache decorator for the grimp
-// helper invocation (fact-cache.md D5 seam 1). Returns the plain runner when
-// the cache is off or key material cannot be derived — never fails the run.
-//
-// The helper command's argv embeds a random temp path (the extracted helper
-// script), so EntryArgs replaces it with the deterministic invocation
-// identity: tool + package list. The helper source itself is key material —
-// editing grimp_helper.py must invalidate — so its hash rides the config
-// slice. Key inputs otherwise: uv version, the ExtractConfig view, the scan
-// root, local virtualenv package metadata when present, and the content hash
-// of every .py + manifest file under s.Root. The python3.12 fallback is left
-// uncached because its global/site environment is outside repo key material.
-func (e *Extractor) cachedRunner(s scope.Scope, tool, version string, pkgs, firstPartyPkgs []string) toolrun.Runner {
-	if e.Cache == nil {
-		return e.runner
-	}
-	if tool != "uv" {
-		return e.runner
-	}
-	helperSum := sha256.Sum256(grimpHelperSrc)
-	resolverStateHash, err := pyResolverStateHash(s.Root)
-	if err != nil {
-		return e.runner
-	}
-	cfgHash, err := factcache.HashJSON(struct {
-		Cfg               evidenceports.ExtractConfig
-		Root              string
-		HelperHash        string
-		ResolverStateHash string
-	}{e.cfg, s.Root, hex.EncodeToString(helperSum[:]), resolverStateHash})
-	if err != nil {
-		return e.runner
-	}
-	// Config exclusions deliberately do NOT filter the hash: grimp imports the
-	// package regardless of `exclude:` globs, so editing an excluded-but-imported
-	// file must still invalidate. ListInputs prunes only known non-input cache
-	// directories, matching what grimp never reads; exclusion-config changes invalidate via
-	// cfgHash (e.cfg embeds Exclusions).
-	files := factcache.ListInputs(s.Root, factcache.MatchExts([]string{".py"}, pyManifestNames), nil)
-	treeHash, err := factcache.HashTree(s.Root, files)
-	if err != nil {
-		return e.runner
-	}
-	return &factcache.Runner{
-		Inner:     e.runner,
-		Store:     e.Cache,
-		Analyzer:  langPython,
-		Key:       factcache.Key(langPython, version, cfgHash, treeHash),
-		Cacheable: cacheableGrimp,
-		EntryArgs: append(append(append([]string{tool, "--packages"}, pkgs...), "--first-party-packages"), firstPartyPkgs...),
-	}
-}
-
-func pyResolverStateHash(root string) (string, error) {
-	files := pyResolverInputs(root)
-	if len(files) == 0 {
-		return "", nil
-	}
-	return factcache.HashTree(root, files)
-}
-
-func pyResolverInputs(root string) []string {
-	var files []string
-	for _, dir := range []string{".venv", "venv"} {
-		base := filepath.Join(root, dir)
-		if _, err := os.Stat(base); err != nil {
-			continue
-		}
-		_ = filepath.WalkDir(base, func(path string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return nil
-			}
-			if d.IsDir() {
-				return nil
-			}
-			switch filepath.Base(path) {
-			case "METADATA", "RECORD", "direct_url.json", "pyvenv.cfg":
-				rel, err := filepath.Rel(root, path)
-				if err == nil {
-					files = append(files, filepath.ToSlash(rel))
-				}
-			}
-			return nil
-		})
-	}
-	return files
-}
-
-// cacheableGrimp vetoes caching output the extractor would report as partial
-// (fact-cache.md D3): a non-zero exit, a helper-reported error, or unresolved
-// imports. Unresolved imports usually mean the environment is missing a
-// dependency — state the cache key cannot see — so caching them would make
-// the degradation sticky across a `pip install`.
-func cacheableGrimp(out toolrun.Output) bool {
-	if out.ExitCode != 0 {
-		return false
-	}
-	var h helperOutput
-	if json.Unmarshal(out.Stdout, &h) != nil {
-		return false
-	}
-	return h.Error == "" && h.Unresolved == 0
 }
 
 // Applicable reports whether this extractor has a Python project to analyse at
@@ -469,6 +355,7 @@ func (e *Extractor) toolVersion(ctx context.Context, tool string, args []string)
 // ---------------------------------------------------------------------------
 
 type helperOutput struct {
+	ProducerVersion   string       `json:"producer_version"`
 	Edges             []helperEdge `json:"edges"`
 	Unresolved        int          `json:"unresolved"`
 	UnresolvedImports []helperEdge `json:"unresolved_imports,omitempty"`
@@ -487,7 +374,7 @@ type helperEdge struct {
 // ---------------------------------------------------------------------------
 
 // parseAndNormalize parses grimp_helper JSON and builds graph.Facts.
-func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts, evidence.Coverage, error) {
+func (e *Extractor) parseAndNormalize(data []byte, _ string) (graph.Facts, evidence.Coverage, error) {
 	var h helperOutput
 	if err := json.Unmarshal(data, &h); err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("unmarshal: %w", err)
@@ -577,7 +464,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 	}
 	cov := evidence.Coverage{
 		Tool:            toolGrimp,
-		Version:         version,
+		Version:         h.ProducerVersion,
 		FilesSeen:       filesSeen,
 		FilesApplicable: filesSeen,
 		Unresolved:      h.Unresolved,

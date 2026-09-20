@@ -17,6 +17,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/goccy/go-yaml"
 
+	modelrule "github.com/alexei-led/archfit/internal/model/rule"
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
@@ -239,7 +240,7 @@ func validate(cfg Config) error {
 			return err
 		}
 	}
-	if err := validateRules(cfg.Rules); err != nil {
+	if err := validateRulesAndWaivers(cfg.Rules, cfg.Waivers); err != nil {
 		return err
 	}
 	if threshold := cfg.Metrics.FunctionLOCThreshold; threshold != nil && *threshold <= 0 {
@@ -341,6 +342,63 @@ func validateRules(rules []policy.RuleDef) error {
 			if p.ID == "" || p.Lang == "" || p.Rule == "" {
 				return fmt.Errorf("rules[%s].patterns[%d]: id, lang, and rule are all required", id, j)
 			}
+		}
+	}
+	return nil
+}
+
+func validateRulesAndWaivers(rules []policy.RuleDef, waivers []policy.WaiverDef) error {
+	if err := validateRules(rules); err != nil {
+		return err
+	}
+	return validateWaivers(waivers, rules)
+}
+
+func validateWaivers(waivers []policy.WaiverDef, rules []policy.RuleDef) error {
+	declared := make(map[string]struct{}, len(rules))
+	for _, rule := range rules {
+		declared[rule.ID] = struct{}{}
+	}
+	for i, waiver := range waivers {
+		field := fmt.Sprintf("waivers[#%d]", i)
+		if strings.TrimSpace(waiver.Rule) == "" {
+			return fmt.Errorf("%s.rule is required", field)
+		}
+		syntheticScope := modelrule.SyntheticWaiverScope(waiver.Rule)
+		if syntheticScope == modelrule.WaiverScopeForbidden {
+			return fmt.Errorf("%s.rule %q cannot be waived; configure coupling.gate.distributed_monolith.mode instead", field, waiver.Rule)
+		}
+		if _, ok := declared[waiver.Rule]; !ok && syntheticScope == "" {
+			return fmt.Errorf("%s.rule %q does not identify a declared or supported synthetic rule", field, waiver.Rule)
+		}
+		if waiver.From == "" && waiver.To == "" && syntheticScope != modelrule.WaiverScopeEdgeless {
+			return fmt.Errorf("%s requires at least one of from or to to define its scope", field)
+		}
+		if syntheticScope == modelrule.WaiverScopeEdgeless && (waiver.From != "" || waiver.To != "") {
+			return fmt.Errorf("%s.rule %q is edge-less and accepts rule-only waivers without from or to", field, waiver.Rule)
+		}
+		for _, selector := range []struct {
+			name    string
+			pattern string
+		}{
+			{name: "from", pattern: waiver.From},
+			{name: "to", pattern: waiver.To},
+		} {
+			if selector.pattern != "" && !doublestar.ValidatePattern(selector.pattern) {
+				return fmt.Errorf("%s.%s %q is not a valid glob pattern", field, selector.name, selector.pattern)
+			}
+		}
+		if strings.TrimSpace(waiver.Reason) == "" {
+			return fmt.Errorf("%s.reason is required", field)
+		}
+		if strings.TrimSpace(waiver.ApprovedBy) == "" {
+			return fmt.Errorf("%s.approved_by is required", field)
+		}
+		if strings.TrimSpace(waiver.Expires) == "" {
+			return fmt.Errorf("%s.expires is required", field)
+		}
+		if _, err := time.Parse("2006-01-02", waiver.Expires); err != nil {
+			return fmt.Errorf("%s.expires %q is not a valid date (expected YYYY-MM-DD): %w", field, waiver.Expires, err)
 		}
 	}
 	return nil

@@ -164,6 +164,7 @@ func TestRenderState_SeamsAndUnknowns(t *testing.T) {
 // planning input, not a stop signal, and still prints the comparison status.
 func TestRenderState_CleanRunSaysSo(t *testing.T) {
 	s := report.NewArchitectureState()
+	s.Decision.HardGates = report.HardGatePass
 	s.Verdict = report.StateNeedsAttention
 	out := render(t, s)
 	if !strings.Contains(out, "No blockers.") {

@@ -129,8 +129,10 @@ modules:
     role: core
     paths:
       - internal/policy/**
+      - internal/model/rule/**
     public:
       - internal/policy
+      - internal/model/rule
     layer: core
     subdomain: core
     volatility: high

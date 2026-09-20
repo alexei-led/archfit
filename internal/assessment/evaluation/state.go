@@ -1,6 +1,9 @@
 package evaluation
 
 import (
+	"sort"
+	"strings"
+
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
@@ -94,21 +97,83 @@ func buildState(diag *result.Result, in stateInput) state.Architecture {
 	st.MetricRegressions = in.MetricRegressions
 	st.Dimensions = buildDimensions(diag, in, split.byDimension)
 	markRegressedDimensions(&st.Dimensions, in.MetricRegressions)
-	// A required-tool policy failure and a tripped metric ratchet both block
-	// without producing a finding, so the hard-gate result is not simply "are
-	// there blocker findings". Rules and gates did run, so the absence of a
-	// failure is a pass, not an abstention.
+	unevaluated := unevaluatedRequiredRules(diag, in.Policy, in.Facts)
 	hardGates := state.HardGatePass
 	if in.RequiredToolFailure || len(in.MetricRegressions) > 0 || len(st.Blockers) > 0 {
 		hardGates = state.HardGateFail
 	}
 	st.Verdict, st.Decision = state.Decide(state.DecisionInput{
-		HardGates:         hardGates,
-		ActiveBlockers:    len(st.Blockers),
-		ActiveDiagnostics: len(st.Diagnostics),
-		Dimensions:        st.Dimensions.Signals(),
+		HardGates:                hardGates,
+		UnevaluatedRequiredRules: unevaluated,
+		ActiveBlockers:           len(st.Blockers),
+		ActiveDiagnostics:        len(st.Diagnostics),
+		Dimensions:               st.Dimensions.Signals(),
 	})
 	return st
+}
+
+func unevaluatedRequiredRules(diag *result.Result, p policy.PolicySnapshot, f Observations) []state.UnevaluatedRule {
+	var missing []state.UnevaluatedRule
+	for _, rule := range p.Gates.Rules.Rules {
+		gate := rule.Gate
+		// Match rules.New: API drift and type leaks default to warn; other
+		// omitted gates retain the fail posture of the rule wrapper.
+		if gate == "" && rule.Type != ruleTypePublicAPIChange && rule.Type != ruleTypePublicAPILeak {
+			gate = string(policy.GateFail)
+		}
+		if gate != string(policy.GateFail) {
+			continue
+		}
+		if reason := ruleUnevaluatedReason(diag, rule, p, f); reason != "" {
+			missing = append(missing, state.UnevaluatedRule{RuleID: rule.ID, Reason: reason})
+		}
+	}
+	sort.Slice(missing, func(i, j int) bool { return missing[i].RuleID < missing[j].RuleID })
+	return missing
+}
+
+func ruleUnevaluatedReason(diag *result.Result, rule policy.RuleDef, p policy.PolicySnapshot, f Observations) string {
+	scope := ruleProducerScope(rule, p, f)
+	if scope.status == ruleScopeNotApplicable {
+		return ""
+	}
+	if scope.status != ruleScopeApplicable {
+		return "rule scope cannot be established from the supported source inventory"
+	}
+	var reasons []string
+	if ruleNeedsDependencies(rule.Type) && !primaryEvidenceComplete(diag, scope.languages) {
+		for language := range scope.languages {
+			tool, ok := primaryToolForLanguage(diag, language)
+			if !ok {
+				reasons = append(reasons, language+" dependency producer is not registered")
+				continue
+			}
+			if reason := producerIncompleteReason(diag, tool); reason != "" {
+				reasons = append(reasons, reason)
+			}
+		}
+	}
+	if ruleNeedsSyntax(rule.Type) && !syntaxEvidenceComplete(diag, scope.languages) {
+		reasons = append(reasons, "syntax evidence is incomplete for the rule scope")
+	}
+	sort.Strings(reasons)
+	return strings.Join(reasons, "; ")
+}
+
+func producerIncompleteReason(diag *result.Result, tool string) string {
+	rows := coverageRows(diag.ToolCoverage, tool)
+	if len(rows) != 1 {
+		return tool + " has no unique completed coverage record"
+	}
+	row := rows[0]
+	if row.Status == "ok" {
+		return ""
+	}
+	reason := tool + " evidence is " + row.Status
+	if row.Reason != "" {
+		reason += ": " + row.Reason
+	}
+	return reason
 }
 
 // markRegressedDimensions raises the gate of every dimension that owns a

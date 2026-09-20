@@ -28,6 +28,7 @@ const (
 type AgentTask struct {
 	FindingID    string                `json:"finding_id"`
 	RuleID       string                `json:"rule_id"`
+	RepairKind   string                `json:"repair_kind"`
 	Goal         string                `json:"goal"`
 	Constraints  []string              `json:"constraints"`
 	Files        []string              `json:"files"`
@@ -80,8 +81,10 @@ type Result struct {
 	// ModelHash and LabelsHash fingerprint the module model and the approved
 	// label set. They reach the wire only through the architecture-state
 	// comparison projection.
-	ModelHash  string `json:"-"`
-	LabelsHash string `json:"-"`
+	ModelHash          string                       `json:"-"`
+	LabelsHash         string                       `json:"-"`
+	MeasurementProfile *evidence.MeasurementProfile `json:"-"`
+	GateReference      *StateComparison             `json:"-"`
 	// Comparison records what this run was compared against, when anything was.
 	// Nil means no comparison was requested. `json:"-"` for the same reason the
 	// hashes are: it reaches the wire through the architecture-state contract.

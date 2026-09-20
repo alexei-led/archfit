@@ -203,13 +203,15 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		SemanticStrengthOverlay: graphResult.SemanticStrengthOverlay,
 	}
 
+	history := buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner)
 	return application.Acquired{
 		Facts: snapshot,
 		Observations: assessmentObservationsOf(
 			snapshot, declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
 		),
 		Context: application.AnalysisContext{
-			Scope: resolved, BaseRef: req.BaseRef, Full: true,
+			MeasurementProfile: s.measurementProfile(ctx, resolved, marked, history),
+			Scope:              resolved, BaseRef: req.BaseRef, Full: true,
 			Now: now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
 			ModelHash:    policy.ModelHash(runPolicy.Topology.Modules),
 			LabelsHash:   labels.FileHash(pinned),
@@ -220,7 +222,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 			MarkedCoverage:            marked,
 			CoverageGaps:              buildCoverageGaps(marked, s.Options.Coverage, resolved.Root),
 			CrateRootDirs:             crateRootDirs,
-			VolatilityCorroboration:   buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner),
+			VolatilityCorroboration:   history,
 			DeployUnitDetectedModules: len(collected.DeployUnitsByModule),
 		},
 	}, nil

@@ -54,6 +54,7 @@ func gap(tool string) evidence.CoverageGap {
 func side(rows []evidence.Coverage, gaps []evidence.CoverageGap) decision.ConfigCompareSide {
 	return decision.ConfigCompareSide{
 		Diag: result.Result{
+			MeasurementProfile:    measurementFixture(),
 			Findings:              []finding.Finding{},
 			ToolCoverage:          rows,
 			CoverageGaps:          gaps,
@@ -102,7 +103,7 @@ func unmeasuredCard() score.Scorecard {
 
 func findingsSide(fs ...finding.Finding) decision.ConfigCompareSide {
 	return decision.ConfigCompareSide{
-		Diag:  result.Result{Findings: fs, ToolCoverage: []evidence.Coverage{}},
+		Diag:  result.Result{Findings: fs, ToolCoverage: []evidence.Coverage{}, MeasurementProfile: measurementFixture()},
 		Score: measuredCard(70),
 	}
 }
@@ -110,8 +111,9 @@ func findingsSide(fs ...finding.Finding) decision.ConfigCompareSide {
 func edgesSide(scored, abstained, external int) decision.ConfigCompareSide {
 	return decision.ConfigCompareSide{
 		Diag: result.Result{
-			Findings:     []finding.Finding{},
-			ToolCoverage: []evidence.Coverage{},
+			MeasurementProfile: measurementFixture(),
+			Findings:           []finding.Finding{},
+			ToolCoverage:       []evidence.Coverage{},
 			ClassifiedEdges: &result.ClassifiedEdgeSummary{
 				Scored: scored, Abstained: abstained, External: external,
 			},
@@ -138,6 +140,7 @@ func warningCodes(ws []decision.ConfigCompareWarning) []string {
 func TestCompareConfigs_Identity(t *testing.T) {
 	s := decision.ConfigCompareSide{
 		Diag: result.Result{
+			MeasurementProfile: measurementFixture(),
 			Findings: []finding.Finding{
 				{ID: "f1", Kind: finding.KindGate, Status: finding.StatusNew},
 			},
@@ -178,16 +181,14 @@ func TestCompareConfigs_Identity(t *testing.T) {
 func TestCompareConfigs_EmptyInput(t *testing.T) {
 	got := decision.CompareConfigs(decision.ConfigCompareInput{})
 
-	if got.Coverage.Status != decision.CoverageComparable {
-		t.Errorf("Coverage.Status = %q, want %q", got.Coverage.Status, decision.CoverageComparable)
+	if got.Coverage.Status != decision.CoverageNotComparable {
+		t.Errorf("Coverage.Status = %q, want %q", got.Coverage.Status, decision.CoverageNotComparable)
 	}
 	if got.Findings.BothIDs == nil || got.Coverage.Details == nil || got.Warnings == nil {
 		t.Errorf("result slices must be non-nil: %+v", got)
 	}
-	// Both sides carry a zero Scorecard, whose OverallBand is "" — not BandNA —
-	// so the delta is a real 0 rather than unknown.
-	if got.ScoreDelta == nil || *got.ScoreDelta != 0 {
-		t.Errorf("ScoreDelta = %v, want 0", got.ScoreDelta)
+	if got.ScoreDelta != nil {
+		t.Errorf("ScoreDelta = %v, want nil without measurement profiles", got.ScoreDelta)
 	}
 }
 
@@ -731,8 +732,9 @@ func TestCompareCoverage_PrimaryAbsent(t *testing.T) {
 func TestCompareCoverage_PrimaryToolsUnknown(t *testing.T) {
 	bare := decision.ConfigCompareSide{
 		Diag: result.Result{
-			Findings:     []finding.Finding{},
-			ToolCoverage: []evidence.Coverage{cov(primaryTool, evidence.StatusAbsent)},
+			MeasurementProfile: measurementFixture(),
+			Findings:           []finding.Finding{},
+			ToolCoverage:       []evidence.Coverage{cov(primaryTool, evidence.StatusAbsent)},
 		},
 		Score: measuredCard(70),
 	}

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
+	modelrule "github.com/alexei-led/archfit/internal/model/rule"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
 
@@ -44,12 +45,12 @@ const (
 const (
 	// RuleIDBCImbalanced is the balanced-coupling advisory the coupling gate
 	// promotes to a gate finding.
-	RuleIDBCImbalanced = "bc/imbalanced_coupling"
+	RuleIDBCImbalanced = modelrule.RuleIDBCImbalancedCoupling
 	// RuleIDDuplicatedKnowledge is the clone-only coupling advisory.
-	RuleIDDuplicatedKnowledge = "bc/duplicated_knowledge"
+	RuleIDDuplicatedKnowledge = modelrule.RuleIDDuplicatedKnowledge
 	// RuleIDCouplingGate is the synthetic finding a tripped coupling gate emits
 	// when it has no promotable advisory.
-	RuleIDCouplingGate = "bc/coupling_gate"
+	RuleIDCouplingGate = modelrule.RuleIDCouplingGate
 )
 
 // Endpoint identifies one side of a finding edge (resolved at diagnostic assembly).

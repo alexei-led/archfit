@@ -369,19 +369,6 @@ func appendConnascenceHints(dst []graph.ConnascenceHint, hints ...graph.Connasce
 	return dst
 }
 
-// goListHashExcludes are the input-tree-hash exclusions faithful to
-// `go list ./...` semantics: the go tool never loads packages under testdata,
-// so edits there cannot affect a member's facts. vendor/ is deliberately
-// HASHED: with vendor/modules.txt present the build defaults to -mod=vendor
-// and type-checks dependency source from vendor/, so a hand-patched vendored
-// file must invalidate (for -mod=mod repos that is a spurious invalidation —
-// over-hash, never under-hash). Config `exclude:` globs are deliberately NOT
-// applied — packages.Load still type-checks files they match (exclusion
-// filtering happens at merge time), so editing an excluded file must still
-// invalidate; exclusion-config changes invalidate via cfgHash (e.cfg embeds
-// Exclusions).
-var goListHashExcludes = []string{"**/testdata/**"}
-
 // memberKeys derives one fact-cache key per member, or nil when key material
 // cannot be derived (cache disabled for this run — never an error). A key of
 // "" vetoes caching for that single member: its build reaches local source
@@ -559,8 +546,9 @@ var goBuildExts = []string{
 // memberInputFiles enumerates one member's input tree as scanRoot-relative
 // slash paths: its go-build source files plus go.mod/go.sum, excluding files
 // owned by a NESTED member (go list ./... stops at nested modules, so those
-// files cannot affect this member's load) and goListHashExcludes (dirs the go
-// tool never loads).
+// files cannot affect this member's load). Directory names and config exclusions
+// do not filter the hash: explicit imports can load even testdata, and vendored
+// sources contribute dependency type information.
 func memberInputFiles(scanRoot, memberDir string, memberDirs []string) []string {
 	var nested []string
 	for _, other := range memberDirs {
@@ -571,7 +559,7 @@ func memberInputFiles(scanRoot, memberDir string, memberDirs []string) []string 
 			nested = append(nested, filepath.ToSlash(rel)+"/")
 		}
 	}
-	files := factcache.ListInputs(memberDir, factcache.MatchExts(goBuildExts, []string{"go.mod", "go.sum"}), goListHashExcludes)
+	files := factcache.ListInputs(memberDir, factcache.MatchExts(goBuildExts, []string{"go.mod", "go.sum"}), nil)
 	var out []string
 	for _, f := range files {
 		underNested := false
@@ -689,6 +677,7 @@ var goCacheEnvKeys = []string{
 	"GOEXPERIMENT",
 	"GO111MODULE",
 	"GOTOOLCHAIN",
+	"GO386", "GOAMD64", "GOARM", "GOARM64", "GOMIPS", "GOMIPS64", "GOPPC64", "GORISCV64", "GOWASM",
 }
 
 func (e *GoExtractor) goCacheEnv(ctx context.Context) map[string]string {

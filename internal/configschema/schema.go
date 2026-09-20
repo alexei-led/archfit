@@ -43,7 +43,7 @@ var toolModeSchema = &jsonschema.Schema{
 var gateModeSchema = &jsonschema.Schema{
 	Type:        typeString,
 	Enum:        []any{"off", "warn", "fail"},
-	Description: "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)",
+	Description: "Gate posture: off (skip the check) | warn (advisory) | fail (blocking); defaults depend on the configured rule or metric",
 }
 
 // schemaDefinitionName maps a Go type to its published $defs key. pattern.Def is

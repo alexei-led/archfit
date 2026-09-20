@@ -90,6 +90,7 @@ func (e *Extractor) runModuleGraph(ctx context.Context, runner toolrun.Runner, m
 
 	cov := evidence.Coverage{
 		Tool:            toolCargoModules,
+		Version:         e.toolVersion(ctx, toolCargoModules),
 		FilesSeen:       len(members),
 		FilesApplicable: len(members) - len(failed),
 		Status:          status,

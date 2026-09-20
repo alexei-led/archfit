@@ -6,6 +6,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
 const (
@@ -17,6 +18,7 @@ const (
 func fingerprints() decision.Fingerprints {
 	return decision.Fingerprints{
 		ConfigHash: "cfg", ModelHash: "model", LabelsHash: "labels", RubricVersion: "bc_score.v6",
+		MeasurementProfile: measurementFixture(),
 	}
 }
 
@@ -80,12 +82,16 @@ func TestCompareFingerprints(t *testing.T) {
 // drifted inputs names all of them: fixing one and finding the comparison still
 // refused, with no new information, is the failure mode.
 func TestCompareFingerprintsReportsEveryMismatch(t *testing.T) {
-	base := decision.Fingerprints{ConfigHash: "x", ModelHash: "y", LabelsHash: "z", RubricVersion: "w"}
+	base := decision.Fingerprints{ConfigHash: "x", ModelHash: "y", LabelsHash: "z", RubricVersion: "w", MeasurementProfile: measurementFixture()}
 
 	got := decision.CompareFingerprints(comparisonBaseRef, fingerprints(), base)
 	if len(got.Reasons) != 4 {
 		t.Errorf("reasons = %v, want one per drifted input", got.Reasons)
 	}
+}
+
+func measurementFixture() *evidence.MeasurementProfile {
+	return &evidence.MeasurementProfile{Version: evidence.MeasurementProfileVersion, SettingsHash: "settings", Producers: []evidence.MeasurementProducer{{Tool: "loc", SemanticsVersion: "loc.v1", Status: evidence.StatusOK}}}
 }
 
 // TestCompareFingerprintsDistinguishesUnsetFromDigest pins the reason text: an

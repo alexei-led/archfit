@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -16,6 +18,7 @@ import (
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -50,19 +53,40 @@ func (a *Adapter) SyntaxCoverageTool() string { return syntaxToolName }
 // plain runner when the cache is off or key material cannot be derived —
 // never fails the run. The rules/patterns ride each command's argv (folded
 // into the entry address), so the Key carries only the sg version, the scan
-// root, and the whole-tree content hash — ast-grep scans every language, so
-// its input scope is the full tree. Timed-out runs are exec-level errors and
-// are never recorded; a non-zero sg exit is not cached either (it means a
-// rejected rule file, which the caller reports as partial).
-func (a *Adapter) cachedRunner(ctx context.Context, root string) toolrun.Runner {
-	if a.Cache == nil {
+// root, and the requested languages' source and ignore-file hashes. Unknown
+// languages/custom mappings and excessive input trees bypass caching. Timed-out
+// runs and non-zero sg exits are never recorded.
+func (a *Adapter) cachedRunner(ctx context.Context, root string, langs []string) toolrun.Runner {
+	if a.Cache == nil || len(langs) == 0 {
 		return a.runner
+	}
+	var exts []string
+	for _, lang := range langs {
+		switch lang {
+		case "javascript", "jsx", "tsx":
+			lang = graph.LangTypeScript
+		}
+		convention := graph.BuiltinConventions.Lookup(lang)
+		if len(convention.FileExtensions) == 0 {
+			return a.runner
+		}
+		exts = append(exts, convention.FileExtensions...)
+	}
+	for dir := root; ; dir = filepath.Dir(dir) {
+		for _, name := range []string{"sgconfig.yml", "sgconfig.yaml"} {
+			if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+				return a.runner // custom language mappings can change the source extensions
+			}
+		}
+		if filepath.Dir(dir) == dir {
+			break
+		}
 	}
 	cfgHash, err := factcache.HashJSON(struct{ Root string }{root})
 	if err != nil {
 		return a.runner
 	}
-	files := factcache.ListInputs(root, factcache.MatchAll, nil)
+	files := factcache.ListInputs(root, factcache.MatchExts(exts, []string{".gitignore", ".ignore"}), nil)
 	treeHash, err := factcache.HashTree(root, files)
 	if err != nil {
 		return a.runner
@@ -151,7 +175,11 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]
 	var matches []pattern.Match
 	fileSet := make(map[string]struct{})
 
-	runner := a.cachedRunner(ctx, s.Root)
+	langs := make([]string, 0, len(c))
+	for _, def := range c {
+		langs = append(langs, def.Lang)
+	}
+	runner := a.cachedRunner(ctx, s.Root, langs)
 	for _, def := range c {
 		out, err := runner.Run(ctx, toolrun.ToolCmd{
 			Name:    "sg",

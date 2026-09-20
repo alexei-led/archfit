@@ -10,6 +10,13 @@
         "rule_id": {
           "type": "string"
         },
+        "repair_kind": {
+          "type": "string",
+          "enum": [
+            "code_change",
+            "needs_owner_decision"
+          ]
+        },
         "goal": {
           "type": "string"
         },
@@ -46,6 +53,7 @@
       "required": [
         "finding_id",
         "rule_id",
+        "repair_kind",
         "goal",
         "constraints",
         "files",
@@ -357,6 +365,66 @@
         "line"
       ]
     },
+    "MeasurementProducer": {
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "semantics_version": {
+          "type": "string"
+        },
+        "tool_version": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "partial_basis": {
+          "type": "string",
+          "enum": [
+            "unresolved_specifiers",
+            "degraded_precision"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "tool",
+        "semantics_version",
+        "status"
+      ]
+    },
+    "MeasurementProfile": {
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "settings_hash": {
+          "type": "string"
+        },
+        "producers": {
+          "items": {
+            "$ref": "#/$defs/MeasurementProducer"
+          },
+          "type": "array"
+        },
+        "unknowns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "version",
+        "settings_hash",
+        "producers",
+        "unknowns"
+      ]
+    },
     "MetricDelta": {
       "properties": {
         "name": {
@@ -645,6 +713,9 @@
         "rubric_version": {
           "type": "string"
         },
+        "measurement_profile": {
+          "$ref": "#/$defs/MeasurementProfile"
+        },
         "reasons": {
           "items": {
             "type": "string"
@@ -704,6 +775,12 @@
             "fail",
             "unmeasured"
           ]
+        },
+        "unevaluated_required_rules": {
+          "items": {
+            "$ref": "#/$defs/UnevaluatedRule"
+          },
+          "type": "array"
         },
         "active_blockers": {
           "type": "integer"
@@ -813,6 +890,22 @@
         "start_line"
       ]
     },
+    "UnevaluatedRule": {
+      "properties": {
+        "rule_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "rule_id",
+        "reason"
+      ]
+    },
     "UnknownFact": {
       "properties": {
         "fact": {
@@ -854,6 +947,9 @@
       "$ref": "#/$defs/StateDecision"
     },
     "comparison": {
+      "$ref": "#/$defs/StateComparison"
+    },
+    "gate_reference": {
       "$ref": "#/$defs/StateComparison"
     },
     "measurement": {

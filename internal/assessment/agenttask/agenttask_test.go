@@ -110,10 +110,10 @@ func TestBuild_GoalTemplates(t *testing.T) {
 		want     string
 	}{
 		{ruleTypeForbidden, "Remove the forbidden dependency"},
-		{"public_api_only", "public API"},
-		{"internal_api_access", "public API"},
+		{"public_api_only", publicAPIText},
+		{"internal_api_access", publicAPIText},
 		{"forbidden_layer_direction", "inner layers must not import outer layers"},
-		{"new_cross_module_dependency", "archfit baseline"},
+		{"new_cross_module_dependency", "architecture-owner decision"},
 		{"cycle", "Break the import cycle"},
 		{"someone_elses_rule", "a uses b internals"}, // unknown type → Why fallback
 	}

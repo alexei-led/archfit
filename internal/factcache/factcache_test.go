@@ -214,10 +214,6 @@ func TestHashTree(t *testing.T) {
 	}
 }
 
-// ListInputs must hash THROUGH file symlinks (the tools follow them, so target
-// edits must invalidate) and surface directory symlinks (WalkDir cannot descend
-// them — including the path makes HashTree error and the caller veto caching).
-// Dangling links carry no readable content and are skipped.
 func TestListInputs_Symlinks(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -240,17 +236,19 @@ func TestListInputs_Symlinks(t *testing.T) {
 	}
 
 	const plainFile, linkedFile, realFile = "plain.go", "linked.go", "real.go"
+	const goExt = ".go"
 	write(root, plainFile, "package a")
 	write(outside, realFile, "package b")
 	if err := os.MkdirAll(filepath.Join(outside, "pkg"), 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	link(filepath.Join(outside, realFile), linkedFile)
+	write(outside, "pkg/input.go", "package linked")
 	link(filepath.Join(outside, "pkg"), "linkeddir")
 	link(filepath.Join(outside, "gone.go"), "dangling.go")
 
-	got := ListInputs(root, MatchExts([]string{".go"}, nil), nil)
-	want := []string{linkedFile, "linkeddir", plainFile}
+	got := ListInputs(root, MatchExts([]string{goExt}, nil), nil)
+	want := []string{linkedFile, "linkeddir/input.go", plainFile}
 	if !slices.Equal(got, want) {
 		t.Fatalf("ListInputs = %v, want %v", got, want)
 	}
@@ -270,10 +268,17 @@ func TestListInputs_Symlinks(t *testing.T) {
 		t.Error("edit behind a file symlink must change the hash")
 	}
 
-	// A directory symlink in the list must be a HashTree error (cache veto),
-	// never a silent skip.
-	if _, err := HashTree(root, got); err == nil {
-		t.Error("directory symlink in inputs must veto hashing, not skip")
+	before, err = HashTree(root, got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(outside, "pkg/input.go", "package changed")
+	after, err = HashTree(root, ListInputs(root, MatchExts([]string{goExt}, nil), nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Fatal("edit behind directory symlink must invalidate the tree")
 	}
 }
 

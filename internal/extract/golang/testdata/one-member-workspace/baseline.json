@@ -9,7 +9,8 @@
         "pkg/b"
       ],
       "finding_id": "ba3803eca947bf3c1b7efa8f37854d5e",
-      "goal": "Remove the forbidden dependency from pkg/a/a.go on pkg/b; depend on b's public API or move the shared code to an allowed location.",
+      "goal": "Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.",
+      "repair_kind": "code_change",
       "rule_id": "no_direct_b_dependency",
       "validation": [
         "archfit check -c \u003cROOT\u003e/.archfit.yaml"
@@ -18,6 +19,75 @@
   ],
   "comparison": {
     "config_hash": "0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6",
+    "measurement_profile": {
+      "producers": [
+        {
+          "semantics_version": "ast-grep.v1",
+          "status": "ok",
+          "tool": "ast-grep",
+          "tool_version": "\u003cTOOL_VERSION\u003e"
+        },
+        {
+          "semantics_version": "ast-grep/syntax.v1",
+          "status": "disabled",
+          "tool": "ast-grep/syntax"
+        },
+        {
+          "semantics_version": "cargo.v1",
+          "status": "absent",
+          "tool": "cargo"
+        },
+        {
+          "semantics_version": "cargo-modules.v1",
+          "status": "absent",
+          "tool": "cargo-modules"
+        },
+        {
+          "semantics_version": "dependency-cruiser.v1",
+          "status": "absent",
+          "tool": "dependency-cruiser"
+        },
+        {
+          "semantics_version": "deploy-unit.v1",
+          "status": "ok",
+          "tool": "deploy-unit"
+        },
+        {
+          "semantics_version": "git-history.recent500-full-fallback.v1",
+          "status": "absent",
+          "tool": "git-history"
+        },
+        {
+          "semantics_version": "go/packages.v1",
+          "status": "ok",
+          "tool": "go/packages",
+          "tool_version": "\u003cTOOL_VERSION\u003e"
+        },
+        {
+          "semantics_version": "grimp.v1",
+          "status": "absent",
+          "tool": "grimp"
+        },
+        {
+          "semantics_version": "jscpd.v1",
+          "status": "disabled",
+          "tool": "jscpd"
+        },
+        {
+          "semantics_version": "loc.v1",
+          "status": "ok",
+          "tool": "loc"
+        },
+        {
+          "semantics_version": "scip.v1",
+          "status": "disabled",
+          "tool": "scip"
+        }
+      ],
+      "settings_hash": "\u003cSETTINGS_HASH\u003e",
+      "unknowns": [],
+      "version": "archfit.measurement.v1"
+    },
     "model_hash": "124d0f767415a09b74bcd3206ab947f4bb01e3c7905db14a15eaed59d690ef78",
     "reasons": [],
     "rubric_version": "bc_score.v6",
@@ -853,6 +923,13 @@
       "why": "balanced coupling: functional integration strength × cross_module_different_owner distance × low volatility → low severity (unbalanced coupling → elevated maintenance effort)"
     }
   ],
+  "gate_reference": {
+    "base_ref": "baseline",
+    "reasons": [
+      "no baseline file was loaded"
+    ],
+    "status": "non_comparable"
+  },
   "measurement": {
     "history_depth": 0,
     "history_window": "unavailable",

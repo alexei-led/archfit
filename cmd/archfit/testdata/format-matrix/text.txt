@@ -117,6 +117,11 @@ COMPARISON
 
   status: not_requested  ·  reference: none
 
+GATE REFERENCE
+
+  status: non_comparable  ·  reference: baseline
+    no baseline file was loaded
+
 FINDING INDEX (2)
 
   ba3803eca947bf3c1b7efa8f37854d5e  new  no_direct_b_dependency

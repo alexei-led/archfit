@@ -37,9 +37,13 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	deps.refresh = c.Refresh
 	bPath := filepath.Join(filepath.Dir(c.Config), defaultBaselinePath)
 	service := application.BaselineService{Stages: newAnalysisStages(c.Config, c.Root, cfg, deps), Writer: baselineWriterAdapter{}}
-	if _, err := service.Execute(ctx, application.BaselineRequest{ConfigPath: c.Config, Root: c.Root, Path: bPath, NoAdvisories: c.NoAdvisories}); err != nil {
+	resp, err := service.Execute(ctx, application.BaselineRequest{ConfigPath: c.Config, Root: c.Root, Path: bPath, NoAdvisories: c.NoAdvisories})
+	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 	_, _ = fmt.Fprintf(deps.Stdout, "baseline saved: %s\n", bPath)
+	if resp.SkippedWaived > 0 {
+		_, _ = fmt.Fprintf(deps.Stdout, "skipped %d finding(s) covered by temporary waivers, including expired waivers; not accepted as permanent debt\n", resp.SkippedWaived)
+	}
 	return nil
 }

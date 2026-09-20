@@ -438,10 +438,17 @@ func (d Dimensions) CountStatuses() (measured, partial, unmeasured int) {
 // these classifications plus dimension status; it may never inspect a
 // dimension's metrics or derive an implicit threshold from them.
 type Decision struct {
-	HardGates           HardGateState
-	ActiveBlockers      int
-	AttentionDimensions int
-	UnknownDimensions   int
+	HardGates                HardGateState
+	UnevaluatedRequiredRules []UnevaluatedRule
+	ActiveBlockers           int
+	AttentionDimensions      int
+	UnknownDimensions        int
+}
+
+// UnevaluatedRule identifies a required rule whose producer evidence is incomplete.
+type UnevaluatedRule struct {
+	RuleID string
+	Reason string
 }
 
 // Architecture is the assessment-owned architecture state. It has no

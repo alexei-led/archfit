@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/state"
 	"github.com/alexei-led/archfit/internal/assessment/status"
+	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -45,10 +46,11 @@ type BaselineDimension struct {
 // delta may be claimed only when all four still match this run, so a policy
 // change can never be reported as a code change.
 type BaselineStateSnapshot struct {
-	ConfigHash    string
-	ModelHash     string
-	LabelsHash    string
-	RubricVersion string
+	ConfigHash         string
+	ModelHash          string
+	LabelsHash         string
+	RubricVersion      string
+	MeasurementProfile *modevidence.MeasurementProfile
 	// HardGateFindingIDs are the reference's active blockers.
 	HardGateFindingIDs []string
 	// QualifyingSeamIDs are the reference's distributed-monolith seams.
@@ -77,9 +79,11 @@ type BaselineLoader interface {
 // set lifecycle status assigns against, the metric anchor, and the
 // architecture-state reference a comparison may use.
 type Baseline struct {
+	// Present distinguishes a loaded file from an optional missing baseline.
+	Present  bool
 	Accepted status.AcceptedSet
 	Metrics  report.MetricSnapshot
-	// State is the stored architecture-state reference, or nil when no baseline exists.
+	// State is nil when the baseline or its architecture-state snapshot is absent.
 	State *BaselineStateSnapshot
 }
 
@@ -96,9 +100,11 @@ type BaselineRequest struct {
 	NoAdvisories bool
 }
 
-// BaselineResponse identifies the persisted baseline.
+// BaselineResponse identifies the persisted baseline and temporary findings
+// deliberately excluded from permanent acceptance.
 type BaselineResponse struct {
-	Path string
+	Path          string
+	SkippedWaived int
 }
 
 // BaselineService owns the baseline use case.
@@ -133,7 +139,12 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 	}
 	doc := ProjectReport(out.Diagnostic, out.Score)
 	snapshot := BaselineSnapshot{Metrics: documentMetrics(doc), State: baselineState(out.Diagnostic)}
+	skippedWaived := 0
 	for _, f := range doc.Findings {
+		if f.Status == report.FindingStatusWaived || f.Status == report.FindingStatusExpiredWaiver {
+			skippedWaived++
+			continue
+		}
 		if f.Status == report.FindingStatusFixed || f.RuleID == finding.RuleIDCouplingGate {
 			continue
 		}
@@ -146,7 +157,7 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 	if err := s.Writer.Save(ctx, req.Path, snapshot); err != nil {
 		return BaselineResponse{}, fmt.Errorf("save baseline: %w", err)
 	}
-	return BaselineResponse{Path: req.Path}, nil
+	return BaselineResponse{Path: req.Path, SkippedWaived: skippedWaived}, nil
 }
 
 // baselineState projects the run into the architecture-state reference a later
@@ -155,7 +166,7 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 func baselineState(r result.Result) *BaselineStateSnapshot {
 	out := &BaselineStateSnapshot{
 		ConfigHash: r.ConfigHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
-		RubricVersion:      report.ScoreVersion,
+		RubricVersion: report.ScoreVersion, MeasurementProfile: r.MeasurementProfile,
 		HardGateFindingIDs: []string{},
 		QualifyingSeamIDs:  []string{},
 		Dimensions:         make([]BaselineDimension, 0, state.DimensionCount),

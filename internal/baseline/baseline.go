@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/alexei-led/archfit/internal/assessment/status"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
@@ -63,14 +64,15 @@ type DimensionSnapshot struct {
 
 // StateSnapshot is the architecture-state reference a v2 baseline stores.
 //
-// The four fingerprints are stored together with the facts they qualify: a
-// dimension or seam delta may be claimed only when all four still match, so a
+// Policy fingerprints and measurement identity travel with the facts they qualify:
+// a dimension or seam delta may be claimed only when these inputs still match, so a
 // reader can tell a code change from a policy change without guessing.
 type StateSnapshot struct {
-	ConfigHash    string `json:"config_hash"`
-	ModelHash     string `json:"model_hash"`
-	LabelsHash    string `json:"labels_hash"`
-	RubricVersion string `json:"rubric_version"`
+	ConfigHash         string                       `json:"config_hash"`
+	ModelHash          string                       `json:"model_hash"`
+	LabelsHash         string                       `json:"labels_hash"`
+	RubricVersion      string                       `json:"rubric_version"`
+	MeasurementProfile *evidence.MeasurementProfile `json:"measurement_profile,omitempty"`
 	// HardGateFindingIDs are the reference's active blocker IDs, so a later run
 	// can name which blockers are new without re-deriving them from the
 	// accepted set (which mixes gates and advisories).

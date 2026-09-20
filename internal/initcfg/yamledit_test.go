@@ -61,6 +61,8 @@ waivers:
     from: classify
     to: extract
     reason: legacy
+    approved_by: test-owner
+    expires: "2099-01-01"
 `
 
 // noModulesWithLayers has layers: but no modules: section.

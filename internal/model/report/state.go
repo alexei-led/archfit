@@ -231,24 +231,32 @@ func (d Dimensions) CountStatuses() (measured, partial, unmeasured int) {
 // only these classifications plus dimension status; it may never inspect a
 // dimension's metrics or derive an implicit threshold from them.
 type StateDecision struct {
-	HardGates           HardGateState `json:"hard_gates"`
-	ActiveBlockers      int           `json:"active_blockers"`
-	AttentionDimensions int           `json:"attention_dimensions"`
-	UnknownDimensions   int           `json:"unknown_dimensions"`
+	HardGates                HardGateState     `json:"hard_gates"`
+	UnevaluatedRequiredRules []UnevaluatedRule `json:"unevaluated_required_rules,omitempty"`
+	ActiveBlockers           int               `json:"active_blockers"`
+	AttentionDimensions      int               `json:"attention_dimensions"`
+	UnknownDimensions        int               `json:"unknown_dimensions"`
+}
+
+// UnevaluatedRule identifies a required rule whose producer evidence is incomplete.
+type UnevaluatedRule struct {
+	RuleID string `json:"rule_id"`
+	Reason string `json:"reason"`
 }
 
 // StateComparison records what this run was compared against and whether the
 // comparison is admissible at all.
 type StateComparison struct {
-	Status            ComparisonStatus `json:"status"`
-	BaseRef           string           `json:"base_ref,omitempty"`
-	ConfigHash        string           `json:"config_hash,omitempty"`
-	ModelHash         string           `json:"model_hash,omitempty"`
-	LabelsHash        string           `json:"labels_hash,omitempty"`
-	RubricVersion     string           `json:"rubric_version,omitempty"`
-	Reasons           []string         `json:"reasons"`
-	TaskOriginStatus  string           `json:"task_origin_status,omitempty"`
-	TaskOriginReasons []string         `json:"task_origin_reasons,omitempty"`
+	Status             ComparisonStatus    `json:"status"`
+	BaseRef            string              `json:"base_ref,omitempty"`
+	ConfigHash         string              `json:"config_hash,omitempty"`
+	ModelHash          string              `json:"model_hash,omitempty"`
+	LabelsHash         string              `json:"labels_hash,omitempty"`
+	RubricVersion      string              `json:"rubric_version,omitempty"`
+	MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"`
+	Reasons            []string            `json:"reasons"`
+	TaskOriginStatus   string              `json:"task_origin_status,omitempty"`
+	TaskOriginReasons  []string            `json:"task_origin_reasons,omitempty"`
 }
 
 // StateMeasurement holds deterministic source, history, and tool facts only. It
@@ -345,6 +353,7 @@ type ArchitectureState struct {
 	Verdict       StateVerdict     `json:"verdict"`
 	Decision      StateDecision    `json:"decision"`
 	Comparison    StateComparison  `json:"comparison"`
+	GateReference *StateComparison `json:"gate_reference,omitempty"`
 	Measurement   StateMeasurement `json:"measurement"`
 	Dimensions    Dimensions       `json:"dimensions"`
 	Coverage      StateCoverage    `json:"coverage"`

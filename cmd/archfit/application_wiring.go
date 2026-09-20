@@ -76,11 +76,12 @@ func (baselineLoaderAdapter) Load(ctx context.Context, bundleDir string) (applic
 	if err != nil {
 		return application.Baseline{}, err
 	}
-	out := application.Baseline{Accepted: b, Metrics: b.Metrics}
+	out := application.Baseline{Present: b.SchemaVersion != "", Accepted: b, Metrics: b.Metrics}
 	if b.State != nil {
 		out.State = &application.BaselineStateSnapshot{
 			ConfigHash: b.State.ConfigHash, ModelHash: b.State.ModelHash,
 			LabelsHash: b.State.LabelsHash, RubricVersion: b.State.RubricVersion,
+			MeasurementProfile: b.State.MeasurementProfile,
 			HardGateFindingIDs: b.State.HardGateFindingIDs,
 			QualifyingSeamIDs:  b.State.QualifyingSeamIDs,
 			Dimensions:         loadedDimensions(b.State.Dimensions),
@@ -116,6 +117,7 @@ func (baselineWriterAdapter) Save(ctx context.Context, path string, in applicati
 		b.State = &baseline.StateSnapshot{
 			ConfigHash: in.State.ConfigHash, ModelHash: in.State.ModelHash,
 			LabelsHash: in.State.LabelsHash, RubricVersion: in.State.RubricVersion,
+			MeasurementProfile: in.State.MeasurementProfile,
 			HardGateFindingIDs: in.State.HardGateFindingIDs,
 			QualifyingSeamIDs:  in.State.QualifyingSeamIDs,
 			Dimensions:         savedDimensions(in.State.Dimensions),
