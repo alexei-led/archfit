@@ -42,6 +42,14 @@ and make archfit all passed. The self-architecture command can still report
 disclosed unmeasured evidence; its successful exit does not claim every
 architecture dimension has complete coverage.
 
+The first Linux CI run exposed an environment-dependent empty pattern scan:
+util-linux's `sg` was counted as a producer despite no configured patterns.
+Empty pattern configuration now reports disabled without probing tools. A
+no-probe regression and the regenerated output fixtures cover the correction.
+All previously failing CLI test families also pass with an unrelated `sg`
+first on PATH. The full local checks passed again. RevMux round 04 reviewed
+this CI correction with 2/2 sources, no degradation and zero findings.
+
 The shared synthetic rule contract lives in `internal/model/rule` and belongs
 to the existing `architecture-policy` capability. It is stdlib-only and shared
 by validation and finding producers; the `internal/policy` export cap stays 40.

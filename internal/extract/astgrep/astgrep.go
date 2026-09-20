@@ -166,6 +166,9 @@ type dedupeKey struct {
 // sorted matches plus a Coverage record. A missing "sg" binary returns empty
 // matches with status "absent" — never an error.
 func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]pattern.Match, evidence.Coverage, error) {
+	if len(c) == 0 {
+		return nil, evidence.Coverage{Tool: toolName, Status: evidence.StatusDisabled}, nil
+	}
 	_, ok := a.runner.Detect(ctx, "sg")
 	if !ok {
 		return nil, evidence.Coverage{Tool: toolName, Status: "absent"}, nil

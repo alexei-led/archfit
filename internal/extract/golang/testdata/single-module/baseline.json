@@ -23,9 +23,8 @@
       "producers": [
         {
           "semantics_version": "ast-grep.v1",
-          "status": "ok",
-          "tool": "ast-grep",
-          "tool_version": "\u003cTOOL_VERSION\u003e"
+          "status": "disabled",
+          "tool": "ast-grep"
         },
         {
           "semantics_version": "ast-grep/syntax.v1",
@@ -137,7 +136,7 @@
         "tool": "ast-grep/syntax"
       },
       {
-        "status": "ok",
+        "status": "disabled",
         "tool": "ast-grep"
       },
       {
@@ -665,15 +664,15 @@
         },
         {
           "denominator": {
-            "observed": 4,
-            "total": 4
+            "observed": 3,
+            "total": 3
           },
           "name": "analyzers_reporting_coverage",
           "provenance": [
             "evidence/acquisition"
           ],
           "unit": "count",
-          "value": 4
+          "value": 3
         },
         {
           "name": "coverage_gaps",
@@ -689,7 +688,7 @@
             "evidence/acquisition"
           ],
           "unit": "count",
-          "value": 7
+          "value": 8
         },
         {
           "name": "coverage",

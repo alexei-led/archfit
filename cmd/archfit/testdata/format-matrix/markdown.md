@@ -88,9 +88,9 @@
 - `matching_declared_deploy_units`: 0 count
 - `mismatched_declared_deploy_units`: 0 count
 - `declared_external_systems`: 0 count
-- `analyzers_reporting_coverage`: 4 count (4/4)
+- `analyzers_reporting_coverage`: 3 count (3/3)
 - `coverage_gaps`: 0 count
-- `analyzers_not_applicable`: 7 count
+- `analyzers_not_applicable`: 8 count
 - `coverage`: 1 ratio
 
 ## Evidence coverage
@@ -106,7 +106,7 @@
 | jscpd | disabled | clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable |
 | scip | disabled | opt-in: analyzers.scip.enabled |
 | ast-grep/syntax | disabled | opt-in: analyzers.syntax.enabled |
-| ast-grep | ok | — |
+| ast-grep | disabled | — |
 | cargo-modules | absent | — |
 
 ## Coupling seams (1)
@@ -241,7 +241,7 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - jscpd: disabled — clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable
 - scip: disabled — opt-in: analyzers.scip.enabled
 - ast-grep/syntax: disabled — opt-in: analyzers.syntax.enabled
-- ast-grep: ok
+- ast-grep: disabled
 - cargo-modules: absent
 
 ## Finding index (2)
