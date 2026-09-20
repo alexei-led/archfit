@@ -3,7 +3,11 @@ package golang
 import (
 	"context"
 	"fmt"
+	"go/build"
 	"go/types"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -256,33 +260,36 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	// can hide a whole subtree's edges. Both the prose reason (for humans) and
 	// the two typed Coverage counters (for those consumers) carry the split — a
 	// reason string is not a machine contract.
-	unresolved := inputsMissing + precisionOnly
+	cov := e.coverageForLoad(s.Root, memberDirs, filesSeen, inputsMissing, precisionOnly)
+	cov.Version = e.goVersion(ctx)
+	facts := graph.Facts{
+		Nodes: nodes, Edges: edges, Language: "go", Unresolved: cov.Unresolved, GoModules: goModules,
+	}
+	return facts, cov, nil
+}
 
+func (e *GoExtractor) coverageForLoad(root string, members []string, filesSeen, inputsMissing, precisionOnly int) evidence.Coverage {
+	filesApplicable := filesSeen
+	var inventoryErr error
+	if filesSeen == 0 {
+		filesApplicable, inventoryErr = e.countApplicableSources(root, members)
+		if filesApplicable > 0 || inventoryErr != nil {
+			inputsMissing = max(inputsMissing, 1)
+		}
+	}
+	unresolved := inputsMissing + precisionOnly
 	status := statusOK
 	switch {
-	case filesSeen == 0:
-		// No Go source files under the scan root: go/packages is not applicable
-		// here (e.g. a non-Go repo). Report absent so the coverage metric reads
-		// n/a rather than a false-green 100% over an empty file set. A non-Go dir
-		// makes packages.Load return a synthetic error package (unresolved>0),
-		// which must not be mistaken for partial coverage.
+	case filesSeen == 0 && filesApplicable == 0 && inventoryErr == nil:
 		status = statusAbsent
 	case unresolved > 0:
 		status = statusPartial
 	}
 
-	facts := graph.Facts{
-		Nodes:      nodes,
-		Edges:      edges,
-		Language:   "go",
-		Unresolved: unresolved,
-		GoModules:  goModules,
-	}
 	cov := evidence.Coverage{
 		Tool:                    toolGoPackages,
-		Version:                 e.goVersion(ctx),
 		FilesSeen:               filesSeen,
-		FilesApplicable:         filesSeen,
+		FilesApplicable:         filesApplicable,
 		Unresolved:              unresolved,
 		UnresolvedInputsMissing: inputsMissing,
 		UnresolvedPrecisionOnly: precisionOnly,
@@ -290,8 +297,63 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	}
 	if status == statusPartial {
 		cov.Reason = goPartialReason(inputsMissing, precisionOnly)
+		if inventoryErr != nil {
+			cov.Reason += "; source applicability could not be determined: " + inventoryErr.Error()
+		}
 	}
-	return facts, cov, nil
+	return cov
+}
+
+// countApplicableSources checks applicability independently of packages.Load.
+// Selected members, Go's directory exclusions, and build constraints bound the
+// inventory so deliberately unbuilt source does not become a failed measurement.
+func (e *GoExtractor) countApplicableSources(root string, members []string) (int, error) {
+	buildContext := build.Default
+	for key, target := range map[string]*string{"GOOS": &buildContext.GOOS, "GOARCH": &buildContext.GOARCH} {
+		if value := os.Getenv(key); value != "" {
+			*target = value
+		}
+	}
+	flags := append(strings.Fields(os.Getenv("GOFLAGS")), e.cfg.BuildFlags...)
+	for i, flag := range flags {
+		value, ok := strings.CutPrefix(flag, "-tags=")
+		if flag == "-tags" && i+1 < len(flags) {
+			value, ok = flags[i+1], true
+		}
+		if ok {
+			buildContext.BuildTags = strings.FieldsFunc(strings.Trim(value, "\"'"), func(r rune) bool { return r == ',' || r == ' ' })
+		}
+	}
+	count := 0
+	for _, member := range members {
+		err := filepath.WalkDir(member, func(name string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(root, name)
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				if name != member && (strings.HasPrefix(entry.Name(), ".") || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "testdata" || entry.Name() == "vendor" || hasGoMod(name) || e.isExcluded(filepath.ToSlash(rel)+"/")) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") || e.isExcluded(filepath.ToSlash(rel)) {
+				return nil
+			}
+			matched, err := buildContext.MatchFile(filepath.Dir(name), entry.Name())
+			if matched {
+				count++
+			}
+			return err
+		})
+		if err != nil {
+			return count, err
+		}
+	}
+	return count, nil
 }
 
 // goPartialReason states which incomplete-load condition earned the partial row.

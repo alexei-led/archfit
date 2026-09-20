@@ -51,6 +51,9 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 		AttentionDimensions: r.State.Decision.AttentionDimensions,
 		UnknownDimensions:   r.State.Decision.UnknownDimensions,
 	}
+	for _, rule := range r.State.Decision.UnevaluatedRequiredRules {
+		out.Decision.UnevaluatedRequiredRules = append(out.Decision.UnevaluatedRequiredRules, report.UnevaluatedRule{RuleID: rule.RuleID, Reason: rule.Reason})
+	}
 	out.Dimensions = projectStateDimensions(r.State.Dimensions)
 	out.Findings = doc.Findings
 	out.AgentTasks = doc.AgentTasks
@@ -65,7 +68,11 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 	out.Comparison = report.StateComparison{
 		Status: report.ComparisonNotRequested, Reasons: []string{},
 		ConfigHash: r.ConfigHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
-		RubricVersion: report.ScoreVersion,
+		RubricVersion:      report.ScoreVersion,
+		MeasurementProfile: projectMeasurementProfile(r.MeasurementProfile),
+	}
+	if c := r.GateReference; c != nil {
+		out.GateReference = &report.StateComparison{Status: report.ComparisonStatus(c.Status), BaseRef: c.BaseRef, Reasons: append([]string{}, c.Reasons...)}
 	}
 	if c := r.Comparison; c != nil {
 		// The comparison verdict is decided where both sides exist (the base
@@ -82,6 +89,17 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 	out.Seams = projectStateSeams(r.Seams)
 
 	out.Coverage.Measured, out.Coverage.Partial, out.Coverage.Unmeasured = out.Dimensions.CountStatuses()
+	return out
+}
+
+func projectMeasurementProfile(p *evidence.MeasurementProfile) *report.MeasurementProfile {
+	if p == nil {
+		return nil
+	}
+	out := &report.MeasurementProfile{Version: p.Version, SettingsHash: p.SettingsHash, Producers: []report.MeasurementProducer{}, Unknowns: append([]string{}, p.Unknowns...)}
+	for _, producer := range p.Producers {
+		out.Producers = append(out.Producers, report.MeasurementProducer{Tool: producer.Tool, SemanticsVersion: producer.SemanticsVersion, ToolVersion: producer.ToolVersion, Status: producer.Status, PartialBasis: string(producer.PartialBasis)})
+	}
 	return out
 }
 
@@ -473,7 +491,7 @@ func projectFindings(in []finding.Finding) []report.Finding {
 func projectAgentTasks(in []result.AgentTask) []report.AgentTask {
 	out := make([]report.AgentTask, 0, len(in))
 	for _, t := range in {
-		out = append(out, report.AgentTask{FindingID: t.FindingID, RuleID: t.RuleID, Goal: t.Goal, Constraints: t.Constraints, Files: t.Files, Validation: t.Validation, Declarations: projectSyntaxFacts(t.Declarations), Origin: string(t.Origin)})
+		out = append(out, report.AgentTask{FindingID: t.FindingID, RuleID: t.RuleID, RepairKind: t.RepairKind, Goal: t.Goal, Constraints: t.Constraints, Files: t.Files, Validation: t.Validation, Declarations: projectSyntaxFacts(t.Declarations), Origin: string(t.Origin)})
 	}
 	return out
 }

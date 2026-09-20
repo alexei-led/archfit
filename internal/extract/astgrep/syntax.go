@@ -244,7 +244,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 
 	var facts []evidence.SyntaxFact
 
-	runner := a.cachedRunner(ctx, s.Root)
+	runner := a.cachedRunner(ctx, s.Root, langs)
 	for _, lang := range langs {
 		rules, hasRules := embeddedRules[lang]
 		if !hasRules {

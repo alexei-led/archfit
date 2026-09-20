@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 
+	modelrule "github.com/alexei-led/archfit/internal/model/rule"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 	"github.com/alexei-led/archfit/internal/relationship/classify"
@@ -14,8 +15,8 @@ import (
 
 const relationshipScoreVersion = "bc_score.v6"
 const (
-	bcImbalancedRule        = "bc/imbalanced_coupling"
-	duplicatedKnowledgeRule = "bc/duplicated_knowledge"
+	bcImbalancedRule        = modelrule.RuleIDBCImbalancedCoupling
+	duplicatedKnowledgeRule = modelrule.RuleIDDuplicatedKnowledge
 )
 
 func advisoryCandidates(set relationship.Set, clones []relationship.CloneOnlyPair, cfg classify.Config) []relationship.AdvisoryCandidate {

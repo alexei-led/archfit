@@ -647,7 +647,7 @@ func assertReachabilityEnvelope(t *testing.T, data []byte) {
 		t.Fatal("JSON unexpectedly wraps the state in architecture_state; the observed contract is the document root")
 	}
 	want := []string{
-		"agent_tasks", "comparison", "coverage", "decision", "dimensions", "findings",
+		"agent_tasks", "comparison", "coverage", "decision", "dimensions", "findings", "gate_reference",
 		"measurement", "schema_version", "seams", "verdict",
 	}
 	got := make([]string, 0, len(raw))

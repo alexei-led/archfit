@@ -151,12 +151,20 @@ type ConfigCompareWarning struct {
 // It is pure: no I/O, no clock, no config parsing. Every slice in the result is
 // non-nil and stably ordered.
 func CompareConfigs(in ConfigCompareInput) ConfigCompareResult {
-	return ConfigCompareResult{
+	out := ConfigCompareResult{
 		Findings:   compareFindings(in.Current.Diag.Findings, in.Candidate.Diag.Findings),
 		Coverage:   compareCoverage(in.Current.Diag, in.Candidate.Diag),
 		ScoreDelta: compareScore(in.Current.Score, in.Candidate.Score),
 		Warnings:   measurementWarnings(in.Current.Diag.ClassifiedEdges, in.Candidate.Diag.ClassifiedEdges),
 	}
+	for _, reason := range CompareMeasurementProfiles(in.Current.Diag.MeasurementProfile, in.Candidate.Diag.MeasurementProfile) {
+		out.Coverage.Status = CoverageNotComparable
+		out.Coverage.Details = append(out.Coverage.Details, CoverageDetail{Tool: "measurement_profile", Current: "current", Candidate: "candidate", Status: CoverageNotComparable, Reason: reason})
+	}
+	if out.Coverage.Status == CoverageNotComparable {
+		out.ScoreDelta = nil
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -392,10 +400,7 @@ const (
 // rejected ast-grep rule file, an empty SCIP index, a failed jscpd run) leaves
 // every one of those counters at zero and is unstable by both checks.
 func PartialFromUnresolvedSpecifiers(c evidence.Coverage) bool {
-	if c.Status != evidence.StatusPartial || c.Unresolved <= 0 {
-		return false
-	}
-	return c.Tool == toolDepCruiser || c.Tool == toolGrimp
+	return evidence.PartialFromUnresolvedSpecifiers(c)
 }
 
 // PartialFromDegradedPrecision reports whether a "partial" row came from a run
@@ -415,10 +420,7 @@ func PartialFromUnresolvedSpecifiers(c evidence.Coverage) bool {
 // The base comparison reads this same function for the same reason
 // PartialFromUnresolvedSpecifiers is shared.
 func PartialFromDegradedPrecision(c evidence.Coverage) bool {
-	if c.Status != evidence.StatusPartial {
-		return false
-	}
-	return c.UnresolvedInputsMissing == 0 && c.UnresolvedPrecisionOnly > 0
+	return evidence.PartialFromDegradedPrecision(c)
 }
 
 // unstableStatus reports whether a coverage row means the analyzer could have

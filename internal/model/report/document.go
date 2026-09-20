@@ -7,6 +7,7 @@ const SchemaVersion = "archfit.diagnostic.v2"
 type AgentTask struct {
 	FindingID    string       `json:"finding_id"`
 	RuleID       string       `json:"rule_id"`
+	RepairKind   string       `json:"repair_kind"`
 	Goal         string       `json:"goal"`
 	Constraints  []string     `json:"constraints"`
 	Files        []string     `json:"files"`

@@ -6,7 +6,7 @@ Facts first:
 
 - Bare `archfit` is the same as `archfit analyze`.
 - `archfit analyze` is report-only. A successful run exits `0` even when it reports findings.
-- `archfit check` is the CI gate. It exits `1` on violations, `2` on warnings, and `3` on usage, config, or runtime errors.
+- `archfit check` is the CI gate. It exits `1` on blocking violations, `2` when evidence or diagnostics need attention, and `3` on usage, config, or runtime errors.
 - Every command supports `-h, --help`.
 - `archfit` also supports `-v, --version`.
 
@@ -63,12 +63,12 @@ Use this when you know the job, not the command.
 `archfit check` is the only command that uses all four exit codes. Its exit code
 is the architecture verdict, nothing else.
 
-| Code | Meaning                                                                                                             | Commands that produce it                                                                                                                                                                                      |
-| ---- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Code | Meaning                                                                                                               | Commands that produce it                                                                                                                                                                                      |
+| ---- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`  | `healthy` — every dimension measured, every hard gate passing, no active diagnostic. For `analyze`, any valid report. | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config compare`, `archfit config enrich ...` |
-| `1`  | `blocked` — an active hard-gate finding, or a required analyzer that did not run under `--require-tools`.            | `archfit check`; `archfit analyze` never exits `1` on a successful run                                                                                                                                        |
-| `2`  | `needs_attention` — no blocker, but an active diagnostic or a partial/unmeasured dimension.                          | `archfit check`                                                                                                                                                                                               |
-| `3`  | Usage, parse, config, or runtime error. No valid report was produced.                                               | All commands                                                                                                                                                                                                  |
+| `1`  | `blocked` — an active hard-gate finding, or a required analyzer that did not run under `--require-tools`.             | `archfit check`; `archfit analyze` never exits `1` on a successful run                                                                                                                                        |
+| `2`  | `needs_attention` — no blocker, but an active diagnostic or a partial/unmeasured dimension.                           | `archfit check`                                                                                                                                                                                               |
+| `3`  | Usage, parse, config, or runtime error. No valid report was produced.                                                 | All commands                                                                                                                                                                                                  |
 
 Notes:
 
@@ -77,9 +77,10 @@ Notes:
 - `archfit baseline`, `archfit explain`, `archfit doctor`, and the `config` commands are success-or-error commands: `0` or `3`.
 - Exit `0` is reachable when all nine dimensions are measured, hard gates pass,
   and no diagnostic is active. Missing supplied coverage, a non-comparable
-  persisted baseline, or incomplete declared operational topology produces exit
-  `2`, never a healthy zero. During adoption you may treat `0` and `2` as "not
-  blocked" and gate on `1`; require `0` when complete evidence is your CI policy.
+  persisted baseline, incomplete declared operational topology, or an
+  unevaluated required rule produces exit `2`, never a healthy zero. During
+  adoption you may treat `0` and `2` as "not blocked" and gate on `1`; require
+  `0` when complete evidence is your CI policy.
 - A coupling advisory is a diagnostic, never a blocker: it can reach `2`, never
   `1`. The only coupling gate is `coupling.gate.distributed_monolith`, and it
   blocks only in `mode: fail` against a comparable reference.
@@ -88,13 +89,13 @@ Notes:
 
 These formats apply to `archfit analyze` and `archfit check`.
 
-| Format            | Best for                                            | Notes                                                                                                                                     |
-| ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `text`            | terminal use, local review, quick CI logs           | Default. Headline, nine dimensions, unmeasured facts, seams, actionable findings, comparison.                                              |
-| `json`            | automation, bots, custom dashboards, agent loops    | `archfit.architecture-state.v1` at the document root. Use this when a script needs `agent_tasks[]`, findings, dimensions, or the seam ledger. |
-| `markdown` / `md` | saved audit reports, PR attachments, docs artifacts | Same facts as `json`, laid out for a human. Good for `archfit-report.md`.                                                                  |
-| `sarif`           | GitHub code scanning and other SARIF consumers      | Findings keep their rule IDs and `archfit/v1` fingerprints; the state rides in `run.properties`.                                           |
-| `scorecard`       | dimension-by-dimension review                       | The nine-dimension state scorecard: status, gate, confidence, denominator, metrics, and unknowns per dimension. No repository score.       |
+| Format            | Best for                                            | Notes                                                                                                                                                                           |
+| ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text`            | terminal use, local review, quick CI logs           | Default. Headline, nine dimensions, unmeasured facts, seams, actionable findings, comparison.                                                                                   |
+| `json`            | automation, bots, custom dashboards, agent loops    | `archfit.architecture-state.v1` at the document root. Use this when a script needs `agent_tasks[]`, findings, dimensions, comparison/gate-reference status, or the seam ledger. |
+| `markdown` / `md` | saved audit reports, PR attachments, docs artifacts | Same facts as `json`, laid out for a human. Good for `archfit-report.md`.                                                                                                       |
+| `sarif`           | GitHub code scanning and other SARIF consumers      | Findings keep their rule IDs and `archfit/v1` fingerprints; the state rides in `run.properties`.                                                                                |
+| `scorecard`       | dimension-by-dimension review                       | The nine-dimension state scorecard: status, gate, confidence, denominator, metrics, and unknowns per dimension. No repository score.                                            |
 
 Format rules:
 
@@ -139,13 +140,13 @@ Flags:
 | ----------------- | ----------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | `-c, --config`    | path        | `.archfit.yaml`                   | Config file to load.                                                                                          | `archfit analyze -c ./policy/.archfit.yaml`                |
 | `--root`          | path        | directory of `--config`           | Repo root to analyze. Use when the policy file lives outside the checked-out repo.                            | `archfit analyze --root ../repo -c ./policy/.archfit.yaml` |
-| `--base`          | git ref     | none                              | Compare the current run to a base ref and report the comparison and its comparability reasons.                                           | `archfit analyze --base origin/main`                       |
+| `--base`          | git ref     | none                              | Compare the current run to a base ref and report the comparison and its comparability reasons.                | `archfit analyze --base origin/main`                       |
 | `--ai-summary`    | bool        | `false`                           | Append an off-gate AI narrative review after the deterministic render. Requires `ai:` config.                 | `archfit analyze --ai-summary -c .archfit.yaml`            |
 | `--refresh`       | bool        | `false`                           | Re-run extractors, bypass cached reads, and refresh the cache with fresh results.                             | `archfit analyze --refresh -c .archfit.yaml`               |
 | `--json`          | bool        | `false`                           | Shorthand for `--format json`.                                                                                | `archfit analyze --json`                                   |
 | `--markdown`      | bool        | `false`                           | Shorthand for `--format markdown`.                                                                            | `archfit analyze --markdown > archfit-report.md`           |
 | `--sarif`         | bool        | `false`                           | Shorthand for `--format sarif`.                                                                               | `archfit analyze --sarif > archfit.sarif`                  |
-| `--format`        | enum list   | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`. Repeatable.               | `archfit analyze --format text --format json`              |
+| `--format`        | enum list   | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`. Repeatable.        | `archfit analyze --format text --format json`              |
 | `--no-advisories` | bool        | `false`                           | Hide informational Balanced Coupling advisories from the output.                                              | `archfit analyze --no-advisories`                          |
 | `--min-severity`  | enum        | empty                             | Show only advisories at or above `low`, `medium`, `high`, or `critical`.                                      | `archfit analyze --min-severity high`                      |
 | `--lang`          | string list | none                              | Force named analyzers on. Repeatable. See the language setup docs for valid names.                            | `archfit analyze --lang go --lang ts`                      |
@@ -189,21 +190,21 @@ archfit check [flags]
 
 Flags:
 
-| Flag              | Type      | Default                           | Effect                                                                                          | Example                                                  |
-| ----------------- | --------- | --------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `-c, --config`    | path      | `.archfit.yaml`                   | Config file to load.                                                                            | `archfit check -c .archfit.yaml`                         |
-| `--root`          | path      | directory of `--config`           | Repo root to analyze.                                                                           | `archfit check --root ../repo -c ./policy/.archfit.yaml` |
-| `--base`          | git ref   | none                              | Compare the current branch against a base ref and report the comparison and its comparability reasons.                    | `archfit check --base origin/main`                       |
-| `--no-advisories` | bool      | `false`                           | Hide informational Balanced Coupling advisories from the output.                                | `archfit check --no-advisories`                          |
-| `--min-severity`  | enum      | empty                             | Show only advisories at or above `low`, `medium`, `high`, or `critical`.                        | `archfit check --min-severity high`                      |
-| `--refresh`       | bool      | `false`                           | Re-run extractors and refresh the cache. Use after installing or updating analyzer tools.       | `archfit check --refresh`                                |
-| `--require-tools` | bool      | `false`                           | Exit non-zero when any required analyzer tool is missing.                                       | `archfit check --require-tools`                          |
-| `--json`          | bool      | `false`                           | Shorthand for `--format json`.                                                                  | `archfit check --json`                                   |
-| `--markdown`      | bool      | `false`                           | Shorthand for `--format markdown`.                                                              | `archfit check --markdown > archfit-report.md`           |
-| `--sarif`         | bool      | `false`                           | Shorthand for `--format sarif`.                                                                 | `archfit check --sarif > archfit.sarif`                  |
+| Flag              | Type      | Default                           | Effect                                                                                                 | Example                                                  |
+| ----------------- | --------- | --------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| `-c, --config`    | path      | `.archfit.yaml`                   | Config file to load.                                                                                   | `archfit check -c .archfit.yaml`                         |
+| `--root`          | path      | directory of `--config`           | Repo root to analyze.                                                                                  | `archfit check --root ../repo -c ./policy/.archfit.yaml` |
+| `--base`          | git ref   | none                              | Compare the current branch against a base ref and report the comparison and its comparability reasons. | `archfit check --base origin/main`                       |
+| `--no-advisories` | bool      | `false`                           | Hide informational Balanced Coupling advisories from the output.                                       | `archfit check --no-advisories`                          |
+| `--min-severity`  | enum      | empty                             | Show only advisories at or above `low`, `medium`, `high`, or `critical`.                               | `archfit check --min-severity high`                      |
+| `--refresh`       | bool      | `false`                           | Re-run extractors and refresh the cache. Use after installing or updating analyzer tools.              | `archfit check --refresh`                                |
+| `--require-tools` | bool      | `false`                           | Exit non-zero when any required analyzer tool is missing.                                              | `archfit check --require-tools`                          |
+| `--json`          | bool      | `false`                           | Shorthand for `--format json`.                                                                         | `archfit check --json`                                   |
+| `--markdown`      | bool      | `false`                           | Shorthand for `--format markdown`.                                                                     | `archfit check --markdown > archfit-report.md`           |
+| `--sarif`         | bool      | `false`                           | Shorthand for `--format sarif`.                                                                        | `archfit check --sarif > archfit.sarif`                  |
 | `--format`        | enum list | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`. Repeatable. | `archfit check --format text --format json`              |
-| `--progress`      | enum      | `auto`                            | Progress reporting on stderr: `auto`, `plain`, or `none`.                                       | `archfit check --progress plain`                         |
-| `-q, --quiet`     | bool      | `false`                           | Suppress progress output.                                                                       | `archfit check -q --json`                                |
+| `--progress`      | enum      | `auto`                            | Progress reporting on stderr: `auto`, `plain`, or `none`.                                              | `archfit check --progress plain`                         |
+| `-q, --quiet`     | bool      | `false`                           | Suppress progress output.                                                                              | `archfit check -q --json`                                |
 
 Examples:
 
@@ -245,10 +246,14 @@ What it writes (`schema_version: archfit.baseline.v2`):
   can detect fixed findings.
 - Keeps the architecture-state reference under `state`: the four comparison
   fingerprints (`config_hash`, `model_hash`, `labels_hash`, `rubric_version`)
+  and the `measurement_profile` (producer semantics, tool versions, statuses,
+  and settings hash)
   together with the facts they qualify — `hard_gate_finding_ids`,
   `qualifying_seam_ids`, and a snapshot of the nine dimensions. A dimension or
-  seam delta is claimed only when all four fingerprints still match; any
-  mismatch is reported as non-comparable and names the input that moved.
+  seam delta is claimed only when all four fingerprints and the measurement
+  profile still match; any fingerprint or profile mismatch is reported as
+  non-comparable
+  and names the input that moved.
 - Stores **no repository score**. Schema v2 retired the scalar gate, so a stored
   score would anchor nothing.
 
@@ -260,7 +265,10 @@ review, inspect the current findings, then regenerate deliberately with
 [`skills/archfit/references/migration.md`](../../skills/archfit/references/migration.md).
 
 Capture is a pure function of the tree and the config: the run reads an empty
-accepted set, so two captures over an unchanged tree are byte-identical.
+accepted set, so two captures over an unchanged tree are byte-identical. Active
+`waived` findings are excluded from permanent acceptance, and the command
+prints how many temporary findings it skipped. This is a disclosure, not a
+blanket migration path: review the complete capture before committing it.
 
 Flags:
 
@@ -553,6 +561,10 @@ Notes:
   candidate's findings by the current config's history.
 - Both runs measure the same tree with the same pinned labels and fact cache.
   Only the config file differs, so a candidate stored outside the repo is fine.
+- Both runs also publish a `measurement_profile` containing the extractor
+  semantics, tool versions/statuses, and settings hash. A profile mismatch is a
+  `not_comparable` coverage result with named details, and no score delta is
+  reported.
 - Nothing is written. Config, baseline, labels, candidate, and policy files stay
   byte-identical; normal fact-cache reads and writes still happen.
 - The report never states that a candidate config is better. A config that scores
@@ -561,19 +573,19 @@ Notes:
 
 Report model:
 
-| Section                 | Meaning                                                                                                                                                        |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `coverage evidence`     | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences.                                               |
+| Section                 | Meaning                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coverage evidence`     | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences.                                                                                                                                                                                                                                                                               |
 | measurement differences | Only what changed: the overall score, the one-sided finding IDs, the classified-edge counts, and the classification mix (strength, distance, distance basis, volatility, severity, and volatility provenance). Nothing changed prints `No change in score, findings, edge counts, or classification mix.` — a claim about those measurements, not a claim that the two configs are equivalent. |
-| measurement loss        | Warnings raised when the candidate measured less of the same tree.                                                                                             |
+| measurement loss        | Warnings raised when the candidate measured less of the same tree.                                                                                                                                                                                                                                                                                                                             |
 
 Coverage grades:
 
-| Grade                  | Condition                                                                                                                                                                                                                     |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `comparable`           | Every compared analyzer ran on both sides. A per-language analyzer absent on both sides with no coverage gap drops out of the comparison entirely — that language is simply not in the tree. A language the repo contains but the config switched off reports `disabled`, not absent, so it never drops out this way.                                  |
-| `comparable_with_gaps` | The sides agree, but at least one analyzer was absent, disabled, or left import specifiers unresolved on **both** sides. The blindness is shared, so the comparison rests on it — each such analyzer is listed with a reason. |
-| `not_comparable`       | An analyzer's evidence differs between the sides, did not finish (timed out, or partial from a run that did not complete), was absent on both sides but expected by only one, or its coverage row is missing or duplicated.   |
+| Grade                  | Condition                                                                                                                                                                                                                                                                                                             |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `comparable`           | Every compared analyzer ran on both sides. A per-language analyzer absent on both sides with no coverage gap drops out of the comparison entirely — that language is simply not in the tree. A language the repo contains but the config switched off reports `disabled`, not absent, so it never drops out this way. |
+| `comparable_with_gaps` | The sides agree, but at least one analyzer was absent, disabled, or left import specifiers unresolved on **both** sides. The blindness is shared, so the comparison rests on it — each such analyzer is listed with a reason.                                                                                         |
+| `not_comparable`       | An analyzer's evidence differs between the sides, did not finish (timed out, or partial from a run that did not complete), was absent on both sides but expected by only one, or its coverage row is missing or duplicated.                                                                                           |
 
 A `not_comparable` grade is about evidence, not about the configs: it can appear
 on a run that reports no measurement differences at all. Read the grade first,
@@ -874,6 +886,11 @@ Effect:
   are named in `comparison.task_origin_reasons`; there is no parallel task list
   or separate delta schema. See
   [Task origin with `--base`](agent-feedback.md#task-origin-with---base).
+- The root `comparison` block describes this base comparison and carries the
+  current run's `measurement_profile`. An unknown or incompatible profile makes
+  the comparison `non_comparable` and keeps affected task origins `unknown`.
+  The persisted baseline used for hard-gate and drift comparisons is reported
+  separately as `gate_reference`; `--base` never replaces it.
 - Never changes the verdict or exit code. A base worktree or pipeline error exits
   `3` and prints no partial output.
 - Not accepted by `archfit baseline`, which always records the checked-out tree.

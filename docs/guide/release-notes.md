@@ -1,6 +1,70 @@
 # Release notes
 
-## Unreleased
+## v2.3.0 — architecture guardrails
+
+Release date: 2026-09-20
+
+This release closes correctness gaps in cached evidence, required-rule
+evaluation, temporary exceptions, agent repair tasks, and cross-run measurement
+compatibility.
+
+- Fact-cache input scope is analyzer-aware and conservative. Source under names
+  such as `target`, `venv`, or `node_modules` is not dropped by a shared name
+  filter when the analyzer may read it. TypeScript cache keys include the full
+  supported `extends` chain; an unresolvable chain bypasses the cache safely.
+  Regression coverage pins Go source beneath analyzer-sensitive directory names
+  and inherited TypeScript configuration; unresolved TypeScript config chains
+  safely bypass caching. Dynamic dependency-cruiser configuration inputs and
+  unsupported TypeScript config resolution are also unknown for measurement
+  compatibility. Other analyzer input sets remain defined by their extractor
+  contracts.
+- Required `gate: fail` rules no longer look passed when their producer evidence
+  is incomplete. Canonical JSON exposes sorted
+  `decision.unevaluated_required_rules` entries with `rule_id` and `reason`;
+  known blockers remain `hard_gates: fail`, while an otherwise clean run with
+  unevaluated required rules remains `hard_gates: unmeasured` and `check` exit
+  `2`. Go applicability is determined from the selected source inventory even
+  when package loading fails.
+- Waivers are validated at config load. They require a declared or supported
+  synthetic rule, applicable endpoint scope, `reason`, `approved_by`,
+  and a valid `YYYY-MM-DD` expiry. Matching is independent of YAML order:
+  active matches win, and expired matches are used only when no active match
+  applies. Baseline capture skips findings covered by temporary waivers,
+  including expired waivers, and prints the count instead of accepting them as
+  permanent debt.
+  Edge-less `map/*` diagnostics retain exact-rule waivers without endpoint
+  selectors. The coupling gate itself remains unwaivable.
+- Agent repair tasks include `repair_kind` (`code_change` or
+  `needs_owner_decision`). Forbidden-dependency goals do not recommend a public
+  route, and new-cross-module goals do not recommend baseline capture as a
+  repair. Validation commands replay effective `--base`, `--lang`, and
+  `--require-tools` flags. `--refresh` is intentionally omitted because cache
+  control must not change validation output.
+- Each run publishes `comparison.measurement_profile` with the profile version,
+  settings hash, producer semantics, statuses, and supported external tool
+  versions. Unknown or incompatible profiles produce named
+  `non_comparable` reasons and suppress unsupported deltas. The persisted
+  baseline is reported separately as `gate_reference`; `--base` is a report-only
+  comparison and never replaces the gate reference.
+  Symmetric completed partials retain comparison through a typed
+  `partial_basis`; missing inputs, timeouts, and opaque unknowns do not.
+  Standard JS dependency-cruiser configurations are evaluated once through the
+  tool's native loader; the same invocation consumes a frozen snapshot used
+  for measurement identity. Unsupported integrations retain facts with an
+  explicit unknown identity.
+- Migration is deliberate. A profile mismatch or incomplete seam snapshot is
+  not repaired by a blanket `archfit baseline`; review current findings and
+  capture a new baseline only after an owner accepts the resulting debt.
+  Pre-v2.3.0 baselines have no profile and cannot support numerical comparisons,
+  although their accepted finding fingerprints remain usable. Capture the new
+  baseline in the same pinned analyzer image/platform and build environment as
+  CI; a local host's profile is not automatically compatible with CI.
+- Python fact caching is disabled until its transient execution environment can
+  be identified before lookup. Each analysis obtains fresh grimp facts and
+  producer identity; uv's package cache remains available. Cache-key work for
+  other analyzers is bounded, and unsupported or oversized inputs run fresh.
+
+## Earlier compatibility changes (already present in v2.2.1)
 
 - Remove the one-release `legacy-json` output and config migration command.
 - Accept only the current JSON, baseline, and config schemas.
@@ -63,7 +127,7 @@ Breaking changes:
 - **The coupling gate is now
   `coupling.gate.distributed_monolith: {mode, max_new_seams}`.** It counts
   logical seams — one ordered module pair, however many imports express it — that
-  are newly introduced against a *comparable* reference. `coupling_balance` no
+  are newly introduced against a _comparable_ reference. `coupling_balance` no
   longer gates at all. Advisory promotion is gone: the seam gate names its own
   seams.
 - **`archfit check`'s exit code IS the state verdict**: `healthy` -> 0,
@@ -144,7 +208,7 @@ Upgrade checklist:
 1. Run `archfit config update --migration-only --json -c .archfit.yaml` and
    review the candidate.
 2. Apply it with `archfit config update --migration-only --apply -c
-   .archfit.yaml`.
+.archfit.yaml`.
 3. Update CI to accept `check` exit `2` as `needs_attention` and block on `1` or
    `3` according to local policy.
 4. Migrate JSON consumers to `archfit.architecture-state.v1`; use

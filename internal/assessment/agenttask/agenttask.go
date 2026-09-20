@@ -224,6 +224,7 @@ func Build(
 		task := result.AgentTask{
 			FindingID:   f.ID,
 			RuleID:      f.RuleID,
+			RepairKind:  repairKind(ruleTypes[f.RuleID]),
 			Goal:        goalFor(ruleTypes[f.RuleID], f),
 			Constraints: constraintsFor(f, modulePublic),
 			Files:       files,
@@ -248,13 +249,13 @@ func goalFor(ruleType string, f finding.Finding) string {
 	}
 	switch ruleType {
 	case "forbidden_dependency":
-		return fmt.Sprintf("Remove the forbidden dependency from %s on %s; depend on %s's public API or move the shared code to an allowed location.", from, to, toMod)
+		return fmt.Sprintf("Remove the forbidden dependency from %s on %s; move shared behavior to a location permitted by the existing dependency rules.", from, to)
 	case "public_api_only", "internal_api_access":
 		return fmt.Sprintf("Replace the internal-API access from %s to %s with %s's public API.", from, to, toMod)
 	case "forbidden_layer_direction":
 		return fmt.Sprintf("Remove the layer-inverting dependency from %s to %s: inner layers must not import outer layers — introduce an abstraction in the inner layer instead.", from, to)
 	case "new_cross_module_dependency":
-		return fmt.Sprintf("Review the new cross-module dependency from %s to %s: either remove it, route it through %s's public API, or accept it explicitly with `archfit baseline`.", from, to, toMod)
+		return fmt.Sprintf("Remove the new cross-module dependency from %s to %s. If the dependency is intentional, request an architecture-owner decision before changing policy or accepted debt.", from, to)
 	case "cycle":
 		return "Break the import cycle: " + f.Why
 	default:
@@ -263,6 +264,13 @@ func goalFor(ruleType string, f finding.Finding) string {
 		}
 		return fmt.Sprintf("Resolve the %s violation on the edge %s -> %s.", f.RuleID, from, to)
 	}
+}
+
+func repairKind(ruleType string) string {
+	if ruleType == "new_cross_module_dependency" {
+		return "needs_owner_decision"
+	}
+	return "code_change"
 }
 
 // constraintsFor joins the finding's constraint text, its allowed

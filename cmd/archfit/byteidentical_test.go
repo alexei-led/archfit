@@ -84,6 +84,12 @@ func runByteIdenticalTest(t *testing.T, fixtureRelPath string) {
 	if readErr != nil {
 		t.Fatalf("read baseline %s: %v", baselinePath, readErr)
 	}
+	if os.Getenv(envUpdateBaselines) != "" {
+		if err := os.WriteFile(baselinePath, got, 0o600); err != nil {
+			t.Fatalf("update baseline %s: %v", baselinePath, err)
+		}
+		return
+	}
 
 	if !bytes.Equal(got, want) {
 		t.Fatalf("output differs from baseline:\n%s", firstDiffLine(string(want), string(got)))
@@ -216,6 +222,18 @@ func normalizeToolVersions(node interface{}) {
 	switch v := node.(type) {
 	case map[string]interface{}:
 		for key, child := range v {
+			if profile, ok := child.(map[string]interface{}); ok && key == "measurement_profile" {
+				profile["settings_hash"] = "<SETTINGS_HASH>"
+				if producers, ok := profile["producers"].([]interface{}); ok {
+					for _, value := range producers {
+						if producer, ok := value.(map[string]interface{}); ok {
+							if _, present := producer["tool_version"]; present {
+								producer["tool_version"] = "<TOOL_VERSION>"
+							}
+						}
+					}
+				}
+			}
 			if versions, ok := child.(map[string]interface{}); ok && key == keyToolVersions {
 				for tool := range versions {
 					delete(versions, tool)

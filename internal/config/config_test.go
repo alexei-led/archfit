@@ -934,6 +934,121 @@ func loadConfigInline(t *testing.T, body string) (config.Config, error) {
 	return config.Load(context.Background(), p)
 }
 
+func TestLoad_ValidatesWaivers(t *testing.T) {
+	base := "version: 2\nrules:\n  - id: edge_rule\n    type: forbidden_dependency\n    from: a/**\n    to: b/**\nwaivers:\n"
+	tests := []struct {
+		name    string
+		waiver  string
+		wantErr string
+	}{
+		{
+			name:   "valid",
+			waiver: "  - rule: edge_rule\n    from: a/**\n    to: b/**\n    reason: migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+		},
+		{
+			name:    "missing rule",
+			waiver:  "  - from: a/**\n    to: b/**\n    reason: migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+			wantErr: ".rule is required",
+		},
+		{
+			name:    "unknown rule",
+			waiver:  "  - rule: missing_rule\n    from: a/**\n    to: b/**\n    reason: migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+			wantErr: "does not identify",
+		},
+		{
+			name:    "missing scope",
+			waiver:  "  - rule: edge_rule\n    reason: migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+			wantErr: "scope",
+		},
+		{
+			name:    "bad from glob",
+			waiver:  "  - rule: edge_rule\n    from: '['\n    to: b/**\n    reason: migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+			wantErr: "from",
+		},
+		{
+			name:    "bad to glob",
+			waiver:  "  - rule: edge_rule\n    from: a/**\n    to: '['\n    reason: migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+			wantErr: "to",
+		},
+		{
+			name:    "missing reason",
+			waiver:  "  - rule: edge_rule\n    from: a/**\n    to: b/**\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+			wantErr: ".reason is required",
+		},
+		{
+			name:    "missing approver",
+			waiver:  "  - rule: edge_rule\n    from: a/**\n    to: b/**\n    reason: migration\n    expires: '2099-01-01'\n",
+			wantErr: ".approved_by is required",
+		},
+		{
+			name:    "missing expiry",
+			waiver:  "  - rule: edge_rule\n    from: a/**\n    to: b/**\n    reason: migration\n    approved_by: '@owner'\n",
+			wantErr: ".expires is required",
+		},
+		{
+			name:    "invalid expiry",
+			waiver:  "  - rule: edge_rule\n    from: a/**\n    to: b/**\n    reason: migration\n    approved_by: '@owner'\n    expires: '2099-02-29'\n",
+			wantErr: "valid date",
+		},
+		{
+			name:   "synthetic rule",
+			waiver: "  - rule: bc/imbalanced_coupling\n    from: checkout/**\n    to: pricing/**\n    reason: migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+		},
+		{
+			name:   "edge-less synthetic rule",
+			waiver: "  - rule: map/uncovered_path\n    reason: module migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+		},
+		{
+			name:    "edge-less synthetic scope rejected",
+			waiver:  "  - rule: map/dead_rule\n    from: modules/**\n    reason: module migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+			wantErr: "edge-less",
+		},
+		{
+			name:    "coupling gate rejected",
+			waiver:  "  - rule: bc/coupling_gate\n    from: checkout\n    to: pricing\n    reason: migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+			wantErr: "cannot be waived",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadConfigInline(t, base+tc.waiver)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Load: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error = %v, want substring %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoad_AllowsScopedAPICycleWaivers(t *testing.T) {
+	body := `version: 2
+rules:
+  - id: api_rule
+    type: public_api_change
+  - id: cycle_rule
+    type: cycle
+waivers:
+  - rule: api_rule
+    from: services/api/**
+    reason: migration
+    approved_by: '@owner'
+    expires: '2099-01-01'
+  - rule: cycle_rule
+    to: services/cycle/**
+    reason: migration
+    approved_by: '@owner'
+    expires: '2099-01-01'
+`
+	if err := loadInline(t, body); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+}
+
 func TestLoad_SuppliedCoverage(t *testing.T) {
 	t.Run("absent block defaults disabled", func(t *testing.T) {
 		cfg, err := loadConfigInline(t, "version: 2\n")

@@ -17,12 +17,13 @@ import (
 // fingerprints across the temporary worktree boundary. Base paths, locations,
 // validation commands, and declarations never cross into head output.
 type BaseEvidence struct {
-	FindingIDs   []string
-	Coverage     []modevidence.Coverage
-	CoverageGaps []modevidence.CoverageGap
-	ConfigHash   string
-	ModelHash    string
-	LabelsHash   string
+	FindingIDs         []string
+	Coverage           []modevidence.Coverage
+	CoverageGaps       []modevidence.CoverageGap
+	ConfigHash         string
+	ModelHash          string
+	LabelsHash         string
+	MeasurementProfile *modevidence.MeasurementProfile
 }
 
 // attachBaseComparison checks the base ref out into a clean detached worktree
@@ -61,9 +62,9 @@ func (s StageExecutor) attachBaseComparison(ctx context.Context, req AnalysisReq
 	}
 	diag.Comparison = decision.CompareFingerprints(req.BaseRef,
 		decision.Fingerprints{ConfigHash: diag.ConfigHash, ModelHash: diag.ModelHash,
-			LabelsHash: diag.LabelsHash, RubricVersion: report.ScoreVersion},
+			LabelsHash: diag.LabelsHash, RubricVersion: report.ScoreVersion, MeasurementProfile: diag.MeasurementProfile},
 		decision.Fingerprints{ConfigHash: evidence.ConfigHash, ModelHash: evidence.ModelHash,
-			LabelsHash: evidence.LabelsHash, RubricVersion: report.ScoreVersion})
+			LabelsHash: evidence.LabelsHash, RubricVersion: report.ScoreVersion, MeasurementProfile: evidence.MeasurementProfile})
 	evaluation.AttachTaskOrigins(diag, evaluation.TaskOriginInput{
 		BaseRef: req.BaseRef, BaseFindingIDs: evidence.FindingIDs,
 		HeadCoverage: diag.ToolCoverage, HeadGaps: diag.CoverageGaps, HeadConfigHash: diag.ConfigHash,
@@ -71,6 +72,15 @@ func (s StageExecutor) attachBaseComparison(ctx context.Context, req AnalysisReq
 		PrimaryTools: runCtx.PrimaryExtractorTools, Patterns: s.Analyzers.Patterns, Syntax: s.Analyzers.Syntax,
 		SCIP: s.Analyzers.SCIP, Clones: s.Analyzers.Clones, CargoModules: s.Analyzers.CargoModules,
 	})
+	if reasons := decision.CompareMeasurementProfiles(diag.MeasurementProfile, evidence.MeasurementProfile); len(reasons) > 0 {
+		for i := range diag.AgentTasks {
+			if diag.AgentTasks[i].Origin != result.TaskOriginPreExisting {
+				diag.AgentTasks[i].Origin = result.TaskOriginUnknown
+			}
+		}
+		diag.Comparison.TaskOriginStatus = result.StateComparisonNonComparable
+		diag.Comparison.TaskOriginReasons = append(diag.Comparison.TaskOriginReasons, reasons...)
+	}
 	return nil
 }
 
@@ -98,12 +108,13 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 	}
 	diag := out.Diagnostic
 	return BaseEvidence{
-		FindingIDs:   evaluation.BaseFindingIDs(diag.Findings),
-		Coverage:     diag.ToolCoverage,
-		CoverageGaps: diag.CoverageGaps,
-		ConfigHash:   diag.ConfigHash,
-		ModelHash:    diag.ModelHash,
-		LabelsHash:   diag.LabelsHash,
+		FindingIDs:         evaluation.BaseFindingIDs(diag.Findings),
+		Coverage:           diag.ToolCoverage,
+		CoverageGaps:       diag.CoverageGaps,
+		ConfigHash:         diag.ConfigHash,
+		ModelHash:          diag.ModelHash,
+		LabelsHash:         diag.LabelsHash,
+		MeasurementProfile: diag.MeasurementProfile,
 	}, nil
 }
 

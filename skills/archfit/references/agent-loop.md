@@ -29,6 +29,7 @@ Every active gate finding produces one structured repair task:
 {
   "finding_id": "8a4be7…",
   "rule_id": "no_internal_access",
+  "repair_kind": "code_change",
   "origin": "introduced",
   "goal": "Replace the internal-API access from pkg/a/a.go with b's public API.",
   "constraints": [
@@ -43,11 +44,19 @@ Every active gate finding produces one structured repair task:
 - `origin` — present with `--base`: `introduced`, `pre_existing`, or `unknown`.
   `unknown` is conservative and means the two runs did not have comparable
   analyzer evidence for this task; it never means introduced.
-- `goal` — deterministic template per rule type.
+- `repair_kind` — `code_change` when the agent can repair source, or
+  `needs_owner_decision` when the finding requires a policy or accepted-debt
+  decision.
+- `goal` — deterministic template per rule type. A `forbidden_dependency` goal
+  never proposes the target module's public API, and a
+  `new_cross_module_dependency` goal never proposes baseline capture as a code
+  fix.
 - `constraints` — the rule's constraint text plus allowed alternatives and the
   target module's public globs.
 - `files` — candidate files to touch.
-- `validation` — the exact command that must pass.
+- `validation` — the exact command that must pass. It preserves effective
+  `--base`, repeated `--lang`, and `--require-tools`; `--refresh` is omitted so
+  cache-control cannot change validation output.
 
 Advisory findings never produce tasks — they are signals, not orders.
 
@@ -63,7 +72,33 @@ inspection and summaries; do not treat a successful analyze exit as a clean gate
 - `fixed` — gone since baseline.
 
 `archfit baseline` accepts the current state; waivers live in config with expiry
-dates.
+dates. Waivers require a valid rule reference, at least one of `from` or `to`,
+`reason`, `approved_by`, and a `YYYY-MM-DD` `expires` value. Invalid metadata is
+rejected at config load. Matching is independent of YAML order: an active match
+wins, and an expired match is used only when no active match applies. Baseline
+capture skips findings covered by temporary waivers, including expired waivers,
+and prints the count.
+
+## Required rule evidence
+
+For an applicable `gate: fail` rule whose producer evidence is incomplete,
+canonical JSON includes sorted `decision.unevaluated_required_rules` entries:
+
+```json
+{
+  "unevaluated_required_rules": [
+    {
+      "rule_id": "no_internal_access",
+      "reason": "go/packages evidence is partial: ..."
+    }
+  ]
+}
+```
+
+The field is omitted when empty. A known blocker still yields
+`decision.hard_gates: "fail"`; otherwise a non-empty list yields
+`"unmeasured"`, so `check` remains exit `2`. Read this structured field rather
+than searching prose or treating an empty finding list as proof of a pass.
 
 ## SARIF — the CI annotation channel
 
@@ -74,15 +109,26 @@ state — verdict, decision, the nine dimensions with their status/gate/confiden
 and the coverage split — rides in `runs[0].properties`. Pipe it to GitHub code
 scanning for inline PR annotations.
 
-## Scorecard delta (--base)
+## Comparison with a Git reference (--base)
 
-`archfit check --base <ref>` gates against a git ref in addition to HEAD.
-`archfit analyze --base <ref>` is the report-only equivalent. Text/markdown
-output adds a "CHANGE VS BASE" section. JSON/SARIF stay the normal HEAD
+`archfit check --base <ref>` adds comparison and task-origin metadata for the
+selected Git reference. Its gate still evaluates the current tree against
+policy and the persisted approved baseline. `archfit analyze --base <ref>` is
+the report-only equivalent. Text/Markdown disclose comparison status and
+reference. JSON/SARIF stay the normal HEAD
 architecture-state contract; there is no separate delta schema or parallel task
 list. With `--base`, canonical JSON classifies each current `agent_tasks[]` entry
 through its optional `origin` field. This metadata never changes the verdict,
 gates, or exit code. `--require-tools` applies exactly as without `--base`.
+
+`comparison.measurement_profile` records the profile version, settings hash, and
+producer semantics/status/tool versions. Symmetric completed partials carry
+`partial_basis` (`unresolved_specifiers` or `degraded_precision`); opaque
+unknowns are not made comparable by matching text. A missing or incompatible
+profile makes the comparison `non_comparable` and keeps unmatched origins
+`unknown`; observed matching findings can remain `pre_existing`.
+The persisted baseline used by gates is reported separately as
+`gate_reference`; `--base` never replaces it.
 
 ## Coverage gaps — missing evidence is loud, not green
 

@@ -258,9 +258,11 @@ func testTaskOriginCrossPathAgreement(t *testing.T) {
 			cmp := CompareConfigs(ConfigCompareInput{
 				Current: ConfigCompareSide{Diag: result.Result{
 					ToolCoverage: tc.head, CoverageGaps: tc.headGap, PrimaryExtractorTools: primary,
+					MeasurementProfile: &evidence.MeasurementProfile{Version: evidence.MeasurementProfileVersion, SettingsHash: "settings", Producers: []evidence.MeasurementProducer{{Tool: "loc", SemanticsVersion: "loc.v1", Status: evidence.StatusOK}}},
 				}},
 				Candidate: ConfigCompareSide{Diag: result.Result{
 					ToolCoverage: tc.base, CoverageGaps: tc.baseGap, PrimaryExtractorTools: primary,
+					MeasurementProfile: &evidence.MeasurementProfile{Version: evidence.MeasurementProfileVersion, SettingsHash: "settings", Producers: []evidence.MeasurementProducer{{Tool: "loc", SemanticsVersion: "loc.v1", Status: evidence.StatusOK}}},
 				}},
 			})
 			gotDecision := cmp.Coverage.Status

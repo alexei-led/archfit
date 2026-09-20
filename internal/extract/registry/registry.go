@@ -122,10 +122,8 @@ var languages = []Descriptor{
 		ID:             "python",
 		Aliases:        []string{"py"},
 		ProjectPresent: pyProjectPresent,
-		NewExtractor: func(r toolrun.Runner, cfg evidenceports.ExtractConfig, fc *factcache.Store) evidenceports.Extractor {
-			ex := py.New(r, cfg)
-			ex.Cache = fc
-			return ex
+		NewExtractor: func(r toolrun.Runner, cfg evidenceports.ExtractConfig, _ *factcache.Store) evidenceports.Extractor {
+			return py.New(r, cfg)
 		},
 		PrimaryTool: ToolGrimp,
 		InstallHint: "uv tool install grimp / pip install grimp",

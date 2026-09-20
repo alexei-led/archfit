@@ -87,6 +87,14 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			continue
 		}
 		switch name {
+		case "MeasurementProducer":
+			if basis, ok := def.Properties.Get("partial_basis"); ok {
+				basis.Enum = []any{"unresolved_specifiers", "degraded_precision"}
+			}
+		case "AgentTask":
+			if kind, ok := def.Properties.Get("repair_kind"); ok {
+				kind.Enum = []any{"code_change", "needs_owner_decision"}
+			}
 		case "StateComparison":
 			if status, ok := def.Properties.Get("status"); ok {
 				status.Enum = []any{

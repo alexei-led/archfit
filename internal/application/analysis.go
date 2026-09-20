@@ -49,16 +49,18 @@ type Request struct {
 	SARIF    bool
 	Formats  []string
 
-	NoAdvisories bool
-	RequireTools bool
+	NoAdvisories   bool
+	RequireTools   bool
+	ValidationArgs []string
 }
 
 // AnalysisRequest is the narrow technical-stage input. The application owns
 // validation and sequencing; the stage owns evidence collection and scoring.
 type AnalysisRequest struct {
-	BaseRef      string
-	NoAdvisories bool
-	RequireTools bool
+	BaseRef        string
+	NoAdvisories   bool
+	RequireTools   bool
+	ValidationArgs []string
 	// ApplyToolGate lets a missing required analyzer stamp the verdict fail and
 	// hard-gate the run. Only analyze/check set it: baseline, explain, enrich,
 	// config compare, and the --base sub-run render a verdict but consume no
@@ -116,10 +118,11 @@ type AnalysisContext struct {
 	// label set. With ConfigHash and the rubric version they are the four
 	// inputs a numerical comparison needs to agree on; any mismatch makes the
 	// comparison non-comparable rather than a delta nobody can justify.
-	ModelHash    string
-	LabelsHash   string
-	ConfigSource string
-	BundleDir    string
+	ModelHash          string
+	LabelsHash         string
+	MeasurementProfile *modevidence.MeasurementProfile
+	ConfigSource       string
+	BundleDir          string
 	// ScanRoot is the analysis boundary AS THE CALLER GAVE IT (empty means "the
 	// whole repository"). Scope.Root is its resolved, canonical form. The repair
 	// tasks' validation command must echo the caller's form, not the resolved
@@ -291,6 +294,8 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		return AnalysisResult{}, err
 	}
 	diag := assessed.Diagnostic
+	diag.MeasurementProfile = runCtx.MeasurementProfile
+	diag.GateReference = baselineComparison(base, runCtx)
 	attachRelationshipEvidence(&diag, relationships.Evidence)
 	diag.DistanceContext = buildDistanceContext(diag, runCtx.Policy, runCtx.DeployUnitDetectedModules)
 	if req.DiscloseHealthWarnings {
@@ -306,6 +311,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		ScanRoot:      runCtx.ScanRoot,
 		Root:          runCtx.Scope.Root,
 		CrateRootDirs: runCtx.CrateRootDirs, RequireTools: req.RequireTools,
+		ValidationArgs: req.ValidationArgs,
 		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
 		CoverageGaps: runCtx.CoverageGaps, ApplyToolGate: req.ApplyToolGate,
 	})
@@ -337,10 +343,7 @@ func seamAnchor(base Baseline, runCtx AnalysisContext) evaluation.BaselineAnchor
 	if base.State == nil {
 		return evaluation.BaselineAnchor{}
 	}
-	cmp := decision.CompareFingerprints("", headFingerprints(runCtx), decision.Fingerprints{
-		ConfigHash: base.State.ConfigHash, ModelHash: base.State.ModelHash,
-		LabelsHash: base.State.LabelsHash, RubricVersion: base.State.RubricVersion,
-	})
+	cmp := baselineComparison(base, runCtx)
 	if cmp.Status != result.StateComparisonComparable {
 		return evaluation.BaselineAnchor{
 			NonComparableReason: "the stored baseline was written under different inputs",
@@ -350,12 +353,32 @@ func seamAnchor(base Baseline, runCtx AnalysisContext) evaluation.BaselineAnchor
 	return evaluation.BaselineAnchor{SeamsComparable: true, QualifyingSeamIDs: base.State.QualifyingSeamIDs}
 }
 
-// headFingerprints are this run's four comparison inputs.
+// headFingerprints are this run's policy and measurement comparison inputs.
 func headFingerprints(runCtx AnalysisContext) decision.Fingerprints {
 	return decision.Fingerprints{
 		ConfigHash: runCtx.ConfigHash, ModelHash: runCtx.ModelHash,
 		LabelsHash: runCtx.LabelsHash, RubricVersion: report.ScoreVersion,
+		MeasurementProfile: runCtx.MeasurementProfile,
 	}
+}
+
+func baselineComparison(base Baseline, runCtx AnalysisContext) *result.StateComparison {
+	if base.State == nil {
+		if !base.Present {
+			return decision.NonComparableState("baseline", "no baseline file was loaded")
+		}
+		return decision.NonComparableState("baseline", "stored baseline has no architecture-state snapshot")
+	}
+	cmp := decision.CompareFingerprints("baseline", headFingerprints(runCtx), decision.Fingerprints{
+		ConfigHash: base.State.ConfigHash, ModelHash: base.State.ModelHash,
+		LabelsHash: base.State.LabelsHash, RubricVersion: base.State.RubricVersion,
+		MeasurementProfile: base.State.MeasurementProfile,
+	})
+	if base.State.QualifyingSeamIDs == nil {
+		cmp.Status = result.StateComparisonNonComparable
+		cmp.Reasons = append(cmp.Reasons, "stored baseline qualifying_seam_ids snapshot is missing or null")
+	}
+	return cmp
 }
 
 func (s StageExecutor) discloseGate(scored evaluation.Scored) {
@@ -472,6 +495,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 		ConfigSource: req.ConfigSource, BundleDir: req.BundleDir,
 		BaseRef: req.BaseRef, NoAdvisories: req.NoAdvisories,
 		RequireTools: req.RequireTools, ApplyToolGate: true, DiscloseHealthWarnings: true,
+		ValidationArgs: req.ValidationArgs,
 	})
 	if err != nil {
 		// A controlled stage failure already carries the user-facing wording; the

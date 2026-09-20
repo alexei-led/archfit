@@ -69,7 +69,7 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 - **Fact cache** (`internal/factcache`, adapter — core ring must not import it;
   see `docs/design/fact-cache.md`). Content-addressed extractor-fact store under
   `.archfit-cache/facts/`; stores facts, never scores. Runner-shaped analyzers
-  (depcruise, grimp, cargo, SCIP, ast-grep) wrap `toolrun.Runner` in
+  (depcruise, cargo, SCIP, ast-grep) wrap `toolrun.Runner` in
   `factcache.Runner`; Go (`packages.Load`) and jscpd (temp-file output) use the
   store directly. Keys hash tool version + config slice + input tree; the
   input-tree hash must cover the TOOL'S real input set — config `exclude:` globs
@@ -77,7 +77,14 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   Partial/timed-out/dirty results are never cached; a Go member whose build
   reaches source no key covers (local `replace` in a member go.mod, unkeyed
   go.work sibling) is vetoed per-member; a local `replace` in the go.work file
-  itself disables the whole run's Go cache. There is no `--no-cache` flag —
+  itself disables the whole run's Go cache. The shared input walker skips only
+  `.archfit-cache` and `.git`; names such as `target`, `venv`, and
+  `node_modules` do not prove that an analyzer ignores source there. TypeScript
+  keys hash the complete supported `extends` chain and bypass the cache when a
+  chain cannot be resolved. Python runs fresh because the uv launcher identity
+  does not establish its transient grimp/Python environment. Cache-key work is
+  bounded (20,000 entries, 64 levels, 32 MiB); cycles, unsupported scope or budget
+  exhaustion never produce a partial reusable key. There is no `--no-cache` flag —
   `--refresh` re-runs the extractors and writes the fresh results back
   (`cmd/archfit/refresh_test.go` pins `--no-cache` as an exit-3 usage error).
 - **No gitnexus.** The `.gitnexus`/`.codegraph` index dirs are excluded from file
@@ -144,7 +151,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   seams, which is why the self-config stays `mode: warn`.
 - **Config schema v2 is the only analysable schema.** `config.SchemaVersion = 2`;
   `analyze`/`check` reject every other version and unknown config keys. `config
-  init` emits v2 directly; owners update older configs manually before analysis.
+init` emits v2 directly; owners update older configs manually before analysis.
 - **Seam ledger** (`relationship.Seam`, built by `analysis.buildSeams`, carried
   on `AssessmentSignals.Seams` → `result.Result.Seams`). One record per ordered
   module pair with a stable ID (`sha256("seam.v1\x00"+from+"\x00"+to)`), the
@@ -155,7 +162,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   level) and unresolved targets (external hygiene) are NOT seams; clone-only
   pairs are not either — they have no import edge. Seam order is by module pair,
   and the gate re-sorts by ID so a ledger reordering cannot reorder gate findings.
-- **Comparison is strict on four fingerprints** (`decision.CompareFingerprints`).
+- **Comparison is strict on four fingerprints plus measurement profile** (`decision.CompareFingerprints`).
   `config_hash` + `model_hash` (`policy.ModelHash` over the RESOLVED module map)
   `labels_hash` (`labels.FileHash` over APPROVED entries only) +
   `rubric_version`. Any mismatch is `non_comparable` with a reason NAMING the
@@ -172,6 +179,14 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   non-comparable, so `mode: fail` blocks only on code-edge changes until
   `archfit baseline` is re-run. Rationale in
   `docs/design/architecture-state-reporting.md`.
+  The measurement profile adds the normalized settings hash and producer
+  semantics/status/tool versions. Unknown or incompatible profile data makes
+  the comparison `non_comparable` with named reasons; external producer
+  versions are exact-match until equivalence is verified. Unresolved dynamic
+  dependency-cruiser inputs and unsupported TypeScript config resolution are
+  unknown profile inputs. The root `comparison`
+  block describes `--base` and carries the current profile. The persisted
+  baseline is exposed separately as `gate_reference`.
 - **Labels are validated structurally** (`labels.Validate`). Self-pair, duplicate
   ordered pair, and (where the module map is in hand) undeclared endpoint are
   hard errors — an override that applies to nothing, or two answers to one
@@ -457,6 +472,12 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   last-resort module root from `config.ModuleRootDirs` (dotted prefix for Python globs)
   goes through the same resolver. agenttask itself never touches the filesystem — the
   composition root (`cmd`) owns the `onDisk` closure.
+- **Agent repair contracts are policy-aware and replayable.** Each task carries
+  `repair_kind: code_change|needs_owner_decision`; forbidden-dependency goals
+  cannot route through a public API, and new-cross-module goals cannot use
+  baseline capture as a repair. Validation replays `--base`, `--lang`, and
+  `--require-tools`; it omits `--refresh` so cache control cannot change the
+  result.
 - **TS coverage honesty: one unresolved ratio.** `score.tsUnresolvedRatioCeiling` (10%)
   caps `coupling_balance` confidence using `Unresolved/SpecifiersSeen` — the SAME
   specifier-denominator ratio the dependency-cruiser `Coverage.Reason` string and the
@@ -500,6 +521,10 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   corroboration, or a comparable persisted baseline honestly produces exit 2;
   none is a permanent dimension status. `make archfit` accepts 0 or 2; only 1
   fails it. A coupling advisory is a diagnostic and can never reach exit 1.
+  An applicable fail-gated rule with incomplete producer evidence is listed in
+  `decision.unevaluated_required_rules`; without another blocker it sets
+  `hard_gates: unmeasured` and remains exit 2. Required-rule evidence is read
+  from these fields, never inferred from finding prose.
 - **Six named erosion gates** hold the architecture-state contract against decay
   back into the averaged score it replaced. Each has ONE executable owner and a
   PAIRED fixture proving it fires on a violating input — a structural rule nobody
@@ -530,20 +555,25 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
 - **The four comparability fingerprints live ONLY in the root `comparison`
   block** (`TestFingerprintsLiveOnlyInTheComparisonBlock` walks the serialised
   wire form). A second copy is a second answer to "may these two runs be
-  compared", and the copies drift. `labels_hash` is `omitempty` and absent when no
-  label is approved — empty compares equal to empty, so two unlabelled repos stay
-  comparable; a malformed labels file is exit 3 long before a report exists. A
+  compared", and the copies drift. `labels_hash` is `omitempty` and absent when
+  no label is approved — empty compares equal to empty, so two unlabelled repos
+  stay comparable; a malformed labels file is exit 3 long before a report
+  exists. The measurement profile also lives under `comparison` and records the
+  normalized settings hash plus producer semantics/status/tool versions; an
+  unknown or incompatible profile is `non_comparable` with named reasons. A
   seam's `label_evidence_hash` is a DIFFERENT fact (the edges behind one label)
-  and stays on the seam.
+  and stays on the seam. The persisted baseline is exposed separately as
+  `gate_reference`; it is not the report-only `--base` comparison.
 - **`change_locality`'s denominator is the DECLARED module set**, not the touched
   count (`changeLocalityDimension`). Observed-over-observed is a tautology: it
   reported 100% coverage on a window that reached one module out of forty.
 - **Baseline schema v2** (`internal/baseline`, `SchemaVersion =
-  "archfit.baseline.v2"`). Stores accepted findings, the metric snapshot, and the
+"archfit.baseline.v2"`). Stores accepted findings, the metric snapshot, and the
   architecture-state reference: the four comparison fingerprints (`config_hash`,
-  `model_hash`, `labels_hash`, `rubric_version`) travelling with the facts they
-  qualify — hard-gate finding IDs, distributed-monolith seam IDs, and the nine
-  dimension snapshots. NO repository scalar is written. Older schemas are
+  `model_hash`, `labels_hash`, `rubric_version`) and the measurement profile
+  travelling with the facts they qualify — hard-gate finding IDs,
+  distributed-monolith seam IDs, and the nine dimension snapshots. NO repository
+  scalar is written. Older schemas are
   rejected; changing only `schema_version` cannot synthesize the missing state
   reference. Preserve the old file for owner review and regenerate deliberately
   with `archfit baseline` after reviewing current findings.
@@ -559,6 +589,10 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   new representatives, and wrote a different file every time. Three captures on
   this repo produced 108, 164, then 148 accepted entries and never settled
   (`cmd/archfit.TestRun_Baseline_IsIdempotent`).
+  Capture also skips findings covered by temporary waivers, including expired
+  waivers, and prints the count; it never silently turns temporary exceptions
+  into permanent accepted debt. A profile mismatch or incomplete seam snapshot
+  requires review, not a blanket re-baseline.
 - Parse config once into typed views; pass a package its view, not the whole config.
 - LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `config enrich`,
   `config init --ai-classify`, `config update --ai-classify`, `analyze --ai-summary`, and `explain --ai-summary`
@@ -566,7 +600,8 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `internal/*` package from importing `internal/llm`, so the LLM commands live in
   `cmd`.
 - `gate:` is wired for **all rule types** (`off` skips, `warn` is advisory/non-blocking,
-  `fail`/unset is blocking; exception: `public_api_change` defaults to `warn` when unset). An unknown `type` value is a config error.
+  `fail`/unset is blocking; exceptions: `public_api_change` and
+  `public_api_type_leak` default to `warn` when unset). An unknown `type` value is a config error.
   `metrics.<name>.gate` follows the same convention: a worsening baseline delta
   blocks when `gate` is unset. A tripped ratchet produces NO finding, so it
   reaches the verdict the same way the required-tool gate does — through
@@ -738,6 +773,7 @@ research artifacts, and analysis notes. Only read when explicitly debugging
 history or looking up a completed plan by name.
 
 <!-- gitnexus:start -->
+
 ## GitNexus — Code Intelligence
 
 This project is indexed by GitNexus as **archfit** (14346 symbols, 42693 relationships, 592 execution flows).
@@ -763,22 +799,22 @@ This project is indexed by GitNexus as **archfit** (14346 symbols, 42693 relatio
 
 ## Resources
 
-| Resource | Use for |
-| --- | --- |
-| `gitnexus://repo/archfit/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/archfit/clusters` | All functional areas |
-| `gitnexus://repo/archfit/processes` | All execution flows |
-| `gitnexus://repo/archfit/process/{name}` | Step-by-step execution trace |
+| Resource                                 | Use for                                  |
+| ---------------------------------------- | ---------------------------------------- |
+| `gitnexus://repo/archfit/context`        | Codebase overview, check index freshness |
+| `gitnexus://repo/archfit/clusters`       | All functional areas                     |
+| `gitnexus://repo/archfit/processes`      | All execution flows                      |
+| `gitnexus://repo/archfit/process/{name}` | Step-by-step execution trace             |
 
 ## CLI
 
-| Task | Read this skill file |
-| --- | --- |
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
+| Task                                         | Read this skill file                               |
+| -------------------------------------------- | -------------------------------------------------- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md`       |
+| Blast radius / "What breaks if I change X?"  | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?"             | `.claude/skills/gitnexus-debugging/SKILL.md`       |
+| Rename / extract / split / refactor          | `.claude/skills/gitnexus-refactoring/SKILL.md`     |
+| Tools, resources, schema reference           | `.claude/skills/gitnexus-guide/SKILL.md`           |
+| Index, status, clean, wiki CLI commands      | `.claude/skills/gitnexus-cli/SKILL.md`             |
 
 <!-- gitnexus:end -->

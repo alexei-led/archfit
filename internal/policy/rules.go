@@ -59,12 +59,12 @@ type MetricConfig = MetricEntry
 // A finding matching a waiver is suppressed until `expires` passes, after which
 // it gates again. reason/approved_by record the governance trail.
 type WaiverDef struct {
-	Rule       string `yaml:"rule"`
+	Rule       string `yaml:"rule" jsonschema:"required,minLength=1"`
 	From       string `yaml:"from"`
 	To         string `yaml:"to"`
-	Reason     string `yaml:"reason"`
-	ApprovedBy string `yaml:"approved_by"`
-	Expires    string `yaml:"expires"`
+	Reason     string `yaml:"reason" jsonschema:"required,minLength=1"`
+	ApprovedBy string `yaml:"approved_by" jsonschema:"required,minLength=1"`
+	Expires    string `yaml:"expires" jsonschema:"required,minLength=1,format=date"`
 }
 
 // WaiverSet is the approved rule deviations (`waivers:`) that suppress matching

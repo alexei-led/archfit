@@ -11,8 +11,9 @@ agent edits code
   → archfit check [--base main] --json
   → exit 0?  healthy — done.
   → exit 2?  needs_attention — no blocking finding. Read the dimension whose
-             status is not `measured` or the active diagnostic. Supply the named
-             missing fact; never treat yellow as a fabricated healthy zero.
+             status is not `measured`, the active diagnostic, or
+             `decision.unevaluated_required_rules`. Supply the named missing
+             fact; never treat yellow as a fabricated healthy zero.
   → exit 1?  blocked — read agent_tasks[] — goal, constraints, files, validation
   → fix within the constraints
   → run the task's validation command
@@ -42,6 +43,7 @@ Every ACTIVE gate finding produces one structured repair task:
 {
   "finding_id": "8a4be7…",
   "rule_id": "no_internal_access",
+  "repair_kind": "code_change",
   "origin": "introduced",
   "goal": "Replace the internal-API access from pkg/a/a.go to
            pkg/b/internal/impl.go with b's public API.",
@@ -50,13 +52,20 @@ Every ACTIVE gate finding produces one structured repair task:
     "public surface of module \"b\": [pkg/b/api/**]"
   ],
   "files": ["pkg/a/a.go", "pkg/b/internal/impl.go"],
-  "validation": ["archfit check -c .archfit.yaml"]
+  "validation": ["archfit check -c .archfit.yaml --lang go --require-tools"]
 }
 ```
 
-Goals are deterministic templates per rule type; constraints join the rule's
-configured constraint text, allowed alternatives, and the target module's
-public globs; validation is the exact `archfit check` command that must pass.
+`repair_kind` is `code_change` for a finding the agent can address in source and
+`needs_owner_decision` for a policy or accepted-debt decision. Goals are
+deterministic templates per rule type; constraints join the rule's configured
+constraint text, allowed alternatives, and the target module's public globs;
+validation is the exact `archfit check` command that must pass. The command
+replays the effective analysis flags (`--base`, repeated `--lang`, and
+`--require-tools`) so the repair is checked under the same conditions.
+`--refresh` is deliberately not serialized: cache-control must not change the
+validation result. `--no-advisories` and output-format flags are not part of
+the validation contract.
 With `--base`, each current task also carries `origin`: `introduced`,
 `pre_existing`, or `unknown`. `unknown` means analyzer evidence was asymmetric;
 it is never upgraded to `introduced`. Origin is triage metadata and never
@@ -69,6 +78,13 @@ names its own seams — a blocked run emits one `bc/coupling_gate` gate finding
 PER newly introduced seam, keyed `coupling-gate/<seamID>` and carrying the module
 pair. `bc/imbalanced_coupling` and `bc/duplicated_knowledge` are diagnostics and
 never gate.
+
+**Policy-correct repair goals.** A `forbidden_dependency` goal never proposes
+the target module's public API as a repair, because the dependency itself is
+forbidden. A `new_cross_module_dependency` goal asks for removal or an explicit
+architecture-owner decision; it does not suggest `archfit baseline` as a code
+fix. Use a public API only when the active rule explicitly permits that
+alternative.
 
 **`files[]` existence guarantee.** Every entry is a repo-relative path that
 exists on disk — this is the field an agent trusts blindly to open the right
@@ -129,11 +145,33 @@ analyzer evidence, or config-hash mismatch makes unmatched tasks `unknown` and
 names the reason. The synthetic `bc/coupling_gate` task is per-run trip state,
 not a stable base finding, so its origin is always `unknown`.
 
+Measurement compatibility is part of this comparison. The run publishes a
+`comparison.measurement_profile` with a profile version, settings hash, and
+the producer/tool versions and statuses that supplied the evidence. A missing,
+unknown, or incompatible profile makes the comparison `non_comparable` and
+keeps unmatched task origins `unknown`; observed matching findings can still be
+`pre_existing`. Reasons name the producer or profile field. The reference and
+status in `comparison` describe `--base`; its fingerprints describe the current
+run. The persisted baseline used
+by the gate is reported separately as `gate_reference`, so a base comparison
+does not silently become a gate reference and a baseline mismatch does not
+pretend to be a base delta.
+
 Three symmetric degradations remain comparable and are always disclosed:
 
 - both sides have unresolved import specifiers;
 - both sides covered every input but lost edge precision;
 - the same activated analyzer is unavailable on both sides.
+
+Completed partial producers carry `partial_basis`: `unresolved_specifiers` or
+`degraded_precision`. Matching statuses without a recognized basis do not prove
+compatibility. Missing inputs, timeouts, and opaque configuration unknowns still
+prevent comparison, even if two runs report the same unknown text.
+
+The history producer identifies its fixed recent-500/full-history-fallback
+algorithm. The observed fallback choice and sample counts stay in measurement
+metadata; an ordinary new commit does not change the profile merely by making
+the bounded history query sufficient.
 
 The safety argument is symmetry: neither side ran evidence the other could hide
 behind. Asymmetric absence or partial evidence remains unknown. Matching uses
@@ -183,4 +221,36 @@ inline PR annotations.
 Findings carry status: `new` (gates), `baseline` (accepted — do not "fix"
 unprompted), `waived` (time-boxed waiver), `expired_waiver` (gates
 again), `fixed` (gone since baseline). `archfit baseline` accepts the current
-state; waivers live in config with expiry dates.
+state; waivers live in config with expiry dates. Waivers must name a declared or
+supported synthetic rule, at least one scope selector (`from` or `to`), a
+non-empty `reason`, `approved_by`, and an ISO date in `expires`; invalid
+metadata is rejected while loading the config. Matching is independent of YAML
+order: an active match wins, and an expired match is reported as
+`expired_waiver` only when no active match applies. Baseline capture skips
+findings covered by temporary waivers, including expired waivers, and prints
+how many were skipped, so a temporary exception is never silently converted
+into permanent accepted debt. Review the full capture before committing it.
+
+## Required rule evidence
+
+When a configured `gate: fail` rule applies to the source tree but its required
+producer evidence is incomplete, JSON includes
+`decision.unevaluated_required_rules`:
+
+```json
+{
+  "unevaluated_required_rules": [
+    {
+      "rule_id": "no_internal_access",
+      "reason": "go/packages evidence is partial: ..."
+    }
+  ]
+}
+```
+
+The list is sorted by `rule_id` and omitted when empty. A known active blocker
+still sets `decision.hard_gates` to `fail`; otherwise a non-empty list sets it to
+`unmeasured`, which keeps `check` at exit `2`. Read these structured fields
+directly. Do not infer required-rule coverage by searching prose or by treating
+an empty finding list as proof that the rule passed. Rules whose source scope is
+proven not applicable are omitted from this list.

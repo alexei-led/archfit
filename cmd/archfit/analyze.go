@@ -160,13 +160,14 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	}
 	resp, err := application.Service{Stages: newAnalyzeStages(req.configPath, req.root, cfg, deps)}.Execute(ctx, application.Request{
 		ConfigSource: req.configPath, BundleDir: filepath.Dir(req.configPath),
-		BaseRef:      req.baseRef,
-		JSON:         req.json,
-		Markdown:     req.markdown,
-		SARIF:        req.sarif,
-		Formats:      req.formats,
-		NoAdvisories: req.noAdvisories,
-		RequireTools: req.requireTools,
+		BaseRef:        req.baseRef,
+		JSON:           req.json,
+		Markdown:       req.markdown,
+		SARIF:          req.sarif,
+		Formats:        req.formats,
+		NoAdvisories:   req.noAdvisories,
+		RequireTools:   req.requireTools,
+		ValidationArgs: scanValidationArgs(req),
 	})
 	if err != nil {
 		return applicationExitError(err)

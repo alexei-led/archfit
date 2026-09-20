@@ -258,9 +258,9 @@ func (e *Extractor) cachedRunner(s scope.Scope, analyzer, version string, exts [
 		return e.runner
 	}
 	// Config exclusions deliberately do NOT filter the hash: cargo reads
-	// manifests and sources regardless of `exclude:` globs (ListInputs prunes
-	// target/ and known non-input cache directories), so editing an excluded-but-compiled file must
-	// still invalidate. Exclusion-config changes invalidate via cfgHash.
+	// manifests and sources regardless of `exclude:` globs. Even target/ can
+	// contain explicitly configured source paths. Exclusion-config changes
+	// invalidate via cfgHash.
 	files := factcache.ListInputs(s.Root, factcache.MatchExts(exts, rustManifestNames), nil)
 	treeHash, err := factcache.HashTree(s.Root, files)
 	if err != nil {

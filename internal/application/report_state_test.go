@@ -202,7 +202,8 @@ func TestShadowStateCoverageCountsTheProjectedEnvelopes(t *testing.T) {
 func TestStateComparisonIsStrictAndExplains(t *testing.T) {
 	head := decision.Fingerprints{
 		ConfigHash: stateConfigHash, ModelHash: "model-hash", LabelsHash: "labels-hash",
-		RubricVersion: report.ScoreVersion,
+		RubricVersion:      report.ScoreVersion,
+		MeasurementProfile: referenceProfile(),
 	}
 
 	t.Run("without a comparison", func(t *testing.T) {

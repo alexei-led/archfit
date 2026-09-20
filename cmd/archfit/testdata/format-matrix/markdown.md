@@ -88,9 +88,9 @@
 - `matching_declared_deploy_units`: 0 count
 - `mismatched_declared_deploy_units`: 0 count
 - `declared_external_systems`: 0 count
-- `analyzers_reporting_coverage`: 4 count (4/4)
+- `analyzers_reporting_coverage`: 3 count (3/3)
 - `coverage_gaps`: 0 count
-- `analyzers_not_applicable`: 7 count
+- `analyzers_not_applicable`: 8 count
 - `coverage`: 1 ratio
 
 ## Evidence coverage
@@ -106,7 +106,7 @@
 | jscpd | disabled | clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable |
 | scip | disabled | opt-in: analyzers.scip.enabled |
 | ast-grep/syntax | disabled | opt-in: analyzers.syntax.enabled |
-| ast-grep | ok | — |
+| ast-grep | disabled | — |
 | cargo-modules | absent | — |
 
 ## Coupling seams (1)
@@ -129,6 +129,12 @@
 
 - **Status:** not_requested
 - **Reference:** none
+
+## Gate reference
+
+- **Status:** non_comparable
+- **Reference:** `baseline`
+- no baseline file was loaded
 
 ## Not measured (14)
 
@@ -179,7 +185,7 @@ Report-only. Static facts only; semantic and dynamic categories without determin
 
 ## Agent tasks (1)
 
-- **no_direct_b_dependency** [`ba3803ec`] Remove the forbidden dependency from pkg/a/a.go on pkg/b; depend on b's public API or move the shared code to an allowed location.
+- **no_direct_b_dependency** [`ba3803ec`] Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.
   - files: pkg/a/a.go, pkg/b
   - constraint: Remove the dependency or move the code
   - validate: `archfit check -c <ROOT>/.archfit.yaml`
@@ -235,7 +241,7 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - jscpd: disabled — clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable
 - scip: disabled — opt-in: analyzers.scip.enabled
 - ast-grep/syntax: disabled — opt-in: analyzers.syntax.enabled
-- ast-grep: ok
+- ast-grep: disabled
 - cargo-modules: absent
 
 ## Finding index (2)

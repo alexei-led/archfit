@@ -4,9 +4,10 @@ import (
 	"fmt"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-// Fingerprints are the four inputs a numerical state comparison must agree on.
+// Fingerprints are the policy hashes and measurement profile a delta must agree on.
 //
 // They are separate values, not one combined hash, so a mismatch can say WHICH
 // input moved. "Not comparable" with no reason is indistinguishable from a bug.
@@ -22,7 +23,8 @@ type Fingerprints struct {
 	// qualification.
 	LabelsHash string
 	// RubricVersion is the scoring rubric the run was produced under.
-	RubricVersion string
+	RubricVersion      string
+	MeasurementProfile *evidence.MeasurementProfile
 }
 
 // fingerprintInputs names each fingerprint for the mismatch reason.
@@ -61,6 +63,10 @@ func CompareFingerprints(baseRef string, head, base Fingerprints) *result.StateC
 		out.Reasons = append(out.Reasons, fmt.Sprintf(
 			"%s differs between the two runs (%s vs %s): a policy change is not a code change",
 			headFields[i].name, shortHash(headFields[i].value), shortHash(baseFields[i].value)))
+	}
+	if reasons := CompareMeasurementProfiles(head.MeasurementProfile, base.MeasurementProfile); len(reasons) > 0 {
+		out.Status = result.StateComparisonNonComparable
+		out.Reasons = append(out.Reasons, reasons...)
 	}
 	return out
 }

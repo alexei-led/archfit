@@ -531,23 +531,7 @@ func intentDimension(diag *result.Result, p policy.PolicySnapshot, f Observation
 			continue
 		}
 		active++
-		scope := ruleProducerScope(rule, p, f)
-		if scope.status == ruleScopeNotApplicable {
-			evaluated++
-			continue
-		}
-		if scope.status != ruleScopeApplicable {
-			unevaluatedRules = append(unevaluatedRules, rule.ID)
-			continue
-		}
-		complete := true
-		if ruleNeedsDependencies(rule.Type) && !primaryEvidenceComplete(diag, scope.languages) {
-			complete = false
-		}
-		if ruleNeedsSyntax(rule.Type) && !syntaxEvidenceComplete(diag, scope.languages) {
-			complete = false
-		}
-		if complete {
+		if ruleUnevaluatedReason(diag, rule, p, f) == "" {
 			evaluated++
 		} else {
 			unevaluatedRules = append(unevaluatedRules, rule.ID)

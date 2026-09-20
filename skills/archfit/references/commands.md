@@ -92,7 +92,8 @@ Shared analysis/check flags:
 - `--base <ref>` — score a git ref in addition to HEAD; text/markdown show a
   "CHANGE VS BASE" section. JSON/SARIF keep the normal HEAD architecture-state
   contract; JSON also adds `origin` to current `agent_tasks[]` when task evidence
-  is comparable.
+  is comparable. `comparison` describes this report-only base comparison;
+  `gate_reference` describes the persisted baseline used by gates.
 - `--format` — `text` (default), `json`, `markdown` (`md` is an alias),
   `sarif`, or `scorecard`. Repeatable / comma-separated.
 - `--json` / `--markdown` / `--sarif` — shorthands for
@@ -132,7 +133,9 @@ absence leaves unmeasured, and an install hint. Gaps surface everywhere:
 `## Coverage gaps` (Markdown), `## Required tools missing` (scorecard),
 `coverage.tools[]` in primary JSON, and stderr.
 
-Default is warn-loud. `archfit check --require-tools` or
+By default a missing analyzer is reported without setting `hard_gates` to
+`fail`; incomplete evidence can still produce `check` exit `2`.
+`archfit check --require-tools` or
 `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail` makes missing required
 tools block (exit 1, a policy decision distinct from exit 3). Tell users to
 install the tool to close the gap, not to disable the gate.
@@ -142,8 +145,11 @@ install the tool to close the gap, not to disable the gate.
 - `text` — human architecture-state report (verdict: HEALTHY / NEEDS ATTENTION /
   BLOCKED), the nine dimension envelopes, the coverage split, and the seam ledger.
 - `json` — `archfit.architecture-state.v1` at the document root: `verdict`,
-  `decision`, `comparison`, `measurement`, `dimensions`, `coverage`, `findings`,
-  `agent_tasks`, and `seams`. **No repository score.**
+  `decision`, `comparison`, optional `gate_reference`, `measurement`,
+  `dimensions`, `coverage`, `findings`, `agent_tasks`, and `seams`. **No
+  repository score.** `decision.unevaluated_required_rules` names applicable
+  fail-gated rules that lacked enough producer evidence; an empty list is
+  omitted.
 - `markdown` — the same state, plus the detailed findings audit.
 - `sarif` — SARIF 2.1.0 for code-scanning annotations; the state rides in
   `runs[0].properties`.
@@ -170,10 +176,9 @@ The exit code IS the architecture-state verdict; nothing else participates.
 - `0` — `healthy`.
 - `1` — `blocked`: active gate finding, or missing required tool under
   `--require-tools` / `analyzers.<x>.gate: fail`. **Gate on this one.**
-- `2` — `needs_attention`: no blocker, but an active diagnostic or incomplete
-  dimension evidence remains. Read the named missing fact; do not treat it as a
-  failure or fabricate evidence to force exit 0. Exit 0 is reachable when every
-  required fact is genuinely supplied.
+- `2` — `needs_attention`: no blocker, but an active diagnostic, incomplete
+  dimension evidence, or unevaluated required rule remains. Read the named
+  missing fact; do not treat it as a failure or fabricate evidence to force exit 0. Exit 0 is reachable when every required fact is genuinely supplied.
 - `3` — usage, config, or runtime error (includes a v1 config under schema v2,
   malformed labels, or missing required AI config for off-gate AI commands).
 

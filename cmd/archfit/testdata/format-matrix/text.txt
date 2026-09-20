@@ -62,9 +62,9 @@ DIMENSIONS
     matching_declared_deploy_units: 0 count
     mismatched_declared_deploy_units: 0 count
     declared_external_systems: 0 count
-    analyzers_reporting_coverage: 4 count (4/4)
+    analyzers_reporting_coverage: 3 count (3/3)
     coverage_gaps: 0 count
-    analyzers_not_applicable: 7 count
+    analyzers_not_applicable: 8 count
     coverage: 1 ratio
   drift           unmeasured  gate: not_applicable  confidence: unrated  no denominator
 
@@ -116,6 +116,11 @@ TOP ACTIONABLE FINDINGS
 COMPARISON
 
   status: not_requested  ·  reference: none
+
+GATE REFERENCE
+
+  status: non_comparable  ·  reference: baseline
+    no baseline file was loaded
 
 FINDING INDEX (2)
 

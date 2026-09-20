@@ -1,82 +1,124 @@
 package factcache
 
 import (
+	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 )
 
-// hashSkipDirs are directory names never part of any extractor's input scope:
-// VCS metadata, archfit's own cache, dependency trees, build output, and
-// interpreter caches. Do not prune every dot-dir here: project dot directories
-// such as .storybook or .cargo can be real analyzer inputs and must invalidate
-// warm fact-cache hits.
+// hashSkipDirs contains only tool metadata shared by every extractor. Source
+// exclusions belong to each caller: names such as target or venv (even with
+// cache/environment markers) do not prove that its analyzer skips the directory.
 var hashSkipDirs = map[string]struct{}{
 	".archfit-cache": {},
 	".git":           {},
-	".venv":          {},
-	"node_modules":   {},
-	"target":         {},
-	"__pycache__":    {},
-	"venv":           {},
 }
 
-// ListInputs walks root and returns the sorted slash-relative paths of the
-// regular files that form one analyzer's input scope: match(rel) selects by
-// path (extension, basename, …) and exclude globs (doublestar, matched against
-// the slash-relative path) drop the rest. Feed the result to HashTree for the
-// key's input-tree component. The walk is best-effort: unreadable entries are
-// skipped, never an error — a file that vanishes between walk and hash is
-// HashTree's error to report.
+// ListInputs enumerates analyzer inputs, following directory symlinks while
+// retaining their logical paths. Caller exclusions prune complete subtrees.
+// Unreadable inputs, cycles, or excessive enumeration return a directory sentinel
+// so HashTree vetoes caching instead of serving incomplete or expensive keys.
 func ListInputs(root string, match func(rel string) bool, exclude []string) []string {
-	var out []string
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return nil //nolint:nilerr // best-effort: skip unreadable entries
+	physical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return []string{"."}
+	}
+	w := inputWalker{match: match, exclude: exclude, active: make(map[string]bool)}
+	if err := w.walk(physical, "", 0); err != nil {
+		return []string{"."}
+	}
+	slices.Sort(w.files)
+	return w.files
+}
+
+const maxInputEntries = 20_000
+
+type inputWalker struct {
+	match   func(string) bool
+	exclude []string
+	active  map[string]bool
+	files   []string
+	entries int
+}
+
+func (w *inputWalker) walk(dir, rel string, depth int) error {
+	if depth > 64 || w.active[dir] {
+		return fs.ErrInvalid
+	}
+	w.active[dir] = true
+	defer delete(w.active, dir)
+	f, err := os.Open(dir) //nolint:gosec // directory resolved from analyzer input scope
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	for {
+		entries, err := f.ReadDir(128)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
 		}
-		name := d.Name()
-		if d.IsDir() {
-			if path == root {
-				return nil
+		for _, entry := range entries {
+			w.entries++
+			if w.entries > maxInputEntries {
+				return fs.ErrInvalid
 			}
-			if _, skip := hashSkipDirs[name]; skip {
-				return filepath.SkipDir
+			if err := w.entry(filepath.Join(dir, entry.Name()), filepath.ToSlash(filepath.Join(rel, entry.Name())), entry, depth); err != nil {
+				return err
 			}
+		}
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
-		isDirLink := false
-		if !d.Type().IsRegular() {
-			if d.Type()&fs.ModeSymlink == 0 {
-				return nil // sockets, devices, … — never tool inputs
-			}
-			info, serr := os.Stat(path) // follow the link
-			if serr != nil {
-				return nil // dangling: no content the tool could read either
-			}
-			// A symlink to a regular file is an input like any other — HashTree's
-			// ReadFile follows it, so target edits invalidate. A symlink to a
-			// directory cannot be descended by WalkDir while the real tool follows
-			// it: include the path so HashTree errors and the caller vetoes
-			// caching — a miss, never a stale hit (over-hash, never under-hash).
-			isDirLink = info.IsDir()
-			if !isDirLink && !info.Mode().IsRegular() {
-				return nil
-			}
+	}
+}
+
+func (w *inputWalker) entry(path, rel string, entry fs.DirEntry, depth int) error {
+	info, err := entry.Info()
+	if err != nil {
+		return err
+	}
+	if entry.Type()&fs.ModeSymlink != 0 {
+		info, err = os.Stat(path)
+		if os.IsNotExist(err) {
+			return nil
 		}
-		rel, err := filepath.Rel(root, path)
 		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			path, err = filepath.EvalSymlinks(path)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if info.IsDir() {
+		if _, skip := hashSkipDirs[entry.Name()]; skip || excludesDirectory(rel, w.exclude) {
 			return nil
 		}
-		rel = filepath.ToSlash(rel)
-		if matchesAny(rel, exclude) || (!isDirLink && !match(rel)) {
-			return nil
+		return w.walk(path, rel, depth+1)
+	}
+	if info.Mode().IsRegular() && !matchesAny(rel, w.exclude) && w.match(rel) {
+		w.files = append(w.files, rel)
+	}
+	return nil
+}
+
+func excludesDirectory(rel string, patterns []string) bool {
+	for _, pattern := range patterns {
+		if strings.HasSuffix(pattern, "/**") {
+			if ok, _ := doublestar.Match(pattern, rel+"/"); ok {
+				return true
+			}
 		}
-		out = append(out, rel)
-		return nil
-	})
-	return out
+	}
+	return false
 }
 
 // MatchExts returns a match func for ListInputs that selects files by
@@ -99,8 +141,7 @@ func MatchExts(exts []string, basenames []string) func(rel string) bool {
 	}
 }
 
-// MatchAll selects every regular file — for analyzers whose input scope is the
-// whole tree (jscpd, ast-grep).
+// MatchAll selects every regular file within the caller's traversal scope.
 func MatchAll(string) bool { return true }
 
 func matchesAny(rel string, patterns []string) bool {

@@ -120,14 +120,15 @@ func Assess(in AssessInput) (Assessed, error) {
 // ScoreInput carries the explicit values scoring, the coupling gate, and repair
 // tasks need on top of the assessed diagnostic.
 type ScoreInput struct {
-	Policy        policy.PolicySnapshot
-	Facts         Observations
-	Anchor        BaselineAnchor
-	ConfigSource  string
-	ScanRoot      string
-	Root          string
-	CrateRootDirs map[string]string
-	RequireTools  bool
+	Policy         policy.PolicySnapshot
+	Facts          Observations
+	Anchor         BaselineAnchor
+	ConfigSource   string
+	ScanRoot       string
+	Root           string
+	CrateRootDirs  map[string]string
+	RequireTools   bool
+	ValidationArgs []string
 	// ApplyToolGate enables the coverage-gap hard gate. Only the analyze/check
 	// use case sets it: every other stage renders a verdict nothing consumes as
 	// an exit code, so a required-analyzer gap must not rewrite it there.
@@ -182,7 +183,7 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	diag.ToolCoverage = in.MarkedCoverage
 	finalized := finalize(diag, FinalizeInput{
 		Gate: gate, Baseline: in.Anchor, RuleTypes: ruleTypes, ModulePublic: modulePublic,
-		ValidationCommands: []string{validationCommand(in.ConfigSource, in.ScanRoot)},
+		ValidationCommands: []string{validationCommand(in.ConfigSource, in.ScanRoot, in.ValidationArgs...)},
 		KnownFiles:         knownFiles, CrateRootDirs: in.CrateRootDirs,
 		ModuleRootDirs: policy.ModuleRootDirs(in.Policy.Topology.Modules),
 		OnDisk:         scope.OnDiskWithin(in.Root),

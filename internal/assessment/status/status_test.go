@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	testRuleID   = "public_api_only"
-	testFrom     = "pkg/a/a.go"
-	testTo       = "pkg/b/internal/impl.go"
-	testFP       = "deadbeefdeadbeefdeadbeefdeadbeef"
-	kindGate     = "gate"
-	kindAdvisory = "advisory"
+	testRuleID       = "public_api_only"
+	testFrom         = "pkg/a/a.go"
+	testTo           = "pkg/b/internal/impl.go"
+	testFP           = "deadbeefdeadbeefdeadbeefdeadbeef"
+	testFutureExpiry = "2099-01-01"
+	kindGate         = "gate"
+	kindAdvisory     = "advisory"
 )
 
 // fakeAccepted is an in-memory status.AcceptedSet — status tests exercise the
@@ -123,6 +124,53 @@ func TestAssign_ActiveException(t *testing.T) {
 	}
 }
 
+func TestAssign_ActiveWaiverWinsRegardlessOfOrder(t *testing.T) {
+	f := makeFindings(makeEdge())
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	expired := policy.WaiverDef{Rule: testRuleID, From: testFrom, To: testTo, Expires: "2020-01-01"}
+	active := policy.WaiverDef{Rule: testRuleID, From: testFrom, To: testTo, Expires: testFutureExpiry}
+	for _, waivers := range []policy.WaiverSet{{Waivers: []policy.WaiverDef{expired, active}}, {Waivers: []policy.WaiverDef{active, expired}}} {
+		result := status.Assign([]finding.Finding{f}, fakeAccepted{}, waivers, now, kindGate)
+		if len(result) != 1 {
+			t.Fatalf("want 1 finding, got %d", len(result))
+		}
+		if result[0].Status != finding.StatusWaived {
+			t.Errorf("want status %q, got %q", finding.StatusWaived, result[0].Status)
+		}
+	}
+}
+
+func TestAssign_SyntheticWaiverMatchesModuleEndpoints(t *testing.T) {
+	f := finding.Finding{
+		ID: "synthetic", RuleID: "labels/stale", Kind: kindAdvisory,
+		Edge: finding.EdgeEvidence{
+			From: finding.Endpoint{Module: "checkout"},
+			To:   finding.Endpoint{Module: "pricing"},
+		},
+	}
+	waivers := policy.WaiverSet{Waivers: []policy.WaiverDef{{
+		Rule: "labels/stale", From: "checkout", To: "pricing", Expires: testFutureExpiry,
+	}}}
+	result := status.Assign([]finding.Finding{f}, fakeAccepted{}, waivers, time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC), kindGate)
+	if len(result) != 1 || result[0].Status != finding.StatusWaived {
+		t.Fatalf("got %+v, want one waived finding", result)
+	}
+}
+
+func TestAssign_EdgelessSyntheticRuleOnlyWaiver(t *testing.T) {
+	f := finding.Finding{
+		ID: "uncovered", RuleID: "map/uncovered_path", Kind: kindAdvisory,
+		MatchedBy: map[string]string{"subject": "pkg/orphan"},
+	}
+	waivers := policy.WaiverSet{Waivers: []policy.WaiverDef{{
+		Rule: "map/uncovered_path", Expires: testFutureExpiry,
+	}}}
+	result := status.Assign([]finding.Finding{f}, fakeAccepted{}, waivers, time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC), kindAdvisory)
+	if len(result) != 1 || result[0].Status != finding.StatusWaived {
+		t.Fatalf("got %+v, want one waived finding", result)
+	}
+}
+
 func TestAssign_ExpiredException(t *testing.T) {
 	f := makeFindings(makeEdge())
 
@@ -206,13 +254,8 @@ func TestAssign_FixedFindingKindFilter(t *testing.T) {
 func TestAssign_ExpiryBoundary(t *testing.T) {
 	f := makeFindings(makeEdge())
 
-	// Use a fixed reference date for the boundary test.
-	// Expiry date is 2025-06-01; exception is valid on 2025-06-01 itself,
-	// expires at end-of-day (2025-06-01 + 24h). So:
-	//   - now = 2025-06-02 00:00:00 exactly → still valid (not after 2025-06-02 00:00:00)
-	//   - now = 2025-06-02 00:00:01 → expired
 	expiryDate := "2025-06-01"
-	endOfExpiryDay := time.Date(2025, 6, 2, 0, 0, 0, 0, time.UTC) // expiry + 24h
+	endOfExpiryDay := time.Date(2025, 6, 2, 0, 0, 0, 0, time.UTC)
 
 	exceptions := policy.WaiverSet{
 		Waivers: []policy.WaiverDef{
@@ -232,12 +275,17 @@ func TestAssign_ExpiryBoundary(t *testing.T) {
 	}{
 		{
 			name:       "just before expiry boundary",
-			now:        endOfExpiryDay.Add(-time.Second), // 2025-06-01 23:59:59 UTC
+			now:        endOfExpiryDay.Add(-time.Second),
 			wantStatus: finding.StatusWaived,
 		},
 		{
+			name:       "at expiry boundary",
+			now:        endOfExpiryDay,
+			wantStatus: finding.StatusExpiredWaiver,
+		},
+		{
 			name:       "just after expiry boundary",
-			now:        endOfExpiryDay.Add(time.Second), // 2025-06-02 00:00:01 UTC
+			now:        endOfExpiryDay.Add(time.Second),
 			wantStatus: finding.StatusExpiredWaiver,
 		},
 	}

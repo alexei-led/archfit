@@ -5,18 +5,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 func headContext() AnalysisContext {
-	return AnalysisContext{ConfigHash: "cfg", ModelHash: "mod", LabelsHash: "lbl"}
+	return AnalysisContext{ConfigHash: "cfg", ModelHash: "mod", LabelsHash: "lbl", MeasurementProfile: referenceProfile()}
 }
 
 func matchingSnapshot() *BaselineStateSnapshot {
 	return &BaselineStateSnapshot{
 		ConfigHash: "cfg", ModelHash: "mod", LabelsHash: "lbl", RubricVersion: report.ScoreVersion,
-		QualifyingSeamIDs: []string{"seam-1"},
+		QualifyingSeamIDs:  []string{"seam-1"},
+		MeasurementProfile: referenceProfile(),
 	}
+}
+
+func referenceProfile() *evidence.MeasurementProfile {
+	return &evidence.MeasurementProfile{Version: evidence.MeasurementProfileVersion, SettingsHash: "settings", Producers: []evidence.MeasurementProducer{{Tool: "loc", SemanticsVersion: "loc.v1", Status: evidence.StatusOK}}}
 }
 
 // TestSeamAnchor pins the comparison contract: a stored reference is admissible

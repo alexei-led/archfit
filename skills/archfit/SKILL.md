@@ -40,6 +40,9 @@ archfit reports one **architecture state**: a verdict (`healthy` /
 confidence, denominator, and what it could not measure. **There is no repository
 score.** Coupling additionally reports a **seam ledger**: one record per ordered
 module pair, with a stable ID, a score distribution, and a balancing hypothesis.
+The state also carries the measurement profile behind the run. A persisted
+baseline is exposed as `gate_reference`; an explicit `--base` comparison is
+reported separately and does not replace the gate reference.
 
 Underneath it measures **Balanced Coupling** (`coupling_balance` band, Khononov
 S×D×V formula) plus structural architecture rules (forbidden deps, layering,
@@ -130,18 +133,27 @@ redirect to a draft file instead of `.archfit.yaml`).
 
 ## Agent repair loop
 
-Fixing findings autonomously: run `archfit check --json`. **Exit 0 or 2 means
-no blocker remains** — 2 (`needs_attention`) names an active diagnostic or a
-missing evidence fact such as supplied coverage or a comparable baseline. Exit
+Fixing findings autonomously: run `archfit check --json`. Exit 0 is healthy.
+Exit 2 (`needs_attention`) has no active blocker but can mean a required rule
+was not evaluated or the baseline cannot be compared. Read
+`decision.unevaluated_required_rules` and `gate_reference` before describing
+the gate as verified; advisory-only attention does not require a code repair. Exit
 1 (`blocked`) is the one to repair. Do not fabricate evidence merely to turn 2
 into 0; exit 0 is reachable when the repository genuinely supplies every
 required fact.
-Each `agent_tasks[]` entry has `goal`, `constraints`, `files`, and a
-`validation` command. With `--base`, it also has `origin` (`introduced`,
-`pre_existing`, or conservatively `unknown`). Origin is triage metadata only;
-it never changes the verdict or exit code. Fix within the constraints, touch only
-the listed files where possible, then re-run `validation` verbatim. Never "fix" `baseline` or
-`waived` findings unprompted. Full contract: `references/agent-loop.md`.
+Each `agent_tasks[]` entry has `repair_kind`, `goal`, `constraints`, `files`,
+and a `validation` command. `repair_kind` is `code_change` or
+`needs_owner_decision`; the latter requires a policy or accepted-debt decision.
+Forbidden-dependency goals do not recommend a public route, and
+new-cross-module goals do not recommend baseline capture as a code fix. With
+`--base`, a task also has `origin` (`introduced`, `pre_existing`, or
+conservatively `unknown`). Origin is triage metadata only; it never changes the
+verdict or exit code. Validation replays effective `--base`, `--lang`, and
+`--require-tools` flags. `--refresh` is intentionally omitted because
+cache-control must not change validation output. Fix within the constraints,
+touch only the listed files where possible, then re-run `validation` verbatim.
+Never "fix" `baseline` or `waived` findings unprompted. Full contract:
+`references/agent-loop.md`.
 
 ## Coverage gaps and gate promotion
 
@@ -151,10 +163,11 @@ the primary JSON), means an analyzer did not run — not a passing gate.
 Read the gap's `affected_metrics` and `install_cmd`; close it by installing the
 tool (`archfit doctor` lists them) or filling the config, not by ignoring it.
 
-- Default is warn-loud (exit 0). To make CI block on a missing tool, promote with
-  `archfit check --require-tools` or per-tool `languages.<x>.gate: fail` /
-  `analyzers.<x>.gate: fail` (exits 1 — a policy decision, distinct from exit 3
-  errors).
+- By default a missing tool is reported without setting `hard_gates` to `fail`.
+  Incomplete evidence can still make `check` return exit `2`. To make CI block
+  on a missing tool, promote with `archfit check --require-tools` or per-tool
+  `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail` (exits 1 — a policy
+  decision, distinct from exit 3 errors).
 - Promote rules to `gate: fail` only when high-confidence (cycles,
   forbidden-dependency, layer-direction); keep noisy ones at `warn`.
 - Separate `tool missing`, `tool failed`, `tool disabled`, and `config
@@ -162,6 +175,9 @@ under-specified`. They have different fixes.
 - If a gap cannot be closed now, say which metrics are unmeasured, lower
   confidence, and avoid treating the run as clean just because report-only
   `analyze` stayed exit 0.
+- If `decision.unevaluated_required_rules` is non-empty, the named fail-gated
+  rules lack enough producer evidence. Resolve those structured reasons; do not
+  infer a pass from an empty finding list or report prose.
 - Under-specified-module warnings usually clear once modules declare `owner` /
   `subdomain` / `volatility`. Draft them with `config enrich subdomain` /
   `config enrich owner` / `config enrich volatility` or `config init
@@ -192,11 +208,12 @@ Capture each finding's ID, rule ID, status, from/to path, `why`, and
 `constraint`. Then prefer, in order:
 
 1. Remove the unnecessary dependency.
-2. Use or add a public API.
+2. Use or add a public API only when the active rule permits that alternative.
 3. Move code to the owning module.
 4. Invert the dependency through an interface or port.
 5. Add an expiring exception for intentional temporary drift.
-6. Baseline reviewed existing debt.
+6. Baseline reviewed existing debt only after owner approval; baseline capture
+   skips findings covered by temporary waivers, including expired waivers.
 
 Never add broad exclusions to hide findings.
 

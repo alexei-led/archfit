@@ -312,12 +312,12 @@ Fields:
 
 Supported formats and units:
 
-| Format | Typical producer | Unit read by Archfit |
-| --- | --- | --- |
-| `go-coverprofile` | `go test -coverprofile` | statements |
-| `lcov` | c8, Vitest/Jest, or `cargo llvm-cov --lcov` | lines |
-| `coverage-py-json` | coverage.py / pytest-cov JSON | statements |
-| `llvm-cov-json` | `cargo llvm-cov --json --summary-only` | lines |
+| Format             | Typical producer                            | Unit read by Archfit |
+| ------------------ | ------------------------------------------- | -------------------- |
+| `go-coverprofile`  | `go test -coverprofile`                     | statements           |
+| `lcov`             | c8, Vitest/Jest, or `cargo llvm-cov --lcov` | lines                |
+| `coverage-py-json` | coverage.py / pytest-cov JSON               | statements           |
+| `llvm-cov-json`    | `cargo llvm-cov --json --summary-only`      | lines                |
 
 Archfit normalizes every parsed file to a slash-separated, analysis-root-relative
 path before module attribution. Absolute paths inside the root and Go import-path
@@ -510,9 +510,10 @@ symbol-level strength from `rust-analyzer scip`.
 
 When an analyzer is **absent** (tool not installed or not found), its metrics
 drop to `n/a` and a coverage gap is reported with an install hint
-(see [commands](commands.md#coverage-gaps-and-required-tools)). By default this is
-**warn-loud** — surfaced, but exit 0. Set a per-analyzer `gate` to make CI block
-on the missing tool:
+(see [commands](commands.md#coverage-gaps-and-required-tools)). By default the
+gap is reported without setting the repository hard gate to `fail`; incomplete
+dimension or required-rule evidence can still make `check` exit `2`. Set a
+per-analyzer `gate` to make CI block on the missing tool:
 
 When an analyzer is **disabled by config** (`enabled: false`), it is simply
 skipped — no coverage gap is emitted and no install prompt is shown.
@@ -637,15 +638,42 @@ cannot hide a qualifying seam: the rule reads the full classified edge set.
 "Newly introduced" needs a reference whose config, module map, labels, and
 rubric all match this run. Without one the rule reports the seam total, states
 that no new-seam count is claimed, and does not block — an unrated gate never
-fails. In v1 the only reference is the stored `.archfit-baseline.json` written
-by `archfit baseline`. `analyze --base <ref>` produces a report-only comparison
-against another tree; it is **not** a seam-gate reference, so a run with
-`--base` and no committed baseline still makes no "new seam" claim.
+fails. The reference is the stored `.archfit-baseline.json` written by
+`archfit baseline`, exposed in architecture-state JSON as `gate_reference`.
+`analyze --base <ref>` produces a report-only comparison against another tree;
+it is **not** a seam-gate reference, so a run with `--base` and no committed
+baseline still makes no "new seam" claim. The root `comparison` block describes
+`--base`; `gate_reference` describes the persisted baseline independently.
 
 When the gate blocks, the verdict becomes FAIL (exit 1), the reasons print to
 stderr, and the run emits one `bc/coupling_gate` gate finding **per newly
 introduced seam**, each naming its module pair, so `agent_tasks[]` points at
 the seams that blocked rather than at unrelated advisories.
+
+### Measurement compatibility
+
+Every architecture-state run carries `comparison.measurement_profile`. It is
+the identity of the measurement conditions, separate from the four policy
+fingerprints. The object contains:
+
+- `version` — the Archfit measurement-profile contract, currently
+  `archfit.measurement.v1`;
+- `settings_hash` — the normalized extractor and acquisition settings;
+- `producers[]` — one row per evidence producer with `tool`,
+  `semantics_version`, `status`, and (when applicable) `tool_version`;
+- `unknowns[]` — reasons Archfit could not establish a producer or environment
+  fact.
+
+Comparisons require compatible settings and producer semantics, availability,
+and supported external tool versions. An unknown or incompatible profile makes
+the comparison `non_comparable` with named reasons; Archfit does not invent a
+delta. This applies to both `--base` task origin and `config compare`. The
+Unresolved dynamic dependency-cruiser configuration inputs and unsupported
+TypeScript config resolution are recorded as unknown profile inputs and disable
+comparability. The
+persisted baseline carries the profile in `state`; its compatibility is exposed
+as `gate_reference` and is independent of the report-only `comparison` block.
+Do not use a blanket `archfit baseline` run as a profile migration.
 
 #### Unsupported older schemas
 
@@ -930,15 +958,15 @@ rules:
 
 ### Rule field reference
 
-| Field      | Applies to       | Description                                                                                  |
-| ---------- | ---------------- | -------------------------------------------------------------------------------------------- |
-| `id`       | all              | Stable ID used in findings, baselines, and waivers.                                          |
-| `type`     | all              | Built-in rule type (see below). Unknown type is a config error.                              |
-| `gate`     | all              | `fail` (or absent for most types), `warn`, or `off`. `public_api_change` defaults to `warn`. |
-| `from`     | most             | Source module or path glob.                                                                  |
-| `to`       | most             | Target module or path glob.                                                                  |
-| `max`      | `public_api_max` | Integer ceiling.                                                                             |
-| `patterns` | structural rules | Optional ast-grep patterns for structural evidence.                                          |
+| Field      | Applies to       | Description                                                                                                            |
+| ---------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `id`       | all              | Stable ID used in findings, baselines, and waivers.                                                                    |
+| `type`     | all              | Built-in rule type (see below). Unknown type is a config error.                                                        |
+| `gate`     | all              | `fail` (or absent for most types), `warn`, or `off`. `public_api_change` and `public_api_type_leak` default to `warn`. |
+| `from`     | most             | Source module or path glob.                                                                                            |
+| `to`       | most             | Target module or path glob.                                                                                            |
+| `max`      | `public_api_max` | Integer ceiling.                                                                                                       |
+| `patterns` | structural rules | Optional ast-grep patterns for structural evidence.                                                                    |
 
 `forbidden_layer_direction` takes no `from`/`to` (or `from_layer`/`to_layer`)
 keys — it derives layer ordering from `layers:` and each endpoint's layer from
@@ -949,9 +977,12 @@ violation under its own rule ID (`archfit config init` generates exactly one).
 
 `gate` controls how the rule blocks the run:
 
-- `fail` (or absent) — finding blocks CI; exit 1. **Exception:** `public_api_change`
-  defaults to `warn` when `gate` is absent.
-- `warn` — finding is advisory; surfaced but exit 0.
+- `fail` (or absent) — finding blocks CI; exit 1. **Exceptions:**
+  `public_api_change` and `public_api_type_leak` default to `warn` when `gate`
+  is absent.
+- `warn` — finding is advisory; surfaced without setting `hard_gates` to `fail`.
+  `check` can still return exit `2` for the active diagnostic or other missing
+  evidence; report-only `analyze` exits `0` after a successful run.
 - `off` — rule is skipped entirely; no findings emitted.
 
 `gate:` is wired for **all rule types**. An unknown `type` value is a config error.
@@ -987,9 +1018,10 @@ violation under its own rule ID (`archfit config init` generates exactly one).
   `analyzers.syntax.enabled: true`). Flags API surface that couples callers to a
   transitive dependency. Defaults to `gate: warn`.
 
-**Note:** when `analyzers.syntax.enabled` is not `true`, the rule types
-`public_api_max`, `public_api_change`, and `public_api_type_leak` emit zero
-findings silently — they are not errors.
+**Note:** without syntax evidence, `public_api_max`, `public_api_change`, and
+`public_api_type_leak` cannot establish conformance. Applicable fail-gated rules
+appear in `decision.unevaluated_required_rules`; advisory rules disclose the
+gap in the intent dimension.
 
 Example syntax-facts rule:
 
@@ -1028,16 +1060,39 @@ waivers:
 
 Fields:
 
-- `rule` — rule ID.
-- `from` — source glob.
-- `to` — target glob.
-- `reason` — why the waiver exists.
-- `approved_by` — reviewer or owner.
-- `expires` — expiry date.
+- `rule` — required declared rule ID or supported synthetic rule ID.
+- `from` — source glob. Edge-backed rules require at least one of `from` or
+  `to`; an empty selector pair does not create a global waiver.
+- `to` — target glob. For module-only findings, selectors match module names.
+- `reason` — required explanation of why the waiver exists.
+- `approved_by` — required reviewer or owner metadata.
+- `expires` — required `YYYY-MM-DD` expiry date, valid through that UTC day and
+  expired at the following midnight UTC.
+
+The edge-less diagnostics `map/uncovered_path`, `map/dead_rule`, and
+`map/stale_review` are scoped by their exact rule ID and must omit `from` and
+`to`. Other supported synthetic waivers are `bc/imbalanced_coupling`,
+`bc/duplicated_knowledge`, and `labels/stale`; these require endpoint scope.
+`bc/coupling_gate` cannot be waived. A change to that gate is a separate,
+owner-approved coupling policy decision. The `approved_by` string records
+metadata; the CLI does not authenticate the approver.
 
 Expired waivers are reported as `expired_waiver`. Active waivers show finding
 status `waived`. Waivers require a reason, approver, and expiry — they are
-deliberate human friction, not a quiet ignore list.
+deliberate human friction, not a quiet ignore list. Rule references, selectors,
+glob syntax, and all required metadata are validated while loading the config;
+an invalid waiver is a configuration error (exit `3`) before analysis starts.
+When several waivers match a finding, matching is independent of YAML order: an
+active match wins, and an expired match is used only when no active match
+applies.
+
+`archfit baseline` does not turn temporary exceptions into permanent debt:
+findings covered by temporary waivers, including expired waivers, are omitted
+from the accepted set and the command prints the number skipped. Review the
+full capture before committing it. A measurement-profile mismatch or an
+incomplete stored seam snapshot makes the baseline `gate_reference`
+non-comparable; do not treat a blanket re-baseline as the migration for that
+condition.
 
 ## `metrics`
 

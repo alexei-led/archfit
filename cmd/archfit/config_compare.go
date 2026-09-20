@@ -439,7 +439,7 @@ func scoreCompareLine(current, candidate report.Scorecard, delta *int) (string, 
 	case current.OverallBand.Unmeasured() && candidate.OverallBand.Unmeasured():
 		return "", false
 	default:
-		return fmt.Sprintf("score: %s → %s (delta unknown: one side is unmeasured)",
+		return fmt.Sprintf("score: %s → %s (delta unknown: measurement is unmeasured or non-comparable)",
 			scoreText(current), scoreText(candidate)), true
 	}
 }

@@ -16,20 +16,22 @@ path. That makes the job easier to read and copy.
 
 `archfit check` exits with CI-friendly status codes:
 
-| Exit code | Meaning                                                                                                           | Typical CI action                                |
-| --------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `0`       | `healthy`. Nothing blocking, nothing flagged, no dimension partial.                                              | Continue the job.                                |
-| `1`       | `blocked`. A hard gate failed, or `--require-tools` turned a missing analyzer into a hard failure.               | Fail the job.                                    |
-| `2`       | `needs_attention`. Nothing blocking, but a diagnostic is active or a dimension is partial.                       | **Do not fail the job by default** — see below.  |
-| `3`       | Usage, config, or runtime/tool error.                                                                             | Treat as CI infrastructure or config failure.    |
+| Exit code | Meaning                                                                                                                       | Typical CI action                               |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `0`       | `healthy`. Every dimension is measured, hard gates pass, and no diagnostic is active.                                         | Continue the job.                               |
+| `1`       | `blocked`. A hard gate failed, or `--require-tools` turned a missing analyzer into a hard failure.                            | Fail the job.                                   |
+| `2`       | `needs_attention`. Nothing blocking, but a diagnostic, partial/unmeasured dimension, or unevaluated required rule is present. | **Do not fail the job by default** — see below. |
+| `3`       | Usage, config, or runtime/tool error.                                                                                         | Treat as CI infrastructure or config failure.   |
 
 The exit code IS the architecture-state verdict — nothing else participates.
 
 Exit `0` is reachable when all nine dimensions have complete evidence, hard
 gates pass, and no diagnostic is active. Exit `2` is still common while adopting
 the evidence contract: omitted supplied coverage leaves `testability` partial,
-a missing or incomparable persisted baseline leaves `drift` unmeasured, and
-missing deploy corroboration or ownership statements leave `operations` partial.
+a missing or incomparable persisted baseline leaves `drift` unmeasured,
+missing deploy corroboration or ownership statements leave `operations`
+partial, and a fail-gated rule without enough producer evidence is listed under
+`decision.unevaluated_required_rules`.
 Treat that as an honest yellow result, not as a healthy zero. The recipe below
 allows yellow and fails only blocked runs; require exit `0` instead after your CI
 supplies every required fact.
@@ -74,6 +76,13 @@ debt. `unknown` means analyzer evidence differed between the two sides, so a
 missing analyzer never manufactures a new finding. The classification is
 report-only and changes neither the verdict nor the exit code. See
 [Task origin with `--base`](agent-feedback.md#task-origin-with---base).
+
+Measurement profile compatibility is part of this comparison. A missing,
+unknown, or incompatible producer/settings profile makes the comparison
+`non_comparable` and keeps affected task origins `unknown`; the reasons name the
+producer or profile field. The root `comparison` block describes this explicit
+`--base` comparison. The persisted baseline used by the gate is a separate
+`gate_reference` block; a base ref never becomes the gate reference.
 
 **Known ceiling — gitignored generated code.** The base side is a checkout of
 tracked files only, so a gitignored generated package (protoc, sqlc, wire, or
@@ -122,9 +131,10 @@ still matters. Parse the JSON, but also check the process status.
 
 ## 5. Strict tool presence
 
-By default, missing analyzers are surfaced as coverage gaps instead of hard job
-failures. If CI must fail when a required tool is missing, turn on the strict
-gate:
+By default, missing analyzers are surfaced as coverage gaps and do not set the
+repository hard gate to `fail`. The run can still be `needs_attention` (exit
+`2`) when a dimension or required rule lacks evidence. If CI must fail when a
+required tool is missing, turn on the strict gate:
 
 ```sh
 archfit check --require-tools -c .archfit.yaml
@@ -149,7 +159,15 @@ Normal CI flow:
 3. Update the baseline only when you intentionally accept the current result.
 4. Commit the new `.archfit-baseline.json` in its own reviewable change.
 
-Update flow:
+Capture and validation must use the same measurement environment: pin the
+analyzer image and platform, toolchain versions, and build settings. A baseline
+captured on macOS/arm64 can be non-comparable on Linux/amd64 because build
+constraints change which Go files are analyzed. Different analyzer versions or
+availability can also change the facts. Prefer a separate trusted CI workflow
+that captures the candidate baseline with the same setup as the gate and opens
+a reviewable baseline PR.
+
+Update flow, inside that matching environment:
 
 ```sh
 archfit baseline -c .archfit.yaml
@@ -157,6 +175,20 @@ archfit check -c .archfit.yaml
 git add .archfit-baseline.json
 git commit -m "Update archfit baseline"
 ```
+
+Baseline capture reads an empty accepted set and accepts only the current tree.
+Findings covered by temporary waivers, including expired waivers, are skipped
+and the command prints the count; a temporary waiver is never converted into
+permanent accepted debt. Review the complete baseline diff before committing it.
+A baseline with an incompatible
+measurement profile or missing seam snapshot leaves the gate reference
+`non_comparable`; do not fix that by blindly re-running `archfit baseline`.
+Review the findings and intentionally capture a new baseline only when the
+owner accepts the resulting debt. Every baseline captured before v2.3.0 lacks
+the measurement profile: accepted findings remain usable, but numerical drift
+and seam comparisons abstain until an owner-approved capture supplies the new
+identity. Check `gate_reference` explicitly; a non-comparable reference is not
+evidence that the PR introduced no new coupling.
 
 If you automate this in CI, do it in a separate manual or scheduled workflow
 that opens a pull request with the baseline diff. Do not let a PR job silently
@@ -176,8 +208,18 @@ archfit check --json -c .archfit.yaml
 ```
 
 Each `agent_tasks[]` item is the repair contract for one active gate finding.
-Read its goal, constraints, files, and validation command. Fix only that scope,
-then re-run the check.
+Read its `repair_kind`, goal, constraints, files, and validation command.
+`code_change` tasks are source repairs; `needs_owner_decision` tasks require a
+policy or accepted-debt decision. A forbidden dependency task never recommends
+the target module's public API, and a new cross-module dependency task never
+uses baseline capture as its repair. The validation command carries the
+effective `--base`, `--lang`, and `--require-tools` flags from the original run.
+`--refresh` is intentionally not replayed because cache-control must not change
+the validation result. Fix only that scope, then run the command verbatim.
+
+If exit `2` includes `decision.unevaluated_required_rules`, resolve the named
+producer evidence before claiming a required rule passed. The array is
+structured and sorted by `rule_id`; do not infer it from report prose.
 
 ## 8. Environment variables and `.env`
 
