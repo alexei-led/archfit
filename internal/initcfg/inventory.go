@@ -41,7 +41,9 @@ type SourceFile struct {
 // entry would fail lint as matching nothing.
 //
 // One pass is exact: a dropped module owns no production file, so dropping it
-// hands none to another module.
+// hands none to another module. Its package nodes can still fall under a kept
+// ancestor's glob (api/v1 under api/**), so its edges are re-targeted there
+// (foldDroppedEdges), not lost.
 func keepModulesWithSource(mods []ModuleDef, origins []string, judged int, sources []SourceFile) ([]ModuleDef, []string) {
 	owned := inventoryOwners(mods, sources)
 	keptMods := make([]ModuleDef, 0, len(mods))
@@ -57,6 +59,58 @@ func keepModulesWithSource(mods []ModuleDef, origins []string, judged int, sourc
 		keptOrigins = append(keptOrigins, origins[i])
 	}
 	return keptMods, keptOrigins
+}
+
+// foldDroppedEdges re-targets every edge into a module keepModulesWithSource
+// dropped onto the kept modules whose paths globs own the dropped module's
+// sources: the written config keeps them under that ancestor (api/v1 under
+// api/**), so check reads server -> api/v1 as server -> api. An edge out of a
+// dropped module goes, because the module owns no production file and check
+// drops edges from non-production source; so does an edge whose target no kept
+// module owns, or one that folds onto its own source.
+func foldDroppedEdges(edges []ModuleEdge, discovered, kept []ModuleDef) []ModuleEdge {
+	keptNames := make(map[string]struct{}, len(kept))
+	defs := make(map[string]policy.ModuleDef, len(kept))
+	for i, m := range kept {
+		keptNames[m.Name] = struct{}{}
+		defs[ownerKey(i)] = policy.ModuleDef{Paths: m.Paths}
+	}
+	mm := policy.BuildModuleMap(defs)
+	owners := make(map[string][]string)
+	for _, m := range discovered {
+		if _, ok := keptNames[m.Name]; ok {
+			continue
+		}
+		for _, src := range m.Sources {
+			key, ok := mm.ModuleFor(src)
+			if !ok {
+				continue
+			}
+			if i, err := strconv.Atoi(key); err == nil && !slices.Contains(owners[m.Name], kept[i].Name) {
+				owners[m.Name] = append(owners[m.Name], kept[i].Name)
+			}
+		}
+	}
+	seen := make(map[ModuleEdge]struct{}, len(edges))
+	var out []ModuleEdge
+	for _, e := range edges {
+		if _, ok := keptNames[e.From]; !ok {
+			continue
+		}
+		targets := owners[e.To]
+		if _, ok := keptNames[e.To]; ok {
+			targets = []string{e.To}
+		}
+		for _, to := range targets {
+			edge := ModuleEdge{From: e.From, To: to}
+			if _, dup := seen[edge]; dup || edge.From == edge.To {
+				continue
+			}
+			seen[edge] = struct{}{}
+			out = append(out, edge)
+		}
+	}
+	return out
 }
 
 // publicWithSource keeps the public entries that match the selector of at

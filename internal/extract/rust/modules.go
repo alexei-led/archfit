@@ -22,7 +22,8 @@ const (
 // runModuleGraph invokes cargo-modules per workspace member and merges the
 // resulting module-level nodes and edges into facts. On any per-crate failure it
 // records partial coverage and continues — never hard-errors, matching the
-// SCIP/complexity absent/partial contract.
+// SCIP/complexity absent/partial contract. It also returns the crate
+// identifiers it graphed, a crate with no submodule included.
 //
 // Integration design: module nodes use the path "<crate>::<mod>" (double-colon,
 // matching cargo-modules' own DOT node IDs). This is distinct from the crate-level
@@ -34,14 +35,14 @@ const (
 // has many such nodes, so the guard no longer trips.
 // runner is the (possibly fact-cache-decorated) runner for the per-crate
 // invocations; Detect passes through the decorator to the real runner.
-func (e *Extractor) runModuleGraph(ctx context.Context, runner toolrun.Runner, members []cargoPackage) ([]graph.Node, []graph.Edge, evidence.Coverage) {
+func (e *Extractor) runModuleGraph(ctx context.Context, runner toolrun.Runner, members []cargoPackage) ([]graph.Node, []graph.Edge, evidence.Coverage, []string) {
 	if len(members) == 0 {
-		return nil, nil, evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
+		return nil, nil, evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}, nil
 	}
 
 	// Detect cargo-modules binary.
 	if _, ok := runner.Detect(ctx, toolCargoModules); !ok {
-		return nil, nil, evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
+		return nil, nil, evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}, nil
 	}
 
 	var allNodes []graph.Node
@@ -64,7 +65,7 @@ func (e *Extractor) runModuleGraph(ctx context.Context, runner toolrun.Runner, m
 		}
 	}
 
-	var failed []string
+	var failed, graphed []string
 	for _, m := range members {
 		crateDir := filepath.Dir(m.ManifestPath)
 		nodes, edges, ok := runCargoModulesForCrate(ctx, runner, m, crateDir)
@@ -72,6 +73,7 @@ func (e *Extractor) runModuleGraph(ctx context.Context, runner toolrun.Runner, m
 			failed = append(failed, m.Name)
 			continue
 		}
+		graphed = append(graphed, m.crateIdentifier())
 		for _, n := range nodes {
 			emitNode(n)
 		}
@@ -100,7 +102,7 @@ func (e *Extractor) runModuleGraph(ctx context.Context, runner toolrun.Runner, m
 		// is usually a proc-macro/codegen crate or a bin-target-name mismatch).
 		cov.Reason = "cargo-modules produced no graph for: " + strings.Join(failed, ", ")
 	}
-	return allNodes, allEdges, cov
+	return allNodes, allEdges, cov, graphed
 }
 
 // binTargetName returns this package's first binary target name (which may differ

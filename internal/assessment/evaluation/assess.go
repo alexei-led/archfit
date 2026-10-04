@@ -47,10 +47,20 @@ type Observations struct {
 	// keeps them. Nil excludes nothing.
 	UnanalysedFiles map[string]struct{}
 	// RustModuleNodes are the crate::mod node IDs of the Rust module graph
-	// (cargo-modules), sorted. A crate::mod selector under a crate that has
-	// them is judged against them; under a crate that has none it stays
+	// (cargo-modules), sorted. A crate::mod selector under a crate the module
+	// graph covers (RustModuleGraphCrates, or a crate with nodes here) is
+	// judged against them; under a loaded crate it does not cover it stays
 	// undecidable, so a missing module graph never reads as an empty one.
 	RustModuleNodes []string
+	// RustCrates are the loaded Rust crates (cargo metadata) in both
+	// spellings: the crate identifier crate::mod node IDs start with and the
+	// library spelling of the package name. A loaded crate is first-party even
+	// when no file selector spells it (binary target yazi of package yazi-fm).
+	RustCrates []string
+	// RustModuleGraphCrates are the crate identifiers cargo-modules graphed,
+	// a crate with no submodule included: its module graph is empty, so a
+	// crate::mod selector under it provably matches nothing.
+	RustModuleGraphCrates []string
 	// UnwalkedSourceProduction says, for each dependency-edge source file the
 	// LOC walk never visited (a dot directory, target/), whether it is
 	// production: a path-only FileClass with the configured globs, false when

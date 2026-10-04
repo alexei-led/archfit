@@ -183,8 +183,9 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner, presence 
 	}
 
 	if presence.Sources != nil {
+		discovered := allModules
 		allModules, origins = keepModulesWithSource(allModules, origins, judged, presence.Sources)
-		allEdges = edgesBetween(allEdges, allModules)
+		allEdges = foldDroppedEdges(allEdges, discovered, allModules)
 	}
 	allModules = disambiguateNames(allModules)
 	// Only Rust discovery assigns layers, from the crate dependency graph; a
@@ -211,23 +212,6 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner, presence 
 		ImportGraphComplete: gap == "",
 		GraphGap:            gap,
 	}, nil
-}
-
-// edgesBetween keeps the edges whose endpoints are both modules in mods.
-func edgesBetween(edges []ModuleEdge, mods []ModuleDef) []ModuleEdge {
-	names := make(map[string]struct{}, len(mods))
-	for _, m := range mods {
-		names[m.Name] = struct{}{}
-	}
-	var out []ModuleEdge
-	for _, e := range edges {
-		_, from := names[e.From]
-		_, to := names[e.To]
-		if from && to {
-			out = append(out, e)
-		}
-	}
-	return out
 }
 
 // Draft basis values distinguish deterministic facts from semantic judgments in

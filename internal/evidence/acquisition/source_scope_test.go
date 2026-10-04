@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	evidencecontract "github.com/alexei-led/archfit/internal/evidence"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
@@ -194,5 +195,30 @@ func TestRustModuleNodesListTheModuleGraph(t *testing.T) {
 	}
 	if got := rustModuleNodes(evidencecontract.Facts{}); got != nil {
 		t.Fatalf("rustModuleNodes without a graph = %v, want nil", got)
+	}
+}
+
+// TestRustCratesNameBothSpellings pins the loaded crate identities rule scope
+// judges crate::mod selectors against: the crate identifier (a binary target's
+// own name) and the library spelling of the package name.
+func TestRustCratesNameBothSpellings(t *testing.T) {
+	g := graph.Build([]graph.Facts{{Language: graph.LangRust,
+		CrateRoots: []graph.CrateRoot{{Dir: crateFM, Name: crateFM, Crate: crateYazi}}}})
+	got := rustCrates(evidencecontract.Facts{Graph: g})
+	if want := []string{crateYazi, "yazi_fm"}; !slices.Equal(got, want) {
+		t.Fatalf("rustCrates = %v, want %v", got, want)
+	}
+	if got := rustCrates(evidencecontract.Facts{}); got != nil {
+		t.Fatalf("rustCrates without a graph = %v, want nil", got)
+	}
+}
+
+// TestAssessmentObservationsCarryRustCrateIdentities pins that the Rust crate
+// identities rule scope reads survive the narrowing to assessment observations.
+func TestAssessmentObservationsCarryRustCrateIdentities(t *testing.T) {
+	inventory := evaluation.Observations{RustCrates: []string{crateYazi}, RustModuleGraphCrates: []string{crateYazi}}
+	got := assessmentObservationsOf(evidencecontract.Facts{}, inventory, nil, nil, nil, nil)
+	if !slices.Equal(got.RustCrates, inventory.RustCrates) || !slices.Equal(got.RustModuleGraphCrates, inventory.RustModuleGraphCrates) {
+		t.Fatalf("RustCrates = %v, RustModuleGraphCrates = %v, want both %v", got.RustCrates, got.RustModuleGraphCrates, []string{crateYazi})
 	}
 }

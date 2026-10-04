@@ -84,7 +84,8 @@ type selectorInventory struct {
 	// files; module rule scope reads them only to know which modules own them.
 	outOfScope map[string]struct{}
 	// rustModules are the crate::mod node IDs of the Rust module graph, and
-	// rustModuleCrates the crates (library spelling) they belong to.
+	// rustModuleCrates the crates (library spelling) it covers: those with
+	// nodes there and those cargo-modules graphed with no submodule.
 	rustModules      []string
 	rustModuleCrates map[string]struct{}
 	// roots are the leading segments of every file path and node selector,
@@ -131,6 +132,15 @@ func newSelectorInventory(moduleMap policy.ModuleMap, files []string, f Observat
 				inv.roots[sepCrate][rustLibName(selector)] = struct{}{}
 			}
 		}
+	}
+	// A loaded crate is a crate:: root whatever its files project to: a
+	// binary target's crate identifier (yazi) differs from its package (yazi-fm).
+	for _, crate := range f.RustCrates {
+		inv.roots[sepCrate][crate] = struct{}{}
+	}
+	for _, crate := range f.RustModuleGraphCrates {
+		inv.rustModuleCrates[rustLibName(crate)] = struct{}{}
+		inv.roots[sepCrate][rustLibName(crate)] = struct{}{}
 	}
 	for _, node := range inv.rustModules {
 		crate, _, _ := strings.Cut(node, sepCrate)

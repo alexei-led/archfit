@@ -32,4 +32,8 @@ type Facts struct {
 	RuntimeConfidence       string
 	DeprecatedDeps          []modevidence.DeprecatedDep
 	SemanticStrengthOverlay *modevidence.SemanticStrengthOverlay
+	// RustModuleGraphCrates are the crate identifiers cargo-modules graphed,
+	// a crate with no submodule included: its module graph is empty, not
+	// missing.
+	RustModuleGraphCrates []string
 }

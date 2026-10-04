@@ -312,3 +312,23 @@ func nodeKeys(nodes []graph.Node) []string {
 	}
 	return ids
 }
+
+// TestModuleGraph_RootOnlyCrateIsGraphed pins that a crate cargo-modules
+// graphs with no submodule is reported as graphed: its module graph is empty,
+// not missing.
+func TestModuleGraph_RootOnlyCrateIsGraphed(t *testing.T) {
+	const rootOnlyDOT = `digraph {
+    "mylib" [label="crate|mylib", fillcolor="#5397c8"]; // "crate" node
+}
+`
+	e := rust.New(moduleGraphRunner(libCargoMeta, rootOnlyDOT), evidenceports.ExtractConfig{
+		Mode:        evidenceports.ModeAuto,
+		ModuleGraph: true,
+	})
+	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir}); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if got := e.LastModuleGraphCrates(); len(got) != 1 || got[0] != "mylib" {
+		t.Fatalf("LastModuleGraphCrates = %v, want [mylib]", got)
+	}
+}

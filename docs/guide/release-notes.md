@@ -70,7 +70,9 @@ Fixed:
   the cargo-modules module graph: dead ones report `selector matches nothing`,
   `guard: true` works on them, and a rule on a `crate::mod` is no longer both
   fired and listed in `unevaluated_required_rules`. Under a loaded crate the
-  graph does not cover, the selector stays undecided.
+  graph does not cover, the selector stays undecided. A loaded crate is named
+  by its target too (`yazi` for package `yazi-fm`), and a crate cargo-modules
+  graphed with no submodule has an empty module graph, not a missing one.
 - `config lint` judges `public_outside_module` by the packages a `public:`
   entry matches, so brace and class globs (`internal/{a,b}/**`) no longer give a
   false error.
@@ -117,7 +119,9 @@ Fixed:
   cannot see: `mocks/`, packages with only generated or only test files, and
   default-excluded trees such as `reports/` and `testdata/`. On pumba the
   generated config passes `config lint` and `check` evaluates the
-  `no-module-cycles` starter rule. Go and TypeScript discovery over one
+  `no-module-cycles` starter rule. A dropped package still owned by a parent
+  module's glob (`api/v1` under `api/**`) keeps its incoming edges under that
+  parent, so the starter gate counts the cycles `check` sees. Go and TypeScript discovery over one
   directory no longer produce two modules that tie in ownership
   (`ambiguous_ownership`); the Go module keeps the directory.
 - `config update` checks every Python package and module in a discovered

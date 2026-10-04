@@ -71,9 +71,11 @@ func ruleScopeObservations(ctx context.Context, runner toolrun.Runner, store *fa
 		UnanalysedFiles: unanalysedFiles(root, f, outOfScope, opts.Coverage),
 		UnwalkedSourceProduction: unwalkedSourceProduction(
 			f, opts.Exclusions, opts.Coverage, opts.Acquisition.FileClass),
-		RustModuleNodes:  rustModuleNodes(f),
-		GoModulePaths:    goModules,
-		GoStdlibPackages: goStdlibPackages(ctx, runner, store, root, goModules),
+		RustModuleNodes:       rustModuleNodes(f),
+		RustCrates:            rustCrates(f),
+		RustModuleGraphCrates: f.RustModuleGraphCrates,
+		GoModulePaths:         goModules,
+		GoStdlibPackages:      goStdlibPackages(ctx, runner, store, root, goModules),
 	}
 }
 
@@ -180,6 +182,21 @@ func rustModuleNodes(f evidencecontract.Facts) []string {
 		if n.Language == graph.LangRust && n.Kind == graph.NodeKindPackage && strings.Contains(n.Path, "::") {
 			out = append(out, n.Path)
 		}
+	}
+	return out
+}
+
+// rustCrates lists both spellings of every loaded Rust crate: the crate
+// identifier crate::mod node IDs start with (a binary target's own name, such
+// as yazi for package yazi-fm) and the library spelling of the package name.
+// Nil without cargo metadata.
+func rustCrates(f evidencecontract.Facts) []string {
+	if f.Graph == nil {
+		return nil
+	}
+	var out []string
+	for _, root := range f.Graph.CrateRoots() {
+		out = append(out, root.Crate, strings.ReplaceAll(root.Name, "-", "_"))
 	}
 	return out
 }

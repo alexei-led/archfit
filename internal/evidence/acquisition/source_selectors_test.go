@@ -17,6 +17,7 @@ import (
 const (
 	crateShared = "yazi-shared"
 	crateFM     = "yazi-fm"
+	crateYazi   = "yazi"
 	crateApp    = "app"
 	modShared   = "shared"
 	crateLinter = "ruff_linter"
@@ -26,12 +27,12 @@ const (
 func TestCrateRootDirsKeyEveryCrateSpelling(t *testing.T) {
 	got := crateRootDirsOf([]graph.CrateRoot{
 		{Dir: crateShared, Name: crateShared, Crate: idShared},
-		{Dir: crateFM, Name: crateFM, Crate: "yazi"},
+		{Dir: crateFM, Name: crateFM, Crate: crateYazi},
 		{Dir: "", Name: crateApp, Crate: crateApp},
 	})
 	want := map[string]string{
 		crateShared: crateShared, idShared: crateShared,
-		crateFM: crateFM, "yazi": crateFM,
+		crateFM: crateFM, crateYazi: crateFM,
 		crateApp: "",
 	}
 	if !maps.Equal(got, want) {

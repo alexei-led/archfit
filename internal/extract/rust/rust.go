@@ -41,6 +41,9 @@ type Extractor struct {
 	cfg                evidenceports.ExtractConfig
 	lastModuleGraphCov evidence.Coverage // cargo-modules coverage from most recent Extract call
 	lastCrateRoots     []graph.CrateRoot // crate roots from most recent Extract call
+	// lastModuleGraphCrates are the crate identifiers cargo-modules graphed in
+	// the most recent Extract call, a root-only crate (no submodule) included.
+	lastModuleGraphCrates []string
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
 	Cache *factcache.Store
 }
@@ -111,6 +114,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	// well-formed row instead of a zero-value Coverage{} (empty Tool/Status). The
 	// cfg.ModuleGraph branch below overwrites it when the graph actually runs.
 	e.lastModuleGraphCov = evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
+	e.lastModuleGraphCrates = nil
 	if e.cfg.Mode == evidenceports.ModeOff {
 		return graph.Facts{}, absentCoverage(""), nil
 	}
@@ -192,10 +196,11 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	// lastModuleGraphCov so the pipeline can append it to ExtraCoverage (same pattern
 	// as complexity/clones, which also surface coverage outside Extract).
 	if e.cfg.ModuleGraph {
-		modNodes, modEdges, modCov := e.runModuleGraph(ctx, e.moduleGraphRunner(ctx, s, version), members)
+		modNodes, modEdges, modCov, graphed := e.runModuleGraph(ctx, e.moduleGraphRunner(ctx, s, version), members)
 		facts.Nodes = append(facts.Nodes, modNodes...)
 		facts.Edges = append(facts.Edges, modEdges...)
 		e.lastModuleGraphCov = modCov
+		e.lastModuleGraphCrates = graphed
 	} else {
 		e.lastModuleGraphCov = evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
 	}
@@ -209,6 +214,14 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 // Returns absent coverage when ModuleGraph is disabled or Extract has not been called.
 func (e *Extractor) LastModuleGraphCoverage() evidence.Coverage {
 	return e.lastModuleGraphCov
+}
+
+// LastModuleGraphCrates returns the crate identifiers (CrateRoot.Crate)
+// cargo-modules graphed in the most recent Extract call. A crate with no
+// submodule contributes no crate::mod node, so only this list tells its empty
+// module graph from a missing one. Nil when the module graph did not run.
+func (e *Extractor) LastModuleGraphCrates() []string {
+	return e.lastModuleGraphCrates
 }
 
 // LastCrateRoots returns the crate roots (repo-relative crate dir + crate

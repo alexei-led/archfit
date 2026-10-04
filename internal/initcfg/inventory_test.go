@@ -1,6 +1,7 @@
 package initcfg
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -185,5 +186,33 @@ func TestDiscoverPy_GuessesNoLayer(t *testing.T) {
 	if strings.Contains(out, "\nlayers:\n") || !strings.Contains(out, "# layers: not inferred") ||
 		!strings.Contains(out, "  # - id: no-layer-back-edges\n") {
 		t.Errorf("want the commented layers how-to and no live layer rule:\n%s", out)
+	}
+}
+
+// TestDiscover_DroppedModuleEdgesFoldIntoTheOwningAncestor: api/v1 holds only
+// generated code, so init drops it, but the written api/** glob still owns its
+// package. check sees server -> api/v1 as server -> api, so init must count
+// the api <-> server cycle the same way instead of writing gate: fail.
+func TestDiscover_DroppedModuleEdgesFoldIntoTheOwningAncestor(t *testing.T) {
+	root := t.TempDir()
+	writeGoMod(t, root)
+	runner := mockRunner(`{"ImportPath":"github.com/example/myapp/api","Imports":["github.com/example/myapp/internal/server"],"Module":{"Path":"github.com/example/myapp"}}
+{"ImportPath":"github.com/example/myapp/api/v1","Imports":["github.com/example/myapp/api"],"Module":{"Path":"github.com/example/myapp"}}
+{"ImportPath":"github.com/example/myapp/internal/server","Imports":["github.com/example/myapp/api/v1"],"Module":{"Path":"github.com/example/myapp"}}`)
+	presence := Presence{Go: true, GoMembers: []string{root}, Sources: []SourceFile{
+		goSource("api/types.go", true),
+		goSource("api/v1/v1.pb.go", false),
+		goSource("internal/server/server.go", true),
+	}}
+	cfg, err := Discover(context.Background(), root, runner, presence)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	want := []ModuleEdge{{From: invModAPI, To: "server"}, {From: "server", To: invModAPI}}
+	if !reflect.DeepEqual(cfg.Edges, want) {
+		t.Errorf("edges = %+v, want %+v", cfg.Edges, want)
+	}
+	if out := Render(cfg, nil, false); !strings.Contains(out, "gate: warn — 1 current module cycle(s) at init") {
+		t.Errorf("module_cycle gate should count the api <-> server cycle:\n%s", out)
 	}
 }

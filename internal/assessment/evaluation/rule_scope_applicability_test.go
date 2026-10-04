@@ -230,3 +230,52 @@ func TestRustCrateModuleSelectorsMatchUnderscoredCrateNames(t *testing.T) {
 		t.Fatalf("unevaluated_required_rules = %v, want %v", got, want)
 	}
 }
+
+// TestRustModuleRuleScopeKnowsBinaryTargetCrates pins that a loaded crate
+// whose target name differs from its package name (package yazi-fm, binary
+// target yazi) is a known crate: with no module graph, modules declared as
+// yazi::a and yazi::b leave a fail-gated module_cycle unevaluated instead of
+// reading as absent and passing with no findings.
+func TestRustModuleRuleScopeKnowsBinaryTargetCrates(t *testing.T) {
+	diag, in := rustModuleFixture()
+	in.Facts.SourceSelectors[rustLibFile] = "yazi-fm"
+	in.Facts.RustCrates = []string{"yazi", "yazi_fm"}
+	in.Facts.RustModuleNodes = nil
+	withModules(&in, map[string]policy.ModuleDef{
+		"a": {Paths: []string{"yazi::a"}},
+		"b": {Paths: []string{"yazi::b"}},
+	})
+	withRule(&in, policy.RuleDef{Type: typeModCycle})
+	if got := unevaluatedReasons(diag, in); !strings.Contains(got[ruleIDScoped], "module graph") {
+		t.Fatalf("unevaluated_required_rules = %v, want %s unevaluated for the missing module graph", got, ruleIDScoped)
+	}
+}
+
+// TestRustCrateWithEmptyModuleGraphDecidesSelectors pins that a crate
+// cargo-modules graphed with no submodule has an empty module graph, not a
+// missing one: a core::legacy selector under it matches nothing, and a guard
+// on it holds.
+func TestRustCrateWithEmptyModuleGraphDecidesSelectors(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		guard      bool
+		wantReason string
+	}{
+		{name: "dead selector", wantReason: "selector matches nothing: from core::legacy"},
+		{name: "guard on the empty module graph", guard: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			diag, in := rustModuleFixture()
+			in.Facts.RustModuleNodes = nil
+			in.Facts.RustModuleGraphCrates = []string{rustCrate}
+			withRule(&in, policy.RuleDef{Type: ruleForbidden, From: "core::legacy", To: selBilling, Guard: tc.guard})
+			want := map[string]string{}
+			if tc.wantReason != "" {
+				want[ruleIDScoped] = tc.wantReason
+			}
+			if got := unevaluatedReasons(diag, in); !maps.Equal(got, want) {
+				t.Fatalf("unevaluated_required_rules = %v, want %v", got, want)
+			}
+		})
+	}
+}
