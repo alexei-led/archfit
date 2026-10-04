@@ -44,6 +44,13 @@ func loadSelfConfig(t *testing.T) config.Config {
 // file, plus the repo-relative path of every Go file. Module path globs and
 // rule endpoints are matched against these, so "matches something" means
 // "matches real source", not "is syntactically plausible".
+// isToolStateDir reports a dot directory below the walk root. Those hold tool
+// state (agent worktrees under .claude/, editor dirs), which the Go toolchain
+// and archfit's LOC walk skip too; walking them double-counts every package.
+func isToolStateDir(rel, name string) bool {
+	return rel != "." && strings.HasPrefix(name, ".")
+}
+
 func repoDirs(t *testing.T) (dirs []string, goFiles []string) {
 	t.Helper()
 	root := ".."
@@ -63,7 +70,7 @@ func repoDirs(t *testing.T) (dirs []string, goFiles []string) {
 			return relErr
 		}
 		if d.IsDir() {
-			if skip[d.Name()] {
+			if skip[d.Name()] || isToolStateDir(rel, d.Name()) {
 				return filepath.SkipDir
 			}
 			if rel != "." {
