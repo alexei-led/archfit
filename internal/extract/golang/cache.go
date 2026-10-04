@@ -64,6 +64,10 @@ type packageFacts struct {
 	// can decode this as false when it was true.
 	InputsMissing bool        `json:"inputs_missing,omitempty"`
 	Files         []fileFacts `json:"files,omitempty"`
+	// IgnoredFiles are the ScanRoot-relative non-test Go files the build
+	// configuration (GOOS/GOARCH, build tags, cgo) left out of this package:
+	// never parsed, so no edge in them reaches a rule.
+	IgnoredFiles []string `json:"ignored_files,omitempty"`
 	// Hints maps relFile+"\x00"+rawImportedPkgPath to the strongest BC
 	// integration-strength label seen (buildStrengthHints, pre-strip).
 	Hints map[string]string `json:"hints,omitempty"`
@@ -233,6 +237,7 @@ func deriveMemberFacts(pkgs []*packages.Package, root string) (mf memberFacts, c
 		if pf.Synthetic || pf.IllTyped {
 			clean = false
 		}
+		pf.IgnoredFiles = deriveIgnoredFiles(pkg, root)
 		if !pf.Synthetic {
 			pf.Files = deriveFileFacts(pkg, root)
 			pf.Hints, pf.Connascence = deriveRawHints(pkg, dtos, root)
@@ -265,6 +270,24 @@ func importsUnresolved(pkg *packages.Package) bool {
 		}
 	}
 	return false
+}
+
+// deriveIgnoredFiles keeps the Go files of pkg.IgnoredFiles that another
+// platform or tag set would load. Non-Go files carry no imports, and archfit
+// loads no _test.go file on any platform.
+func deriveIgnoredFiles(pkg *packages.Package, root string) []string {
+	var out []string
+	for _, abs := range pkg.IgnoredFiles {
+		if !strings.HasSuffix(abs, ".go") || strings.HasSuffix(abs, "_test.go") {
+			continue
+		}
+		rel, err := filepath.Rel(root, abs)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		out = append(out, filepath.ToSlash(rel))
+	}
+	return out
 }
 
 // deriveFileFacts extracts the per-file import facts collectFromFacts needs.

@@ -2,6 +2,7 @@ package deployunit_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -162,6 +163,45 @@ func TestDiscoverRealGoFindParity(t *testing.T) {
 				if got.Coverage.Status != evidence.StatusOK || !reflect.DeepEqual(got.Units, want) {
 					t.Fatalf("discovery = %+v, want complete matching %v", got, want)
 				}
+			}
+		})
+	}
+}
+
+// TestDiscoverGoMainFromAliasedInvocationPath runs discovery from a shell whose
+// PWD spells the canonical root through a symlink or a case variant. The Go
+// main package must still be found: model_hash covers detected deploy units, so
+// a unit that depends on the invocation path makes an unchanged tree compare
+// as a policy change.
+func TestDiscoverGoMainFromAliasedInvocationPath(t *testing.T) {
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(parent, "repo")
+	mustMkdir(t, filepath.Join(root, "cmd", "server"))
+	mustWrite(t, filepath.Join(root, "go.mod"), "module example.com/repo\n\ngo 1.26\n")
+	mustWrite(t, filepath.Join(root, "cmd", "server", "main.go"), "package main\n\nfunc main() {}\n")
+	want := map[string]evidence.CorroboratedDeployUnit{
+		"cmd/server": {Path: "cmd/server", Unit: "server", Source: evidence.TopologySourceGoMain},
+	}
+
+	symlink := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(root, symlink); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	for name, alias := range map[string]string{
+		"symlink":      symlink,
+		"case variant": filepath.Join(parent, "REPO"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := os.Stat(alias); err != nil {
+				t.Skipf("%s does not resolve here (case-sensitive filesystem): %v", alias, err)
+			}
+			t.Chdir(alias)
+			got := deployunit.Discover(context.Background(), root, emptyModuleMap(), toolrun.New(), evidenceports.ExtractConfig{})
+			if got.Coverage.Status != evidence.StatusOK || !reflect.DeepEqual(got.Units, want) {
+				t.Fatalf("discovery from %s = %+v, want %v", alias, got, want)
 			}
 		})
 	}

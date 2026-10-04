@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/ownership"
@@ -133,6 +134,25 @@ func tsUnresolvedWarning(cov []evidence.Coverage) string {
 	for _, c := range cov {
 		if c.Tool == registry.ToolDepCruiser && c.Status == evidence.StatusPartial && c.Reason != "" {
 			return registry.ToolDepCruiser + ": " + c.Reason
+		}
+	}
+	return ""
+}
+
+// goBuildConstraintWarning returns the go/packages reason clause that counts Go
+// files the host build configuration (GOOS/GOARCH, build tags) left out of the
+// load. Those files are never parsed, so an import in them reaches no rule; the
+// row stays ok, so without this line the gap would be stderr-silent. Returns ""
+// when the row carries no such clause.
+func goBuildConstraintWarning(cov []evidence.Coverage) string {
+	for _, c := range cov {
+		if c.Tool != registry.ToolGoPackages {
+			continue
+		}
+		for clause := range strings.SplitSeq(c.Reason, "; ") {
+			if strings.Contains(clause, golang.BuildConstraintExclusion) {
+				return registry.ToolGoPackages + ": " + clause
+			}
 		}
 	}
 	return ""

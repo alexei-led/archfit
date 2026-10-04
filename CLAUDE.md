@@ -65,7 +65,11 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 - Every subprocess call goes through `toolrun.Runner` (interface in
   `internal/toolrun/toolrun.go`); extractors in `internal/extract/{go,ts,py,rust}`
   are out-of-process adapters. No `exec.Command` in core code — fake the `Runner`
-  in tests.
+  in tests. A child with a `WorkDir` gets `PWD=<abs WorkDir>` (os/exec refreshes
+  PWD only when `Env` is nil): Go tools trust an inherited PWD that aliases their
+  cwd, so `go list -f {{.Dir}}` echoed the shell's symlink/case-variant spelling,
+  the Go main deploy unit fell outside the canonical scan root, and `model_hash`
+  depended on the invocation path.
 - **Fact cache** (`internal/factcache`, adapter — core ring must not import it;
   see `docs/design/fact-cache.md`). Content-addressed extractor-fact store under
   `.archfit-cache/facts/`; stores facts, never scores. Runner-shaped analyzers
@@ -411,8 +415,10 @@ init` emits v2 directly; owners update older configs manually before analysis.
   boundary; all extractors walk this tree). `Scope.GitRoot` = `git rev-parse
 --show-toplevel` (git ops only). `Scope.SubtreePrefix = rel(GitRoot, Root)`.
   `--root` absent ⇒ ScanRoot=GitRoot, prefix="" ⇒ byte-identical. Non-git full
-  mode proceeds with `GitRoot=""` (history empty); delta mode without git is a
-  hard error.
+  mode proceeds with `GitRoot=""` (history empty) and ScanRoot = the canonical
+  ABSOLUTE `--root` or config directory (`canonicalPath` absolutizes before
+  resolving symlinks; a relative `.` root dropped every Go fact and deploy
+  unit); delta mode without git is a hard error.
   **macOS APFS case-variant `--root` (Task 25, fixed):** `snapScanRoot` in
   `internal/scope/scope.go` uses `os.SameFile` (device+inode) to snap a
   case-variant scan root to the git root's canonical path, so
@@ -435,6 +441,16 @@ init` emits v2 directly; owners update older configs manually before analysis.
   each member as a synthetic module when **≥2** members were loaded and the
   member's `RelDir != "."` and no config module already covers it — mirrors the
   Rust `::` gate. `languages.go.modules.include/exclude` scopes which members load.
+- **Go files excluded by build constraints are disclosed, never graded.** The
+  load sees only the host GOOS/GOARCH and tags, so `_windows.go` and tag-gated
+  files are never parsed. `deriveIgnoredFiles` keeps the non-test `.go` files of
+  `pkg.IgnoredFiles` (cached with the member facts — fact-cache schema `3`), and
+  the merge counts them minus config exclusions into the go/packages `Reason`
+  (`golang.BuildConstraintExclusion`) plus ONE stderr warning
+  (`goBuildConstraintWarning`). Status, `Unresolved`, the measurement profile and
+  dimension promotion do not move: the load is complete for its configuration.
+  Ceiling: a directory whose every file is excluded is dropped by `go list ./...`
+  and not counted.
 - **Per-analyzer timeout.** `analyzers.<x>.timeout` (Go duration string, e.g. `"5m"`)
   caps `scip` and `clones` (jscpd) subprocess runs. On timeout the result is
   dropped; dependent metrics report `n/a (timed out)`; the run continues on the

@@ -99,6 +99,27 @@ path with no change in output.
 members are loaded (see
 [configuration reference](configuration-reference.md#languagesgomodules)).
 
+**Build constraints:** `go/packages` loads each package for the host
+`GOOS`/`GOARCH`, the default build tags, and any `-tags` in `GOFLAGS`. Files that
+this build configuration excludes are never parsed, so an import in them reaches
+no rule. Examples are `store_windows.go` on a Linux runner, a
+`//go:build enterprise` file, and cgo files when cgo is off. archfit counts these
+files and reports the count in two places: the `go/packages` coverage reason and
+one stderr warning (`warning: go/packages: N Go file(s) excluded by build
+constraints ...`). The coverage status does not change: the load is complete for
+the configuration it ran under, so dimension promotion and comparability do not
+move.
+
+- To analyze another platform or tag set, run archfit under it, for example
+  `GOOS=windows archfit check` or `GOFLAGS=-tags=enterprise archfit check`.
+- To remove files that are never built on purpose from the count (for example
+  `//go:build ignore` generators), list them under [`exclude`](configuration-reference.md#exclude).
+- The count covers only files in packages that `go/packages` loaded. If build
+  constraints exclude every file in a directory, `go list ./...` does not list
+  that directory, and its files are not counted.
+- `_test.go` files are not counted. archfit does not load test files on any
+  platform.
+
 Install/check:
 
 ```sh

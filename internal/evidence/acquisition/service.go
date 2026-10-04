@@ -188,6 +188,9 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	if warning := pyUnresolvedWarning(coverage); warning != "" {
 		note(warning)
 	}
+	if warning := goBuildConstraintWarning(coverage); warning != "" {
+		note(warning)
+	}
 	// Rule and metric evaluation reads the RAW coverage rows; the marked copy is
 	// report evidence only, so a config opt-out can never move a measured metric.
 	marked := markDisabledPrimaries(append(append([]evidence.Coverage(nil), coverage...), reportOnlyCoverage...), s.Options.Coverage, resolved.Root)

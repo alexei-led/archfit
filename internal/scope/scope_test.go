@@ -3,6 +3,8 @@ package scope_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -159,6 +161,31 @@ func TestResolve_NonGitFullMode(t *testing.T) {
 	}
 	if s.SubtreePrefix != "" {
 		t.Errorf("subtree prefix: got %q, want empty (non-git)", s.SubtreePrefix)
+	}
+}
+
+// TestResolve_NonGitRelativeWorkDirIsCanonical covers the default non-git
+// run: the config sits in the working directory, so WorkDir is ".". A relative
+// root makes every extractor's filepath.Rel against absolute tool output fail,
+// which silently drops Go facts and deploy units; reaching the directory through
+// a symlink must not change the root either.
+func TestResolve_NonGitRelativeWorkDirIsCanonical(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(dir, alias); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	t.Chdir(alias)
+
+	s, err := scope.Resolve(context.Background(), scope.Config{Full: true, WorkDir: "."}, fakeResolver{err: errors.New("not a git repo")})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if s.Root != dir {
+		t.Errorf("root: got %q, want the canonical absolute directory %q", s.Root, dir)
 	}
 }
 

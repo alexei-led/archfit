@@ -43,6 +43,82 @@ func TestRun_Check_Root_NonGitFullMode(t *testing.T) {
 	}
 }
 
+// TestRun_Analyze_Base_InvocationPathSpelling runs `analyze --base HEAD` on an
+// unchanged tree from the canonical directory, a symlink to it, and (on a
+// case-insensitive filesystem) a case variant of it. The shell's spelling of
+// the working directory must not reach model_hash: before the fix, `go list`
+// echoed the inherited PWD, the Go main package fell outside the canonical scan
+// root, the head side lost its deploy unit, and the comparison read
+// non_comparable on model_hash.
+func TestRun_Analyze_Base_InvocationPathSpelling(t *testing.T) {
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(parent, "repo")
+	for name, content := range map[string]string{
+		markerGoMod:          goModStub,
+		"cmd/server/main.go": goMainSrc,
+		"pkg/app/app.go":     "package app\n\nfunc Run() {}\n",
+		defaultConfigPath: "version: 2\nmodules:\n" +
+			"  server:\n    paths: [\"cmd/server/**\"]\n    owner: team-a\n" +
+			"  app:\n    paths: [\"pkg/app/**\"]\n    owner: team-a\n",
+	} {
+		path := filepath.Join(repo, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitInitFixtureRepo(t, repo)
+	gitCommitAll(t, repo, "initial commit")
+	symlink := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(repo, symlink); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	type run struct {
+		Comparison struct {
+			Status    string   `json:"status"`
+			Reasons   []string `json:"reasons"`
+			ModelHash string   `json:"model_hash"`
+		} `json:"comparison"`
+	}
+	analyzeFrom := func(t *testing.T, dir string) run {
+		t.Helper()
+		t.Chdir(dir)
+		code, stdout, stderr := runArchfit(t, cmdAnalyze, flagBase, "HEAD", fmtJSON, flagRefresh, "-c", defaultConfigPath)
+		if code != 0 {
+			t.Fatalf("analyze --base HEAD from %s: exit = %d\nstderr:\n%s", dir, code, stderr)
+		}
+		var got run
+		if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+			t.Fatalf("invalid JSON from %s: %v\n%s", dir, err, stdout)
+		}
+		if got.Comparison.Status != "comparable" {
+			t.Errorf("comparison from %s = %q %v, want comparable on an unchanged tree", dir, got.Comparison.Status, got.Comparison.Reasons)
+		}
+		return got
+	}
+
+	canonical := analyzeFrom(t, repo)
+	for name, alias := range map[string]string{
+		"symlink":      symlink,
+		"case variant": filepath.Join(parent, "REPO"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := os.Stat(alias); err != nil {
+				t.Skipf("%s does not resolve here (case-sensitive filesystem): %v", alias, err)
+			}
+			if got := analyzeFrom(t, alias); got.Comparison.ModelHash != canonical.Comparison.ModelHash {
+				t.Errorf("model_hash from %s = %s, want %s (the canonical run's)", alias, got.Comparison.ModelHash, canonical.Comparison.ModelHash)
+			}
+		})
+	}
+}
+
 // TestRun_Check_Root_OutputWarningUsesRoot is a regression guard for
 // outputInsideRootWarning using s.Root (the resolved ScanRoot) rather than the
 // git toplevel. When --root names the same directory that holds the config,

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -79,6 +80,34 @@ func TestRun_EnvPinned(t *testing.T) {
 	}
 	if !strings.Contains(string(out.Stdout), "C") {
 		t.Errorf("Stdout = %q, want LC_ALL=C to be visible", out.Stdout)
+	}
+}
+
+// TestRun_WorkDirSetsChildPWD pins the child's PWD to its own working
+// directory. An inherited PWD that is a symlink alias of that directory is
+// trusted by Go's os.Getwd, so `go list -f {{.Dir}}` would echo the alias and
+// every path compared against the canonical scan root would fall outside it.
+func TestRun_WorkDirSetsChildPWD(t *testing.T) {
+	workDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(workDir, alias); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	t.Setenv("PWD", alias)
+
+	out, err := New().Run(context.Background(), ToolCmd{
+		Name:    "sh",
+		Args:    []string{"-c", `printf '%s' "$PWD"`},
+		WorkDir: workDir,
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if got := string(out.Stdout); got != workDir {
+		t.Errorf("child PWD = %q, want the working directory %q", got, workDir)
 	}
 }
 
