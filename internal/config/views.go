@@ -56,6 +56,24 @@ func (c Config) Lint() []LintWarning {
 	return LintModules(c.Modules)
 }
 
+// ruleTypeForbiddenPattern is the only rule type that evaluates rules[].patterns.
+const ruleTypeForbiddenPattern = "forbidden_pattern"
+
+// PatternWarnings reports rules that declare `patterns:` on a rule type that
+// never reads them. ast-grep still runs those patterns — ForPatterns keeps
+// collecting every rule's, because their content feeds the measurement settings
+// hash — but only forbidden_pattern turns matches into findings. Schema v2 loads
+// them with this warning rather than rejecting a key it used to accept.
+func (c Config) PatternWarnings() []string {
+	var out []string
+	for _, r := range c.Rules {
+		if len(r.Patterns) > 0 && r.Type != ruleTypeForbiddenPattern {
+			out = append(out, fmt.Sprintf("rule %q (type %s) declares patterns, but patterns are only evaluated by forbidden_pattern rules: its matches never produce a finding", r.ID, r.Type))
+		}
+	}
+	return out
+}
+
 // LintModules is Lint over an arbitrary module set. Acquisition projects it so
 // the warnings are computed against the run's RESOLVED modules: ownership
 // resolution (CODEOWNERS, git history) runs after config decode, and a warning

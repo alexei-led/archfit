@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	testBelongsTo  = "belongs_to"
 	testImportKind = "imports"
 	testModuleA    = "internal/a"
 	testModuleB    = "internal/b"
@@ -138,8 +139,8 @@ func TestSetCycles(t *testing.T) {
 
 	t.Run("non_dependency_edges_excluded", func(t *testing.T) {
 		set := Set{Edges: []Edge{
-			{FromID: testNodeA, ToID: testNodeB, Kind: "belongs_to"},
-			{FromID: testNodeB, ToID: testNodeA, Kind: "belongs_to"},
+			{FromID: testNodeA, ToID: testNodeB, Kind: testBelongsTo},
+			{FromID: testNodeB, ToID: testNodeA, Kind: testBelongsTo},
 		}}
 		if got := set.Cycles(); len(got) != 0 {
 			t.Fatalf("Cycles() = %v, want none for belongs_to edges", got)
@@ -154,4 +155,98 @@ func TestSetCycles(t *testing.T) {
 			t.Fatalf("Cycles() = %v, want none for a self-loop", got)
 		}
 	})
+
+	t.Run("go_file_to_package_edges_never_cycle", func(t *testing.T) {
+		set := Set{Edges: []Edge{
+			{FromID: "file:billing/app/notify.go", ToID: "package:shipping/api", Kind: testImportKind},
+			{FromID: "file:shipping/app/bill.go", ToID: "package:billing/app", Kind: testImportKind},
+		}}
+		if got := set.Cycles(); len(got) != 0 {
+			t.Fatalf("Cycles() = %v, want none: file -> package edges cannot close a node cycle", got)
+		}
+	})
+}
+
+// moduleEdge is a dependency edge between two resolved modules.
+func moduleEdge(from, to, fromModule, toModule string) Edge {
+	return Edge{FromID: from, ToID: to, FromModule: fromModule, ToModule: toModule, Kind: testImportKind}
+}
+
+func TestSetModuleCycles(t *testing.T) {
+	const (
+		billing  = "billing"
+		shipping = "shipping"
+		catalog  = "catalog"
+	)
+	tests := []struct {
+		name  string
+		edges []Edge
+		keep  func(string) bool
+		want  [][]string
+	}{
+		{
+			name: "two module cycle through different files and packages",
+			edges: []Edge{
+				moduleEdge("file:billing/app/notify.go", "package:shipping/api", billing, shipping),
+				moduleEdge("file:shipping/app/bill.go", "package:billing/app", shipping, billing),
+			},
+			want: [][]string{{billing, shipping}},
+		},
+		{
+			name: "three module cycle",
+			edges: []Edge{
+				moduleEdge("file:a.go", "package:b", billing, shipping),
+				moduleEdge("file:b.go", "package:c", shipping, catalog),
+				moduleEdge("file:c.go", "package:a", catalog, billing),
+			},
+			want: [][]string{{billing, catalog, shipping}},
+		},
+		{
+			name: "acyclic module graph",
+			edges: []Edge{
+				moduleEdge("file:a.go", "package:b", billing, shipping),
+				moduleEdge("file:b.go", "package:c", shipping, catalog),
+			},
+		},
+		{
+			name: "edges inside one module are not a module cycle",
+			edges: []Edge{
+				moduleEdge("file:billing/a.go", "package:billing/b", billing, billing),
+				moduleEdge("file:billing/b.go", "package:billing/a", billing, billing),
+			},
+		},
+		{
+			name: "unowned endpoints never join a cycle",
+			edges: []Edge{
+				moduleEdge("file:billing/a.go", "package:tools/gen", billing, ""),
+				moduleEdge("file:tools/gen/g.go", "package:billing", "", billing),
+			},
+		},
+		{
+			name: "non dependency edges are ignored",
+			edges: []Edge{
+				{FromID: "file:a.go", ToID: "package:b", FromModule: billing, ToModule: shipping, Kind: testBelongsTo},
+				{FromID: "file:b.go", ToID: "package:a", FromModule: shipping, ToModule: billing, Kind: testBelongsTo},
+			},
+		},
+		{
+			name: "keep drops modules outside the declared set",
+			edges: []Edge{
+				moduleEdge("package:shop::billing", "package:shop::auto", billing, "shop::auto"),
+				moduleEdge("package:shop::auto", "package:shop::billing", "shop::auto", billing),
+			},
+			keep: func(m string) bool { return m == billing },
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Set{Edges: tc.edges}.ModuleCycles(tc.keep)
+			if len(got) == 0 && len(tc.want) == 0 {
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("ModuleCycles() = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }

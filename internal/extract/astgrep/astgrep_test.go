@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
@@ -291,3 +292,69 @@ func TestAdapter_Name(t *testing.T) {
 
 // Compile-time interface check.
 var _ evidenceports.PatternProvider = (*astgrep.Adapter)(nil)
+
+// TestFind_RejectedPatternRunIsPartial pins that a pattern run sg rejects (exit
+// code above 1, here an unknown --lang) degrades the coverage row to partial
+// with a reason naming the pattern, while a no-match run (exit 1) stays ok and
+// the other patterns' matches survive. An ok row over a failed run would let a
+// forbidden_pattern rule count as evaluated with zero findings.
+func TestFind_RejectedPatternRunIsPartial(t *testing.T) {
+	good := marshalEntries(t, []map[string]any{sgEntry("time.Now()", "pkg/a/a.go", patternReflect, 5)})
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
+			return toolrun.ToolInfo{Name: "sg"}, true
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			switch {
+			case slices.Contains(cmd.Args, "nosuchlang"):
+				return toolrun.Output{ExitCode: 2, Stderr: []byte("error: nosuchlang is not supported!")}, nil
+			case slices.Contains(cmd.Args, "python"):
+				return toolrun.Output{ExitCode: 1, Stdout: []byte("[]")}, nil
+			case slices.Contains(cmd.Args, "--pattern"):
+				return toolrun.Output{Stdout: good}, nil
+			}
+			return toolrun.Output{Stdout: []byte("ast-grep 0.45.3\n")}, nil
+		},
+	}
+	cfg := pattern.Config{
+		{ID: patternReflect, Lang: "go", Rule: "time.Now()"},
+		{ID: "py-none", Lang: "python", Rule: "os.getenv($A)"},
+		{ID: "bad-lang", Lang: "nosuchlang", Rule: "x"},
+	}
+	matches, cov, err := astgrep.New(runner).Find(context.Background(), testScope, cfg)
+	if err != nil {
+		t.Fatalf("a rejected pattern must not fail the run: %v", err)
+	}
+	if len(matches) != 1 || matches[0].Pattern != patternReflect {
+		t.Errorf("matches = %+v, want the go pattern's match kept", matches)
+	}
+	if cov.Status != "partial" || !strings.Contains(cov.Reason, `"bad-lang"`) || !strings.Contains(cov.Reason, "exit 2") {
+		t.Errorf("coverage = %+v, want partial naming bad-lang and its exit code", cov)
+	}
+	if strings.Contains(cov.Reason, "py-none") {
+		t.Errorf("coverage reason %q names a no-match run as a failure", cov.Reason)
+	}
+}
+
+// TestFind_RunsTheRunSubcommandFirst pins the argv shape. `sg --lang go --json
+// run ...` parses "run" as a path to search, so ast-grep prints a missing-path
+// error beside the results; the subcommand leads so every argument is a flag.
+func TestFind_RunsTheRunSubcommandFirst(t *testing.T) {
+	runner := presentRunner([]byte("[]"))
+	if _, _, err := astgrep.New(runner).Find(context.Background(), testScope, singlePatternCfg); err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	var patternRuns int
+	for _, call := range runner.RunCalls() {
+		if !slices.Contains(call.Cmd.Args, "--pattern") {
+			continue
+		}
+		patternRuns++
+		if got := call.Cmd.Args; got[0] != "run" || got[len(got)-1] != "." {
+			t.Errorf("sg args = %q, want the run subcommand first and the search root last", got)
+		}
+	}
+	if patternRuns != 1 {
+		t.Errorf("pattern runs = %d, want 1", patternRuns)
+	}
+}

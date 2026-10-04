@@ -21,6 +21,7 @@ const (
 	ruleTypeLayer     = "forbidden_layer_direction"
 	validateCmd       = "archfit check"
 	kindFunction      = "function"
+	moduleDomain      = "domain"
 )
 
 func gateFinding(id, ruleID string, status finding.Status) finding.Finding {
@@ -238,5 +239,94 @@ func TestBuild_DeclarationsAbsentWhenSyntaxEmpty(t *testing.T) {
 	}
 	if strings.Contains(string(b), `"declarations"`) {
 		t.Errorf("JSON contains 'declarations' key but should be absent; got: %s", b)
+	}
+}
+
+// TestBuild_ModuleCycleTaskAsksToRemoveOneDirection pins the module_cycle
+// repair contract: the goal names the cycle's members and the direction to drop,
+// files come from the import sites (the finding has no endpoint paths), and the
+// target's public surface is never offered — importing it through its public
+// API still closes the cycle.
+func TestBuild_ModuleCycleTaskAsksToRemoveOneDirection(t *testing.T) {
+	const ruleModuleCycle = "no_module_cycles"
+	f := finding.Finding{
+		ID: "c1", Kind: finding.KindGate, RuleID: ruleModuleCycle, Status: finding.StatusNew,
+		Edge: finding.EdgeEvidence{
+			From: finding.Endpoint{Module: "billing"},
+			To:   finding.Endpoint{Module: "shipping"},
+			Kind: "module_dependency",
+		},
+		MatchedBy:  map[string]string{"cycle_modules": "billing, shipping"},
+		Locations:  []relationship.Location{{File: "billing/app/notify.go", Line: 3}},
+		Constraint: "Remove one direction of the module cycle",
+	}
+	tasks := agenttask.Build([]finding.Finding{f},
+		map[string]string{ruleModuleCycle: "module_cycle"},
+		map[string][]string{"shipping": {"shipping/api"}},
+		[]string{validateCmd},
+		nil,
+		nil,
+		agenttask.PathResolver{},
+	)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(tasks))
+	}
+	task := tasks[0]
+	for _, want := range []string{"billing, shipping", "billing -> shipping", "from shipping back to billing"} {
+		if !strings.Contains(task.Goal, want) {
+			t.Errorf("goal %q does not mention %q", task.Goal, want)
+		}
+	}
+	for _, c := range task.Constraints {
+		if strings.Contains(c, "public surface") {
+			t.Errorf("constraints = %v, want no public-surface route for a cycle", task.Constraints)
+		}
+	}
+	if !reflect.DeepEqual(task.Files, []string{"billing/app/notify.go"}) {
+		t.Errorf("files = %v, want the import site", task.Files)
+	}
+	if task.RepairKind != "code_change" {
+		t.Errorf("repair kind = %q, want code_change", task.RepairKind)
+	}
+}
+
+// TestBuild_ForbiddenPatternTaskNamesThePatternAndFile pins the pattern repair
+// contract: the goal names the file and the pattern ID (never matched source),
+// files come from the match sites, and no public-surface route is offered — the
+// finding has no target module.
+func TestBuild_ForbiddenPatternTaskNamesThePatternAndFile(t *testing.T) {
+	const (
+		rulePattern = "domain_no_clock"
+		file        = "internal/domain/service.go"
+	)
+	f := finding.Finding{
+		ID: "p1", Kind: finding.KindGate, RuleID: rulePattern, Status: finding.StatusNew,
+		Edge:       finding.EdgeEvidence{From: finding.Endpoint{Module: moduleDomain, Path: file}, Kind: "pattern_match"},
+		MatchedBy:  map[string]string{"pattern": "clock", "file": file},
+		Locations:  []relationship.Location{{File: file, Line: 12}},
+		Constraint: "Remove the construct matching pattern \"clock\"",
+	}
+	tasks := agenttask.Build([]finding.Finding{f},
+		map[string]string{rulePattern: "forbidden_pattern"},
+		map[string][]string{moduleDomain: {"internal/domain"}},
+		[]string{validateCmd},
+		nil,
+		nil,
+		agenttask.PathResolver{},
+	)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(tasks))
+	}
+	task := tasks[0]
+	if !strings.Contains(task.Goal, file) || !strings.Contains(task.Goal, `"clock"`) {
+		t.Errorf("goal %q does not name the file and the pattern", task.Goal)
+	}
+	if !reflect.DeepEqual(task.Files, []string{file}) {
+		t.Errorf("files = %v, want the match site", task.Files)
+	}
+	for _, c := range task.Constraints {
+		if strings.Contains(c, "public surface") {
+			t.Errorf("constraints = %v, want no public-surface route", task.Constraints)
+		}
 	}
 }

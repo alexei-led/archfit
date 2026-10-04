@@ -22,13 +22,16 @@ layers:
   - adapter
   - cmd
 modules:
+  # Other modules import the domain's root package only. Pairing it with an
+  # internal glob over the rest of the module is what makes public_api_only
+  # block a bypass: a nested internal/ dir is already compiler-enforced in Go.
   domain:
     paths:
       - internal/domain/**
     public:
       - internal/domain
     internal:
-      - internal/domain/internal/**
+      - internal/domain/**
     layer: domain
     subdomain: core # core -> high volatility
     owner: team-core
@@ -61,15 +64,28 @@ rules:
     from: internal/domain/**
     to: internal/adapter/**
     gate: fail
+  # Domain logic takes time as an input instead of reading the wall clock.
+  # Needs ast-grep (sg); check a pattern with `sg run --lang go --pattern ...`.
+  - id: domain_no_clock
+    type: forbidden_pattern
+    from: internal/domain/**
+    gate: fail
+    patterns:
+      - id: domain_clock
+        lang: go
+        rule: time.Now()
   # Respect the layer order declared above.
   - id: layer_direction
     type: forbidden_layer_direction
     gate: fail
-  # No importing another module's internal package.
+  # No importing another module's declared internal packages (the domain's
+  # sub-packages above) or a Go internal/ package across modules.
   - id: public_api_only
     type: public_api_only
     gate: fail
-  # Cycles are reported and gated.
-  - id: no_cycles
-    type: cycle
+  # No dependency cycle among the declared modules. module_cycle sees cycles
+  # that close across modules through different files; the node-level
+  # cycle rule cannot (on Go it never fires).
+  - id: no_module_cycles
+    type: module_cycle
     gate: fail

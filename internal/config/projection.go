@@ -220,6 +220,9 @@ func (p Preparer) Prepare(context.Context) error {
 	}
 	if p.DiscloseLint {
 		PrintLint(p.stderr(), p.Config.Lint())
+		for _, warning := range p.Config.PatternWarnings() {
+			_, _ = fmt.Fprintf(p.stderr(), "warning: %s\n", warning)
+		}
 	}
 	return nil
 }

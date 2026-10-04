@@ -290,9 +290,33 @@ init` emits v2 directly; owners update older configs manually before analysis.
   address still leaves the rule unevaluated, which is what keeps a missing
   analyzer honest, and a probe-based filter is the wrong axis (`.go` files with
   no `go.mod` yield a gapless-`absent` Go row over files that genuinely went
-  unmeasured). Module-wide rules (`public_api_max`, `forbidden_layer_direction`)
-  keep the full module scope on purpose — a helper script inside a declared
-  module is a real member of its API accounting.
+  unmeasured). Module-wide rules (`public_api_max`, `forbidden_layer_direction`,
+  `module_cycle`) keep the full module scope on purpose — a helper script inside
+  a declared module is a real member of its API accounting and of its edges.
+- **Internal-access rules decide from declared surfaces, rule-side**
+  (`rules.internalTarget` over `policy.ModuleMap.MatchesInternal`).
+  `public_api_only`/`internal_api_access`: a `public:` glob of the target's own
+  module never fires; any module's `internal:` glob fires; only an undeclared
+  target falls back to the extractor's `uses_internal` kind (Go `/internal/`
+  segment, TS/Python internal-glob match). Never move this into an extractor:
+  finding fingerprints hash the edge kind, so changing Go edge kinds re-keys
+  every accepted finding on those edges, under every rule.
+- **`cycle` is node-level; `module_cycle` is the declared-module check.** Go
+  edges run file -> package, so `cycle` is structurally 0 on Go.
+  `module_cycle` runs Tarjan (`relationship.Set.ModuleCycles`, sharing
+  `stronglyConnected` with `Set.Cycles`) over DECLARED modules only (`mm.Has`;
+  synthetic crate::mod and go.work members stay out) and emits one
+  `module_dependency` finding per ordered pair inside an SCC, keyed by
+  `finding.NewKeyed(rule, kind, from, to)` with empty endpoint paths.
+  `resolveEvidence` fills a module only when it is empty and has a path.
+- **`forbidden_pattern` is the only consumer of `rules[].patterns`.** It fires
+  on production files in the LOC inventory (`FileClassIndex`) under `from:`
+  (path or convention selector — the same matcher its producer scope uses), is
+  evaluated only when the `ast-grep` pattern row is ok, and never puts matched
+  source text in a finding (the text is hashed into the ID only). A pattern run
+  `sg` rejects (exit > 1) makes that row partial, never "no match". Patterns on
+  other rule types still run and warn at Prepare; `ForPatterns` keeps
+  collecting every rule's patterns because they feed the settings hash.
 - **A language switched off over a language that IS PRESENT reports `disabled`,
   never `absent`** (`markDisabledPrimaries`, `internal/evidence/acquisition/coverage.go`,
   applied to `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode

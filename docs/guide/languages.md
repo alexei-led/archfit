@@ -143,7 +143,7 @@ modules:
   domain:
     paths: [internal/domain/**]
     public: [internal/domain]
-    internal: [internal/domain/internal/**]
+    internal: [internal/domain/**]
     layer: model
     subdomain: core
   http:
@@ -159,7 +159,10 @@ rules:
 ```
 
 For Go, `public` usually names package import paths, such as `internal/domain`,
-not individual `.go` files.
+not individual `.go` files. Pair it with an `internal` glob over the rest of the
+module, as above, to make `public_api_only` block imports that bypass the public
+package: a nested `internal/` directory is already enforced by the Go compiler,
+so no cross-module import of it can exist.
 
 ## TypeScript and JavaScript
 
@@ -279,7 +282,6 @@ modules:
     public: [myapp.domain.api**]
     internal:
       - myapp.domain._internal**
-      - myapp/domain/_internal/**
     layer: domain
     subdomain: core
   web:
@@ -302,8 +304,8 @@ Python notes:
 
 - dependency nodes are dotted module names;
 - use dotted globs for `modules.paths`, `public`, and rule `from`/`to` filters;
-- include slash-style `internal` globs too when you want the extractor to mark
-  `_internal` packages as internal-access edges;
+- write `internal` globs dotted too: `public_api_only` and `internal_api_access`
+  match them against the dotted node IDs, and a slash-style glob never matches;
 - imports of underscore-prefixed modules, such as `myapp._internal`, are treated
   as intrusive coupling signals.
 

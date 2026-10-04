@@ -27,6 +27,16 @@ const (
 	ruleTypeForbiddenLayerDirection = "forbidden_layer_direction"
 )
 
+// Rule types with a dedicated goal template, and the MatchedBy keys those
+// templates read: a module cycle lists its members, a pattern finding names its
+// pattern. Both agree with internal/assessment/rules by convention.
+const (
+	ruleTypeModuleCycle      = "module_cycle"
+	matchedByCycleModulesKey = "cycle_modules"
+	ruleTypeForbiddenPattern = "forbidden_pattern"
+	matchedByPatternKey      = "pattern"
+)
+
 // PathResolver carries the filesystem facts filesFor needs to turn a config
 // module key, a Rust "crate::mod" module key, or a Python dotted module key
 // into a path that actually exists on disk — without agenttask itself ever
@@ -280,6 +290,13 @@ func goalFor(ruleType string, f finding.Finding) string {
 		return fmt.Sprintf("Remove the new cross-module dependency from %s to %s. If the dependency is intentional, request an architecture-owner decision before changing policy or accepted debt.", from, to)
 	case "cycle":
 		return "Break the import cycle: " + f.Why
+	case ruleTypeModuleCycle:
+		fromMod, toMod := f.Edge.From.Module, f.Edge.To.Module
+		return fmt.Sprintf("Break the dependency cycle among declared modules %s by removing one direction of it: drop the %s -> %s dependency, or the dependency path from %s back to %s. Routing it through another module keeps the cycle.",
+			f.MatchedBy[matchedByCycleModulesKey], fromMod, toMod, toMod, fromMod)
+	case ruleTypeForbiddenPattern:
+		return fmt.Sprintf("Remove the code in %s that matches forbidden pattern %q at the listed lines: replace it, or move that behavior to code the rule's scope does not cover.",
+			from, f.MatchedBy[matchedByPatternKey])
 	default:
 		if f.Why != "" {
 			return f.Why
@@ -296,10 +313,10 @@ func repairKind(ruleType string) string {
 }
 
 // constraintsFor joins the finding's constraint text, its allowed
-// alternatives, and — unless the rule forbids the target outright — the target
-// module's public surface. A forbidden dependency or an inverted layer is still
-// a violation through the target's public API, so naming that surface would
-// route the agent straight back to the forbidden target.
+// alternatives, and — unless the rule forbids the target route — the target
+// module's public surface. A forbidden dependency, an inverted layer, or a
+// module cycle is still a violation through the target's public API, so naming
+// that surface would route the agent straight back into the violation.
 func constraintsFor(f finding.Finding, ruleType string, modulePublic map[string][]string) []string {
 	out := []string{}
 	if f.Constraint != "" {
@@ -308,7 +325,7 @@ func constraintsFor(f finding.Finding, ruleType string, modulePublic map[string]
 	for _, alt := range f.Alternatives {
 		out = append(out, "allowed alternative: "+alt)
 	}
-	if forbidsTarget(ruleType) {
+	if forbidsTarget(ruleType) || ruleType == ruleTypeModuleCycle {
 		return out
 	}
 	if pub := modulePublic[f.Edge.To.Module]; len(pub) > 0 {

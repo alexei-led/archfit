@@ -4,6 +4,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/metrics"
 	"github.com/alexei-led/archfit/internal/assessment/rules"
 	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/policy"
 )
@@ -14,6 +15,8 @@ type RuleEvidence struct {
 	PatternMatches []pattern.Match
 	// SyntaxFacts is nil/empty when the syntax pass is off.
 	SyntaxFacts []evidence.SyntaxFact
+	// FileClasses is the source inventory's file classification.
+	FileClasses map[string]fileclass.FileClass
 }
 
 // Ruleset is the compiled policy rule set. Stage adapters build one and hand it

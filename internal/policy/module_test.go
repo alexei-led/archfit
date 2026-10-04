@@ -58,3 +58,62 @@ func TestIsModuleRoot(t *testing.T) {
 		t.Error("IsModuleRoot(internal/model/graph) = true, want false (nested dir)")
 	}
 }
+
+func TestMatchesInternal_DeclaredSurfacePrecedence(t *testing.T) {
+	const (
+		billingAll  = "internal/billing/**"
+		billingAPI  = "internal/billing/api"
+		pyDomain    = "myapp.domain"
+		pyDomainAll = "myapp.domain.**"
+		rustLedger  = "shop::billing::ledger"
+	)
+	mm := BuildModuleMap(map[string]ModuleDef{
+		"billing": {
+			Paths:    []string{billingAll},
+			Public:   []string{billingAPI},
+			Internal: []string{billingAll},
+		},
+		"shipping": {Paths: []string{"internal/shipping/**"}},
+		"ledger": {
+			// More specific than billing, and its public: glob names a path it
+			// does not own: that declaration cannot open billing's surface.
+			Paths:  []string{"internal/billing/ledger/**"},
+			Public: []string{"internal/billing/domain"},
+		},
+		"py": {
+			Paths:    []string{pyDomain, pyDomainAll},
+			Public:   []string{pyDomain},
+			Internal: []string{pyDomainAll},
+		},
+		"rs": {
+			Paths:    []string{"shop::billing", "shop::billing::**"},
+			Internal: []string{rustLedger},
+		},
+	})
+
+	tests := []struct {
+		name         string
+		path         string
+		wantInternal bool
+		wantGlob     string
+	}{
+		{"owner public glob exempts", billingAPI, false, billingAPI},
+		{"owner internal glob marks internal", "internal/billing/domain/store", true, billingAll},
+		{"another module's public glob cannot open a surface", "internal/billing/domain", true, billingAll},
+		{"internal glob of a less specific module still applies", "internal/billing/ledger/book", true, billingAll},
+		{"no declaration is undecided", "internal/shipping/api", false, ""},
+		{"unowned path is undecided", "cmd/server", false, ""},
+		{"python dotted public wins", pyDomain, false, pyDomain},
+		{"python dotted internal", "myapp.domain.store", true, pyDomainAll},
+		{"rust crate::mod internal", rustLedger, true, rustLedger},
+		{"rust crate::mod undeclared", "shop::billing::api", false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			internal, glob := mm.MatchesInternal(tt.path)
+			if internal != tt.wantInternal || glob != tt.wantGlob {
+				t.Errorf("MatchesInternal(%q) = (%v, %q), want (%v, %q)", tt.path, internal, glob, tt.wantInternal, tt.wantGlob)
+			}
+		})
+	}
+}

@@ -459,15 +459,16 @@ func TestInternalAPIAccess_ModuleMap(t *testing.T) {
 	}
 }
 
-// TestPublicAPIOnly_PerLanguage locks publicAPIOnly.Check's EdgeKind gating
-// only: Check never reads Edge.Language, so all three subtests below assert
-// the exact same thing — a plain EdgeKindImports edge produces no finding —
-// regardless of the language label attached to the edge. Per-language
-// differences in WHEN edgeKindUsesInternal actually gets assigned (Go
-// extractor: lexically, on any "/internal/" import path; TS/Python
-// extractors: only when a module declares an `internal:` glob
-// (matchesInternal); Rust extractor: never) live in the extractors, not in
-// this rule or in this test.
+// TestPublicAPIOnly_PerLanguage locks publicAPIOnly.Check's EdgeKind fallback
+// with NO declared surfaces: Check never reads Edge.Language, so all three
+// subtests below assert the exact same thing — a plain EdgeKindImports edge
+// produces no finding — regardless of the language label attached to the edge.
+// Per-language differences in WHEN edgeKindUsesInternal gets assigned (Go
+// extractor: lexically, on any "/internal/" import path; TS/Python extractors:
+// only when a module declares an `internal:` glob; Rust extractor: never) live
+// in the extractors. Declared `public:`/`internal:` globs decide before that
+// kind in every language; TestInternalAccessRules_DecideFromDeclaredSurfaces
+// covers them.
 func TestPublicAPIOnly_PerLanguage(t *testing.T) {
 	cfg := policy.RuleConfig{
 		Rules: []policy.RuleDef{
@@ -485,9 +486,9 @@ func TestPublicAPIOnly_PerLanguage(t *testing.T) {
 		name     string
 		language string
 	}{
-		{name: "typescript", language: "typescript"},
-		{name: "python", language: "python"},
-		{name: "rust", language: "rust"},
+		{name: langTypeScript, language: langTypeScript},
+		{name: langPython, language: langPython},
+		{name: langRust, language: langRust},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -156,6 +156,11 @@ func ruleUnevaluatedReason(diag *result.Result, rule policy.RuleDef, p policy.Po
 	if ruleNeedsSyntax(rule.Type) && !syntaxEvidenceComplete(diag, scope.languages) {
 		reasons = append(reasons, "syntax evidence is incomplete for the rule scope")
 	}
+	if ruleNeedsPatterns(rule.Type) {
+		if reason := producerIncompleteReason(diag, patternCoverageTool); reason != "" {
+			reasons = append(reasons, reason)
+		}
+	}
 	sort.Strings(reasons)
 	return strings.Join(reasons, "; ")
 }

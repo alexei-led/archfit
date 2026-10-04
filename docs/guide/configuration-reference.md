@@ -63,9 +63,9 @@ modules:
     paths:
       - internal/domain/**
     public:
-      - internal/domain
+      - internal/domain # the one package other modules import
     internal:
-      - internal/domain/internal/**
+      - internal/domain/** # every other domain package is private
     layer: domain
     subdomain: core
     volatility: high
@@ -746,7 +746,7 @@ modules:
   pricing:
     paths: [services/pricing/**]
     public: [services/pricing/contracts/**]
-    internal: [services/pricing/internal/**]
+    internal: [services/pricing/**]
     layer: domain
     subdomain: core
     volatility: high
@@ -757,10 +757,13 @@ modules:
 Fields:
 
 - `paths` — globs that claim files, packages, or modules for ownership.
-- `public` — allowed public API surface. Matching targets are classified as
-  contract coupling.
+- `public` — declared public API surface. Matching targets are classified as
+  contract coupling, and a target that matches its own module's `public` glob is
+  never internal access, even when it also matches an `internal` glob or the
+  extractor marked it internal.
 - `internal` — private surface. Matching targets are classified as intrusive
-  coupling or internal API access when the extractor emits that edge kind.
+  coupling, and `public_api_only`/`internal_api_access` treat them as internal
+  access in every language.
 - `layer` — one of the names from `layers`.
 - `subdomain` — DDD subdomain classification: `core`, `supporting`, or `generic`.
   Determines the volatility ordinal when no explicit `volatility` is set.
@@ -772,6 +775,14 @@ Fields:
 - `role` — optional architectural role. See [Module role vs layer](#module-role-vs-layer).
 - `reviewed_at` — date of last architecture-map review.
 - `reviewed_by` — reviewer identity.
+
+`public` alone only exempts paths; it never flags an import that misses it. To
+make archfit block imports that bypass a module's public package, pair the
+public package with an `internal` glob over the rest of the module, as
+`pricing` does above: `contracts/**` stays public and everything else under
+`services/pricing/` is private. A nested `internal/` directory inside its own
+module is not enough on Go: the Go compiler already rejects every import of it
+from outside the parent tree, so no cross-module edge to it can exist.
 
 ### Module role vs layer
 
@@ -966,7 +977,7 @@ rules:
 | `from`     | most             | Source module or path glob.                                                                                            |
 | `to`       | most             | Target module or path glob.                                                                                            |
 | `max`      | `public_api_max` | Integer ceiling.                                                                                                       |
-| `patterns` | structural rules | Optional ast-grep patterns for structural evidence.                                                                    |
+| `patterns` | `forbidden_pattern` | ast-grep patterns (`id`, `lang`, `rule`) the rule forbids. On any other type they still run but never produce a finding, and `analyze`/`check` print a warning. |
 
 `forbidden_layer_direction` takes no `from`/`to` (or `from_layer`/`to_layer`)
 keys — it derives layer ordering from `layers:` and each endpoint's layer from
@@ -993,20 +1004,47 @@ violation under its own rule ID (`archfit config init` generates exactly one).
   globs. Both globs are **required**: an empty glob matches nothing, ever
   (`doublestar.Match("", path)` is always false; there is no empty-means-match-all
   special case), so a rule missing either is rejected as a config error at load.
-- `public_api_only` — fires on internal-access edges, optionally filtered by
-  `from` and `to`. Consults the `modules:` map: an edge where both endpoints
-  resolve to the same module (e.g. `domain` importing its own
-  `domain/internal`) is idiomatic same-module access and never fires. When
-  either endpoint isn't covered by the module map, the edge still fires
-  (module-blind fallback).
+- `public_api_only` — fires on edges into internal surface, optionally filtered
+  by `from` and `to`. The declared surfaces decide first, in every language:
+  1. a target matching a `public` glob of the module that owns it never fires;
+  2. a target matching any module's `internal` glob fires;
+  3. only a target no declaration covers falls back to the extractor's
+     internal-access edge kind: the Go `/internal/` path segment, or the
+     TypeScript/Python extractors' own `internal` glob match. Rust has no
+     fallback.
+
+  Consults the `modules:` map: an edge where both endpoints resolve to the same
+  module (e.g. `domain` importing its own `domain/internal`) is idiomatic
+  same-module access and never fires. When either endpoint isn't covered by the
+  module map, the edge still fires (module-blind fallback). A finding decided by
+  a declaration names the glob in `matched_by.internal_glob`.
+
 - `internal_api_access` — same internal-access signal, with a separate rule ID.
-  Applies the same module-map same-module skip and module-blind fallback as
-  `public_api_only`.
+  Applies the same declared-surface precedence, module-map same-module skip,
+  and module-blind fallback as `public_api_only`.
 - `forbidden_layer_direction` — fires when a dependency direction violates the
   ordered `layers` list.
 - `new_cross_module_dependency` — fires on cross-module edges. Baseline status
   separates known from new findings.
-- `cycle` — fires once per detected import cycle.
+- `cycle` — fires once per node-level import cycle: a strongly-connected
+  component of size > 1 over the dependency graph's own nodes (TypeScript
+  files, Python dotted modules, Rust crates or `crate::mod` nodes). It is always
+  silent on compiling Go, whose edges run file → package, and it never sees a
+  cycle that closes across modules through different files. Use `module_cycle`
+  for that.
+- `module_cycle` — fires on dependency cycles among **declared modules**. It
+  builds the module graph from classified dependency edges whose endpoints
+  resolve to two different declared modules (unowned code, external targets,
+  and auto-registered synthetic modules stay out), and emits one finding per
+  ordered module pair inside a strongly-connected component: billing → shipping
+  and shipping → billing are two findings, each located at its import lines
+  (sorted, at most 50; the full count is in `matched_by.locations_total`).
+  Removing one direction fixes that finding, and breaking the cycle fixes the
+  rest. The finding edge is `{module, path: ""}` on both sides with
+  `kind: module_dependency`, and its ID is keyed on the rule ID and the ordered
+  module pair, so a moved import keeps it. Takes no `from`/`to`: a scope glob is
+  a config error. Needs at least two declared modules; otherwise it does not
+  apply.
 - `public_api_max` — fires when any module's exported declaration count exceeds
   `max` (requires `analyzers.syntax.enabled: true`). Scoped per module. No baseline
   — static ceiling.
@@ -1043,6 +1081,56 @@ rules:
     type: public_api_type_leak
     gate: warn
 ```
+
+### `forbidden_pattern`
+
+`forbidden_pattern` fires when source code under `from` contains a construct
+one of its `patterns` matches. It is the only rule type that reads `patterns`.
+Use it for logic that belongs in another module: a domain that reads the wall
+clock, opens files, or reads the environment.
+
+```yaml
+rules:
+  - id: domain_no_clock
+    type: forbidden_pattern
+    from: internal/domain/**
+    gate: fail
+    patterns:
+      - id: clock
+        lang: go
+        rule: time.Now()
+```
+
+How it decides:
+
+- `patterns` is required: each entry is an ast-grep pattern with an `id`, the
+  ast-grep `lang`, and the pattern `rule`. Pattern IDs must be unique across
+  **all** rules' patterns, because every rule's patterns run in one ast-grep pass
+  and a match carries only its pattern ID.
+- `from` is optional (empty means every production file). It matches the
+  repo-relative file path, or the file's module selector (a dotted Python
+  module such as `myapp.domain.**`). `to` is a config error.
+- Only **production** files in the source inventory fire: test, generated, and
+  vendored files never do, and neither do directories the source walk skips
+  (`testdata`, `vendor`, `node_modules`, and similar).
+- Findings are one per pattern, file, and matched text (whitespace removed),
+  located at every line of that text in the file (sorted, at most 50). The ID
+  leaves the line out, so a moved or reformatted match keeps it. Findings name
+  the pattern ID and `file:line`, and never carry the matched source text.
+- The rule is evaluated only when the ast-grep pattern pass completed (`sg`
+  present and every pattern run accepted). An absent `sg`, or a pattern run
+  `sg` rejects (for example an unknown `lang`), leaves it in
+  `decision.unevaluated_required_rules` instead of passing with zero findings.
+
+Write and check patterns with `sg run --lang <lang> --pattern '<rule>' .`
+before you gate on them. In Go, a call with exactly one argument, such as
+`os.Getenv($KEY)`, parses as a type conversion and matches nothing; patterns
+with no arguments (`time.Now()`) or with several (`fmt.Sprintf($F, $$$)`)
+match calls as expected.
+
+`patterns` on any other rule type is accepted for compatibility, but its
+matches never produce a finding; `analyze` and `check` print a warning naming
+the rule.
 
 ## `waivers`
 
@@ -1102,7 +1190,8 @@ Built-in metric names:
   cross-boundary edges.
 - `unbalanced_edge` — count of new high-risk intrusive, volatile edges across
   larger boundaries.
-- `cycle` — import cycle count.
+- `cycle` — node-level import cycle count (always `0` on compiling Go; see the
+  `module_cycle` rule for cycles among declared modules).
 - `coverage` — extracted files over applicable files, with confidence lowered by
   unresolved imports.
 

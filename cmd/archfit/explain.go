@@ -39,7 +39,11 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 	_, _ = fmt.Fprintf(deps.Stdout, "rule:       %s\n", f.RuleID)
 	_, _ = fmt.Fprintf(deps.Stdout, "status:     %s\n", f.Status)
 	_, _ = fmt.Fprintf(deps.Stdout, "severity:   %s\n", f.Severity)
-	_, _ = fmt.Fprintf(deps.Stdout, "edge:       %s -> %s (%s)\n", f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind)
+	// A module-keyed finding (module_cycle, bc/coupling_gate) has no endpoint
+	// paths; its modules line below names the pair.
+	if f.Edge.From.Path != "" || f.Edge.To.Path != "" {
+		_, _ = fmt.Fprintf(deps.Stdout, "edge:       %s -> %s (%s)\n", f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind)
+	}
 	if f.Edge.From.Module != "" || f.Edge.To.Module != "" {
 		_, _ = fmt.Fprintf(deps.Stdout, "modules:    %s -> %s\n", f.Edge.From.Module, f.Edge.To.Module)
 	}

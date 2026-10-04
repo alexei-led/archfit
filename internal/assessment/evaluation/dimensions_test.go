@@ -15,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/state"
 	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
+	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
@@ -288,9 +289,10 @@ func TestChangeLocalityRefusesAnEmptyHistory(t *testing.T) {
 func TestFindingsRouteToTheOwningDimension(t *testing.T) {
 	t.Parallel()
 	ruleTypes := map[string]string{
-		ruleDep: ruleForbidden, "layer": "forbidden_layer_direction", "cyc": metricCycle,
+		ruleDep: ruleForbidden, "layer": "forbidden_layer_direction", "cyc": metricCycle, "modcyc": "module_cycle",
 		"newdep": "new_cross_module_dependency", "pub": "public_api_only", "max": rulePublicAPIMax,
 		"leak": "public_api_type_leak", "internal": "internal_api_access", "waiver": "waiver_expiry",
+		"pattern": "forbidden_pattern",
 	}
 	tests := []struct {
 		ruleID string
@@ -299,11 +301,13 @@ func TestFindingsRouteToTheOwningDimension(t *testing.T) {
 		{ruleDep, state.DimensionStructure},
 		{"layer", state.DimensionStructure},
 		{"cyc", state.DimensionStructure},
+		{"modcyc", state.DimensionStructure},
 		{"newdep", state.DimensionStructure},
 		{"pub", state.DimensionModularity},
 		{"max", state.DimensionModularity},
 		{"leak", state.DimensionModularity},
 		{"internal", state.DimensionModularity},
+		{"pattern", state.DimensionModularity},
 		{finding.RuleIDBCImbalanced, state.DimensionCoupling},
 		{finding.RuleIDDuplicatedKnowledge, state.DimensionCoupling},
 		{finding.RuleIDCouplingGate, state.DimensionCoupling},
@@ -636,6 +640,72 @@ func TestIntentOnlyAcceptsExplicitlyEmptySupportedRuleScope(t *testing.T) {
 			}
 			if dim.Coverage.Observed != tc.wantSeen || dim.Coverage.Total != 1 {
 				t.Errorf("intent rule coverage = %d/%d, want %d/1", dim.Coverage.Observed, dim.Coverage.Total, tc.wantSeen)
+			}
+		})
+	}
+}
+
+// TestIntentEvaluatesModuleCycleRules pins that module_cycle has a producer
+// scope — every declared module's source languages — so a completed producer
+// makes it evaluated conformance rather than an unknown rule type, and an
+// incomplete one leaves it unevaluated.
+func TestIntentEvaluatesModuleCycleRules(t *testing.T) {
+	t.Parallel()
+	rule := policy.RuleDef{ID: ruleModuleCycle, Type: "module_cycle", Gate: string(policy.GateFail)}
+
+	diag, in := dimensionsFixture()
+	in.Policy.Gates.Rules.Rules = []policy.RuleDef{rule}
+	dim := evaluation.BuildDimensions(diag, in, nil).Intent
+	if dim.Status != state.Measured || dim.Coverage.Observed != 1 {
+		t.Errorf("intent = %q with %d/%d rules evaluated, want measured 1/1 over a completed go/packages run",
+			dim.Status, dim.Coverage.Observed, dim.Coverage.Total)
+	}
+
+	diag, in = dimensionsFixture()
+	in.Policy.Gates.Rules.Rules = []policy.RuleDef{rule}
+	diag.ToolCoverage[0].Status = modevidence.StatusPartial
+	if got := evaluation.BuildDimensions(diag, in, nil).Intent.Status; got != state.Partial {
+		t.Errorf("intent = %q, want partial while the module graph's producer is incomplete", got)
+	}
+}
+
+// toolAstGrep is the coverage name of the ast-grep pattern pass.
+const toolAstGrep = "ast-grep"
+
+// TestIntentEvaluatesForbiddenPatternOnlyOverACompletedPatternPass pins the
+// readiness of forbidden_pattern: it reads the ast-grep pattern pass, not the
+// dependency graph, so only that pass's coverage row decides whether the rule
+// was evaluated — an absent or partial pass is never zero findings' worth of
+// conformance, and a partial dependency producer does not hold it back.
+func TestIntentEvaluatesForbiddenPatternOnlyOverACompletedPatternPass(t *testing.T) {
+	t.Parallel()
+	rule := policy.RuleDef{ID: "domain_no_clock", Type: "forbidden_pattern", Gate: string(policy.GateFail), From: assessPathsA,
+		Patterns: []pattern.Def{{ID: "clock", Lang: "go", Rule: "time.Now()"}}}
+	tests := []struct {
+		name       string
+		patternRow *modevidence.Coverage
+		primary    string
+		want       state.MeasurementStatus
+	}{
+		{"completed pattern pass", &modevidence.Coverage{Tool: toolAstGrep, Status: modevidence.StatusOK}, modevidence.StatusOK, state.Measured},
+		{"completed pattern pass over a partial dependency producer",
+			&modevidence.Coverage{Tool: toolAstGrep, Status: modevidence.StatusOK}, modevidence.StatusPartial, state.Measured},
+		{"absent ast-grep", &modevidence.Coverage{Tool: toolAstGrep, Status: modevidence.StatusAbsent}, modevidence.StatusOK, state.Partial},
+		{"rejected pattern run", &modevidence.Coverage{Tool: toolAstGrep, Status: modevidence.StatusPartial,
+			Reason: `sg rejected pattern "clock" (exit 2)`}, modevidence.StatusOK, state.Partial},
+		{"no pattern row at all", nil, modevidence.StatusOK, state.Partial},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			diag, in := dimensionsFixture()
+			in.Policy.Gates.Rules.Rules = []policy.RuleDef{rule}
+			diag.ToolCoverage[0].Status = tc.primary
+			if tc.patternRow != nil {
+				diag.ToolCoverage = append(diag.ToolCoverage, *tc.patternRow)
+			}
+			if got := evaluation.BuildDimensions(diag, in, nil).Intent.Status; got != tc.want {
+				t.Errorf("intent = %q, want %q", got, tc.want)
 			}
 		})
 	}

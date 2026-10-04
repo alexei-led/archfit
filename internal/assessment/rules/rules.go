@@ -1,7 +1,7 @@
 // Package rules defines the Rule interface and the built-in rule
 // implementations: ForbiddenDependency, PublicAPIOnly, ForbiddenLayerDirection,
-// InternalAPIAccess, NewCrossModuleDependency, CycleRule,
-// PublicAPIMax, PublicAPIChange, PublicAPITypeLeak.
+// InternalAPIAccess, NewCrossModuleDependency, CycleRule, ModuleCycle,
+// PublicAPIMax, PublicAPIChange, PublicAPITypeLeak, ForbiddenPattern.
 package rules
 
 import (
@@ -9,6 +9,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
@@ -35,6 +36,9 @@ const matchedByFile = "file"
 type Evidence struct {
 	PatternMatches []pattern.Match
 	SyntaxFacts    []evidence.SyntaxFact // nil/empty when syntax is off; consumed by public_api_max
+	// FileClasses is the LOC walk's file classification (the source
+	// inventory). forbidden_pattern fires only on Production files in it.
+	FileClasses map[string]fileclass.FileClass
 }
 
 // Rule is the interface implemented by every built-in and user-defined rule.
@@ -52,9 +56,11 @@ type Rule interface {
 //	"internal_api_access"         → internalAPIAccess
 //	"new_cross_module_dependency" → newCrossModuleDependency
 //	"cycle"                       → cycleRule
+//	"module_cycle"                → moduleCycle
 //	"public_api_max"              → publicAPIMax
 //	"public_api_change"           → publicAPIChange
 //	"public_api_type_leak"        → publicAPITypeLeak
+//	"forbidden_pattern"           → forbiddenPattern
 //
 // Unknown type strings are a config error.
 func New(cfg policy.RuleConfig) ([]Rule, error) {
@@ -87,6 +93,11 @@ func New(cfg policy.RuleConfig) ([]Rule, error) {
 			inner = &newCrossModuleDependency{def: def, mm: cfg.ModuleMap}
 		case "cycle":
 			inner = &cycleRule{def: def}
+		case "module_cycle":
+			if err := validateModuleCycleDef(def); err != nil {
+				return nil, err
+			}
+			inner = &moduleCycle{def: def, mm: cfg.ModuleMap}
 		case "public_api_max":
 			if err := validatePublicAPIMaxDef(def); err != nil {
 				return nil, err
@@ -96,6 +107,11 @@ func New(cfg policy.RuleConfig) ([]Rule, error) {
 			inner = &publicAPIChange{def: def, mm: cfg.ModuleMap}
 		case "public_api_type_leak":
 			inner = &publicAPITypeLeak{def: def, mm: cfg.ModuleMap}
+		case "forbidden_pattern":
+			if err := validateForbiddenPatternDef(def, cfg.Rules); err != nil {
+				return nil, err
+			}
+			inner = newForbiddenPattern(def, cfg.ModuleMap)
 		default:
 			return nil, fmt.Errorf("rules: unknown rule type %q (id=%q)", def.Type, def.ID)
 		}

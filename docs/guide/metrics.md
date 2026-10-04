@@ -284,7 +284,11 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 
 ### `cycle`
 
-- **Represents:** number of import cycles among modules/packages.
+- **Represents:** number of node-level import cycles: cycles among the
+  dependency graph's own nodes (TypeScript files, Python dotted modules, Rust
+  crates or `crate::mod` nodes). Always `0` on compiling Go, whose edges run
+  file → package. A cycle among declared modules that closes through different
+  files is not counted here; the `module_cycle` rule reports it.
 - **Computed:** Tarjan strongly-connected components; each SCC of size > 1 is one
   cycle.
 - **Band:** always `info`. Confidence always `high` (cycles are a fact, not an

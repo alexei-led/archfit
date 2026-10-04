@@ -18,7 +18,7 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 	// The relationship contract and the acquired signals are the only inputs.
 	assessed := evaluate(Input{
 		Relationships:      in.Relationships,
-		Evidence:           RuleEvidence{PatternMatches: in.Facts.PatternMatches, SyntaxFacts: syntaxFacts},
+		Evidence:           RuleEvidence{PatternMatches: in.Facts.PatternMatches, SyntaxFacts: syntaxFacts, FileClasses: in.Facts.FileClassIndex},
 		Rules:              rules,
 		Metrics:            metrics,
 		Signals:            runSignals(in.Facts),

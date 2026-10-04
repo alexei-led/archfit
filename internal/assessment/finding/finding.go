@@ -3,6 +3,7 @@ package finding
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 
 	modelrule "github.com/alexei-led/archfit/internal/model/rule"
 	"github.com/alexei-led/archfit/internal/relationship"
@@ -106,6 +107,27 @@ func New(ruleID string, e relationship.Edge, locs []relationship.Location) Findi
 			Kind: e.Kind,
 		},
 		Locations: locs,
+	}
+}
+
+// NewKeyed creates a Finding whose subject is not one graph edge — a module
+// pair, a pattern match — with a stable fingerprint over the rule ID, the
+// finding's edge kind, and the subject keys, in order:
+// hex(sha256(ruleID + "\x00" + kind + "\x00" + key...)[:16]), the same
+// 32-character scheme as New. Line numbers never enter keys, so a moved
+// violation keeps its ID.
+//
+// Kind defaults to "gate" and Status to "new"; Edge.Kind is kind. Endpoints,
+// locations, severity, and text are the caller's.
+func NewKeyed(ruleID, kind string, keys ...string) Finding {
+	parts := append([]string{ruleID, kind}, keys...)
+	h := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return Finding{
+		ID:     hex.EncodeToString(h[:16]),
+		Kind:   KindGate,
+		RuleID: ruleID,
+		Status: StatusNew,
+		Edge:   EdgeEvidence{Kind: kind},
 	}
 }
 

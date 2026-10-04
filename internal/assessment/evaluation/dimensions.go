@@ -114,9 +114,10 @@ func dimensionForRule(ruleID string, ruleTypes map[string]string) string {
 		return state.DimensionCoupling
 	}
 	switch ruleTypes[ruleID] {
-	case "forbidden_dependency", "forbidden_layer_direction", "cycle", "new_cross_module_dependency":
+	case "forbidden_dependency", "forbidden_layer_direction", "cycle", ruleTypeModuleCycle, "new_cross_module_dependency":
 		return state.DimensionStructure
-	case "public_api_only", "public_api_max", "public_api_change", "public_api_type_leak", "internal_api_access":
+	case "public_api_only", "public_api_max", "public_api_change", "public_api_type_leak", "internal_api_access",
+		ruleTypeForbiddenPattern:
 		return state.DimensionModularity
 	}
 	return state.DimensionIntent
@@ -131,6 +132,11 @@ const (
 	ruleTypePublicAPIMax    = "public_api_max"
 	ruleTypePublicAPIChange = "public_api_change"
 	ruleTypePublicAPILeak   = "public_api_type_leak"
+	ruleTypeModuleCycle     = "module_cycle"
+	// ruleTypeForbiddenPattern reads the pattern pass, whose coverage row is
+	// patternCoverageTool.
+	ruleTypeForbiddenPattern = "forbidden_pattern"
+	patternCoverageTool      = "ast-grep"
 )
 
 type primaryInventory struct {
@@ -192,7 +198,13 @@ func ruleNeedsSyntax(ruleType string) bool {
 }
 
 func ruleNeedsDependencies(ruleType string) bool {
-	return ruleType != ruleTypePublicAPIMax && ruleType != ruleTypePublicAPIChange
+	return ruleType != ruleTypePublicAPIMax && ruleType != ruleTypePublicAPIChange && ruleType != ruleTypeForbiddenPattern
+}
+
+// ruleNeedsPatterns reports whether a rule type reads the ast-grep pattern
+// pass: it is evaluated only when that pass completed.
+func ruleNeedsPatterns(ruleType string) bool {
+	return ruleType == ruleTypeForbiddenPattern
 }
 
 func syntaxEvidenceComplete(diag *result.Result, languages map[string]struct{}) bool {
@@ -254,13 +266,20 @@ func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observati
 			p.Topology.ModuleMap.SelectorLanguages(rule.To))
 	case "forbidden_layer_direction":
 		return moduleRuleScope(p.Topology, files, f.SourceSelectors)
-	case "new_cross_module_dependency":
+	case "new_cross_module_dependency", ruleTypeModuleCycle:
+		// Both read module pairs, and a pair needs two declared modules. A
+		// module cycle is module-wide: every declared module can close one.
 		if len(p.Topology.Modules) < 2 {
 			return ruleScope{status: ruleScopeNotApplicable}
 		}
 		return moduleRuleScope(p.Topology, files, f.SourceSelectors)
 	case "cycle":
 		return allSourceScope(p.Topology.ModuleMap, files)
+	case ruleTypeForbiddenPattern:
+		// nil projected selectors: the rule matches from: against the file path
+		// or its convention selector, and its scope must use the same matcher,
+		// or a from: glob could scope as applicable yet never match a file.
+		return patternRuleScope(p.Topology.ModuleMap, rule.From, files, nil)
 	default:
 		return ruleScope{status: ruleScopeUnknown}
 	}

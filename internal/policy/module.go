@@ -132,6 +132,45 @@ func (mm ModuleMap) ModuleFor(path string) (string, bool) {
 	return best, true
 }
 
+// MatchesInternal reports whether the declared module surfaces make a graph-node
+// path internal, and which glob decided. An empty glob means no declaration
+// speaks about path, so the caller keeps its own language-level signal.
+//
+// Precedence, the same public-before-internal order the coupling classifier
+// applies:
+//  1. a public: glob of the module that owns path decides "not internal";
+//  2. otherwise any module's internal: glob decides "internal";
+//  3. otherwise nothing is decided.
+//
+// The public side is narrowed to the owning module's own declaration: one
+// module's public: glob cannot open another module's surface.
+//
+// path is in the graph-node vocabulary ModuleFor resolves: slash paths for Go
+// and TypeScript, dotted IDs for Python, crate::mod for Rust.
+func (mm ModuleMap) MatchesInternal(path string) (internal bool, glob string) {
+	if owner, ok := mm.ModuleFor(path); ok {
+		if g, matched := firstMatch(mm.modules[owner].Public, path); matched {
+			return false, g
+		}
+	}
+	for _, name := range mm.names {
+		if g, matched := firstMatch(mm.modules[name].Internal, path); matched {
+			return true, g
+		}
+	}
+	return false, ""
+}
+
+// firstMatch returns the first glob in globs that matches path.
+func firstMatch(globs []string, path string) (string, bool) {
+	for _, g := range globs {
+		if matched, _ := doublestar.Match(g, path); matched {
+			return g, true
+		}
+	}
+	return "", false
+}
+
 // globSpecificity ranks a glob pattern by how specific it is: the byte length of
 // its literal prefix, i.e. everything before the first wildcard metacharacter
 // (* ? [ {). A pattern with no wildcard (an exact path) is maximally specific

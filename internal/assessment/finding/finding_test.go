@@ -148,3 +148,32 @@ func TestNew_GoldenID(t *testing.T) {
 		t.Errorf("golden ID mismatch: got %q, want %q", f.ID, want)
 	}
 }
+
+func TestNewKeyed_GoldenIDAndDefaults(t *testing.T) {
+	const kind = "module_dependency"
+	f := finding.NewKeyed("no_module_cycles", kind, "billing", "shipping")
+
+	// Computed once: sha256("no_module_cycles\x00module_dependency\x00billing\x00shipping")[:16] hex.
+	// A change here re-keys every accepted module-keyed baseline entry.
+	const want = "c569fa89305a0875e0c8e48596cd99d6"
+	if f.ID != want {
+		t.Errorf("golden ID mismatch: got %q, want %q", f.ID, want)
+	}
+	if f.Kind != finding.KindGate || f.Status != finding.StatusNew || f.RuleID != "no_module_cycles" || f.Edge.Kind != kind {
+		t.Errorf("defaults = kind %q status %q rule %q edge.kind %q", f.Kind, f.Status, f.RuleID, f.Edge.Kind)
+	}
+}
+
+func TestNewKeyed_EveryKeyParticipates(t *testing.T) {
+	base := finding.NewKeyed("rule", "module_dependency", "a", "b").ID
+	for name, other := range map[string]string{
+		"reversed pair": finding.NewKeyed("rule", "module_dependency", "b", "a").ID,
+		"other rule":    finding.NewKeyed("rule2", "module_dependency", "a", "b").ID,
+		"other kind":    finding.NewKeyed("rule", "pattern_match", "a", "b").ID,
+		"extra key":     finding.NewKeyed("rule", "module_dependency", "a", "b", "c").ID,
+	} {
+		if other == base {
+			t.Errorf("%s produced the same ID %q", name, base)
+		}
+	}
+}
