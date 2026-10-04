@@ -170,7 +170,7 @@ func TestCandidateConfigForUpdate_UsesDiscoveredModules(t *testing.T) {
 		{Name: testUpdateWebModule, Paths: []string{"web/**"}, Public: []string{"web/api/**"}, Internal: []string{"web/internal/**"}, Layer: testUpdateLayerAdapter},
 	}}
 
-	got := candidateConfigForUpdate(cfg, discovered, nil)
+	got := candidateConfigForUpdate(cfg, discovered, initcfg.UpdateReport{})
 	mm := got.ModuleMapView()
 	if mod, ok := mm.ModuleForFile(testUpdateModuleAPath); !ok || mod != testUpdateModuleA {
 		t.Fatalf("ModuleForFile(services/a/impl.go) = (%q,%t), want (services/a,true)", mod, ok)
@@ -213,7 +213,7 @@ func TestStaticExternalDistanceConfigCandidatesFromGraph_UsesDiscoveredModuleCon
 		Paths: []string{testUpdateModuleAGlob},
 	}}}
 
-	raw := staticExternalDistanceConfigCandidatesFromGraph(g, candidateConfigForUpdate(cfg, discovered, nil))
+	raw := staticExternalDistanceConfigCandidatesFromGraph(g, candidateConfigForUpdate(cfg, discovered, initcfg.UpdateReport{}))
 	if len(raw) != 1 {
 		t.Fatalf("staticExternalDistanceConfigCandidatesFromGraph len = %d, want 1: %+v", len(raw), raw)
 	}
@@ -281,7 +281,7 @@ func TestDeployUnitSuggestions_UsesDiscoveredModuleMap(t *testing.T) {
 	cfg := config.Config{}
 	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{{Name: testUpdateWebModule, Paths: []string{testUpdateWebGlob}}}}
 
-	got := deployUnitSuggestions(context.Background(), dir, candidateConfigForUpdate(cfg, discovered, nil), &appDeps{Runner: runner})
+	got := deployUnitSuggestions(context.Background(), dir, candidateConfigForUpdate(cfg, discovered, initcfg.UpdateReport{}), &appDeps{Runner: runner})
 	if len(got) != 1 {
 		t.Fatalf("deployUnitSuggestions len = %d, want 1: %+v", len(got), got)
 	}
@@ -303,7 +303,7 @@ func TestDeployUnitSuggestions_UsesDiscoveredModuleMap(t *testing.T) {
 			DiscoveredName: testUpdateWebModule,
 			Paths:          []string{testUpdateWebGlob},
 		}}
-		candidate := candidateConfigForUpdate(driftedCfg, discovered, drift)
+		candidate := candidateConfigForUpdate(driftedCfg, discovered, initcfg.UpdateReport{NameDrift: drift})
 		if _, ok := candidate.Modules[driftedName]; !ok {
 			t.Fatalf("candidate modules = %+v, want the module under its config name", candidate.Modules)
 		}

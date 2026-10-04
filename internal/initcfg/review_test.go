@@ -122,7 +122,7 @@ func TestDiffModules_Issues(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := DiffModules(tc.existing, tc.fresh, tc.requireLayer)
+			got := DiffModules(tc.existing, tc.fresh, tc.requireLayer, nil)
 			var codes []string
 			for _, issue := range got.Issues {
 				codes = append(codes, issue.Code)
@@ -150,7 +150,7 @@ func TestDiffModules_IssuesSortedByModuleThenCode(t *testing.T) {
 		{Name: testReviewModA, Paths: []string{testReviewPathA}},
 	}
 
-	got := DiffModules(existing, fresh, true)
+	got := DiffModules(existing, fresh, true, nil)
 	want := []ModuleIssue{
 		{Code: IssueMissingVolatilityInput, Module: testReviewModA},
 		{Code: IssueMissingLayer, Module: testReviewModZ},
@@ -186,7 +186,7 @@ func TestBuildConfigReview_PathlessStanzaIsDisclosed(t *testing.T) {
 		{Name: testReviewModZ, Paths: []string{testReviewPathZ}},
 	}
 
-	rev := BuildConfigReview(DiffModules(existing, fresh, false))
+	rev := BuildConfigReview(DiffModules(existing, fresh, false, nil))
 	if len(rev.Issues) != 0 {
 		t.Fatalf("fixture regression: this shape must raise no issue, got %+v", rev.Issues)
 	}

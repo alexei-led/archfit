@@ -26,6 +26,12 @@ type ModuleDef struct {
 	Internal []string
 	// Layer is the inferred architectural layer (e.g. "adapter", "core", "cmd").
 	Layer string
+	// Sources are the graph-node paths discovery found inside the module (Go
+	// package directories, Python dotted packages). config update uses them to
+	// tell a module the configured map already owns from a genuinely new one.
+	// Empty when the discoverer does not enumerate sources (TypeScript, Rust):
+	// such a module is matched by name only.
+	Sources []string
 }
 
 // ModuleEdge is a directed dependency edge between two discovered modules.
@@ -49,38 +55,62 @@ type DiscoveredConfig struct {
 	Edges []ModuleEdge
 	// PyPackage is the primary Python top-level package name (e.g. "ccgram").
 	PyPackage string
-	// HasGo is true when a go.mod was found at root.
-	HasGo bool
-	// HasPython is true when Python packages were discovered.
+	// HasGo, HasPython, HasTS and HasRust are the extractor registry's
+	// applicability answers (Presence), not discovery results: a language is
+	// present when its extractor would analyse it, even if discovery found no
+	// module to propose.
+	HasGo     bool
 	HasPython bool
-	// HasTS is true when TypeScript packages were discovered.
-	HasTS bool
-	// HasRust is true when a Cargo.toml was found at root.
-	HasRust bool
+	HasTS     bool
+	HasRust   bool
+	// ImportGraphComplete is true when Edges is the module graph analysis will
+	// check: every discovered module came from Go discovery and no Rust
+	// project is present (Rust analysis adds intra-crate modules discovery
+	// cannot see). TypeScript and Python discovery build no graph. Render
+	// gates a starter rule on fail only when this graph shows it clean.
+	ImportGraphComplete bool
 }
 
-// toolModeBool renders a language's enabled mode as a YAML boolean. The canonical
-// enable vocabulary is true|false|auto; init emits true/false (never on/off).
-func toolModeBool(present bool) string {
-	if present {
+// Presence is the extractor registry's answer to "is this language present
+// under root?", computed by the composition root with each extractor's own
+// applicability function (registry.ProjectPresent). Discovery never decides
+// presence from its own marker files: a marker list that disagrees with the
+// extractor writes `enabled: false` over a language analysis would measure.
+type Presence struct {
+	Go         bool
+	TypeScript bool
+	Python     bool
+	Rust       bool
+	// GoMembers are the absolute Go module directories the Go extractor loads
+	// (go.work members, a root go.mod, or nested go.mod dirs).
+	GoMembers []string
+	// GoWorkOff is true when Go-toolchain subprocesses must ignore the go.work
+	// governing root (see registry.GoWorkOff).
+	GoWorkOff bool
+}
+
+// languageMode renders a language's enabled mode. A present language is
+// enabled explicitly; an absent one stays at the config default `auto`, so a
+// presence probe that missed a project can never switch its analysis off.
+// Rust is `auto` even when present: missing cargo then reports a coverage gap
+// instead of failing the run.
+func languageMode(lang string, present bool) string {
+	if present && lang != langRust {
 		return "true"
 	}
-	return "false"
+	return "auto"
 }
 
-// rustToolMode keeps generated Rust configs non-degenerate without making the
-// base no-config path strict: a Cargo.toml project opts into Rust analysis, but
-// missing cargo still reports a coverage gap instead of hard-failing.
-func rustToolMode(present bool) string {
-	if present {
-		return "auto"
-	}
-	return "false"
-}
-
-// Discover detects Go, Python, and TypeScript modules at root.
-// Go discovery is skipped when no go.mod exists. Python and TypeScript
-// discovery run unconditionally (they guard on their own marker files).
+// Discover detects Go, Python, TypeScript, and Rust modules at root.
+// presence decides which languages are present; it comes from the extractor
+// registry, so discovery and analysis agree on what is in the tree. Go
+// discovery runs `go list` in every member presence names (a go.work
+// monorepo with no root go.mod included). Python and TypeScript discovery
+// still find their own module candidates; Rust discovery reads the root
+// Cargo.toml it has always used.
+//
+// Layers are kept only when discovery assigns at least two of them: a single
+// layer orders nothing, and Render then asks the owner to declare layers.
 //
 // Name uniqueness is guaranteed by a two-pass disambiguation applied after
 // all language discoverers have run:
@@ -95,14 +125,13 @@ func rustToolMode(present bool) string {
 //     original name that was never touched), a deterministic numeric suffix is
 //     appended ("_2", "_3", …). Suffixes are assigned in ascending order over
 //     the slice position so the result is stable across runs.
-func Discover(ctx context.Context, root string, runner toolrun.Runner) (DiscoveredConfig, error) {
+func Discover(ctx context.Context, root string, runner toolrun.Runner, presence Presence) (DiscoveredConfig, error) {
 	var allModules []ModuleDef
 	var allEdges []ModuleEdge
 	var modPath string
-	hasGo := fileExists(filepath.Join(root, "go.mod"))
 
-	if hasGo {
-		goMods, goEdges, goModPath, err := discoverGo(ctx, root, runner)
+	if presence.Go && len(presence.GoMembers) > 0 {
+		goMods, goEdges, goModPath, err := discoverGo(ctx, root, runner, presence.GoMembers, presence.GoWorkOff)
 		if err != nil {
 			return DiscoveredConfig{}, err
 		}
@@ -123,12 +152,12 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner) (Discover
 	}
 	allModules = append(allModules, tsMods...)
 
-	// Rust discovery is gated on a root Cargo.toml (the project marker). A missing
-	// cargo yields no crate modules but still flips HasRust on, so Render emits
-	// tools.rust ready for when cargo is installed; a present-but-failing cargo
-	// (broken manifest, parse error) surfaces the error like go list does.
-	hasRust := fileExists(filepath.Join(root, markerCargoToml))
-	if hasRust {
+	// Rust discovery runs `cargo metadata` at root, so it still needs the root
+	// Cargo.toml; a configured sub-crate manifest makes Rust present without
+	// giving this discoverer a manifest to read. A missing cargo yields no crate
+	// modules; a present-but-failing cargo (broken manifest, parse error)
+	// surfaces the error like go list does.
+	if presence.Rust && fileExists(filepath.Join(root, markerCargoToml)) {
 		rustMods, rustEdges, rerr := DiscoverRust(ctx, root, runner)
 		if rerr != nil {
 			return DiscoveredConfig{}, rerr
@@ -138,17 +167,25 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner) (Discover
 	}
 
 	allModules = disambiguateNames(allModules)
+	layers := inferLayers(allModules)
+	if len(layers) < 2 {
+		layers = nil
+		for i := range allModules {
+			allModules[i].Layer = ""
+		}
+	}
 
 	return DiscoveredConfig{
-		ModulePath: modPath,
-		Modules:    allModules,
-		Layers:     inferLayers(allModules),
-		Edges:      allEdges,
-		PyPackage:  detectPyPackage(root),
-		HasGo:      hasGo,
-		HasPython:  len(pyMods) > 0,
-		HasTS:      len(tsMods) > 0,
-		HasRust:    hasRust,
+		ModulePath:          modPath,
+		Modules:             allModules,
+		Layers:              layers,
+		Edges:               allEdges,
+		PyPackage:           detectPyPackage(root),
+		HasGo:               presence.Go,
+		HasPython:           presence.Python,
+		HasTS:               presence.TypeScript,
+		HasRust:             presence.Rust,
+		ImportGraphComplete: len(pyMods) == 0 && len(tsMods) == 0 && !presence.Rust,
 	}, nil
 }
 
@@ -340,7 +377,9 @@ const TargetSchemaVersion = 2
 func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) string {
 	var b strings.Builder
 
-	b.WriteString("# Generated by archfit init — TODO: review and promote gate: warn to gate: fail\n")
+	b.WriteString("# Generated by archfit config init. Review module names and paths, then read the\n")
+	b.WriteString("# rules: section: each starter rule says what it blocks and when its gate is fail.\n")
+	b.WriteString("# Next: archfit config lint · archfit check · archfit baseline\n")
 	// Keep config init aligned with the schema accepted by config.Load.
 	b.WriteString("version: " + strconv.Itoa(TargetSchemaVersion) + "\n\n")
 	b.WriteString("# Balanced-Coupling advisory tuning.\n")
@@ -365,11 +404,7 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 		case langRust:
 			present = cfg.HasRust
 		}
-		mode := toolModeBool(present)
-		if lang == langRust {
-			mode = rustToolMode(present)
-		}
-		fmt.Fprintf(&b, "  %s:\n    enabled: %s\n", lang, mode)
+		fmt.Fprintf(&b, "  %s:\n    enabled: %s\n", lang, languageMode(lang, present))
 		if lang == langPython && cfg.PyPackage != "" {
 			fmt.Fprintf(&b, "    package: %s\n", cfg.PyPackage)
 		}
@@ -397,7 +432,8 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	b.WriteString("#   syntax: { enabled: true }       # ast-grep: roles, routes, exported surface\n")
 	b.WriteString("#   clones: { enabled: true }       # cross-module duplication\n")
 	b.WriteString("\n")
-	b.WriteString("# Off-gate LLM for `config init/update/enrich`, `analyze --ai-summary`, and `explain --ai-summary` (never used by the deterministic gate).\n")
+	b.WriteString("# Off-gate LLM for config init/update/enrich and analyze/explain --ai-summary.\n")
+	b.WriteString("# The deterministic gate never uses it.\n")
 	b.WriteString("# ai:\n")
 	b.WriteString("#   provider: anthropic   # anthropic | openai | ollama\n")
 	b.WriteString("#   model: claude-opus-4-8\n")
@@ -406,11 +442,14 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 
 	// layers:
 	if len(cfg.Layers) > 0 {
+		b.WriteString("# layers: innermost first; a module may import its own layer or an earlier one.\n")
 		b.WriteString("layers:\n")
 		for _, l := range cfg.Layers {
 			fmt.Fprintf(&b, "  - %s\n", l)
 		}
 		b.WriteString("\n")
+	} else {
+		writeLayersHowTo(&b)
 	}
 
 	// modules:
@@ -431,42 +470,11 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 
 	writeExternalSystemSuggestionComments(&b, ann)
 
-	// rules:
-	//
-	// forbidden_layer_direction is checked by forbiddenLayerDirection.Check,
-	// which derives layer ordering from cfg.Layers and endpoint layers from the
-	// module map (policy.ModuleMap.LayerFor) — it never reads a per-rule
-	// from_layer/to_layer, so those keys are not emitted here. Because the check
-	// is global (every rule instance re-detects every back-edge in the graph),
-	// exactly ONE rule is emitted: a second instance would duplicate each
-	// violation under a different rule ID.
 	b.WriteString("rules:\n")
-	switch {
-	case hasCrossLayerEdge(cfg):
-		writeLayerRule(&b, "no-layer-back-edges")
-	case len(cfg.Layers) >= 2:
-		// Layers are assigned but no cross-layer edge was visible at init
-		// (Python/TypeScript discovery builds no dependency graph). The rule is
-		// live: it checks the real graph at analyze time.
-		b.WriteString("  # NOTE: no cross-layer dependency edge was visible at init time; this\n")
-		b.WriteString("  # rule checks the real dependency graph at analyze time.\n")
-		writeLayerRule(&b, "no-layer-back-edges")
-	default:
-		b.WriteString("  # NOTE: fewer than two layers were inferred — this rule has nothing to\n")
-		b.WriteString("  # check until layers: lists at least two layers and each module is\n")
-		b.WriteString("  # assigned a layer: matching one of them.\n")
-		writeLayerRule(&b, "no-layer-violations")
-	}
+	writeStarterRules(&b, cfg)
 	writeRuleSuggestionComments(&b, ann)
 
 	return b.String()
-}
-
-// writeLayerRule emits the single forbidden_layer_direction rule stanza.
-func writeLayerRule(b *strings.Builder, id string) {
-	fmt.Fprintf(b, "  - id: %s\n", id)
-	b.WriteString("    type: forbidden_layer_direction\n")
-	b.WriteString("    gate: warn\n")
 }
 
 func writeExternalSystemSuggestionComments(b *strings.Builder, ann map[string]ModuleAnnotation) {
@@ -602,36 +610,6 @@ func annotationExternalSystemSuggestions(ann map[string]ModuleAnnotation) []Exte
 		return out[i].SourceModule < out[j].SourceModule
 	})
 	return out
-}
-
-// hasCrossLayerEdge reports whether the discovered graph proves the generated
-// forbidden_layer_direction rule already has something to check: at least two
-// layers and at least one edge between modules in different layers. When false,
-// Render picks a NOTE comment by cause: layers assigned but no cross-layer edge
-// visible at init (Python/TypeScript discovery builds no graph — the rule still
-// checks the real graph at analyze time) vs fewer than two inferred layers (the
-// rule has nothing to check until layers are assigned).
-func hasCrossLayerEdge(cfg DiscoveredConfig) bool {
-	if len(cfg.Edges) == 0 || len(cfg.Layers) < 2 {
-		return false
-	}
-
-	// moduleLayer maps module name → layer name.
-	moduleLayer := make(map[string]string, len(cfg.Modules))
-	for _, m := range cfg.Modules {
-		if m.Layer != "" {
-			moduleLayer[m.Name] = m.Layer
-		}
-	}
-
-	for _, e := range cfg.Edges {
-		fl := moduleLayer[e.From]
-		tl := moduleLayer[e.To]
-		if fl != "" && tl != "" && fl != tl {
-			return true
-		}
-	}
-	return false
 }
 
 // yamlKey sanitizes a module name for use as a YAML mapping key.

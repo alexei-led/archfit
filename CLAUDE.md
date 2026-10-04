@@ -257,7 +257,10 @@ init` emits v2 directly; owners update older configs manually before analysis.
   extractor's `Extract` calls to decide whether to run. There is no
   `ProjectMarkers []string` and no marker-list fallback: a new language MUST
   supply a `ProjectPresent` that delegates to its extractor, never a hand-rolled
-  list of filenames. **A probe that disagrees with its extractor turns "we did not
+  list of filenames. `config init`/`config update` take presence from the same
+  probes (`languagePresence` in `cmd/archfit/init.go` → `initcfg.Presence`; Go
+  members from `registry.GoMembers`), write a present language `enabled: true`
+  and an absent one `auto`, never `false`. **A probe that disagrees with its extractor turns "we did not
   measure" into "there is nothing here"**, and gapless `absent` on a primary row
   is the ONE shape both pairing paths read as "language not present" — so
   `analyze --base` and `config compare` drop the analyzer and report confidence
@@ -382,7 +385,12 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `docs/design/architecture-baseline.md`. `DiffModules` runs the name-drift
   pass ITSELF (`resolveNameDrift`, unexported — there is no two-step call a
   consumer can get wrong), reclassifying each 1:1 add/remove pair with an equal
-  normalized path set as `NameDrift`. On top of that, `Removed` is review-only:
+  normalized path set as `NameDrift`. It then runs the ownership pass
+  (`resolveOwnership`): a discovered module whose every `Sources` entry (Go
+  package dirs, Python dotted packages) the configured map owns under
+  most-specific matching (`ModuleMap.ModuleFor`, injected from cmd) is
+  `Covered`, not `Added`, and its owning stanzas leave `Removed` and are
+  field-checked. TypeScript/Rust modules carry no sources and stay name-matched. On top of that, `Removed` is review-only:
   `initcfg.HasModuleEdits` (module stanzas), `initcfg.HasPendingEdits`
   (`HasModuleEdits` plus settings — the single source for "would `--apply` write
   anything"), and `buildUpdateEdits` all exclude it, so `--apply`

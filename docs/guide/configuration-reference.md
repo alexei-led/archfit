@@ -1002,7 +1002,7 @@ keys — it derives layer ordering from `layers:` and each endpoint's layer from
 the `modules:` map's `layer:` field, for every module pair in the graph. A rule
 of this type needs only `id`, `type`, and `gate`. Declare **at most one** rule
 of this type: the check is global, so a second instance re-reports every
-violation under its own rule ID (`archfit config init` generates exactly one).
+violation under its own rule ID (`archfit config init` generates at most one).
 
 `gate` controls how the rule blocks the run:
 

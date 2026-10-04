@@ -12,7 +12,6 @@ const (
 	layerModel   = "model"
 	layerCore    = "core"
 	layerAdapter = "adapter"
-	layerEngine  = "engine"
 	layerCmd     = "cmd"
 )
 
@@ -81,11 +80,12 @@ func pathSlug(paths []string) string {
 }
 
 // inferLayers derives an ordered, deduplicated layer list from discovered modules.
-// Canonical Go layers come first in the fixed order: model → core → adapter → engine → cmd.
+// Convention layers (Python sub-package names) come first in the fixed order:
+// model → core → adapter → cmd.
 // Topo-tier layers (layer-0, layer-1, …) from Rust discovery are appended afterward,
 // sorted numerically, so the combined list is always deterministic.
 func inferLayers(mods []ModuleDef) []string {
-	canonical := []string{layerModel, layerCore, layerAdapter, layerEngine, layerCmd}
+	canonical := []string{layerModel, layerCore, layerAdapter, layerCmd}
 	canonicalSet := make(map[string]bool, len(canonical))
 	for _, l := range canonical {
 		canonicalSet[l] = true

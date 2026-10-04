@@ -186,6 +186,20 @@ func GoWorkOff(scanRoot string, cfg evidenceports.ExtractConfig) bool {
 	return err == nil && m.GoWorkOff
 }
 
+// GoMembers returns the absolute Go module directories the Go extractor loads
+// under scanRoot, found by the extractor's own member discovery and module
+// filter, plus whether its Go-toolchain subprocesses must run with GOWORK=off
+// (see GoWorkOff). Onboarding enumerates packages per member from this answer
+// so a go.work monorepo with no root go.mod is discovered, not skipped. Nil
+// dirs when discovery fails.
+func GoMembers(scanRoot string, cfg evidenceports.ExtractConfig) (dirs []string, goWorkOff bool) {
+	members, err := golang.AnalysableMembers(scanRoot, cfg.Exclusions, cfg.GoModuleInclude, cfg.GoModuleExclude)
+	if err != nil {
+		return nil, false
+	}
+	return members.Dirs, members.GoWorkOff
+}
+
 // GoModulePaths returns the module paths of the Go members the extractor loads
 // under scanRoot, found by the extractor's own member discovery. Go node IDs
 // drop the module path, so rule scope needs these to recognise a selector

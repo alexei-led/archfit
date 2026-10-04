@@ -61,9 +61,10 @@ func DiscoverPy(root string) ([]ModuleDef, error) {
 				// No sub-packages: return the top-level package as a single module.
 				mod := pyDottedModule(t.prefix + e.Name())
 				mods = append(mods, ModuleDef{
-					Name:  e.Name(),
-					Paths: pyModulePaths(mod),
-					Layer: layerCore,
+					Name:    e.Name(),
+					Paths:   pyModulePaths(mod),
+					Layer:   layerCore,
+					Sources: []string{mod},
 				})
 			}
 		}
@@ -92,9 +93,10 @@ func discoverPySubpackages(pkgDir, pathPrefix string) []ModuleDef {
 		}
 		mod := pyDottedModule(pathPrefix + e.Name())
 		mods = append(mods, ModuleDef{
-			Name:  e.Name(),
-			Paths: pyModulePaths(mod),
-			Layer: inferPyLayer(e.Name()),
+			Name:    e.Name(),
+			Paths:   pyModulePaths(mod),
+			Layer:   inferPyLayer(e.Name()),
+			Sources: []string{mod},
 		})
 	}
 	return mods

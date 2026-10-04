@@ -402,6 +402,25 @@ Notes:
 - Use `-o -` to write the rendered config to stdout.
 - Without `--force`, an existing valid config is left untouched.
 - `--apply` requires `--ai-classify`.
+- Language presence comes from each extractor's own applicability check, the
+  same one analysis uses. A present language is written `enabled: true` (Rust:
+  `auto`); an absent one stays `auto`. Init never writes `enabled: false`.
+- Go modules come from every Go member the extractor loads: `go.work` members,
+  a root `go.mod`, or nested `go.mod` directories. A `go.work` monorepo with no
+  root `go.mod` is discovered member by member.
+- `public:` is written only for a directory that is itself a Go package; a bare
+  grouping directory names no graph node.
+- Starter rules: `module_cycle` (`no-module-cycles`) always, and
+  `forbidden_layer_direction` (`no-layer-back-edges`) when discovery inferred
+  two or more layers. Each gets `gate: fail` when the init-time import graph
+  covers every module and shows no violation, and `gate: warn` with a comment
+  otherwise (the current violation count, or "no complete import graph" for
+  TypeScript, Python, and Rust, whose analysis sees more than init does).
+- Init does not guess layers from directory names. With fewer than two inferred
+  layers, it writes a commented `layers:` example and a commented
+  `no-layer-back-edges` rule: list your layers innermost first, set `layer:` on
+  each module, and uncomment the rule.
+- The generated config passes `archfit config lint`.
 
 Flags:
 
@@ -481,11 +500,18 @@ Review model:
 
 | Field             | Applied by `--apply`? | Meaning                                                                               |
 | ----------------- | --------------------- | ------------------------------------------------------------------------------------- |
-| `added_modules`   | yes                   | Modules discovery found that the config does not declare.                             |
+| `added_modules`   | yes                   | Discovered modules holding source no configured module owns.                          |
 | `path_drift`      | yes                   | Declared modules whose configured paths differ from the discovered paths.             |
 | `settings`        | yes                   | Non-module settings, such as the Rust deep-analysis defaults.                         |
 | `name_drift`      | no                    | A configured module and a discovered module own the same paths under different names. |
 | `removed_modules` | no                    | Configured modules discovery did not emit.                                            |
+
+A discovered module whose every source (Go package, Python package) a
+configured module already owns, by the same most-specific match analysis uses,
+is not added: the curated map just groups the code more finely or more coarsely
+than discovery. Its owning stanzas are not reported as removed, and their fields
+are checked. TypeScript and Rust modules carry no source list and are matched by
+name.
 
 `name_drift` and `removed_modules` are review-only. Resolving either means
 re-keying or deleting a stanza, which discards its `owner`, `subdomain`,

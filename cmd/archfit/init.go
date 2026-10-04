@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 )
@@ -51,7 +52,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		out = filepath.Join(root, out)
 	}
 	ctx := context.Background()
-	cfg, err := initcfg.Discover(ctx, root, deps.Runner)
+	cfg, err := initcfg.Discover(ctx, root, deps.Runner, languagePresence(root, config.Default()))
 	if err != nil {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}
@@ -136,6 +137,26 @@ func (c *InitCmd) Run(deps *appDeps) error {
 	}
 	printCacheGitignoreHint(deps.Stdout, root)
 	return nil
+}
+
+// languagePresence asks every registered extractor whether its language is
+// present under root, through the extractor's own applicability function and
+// the same projected extractor config analysis uses (merged exclusions,
+// languages.go.modules, python.package, rust.manifest). config init and config
+// update must never decide presence from their own marker files: a go.work
+// monorepo with no root go.mod was written as `go: enabled: false`.
+func languagePresence(root string, cfg config.Config) initcfg.Presence {
+	extract := cfg.RunOptions().Extractors
+	p := initcfg.Presence{
+		Go:         registry.ProjectPresent(config.LangGo, root, extract[config.LangGo]),
+		TypeScript: registry.ProjectPresent(config.LangTypeScript, root, extract[config.LangTypeScript]),
+		Python:     registry.ProjectPresent(config.LangPython, root, extract[config.LangPython]),
+		Rust:       registry.ProjectPresent(config.LangRust, root, extract[config.LangRust]),
+	}
+	if p.Go {
+		p.GoMembers, p.GoWorkOff = registry.GoMembers(root, extract[config.LangGo])
+	}
+	return p
 }
 
 // printCacheGitignoreHint reminds the user to gitignore .archfit-cache/ (the

@@ -117,8 +117,8 @@ func TestDiscoverRust_MalformedJSON_ReturnsError(t *testing.T) {
 
 // TestRender_RustToolMode asserts the languages.rust stanza reflects HasRust. The
 // assertions bind the rust stanza to its mode (rust: → enabled: <mode>) so a
-// regression that flips the mode is caught — other languages emit false too, so
-// a bare `enabled: false` check would pass even with the rust stanza wrong.
+// regression that flips the mode is caught. An absent language stays at the
+// config default auto, never false: a missed probe must not switch analysis off.
 func TestRender_RustToolMode(t *testing.T) {
 	on := Render(DiscoveredConfig{HasRust: true}, nil, false)
 	if !strings.Contains(on, "rust:\n    enabled: auto") {
@@ -130,8 +130,8 @@ func TestRender_RustToolMode(t *testing.T) {
 		}
 	}
 	off := Render(DiscoveredConfig{HasRust: false}, nil, false)
-	if !strings.Contains(off, "rust:\n    enabled: false") {
-		t.Errorf("HasRust=false should emit languages.rust enabled false; got:\n%s", off)
+	if !strings.Contains(off, "rust:\n    enabled: auto") {
+		t.Errorf("HasRust=false should emit languages.rust enabled auto; got:\n%s", off)
 	}
 	if strings.Contains(off, "cargo_modules:\n    enabled: true") {
 		t.Errorf("HasRust=false should not force cargo_modules; got:\n%s", off)
