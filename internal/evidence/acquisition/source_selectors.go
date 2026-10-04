@@ -186,19 +186,22 @@ func rustModuleNodes(f evidencecontract.Facts) []string {
 	return out
 }
 
-// rustCrates lists both spellings of every loaded Rust crate: the crate
-// identifier crate::mod node IDs start with (a binary target's own name, such
-// as yazi for package yazi-fm) and the library spelling of the package name.
-// Nil without cargo metadata.
+// rustCrates lists every loaded Rust crate identity, sorted and unique: the
+// crate identifier crate::mod node IDs start with (a binary target's own name,
+// such as yazi for package yazi-fm), the library spelling of the package name,
+// and the crate name of every other target cargo metadata listed (binary
+// tool_cli of a lib+bin package tool). A crate::mod path under any of them with
+// no module graph is undecidable, never absent. Nil without cargo metadata.
 func rustCrates(f evidencecontract.Facts) []string {
 	if f.Graph == nil {
 		return nil
 	}
-	var out []string
+	out := slices.Clone(f.RustTargetCrates)
 	for _, root := range f.Graph.CrateRoots() {
 		out = append(out, root.Crate, strings.ReplaceAll(root.Name, "-", "_"))
 	}
-	return out
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // goStdlibPackages lists the importable standard-library packages of the Go

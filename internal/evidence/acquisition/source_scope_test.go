@@ -1,6 +1,7 @@
 package acquisition
 
 import (
+	"context"
 	"maps"
 	"slices"
 	"testing"
@@ -220,5 +221,35 @@ func TestAssessmentObservationsCarryRustCrateIdentities(t *testing.T) {
 	got := assessmentObservationsOf(evidencecontract.Facts{}, inventory, nil, nil, nil, nil)
 	if !slices.Equal(got.RustCrates, inventory.RustCrates) || !slices.Equal(got.RustModuleGraphCrates, inventory.RustModuleGraphCrates) {
 		t.Fatalf("RustCrates = %v, RustModuleGraphCrates = %v, want both %v", got.RustCrates, got.RustModuleGraphCrates, []string{crateYazi})
+	}
+}
+
+const (
+	crateTool    = "tool"
+	crateToolCLI = "tool_cli"
+)
+
+// TestRustCratesNameEveryLoadedTarget pins that a binary target of a lib+bin
+// package (package tool, lib tool, bin tool-cli) is a loaded crate: crate::mod
+// selectors under tool_cli are undecidable without its module graph, never
+// definitely absent. A lib-only package keeps its existing identities.
+func TestRustCratesNameEveryLoadedTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		targets []string
+		want    []string
+	}{
+		{name: "lib and bin", targets: []string{crateTool, crateToolCLI}, want: []string{crateTool, crateToolCLI}},
+		{name: "lib only", targets: []string{crateTool}, want: []string{crateTool}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := graph.Build([]graph.Facts{{Language: graph.LangRust,
+				CrateRoots: []graph.CrateRoot{{Name: crateTool, Crate: crateTool}}}})
+			f := evidencecontract.Facts{Graph: g, RustTargetCrates: tc.targets}
+			got := ruleScopeObservations(context.Background(), nil, nil, t.TempDir(), f, RunOptions{}).RustCrates
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("RustCrates = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

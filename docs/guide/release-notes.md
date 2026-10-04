@@ -71,7 +71,8 @@ Fixed:
   `guard: true` works on them, and a rule on a `crate::mod` is no longer both
   fired and listed in `unevaluated_required_rules`. Under a loaded crate the
   graph does not cover, the selector stays undecided. A loaded crate is named
-  by its target too (`yazi` for package `yazi-fm`), and a crate cargo-modules
+  by every target cargo metadata lists (`yazi` for package `yazi-fm`, and the
+  binary `tool_cli` beside library `tool`), and a crate cargo-modules
   graphed with no submodule has an empty module graph, not a missing one.
 - `config lint` judges `public_outside_module` by the packages a `public:`
   entry matches, so brace and class globs (`internal/{a,b}/**`) no longer give a

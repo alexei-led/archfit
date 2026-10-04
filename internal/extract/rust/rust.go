@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -44,6 +45,9 @@ type Extractor struct {
 	// lastModuleGraphCrates are the crate identifiers cargo-modules graphed in
 	// the most recent Extract call, a root-only crate (no submodule) included.
 	lastModuleGraphCrates []string
+	// lastTargetCrates are the crate names of every target of the members in
+	// lastCrateRoots, from the most recent Extract call.
+	lastTargetCrates []string
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
 	Cache *factcache.Store
 }
@@ -115,6 +119,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	// cfg.ModuleGraph branch below overwrites it when the graph actually runs.
 	e.lastModuleGraphCov = evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
 	e.lastModuleGraphCrates = nil
+	e.lastTargetCrates = nil
 	if e.cfg.Mode == evidenceports.ModeOff {
 		return graph.Facts{}, absentCoverage(""), nil
 	}
@@ -187,6 +192,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	// size/cohesion metrics — the crate name is not derivable from a path alone.
 	facts.CrateRoots = crateRoots(s.Root, members)
 	e.lastCrateRoots = facts.CrateRoots
+	e.lastTargetCrates = targetCrates(facts.CrateRoots, members)
 
 	// Opt-in intra-crate module graph via cargo-modules (analyzers.cargo_modules.enabled: true).
 	// When enabled, module-level nodes and edges are merged into facts alongside the
@@ -222,6 +228,15 @@ func (e *Extractor) LastModuleGraphCoverage() evidence.Coverage {
 // module graph from a missing one. Nil when the module graph did not run.
 func (e *Extractor) LastModuleGraphCrates() []string {
 	return e.lastModuleGraphCrates
+}
+
+// LastTargetCrates returns the crate names (Cargo's '-' to '_' spelling) of
+// every target cargo metadata listed for the members LastCrateRoots carries:
+// library, binaries, and the rest, sorted and unique. CrateRoot.Crate names
+// only the target cargo-modules graphs, so a binary target of a lib+bin package
+// is known only here. Nil when Extract has not been called or found no members.
+func (e *Extractor) LastTargetCrates() []string {
+	return e.lastTargetCrates
 }
 
 // LastCrateRoots returns the crate roots (repo-relative crate dir + crate
@@ -515,6 +530,27 @@ func crateRoots(root string, members []cargoPackage) []graph.CrateRoot {
 		out = append(out, graph.CrateRoot{Dir: rel, Name: m.Name, Crate: m.crateIdentifier()})
 	}
 	return out
+}
+
+// targetCrates lists the crate name of every target of the members roots
+// carries (members outside the analysed root are not there), in Cargo's crate
+// spelling, sorted and unique.
+func targetCrates(roots []graph.CrateRoot, members []cargoPackage) []string {
+	loaded := make(map[string]struct{}, len(roots))
+	for _, cr := range roots {
+		loaded[cr.Name] = struct{}{}
+	}
+	var out []string
+	for _, m := range members {
+		if _, ok := loaded[m.Name]; !ok {
+			continue
+		}
+		for _, t := range m.Targets {
+			out = append(out, strings.ReplaceAll(t.Name, "-", "_"))
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // absentCoverage returns a Coverage record indicating cargo was not found.

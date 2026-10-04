@@ -52,10 +52,11 @@ type Observations struct {
 	// judged against them; under a loaded crate it does not cover it stays
 	// undecidable, so a missing module graph never reads as an empty one.
 	RustModuleNodes []string
-	// RustCrates are the loaded Rust crates (cargo metadata) in both
-	// spellings: the crate identifier crate::mod node IDs start with and the
-	// library spelling of the package name. A loaded crate is first-party even
-	// when no file selector spells it (binary target yazi of package yazi-fm).
+	// RustCrates are the loaded Rust crates (cargo metadata): the crate
+	// identifier crate::mod node IDs start with, the library spelling of the
+	// package name, and the crate name of every other target of the package.
+	// A loaded crate is first-party even when no file selector spells it
+	// (binary target yazi of package yazi-fm, binary tool_cli beside lib tool).
 	RustCrates []string
 	// RustModuleGraphCrates are the crate identifiers cargo-modules graphed,
 	// a crate with no submodule included: its module graph is empty, so a

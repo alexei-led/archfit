@@ -172,7 +172,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	// `coverage` metric would otherwise divide crate counts by file counts and can
 	// exceed the 1.0 ceiling its own contract calls impossible.
 	var reportOnlyCoverage []evidence.Coverage
-	var rustModuleGraphCrates []string
+	var rustModuleGraphCrates, rustTargetCrates []string
 	if suppliedCoverageRow.Tool != "" {
 		reportOnlyCoverage = append(reportOnlyCoverage, suppliedCoverageRow)
 	}
@@ -180,6 +180,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		reportOnlyCoverage = append(reportOnlyCoverage, ex.LastModuleGraphCoverage())
 		crateRootDirs = crateRootDirsOf(ex.LastCrateRoots())
 		rustModuleGraphCrates = ex.LastModuleGraphCrates()
+		rustTargetCrates = ex.LastTargetCrates()
 	}
 	// Unresolved-specifier disclosure. Both analyzers complete but drop edges
 	// into the external bucket, so the gap must not be stderr-silent.
@@ -206,6 +207,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		RuntimeConfidence: collected.RuntimeConfidence, DeprecatedDeps: collected.DeprecatedDeps,
 		SemanticStrengthOverlay: graphResult.SemanticStrengthOverlay,
 		RustModuleGraphCrates:   rustModuleGraphCrates,
+		RustTargetCrates:        rustTargetCrates,
 	}
 
 	history := buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner, graphResult.Graph.CrateRoots()...)

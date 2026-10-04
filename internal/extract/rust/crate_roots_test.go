@@ -69,3 +69,26 @@ func TestCrateIdentifier(t *testing.T) {
 		})
 	}
 }
+
+// TestTargetCrates pins the rule-scope crate inventory to every target cargo
+// metadata lists for a member inside the analysed root, in crate spelling: a
+// binary target of a lib+bin package is a crate of its own, though
+// crateIdentifier names only the library.
+func TestTargetCrates(t *testing.T) {
+	root := filepath.FromSlash("/repo")
+	members := []cargoPackage{
+		{Name: nameTool, ManifestPath: filepath.Join(root, manifestFile), Targets: []cargoTarget{
+			{Name: nameTool, Kind: []string{kindLib}},
+			{Name: "tool-cli", Kind: []string{kindBin}},
+			{Name: "tool-admin", Kind: []string{kindBin}},
+			{Name: "smoke", Kind: []string{"test"}},
+		}},
+		{Name: nameGrep, ManifestPath: filepath.Join(root, "crates", "grep", manifestFile), Targets: []cargoTarget{{Name: nameGrep, Kind: []string{kindLib}}}},
+		{Name: "outside", ManifestPath: filepath.Join(filepath.FromSlash("/elsewhere"), manifestFile), Targets: []cargoTarget{{Name: "outside-cli", Kind: []string{kindBin}}}},
+	}
+	got := targetCrates(crateRoots(root, members), members)
+	want := []string{nameGrep, "smoke", nameTool, "tool_admin", "tool_cli"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("targetCrates = %v, want %v", got, want)
+	}
+}

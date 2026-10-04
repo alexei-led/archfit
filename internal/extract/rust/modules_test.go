@@ -2,6 +2,10 @@ package rust_test
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -330,5 +334,44 @@ func TestModuleGraph_RootOnlyCrateIsGraphed(t *testing.T) {
 	}
 	if got := e.LastModuleGraphCrates(); len(got) != 1 || got[0] != "mylib" {
 		t.Fatalf("LastModuleGraphCrates = %v, want [mylib]", got)
+	}
+}
+
+// TestExtract_TargetCratesNameEveryTarget pins that Extract carries every
+// target of a loaded member out to rule scope: a lib+bin package names its
+// binary crate beside the library, and a lib-only package names the library.
+func TestExtract_TargetCratesNameEveryTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		targets string
+		want    []string
+	}{
+		{name: "lib and bin", targets: `{"name": "tool", "kind": ["lib"]}, {"name": "tool-cli", "kind": ["bin"]}`, want: []string{"tool", "tool_cli"}},
+		{name: "lib only", targets: `{"name": "tool", "kind": ["lib"]}`, want: []string{"tool"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest := filepath.Join(root, "Cargo.toml")
+			if err := os.WriteFile(manifest, []byte("[package]\nname = \"tool\"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			meta, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			metaJSON := `{"packages": [{"id": "tool 0.1.0", "name": "tool", "manifest_path": ` + string(meta) +
+				`, "source": null, "dependencies": [], "targets": [` + tc.targets + `]}],
+				"workspace_members": ["tool 0.1.0"], "workspace_root": ` + string(meta) + `}`
+			e := rust.New(moduleGraphRunner(metaJSON, ""), evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
+			if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+			if got := e.LastTargetCrates(); !slices.Equal(got, tc.want) {
+				t.Fatalf("LastTargetCrates = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

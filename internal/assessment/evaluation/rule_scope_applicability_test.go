@@ -251,6 +251,43 @@ func TestRustModuleRuleScopeKnowsBinaryTargetCrates(t *testing.T) {
 	}
 }
 
+const (
+	crateTool    = "tool"
+	crateToolCLI = "tool_cli"
+)
+
+// TestRustModuleRuleScopeKnowsEveryLoadedTarget pins the inventory a lib+bin
+// package (package tool, lib tool, bin tool-cli) feeds rule scope: once
+// cargo metadata names the binary target tool_cli, modules declared under it
+// with no module graph leave a fail-gated module_cycle unevaluated. A lib-only
+// package names no tool_cli, so the same modules stay absent and the rule
+// stays out of scope.
+func TestRustModuleRuleScopeKnowsEveryLoadedTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		crates          []string
+		wantUnevaluated bool
+	}{
+		{name: "lib and bin", crates: []string{crateTool, crateToolCLI}, wantUnevaluated: true},
+		{name: "lib only", crates: []string{crateTool}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			diag, in := rustModuleFixture()
+			in.Facts.SourceSelectors[rustLibFile] = crateTool
+			in.Facts.RustCrates = tc.crates
+			in.Facts.RustModuleNodes = nil
+			withModules(&in, map[string]policy.ModuleDef{
+				"a": {Paths: []string{crateToolCLI + "::a"}},
+				"b": {Paths: []string{crateToolCLI + "::b"}},
+			})
+			withRule(&in, policy.RuleDef{Type: typeModCycle})
+			if _, listed := unevaluatedReasons(diag, in)[ruleIDScoped]; listed != tc.wantUnevaluated {
+				t.Fatalf("%s listed in unevaluated_required_rules = %v, want %v", ruleIDScoped, listed, tc.wantUnevaluated)
+			}
+		})
+	}
+}
+
 // TestRustCrateWithEmptyModuleGraphDecidesSelectors pins that a crate
 // cargo-modules graphed with no submodule has an empty module graph, not a
 // missing one: a core::legacy selector under it matches nothing, and a guard
