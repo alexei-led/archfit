@@ -138,6 +138,9 @@ func ruleUnevaluatedReason(diag *result.Result, rule policy.RuleDef, p policy.Po
 		return ""
 	}
 	if scope.status != ruleScopeApplicable {
+		if scope.reason != "" {
+			return scope.reason
+		}
 		return "rule scope cannot be established from the supported source inventory"
 	}
 	var reasons []string

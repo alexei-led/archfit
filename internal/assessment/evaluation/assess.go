@@ -23,14 +23,23 @@ import (
 // already answered by the relationship contract. Assessment cannot re-derive a
 // relationship even by accident.
 type Observations struct {
-	Coverage                []modevidence.Coverage
-	SuppliedCoverage        []modevidence.CoverageIngest
-	Symbols                 symbol.Graph
-	PatternMatches          []pattern.Match
-	SyntaxFacts             []modevidence.SyntaxFact
-	FileLOC                 map[string]int
-	FileClassIndex          map[string]fileclass.FileClass
-	SourceSelectors         map[string]string
+	Coverage         []modevidence.Coverage
+	SuppliedCoverage []modevidence.CoverageIngest
+	Symbols          symbol.Graph
+	PatternMatches   []pattern.Match
+	SyntaxFacts      []modevidence.SyntaxFact
+	FileLOC          map[string]int
+	FileClassIndex   map[string]fileclass.FileClass
+	SourceSelectors  map[string]string
+	// OutOfScopeFiles are walked source files the configuration declared
+	// outside the analysis scope: an `exclude:` glob matches them, or their
+	// language is switched off. Rule scope skips them, so a stray tooling script
+	// cannot hold a rule unevaluated for an analyzer the config turned off.
+	// Metrics and file classes still count them; nil excludes nothing.
+	OutOfScopeFiles map[string]struct{}
+	// GoModulePaths are the first-party Go module paths. Go node IDs drop them,
+	// so a rule selector spelled with one can never match.
+	GoModulePaths           []string
 	FileFacts               []modevidence.FileFact
 	Clones                  []clone.Cluster
 	DynamicImports          []modevidence.DynamicImportSite

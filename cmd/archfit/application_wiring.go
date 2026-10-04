@@ -50,6 +50,14 @@ func newAnalysisStages(configPath, root string, cfg config.Config, deps *appDeps
 	}
 }
 
+// newConfigLintService composes `config lint`: the acquisition walk is its
+// source-inventory port, under the projections of the config being linted.
+func newConfigLintService(configPath string, cfg config.Config, deps *appDeps) application.ConfigLintService {
+	return application.ConfigLintService{Inventory: acquisition.Inventory{
+		ConfigPath: configPath, Options: cfg.RunOptions(), Runner: deps.Runner,
+	}}
+}
+
 // newAnalyzeStages composes the analyze/check run. It is the only composition
 // that owns the user's stderr conversation, so it is the only one that
 // discloses the config-quality block.

@@ -226,8 +226,12 @@ accepted-baseline and current values, and the `gate_reference` status. Fix the
 regression, or have an owner review the new value and re-run `archfit baseline`.
 
 If exit `2` includes `decision.unevaluated_required_rules`, resolve the named
-producer evidence before claiming a required rule passed. The array is
-structured and sorted by `rule_id`; do not infer it from report prose.
+producer evidence before claiming a required rule passed. A reason starting
+with `selector matches nothing:` is a policy defect, not missing evidence: fix
+the named selector, or mark an intentional guard with `guard: true`, in an
+owner-approved config change. The array is structured and sorted by `rule_id`;
+do not infer it from report prose. Run `archfit config lint` as a fast step
+beside `check`: it exits `1` on the same dead selectors before any analyzer runs.
 
 ## 8. Environment variables and `.env`
 

@@ -207,11 +207,19 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 
 	history := buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner, graphResult.Graph.CrateRoots()...)
+	observations := assessmentObservationsOf(
+		snapshot, ruleScopeObservations(resolved.Root, snapshot, s.Options),
+		declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
+	)
+	// Config values schema v2 still loads but classification cannot read, and
+	// warn-gated rules whose selector matches nothing, are disclosed with the
+	// run's other config warnings. config lint reports the same defects.
+	for _, warning := range evaluation.PolicyWarnings(runPolicy, observations) {
+		note(warning)
+	}
 	return application.Acquired{
-		Facts: snapshot,
-		Observations: assessmentObservationsOf(
-			snapshot, declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
-		),
+		Facts:        snapshot,
+		Observations: observations,
 		Context: application.AnalysisContext{
 			MeasurementProfile: s.measurementProfile(ctx, resolved, marked, history),
 			Scope:              resolved, BaseRef: req.BaseRef, Full: true,
@@ -231,16 +239,20 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}, nil
 }
 
+// assessmentObservationsOf narrows the evidence snapshot to what assessment
+// reads. inventory carries the rule-scope fields (ruleScopeObservations).
 func assessmentObservationsOf(
 	f evidencecontract.Facts,
+	inventory evaluation.Observations,
 	declaredDeployUnits map[string]string,
 	corroboratedDeployUnits map[string]evidence.CorroboratedDeployUnit,
 	ownerProvenance map[string]evidence.OwnerProvenance,
 ) evaluation.Observations {
 	return evaluation.Observations{
 		Coverage: f.Coverage, SuppliedCoverage: f.SuppliedCoverage,
-		SourceSelectors: sourceSelectorsOf(f),
-		Symbols:         f.Symbols, PatternMatches: f.PatternMatches,
+		SourceSelectors: inventory.SourceSelectors, OutOfScopeFiles: inventory.OutOfScopeFiles,
+		GoModulePaths: inventory.GoModulePaths,
+		Symbols:       f.Symbols, PatternMatches: f.PatternMatches,
 		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
 		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
 		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,

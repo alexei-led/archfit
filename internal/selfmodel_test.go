@@ -3,6 +3,10 @@
 // the model does not — a dead path glob, an unowned package, a rule aimed at a
 // package that no longer exists, or a public entry outside its own module.
 //
+// The rule, public-surface, layer, and ownership checks are the production
+// `archfit config lint` predicates run over this repository, so the self-model
+// holds the engine's config to exactly what lint and check enforce for users.
+//
 // Run with: go test ./internal/ -run TestSelfModel
 package arch_test
 
@@ -16,16 +20,20 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/evidence/acquisition"
 	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 const selfConfigPath = "../.archfit.yaml"
 
 // guardRules match nothing on purpose: each one forbids re-introducing a
-// package this migration deleted. They are the single exception to the
-// dead-rule check, and removing a package from this list without deleting the
-// rule turns a live guard into silent dead config.
+// package this migration deleted, and declares `guard: true`, which exempts it
+// from the dead-selector check. The test fails if a guard is deleted, loses
+// `guard: true`, or starts matching real source; every guard needs an entry
+// here saying what it guards.
 var guardRules = map[string]string{
 	"no_stage_view":       "internal/view was dissolved; the rule blocks a new shared stage-view package",
 	"no_analysispipeline": "internal/analysispipeline was dissolved; the rule blocks a new orchestration hub",
@@ -38,6 +46,36 @@ func loadSelfConfig(t *testing.T) config.Config {
 		t.Fatalf("load self-config: %v", err)
 	}
 	return cfg
+}
+
+// lintRepo runs the production config lint for cfg over this repository: the
+// source inventory `archfit config lint` reads and the predicates it applies.
+func lintRepo(t *testing.T, cfg config.Config) []evaluation.PolicyDiagnostic {
+	t.Helper()
+	root, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatalf("resolve repository root: %v", err)
+	}
+	inventory, err := acquisition.Inventory{ConfigPath: selfConfigPath, Options: cfg.RunOptions(), Runner: toolrun.New()}.
+		SourceInventory(context.Background(), root)
+	if err != nil {
+		t.Fatalf("read source inventory: %v", err)
+	}
+	if len(inventory.FileClassIndex) == 0 {
+		t.Fatal("empty source inventory: every lint check would pass vacuously")
+	}
+	return evaluation.LintPolicy(cfg.PolicySnapshot(), inventory)
+}
+
+// lintFindings keeps the diagnostics carrying one of codes.
+func lintFindings(diagnostics []evaluation.PolicyDiagnostic, codes ...string) []evaluation.PolicyDiagnostic {
+	var out []evaluation.PolicyDiagnostic
+	for _, d := range diagnostics {
+		if slices.Contains(codes, d.Code) {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // repoDirs lists every repo-relative directory that holds at least one source
@@ -149,55 +187,19 @@ func TestSelfModelCoversEveryGoPackage(t *testing.T) {
 }
 
 // TestSelfModelHasNoAmbiguousPackageOwnership fails when two modules both claim
-// a package by an equally specific glob. Most-specific-wins resolves genuine
+// source by an equally specific glob. Most-specific-wins resolves genuine
 // nesting; an exact tie means one module silently shadows the other.
 func TestSelfModelHasNoAmbiguousPackageOwnership(t *testing.T) {
-	cfg := loadSelfConfig(t)
-
-	for _, dir := range goPackageDirs(t) {
-		best := -1
-		var winners []string
-		for _, name := range sortedModuleNames(cfg.Modules) {
-			for _, glob := range cfg.Modules[name].Paths {
-				ok, err := doublestar.Match(glob, dir)
-				if err != nil || !ok {
-					continue
-				}
-				switch spec := globWeight(glob); {
-				case spec > best:
-					best, winners = spec, append(winners[:0], name)
-				case spec == best && !slices.Contains(winners, name):
-					winners = append(winners, name)
-				}
-			}
-		}
-		if len(winners) > 1 {
-			t.Errorf("Go package %q is claimed at equal specificity by %v", dir, winners)
-		}
+	for _, d := range lintFindings(lintRepo(t, loadSelfConfig(t)), evaluation.LintAmbiguousOwnership) {
+		t.Errorf("%s: %s", d.Path, d.Message)
 	}
 }
 
-// globWeight mirrors the ordering policy.ModuleMap uses to pick the most
-// specific match: the byte length of the glob's literal prefix, i.e. everything
-// before the first wildcard metacharacter. Copied verbatim from
-// policy.globSpecificity (internal/policy/module.go) — the tie this test looks
-// for is only real if the two rank patterns identically, so keep them in step.
-func globWeight(glob string) int {
-	for i := 0; i < len(glob); i++ {
-		switch glob[i] {
-		case '*', '?', '[', '{':
-			return i
-		}
-	}
-	return len(glob)
-}
-
-// TestSelfModelHasNoDeadRules fails when a rule points at a path that no longer
-// exists, unless the rule is a declared re-introduction guard.
+// TestSelfModelHasNoDeadRules fails when a rule selector matches no source,
+// unless the rule is a declared re-introduction guard, and when a guard is
+// missing, undeclared, or matches real source again.
 func TestSelfModelHasNoDeadRules(t *testing.T) {
 	cfg := loadSelfConfig(t)
-	dirs, goFiles := repoDirs(t)
-	candidates := append(append([]string{}, dirs...), goFiles...)
 
 	seen := map[string]bool{}
 	graded := 0
@@ -211,62 +213,43 @@ func TestSelfModelHasNoDeadRules(t *testing.T) {
 		}
 		seen[rule.ID] = true
 
-		if _, isGuard := guardRules[rule.ID]; isGuard {
-			if matchesAny(rule.To, candidates) {
-				t.Errorf("guard rule %q now matches real source %q — the package it forbids was re-introduced", rule.ID, rule.To)
-			}
-			continue
-		}
-		for label, glob := range map[string]string{"from": rule.From, "to": rule.To} {
-			if glob == "" || glob == "**" {
-				continue
-			}
+		_, registered := guardRules[rule.ID]
+		switch {
+		case registered && !rule.Guard:
+			t.Errorf("guard rule %q must declare guard: true", rule.ID)
+		case !registered && rule.Guard:
+			t.Errorf("rule %q declares guard: true but guardRules does not say what it guards", rule.ID)
+		case !rule.Guard && (rule.From != "" || rule.To != ""):
 			graded++
-			if !matchesAny(glob, candidates) {
-				t.Errorf("rule %q: %s glob %q matches no directory or Go file", rule.ID, label, glob)
-			}
 		}
 	}
-
 	for id, why := range guardRules {
 		if !seen[id] {
 			t.Errorf("guard rule %q is missing from .archfit.yaml (%s)", id, why)
 		}
 	}
+	for _, d := range lintFindings(lintRepo(t, cfg), evaluation.LintDeadSelector, evaluation.LintGuardMatchesSource) {
+		t.Errorf("%s: %s", d.Path, d.Message)
+	}
 
-	// Non-vacuity guard. The loop above grades rules; with an empty or
-	// all-guard rule set it grades nothing and still passes, which reads as
-	// "every boundary is live" for a config that declares no boundary at all.
+	// Non-vacuity guard. With an empty or all-guard rule set the lint grades
+	// nothing and still passes, which reads as "every boundary is live" for a
+	// config that declares no boundary at all.
 	if graded == 0 {
-		t.Error("no rule was graded for dead globs — the dead-rule gate checked nothing")
+		t.Error("no rule was graded for dead selectors — the dead-rule gate checked nothing")
 	}
 }
 
 // TestSelfModelPublicSurfacesAreRealAndOwned fails when a module publishes a
-// path it does not own or that holds no Go source. A public entry is a coupling
+// path it does not own or that names no package. A public entry is a coupling
 // classification input: a stale one silences a real intrusive edge.
 func TestSelfModelPublicSurfacesAreRealAndOwned(t *testing.T) {
 	cfg := loadSelfConfig(t)
-	goPkgs := goPackageDirs(t)
-
-	for _, name := range sortedModuleNames(cfg.Modules) {
-		def := cfg.Modules[name]
-		for _, pub := range def.Public {
-			if !matchesAny(pub, goPkgs) {
-				t.Errorf("module %q: public entry %q names no Go package", name, pub)
-				continue
-			}
-			owned := false
-			for _, glob := range def.Paths {
-				if ok, err := doublestar.Match(glob, pub); err == nil && ok {
-					owned = true
-					break
-				}
-			}
-			if !owned {
-				t.Errorf("module %q: public entry %q is outside the module's own paths %v", name, pub, def.Paths)
-			}
-		}
+	if !slices.ContainsFunc(sortedModuleNames(cfg.Modules), func(name string) bool { return len(cfg.Modules[name].Public) > 0 }) {
+		t.Fatal("no module declares a public surface: the check would pass vacuously")
+	}
+	for _, d := range lintFindings(lintRepo(t, cfg), evaluation.LintPublicOutsideModule, evaluation.LintPublicMatchesNothing) {
+		t.Errorf("%s: %s", d.Path, d.Message)
 	}
 }
 
@@ -276,6 +259,9 @@ func TestSelfModelPublicSurfacesAreRealAndOwned(t *testing.T) {
 // leaves a rung in the ladder that means nothing.
 func TestSelfModelLayersAreDeclaredAndUsed(t *testing.T) {
 	cfg := loadSelfConfig(t)
+	for _, d := range lintFindings(lintRepo(t, cfg), evaluation.LintUndeclaredLayer) {
+		t.Errorf("%s: %s", d.Path, d.Message)
+	}
 
 	used := map[string]bool{}
 	for _, name := range sortedModuleNames(cfg.Modules) {
@@ -283,9 +269,6 @@ func TestSelfModelLayersAreDeclaredAndUsed(t *testing.T) {
 		if layer == "" {
 			t.Errorf("module %q declares no layer", name)
 			continue
-		}
-		if !slices.Contains(cfg.Layers, layer) {
-			t.Errorf("module %q: layer %q is not declared in layers: %v", name, layer, cfg.Layers)
 		}
 		used[layer] = true
 	}

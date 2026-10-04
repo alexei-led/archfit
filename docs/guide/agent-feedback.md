@@ -265,5 +265,8 @@ The list is sorted by `rule_id` and omitted when empty. A known active blocker
 still sets `decision.hard_gates` to `fail`; otherwise a non-empty list sets it to
 `unmeasured`, which keeps `check` at exit `2`. Read these structured fields
 directly. Do not infer required-rule coverage by searching prose or by treating
-an empty finding list as proof that the rule passed. Rules whose source scope is
-proven not applicable are omitted from this list.
+an empty finding list as proof that the rule passed. A rule whose selector
+matches no scanned source is listed with the reason
+`selector matches nothing: <from|to> <glob>`: it could never find a violation,
+so it is a policy defect for the config owner, not missing evidence and not a
+code change to make. A declared guard (`guard: true`) is not listed.

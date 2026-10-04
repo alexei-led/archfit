@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"testing"
 
@@ -391,5 +392,31 @@ func TestDiscoverMembers_ArchfitSelfCollapses(t *testing.T) {
 	}
 	if got[0] != repoRoot {
 		t.Errorf("member = %q, want %q", got[0], repoRoot)
+	}
+}
+
+func TestModulePaths_ReadsEachMemberGoMod(t *testing.T) {
+	root := t.TempDir()
+	for dir, goMod := range map[string]string{
+		"b":         "module example.com/b\n\ngo 1.21\n",
+		"a":         "module example.com/a\n\ngo 1.21\n",
+		"a-copy":    "module example.com/a\n\ngo 1.21\n",
+		"no-module": "go 1.21\n",
+	} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, dir, "go.mod"), []byte(goMod), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dirs := []string{"b", "a", "a-copy", "no-module", "missing"}
+	for i, dir := range dirs {
+		dirs[i] = filepath.Join(root, dir)
+	}
+	got := goextract.ModulePaths(dirs)
+	want := []string{"example.com/a", "example.com/b"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ModulePaths = %v, want %v", got, want)
 	}
 }

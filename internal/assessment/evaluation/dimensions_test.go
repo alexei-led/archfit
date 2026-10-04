@@ -292,7 +292,7 @@ func TestFindingsRouteToTheOwningDimension(t *testing.T) {
 		ruleDep: ruleForbidden, "layer": "forbidden_layer_direction", "cyc": metricCycle, "modcyc": "module_cycle",
 		"newdep": "new_cross_module_dependency", "pub": "public_api_only", "max": rulePublicAPIMax,
 		"leak": "public_api_type_leak", "internal": "internal_api_access", "waiver": "waiver_expiry",
-		"pattern": "forbidden_pattern",
+		"pattern": ruleTypePattern,
 	}
 	tests := []struct {
 		ruleID string
@@ -615,16 +615,22 @@ func TestIntentDoesNotConformUnsupportedLanguageRules(t *testing.T) {
 	}
 }
 
-func TestIntentOnlyAcceptsExplicitlyEmptySupportedRuleScope(t *testing.T) {
+// TestIntentNeverConformsAVacuousRuleScope pins that a selector matching no
+// scanned source is vacuous: the rule cannot have found a violation, so it is
+// not conformance evidence, whatever the selector's language. Only a declared
+// guard (`guard: true`), which matches nothing on purpose, counts as evaluated.
+func TestIntentNeverConformsAVacuousRuleScope(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name       string
 		from       string
+		guard      bool
 		wantStatus state.MeasurementStatus
 		wantSeen   int
 	}{
-		{name: "supported language scope", from: "missing/**/*.go", wantStatus: state.Measured, wantSeen: 1},
-		{name: "language-ambiguous scope", from: "missing/**", wantStatus: state.Partial, wantSeen: 0},
+		{name: "supported-language selector", from: selMissingGo, wantStatus: state.Partial, wantSeen: 0},
+		{name: "language-ambiguous selector", from: "missing/**", wantStatus: state.Partial, wantSeen: 0},
+		{name: "declared guard", from: selMissingGo, guard: true, wantStatus: state.Measured, wantSeen: 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -632,7 +638,7 @@ func TestIntentOnlyAcceptsExplicitlyEmptySupportedRuleScope(t *testing.T) {
 			diag, in := dimensionsFixture()
 			in.Policy.Gates.Rules.Rules = []policy.RuleDef{{
 				ID: "empty_scope", Type: ruleForbidden, Gate: gateWarnPosture,
-				From: tc.from, To: "a/**/*.go",
+				From: tc.from, To: "a/**/*.go", Guard: tc.guard,
 			}}
 			dim := evaluation.BuildDimensions(diag, in, nil).Intent
 			if dim.Status != tc.wantStatus {
@@ -679,7 +685,7 @@ const toolAstGrep = "ast-grep"
 // conformance, and a partial dependency producer does not hold it back.
 func TestIntentEvaluatesForbiddenPatternOnlyOverACompletedPatternPass(t *testing.T) {
 	t.Parallel()
-	rule := policy.RuleDef{ID: "domain_no_clock", Type: "forbidden_pattern", Gate: string(policy.GateFail), From: assessPathsA,
+	rule := policy.RuleDef{ID: "domain_no_clock", Type: ruleTypePattern, Gate: string(policy.GateFail), From: assessPathsA,
 		Patterns: []pattern.Def{{ID: "clock", Lang: "go", Rule: "time.Now()"}}}
 	tests := []struct {
 		name       string
@@ -1102,6 +1108,7 @@ func TestIntentScopesDependencyRulesByTargetVocabulary(t *testing.T) {
 				Facts: evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
 					"internal/extract/py/py.go":           fileclass.Production,
 					"internal/extract/py/grimp_helper.py": fileclass.Production,
+					"internal/config/config.go":           fileclass.Production,
 				}},
 			}
 			diag := &result.Result{

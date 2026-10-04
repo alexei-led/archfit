@@ -61,11 +61,13 @@ type cli struct {
 
 // ConfigCmd groups the config-authoring subcommands. init scaffolds a config (or,
 // with --ai-classify, drafts a full AI-classified config); update syncs the
-// config with the project structure; compare measures one tree under two
-// configs; enrich drafts per-dimension AI annotations for review.
+// config with the project structure; lint reports defects loading accepts;
+// compare measures one tree under two configs; enrich drafts per-dimension AI
+// annotations for review.
 type ConfigCmd struct {
 	Init    InitCmd    `cmd:"" help:"Create a starter config (use --ai-classify for an AI-classified draft)."`
 	Update  UpdateCmd  `cmd:"" help:"Sync the config with current project structure."`
+	Lint    LintCmd    `cmd:"" help:"Report config defects judged against the source tree: dead selectors, unknown values, ownership ties. Exits 1 on errors."`
 	Compare CompareCmd `cmd:"" help:"Measure one source tree under two configs and report the difference (report-only)."`
 	Enrich  EnrichCmd  `cmd:"" help:"Draft AI annotations (labels/owner/volatility/subdomain) for review."`
 }

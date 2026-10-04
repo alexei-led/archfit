@@ -137,6 +137,10 @@ const (
 	// patternCoverageTool.
 	ruleTypeForbiddenPattern = "forbidden_pattern"
 	patternCoverageTool      = "ast-grep"
+	// The rule types that read their from:/to: selectors.
+	ruleTypeForbiddenDependency = "forbidden_dependency"
+	ruleTypePublicAPIOnly       = "public_api_only"
+	ruleTypeInternalAPIAccess   = "internal_api_access"
 )
 
 type primaryInventory struct {
@@ -239,12 +243,20 @@ const (
 type ruleScope struct {
 	status    ruleScopeStatus
 	languages map[string]struct{}
+	// reason replaces the generic unknown-scope reason when the scope is
+	// unknown for a specific, nameable cause.
+	reason string
 }
 
 // ruleProducerScope derives the language denominator of one rule from the
 // files its own selectors can reach. A selector over an unsupported language
 // remains unknown: the supported-source inventory cannot prove that scope
 // empty, so a rule invocation over an empty graph is not conformance evidence.
+//
+// A selector that provably matches nothing makes the rule vacuous, never
+// conformant: its scope is unknown with a reason naming the selector. A guard
+// rule (`guard: true`) matches nothing on purpose, so its empty selector is
+// not a defect; an empty source selector leaves it nothing to check.
 func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observations) ruleScope {
 	files := sourceInventoryFiles(f)
 	switch rule.Type {
@@ -253,7 +265,10 @@ func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observati
 	case ruleTypePublicAPILeak:
 		// The current type-leak producer is explicitly Go-only.
 		return restrictRuleScopeLanguages(moduleRuleScope(p.Topology, files, f.SourceSelectors), "go")
-	case "forbidden_dependency", "public_api_only", "internal_api_access":
+	case ruleTypeForbiddenDependency, ruleTypePublicAPIOnly, ruleTypeInternalAPIAccess:
+		if scope, decided := vacuityScope(rule, p.Topology.ModuleMap, files, f); decided {
+			return scope
+		}
 		// Dependency producers are selected by the source endpoint language, but
 		// an explicitly unsupported target scope is still unevaluated: no
 		// producer can emit a relationship to that source-file vocabulary.
@@ -276,6 +291,9 @@ func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observati
 	case "cycle":
 		return allSourceScope(p.Topology.ModuleMap, files)
 	case ruleTypeForbiddenPattern:
+		if scope, decided := vacuityScope(rule, p.Topology.ModuleMap, files, f); decided {
+			return scope
+		}
 		// nil projected selectors: the rule matches from: against the file path
 		// or its convention selector, and its scope must use the same matcher,
 		// or a from: glob could scope as applicable yet never match a file.
@@ -285,6 +303,27 @@ func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observati
 	}
 }
 
+// vacuityScope decides the scope of a rule whose selector matches nothing: a
+// policy defect unless the rule is a guard, and a guard whose source matches
+// nothing has nothing to check. decided is false when the selectors are live
+// or a guard's target is vacuous, so the caller scopes the rule as usual.
+func vacuityScope(rule policy.RuleDef, mm policy.ModuleMap, files []string, f Observations) (scope ruleScope, decided bool) {
+	side, glob, vacuous := newSelectorInventory(mm, files, f).vacuousSelector(rule)
+	switch {
+	case !vacuous:
+		return ruleScope{}, false
+	case !rule.Guard:
+		return ruleScope{status: ruleScopeUnknown, reason: selectorMatchesNothing(side, glob)}, true
+	case side == selectorFrom:
+		return ruleScope{status: ruleScopeNotApplicable}, true
+	default:
+		return ruleScope{}, false
+	}
+}
+
+// sourceInventoryFiles is the rule-scope source inventory: every walked source
+// file inside the declared analysis scope. A file the configuration declared out
+// of scope is not part of any rule's scope, whatever its language.
 func sourceInventoryFiles(f Observations) []string {
 	set := make(map[string]struct{}, len(f.FileClassIndex)+len(f.FileLOC))
 	for file := range f.FileClassIndex {
@@ -295,6 +334,9 @@ func sourceInventoryFiles(f Observations) []string {
 	}
 	files := make([]string, 0, len(set))
 	for file := range set {
+		if _, outOfScope := f.OutOfScopeFiles[file]; outOfScope {
+			continue
+		}
 		files = append(files, file)
 	}
 	sort.Strings(files)
@@ -400,10 +442,9 @@ func patternRuleScope(moduleMap policy.ModuleMap, pattern string, files []string
 	if len(languages) > 0 {
 		return ruleScope{status: ruleScopeApplicable, languages: languages}
 	}
-	if !explicitlySupportedSourcePattern(moduleMap, pattern) {
-		return ruleScope{status: ruleScopeUnknown}
-	}
-	return ruleScope{status: ruleScopeNotApplicable}
+	// A selector that matches no supported source was either reported vacuous
+	// by ruleProducerScope or is one the inventory cannot judge.
+	return ruleScope{status: ruleScopeUnknown}
 }
 
 func ruleFileSelector(moduleMap policy.ModuleMap, file string, selectors map[string]string) (string, string, bool) {

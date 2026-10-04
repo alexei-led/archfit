@@ -24,6 +24,8 @@ import (
 const (
 	ruleModuleCycle = "no_module_cycles"
 	ruleForbidden   = "forbidden_dependency"
+	ruleTypePattern = "forbidden_pattern"
+	selCatalog      = "internal/catalog/**"
 	ruleBC          = "bc/imbalanced_coupling"
 	ruleStaleLabel  = "labels/stale"
 	metricName      = "cycle_count"

@@ -28,13 +28,13 @@ introduced against a comparable reference. archfit's own config sets `mode: warn
 on the evidence — 380 scored edges, 78 critical, **0** at high distance, so no
 seam qualifies.
 
-| Aspect       | Violation                             | Regression                                   | Signal                                                    |
-| ------------ | ------------------------------------- | -------------------------------------------- | --------------------------------------------------------- |
+| Aspect       | Violation                             | Regression                                                        | Signal                                                    |
+| ------------ | ------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------- |
 | Source       | `rules` with `gate: fail`/`warn`      | `metrics` delta vs baseline, `coupling.gate.distributed_monolith` | metric absolute values, BC advisories                     |
-| Effect       | sets exit code; fails CI              | fails CI unless downgraded per metric        | report-only; never gates                                  |
-| Determinism  | byte-identical, gate-grade            | byte-identical, gate-grade                   | deterministic, but advisory                               |
-| Examples     | forbidden dependency, cycle, API leak | new cycle, encapsulation drop, coverage drop | `blast_radius`, `coupling_balance` advisories, BC rollups |
-| Acting on it | must fix or baseline/except           | fix, or re-baseline to accept the new level  | judgement call; prioritize, don't block                   |
+| Effect       | sets exit code; fails CI              | fails CI unless downgraded per metric                             | report-only; never gates                                  |
+| Determinism  | byte-identical, gate-grade            | byte-identical, gate-grade                                        | deterministic, but advisory                               |
+| Examples     | forbidden dependency, cycle, API leak | new cycle, encapsulation drop, coverage drop                      | `blast_radius`, `coupling_balance` advisories, BC rollups |
+| Acting on it | must fix or baseline/except           | fix, or re-baseline to accept the new level                       | judgement call; prioritize, don't block                   |
 
 A rising signal is **not** a build break — treat it as a prompt to look. A
 regression **is** a build break by default: either fix it or deliberately accept
@@ -90,6 +90,7 @@ and the JSON bundle that `archfit analyze --ai-summary` narrates.
 ```sh
 archfit check --config .archfit.yaml                  # gates only: the verdict
 archfit analyze --markdown --config .archfit.yaml   # gates + signals, as Markdown
+archfit config lint --config .archfit.yaml          # dead selectors, unknown values, ownership ties
 ```
 
 The current self-config may report **`NEEDS ATTENTION`, exit 2** because supplied

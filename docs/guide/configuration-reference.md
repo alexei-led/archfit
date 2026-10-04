@@ -162,6 +162,14 @@ archfit also warns (a config warning + stderr line) when an output/report path
 resolves **inside** the analyzed root — write reports outside `--root`, or exclude
 their directory, to keep scans deterministic.
 
+Excluded files also leave every rule's scope. A rule is evaluated over the
+languages of the source files its selectors reach; a stray tooling script (a
+`.cjs` config wrapper, a Python helper) in a Go repository would otherwise put
+TypeScript or Python in scope and keep the rule unevaluated until
+dependency-cruiser or grimp ran. Exclude the script, or switch its language off
+(`languages.<id>.enabled: false`), to declare it out of scope. Size and
+file-class metrics still count excluded files the LOC walk visits.
+
 ## `languages`
 
 Per-language extractor settings. Each language has `enabled` and `gate`; some
@@ -171,7 +179,9 @@ have extra fields.
 string spellings `"on"` and `"off"` are a **hard error** in this schema.
 
 - `true` — require the adapter; missing project markers or tools are errors.
-- `false` — skip the adapter entirely.
+- `false` — skip the adapter entirely. The language's source files also leave
+  rule scope, so they cannot hold a rule unevaluated. Set an explicit `gate:` to
+  keep them in scope and be told the analyzer did not run.
 - `auto` — use the adapter when project markers and tools are found (default).
 
 Use `auto` for mixed repos while calibrating. Use `true` in CI when a language
@@ -770,6 +780,13 @@ Fields:
 - `volatility` — explicit override: `high` (=10), `medium` (=6), `low` (=3),
   or `frozen` / `legacy` (=1). Use `subdomain` unless you need a specific value
   that differs from the DDD default.
+
+`layer`, `subdomain`, and `volatility` values are matched as listed
+(`subdomain` and `volatility` case-insensitively). Any other value still loads in
+schema v2 but classifies as if nothing were declared: `analyze` and `check`
+print a config warning, and `archfit config lint` reports `undeclared_layer`,
+`unknown_subdomain`, or `unknown_volatility` as an error.
+
 - `owner` — team or person responsible for the module.
 - `deploy_unit` — deployable/runtime unit used for distance classification.
 - `role` — optional architectural role. See [Module role vs layer](#module-role-vs-layer).
@@ -978,6 +995,7 @@ rules:
 | `to`       | most             | Target module or path glob.                                                                                            |
 | `max`      | `public_api_max` | Integer ceiling.                                                                                                       |
 | `patterns` | `forbidden_pattern` | ast-grep patterns (`id`, `lang`, `rule`) the rule forbids. On any other type they still run but never produce a finding, and `analyze`/`check` print a warning. |
+| `guard`    | selector rules   | `true` marks a rule whose `from`/`to` selector is expected to match nothing (see below). Default `false`.              |
 
 `forbidden_layer_direction` takes no `from`/`to` (or `from_layer`/`to_layer`)
 keys — it derives layer ordering from `layers:` and each endpoint's layer from
@@ -997,6 +1015,43 @@ violation under its own rule ID (`archfit config init` generates exactly one).
 - `off` — rule is skipped entirely; no findings emitted.
 
 `gate:` is wired for **all rule types**. An unknown `type` value is a config error.
+
+### Selectors that match nothing
+
+A rule whose selector matches no scanned source cannot find a violation, so it
+is never counted as evaluated conformance. This applies to the selectors of
+`forbidden_dependency`, `public_api_only`, and `internal_api_access`:
+
+- a `from:` selector that matches no in-scope source file or graph node;
+- a `to:` selector spelled as first-party source (it starts with a wildcard or
+  with a top-level directory, Python package, or crate the tree contains) that
+  matches nothing — usually a typo or a renamed directory;
+- a selector spelled with the Go module path (`example.com/shop/internal/x`;
+  rule selectors are scan-root-relative), a leading `./`, `../`, `/` or `!`, or
+  an extglob negation `!(...)`, none of which a graph node ID can match.
+
+A `to:` selector that names no first-party source, such as `net/http` or
+`github.com/sirupsen/logrus`, is a ban on an external package: it is evaluated
+normally. A `gate: fail` rule with a dead selector is listed in
+`decision.unevaluated_required_rules` with the reason
+`selector matches nothing: <from|to> <glob>`, which keeps `check` at exit `2`.
+A `gate: warn` rule with one is reported as a config warning. `archfit config
+lint` reports both as `dead_selector` and exits `1`.
+
+Set `guard: true` on a rule that is meant to match nothing, such as a ban on
+re-introducing a deleted package. A guard counts as evaluated while its
+selector matches nothing; `archfit config lint` lists it as `guard_rule` and
+warns with `guard_matches_source` once the guarded path exists again.
+
+```yaml
+rules:
+  - id: no_legacy_reports
+    type: forbidden_dependency
+    from: internal/**
+    to: internal/legacy/reports/** # deleted; must not come back
+    gate: fail
+    guard: true
+```
 
 ### Built-in rule types
 

@@ -186,6 +186,18 @@ func GoWorkOff(scanRoot string, cfg evidenceports.ExtractConfig) bool {
 	return err == nil && m.GoWorkOff
 }
 
+// GoModulePaths returns the module paths of the Go members the extractor loads
+// under scanRoot, found by the extractor's own member discovery. Go node IDs
+// drop the module path, so rule scope needs these to recognise a selector
+// spelled as a Go import path. Nil when discovery fails.
+func GoModulePaths(scanRoot string, cfg evidenceports.ExtractConfig) []string {
+	members, err := golang.AnalysableMembers(scanRoot, cfg.Exclusions, cfg.GoModuleInclude, cfg.GoModuleExclude)
+	if err != nil {
+		return nil
+	}
+	return golang.ModulePaths(members.Dirs)
+}
+
 // New constructs the registered extractor for one canonical language ID.
 func New(id string, runner toolrun.Runner, cfg evidenceports.ExtractConfig, facts *factcache.Store) evidenceports.Extractor {
 	for _, lang := range languages {

@@ -281,11 +281,11 @@ init` emits v2 directly; owners update older configs manually before analysis.
   source; a new language declares its vocabulary there, not here). A selector
   the language cannot spell can never match one of its nodes, so that language
   leaves the rule's scope. The source scope is an extension scan over the
-  `from:` glob, and a glob picks up whatever sits there: archfit ships three
-  Python helper scripts it runs through uv, so `from: internal/**` put python in
+  `from:` glob, and a glob picks up whatever sits there: archfit ships Python
+  helper scripts it runs through uv, so `from: internal/**` put python in
   scope for rules whose `to:` is a Go package path, and grimp's legitimate
   absence then marked them unevaluated — 8 of 60 rules, holding `intent` at
-  `partial` permanently and putting exit 0 out of reach. The narrowing uses only
+  `partial` permanently. The narrowing uses only
   availability-INDEPENDENT facts: an absent producer for a language the rule CAN
   address still leaves the rule unevaluated, which is what keeps a missing
   analyzer honest, and a probe-based filter is the wrong axis (`.go` files with
@@ -317,6 +317,20 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `sg` rejects (exit > 1) makes that row partial, never "no match". Patterns on
   other rule types still run and warn at Prepare; `ForPatterns` keeps
   collecting every rule's patterns because they feed the settings hash.
+- **The rule-scope source inventory is the DECLARED analysis scope**
+  (`acquisition.declaredOutOfScope` → `Observations.OutOfScopeFiles`, skipped by
+  `evaluation.sourceInventoryFiles`). A walked source file leaves every rule's
+  scope when an effective `exclude:` glob matches it or its language is switched
+  off (`primaryDisabledByConfig`: `enabled: false` and no explicit `gate:`). The
+  exclusion set is `RunOptions.Exclusions` — merged once, never re-merged. This
+  is declared scope, not analyzer availability, and not "what the extractors
+  read": dependency-cruiser ignores `exclude:`. Metrics and file classes still
+  count the files. Vocabulary narrowing alone did not keep exit 0 reachable:
+  #40 added `internal/extract/ts/config_snapshot.cjs`, and the `.cjs` plus the
+  `.py` helpers held 7 fail-gated rules (`layer_inversion` included, through
+  module-wide scope) waiting for dependency-cruiser and grimp, although
+  `.archfit.yaml` switches TypeScript and Python off. With the declared-scope
+  inventory the self-check reaches `hard_gates: pass`.
 - **A language switched off over a language that IS PRESENT reports `disabled`,
   never `absent`** (`markDisabledPrimaries`, `internal/evidence/acquisition/coverage.go`,
   applied to `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode
@@ -544,11 +558,40 @@ init` emits v2 directly; owners update older configs manually before analysis.
   physical tree: no dead path glob, no Go package without an owning module, no
   equal-specificity ownership tie (the catch-all shadowing bug), no rule aimed at
   a path that does not exist, no `public:` entry outside its own module or
-  without Go source, and no declared layer without a module. Two rules match
-  nothing ON PURPOSE and are allowlisted in `guardRules`: `no_stage_view` and
-  `no_analysispipeline` block the dissolved packages from returning — the test
-  fails if either guard is deleted, and also if either starts matching real
-  source. Moving a package means updating the owning `paths:` in the same commit.
+  naming no package, no undeclared layer, and no declared layer without a module.
+  The rule, public-surface, layer, and ownership-tie checks ARE the production
+  `archfit config lint` predicates (`evaluation.LintPolicy` over
+  `acquisition.Inventory`), so the engine's config is held to exactly what users
+  get. Two rules match nothing ON PURPOSE and declare `guard: true`:
+  `no_stage_view` and `no_analysispipeline` block the dissolved packages from
+  returning. The `guardRules` table names what each guards; the test fails if
+  either guard is deleted, loses `guard: true`, or starts matching real source
+  (`guard_matches_source`), and if any other rule declares `guard: true` without
+  an entry. Moving a package means updating the owning `paths:` in the same commit.
+- **A rule selector that matches nothing is never conformance**
+  (`evaluation.selectorInventory.vacuousSelector`, one predicate for check and
+  `config lint`). It applies to the selectors of `forbidden_dependency`,
+  `public_api_only`, and `internal_api_access`, over the declared-scope
+  inventory plus node selectors: a `from:` that matches no in-scope source; a
+  `to:` spelled as first-party source (empty literal prefix, or a leading
+  segment the inventory's paths or selectors start with) that matches nothing;
+  and any selector spelled with the Go module path, a leading `!`/`./`/`../`/`/`,
+  or `!(` extglob. A `to:` naming no first-party root (`os`, `github.com/...`)
+  is an external ban, never vacuous. The inventory abstains, keeping the generic
+  "rule scope cannot be established" reason, for an unsupported file type and
+  for a language whose node identities are unknown (Rust without crate roots).
+  A vacuous fail-gated rule is listed in `decision.unevaluated_required_rules`
+  with the reason `selector matches nothing: <from|to> <glob>` (the App keys a
+  policy-defect reason off that prefix); a warn-gated one is a config warning
+  (`evaluation.PolicyWarnings`, noted by acquisition); both stay out of intent's
+  evaluated count. `guard: true` exempts a rule: a vacuous source side makes it
+  not applicable, a vacuous target side is ignored. Never add a "the rule
+  fired, so it is live" shortcut: lint cannot see findings, and the two would
+  disagree. `archfit config lint` exits 1 on an error diagnostic and 3 on an
+  unreadable config; unknown `volatility`/`subdomain` (vocabulary owned by
+  `policy.ModuleDef.UnknownVolatility`/`UnknownSubdomain`, pinned to classify)
+  and undeclared layers still load in schema v2 and surface as lint errors and
+  check config warnings.
 - **The primary output is `archfit.architecture-state.v1`** (`internal/model/report/state.go`,
   rendered by `internal/output/jsonout.Renderer`). `--format json` emits the
   state AT THE DOCUMENT ROOT — `verdict`, `decision`, `comparison`, `measurement`,
@@ -569,7 +612,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
   corroboration, or a comparable persisted baseline honestly produces exit 2;
   none is a permanent dimension status. `make archfit` accepts 0 or 2; only 1
   fails it. A coupling advisory is a diagnostic and can never reach exit 1.
-  An applicable fail-gated rule with incomplete producer evidence is listed in
+  An applicable fail-gated rule with incomplete producer evidence, or with a
+  selector that matches nothing, is listed in
   `decision.unevaluated_required_rules`; without another blocker it sets
   `hard_gates: unmeasured` and remains exit 2. Required-rule evidence is read
   from these fields, never inferred from finding prose.

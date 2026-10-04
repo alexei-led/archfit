@@ -529,6 +529,10 @@
             "$ref": "#/$defs/PatternDef"
           },
           "type": "array"
+        },
+        "guard": {
+          "type": "boolean",
+          "description": "Guard marks an intentional guard rule whose from:/to: selector is expected\nto match nothing, such as a ban on re-introducing a deleted package. A\nguard counts as evaluated while its selector matches nothing; any other\nrule with a selector that matches nothing is reported as not evaluated."
         }
       },
       "additionalProperties": false,

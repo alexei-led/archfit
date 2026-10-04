@@ -8,6 +8,7 @@ package policy
 
 import (
 	gopath "path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -65,6 +66,29 @@ type ModuleDef struct {
 	Role       Role      `yaml:"role,omitempty"`
 	ReviewedAt time.Time `yaml:"reviewed_at,omitempty"`
 	ReviewedBy string    `yaml:"reviewed_by"`
+}
+
+// moduleVolatilities are the volatility values classification reads, matched
+// case-insensitively; legacy is an alias for frozen.
+var moduleVolatilities = map[string]struct{}{"high": {}, "medium": {}, "low": {}, "frozen": {}, "legacy": {}}
+
+// moduleSubdomains are the subdomain values classification maps to a
+// volatility (core high, supporting and generic low), matched case-insensitively.
+var moduleSubdomains = map[string]struct{}{"core": {}, "supporting": {}, "generic": {}}
+
+// UnknownVolatility reports whether d declares a volatility classification does
+// not read. An unknown value is not a declaration: the module's volatility is
+// then undeclared. Empty is undeclared, not unknown.
+func (d ModuleDef) UnknownVolatility() bool {
+	_, known := moduleVolatilities[strings.ToLower(d.Volatility)]
+	return d.Volatility != "" && !known
+}
+
+// UnknownSubdomain reports whether d declares a subdomain classification does
+// not read. Empty is undeclared, not unknown.
+func (d ModuleDef) UnknownSubdomain() bool {
+	_, known := moduleSubdomains[strings.ToLower(d.Subdomain)]
+	return d.Subdomain != "" && !known
 }
 
 // ModuleMap resolves a repo-relative path to the owning module name.
@@ -169,6 +193,32 @@ func firstMatch(globs []string, path string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// OwnershipTie returns the modules that claim path at the highest specificity
+// when more than one does, in name order. ModuleFor then resolves the tie by
+// name, so every module after the first silently loses the path. Nil when at
+// most one module claims path at the highest specificity.
+func (mm ModuleMap) OwnershipTie(path string) []string {
+	best := -1
+	winners := make([]string, 0, 2)
+	for _, name := range mm.names {
+		for _, pattern := range mm.modules[name].Paths {
+			if matched, _ := doublestar.Match(pattern, path); !matched {
+				continue
+			}
+			switch spec := globSpecificity(pattern); {
+			case spec > best:
+				best, winners = spec, append(winners[:0], name)
+			case spec == best && !slices.Contains(winners, name):
+				winners = append(winners, name)
+			}
+		}
+	}
+	if len(winners) < 2 {
+		return nil
+	}
+	return winners
 }
 
 // globSpecificity ranks a glob pattern by how specific it is: the byte length of

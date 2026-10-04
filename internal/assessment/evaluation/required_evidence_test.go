@@ -19,6 +19,7 @@ func TestRequiredRuleEvidenceControlsHardGateCompleteness(t *testing.T) {
 		blocker bool
 		want    state.HardGateState
 		missing int
+		reason  string
 	}{
 		{name: "failed required producer", status: modevidence.StatusPartial, gate: string(policy.GateFail), want: state.HardGateUnmeasured, missing: 1},
 		{name: "absent required producer", status: modevidence.StatusAbsent, gate: string(policy.GateFail), want: state.HardGateUnmeasured, missing: 1},
@@ -26,7 +27,12 @@ func TestRequiredRuleEvidenceControlsHardGateCompleteness(t *testing.T) {
 		{name: "off rule", status: modevidence.StatusPartial, gate: "off", want: state.HardGatePass},
 		{name: "known failure dominates", status: modevidence.StatusPartial, gate: string(policy.GateFail), blocker: true, want: state.HardGateFail, missing: 1},
 		{name: "completed required producer", status: modevidence.StatusOK, gate: string(policy.GateFail), want: state.HardGatePass},
-		{name: "explicitly empty scope", status: modevidence.StatusPartial, gate: string(policy.GateFail), from: "missing/**/*.go", want: state.HardGatePass},
+		// A selector that matches no scanned source is vacuous, not an empty
+		// scope proven conformant — even when the producer completed.
+		{
+			name: "selector matching nothing", status: modevidence.StatusOK, gate: string(policy.GateFail), from: selMissingGo,
+			want: state.HardGateUnmeasured, missing: 1, reason: "selector matches nothing: from missing/**/*.go",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			diag, in := dimensionsFixture()
@@ -44,6 +50,9 @@ func TestRequiredRuleEvidenceControlsHardGateCompleteness(t *testing.T) {
 			}
 			if tc.missing > 0 && (st.Decision.UnevaluatedRequiredRules[0].RuleID != "required" || st.Decision.UnevaluatedRequiredRules[0].Reason == "") {
 				t.Fatalf("missing typed evidence: %+v", st.Decision)
+			}
+			if tc.reason != "" && st.Decision.UnevaluatedRequiredRules[0].Reason != tc.reason {
+				t.Fatalf("reason = %q, want %q", st.Decision.UnevaluatedRequiredRules[0].Reason, tc.reason)
 			}
 		})
 	}
