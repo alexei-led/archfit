@@ -31,3 +31,6 @@ docs/plans/completed/
 # Backup files
 *.bak
 .claude
+
+# revmux review archive (agent transcripts); .revmux/profile.md stays tracked
+.revmux/tasks/
