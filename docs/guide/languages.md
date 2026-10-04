@@ -190,7 +190,15 @@ How extraction works:
 - otherwise runs `npx depcruise`;
 - reads dependency-cruiser JSON output;
 - skips Node.js core modules;
+- drops installed third-party code in `node_modules` at any depth, including a
+  workspace package's own nested `node_modules`, so it never becomes a
+  first-party file or a rule finding;
 - emits file-to-file dependency edges.
+
+Without a root `package.json` the extractor does not run and the TypeScript
+coverage row is `absent` with no gap. TypeScript files elsewhere in the tree
+then leave dependency rule scope instead of holding rules unevaluated; point
+`--root` at the TypeScript project to analyse it.
 
 Example config:
 
@@ -337,7 +345,12 @@ How extraction works:
 - runs `cargo metadata --format-version 1 --no-deps` in the project root;
 - emits one `package:<crate>` node per workspace member;
 - emits an `external:<crate>` node for each registry dependency;
-- emits `depends_on` edges located at `Cargo.toml`;
+- emits `depends_on` edges located in the member's own `Cargo.toml`, at the line
+  that declares the dependency in the table of its kind (`[dependencies]`,
+  `[build-dependencies]`, `[dev-dependencies]`, their `[target.<cfg>.…]` forms, or a
+  `[dependencies.<name>]` header). A declaration the line scan cannot place keeps
+  the manifest with line 0, and a member whose manifest is outside the analysed
+  root gets no location;
 - skips dev-dependencies unless `languages.rust.include_dev_deps: true`.
 
 Granularity is **crate-level by default**: each workspace member is one node, so a
@@ -421,6 +434,16 @@ rules:
 For Rust, module paths and rule filters are crate-name globs (the crate name from
 `Cargo.toml`, such as `grep-cli`), not file paths.
 
+With `analyzers.cargo_modules.enabled: true`, intra-crate nodes are spelled with
+the rustc crate name (`grep_cli::args`): `-` becomes `_`, and a binary-only package
+uses its binary target's name. The rules place such a node, when no `paths:` glob
+claims it, in the module that declares its crate (by package name, crate name, or
+a directory glob over the crate). So a `public_api_only` or `internal_api_access`
+edge between two modules of one crate is same-module access and never fires, and
+that module's `public:` globs (for example `grep_cli::args::**`) exempt its targets.
+A `paths:` glob on a `crate::mod` node still wins: declare one to carve a module
+out of a crate.
+
 ## File classification per language
 
 archfit classifies every source file as `Production`, `Test`, `Generated`, or
@@ -432,9 +455,17 @@ in structural metrics. The per-language detection patterns are:
 | Go            | `*_test.go`                                          | `// Code generated .* DO NOT EDIT` header; `*.pb.go`; `*_gen.go`; `mock_*.go`; `*_mock.go`; `mocks/` dir |
 | TypeScript/JS | `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx` | `*.gen.ts` (e.g. `api.gen.ts`); moq-style header                                                         |
 | Python        | `test_*.py`, `*_test.py`                             | `_pb2.py`; `// Code generated` header                                                                    |
-| Rust          | `tests/` directory path segment                      | `*.gen.rs`; moq-style header                                                                             |
+| Rust          | `tests.rs`, `*_test.rs`, `*_tests.rs`; `tests/`, `benches/`, `*_tests/`, `*-tests/` dirs | `*.gen.rs`; moq-style header                                                                             |
 
 `Vendor` covers `vendor/`, `node_modules/`, and `pkg/mod/` regardless of language.
+
+Rust classification is file-level. A test module in its own file (`mod tests;`
+next to `tests.rs`) is `Test`, but an inline `#[cfg(test)] mod tests { … }` block
+inside a production file stays `Production`: archfit does not split one file into
+classes. A `forbidden_pattern` match inside such a block still fires; move the
+tests to a sibling `tests.rs` or narrow the rule's `from:`. Directory suffixes need
+a separator, so `contests/` stays `Production`; add a `test_globs` entry for other
+project conventions (for example `test.rs`).
 
 Auto-detection runs first; the `file_class:` config key (`generated_globs`,
 `test_globs`, `mock_frameworks`) adds project-specific patterns on top. See

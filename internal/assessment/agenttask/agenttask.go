@@ -35,6 +35,7 @@ const (
 // pattern. Both agree with internal/assessment/rules by convention.
 const (
 	ruleTypeModuleCycle      = "module_cycle"
+	edgeKindModuleDependency = "module_dependency" // a module-pair finding's edge kind
 	matchedByCycleModulesKey = "cycle_modules"
 	matchedByCycleSizeKey    = "cycle_size"
 	ruleTypeForbiddenPattern = "forbidden_pattern"
@@ -156,6 +157,16 @@ func (r PathResolver) resolve(candidate string) (string, bool) {
 	if r.exists(candidate) {
 		return candidate, true
 	}
+	if dir, ok := r.crateRootDirs[candidate]; ok {
+		// A crate-level node or module root: a package name or crate
+		// identifier, never a path. Root crates (Dir "") resolve to src.
+		if dir != "" && r.exists(dir) {
+			return dir, true
+		}
+		if src := path.Join(dir, "src"); r.exists(src) {
+			return src, true
+		}
+	}
 	if crate, modPath, ok := strings.Cut(candidate, "::"); ok {
 		if dir, ok := r.crateRootDirs[crate]; ok {
 			// Root crates carry Dir "" — path.Join drops the empty segment, so
@@ -265,8 +276,10 @@ func Build(
 			Validation:  append([]string{}, validation...),
 		}
 		// A seam task's files span both modules — up to forty paths of
-		// evidence — so their declarations would bury the import to cut.
-		if factsByFile != nil && !seamGate {
+		// evidence — and a module-cycle task's span up to fifty import sites
+		// of one module, repeated for every pair of the cycle; their
+		// declarations would bury the import to cut and dominate the report.
+		if factsByFile != nil && !seamGate && ruleType != ruleTypeModuleCycle {
 			task.Declarations = declarationsFor(files, factsByFile)
 		}
 		tasks = append(tasks, task)
@@ -438,12 +451,14 @@ func filesFor(f finding.Finding, seamEvidence []string, r PathResolver) []string
 
 // rootFallbackModules names the modules whose declared root stands in when no
 // evidence resolved: the module a public_api_* finding is about, or the two
-// ends of a coupling-gate seam, source first because the repair starts there.
+// ends of a coupling-gate seam or a module_cycle pair, source first because the
+// repair starts there. A module_cycle pair over cargo-modules crate::mod
+// modules has no import site to locate.
 func rootFallbackModules(f finding.Finding) []string {
 	if mod := f.MatchedBy[matchedByModuleKey]; mod != "" {
 		return []string{mod}
 	}
-	if f.RuleID == finding.RuleIDCouplingGate {
+	if f.RuleID == finding.RuleIDCouplingGate || f.Edge.Kind == edgeKindModuleDependency {
 		return []string{f.Edge.From.Module, f.Edge.To.Module}
 	}
 	return nil

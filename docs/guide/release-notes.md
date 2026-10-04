@@ -26,8 +26,14 @@ New:
 - `config init` emits failable starter rules: `no-module-cycles`, and
   `no-layer-back-edges` when it inferred two or more layers. Each is
   `gate: fail` when the init-time graph is complete and clean, otherwise
-  `gate: warn` with the reason. Without inferred layers it writes a commented
-  `layers:` how-to instead of guessing layers from directory names.
+  `gate: warn` with the reason. Init writes `gate: fail` only when it can prove
+  the rule is evaluable over a complete import graph; it writes `warn` with a
+  `# Why:` comment when Python or TypeScript modules exist, when Rust is present,
+  or when a Go module also owns source in another language (TypeScript under
+  `web/ui/`). Without inferred layers it writes a commented `layers:` how-to
+  instead of guessing layers from directory names, including from Python
+  sub-package names. Rust workspace tiers still come from the crate dependency
+  graph, without dev-dependencies.
 - Releases attach `image-identity.json` with the per-platform image digests.
 
 Fixed:
@@ -60,17 +66,78 @@ Fixed:
   package directory in `from:`, and a slash path over Python or Rust source can
   never match, and are now reported dead. A Go import-path domain such as
   `go.uber.org/**` is no longer reported dead beside a top-level `go/`
-  directory, and a `crate::mod` selector below a known crate is left
-  undecided instead of dead.
+  directory. Rust `crate::mod` selectors and module paths are judged against
+  the cargo-modules module graph: dead ones report `selector matches nothing`,
+  `guard: true` works on them, and a rule on a `crate::mod` is no longer both
+  fired and listed in `unevaluated_required_rules`. Under a loaded crate the
+  graph does not cover, the selector stays undecided.
 - `config lint` judges `public_outside_module` by the packages a `public:`
   entry matches, so brace and class globs (`internal/{a,b}/**`) no longer give a
   false error.
 - `forbidden_pattern` reports every distinct match on a line; a second match
   on a line that already had one is no longer dropped.
+- Rule scope follows each extractor's own applicability. TypeScript with no
+  root `package.json` (for example `web/ui/` in a Go repository), Go files with
+  no `go.mod`, and Rust files outside every cargo workspace member no longer
+  hold dependency or module rules unevaluated waiting for a producer that
+  cannot run. An explicit `languages.<id>.gate` keeps them in scope. A selector
+  that matches only such source is reported as `selector matches only source no
+  dependency producer analyses: <side> <glob>`.
+- `module_cycle` counts only production edges. An import from a test,
+  generated or vendored file, or from a file declared out of scope, no longer
+  closes a module cycle. Files the source walk skips (such as `.storybook/`) are
+  classified from their path, so `file_class.test_globs` applies to them.
+  Finding IDs are unchanged.
+- TypeScript analysis drops `node_modules` at any depth, including a workspace
+  package's nested `node_modules`, in root and subtree mode. Third-party files
+  no longer become first-party nodes, `module_cycle` locations or agent-task
+  files.
+- A `guard: true` rule is no longer listed in `unevaluated_required_rules`
+  while its `to:` matches nothing, even when producer evidence is partial
+  (normal on TypeScript).
+- Rust: `public_api_only` and `internal_api_access` no longer fire on edges
+  between two modules of one crate when an `internal:` glob names
+  cargo-modules nodes (`yazi_shared::url::**`) of a crate declared by package
+  name. Such nodes belong to the module that declares their crate, so its
+  `public:` globs exempt them; `new_cross_module_dependency` and
+  `forbidden_layer_direction` resolve them the same way. On yazi this removes
+  63 false blocking findings and keeps the real cross-crate one.
+- Rust: crate dependency findings point at the member's own `Cargo.toml` and
+  the line that declares the dependency (for example `yazi-adapter/Cargo.toml:22`),
+  not the root `Cargo.toml:0`. A declaration the scan cannot place keeps line 0;
+  a member outside the analysed root has no location. Finding IDs are unchanged.
+- Rust agent tasks list files for crate-level and `crate::mod` nodes, including
+  `module_cycle` tasks. Before, the package name (`yazi-shared`) and the crate
+  name (`yazi_shared`) did not match and these tasks had `files: []`.
+- Rust test files are classified Test: `tests.rs`, `*_test.rs`, `*_tests.rs`,
+  and files under `tests/`, `benches/`, `*_tests/` or `*-tests/`, so
+  `forbidden_pattern` no longer fires there (ruff: 42 of 113 findings removed).
+  An inline `#[cfg(test)]` block inside a production file is still production.
+- `config init` and `config update` no longer propose modules for trees `check`
+  cannot see: `mocks/`, packages with only generated or only test files, and
+  default-excluded trees such as `reports/` and `testdata/`. On pumba the
+  generated config passes `config lint` and `check` evaluates the
+  `no-module-cycles` starter rule. Go and TypeScript discovery over one
+  directory no longer produce two modules that tie in ownership
+  (`ambiguous_ownership`); the Go module keeps the directory.
 - `config update` checks every Python package and module in a discovered
   package against the configured map, not only the package root.
 - `cycle` and `module_cycle` findings keep `why` and the repair goal bounded on
   large cycles; the full member list stays in `matched_by.cycle_modules`.
+  `module_cycle` reports at most 200 module pairs per cycle, the first in
+  (from, to) order; `matched_by.cycle_pairs_total` gives the full count and a
+  capped cycle's `why` says how many pairs are reported. Reported pairs keep
+  their finding IDs. Module-cycle agent tasks no longer carry `declarations`
+  (on a 19-module cycle the report drops from 1.29 MB to 0.41 MB); locations
+  still name the import lines.
+- A state report could not be decoded when an analyzer exited non-zero with
+  multi-line output, for example dependency-cruiser on a Svelte 5 top-level
+  `await`. Every free-text field is now one line, with line breaks, tabs and
+  colour codes collapsed: coverage reasons, unevaluated-rule reasons, `why`,
+  `constraint`, allowed alternatives, dimension text, and agent task goal and
+  constraints. Text over 400 characters (3600 for task text) is cut with `…`,
+  keeping the tool name, exit code and first error line. The full analyzer
+  output is printed on stderr. Text that was already valid is unchanged.
 - `config lint` prints ownership ties in a stable order.
 - `model_hash` and Go deploy units no longer depend on how the shell spells the
   repository path (a `/tmp` symlink or an APFS case variant).
@@ -95,8 +162,22 @@ Upgrade effects:
 - A pattern that ast-grep rejects now marks the `ast-grep` coverage row
   partial instead of reading as "no match".
 - The fact cache schema is `3`; the first run after upgrading is cold.
-- `check`, `analyze` and `config lint` run one `go list std` per repository
-  with a Go module; if it fails, the previous selector judgment applies.
+- `check` and `analyze` read the Go standard-library list (`go list std`)
+  from the fact cache (`.archfit-cache/facts/go-std`), keyed on the toolchain
+  that `go env` reports in the repository, so warm runs do not run it again.
+  `config lint` runs it uncached. If it fails, the previous selector judgment
+  applies.
+- Rule scope and `module_cycle` shrink as described under Fixed, so rules that
+  waited on a producer that cannot run (TypeScript without a root
+  `package.json`, Go without `go.mod`) can now be evaluated and `check` can
+  move from exit 2 to 0. A `module_cycle` that existed only through test,
+  generated or out-of-scope imports disappears. Pairs past the 200-pair cap of
+  a large cycle appear as new findings once the reported ones are fixed.
+- Where nested `node_modules` exist, the dependency-cruiser specifier count
+  shrinks, so the unresolved percentage it reports can rise.
+- Rust repositories: `production_files`, `production_loc`, `test_files` and
+  `test_to_production_files` move because of the test-file reclassification.
+  These are report-only dimension metrics and no gate reads them.
 
 ## v2.3.1 — corpus correctness
 

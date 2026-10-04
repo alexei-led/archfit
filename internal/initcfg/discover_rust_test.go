@@ -60,9 +60,55 @@ func TestDiscoverRust_Workspace_OneModulePerMember(t *testing.T) {
 		if len(mods[i].Paths) != 1 || mods[i].Paths[0] != w {
 			t.Errorf("module[%d].Paths = %v, want [%q]", i, mods[i].Paths, w)
 		}
-		if mods[i].Layer != layerCore {
-			t.Errorf("module[%d].Layer = %q, want %q", i, mods[i].Layer, layerCore)
+		// No inter-crate edge, so no tier: a layer is never a name-based guess.
+		if mods[i].Layer != "" {
+			t.Errorf("module[%d].Layer = %q, want none without a dependency graph", i, mods[i].Layer)
 		}
+	}
+}
+
+// tierCLI is the outermost crate of tieredMetadata.
+const tierCLI = "cli"
+
+// tieredMetadata: cli depends on core, core on util (normal and build
+// dependencies), and util dev-depends on cli for a test helper. The
+// dev-dependency points back up the graph; the Rust extractor drops it by
+// default, so it must not shape the tiers either.
+const tieredMetadata = `{
+  "packages": [
+    {"id": "id-cli", "name": "cli", "dependencies": [{"name": "core", "kind": null}]},
+    {"id": "id-core", "name": "core", "dependencies": [{"name": "util", "kind": "build"}]},
+    {"id": "id-util", "name": "util", "dependencies": [{"name": "cli", "kind": "dev"}]}
+  ],
+  "workspace_members": ["id-cli", "id-core", "id-util"]
+}`
+
+// TestDiscoverRust_TiersFromDependencyGraph: layers are topological tiers of
+// the normal/build crate graph, so every discovered edge points to an earlier
+// layer and the starter direction rule starts with zero back-edges.
+func TestDiscoverRust_TiersFromDependencyGraph(t *testing.T) {
+	mods, edges, err := DiscoverRust(context.Background(), t.TempDir(), rustRunner(tieredMetadata))
+	if err != nil {
+		t.Fatalf("DiscoverRust: %v", err)
+	}
+	got := map[string]string{}
+	for _, m := range mods {
+		got[m.Name] = m.Layer
+	}
+	want := map[string]string{invModUtil: "layer-0", layerCore: "layer-1", tierCLI: "layer-2"}
+	for name, layer := range want {
+		if got[name] != layer {
+			t.Errorf("crate %s layer = %q, want %q (all: %v)", name, got[name], layer, got)
+		}
+	}
+	for _, e := range edges {
+		if e.From == invModUtil && e.To == tierCLI {
+			t.Errorf("dev-dependency util→cli became an edge: %v", edges)
+		}
+	}
+	cfg := DiscoveredConfig{Modules: mods, Edges: edges, Layers: inferLayers(mods)}
+	if n := layerBackEdgeCount(cfg); n != 0 {
+		t.Errorf("layer back-edges at init = %d, want 0 (layers %v, edges %v)", n, cfg.Layers, edges)
 	}
 }
 

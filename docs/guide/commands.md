@@ -408,18 +408,33 @@ Notes:
 - Go modules come from every Go member the extractor loads: `go.work` members,
   a root `go.mod`, or nested `go.mod` directories. A `go.work` monorepo with no
   root `go.mod` is discovered member by member.
-- `public:` is written only for a directory that is itself a Go package; a bare
-  grouping directory names no graph node.
+- Init proposes a module only where the source inventory that `config lint`
+  and `check` read holds production code for it. A `mocks/` package, a
+  package of only generated or only test files, and a tree excluded by default
+  (`reports/`, `testdata/`, `build/`, `dist/`, `vendor/`) get no module, even
+  when `go list` or a `src/` subdirectory scan finds them. When Go and
+  TypeScript discovery propose the same directory, the Go module keeps it.
+  Rust crates from `cargo metadata` are always kept.
+- `public:` is written only for a directory that is itself a Go package with
+  production code; a bare grouping directory names no graph node.
 - Starter rules: `module_cycle` (`no-module-cycles`) always, and
   `forbidden_layer_direction` (`no-layer-back-edges`) when discovery inferred
   two or more layers. Each gets `gate: fail` when the init-time import graph
   covers every module and shows no violation, and `gate: warn` with a comment
-  otherwise (the current violation count, or "no complete import graph" for
-  TypeScript, Python, and Rust, whose analysis sees more than init does).
-- Init does not guess layers from directory names. With fewer than two inferred
-  layers, it writes a commented `layers:` example and a commented
-  `no-layer-back-edges` rule: list your layers innermost first, set `layer:` on
-  each module, and uncomment the rule.
+  otherwise: the current violation count, or "no complete import graph" with a
+  `Why:` line. The graph is incomplete when TypeScript or Python modules exist
+  (their discovery builds no graph), when Rust is present (analysis adds
+  intra-crate modules), or when a Go module also owns source in another
+  language, such as TypeScript under `web/ui/`, which init's Go graph omits.
+- Init does not guess layers from directory or package names, in any language.
+  The one exception is evidence, not a name: for a Rust workspace, each crate
+  is put in a tier of the `cargo metadata` dependency graph (`layer-0` for
+  crates that depend on no other member, then one tier above the deepest crate
+  it depends on). Dev-dependencies are left out, as in analysis, so every
+  current crate edge points to an earlier tier and the rule starts with zero
+  back-edges. With fewer than two layers, init writes a commented `layers:`
+  example and a commented `no-layer-back-edges` rule: list your layers
+  innermost first, set `layer:` on each module, and uncomment the rule.
 - The generated config passes `archfit config lint`.
 
 Flags:
@@ -590,17 +605,17 @@ Exit codes:
 
 Diagnostics:
 
-| Code                     | Severity                       | Meaning                                                                                                                                                                                     |
-| ------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dead_selector`          | error (warning on `gate: off`) | A `forbidden_dependency`, `public_api_only`, `internal_api_access`, or `forbidden_pattern` (`from:` only) selector matches no scanned source. `check` lists the same rule as not evaluated. |
-| `guard_rule`             | info                           | A `guard: true` rule whose selector matches nothing, as intended.                                                                                                                           |
-| `guard_matches_source`   | warning                        | A `guard: true` rule whose selectors all match source: the guarded path exists again.                                                                                                       |
-| `unknown_volatility`     | error                          | `modules.<m>.volatility` is not `high`, `medium`, `low`, `frozen`, or `legacy`.                                                                                                             |
-| `unknown_subdomain`      | error                          | `modules.<m>.subdomain` is not `core`, `supporting`, or `generic`.                                                                                                                          |
-| `undeclared_layer`       | error                          | `modules.<m>.layer` is not declared in `layers:`.                                                                                                                                           |
-| `public_outside_module`  | error                          | A `public:` entry is outside the module's own `paths:`.                                                                                                                                     |
-| `public_matches_nothing` | error                          | A `public:` entry names no scanned package or module.                                                                                                                                       |
-| `ambiguous_ownership`    | error                          | Two modules claim the same source at equal glob specificity; the first by name silently wins.                                                                                               |
+| Code                     | Severity                       | Meaning                                                                                                                                                                                                                                                        |
+| ------------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dead_selector`          | error (warning on `gate: off`) | A `forbidden_dependency`, `public_api_only`, `internal_api_access`, or `forbidden_pattern` (`from:` only) selector matches no scanned source, or (dependency rules) only source no dependency producer analyses. `check` lists the same rule as not evaluated. |
+| `guard_rule`             | info                           | A `guard: true` rule whose selector matches nothing, as intended.                                                                                                                                                                                              |
+| `guard_matches_source`   | warning                        | A `guard: true` rule whose selectors all match source: the guarded path exists again.                                                                                                                                                                          |
+| `unknown_volatility`     | error                          | `modules.<m>.volatility` is not `high`, `medium`, `low`, `frozen`, or `legacy`.                                                                                                                                                                                |
+| `unknown_subdomain`      | error                          | `modules.<m>.subdomain` is not `core`, `supporting`, or `generic`.                                                                                                                                                                                             |
+| `undeclared_layer`       | error                          | `modules.<m>.layer` is not declared in `layers:`.                                                                                                                                                                                                              |
+| `public_outside_module`  | error                          | A `public:` entry is outside the module's own `paths:`.                                                                                                                                                                                                        |
+| `public_matches_nothing` | error                          | A `public:` entry names no scanned package or module.                                                                                                                                                                                                          |
+| `ambiguous_ownership`    | error                          | Two modules claim the same source at equal glob specificity; the first by name silently wins.                                                                                                                                                                  |
 
 Notes:
 

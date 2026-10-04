@@ -9,10 +9,17 @@ archfit config init --root . --output .archfit.yaml
 Then review the generated modules, layers, and rules before using `archfit
 check` in CI. The starter rules can fail: `module_cycle` blocks a new dependency
 cycle between modules, and a `forbidden_layer_direction` rule blocks an inner
-layer importing an outer one. Init does not guess layers from directory names;
-when it infers fewer than two, the generated file shows how to declare them and
-leaves the direction rule commented until you do. Start with narrow rules and baseline accepted current findings
-while calibrating. Keep `gate` values aligned with the intended CI policy.
+layer importing an outer one. Init does not guess layers from directory or
+package names in any language; only a Rust workspace gets layers, as tiers of
+its crate dependency graph. When it infers fewer than two, the generated file
+shows how to declare them and leaves the direction rule commented until you do.
+Init also skips trees that hold no production source in the inventory `check`
+reads (`mocks/`, generated or test-only packages, default-excluded trees), so
+the generated file passes `archfit config lint` and `check` can evaluate every
+starter rule. A starter rule init cannot prove evaluable over a complete graph
+is written at `gate: warn` with a `Why:` comment. Start with narrow rules and
+baseline accepted current findings while calibrating. Keep `gate` values
+aligned with the intended CI policy.
 
 Use `archfit analyze --config .archfit.yaml` for local review and `archfit check
 --config .archfit.yaml` for CI validation.

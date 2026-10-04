@@ -217,6 +217,33 @@ func TestBuild_DeclarationsEnrichedWhenSyntaxPresent(t *testing.T) {
 // TestBuild_DeclarationsAbsentWhenSyntaxEmpty verifies that when no SyntaxFacts
 // are provided, the Declarations field is nil and the JSON output is byte-for-byte
 // identical to the pre-enrichment shape (no extra key, no empty array).
+// TestBuild_ModuleCycleTaskCarriesNoDeclarations pins the report-size bound: a
+// module-cycle task lists up to fifty import-site files of one module, so every
+// declaration in them buried the import to cut (396 on one ccgram task, 88% of
+// that report's task bytes). The locations already point at the import lines.
+// Rules that name one edge keep their declarations.
+func TestBuild_ModuleCycleTaskCarriesNoDeclarations(t *testing.T) {
+	facts := []evidence.SyntaxFact{{File: fileFrom, Kind: kindFunction, Name: "Handle", Exported: true, StartLine: 3}}
+	for _, tc := range []struct {
+		ruleType string
+		want     int
+	}{
+		{ruleTypeCycle, 0},
+		{ruleTypeForbidden, 1},
+		{ruleTypeLayer, 1},
+	} {
+		t.Run(tc.ruleType, func(t *testing.T) {
+			tasks := agenttask.Build(
+				[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
+				map[string]string{ruleForbidden: tc.ruleType}, nil, []string{validateCmd}, facts, nil, agenttask.PathResolver{},
+			)
+			if len(tasks) != 1 || len(tasks[0].Declarations) != tc.want {
+				t.Fatalf("%s task declarations = %+v, want %d", tc.ruleType, tasks, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuild_DeclarationsAbsentWhenSyntaxEmpty(t *testing.T) {
 	tasks := agenttask.Build(
 		[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
@@ -257,9 +284,9 @@ func TestBuild_ModuleCycleGoalBoundsTheMemberList(t *testing.T) {
 		Edge: finding.EdgeEvidence{
 			From: finding.Endpoint{Module: members[0]},
 			To:   finding.Endpoint{Module: members[1]},
-			Kind: "module_dependency",
+			Kind: edgeKindModuleDependency,
 		},
-		MatchedBy: map[string]string{"cycle_modules": strings.Join(members, ", "), "cycle_size": "60"},
+		MatchedBy: map[string]string{matchedByCycleModules: strings.Join(members, ", "), "cycle_size": "60"},
 	}
 	tasks := agenttask.Build([]finding.Finding{f},
 		map[string]string{ruleModuleCycle: ruleTypeCycle}, nil, []string{validateCmd},
@@ -288,9 +315,9 @@ func TestBuild_ModuleCycleTaskAsksToRemoveOneDirection(t *testing.T) {
 		Edge: finding.EdgeEvidence{
 			From: finding.Endpoint{Module: "billing"},
 			To:   finding.Endpoint{Module: "shipping"},
-			Kind: "module_dependency",
+			Kind: edgeKindModuleDependency,
 		},
-		MatchedBy:  map[string]string{"cycle_modules": "billing, shipping"},
+		MatchedBy:  map[string]string{matchedByCycleModules: "billing, shipping"},
 		Locations:  []relationship.Location{{File: "billing/app/notify.go", Line: 3}},
 		Constraint: "Remove one direction of the module cycle",
 	}

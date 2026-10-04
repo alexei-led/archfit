@@ -62,8 +62,12 @@ func emptyRunner() *toolrun.RunnerMock {
 
 // matchingRunner returns a runner that emits exactly one package entry so that
 // discovery returns a module at "internal/<sub>" with the given module path.
-// pkgRel is relative to modPath, e.g. "internal/mymod".
-func matchingRunner(pkgRel string) *toolrun.RunnerMock {
+// pkgRel is relative to modPath, e.g. "internal/mymod". It writes the package's
+// source under root: discovery proposes only packages the source inventory
+// holds production code for.
+func matchingRunner(t *testing.T, root, pkgRel string) *toolrun.RunnerMock {
+	t.Helper()
+	writeGoPackage(t, root, pkgRel)
 	const modPath = "example.com/test"
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
@@ -867,7 +871,7 @@ rules:
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := matchingRunner("internal/mymod")
+	runner := matchingRunner(t, dir, "internal/mymod")
 
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
@@ -904,7 +908,7 @@ func TestUpdateCmd_LLMApply_NoSetFieldsForAddedModule(t *testing.T) {
 	dir := minimalRoot(t)
 	// Config has no modules; discovery will find one (it will be Added).
 	cfgPath := writeConfig(t, dir, minimalConfigNoModules)
-	runner := matchingRunner("internal/newmod")
+	runner := matchingRunner(t, dir, "internal/newmod")
 
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
@@ -954,7 +958,7 @@ func TestUpdateCmd_LLMApply_SurfacesReviewOnlySuggestionsAfterStructuralEdit(t *
 		AIModel:          defaultLLMModel,
 		providerOverride: &ruleSuggestionProvider{},
 	}
-	out, err := runUpdateCmd(t, cmd, matchingRunner("internal/mymod"))
+	out, err := runUpdateCmd(t, cmd, matchingRunner(t, dir, "internal/mymod"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -994,7 +998,7 @@ rules:
     to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
-	runner := matchingRunner("internal/mymod")
+	runner := matchingRunner(t, dir, "internal/mymod")
 
 	// LLM suggests layer=core, but mymod already has layer=adapter.
 	cmd := &UpdateCmd{
@@ -1059,7 +1063,7 @@ rules:
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := matchingRunner("internal/mymod")
+	runner := matchingRunner(t, dir, "internal/mymod")
 
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
@@ -1120,7 +1124,7 @@ rules:
 		t.Fatal(err)
 	}
 
-	runner := matchingRunner("internal/mymod")
+	runner := matchingRunner(t, dir, "internal/mymod")
 
 	// flexFakeProvider returns layer="infra" (NOT in layers: [core, adapter]).
 	// subdomain and volatility are already present → their fills are skipped.
@@ -1166,7 +1170,7 @@ func TestUpdateCmd_BackupCreatedOnApply(t *testing.T) {
 		Root:   dir,
 		Apply:  true,
 	}
-	_, err := runUpdateCmd(t, cmd, matchingRunner("internal/newmod"))
+	_, err := runUpdateCmd(t, cmd, matchingRunner(t, dir, "internal/newmod"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1188,7 +1192,7 @@ func TestUpdateCmd_Apply_Idempotent(t *testing.T) {
 	cmd := &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}
 
 	// First apply: adds the newly discovered module stanza.
-	if _, err := runUpdateCmd(t, cmd, matchingRunner("internal/newmod")); err != nil {
+	if _, err := runUpdateCmd(t, cmd, matchingRunner(t, dir, "internal/newmod")); err != nil {
 		t.Fatalf("first apply: unexpected error: %v", err)
 	}
 	afterFirst, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -1200,7 +1204,7 @@ func TestUpdateCmd_Apply_Idempotent(t *testing.T) {
 	_ = os.Remove(cfgPath + ".bak")
 
 	// Second apply: no actionable edits — AddModule is a no-op on re-apply.
-	if _, err = runUpdateCmd(t, cmd, matchingRunner("internal/newmod")); err != nil {
+	if _, err = runUpdateCmd(t, cmd, matchingRunner(t, dir, "internal/newmod")); err != nil {
 		t.Fatalf("second apply: unexpected error: %v", err)
 	}
 	afterSecond, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -1242,7 +1246,7 @@ rules:
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := matchingRunner("internal/mymod")
+	runner := matchingRunner(t, dir, "internal/mymod")
 
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
@@ -1312,7 +1316,7 @@ rules:
 		AIModel:          defaultLLMModel,
 		providerOverride: &ruleSuggestionProvider{},
 	}
-	out, err := runUpdateCmd(t, cmd, matchingRunner("internal/mymod"))
+	out, err := runUpdateCmd(t, cmd, matchingRunner(t, dir, "internal/mymod"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1407,6 +1411,9 @@ func TestUpdateCmd_LLM_WarnPartialClassify(t *testing.T) {
 	dir := minimalRoot(t)
 	// Config has no modules; discovery will find two (both will be Added).
 	cfgPath := writeConfig(t, dir, minimalConfigNoModules)
+	// Discovery proposes only packages the source inventory holds code for.
+	writeGoPackage(t, dir, "internal/alpha")
+	writeGoPackage(t, dir, "internal/beta")
 
 	const modPath = "example.com/test"
 	runner := &toolrun.RunnerMock{
@@ -1617,7 +1624,7 @@ func TestUpdateCmd_JSON_RejectsConflictingFlagsBeforeSideEffects(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			runner := matchingRunner(testUpdateReviewPkg)
+			runner := matchingRunner(t, dir, testUpdateReviewPkg)
 			cmd := &UpdateCmd{Config: cfgPath, Root: dir, JSON: true}
 			tc.mutate(cmd)
 
@@ -1680,7 +1687,7 @@ func runConfigReviewJSONDocument(t *testing.T) {
 
 	out, err := runUpdateCmd(t,
 		&UpdateCmd{Config: cfgPath, Root: dir, JSON: true},
-		matchingRunner(testUpdateReviewPkg))
+		matchingRunner(t, dir, testUpdateReviewPkg))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1755,7 +1762,7 @@ rules:
 
 	out, err := runUpdateCmd(t,
 		&UpdateCmd{Config: cfgPath, Root: dir, JSON: true},
-		matchingRunner("internal/mymod"))
+		matchingRunner(t, dir, "internal/mymod"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1780,7 +1787,7 @@ rules:
 	// subdomain, and layer.
 	if _, err = runUpdateCmd(t,
 		&UpdateCmd{Config: cfgPath, Root: dir, Apply: true},
-		matchingRunner("internal/mymod")); err != nil {
+		matchingRunner(t, dir, "internal/mymod")); err != nil {
 		t.Fatalf("apply: unexpected error: %v", err)
 	}
 	after, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -1811,7 +1818,7 @@ func runConfigReviewApplyDisclosesIssues(t *testing.T) {
 
 	out, err := runUpdateCmd(t,
 		&UpdateCmd{Config: cfgPath, Root: dir, Apply: true},
-		matchingRunner(testUpdateReviewPkg))
+		matchingRunner(t, dir, testUpdateReviewPkg))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1862,7 +1869,7 @@ rules:
 
 	out, err := runUpdateCmd(t,
 		&UpdateCmd{Config: cfgPath, Root: dir, JSON: true},
-		matchingRunner(testUpdateReviewPkg))
+		matchingRunner(t, dir, testUpdateReviewPkg))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1883,7 +1890,7 @@ func runConfigReviewTextStatus(t *testing.T) {
 
 	out, err := runUpdateCmd(t,
 		&UpdateCmd{Config: cfgPath, Root: dir},
-		matchingRunner(testUpdateReviewPkg))
+		matchingRunner(t, dir, testUpdateReviewPkg))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

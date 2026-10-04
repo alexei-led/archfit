@@ -116,17 +116,46 @@ func (p cargoPackage) binTargetName() string {
 	return ""
 }
 
-// hasLibTarget reports whether this package declares a lib target, used to select
-// the cargo-modules invocation flag (--lib vs --bin <name>).
-func (p cargoPackage) hasLibTarget() bool {
+// crateIdentifier returns the rustc crate name of the target cargo-modules
+// graphs for this package (runCargoModulesForCrate): the library target when
+// there is one, else the first binary target. Its "<crate>::<mod>" node IDs start
+// with this name, which differs from the package name whenever the package name
+// has a '-' or a binary target is named on its own (yazi-fm → yazi). Cargo turns
+// '-' into '_' in crate names; a package with neither target falls back to its
+// normalized package name.
+func (p cargoPackage) crateIdentifier() string {
+	name := p.Name
+	switch lib, ok := p.libTargetName(); {
+	case ok:
+		name = lib
+	case p.binTargetName() != "":
+		name = p.binTargetName()
+	}
+	return strings.ReplaceAll(name, "-", "_")
+}
+
+// libTargetName returns the name of this package's library target, if any.
+func (p cargoPackage) libTargetName() (string, bool) {
 	for _, t := range p.Targets {
 		for _, k := range t.Kind {
-			if k == "lib" || k == "proc-macro" || k == "cdylib" || k == "staticlib" {
-				return true
+			if isLibKind(k) {
+				return t.Name, true
 			}
 		}
 	}
-	return false
+	return "", false
+}
+
+// isLibKind reports whether a cargo target kind builds a library crate.
+func isLibKind(kind string) bool {
+	return kind == "lib" || kind == "proc-macro" || kind == "cdylib" || kind == "staticlib"
+}
+
+// hasLibTarget reports whether this package declares a lib target, used to select
+// the cargo-modules invocation flag (--lib vs --bin <name>).
+func (p cargoPackage) hasLibTarget() bool {
+	_, ok := p.libTargetName()
+	return ok
 }
 
 // runCargoModulesForCrate runs cargo-modules for a single crate and parses the DOT

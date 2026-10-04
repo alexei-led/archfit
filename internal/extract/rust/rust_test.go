@@ -156,8 +156,12 @@ func TestExtract_Workspace(t *testing.T) {
 		if edge.Confidence != "high" {
 			t.Errorf("edge %s -> %s: Confidence = %q, want high", we[0], we[1], edge.Confidence)
 		}
-		if len(edge.Locations) != 1 || edge.Locations[0].File != "Cargo.toml" {
-			t.Errorf("edge %s -> %s: Locations = %v, want [{Cargo.toml 0}]", we[0], we[1], edge.Locations)
+		// The fixture's members live at /repo, outside the scanned testdata
+		// root: no location beats one that escapes the root or names a root
+		// manifest that does not declare the dependency.
+		// manifest_location_test.go pins the in-root member manifest lines.
+		if len(edge.Locations) != 0 {
+			t.Errorf("edge %s -> %s: Locations = %v, want none for a member outside the root", we[0], we[1], edge.Locations)
 		}
 	}
 	if len(facts.Edges) != len(wantEdges) {

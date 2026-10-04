@@ -160,7 +160,7 @@ func TestMatchesInternal_DeclaredSurfacePrecedence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			internal, glob := mm.MatchesInternal(tt.path)
+			internal, glob := mm.MatchesInternal(tt.path, "")
 			if internal != tt.wantInternal || glob != tt.wantGlob {
 				t.Errorf("MatchesInternal(%q) = (%v, %q), want (%v, %q)", tt.path, internal, glob, tt.wantInternal, tt.wantGlob)
 			}

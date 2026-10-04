@@ -71,7 +71,11 @@ func (a *configUpdateAdapter) ReadConfigUpdateFile(_ context.Context, path strin
 }
 
 func (a *configUpdateAdapter) DiscoverConfigUpdate(ctx context.Context, req application.ConfigUpdateDiscoveryRequest) error {
-	fresh, err := initcfg.Discover(ctx, req.Root, a.deps.Runner, languagePresence(req.Root, a.cfg))
+	presence, err := languagePresence(ctx, req.Root, a.cfg, a.deps.Runner)
+	if err != nil {
+		return fmt.Errorf("discovering project structure: %w", err)
+	}
+	fresh, err := initcfg.Discover(ctx, req.Root, a.deps.Runner, presence)
 	if err != nil {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}

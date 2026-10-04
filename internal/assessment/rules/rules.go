@@ -38,8 +38,17 @@ type Evidence struct {
 	SyntaxFacts    []evidence.SyntaxFact // nil/empty when syntax is off; consumed by public_api_max
 	// FileClasses is the LOC walk's file classification (the source
 	// inventory) without the files the configuration declared out of scope.
-	// forbidden_pattern fires only on Production files in it.
+	// forbidden_pattern fires only on Production files in it, and
+	// module_cycle counts only edges that start in one.
 	FileClasses map[string]fileclass.FileClass
+	// OutOfScopeFiles are the walked files the configuration declared out of
+	// scope, which FileClasses leaves out. module_cycle reads it to tell a file
+	// declared out of scope from one the source walk never visited.
+	OutOfScopeFiles map[string]struct{}
+	// UnwalkedSourceProduction says, for an edge source file the source walk
+	// never visited, whether it is production (path-only class, false when
+	// declared out of scope).
+	UnwalkedSourceProduction map[string]bool
 }
 
 // Rule is the interface implemented by every built-in and user-defined rule.

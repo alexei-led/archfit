@@ -133,9 +133,15 @@ const (
 // per workspace member so the filesystem-free core ring can resolve a .rs file path
 // to its module key ("<crate>::<mod>") — the crate name is not derivable from the
 // path alone. Dir is repo-relative and slash-separated ("" for a root crate).
+//
+// A crate has two spellings. Name is the Cargo PACKAGE name ("yazi-shared"),
+// which the crate-level package nodes and rule selectors use. Crate is the
+// rustc crate identifier ("yazi_shared", or a binary target's own name such as
+// "yazi"), which the cargo-modules "<crate>::<mod>" node IDs start with.
 type CrateRoot struct {
-	Dir  string
-	Name string
+	Dir   string
+	Name  string
+	Crate string
 }
 
 // GoModule maps a Go workspace member's module path to its ScanRoot-relative directory.

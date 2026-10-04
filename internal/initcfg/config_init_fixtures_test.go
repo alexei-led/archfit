@@ -282,25 +282,31 @@ func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Discover: %v", err)
 			}
-			if len(discovered.Layers) < 2 {
-				// This fixture's real Discover-derived layer assignment collapses
-				// every module onto a single layer: discoverSubdirs (TS) hardcodes
-				// Layer=layerCore regardless of directory name, and rustfixture is
-				// a single crate with no inter-crate edges to topo-assign distinct
-				// layers from (see discover_ts.go, discover_rust.go). There is no
-				// forbidden direction to construct without inventing a layer split
-				// Discover never produces on these fixtures — mirrors
-				// TestPublicAPIOnly_Task1Fixtures's rustfixture early-return.
-				return
+			layers := discovered.Layers
+			moduleLayer := make(map[string]string, len(discovered.Modules))
+			for _, m := range discovered.Modules {
+				moduleLayer[m.Name] = m.Layer
+			}
+			if len(layers) < 2 {
+				// Init infers layers only from a multi-crate Rust graph, so on
+				// these fixtures the owner declares them, as the generated how-to
+				// asks. The single-crate rustfixture has no second module to
+				// direct — mirrors TestPublicAPIOnly_Task1Fixtures's early return.
+				if len(discovered.Modules) < 2 {
+					return
+				}
+				layers = []string{"inner", "outer"}
+				moduleLayer[discovered.Modules[0].Name] = layers[0]
+				moduleLayer[discovered.Modules[1].Name] = layers[1]
 			}
 
 			modules := make(map[string]policy.ModuleDef, len(discovered.Modules))
 			for _, m := range discovered.Modules {
-				modules[m.Name] = policy.ModuleDef{Paths: m.Paths, Layer: m.Layer}
+				modules[m.Name] = policy.ModuleDef{Paths: m.Paths, Layer: moduleLayer[m.Name]}
 			}
 			cfg := config.Config{
 				Version: 1,
-				Layers:  discovered.Layers,
+				Layers:  layers,
 				Modules: modules,
 				Rules: []policy.RuleDef{
 					{ID: "no-back-edge", Type: "forbidden_layer_direction"},
@@ -314,14 +320,14 @@ func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
 			// The forbidden direction is innermost layer (rank 0, Layers[0]) importing
 			// the outermost layer (highest rank, Layers[last]) — see
 			// forbiddenLayerDirection.Check's fromRank < toRank comment.
-			innerLayer := discovered.Layers[0]
-			outerLayer := discovered.Layers[len(discovered.Layers)-1]
+			innerLayer := layers[0]
+			outerLayer := layers[len(layers)-1]
 			var innerPath, outerPath string
 			for _, m := range discovered.Modules {
-				if m.Layer == innerLayer && innerPath == "" {
+				if moduleLayer[m.Name] == innerLayer && innerPath == "" {
 					innerPath = pathIn(m.Paths[0])
 				}
-				if m.Layer == outerLayer && outerPath == "" {
+				if moduleLayer[m.Name] == outerLayer && outerPath == "" {
 					outerPath = pathIn(m.Paths[0])
 				}
 			}

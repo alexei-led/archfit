@@ -145,10 +145,11 @@ rules:
 }
 
 // TestRun_Check_RuleScopeHonorsDeclaredScope runs the real check over a Go repo
-// with one stray tooling script inside a rule's source scope. The script keeps
-// the Go rule unevaluated, waiting for dependency-cruiser, until the
-// configuration declares it out of scope: by an exclude: glob or by switching
-// its language off.
+// with one stray tooling script inside a rule's source scope. The repo has no
+// package.json, so the TypeScript extractor's own applicability probe finds no
+// project and the script is out of dependency rule scope: the rule does not
+// wait for dependency-cruiser. Only an explicit gate on the language, which
+// demands to be told the producer did not run, keeps the script in scope.
 func TestRun_Check_RuleScopeHonorsDeclaredScope(t *testing.T) {
 	t.Parallel()
 	const rule = `rules:
@@ -164,7 +165,9 @@ func TestRun_Check_RuleScopeHonorsDeclaredScope(t *testing.T) {
 		want        report.HardGateState
 		unevaluated []string
 	}{
-		{name: "stray script in scope", want: report.HardGateUnmeasured, unevaluated: []string{"b-not-to-a"}},
+		{name: "stray script without a typescript project", want: report.HardGatePass},
+		{name: "explicit gate on the absent language", declaration: "languages:\n  typescript:\n    gate: warn\n",
+			want: report.HardGateUnmeasured, unevaluated: []string{"b-not-to-a"}},
 		{name: "excluded script", declaration: "exclude: [\"pkg/b/tools/**\"]\n", want: report.HardGatePass},
 		{name: "switched-off language", declaration: "languages:\n  typescript:\n    enabled: false\n", want: report.HardGatePass},
 	} {

@@ -118,6 +118,42 @@ func TestPolicyWarningsDiscloseWhatLoadingAccepts(t *testing.T) {
 	}
 }
 
+// TestLintSeparatesUnanalysedSourceFromADeadSelector pins that a dependency
+// rule aimed only at source no dependency producer analyses is reported as
+// such, by lint and by check, not as a selector typo, while forbidden_pattern,
+// which reads the ast-grep pattern pass, sees that source.
+func TestLintSeparatesUnanalysedSourceFromADeadSelector(t *testing.T) {
+	const webFile, webGlob = "web/ui/app.ts", "web/ui/**"
+	modules := map[string]policy.ModuleDef{"a": {Paths: []string{assessPathsA}}}
+	rules := []policy.RuleDef{
+		{ID: "dep", Type: ruleForbidden, Gate: gateWarnPosture, From: webGlob, To: assessPathsA},
+		{ID: "pattern_rule", Type: ruleTypePattern, Gate: gateFail, From: webGlob},
+	}
+	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
+	snapshot := policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{},
+		policy.GatePolicy{Rules: policy.RuleConfig{Rules: rules}}, nil, nil)
+	facts := evaluation.Observations{
+		FileClassIndex:  map[string]fileclass.FileClass{"a/a.go": fileclass.Production, webFile: fileclass.Production},
+		UnanalysedFiles: map[string]struct{}{webFile: {}},
+	}
+	diagnostics := evaluation.LintPolicy(snapshot, facts)
+	messages := make([]string, 0, len(diagnostics))
+	for _, d := range diagnostics {
+		messages = append(messages, d.Path+" "+d.Message)
+	}
+	got := strings.Join(messages, "\n")
+	if !strings.Contains(got, "rules[dep].from from: web/ui/** matches only source no dependency producer analyses") {
+		t.Errorf("lint does not name the unanalysed source:\n%s", got)
+	}
+	if strings.Contains(got, "rules[pattern_rule]") {
+		t.Errorf("forbidden_pattern over unanalysed source must lint clean:\n%s", got)
+	}
+	warnings := strings.Join(evaluation.PolicyWarnings(snapshot, facts), "\n")
+	if want := "rules[dep] is not evaluated: selector matches only source no dependency producer analyses: from web/ui/**"; !strings.Contains(warnings, want) {
+		t.Errorf("PolicyWarnings = %q, want %q", warnings, want)
+	}
+}
+
 // TestLintAndCheckAgreeOnVacuousRules is the parity test: every gated
 // non-guard rule lint reports as a dead selector is exactly a rule the decision
 // lists as "selector matches nothing", because both read one predicate.

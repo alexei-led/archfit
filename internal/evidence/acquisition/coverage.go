@@ -170,22 +170,16 @@ func buildCoverageGaps(cov []evidence.Coverage, cfg CoverageOptions, root string
 		// abstain-toward-disclosure choice primaryLanguagePresent makes.
 		// cargo-modules (opt-in intra-crate tool, not a language primary) is
 		// suppressed on the same marker as Rust itself.
-		if root != "" && !toolGateDemands(cfg, c.Tool) {
-			switch c.Tool {
-			case registry.ToolCargoModules:
-				// cargo-modules is Rust-specific but not a primary tool. It runs inside
-				// the Rust extractor and behind the SAME applicability marker, so it
-				// reads the marker through rustProjectPresent — a configured
-				// languages.rust.manifest points both at the sub-crate manifest.
-				if probe := cfg.ProjectPresent[registry.ToolCargoModules]; probe != nil && !probe(root) {
-					continue
-				}
-			default:
-				if _, isPrimary := primaryToolLanguage[c.Tool]; isPrimary {
-					if !primaryProjectPresent(c.Tool, root, cfg) {
-						continue
-					}
-				}
+		if primaryAbsentFromTree(cfg, c.Tool, root) {
+			continue
+		}
+		// cargo-modules is Rust-specific but not a primary tool. It runs inside
+		// the Rust extractor and behind the SAME applicability marker, so it
+		// reads the marker through rustProjectPresent — a configured
+		// languages.rust.manifest points both at the sub-crate manifest.
+		if c.Tool == registry.ToolCargoModules && root != "" && !toolGateDemands(cfg, c.Tool) {
+			if probe := cfg.ProjectPresent[registry.ToolCargoModules]; probe != nil && !probe(root) {
+				continue
 			}
 		}
 		info, ok := toolAffectedMetrics[c.Tool]
@@ -201,6 +195,21 @@ func buildCoverageGaps(cov []evidence.Coverage, cfg CoverageOptions, root string
 	}
 	sort.Slice(gaps, func(i, j int) bool { return gaps[i].Tool < gaps[j].Tool })
 	return gaps
+}
+
+// primaryAbsentFromTree reports whether a language primary analyzer is absent
+// because its language is not in the tree: the extractor's own applicability
+// probe finds no project under root, and no explicit warn/fail gate asked to
+// be told about the tool anyway. It is the single predicate behind both the
+// gapless absent primary row (buildCoverageGaps suppresses the gap on it) and
+// the rule-scope files no dependency producer analyses (unanalysedFiles), so a
+// language the coverage block calls absent never holds a rule unevaluated
+// waiting for its producer. An unprobeable root (root == "") answers false.
+func primaryAbsentFromTree(cfg CoverageOptions, tool, root string) bool {
+	if _, isPrimary := primaryToolLanguage[tool]; !isPrimary || root == "" || toolGateDemands(cfg, tool) {
+		return false
+	}
+	return !primaryProjectPresent(tool, root, cfg)
 }
 
 // toolGateDemands reports whether the config explicitly asked to be told about

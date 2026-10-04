@@ -24,6 +24,22 @@ func selectorMatchesNothing(side, glob string) string {
 	return selectorMatchesNothingPrefix + side + " " + glob
 }
 
+// selectorMatchesOnlyUnanalysedPrefix starts the reason for a dependency rule
+// whose selector matches only source no dependency producer analyses (its
+// language's extractor finds no project under the analysis root). It must not
+// share the "selector matches nothing" prefix: the selector is not a typo, and
+// the fix is to analyse that source, not to edit the config.
+const selectorMatchesOnlyUnanalysedPrefix = "selector matches only source no dependency producer analyses: "
+
+// vacuityReason is the unevaluated reason for a vacuous selector of a ruleType
+// rule.
+func (inv selectorInventory) vacuityReason(ruleType, side, glob string) string {
+	if inv.matchesOnlyUnanalysed(ruleType, side, glob) {
+		return selectorMatchesOnlyUnanalysedPrefix + side + " " + glob
+	}
+	return selectorMatchesNothing(side, glob)
+}
+
 // selectorRuleTypes are the rule types that read their from:/to: selectors.
 // Every other type ignores them, so their selectors cannot make it vacuous.
 var selectorRuleTypes = map[string]struct{}{
@@ -36,6 +52,10 @@ var selectorRuleTypes = map[string]struct{}{
 // while Python and Rust edges start at the module or crate node.
 var fileSourceLanguages = map[string]struct{}{"go": {}, "typescript": {}}
 
+// languageRust is the Rust language id, whose crate::mod module-graph nodes
+// have no file of their own.
+const languageRust = "rust"
+
 // Selector vocabularies by separator: slash paths (file paths, Go package
 // directories, TypeScript files), Python dotted IDs, and Rust crate::mod IDs.
 const (
@@ -46,23 +66,35 @@ const (
 
 // selectorInventory is the rule-scope source inventory as rule selectors see
 // it: every in-scope source file, the graph-node selector each file projects
-// to, the first-party Go module paths, and the Go standard-library packages.
-// Rule evaluation and config lint decide selector vacuity with this one
-// predicate. Their inputs differ in two places: check has Rust crate names
-// from cargo metadata, and `check --lang` turns on a language the config
-// switches off, so the in-scope files differ.
+// to, the Rust module-graph nodes, the first-party Go module paths, and the Go
+// standard-library packages. Rule evaluation and config lint decide selector
+// vacuity with this one predicate. Their inputs differ in two places: check has
+// Rust crate names and module graph from cargo metadata and cargo-modules, and
+// `check --lang` turns on a language the config switches off, so the in-scope
+// files differ.
 type selectorInventory struct {
 	moduleMap policy.ModuleMap
 	files     []string
 	selectors map[string]string
+	// unanalysed are the files no dependency producer analyses
+	// (Observations.UnanalysedFiles). Only forbidden_pattern, which reads the
+	// ast-grep pattern pass, matches its selectors against them.
+	unanalysed map[string]struct{}
+	// outOfScope are the walked files declared out of scope. They are not in
+	// files; module rule scope reads them only to know which modules own them.
+	outOfScope map[string]struct{}
+	// rustModules are the crate::mod node IDs of the Rust module graph, and
+	// rustModuleCrates the crates (library spelling) they belong to.
+	rustModules      []string
+	rustModuleCrates map[string]struct{}
 	// roots are the leading segments of every file path and node selector,
 	// keyed by the separator of the vocabulary they are spelled in (sepPath,
 	// sepDotted, sepCrate). A target selector whose leading segment, cut in its
 	// own vocabulary, is one of them names first-party source.
 	roots map[string]map[string]struct{}
 	// unresolved are the languages whose node identity the inventory could not
-	// name for some file. Without cargo metadata Rust crate names are unknown,
-	// so a selector Rust could spell cannot be proven to match nothing.
+	// name for some analysed file. Without cargo metadata Rust crate names are
+	// unknown, so a selector Rust could spell cannot be proven to match nothing.
 	unresolved map[string]struct{}
 	goModules  []string
 	goStdlib   []string
@@ -73,23 +105,94 @@ type selectorInventory struct {
 func newSelectorInventory(moduleMap policy.ModuleMap, files []string, f Observations) selectorInventory {
 	inv := selectorInventory{
 		moduleMap: moduleMap, files: files, selectors: f.SourceSelectors,
+		unanalysed: f.UnanalysedFiles, outOfScope: f.OutOfScopeFiles,
+		rustModules: f.RustModuleNodes, rustModuleCrates: map[string]struct{}{},
 		roots:      map[string]map[string]struct{}{sepPath: {}, sepDotted: {}, sepCrate: {}},
 		unresolved: map[string]struct{}{}, goModules: f.GoModulePaths, goStdlib: f.GoStdlibPackages,
 	}
 	for _, file := range inv.files {
 		inv.addRoot(sepPath, file)
 		language, selector, supported := ruleFileSelector(moduleMap, file, f.SourceSelectors)
+		_, unanalysed := inv.unanalysed[file]
 		switch {
 		case !supported:
 		case selector == "" && strings.Contains(file, "/"):
 			// A file below the root always has a node identity; an empty one was
-			// withheld by the producer projection.
-			inv.unresolved[language] = struct{}{}
+			// withheld by the producer projection. A file no producer analyses
+			// (a Rust file outside every workspace member) has none to withhold.
+			if !unanalysed {
+				inv.unresolved[language] = struct{}{}
+			}
 		case selector != "" && selector != file:
 			inv.addRoot(selectorSeparator(selector), selector)
+			if language == languageRust {
+				// Cargo names the package ("my-core"); crate::mod node IDs use the
+				// library name (my_core).
+				inv.roots[sepCrate][rustLibName(selector)] = struct{}{}
+			}
 		}
 	}
+	for _, node := range inv.rustModules {
+		crate, _, _ := strings.Cut(node, sepCrate)
+		inv.rustModuleCrates[crate] = struct{}{}
+		inv.roots[sepCrate][crate] = struct{}{}
+	}
 	return inv
+}
+
+// rustLibName is the library spelling of a Cargo package name.
+func rustLibName(crate string) string {
+	return strings.ReplaceAll(crate, "-", "_")
+}
+
+// analysedFiles are the inventory files a dependency producer analyses: the
+// rule scope of every rule type but forbidden_pattern.
+func (inv selectorInventory) analysedFiles() []string {
+	if len(inv.unanalysed) == 0 {
+		return inv.files
+	}
+	out := make([]string, 0, len(inv.files))
+	for _, file := range inv.files {
+		if _, unanalysed := inv.unanalysed[file]; !unanalysed {
+			out = append(out, file)
+		}
+	}
+	return out
+}
+
+// matchesRustModule reports whether pattern matches a Rust module-graph node.
+func (inv selectorInventory) matchesRustModule(pattern string) bool {
+	for _, node := range inv.rustModules {
+		if matched, _ := doublestar.Match(pattern, node); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// rustModulePath judges a crate::mod pattern against the module graph:
+// decided when the crate's module graph is in hand (matched says whether a
+// node matches), or when the crate is not a loaded crate at all (nothing can
+// match). A wildcard crate, or a loaded crate the module graph does not cover,
+// is undecided: an absent module graph is never an empty one.
+func (inv selectorInventory) rustModulePath(pattern string) (matched, decided bool) {
+	crate, _, belowCrate := strings.Cut(literalPrefix(pattern), sepCrate)
+	switch {
+	case !belowCrate:
+		return false, false
+	case inv.hasRustModuleGraph(crate):
+		return inv.matchesRustModule(pattern), true
+	default:
+		_, known := inv.roots[sepCrate][crate]
+		_, unresolved := inv.unresolved[languageRust]
+		return false, !known && !unresolved
+	}
+}
+
+// hasRustModuleGraph reports whether the module graph covers crate.
+func (inv selectorInventory) hasRustModuleGraph(crate string) bool {
+	_, ok := inv.rustModuleCrates[rustLibName(crate)]
+	return ok
 }
 
 // addRoot records the leading segment of id, cut at sep, as a root of the sep
@@ -156,38 +259,72 @@ func (inv selectorInventory) vacuous(ruleType, side, pattern string) bool {
 // file glob never matches a target, a Go package directory never matches a
 // source, and a slash path never matches a Python or Rust endpoint. A file of
 // an unsupported type matches by path: no node vocabulary rules it out.
+//
+// Every rule type but forbidden_pattern reads dependency edges, so only the
+// files a dependency producer analyses can match, plus the Rust module-graph
+// nodes, which have no file of their own.
 func (inv selectorInventory) matches(ruleType, side, pattern string) bool {
+	patternPass := ruleType == ruleTypeForbiddenPattern
 	for _, file := range inv.files {
-		language, selector, supported := ruleFileSelector(inv.moduleMap, file, inv.selectors)
-		var matched bool
-		_, fileSource := fileSourceLanguages[language]
-		switch {
-		case !supported || ruleType == ruleTypeForbiddenPattern:
-			matched = rulePatternMatches(pattern, file, selector)
-		case side == selectorFrom && fileSource:
-			matched, _ = doublestar.Match(pattern, file)
-		case selector != "":
-			matched, _ = doublestar.Match(pattern, selector)
+		if _, unanalysed := inv.unanalysed[file]; unanalysed && !patternPass {
+			continue
 		}
-		if matched {
+		if inv.fileMatches(ruleType, side, pattern, file) {
+			return true
+		}
+	}
+	return !patternPass && inv.matchesRustModule(pattern)
+}
+
+// matchesOnlyUnanalysed reports whether a dependency rule's selector, which
+// matches nothing a dependency producer analyses, matches source no producer
+// analyses: the rule is aimed at code archfit cannot read relationships from
+// in this tree, which is not a selector typo.
+func (inv selectorInventory) matchesOnlyUnanalysed(ruleType, side, pattern string) bool {
+	if ruleType == ruleTypeForbiddenPattern {
+		return false
+	}
+	for file := range inv.unanalysed {
+		if inv.fileMatches(ruleType, side, pattern, file) {
 			return true
 		}
 	}
 	return false
 }
 
+// fileMatches reports whether pattern matches what a ruleType rule compares
+// its side selector with for one file.
+func (inv selectorInventory) fileMatches(ruleType, side, pattern, file string) bool {
+	language, selector, supported := ruleFileSelector(inv.moduleMap, file, inv.selectors)
+	_, fileSource := fileSourceLanguages[language]
+	var matched bool
+	switch {
+	case !supported || ruleType == ruleTypeForbiddenPattern:
+		matched = rulePatternMatches(pattern, file, selector)
+	case side == selectorFrom && fileSource:
+		matched, _ = doublestar.Match(pattern, file)
+	case selector != "":
+		matched, _ = doublestar.Match(pattern, selector)
+	}
+	return matched
+}
+
 // undecidable reports whether the inventory cannot prove pattern matches
 // nothing: it names a file type outside the supported-source inventory, a
 // language whose node identities are unknown could spell it, or it names a
-// Rust module below a crate. The inventory projects a Rust file only to its
-// crate; crate::mod nodes come from cargo-modules or SCIP, so a crate::mod
-// selector under a known crate (or with a wildcard crate) cannot be judged.
+// Rust module the module graph does not cover. The inventory projects a Rust
+// file only to its crate, and crate::mod nodes come from cargo-modules: a
+// crate::mod selector is judged against them when they cover its crate, and
+// is undecidable under a wildcard crate or a loaded crate they do not cover.
 func (inv selectorInventory) undecidable(pattern string) bool {
 	if strings.Contains(pattern, "/") && unsupportedOrAmbiguousSourcePattern(inv.moduleMap, pattern) {
 		return true
 	}
 	if strings.Contains(pattern, sepCrate) {
 		crate, _, belowCrate := strings.Cut(literalPrefix(pattern), sepCrate)
+		if belowCrate && inv.hasRustModuleGraph(crate) {
+			return false
+		}
 		if _, known := inv.roots[sepCrate][crate]; known || !belowCrate {
 			return true
 		}

@@ -170,6 +170,18 @@ dependency-cruiser or grimp ran. Exclude the script, or switch its language off
 (`languages.<id>.enabled: false`), to declare it out of scope. Size and
 file-class metrics still count excluded files the LOC walk visits.
 
+Rule scope also follows each language's own applicability. When a language's
+extractor finds no project under the analysis root — TypeScript with no
+`package.json` at the root (a `web/ui/` app inside a Go repository), Go files
+with no `go.mod`, Python with no `pyproject.toml`/`setup.py` — its coverage row
+is `absent` with no gap, and its files leave the scope of every rule that reads
+dependency edges, so they cannot hold a rule unevaluated waiting for a producer
+that would never run. The same holds for a Rust file outside every cargo
+workspace member (a `fuzz/` crate the workspace excludes). An explicit
+`languages.<id>.gate: warn|fail` keeps the files in scope. `forbidden_pattern`
+reads the ast-grep pattern pass, not the dependency graph, and keeps them.
+Analyse such source by pointing `--root` at its project.
+
 ## `languages`
 
 Per-language extractor settings. Each language has `enabled` and `gate`; some
@@ -1025,12 +1037,18 @@ the `from:` selector of `forbidden_pattern`.
 
 The dependency rules match graph edge endpoints, spelled per language. A
 `to:` matches the target module node: a Go package directory, a TypeScript
-file, a dotted Python module, or a Rust crate. A `from:` matches the importing
-file for Go and TypeScript, and the module node for Python and Rust. So a Go
-file glob (`internal/domain/*.go`) never matches a `to:`, a bare Go package
-directory never matches a `from:` (write `internal/domain/**`), and a slash
-path never matches a Python or Rust endpoint. A `forbidden_pattern` `from:`
-matches the file path or its node selector. A selector is dead when:
+file, a dotted Python module, or a Rust crate or `crate::mod` module. A `from:`
+matches the importing file for Go and TypeScript, and the module node for
+Python and Rust. So a Go file glob (`internal/domain/*.go`) never matches a
+`to:`, a bare Go package directory never matches a `from:` (write
+`internal/domain/**`), and a slash path never matches a Python or Rust
+endpoint. A `forbidden_pattern` `from:` matches the file path or its node
+selector.
+
+A `crate::mod` selector is judged against the Rust module graph
+(`analyzers.cargo_modules`): under a crate the graph covers, it is live or dead
+like any other selector; under a crate the graph does not cover, it cannot be
+judged and the rule stays unevaluated. A selector is dead when:
 
 - a `from:` selector matches no in-scope source;
 - a `to:` selector spelled as first-party source (it starts with a wildcard or
@@ -1051,10 +1069,23 @@ normally. A `gate: fail` rule with a dead selector is listed in
 A `gate: warn` rule with one is reported as a config warning. `archfit config
 lint` reports both as `dead_selector` and exits `1`.
 
+A dependency-rule selector that matches only source no dependency producer
+analyses (see rule scope above) is not a typo: the code is there, and nothing
+reads its relationships. Such a rule is listed with the reason
+`selector matches only source no dependency producer analyses: <from|to> <glob>`,
+guard or not, and `config lint` reports it as `dead_selector` naming the
+cause.
+
 Set `guard: true` on a rule that is meant to match nothing, such as a ban on
-re-introducing a deleted package. A guard counts as evaluated while its
-selector matches nothing; `archfit config lint` lists it as `guard_rule` and
-warns with `guard_matches_source` once the guarded path exists again.
+re-introducing a deleted package. A guard counts as evaluated while either
+selector matches nothing, whatever state the dependency producer is in: no
+edge can start at, or reach, source that is not there, so a `partial`
+dependency-cruiser run (normal on TypeScript) does not list it. Once the
+guarded path exists again the guard is an ordinary rule: it is evaluated over
+complete producer evidence, and listed in `decision.unevaluated_required_rules`
+when that evidence is incomplete. `archfit config lint` lists a holding guard
+as `guard_rule` and warns with `guard_matches_source` once the guarded path
+exists again.
 
 ```yaml
 rules:
@@ -1083,7 +1114,9 @@ rules:
 
   Consults the `modules:` map: an edge where both endpoints resolve to the same
   module (e.g. `domain` importing its own `domain/internal`) is idiomatic
-  same-module access and never fires. When either endpoint isn't covered by the
+  same-module access and never fires. A Rust `crate::mod` node no `paths:` glob
+  claims resolves to the module that declares its crate, so two modules of one
+  crate are the same module and that module's `public:` globs apply. When either endpoint isn't covered by the
   module map, the edge still fires (module-blind fallback). A finding decided by
   a declaration names the glob in `matched_by.internal_glob`.
 
@@ -1108,11 +1141,27 @@ rules:
   and shipping → billing are two findings, each located at its import lines
   (sorted, at most 50; the full count is in `matched_by.locations_total`).
   Removing one direction fixes that finding, and breaking the cycle fixes the
-  rest. The finding edge is `{module, path: ""}` on both sides with
+  rest. One cycle reports at most 200 pairs, the first in (from, to) order;
+  every finding of the cycle carries the full count in
+  `matched_by.cycle_pairs_total`, and a capped cycle's `why` says how many pairs
+  it reports. The cap keeps a densely coupled cycle from growing the report
+  quadratically. Its cost: once reported pairs are fixed, pairs past the cap
+  appear as new findings that a baseline captured earlier does not cover.
+  Module-cycle agent tasks carry no `declarations`; their locations name the
+  import lines. The finding edge is `{module, path: ""}` on both sides with
   `kind: module_dependency`, and its ID is keyed on the rule ID and the ordered
   module pair, so a moved import keeps it. Takes no `from`/`to`: a scope glob is
   a config error. Needs at least two declared modules; otherwise it does not
-  apply.
+  apply. Only **production** edges count, as for `forbidden_pattern`: an edge
+  whose importing file is a test, generated or vendored file, or a file an
+  `exclude:` glob or a switched-off language declares out of scope, never
+  closes a cycle. A file the source walk skips (a dot directory such as
+  `.storybook/`, or `target/`) but an analyzer still loads is classified from
+  its path with the same `file_class` globs, so it follows the same rule. A Rust crate dependency (located at `Cargo.toml`) and a
+  `crate::mod` edge have no importing file and count; dev-dependencies are
+  left out by the extractor unless the config includes them. Story files,
+  `.storybook/` and tool configs such as `vitest.config.ts` are production by
+  default: classify them with `file_class.test_globs` to keep them out.
 - `public_api_max` — fires when any module's exported declaration count exceeds
   `max` (requires `analyzers.syntax.enabled: true`). Scoped per module. No baseline
   — static ceiling.
@@ -1179,7 +1228,10 @@ How it decides:
   repo-relative file path, or the file's module selector (a dotted Python
   module such as `myapp.domain.**`). `to` is a config error.
 - Only **production** files in the source inventory fire: test, generated, and
-  vendored files never do, and neither do directories the source walk skips
+  vendored files never do (see
+  [file classification](languages.md#file-classification-per-language); a Rust
+  inline `#[cfg(test)]` block inside a production file is not separated and
+  still fires), and neither do directories the source walk skips
   (`testdata`, `vendor`, `node_modules`, and similar), files an `exclude:` glob
   matches, or files of a language switched off with
   `languages.<id>.enabled: false` and no explicit `gate:`.

@@ -18,8 +18,12 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 	// Rule evaluation, lifecycle status, and metric calculation are owned here.
 	// The relationship contract and the acquired signals are the only inputs.
 	assessed := evaluate(Input{
-		Relationships:      in.Relationships,
-		Evidence:           RuleEvidence{PatternMatches: in.Facts.PatternMatches, SyntaxFacts: syntaxFacts, FileClasses: inScopeFileClasses(in.Facts)},
+		Relationships: in.Relationships,
+		Evidence: RuleEvidence{
+			PatternMatches: in.Facts.PatternMatches, SyntaxFacts: syntaxFacts,
+			FileClasses: inScopeFileClasses(in.Facts), OutOfScopeFiles: in.Facts.OutOfScopeFiles,
+			UnwalkedSourceProduction: in.Facts.UnwalkedSourceProduction,
+		},
 		Rules:              rules,
 		Metrics:            metrics,
 		Signals:            runSignals(in.Facts),
@@ -97,8 +101,9 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 // inventory minus the files the configuration declared out of scope. The LOC
 // walk and the ast-grep scan ignore exclude: and switched-off languages, so
 // without this a forbidden_pattern hit in an excluded tree still fired. Only
-// forbidden_pattern reads it. Metrics and dimensions keep the full index, so a
-// fresh map is built rather than deleting from the shared one.
+// forbidden_pattern and module_cycle read it, to keep to production files.
+// Metrics and dimensions keep the full index, so a fresh map is built rather
+// than deleting from the shared one.
 func inScopeFileClasses(f Observations) map[string]fileclass.FileClass {
 	if len(f.OutOfScopeFiles) == 0 {
 		return f.FileClassIndex

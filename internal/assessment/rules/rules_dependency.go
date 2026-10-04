@@ -11,6 +11,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
@@ -73,15 +74,17 @@ func (r *forbiddenDependency) Check(s relationship.Set, _ Evidence) []finding.Fi
 	return out
 }
 
-// sameModule reports whether fromPath and toPath resolve to the same module —
+// sameModule reports whether the edge's endpoints resolve to the same module —
 // a module reaching into its own internal path (e.g. domain importing
 // domain/internal) is idiomatic, not a violation; only cross-module access to
-// another module's internal surface is. When either endpoint isn't covered by
-// the module map, we can't rule out same-module, so callers must treat that
-// as "not same module" (module-blind fallback: the edge still fires).
-func sameModule(mm policy.ModuleMap, fromPath, toPath string) bool {
-	fromModule, fromOK := mm.ModuleFor(fromPath)
-	toModule, toOK := mm.ModuleFor(toPath)
+// another module's internal surface is. Endpoints resolve with ModuleForNode, so
+// two cargo-modules nodes of one crate belong to the module declaring that
+// crate. When either endpoint isn't covered by the module map, we can't rule
+// out same-module, so callers must treat that as "not same module"
+// (module-blind fallback: the edge still fires).
+func sameModule(mm policy.ModuleMap, e relationship.Edge) bool {
+	fromModule, fromOK := mm.ModuleForNode(e.FromPath, e.Language)
+	toModule, toOK := mm.ModuleForNode(e.ToPath, e.Language)
 	return fromOK && toOK && fromModule == toModule
 }
 
@@ -97,7 +100,7 @@ func sameModule(mm policy.ModuleMap, fromPath, toPath string) bool {
 // belongs_to or exposes edge is not an access. glob names the declaration that made the
 // target internal; it is empty when the extractor kind decided.
 func internalTarget(mm policy.ModuleMap, e relationship.Edge) (internal bool, glob string) {
-	if internal, glob := mm.MatchesInternal(e.ToPath); glob != "" {
+	if internal, glob := mm.MatchesInternal(e.ToPath, e.Language); glob != "" {
 		return internal, glob
 	}
 	return e.Kind == relEdgeKindUsesInt, ""
@@ -137,7 +140,7 @@ func (r *publicAPIOnly) Check(s relationship.Set, _ Evidence) []finding.Finding 
 		}
 
 		internal, glob := internalTarget(r.mm, e)
-		if !internal || sameModule(r.mm, fromPath, toPath) {
+		if !internal || sameModule(r.mm, e) {
 			continue
 		}
 
@@ -151,8 +154,8 @@ func (r *publicAPIOnly) Check(s relationship.Set, _ Evidence) []finding.Finding 
 			f.MatchedBy[matchedByInternalGlob] = glob
 		}
 		why := "Access to internal path " + toPath
-		if fromModule, fromOK := r.mm.ModuleFor(fromPath); fromOK {
-			if toModule, toOK := r.mm.ModuleFor(toPath); toOK {
+		if fromModule, fromOK := r.mm.ModuleForNode(fromPath, e.Language); fromOK {
+			if toModule, toOK := r.mm.ModuleForNode(toPath, e.Language); toOK {
 				why = fmt.Sprintf("Cross-module access from %q (%s) to internal path %q (%s)", fromPath, fromModule, toPath, toModule)
 			}
 		}
@@ -181,11 +184,11 @@ func (r *forbiddenLayerDirection) Check(s relationship.Set, _ Evidence) []findin
 		fromPath := e.FromPath
 		toPath := e.ToPath
 
-		fromLayer, ok := r.mm.LayerFor(fromPath)
+		fromLayer, ok := r.mm.LayerFor(fromPath, e.Language)
 		if !ok {
 			continue
 		}
-		toLayer, ok := r.mm.LayerFor(toPath)
+		toLayer, ok := r.mm.LayerFor(toPath, e.Language)
 		if !ok {
 			continue
 		}
@@ -253,7 +256,7 @@ func (r *internalAPIAccess) Check(s relationship.Set, _ Evidence) []finding.Find
 		}
 
 		internal, glob := internalTarget(r.mm, e)
-		if !internal || sameModule(r.mm, fromPath, toPath) {
+		if !internal || sameModule(r.mm, e) {
 			continue
 		}
 
@@ -302,8 +305,8 @@ func (r *newCrossModuleDependency) Check(s relationship.Set, _ Evidence) []findi
 		fromPath := e.FromPath
 		toPath := e.ToPath
 
-		fromModule, fromOK := r.mm.ModuleFor(fromPath)
-		toModule, toOK := r.mm.ModuleFor(toPath)
+		fromModule, fromOK := r.mm.ModuleForNode(fromPath, e.Language)
+		toModule, toOK := r.mm.ModuleForNode(toPath, e.Language)
 
 		// Skip edges where either endpoint is unowned or both are in the same module.
 		if !fromOK || !toOK || fromModule == toModule {
@@ -437,10 +440,13 @@ func validateModuleCycleDef(def policy.RuleDef) error {
 //
 // It emits one finding per ordered module pair whose dependency lies inside a
 // cycle, keyed on (rule, kind, from module, to module): removing a direction
-// fixes that direction's finding, and breaking the cycle fixes the rest.
+// fixes that direction's finding, and breaking the cycle fixes the rest. A
+// component reports at most maxModuleCyclePairs pairs.
 // Synthetic modules (auto-registered Rust crate::mod nodes, Go workspace
 // members) stay out — the rule speaks for the declared architecture, and the
-// node-level cycle rule already sees their cycles.
+// node-level cycle rule already sees their cycles. Only edges that start in
+// production code count (productionSource): a cycle that closes through tests
+// or generated code is not an architecture cycle.
 type moduleCycle struct {
 	def policy.RuleDef
 	mm  policy.ModuleMap
@@ -448,8 +454,14 @@ type moduleCycle struct {
 
 func (r *moduleCycle) ID() string { return r.def.ID }
 
-func (r *moduleCycle) Check(s relationship.Set, _ Evidence) []finding.Finding {
-	sccs := s.ModuleCycles(r.mm.Has)
+func (r *moduleCycle) Check(s relationship.Set, ev Evidence) []finding.Finding {
+	production := relationship.Set{Edges: make([]relationship.Edge, 0, len(s.Edges))}
+	for _, e := range s.DependencyEdges() {
+		if productionSource(e, ev) {
+			production.Edges = append(production.Edges, e)
+		}
+	}
+	sccs := production.ModuleCycles(r.mm.Has)
 	if len(sccs) == 0 {
 		return nil
 	}
@@ -461,7 +473,7 @@ func (r *moduleCycle) Check(s relationship.Set, _ Evidence) []finding.Finding {
 	}
 	type pair struct{ from, to string }
 	sites := make(map[pair][]relationship.Location)
-	for _, e := range s.DependencyEdges() {
+	for _, e := range production.Edges {
 		i, fromOK := component[e.FromModule]
 		j, toOK := component[e.ToModule]
 		if !fromOK || !toOK || i != j || e.FromModule == e.ToModule {
@@ -481,9 +493,19 @@ func (r *moduleCycle) Check(s relationship.Set, _ Evidence) []finding.Finding {
 		return pairs[a].to < pairs[b].to
 	})
 
-	out := make([]finding.Finding, 0, len(pairs))
+	pairTotals := make([]int, len(sccs))
 	for _, p := range pairs {
-		scc := sccs[component[p.from]]
+		pairTotals[component[p.from]]++
+	}
+	pairsKept := make([]int, len(sccs))
+	out := make([]finding.Finding, 0, min(len(pairs), len(sccs)*maxModuleCyclePairs))
+	for _, p := range pairs {
+		i := component[p.from]
+		if pairsKept[i] == maxModuleCyclePairs {
+			continue
+		}
+		pairsKept[i]++
+		scc := sccs[i]
 		locs, total := sortedCappedLocations(sites[p])
 		f := finding.NewKeyed(r.def.ID, edgeKindModuleDependency, p.from, p.to)
 		f.Severity = finding.SeverityHigh
@@ -491,19 +513,74 @@ func (r *moduleCycle) Check(s relationship.Set, _ Evidence) []finding.Finding {
 		f.Edge.To = finding.Endpoint{Module: p.to}
 		f.Locations = locs
 		f.MatchedBy = map[string]string{
-			"from_module":     p.from,
-			"to_module":       p.to,
-			"cycle_modules":   strings.Join(scc, ", "),
-			"cycle_size":      strconv.Itoa(len(scc)),
-			"locations_total": strconv.Itoa(total),
+			"from_module":       p.from,
+			"to_module":         p.to,
+			"cycle_modules":     strings.Join(scc, ", "),
+			"cycle_size":        strconv.Itoa(len(scc)),
+			"cycle_pairs_total": strconv.Itoa(pairTotals[i]),
+			"locations_total":   strconv.Itoa(total),
 		}
 		// The why names the pair and the cycle size only: a component can hold
 		// every declared module, and matched_by.cycle_modules lists them.
 		f.Why = fmt.Sprintf("Module %s depends on %s, and the two are in a dependency cycle among %d declared modules", p.from, p.to, len(scc))
+		if pairTotals[i] > maxModuleCyclePairs {
+			f.Why += fmt.Sprintf("; %d of the cycle's %d module pairs are reported", maxModuleCyclePairs, pairTotals[i])
+		}
 		f.Constraint = "Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"
 		out = append(out, f)
 	}
 	return out
+}
+
+// maxModuleCyclePairs caps the findings one strongly-connected component
+// emits. A component of n modules has up to n(n-1) ordered pairs, each a
+// finding and an agent task, so an unbounded component grows the report
+// quadratically: a 19-module cycle produced 81 pairs and a 1.29 MB report, and
+// a densely coupled 50-module monolith would pass a consumer's 5 MiB cap. The
+// first pairs in (from, to) order are kept, so a kept pair's ID never moves;
+// every finding names the component's full count in
+// matched_by.cycle_pairs_total. The cost of the bound: once kept pairs are
+// fixed, pairs past the cap surface as new findings, which a baseline captured
+// while they were hidden does not cover.
+const maxModuleCyclePairs = 200
+
+// productionSource reports whether a dependency edge starts in production
+// code, the scope module_cycle shares with forbidden_pattern. An edge
+// attributed to source files (a file node, or import sites in source files)
+// counts when one of them is production. A file in the source inventory is
+// judged by its FileClass; a file the walk never visited (a dot directory,
+// target/, which an analyzer still loads) by its path-only class
+// (Evidence.UnwalkedSourceProduction), and a file neither knows counts, so a
+// fail-gated cycle never passes silently. Test, generated and vendored files,
+// and files declared out of scope (an exclude: glob), never count. An edge with
+// no source-file attribution counts: a Rust crate dependency is located at
+// Cargo.toml and a cargo-modules crate::mod edge has no site, so only the
+// manifest dependency kind could tell, and the extractor already applied it.
+func productionSource(e relationship.Edge, ev Evidence) bool {
+	attributed := false
+	consider := func(file string) bool {
+		if _, _, source := (policy.ModuleMap{}).RuleSelectorForFile(file); !source {
+			return false
+		}
+		attributed = true
+		if class, inventoried := ev.FileClasses[file]; inventoried {
+			return fileclass.IsProduction(class)
+		}
+		if _, declaredOut := ev.OutOfScopeFiles[file]; declaredOut {
+			return false
+		}
+		production, classified := ev.UnwalkedSourceProduction[file]
+		return production || !classified
+	}
+	if strings.HasPrefix(e.FromID, relNodeKindFile+":") && consider(e.FromPath) {
+		return true
+	}
+	for _, l := range e.Locations {
+		if consider(l.File) {
+			return true
+		}
+	}
+	return !attributed
 }
 
 // edgeLocations returns an edge's import sites, or the importing file itself

@@ -41,18 +41,19 @@ func writeLayersHowTo(b *strings.Builder) {
 //
 // The gate is adaptive: fail when the init-time import graph covers every
 // module and shows no violation, so the first new one blocks; warn with the
-// current count when it shows violations, or when no complete graph was
-// available (TypeScript/Python discovery builds none, Rust analysis adds
-// intra-crate modules discovery cannot see).
+// current count when it shows violations, or, with the reason, when init
+// cannot prove the graph complete (cfg.GraphGap: TypeScript/Python discovery
+// builds none, Rust analysis adds intra-crate modules discovery cannot see, a
+// Go module owns source in a language init's graph omits).
 func writeStarterRules(b *strings.Builder, cfg DiscoveredConfig) {
 	b.WriteString("  # Catches: a dependency cycle between declared modules (A imports B and B\n")
 	b.WriteString("  # imports A, through any files).\n")
-	gate := writeGateNote(b, moduleCycleCount(cfg.Edges), cfg.ImportGraphComplete, "module cycle(s)")
+	gate := writeGateNote(b, moduleCycleCount(cfg.Edges), cfg, "module cycle(s)")
 	fmt.Fprintf(b, "  - id: %s\n    type: module_cycle\n    gate: %s\n", ruleIDModuleCycles, gate)
 
 	if len(cfg.Layers) >= 2 {
 		b.WriteString("  # Catches: a module importing a module in a later (outer) layer.\n")
-		gate = writeGateNote(b, layerBackEdgeCount(cfg), cfg.ImportGraphComplete, "layer back-edge(s)")
+		gate = writeGateNote(b, layerBackEdgeCount(cfg), cfg, "layer back-edge(s)")
 		fmt.Fprintf(b, "  - id: %s\n    type: forbidden_layer_direction\n    gate: %s\n", ruleIDLayerBackEdge, gate)
 		return
 	}
@@ -65,11 +66,17 @@ func writeStarterRules(b *strings.Builder, cfg DiscoveredConfig) {
 
 // writeGateNote writes the comment explaining a starter rule's gate and
 // returns the gate.
-func writeGateNote(b *strings.Builder, violations int, graphComplete bool, noun string) string {
+func writeGateNote(b *strings.Builder, violations int, cfg DiscoveredConfig, noun string) string {
 	switch {
-	case !graphComplete:
+	case !cfg.ImportGraphComplete:
 		b.WriteString("  # gate: warn — init saw no complete import graph. Run archfit check, fix or\n")
 		b.WriteString("  # baseline what this rule reports, then set gate: fail.\n")
+		if cfg.GraphGap != "" {
+			fmt.Fprintf(b, "  # Why: %s.\n", sanitizeComment(cfg.GraphGap))
+		}
+		if violations > 0 {
+			fmt.Fprintf(b, "  # The partial graph already shows %d %s.\n", violations, noun)
+		}
 		return gateWarn
 	case violations > 0:
 		fmt.Fprintf(b, "  # gate: warn — %d current %s at init. Fix them or run archfit baseline,\n", violations, noun)

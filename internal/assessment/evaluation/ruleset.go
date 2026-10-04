@@ -18,6 +18,11 @@ type RuleEvidence struct {
 	// FileClasses is the source inventory's file classification, without the
 	// files the configuration declared out of scope.
 	FileClasses map[string]fileclass.FileClass
+	// OutOfScopeFiles are the walked files the configuration declared out of
+	// scope (Observations.OutOfScopeFiles).
+	OutOfScopeFiles map[string]struct{}
+	// UnwalkedSourceProduction is Observations.UnwalkedSourceProduction.
+	UnwalkedSourceProduction map[string]bool
 }
 
 // Ruleset is the compiled policy rule set. Stage adapters build one and hand it

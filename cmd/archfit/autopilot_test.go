@@ -47,9 +47,7 @@ func (autopilotProvider) Complete(_ context.Context, req llm.Request) (llm.Respo
 func TestInit_LLMDraft_OwnerCommentWritten(t *testing.T) {
 	t.Parallel()
 	root := minimalRoot(t)
-	if err := os.MkdirAll(filepath.Join(root, "internal", "mymod"), 0o750); err != nil {
-		t.Fatal(err)
-	}
+	writeGoPackage(t, root, "internal/mymod")
 	outPath := filepath.Join(root, defaultConfigPath)
 	const modPath = "example.com/test"
 

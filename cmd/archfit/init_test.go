@@ -52,6 +52,15 @@ func runInitCmdWithRunner(t *testing.T, cmd *InitCmd, runFn func(context.Context
 }
 
 // goListJSON returns a single go list -json entry for the given module path and import path.
+// writeGoPackage writes one production Go file for the package at pkgRel
+// under root, so a faked go list entry names a package the source inventory
+// holds.
+func writeGoPackage(t *testing.T, root, pkgRel string) {
+	t.Helper()
+	name := filepath.Base(pkgRel)
+	writeFileAt(t, root, pkgRel+"/"+name+".go", "package "+name+"\n")
+}
+
 func goListJSON(modPath, importPath string) []byte {
 	return fmt.Appendf(nil,
 		`{"ImportPath":%q,"Dir":".","Module":{"Path":%q}}`,
@@ -214,9 +223,7 @@ func TestInitCmd_Force_Overwrites(t *testing.T) {
 func TestInitCmd_LLM_CommentedSuggestions(t *testing.T) {
 	t.Parallel()
 	root := minimalRoot(t)
-	if err := os.MkdirAll(filepath.Join(root, "internal", "mymod"), 0o750); err != nil {
-		t.Fatal(err)
-	}
+	writeGoPackage(t, root, "internal/mymod")
 	outPath := filepath.Join(root, ".archfit.yaml")
 
 	const modPath = "example.com/test"
@@ -251,9 +258,7 @@ func TestInitCmd_LLM_CommentedSuggestions(t *testing.T) {
 func TestInitCmd_LLMApply_LiveFields(t *testing.T) {
 	t.Parallel()
 	root := minimalRoot(t)
-	if err := os.MkdirAll(filepath.Join(root, "internal", "mymod"), 0o750); err != nil {
-		t.Fatal(err)
-	}
+	writeGoPackage(t, root, "internal/mymod")
 	outPath := filepath.Join(root, ".archfit.yaml")
 
 	const modPath = "example.com/test"

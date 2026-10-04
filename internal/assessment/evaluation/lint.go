@@ -86,7 +86,13 @@ func PolicyWarnings(p policy.PolicySnapshot, f Observations) []string {
 		if rule.Gate != string(policy.GateWarn) || rule.Guard {
 			continue
 		}
-		if side, glob, vacuous := inv.vacuousSelector(rule); vacuous {
+		side, glob, vacuous := inv.vacuousSelector(rule)
+		switch {
+		case !vacuous:
+		case inv.matchesOnlyUnanalysed(rule.Type, side, glob):
+			out = append(out, "rules["+rule.ID+"] is not evaluated: "+inv.vacuityReason(rule.Type, side, glob)+
+				" — its language's extractor finds no project under the analysis root")
+		default:
 			out = append(out, "rules["+rule.ID+"] is not evaluated: "+selectorMatchesNothing(side, glob)+
 				" — fix the selector or set guard: true")
 		}
@@ -106,6 +112,10 @@ func ruleDiagnostics(rules []policy.RuleDef, inv selectorInventory) []PolicyDiag
 		side, glob, vacuous := inv.vacuousSelector(rule)
 		path := "rules[" + rule.ID + "]"
 		switch {
+		case vacuous && inv.matchesOnlyUnanalysed(rule.Type, side, glob):
+			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
+				Message: side + ": " + glob + " matches only source no dependency producer analyses: its language's" +
+					" extractor finds no project under the analysis root, so the rule can never be evaluated"})
 		case rule.Guard && vacuous:
 			out = append(out, PolicyDiagnostic{Code: LintGuardRule, Severity: LintSeverityInfo, Path: path,
 				Message: "guard rule: " + side + " " + glob + " matches nothing by design"})
@@ -114,16 +124,20 @@ func ruleDiagnostics(rules []policy.RuleDef, inv selectorInventory) []PolicyDiag
 			out = append(out, PolicyDiagnostic{Code: LintGuardMatchesSource, Severity: LintSeverityWarning, Path: path,
 				Message: "guard rule matches scanned source: the guarded path exists — remove the code or drop guard: true"})
 		case vacuous:
-			severity := LintSeverityError
-			if rule.Gate == string(policy.GateOff) {
-				severity = LintSeverityWarning
-			}
-			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: severity, Path: path + "." + side,
+			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
 				Message: side + ": " + glob + " matches no scanned source" + inv.vacuityHint(glob) +
 					"; fix the selector or set guard: true"})
 		}
 	}
 	return out
+}
+
+// deadSelectorSeverity is an error, or a warning on a gate: off rule.
+func deadSelectorSeverity(rule policy.RuleDef) string {
+	if rule.Gate == string(policy.GateOff) {
+		return LintSeverityWarning
+	}
+	return LintSeverityError
 }
 
 // orMatchAll spells an empty rule selector, which means "match all", as the
@@ -272,6 +286,11 @@ func (inv selectorInventory) nodesMatching(pattern string) []string {
 		seen[selector] = struct{}{}
 		if matched, _ := doublestar.Match(pattern, selector); matched {
 			nodes = append(nodes, selector)
+		}
+	}
+	for _, node := range inv.rustModules {
+		if matched, _ := doublestar.Match(pattern, node); matched {
+			nodes = append(nodes, node)
 		}
 	}
 	return nodes

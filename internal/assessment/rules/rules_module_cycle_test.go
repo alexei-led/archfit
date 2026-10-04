@@ -7,6 +7,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/rules"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
@@ -67,6 +68,90 @@ func newModuleCycleRule(t *testing.T, gate string, declared ...string) rules.Rul
 
 func loc(file string, line int) relationship.Location {
 	return relationship.Location{File: file, Line: line}
+}
+
+// productionEvidence inventories every file an edge of set starts in as a
+// Production source file.
+func productionEvidence(set relationship.Set) rules.Evidence {
+	classes := map[string]fileclass.FileClass{}
+	for _, e := range set.Edges {
+		if strings.HasPrefix(e.FromID, "file:") {
+			classes[e.FromPath] = fileclass.Production
+		}
+		for _, l := range e.Locations {
+			classes[l.File] = fileclass.Production
+		}
+	}
+	return rules.Evidence{FileClasses: classes}
+}
+
+func checkProduction(r rules.Rule, set relationship.Set) []finding.Finding {
+	return r.Check(set, productionEvidence(set))
+}
+
+// TestModuleCycle_CountsOnlyProductionSources pins that a module cycle is a
+// production fact: an edge counts only when its importing source file is a
+// Production file in the source inventory. A cycle that closes only through
+// test or generated code, or through a file declared out of scope (an
+// exclude: glob), is not reported. A file the source walk never visited (a Go
+// package under a directory named target/, which go/packages still loads) has
+// no class to prove it non-production, so its edge counts: a fail-gated cycle
+// never passes silently. An edge with no source-file attribution (a Rust crate
+// dependency located at Cargo.toml, a cargo-modules crate::mod edge) keeps
+// counting: only its manifest kind could say otherwise, and the extractor
+// already applied it.
+func TestModuleCycle_CountsOnlyProductionSources(t *testing.T) {
+	const (
+		billingProd  = "billing/app/notify.go"
+		shippingProd = "shipping/app/bill.go"
+		shippingTest = "shipping/app/bill_test.go"
+	)
+	back := func(from string, locs ...relationship.Location) moduleTestEdge {
+		return moduleTestEdge{from, "package:billing/app", modShipping, modBilling, locs}
+	}
+	forward := moduleTestEdge{"file:" + billingProd, nodePkgShipping, modBilling, modShipping,
+		[]relationship.Location{loc(billingProd, 3)}}
+	classes := map[string]fileclass.FileClass{
+		billingProd: fileclass.Production, shippingProd: fileclass.Production, shippingTest: fileclass.Test,
+		"shipping/src/x.stories.gen.ts": fileclass.Generated, "shop/shipping/test_app.py": fileclass.Test,
+		"shop/shipping/app.py": fileclass.Production,
+	}
+	tests := []struct {
+		name  string
+		back  moduleTestEdge
+		cycle bool
+	}{
+		{"go production import closes the cycle", back("file:"+shippingProd, loc(shippingProd, 3)), true},
+		{"go test import does not", back("file:"+shippingTest, loc(shippingTest, 3)), false},
+		{"typescript generated file does not", back("file:shipping/src/x.stories.gen.ts"), false},
+		{"file declared out of scope does not",
+			back("file:shipping/legacy/old.go", loc("shipping/legacy/old.go", 3)), false},
+		{"file the walk never visited does",
+			back("file:shipping/target/x.go", loc("shipping/target/x.go", 3)), true},
+		{"unwalked file classified non-production does not",
+			back("file:shipping/.storybook/preview.tsx"), false},
+		{"unwalked file with no class does",
+			back("file:shipping/.config/x.ts"), true},
+		{"python test module does not",
+			back("module:shop.shipping.test_app", loc("shop/shipping/test_app.py", 2)), false},
+		{"python production module does",
+			back("module:shop.shipping.app", loc("shop/shipping/app.py", 2)), true},
+		{"rust crate dependency located at its manifest does",
+			back("package:shipping", loc("Cargo.toml", 0)), true},
+		{"rust crate::mod edge without sites does", back("package:shop::shipping"), true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newModuleCycleRule(t, "", modBilling, modShipping)
+			findings := r.Check(moduleSet(forward, tc.back), rules.Evidence{
+				FileClasses: classes, OutOfScopeFiles: map[string]struct{}{"shipping/legacy/old.go": {}},
+				UnwalkedSourceProduction: map[string]bool{"shipping/target/x.go": true, "shipping/.storybook/preview.tsx": false},
+			})
+			if got := len(findings) == 2; got != tc.cycle {
+				t.Fatalf("cycle reported = %v (%d findings), want %v", got, len(findings), tc.cycle)
+			}
+		})
+	}
 }
 
 // TestModuleCycle_FindsCyclesInEveryNodeVocabulary pins one finding per
@@ -132,7 +217,7 @@ func TestModuleCycle_FindsCyclesInEveryNodeVocabulary(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newModuleCycleRule(t, "", modBilling, modShipping)
-			findings := r.Check(tc.set, rules.Evidence{})
+			findings := checkProduction(r, tc.set)
 			if len(findings) != 2 {
 				t.Fatalf("got %d findings, want one per direction: %+v", len(findings), findings)
 			}
@@ -164,10 +249,10 @@ func TestModuleCycle_FindsCyclesInEveryNodeVocabulary(t *testing.T) {
 
 func TestModuleCycle_FingerprintIsPinned(t *testing.T) {
 	r := newModuleCycleRule(t, "", modBilling, modShipping)
-	findings := r.Check(moduleSet(
+	findings := checkProduction(r, moduleSet(
 		moduleTestEdge{nodeBillingAGo, nodePkgShipping, modBilling, modShipping, nil},
 		moduleTestEdge{nodeShippingBGo, nodePkgBilling, modShipping, modBilling, nil},
-	), rules.Evidence{})
+	))
 	if len(findings) != 2 {
 		t.Fatalf("got %d findings, want 2", len(findings))
 	}
@@ -215,7 +300,7 @@ func TestModuleCycle_NoFindingWithoutADeclaredModuleCycle(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newModuleCycleRule(t, "", modBilling, modShipping, modCatalog)
-			if findings := r.Check(tc.set, rules.Evidence{}); len(findings) != 0 {
+			if findings := checkProduction(r, tc.set); len(findings) != 0 {
 				t.Fatalf("got %d findings, want 0: %+v", len(findings), findings)
 			}
 		})
@@ -224,13 +309,13 @@ func TestModuleCycle_NoFindingWithoutADeclaredModuleCycle(t *testing.T) {
 
 func TestModuleCycle_ThreeModuleCycleAndOutsiders(t *testing.T) {
 	r := newModuleCycleRule(t, "", modBilling, modShipping, modCatalog, "audit")
-	findings := r.Check(moduleSet(
+	findings := checkProduction(r, moduleSet(
 		moduleTestEdge{nodeBillingAGo, nodePkgShipping, modBilling, modShipping, nil},
 		moduleTestEdge{nodeShippingBGo, "package:catalog", modShipping, modCatalog, nil},
 		moduleTestEdge{"file:catalog/c.go", nodePkgBilling, modCatalog, modBilling, nil},
 		// audit depends on the cycle but is not part of it.
 		moduleTestEdge{"file:audit/d.go", nodePkgBilling, "audit", modBilling, nil},
-	), rules.Evidence{})
+	))
 	got := make([]string, 0, len(findings))
 	for _, f := range findings {
 		got = append(got, f.Edge.From.Module+"->"+f.Edge.To.Module)
@@ -250,10 +335,10 @@ func TestModuleCycle_CapsLocationsAndReportsTheTotal(t *testing.T) {
 	}
 	sites = append(sites, loc("billing/f01.go", 3)) // duplicate site
 	r := newModuleCycleRule(t, "", modBilling, modShipping)
-	findings := r.Check(moduleSet(
+	findings := checkProduction(r, moduleSet(
 		moduleTestEdge{nodeBillingAGo, nodePkgShipping, modBilling, modShipping, sites},
 		moduleTestEdge{nodeShippingBGo, nodePkgBilling, modShipping, modBilling, nil},
-	), rules.Evidence{})
+	))
 	if len(findings) != 2 {
 		t.Fatalf("got %d findings, want 2", len(findings))
 	}
@@ -271,10 +356,10 @@ func TestModuleCycle_GateAndValidation(t *testing.T) {
 		moduleTestEdge{nodeBillingAGo, nodePkgShipping, modBilling, modShipping, nil},
 		moduleTestEdge{nodeShippingBGo, nodePkgBilling, modShipping, modBilling, nil},
 	)
-	if findings := newModuleCycleRule(t, "off", modBilling, modShipping).Check(cyclic, rules.Evidence{}); len(findings) != 0 {
+	if findings := newModuleCycleRule(t, "off", modBilling, modShipping).Check(cyclic, productionEvidence(cyclic)); len(findings) != 0 {
 		t.Errorf("gate off: got %d findings, want 0", len(findings))
 	}
-	for _, f := range newModuleCycleRule(t, gateWarn, modBilling, modShipping).Check(cyclic, rules.Evidence{}) {
+	for _, f := range newModuleCycleRule(t, gateWarn, modBilling, modShipping).Check(cyclic, productionEvidence(cyclic)) {
 		if f.Kind != kindAdvisory {
 			t.Errorf("gate warn: kind = %q, want advisory", f.Kind)
 		}
@@ -287,5 +372,64 @@ func TestModuleCycle_GateAndValidation(t *testing.T) {
 		if _, err := rules.New(policy.RuleConfig{Rules: []policy.RuleDef{def}}); err == nil || !strings.Contains(err.Error(), def.ID) {
 			t.Errorf("%s: err = %v, want a config error naming the rule", def.ID, err)
 		}
+	}
+}
+
+// meshEdges returns one edge for every ordered pair of the named modules: a
+// fully connected strongly-connected component.
+func meshEdges(modules []string) []moduleTestEdge {
+	var edges []moduleTestEdge
+	for _, from := range modules {
+		for _, to := range modules {
+			if from != to {
+				edges = append(edges, moduleTestEdge{"file:" + from + "/a.go", "package:" + to, from, to, nil})
+			}
+		}
+	}
+	return edges
+}
+
+// TestModuleCycle_CapsPairsPerCycleAndKeepsTheirIDs bounds a large cycle's
+// findings: a fully meshed 16-module component has 240 ordered pairs and
+// reports the first 200 in (from, to) order, each naming the full count. A
+// small cycle elsewhere is unaffected, and every kept pair keeps the ID it has
+// without the cap.
+func TestModuleCycle_CapsPairsPerCycleAndKeepsTheirIDs(t *testing.T) {
+	const reported = 200
+	mesh := make([]string, 0, 16)
+	for i := range 16 {
+		mesh = append(mesh, fmt.Sprintf("m%02d", i))
+	}
+	declared := append([]string{modBilling, modShipping}, mesh...)
+	edges := append(meshEdges(mesh),
+		moduleTestEdge{nodeBillingAGo, nodePkgShipping, modBilling, modShipping, nil},
+		moduleTestEdge{nodeShippingBGo, nodePkgBilling, modShipping, modBilling, nil},
+	)
+	findings := newModuleCycleRule(t, "", declared...).Check(moduleSet(edges...), rules.Evidence{})
+
+	var meshPairs []string
+	small := 0
+	for _, f := range findings {
+		pair := f.Edge.From.Module + "->" + f.Edge.To.Module
+		if f.MatchedBy["cycle_size"] == "2" {
+			small++
+			if f.MatchedBy["cycle_pairs_total"] != "2" || strings.Contains(f.Why, "reported") {
+				t.Errorf("%s: matched_by = %v, why = %q, want the uncapped two-pair cycle", pair, f.MatchedBy, f.Why)
+			}
+			continue
+		}
+		meshPairs = append(meshPairs, pair)
+		if f.MatchedBy["cycle_pairs_total"] != "240" || !strings.Contains(f.Why, "200 of the cycle's 240 module pairs are reported") {
+			t.Errorf("%s: matched_by = %v, why = %q, want the reported share of 240 pairs", pair, f.MatchedBy, f.Why)
+		}
+		if want := finding.NewKeyed(ruleIDModuleCycle, kindModuleDep, f.Edge.From.Module, f.Edge.To.Module).ID; f.ID != want {
+			t.Errorf("%s: ID = %s, want the pair key %s", pair, f.ID, want)
+		}
+	}
+	if small != 2 || len(meshPairs) != reported {
+		t.Fatalf("findings: %d in the small cycle, %d in the mesh; want 2 and %d", small, len(meshPairs), reported)
+	}
+	if meshPairs[0] != "m00->m01" || meshPairs[reported-1] != "m13->m04" {
+		t.Errorf("kept pairs run %s .. %s, want the first %d in (from, to) order: m00->m01 .. m13->m04", meshPairs[0], meshPairs[reported-1], reported)
 	}
 }

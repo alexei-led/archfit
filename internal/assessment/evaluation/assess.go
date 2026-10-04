@@ -37,6 +37,25 @@ type Observations struct {
 	// cannot hold a rule unevaluated for an analyzer the config turned off.
 	// Metrics and file classes still count them; nil excludes nothing.
 	OutOfScopeFiles map[string]struct{}
+	// UnanalysedFiles are in-scope walked source files no dependency producer
+	// analyses: their language's extractor applicability probe finds no
+	// project under the root (TypeScript below a directory with no root
+	// package.json, Go files with no go.mod), which is exactly when the
+	// language's primary coverage row is gapless absent, or they are Rust files
+	// outside every cargo workspace member. Dependency and module rule scope
+	// skips them; forbidden_pattern, which reads the ast-grep pattern pass,
+	// keeps them. Nil excludes nothing.
+	UnanalysedFiles map[string]struct{}
+	// RustModuleNodes are the crate::mod node IDs of the Rust module graph
+	// (cargo-modules), sorted. A crate::mod selector under a crate that has
+	// them is judged against them; under a crate that has none it stays
+	// undecidable, so a missing module graph never reads as an empty one.
+	RustModuleNodes []string
+	// UnwalkedSourceProduction says, for each dependency-edge source file the
+	// LOC walk never visited (a dot directory, target/), whether it is
+	// production: a path-only FileClass with the configured globs, false when
+	// declared out of scope. module_cycle reads it.
+	UnwalkedSourceProduction map[string]bool
 	// GoModulePaths are the first-party Go module paths. Go node IDs drop them,
 	// so a rule selector spelled with one can never match.
 	GoModulePaths []string
@@ -45,7 +64,13 @@ type Observations struct {
 	// dropped). A to: selector naming one is an external ban even when a
 	// first-party directory shares its first segment (database/sql beside a
 	// top-level database/). Nil when Go is absent or the toolchain probe failed.
-	GoStdlibPackages        []string
+	GoStdlibPackages []string
+	// CrateOwners maps each Rust crate spelling (package name and crate
+	// identifier) to the declared module that owns the crate, resolved by
+	// acquisition (policy.ModuleMap.CrateOwners). The rules use it to place a
+	// Rust node no path glob claims, such as a cargo-modules crate::mod node,
+	// in its crate's module. Nil when Rust is absent.
+	CrateOwners             map[string]string
 	FileFacts               []modevidence.FileFact
 	Clones                  []clone.Cluster
 	DynamicImports          []modevidence.DynamicImportSite
@@ -116,7 +141,9 @@ type Assessed struct {
 // assembles the report-only evidence blocks into one diagnostic. Scoring, the
 // coupling gate, and repair tasks follow in Score.
 func Assess(in AssessInput) (Assessed, error) {
-	ruleset, err := NewRuleset(in.Policy.Gates.Rules)
+	ruleConfig := in.Policy.Gates.Rules
+	ruleConfig.ModuleMap = ruleConfig.ModuleMap.WithCrateOwners(in.Facts.CrateOwners)
+	ruleset, err := NewRuleset(ruleConfig)
 	if err != nil {
 		return Assessed{}, err
 	}

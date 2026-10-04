@@ -84,7 +84,6 @@ func discoverTSWorkspaces(root, pkgJSON string) []ModuleDef {
 				Name:   name,
 				Paths:  []string{path},
 				Public: []string{path},
-				Layer:  layerCore,
 			})
 		}
 	}
@@ -172,7 +171,6 @@ func discoverSubdirs(root string, dirNames []string) ([]ModuleDef, error) {
 				// a non-exported binding), so they are contract coupling. Mark the
 				// module's files public; SCIP-typescript can refine this when enabled.
 				Public: []string{path},
-				Layer:  layerCore,
 			})
 		}
 	}

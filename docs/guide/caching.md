@@ -35,7 +35,8 @@ Cache keys are content hashes — there is no time-based expiry. An entry is reu
 only when **all** of these are unchanged:
 
 - the analyzer's tool version (probed each run: `go version`, depcruise,
-  cargo, ast-grep, jscpd, SCIP indexer);
+  cargo, ast-grep, jscpd, SCIP indexer, and `go env` for the standard-library
+  list rule selectors are judged against);
 - the slice of `.archfit.yaml` that analyzer consumes (editing an unrelated rule
   does not invalidate extractor facts);
 - the analyzer's input files, by content hash:
@@ -48,6 +49,7 @@ only when **all** of these are unchanged:
 | Rust `cargo metadata`     | manifests only (`Cargo.toml`/`Cargo.lock`) — a `.rs` edit does not re-run it                                                                                                   |
 | Rust cargo-modules / SCIP | `.rs` tree (+ manifests); SCIP caches the parsed edge/symbol output, not the raw index                                                                                         |
 | clones (jscpd), ast-grep  | their source-file scope                                                                                                                                                        |
+| Go standard library list  | the toolchain only: `go env GOVERSION GOROOT GOOS GOARCH GOFLAGS GOEXPERIMENT CGO_ENABLED`, probed in the repository so a `go.mod` `toolchain` line counts — no source input  |
 
 Never cached: timed-out runs, partial-status results, and tool failures — a cached
 degradation would be sticky. A corrupted cache entry is treated as a miss, never an

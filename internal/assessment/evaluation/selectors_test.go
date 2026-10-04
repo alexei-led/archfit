@@ -135,6 +135,34 @@ func TestVacuousSelectorsNeverCountAsConformance(t *testing.T) {
 	}
 }
 
+// TestGuardWithVacuousTargetIgnoresProducerPartialness pins the guard
+// semantics: while the guarded target matches no scanned source, no edge can
+// reach it, so the guard holds whatever state the dependency producer is in
+// (a partial run is the steady state on TypeScript). Once the guarded path
+// exists again the guard is an ordinary rule and waits for complete evidence.
+func TestGuardWithVacuousTargetIgnoresProducerPartialness(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		to         string
+		wantListed bool
+	}{
+		{name: "guarded target absent", to: "internal/legacy/**"},
+		{name: "guarded target exists again", to: selBilling, wantListed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			diag, in := vacuityFixture()
+			diag.ToolCoverage[0].Status = modevidence.StatusPartial
+			in.Policy.Gates.Rules.Rules = []policy.RuleDef{{
+				ID: "guard", Type: ruleForbidden, Gate: string(policy.GateFail), From: selShipping, To: tc.to, Guard: true,
+			}}
+			listed := len(evaluation.BuildState(diag, in).Decision.UnevaluatedRequiredRules) > 0
+			if listed != tc.wantListed {
+				t.Fatalf("guard listed in unevaluated_required_rules = %v, want %v", listed, tc.wantListed)
+			}
+		})
+	}
+}
+
 // TestVacuousWarnRuleIsNotConformance pins the advisory half: a warn-gated
 // rule with a vacuous selector is not a required rule, so it never reaches the
 // hard-gate decision, but intent still refuses to count it as evaluated.

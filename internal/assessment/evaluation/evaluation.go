@@ -58,6 +58,7 @@ func evaluate(in Input) Result {
 	for _, rule := range in.Rules.rules {
 		raw = append(raw, rule.Check(in.Relationships, rules.Evidence{
 			PatternMatches: in.Evidence.PatternMatches, SyntaxFacts: in.Evidence.SyntaxFacts, FileClasses: in.Evidence.FileClasses,
+			OutOfScopeFiles: in.Evidence.OutOfScopeFiles, UnwalkedSourceProduction: in.Evidence.UnwalkedSourceProduction,
 		})...)
 	}
 	adv := candidateFindings(in.AdvisoryCandidates)

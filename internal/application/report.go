@@ -30,6 +30,7 @@ func ProjectReport(r result.Result, sc score.Scorecard) report.Document {
 	}
 	doc.Score = projectScorecard(sc)
 	doc.State = projectArchitectureState(r, doc)
+	boundReportText(&doc)
 	return doc
 }
 

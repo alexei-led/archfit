@@ -33,7 +33,18 @@ const (
 	statusAbsent    = "absent"
 
 	runTimeout = 5 * time.Minute
+
+	// thirdPartyDir is the directory npm-family package managers install
+	// dependencies into, at the project root and inside every workspace package.
+	thirdPartyDir = "node_modules"
 )
+
+// thirdPartyExclude is dependency-cruiser's --exclude: a node_modules segment
+// at any depth, in root and subtree mode alike. A root-only "^node_modules"
+// let a workspace package's nested node_modules (code/addons/a11y/node_modules)
+// enter the graph as first-party files, and it never matched in subtree mode,
+// whose paths carry the subtree prefix.
+const thirdPartyExclude = "(^|/)" + thirdPartyDir + "/"
 
 // Extractor is the TypeScript import extractor using dependency-cruiser.
 // It satisfies the engine.Extractor interface structurally.
@@ -153,7 +164,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		srcArg = filepath.ToSlash(filepath.Join(s.SubtreePrefix, src))
 	}
 
-	args := append(packagePinArgs(launcher), toolName, srcArg, "--output-type", "json", "--exclude", "^node_modules")
+	args := append(packagePinArgs(launcher), toolName, srcArg, "--output-type", "json", "--exclude", thirdPartyExclude)
 	// Scope depcruise to the analysis subtree when running from the git root.
 	// --include-only uses a JS regex against the git-root-relative module paths.
 	// Omitted when SubtreePrefix is empty to preserve byte-identical output on
@@ -378,9 +389,12 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir s
 	if err != nil {
 		return e.runner
 	}
-	// Match the CLI's root-only node_modules exclusion; resolution still keys
-	// every dependency filename and resolver manifest, including symlink targets.
-	// Application exclusions do not constrain the tool's source inputs.
+	// Only the root node_modules leaves the source hash; resolution still keys
+	// every dependency filename and resolver manifest there, including symlink
+	// targets. A nested node_modules stays hashed although --exclude drops it at
+	// any depth: depcruise still resolves imports through it, and nothing else
+	// keys that resolver state (over-hash, never under-hash). Application
+	// exclusions do not constrain the tool's source inputs.
 	var excludes []string
 	if s.Root == workDir {
 		excludes = []string{"node_modules/**"}
@@ -630,6 +644,12 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 		// authoritative unresolved count. Counting the module entry too would
 		// double-count the same package.
 		srcPath := normPath(mod.Source)
+		// Installed third-party code is never first-party source. --exclude
+		// already keeps it out; dropping it here too keeps a fact-cache replay
+		// of output produced under the old root-only exclude out of the graph.
+		if inThirdPartyDir(srcPath) {
+			continue
+		}
 		if mod.CouldNotResolve {
 			emitNode(graph.Node{Kind: graph.NodeKindExternal, Path: srcPath, Language: graph.LangTypeScript})
 			continue
@@ -648,7 +668,6 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 			if dep.CoreModule {
 				continue
 			}
-			totalSpecifiers++
 
 			// Resolve the target path: prefer resolved, fall back to module.
 			toPath := dep.Resolved
@@ -656,6 +675,12 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 				toPath = dep.Module
 			}
 			toPath = normPath(toPath)
+			// A resolved import into installed third-party code is dropped,
+			// the way dependency-cruiser's --exclude drops it.
+			if !dep.CouldNotResolve && inThirdPartyDir(toPath) {
+				continue
+			}
+			totalSpecifiers++
 
 			// An unresolved target is not a first-party source file: it is an
 			// uninstalled npm package, a path depcruise could not resolve, or a
@@ -722,6 +747,12 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 		Reason:          reason,
 	}
 	return facts, cov, nil
+}
+
+// inThirdPartyDir reports whether a dependency-cruiser module path lies inside
+// a node_modules directory at any depth: the path thirdPartyExclude matches.
+func inThirdPartyDir(path string) bool {
+	return strings.HasPrefix(path, thirdPartyDir+"/") || strings.Contains(path, "/"+thirdPartyDir+"/")
 }
 
 // matchesInternal reports whether path matches any of the configured internal globs.

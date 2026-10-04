@@ -38,6 +38,17 @@ Nullable by contract, not by accident: `seams[].scores.p10` and `p90` are `null`
 when a seam has fewer than ten scored edges. A percentile nobody can compute is
 reported as absent, never as `0`.
 
+Free text is single-line and bounded by contract. Every reason, `why`,
+`constraint`, allowed alternative, dimension basis, and unknown-fact text is one
+line of at most 400 characters; an agent task's `goal` and `constraints` are at
+most 3600. Analyzer output reaches some of these fields, for example the reason
+of a `dependency-cruiser` row that exited non-zero. archfit collapses its line
+breaks, tabs, and colour codes into single spaces and keeps the leading text,
+which holds the tool, the exit code, and the first error line. Text cut at the
+limit ends in `…`. The full analyzer output is printed on stderr as a warning,
+never in the report. Text that was already one short line is published
+unchanged.
+
 ## agent_tasks — the gate repair channel
 
 Every ACTIVE gate finding produces one structured repair task:
@@ -109,8 +120,9 @@ isn't resolvable, `files` is legitimately empty — never a fabricated string
 `bc/coupling_gate` finding names only a module pair, so its task resolves the
 node paths and import sites of up to 20 of the seam's qualifying edges
 (critical band at high distance, in endpoint order) and falls back to the
-source, then the target, module's `paths:` root. Seam-gate tasks carry no
-`declarations`.
+source, then the target, module's `paths:` root. Seam-gate and module-cycle
+tasks carry no `declarations`: their files span many import sites, and the
+declarations in them would bury the import to cut.
 
 **`edge.path` group semantics.** For a rolled-up finding (`group_count > 1`),
 `edge.from.path`/`edge.to.path` are taken from whichever member edge owns
@@ -271,4 +283,12 @@ an empty finding list as proof that the rule passed. A rule whose selector
 matches no scanned source is listed with the reason
 `selector matches nothing: <from|to> <glob>`: it could never find a violation,
 so it is a policy defect for the config owner, not missing evidence and not a
-code change to make. A declared guard (`guard: true`) is not listed.
+code change to make. A selector that matches only source no dependency
+producer analyses (its language's extractor finds no project under the
+analysis root) is listed with the reason
+`selector matches only source no dependency producer analyses: <from|to> <glob>`:
+the fix is to analyse that source, not to edit the selector. A declared guard
+(`guard: true`) is not listed while its selector matches nothing, whatever
+state the dependency producer is in. Once the guarded path exists again the
+guard is an ordinary rule and is listed when its producer evidence is
+incomplete.

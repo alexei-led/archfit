@@ -10,10 +10,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/evidence/acquisition"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
+	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 // InitCmd discovers project structure and writes a starter archfit.yaml.
@@ -52,7 +56,11 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		out = filepath.Join(root, out)
 	}
 	ctx := context.Background()
-	cfg, err := initcfg.Discover(ctx, root, deps.Runner, languagePresence(root, config.Default()))
+	presence, err := languagePresence(ctx, root, config.Default(), deps.Runner)
+	if err != nil {
+		return fmt.Errorf("discovering project structure: %w", err)
+	}
+	cfg, err := initcfg.Discover(ctx, root, deps.Runner, presence)
 	if err != nil {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}
@@ -145,8 +153,15 @@ func (c *InitCmd) Run(deps *appDeps) error {
 // languages.go.modules, python.package, rust.manifest). config init and config
 // update must never decide presence from their own marker files: a go.work
 // monorepo with no root go.mod was written as `go: enabled: false`.
-func languagePresence(root string, cfg config.Config) initcfg.Presence {
-	extract := cfg.RunOptions().Extractors
+//
+// It also reads the rule-scope source inventory with the reader config lint
+// uses, under cfg's scope, so discovery proposes only modules lint and check
+// can see source for. A mocks/ package go list reports but the inventory
+// skips was written as a module, failed lint, and held the starter rule
+// unevaluated.
+func languagePresence(ctx context.Context, root string, cfg config.Config, runner toolrun.Runner) (initcfg.Presence, error) {
+	opts := cfg.RunOptions()
+	extract := opts.Extractors
 	p := initcfg.Presence{
 		Go:         registry.ProjectPresent(config.LangGo, root, extract[config.LangGo]),
 		TypeScript: registry.ProjectPresent(config.LangTypeScript, root, extract[config.LangTypeScript]),
@@ -156,7 +171,20 @@ func languagePresence(root string, cfg config.Config) initcfg.Presence {
 	if p.Go {
 		p.GoMembers, p.GoWorkOff = registry.GoMembers(root, extract[config.LangGo])
 	}
-	return p
+	inventory, err := acquisition.Inventory{
+		ConfigPath: filepath.Join(root, defaultConfigPath), Options: opts, Runner: runner,
+	}.SourceInventory(ctx, root)
+	if err != nil {
+		return initcfg.Presence{}, fmt.Errorf("reading the source inventory: %w", err)
+	}
+	files := evaluation.SourceInventory(inventory)
+	p.Sources = make([]initcfg.SourceFile, 0, len(files))
+	for _, f := range files {
+		p.Sources = append(p.Sources, initcfg.SourceFile{
+			Path: f.Path, Language: f.Language, Selector: f.Selector, Production: fileclass.IsProduction(f.Class),
+		})
+	}
+	return p, nil
 }
 
 // printCacheGitignoreHint reminds the user to gitignore .archfit-cache/ (the

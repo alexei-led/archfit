@@ -64,12 +64,13 @@ type DiscoveredConfig struct {
 	HasPython bool
 	HasTS     bool
 	HasRust   bool
-	// ImportGraphComplete is true when Edges is the module graph analysis will
-	// check: every discovered module came from Go discovery and no Rust
-	// project is present (Rust analysis adds intra-crate modules discovery
-	// cannot see). TypeScript and Python discovery build no graph. Render
-	// gates a starter rule on fail only when this graph shows it clean.
+	// ImportGraphComplete is true when Edges is the module graph check will
+	// judge the starter rules over (see graphGap). Render gates a starter rule
+	// on fail only when this graph shows it clean.
 	ImportGraphComplete bool
+	// GraphGap says why the graph is not complete; Render writes it beside
+	// gate: warn. Empty when ImportGraphComplete is true.
+	GraphGap string
 }
 
 // Presence is the extractor registry's answer to "is this language present
@@ -88,6 +89,11 @@ type Presence struct {
 	// GoWorkOff is true when Go-toolchain subprocesses must ignore the go.work
 	// governing root (see registry.GoWorkOff).
 	GoWorkOff bool
+	// Sources is the rule-scope source inventory of root, read the way config
+	// lint reads it. Discovery keeps only modules that own production source
+	// in it. nil means the caller supplied none (discovery unit tests); the
+	// composition root always supplies it.
+	Sources []SourceFile
 }
 
 // languageMode renders a language's enabled mode. A present language is
@@ -128,8 +134,16 @@ func languageMode(lang string, present bool) string {
 //     the slice position so the result is stable across runs.
 func Discover(ctx context.Context, root string, runner toolrun.Runner, presence Presence) (DiscoveredConfig, error) {
 	var allModules []ModuleDef
+	// origins records the discoverer of each module in allModules.
+	var origins []string
 	var allEdges []ModuleEdge
 	var modPath string
+	add := func(lang string, mods []ModuleDef) {
+		allModules = append(allModules, mods...)
+		for range mods {
+			origins = append(origins, lang)
+		}
+	}
 
 	if presence.Go && len(presence.GoMembers) > 0 {
 		goMods, goEdges, goModPath, err := discoverGo(ctx, root, runner, presence.GoMembers, presence.GoWorkOff)
@@ -137,7 +151,7 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner, presence 
 			return DiscoveredConfig{}, err
 		}
 		modPath = goModPath
-		allModules = append(allModules, goMods...)
+		add(langGo, goMods)
 		allEdges = append(allEdges, goEdges...)
 	}
 
@@ -145,13 +159,14 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner, presence 
 	if err != nil {
 		return DiscoveredConfig{}, err
 	}
-	allModules = append(allModules, pyMods...)
+	add(langPython, pyMods)
 
 	tsMods, err := DiscoverTS(root)
 	if err != nil {
 		return DiscoveredConfig{}, err
 	}
-	allModules = append(allModules, tsMods...)
+	add(langTypeScript, tsMods)
+	judged := len(allModules)
 
 	// Rust discovery runs `cargo metadata` at root, so it still needs the root
 	// Cargo.toml; a configured sub-crate manifest makes Rust present without
@@ -163,11 +178,17 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner, presence 
 		if rerr != nil {
 			return DiscoveredConfig{}, rerr
 		}
-		allModules = append(allModules, rustMods...)
+		add(langRust, rustMods)
 		allEdges = append(allEdges, rustEdges...)
 	}
 
+	if presence.Sources != nil {
+		allModules, origins = keepModulesWithSource(allModules, origins, judged, presence.Sources)
+		allEdges = edgesBetween(allEdges, allModules)
+	}
 	allModules = disambiguateNames(allModules)
+	// Only Rust discovery assigns layers, from the crate dependency graph; a
+	// single layer orders nothing.
 	layers := inferLayers(allModules)
 	if len(layers) < 2 {
 		layers = nil
@@ -176,6 +197,7 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner, presence 
 		}
 	}
 
+	gap := graphGap(allModules, origins, presence.Rust, presence.Sources)
 	return DiscoveredConfig{
 		ModulePath:          modPath,
 		Modules:             allModules,
@@ -186,8 +208,26 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner, presence 
 		HasPython:           presence.Python,
 		HasTS:               presence.TypeScript,
 		HasRust:             presence.Rust,
-		ImportGraphComplete: len(pyMods) == 0 && len(tsMods) == 0 && !presence.Rust,
+		ImportGraphComplete: gap == "",
+		GraphGap:            gap,
 	}, nil
+}
+
+// edgesBetween keeps the edges whose endpoints are both modules in mods.
+func edgesBetween(edges []ModuleEdge, mods []ModuleDef) []ModuleEdge {
+	names := make(map[string]struct{}, len(mods))
+	for _, m := range mods {
+		names[m.Name] = struct{}{}
+	}
+	var out []ModuleEdge
+	for _, e := range edges {
+		_, from := names[e.From]
+		_, to := names[e.To]
+		if from && to {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // Draft basis values distinguish deterministic facts from semantic judgments in

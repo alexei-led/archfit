@@ -13,9 +13,12 @@ import (
 // Go:         *_test.go
 // Python:     test_*.py, *_test.py, or any path containing a /tests/ segment
 // TypeScript/JavaScript: any filename containing .test. or .spec., or a path containing __tests__/
-// Rust:       any path containing a /tests/ path segment
+// Rust:       tests.rs, *_test.rs, *_tests.rs, or a tests/, benches/, *_tests/, or *-tests/ dir
 //
-// Ceiling: Rust inline #[cfg(test)] mod blocks are not detected by path.
+// Ceiling: Rust classification is file-level. A `#[cfg(test)] mod tests { … }`
+// block inside a production file stays Production; only a test module in its own
+// sibling file (`mod tests;` → tests.rs) is recognised. Directory suffixes need a
+// separator, so contests/ and attests/ stay Production.
 func IsTestFile(lang, path string) bool {
 	base := filepath.Base(path)
 	switch lang {
@@ -31,10 +34,26 @@ func IsTestFile(lang, path string) bool {
 			strings.Contains(base, ".spec.") ||
 			containsPathSegment(path, "__tests__")
 	case graph.LangRust:
-		return containsPathSegment(path, "tests")
+		stem := strings.TrimSuffix(base, ".rs")
+		return base == "tests.rs" ||
+			strings.HasSuffix(stem, "_test") || strings.HasSuffix(stem, "_tests") ||
+			containsRustTestDir(path)
 	default:
 		return false
 	}
+}
+
+// containsRustTestDir reports whether a directory segment of path holds Rust test
+// or benchmark code: tests/, benches/, or a test-suite directory such as
+// property_tests/. The file name itself is not a directory segment.
+func containsRustTestDir(path string) bool {
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	for _, dir := range parts[:len(parts)-1] {
+		if dir == "tests" || dir == "benches" || strings.HasSuffix(dir, "_tests") || strings.HasSuffix(dir, "-tests") {
+			return true
+		}
+	}
+	return false
 }
 
 // containsPathSegment reports whether path contains the given directory name segment.

@@ -21,6 +21,9 @@ const (
 	fixturePkgAGo   = "pkg/a.go"
 	fixturePkgBGo   = "pkg/b.go"
 	fixturePkgDir   = "pkg"
+
+	edgeKindModuleDependency = "module_dependency"
+	matchedByCycleModules    = "cycle_modules"
 )
 
 // writeFixtureFile creates a real file at root/relPath so the integration
@@ -421,6 +424,67 @@ func TestFilesFor_RustCrateResolution(t *testing.T) {
 			t.Errorf("files = %v, want [%q] (root crate src dir, never the repo root or a drop)", tasks[0].Files, want)
 		}
 	})
+}
+
+// TestFilesFor_RustBareCrateResolvesToCrateDir pins the crate-level shape: a
+// cargo package node or a bare crate identifier is not a path, so it resolves
+// through the crate roots to the crate's own directory instead of dropping.
+func TestFilesFor_RustBareCrateResolvesToCrateDir(t *testing.T) {
+	const dirLinter = "crates/ruff_linter"
+	root := t.TempDir()
+	writeFixtureFile(t, root, "crates/ruff_linter/src/lib.rs")
+	writeFixtureFile(t, root, "src/main.rs")
+	resolver := agenttask.NewPathResolver(buildKnownFiles(t, root),
+		map[string]string{"ruff_linter": dirLinter, "ruff-linter": dirLinter, "app": ""}, nil, nil)
+	tests := []struct {
+		name, key, want string
+	}{
+		{"crate identifier", "ruff_linter", dirLinter},
+		{"package name", "ruff-linter", dirLinter},
+		{"root crate uses its src dir", "app", "src"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tasks := agenttask.Build([]finding.Finding{gateFindingWithModuleEdge(tc.key)},
+				map[string]string{rulePublicAPIMax: rulePublicAPIMax}, nil, nil, nil, nil, resolver)
+			if len(tasks) != 1 {
+				t.Fatalf("tasks = %d, want 1", len(tasks))
+			}
+			assertFilesExistOnDisk(t, root, tasks[0].Files)
+			if len(tasks[0].Files) != 1 || tasks[0].Files[0] != tc.want {
+				t.Errorf("files = %v, want [%q]", tasks[0].Files, tc.want)
+			}
+		})
+	}
+}
+
+// TestFilesFor_ModuleCycleFallsBackToModuleRoot pins the module-pair shape: a
+// cargo-modules crate::mod edge carries no import site, so a module_cycle
+// finding over such modules has no location. Its task then takes the source
+// module's declared root, as a coupling-gate seam does, instead of files: [].
+func TestFilesFor_ModuleCycleFallsBackToModuleRoot(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "crates/sem/src/types.rs")
+	writeFixtureFile(t, root, "crates/sem/src/place.rs")
+	resolver := agenttask.NewPathResolver(buildKnownFiles(t, root),
+		map[string]string{"sem": "crates/sem"},
+		map[string]string{"sem_types": "sem::types::", "sem_place": "sem::place"}, nil)
+	f := finding.Finding{
+		ID: "sem-cycle", Kind: finding.KindGate, RuleID: "no-module-cycles", Status: finding.StatusNew,
+		Edge: finding.EdgeEvidence{
+			From: finding.Endpoint{Module: "sem_types"},
+			To:   finding.Endpoint{Module: "sem_place"},
+			Kind: edgeKindModuleDependency,
+		},
+		MatchedBy: map[string]string{matchedByCycleModules: "sem_place, sem_types"},
+	}
+	tasks := agenttask.Build([]finding.Finding{f}, map[string]string{"no-module-cycles": "module_cycle"}, nil, nil, nil, nil, resolver)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(tasks))
+	}
+	if want := "crates/sem/src/types.rs"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+		t.Errorf("files = %v, want [%q] (the source module's root)", tasks[0].Files, want)
+	}
 }
 
 // TestFilesFor_OnDiskFallback pins the "exists on disk" contract: the LOC

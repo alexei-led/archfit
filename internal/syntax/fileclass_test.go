@@ -51,8 +51,11 @@ func TestClassifyFile_BuiltIn(t *testing.T) {
 		{name: "python tests/ segment", lang: langPython, path: "mypackage/tests/helpers.py", header: noHeader, want: fileclass.Test},
 		{name: "python _pb2 generated", lang: langPython, path: "mypackage/api_pb2.py", header: noHeader, want: fileclass.Generated},
 		// --- Rust ---
-		{name: "rust production", lang: "rust", path: "src/lib.rs", header: noHeader, want: fileclass.Production},
-		{name: "rust tests/ segment", lang: "rust", path: "tests/integration.rs", header: noHeader, want: fileclass.Test},
+		{name: "rust production", lang: langRust, path: "src/lib.rs", header: noHeader, want: fileclass.Production},
+		{name: "rust tests/ segment", lang: langRust, path: "tests/integration.rs", header: noHeader, want: fileclass.Test},
+		{name: "rust cfg(test) sibling file", lang: langRust, path: "src/types/tests.rs", header: noHeader, want: fileclass.Test},
+		{name: "rust property_tests dir", lang: langRust, path: "src/types/property_tests/setup.rs", header: noHeader, want: fileclass.Test},
+		{name: "rust benches dir", lang: langRust, path: "benches/parse.rs", header: noHeader, want: fileclass.Test},
 		// --- Vendor ---
 		{name: "vendor path", lang: "go", path: "vendor/github.com/pkg/x.go", header: noHeader, want: fileclass.Vendor},
 	}
@@ -91,6 +94,8 @@ func TestClassifyFile_ConfigOverride(t *testing.T) {
 		{name: "testutil/ glob → Test", lang: "go", path: "testutil/helpers.go", want: fileclass.Test},
 		// Custom generated glob (directory segment).
 		{name: "generated/ dir → Generated", lang: "go", path: "generated/api.go", want: fileclass.Generated},
+		// A configured generated glob still beats the Rust test-file convention.
+		{name: "generated/ beats rust tests.rs", lang: langRust, path: "generated/tests.rs", want: fileclass.Generated},
 	}
 
 	for _, tc := range cases {

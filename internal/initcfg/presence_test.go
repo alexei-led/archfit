@@ -5,11 +5,16 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/registry"
 )
 
-// Names the retired archfit-specific Go layer table used; tests still use them
-// as plain module and layer names.
+// Names the retired archfit-specific Go layer table and the retired Python
+// sub-package layer guess used; tests still use them as plain module and
+// layer names.
 const (
 	adapterExtract = "extract"
 	layerEngine    = "engine"
+	layerModel     = "model"
+	layerCore      = "core"
+	layerAdapter   = "adapter"
+	layerCmd       = "cmd"
 )
 
 // ProbePresence answers language presence the way cmd's languagePresence

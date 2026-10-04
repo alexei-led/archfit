@@ -173,7 +173,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		return graph.Facts{}, evidence.Coverage{Tool: toolCargo, Version: version, Status: statusPartial, Reason: reason}, nil
 	}
 
-	facts, members, cov, err := e.parseAndNormalize(out.Stdout, version)
+	facts, members, cov, err := e.parseAndNormalize(out.Stdout, version, s.Root)
 	if err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/rust: parse output: %w", err)
 	}
@@ -318,6 +318,21 @@ type cargoDependency struct {
 	Source *string `json:"source"`
 	// Kind is null for a normal dependency, "dev", or "build".
 	Kind *string `json:"kind"`
+	// Rename is the Cargo.toml key of a renamed dependency
+	// (`key = { package = "name" }`); null when the key is the package name.
+	Rename *string `json:"rename"`
+}
+
+// manifestKey returns the dependency's key and table kind in its Cargo.toml.
+func (d cargoDependency) manifestKey() depLineKey {
+	key := depLineKey{kind: depKindNormal, key: d.Name}
+	if d.Rename != nil && *d.Rename != "" {
+		key.key = *d.Rename
+	}
+	if d.Kind != nil {
+		key.kind = *d.Kind
+	}
+	return key
 }
 
 // included reports whether this dependency should become a graph edge. Normal
@@ -346,10 +361,11 @@ func (d cargoDependency) included(includeDev bool) bool {
 // Workspace members are the first-party set: each becomes a package:<crate>
 // node. A dependency whose crate name matches a member resolves to a package:
 // node (intra-workspace edge); any other dependency becomes an external: node.
-// Every kept dependency yields a depends_on edge located at Cargo.toml.
+// Every kept dependency yields a depends_on edge located in the member's own
+// Cargo.toml (memberManifestLocations).
 // The resolved members slice is returned so ModuleGraph can reuse it without
 // re-running cargo metadata.
-func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts, []cargoPackage, evidence.Coverage, error) {
+func (e *Extractor) parseAndNormalize(data []byte, version, root string) (graph.Facts, []cargoPackage, evidence.Coverage, error) {
 	var meta cargoMetadata
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return graph.Facts{}, nil, evidence.Coverage{}, fmt.Errorf("unmarshal: %w", err)
@@ -397,9 +413,11 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		}
 	}
 
+	rootAbs, rootOK := canonicalRoot(root)
 	for _, m := range members {
 		fromNode := graph.Node{Kind: graph.NodeKindPackage, Path: m.Name, Language: graph.LangRust}
 		emitNode(fromNode)
+		locate := memberManifestLocations(rootAbs, rootOK, m.ManifestPath)
 
 		for _, dep := range m.Dependencies {
 			if !dep.included(e.cfg.IncludeDevDeps) {
@@ -425,7 +443,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 				Kind:       graph.EdgeKindDependsOn,
 				Language:   langRust,
 				Confidence: "high",
-				Locations:  []graph.Location{{File: manifestFile}},
+				Locations:  locate(dep),
 			})
 		}
 	}
@@ -448,32 +466,40 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 	return facts, members, cov, nil
 }
 
+// memberManifestLocations returns the locator for one member's dependency
+// edges: the member's own Cargo.toml, repo-relative, at the line that declares
+// the dependency in the table of its kind (dependencyLines), or line 0 when the
+// scan cannot place it. A member whose manifest lies outside the analysed root
+// gets no location: an escaping path is no evidence, and the root manifest
+// would name a file that does not declare the dependency.
+func memberManifestLocations(rootAbs string, rootOK bool, manifestPath string) func(cargoDependency) []graph.Location {
+	file, inside := relToRoot(rootAbs, manifestPath)
+	if !rootOK || !inside || file == "" {
+		return func(cargoDependency) []graph.Location { return nil }
+	}
+	lines := readDependencyLines(manifestPath)
+	return func(dep cargoDependency) []graph.Location {
+		return []graph.Location{{File: file, Line: lines[dep.manifestKey()]}}
+	}
+}
+
 // crateRoots maps each workspace member to its repo-relative source dir and crate
 // name so the core ring can resolve a .rs path to its module key. cargo reports an
 // absolute manifest_path; members whose dir is outside the analysed root, or that
 // cannot be made relative to it, are skipped (best-effort — never fails extraction).
 // A member at the root itself yields Dir "".
 func crateRoots(root string, members []cargoPackage) []graph.CrateRoot {
-	// EvalSymlinks resolves case variants and symlinks so rootAbs matches the
-	// canonical ManifestPath reported by cargo (macOS case-insensitive FS).
-	// Falls back to Abs if the path does not exist yet (e.g. tests with fake paths).
-	rootAbs, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		rootAbs, err = filepath.Abs(root)
-		if err != nil {
-			return nil
-		}
+	rootAbs, ok := canonicalRoot(root)
+	if !ok {
+		return nil
 	}
 	out := make([]graph.CrateRoot, 0, len(members))
 	for _, m := range members {
-		rel, err := filepath.Rel(rootAbs, filepath.Dir(m.ManifestPath))
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		rel, inside := relToRoot(rootAbs, filepath.Dir(m.ManifestPath))
+		if !inside {
 			continue // outside the analysed root
 		}
-		if rel == "." {
-			rel = ""
-		}
-		out = append(out, graph.CrateRoot{Dir: filepath.ToSlash(rel), Name: m.Name})
+		out = append(out, graph.CrateRoot{Dir: rel, Name: m.Name, Crate: m.crateIdentifier()})
 	}
 	return out
 }

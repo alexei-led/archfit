@@ -253,20 +253,26 @@ type ruleScope struct {
 // remains unknown: the supported-source inventory cannot prove that scope
 // empty, so a rule invocation over an empty graph is not conformance evidence.
 //
+// Every rule type but forbidden_pattern reads dependency edges, so its scope is
+// the files a dependency producer analyses (selectorInventory.analysedFiles):
+// a language whose extractor finds no project under the root is not waited
+// for. forbidden_pattern reads the ast-grep pattern pass and keeps them.
+//
 // A selector that provably matches nothing makes the rule vacuous, never
 // conformant: its scope is unknown with a reason naming the selector. A guard
 // rule (`guard: true`) matches nothing on purpose, so its empty selector is
-// not a defect; an empty source selector leaves it nothing to check.
+// not a defect.
 func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observations) ruleScope {
-	files := sourceInventoryFiles(f)
+	inv := newSelectorInventory(p.Topology.ModuleMap, sourceInventoryFiles(f), f)
+	files := inv.analysedFiles()
 	switch rule.Type {
 	case ruleTypePublicAPIMax, ruleTypePublicAPIChange:
-		return moduleRuleScope(p.Topology, files, f.SourceSelectors)
+		return moduleRuleScope(p.Topology, inv)
 	case ruleTypePublicAPILeak:
 		// The current type-leak producer is explicitly Go-only.
-		return restrictRuleScopeLanguages(moduleRuleScope(p.Topology, files, f.SourceSelectors), "go")
+		return restrictRuleScopeLanguages(moduleRuleScope(p.Topology, inv), "go")
 	case ruleTypeForbiddenDependency, ruleTypePublicAPIOnly, ruleTypeInternalAPIAccess:
-		if scope, decided := vacuityScope(rule, p.Topology.ModuleMap, files, f); decided {
+		if scope, decided := vacuityScope(rule, inv); decided {
 			return scope
 		}
 		// Dependency producers are selected by the source endpoint language, but
@@ -277,47 +283,51 @@ func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observati
 			return ruleScope{status: ruleScopeUnknown}
 		}
 		return restrictToTargetVocabulary(
-			patternRuleScope(p.Topology.ModuleMap, rule.From, files, f.SourceSelectors),
+			patternRuleScope(p.Topology.ModuleMap, rule.From, files, f.SourceSelectors, inv.rustModules),
 			p.Topology.ModuleMap.SelectorLanguages(rule.To))
 	case "forbidden_layer_direction":
-		return moduleRuleScope(p.Topology, files, f.SourceSelectors)
+		return moduleRuleScope(p.Topology, inv)
 	case "new_cross_module_dependency", ruleTypeModuleCycle:
 		// Both read module pairs, and a pair needs two declared modules. A
 		// module cycle is module-wide: every declared module can close one.
 		if len(p.Topology.Modules) < 2 {
 			return ruleScope{status: ruleScopeNotApplicable}
 		}
-		return moduleRuleScope(p.Topology, files, f.SourceSelectors)
+		return moduleRuleScope(p.Topology, inv)
 	case "cycle":
 		return allSourceScope(p.Topology.ModuleMap, files)
 	case ruleTypeForbiddenPattern:
-		if scope, decided := vacuityScope(rule, p.Topology.ModuleMap, files, f); decided {
+		if scope, decided := vacuityScope(rule, inv); decided {
 			return scope
 		}
 		// nil projected selectors: the rule matches from: against the file path
 		// or its convention selector, and its scope must use the same matcher,
 		// or a from: glob could scope as applicable yet never match a file.
-		return patternRuleScope(p.Topology.ModuleMap, rule.From, files, nil)
+		return patternRuleScope(p.Topology.ModuleMap, rule.From, inv.files, nil, nil)
 	default:
 		return ruleScope{status: ruleScopeUnknown}
 	}
 }
 
 // vacuityScope decides the scope of a rule whose selector matches nothing: a
-// policy defect unless the rule is a guard, and a guard whose source matches
-// nothing has nothing to check. decided is false when the selectors are live
-// or a guard's target is vacuous, so the caller scopes the rule as usual.
-func vacuityScope(rule policy.RuleDef, mm policy.ModuleMap, files []string, f Observations) (scope ruleScope, decided bool) {
-	side, glob, vacuous := newSelectorInventory(mm, files, f).vacuousSelector(rule)
+// policy defect unless the rule is a guard. A guard holds while either side
+// matches nothing: no edge can start at a source that is not there or reach a
+// target that is not there, whatever state the dependency producer is in, so a
+// partial producer run cannot hold it unevaluated. vacuous() already refuses a
+// selector the inventory cannot judge. A selector that matches only source no
+// dependency producer analyses is neither: the code is there and nothing reads
+// its relationships, so guard or not the rule stays unevaluated with a reason
+// saying so. decided is false when the selectors are live, so the caller
+// scopes the rule as usual.
+func vacuityScope(rule policy.RuleDef, inv selectorInventory) (scope ruleScope, decided bool) {
+	side, glob, vacuous := inv.vacuousSelector(rule)
 	switch {
 	case !vacuous:
 		return ruleScope{}, false
-	case !rule.Guard:
-		return ruleScope{status: ruleScopeUnknown, reason: selectorMatchesNothing(side, glob)}, true
-	case side == selectorFrom:
-		return ruleScope{status: ruleScopeNotApplicable}, true
+	case !rule.Guard || inv.matchesOnlyUnanalysed(rule.Type, side, glob):
+		return ruleScope{status: ruleScopeUnknown, reason: inv.vacuityReason(rule.Type, side, glob)}, true
 	default:
-		return ruleScope{}, false
+		return ruleScope{status: ruleScopeNotApplicable}, true
 	}
 }
 
@@ -358,39 +368,68 @@ func allSourceScope(moduleMap policy.ModuleMap, files []string) ruleScope {
 	return ruleScope{status: ruleScopeApplicable, languages: languages}
 }
 
-func moduleRuleScope(topology policy.TopologyView, files []string, selectors map[string]string) ruleScope {
+// moduleRuleScope is the scope of a module-wide rule: the languages of every
+// declared module's analysed source. A module whose walked source all lies
+// outside the rule's scope (declared out of scope, or unanalysed) contributes
+// nothing; a module declared by Rust crate::mod paths is judged against the
+// module graph (selectorInventory.rustModulePath).
+func moduleRuleScope(topology policy.TopologyView, inv selectorInventory) ruleScope {
 	if len(topology.Modules) == 0 {
 		return ruleScope{status: ruleScopeNotApplicable}
 	}
-	languages := make(map[string]struct{})
-	modulesWithFiles := make(map[string]struct{})
-	for _, file := range files {
-		language, selector, supported := ruleFileSelector(topology.ModuleMap, file, selectors)
+	owner := func(file string) (string, bool) {
+		_, selector, _ := ruleFileSelector(topology.ModuleMap, file, inv.selectors)
 		module, owned := topology.ModuleMap.ModuleFor(file)
 		if !owned && selector != "" {
 			module, owned = topology.ModuleMap.ModuleFor(selector)
 		}
+		return module, owned
+	}
+	languages := make(map[string]struct{})
+	modulesWithFiles := make(map[string]struct{})
+	for _, file := range inv.files {
+		module, owned := owner(file)
 		if !owned {
 			continue
 		}
 		modulesWithFiles[module] = struct{}{}
+		if _, unanalysed := inv.unanalysed[file]; unanalysed {
+			continue
+		}
+		language, _, supported := topology.ModuleMap.RuleSelectorForFile(file)
 		if !supported {
 			return ruleScope{status: ruleScopeUnknown}
 		}
 		languages[language] = struct{}{}
 	}
+	for file := range inv.outOfScope {
+		if module, owned := owner(file); owned {
+			modulesWithFiles[module] = struct{}{}
+		}
+	}
 	// Every declared module is part of a public-surface or module relationship
 	// rule's scope. An explicitly unsupported extension prevents conformance;
 	// otherwise the complete supported-source inventory proves an empty module
 	// scope n/a for the producers Archfit can invoke.
-	for module, def := range topology.Modules {
+	for _, module := range sortedModuleNames(topology.Modules) {
 		if _, hasFile := modulesWithFiles[module]; hasFile {
 			continue
 		}
+		def := topology.Modules[module]
 		if len(def.Paths) == 0 {
 			return ruleScope{status: ruleScopeUnknown}
 		}
 		for _, pattern := range def.Paths {
+			if strings.Contains(pattern, sepCrate) {
+				matched, decided := inv.rustModulePath(pattern)
+				if !decided {
+					return ruleScope{status: ruleScopeUnknown, reason: rustModuleGraphMissing(module, pattern)}
+				}
+				if matched {
+					languages[languageRust] = struct{}{}
+				}
+				continue
+			}
 			if !explicitlySupportedSourcePattern(topology.ModuleMap, pattern) {
 				return ruleScope{status: ruleScopeUnknown}
 			}
@@ -400,6 +439,12 @@ func moduleRuleScope(topology policy.TopologyView, files []string, selectors map
 		return ruleScope{status: ruleScopeApplicable, languages: languages}
 	}
 	return ruleScope{status: ruleScopeNotApplicable}
+}
+
+// rustModuleGraphMissing is the unknown-scope reason for a module declared by
+// a crate::mod path the Rust module graph does not cover.
+func rustModuleGraphMissing(module, pattern string) string {
+	return "module " + module + " path " + pattern + " names Rust modules the module graph (cargo-modules) does not cover"
 }
 
 func restrictRuleScopeLanguages(scope ruleScope, allowed ...string) ruleScope {
@@ -422,7 +467,10 @@ func restrictRuleScopeLanguages(scope ruleScope, allowed ...string) ruleScope {
 	return ruleScope{status: ruleScopeApplicable, languages: languages}
 }
 
-func patternRuleScope(moduleMap policy.ModuleMap, pattern string, files []string, selectors map[string]string) ruleScope {
+// patternRuleScope is the scope of a rule whose source selector is pattern:
+// the languages of the files it matches, and Rust when it matches a node of the
+// Rust module graph (rustModules), whose crate::mod nodes have no file.
+func patternRuleScope(moduleMap policy.ModuleMap, pattern string, files []string, selectors map[string]string, rustModules []string) ruleScope {
 	if pattern == "" {
 		return allSourceScope(moduleMap, files)
 	}
@@ -437,6 +485,12 @@ func patternRuleScope(moduleMap policy.ModuleMap, pattern string, files []string
 		}
 		if rulePatternMatches(pattern, file, selector) {
 			languages[language] = struct{}{}
+		}
+	}
+	for _, node := range rustModules {
+		if matched, _ := doublestar.Match(pattern, node); matched {
+			languages[languageRust] = struct{}{}
+			break
 		}
 	}
 	if len(languages) > 0 {

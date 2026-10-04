@@ -18,6 +18,10 @@ const (
 // A Python project is detected by pyproject.toml or setup.py at root.
 // For each top-level package found, sub-packages are returned as individual
 // modules. If a top-level package has no sub-packages it is returned itself.
+//
+// It assigns no layer: a sub-package name (handlers, providers, models) does
+// not prove an architectural layer, and a live direction rule over guessed
+// layers blocks on a guess. Render writes the layers how-to instead.
 func DiscoverPy(root string) ([]ModuleDef, error) {
 	hasPyProject := fileExists(filepath.Join(root, "pyproject.toml"))
 	hasSetupPy := fileExists(filepath.Join(root, "setup.py"))
@@ -64,7 +68,6 @@ func DiscoverPy(root string) ([]ModuleDef, error) {
 				mods = append(mods, ModuleDef{
 					Name:    e.Name(),
 					Paths:   pyModulePaths(mod),
-					Layer:   layerCore,
 					Sources: pySubtreeModules(pkgDir, mod),
 				})
 			}
@@ -96,7 +99,6 @@ func discoverPySubpackages(pkgDir, pathPrefix string) []ModuleDef {
 		mods = append(mods, ModuleDef{
 			Name:    e.Name(),
 			Paths:   pyModulePaths(mod),
-			Layer:   inferPyLayer(e.Name()),
 			Sources: pySubtreeModules(filepath.Join(pkgDir, e.Name()), mod),
 		})
 	}
@@ -140,20 +142,6 @@ func pyDottedModule(slashPath string) string {
 // itself and its submodules ("ccgram.handlers" + "ccgram.handlers.*").
 func pyModulePaths(mod string) []string {
 	return []string{mod, mod + ".*"}
-}
-
-// inferPyLayer maps common Python sub-package names to architectural layers.
-func inferPyLayer(name string) string {
-	switch name {
-	case "handlers", "api", "routes", "views", "providers":
-		return layerAdapter
-	case "model", "models", "types", "schema":
-		return layerModel
-	case layerCmd, "cli":
-		return layerCmd
-	default:
-		return layerCore
-	}
 }
 
 // detectPyPackage scans root then root/src for the first directory that

@@ -36,7 +36,7 @@ func TestModuleCycle_WhyNamesThePairAndSizeOnly(t *testing.T) {
 		to := modules[(i+1)%size]
 		edges = append(edges, moduleTestEdge{"file:" + from + "/a.go", "package:" + to, from, to, nil})
 	}
-	findings := newModuleCycleRule(t, "", modules...).Check(moduleSet(edges...), rules.Evidence{})
+	findings := checkProduction(newModuleCycleRule(t, "", modules...), moduleSet(edges...))
 	if len(findings) != size {
 		t.Fatalf("got %d findings, want %d", len(findings), size)
 	}
