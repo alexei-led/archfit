@@ -18,6 +18,8 @@ const (
 	selJava      = "src/**/*.java"
 	selMissingGo = "missing/**/*.go"
 	pyCoreFile   = "src/app/core.py"
+	tsAppFile    = "web/src/app.ts"
+	rustLibFile  = "crates/core/src/lib.rs"
 )
 
 // vacuityFixture is a Go repo with a Python package and a Rust crate whose
@@ -29,13 +31,15 @@ func vacuityFixture() (*result.Result, evaluation.StateInput) {
 	for _, tool := range diag.PrimaryExtractorTools[1:] {
 		diag.ToolCoverage = append(diag.ToolCoverage, modevidence.Coverage{Tool: tool, Status: modevidence.StatusOK})
 	}
+	diag.ToolCoverage = append(diag.ToolCoverage, modevidence.Coverage{Tool: toolAstGrep, Status: modevidence.StatusOK})
 	for file, loc := range map[string]int{
 		"internal/billing/domain/order.go": 10, "internal/billing/api/api.go": 10,
-		"internal/shipping/ship.go": 10, pyCoreFile: 10, "crates/core/src/lib.rs": 10,
+		"internal/shipping/ship.go": 10, pyCoreFile: 10, rustLibFile: 10,
+		tsAppFile: 10, "go/cmd/server/main.go": 10,
 	} {
 		in.Facts.FileLOC[file] = loc
 	}
-	in.Facts.SourceSelectors = map[string]string{pyCoreFile: selPyCore, "crates/core/src/lib.rs": ""}
+	in.Facts.SourceSelectors = map[string]string{pyCoreFile: selPyCore, rustLibFile: ""}
 	in.Facts.GoModulePaths = []string{"example.com/shop"}
 	return diag, in
 }
@@ -43,12 +47,16 @@ func vacuityFixture() (*result.Result, evaluation.StateInput) {
 // TestVacuousSelectorsNeverCountAsConformance is the vacuity table: a gated
 // rule whose selector matches nothing the rule can see is listed as not
 // evaluated with the selector named, while external targets, guards, and
-// selectors the inventory cannot judge keep their existing outcome.
+// selectors the inventory cannot judge keep their existing outcome. A
+// dependency rule sees graph edge endpoints, spelled per language: a Go edge
+// starts at a file and ends at a package directory, a TypeScript edge joins
+// files, and Python and Rust edges join dotted modules and crates.
 func TestVacuousSelectorsNeverCountAsConformance(t *testing.T) {
 	const genericReason = "rule scope cannot be established from the supported source inventory"
 	for _, tc := range []struct {
 		name       string
 		rule       policy.RuleDef
+		crate      string // the Rust crate name cargo metadata resolved; "" leaves it unknown
 		wantReason string // "" means the rule is evaluated
 	}{
 		{name: "live selectors", rule: policy.RuleDef{From: selShipping, To: "internal/billing/domain"}},
@@ -78,9 +86,32 @@ func TestVacuousSelectorsNeverCountAsConformance(t *testing.T) {
 		{name: "rule type that ignores selectors", rule: policy.RuleDef{Type: metricCycle, From: "internal/nowhere/**"}},
 		{name: "forbidden pattern over a renamed directory", rule: policy.RuleDef{Type: ruleTypePattern, From: selCatalog},
 			wantReason: "selector matches nothing: from internal/catalog/**"},
+		{name: "domain-prefixed target beside a go/ directory", rule: policy.RuleDef{From: selShipping, To: "go.uber.org/**"}},
+		{name: "typo under the go/ directory", rule: policy.RuleDef{From: selShipping, To: "go/cmd/sevrer"},
+			wantReason: "selector matches nothing: to go/cmd/sevrer"},
+		{name: "go file-path target", rule: policy.RuleDef{From: selShipping, To: "internal/billing/domain/*.go"},
+			wantReason: "selector matches nothing: to internal/billing/domain/*.go"},
+		{name: "go package-directory source", rule: policy.RuleDef{From: "internal/shipping", To: selBilling},
+			wantReason: "selector matches nothing: from internal/shipping"},
+		{name: "go file-path source", rule: policy.RuleDef{From: "internal/shipping/*.go", To: selBilling}},
+		{name: "typescript file target", rule: policy.RuleDef{From: selShipping, To: "web/src/*.ts"}},
+		{name: "python file-path target", rule: policy.RuleDef{From: selShipping, To: "src/app/*.py"},
+			wantReason: "selector matches nothing: to src/app/*.py"},
+		{name: "python file-path source", rule: policy.RuleDef{From: "src/app/*.py", To: selBilling},
+			wantReason: "selector matches nothing: from src/app/*.py"},
+		{name: "rust crate-directory source", rule: policy.RuleDef{From: "crates/core/**", To: selBilling}, crate: assessCore,
+			wantReason: "selector matches nothing: from crates/core/**"},
+		{name: "rust module target below a known crate", rule: policy.RuleDef{From: selShipping, To: "core::domain::**"},
+			crate: assessCore},
+		{name: "rust module source below an unknown crate", rule: policy.RuleDef{From: "coer::domain::**", To: selBilling},
+			crate: assessCore, wantReason: "selector matches nothing: from coer::domain::**"},
+		{name: "forbidden pattern over a go package directory", rule: policy.RuleDef{Type: ruleTypePattern, From: "internal/shipping"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			diag, in := vacuityFixture()
+			if tc.crate != "" {
+				in.Facts.SourceSelectors[rustLibFile] = tc.crate
+			}
 			rule := tc.rule
 			rule.ID = "rule"
 			rule.Gate = string(policy.GateFail)

@@ -5,6 +5,7 @@
 package astgrep
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -155,11 +156,14 @@ type sgMatch struct {
 	} `json:"rule"`
 }
 
-// dedupeKey is used to eliminate duplicate matches.
+// dedupeKey eliminates a match sg reports twice. It carries the matched text
+// because forbidden_pattern keys a finding by (pattern, file, text): a second,
+// different match on the same line is a separate finding, not a duplicate.
 type dedupeKey struct {
 	file    string
 	line    int
 	pattern string
+	text    string
 }
 
 // sgRunNoMatch is the exit code `sg run` uses for a successful search that
@@ -217,7 +221,7 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]
 		for _, m := range raw {
 			// ast-grep reports 0-based lines; normalize to 1-based.
 			line := m.Range.Start.Line + 1
-			k := dedupeKey{file: m.File, line: line, pattern: def.ID}
+			k := dedupeKey{file: m.File, line: line, pattern: def.ID, text: m.Text}
 			if _, dup := seen[k]; dup {
 				continue
 			}
@@ -234,15 +238,10 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]
 		}
 	}
 
-	// Sort by (file, line) for deterministic output.
+	// A total order, so same-line matches never depend on pattern run order.
 	slices.SortFunc(matches, func(a, b pattern.Match) int {
-		if a.File != b.File {
-			if a.File < b.File {
-				return -1
-			}
-			return 1
-		}
-		return a.Line - b.Line
+		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), cmp.Compare(a.Column, b.Column),
+			cmp.Compare(a.Pattern, b.Pattern), cmp.Compare(a.Text, b.Text))
 	})
 
 	cov := evidence.Coverage{

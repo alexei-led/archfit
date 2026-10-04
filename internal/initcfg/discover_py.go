@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -64,7 +65,7 @@ func DiscoverPy(root string) ([]ModuleDef, error) {
 					Name:    e.Name(),
 					Paths:   pyModulePaths(mod),
 					Layer:   layerCore,
-					Sources: []string{mod},
+					Sources: pySubtreeModules(pkgDir, mod),
 				})
 			}
 		}
@@ -96,10 +97,35 @@ func discoverPySubpackages(pkgDir, pathPrefix string) []ModuleDef {
 			Name:    e.Name(),
 			Paths:   pyModulePaths(mod),
 			Layer:   inferPyLayer(e.Name()),
-			Sources: []string{mod},
+			Sources: pySubtreeModules(filepath.Join(pkgDir, e.Name()), mod),
 		})
 	}
 	return mods
+}
+
+// pySubtreeModules returns the dotted module IDs of the package at pkgDir: the
+// package itself, every nested package (a directory with __init__.py), and
+// every .py module, sorted. These are the graph nodes the discovered module's
+// paths (mod, mod.*) claim, so config update's ownership pass checks each of
+// them, as it checks every package Go discovery lists. Symlinked directories
+// are not followed.
+func pySubtreeModules(pkgDir, mod string) []string {
+	out := []string{mod}
+	entries, err := os.ReadDir(pkgDir)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		name := e.Name()
+		switch {
+		case e.IsDir() && fileExists(filepath.Join(pkgDir, name, pyInitFile)):
+			out = append(out, pySubtreeModules(filepath.Join(pkgDir, name), mod+"."+name)...)
+		case e.Type().IsRegular() && strings.HasSuffix(name, ".py") && name != pyInitFile:
+			out = append(out, mod+"."+strings.TrimSuffix(name, ".py"))
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // pyDottedModule converts a slash path (e.g. "src/ccgram/handlers" or

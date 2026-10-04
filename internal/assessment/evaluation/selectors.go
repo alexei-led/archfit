@@ -3,6 +3,8 @@ package evaluation
 import (
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
@@ -29,6 +31,19 @@ var selectorRuleTypes = map[string]struct{}{
 	ruleTypeForbiddenPattern: {}, // reads from: only; to: is a config error on it
 }
 
+// fileSourceLanguages are the languages whose import edges start at the
+// importing file's node: the Go and TypeScript extractors emit file: sources,
+// while Python and Rust edges start at the module or crate node.
+var fileSourceLanguages = map[string]struct{}{"go": {}, "typescript": {}}
+
+// Selector vocabularies by separator: slash paths (file paths, Go package
+// directories, TypeScript files), Python dotted IDs, and Rust crate::mod IDs.
+const (
+	sepPath   = "/"
+	sepDotted = "."
+	sepCrate  = "::"
+)
+
 // selectorInventory is the rule-scope source inventory as rule selectors see
 // it: every in-scope source file, the graph-node selector each file projects
 // to, the first-party Go module paths, and the Go standard-library packages.
@@ -40,9 +55,11 @@ type selectorInventory struct {
 	moduleMap policy.ModuleMap
 	files     []string
 	selectors map[string]string
-	// roots are the leading segments of every file path and node selector. A
-	// target selector that starts with one of them names first-party source.
-	roots map[string]struct{}
+	// roots are the leading segments of every file path and node selector,
+	// keyed by the separator of the vocabulary they are spelled in (sepPath,
+	// sepDotted, sepCrate). A target selector whose leading segment, cut in its
+	// own vocabulary, is one of them names first-party source.
+	roots map[string]map[string]struct{}
 	// unresolved are the languages whose node identity the inventory could not
 	// name for some file. Without cargo metadata Rust crate names are unknown,
 	// so a selector Rust could spell cannot be proven to match nothing.
@@ -56,11 +73,11 @@ type selectorInventory struct {
 func newSelectorInventory(moduleMap policy.ModuleMap, files []string, f Observations) selectorInventory {
 	inv := selectorInventory{
 		moduleMap: moduleMap, files: files, selectors: f.SourceSelectors,
-		roots: map[string]struct{}{}, unresolved: map[string]struct{}{}, goModules: f.GoModulePaths,
-		goStdlib: f.GoStdlibPackages,
+		roots:      map[string]map[string]struct{}{sepPath: {}, sepDotted: {}, sepCrate: {}},
+		unresolved: map[string]struct{}{}, goModules: f.GoModulePaths, goStdlib: f.GoStdlibPackages,
 	}
 	for _, file := range inv.files {
-		inv.roots[leadingSegment(file)] = struct{}{}
+		inv.addRoot(sepPath, file)
 		language, selector, supported := ruleFileSelector(moduleMap, file, f.SourceSelectors)
 		switch {
 		case !supported:
@@ -69,10 +86,23 @@ func newSelectorInventory(moduleMap policy.ModuleMap, files []string, f Observat
 			// withheld by the producer projection.
 			inv.unresolved[language] = struct{}{}
 		case selector != "" && selector != file:
-			inv.roots[leadingSegment(selector)] = struct{}{}
+			inv.addRoot(selectorSeparator(selector), selector)
 		}
 	}
 	return inv
+}
+
+// addRoot records the leading segment of id, cut at sep, as a root of the sep
+// vocabulary. A single-segment id (sep "") is a root in every vocabulary.
+func (inv selectorInventory) addRoot(sep, id string) {
+	if sep == "" {
+		for _, roots := range inv.roots {
+			roots[id] = struct{}{}
+		}
+		return
+	}
+	segment, _, _ := strings.Cut(id, sep)
+	inv.roots[sep][segment] = struct{}{}
 }
 
 // vacuousSelector returns the first selector of rule that provably matches
@@ -83,14 +113,15 @@ func (inv selectorInventory) vacuousSelector(rule policy.RuleDef) (side, glob st
 		return "", "", false
 	}
 	for _, s := range [...]struct{ side, glob string }{{selectorFrom, rule.From}, {selectorTo, rule.To}} {
-		if s.glob != "" && inv.vacuous(s.side, s.glob) {
+		if s.glob != "" && inv.vacuous(rule.Type, s.side, s.glob) {
 			return s.side, s.glob, true
 		}
 	}
 	return "", "", false
 }
 
-// vacuous reports whether one selector matches nothing the rule can see.
+// vacuous reports whether one selector of a ruleType rule matches nothing the
+// rule can see.
 //
 // A source (from:) selector must match in-scope source: rule edges start there.
 // A target (to:) selector is held to the inventory only when it is spelled as
@@ -103,22 +134,42 @@ func (inv selectorInventory) vacuousSelector(rule policy.RuleDef) (side, glob st
 // module path (Go node IDs are scan-root-relative). A selector the inventory
 // cannot judge, an unsupported file type or a language whose node identities
 // are unknown, is not vacuous; rule scope reports it as undetermined instead.
-func (inv selectorInventory) vacuous(side, pattern string) bool {
-	if unmatchableSelector(pattern) || inv.spelledWithGoModulePath(pattern) {
+func (inv selectorInventory) vacuous(ruleType, side, pattern string) bool {
+	if _, spelled := inv.goModulePathOf(pattern); unmatchableSelector(pattern) || spelled {
 		return true
 	}
-	if inv.matches(pattern) || inv.undecidable(pattern) {
+	if inv.matches(ruleType, side, pattern) || inv.undecidable(pattern) {
 		return false
 	}
 	return side == selectorFrom || (inv.firstPartyShaped(pattern) && !inv.namesGoStdlib(pattern))
 }
 
-// matches reports whether pattern matches an in-scope source file or the node
-// selector it projects to: the same test rule scope applies to every file.
-func (inv selectorInventory) matches(pattern string) bool {
+// matches reports whether pattern matches, for some in-scope file, what a
+// ruleType rule compares its side selector with.
+//
+// forbidden_pattern matches its from: against the file path or the file's node
+// selector. The dependency rules match graph edge endpoints, which each
+// language spells its own way: a target is the module node the file projects
+// to (a Go package directory, a TypeScript file, a dotted Python module, a Rust
+// crate), and a source is the importing file in a language whose import edges
+// start at file nodes (Go, TypeScript) and the module node otherwise. So a Go
+// file glob never matches a target, a Go package directory never matches a
+// source, and a slash path never matches a Python or Rust endpoint. A file of
+// an unsupported type matches by path: no node vocabulary rules it out.
+func (inv selectorInventory) matches(ruleType, side, pattern string) bool {
 	for _, file := range inv.files {
-		_, selector, _ := ruleFileSelector(inv.moduleMap, file, inv.selectors)
-		if rulePatternMatches(pattern, file, selector) {
+		language, selector, supported := ruleFileSelector(inv.moduleMap, file, inv.selectors)
+		var matched bool
+		_, fileSource := fileSourceLanguages[language]
+		switch {
+		case !supported || ruleType == ruleTypeForbiddenPattern:
+			matched = rulePatternMatches(pattern, file, selector)
+		case side == selectorFrom && fileSource:
+			matched, _ = doublestar.Match(pattern, file)
+		case selector != "":
+			matched, _ = doublestar.Match(pattern, selector)
+		}
+		if matched {
 			return true
 		}
 	}
@@ -126,11 +177,20 @@ func (inv selectorInventory) matches(pattern string) bool {
 }
 
 // undecidable reports whether the inventory cannot prove pattern matches
-// nothing: it names a file type outside the supported-source inventory, or a
-// language whose node identities are unknown could spell it.
+// nothing: it names a file type outside the supported-source inventory, a
+// language whose node identities are unknown could spell it, or it names a
+// Rust module below a crate. The inventory projects a Rust file only to its
+// crate; crate::mod nodes come from cargo-modules or SCIP, so a crate::mod
+// selector under a known crate (or with a wildcard crate) cannot be judged.
 func (inv selectorInventory) undecidable(pattern string) bool {
 	if strings.Contains(pattern, "/") && unsupportedOrAmbiguousSourcePattern(inv.moduleMap, pattern) {
 		return true
+	}
+	if strings.Contains(pattern, sepCrate) {
+		crate, _, belowCrate := strings.Cut(literalPrefix(pattern), sepCrate)
+		if _, known := inv.roots[sepCrate][crate]; known || !belowCrate {
+			return true
+		}
 	}
 	if explicitlySupportedSourcePattern(inv.moduleMap, pattern) {
 		return false
@@ -145,13 +205,30 @@ func (inv selectorInventory) undecidable(pattern string) bool {
 
 // firstPartyShaped reports whether a target selector is spelled as first-party
 // source: its literal prefix is empty (it starts with a wildcard) or starts
-// with a segment the inventory's paths or node selectors start with.
+// with a segment the inventory's paths or node selectors start with, both cut
+// in the selector's own vocabulary (selectorSeparator). In the slash
+// vocabulary a dot does not separate segments, and a leading segment holding
+// one is a Go import-path domain (go.uber.org, k8s.io, github.com), never a
+// first-party root: Go module paths are not node IDs.
 func (inv selectorInventory) firstPartyShaped(pattern string) bool {
 	prefix := literalPrefix(pattern)
 	if prefix == "" {
 		return true
 	}
-	_, ok := inv.roots[leadingSegment(prefix)]
+	sep := selectorSeparator(pattern)
+	if sep == "" {
+		for _, roots := range inv.roots {
+			if _, ok := roots[prefix]; ok {
+				return true
+			}
+		}
+		return false
+	}
+	segment, _, _ := strings.Cut(prefix, sep)
+	if sep == sepPath && strings.Contains(segment, ".") {
+		return false
+	}
+	_, ok := inv.roots[sep][segment]
 	return ok
 }
 
@@ -172,17 +249,18 @@ func (inv selectorInventory) namesGoStdlib(pattern string) bool {
 	return false
 }
 
-// spelledWithGoModulePath reports whether pattern names a first-party Go
-// package by its import path. Go node IDs drop the module path, so such a
-// selector never matches; only the full module path counts, because a shorter
-// prefix (github.com/org/**) can still match external dependencies.
-func (inv selectorInventory) spelledWithGoModulePath(pattern string) bool {
+// goModulePathOf returns the loaded Go module path pattern names a first-party
+// package by. The Go extractor strips every import path under a loaded module
+// path to its scan-root-relative directory, nested go.mod or not, so such a
+// selector never matches a node; only the full module path counts, because a
+// shorter prefix (github.com/org/**) can still match external dependencies.
+func (inv selectorInventory) goModulePathOf(pattern string) (string, bool) {
 	for _, module := range inv.goModules {
 		if module != "" && (pattern == module || strings.HasPrefix(pattern, module+"/")) {
-			return true
+			return module, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // unmatchableSelector reports a spelling no graph node ID can take. doublestar
@@ -201,15 +279,15 @@ func literalPrefix(pattern string) string {
 	return pattern
 }
 
-// leadingSegment is s up to its first path, dotted-module, or crate separator,
-// so slash paths, Python dotted IDs, and Rust crate::mod IDs share one root
-// vocabulary.
-func leadingSegment(s string) string {
-	end := len(s)
-	for _, sep := range [...]string{"/", ".", "::"} {
-		if i := strings.Index(s, sep); i >= 0 && i < end {
-			end = i
+// selectorSeparator names the vocabulary a selector or node ID is spelled in by
+// the separator it carries: a slash first, because Go import paths and file
+// names carry dots that separate nothing, then a Rust "::", then a Python dot.
+// One with none is "": a single segment any vocabulary can spell.
+func selectorSeparator(pattern string) string {
+	for _, sep := range [...]string{sepPath, sepCrate, sepDotted} {
+		if strings.Contains(pattern, sep) {
+			return sep
 		}
 	}
-	return s[:end]
+	return ""
 }

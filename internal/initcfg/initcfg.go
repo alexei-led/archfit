@@ -27,8 +27,9 @@ type ModuleDef struct {
 	// Layer is the inferred architectural layer (e.g. "adapter", "core", "cmd").
 	Layer string
 	// Sources are the graph-node paths discovery found inside the module (Go
-	// package directories, Python dotted packages). config update uses them to
-	// tell a module the configured map already owns from a genuinely new one.
+	// package directories, Python dotted packages and modules). config update
+	// uses them to tell a module the configured map already owns from a
+	// genuinely new one.
 	// Empty when the discoverer does not enumerate sources (TypeScript, Rust):
 	// such a module is matched by name only.
 	Sources []string
@@ -368,8 +369,8 @@ func writeModuleStanza(b *strings.Builder, name string, m ModuleDef, allowedLaye
 const TargetSchemaVersion = 2
 
 // Render converts a DiscoveredConfig into a YAML string suitable for saving as
-// .archfit.yaml. The output includes a TODO comment and uses only known config
-// fields so it round-trips through config.Load.
+// .archfit.yaml. The output uses only known config fields so it round-trips
+// through config.Load.
 //
 // ann maps module names to LLM annotations. When ann is nil the output is
 // byte-identical to the pre-annotation Render. apply controls plan vs live mode:

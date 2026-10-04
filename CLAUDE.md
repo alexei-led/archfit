@@ -260,7 +260,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
   list of filenames. `config init`/`config update` take presence from the same
   probes (`languagePresence` in `cmd/archfit/init.go` → `initcfg.Presence`; Go
   members from `registry.GoMembers`), write a present language `enabled: true`
-  and an absent one `auto`, never `false`. **A probe that disagrees with its extractor turns "we did not
+  (Rust: `auto`, so a missing cargo is a coverage gap, not a run failure —
+  `initcfg.languageMode`) and an absent one `auto`, never `false`. **A probe that disagrees with its extractor turns "we did not
   measure" into "there is nothing here"**, and gapless `absent` on a primary row
   is the ONE shape both pairing paths read as "language not present" — so
   `analyze --base` and `config compare` drop the analyzer and report confidence
@@ -393,7 +394,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
   consumer can get wrong), reclassifying each 1:1 add/remove pair with an equal
   normalized path set as `NameDrift`. It then runs the ownership pass
   (`resolveOwnership`): a discovered module whose every `Sources` entry (Go
-  package dirs, Python dotted packages) the configured map owns under
+  package dirs; every Python dotted package and module in the subtree) the
+  configured map owns under
   most-specific matching (`ModuleMap.ModuleFor`, injected from cmd) is
   `Covered`, not `Added`, and its owning stanzas leave `Removed` and are
   field-checked. TypeScript/Rust modules carry no sources and stay name-matched. On top of that, `Removed` is review-only:
@@ -587,12 +589,19 @@ init` emits v2 directly; owners update older configs manually before analysis.
 - **A rule selector that matches nothing is never conformance**
   (`evaluation.selectorInventory.vacuousSelector`, one predicate for check and
   `config lint`). It applies to the selectors of `forbidden_dependency`,
-  `public_api_only`, and `internal_api_access`, over the declared-scope
-  inventory plus node selectors: a `from:` that matches no in-scope source; a
-  `to:` spelled as first-party source (empty literal prefix, or a leading
-  segment the inventory's paths or selectors start with) that matches nothing;
-  and any selector spelled with the Go module path, a leading `!`/`./`/`../`/`/`,
-  or `!(` extglob. A `to:` naming no first-party root (`os`, `github.com/...`)
+  `public_api_only`, and `internal_api_access`, and to the `from:` of
+  `forbidden_pattern` (`selectorRuleTypes`), over the declared-scope
+  inventory plus node selectors. The dependency rules match edge endpoints in
+  each language's own vocabulary (`selectorInventory.matches`): a target is the
+  module node (Go package dir, TS file, Python dotted module, Rust crate), a
+  source is the importing file for Go/TS and the module node for Python/Rust;
+  `forbidden_pattern` matches file path or node selector. Vacuous: a `from:`
+  that matches no in-scope source; a `to:` spelled as first-party source (empty
+  literal prefix, or a leading segment, cut in the selector's own vocabulary,
+  that the inventory's paths or selectors start with; a dotted leading segment
+  of a slash selector is a Go import-path domain, never first-party) that
+  matches nothing; and any selector spelled with the Go module path, a leading
+  `!`/`./`/`../`/`/`, or `!(` extglob. A `to:` naming no first-party root (`os`, `github.com/...`)
   is an external ban, never vacuous; nor is a `to:` whose literal prefix names a
   Go standard-library package or its parent path on segment boundaries
   (`database/sql` beside a top-level `database/`): `Observations.GoStdlibPackages`
@@ -601,8 +610,14 @@ init` emits v2 directly; owners update older configs manually before analysis.
   first-party judgment then applies). Lint and check share the predicate and the
   inventory build, but check alone has Rust crate roots, and `check --lang`
   switches a language back on. The inventory abstains, keeping the generic
-  "rule scope cannot be established" reason, for an unsupported file type and
-  for a language whose node identities are unknown (Rust without crate roots).
+  "rule scope cannot be established" reason, for an unsupported file type, for
+  a language whose node identities are unknown (Rust without crate roots), and
+  for a `crate::mod` selector below a known crate (module nodes come from
+  cargo-modules/SCIP, not the file inventory). A Go selector spelled with a
+  loaded module path is dead even for a nested `go.mod` the run does not load:
+  the Go extractor strips every import under a loaded module path to its
+  scan-root-relative dir (pinned by
+  `TestExtract_NestedUnloadedModuleImportIsScanRootRelative`).
   A vacuous fail-gated rule is listed in `decision.unevaluated_required_rules`
   with the reason `selector matches nothing: <from|to> <glob>` (the App keys a
   policy-defect reason off that prefix); a warn-gated one is a config warning
@@ -727,10 +742,14 @@ init` emits v2 directly; owners update older configs manually before analysis.
   verdict for the exit code. The state carries no ratchet field, so text and
   Markdown name the ratchet (`METRIC RATCHET` / `## Metric ratchet`,
   `ratchetRegressions`, twin helpers in console and markdown) from the
-  Document's metric deltas, and only when the contract proves it: verdict
-  blocked, zero active blockers, no coverage gap gating `fail`. They list every
-  metric that worsened against the accepted baseline, because thresholds are not
-  in the contract; the label says "worsened", never "tripped".
+  Document's metric deltas, and only when the contract proves it, with verdict
+  blocked. With zero active blockers and no coverage gap gating `fail`, they
+  list every metric that worsened against the accepted baseline. Otherwise
+  (`ratchetProvenDimensions`) they list the worsened metrics of each failing
+  dimension with no hard-gate finding ref — for `operations`, also no failing
+  analyzer gate; a ratchet beside a hard-gate finding in its own dimension stays
+  unnamed. Thresholds are not in the contract, so a worsened metric inside its
+  threshold is listed too; the label says "worsened", never "tripped".
   `MetricEntry.Enabled` is a `*bool` so a knob-only
   entry (`{gate: warn}`) stays enabled — only explicit `enabled: false` disables
   the metric (`metrics.New`). `coupling_balance` does not gate at all — the only

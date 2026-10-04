@@ -590,17 +590,17 @@ Exit codes:
 
 Diagnostics:
 
-| Code                     | Severity                       | Meaning                                                                                                                                                 |
-| ------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dead_selector`          | error (warning on `gate: off`) | A `forbidden_dependency`, `public_api_only`, or `internal_api_access` selector matches no scanned source. `check` lists the same rule as not evaluated. |
-| `guard_rule`             | info                           | A `guard: true` rule whose selector matches nothing, as intended.                                                                                       |
-| `guard_matches_source`   | warning                        | A `guard: true` rule whose selectors all match source: the guarded path exists again.                                                                   |
-| `unknown_volatility`     | error                          | `modules.<m>.volatility` is not `high`, `medium`, `low`, `frozen`, or `legacy`.                                                                         |
-| `unknown_subdomain`      | error                          | `modules.<m>.subdomain` is not `core`, `supporting`, or `generic`.                                                                                      |
-| `undeclared_layer`       | error                          | `modules.<m>.layer` is not declared in `layers:`.                                                                                                       |
-| `public_outside_module`  | error                          | A `public:` entry is outside the module's own `paths:`.                                                                                                 |
-| `public_matches_nothing` | error                          | A `public:` entry names no scanned package or module.                                                                                                   |
-| `ambiguous_ownership`    | error                          | Two modules claim the same source at equal glob specificity; the first by name silently wins.                                                           |
+| Code                     | Severity                       | Meaning                                                                                                                                                                                     |
+| ------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dead_selector`          | error (warning on `gate: off`) | A `forbidden_dependency`, `public_api_only`, `internal_api_access`, or `forbidden_pattern` (`from:` only) selector matches no scanned source. `check` lists the same rule as not evaluated. |
+| `guard_rule`             | info                           | A `guard: true` rule whose selector matches nothing, as intended.                                                                                                                           |
+| `guard_matches_source`   | warning                        | A `guard: true` rule whose selectors all match source: the guarded path exists again.                                                                                                       |
+| `unknown_volatility`     | error                          | `modules.<m>.volatility` is not `high`, `medium`, `low`, `frozen`, or `legacy`.                                                                                                             |
+| `unknown_subdomain`      | error                          | `modules.<m>.subdomain` is not `core`, `supporting`, or `generic`.                                                                                                                          |
+| `undeclared_layer`       | error                          | `modules.<m>.layer` is not declared in `layers:`.                                                                                                                                           |
+| `public_outside_module`  | error                          | A `public:` entry is outside the module's own `paths:`.                                                                                                                                     |
+| `public_matches_nothing` | error                          | A `public:` entry names no scanned package or module.                                                                                                                                       |
+| `ambiguous_ownership`    | error                          | Two modules claim the same source at equal glob specificity; the first by name silently wins.                                                                                               |
 
 Notes:
 
@@ -611,9 +611,11 @@ Notes:
   `check --lang` turns on a language the config switches off, which changes
   the source in scope; lint reads the config as written. A selector spelled
   with the Go module path (`example.com/shop/internal/x`), a leading `./`,
-  `../`, `/` or `!`, or an extglob `!(...)` never matches. A `to:` selector that
-  names no first-party source, such as `net/http` or `github.com/...`, is an
-  external ban and is never dead. Neither is a `to:` selector that names a Go
+  `../`, `/` or `!`, or an extglob `!(...)` never matches. Dependency-rule
+  selectors are read in each language's edge spelling; see
+  [Selectors that match nothing](configuration-reference.md#selectors-that-match-nothing).
+  A `to:` selector that names no first-party source, such as `net/http` or
+  `github.com/...`, is an external ban and is never dead. Neither is a `to:` selector that names a Go
   standard-library package (as listed by `go list std` for the toolchain in the
   repository) when a first-party directory shares its first segment, such as
   `database/sql` beside a top-level `database/`.

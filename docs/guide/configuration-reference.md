@@ -1020,12 +1020,25 @@ violation under its own rule ID (`archfit config init` generates at most one).
 
 A rule whose selector matches no scanned source cannot find a violation, so it
 is never counted as evaluated conformance. This applies to the selectors of
-`forbidden_dependency`, `public_api_only`, and `internal_api_access`:
+`forbidden_dependency`, `public_api_only`, and `internal_api_access`, and to
+the `from:` selector of `forbidden_pattern`.
 
-- a `from:` selector that matches no in-scope source file or graph node;
+The dependency rules match graph edge endpoints, spelled per language. A
+`to:` matches the target module node: a Go package directory, a TypeScript
+file, a dotted Python module, or a Rust crate. A `from:` matches the importing
+file for Go and TypeScript, and the module node for Python and Rust. So a Go
+file glob (`internal/domain/*.go`) never matches a `to:`, a bare Go package
+directory never matches a `from:` (write `internal/domain/**`), and a slash
+path never matches a Python or Rust endpoint. A `forbidden_pattern` `from:`
+matches the file path or its node selector. A selector is dead when:
+
+- a `from:` selector matches no in-scope source;
 - a `to:` selector spelled as first-party source (it starts with a wildcard or
   with a top-level directory, Python package, or crate the tree contains) that
-  matches nothing — usually a typo or a renamed directory;
+  matches nothing — usually a typo or a renamed directory. The first segment
+  is read in the selector's own spelling: `go.uber.org/**` is an external ban
+  even beside a top-level `go/` directory, and `app.**` is checked against
+  Python packages;
 - a selector spelled with the Go module path (`example.com/shop/internal/x`;
   rule selectors are scan-root-relative), a leading `./`, `../`, `/` or `!`, or
   an extglob negation `!(...)`, none of which a graph node ID can match.

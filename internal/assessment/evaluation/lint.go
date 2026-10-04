@@ -109,7 +109,8 @@ func ruleDiagnostics(rules []policy.RuleDef, inv selectorInventory) []PolicyDiag
 		case rule.Guard && vacuous:
 			out = append(out, PolicyDiagnostic{Code: LintGuardRule, Severity: LintSeverityInfo, Path: path,
 				Message: "guard rule: " + side + " " + glob + " matches nothing by design"})
-		case rule.Guard && inv.matches(orMatchAll(rule.From)) && inv.matches(orMatchAll(rule.To)):
+		case rule.Guard && inv.matches(rule.Type, selectorFrom, orMatchAll(rule.From)) &&
+			inv.matches(rule.Type, selectorTo, orMatchAll(rule.To)):
 			out = append(out, PolicyDiagnostic{Code: LintGuardMatchesSource, Severity: LintSeverityWarning, Path: path,
 				Message: "guard rule matches scanned source: the guarded path exists — remove the code or drop guard: true"})
 		case vacuous:
@@ -140,10 +141,8 @@ func (inv selectorInventory) vacuityHint(glob string) string {
 	if unmatchableSelector(glob) {
 		return " (selectors are relative paths or dotted/crate names: no leading !, ./, ../ or /, and no !( negation)"
 	}
-	for _, module := range inv.goModules {
-		if module != "" && (glob == module || strings.HasPrefix(glob, module+"/")) {
-			return " (selectors are scan-root-relative: drop the Go module path " + module + "/)"
-		}
+	if module, spelled := inv.goModulePathOf(glob); spelled {
+		return " (selectors are scan-root-relative: drop the Go module path " + module + "/)"
 	}
 	return ""
 }
@@ -176,20 +175,32 @@ func moduleValueDiagnostics(topology policy.TopologyView) []PolicyDiagnostic {
 // that name no scanned node. Public globs match edge targets, which are graph
 // nodes (a Go package directory, a TypeScript file, a dotted Python module),
 // so a stale entry silences a real intrusive edge.
+//
+// Ownership is judged on the nodes an entry matches, so glob syntax on either
+// side ({a,b}, [ab]) compares by what it matches, not by its text. An entry
+// that matches no scanned node is judged by its own text, read as a path.
 func publicSurfaceDiagnostics(topology policy.TopologyView, inv selectorInventory) []PolicyDiagnostic {
 	var out []PolicyDiagnostic
 	for _, name := range sortedModuleNames(topology.Modules) {
 		def := topology.Modules[name]
+		owned := func(node string) bool {
+			return slices.ContainsFunc(def.Paths, func(glob string) bool {
+				matched, _ := doublestar.Match(glob, node)
+				return matched
+			})
+		}
 		for i, pub := range def.Public {
 			path := fmt.Sprintf("modules.%s.public[%d]", name, i)
-			if !slices.ContainsFunc(def.Paths, func(glob string) bool {
-				matched, _ := doublestar.Match(glob, pub)
-				return matched
-			}) {
+			nodes := inv.nodesMatching(pub)
+			outside := slices.ContainsFunc(nodes, func(n string) bool { return !owned(n) })
+			if len(nodes) == 0 {
+				outside = !owned(pub)
+			}
+			if outside {
 				out = append(out, PolicyDiagnostic{Code: LintPublicOutsideModule, Severity: LintSeverityError, Path: path,
 					Message: fmt.Sprintf("public entry %q is outside the module's own paths %v", pub, def.Paths)})
 			}
-			if !inv.matchesNode(pub) && !inv.undecidable(pub) {
+			if len(nodes) == 0 && !inv.undecidable(pub) {
 				out = append(out, PolicyDiagnostic{Code: LintPublicMatchesNothing, Severity: LintSeverityError, Path: path,
 					Message: fmt.Sprintf("public entry %q names no scanned package or module", pub)})
 			}
@@ -248,19 +259,22 @@ func ownershipDiagnostics(mm policy.ModuleMap, inv selectorInventory) []PolicyDi
 	return out
 }
 
-// matchesNode reports whether pattern matches the graph-node selector of some
-// in-scope file: what a public glob is matched against.
-func (inv selectorInventory) matchesNode(pattern string) bool {
+// nodesMatching returns the distinct graph-node selectors of in-scope files
+// that pattern matches: what a public glob is matched against.
+func (inv selectorInventory) nodesMatching(pattern string) []string {
+	var nodes []string
+	seen := map[string]struct{}{}
 	for _, file := range inv.files {
 		_, selector, _ := ruleFileSelector(inv.moduleMap, file, inv.selectors)
-		if selector == "" {
+		if _, done := seen[selector]; selector == "" || done {
 			continue
 		}
+		seen[selector] = struct{}{}
 		if matched, _ := doublestar.Match(pattern, selector); matched {
-			return true
+			nodes = append(nodes, selector)
 		}
 	}
-	return false
+	return nodes
 }
 
 func sortedModuleNames(modules map[string]policy.ModuleDef) []string {

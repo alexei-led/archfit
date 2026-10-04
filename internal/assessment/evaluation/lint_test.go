@@ -10,7 +10,10 @@ import (
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
-const gateFail = string(policy.GateFail)
+const (
+	gateFail   = string(policy.GateFail)
+	pyCoreFlat = "app/core.py"
+)
 
 // lintFixture is a two-module Go tree with one diagnostic per lint code.
 func lintFixture() (policy.PolicySnapshot, evaluation.Observations) {
@@ -225,5 +228,74 @@ func TestDeadSelectorTellsGoStdlibFromFirstPartySource(t *testing.T) {
 	}
 	if want := []string{"rules[internal_typo].to", "rules[schema_typo].to"}; !slices.Equal(dead, want) {
 		t.Fatalf("dead selectors = %v, want %v", dead, want)
+	}
+}
+
+// TestDeadSelectorJudgesEachSelectorInItsOwnVocabulary pins first-party
+// judgement per vocabulary: a slash selector is cut at "/" only, so a Go
+// import-path domain beside a same-named directory (go.uber.org/** beside go/)
+// stays an external ban, while a dotted selector is cut at "." and judged
+// against Python module roots.
+func TestDeadSelectorJudgesEachSelectorInItsOwnVocabulary(t *testing.T) {
+	const svc = "go/svc/**"
+	modules := map[string]policy.ModuleDef{
+		"svc": {Paths: []string{svc}},
+		"k8s": {Paths: []string{"k8s/**"}},
+		"py":  {Paths: []string{"app.**"}},
+	}
+	rules := []policy.RuleDef{
+		{ID: "no_zap", Type: ruleForbidden, Gate: gateFail, From: svc, To: "go.uber.org/**"},
+		{ID: "no_zap_root", Type: ruleForbidden, Gate: gateFail, From: svc, To: "go.uber.org"},
+		{ID: "no_client_go", Type: ruleForbidden, Gate: gateFail, From: svc, To: "k8s.io/client-go/**"},
+		{ID: "go_typo", Type: ruleForbidden, Gate: gateFail, From: svc, To: "go/svx/**"},
+		{ID: "py_typo", Type: ruleForbidden, Gate: gateFail, From: selPyCore, To: "app.adaptr.**"},
+		{ID: "py_external", Type: ruleForbidden, Gate: gateFail, From: selPyCore, To: "requests.adapters"},
+	}
+	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
+	snapshot := policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{},
+		policy.GatePolicy{Rules: policy.RuleConfig{Rules: rules}}, nil, nil)
+	facts := evaluation.Observations{
+		FileClassIndex: map[string]fileclass.FileClass{
+			"go/svc/svc.go": fileclass.Production, "k8s/deploy.go": fileclass.Production,
+			pyCoreFlat: fileclass.Production, "app/adapter.py": fileclass.Production,
+		},
+		SourceSelectors: map[string]string{pyCoreFlat: selPyCore, "app/adapter.py": "app.adapter"},
+	}
+	var dead []string
+	for _, d := range evaluation.LintPolicy(snapshot, facts) {
+		if d.Code == evaluation.LintDeadSelector {
+			dead = append(dead, d.Path)
+		}
+	}
+	if want := []string{"rules[go_typo].to", "rules[py_typo].to"}; !slices.Equal(dead, want) {
+		t.Fatalf("dead selectors = %v, want %v", dead, want)
+	}
+}
+
+// TestPublicOutsideModuleComparesWhatGlobsMatch pins public_outside_module to
+// the nodes a public entry matches, so brace and class globs that select the
+// module's own packages are not reported, and an entry reaching another
+// module's package still is.
+func TestPublicOutsideModuleComparesWhatGlobsMatch(t *testing.T) {
+	modules := map[string]policy.ModuleDef{
+		"ab": {Paths: []string{"internal/{a,b}/**"}, Public: []string{
+			"internal/{a,b}/**", "internal/[ab]/api", "internal/{a,c}/api", "internal/z/api",
+		}},
+		"c": {Paths: []string{"internal/c/**"}},
+	}
+	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
+	snapshot := policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, policy.GatePolicy{}, nil, nil)
+	facts := evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
+		"internal/a/api/api.go": fileclass.Production, "internal/b/api/api.go": fileclass.Production,
+		"internal/c/api/api.go": fileclass.Production,
+	}}
+	var outside []string
+	for _, d := range evaluation.LintPolicy(snapshot, facts) {
+		if d.Code == evaluation.LintPublicOutsideModule {
+			outside = append(outside, d.Path)
+		}
+	}
+	if want := []string{"modules.ab.public[2]", "modules.ab.public[3]"}; !slices.Equal(outside, want) {
+		t.Fatalf("public_outside_module = %v, want %v", outside, want)
 	}
 }

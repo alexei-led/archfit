@@ -55,6 +55,20 @@ Fixed:
   (`exclude:` globs, languages switched off).
 - A `to:` selector that names a Go standard-library package (`database/sql`) is
   an external ban, even when a top-level directory shares its first segment.
+- Dead-selector checks read each dependency-rule selector the way the rule
+  matches graph edges in its language. A Go file glob in `to:`, a bare Go
+  package directory in `from:`, and a slash path over Python or Rust source can
+  never match, and are now reported dead. A Go import-path domain such as
+  `go.uber.org/**` is no longer reported dead beside a top-level `go/`
+  directory, and a `crate::mod` selector below a known crate is left
+  undecided instead of dead.
+- `config lint` judges `public_outside_module` by the packages a `public:`
+  entry matches, so brace and class globs (`internal/{a,b}/**`) no longer give a
+  false error.
+- `forbidden_pattern` reports every distinct match on a line; a second match
+  on a line that already had one is no longer dropped.
+- `config update` checks every Python package and module in a discovered
+  package against the configured map, not only the package root.
 - `cycle` and `module_cycle` findings keep `why` and the repair goal bounded on
   large cycles; the full member list stays in `matched_by.cycle_modules`.
 - `config lint` prints ownership ties in a stable order.
@@ -75,7 +89,9 @@ Upgrade effects:
 - Rules with selectors that match nothing move from "evaluated" to
   unevaluated, so `check` can move from exit 0 to exit 2. Fix the selector, or
   mark an intentional guard rule `guard: true`. archfit-app reports these as
-  `policy_defect`.
+  `policy_defect`. This includes dependency rules with a bare Go package
+  directory in `from:` (write `dir/**`), a Go file glob in `to:` (write the
+  package directory), or a slash path over Python or Rust source.
 - A pattern that ast-grep rejects now marks the `ast-grep` coverage row
   partial instead of reading as "no match".
 - The fact cache schema is `3`; the first run after upgrading is cold.

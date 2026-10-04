@@ -247,6 +247,30 @@ func TestFind_Deduplication(t *testing.T) {
 	}
 }
 
+// TestFind_KeepsDistinctMatchesOnOneLine pins the dedup key to the matched
+// text: forbidden_pattern keys a finding by (pattern, file, text), so a second
+// distinct match on the same line must survive, in column order.
+func TestFind_KeepsDistinctMatchesOnOneLine(t *testing.T) {
+	at := func(text string, column int) map[string]any {
+		e := sgEntry(text, dupFile, patternUnsafe, 9)
+		e["range"].(map[string]any)["start"].(map[string]any)[jsonKeyColumn] = column
+		return e
+	}
+	output := marshalEntries(t, []map[string]any{at("unsafe.Pointer(&b)", 30), at("unsafe.Pointer(&a)", 2)})
+
+	matches, _, err := astgrep.New(presentRunner(output)).Find(context.Background(), testScope, singlePatternCfg)
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	texts := make([]string, 0, len(matches))
+	for _, m := range matches {
+		texts = append(texts, m.Text)
+	}
+	if want := []string{"unsafe.Pointer(&a)", "unsafe.Pointer(&b)"}; !slices.Equal(texts, want) {
+		t.Fatalf("matches = %v, want %v", texts, want)
+	}
+}
+
 func TestFind_EmptyOutput_ReturnsNoMatches(t *testing.T) {
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
