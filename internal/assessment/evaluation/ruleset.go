@@ -15,7 +15,8 @@ type RuleEvidence struct {
 	PatternMatches []pattern.Match
 	// SyntaxFacts is nil/empty when the syntax pass is off.
 	SyntaxFacts []evidence.SyntaxFact
-	// FileClasses is the source inventory's file classification.
+	// FileClasses is the source inventory's file classification, without the
+	// files the configuration declared out of scope.
 	FileClasses map[string]fileclass.FileClass
 }
 

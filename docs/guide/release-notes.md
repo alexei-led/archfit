@@ -1,5 +1,87 @@
 # Release notes
 
+## v2.4.0 — guardrails that fire (unreleased)
+
+This release fixes guardrails that silently did not fire, adds the rules an
+architect needs to state module boundaries, and stops the engine from
+misdirecting agents. The architecture-state JSON shape, baseline schema v2 and
+the comparison fingerprints are unchanged. Verdicts can change on upgrade:
+read the "Upgrade effects" list before enabling it in CI.
+
+New:
+
+- `module_cycle` rule: dependency cycles between declared modules, in every
+  language. One finding per ordered module pair inside a cycle; its repair task
+  names the cycle and asks to remove one direction. The node-level `cycle` rule
+  is unchanged and is always zero on compiling Go (edges run file -> package).
+- `forbidden_pattern` rule: the only consumer of `rules[].patterns`. It fires on
+  ast-grep matches in production files under `from:`. Patterns on any other
+  rule type load with a warning; they never produced findings.
+- `archfit config lint` (`archfit.config-lint.v1`): dead selectors, unknown
+  volatility/subdomain values, undeclared layers, public surfaces outside their
+  module or matching nothing, and equal-specificity ownership ties. Exit 0 clean,
+  1 on errors, 3 when the config cannot be read.
+- Rule key `guard: true` marks a rule that is meant to match nothing (a guard
+  against a removed package returning).
+- `config init` emits failable starter rules: `no-module-cycles`, and
+  `no-layer-back-edges` when it inferred two or more layers. Each is
+  `gate: fail` when the init-time graph is complete and clean, otherwise
+  `gate: warn` with the reason. Without inferred layers it writes a commented
+  `layers:` how-to instead of guessing layers from directory names.
+- Releases attach `image-identity.json` with the per-platform image digests.
+
+Fixed:
+
+- `public_api_only` and `internal_api_access` decide from the declared
+  `public:` and `internal:` globs in every language. A Go import that bypasses a
+  declared surface now fires when `go.mod` sits at the scan root, and imports
+  through a declared `public:` surface no longer fire when `go.mod` sits in a
+  subdirectory. Existing finding IDs are unchanged.
+- A gated rule whose `from:`/`to:` selector matches nothing is never counted as
+  evaluated. A fail-gated one is listed in `decision.unevaluated_required_rules`
+  with the reason `selector matches nothing: <from|to> <glob>`; a warn-gated one
+  is a config warning.
+- Rule scope honors `exclude:` and languages switched off, so a stray helper
+  script no longer keeps Go rules unevaluated waiting for dependency-cruiser or
+  grimp.
+- Agent repair tasks: forbidden-dependency, layer, cycle, module-cycle and
+  new-cross-module tasks no longer list the target's public surface as a route
+  (going through it keeps the violation); seam-gate tasks name the files of the
+  qualifying edges.
+- A tripped metric ratchet is named in text and Markdown output with its
+  baseline and current values, also beside other blockers for each dimension
+  whose failing gate only a ratchet explains.
+- `forbidden_pattern` never fires in files outside the declared scope
+  (`exclude:` globs, languages switched off).
+- A `to:` selector that names a Go standard-library package (`database/sql`) is
+  an external ban, even when a top-level directory shares its first segment.
+- `cycle` and `module_cycle` findings keep `why` and the repair goal bounded on
+  large cycles; the full member list stays in `matched_by.cycle_modules`.
+- `config lint` prints ownership ties in a stable order.
+- `model_hash` and Go deploy units no longer depend on how the shell spells the
+  repository path (a `/tmp` symlink or an APFS case variant).
+- Go files excluded by build constraints (`_windows.go`, tag-gated files) are
+  counted in the go/packages coverage reason and one stderr warning.
+- `config init`/`update` detect languages the way analysis does: a `go.work`
+  monorepo without a root `go.mod` gets Go enabled and one module per member.
+  `config update` no longer proposes catch-all modules over code the configured
+  map already owns.
+
+Upgrade effects:
+
+- Repositories with declared `internal:` globs can get new `public_api_only` /
+  `internal_api_access` findings that were previously missed.
+- Configs whose `no_cycles` rule moves to `module_cycle` can get new findings.
+- Rules with selectors that match nothing move from "evaluated" to
+  unevaluated, so `check` can move from exit 0 to exit 2. Fix the selector, or
+  mark an intentional guard rule `guard: true`. archfit-app reports these as
+  `policy_defect`.
+- A pattern that ast-grep rejects now marks the `ast-grep` coverage row
+  partial instead of reading as "no match".
+- The fact cache schema is `3`; the first run after upgrading is cold.
+- `check`, `analyze` and `config lint` run one `go list std` per repository
+  with a Go module; if it fails, the previous selector judgment applies.
+
 ## v2.3.1 — corpus correctness
 
 Release date: 2026-09-20

@@ -208,7 +208,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 
 	history := buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner, graphResult.Graph.CrateRoots()...)
 	observations := assessmentObservationsOf(
-		snapshot, ruleScopeObservations(resolved.Root, snapshot, s.Options),
+		snapshot, ruleScopeObservations(ctx, s.Runner, resolved.Root, snapshot, s.Options),
 		declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
 	)
 	// Config values schema v2 still loads but classification cannot read, and
@@ -251,8 +251,8 @@ func assessmentObservationsOf(
 	return evaluation.Observations{
 		Coverage: f.Coverage, SuppliedCoverage: f.SuppliedCoverage,
 		SourceSelectors: inventory.SourceSelectors, OutOfScopeFiles: inventory.OutOfScopeFiles,
-		GoModulePaths: inventory.GoModulePaths,
-		Symbols:       f.Symbols, PatternMatches: f.PatternMatches,
+		GoModulePaths: inventory.GoModulePaths, GoStdlibPackages: inventory.GoStdlibPackages,
+		Symbols: f.Symbols, PatternMatches: f.PatternMatches,
 		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
 		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
 		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,

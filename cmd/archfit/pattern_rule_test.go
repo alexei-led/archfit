@@ -93,10 +93,10 @@ func (r sgPatternFakeRunner) Stream(ctx context.Context, cmd toolrun.ToolCmd, co
 	return r.real.Stream(ctx, cmd, consume)
 }
 
-// sgMatchJSON renders ast-grep's --json shape for one match (0-based line).
-func sgMatchJSON(file string, line0 int, text string) map[string]any {
+// sgMatchJSON renders ast-grep's --json shape for one time.Now() match (0-based line).
+func sgMatchJSON(file string, line0 int) map[string]any {
 	return map[string]any{
-		"text": text, "file": file, "language": "Go",
+		"text": "time.Now()", "file": file, "language": "Go",
 		"range": map[string]any{"start": map[string]any{"line": line0, "column": 8}, "end": map[string]any{"line": line0, "column": 18}},
 	}
 }
@@ -110,9 +110,9 @@ func TestPipeline_ForbiddenPatternBlocksAProductionHit(t *testing.T) {
 	cfgPath := writeRuleFixtureRepo(t, clockFixtureFiles(clockFixtureConfig))
 	root := filepath.Dir(cfgPath)
 	matches, err := json.Marshal([]map[string]any{
-		sgMatchJSON("internal/app/handler.go", 5, "time.Now()"),
-		sgMatchJSON(fileDomainService, 5, "time.Now()"),
-		sgMatchJSON("internal/domain/service_test.go", 7, "time.Now()"),
+		sgMatchJSON("internal/app/handler.go", 5),
+		sgMatchJSON(fileDomainService, 5),
+		sgMatchJSON("internal/domain/service_test.go", 7),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -188,5 +188,86 @@ func TestRun_Check_WarnsOnPatternsOutsideForbiddenPattern(t *testing.T) {
 	}
 	if !strings.Contains(stderr, `warning: rule "domain_no_clock" (type forbidden_dependency) declares patterns`) {
 		t.Errorf("stderr lacks the patterns warning:\n%s", stderr)
+	}
+}
+
+// TestPipeline_ForbiddenPatternIgnoresOutOfScopeFiles pins forbidden_pattern to
+// the declared analysis scope. The LOC walk and the ast-grep scan both ignore
+// exclude:, so a hit in an excluded tree or in a switched-off language reaches
+// the rule as a classified production file; rule scope already drops those
+// files, and the rule must not fire on them either.
+func TestPipeline_ForbiddenPatternIgnoresOutOfScopeFiles(t *testing.T) {
+	const (
+		ruleID     = "no_clock"
+		legacyFile = "legacy/old.go"
+		ruleBlock  = `rules:
+  - id: no_clock
+    type: forbidden_pattern
+    from: "**"
+    gate: fail
+    patterns:
+      - id: clock
+        lang: go
+        rule: "time.Now()"
+`
+	)
+	clockRead := "package legacy\n\nimport \"time\"\n\nfunc Stamp() int64 {\n\treturn time.Now().Unix()\n}\n"
+	tests := []struct {
+		name    string
+		config  string
+		files   map[string]string
+		hitFile string
+	}{
+		{
+			name:   "excluded tree",
+			config: "version: 2\nexclude: [\"legacy/**\"]\n" + ruleBlock,
+			files: map[string]string{
+				markerGoMod:       fixtureShopGoMod,
+				legacyFile:        clockRead,
+				fileDomainService: "package domain\n\nfunc Answer() int { return 42 }\n",
+			},
+			hitFile: legacyFile,
+		},
+		{
+			name:   "switched-off language",
+			config: "version: 2\nlanguages:\n  go:\n    enabled: false\n" + ruleBlock,
+			files: map[string]string{
+				markerGoMod:  fixtureShopGoMod,
+				legacyFile:   clockRead,
+				"web/app.ts": "export const answer = 42;\n",
+			},
+			hitFile: legacyFile,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			files := tc.files
+			files[defaultConfigPath] = tc.config
+			cfgPath := writeRuleFixtureRepo(t, files)
+			matches, err := json.Marshal([]map[string]any{sgMatchJSON(tc.hitFile, 5)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := loadConfig(context.Background(), cfgPath)
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			deps := &appDeps{Runner: sgPatternFakeRunner{real: toolrun.New(), matches: matches}, Stdout: io.Discard, Stderr: io.Discard}
+			diag, _, err := runPipeline(context.Background(), deps, cfg, cfgPath, filepath.Dir(cfgPath))
+			if err != nil {
+				t.Fatalf("pipeline: %v", err)
+			}
+			for _, f := range diag.Findings {
+				if f.RuleID == ruleID {
+					t.Errorf("forbidden_pattern fired outside the declared scope: %+v", f.Locations)
+				}
+			}
+			for _, rule := range diag.State.Decision.UnevaluatedRequiredRules {
+				if rule.RuleID == ruleID {
+					t.Errorf("forbidden_pattern listed unevaluated: %s", rule.Reason)
+				}
+			}
+		})
 	}
 }

@@ -11,10 +11,11 @@ import (
 const (
 	publicAPIText    = "public API"
 	targetPublicGlob = "pkg/b/api/**"
+	ruleTypeNewCross = "new_cross_module_dependency"
 )
 
 func TestRepairDoesNotSuggestForbiddenPublicRoute(t *testing.T) {
-	for _, ruleType := range []string{ruleTypeForbidden, "new_cross_module_dependency"} {
+	for _, ruleType := range []string{ruleTypeForbidden, ruleTypeNewCross} {
 		t.Run(ruleType, func(t *testing.T) {
 			f := gateFinding("repair", ruleForbidden, finding.StatusNew)
 			f.Constraint = "Remove the dependency"
@@ -33,10 +34,11 @@ func TestRepairDoesNotSuggestForbiddenPublicRoute(t *testing.T) {
 }
 
 // TestConstraintsListTargetPublicSurfaceOnlyWhereItIsARoute pins the
-// rule-aware constraint: a forbidden dependency or an inverted layer stays a
-// violation through the target's public API, so listing that surface sends the
-// agent straight back to the forbidden target. Rules whose remedy IS the public
-// surface, or that describe the module's own surface, keep it.
+// rule-aware constraint: a forbidden dependency, an inverted layer, a cycle, or
+// a new cross-module dependency stays a violation through the target's public
+// API, so listing that surface sends the agent straight back into it. Rules
+// whose remedy IS the public surface, or that describe the module's own
+// surface, keep it.
 func TestConstraintsListTargetPublicSurfaceOnlyWhereItIsARoute(t *testing.T) {
 	tests := []struct {
 		ruleType   string
@@ -46,7 +48,9 @@ func TestConstraintsListTargetPublicSurfaceOnlyWhereItIsARoute(t *testing.T) {
 		{ruleTypeLayer, false},
 		{ruleTypePublicAPI, true},
 		{"internal_api_access", true},
-		{"cycle", true},
+		{"cycle", false},
+		{ruleTypeCycle, false},
+		{ruleTypeNewCross, false},
 		{"public_api_max", true},
 	}
 	for _, tc := range tests {

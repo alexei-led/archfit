@@ -604,12 +604,19 @@ Diagnostics:
 
 Notes:
 
-- A dead selector is decided by the predicate rule evaluation uses, so lint and
-  `check` cannot disagree. A selector spelled with the Go module path
-  (`example.com/shop/internal/x`), a leading `./`, `../`, `/` or `!`, or an
-  extglob `!(...)` never matches. A `to:` selector that names no first-party
-  source, such as `net/http` or `github.com/...`, is an external ban and is
-  never dead.
+- A dead selector is decided by the predicate rule evaluation uses, over the
+  same source inventory, so lint and a `check` of the same config agree, with
+  two exceptions. Lint runs no `cargo metadata`, so it leaves selectors a Rust
+  crate could spell undecided where `check` can list them as not evaluated.
+  `check --lang` turns on a language the config switches off, which changes
+  the source in scope; lint reads the config as written. A selector spelled
+  with the Go module path (`example.com/shop/internal/x`), a leading `./`,
+  `../`, `/` or `!`, or an extglob `!(...)` never matches. A `to:` selector that
+  names no first-party source, such as `net/http` or `github.com/...`, is an
+  external ban and is never dead. Neither is a `to:` selector that names a Go
+  standard-library package (as listed by `go list std` for the toolchain in the
+  repository) when a first-party directory shares its first segment, such as
+  `database/sql` beside a top-level `database/`.
 - Mark a rule that matches nothing on purpose, such as a ban on re-introducing
   a deleted package, with `guard: true`.
 - Unknown `volatility`, `subdomain`, and `layer` values still load in config

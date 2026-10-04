@@ -22,22 +22,33 @@ type metricRegression struct {
 //
 // A tripped ratchet produces no finding, so the state cannot point at it; the
 // document's metric deltas can. They are read only when the contract proves a
-// ratchet blocked: the verdict is blocked, no active blocker finding exists,
-// and no required analyzer failed its gate — the only other causes of a
-// blocked verdict. The thresholds (metrics.<name>.max_new / min_delta) and the
-// per-metric gate are not in the contract, so every metric that worsened is
+// ratchet blocked. The verdict must be blocked. With no active blocker and no
+// required analyzer failing its gate, nothing else can block, so every
+// worsened metric is listed. Otherwise the proof is per dimension: a
+// dimension's gate fails only from a hard-gate finding routed to it, from a
+// tripped ratchet on a metric it owns, or (operations only) from a required
+// analyzer failing its gate. A failing dimension with no hard-gate finding ref
+// — and, for operations, no failing analyzer gate — therefore holds a tripped
+// ratchet, and only its worsened metrics are listed. A ratchet in a dimension a
+// blocker also explains cannot be told apart and stays unnamed.
+//
+// The thresholds (metrics.<name>.max_new / min_delta) and the per-metric gate
+// are not in the contract, so every worsened metric of a proven dimension is
 // listed, one still inside its threshold included; the section says
 // "worsened", never "tripped". The console renderer keeps an identical twin.
 func ratchetRegressions(d report.Document) []metricRegression {
 	s := d.State
-	if s.Verdict != report.StateBlocked || s.Decision.ActiveBlockers > 0 {
+	if s.Verdict != report.StateBlocked {
 		return nil
 	}
+	analyzerGateFailed := false
 	for _, gap := range d.CoverageGaps {
 		if gap.Gate == string(report.GateFail) {
-			return nil
+			analyzerGateFailed = true
 		}
 	}
+	listAll := s.Decision.ActiveBlockers == 0 && !analyzerGateFailed
+	proven := ratchetProvenDimensions(s.Dimensions, analyzerGateFailed)
 	var out []metricRegression
 	for _, m := range d.Metrics {
 		if !worsened(m) {
@@ -45,7 +56,32 @@ func ratchetRegressions(d report.Document) []metricRegression {
 		}
 		r := metricRegression{name: m.Name, before: m.Value - *m.Delta, after: m.Value}
 		r.dimension, r.gate = owningDimension(s.Dimensions, m.Name)
+		if _, ok := proven[r.dimension]; !listAll && !ok {
+			continue
+		}
 		out = append(out, r)
+	}
+	return out
+}
+
+// ratchetProvenDimensions names the dimensions whose failing gate only a
+// tripped ratchet can explain: no hard-gate finding is routed to them, and the
+// operations gate is not also explained by a required analyzer failing.
+func ratchetProvenDimensions(dims report.Dimensions, analyzerGateFailed bool) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, dim := range dims.All() {
+		if dim.Gate != report.GateFail || (analyzerGateFailed && dim.Name == report.DimensionOperations) {
+			continue
+		}
+		explained := false
+		for _, ref := range dim.Findings {
+			if ref.Kind == report.FindingKindGate {
+				explained = true
+			}
+		}
+		if !explained {
+			out[dim.Name] = struct{}{}
+		}
 	}
 	return out
 }

@@ -46,11 +46,13 @@ func (d PolicyDiagnostic) IsError() bool { return d.Severity == LintSeverityErro
 
 // LintPolicy reports the configuration defects that loading accepts but that
 // silently weaken the policy, judged against the rule-scope source inventory:
-// dead rule selectors (the predicate rule scope uses, so lint and check agree),
+// dead rule selectors (the predicate rule scope uses; see selectorInventory for
+// where lint and check inputs differ),
 // guard rules, unknown module volatility or subdomain values, layers missing
 // from `layers:`, public entries outside their module or matching no source,
 // and source paths two modules claim at equal specificity. Diagnostics are
-// sorted by path, then code.
+// sorted by path, then code, then message, so two ties that name the same first
+// module keep one order.
 func LintPolicy(p policy.PolicySnapshot, f Observations) []PolicyDiagnostic {
 	inv := newSelectorInventory(p.Topology.ModuleMap, sourceInventoryFiles(f), f)
 	out := ruleDiagnostics(p.Gates.Rules.Rules, inv)
@@ -61,7 +63,10 @@ func LintPolicy(p policy.PolicySnapshot, f Observations) []PolicyDiagnostic {
 		if out[i].Path != out[j].Path {
 			return out[i].Path < out[j].Path
 		}
-		return out[i].Code < out[j].Code
+		if out[i].Code != out[j].Code {
+			return out[i].Code < out[j].Code
+		}
+		return out[i].Message < out[j].Message
 	})
 	return out
 }
@@ -227,8 +232,14 @@ func ownershipDiagnostics(mm policy.ModuleMap, inv selectorInventory) []PolicyDi
 			}
 		}
 	}
+	keys := make([]string, 0, len(ties))
+	for key := range ties {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
 	out := make([]PolicyDiagnostic, 0, len(ties))
-	for _, t := range ties {
+	for _, key := range keys {
+		t := ties[key]
 		out = append(out, PolicyDiagnostic{Code: LintAmbiguousOwnership, Severity: LintSeverityError,
 			Path: "modules." + t.modules[0] + ".paths",
 			Message: fmt.Sprintf("%d source path(s), e.g. %s, are claimed at equal specificity by modules %s; %s wins by name",

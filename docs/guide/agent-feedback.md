@@ -63,8 +63,10 @@ Every ACTIVE gate finding produces one structured repair task:
 `needs_owner_decision` for a policy or accepted-debt decision. Goals are
 deterministic templates per rule type; constraints carry the rule type's fixed
 constraint text plus the target module's public globs, except on
-`forbidden_dependency` and `forbidden_layer_direction` tasks, which never list
-the target's public surface (the dependency is forbidden through it too).
+`forbidden_dependency`, `forbidden_layer_direction`, `cycle`, `module_cycle`,
+and `new_cross_module_dependency` tasks, which never list the target's public
+surface: routing through it keeps the dependency forbidden, the layer inverted,
+the cycle closed, or the cross-module dependency new.
 Validation is the exact `archfit check` command to re-run. The repair is done
 when that run no longer lists the task's `finding_id` and its verdict is not
 `blocked`; exit 2 can remain and is not a failed repair. One import that breaks

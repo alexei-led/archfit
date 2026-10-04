@@ -311,9 +311,15 @@ init` emits v2 directly; owners update older configs manually before analysis.
   synthetic crate::mod and go.work members stay out) and emits one
   `module_dependency` finding per ordered pair inside an SCC, keyed by
   `finding.NewKeyed(rule, kind, from, to)` with empty endpoint paths.
-  `resolveEvidence` fills a module only when it is empty and has a path.
+  `resolveEvidence` fills a module only when it is empty and has a path. Its
+  `why` names the pair and the cycle size only; the node-level `cycle` why caps
+  its member list (`boundedMemberList`, 300 bytes) and the module-cycle goal
+  collapses a long member list to its size (`agenttask.cycleMembers`). The App
+  rejects a `why` over 500 characters, so no finding text may grow with the graph.
 - **`forbidden_pattern` is the only consumer of `rules[].patterns`.** It fires
-  on production files in the LOC inventory (`FileClassIndex`) under `from:`
+  on production files in the LOC inventory (`FileClassIndex` minus
+  `OutOfScopeFiles`, `evaluation.inScopeFileClasses`; the LOC walk and the `sg`
+  scan ignore `exclude:` and switched-off languages) under `from:`
   (path or convention selector — the same matcher its producer scope uses), is
   evaluated only when the `ast-grep` pattern row is ok, and never puts matched
   source text in a finding (the text is hashed into the ID only). A pattern run
@@ -450,7 +456,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
 - **Owner inheritance for auto-registered synthetic submodules**
   (`classify.AugmentModulesFromGraph`, `AugmentGoWorkspaceModules`): propagates
   `owner` from the nearest config-declared ancestor module to each synthetic module.
-  Fixes inter-submodule edges defaulting to `cross_module_different_owner` (D=10)
+  Fixes inter-submodule edges defaulting to `cross_module_different_owner` (D=7)
   on single-team repos with many cargo-modules or Go workspace members.
 - **SCIP empty-index reports `partial`/`warn`** (`internal/extract/scip/scip_strength.go`).
   When the resolved edge map is empty (`len(m)==0`), `Coverage.Status` is set
@@ -541,10 +547,12 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `declarations`.
 - **Agent repair contracts are policy-aware and replayable.** Each task carries
   `repair_kind: code_change|needs_owner_decision`; forbidden-dependency goals
-  cannot route through a public API, `forbidden_dependency` and
-  `forbidden_layer_direction` constraints never list the target module's public
-  surface (`agenttask.forbidsTarget`), and new-cross-module goals cannot use
-  baseline capture as a repair. One task per active gate finding: an import that
+  cannot route through a public API, `forbidden_dependency`,
+  `forbidden_layer_direction`, `cycle`, `module_cycle`, and
+  `new_cross_module_dependency` constraints never list the target module's
+  public surface (`agenttask.forbidsTarget`: a public route keeps the
+  violation), and new-cross-module goals cannot use baseline capture as a
+  repair. One task per active gate finding: an import that
   breaks two rules is two findings and two tasks. Validation replays `--base`,
   `--lang`, and `--require-tools`; it omits `--refresh` so cache control cannot
   change the result.
@@ -585,7 +593,14 @@ init` emits v2 directly; owners update older configs manually before analysis.
   segment the inventory's paths or selectors start with) that matches nothing;
   and any selector spelled with the Go module path, a leading `!`/`./`/`../`/`/`,
   or `!(` extglob. A `to:` naming no first-party root (`os`, `github.com/...`)
-  is an external ban, never vacuous. The inventory abstains, keeping the generic
+  is an external ban, never vacuous; nor is a `to:` whose literal prefix names a
+  Go standard-library package or its parent path on segment boundaries
+  (`database/sql` beside a top-level `database/`): `Observations.GoStdlibPackages`
+  comes from `go list std` through `toolrun` in `acquisition.ruleScopeObservations`,
+  only when a Go module exists, `internal`/`vendor` dropped, nil on failure (the
+  first-party judgment then applies). Lint and check share the predicate and the
+  inventory build, but check alone has Rust crate roots, and `check --lang`
+  switches a language back on. The inventory abstains, keeping the generic
   "rule scope cannot be established" reason, for an unsupported file type and
   for a language whose node identities are unknown (Rust without crate roots).
   A vacuous fail-gated rule is listed in `decision.unevaluated_required_rules`

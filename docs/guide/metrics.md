@@ -52,15 +52,23 @@ upward (delta > `max_new`), ratio metrics (`encapsulation`, `coverage`) worsen
 downward (drop > `min_delta`). Per-metric `gate`/threshold knobs are documented
 in the [configuration reference](configuration-reference.md#metrics).
 
-A blocking metric delta produces no finding and no agent task: the run is
-`blocked` with zero `active_blockers`. When no required analyzer failed its gate
-either, the text and Markdown output add a `METRIC RATCHET` / `## Metric ratchet`
-section. It lists every metric that worsened against the accepted baseline with
-its baseline and current values and its dimension gate, the `gate_reference`
-status and reasons, and the next step: fix the regression, or have an owner
-review the new value and re-run `archfit baseline`. The thresholds are not in the
-report, so a worsened metric that stayed inside its threshold is listed too. The
-JSON state has no field for the ratchet yet.
+A blocking metric delta produces no finding and no agent task, but it fails the
+gate of the dimension that owns the metric. The text and Markdown output add a
+`METRIC RATCHET` / `## Metric ratchet` section whenever the report proves a
+ratchet blocked:
+
+- With zero `active_blockers` and no required analyzer failing its gate, only a
+  ratchet can block, so the section lists every metric that worsened.
+- Otherwise it lists the worsened metrics of each dimension whose gate is
+  `fail` with no hard-gate finding routed to it (for `operations`, also no
+  required analyzer failing its gate). A ratchet in a dimension that also holds
+  a hard-gate finding cannot be told apart from that finding and is not named.
+
+Each entry shows the baseline and current values and the dimension gate,
+followed by the `gate_reference` status and reasons and the next step: fix the
+regression, or have an owner review the new value and re-run `archfit baseline`.
+The thresholds are not in the report, so a worsened metric that stayed inside
+its threshold is listed too. The JSON state has no field for the ratchet yet.
 
 `archfit check`'s exit code IS this verdict: `0` healthy, `2` needs_attention,
 `1` blocked, `3` tool/config error. Exit 0 is reachable when all nine dimensions

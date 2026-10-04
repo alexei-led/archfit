@@ -40,9 +40,13 @@ public_outside_module, public_matches_nothing, ambiguous_ownership.
 Warnings: guard_matches_source, and dead_selector on a gate: off rule.
 Info: guard_rule.
 
-A dead selector is decided by the same predicate check uses: a gated rule with
-one is listed in decision.unevaluated_required_rules (gate: fail) or as a config
-warning (gate: warn). Mark an intentional match-nothing rule with guard: true.
+A dead selector is decided by the predicate check uses, over the same source
+inventory: a gated rule with one is listed in decision.unevaluated_required_rules
+(gate: fail) or as a config warning (gate: warn). Two exceptions: lint runs no
+cargo metadata, so it leaves selectors a Rust crate could spell undecided where
+check can call them dead; and check --lang turns on a language the config
+switches off, which changes the source in scope, while lint reads the config as
+written. Mark an intentional match-nothing rule with guard: true.
 
 Common runs:
   archfit config lint

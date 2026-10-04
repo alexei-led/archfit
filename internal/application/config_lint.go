@@ -22,8 +22,12 @@ type ConfigLintRequest struct {
 
 // ConfigLintService reports configuration defects that loading accepts but that
 // silently weaken the policy. It reads the source inventory and runs no
-// analyzer, and the vacuity decision is the one rule evaluation makes, so lint
-// and check cannot disagree about a dead selector.
+// analyzer. The vacuity decision is the one rule evaluation makes, over the
+// same inventory build, so lint and a check of the same config agree about a
+// dead selector, with two exceptions. Check has the Rust crate names cargo
+// metadata supplies, so it can call a Rust-spelled selector dead that lint
+// leaves undecided. `check --lang` turns on a language the config switches
+// off, which changes the source in scope; lint reads the config as written.
 type ConfigLintService struct {
 	Inventory SourceInventoryReader
 }

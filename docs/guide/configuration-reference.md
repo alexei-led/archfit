@@ -1167,7 +1167,9 @@ How it decides:
   module such as `myapp.domain.**`). `to` is a config error.
 - Only **production** files in the source inventory fire: test, generated, and
   vendored files never do, and neither do directories the source walk skips
-  (`testdata`, `vendor`, `node_modules`, and similar).
+  (`testdata`, `vendor`, `node_modules`, and similar), files an `exclude:` glob
+  matches, or files of a language switched off with
+  `languages.<id>.enabled: false` and no explicit `gate:`.
 - Findings are one per pattern, file, and matched text (whitespace removed),
   located at every line of that text in the file (sorted, at most 50). The ID
   leaves the line out, so a moved or reformatted match keeps it. Findings name

@@ -232,6 +232,9 @@ the named selector, or mark an intentional guard with `guard: true`, in an
 owner-approved config change. The array is structured and sorted by `rule_id`;
 do not infer it from report prose. Run `archfit config lint` as a fast step
 beside `check`: it exits `1` on the same dead selectors before any analyzer runs.
+Two exceptions: lint leaves selectors a Rust crate could spell undecided (it
+runs no `cargo metadata`), and `check --lang` turns on a language the config
+switches off, so its source scope differs from the config lint reads.
 
 ## 8. Environment variables and `.env`
 

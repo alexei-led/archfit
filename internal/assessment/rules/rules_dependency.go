@@ -363,12 +363,46 @@ func (r *cycleRule) Check(s relationship.Set, _ Evidence) []finding.Finding {
 				"cycle_members": strings.Join(scc, ", "),
 				"cycle_size":    strconv.Itoa(len(scc)),
 			},
-			Why:        fmt.Sprintf("Import cycle detected among %d nodes: %s", len(scc), strings.Join(scc, " → ")),
+			Why:        fmt.Sprintf("Import cycle detected among %d nodes: %s", len(scc), boundedMemberList(scc, " → ")),
 			Constraint: "Break the cycle by introducing an abstraction or reorganizing packages",
 		}
 		out = append(out, f)
 	}
 	return out
+}
+
+// maxWhyMemberBytes bounds the member list a cycle why prints. Report consumers
+// cap why (the App rejects a report whose why exceeds 500 characters), and a
+// strongly-connected component has no size limit; matched_by keeps every
+// member. Bytes bound runes and UTF-16 units alike.
+const maxWhyMemberBytes = 300
+
+// boundedMemberList joins members with sep when the whole list fits in
+// maxWhyMemberBytes. Otherwise it keeps the leading members that fit and says
+// how many it left out, so the why stays bounded whatever the cycle size.
+func boundedMemberList(members []string, sep string) string {
+	if full := strings.Join(members, sep); len(full) <= maxWhyMemberBytes {
+		return full
+	}
+	var b strings.Builder
+	shown := 0
+	for _, m := range members {
+		next := m
+		if shown > 0 {
+			next = sep + m
+		}
+		tail := fmt.Sprintf("%s… and %d more", sep, len(members)-shown-1)
+		if b.Len()+len(next)+len(tail) > maxWhyMemberBytes {
+			break
+		}
+		b.WriteString(next)
+		shown++
+	}
+	if shown == 0 {
+		return fmt.Sprintf("%d members, listed in matched_by", len(members))
+	}
+	fmt.Fprintf(&b, "%s… and %d more", sep, len(members)-shown)
+	return b.String()
 }
 
 // cycleFingerprintID computes a stable 32-char hex ID for a cycle finding
@@ -450,7 +484,6 @@ func (r *moduleCycle) Check(s relationship.Set, _ Evidence) []finding.Finding {
 	out := make([]finding.Finding, 0, len(pairs))
 	for _, p := range pairs {
 		scc := sccs[component[p.from]]
-		members := strings.Join(scc, ", ")
 		locs, total := sortedCappedLocations(sites[p])
 		f := finding.NewKeyed(r.def.ID, edgeKindModuleDependency, p.from, p.to)
 		f.Severity = finding.SeverityHigh
@@ -460,11 +493,13 @@ func (r *moduleCycle) Check(s relationship.Set, _ Evidence) []finding.Finding {
 		f.MatchedBy = map[string]string{
 			"from_module":     p.from,
 			"to_module":       p.to,
-			"cycle_modules":   members,
+			"cycle_modules":   strings.Join(scc, ", "),
 			"cycle_size":      strconv.Itoa(len(scc)),
 			"locations_total": strconv.Itoa(total),
 		}
-		f.Why = fmt.Sprintf("Module %s depends on %s, and the two are in a dependency cycle among declared modules: %s", p.from, p.to, members)
+		// The why names the pair and the cycle size only: a component can hold
+		// every declared module, and matched_by.cycle_modules lists them.
+		f.Why = fmt.Sprintf("Module %s depends on %s, and the two are in a dependency cycle among %d declared modules", p.from, p.to, len(scc))
 		f.Constraint = "Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"
 		out = append(out, f)
 	}

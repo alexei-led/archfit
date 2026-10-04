@@ -154,3 +154,76 @@ func TestLintAndCheckAgreeOnVacuousRules(t *testing.T) {
 		t.Fatalf("lint dead selectors %v, check vacuous rules %v: the two must agree", linted, decided)
 	}
 }
+
+// TestLintPolicyOrdersOwnershipTiesDeterministically pins a stable order for
+// two tied module sets that point at the same config path: both ties name
+// module a first, so path and code are equal and only the message differs.
+func TestLintPolicyOrdersOwnershipTiesDeterministically(t *testing.T) {
+	modules := map[string]policy.ModuleDef{
+		"a": {Paths: []string{"x/**", "y/**"}},
+		"b": {Paths: []string{"x/**"}},
+		"c": {Paths: []string{"y/**"}},
+	}
+	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
+	snapshot := policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{}, policy.GatePolicy{}, nil, nil)
+	facts := evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
+		"x/x.go": fileclass.Production, "y/y.go": fileclass.Production,
+	}}
+	messages := func() []string {
+		var out []string
+		for _, d := range evaluation.LintPolicy(snapshot, facts) {
+			if d.Code == evaluation.LintAmbiguousOwnership {
+				out = append(out, d.Path+": "+d.Message)
+			}
+		}
+		return out
+	}
+	first := messages()
+	if len(first) != 2 {
+		t.Fatalf("ownership ties = %q, want two (a+b and a+c)", first)
+	}
+	for range 100 {
+		if got := messages(); !slices.Equal(got, first) {
+			t.Fatalf("ownership tie order changed between runs:\n first %q\n later %q", first, got)
+		}
+	}
+}
+
+// TestDeadSelectorTellsGoStdlibFromFirstPartySource pins a to: selector that
+// names a Go standard-library package as an external ban even when a top-level
+// directory shares its first segment, while a typo under that directory, or
+// under any other first-party root, is still dead.
+func TestDeadSelectorTellsGoStdlibFromFirstPartySource(t *testing.T) {
+	const web, netHTTP = "web/**", "net/http"
+	modules := map[string]policy.ModuleDef{
+		"web":      {Paths: []string{web}},
+		"database": {Paths: []string{"database/**"}},
+		"core":     {Paths: []string{"internal/**"}},
+	}
+	rules := []policy.RuleDef{
+		{ID: "no_sql", Type: ruleForbidden, Gate: gateFail, From: web, To: "database/sql"},
+		{ID: "no_sql_tree", Type: ruleForbidden, Gate: gateFail, From: web, To: "database/sql/**"},
+		{ID: "no_net", Type: ruleForbidden, Gate: gateFail, From: web, To: netHTTP},
+		{ID: "schema_typo", Type: ruleForbidden, Gate: gateFail, From: web, To: "database/shcema/**"},
+		{ID: "internal_typo", Type: ruleForbidden, Gate: gateFail, From: web, To: "internal/nope/**"},
+	}
+	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
+	snapshot := policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{},
+		policy.GatePolicy{Rules: policy.RuleConfig{Rules: rules}}, nil, nil)
+	facts := evaluation.Observations{
+		FileClassIndex: map[string]fileclass.FileClass{
+			"web/web.go": fileclass.Production, "database/schema/schema.go": fileclass.Production,
+			"internal/core/core.go": fileclass.Production, "net/probe.go": fileclass.Production,
+		},
+		GoStdlibPackages: []string{"database/sql", "database/sql/driver", "net", netHTTP},
+	}
+	var dead []string
+	for _, d := range evaluation.LintPolicy(snapshot, facts) {
+		if d.Code == evaluation.LintDeadSelector {
+			dead = append(dead, d.Path)
+		}
+	}
+	if want := []string{"rules[internal_typo].to", "rules[schema_typo].to"}; !slices.Equal(dead, want) {
+		t.Fatalf("dead selectors = %v, want %v", dead, want)
+	}
+}

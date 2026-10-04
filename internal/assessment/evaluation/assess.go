@@ -39,7 +39,13 @@ type Observations struct {
 	OutOfScopeFiles map[string]struct{}
 	// GoModulePaths are the first-party Go module paths. Go node IDs drop them,
 	// so a rule selector spelled with one can never match.
-	GoModulePaths           []string
+	GoModulePaths []string
+	// GoStdlibPackages are the importable Go standard-library package paths of
+	// the toolchain that analyses the tree (internal and vendor packages
+	// dropped). A to: selector naming one is an external ban even when a
+	// first-party directory shares its first segment (database/sql beside a
+	// top-level database/). Nil when Go is absent or the toolchain probe failed.
+	GoStdlibPackages        []string
 	FileFacts               []modevidence.FileFact
 	Clones                  []clone.Cluster
 	DynamicImports          []modevidence.DynamicImportSite

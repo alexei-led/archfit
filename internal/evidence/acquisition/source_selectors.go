@@ -3,6 +3,10 @@ package acquisition
 import (
 	"context"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
 
@@ -43,21 +47,54 @@ func (i Inventory) SourceInventory(ctx context.Context, root string) (evaluation
 		return evaluation.Observations{}, err
 	}
 	facts := evidencecontract.Facts{FileLOC: fileLOC, FileClassIndex: classes}
-	return ruleScopeObservations(resolved.Root, facts, i.Options), nil
+	return ruleScopeObservations(ctx, i.Runner, resolved.Root, facts, i.Options), nil
 }
 
 // ruleScopeObservations projects walked source into the fields rule scope
 // reads: the files, the node selector each file projects to, the files the
-// configuration declared out of scope, and the first-party Go module paths.
-// Acquire and SourceInventory both build them here, so check and config lint
-// cannot disagree about which source a rule selector reaches.
-func ruleScopeObservations(root string, f evidencecontract.Facts, opts RunOptions) evaluation.Observations {
+// configuration declared out of scope, the first-party Go module paths, and
+// the Go standard-library packages. Acquire and SourceInventory both build them
+// here, so check and config lint judge a rule selector over the same inventory
+// build; only the facts an analyzer adds (Rust crate roots) and the effective
+// config of check --lang, which turns a switched-off language on, separate them.
+func ruleScopeObservations(ctx context.Context, runner toolrun.Runner, root string, f evidencecontract.Facts, opts RunOptions) evaluation.Observations {
+	goModules := registry.GoModulePaths(root, opts.Acquisition.GoExtract)
 	return evaluation.Observations{
 		FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
-		SourceSelectors: sourceSelectorsOf(f),
-		OutOfScopeFiles: declaredOutOfScope(f, opts.Exclusions, opts.Coverage),
-		GoModulePaths:   registry.GoModulePaths(root, opts.Acquisition.GoExtract),
+		SourceSelectors:  sourceSelectorsOf(f),
+		OutOfScopeFiles:  declaredOutOfScope(f, opts.Exclusions, opts.Coverage),
+		GoModulePaths:    goModules,
+		GoStdlibPackages: goStdlibPackages(ctx, runner, root, goModules),
 	}
+}
+
+// goStdlibPackages lists the importable standard-library packages of the Go
+// toolchain that analyses root (`go list std`, run in root so a go.mod
+// toolchain line selects the same toolchain go/packages uses). Packages under an
+// internal or vendor segment are dropped: no first-party import can reach them,
+// and keeping internal/... would excuse every first-party internal/ typo.
+//
+// It probes only when root holds a Go module: a standard-library ban means
+// nothing elsewhere. A failed probe returns nil, and a to: selector colliding
+// with a first-party directory is then judged as before (first-party).
+func goStdlibPackages(ctx context.Context, runner toolrun.Runner, root string, goModules []string) []string {
+	if len(goModules) == 0 {
+		return nil
+	}
+	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: "go", Args: []string{"list", "std"}, WorkDir: root, Timeout: 30 * time.Second})
+	if err != nil || out.ExitCode != 0 {
+		return nil
+	}
+	var pkgs []string
+	for _, line := range strings.Split(string(out.Stdout), "\n") {
+		pkg := strings.TrimSpace(line)
+		if pkg == "" || strings.HasPrefix(pkg, "vendor/") || slices.Contains(strings.Split(pkg, "/"), "internal") {
+			continue
+		}
+		pkgs = append(pkgs, pkg)
+	}
+	sort.Strings(pkgs)
+	return pkgs
 }
 
 func sourceSelectorsOf(f evidencecontract.Facts) map[string]string {

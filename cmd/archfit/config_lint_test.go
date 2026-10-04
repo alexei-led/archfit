@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -110,5 +111,51 @@ func TestConfigLint_UnreadableConfigExitsThree(t *testing.T) {
 		if code, _, stderr := runArchfit(t, "config", "lint", "-c", path); code != 3 || stderr == "" {
 			t.Errorf("%s: config lint exit = %d (stderr %q), want 3 with an error", name, code, stderr)
 		}
+	}
+}
+
+// TestConfigLintAndCheck_StdlibTargetBesideFirstPartyDirectory runs the real
+// toolchain probe: a ban on database/sql in a repo with a top-level database/
+// directory is an external ban in both lint and check, while a typo under that
+// directory is still a dead selector.
+func TestConfigLintAndCheck_StdlibTargetBesideFirstPartyDirectory(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeRuleFixtureRepo(t, map[string]string{
+		markerGoMod:                 fixtureShopGoMod,
+		"app/app.go":                "package app\n\nfunc Answer() int { return 42 }\n",
+		"database/schema/schema.go": "package schema\n\nconst Version = 1\n",
+		defaultConfigPath: `version: 2
+modules:
+  app:
+    paths: ["app/**"]
+    owner: team-a
+  database:
+    paths: ["database/**"]
+    owner: team-d
+rules:
+  - id: no_sql
+    type: forbidden_dependency
+    from: "app/**"
+    to: "database/sql"
+    gate: fail
+  - id: schema_typo
+    type: forbidden_dependency
+    from: "app/**"
+    to: "database/shcema/**"
+    gate: fail
+`,
+	})
+	code, stdout, stderr := runArchfit(t, "config", "lint", "-c", cfgPath)
+	want := "error dead_selector rules[schema_typo].to: to: database/shcema/** matches no scanned source; fix the selector or set guard: true\n"
+	if code != 1 || stdout != want {
+		t.Fatalf("config lint: exit %d, stdout %q, want exit 1 and only the typo\nstderr:\n%s", code, stdout, stderr)
+	}
+	_, state := checkStateOf(t, cfgPath)
+	unevaluated := make([]string, 0, len(state.Decision.UnevaluatedRequiredRules))
+	for _, rule := range state.Decision.UnevaluatedRequiredRules {
+		unevaluated = append(unevaluated, rule.RuleID+": "+rule.Reason)
+	}
+	if wantRules := []string{"schema_typo: selector matches nothing: to database/shcema/**"}; !slices.Equal(unevaluated, wantRules) {
+		t.Fatalf("unevaluated required rules = %q, want %q", unevaluated, wantRules)
 	}
 }

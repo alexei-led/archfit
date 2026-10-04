@@ -20,11 +20,14 @@ import (
 // not by import, since agenttask must not depend on the rules package.
 const matchedByModuleKey = "module"
 
-// Rule types that forbid their target outright. They select both a repair goal
-// and whether the target's public surface may appear as a constraint.
+// Rule types whose violation survives any route to the target, its public API
+// included. They select a repair goal, and forbidsTarget keeps the target's
+// public surface out of their constraints.
 const (
 	ruleTypeForbiddenDependency     = "forbidden_dependency"
 	ruleTypeForbiddenLayerDirection = "forbidden_layer_direction"
+	ruleTypeCycle                   = "cycle"
+	ruleTypeNewCrossModule          = "new_cross_module_dependency"
 )
 
 // Rule types with a dedicated goal template, and the MatchedBy keys those
@@ -33,6 +36,7 @@ const (
 const (
 	ruleTypeModuleCycle      = "module_cycle"
 	matchedByCycleModulesKey = "cycle_modules"
+	matchedByCycleSizeKey    = "cycle_size"
 	ruleTypeForbiddenPattern = "forbidden_pattern"
 	matchedByPatternKey      = "pattern"
 )
@@ -286,14 +290,14 @@ func goalFor(ruleType string, f finding.Finding) string {
 		return fmt.Sprintf("Replace the internal-API access from %s to %s with %s's public API.", from, to, toMod)
 	case ruleTypeForbiddenLayerDirection:
 		return fmt.Sprintf("Remove the layer-inverting dependency from %s to %s: inner layers must not import outer layers — introduce an abstraction in the inner layer instead.", from, to)
-	case "new_cross_module_dependency":
+	case ruleTypeNewCrossModule:
 		return fmt.Sprintf("Remove the new cross-module dependency from %s to %s. If the dependency is intentional, request an architecture-owner decision before changing policy or accepted debt.", from, to)
-	case "cycle":
+	case ruleTypeCycle:
 		return "Break the import cycle: " + f.Why
 	case ruleTypeModuleCycle:
 		fromMod, toMod := f.Edge.From.Module, f.Edge.To.Module
 		return fmt.Sprintf("Break the dependency cycle among declared modules %s by removing one direction of it: drop the %s -> %s dependency, or the dependency path from %s back to %s. Routing it through another module keeps the cycle.",
-			f.MatchedBy[matchedByCycleModulesKey], fromMod, toMod, toMod, fromMod)
+			cycleMembers(f), fromMod, toMod, toMod, fromMod)
 	case ruleTypeForbiddenPattern:
 		return fmt.Sprintf("Remove the code in %s that matches forbidden pattern %q at the listed lines: replace it, or move that behavior to code the rule's scope does not cover.",
 			from, f.MatchedBy[matchedByPatternKey])
@@ -305,8 +309,22 @@ func goalFor(ruleType string, f finding.Finding) string {
 	}
 }
 
+// maxGoalMemberBytes bounds the cycle member list a goal quotes; the App caps
+// goal text, and a large strongly connected component can name every module.
+const maxGoalMemberBytes = 300
+
+// cycleMembers is the member list a module-cycle goal quotes: the whole list
+// when it is short, otherwise its size and where the full list lives.
+func cycleMembers(f finding.Finding) string {
+	members := f.MatchedBy[matchedByCycleModulesKey]
+	if len(members) <= maxGoalMemberBytes {
+		return members
+	}
+	return fmt.Sprintf("(%s modules, listed in matched_by.cycle_modules)", f.MatchedBy[matchedByCycleSizeKey])
+}
+
 func repairKind(ruleType string) string {
-	if ruleType == "new_cross_module_dependency" {
+	if ruleType == ruleTypeNewCrossModule {
 		return "needs_owner_decision"
 	}
 	return "code_change"
@@ -314,9 +332,10 @@ func repairKind(ruleType string) string {
 
 // constraintsFor joins the finding's constraint text, its allowed
 // alternatives, and — unless the rule forbids the target route — the target
-// module's public surface. A forbidden dependency, an inverted layer, or a
-// module cycle is still a violation through the target's public API, so naming
-// that surface would route the agent straight back into the violation.
+// module's public surface. A forbidden dependency, an inverted layer, a node or
+// module cycle, or a new cross-module dependency is still a violation through
+// the target's public API, so naming that surface would route the agent
+// straight back into the violation.
 func constraintsFor(f finding.Finding, ruleType string, modulePublic map[string][]string) []string {
 	out := []string{}
 	if f.Constraint != "" {
@@ -325,7 +344,7 @@ func constraintsFor(f finding.Finding, ruleType string, modulePublic map[string]
 	for _, alt := range f.Alternatives {
 		out = append(out, "allowed alternative: "+alt)
 	}
-	if forbidsTarget(ruleType) || ruleType == ruleTypeModuleCycle {
+	if forbidsTarget(ruleType) {
 		return out
 	}
 	if pub := modulePublic[f.Edge.To.Module]; len(pub) > 0 {
@@ -334,10 +353,17 @@ func constraintsFor(f finding.Finding, ruleType string, modulePublic map[string]
 	return out
 }
 
-// forbidsTarget reports whether a rule type forbids the dependency on its
-// target by any route, the target's public API included.
+// forbidsTarget reports whether a rule type's violation survives any route to
+// the target, the target's public API included: the dependency is forbidden,
+// the layer stays inverted, the cycle stays closed, or the cross-module
+// dependency stays new.
 func forbidsTarget(ruleType string) bool {
-	return ruleType == ruleTypeForbiddenDependency || ruleType == ruleTypeForbiddenLayerDirection
+	switch ruleType {
+	case ruleTypeForbiddenDependency, ruleTypeForbiddenLayerDirection,
+		ruleTypeCycle, ruleTypeModuleCycle, ruleTypeNewCrossModule:
+		return true
+	}
+	return false
 }
 
 // declarationsFor returns the SyntaxFacts for the given files, in file + start-line

@@ -2,6 +2,7 @@ package agenttask_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -18,6 +19,7 @@ const (
 	fileTo            = "pkg/b/internal/impl.go"
 	ruleTypeForbidden = "forbidden_dependency"
 	ruleTypePublicAPI = "public_api_only"
+	ruleTypeCycle     = "module_cycle"
 	ruleTypeLayer     = "forbidden_layer_direction"
 	validateCmd       = "archfit check"
 	kindFunction      = "function"
@@ -133,7 +135,7 @@ func TestBuild_GoalTemplates(t *testing.T) {
 		{ruleTypePublicAPI, publicAPIText},
 		{"internal_api_access", publicAPIText},
 		{ruleTypeLayer, "inner layers must not import outer layers"},
-		{"new_cross_module_dependency", "architecture-owner decision"},
+		{ruleTypeNewCross, "architecture-owner decision"},
 		{"cycle", "Break the import cycle"},
 		{"someone_elses_rule", "a uses b internals"}, // unknown type → Why fallback
 	}
@@ -242,6 +244,38 @@ func TestBuild_DeclarationsAbsentWhenSyntaxEmpty(t *testing.T) {
 	}
 }
 
+// TestBuild_ModuleCycleGoalBoundsTheMemberList pins that a large cycle's goal
+// names its size instead of every member: goal text is capped downstream.
+func TestBuild_ModuleCycleGoalBoundsTheMemberList(t *testing.T) {
+	const ruleModuleCycle = "no_module_cycles"
+	members := make([]string, 60)
+	for i := range members {
+		members[i] = fmt.Sprintf("capability-module-%02d", i)
+	}
+	f := finding.Finding{
+		ID: "c1", Kind: finding.KindGate, RuleID: ruleModuleCycle, Status: finding.StatusNew,
+		Edge: finding.EdgeEvidence{
+			From: finding.Endpoint{Module: members[0]},
+			To:   finding.Endpoint{Module: members[1]},
+			Kind: "module_dependency",
+		},
+		MatchedBy: map[string]string{"cycle_modules": strings.Join(members, ", "), "cycle_size": "60"},
+	}
+	tasks := agenttask.Build([]finding.Finding{f},
+		map[string]string{ruleModuleCycle: ruleTypeCycle}, nil, []string{validateCmd},
+		nil, nil, agenttask.PathResolver{})
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(tasks))
+	}
+	goal := tasks[0].Goal
+	if !strings.Contains(goal, "(60 modules, listed in matched_by.cycle_modules)") {
+		t.Errorf("goal %q does not summarise the 60-module cycle", goal)
+	}
+	if strings.Contains(goal, members[59]) || len(goal) > 600 {
+		t.Errorf("goal is not bounded: %d bytes", len(goal))
+	}
+}
+
 // TestBuild_ModuleCycleTaskAsksToRemoveOneDirection pins the module_cycle
 // repair contract: the goal names the cycle's members and the direction to drop,
 // files come from the import sites (the finding has no endpoint paths), and the
@@ -261,7 +295,7 @@ func TestBuild_ModuleCycleTaskAsksToRemoveOneDirection(t *testing.T) {
 		Constraint: "Remove one direction of the module cycle",
 	}
 	tasks := agenttask.Build([]finding.Finding{f},
-		map[string]string{ruleModuleCycle: "module_cycle"},
+		map[string]string{ruleModuleCycle: ruleTypeCycle},
 		map[string][]string{"shipping": {"shipping/api"}},
 		[]string{validateCmd},
 		nil,

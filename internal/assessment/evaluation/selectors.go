@@ -31,8 +31,11 @@ var selectorRuleTypes = map[string]struct{}{
 
 // selectorInventory is the rule-scope source inventory as rule selectors see
 // it: every in-scope source file, the graph-node selector each file projects
-// to, and the first-party Go module paths. Rule evaluation and config lint
-// decide selector vacuity over the same value, so they cannot disagree.
+// to, the first-party Go module paths, and the Go standard-library packages.
+// Rule evaluation and config lint decide selector vacuity with this one
+// predicate. Their inputs differ in two places: check has Rust crate names
+// from cargo metadata, and `check --lang` turns on a language the config
+// switches off, so the in-scope files differ.
 type selectorInventory struct {
 	moduleMap policy.ModuleMap
 	files     []string
@@ -45,6 +48,7 @@ type selectorInventory struct {
 	// so a selector Rust could spell cannot be proven to match nothing.
 	unresolved map[string]struct{}
 	goModules  []string
+	goStdlib   []string
 }
 
 // newSelectorInventory builds the inventory over files, the rule-scope source
@@ -53,6 +57,7 @@ func newSelectorInventory(moduleMap policy.ModuleMap, files []string, f Observat
 	inv := selectorInventory{
 		moduleMap: moduleMap, files: files, selectors: f.SourceSelectors,
 		roots: map[string]struct{}{}, unresolved: map[string]struct{}{}, goModules: f.GoModulePaths,
+		goStdlib: f.GoStdlibPackages,
 	}
 	for _, file := range inv.files {
 		inv.roots[leadingSegment(file)] = struct{}{}
@@ -90,7 +95,9 @@ func (inv selectorInventory) vacuousSelector(rule policy.RuleDef) (side, glob st
 // A source (from:) selector must match in-scope source: rule edges start there.
 // A target (to:) selector is held to the inventory only when it is spelled as
 // first-party source, because a ban on an external package (os, net/http,
-// github.com/...) legitimately matches no source file. Spellings no node ID can
+// github.com/...) legitimately matches no source file. A target that names a Go
+// standard-library package is external even when a first-party directory shares
+// its first segment (database/sql beside a top-level database/). Spellings no node ID can
 // take are vacuous on either side: an extglob negation or a leading "!",
 // "./", "../" or "/", and a first-party Go package written with its go.mod
 // module path (Go node IDs are scan-root-relative). A selector the inventory
@@ -103,7 +110,7 @@ func (inv selectorInventory) vacuous(side, pattern string) bool {
 	if inv.matches(pattern) || inv.undecidable(pattern) {
 		return false
 	}
-	return side == selectorFrom || inv.firstPartyShaped(pattern)
+	return side == selectorFrom || (inv.firstPartyShaped(pattern) && !inv.namesGoStdlib(pattern))
 }
 
 // matches reports whether pattern matches an in-scope source file or the node
@@ -146,6 +153,23 @@ func (inv selectorInventory) firstPartyShaped(pattern string) bool {
 	}
 	_, ok := inv.roots[leadingSegment(prefix)]
 	return ok
+}
+
+// namesGoStdlib reports whether a target selector's literal prefix names a Go
+// standard-library package or a path ancestor of one, on segment boundaries:
+// database/sql and database/** name the standard library, database/shcema does
+// not.
+func (inv selectorInventory) namesGoStdlib(pattern string) bool {
+	prefix := strings.TrimSuffix(literalPrefix(pattern), "/")
+	if prefix == "" {
+		return false
+	}
+	for _, pkg := range inv.goStdlib {
+		if pkg == prefix || strings.HasPrefix(pkg, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // spelledWithGoModulePath reports whether pattern names a first-party Go

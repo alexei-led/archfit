@@ -80,16 +80,26 @@ func TestRender_NamesTheRatchetThatBlocked(t *testing.T) {
 	}
 }
 
+// gateRef is an active hard-gate finding reference routed to a dimension.
+func gateRef(id string) report.FindingRef {
+	return report.FindingRef{ID: id, RuleID: "no_" + id, Kind: report.FindingKindGate, Severity: "high", Status: "new"}
+}
+
 // TestRender_RatchetNeedsAContractProof pins the abstention: the section is
-// printed only where the contract proves a ratchet blocked. A blocker finding
-// or a failing required analyzer explains the block on its own, and a run that
-// is not blocked tripped nothing.
+// printed only where the contract proves a ratchet blocked. A dimension gate
+// fails from a ratchet, from a hard-gate finding routed to it, or (operations
+// only) from a required analyzer that failed its gate; where the latter two
+// can explain the failing gate, and when the run is not blocked, nothing is
+// proven.
 func TestRender_RatchetNeedsAContractProof(t *testing.T) {
 	tests := []struct {
 		name   string
 		mutate func(*report.Document)
 	}{
-		{"an active blocker explains the block", func(d *report.Document) { d.State.Decision.ActiveBlockers = 1 }},
+		{"a blocker routed to the metric's dimension explains its gate", func(d *report.Document) {
+			d.State.Decision.ActiveBlockers = 1
+			d.State.Dimensions.Operations.Findings = []report.FindingRef{gateRef("deploy")}
+		}},
 		{"a required analyzer failed its gate", func(d *report.Document) {
 			d.CoverageGaps = []report.CoverageGap{{Tool: "go/packages", Gate: string(report.GateFail)}}
 		}},
@@ -104,6 +114,46 @@ func TestRender_RatchetNeedsAContractProof(t *testing.T) {
 			tc.mutate(&d)
 			if block := ratchetBlock(renderDoc(t, d)); block != "" {
 				t.Errorf("ratchet section printed without proof:\n%s", block)
+			}
+		})
+	}
+}
+
+// TestRender_RatchetShownBesideOtherBlockers pins the proof that survives other
+// blockers: a dimension whose gate fails with no hard-gate finding routed to it
+// (and, for operations, no required analyzer failing) failed from a ratchet.
+// Only the worsened metrics that dimension owns are named; a worsened metric in
+// a dimension a blocker explains is not.
+func TestRender_RatchetShownBesideOtherBlockers(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*report.Document)
+	}{
+		{"a blocker in another dimension", func(d *report.Document) {
+			d.State.Decision.ActiveBlockers = 1
+			d.State.Dimensions.Structure.Gate = report.GateFail
+			d.State.Dimensions.Structure.Findings = []report.FindingRef{gateRef("cycle")}
+		}},
+		{"a required analyzer failed and the ratchet is outside operations", func(d *report.Document) {
+			d.CoverageGaps = []report.CoverageGap{{Tool: "dependency-cruiser", Gate: string(report.GateFail)}}
+			d.State.Dimensions.Complexity.Gate = report.GateFail
+			d.State.Dimensions.Complexity.Metrics = d.State.Dimensions.Operations.Metrics
+			d.State.Dimensions.Operations.Metrics = nil
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d := ratchetDoc()
+			worse := 3.0
+			d.Metrics = append(d.Metrics, report.MetricResult{Name: "max_cyclomatic", Value: 9, Delta: &worse, Direction: report.DirectionHigherIsWorse})
+			d.State.Dimensions.Structure.Metrics = []report.MetricValue{{Name: "max_cyclomatic", Value: 9}}
+			tc.mutate(&d)
+			block := ratchetBlock(renderDoc(t, d))
+			if !strings.Contains(block, metricCoverage) {
+				t.Errorf("ratchet section does not name %q:\n%s", metricCoverage, block)
+			}
+			if strings.Contains(block, "max_cyclomatic") {
+				t.Errorf("ratchet section names a metric whose dimension a blocker or nothing explains:\n%s", block)
 			}
 		})
 	}

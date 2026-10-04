@@ -37,7 +37,8 @@ type Evidence struct {
 	PatternMatches []pattern.Match
 	SyntaxFacts    []evidence.SyntaxFact // nil/empty when syntax is off; consumed by public_api_max
 	// FileClasses is the LOC walk's file classification (the source
-	// inventory). forbidden_pattern fires only on Production files in it.
+	// inventory) without the files the configuration declared out of scope.
+	// forbidden_pattern fires only on Production files in it.
 	FileClasses map[string]fileclass.FileClass
 }
 
