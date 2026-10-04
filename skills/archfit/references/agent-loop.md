@@ -13,8 +13,12 @@ agent edits code
   → exit 0 or 2?  no blocker remains. (2 = needs_attention: read the active
      diagnostic or named missing evidence; never fabricate it to force 0.)
   → exit 1?  read agent_tasks[] — goal, constraints, files, validation
-  → fix within the constraints, touching only the listed files where possible
+     (empty agent_tasks[]: a metric ratchet or a required analyzer blocked;
+      the text/Markdown METRIC RATCHET section names the metric)
+  → fix within the constraints; change the importing side of the edge
   → run the task's validation command verbatim
+  → done when that run no longer lists the task's finding_id and is not
+     blocked; exit 2 after a correct fix is not a failed repair
   → repeat
 ```
 
@@ -23,7 +27,8 @@ or repair-loop gate.
 
 ## agent_tasks[] — the actionable channel
 
-Every active gate finding produces one structured repair task:
+Every active gate finding produces one structured repair task. One import that
+breaks two rules is two findings, so it yields two tasks:
 
 ```json
 {
@@ -51,12 +56,19 @@ Every active gate finding produces one structured repair task:
   never proposes the target module's public API, and a
   `new_cross_module_dependency` goal never proposes baseline capture as a code
   fix.
-- `constraints` — the rule's constraint text plus allowed alternatives and the
-  target module's public globs.
-- `files` — candidate files to touch.
-- `validation` — the exact command that must pass. It preserves effective
-  `--base`, repeated `--lang`, and `--require-tools`; `--refresh` is omitted so
-  cache-control cannot change validation output.
+- `constraints` — the rule type's fixed constraint text, plus the target
+  module's public globs. `forbidden_dependency` and `forbidden_layer_direction`
+  tasks never list those globs: the dependency is still forbidden through the
+  target's public API.
+- `files` — repo paths that exist on disk: both ends of the edge plus the import
+  sites. The target end is listed too; for a forbidden-dependency or layer task,
+  change the importing side, not the target. A `bc/coupling_gate` task lists
+  the files behind up to 20 of the seam's qualifying edges.
+- `validation` — the exact command to re-run. It preserves effective `--base`,
+  repeated `--lang`, and `--require-tools`; `--refresh` is omitted so
+  cache-control cannot change validation output. The repair is done when that
+  run no longer lists the task's `finding_id` and its verdict is not `blocked`;
+  it may still exit `2`.
 
 Advisory findings never produce tasks — they are signals, not orders.
 

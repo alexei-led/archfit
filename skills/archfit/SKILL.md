@@ -138,30 +138,41 @@ Exit 2 (`needs_attention`) has no active blocker but can mean a required rule
 was not evaluated or the baseline cannot be compared. Read
 `decision.unevaluated_required_rules` and `gate_reference` before describing
 the gate as verified; advisory-only attention does not require a code repair. Exit
-1 (`blocked`) is the one to repair. Do not fabricate evidence merely to turn 2
-into 0; exit 0 is reachable when the repository genuinely supplies every
-required fact.
+1 (`blocked`) is the one to repair. Exit 1 with an empty `agent_tasks[]` is a
+tripped metric ratchet or a required analyzer that did not run; for a ratchet,
+the text and Markdown output name the metric in a `METRIC RATCHET` /
+`## Metric ratchet` section with its accepted-baseline and current values. Do
+not fabricate evidence merely to turn 2 into 0; exit 0 is reachable when the
+repository genuinely supplies every required fact.
 Each `agent_tasks[]` entry has `repair_kind`, `goal`, `constraints`, `files`,
 and a `validation` command. `repair_kind` is `code_change` or
 `needs_owner_decision`; the latter requires a policy or accepted-debt decision.
-Forbidden-dependency goals do not recommend a public route, and
-new-cross-module goals do not recommend baseline capture as a code fix. With
+Forbidden-dependency and layer-direction tasks never offer the target module's
+public API as a route, in the goal or in the constraints, and
+new-cross-module goals do not recommend baseline capture as a code fix. One
+import that breaks two rules yields two tasks, one per finding ID. `files` names
+both ends of the edge plus the import sites, so it includes the forbidden
+target: change the importing side, not the target. A `bc/coupling_gate` task
+lists the files behind up to 20 of the seam's qualifying edges. With
 `--base`, a task also has `origin` (`introduced`, `pre_existing`, or
 conservatively `unknown`). Origin is triage metadata only; it never changes the
 verdict or exit code. Validation replays effective `--base`, `--lang`, and
 `--require-tools` flags. `--refresh` is intentionally omitted because
 cache-control must not change validation output. Fix within the constraints,
-touch only the listed files where possible, then re-run `validation` verbatim.
-Never "fix" `baseline` or `waived` findings unprompted. Full contract:
-`references/agent-loop.md`.
+then re-run `validation` verbatim. The task is done when its `finding_id` is
+gone from that run and the verdict is not `blocked`; exit 2 after a correct fix
+is not a failed repair. Never "fix" `baseline` or `waived` findings unprompted.
+Full contract: `references/agent-loop.md`.
 
 ## Coverage gaps and gate promotion
 
-archfit never scores absence of evidence as healthy. A metric reading `n/a`, or a
-`## Coverage gaps` / `## Required tools missing` section (`coverage.tools[]` in
-the primary JSON), means an analyzer did not run — not a passing gate.
-Read the gap's `affected_metrics` and `install_cmd`; close it by installing the
-tool (`archfit doctor` lists them) or filling the config, not by ignoring it.
+archfit never scores absence of evidence as healthy. A metric reading `n/a`, a
+`## Coverage gaps` (Markdown) or `## Required tools missing` (scorecard)
+section, or a `coverage.tools[]` row that is not `ok` in the primary JSON means
+an analyzer did not run — not a passing gate. The JSON row carries only `tool`,
+`status`, and `reason`; the Markdown and scorecard sections also list the
+affected metrics and the install command. Close the gap by installing the tool
+(`archfit doctor` lists them) or filling the config, not by ignoring it.
 
 - By default a missing tool is reported without setting `hard_gates` to `fail`.
   Incomplete evidence can still make `check` return exit `2`. To make CI block

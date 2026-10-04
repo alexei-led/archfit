@@ -112,7 +112,7 @@ func TestNewPathResolver_ZeroKnownFilesTrustsEverything(t *testing.T) {
 	tasks := agenttask.Build(
 		[]finding.Finding{f},
 		map[string]string{ruleTypeForbidden: ruleTypeForbidden},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 		resolver,
 	)
 	if len(tasks) != 1 {
@@ -145,7 +145,7 @@ func TestNewPathResolver_SharedDirectoryAncestorDedup(t *testing.T) {
 	tasks := agenttask.Build(
 		[]finding.Finding{f},
 		map[string]string{ruleTypeForbidden: ruleTypeForbidden},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 		resolver,
 	)
 	if len(tasks) != 1 {
@@ -173,7 +173,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("widget")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -194,7 +194,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("myapp.domain")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -215,7 +215,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("myapp.domain")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -240,7 +240,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("myapp.domain")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -261,7 +261,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("mycrate::mymod")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -294,7 +294,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{f},
 			map[string]string{ruleTypeForbidden: ruleTypeForbidden},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -319,7 +319,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("ghost.module")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -339,7 +339,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("ghostmod")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -363,7 +363,7 @@ func TestFilesFor_RustCrateResolution(t *testing.T) {
 		return agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge(modKey)},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 	}
@@ -451,7 +451,7 @@ func TestFilesFor_OnDiskFallback(t *testing.T) {
 
 	t.Run("with_callback_the_on_disk_file_survives", func(t *testing.T) {
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, onDisk)
-		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, resolver)
+		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -463,7 +463,7 @@ func TestFilesFor_OnDiskFallback(t *testing.T) {
 
 	t.Run("without_callback_the_index_miss_is_dropped", func(t *testing.T) {
 		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
-		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, resolver)
+		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, nil, resolver)
 		if len(tasks) != 1 {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
@@ -488,7 +488,7 @@ func TestFilesFor_DottedModuleRootFallback(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("domain")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -509,7 +509,7 @@ func TestFilesFor_DottedModuleRootFallback(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("domain")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -540,7 +540,7 @@ func TestFilesFor_ModuleKeyCollisionSkipped(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{f},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -563,7 +563,7 @@ func TestFilesFor_ModuleKeyCollisionSkipped(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{f},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {
@@ -605,7 +605,7 @@ func TestFilesFor_EscapingCandidatesDropped(t *testing.T) {
 			tasks := agenttask.Build(
 				[]finding.Finding{gateFindingWithModuleEdge("leaky")},
 				map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-				nil, nil, nil,
+				nil, nil, nil, nil,
 				resolver,
 			)
 			if len(tasks) != 1 {
@@ -626,7 +626,7 @@ func TestFilesFor_EscapingCandidatesDropped(t *testing.T) {
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("leaky::mymod")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
-			nil, nil, nil,
+			nil, nil, nil, nil,
 			resolver,
 		)
 		if len(tasks) != 1 {

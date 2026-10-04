@@ -17,6 +17,8 @@ const (
 	fileFrom          = "pkg/a/a.go"
 	fileTo            = "pkg/b/internal/impl.go"
 	ruleTypeForbidden = "forbidden_dependency"
+	ruleTypePublicAPI = "public_api_only"
+	ruleTypeLayer     = "forbidden_layer_direction"
 	validateCmd       = "archfit check"
 	kindFunction      = "function"
 )
@@ -57,6 +59,7 @@ func TestBuild_ActiveGateFindingsOnly(t *testing.T) {
 		nil,
 		[]string{"archfit check"},
 		nil,
+		nil,
 		agenttask.PathResolver{},
 	)
 
@@ -69,12 +72,28 @@ func TestBuild_ActiveGateFindingsOnly(t *testing.T) {
 	}
 }
 
+// TestBuild_OneTaskPerFindingNotPerEdge pins the published cardinality: one
+// import that breaks two rules is two findings with two IDs, so it is two
+// tasks. Consumers key tasks by finding_id; merging them per edge is a
+// contract change, not a dedup fix.
+func TestBuild_OneTaskPerFindingNotPerEdge(t *testing.T) {
+	forbidden := gateFinding("f-forbidden", ruleForbidden, finding.StatusNew)
+	layered := gateFinding("f-layer", "layer-direction", finding.StatusNew)
+	tasks := agenttask.Build([]finding.Finding{forbidden, layered},
+		map[string]string{ruleForbidden: ruleTypeForbidden, "layer-direction": ruleTypeLayer},
+		nil, nil, nil, nil, agenttask.PathResolver{})
+	if len(tasks) != 2 || tasks[0].FindingID != "f-forbidden" || tasks[1].FindingID != "f-layer" {
+		t.Fatalf("tasks = %+v, want one per finding ID", tasks)
+	}
+}
+
 func TestBuild_TaskShape(t *testing.T) {
 	tasks := agenttask.Build(
 		[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
-		map[string]string{ruleForbidden: "public_api_only"},
+		map[string]string{ruleForbidden: ruleTypePublicAPI},
 		map[string][]string{"b": {"pkg/b/api/**"}},
 		[]string{"archfit check -c .archfit.yaml"},
+		nil,
 		nil,
 		agenttask.PathResolver{},
 	)
@@ -110,9 +129,9 @@ func TestBuild_GoalTemplates(t *testing.T) {
 		want     string
 	}{
 		{ruleTypeForbidden, "Remove the forbidden dependency"},
-		{"public_api_only", publicAPIText},
+		{ruleTypePublicAPI, publicAPIText},
 		{"internal_api_access", publicAPIText},
-		{"forbidden_layer_direction", "inner layers must not import outer layers"},
+		{ruleTypeLayer, "inner layers must not import outer layers"},
 		{"new_cross_module_dependency", "architecture-owner decision"},
 		{"cycle", "Break the import cycle"},
 		{"someone_elses_rule", "a uses b internals"}, // unknown type → Why fallback
@@ -122,7 +141,7 @@ func TestBuild_GoalTemplates(t *testing.T) {
 			tasks := agenttask.Build(
 				[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
 				map[string]string{ruleForbidden: tc.ruleType},
-				nil, nil, nil,
+				nil, nil, nil, nil,
 				agenttask.PathResolver{},
 			)
 			if len(tasks) != 1 {
@@ -136,7 +155,7 @@ func TestBuild_GoalTemplates(t *testing.T) {
 }
 
 func TestBuild_EmptyAndDeterministic(t *testing.T) {
-	if got := agenttask.Build(nil, nil, nil, nil, nil, agenttask.PathResolver{}); got == nil || len(got) != 0 {
+	if got := agenttask.Build(nil, nil, nil, nil, nil, nil, agenttask.PathResolver{}); got == nil || len(got) != 0 {
 		t.Errorf("nil findings → %v, want empty non-nil slice", got)
 	}
 
@@ -144,8 +163,8 @@ func TestBuild_EmptyAndDeterministic(t *testing.T) {
 		gateFinding("z", ruleForbidden, finding.StatusNew),
 		gateFinding("a", ruleForbidden, finding.StatusNew),
 	}
-	first := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil, agenttask.PathResolver{})
-	second := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil, agenttask.PathResolver{})
+	first := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil, nil, agenttask.PathResolver{})
+	second := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil, nil, agenttask.PathResolver{})
 	if !reflect.DeepEqual(first, second) {
 		t.Error("two builds differ — must be deterministic")
 	}
@@ -169,6 +188,7 @@ func TestBuild_DeclarationsEnrichedWhenSyntaxPresent(t *testing.T) {
 		nil,
 		[]string{validateCmd},
 		sf,
+		nil,
 		agenttask.PathResolver{},
 	)
 	if len(tasks) != 1 {
@@ -200,6 +220,7 @@ func TestBuild_DeclarationsAbsentWhenSyntaxEmpty(t *testing.T) {
 		map[string]string{ruleForbidden: "forbidden_dependency"},
 		nil,
 		[]string{validateCmd},
+		nil,
 		nil,
 		agenttask.PathResolver{},
 	)

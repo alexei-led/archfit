@@ -76,7 +76,23 @@ func projectSeams(in []relationship.Seam) []result.Seam {
 			Labels: s.Labels, LabelEvidenceHash: s.LabelEvidenceHash, Confidence: string(s.Confidence),
 			RoleExpectation: string(s.RoleExpectation), Hypothesis: string(s.Hypothesis),
 			DistributedMonolith: s.DistributedMonolith,
+			QualifyingPaths:     qualifyingPaths(s.QualifyingEdges),
 		})
+	}
+	return out
+}
+
+// qualifyingPaths flattens the seam's qualifying edges into the candidate
+// paths a repair task resolves: each edge's two node paths, then its import
+// sites. They are candidates, not files — a Python dotted ID or a Rust
+// crate::mod key is resolved (or dropped) where the task is built.
+func qualifyingPaths(edges []relationship.Edge) []string {
+	var out []string
+	for _, e := range edges {
+		out = append(out, e.FromPath, e.ToPath)
+		for _, loc := range e.Locations {
+			out = append(out, loc.File)
+		}
 	}
 	return out
 }

@@ -4,6 +4,7 @@
 package analysis_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/graph"
@@ -450,5 +451,57 @@ func TestSeamOfWhollyAbstainedEdgesReportsUnknownStrength(t *testing.T) {
 	}
 	if s.Scores.N != 0 {
 		t.Errorf("scores.n = %d, want 0 — no edge contributed a balance", s.Scores.N)
+	}
+}
+
+// manyEdgeGraph builds n a -> b imports from distinct files, listed in reverse
+// so the ledger has to impose its own order.
+func manyEdgeGraph(n int, hint string) *graph.Graph {
+	nodes := []graph.Node{{Kind: graph.NodeKindFile, Path: fileB, Language: graph.LangGo}}
+	edges := make([]graph.Edge, 0, n)
+	for i := n - 1; i >= 0; i-- {
+		from := fmt.Sprintf("a/f%02d.go", i)
+		nodes = append(nodes, graph.Node{Kind: graph.NodeKindFile, Path: from, Language: graph.LangGo})
+		edges = append(edges, graph.Edge{
+			From: "file:" + from, To: nodeB, Kind: graph.EdgeKindImports, Language: graph.LangGo,
+			StrengthHint: hint, Locations: []graph.Location{{File: from, Line: 3}},
+		})
+	}
+	return graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges}})
+}
+
+// TestSeamCarriesItsQualifyingEdges pins the seam gate's repair evidence: a
+// distributed-monolith seam keeps the edges that qualify it, capped and in a
+// stable order, so a blocking seam can name files instead of only modules. A
+// seam that does not qualify carries none.
+func TestSeamCarriesItsQualifyingEdges(t *testing.T) {
+	tests := []struct {
+		name      string
+		edges     int
+		hint      string
+		wantEdges int
+	}{
+		{"a qualifying seam keeps every edge under the cap", 3, string(relationship.StrengthIntrusive), 3},
+		{"a qualifying seam keeps at most twenty edges", 25, string(relationship.StrengthIntrusive), 20},
+		{"a declared boundary keeps none", 3, string(relationship.StrengthContract), 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := seamAB(t, analysis.Analyze(analysis.Input{
+				Graph: manyEdgeGraph(tc.edges, tc.hint), Policy: relationshipPolicy(twoModules()),
+			}))
+			if len(s.QualifyingEdges) != tc.wantEdges {
+				t.Fatalf("qualifying edges = %d, want %d (distributed_monolith %v)",
+					len(s.QualifyingEdges), tc.wantEdges, s.DistributedMonolith)
+			}
+			for i, e := range s.QualifyingEdges {
+				if want := fmt.Sprintf("a/f%02d.go", i); e.FromPath != want || e.ToPath != fileB {
+					t.Errorf("qualifying edge %d = %s -> %s, want %s -> %s in endpoint order", i, e.FromPath, e.ToPath, want, fileB)
+				}
+				if len(e.Locations) != 1 || e.Locations[0].File != e.FromPath {
+					t.Errorf("qualifying edge %d locations = %+v, want the import site", i, e.Locations)
+				}
+			}
+		})
 	}
 }

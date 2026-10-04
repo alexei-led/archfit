@@ -40,9 +40,10 @@ func New() *Renderer { return &Renderer{} }
 func (r *Renderer) Format() string { return "markdown" }
 
 // Render writes the BC-aligned Markdown report for d to w: the architecture
-// state headline first, then the detailed audit.
+// state headline first — naming the metrics behind a metric-ratchet block from
+// the document's metric deltas — then the detailed audit.
 func (r *Renderer) Render(d report.Document, w io.Writer) error {
-	if err := RenderState(d.State, w); err != nil {
+	if err := writeState(d.State, ratchetRegressions(d), w); err != nil {
 		return err
 	}
 	if err := r.renderAudit(d, w); err != nil {

@@ -15,8 +15,11 @@ agent edits code
              `decision.unevaluated_required_rules`. Supply the named missing
              fact; never treat yellow as a fabricated healthy zero.
   → exit 1?  blocked — read agent_tasks[] — goal, constraints, files, validation
+             (empty agent_tasks[]: a metric ratchet or a required analyzer
+             blocked; the text/Markdown METRIC RATCHET section names the metric)
   → fix within the constraints
   → run the task's validation command
+  → done when that run no longer lists the task's finding_id and is not blocked
   → repeat
 ```
 
@@ -58,11 +61,16 @@ Every ACTIVE gate finding produces one structured repair task:
 
 `repair_kind` is `code_change` for a finding the agent can address in source and
 `needs_owner_decision` for a policy or accepted-debt decision. Goals are
-deterministic templates per rule type; constraints join the rule's configured
-constraint text, allowed alternatives, and the target module's public globs;
-validation is the exact `archfit check` command that must pass. The command
-replays the effective analysis flags (`--base`, repeated `--lang`, and
-`--require-tools`) so the repair is checked under the same conditions.
+deterministic templates per rule type; constraints carry the rule type's fixed
+constraint text plus the target module's public globs, except on
+`forbidden_dependency` and `forbidden_layer_direction` tasks, which never list
+the target's public surface (the dependency is forbidden through it too).
+Validation is the exact `archfit check` command to re-run. The repair is done
+when that run no longer lists the task's `finding_id` and its verdict is not
+`blocked`; exit 2 can remain and is not a failed repair. One import that breaks
+two rules is two findings and therefore two tasks, keyed by their finding IDs.
+The command replays the effective analysis flags (`--base`, repeated `--lang`,
+and `--require-tools`) so the repair is checked under the same conditions.
 `--refresh` is deliberately not serialized: cache-control must not change the
 validation result. `--no-advisories` and output-format flags are not part of
 the validation contract.
@@ -95,7 +103,12 @@ emitted as a bare key or ID. If dropping empties the set, `files` falls back to
 the target module's config `paths:` root — itself resolved to a real path (a
 Python dotted glob root goes through the module-file probe); if even that
 isn't resolvable, `files` is legitimately empty — never a fabricated string
-(`internal/assessment/agenttask/agenttask.go`, `filesFor`).
+(`internal/assessment/agenttask/agenttask.go`, `filesFor`). A
+`bc/coupling_gate` finding names only a module pair, so its task resolves the
+node paths and import sites of up to 20 of the seam's qualifying edges
+(critical band at high distance, in endpoint order) and falls back to the
+source, then the target, module's `paths:` root. Seam-gate tasks carry no
+`declarations`.
 
 **`edge.path` group semantics.** For a rolled-up finding (`group_count > 1`),
 `edge.from.path`/`edge.to.path` are taken from whichever member edge owns

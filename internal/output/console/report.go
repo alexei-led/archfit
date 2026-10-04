@@ -23,9 +23,10 @@ func New() *Renderer { return &Renderer{} }
 // Format returns "console".
 func (r *Renderer) Format() string { return "console" }
 
-// Render writes the document's architecture state as terminal text.
+// Render writes the document's architecture state as terminal text, and names
+// the metrics behind a metric-ratchet block from the document's metric deltas.
 func (r *Renderer) Render(d report.Document, w io.Writer) error {
-	return RenderState(d.State, w)
+	return writeState(d.State, ratchetRegressions(d), w)
 }
 
 // RenderState writes the architecture state as terminal-native plain text: the
@@ -37,11 +38,19 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 // acts on is a named blocker, a flagged dimension, or an unmeasured one. No
 // Markdown, no wide tables, no color — scannable in a terminal and safe to pipe
 // (timing and progress live on stderr, not here).
+//
+// The state alone carries no metric deltas, so it cannot name a tripped
+// metric ratchet; Render, which holds the whole document, can.
 func RenderState(s report.ArchitectureState, w io.Writer) error {
+	return writeState(s, nil, w)
+}
+
+func writeState(s report.ArchitectureState, regressions []metricRegression, w io.Writer) error {
 	var b strings.Builder
 
 	b.WriteString("ARCHITECTURE STATE\n\n")
 	writeHeadline(&b, s)
+	writeMetricRatchet(&b, s.GateReference, regressions)
 	writeDimensions(&b, s.Dimensions)
 	writeUnknowns(&b, s.Dimensions)
 	writeSeams(&b, s.Seams)

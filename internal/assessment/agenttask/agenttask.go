@@ -20,6 +20,13 @@ import (
 // not by import, since agenttask must not depend on the rules package.
 const matchedByModuleKey = "module"
 
+// Rule types that forbid their target outright. They select both a repair goal
+// and whether the target's public surface may appear as a constraint.
+const (
+	ruleTypeForbiddenDependency     = "forbidden_dependency"
+	ruleTypeForbiddenLayerDirection = "forbidden_layer_direction"
+)
+
 // PathResolver carries the filesystem facts filesFor needs to turn a config
 // module key, a Rust "crate::mod" module key, or a Python dotted module key
 // into a path that actually exists on disk — without agenttask itself ever
@@ -193,6 +200,8 @@ func pythonModuleFileCandidates(modulePath string) []string {
 // is disabled). When non-empty, each task is enriched with the declarations
 // found in its referenced files (compact agent context). When empty the output
 // is structurally identical to pre-enrichment builds.
+// seams is the seam ledger. A coupling-gate finding names only a module pair,
+// so its task takes its files from that seam's qualifying edges.
 //
 // Output is sorted by FindingID; all nested slices carry a total order.
 func Build(
@@ -201,6 +210,7 @@ func Build(
 	modulePublic map[string][]string,
 	validation []string,
 	syntaxFacts []evidence.SyntaxFact,
+	seams []result.Seam,
 	resolver PathResolver,
 ) []result.AgentTask {
 	// Build a file→facts index once so the per-task lookup is O(1).
@@ -211,6 +221,10 @@ func Build(
 			factsByFile[sf.File] = append(factsByFile[sf.File], sf)
 		}
 	}
+	seamPaths := make(map[[2]string][]string, len(seams))
+	for _, s := range seams {
+		seamPaths[[2]string{s.FromModule, s.ToModule}] = s.QualifyingPaths
+	}
 
 	tasks := []result.AgentTask{}
 	for _, f := range findings {
@@ -220,17 +234,25 @@ func Build(
 		if f.Status != finding.StatusNew && f.Status != finding.StatusExpiredWaiver {
 			continue
 		}
-		files := filesFor(f, resolver)
+		seamGate := f.RuleID == finding.RuleIDCouplingGate
+		var seamEvidence []string
+		if seamGate {
+			seamEvidence = seamPaths[[2]string{f.Edge.From.Module, f.Edge.To.Module}]
+		}
+		files := filesFor(f, seamEvidence, resolver)
+		ruleType := ruleTypes[f.RuleID]
 		task := result.AgentTask{
 			FindingID:   f.ID,
 			RuleID:      f.RuleID,
-			RepairKind:  repairKind(ruleTypes[f.RuleID]),
-			Goal:        goalFor(ruleTypes[f.RuleID], f),
-			Constraints: constraintsFor(f, modulePublic),
+			RepairKind:  repairKind(ruleType),
+			Goal:        goalFor(ruleType, f),
+			Constraints: constraintsFor(f, ruleType, modulePublic),
 			Files:       files,
 			Validation:  append([]string{}, validation...),
 		}
-		if factsByFile != nil {
+		// A seam task's files span both modules — up to forty paths of
+		// evidence — so their declarations would bury the import to cut.
+		if factsByFile != nil && !seamGate {
 			task.Declarations = declarationsFor(files, factsByFile)
 		}
 		tasks = append(tasks, task)
@@ -248,11 +270,11 @@ func goalFor(ruleType string, f finding.Finding) string {
 		toMod = to
 	}
 	switch ruleType {
-	case "forbidden_dependency":
+	case ruleTypeForbiddenDependency:
 		return fmt.Sprintf("Remove the forbidden dependency from %s on %s; move shared behavior to a location permitted by the existing dependency rules.", from, to)
 	case "public_api_only", "internal_api_access":
 		return fmt.Sprintf("Replace the internal-API access from %s to %s with %s's public API.", from, to, toMod)
-	case "forbidden_layer_direction":
+	case ruleTypeForbiddenLayerDirection:
 		return fmt.Sprintf("Remove the layer-inverting dependency from %s to %s: inner layers must not import outer layers — introduce an abstraction in the inner layer instead.", from, to)
 	case "new_cross_module_dependency":
 		return fmt.Sprintf("Remove the new cross-module dependency from %s to %s. If the dependency is intentional, request an architecture-owner decision before changing policy or accepted debt.", from, to)
@@ -274,8 +296,11 @@ func repairKind(ruleType string) string {
 }
 
 // constraintsFor joins the finding's constraint text, its allowed
-// alternatives, and the target module's public surface.
-func constraintsFor(f finding.Finding, modulePublic map[string][]string) []string {
+// alternatives, and — unless the rule forbids the target outright — the target
+// module's public surface. A forbidden dependency or an inverted layer is still
+// a violation through the target's public API, so naming that surface would
+// route the agent straight back to the forbidden target.
+func constraintsFor(f finding.Finding, ruleType string, modulePublic map[string][]string) []string {
 	out := []string{}
 	if f.Constraint != "" {
 		out = append(out, f.Constraint)
@@ -283,10 +308,19 @@ func constraintsFor(f finding.Finding, modulePublic map[string][]string) []strin
 	for _, alt := range f.Alternatives {
 		out = append(out, "allowed alternative: "+alt)
 	}
+	if forbidsTarget(ruleType) {
+		return out
+	}
 	if pub := modulePublic[f.Edge.To.Module]; len(pub) > 0 {
 		out = append(out, fmt.Sprintf("public surface of module %q: %v", f.Edge.To.Module, pub))
 	}
 	return out
+}
+
+// forbidsTarget reports whether a rule type forbids the dependency on its
+// target by any route, the target's public API included.
+func forbidsTarget(ruleType string) bool {
+	return ruleType == ruleTypeForbiddenDependency || ruleType == ruleTypeForbiddenLayerDirection
 }
 
 // declarationsFor returns the SyntaxFacts for the given files, in file + start-line
@@ -301,14 +335,14 @@ func declarationsFor(files []string, factsByFile map[string][]evidence.SyntaxFac
 }
 
 // filesFor returns the deduplicated, sorted repo-relative files involved: edge
-// endpoints plus every finding location, each resolved to a path that exists
-// on disk. An entry that cannot be resolved (e.g. a bare config module key or
-// a dotted/"::" module id copied verbatim onto Edge.From/To.Path) is dropped
+// endpoints plus every finding location, plus seamEvidence (a coupling-gate
+// finding's qualifying-edge paths), each resolved to a path that exists on
+// disk. An entry that cannot be resolved (e.g. a bare config module key or a
+// dotted/"::" module id copied verbatim onto Edge.From/To.Path) is dropped
 // rather than emitted — this is the contract agents trust blindly. When
-// dropping leaves the set empty, the finding's module root dir (config
-// paths:) is used as a last resort; if that isn't resolvable either, Files is
-// legitimately empty.
-func filesFor(f finding.Finding, r PathResolver) []string {
+// dropping leaves the set empty, a module root dir (config paths:) is used as
+// a last resort; if that isn't resolvable either, Files is legitimately empty.
+func filesFor(f finding.Finding, seamEvidence []string, r PathResolver) []string {
 	set := map[string]struct{}{}
 	add := func(candidate string) {
 		if resolved, ok := r.resolve(candidate); ok {
@@ -333,15 +367,19 @@ func filesFor(f finding.Finding, r PathResolver) []string {
 		}
 		add(p)
 	}
+	for _, p := range seamEvidence {
+		add(p)
+	}
 
 	if len(set) == 0 {
-		if mod := f.MatchedBy[matchedByModuleKey]; mod != "" {
+		for _, mod := range rootFallbackModules(f) {
 			// The root goes through resolve, not a bare dir check: a Python
 			// module's root is a dotted module-ID prefix that only the
 			// dotted-candidate probe can turn into a real path.
 			if root, ok := r.moduleRootDirs[mod]; ok && root != "" {
 				if resolved, rok := r.resolve(root); rok {
 					set[resolved] = struct{}{}
+					break
 				}
 			}
 		}
@@ -353,4 +391,17 @@ func filesFor(f finding.Finding, r PathResolver) []string {
 	}
 	sort.Strings(files)
 	return files
+}
+
+// rootFallbackModules names the modules whose declared root stands in when no
+// evidence resolved: the module a public_api_* finding is about, or the two
+// ends of a coupling-gate seam, source first because the repair starts there.
+func rootFallbackModules(f finding.Finding) []string {
+	if mod := f.MatchedBy[matchedByModuleKey]; mod != "" {
+		return []string{mod}
+	}
+	if f.RuleID == finding.RuleIDCouplingGate {
+		return []string{f.Edge.From.Module, f.Edge.To.Module}
+	}
+	return nil
 }

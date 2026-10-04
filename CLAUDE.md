@@ -471,13 +471,21 @@ init` emits v2 directly; owners update older configs manually before analysis.
   then the crate dir (`src` for a root crate whose `CrateRoot.Dir` is `""`); the
   last-resort module root from `config.ModuleRootDirs` (dotted prefix for Python globs)
   goes through the same resolver. agenttask itself never touches the filesystem — the
-  composition root (`cmd`) owns the `onDisk` closure.
+  composition root (`cmd`) owns the `onDisk` closure. A `bc/coupling_gate` finding
+  carries only a module pair, so `agenttask.Build` takes the seam ledger and resolves
+  the paths of up to 20 qualifying edges (`relationship.Seam.QualifyingEdges` →
+  `result.Seam.QualifyingPaths`, `json:"-"`, so `seams[]` on the wire is unchanged),
+  falling back to the source, then target, module root; seam-gate tasks carry no
+  `declarations`.
 - **Agent repair contracts are policy-aware and replayable.** Each task carries
   `repair_kind: code_change|needs_owner_decision`; forbidden-dependency goals
-  cannot route through a public API, and new-cross-module goals cannot use
-  baseline capture as a repair. Validation replays `--base`, `--lang`, and
-  `--require-tools`; it omits `--refresh` so cache control cannot change the
-  result.
+  cannot route through a public API, `forbidden_dependency` and
+  `forbidden_layer_direction` constraints never list the target module's public
+  surface (`agenttask.forbidsTarget`), and new-cross-module goals cannot use
+  baseline capture as a repair. One task per active gate finding: an import that
+  breaks two rules is two findings and two tasks. Validation replays `--base`,
+  `--lang`, and `--require-tools`; it omits `--refresh` so cache control cannot
+  change the result.
 - **TS coverage honesty: one unresolved ratio.** `score.tsUnresolvedRatioCeiling` (10%)
   caps `coupling_balance` confidence using `Unresolved/SpecifiersSeen` — the SAME
   specifier-denominator ratio the dependency-cruiser `Coverage.Reason` string and the
@@ -609,7 +617,14 @@ init` emits v2 directly; owners update older configs manually before analysis.
   (`buildState`), never through the finding populations. It also raises the
   owning dimension's `gate` to `fail`, routed by the envelope's own metric list.
   Asserting only `evaluation.Result.Verdict` cannot see this: nothing reads that
-  verdict for the exit code. `MetricEntry.Enabled` is a `*bool` so a knob-only
+  verdict for the exit code. The state carries no ratchet field, so text and
+  Markdown name the ratchet (`METRIC RATCHET` / `## Metric ratchet`,
+  `ratchetRegressions`, twin helpers in console and markdown) from the
+  Document's metric deltas, and only when the contract proves it: verdict
+  blocked, zero active blockers, no coverage gap gating `fail`. They list every
+  metric that worsened against the accepted baseline, because thresholds are not
+  in the contract; the label says "worsened", never "tripped".
+  `MetricEntry.Enabled` is a `*bool` so a knob-only
   entry (`{gate: warn}`) stays enabled — only explicit `enabled: false` disables
   the metric (`metrics.New`). `coupling_balance` does not gate at all — the only
   coupling gate is `coupling.gate.distributed_monolith`; see the coupling-gate

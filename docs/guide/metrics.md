@@ -52,6 +52,16 @@ upward (delta > `max_new`), ratio metrics (`encapsulation`, `coverage`) worsen
 downward (drop > `min_delta`). Per-metric `gate`/threshold knobs are documented
 in the [configuration reference](configuration-reference.md#metrics).
 
+A blocking metric delta produces no finding and no agent task: the run is
+`blocked` with zero `active_blockers`. When no required analyzer failed its gate
+either, the text and Markdown output add a `METRIC RATCHET` / `## Metric ratchet`
+section. It lists every metric that worsened against the accepted baseline with
+its baseline and current values and its dimension gate, the `gate_reference`
+status and reasons, and the next step: fix the regression, or have an owner
+review the new value and re-run `archfit baseline`. The thresholds are not in the
+report, so a worsened metric that stayed inside its threshold is listed too. The
+JSON state has no field for the ratchet yet.
+
 `archfit check`'s exit code IS this verdict: `0` healthy, `2` needs_attention,
 `1` blocked, `3` tool/config error. Exit 0 is reachable when all nine dimensions
 are measured, all hard gates pass, and no active diagnostic remains. A run with

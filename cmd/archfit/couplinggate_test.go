@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -116,6 +117,61 @@ func TestRun_Check_DistributedMonolithSeamIsDiagnostic(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRun_Check_BlockingSeamTaskNamesFiles pins the seam gate's repair channel
+// end to end: a seam introduced after a comparable baseline blocks in fail
+// mode, and its task names files that exist on disk. The gate finding carries
+// only a module pair, so before this the task shipped `files: []`.
+//
+// The import targets a config-declared internal path (pkg/b/impl), not a Go
+// `internal/` directory: Go rejects that import, go/packages turns partial, and
+// a partial producer makes the stored reference non-comparable — the gate would
+// abstain instead of block.
+func TestRun_Check_BlockingSeamTaskNamesFiles(t *testing.T) {
+	t.Parallel()
+	const implDir = "pkg/b/impl"
+	root := t.TempDir()
+	writeFileAt(t, root, markerGoMod, "module example.com/test\n\ngo 1.21\n")
+	writeFileAt(t, root, implDir+"/impl.go", implSource())
+	writeFileAt(t, root, filePkgAA, "package a\n\nfunc UseSecret() string { return \"\" }\n")
+	writeFileAt(t, root, defaultConfigPath, strings.Replace(distributedMonolithCfg, "pkg/b/internal/**", implDir+"/**", 1)+
+		"coupling:\n  gate:\n    distributed_monolith:\n      mode: fail\n      max_new_seams: 0\n")
+	gitInitFixtureRepo(t, root)
+	cfgPath := filepath.Join(root, defaultConfigPath)
+	if code, stdout, stderr := runArchfit(t, cmdBaseline, "-c", cfgPath, flagRefresh); code != 0 {
+		t.Fatalf("baseline before the seam: exit = %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+
+	writeFileAt(t, root, filePkgAA, "package a\n\nimport \"example.com/test/"+implDir+"\"\n\n"+
+		"func UseSecret() string { return impl.Secret() }\n")
+	code, stdout, stderr := runArchfit(t, cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh)
+	if code != 1 {
+		t.Fatalf("check after the seam: exit = %d, want 1 (a new seam in fail mode)\nstderr:\n%s", code, stderr)
+	}
+	var doc struct {
+		AgentTasks []struct {
+			RuleID string   `json:"rule_id"`
+			Files  []string `json:"files"`
+		} `json:"agent_tasks"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("decode check output: %v", err)
+	}
+	var files []string
+	for _, task := range doc.AgentTasks {
+		if task.RuleID == ruleIDCouplingGate {
+			files = task.Files
+		}
+	}
+	if !slices.Contains(files, filePkgAA) {
+		t.Fatalf("seam-gate task files = %v, want the importing file %s", files, filePkgAA)
+	}
+	for _, f := range files {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(f))); err != nil {
+			t.Errorf("seam-gate task file %q does not exist: %v", f, err)
+		}
 	}
 }
 

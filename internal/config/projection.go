@@ -191,7 +191,7 @@ func ApplyFlagOverrides(cfg *Config, severity string, lang []string) error {
 	for _, key := range lang {
 		canonical := registry.ByAlias(key)
 		if canonical == "" {
-			return fmt.Errorf("--lang: unknown analyzer %q; see %s", key, languagesDocsURL)
+			return fmt.Errorf("--lang: unknown language %q; see %s", key, languagesDocsURL)
 		}
 		cfg.SetToolMode(canonical, ModeOn)
 	}

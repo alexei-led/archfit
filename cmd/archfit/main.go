@@ -48,8 +48,8 @@ const (
 // commands live under `config`; `doctor` both checks and (with --fix) installs
 // analyzer tools.
 type cli struct {
-	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" group:"analysis" help:"Analyze architecture locally: decision, score, findings (default command)."`
-	Check    CheckCmd    `cmd:"" group:"analysis" help:"Run the architecture gate. Exits non-zero on violations (1), warnings (2), or config/tool error (3). Use in CI."`
+	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" group:"analysis" help:"Analyze architecture locally: verdict, dimensions, findings (default command)."`
+	Check    CheckCmd    `cmd:"" group:"analysis" help:"Run the architecture gate. Exits 1 when blocked, 2 when it needs attention, 3 on a config or tool error. Use in CI."`
 	Baseline BaselineCmd `cmd:"" group:"analysis" help:"Accept current findings as the gate baseline."`
 	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
 
