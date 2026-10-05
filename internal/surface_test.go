@@ -125,6 +125,9 @@ func identifierUses(t *testing.T) map[string][]string {
 			case dirGit, dirFactCache, ".bin", "docs", dirVendor:
 				return fs.SkipDir
 			}
+			if path != ".." && isToolStateDir(path, entry.Name()) {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		if filepath.Ext(path) != goSourceExt {

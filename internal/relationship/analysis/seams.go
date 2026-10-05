@@ -93,10 +93,16 @@ type seamAccumulator struct {
 	volatility                 relationship.Volatility
 	severity                   relationship.Severity
 	distributed                bool
+	qualifying                 []*relationship.Edge
 	nonHighLLM                 bool
 	worst                      *relationship.Edge
 	worstStrength, worstDistOr int
 }
+
+// qualifyingEdgeCap bounds the repair evidence a seam keeps. A seam can be
+// expressed by hundreds of imports; twenty named files are enough to start the
+// repair, and the full ledger stays in the edge set.
+const qualifyingEdgeCap = 20
 
 func (a *seamAccumulator) add(e *relationship.Edge) {
 	a.edges++
@@ -117,6 +123,7 @@ func (a *seamAccumulator) add(e *relationship.Edge) {
 		a.critical++
 		if coupling.DistanceIsHigh(e.Distance) {
 			a.distributed = true
+			a.qualifying = append(a.qualifying, e)
 		}
 	}
 	if e.Classified.Score.Band == relationship.SeverityCritical || e.Classified.Score.Band == relationship.SeverityHigh {
@@ -193,6 +200,7 @@ func (a *seamAccumulator) seam(in seamInput, volatility map[string]classify.Modu
 		Quadrant:            seamQuadrant(a.worstStrength, a.worstDistOr),
 		RoleExpectation:     roleExpectation(fromDef.Role),
 		DistributedMonolith: a.distributed,
+		QualifyingEdges:     a.qualifyingEdges(),
 	}
 	if vp, ok := volatility[a.to]; ok {
 		s.VolatilityProvenance = string(vp.Reported())
@@ -201,6 +209,31 @@ func (a *seamAccumulator) seam(in seamInput, volatility map[string]classify.Modu
 	s.Confidence = seamConfidence(a.scored, a.abstained, a.nonHighLLM)
 	s.Hypothesis = seamHypothesis(a.worst, s.RoleExpectation, a.volatility)
 	return s
+}
+
+// qualifyingEdges returns the distributed-monolith edges in endpoint-ID order,
+// capped. The order is the edge identity, not a severity rank: every one of
+// them qualifies the seam equally, and a stable order keeps the repair evidence
+// identical across runs over the same tree.
+func (a *seamAccumulator) qualifyingEdges() []relationship.Edge {
+	if len(a.qualifying) == 0 {
+		return nil
+	}
+	sort.Slice(a.qualifying, func(i, j int) bool {
+		x, y := a.qualifying[i], a.qualifying[j]
+		if x.FromID != y.FromID {
+			return x.FromID < y.FromID
+		}
+		if x.ToID != y.ToID {
+			return x.ToID < y.ToID
+		}
+		return x.Kind < y.Kind
+	})
+	out := make([]relationship.Edge, 0, min(len(a.qualifying), qualifyingEdgeCap))
+	for _, e := range a.qualifying[:min(len(a.qualifying), qualifyingEdgeCap)] {
+		out = append(out, *e)
+	}
+	return out
 }
 
 // worstBasis is the distance basis of the edge that drives the seam. An

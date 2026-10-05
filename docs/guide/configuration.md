@@ -7,8 +7,19 @@ archfit config init --root . --output .archfit.yaml
 ```
 
 Then review the generated modules, layers, and rules before using `archfit
-check` in CI. Start with narrow rules and baseline accepted current findings
-while calibrating. Keep `gate` values aligned with the intended CI policy.
+check` in CI. The starter rules can fail: `module_cycle` blocks a new dependency
+cycle between modules, and a `forbidden_layer_direction` rule blocks an inner
+layer importing an outer one. Init does not guess layers from directory or
+package names in any language; only a Rust workspace gets layers, as tiers of
+its crate dependency graph. When it infers fewer than two, the generated file
+shows how to declare them and leaves the direction rule commented until you do.
+Init also skips trees that hold no production source in the inventory `check`
+reads (`mocks/`, generated or test-only packages, default-excluded trees), so
+the generated file passes `archfit config lint` and `check` can evaluate every
+starter rule. A starter rule init cannot prove evaluable over a complete graph
+is written at `gate: warn` with a `Why:` comment. Start with narrow rules and
+baseline accepted current findings while calibrating. Keep `gate` values
+aligned with the intended CI policy.
 
 Use `archfit analyze --config .archfit.yaml` for local review and `archfit check
 --config .archfit.yaml` for CI validation.
@@ -22,7 +33,10 @@ the `archfit.config-review.v1` document for scripts and agents. Its status line
 reads `action_required`, `review_available`, or `no_known_issues`; the last one
 means these checks found nothing, not that the config is complete.
 
-`--apply` writes added modules, path drift, and settings only. Two structure
+A discovered module is only "added" when it holds source no configured module
+owns, so a hand-curated module map that groups code differently from discovery
+gets no catch-all stanzas. `--apply` writes added modules, path drift, and
+settings only. Two structure
 buckets stay review-only because resolving them would discard a stanza's
 `owner`, `subdomain`, `volatility`, `layer`, and `public` values: `name_drift`
 (a configured module and a discovered module own the same paths under different

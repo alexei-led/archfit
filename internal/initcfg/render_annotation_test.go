@@ -176,8 +176,10 @@ func TestRender_PlanMode_RendersRuleSuggestionsAsComments(t *testing.T) {
 		}
 	}
 	loaded := roundTrip(t, out)
-	if len(loaded.Rules) != 1 {
-		t.Fatalf("commented rule suggestions must stay inert, loaded rules = %+v", loaded.Rules)
+	for _, r := range loaded.Rules {
+		if r.ID == "no-classify-to-extract" {
+			t.Fatalf("commented rule suggestions must stay inert, loaded rules = %+v", loaded.Rules)
+		}
 	}
 }
 

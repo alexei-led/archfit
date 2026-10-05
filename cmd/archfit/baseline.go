@@ -12,7 +12,7 @@ import (
 type BaselineCmd struct {
 	Config       string `short:"c" help:"Config file." default:".archfit.yaml"`
 	Root         string `short:"r" help:"Repository root to analyze (default: directory of --config)." type:"path"`
-	NoAdvisories bool   `name:"no-advisories" help:"Exclude informational Balanced-Coupling advisories from the baseline."`
+	NoAdvisories bool   `name:"no-advisories" help:"Exclude advisory findings from the baseline: Balanced-Coupling advisories and violations of gate: warn rules."`
 	Refresh      bool   `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
 }
 

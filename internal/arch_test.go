@@ -444,6 +444,9 @@ func productionImportFiles(t *testing.T, importPath string) []string {
 			case dirGit, dirFactCache, dirTestdata, dirVendor:
 				return fs.SkipDir
 			}
+			if path != ".." && isToolStateDir(path, entry.Name()) {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		if filepath.Ext(path) != goSourceExt || strings.HasSuffix(path, "_test"+goSourceExt) {

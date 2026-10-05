@@ -182,6 +182,10 @@ type Seam struct {
 	RoleExpectation      string                `json:"role_expectation,omitempty"`
 	Hypothesis           string                `json:"hypothesis,omitempty"`
 	DistributedMonolith  bool                  `json:"distributed_monolith,omitempty"`
+	// QualifyingPaths are the node paths and import-site files of the seam's
+	// capped qualifying edges, in edge order. They are repair evidence for a
+	// seam-gate task and never part of the published seam record.
+	QualifyingPaths []string `json:"-"`
 }
 
 // SeamDistance is the raw distance evidence behind a seam's collapsed rung.

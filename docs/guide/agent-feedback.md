@@ -15,8 +15,11 @@ agent edits code
              `decision.unevaluated_required_rules`. Supply the named missing
              fact; never treat yellow as a fabricated healthy zero.
   → exit 1?  blocked — read agent_tasks[] — goal, constraints, files, validation
+             (empty agent_tasks[]: a metric ratchet or a required analyzer
+             blocked; the text/Markdown METRIC RATCHET section names the metric)
   → fix within the constraints
   → run the task's validation command
+  → done when that run no longer lists the task's finding_id and is not blocked
   → repeat
 ```
 
@@ -34,6 +37,17 @@ describes `.archfit.yaml`.
 Nullable by contract, not by accident: `seams[].scores.p10` and `p90` are `null`
 when a seam has fewer than ten scored edges. A percentile nobody can compute is
 reported as absent, never as `0`.
+
+Free text is single-line and bounded by contract. Every reason, `why`,
+`constraint`, allowed alternative, dimension basis, and unknown-fact text is one
+line of at most 400 characters; an agent task's `goal` and `constraints` are at
+most 3600. Analyzer output reaches some of these fields, for example the reason
+of a `dependency-cruiser` row that exited non-zero. archfit collapses its line
+breaks, tabs, and colour codes into single spaces and keeps the leading text,
+which holds the tool, the exit code, and the first error line. Text cut at the
+limit ends in `…`. The full analyzer output is printed on stderr as a warning,
+never in the report. Text that was already one short line is published
+unchanged.
 
 ## agent_tasks — the gate repair channel
 
@@ -58,11 +72,18 @@ Every ACTIVE gate finding produces one structured repair task:
 
 `repair_kind` is `code_change` for a finding the agent can address in source and
 `needs_owner_decision` for a policy or accepted-debt decision. Goals are
-deterministic templates per rule type; constraints join the rule's configured
-constraint text, allowed alternatives, and the target module's public globs;
-validation is the exact `archfit check` command that must pass. The command
-replays the effective analysis flags (`--base`, repeated `--lang`, and
-`--require-tools`) so the repair is checked under the same conditions.
+deterministic templates per rule type; constraints carry the rule type's fixed
+constraint text plus the target module's public globs, except on
+`forbidden_dependency`, `forbidden_layer_direction`, `cycle`, `module_cycle`,
+and `new_cross_module_dependency` tasks, which never list the target's public
+surface: routing through it keeps the dependency forbidden, the layer inverted,
+the cycle closed, or the cross-module dependency new.
+Validation is the exact `archfit check` command to re-run. The repair is done
+when that run no longer lists the task's `finding_id` and its verdict is not
+`blocked`; exit 2 can remain and is not a failed repair. One import that breaks
+two rules is two findings and therefore two tasks, keyed by their finding IDs.
+The command replays the effective analysis flags (`--base`, repeated `--lang`,
+and `--require-tools`) so the repair is checked under the same conditions.
 `--refresh` is deliberately not serialized: cache-control must not change the
 validation result. `--no-advisories` and output-format flags are not part of
 the validation contract.
@@ -95,7 +116,13 @@ emitted as a bare key or ID. If dropping empties the set, `files` falls back to
 the target module's config `paths:` root — itself resolved to a real path (a
 Python dotted glob root goes through the module-file probe); if even that
 isn't resolvable, `files` is legitimately empty — never a fabricated string
-(`internal/assessment/agenttask/agenttask.go`, `filesFor`).
+(`internal/assessment/agenttask/agenttask.go`, `filesFor`). A
+`bc/coupling_gate` finding names only a module pair, so its task resolves the
+node paths and import sites of up to 20 of the seam's qualifying edges
+(critical band at high distance, in endpoint order) and falls back to the
+source, then the target, module's `paths:` root. Seam-gate and module-cycle
+tasks carry no `declarations`: their files span many import sites, and the
+declarations in them would bury the import to cut.
 
 **`edge.path` group semantics.** For a rolled-up finding (`group_count > 1`),
 `edge.from.path`/`edge.to.path` are taken from whichever member edge owns
@@ -252,5 +279,16 @@ The list is sorted by `rule_id` and omitted when empty. A known active blocker
 still sets `decision.hard_gates` to `fail`; otherwise a non-empty list sets it to
 `unmeasured`, which keeps `check` at exit `2`. Read these structured fields
 directly. Do not infer required-rule coverage by searching prose or by treating
-an empty finding list as proof that the rule passed. Rules whose source scope is
-proven not applicable are omitted from this list.
+an empty finding list as proof that the rule passed. A rule whose selector
+matches no scanned source is listed with the reason
+`selector matches nothing: <from|to> <glob>`: it could never find a violation,
+so it is a policy defect for the config owner, not missing evidence and not a
+code change to make. A selector that matches only source no dependency
+producer analyses (its language's extractor finds no project under the
+analysis root) is listed with the reason
+`selector matches only source no dependency producer analyses: <from|to> <glob>`:
+the fix is to analyse that source, not to edit the selector. A declared guard
+(`guard: true`) is not listed while its selector matches nothing, whatever
+state the dependency producer is in. Once the guarded path exists again the
+guard is an ordinary rule and is listed when its producer evidence is
+incomplete.

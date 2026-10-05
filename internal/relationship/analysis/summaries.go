@@ -425,9 +425,9 @@ func buildStaticDistanceCandidates(g *graph.Graph, idx coupling.Index, mm policy
 		v.Count++
 		for _, l := range e.Locations {
 			// Dedup per group. Several edges in one group can carry the same
-			// site: the Rust extractor stamps every crate dependency with the
-			// package-level "Cargo.toml", so a workspace whose members map to
-			// one configured module repeats that site once per member.
+			// site whenever an extractor locates them at a file without a line
+			// (a Rust dependency the manifest scan cannot place keeps its
+			// member's Cargo.toml with line 0).
 			site := evidence.DistanceConfigEvidenceSite{File: l.File, Line: l.Line, Kind: string(e.Kind), Language: e.Language, Target: rawTarget}
 			if _, dup := seen[k][site]; dup {
 				continue

@@ -5,6 +5,7 @@
 package evaluation_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -193,6 +194,50 @@ func TestScoreWithoutApplyToolGateLeavesTheVerdictAlone(t *testing.T) {
 	}
 	if diag.Verdict != before {
 		t.Errorf("verdict = %q, want it unchanged at %q", diag.Verdict, before)
+	}
+}
+
+// TestAssessResolvesRustCrateModNodesThroughObservedCrateRoots pins the wiring
+// behind the yazi false positives: the rules see the declared module map only,
+// where a crate declared by package name (yazi-shared) cannot claim the
+// cargo-modules node yazi_shared::url::buf. Assess must hand the rules the
+// observed crate owners, so a same-crate access is same-module and stays silent
+// while the cross-crate access still fires.
+func TestAssessResolvesRustCrateModNodesThroughObservedCrateOwners(t *testing.T) {
+	t.Parallel()
+	const shared, fs = "yazi-shared", "yazi-fs"
+	modules := map[string]policy.ModuleDef{
+		shared: {Paths: []string{shared}, Internal: []string{"yazi_shared::url::**"}},
+		fs:     {Paths: []string{fs}},
+	}
+	topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
+	in := assessInput()
+	in.Policy = policy.New(topology, policy.RelationshipPolicy{Topology: topology}, policy.AssessmentPolicy{Topology: topology},
+		policy.GatePolicy{Rules: policy.RuleConfig{Rules: []policy.RuleDef{{ID: "public-only", Type: "public_api_only", Gate: "fail"}}}}, nil, nil)
+	in.Facts.CrateOwners = map[string]string{
+		shared: shared, "yazi_shared": shared,
+		fs: fs, "yazi_fs": fs,
+	}
+	rustEdge := func(from, to string) relationship.Edge {
+		return relationship.Edge{FromID: "package:" + from, ToID: "package:" + to, FromPath: from, ToPath: to,
+			Kind: "depends_on", Language: "rust"}
+	}
+	in.Relationships = relationship.Set{Edges: []relationship.Edge{
+		rustEdge("yazi_shared::url::buf", "yazi_shared::url::cov"),
+		rustEdge("yazi_fs::path", "yazi_shared::url::buf"),
+	}}
+	assessed, err := evaluation.Assess(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gates []string
+	for _, f := range assessed.Diagnostic.Findings {
+		if f.RuleID == "public-only" {
+			gates = append(gates, f.Edge.From.Path+" -> "+f.Edge.To.Path)
+		}
+	}
+	if want := []string{"yazi_fs::path -> yazi_shared::url::buf"}; !slices.Equal(gates, want) {
+		t.Errorf("public-only findings = %v, want %v", gates, want)
 	}
 }
 

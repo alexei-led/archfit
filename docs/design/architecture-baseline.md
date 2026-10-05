@@ -87,7 +87,11 @@ types in `internal/model/*`, never into `internal/evidence.Facts` or
 carries no graph and no classifier index, so it cannot re-derive a relationship
 even by accident.
 
-Cycles: 0 package cycles, 0 module cycles (`cycle` metric).
+Cycles: 0 package cycles (the Go compiler forbids them; the node-level `cycle`
+metric is structurally `0` on Go). One declared-module cycle:
+`evidence-adapters` ↔ `persistence-adapters` (13 import sites one way, 5 the
+other; measured on 2026-10-04 by adding a `module_cycle` rule to a scratch copy
+of `.archfit.yaml`). The self-config does not gate it yet.
 
 ## Enforcement — which check catches which regression
 

@@ -98,11 +98,14 @@ Shared analysis/check flags:
   `sarif`, or `scorecard`. Repeatable / comma-separated.
 - `--json` / `--markdown` / `--sarif` — shorthands for
   `--format json/markdown/sarif`.
-- `--no-advisories` — hide informational Balanced Coupling advisories from
-  output.
+- `--no-advisories` — drop advisory findings: Balanced Coupling advisories and
+  violations of `gate: warn` rules. Dropped findings do not count as
+  diagnostics, so dimension gates and the attention count change too; on
+  `baseline` they are left out of the accepted set.
 - `--min-severity <level>` — minimum advisory severity to show (`low`, `medium`,
   `high`, `critical`).
-- `--lang <name>` — force an analyzer on. Repeatable.
+- `--lang <language>` — force a language on: `go`, `typescript` (`ts`),
+  `python` (`py`), `rust` (`rs`). Repeatable. Analyzer names are rejected.
 - `--refresh` — re-run extractors/AI calls and refresh cache entries.
 - `--require-tools` — opt-in hard gate: mark missing required analyzer tools as
   failures (use with `check` for CI exit codes).
@@ -174,8 +177,9 @@ usage/config/runtime errors.
 The exit code IS the architecture-state verdict; nothing else participates.
 
 - `0` — `healthy`.
-- `1` — `blocked`: active gate finding, or missing required tool under
-  `--require-tools` / `analyzers.<x>.gate: fail`. **Gate on this one.**
+- `1` — `blocked`: active gate finding, missing required tool under
+  `--require-tools` / `analyzers.<x>.gate: fail`, or a tripped metric ratchet
+  (`metrics.<name>.gate`). **Gate on this one.**
 - `2` — `needs_attention`: no blocker, but an active diagnostic, incomplete
   dimension evidence, or unevaluated required rule remains. Read the named
   missing fact; do not treat it as a failure or fabricate evidence to force exit 0. Exit 0 is reachable when every required fact is genuinely supplied.

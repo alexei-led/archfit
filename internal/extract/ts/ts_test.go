@@ -245,6 +245,40 @@ func TestExtract_ExternalNodes(t *testing.T) {
 	}
 }
 
+// TestExtract_DropsThirdPartyCodeAtAnyDepth pins that installed third-party
+// code never becomes first-party graph facts, wherever node_modules sits: a
+// workspace package's nested node_modules (code/addons/a11y/node_modules/...)
+// is as third-party as the root one. A resolved import into it is dropped the
+// way dependency-cruiser's --exclude drops the root one, and a module listed
+// from it contributes neither a node nor its own imports.
+func TestExtract_DropsThirdPartyCodeAtAnyDepth(t *testing.T) {
+	const nested = "code/addons/a11y/node_modules/@testing-library/dom/dist/pretty-dom.js"
+	data := []byte(`{"modules":[
+	  {"source":"code/addons/a11y/src/a.ts","dependencies":[
+	    {"resolved":"` + nested + `","module":"@testing-library/dom","dependencyTypes":["npm"],"couldNotResolve":false,"coreModule":false},
+	    {"resolved":"code/core/src/b.ts","module":"../../core/src/b","dependencyTypes":["local"],"couldNotResolve":false,"coreModule":false}]},
+	  {"source":"code/core/src/b.ts","dependencies":[]},
+	  {"source":"` + nested + `","dependencies":[
+	    {"resolved":"code/core/src/b.ts","module":"../b","dependencyTypes":["local"],"couldNotResolve":false,"coreModule":false}]}
+	]}`)
+	facts, cov, err := ts.New(mockRunner(data), evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}).
+		Extract(context.Background(), scope.Scope{Root: fixtureDir})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	for _, n := range facts.Nodes {
+		if strings.Contains(n.ID(), "node_modules") {
+			t.Errorf("third-party node %q must not enter the graph", n.ID())
+		}
+	}
+	if len(facts.Edges) != 1 || facts.Edges[0].From != "file:code/addons/a11y/src/a.ts" || facts.Edges[0].To != "file:code/core/src/b.ts" {
+		t.Errorf("edges = %+v, want only the first-party a.ts -> b.ts edge", facts.Edges)
+	}
+	if cov.FilesSeen != 2 || cov.SpecifiersSeen != 1 {
+		t.Errorf("FilesSeen=%d SpecifiersSeen=%d, want 2 first-party files and 1 first-party specifier", cov.FilesSeen, cov.SpecifiersSeen)
+	}
+}
+
 // TestExtract_EdgeTypes asserts dependency-cruiser dependencyTypes drive the
 // Balanced Coupling integration-strength hint: a type-only (`import type`) edge
 // shares only the type shape and vanishes at runtime → Contract (weakest); a
@@ -448,10 +482,23 @@ func TestExtract_IncludeOnly(t *testing.T) {
 					t.Errorf("pattern %q should NOT match sibling %q but does", got, prefix+"-client/src/index.ts")
 				}
 			}
-			// --exclude ^node_modules must always be present.
+			// --exclude must drop node_modules at any depth, in root and
+			// subtree mode alike, and nothing that merely shares the name.
 			exIdx := slices.Index(gotArgs, "--exclude")
-			if exIdx == -1 || exIdx+1 >= len(gotArgs) || gotArgs[exIdx+1] != "^node_modules" {
-				t.Errorf("expected --exclude ^node_modules in args %v", gotArgs)
+			if exIdx == -1 || exIdx+1 >= len(gotArgs) {
+				t.Fatalf("expected --exclude in args %v", gotArgs)
+			}
+			exclude := regexp.MustCompile(gotArgs[exIdx+1])
+			for path, want := range map[string]bool{
+				"node_modules/react/index.js":                       true,
+				"code/addons/a11y/node_modules/@scope/dom/index.js": true,
+				"services/api/node_modules/lib/index.js":            true,
+				"src/node_modules_util.ts":                          false,
+				"src/my_node_modules/x.ts":                          false,
+			} {
+				if got := exclude.MatchString(path); got != want {
+					t.Errorf("--exclude %q matches %q = %v, want %v", gotArgs[exIdx+1], path, got, want)
+				}
 			}
 		})
 	}

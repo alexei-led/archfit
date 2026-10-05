@@ -1,10 +1,10 @@
 # archfit starter: Python package (src/ layout, dotted module names)
 #
 # Python dependency nodes are dotted module names (myapp.domain.service), so
-# module paths, public/internal globs, and rule from/to use DOTTED globs. Add
-# slash-style internal globs too when you want _internal packages flagged as
-# internal-access edges. Set languages.python.package when the top-level package
-# name does not match the repo directory or uses a src/ layout.
+# module paths, public/internal globs, and rule from/to use DOTTED globs; a
+# slash-style glob never matches a Python node. Set languages.python.package when
+# the top-level package name does not match the repo directory or uses a src/
+# layout.
 #   archfit analyze --config .archfit.yaml
 version: 2
 coupling:
@@ -29,7 +29,6 @@ modules:
       - myapp.domain.api**
     internal:
       - myapp.domain._internal**
-      - myapp/domain/_internal/** # slash form: marks internal-access edges
     layer: domain
     subdomain: core
     owner: team-core
@@ -62,6 +61,9 @@ rules:
   - id: no_private_imports
     type: internal_api_access
     gate: fail
-  - id: no_cycles
-    type: cycle
+  # No dependency cycle among the declared modules. module_cycle sees cycles
+  # that close across modules through different files; the node-level
+  # cycle rule cannot (on Go it never fires).
+  - id: no_module_cycles
+    type: module_cycle
     gate: fail

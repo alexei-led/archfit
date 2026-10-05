@@ -48,6 +48,22 @@ func TestIsTestFile(t *testing.T) {
 		{langRust, "tests/integration.rs", true},
 		{langRust, "src/tests/unit.rs", true},
 		{langRust, "src/test_helper.rs", false}, // no /tests/ segment
+		{langRust, "src/types/tests.rs", true},
+		{langRust, "src/tests.rs", true},
+		{langRust, "src/parser_test.rs", true},
+		{langRust, "src/parser_tests.rs", true},
+		{langRust, "src/types/property_tests/setup.rs", true},
+		{langRust, "src/types/property-tests/setup.rs", true},
+		{langRust, "benches/throughput.rs", true},
+		{langRust, "crates/ruff/benches/parser.rs", true},
+		{langRust, "src/contests/score.rs", false},     // "tests" suffix without a separator
+		{langRust, "src/latests.rs", false},            // not tests.rs, *_test.rs, or *_tests.rs
+		{langRust, "src/testing.rs", false},            // helper module, not a test file
+		{langRust, "src/test.rs", false},               // not in the conservative list
+		{langRust, "src/attests/check.rs", false},      // "tests" suffix without a separator
+		{langRust, "src/bench/mod.rs", false},          // only the benches/ target directory
+		{langPython, "pkg/property_tests/x.py", false}, // the Rust directory forms stay Rust-only
+		{langGo, "pkg/tests.go", false},                // the Rust file forms stay Rust-only
 		// Unknown language
 		{"java", "Test.java", false},
 	}

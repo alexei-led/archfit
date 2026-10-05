@@ -148,6 +148,32 @@ func TestFormatMatrix_ExitCodesUnchanged(t *testing.T) {
 	})
 }
 
+// TestFormatMatrix_RatchetBlockIsNamed pins the human channel of a metric
+// ratchet: the block produces no finding and no agent task, so text and
+// Markdown must both name the metric that worsened, with the accepted-baseline
+// and current values and the next step. The fixture raises the stored coverage
+// value by one, so coverage is the one metric that worsened.
+func TestFormatMatrix_RatchetBlockIsNamed(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeMetricRegressionRepo(t)
+	for _, tc := range []struct {
+		format, section, metric string
+	}{
+		{formatText, "METRIC RATCHET (1)", "  coverage: "},
+		{formatMarkdown, "## Metric ratchet", "| coverage | "},
+	} {
+		code, stdout, stderr := runArchfit(t, cmdCheck, "-c", cfgPath, "--format="+tc.format)
+		if code != 1 {
+			t.Fatalf("check --format=%s: exit = %d, want 1 (ratchet block)\nstderr:\n%s", tc.format, code, stderr)
+		}
+		for _, want := range []string{tc.section, tc.metric, "archfit baseline"} {
+			if !strings.Contains(stdout, want) {
+				t.Errorf("--format=%s is missing %q:\n%s", tc.format, want, stdout)
+			}
+		}
+	}
+}
+
 // requireHealthyExtraction fails fast when the environment — not the code —
 // degraded Go extraction, so an environment problem cannot be misread as an
 // output regression and "fixed" by re-recording the baselines.

@@ -182,6 +182,28 @@ func hasGoMod(dir string) bool {
 	return err == nil
 }
 
+// ModulePaths returns the module path each member directory's go.mod declares,
+// sorted and de-duplicated. A member whose go.mod is unreadable or declares no
+// module contributes nothing.
+func ModulePaths(dirs []string) []string {
+	seen := make(map[string]struct{}, len(dirs))
+	var out []string
+	for _, dir := range dirs {
+		data, err := os.ReadFile(filepath.Join(dir, "go.mod")) // #nosec G304 -- member dir comes from go.mod discovery
+		if err != nil {
+			continue
+		}
+		path := modfile.ModulePath(data)
+		if _, dup := seen[path]; path == "" || dup {
+			continue
+		}
+		seen[path] = struct{}{}
+		out = append(out, path)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // walkGoMods walks scanRoot and returns the absolute paths of dirs containing a
 // go.mod, filtered by exclusion globs. Excluded directories are skipped entirely
 // (filepath.SkipDir) to avoid unnecessary traversal.

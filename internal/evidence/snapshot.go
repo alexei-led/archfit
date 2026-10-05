@@ -32,4 +32,13 @@ type Facts struct {
 	RuntimeConfidence       string
 	DeprecatedDeps          []modevidence.DeprecatedDep
 	SemanticStrengthOverlay *modevidence.SemanticStrengthOverlay
+	// RustModuleGraphCrates are the crate identifiers cargo-modules graphed,
+	// a crate with no submodule included: its module graph is empty, not
+	// missing.
+	RustModuleGraphCrates []string
+	// RustTargetCrates are the crate names of every target cargo metadata
+	// lists for a loaded workspace member (library, binaries, and the rest), in
+	// crate spelling. A binary target of a lib+bin package is a crate of its own
+	// that CrateRoot.Crate, the library, does not name.
+	RustTargetCrates []string
 }

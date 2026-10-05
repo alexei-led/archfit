@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/rules"
 	"github.com/alexei-led/archfit/internal/baseline"
@@ -108,7 +107,7 @@ func TestConfigInit_PerLanguage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := initFixtureRoot(t, tt.root)
-			discovered, err := initcfg.Discover(context.Background(), root, tt.runner)
+			discovered, err := initcfg.Discover(context.Background(), root, tt.runner, initcfg.ProbePresence(root))
 			if err != nil {
 				t.Fatalf("Discover: %v", err)
 			}
@@ -203,7 +202,7 @@ func TestPublicAPIOnly_Task1Fixtures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := initFixtureRoot(t, tt.root)
-			discovered, err := initcfg.Discover(context.Background(), root, tt.runner)
+			discovered, err := initcfg.Discover(context.Background(), root, tt.runner, initcfg.ProbePresence(root))
 			if err != nil {
 				t.Fatalf("Discover: %v", err)
 			}
@@ -279,29 +278,35 @@ func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := initFixtureRoot(t, tt.root)
-			discovered, err := initcfg.Discover(context.Background(), root, tt.runner)
+			discovered, err := initcfg.Discover(context.Background(), root, tt.runner, initcfg.ProbePresence(root))
 			if err != nil {
 				t.Fatalf("Discover: %v", err)
 			}
-			if len(discovered.Layers) < 2 {
-				// This fixture's real Discover-derived layer assignment collapses
-				// every module onto a single layer: discoverSubdirs (TS) hardcodes
-				// Layer=layerCore regardless of directory name, and rustfixture is
-				// a single crate with no inter-crate edges to topo-assign distinct
-				// layers from (see discover_ts.go, discover_rust.go). There is no
-				// forbidden direction to construct without inventing a layer split
-				// Discover never produces on these fixtures — mirrors
-				// TestPublicAPIOnly_Task1Fixtures's rustfixture early-return.
-				return
+			layers := discovered.Layers
+			moduleLayer := make(map[string]string, len(discovered.Modules))
+			for _, m := range discovered.Modules {
+				moduleLayer[m.Name] = m.Layer
+			}
+			if len(layers) < 2 {
+				// Init infers layers only from a multi-crate Rust graph, so on
+				// these fixtures the owner declares them, as the generated how-to
+				// asks. The single-crate rustfixture has no second module to
+				// direct — mirrors TestPublicAPIOnly_Task1Fixtures's early return.
+				if len(discovered.Modules) < 2 {
+					return
+				}
+				layers = []string{"inner", "outer"}
+				moduleLayer[discovered.Modules[0].Name] = layers[0]
+				moduleLayer[discovered.Modules[1].Name] = layers[1]
 			}
 
 			modules := make(map[string]policy.ModuleDef, len(discovered.Modules))
 			for _, m := range discovered.Modules {
-				modules[m.Name] = policy.ModuleDef{Paths: m.Paths, Layer: m.Layer}
+				modules[m.Name] = policy.ModuleDef{Paths: m.Paths, Layer: moduleLayer[m.Name]}
 			}
 			cfg := config.Config{
 				Version: 1,
-				Layers:  discovered.Layers,
+				Layers:  layers,
 				Modules: modules,
 				Rules: []policy.RuleDef{
 					{ID: "no-back-edge", Type: "forbidden_layer_direction"},
@@ -315,14 +320,14 @@ func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
 			// The forbidden direction is innermost layer (rank 0, Layers[0]) importing
 			// the outermost layer (highest rank, Layers[last]) — see
 			// forbiddenLayerDirection.Check's fromRank < toRank comment.
-			innerLayer := discovered.Layers[0]
-			outerLayer := discovered.Layers[len(discovered.Layers)-1]
+			innerLayer := layers[0]
+			outerLayer := layers[len(layers)-1]
 			var innerPath, outerPath string
 			for _, m := range discovered.Modules {
-				if m.Layer == innerLayer && innerPath == "" {
+				if moduleLayer[m.Name] == innerLayer && innerPath == "" {
 					innerPath = pathIn(m.Paths[0])
 				}
-				if m.Layer == outerLayer && outerPath == "" {
+				if moduleLayer[m.Name] == outerLayer && outerPath == "" {
 					outerPath = pathIn(m.Paths[0])
 				}
 			}
@@ -389,75 +394,78 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Result {
 	return assessed.Diagnostic
 }
 
-// TestConfigInit_GoFixture_LayerRuleBackEdge runs the full analyze gate over
-// the Go fixture with the config `config init` generates for it. The fixture
-// has a genuine layer back-edge (internal/model imports internal/engine —
-// the innermost layer reaching into the outermost one).
-//
-// V4 (docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md) was that Render emitted
-// `type: forbidden_dependency` with `from_layer`/`to_layer`, but
-// forbiddenDependency.Check reads `From`/`To`, which were always empty — the
-// generated rule could never fire. Render now emits
-// `type: forbidden_layer_direction`, which derives layer ordering from
-// cfg.Layers and the module map, so the back-edge below is caught.
-func TestConfigInit_GoFixture_LayerRuleBackEdge(t *testing.T) {
-	root := initFixtureRoot(t, "gofixture")
-	discovered, err := initcfg.Discover(context.Background(), root, toolrun.New())
-	if err != nil {
-		t.Fatalf("Discover: %v", err)
-	}
-	if len(discovered.Layers) < 2 {
-		t.Fatalf("fixture must discover >=2 layers (back-edge needs a layer pair), got %v", discovered.Layers)
-	}
+// fixtureLayers and fixtureModuleLayers declare the Go fixture's two layers,
+// model innermost, each module in the layer of its name.
+const (
+	fixtureLayerModel  = "model"
+	fixtureLayerEngine = "engine"
+)
 
-	rendered := initcfg.Render(discovered, nil, false)
-	cfg := loadRendered(t, rendered)
-	if len(cfg.Rules) == 0 {
-		t.Fatalf("generated config has no rules:\n%s", rendered)
+var (
+	fixtureLayers       = []string{fixtureLayerModel, fixtureLayerEngine}
+	fixtureModuleLayers = map[string]string{fixtureLayerModel: fixtureLayerModel, fixtureLayerEngine: fixtureLayerEngine}
+)
+
+// declareLayers performs the edit the generated layers how-to asks for: list
+// the layers, set layer: on each module, and uncomment the direction rule.
+func declareLayers(t *testing.T, rendered string, layers []string, moduleLayer map[string]string) string {
+	t.Helper()
+	const commented = "  # - id: no-layer-back-edges\n  #   type: forbidden_layer_direction\n  #   gate: fail\n"
+	if !strings.Contains(rendered, commented) {
+		t.Fatalf("generated config has no commented layer rule to uncomment:\n%s", rendered)
 	}
-
-	diag := runRenderedAnalyze(t, root, rendered)
-
-	wantRuleID := cfg.Rules[0].ID // the single generated forbidden_layer_direction rule
-	var layerFindings []finding.Finding
-	for _, f := range diag.Findings {
-		if f.RuleID == wantRuleID {
-			layerFindings = append(layerFindings, f)
+	out := strings.Replace(rendered, commented, strings.ReplaceAll(commented, "# ", ""), 1)
+	out = strings.Replace(out, "\nmodules:\n", "\nlayers:\n  - "+strings.Join(layers, "\n  - ")+"\n\nmodules:\n", 1)
+	for module, layer := range moduleLayer {
+		header := "\n  " + module + ":\n    paths:\n"
+		if !strings.Contains(out, header) {
+			t.Fatalf("module %q not in generated config:\n%s", module, out)
 		}
+		out = strings.Replace(out, header, "\n  "+module+":\n    layer: "+layer+"\n    paths:\n", 1)
 	}
-	if got := len(layerFindings); got != 1 {
-		t.Fatalf("findings for rule %q = %d, want 1 (the back-edge): %+v", wantRuleID, got, diag.Findings)
-	}
-	if got := layerFindings[0].Kind; got != finding.KindAdvisory {
-		t.Errorf("finding kind = %q, want %q (rule is gate: warn)", got, finding.KindAdvisory)
-	}
+	return out
 }
 
-// TestConfigInit_GoFixture_LayerRuleBackEdge_PromotedToFail simulates the
-// shipped TODO comment ("review and promote gate: warn to gate: fail"): once
-// promoted, the same back-edge must block the verdict, not just advise.
-func TestConfigInit_GoFixture_LayerRuleBackEdge_PromotedToFail(t *testing.T) {
+// TestConfigInit_GoFixture_DeclaredLayersBlockBackEdge runs the full analyze
+// gate over the Go fixture. The fixture has a genuine layer back-edge
+// (internal/model imports internal/engine). config init guesses no Go layer,
+// so the generated config carries no live direction rule; once the owner
+// declares the layers the how-to describes, the same config blocks the
+// back-edge.
+func TestConfigInit_GoFixture_DeclaredLayersBlockBackEdge(t *testing.T) {
 	root := initFixtureRoot(t, "gofixture")
-	discovered, err := initcfg.Discover(context.Background(), root, toolrun.New())
+	discovered, err := initcfg.Discover(context.Background(), root, toolrun.New(), initcfg.ProbePresence(root))
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
+	if len(discovered.Layers) != 0 {
+		t.Fatalf("Discover guessed Go layers %v, want none", discovered.Layers)
+	}
 	rendered := initcfg.Render(discovered, nil, false)
-	promoted := strings.Replace(rendered, "    gate: warn\n", "    gate: fail\n", 1)
-	if promoted == rendered {
-		t.Fatalf("expected exactly one rule-level gate: warn to promote:\n%s", rendered)
+	if strings.Contains(rendered, "\n    type: forbidden_layer_direction") {
+		t.Fatalf("live direction rule without declared layers can never fire:\n%s", rendered)
 	}
 
-	diag := runRenderedAnalyze(t, root, promoted)
+	declared := declareLayers(t, rendered, fixtureLayers, fixtureModuleLayers)
+	diag := runRenderedAnalyze(t, root, declared)
+	var layerFindings int
+	for _, f := range diag.Findings {
+		if f.RuleID == "no-layer-back-edges" {
+			layerFindings++
+		}
+	}
+	if layerFindings != 1 {
+		t.Fatalf("no-layer-back-edges findings = %d, want 1 (the back-edge): %+v", layerFindings, diag.Findings)
+	}
 	if diag.Verdict != result.VerdictFail {
 		t.Errorf("verdict = %q, want %q (back-edge under gate: fail): %+v", diag.Verdict, result.VerdictFail, diag.Findings)
 	}
 }
 
 // TestConfigInit_GoFixture_NoBackEdge_GatePasses is the mirror of
-// TestConfigInit_GoFixture_LayerRuleBackEdge: the same two-layer shape, but
-// the dependency runs the allowed direction (outer imports inner). The
-// generated forbidden_layer_direction rule must not fire.
+// TestConfigInit_GoFixture_DeclaredLayersBlockBackEdge: the same two-layer
+// shape, but the dependency runs the allowed direction (outer imports inner).
+// Neither starter rule may fire.
 func TestConfigInit_GoFixture_NoBackEdge_GatePasses(t *testing.T) {
 	root := t.TempDir()
 	writeFixtureFile(t, root, "go.mod", "module example.com/gofixtureok\n\ngo 1.21\n")
@@ -477,22 +485,23 @@ import "example.com/gofixtureok/internal/model"
 func Run() string { return model.Describe() }
 `)
 
-	discovered, err := initcfg.Discover(context.Background(), root, toolrun.New())
+	discovered, err := initcfg.Discover(context.Background(), root, toolrun.New(), initcfg.ProbePresence(root))
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	if len(discovered.Layers) < 2 {
-		t.Fatalf("fixture must discover >=2 layers, got %v", discovered.Layers)
-	}
 	rendered := initcfg.Render(discovered, nil, false)
+	if !strings.Contains(rendered, "type: module_cycle\n    gate: fail\n") {
+		t.Fatalf("clean Go graph should gate module_cycle on fail:\n%s", rendered)
+	}
+	declared := declareLayers(t, rendered, fixtureLayers, fixtureModuleLayers)
 
-	diag := runRenderedAnalyze(t, root, rendered)
+	diag := runRenderedAnalyze(t, root, declared)
 	if diag.Verdict != result.VerdictPass {
 		t.Errorf("verdict = %q, want %q (no back-edge): %+v", diag.Verdict, result.VerdictPass, diag.Findings)
 	}
 	for _, f := range diag.Findings {
 		if strings.HasPrefix(f.RuleID, "no-") {
-			t.Errorf("unexpected layer-rule finding with no back-edge: %+v", f)
+			t.Errorf("unexpected starter-rule finding with no violation: %+v", f)
 		}
 	}
 }

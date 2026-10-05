@@ -131,6 +131,38 @@ jobs:
             --tag "${IMAGE}:${TAG}" \
             --tag "${IMAGE}:latest" \
             "${DIGESTS[@]}"
+      # The App's locked manifest pins the engine by per-platform digest. Read
+      # them back from the published index so the release carries the exact
+      # values instead of someone copying them by hand.
+      - name: Record image identity
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p /tmp/identity
+          docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{json .Manifest}}' \
+            | jq --arg image "$IMAGE" --arg version "$TAG" '{
+                schema_version: "archfit.image-identity.v1",
+                engine_version: $version,
+                image: $image,
+                index_digest: .digest,
+                platforms: ([.manifests[]
+                  | select(.platform.os != "unknown")
+                  | {platform: "\(.platform.os)/\(.platform.architecture)", digest: .digest}]
+                  | sort_by(.platform))
+              }' > /tmp/identity/image-identity.json
+          jq -e '(.index_digest | test("^sha256:[0-9a-f]{64}$"))
+                 and (.platforms | length) == 2
+                 and all(.platforms[]; .digest | test("^sha256:[0-9a-f]{64}$"))' \
+            /tmp/identity/image-identity.json
+          cat /tmp/identity/image-identity.json
+      - name: Upload image identity
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: image-identity
+          path: /tmp/identity/image-identity.json
+          if-no-files-found: error
+          retention-days: 1
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
@@ -151,6 +183,11 @@ jobs:
           path: dist/
           pattern: binary-*
           merge-multiple: true
+      - name: Download image identity
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: image-identity
+          path: dist/
       - name: Generate SHA256SUMS
         run: cd dist && sha256sum archfit-* > SHA256SUMS
       - name: Generate release notes

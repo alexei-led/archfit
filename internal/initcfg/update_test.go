@@ -3,6 +3,8 @@ package initcfg
 import (
 	"reflect"
 	"testing"
+
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 func TestDiffModules(t *testing.T) {
@@ -199,7 +201,7 @@ func TestDiffModules(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := DiffModules(tc.existing, tc.fresh, tc.requireLayer)
+			got := DiffModules(tc.existing, tc.fresh, tc.requireLayer, nil)
 			if !reflect.DeepEqual(got.Added, tc.want.Added) {
 				t.Errorf("Added:\n  got  %#v\n  want %#v", got.Added, tc.want.Added)
 			}
@@ -371,7 +373,7 @@ func TestResolveNameDrift(t *testing.T) {
 			mod("kept", "kept/**"),
 		}
 		requireLayer := true
-		got := DiffModules(existing, fresh, requireLayer)
+		got := DiffModules(existing, fresh, requireLayer, nil)
 
 		want := []string{
 			"internal/api|" + IssueMissingLayer,
@@ -404,4 +406,156 @@ func TestResolveNameDrift(t *testing.T) {
 			t.Errorf("unchecked_modules = %+v, want exactly the unmatched module with a reason", unchecked)
 		}
 	})
+}
+
+// TestDiffModules_OwnershipCoverage pins the ownership pass: a discovered
+// module is new only when some source in it has no configured owner, whatever
+// the names. A curated map finer or coarser than discovery's two-segment
+// directories gets no catch-all stanza, and its owners are not reported as
+// unmatched.
+func TestDiffModules_OwnershipCoverage(t *testing.T) {
+	cfgMod := func(name string, paths ...string) ExistingModule {
+		return ExistingModule{Name: name, Paths: paths, HasOwner: true, HasSubdomain: true}
+	}
+	found := func(name, path string, sources ...string) ModuleDef {
+		return ModuleDef{Name: name, Paths: []string{path}, Sources: sources}
+	}
+	tests := []struct {
+		name        string
+		existing    []ExistingModule
+		fresh       []ModuleDef
+		noResolver  bool
+		wantAdded   []string
+		wantRemoved []string
+		wantCovered map[string][]string
+		wantDrift   int
+	}{
+		{
+			name: "finer curated map owns a discovered catch-all",
+			existing: []ExistingModule{
+				cfgMod(testModDomainOrder, "internal/domain/order/**"),
+				cfgMod("domain-billing", "internal/domain/billing/**"),
+			},
+			fresh:       []ModuleDef{found(testModDomain, "internal/domain/**", "internal/domain/billing", "internal/domain/order")},
+			wantCovered: map[string][]string{testModDomain: {"domain-billing", testModDomainOrder}},
+		},
+		{
+			name:        "coarser capability module owns several discovered directories",
+			existing:    []ExistingModule{cfgMod("decision-core", "internal/**")},
+			fresh:       []ModuleDef{found("assessment", "internal/assessment/**", "internal/assessment/rules", "internal/assessment/score")},
+			wantCovered: map[string][]string{"assessment": {"decision-core"}},
+		},
+		{
+			name:        "x/** owns the bare package node x",
+			existing:    []ExistingModule{cfgMod("application", "internal/app/**", "internal/appkit/**")},
+			fresh:       []ModuleDef{found("app", "internal/app/**", "internal/app")},
+			wantCovered: map[string][]string{"app": {"application"}},
+		},
+		{
+			name:        "same path set stays a name drift, not coverage",
+			existing:    []ExistingModule{cfgMod("internal/app", "internal/app/**")},
+			fresh:       []ModuleDef{found("app", "internal/app/**", "internal/app")},
+			wantCovered: map[string][]string{},
+			wantDrift:   1,
+		},
+		{
+			name:      "partially owned module is genuinely new code",
+			existing:  []ExistingModule{cfgMod(testModDomainOrder, "internal/domain/order/**")},
+			fresh:     []ModuleDef{found(testModDomain, "internal/domain/**", "internal/domain/order", "internal/domain/shipping")},
+			wantAdded: []string{testModDomain},
+		},
+		{
+			name:        "module without sources stays name-matched",
+			existing:    []ExistingModule{cfgMod("ui", "src/**")},
+			fresh:       []ModuleDef{{Name: layerCore, Paths: []string{"src/core/**"}}},
+			wantAdded:   []string{layerCore},
+			wantRemoved: []string{"ui"},
+		},
+		{
+			name:        "nil resolver disables the pass",
+			existing:    []ExistingModule{cfgMod(testModDomainOrder, "internal/domain/order/**")},
+			fresh:       []ModuleDef{found(testModDomain, "internal/domain/**", "internal/domain/order")},
+			noResolver:  true,
+			wantAdded:   []string{testModDomain},
+			wantRemoved: []string{testModDomainOrder},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			modules := make(map[string]policy.ModuleDef, len(tt.existing))
+			for _, e := range tt.existing {
+				modules[e.Name] = policy.ModuleDef{Paths: e.Paths}
+			}
+			ownerOf := policy.BuildModuleMap(modules).ModuleFor
+			if tt.noResolver {
+				ownerOf = nil
+			}
+			got := DiffModules(tt.existing, tt.fresh, false, ownerOf)
+
+			if names := moduleDefNames(got.Added); !equalStrings(names, tt.wantAdded) {
+				t.Errorf("added = %v, want %v", names, tt.wantAdded)
+			}
+			if names := existingModuleNames(got.Removed); !equalStrings(names, tt.wantRemoved) {
+				t.Errorf("removed = %v, want %v", names, tt.wantRemoved)
+			}
+			covered := map[string][]string{}
+			for _, c := range got.Covered {
+				covered[c.Discovered.Name] = c.Owners
+			}
+			if len(covered) != len(tt.wantCovered) || (len(covered) > 0 && !reflect.DeepEqual(covered, tt.wantCovered)) {
+				t.Errorf("covered = %v, want %v", covered, tt.wantCovered)
+			}
+			if len(got.NameDrift) != tt.wantDrift {
+				t.Errorf("name drift = %+v, want %d", got.NameDrift, tt.wantDrift)
+			}
+			if wantSync := len(tt.wantAdded) == 0 && len(tt.wantRemoved) == 0 && tt.wantDrift == 0; got.StructuralInSync != wantSync {
+				t.Errorf("StructuralInSync = %v, want %v", got.StructuralInSync, wantSync)
+			}
+			if HasModuleEdits(got) != (len(tt.wantAdded) > 0) {
+				t.Errorf("HasModuleEdits = %v with added %v", HasModuleEdits(got), tt.wantAdded)
+			}
+		})
+	}
+}
+
+// TestDiffModules_OwnershipRescuesOwnersIntoFieldChecks: a stanza that owns
+// discovered source leaves Removed and is checked like any matched module —
+// also when the discovered module is only partly owned and stays Added — so
+// its gaps are reported instead of hidden behind "unmatched".
+func TestDiffModules_OwnershipRescuesOwnersIntoFieldChecks(t *testing.T) {
+	for name, sources := range map[string][]string{
+		"fully owned":  {"internal/domain/order"},
+		"partly owned": {"internal/domain/order", "internal/domain/shipping"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			existing := []ExistingModule{{Name: testModDomainOrder, Paths: []string{"internal/domain/order/**"}}}
+			ownerOf := policy.BuildModuleMap(map[string]policy.ModuleDef{
+				testModDomainOrder: {Paths: []string{"internal/domain/order/**"}},
+			}).ModuleFor
+			got := DiffModules(existing, []ModuleDef{{
+				Name: testModDomain, Paths: []string{"internal/domain/**"}, Sources: sources,
+			}}, false, ownerOf)
+
+			keys := make([]string, 0, len(got.Issues))
+			for _, i := range got.Issues {
+				keys = append(keys, i.Module+"|"+i.Code)
+			}
+			want := []string{testModDomainOrder + "|" + IssueMissingOwner, testModDomainOrder + "|" + IssueMissingVolatilityInput}
+			if !reflect.DeepEqual(keys, want) {
+				t.Errorf("issues = %v, want %v", keys, want)
+			}
+			if unchecked := BuildConfigReview(got).UncheckedModules; len(unchecked) != 0 {
+				t.Errorf("unchecked_modules = %+v, want none", unchecked)
+			}
+		})
+	}
+}
+
+const testModDomainOrder = "domain-order"
+
+func equalStrings(a, b []string) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	return reflect.DeepEqual(a, b)
 }

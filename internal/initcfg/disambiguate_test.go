@@ -147,11 +147,11 @@ func TestDiscover_NoCollision_RenderByteIdentical(t *testing.T) {
 	writeGoMod(t, root)
 	runner := mockRunner(goListSingleLang)
 
-	cfg1, err := Discover(context.Background(), root, runner)
+	cfg1, err := Discover(context.Background(), root, runner, ProbePresence(root))
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	cfg2, err := Discover(context.Background(), root, runner)
+	cfg2, err := Discover(context.Background(), root, runner, ProbePresence(root))
 	if err != nil {
 		t.Fatalf("Discover second run: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestDiscover_GoAndPythonSameName_DistinctSlugs(t *testing.T) {
 }
 `
 	runner := mockRunner(goList)
-	cfg, err := Discover(context.Background(), root, runner)
+	cfg, err := Discover(context.Background(), root, runner, ProbePresence(root))
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -17,6 +18,10 @@ const (
 // A Python project is detected by pyproject.toml or setup.py at root.
 // For each top-level package found, sub-packages are returned as individual
 // modules. If a top-level package has no sub-packages it is returned itself.
+//
+// It assigns no layer: a sub-package name (handlers, providers, models) does
+// not prove an architectural layer, and a live direction rule over guessed
+// layers blocks on a guess. Render writes the layers how-to instead.
 func DiscoverPy(root string) ([]ModuleDef, error) {
 	hasPyProject := fileExists(filepath.Join(root, "pyproject.toml"))
 	hasSetupPy := fileExists(filepath.Join(root, "setup.py"))
@@ -61,9 +66,9 @@ func DiscoverPy(root string) ([]ModuleDef, error) {
 				// No sub-packages: return the top-level package as a single module.
 				mod := pyDottedModule(t.prefix + e.Name())
 				mods = append(mods, ModuleDef{
-					Name:  e.Name(),
-					Paths: pyModulePaths(mod),
-					Layer: layerCore,
+					Name:    e.Name(),
+					Paths:   pyModulePaths(mod),
+					Sources: pySubtreeModules(pkgDir, mod),
 				})
 			}
 		}
@@ -92,12 +97,37 @@ func discoverPySubpackages(pkgDir, pathPrefix string) []ModuleDef {
 		}
 		mod := pyDottedModule(pathPrefix + e.Name())
 		mods = append(mods, ModuleDef{
-			Name:  e.Name(),
-			Paths: pyModulePaths(mod),
-			Layer: inferPyLayer(e.Name()),
+			Name:    e.Name(),
+			Paths:   pyModulePaths(mod),
+			Sources: pySubtreeModules(filepath.Join(pkgDir, e.Name()), mod),
 		})
 	}
 	return mods
+}
+
+// pySubtreeModules returns the dotted module IDs of the package at pkgDir: the
+// package itself, every nested package (a directory with __init__.py), and
+// every .py module, sorted. These are the graph nodes the discovered module's
+// paths (mod, mod.*) claim, so config update's ownership pass checks each of
+// them, as it checks every package Go discovery lists. Symlinked directories
+// are not followed.
+func pySubtreeModules(pkgDir, mod string) []string {
+	out := []string{mod}
+	entries, err := os.ReadDir(pkgDir)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		name := e.Name()
+		switch {
+		case e.IsDir() && fileExists(filepath.Join(pkgDir, name, pyInitFile)):
+			out = append(out, pySubtreeModules(filepath.Join(pkgDir, name), mod+"."+name)...)
+		case e.Type().IsRegular() && strings.HasSuffix(name, ".py") && name != pyInitFile:
+			out = append(out, mod+"."+strings.TrimSuffix(name, ".py"))
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // pyDottedModule converts a slash path (e.g. "src/ccgram/handlers" or
@@ -112,20 +142,6 @@ func pyDottedModule(slashPath string) string {
 // itself and its submodules ("ccgram.handlers" + "ccgram.handlers.*").
 func pyModulePaths(mod string) []string {
 	return []string{mod, mod + ".*"}
-}
-
-// inferPyLayer maps common Python sub-package names to architectural layers.
-func inferPyLayer(name string) string {
-	switch name {
-	case "handlers", "api", "routes", "views", "providers":
-		return layerAdapter
-	case "model", "models", "types", "schema":
-		return layerModel
-	case layerCmd, "cli":
-		return layerCmd
-	default:
-		return layerCore
-	}
 }
 
 // detectPyPackage scans root then root/src for the first directory that

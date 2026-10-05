@@ -1,11 +1,13 @@
 # archfit starter: DDD bounded contexts (subdomain-driven volatility)
 #
 # In Balanced Coupling terms, the subdomain sets volatility: Core -> high,
-# Supporting -> medium, Generic -> low. Declaring subdomains is what lets archfit
+# Supporting -> low, Generic -> low. Declaring subdomains is what lets archfit
 # tell cohesion (good) from distributed-monolith risk. Each bounded context is a
 # module; contexts integrate through a published contract (public surface), never
 # through each other's internals (which would be intrusive coupling across a
-# context boundary -> a flag).
+# context boundary -> a flag). Every context declares its contract package as
+# public and the rest of its tree as internal, so public_api_only blocks an
+# import that bypasses the contract.
 #   archfit analyze --config .archfit.yaml
 #   archfit analyze --format scorecard --config .archfit.yaml
 version: 2
@@ -30,7 +32,7 @@ modules:
     public:
       - internal/pricing/contract
     internal:
-      - internal/pricing/internal/**
+      - internal/pricing/**
     layer: domain
     subdomain: core
     owner: team-pricing
@@ -40,7 +42,7 @@ modules:
     public:
       - internal/ordering/contract
     internal:
-      - internal/ordering/internal/**
+      - internal/ordering/**
     layer: domain
     subdomain: core
     owner: team-ordering
@@ -50,6 +52,8 @@ modules:
       - internal/catalog/**
     public:
       - internal/catalog/contract
+    internal:
+      - internal/catalog/**
     layer: domain
     subdomain: supporting
     owner: team-catalog
@@ -59,23 +63,24 @@ modules:
       - internal/notifications/**
     public:
       - internal/notifications/contract
+    internal:
+      - internal/notifications/**
     layer: infrastructure
     subdomain: generic
     owner: team-platform
 rules:
   # Cross-context: only through the published contract, never the internals.
+  # A pricing import of anything under internal/ordering/ except its contract
+  # package fails here.
   - id: contexts_via_contract
     type: public_api_only
-    gate: fail
-  # Pricing must not reach into ordering internals (intrusive cross-context).
-  - id: pricing_no_ordering_internal
-    type: forbidden_dependency
-    from: internal/pricing/**
-    to: internal/ordering/internal/**
     gate: fail
   - id: layer_direction
     type: forbidden_layer_direction
     gate: fail
-  - id: no_cycles
-    type: cycle
+  # No dependency cycle among the declared modules. module_cycle sees cycles
+  # that close across modules through different files; the node-level
+  # cycle rule cannot (on Go it never fires).
+  - id: no_module_cycles
+    type: module_cycle
     gate: fail

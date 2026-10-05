@@ -210,16 +210,31 @@ archfit check --json -c .archfit.yaml
 Each `agent_tasks[]` item is the repair contract for one active gate finding.
 Read its `repair_kind`, goal, constraints, files, and validation command.
 `code_change` tasks are source repairs; `needs_owner_decision` tasks require a
-policy or accepted-debt decision. A forbidden dependency task never recommends
-the target module's public API, and a new cross-module dependency task never
-uses baseline capture as its repair. The validation command carries the
-effective `--base`, `--lang`, and `--require-tools` flags from the original run.
-`--refresh` is intentionally not replayed because cache-control must not change
-the validation result. Fix only that scope, then run the command verbatim.
+policy or accepted-debt decision. A forbidden dependency or layer-direction task
+never recommends the target module's public API, and a new cross-module
+dependency task never uses baseline capture as its repair. The validation
+command carries the effective `--base`, `--lang`, and `--require-tools` flags
+from the original run. `--refresh` is intentionally not replayed because
+cache-control must not change the validation result. Fix only that scope, then
+run the command verbatim. The task is done when that run no longer lists its
+`finding_id` and the verdict is not `blocked`; exit 2 can remain.
+
+Exit 1 with an empty `agent_tasks[]` is a block no finding carries: a tripped
+metric ratchet (`metrics.<name>.gate`) or a required analyzer that did not run.
+For a ratchet, the text and Markdown output name the metric that worsened, its
+accepted-baseline and current values, and the `gate_reference` status. Fix the
+regression, or have an owner review the new value and re-run `archfit baseline`.
 
 If exit `2` includes `decision.unevaluated_required_rules`, resolve the named
-producer evidence before claiming a required rule passed. The array is
-structured and sorted by `rule_id`; do not infer it from report prose.
+producer evidence before claiming a required rule passed. A reason starting
+with `selector matches nothing:` is a policy defect, not missing evidence: fix
+the named selector, or mark an intentional guard with `guard: true`, in an
+owner-approved config change. The array is structured and sorted by `rule_id`;
+do not infer it from report prose. Run `archfit config lint` as a fast step
+beside `check`: it exits `1` on the same dead selectors before any analyzer runs.
+Two exceptions: lint leaves selectors a Rust crate could spell undecided (it
+runs no `cargo metadata`), and `check --lang` turns on a language the config
+switches off, so its source scope differs from the config lint reads.
 
 ## 8. Environment variables and `.env`
 

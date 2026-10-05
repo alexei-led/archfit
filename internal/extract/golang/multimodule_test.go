@@ -151,6 +151,36 @@ func TestExtract_MultiModule_ScanRootRelativeIDs(t *testing.T) {
 	}
 }
 
+// TestExtract_NestedUnloadedModuleImportIsScanRootRelative pins the spelling
+// rule selectors depend on: with a root go.mod and a nested api/go.mod that no
+// go.work loads, an import of the nested module is still stripped by the
+// loaded module path, so its edge targets "api/x", never the import path.
+// Rule-selector vacuity judges a to: spelled with the module path dead on this
+// basis (evaluation.goModulePathOf).
+func TestExtract_NestedUnloadedModuleImportIsScanRootRelative(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"), "module example.com/repo\n\ngo 1.21\n\n"+
+		"require example.com/repo/api v0.0.0\n\nreplace example.com/repo/api => ./api\n")
+	writeTestFile(t, filepath.Join(dir, "api", "go.mod"), "module example.com/repo/api\n\ngo 1.21\n")
+	writeTestFile(t, filepath.Join(dir, "api", "x", "x.go"), "package x\n\nfunc X() int { return 1 }\n")
+	writeTestFile(t, filepath.Join(dir, "cmd", "main.go"),
+		"package main\n\nimport \"example.com/repo/api/x\"\n\nfunc main() { _ = x.X() }\n")
+
+	facts, _, err := goextract.New(evidenceports.ExtractConfig{}).Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	var targets []string
+	for _, e := range facts.Edges {
+		if e.From == "file:cmd/main.go" {
+			targets = append(targets, e.To)
+		}
+	}
+	if want := []string{"package:api/x"}; !slices.Equal(targets, want) {
+		t.Fatalf("cmd/main.go edge targets = %v, want %v", targets, want)
+	}
+}
+
 // TestExtract_MultiModule_GoModulesPopulated verifies that facts.GoModules is
 // populated with one entry per workspace member, sorted by Path.
 func TestExtract_MultiModule_GoModulesPopulated(t *testing.T) {

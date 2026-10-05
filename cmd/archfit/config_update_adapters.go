@@ -71,12 +71,17 @@ func (a *configUpdateAdapter) ReadConfigUpdateFile(_ context.Context, path strin
 }
 
 func (a *configUpdateAdapter) DiscoverConfigUpdate(ctx context.Context, req application.ConfigUpdateDiscoveryRequest) error {
-	fresh, err := initcfg.Discover(ctx, req.Root, a.deps.Runner)
+	presence, err := languagePresence(ctx, req.Root, a.cfg, a.deps.Runner)
 	if err != nil {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}
-	report := initcfg.DiffModules(configToExisting(a.cfg.Modules), fresh.Modules, requiresLayerClassification(a.cfg))
-	candidate := candidateConfigForUpdate(a.cfg, fresh, report.NameDrift)
+	fresh, err := initcfg.Discover(ctx, req.Root, a.deps.Runner, presence)
+	if err != nil {
+		return fmt.Errorf("discovering project structure: %w", err)
+	}
+	report := initcfg.DiffModules(configToExisting(a.cfg.Modules), fresh.Modules, requiresLayerClassification(a.cfg),
+		a.cfg.ModuleMapView().ModuleFor)
+	candidate := candidateConfigForUpdate(a.cfg, fresh, report)
 	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, req.Root, candidate, a.deps)
 	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, req.Root, candidate, a.deps)
 	if req.AIClassify {
@@ -312,17 +317,33 @@ func uniqueSyntheticModuleName(path string, used map[string]struct{}) string {
 // The config name cannot collide with another discovered module: it comes from
 // the report's Removed bucket, which by construction holds only names discovery
 // did not emit, and each drift pairing is unique.
-func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig, drift []initcfg.NameDrift) config.Config {
+//
+// A covered discovered module (report.Covered: every source already owned by
+// the configured map) is not written by --apply either, so it enters the
+// candidate as the configured stanzas that own it, unchanged. Projecting the
+// discovered catch-all instead would aim suggestions at a module name the
+// config does not contain and drop the curated modules that own the code.
+func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig, report initcfg.UpdateReport) config.Config {
 	if len(discovered.Modules) == 0 {
 		return cfg
 	}
-	configNameFor := make(map[string]string, len(drift))
-	for _, d := range drift {
+	configNameFor := make(map[string]string, len(report.NameDrift))
+	for _, d := range report.NameDrift {
 		configNameFor[d.DiscoveredName] = d.ConfigName
+	}
+	coveredBy := make(map[string][]string, len(report.Covered))
+	for _, c := range report.Covered {
+		coveredBy[c.Discovered.Name] = c.Owners
 	}
 	out := cfg
 	out.Modules = make(map[string]config.ModuleDef, len(discovered.Modules))
 	for _, mod := range discovered.Modules {
+		if owners, covered := coveredBy[mod.Name]; covered {
+			for _, owner := range owners {
+				out.Modules[owner] = cfg.Modules[owner]
+			}
+			continue
+		}
 		name := mod.Name
 		if configName, drifted := configNameFor[name]; drifted {
 			name = configName

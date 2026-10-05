@@ -63,9 +63,9 @@ modules:
     paths:
       - internal/domain/**
     public:
-      - internal/domain
+      - internal/domain # the one package other modules import
     internal:
-      - internal/domain/internal/**
+      - internal/domain/** # every other domain package is private
     layer: domain
     subdomain: core
     volatility: high
@@ -162,6 +162,26 @@ archfit also warns (a config warning + stderr line) when an output/report path
 resolves **inside** the analyzed root — write reports outside `--root`, or exclude
 their directory, to keep scans deterministic.
 
+Excluded files also leave every rule's scope. A rule is evaluated over the
+languages of the source files its selectors reach; a stray tooling script (a
+`.cjs` config wrapper, a Python helper) in a Go repository would otherwise put
+TypeScript or Python in scope and keep the rule unevaluated until
+dependency-cruiser or grimp ran. Exclude the script, or switch its language off
+(`languages.<id>.enabled: false`), to declare it out of scope. Size and
+file-class metrics still count excluded files the LOC walk visits.
+
+Rule scope also follows each language's own applicability. When a language's
+extractor finds no project under the analysis root — TypeScript with no
+`package.json` at the root (a `web/ui/` app inside a Go repository), Go files
+with no `go.mod`, Python with no `pyproject.toml`/`setup.py` — its coverage row
+is `absent` with no gap, and its files leave the scope of every rule that reads
+dependency edges, so they cannot hold a rule unevaluated waiting for a producer
+that would never run. The same holds for a Rust file outside every cargo
+workspace member (a `fuzz/` crate the workspace excludes). An explicit
+`languages.<id>.gate: warn|fail` keeps the files in scope. `forbidden_pattern`
+reads the ast-grep pattern pass, not the dependency graph, and keeps them.
+Analyse such source by pointing `--root` at its project.
+
 ## `languages`
 
 Per-language extractor settings. Each language has `enabled` and `gate`; some
@@ -171,7 +191,9 @@ have extra fields.
 string spellings `"on"` and `"off"` are a **hard error** in this schema.
 
 - `true` — require the adapter; missing project markers or tools are errors.
-- `false` — skip the adapter entirely.
+- `false` — skip the adapter entirely. The language's source files also leave
+  rule scope, so they cannot hold a rule unevaluated. Set an explicit `gate:` to
+  keep them in scope and be told the analyzer did not run.
 - `auto` — use the adapter when project markers and tools are found (default).
 
 Use `auto` for mixed repos while calibrating. Use `true` in CI when a language
@@ -746,7 +768,7 @@ modules:
   pricing:
     paths: [services/pricing/**]
     public: [services/pricing/contracts/**]
-    internal: [services/pricing/internal/**]
+    internal: [services/pricing/**]
     layer: domain
     subdomain: core
     volatility: high
@@ -757,21 +779,39 @@ modules:
 Fields:
 
 - `paths` — globs that claim files, packages, or modules for ownership.
-- `public` — allowed public API surface. Matching targets are classified as
-  contract coupling.
+- `public` — declared public API surface. Matching targets are classified as
+  contract coupling, and a target that matches its own module's `public` glob is
+  never internal access, even when it also matches an `internal` glob or the
+  extractor marked it internal.
 - `internal` — private surface. Matching targets are classified as intrusive
-  coupling or internal API access when the extractor emits that edge kind.
+  coupling, and `public_api_only`/`internal_api_access` treat them as internal
+  access in every language.
 - `layer` — one of the names from `layers`.
 - `subdomain` — DDD subdomain classification: `core`, `supporting`, or `generic`.
   Determines the volatility ordinal when no explicit `volatility` is set.
 - `volatility` — explicit override: `high` (=10), `medium` (=6), `low` (=3),
   or `frozen` / `legacy` (=1). Use `subdomain` unless you need a specific value
   that differs from the DDD default.
+
+`layer`, `subdomain`, and `volatility` values are matched as listed
+(`subdomain` and `volatility` case-insensitively). Any other value still loads in
+schema v2 but classifies as if nothing were declared: `analyze` and `check`
+print a config warning, and `archfit config lint` reports `undeclared_layer`,
+`unknown_subdomain`, or `unknown_volatility` as an error.
+
 - `owner` — team or person responsible for the module.
 - `deploy_unit` — deployable/runtime unit used for distance classification.
 - `role` — optional architectural role. See [Module role vs layer](#module-role-vs-layer).
 - `reviewed_at` — date of last architecture-map review.
 - `reviewed_by` — reviewer identity.
+
+`public` alone only exempts paths; it never flags an import that misses it. To
+make archfit block imports that bypass a module's public package, pair the
+public package with an `internal` glob over the rest of the module, as
+`pricing` does above: `contracts/**` stays public and everything else under
+`services/pricing/` is private. A nested `internal/` directory inside its own
+module is not enough on Go: the Go compiler already rejects every import of it
+from outside the parent tree, so no cross-module edge to it can exist.
 
 ### Module role vs layer
 
@@ -966,14 +1006,15 @@ rules:
 | `from`     | most             | Source module or path glob.                                                                                            |
 | `to`       | most             | Target module or path glob.                                                                                            |
 | `max`      | `public_api_max` | Integer ceiling.                                                                                                       |
-| `patterns` | structural rules | Optional ast-grep patterns for structural evidence.                                                                    |
+| `patterns` | `forbidden_pattern` | ast-grep patterns (`id`, `lang`, `rule`) the rule forbids. On any other type they still run but never produce a finding, and `analyze`/`check` print a warning. |
+| `guard`    | selector rules   | `true` marks a rule whose `from`/`to` selector is expected to match nothing (see below). Default `false`.              |
 
 `forbidden_layer_direction` takes no `from`/`to` (or `from_layer`/`to_layer`)
 keys — it derives layer ordering from `layers:` and each endpoint's layer from
 the `modules:` map's `layer:` field, for every module pair in the graph. A rule
 of this type needs only `id`, `type`, and `gate`. Declare **at most one** rule
 of this type: the check is global, so a second instance re-reports every
-violation under its own rule ID (`archfit config init` generates exactly one).
+violation under its own rule ID (`archfit config init` generates at most one).
 
 `gate` controls how the rule blocks the run:
 
@@ -987,26 +1028,140 @@ violation under its own rule ID (`archfit config init` generates exactly one).
 
 `gate:` is wired for **all rule types**. An unknown `type` value is a config error.
 
+### Selectors that match nothing
+
+A rule whose selector matches no scanned source cannot find a violation, so it
+is never counted as evaluated conformance. This applies to the selectors of
+`forbidden_dependency`, `public_api_only`, and `internal_api_access`, and to
+the `from:` selector of `forbidden_pattern`.
+
+The dependency rules match graph edge endpoints, spelled per language. A
+`to:` matches the target module node: a Go package directory, a TypeScript
+file, a dotted Python module, or a Rust crate or `crate::mod` module. A `from:`
+matches the importing file for Go and TypeScript, and the module node for
+Python and Rust. So a Go file glob (`internal/domain/*.go`) never matches a
+`to:`, a bare Go package directory never matches a `from:` (write
+`internal/domain/**`), and a slash path never matches a Python or Rust
+endpoint. A `forbidden_pattern` `from:` matches the file path or its node
+selector.
+
+A `crate::mod` selector is judged against the Rust module graph
+(`analyzers.cargo_modules`): under a crate the graph covers, it is live or dead
+like any other selector; under a crate the graph does not cover, it cannot be
+judged and the rule stays unevaluated. A selector is dead when:
+
+- a `from:` selector matches no in-scope source;
+- a `to:` selector spelled as first-party source (it starts with a wildcard or
+  with a top-level directory, Python package, or crate the tree contains) that
+  matches nothing — usually a typo or a renamed directory. The first segment
+  is read in the selector's own spelling: `go.uber.org/**` is an external ban
+  even beside a top-level `go/` directory, and `app.**` is checked against
+  Python packages;
+- a selector spelled with the Go module path (`example.com/shop/internal/x`;
+  rule selectors are scan-root-relative), a leading `./`, `../`, `/` or `!`, or
+  an extglob negation `!(...)`, none of which a graph node ID can match.
+
+A `to:` selector that names no first-party source, such as `net/http` or
+`github.com/sirupsen/logrus`, is a ban on an external package: it is evaluated
+normally. A `gate: fail` rule with a dead selector is listed in
+`decision.unevaluated_required_rules` with the reason
+`selector matches nothing: <from|to> <glob>`, which keeps `check` at exit `2`.
+A `gate: warn` rule with one is reported as a config warning. `archfit config
+lint` reports both as `dead_selector` and exits `1`.
+
+A dependency-rule selector that matches only source no dependency producer
+analyses (see rule scope above) is not a typo: the code is there, and nothing
+reads its relationships. Such a rule is listed with the reason
+`selector matches only source no dependency producer analyses: <from|to> <glob>`,
+guard or not, and `config lint` reports it as `dead_selector` naming the
+cause.
+
+Set `guard: true` on a rule that is meant to match nothing, such as a ban on
+re-introducing a deleted package. A guard counts as evaluated while either
+selector matches nothing, whatever state the dependency producer is in: no
+edge can start at, or reach, source that is not there, so a `partial`
+dependency-cruiser run (normal on TypeScript) does not list it. Once the
+guarded path exists again the guard is an ordinary rule: it is evaluated over
+complete producer evidence, and listed in `decision.unevaluated_required_rules`
+when that evidence is incomplete. `archfit config lint` lists a holding guard
+as `guard_rule` and warns with `guard_matches_source` once the guarded path
+exists again.
+
+```yaml
+rules:
+  - id: no_legacy_reports
+    type: forbidden_dependency
+    from: internal/**
+    to: internal/legacy/reports/** # deleted; must not come back
+    gate: fail
+    guard: true
+```
+
 ### Built-in rule types
 
 - `forbidden_dependency` — fires when an edge matches both `from` and `to`
   globs. Both globs are **required**: an empty glob matches nothing, ever
   (`doublestar.Match("", path)` is always false; there is no empty-means-match-all
   special case), so a rule missing either is rejected as a config error at load.
-- `public_api_only` — fires on internal-access edges, optionally filtered by
-  `from` and `to`. Consults the `modules:` map: an edge where both endpoints
-  resolve to the same module (e.g. `domain` importing its own
-  `domain/internal`) is idiomatic same-module access and never fires. When
-  either endpoint isn't covered by the module map, the edge still fires
-  (module-blind fallback).
+- `public_api_only` — fires on edges into internal surface, optionally filtered
+  by `from` and `to`. The declared surfaces decide first, in every language:
+  1. a target matching a `public` glob of the module that owns it never fires;
+  2. a target matching any module's `internal` glob fires;
+  3. only a target no declaration covers falls back to the extractor's
+     internal-access edge kind: the Go `/internal/` path segment, or the
+     TypeScript/Python extractors' own `internal` glob match. Rust has no
+     fallback.
+
+  Consults the `modules:` map: an edge where both endpoints resolve to the same
+  module (e.g. `domain` importing its own `domain/internal`) is idiomatic
+  same-module access and never fires. A Rust `crate::mod` node no `paths:` glob
+  claims resolves to the module that declares its crate, so two modules of one
+  crate are the same module and that module's `public:` globs apply. When either endpoint isn't covered by the
+  module map, the edge still fires (module-blind fallback). A finding decided by
+  a declaration names the glob in `matched_by.internal_glob`.
+
 - `internal_api_access` — same internal-access signal, with a separate rule ID.
-  Applies the same module-map same-module skip and module-blind fallback as
-  `public_api_only`.
+  Applies the same declared-surface precedence, module-map same-module skip,
+  and module-blind fallback as `public_api_only`.
 - `forbidden_layer_direction` — fires when a dependency direction violates the
   ordered `layers` list.
 - `new_cross_module_dependency` — fires on cross-module edges. Baseline status
   separates known from new findings.
-- `cycle` — fires once per detected import cycle.
+- `cycle` — fires once per node-level import cycle: a strongly-connected
+  component of size > 1 over the dependency graph's own nodes (TypeScript
+  files, Python dotted modules, Rust crates or `crate::mod` nodes). It is always
+  silent on compiling Go, whose edges run file → package, and it never sees a
+  cycle that closes across modules through different files. Use `module_cycle`
+  for that.
+- `module_cycle` — fires on dependency cycles among **declared modules**. It
+  builds the module graph from classified dependency edges whose endpoints
+  resolve to two different declared modules (unowned code, external targets,
+  and auto-registered synthetic modules stay out), and emits one finding per
+  ordered module pair inside a strongly-connected component: billing → shipping
+  and shipping → billing are two findings, each located at its import lines
+  (sorted, at most 50; the full count is in `matched_by.locations_total`).
+  Removing one direction fixes that finding, and breaking the cycle fixes the
+  rest. One cycle reports at most 200 pairs, the first in (from, to) order;
+  every finding of the cycle carries the full count in
+  `matched_by.cycle_pairs_total`, and a capped cycle's `why` says how many pairs
+  it reports. The cap keeps a densely coupled cycle from growing the report
+  quadratically. Its cost: once reported pairs are fixed, pairs past the cap
+  appear as new findings that a baseline captured earlier does not cover.
+  Module-cycle agent tasks carry no `declarations`; their locations name the
+  import lines. The finding edge is `{module, path: ""}` on both sides with
+  `kind: module_dependency`, and its ID is keyed on the rule ID and the ordered
+  module pair, so a moved import keeps it. Takes no `from`/`to`: a scope glob is
+  a config error. Needs at least two declared modules; otherwise it does not
+  apply. Only **production** edges count, as for `forbidden_pattern`: an edge
+  whose importing file is a test, generated or vendored file, or a file an
+  `exclude:` glob or a switched-off language declares out of scope, never
+  closes a cycle. A file the source walk skips (a dot directory such as
+  `.storybook/`, or `target/`) but an analyzer still loads is classified from
+  its path with the same `file_class` globs, so it follows the same rule. A Rust crate dependency (located at `Cargo.toml`) and a
+  `crate::mod` edge have no importing file and count; dev-dependencies are
+  left out by the extractor unless the config includes them. Story files,
+  `.storybook/` and tool configs such as `vitest.config.ts` are production by
+  default: classify them with `file_class.test_globs` to keep them out.
 - `public_api_max` — fires when any module's exported declaration count exceeds
   `max` (requires `analyzers.syntax.enabled: true`). Scoped per module. No baseline
   — static ceiling.
@@ -1043,6 +1198,61 @@ rules:
     type: public_api_type_leak
     gate: warn
 ```
+
+### `forbidden_pattern`
+
+`forbidden_pattern` fires when source code under `from` contains a construct
+one of its `patterns` matches. It is the only rule type that reads `patterns`.
+Use it for logic that belongs in another module: a domain that reads the wall
+clock, opens files, or reads the environment.
+
+```yaml
+rules:
+  - id: domain_no_clock
+    type: forbidden_pattern
+    from: internal/domain/**
+    gate: fail
+    patterns:
+      - id: clock
+        lang: go
+        rule: time.Now()
+```
+
+How it decides:
+
+- `patterns` is required: each entry is an ast-grep pattern with an `id`, the
+  ast-grep `lang`, and the pattern `rule`. Pattern IDs must be unique across
+  **all** rules' patterns, because every rule's patterns run in one ast-grep pass
+  and a match carries only its pattern ID.
+- `from` is optional (empty means every production file). It matches the
+  repo-relative file path, or the file's module selector (a dotted Python
+  module such as `myapp.domain.**`). `to` is a config error.
+- Only **production** files in the source inventory fire: test, generated, and
+  vendored files never do (see
+  [file classification](languages.md#file-classification-per-language); a Rust
+  inline `#[cfg(test)]` block inside a production file is not separated and
+  still fires), and neither do directories the source walk skips
+  (`testdata`, `vendor`, `node_modules`, and similar), files an `exclude:` glob
+  matches, or files of a language switched off with
+  `languages.<id>.enabled: false` and no explicit `gate:`.
+- Findings are one per pattern, file, and matched text (whitespace removed),
+  located at every line of that text in the file (sorted, at most 50). The ID
+  leaves the line out, so a moved or reformatted match keeps it. Findings name
+  the pattern ID and `file:line`, and never carry the matched source text.
+- The rule is evaluated only when the ast-grep pattern pass completed (`sg`
+  present and every pattern run accepted). An absent `sg`, or a pattern run
+  `sg` rejects (for example an unknown `lang`), leaves it in
+  `decision.unevaluated_required_rules` instead of passing with zero findings.
+
+Write and check patterns with `sg run --lang <lang> --pattern '<rule>' .`
+before you gate on them. In Go, a call with exactly one argument, such as
+`os.Getenv($KEY)`, parses as a type conversion and matches nothing; patterns
+with no arguments (`time.Now()`) or with several (`fmt.Sprintf($F, $$$)`)
+match calls as expected.
+
+`patterns` on any other rule type is accepted for compatibility, but its
+matches never produce a finding; `analyze` and `check` print a warning naming
+the rule.
 
 ## `waivers`
 
@@ -1102,7 +1312,8 @@ Built-in metric names:
   cross-boundary edges.
 - `unbalanced_edge` — count of new high-risk intrusive, volatile edges across
   larger boundaries.
-- `cycle` — import cycle count.
+- `cycle` — node-level import cycle count (always `0` on compiling Go; see the
+  `module_cycle` rule for cycles among declared modules).
 - `coverage` — extracted files over applicable files, with confidence lowered by
   unresolved imports.
 

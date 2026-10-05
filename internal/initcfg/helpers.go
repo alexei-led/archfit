@@ -7,15 +7,6 @@ import (
 	"strings"
 )
 
-// Layer name constants used for inference and YAML output.
-const (
-	layerModel   = "model"
-	layerCore    = "core"
-	layerAdapter = "adapter"
-	layerEngine  = "engine"
-	layerCmd     = "cmd"
-)
-
 // Language keys reused in Render's language loop and language-specific cases.
 const (
 	langGo         = "go"
@@ -80,43 +71,21 @@ func pathSlug(paths []string) string {
 	return s
 }
 
-// inferLayers derives an ordered, deduplicated layer list from discovered modules.
-// Canonical Go layers come first in the fixed order: model → core → adapter → engine → cmd.
-// Topo-tier layers (layer-0, layer-1, …) from Rust discovery are appended afterward,
-// sorted numerically, so the combined list is always deterministic.
+// inferLayers derives the ordered, deduplicated layer list from discovered
+// modules. Only Rust discovery assigns layers — topological tiers of the crate
+// dependency graph (layer-0, layer-1, …) — so the list is those tiers in
+// numeric order. No layer is ever inferred from a directory or package name.
 func inferLayers(mods []ModuleDef) []string {
-	canonical := []string{layerModel, layerCore, layerAdapter, layerEngine, layerCmd}
-	canonicalSet := make(map[string]bool, len(canonical))
-	for _, l := range canonical {
-		canonicalSet[l] = true
-	}
-
-	seen := make(map[string]bool)
+	assigned := make(map[string]string)
 	for _, m := range mods {
 		if m.Layer != "" {
-			seen[m.Layer] = true
+			assigned[m.Layer] = m.Layer
 		}
 	}
-
-	var layers []string
-	for _, l := range canonical {
-		if seen[l] {
-			layers = append(layers, l)
-		}
+	if len(assigned) == 0 {
+		return nil
 	}
-
-	// Collect topo-tier layers (layer-N) not in the canonical set.
-	topoAssign := make(map[string]string)
-	for l := range seen {
-		if !canonicalSet[l] {
-			topoAssign[l] = l
-		}
-	}
-	if len(topoAssign) > 0 {
-		layers = append(layers, topoLayerList(topoAssign)...)
-	}
-
-	return layers
+	return topoLayerList(assigned)
 }
 
 // fileExists reports whether path exists and is a regular file.

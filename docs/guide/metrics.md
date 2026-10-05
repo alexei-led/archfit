@@ -52,6 +52,24 @@ upward (delta > `max_new`), ratio metrics (`encapsulation`, `coverage`) worsen
 downward (drop > `min_delta`). Per-metric `gate`/threshold knobs are documented
 in the [configuration reference](configuration-reference.md#metrics).
 
+A blocking metric delta produces no finding and no agent task, but it fails the
+gate of the dimension that owns the metric. The text and Markdown output add a
+`METRIC RATCHET` / `## Metric ratchet` section whenever the report proves a
+ratchet blocked:
+
+- With zero `active_blockers` and no required analyzer failing its gate, only a
+  ratchet can block, so the section lists every metric that worsened.
+- Otherwise it lists the worsened metrics of each dimension whose gate is
+  `fail` with no hard-gate finding routed to it (for `operations`, also no
+  required analyzer failing its gate). A ratchet in a dimension that also holds
+  a hard-gate finding cannot be told apart from that finding and is not named.
+
+Each entry shows the baseline and current values and the dimension gate,
+followed by the `gate_reference` status and reasons and the next step: fix the
+regression, or have an owner review the new value and re-run `archfit baseline`.
+The thresholds are not in the report, so a worsened metric that stayed inside
+its threshold is listed too. The JSON state has no field for the ratchet yet.
+
 `archfit check`'s exit code IS this verdict: `0` healthy, `2` needs_attention,
 `1` blocked, `3` tool/config error. Exit 0 is reachable when all nine dimensions
 are measured, all hard gates pass, and no active diagnostic remains. A run with
@@ -274,7 +292,11 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 
 ### `cycle`
 
-- **Represents:** number of import cycles among modules/packages.
+- **Represents:** number of node-level import cycles: cycles among the
+  dependency graph's own nodes (TypeScript files, Python dotted modules, Rust
+  crates or `crate::mod` nodes). Always `0` on compiling Go, whose edges run
+  file → package. A cycle among declared modules that closes through different
+  files is not counted here; the `module_cycle` rule reports it.
 - **Computed:** Tarjan strongly-connected components; each SCC of size > 1 is one
   cycle.
 - **Band:** always `info`. Confidence always `high` (cycles are a fact, not an

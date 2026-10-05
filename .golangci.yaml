@@ -34,6 +34,14 @@ linters:
         linters:
           - staticcheck
         text: SA5011
+      # G703 (gosec >= the version in golangci-lint v2.14) flags the go.work member
+      # go.mod read; the path comes from the analysed workspace's own go.work, and
+      # reading it is the point. A //nolint here trips nolintlint on CI's older
+      # pinned linter, which has no G703, so the exclusion lives in config.
+      - path: internal/extract/golang/cache\.go
+        linters:
+          - gosec
+        text: G703
 formatters:
   enable:
     - gofmt

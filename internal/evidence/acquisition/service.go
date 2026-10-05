@@ -20,6 +20,7 @@ import (
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/policy"
@@ -171,14 +172,15 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	// `coverage` metric would otherwise divide crate counts by file counts and can
 	// exceed the 1.0 ceiling its own contract calls impossible.
 	var reportOnlyCoverage []evidence.Coverage
+	var rustModuleGraphCrates, rustTargetCrates []string
 	if suppliedCoverageRow.Tool != "" {
 		reportOnlyCoverage = append(reportOnlyCoverage, suppliedCoverageRow)
 	}
 	if ex := registry.RustExtractor(extractors); ex != nil {
 		reportOnlyCoverage = append(reportOnlyCoverage, ex.LastModuleGraphCoverage())
-		for _, cr := range ex.LastCrateRoots() {
-			crateRootDirs[cr.Name] = cr.Dir
-		}
+		crateRootDirs = crateRootDirsOf(ex.LastCrateRoots())
+		rustModuleGraphCrates = ex.LastModuleGraphCrates()
+		rustTargetCrates = ex.LastTargetCrates()
 	}
 	// Unresolved-specifier disclosure. Both analyzers complete but drop edges
 	// into the external bucket, so the gap must not be stderr-silent.
@@ -186,6 +188,9 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		note(warning)
 	}
 	if warning := pyUnresolvedWarning(coverage); warning != "" {
+		note(warning)
+	}
+	if warning := goBuildConstraintWarning(coverage); warning != "" {
 		note(warning)
 	}
 	// Rule and metric evaluation reads the RAW coverage rows; the marked copy is
@@ -201,14 +206,25 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		DynamicImports: collected.DynamicImports, RuntimeAsyncSites: collected.RuntimeAsyncSites,
 		RuntimeConfidence: collected.RuntimeConfidence, DeprecatedDeps: collected.DeprecatedDeps,
 		SemanticStrengthOverlay: graphResult.SemanticStrengthOverlay,
+		RustModuleGraphCrates:   rustModuleGraphCrates,
+		RustTargetCrates:        rustTargetCrates,
 	}
 
 	history := buildVolatilityCorroboration(ctx, resolved.GitRoot, resolved.SubtreePrefix, runPolicy, s.Runner, graphResult.Graph.CrateRoots()...)
+	observations := assessmentObservationsOf(
+		snapshot, ruleScopeObservations(ctx, s.Runner, store, resolved.Root, snapshot, s.Options),
+		declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
+		crateOwnersOf(snapshot, runPolicy.Gates.Rules.ModuleMap),
+	)
+	// Config values schema v2 still loads but classification cannot read, and
+	// warn-gated rules whose selector matches nothing, are disclosed with the
+	// run's other config warnings. config lint reports the same defects.
+	for _, warning := range evaluation.PolicyWarnings(runPolicy, observations) {
+		note(warning)
+	}
 	return application.Acquired{
-		Facts: snapshot,
-		Observations: assessmentObservationsOf(
-			snapshot, declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
-		),
+		Facts:        snapshot,
+		Observations: observations,
 		Context: application.AnalysisContext{
 			MeasurementProfile: s.measurementProfile(ctx, resolved, marked, history),
 			Scope:              resolved, BaseRef: req.BaseRef, Full: true,
@@ -228,23 +244,63 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}, nil
 }
 
+// crateRootDirsOf maps each Rust crate spelling to the crate's repo-relative
+// directory: the package name the crate-level nodes use and the crate
+// identifier the cargo-modules "<crate>::<mod>" node IDs start with. A package
+// name wins over another crate's identifier of the same spelling, whatever
+// the member order.
+func crateRootDirsOf(roots []graph.CrateRoot) map[string]string {
+	out := make(map[string]string, 2*len(roots))
+	for _, cr := range roots {
+		out[cr.Name] = cr.Dir
+	}
+	for _, cr := range roots {
+		if _, taken := out[cr.Crate]; !taken && cr.Crate != "" {
+			out[cr.Crate] = cr.Dir
+		}
+	}
+	return out
+}
+
+// assessmentObservationsOf narrows the evidence snapshot to what assessment
+// reads. inventory carries the rule-scope fields (ruleScopeObservations).
 func assessmentObservationsOf(
 	f evidencecontract.Facts,
+	inventory evaluation.Observations,
 	declaredDeployUnits map[string]string,
 	corroboratedDeployUnits map[string]evidence.CorroboratedDeployUnit,
 	ownerProvenance map[string]evidence.OwnerProvenance,
+	crateOwners map[string]string,
 ) evaluation.Observations {
 	return evaluation.Observations{
 		Coverage: f.Coverage, SuppliedCoverage: f.SuppliedCoverage,
-		SourceSelectors: sourceSelectorsOf(f),
-		Symbols:         f.Symbols, PatternMatches: f.PatternMatches,
+		SourceSelectors: inventory.SourceSelectors, OutOfScopeFiles: inventory.OutOfScopeFiles,
+		UnanalysedFiles: inventory.UnanalysedFiles, RustModuleNodes: inventory.RustModuleNodes,
+		RustCrates: inventory.RustCrates, RustModuleGraphCrates: inventory.RustModuleGraphCrates,
+		UnwalkedSourceProduction: inventory.UnwalkedSourceProduction,
+		GoModulePaths:            inventory.GoModulePaths, GoStdlibPackages: inventory.GoStdlibPackages,
+		Symbols: f.Symbols, PatternMatches: f.PatternMatches,
 		SyntaxFacts: f.SyntaxFacts, FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
 		FileFacts: f.FileFacts, Clones: f.Clones, DynamicImports: f.DynamicImports,
 		RuntimeAsyncSites: f.RuntimeAsyncSites, RuntimeConfidence: f.RuntimeConfidence,
 		DeprecatedDeps: f.DeprecatedDeps, SemanticStrengthOverlay: f.SemanticStrengthOverlay,
 		DeclaredDeployUnits: declaredDeployUnits, CorroboratedDeployUnits: corroboratedDeployUnits,
-		OwnerProvenance: ownerProvenance,
+		OwnerProvenance: ownerProvenance, CrateOwners: crateOwners,
 	}
+}
+
+// crateOwnersOf resolves each Rust crate the extractor reported to the declared
+// module that owns it, so the rules can place a crate::mod node in its crate's
+// module. Nil without a graph or crate roots.
+func crateOwnersOf(f evidencecontract.Facts, mm policy.ModuleMap) map[string]string {
+	if f.Graph == nil {
+		return nil
+	}
+	roots := f.Graph.CrateRoots()
+	if len(roots) == 0 {
+		return nil
+	}
+	return mm.CrateOwners(roots)
 }
 
 func declaredOperationsFacts(p policy.PolicySnapshot) (map[string]string, map[string]evidence.OwnerProvenance) {

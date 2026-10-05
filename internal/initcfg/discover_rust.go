@@ -36,7 +36,12 @@ type cargoPkg struct {
 // cargoDep is one declared dependency from a crate's Cargo.toml.
 type cargoDep struct {
 	Name string `json:"name"`
+	// Kind is null for a normal dependency, "dev", or "build".
+	Kind *string `json:"kind"`
 }
+
+// cargoDepKindDev marks a dev-dependency in cargo metadata.
+const cargoDepKindDev = "dev"
 
 // DiscoverRust enumerates first-party crates from `cargo metadata` and returns
 // one ModuleDef per workspace member. Each module's Paths glob is the crate name
@@ -116,6 +121,12 @@ func buildRustModules(meta cargoMeta) ([]ModuleDef, []ModuleEdge) {
 			if _, toIsMember := memberNames[dep.Name]; !toIsMember {
 				continue // skip external dependencies
 			}
+			if dep.Kind != nil && *dep.Kind == cargoDepKindDev {
+				// The Rust extractor drops dev-dependencies by default, and a
+				// dev-dependency may point back up the graph (a test-helper
+				// crate depending on its dependents), which no tier order holds.
+				continue
+			}
 			if dep.Name == p.Name {
 				continue
 			}
@@ -134,21 +145,20 @@ func buildRustModules(meta cargoMeta) ([]ModuleDef, []ModuleEdge) {
 		return edges[i].To < edges[j].To
 	})
 
-	// Assign topo-level layers when we have a dependency graph.
-	// Without edges, fall back to the flat "core" layer so Render emits the
-	// prominent comment that only metrics (no gates) are produced.
+	// Layers are topological tiers of the crate dependency graph, not a guess
+	// from a name: a crate sits one tier above the deepest crate it depends on.
+	// Normal and build dependencies cannot form a cycle in cargo, so every
+	// current edge points to an earlier tier and the direction rule starts
+	// clean; it then catches a new dependency that inverts the observed order.
+	// Without edges there are no tiers, and Render asks for layers instead.
 	layerAssign := topoLayerAssign(sorted, edges)
 
 	mods := make([]ModuleDef, 0, len(sorted))
 	for _, name := range sorted {
-		layer := layerCore
-		if l, ok := layerAssign[name]; ok {
-			layer = l
-		}
 		mods = append(mods, ModuleDef{
 			Name:  name,
 			Paths: []string{name},
-			Layer: layer,
+			Layer: layerAssign[name],
 		})
 	}
 

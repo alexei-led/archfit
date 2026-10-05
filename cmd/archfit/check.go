@@ -10,11 +10,11 @@ type CheckCmd struct {
 	Root   string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
 	Base   string `help:"Git ref to compare against (e.g. main, HEAD~1). When set, the normal output gains a base-vs-head delta."`
 
-	NoAdvisories bool     `name:"no-advisories" help:"Hide informational Balanced-Coupling advisories from the output."`
+	NoAdvisories bool     `name:"no-advisories" help:"Drop advisory findings: Balanced-Coupling advisories and violations of gate: warn rules. Dropped findings do not count as diagnostics."`
 	MinSeverity  string   `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
 	Refresh      bool     `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
 	RequireTools bool     `name:"require-tools" help:"Exit non-zero when any required analyzer tool is missing."`
-	Lang         []string `name:"lang" help:"Analyzer name to force on. Repeatable. See analyzer setup docs for valid names."`
+	Lang         []string `name:"lang" help:"Language to force on: go, typescript (ts), python (py), rust (rs). Repeatable."`
 
 	JSON     bool     `name:"json" help:"Output format: JSON (shorthand for --format json)."`
 	Markdown bool     `name:"markdown" help:"Output format: Markdown (shorthand for --format markdown)."`
@@ -31,7 +31,8 @@ func (*CheckCmd) Help() string {
 Exit codes follow the architecture verdict:
   0  healthy         — every dimension measured, every hard gate passing, nothing active
   2  needs_attention — no blocker, but an active diagnostic or an unmeasured dimension
-  1  blocked         — an active hard-gate finding, or a required analyzer that did not run
+  1  blocked         — an active hard-gate finding, a required analyzer that did not run,
+                       or a tripped metric ratchet (metrics.<name>.gate)
   3  usage, config, or tool error — no valid report was produced
 
 A coupling advisory is a diagnostic, never a blocker: it can reach exit 2, never

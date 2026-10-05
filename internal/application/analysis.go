@@ -233,6 +233,7 @@ func (s StageExecutor) Execute(ctx context.Context, req AnalysisRequest) (Analys
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("evidence acquisition: %w", err)
 	}
+	discloseRawCoverageReasons(s.stderr(), req.WarnLabel, acquired.Context.MarkedCoverage)
 	assessed, err := s.assess(ctx, req, acquired, base)
 	if err != nil {
 		return AnalysisResult{}, fmt.Errorf("assessment: %w", err)

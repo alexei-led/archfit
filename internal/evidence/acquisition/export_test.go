@@ -14,6 +14,7 @@ var (
 	OwnerDegradationWarning      = ownerDegradationWarning
 	TSUnresolvedWarning          = tsUnresolvedWarning
 	PyUnresolvedWarning          = pyUnresolvedWarning
+	GoBuildConstraintWarning     = goBuildConstraintWarning
 	BuildVolatilityCorroboration = buildVolatilityCorroboration
 	ConfigHash                   = configHash
 )

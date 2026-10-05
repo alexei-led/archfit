@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -126,6 +127,16 @@ func (r *ToolRunner) buildCmd(parentCtx context.Context, cmd ToolCmd) (context.C
 	// Pin locale and timezone on top for deterministic output; caller env
 	// appended last so callers can override if needed.
 	env = append(env, "LC_ALL=C", "TZ=UTC")
+	// os/exec refreshes PWD only when Env is nil. An inherited PWD that is a
+	// symlink or case-variant alias of WorkDir is trusted by Go's os.Getwd, so
+	// Go tools (`go list -f {{.Dir}}`) would print paths in the caller's shell
+	// spelling instead of WorkDir's, and those paths fall outside the canonical
+	// scan root they are compared against.
+	if cmd.WorkDir != "" {
+		if pwd, err := filepath.Abs(cmd.WorkDir); err == nil {
+			env = append(env, "PWD="+pwd)
+		}
+	}
 	env = append(env, cmd.Env...)
 	c.Env = env
 

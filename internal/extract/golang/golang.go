@@ -43,6 +43,11 @@ const (
 	sourceGoTypes  = "go/types"
 )
 
+// BuildConstraintExclusion is the go/packages coverage-reason phrase that
+// discloses Go files the host build configuration left out of the load. The
+// run warning finds its clause by this phrase.
+const BuildConstraintExclusion = "excluded by build constraints"
+
 // goStrengthRank maps a BC integration-strength label to its coupling rank.
 // contract (rank 1) is the weakest coupling; intrusive (rank 5) is the strongest.
 // Used to pick the STRONGEST hint seen per (fromFile, toPkg) pair. The relative
@@ -261,6 +266,16 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	// the two typed Coverage counters (for those consumers) carry the split — a
 	// reason string is not a machine contract.
 	cov := e.coverageForLoad(s.Root, memberDirs, filesSeen, inputsMissing, precisionOnly)
+	// Files the build configuration left out are disclosed, never graded: the
+	// load is complete for the configuration it ran under, so the status (and
+	// with it comparability and dimension promotion) stays as measured.
+	if n := e.countConstraintExcluded(allPkgs); n > 0 {
+		note := fmt.Sprintf("%d Go file(s) %s (GOOS/GOARCH, build tags) were not analyzed", n, BuildConstraintExclusion)
+		if cov.Reason != "" {
+			note = cov.Reason + "; " + note
+		}
+		cov.Reason = note
+	}
 	cov.Version = e.goVersion(ctx)
 	facts := graph.Facts{
 		Nodes: nodes, Edges: edges, Language: "go", Unresolved: cov.Unresolved, GoModules: goModules,
@@ -626,6 +641,25 @@ func containsBehaviorCarrier(t types.Type, seen map[*types.Named]bool) bool {
 		}
 	}
 	return false
+}
+
+// countConstraintExcluded counts the distinct Go files the build configuration
+// left out of the loaded packages, minus config exclusions (an excluded file is
+// out of scope on every platform).
+//
+// Ceiling: a directory whose every file is excluded is not counted, because
+// `go list ./...` does not list it at all. Upgrade to a member-tree walk for
+// directories the load never reported if whole platform-only packages turn up.
+func (e *GoExtractor) countConstraintExcluded(pkgs []packageFacts) int {
+	seen := make(map[string]struct{})
+	for _, p := range pkgs {
+		for _, f := range p.IgnoredFiles {
+			if !e.isExcluded(f) {
+				seen[f] = struct{}{}
+			}
+		}
+	}
+	return len(seen)
 }
 
 // isExcluded reports whether path matches any of the configured exclusion globs.

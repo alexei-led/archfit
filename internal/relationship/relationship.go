@@ -286,20 +286,65 @@ func (s Set) FindByFindingEdge(fromPath, toPath, kind string) (Edge, bool) {
 // This is the relationship-owned cycle detection primitive consumed by both the
 // cycle metric and the cycle rule, mirroring the pre-contract graph.Cycles
 // traversal over the narrower relationship contract.
+//
+// It is node-level: Go imports run file -> package and packages have no
+// outgoing dependency edges, so a Go graph never yields a component here.
+// ModuleCycles answers the module-level question.
 func (s Set) Cycles() [][]string {
-	// Build adjacency list from dependency edges only.
 	adj := make(map[string][]string)
-	nodeSet := make(map[string]struct{})
 	for _, e := range s.Edges {
 		if !e.IsDependency() {
 			continue
 		}
 		adj[e.FromID] = append(adj[e.FromID], e.ToID)
-		nodeSet[e.FromID] = struct{}{}
-		nodeSet[e.ToID] = struct{}{}
+	}
+	return stronglyConnected(adj)
+}
+
+// ModuleCycles returns the strongly-connected components of size > 1 in the
+// module graph the dependency edges induce: one vertex per module and one arc
+// per ordered (FromModule, ToModule) pair of two distinct, non-empty modules
+// that keep accepts (nil keep accepts every non-empty module). Members are
+// sorted, and components are ordered by their first member.
+//
+// A module cycle need not contain a node cycle: billing/app -> shipping/api
+// and shipping/app -> billing/app close one without any package cycle.
+// Unowned and external endpoints carry no module and never join one, and an
+// edge inside one module is a different fractal level, not a module cycle.
+func (s Set) ModuleCycles(keep func(module string) bool) [][]string {
+	adj := make(map[string][]string)
+	seen := make(map[[2]string]struct{})
+	for _, e := range s.Edges {
+		if !e.IsDependency() || e.FromModule == "" || e.ToModule == "" || e.FromModule == e.ToModule {
+			continue
+		}
+		if keep != nil && (!keep(e.FromModule) || !keep(e.ToModule)) {
+			continue
+		}
+		pair := [2]string{e.FromModule, e.ToModule}
+		if _, dup := seen[pair]; dup {
+			continue
+		}
+		seen[pair] = struct{}{}
+		adj[e.FromModule] = append(adj[e.FromModule], e.ToModule)
+	}
+	return stronglyConnected(adj)
+}
+
+// stronglyConnected runs Tarjan's algorithm over adj and returns every
+// strongly-connected component of size > 1. A vertex is any key of adj or any
+// arc target. Each component is sorted, and the outer slice is ordered by the
+// first member of each component, so the result is independent of map and arc
+// order. A self-loop is not a cycle.
+func stronglyConnected(adj map[string][]string) [][]string {
+	nodeSet := make(map[string]struct{}, len(adj))
+	for from, targets := range adj {
+		nodeSet[from] = struct{}{}
+		for _, to := range targets {
+			nodeSet[to] = struct{}{}
+		}
 	}
 
-	// Tarjan's SCC.
 	idx := 0
 	indices := make(map[string]int)
 	lowlink := make(map[string]int)

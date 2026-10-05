@@ -22,19 +22,22 @@ import (
 )
 
 const (
-	ruleForbidden  = "forbidden_dependency"
-	ruleBC         = "bc/imbalanced_coupling"
-	ruleStaleLabel = "labels/stale"
-	metricName     = "cycle_count"
-	pathA          = "a/a.go"
-	pathB          = "b/b.go"
-	kindImports    = "imports"
-	keyStrength    = "strength"
-	keyDistance    = "distance"
-	keyVolatility  = "volatility"
-	strFunctional  = "functional"
-	distSameOwner  = "cross_module_same_owner"
-	volLow         = "low"
+	ruleModuleCycle = "no_module_cycles"
+	ruleForbidden   = "forbidden_dependency"
+	ruleTypePattern = "forbidden_pattern"
+	selCatalog      = "internal/catalog/**"
+	ruleBC          = "bc/imbalanced_coupling"
+	ruleStaleLabel  = "labels/stale"
+	metricName      = "cycle_count"
+	pathA           = "a/a.go"
+	pathB           = "b/b.go"
+	kindImports     = "imports"
+	keyStrength     = "strength"
+	keyDistance     = "distance"
+	keyVolatility   = "volatility"
+	strFunctional   = "functional"
+	distSameOwner   = "cross_module_same_owner"
+	volLow          = "low"
 )
 
 var evaluatedAt = time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
@@ -305,6 +308,33 @@ func TestEvaluateGateFindingOutranksMetricWarn(t *testing.T) {
 	})
 	if got.Verdict != result.VerdictFail {
 		t.Fatalf("Verdict = %q, want fail: a new gate finding outranks a metric warn", got.Verdict)
+	}
+}
+
+// TestEvaluateKeepsTheModulesOfModuleKeyedFindings pins that evidence
+// resolution only fills an empty module: a module-keyed finding (module_cycle)
+// names its modules itself and has no endpoint path to re-derive them from, so
+// resolving its empty paths would erase both modules.
+func TestEvaluateKeepsTheModulesOfModuleKeyedFindings(t *testing.T) {
+	const fromModule, toModule = "orders", "payments"
+	moduleKeyed := finding.Finding{
+		ID: "mod", Kind: finding.KindGate, RuleID: ruleModuleCycle, Status: finding.StatusNew, Severity: finding.SeverityHigh,
+		Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: fromModule}, To: finding.Endpoint{Module: toModule}, Kind: "module_dependency"},
+	}
+	modules := map[string]policy.ModuleDef{assessModA: {Paths: []string{assessPathsA}}, assessModB: {Paths: []string{assessPathsB}}}
+	got := evaluation.Evaluate(evaluation.Input{
+		Rules: evaluation.RulesetOf(stubRule{id: ruleModuleCycle, findings: []finding.Finding{
+			moduleKeyed, gateFinding("edge", pathA, pathB, finding.SeverityHigh),
+		}}),
+		Policy:   policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}},
+		Accepted: acceptedSet{},
+		Now:      evaluatedAt,
+	})
+	if f := findByID(t, got.Findings, "mod"); f.Edge.From.Module != fromModule || f.Edge.To.Module != toModule {
+		t.Errorf("module-keyed edge = %+v, want %s -> %s kept", f.Edge, fromModule, toModule)
+	}
+	if f := findByID(t, got.Findings, "edge"); f.Edge.From.Module != assessModA || f.Edge.To.Module != assessModB {
+		t.Errorf("path-keyed edge = %+v, want modules resolved from the paths", f.Edge)
 	}
 }
 

@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	"github.com/alexei-led/archfit/internal/application"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/evidence/acquisition"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship/labels"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -193,6 +196,73 @@ func TestAcquireThreadsMissingSuppliedCoverageIntoTheExistingGapGate(t *testing.
 	}
 	if !found {
 		t.Fatalf("coverage gaps = %+v, want supplied-coverage", acquired.Context.CoverageGaps)
+	}
+}
+
+// TestAcquireDisclosesGoFilesExcludedByBuildConstraints adds a file for another
+// GOOS to an otherwise identical tree. The run prints one stderr warning and the
+// go/packages row names the count, but the row status and the measurement
+// profile stay those of the tree without the file: an unbuilt file is a scope
+// disclosure, never a degraded or non-comparable measurement.
+func TestAcquireDisclosesGoFilesExcludedByBuildConstraints(t *testing.T) {
+	t.Parallel()
+	otherOS := "windows"
+	if runtime.GOOS == otherOS {
+		otherOS = "linux"
+	}
+	acquire := func(t *testing.T, constrained bool) (application.Acquired, string) {
+		t.Helper()
+		root := t.TempDir()
+		files := map[string]string{
+			"go.mod": "module example.com/constrained\n\ngo 1.26\n",
+			"a/a.go": "package a\n",
+		}
+		if constrained {
+			files["a/a_"+otherOS+".go"] = "package a\n\nimport _ \"os\"\n"
+		}
+		for name, content := range files {
+			path := filepath.Join(root, name)
+			if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var stderr bytes.Buffer
+		acquired, err := acquisitionService(t, root, &gitOnlyRunner{root: root}, &stderr).
+			Acquire(context.Background(), application.AnalysisRequest{EvaluatedAt: time.Unix(1, 0)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return acquired, stderr.String()
+	}
+	goRow := func(t *testing.T, acquired application.Acquired) evidence.Coverage {
+		t.Helper()
+		for _, row := range acquired.Facts.Coverage {
+			if row.Tool == "go/packages" {
+				return row
+			}
+		}
+		t.Fatalf("no go/packages coverage row in %+v", acquired.Facts.Coverage)
+		return evidence.Coverage{}
+	}
+
+	clean, cleanStderr := acquire(t, false)
+	disclosed, stderr := acquire(t, true)
+	const phrase = "1 Go file(s) excluded by build constraints"
+	if got := strings.Count(stderr, phrase); got != 1 || strings.Contains(cleanStderr, phrase) {
+		t.Errorf("stderr disclosed the excluded file %d time(s), want once and only for the constrained tree:\n%s", got, stderr)
+	}
+	row, cleanRow := goRow(t, disclosed), goRow(t, clean)
+	if !strings.Contains(row.Reason, phrase) {
+		t.Errorf("go/packages reason = %q, want it to contain %q", row.Reason, phrase)
+	}
+	if row.Status != cleanRow.Status || row.Status != evidence.StatusOK {
+		t.Errorf("go/packages status = %q (without the file: %q), want ok for both", row.Status, cleanRow.Status)
+	}
+	if !reflect.DeepEqual(disclosed.Context.MeasurementProfile, clean.Context.MeasurementProfile) {
+		t.Errorf("measurement profile moved with an unbuilt file:\n got %+v\nwant %+v", disclosed.Context.MeasurementProfile, clean.Context.MeasurementProfile)
 	}
 }
 

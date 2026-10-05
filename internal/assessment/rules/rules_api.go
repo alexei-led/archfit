@@ -195,12 +195,13 @@ func (r *publicAPIChange) Check(_ relationship.Set, ev Evidence) []finding.Findi
 // versionSegmentRe matches trailing versioned path segments like "v2", "v3".
 var versionSegmentRe = regexp.MustCompile(`^v\d+$`)
 
-// Relationship node/edge kind literals used by the type-leak rule. The rule
-// consumes the narrow relationship contract, whose Kind fields are strings
-// rather than the graph package's typed kind constants.
+// Relationship node/edge kind literals used by the rules. They consume the
+// narrow relationship contract, whose Kind fields are strings rather than the
+// graph package's typed kind constants.
 const (
 	relNodeKindPackage  = "package"
 	relNodeKindExternal = "external"
+	relNodeKindFile     = "file"
 	relEdgeKindImports  = "imports"
 	relEdgeKindUsesInt  = "uses_internal"
 )

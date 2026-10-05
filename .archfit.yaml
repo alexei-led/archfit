@@ -477,6 +477,7 @@ rules:
     from: internal/**
     to: internal/view/**
     gate: fail
+    guard: true
   - id: classify_no_config
     type: forbidden_dependency
     from: internal/relationship/**
@@ -638,6 +639,7 @@ rules:
     from: '**'
     to: internal/analysispipeline/**
     gate: fail
+    guard: true
   # Composition-root direction. The library never reaches back into the CLI, so
   # every command stays replaceable and no domain decision can hide in cmd.
   - id: core_no_cmd

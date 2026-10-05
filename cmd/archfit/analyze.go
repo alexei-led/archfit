@@ -40,9 +40,9 @@ type AnalyzeCmd struct {
 	// flag is set. Valid values: json, text, markdown, md, sarif, scorecard.
 	Format []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard"`
 
-	NoAdvisories bool     `name:"no-advisories" help:"Hide informational Balanced-Coupling advisories from the output."`
+	NoAdvisories bool     `name:"no-advisories" help:"Drop advisory findings: Balanced-Coupling advisories and violations of gate: warn rules. Dropped findings do not count as diagnostics."`
 	MinSeverity  string   `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
-	Lang         []string `name:"lang" help:"Analyzer name to force on. Repeatable. See analyzer setup docs for valid names."`
+	Lang         []string `name:"lang" help:"Language to force on: go, typescript (ts), python (py), rust (rs). Repeatable."`
 	RequireTools bool     `name:"require-tools" help:"Mark missing required analyzer tools as fail in the rendered verdict."`
 
 	// Progress controls live phase reporting on stderr; Quiet suppresses it.

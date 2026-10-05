@@ -61,8 +61,11 @@ rules:
   - id: public_api_only
     type: public_api_only
     gate: fail
-  - id: no_cycles
-    type: cycle
+  # No dependency cycle among the declared modules. module_cycle sees cycles
+  # that close across modules through different files; the node-level
+  # cycle rule cannot (on Go it never fires).
+  - id: no_module_cycles
+    type: module_cycle
     gate: fail
 exclude:
   - '**/dist/**'

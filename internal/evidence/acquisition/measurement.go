@@ -97,7 +97,7 @@ func (s *Service) measurementToolVersion(ctx context.Context, root, tool string)
 func (s *Service) measurementGoEnv(ctx context.Context, root string) (map[string]string, bool) {
 	keys := []string{"GOOS", "GOARCH", "CGO_ENABLED", "GOFLAGS", "GOEXPERIMENT", "GO111MODULE", "GOTOOLCHAIN",
 		"GO386", "GOAMD64", "GOARM", "GOARM64", "GOMIPS", "GOMIPS64", "GOPPC64", "GORISCV64", "GOWASM"}
-	out, err := s.Runner.Run(ctx, toolrun.ToolCmd{Name: "go", Args: append([]string{"env", "-json"}, keys...), WorkDir: root, Timeout: 10 * time.Second})
+	out, err := s.Runner.Run(ctx, toolrun.ToolCmd{Name: "go", Args: goEnvJSONArgs(keys), WorkDir: root, Timeout: 10 * time.Second})
 	if err != nil || out.ExitCode != 0 {
 		return nil, false
 	}

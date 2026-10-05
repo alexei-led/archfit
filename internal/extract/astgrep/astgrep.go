@@ -5,6 +5,7 @@
 package astgrep
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -155,16 +156,26 @@ type sgMatch struct {
 	} `json:"rule"`
 }
 
-// dedupeKey is used to eliminate duplicate matches.
+// dedupeKey eliminates a match sg reports twice. It carries the matched text
+// because forbidden_pattern keys a finding by (pattern, file, text): a second,
+// different match on the same line is a separate finding, not a duplicate.
 type dedupeKey struct {
 	file    string
 	line    int
 	pattern string
+	text    string
 }
+
+// sgRunNoMatch is the exit code `sg run` uses for a successful search that
+// matched nothing, like grep. Anything above it is a failed run.
+const sgRunNoMatch = 1
 
 // Find runs all patterns against the given scope and returns deduplicated,
 // sorted matches plus a Coverage record. A missing "sg" binary returns empty
-// matches with status "absent" — never an error.
+// matches with status "absent" — never an error. A pattern run sg rejects (exit
+// code above 1, e.g. an unknown --lang) marks the coverage partial with a reason
+// naming the pattern: an empty result from a failed run must never read as
+// "no match", because forbidden_pattern rules treat an ok row as evaluated.
 func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]pattern.Match, evidence.Coverage, error) {
 	if len(c) == 0 {
 		return nil, evidence.Coverage{Tool: toolName, Status: evidence.StatusDisabled}, nil
@@ -183,14 +194,20 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]
 		langs = append(langs, def.Lang)
 	}
 	runner := a.cachedRunner(ctx, s.Root, langs)
+	var failures []string
 	for _, def := range c {
 		out, err := runner.Run(ctx, toolrun.ToolCmd{
 			Name:    "sg",
-			Args:    []string{"--lang", def.Lang, "--json", "run", "--pattern", def.Rule, "."},
+			Args:    []string{"run", "--lang", def.Lang, "--json", "--pattern", def.Rule, "."},
 			WorkDir: s.Root,
 		})
 		if err != nil {
 			return nil, evidence.Coverage{}, fmt.Errorf("astgrep: run sg for pattern %q: %w", def.ID, err)
+		}
+		if out.ExitCode > sgRunNoMatch {
+			failures = append(failures, fmt.Sprintf("sg rejected pattern %q (exit %d): %s",
+				def.ID, out.ExitCode, strings.TrimSpace(string(out.Stderr))))
+			continue
 		}
 		if len(out.Stdout) == 0 {
 			continue
@@ -204,7 +221,7 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]
 		for _, m := range raw {
 			// ast-grep reports 0-based lines; normalize to 1-based.
 			line := m.Range.Start.Line + 1
-			k := dedupeKey{file: m.File, line: line, pattern: def.ID}
+			k := dedupeKey{file: m.File, line: line, pattern: def.ID, text: m.Text}
 			if _, dup := seen[k]; dup {
 				continue
 			}
@@ -221,15 +238,10 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]
 		}
 	}
 
-	// Sort by (file, line) for deterministic output.
+	// A total order, so same-line matches never depend on pattern run order.
 	slices.SortFunc(matches, func(a, b pattern.Match) int {
-		if a.File != b.File {
-			if a.File < b.File {
-				return -1
-			}
-			return 1
-		}
-		return a.Line - b.Line
+		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), cmp.Compare(a.Column, b.Column),
+			cmp.Compare(a.Pattern, b.Pattern), cmp.Compare(a.Text, b.Text))
 	})
 
 	cov := evidence.Coverage{
@@ -237,6 +249,10 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]
 		Version:   a.sgVersion(ctx),
 		FilesSeen: len(fileSet),
 		Status:    "ok",
+	}
+	if len(failures) > 0 {
+		cov.Status = evidence.StatusPartial
+		cov.Reason = strings.Join(failures, "; ")
 	}
 	return matches, cov, nil
 }

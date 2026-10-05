@@ -11,20 +11,22 @@ import (
 	"strings"
 )
 
-// canonicalPath returns a case- and symlink-resolved form of p.
-// It calls filepath.EvalSymlinks first (real paths only), then falls back to
-// filepath.Abs on error (handles fake/non-existent paths used in tests), and
-// returns p unchanged if both fail. An empty p is returned as-is so that the
-// GitRoot=="" invariant in non-git full mode is preserved.
+// canonicalPath returns an absolute, symlink-resolved form of p.
+// It makes p absolute first — a relative root (the "." a non-git run gets when
+// the config sits in the working directory) cannot be compared with the
+// absolute paths extractors report — then calls filepath.EvalSymlinks (real
+// paths only) and keeps the absolute form when that fails (fake/non-existent
+// paths used in tests). An empty p is returned as-is so that the GitRoot==""
+// invariant in non-git full mode is preserved.
 func canonicalPath(p string) string {
 	if p == "" {
 		return ""
 	}
+	if a, err := filepath.Abs(p); err == nil {
+		p = a
+	}
 	if r, err := filepath.EvalSymlinks(p); err == nil {
 		return r
-	}
-	if a, err := filepath.Abs(p); err == nil {
-		return a
 	}
 	return p
 }

@@ -24,6 +24,11 @@ type RuleDef struct {
 	Max       *int          `yaml:"max,omitempty"`       // public_api_max: exported-declaration ceiling per module
 	Threshold *int          `yaml:"threshold,omitempty"` // reserved: per-rule integer threshold
 	Patterns  []pattern.Def `yaml:"patterns,omitempty"`
+	// Guard marks an intentional guard rule whose from:/to: selector is expected
+	// to match nothing, such as a ban on re-introducing a deleted package. A
+	// guard counts as evaluated while its selector matches nothing; any other
+	// rule with a selector that matches nothing is reported as not evaluated.
+	Guard bool `yaml:"guard,omitempty"`
 }
 
 // RuleConfig is the rule-evaluation projection of the policy: the declared

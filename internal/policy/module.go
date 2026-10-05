@@ -8,6 +8,7 @@ package policy
 
 import (
 	gopath "path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -67,12 +68,39 @@ type ModuleDef struct {
 	ReviewedBy string    `yaml:"reviewed_by"`
 }
 
+// moduleVolatilities are the volatility values classification reads, matched
+// case-insensitively; legacy is an alias for frozen.
+var moduleVolatilities = map[string]struct{}{"high": {}, "medium": {}, "low": {}, "frozen": {}, "legacy": {}}
+
+// moduleSubdomains are the subdomain values classification maps to a
+// volatility (core high, supporting and generic low), matched case-insensitively.
+var moduleSubdomains = map[string]struct{}{"core": {}, "supporting": {}, "generic": {}}
+
+// UnknownVolatility reports whether d declares a volatility classification does
+// not read. An unknown value is not a declaration: the module's volatility is
+// then undeclared. Empty is undeclared, not unknown.
+func (d ModuleDef) UnknownVolatility() bool {
+	_, known := moduleVolatilities[strings.ToLower(d.Volatility)]
+	return d.Volatility != "" && !known
+}
+
+// UnknownSubdomain reports whether d declares a subdomain classification does
+// not read. Empty is undeclared, not unknown.
+func (d ModuleDef) UnknownSubdomain() bool {
+	_, known := moduleSubdomains[strings.ToLower(d.Subdomain)]
+	return d.Subdomain != "" && !known
+}
+
 // ModuleMap resolves a repo-relative path to the owning module name.
 // It uses doublestar glob matching against module path patterns.
 type ModuleMap struct {
 	// sorted module names for deterministic iteration when globs overlap
 	names   []string
 	modules map[string]ModuleDef
+	// crateModules maps each Rust crate spelling (package name and crate
+	// identifier) to the declared module that owns the crate. Empty unless
+	// WithCrateOwners attached them.
+	crateModules map[string]string
 }
 
 // buildModuleMap constructs a ModuleMap from the Config's Modules.
@@ -130,6 +158,150 @@ func (mm ModuleMap) ModuleFor(path string) (string, bool) {
 		return "", false
 	}
 	return best, true
+}
+
+// CrateOwners maps each Rust crate spelling — the package name and the crate
+// identifier of every crate root — to the declared module that owns the crate:
+// the module whose path globs match the package name, the crate identifier, or
+// a file in the crate's directory. That is the probe
+// classify.AugmentCargoCrateNodes binds crate nodes with. A root crate (Dir "")
+// has no directory boundary and is never claimed by one; a crate no module
+// declares is left out. A package name wins over another crate's identifier of
+// the same spelling, whatever the member order.
+//
+// Acquisition computes it where crate roots and policy meet; the rules receive
+// the result through WithCrateOwners.
+func (mm ModuleMap) CrateOwners(roots []graph.CrateRoot) map[string]string {
+	owners := make(map[string]string, 2*len(roots))
+	owner := make([]string, len(roots))
+	for i, cr := range roots {
+		owner[i] = mm.crateOwner(cr)
+		if owner[i] != "" {
+			owners[cr.Name] = owner[i]
+		}
+	}
+	for i, cr := range roots {
+		if _, taken := owners[cr.Crate]; !taken && owner[i] != "" && cr.Crate != "" {
+			owners[cr.Crate] = owner[i]
+		}
+	}
+	return owners
+}
+
+// WithCrateOwners returns mm with the crate owners CrateOwners resolved, so
+// ModuleForNode can place a Rust node no path glob claims in the declared
+// module that owns its crate. ModuleFor itself is unchanged.
+func (mm ModuleMap) WithCrateOwners(owners map[string]string) ModuleMap {
+	mm.crateModules = owners
+	return mm
+}
+
+// crateOwner returns the declared module that owns one crate, or "".
+func (mm ModuleMap) crateOwner(cr graph.CrateRoot) string {
+	for _, probe := range []string{cr.Name, cr.Crate} {
+		if probe == "" {
+			continue
+		}
+		if mod, ok := mm.ModuleFor(probe); ok {
+			return mod
+		}
+	}
+	if cr.Dir != "" {
+		if mod, ok := mm.ModuleFor(cr.Dir + "/Cargo.toml"); ok {
+			return mod
+		}
+	}
+	return ""
+}
+
+// ModuleForNode resolves a graph-node path of the given language to its
+// declared module. A path glob decides first, exactly as in ModuleFor. A Rust
+// node no glob claims — a crate-level package node, or a cargo-modules
+// "<crate>::<mod>" node — then belongs to the declared module that owns its
+// crate (WithCrateOwners). Without that, a crate declared by package name
+// ("yazi-shared") never owns its own "yazi_shared::url::buf" nodes, and the
+// rules read two modules of one crate as two unrelated, unowned paths.
+//
+// The fallback is Rust-only: a Python package or Go directory can share a
+// crate's name in a mixed repository, and must never take its module.
+func (mm ModuleMap) ModuleForNode(path, language string) (string, bool) {
+	if mod, ok := mm.ModuleFor(path); ok {
+		return mod, true
+	}
+	if language != graph.LangRust || len(mm.crateModules) == 0 {
+		return "", false
+	}
+	crate, _, _ := strings.Cut(path, "::")
+	mod, ok := mm.crateModules[crate]
+	return mod, ok
+}
+
+// MatchesInternal reports whether the declared module surfaces make a graph-node
+// path internal, and which glob decided. An empty glob means no declaration
+// speaks about path, so the caller keeps its own language-level signal.
+//
+// Precedence, the same public-before-internal order the coupling classifier
+// applies:
+//  1. a public: glob of the module that owns path decides "not internal";
+//  2. otherwise any module's internal: glob decides "internal";
+//  3. otherwise nothing is decided.
+//
+// The public side is narrowed to the owning module's own declaration: one
+// module's public: glob cannot open another module's surface. The owner is
+// resolved with ModuleForNode, so a Rust crate::mod node is owned by the
+// module that declares its crate.
+//
+// path is in the graph-node vocabulary ModuleFor resolves: slash paths for Go
+// and TypeScript, dotted IDs for Python, crate::mod for Rust. language is the
+// node's language.
+func (mm ModuleMap) MatchesInternal(path, language string) (internal bool, glob string) {
+	if owner, ok := mm.ModuleForNode(path, language); ok {
+		if g, matched := firstMatch(mm.modules[owner].Public, path); matched {
+			return false, g
+		}
+	}
+	for _, name := range mm.names {
+		if g, matched := firstMatch(mm.modules[name].Internal, path); matched {
+			return true, g
+		}
+	}
+	return false, ""
+}
+
+// firstMatch returns the first glob in globs that matches path.
+func firstMatch(globs []string, path string) (string, bool) {
+	for _, g := range globs {
+		if matched, _ := doublestar.Match(g, path); matched {
+			return g, true
+		}
+	}
+	return "", false
+}
+
+// OwnershipTie returns the modules that claim path at the highest specificity
+// when more than one does, in name order. ModuleFor then resolves the tie by
+// name, so every module after the first silently loses the path. Nil when at
+// most one module claims path at the highest specificity.
+func (mm ModuleMap) OwnershipTie(path string) []string {
+	best := -1
+	winners := make([]string, 0, 2)
+	for _, name := range mm.names {
+		for _, pattern := range mm.modules[name].Paths {
+			if matched, _ := doublestar.Match(pattern, path); !matched {
+				continue
+			}
+			switch spec := globSpecificity(pattern); {
+			case spec > best:
+				best, winners = spec, append(winners[:0], name)
+			case spec == best && !slices.Contains(winners, name):
+				winners = append(winners, name)
+			}
+		}
+	}
+	if len(winners) < 2 {
+		return nil
+	}
+	return winners
 }
 
 // globSpecificity ranks a glob pattern by how specific it is: the byte length of
@@ -321,10 +493,11 @@ func ModuleRootDirs(modules map[string]ModuleDef) map[string]string {
 	return out
 }
 
-// LayerFor returns the layer name for the module that owns the given repo-relative
-// path. Returns ("", false) if no module matches or the module has no layer set.
-func (mm ModuleMap) LayerFor(path string) (string, bool) {
-	name, ok := mm.ModuleFor(path)
+// LayerFor returns the layer name for the module that owns the given graph-node
+// path of the given language (ModuleForNode). Returns ("", false) if no module
+// matches or the module has no layer set.
+func (mm ModuleMap) LayerFor(path, language string) (string, bool) {
+	name, ok := mm.ModuleForNode(path, language)
 	if !ok {
 		return "", false
 	}

@@ -40,12 +40,24 @@ type NameDrift struct {
 	Existing ExistingModule
 }
 
+// CoveredModule records a discovered module whose every source the configured
+// module map already owns. It is not a new module: the curated map is just
+// finer- or coarser-grained than discovery's directory grouping. Owners are the
+// configured modules that own those sources, by most-specific match.
+type CoveredModule struct {
+	Discovered ModuleDef
+	Owners     []string
+}
+
 // UpdateReport is the result of DiffModules.
 type UpdateReport struct {
-	Added        []ModuleDef
-	Suggested    []ModuleDef
-	Removed      []ExistingModule
-	NameDrift    []NameDrift
+	Added     []ModuleDef
+	Suggested []ModuleDef
+	Removed   []ExistingModule
+	NameDrift []NameDrift
+	// Covered holds discovered modules the configured map already owns; they
+	// are neither added nor applied (see resolveOwnership).
+	Covered      []CoveredModule
 	PathDrift    []PathDelta
 	Unclassified []string
 	// Pathless names the configured modules whose field checks were SKIPPED
@@ -132,20 +144,30 @@ func pathSetsEqual(a, b []string) bool {
 // for determinism.
 //
 //   - Added: modules in fresh not in existing, after name drift is resolved.
+//
 //   - Removed: modules in existing not in fresh, after name drift is resolved.
+//
 //   - NameDrift: Added/Removed pairs that own exactly the same paths, so the
 //     only difference is the key (see resolveNameDrift).
+//
 //   - PathDrift: modules present in both whose paths differ as normalized sets.
 //     ConfigPaths and DiscoveredPaths preserve their original ordering.
+//
 //   - StructuralInSync: true when Added, Removed, NameDrift, and PathDrift are
 //     all empty.
+//
 //   - Unclassified: existing modules discovery still accounts for that cannot be
 //     classified — neither subdomain nor volatility is set (either one supplies
 //     volatility), or layer is missing while requireLayer says an active layer
 //     policy needs it. Modules in Removed are excluded from Unclassified.
+//
 //   - Issues: the Unclassified reasons plus missing owner, one entry per gap,
 //     sorted by module then code. Modules with no paths classify nothing and are
 //     skipped, mirroring config.Config.Lint; Unclassified keeps them.
+//
+//   - Covered: discovered modules whose every source the configured map already
+//     owns (see resolveOwnership). Their configured owners leave Removed and are
+//     field-checked like any matched stanza.
 //
 // The name-drift pass runs INSIDE this function rather than beside it: matching
 // is by name, so a stanza discovery merely renamed starts out in Removed, and
@@ -159,8 +181,91 @@ func pathSetsEqual(a, b []string) bool {
 //
 // requireLayer must be true only when a forbidden_layer_direction rule is active
 // (gate other than "off"); layer is optional for every other config.
-func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool) UpdateReport {
-	return resolveNameDrift(diffModulesByName(existing, fresh, requireLayer), requireLayer)
+//
+// ownerOf resolves a graph-node path to the configured module that owns it,
+// with the same most-specific rule analysis uses (policy.ModuleMap.ModuleFor).
+// Nil disables the ownership pass.
+func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool, ownerOf func(path string) (string, bool)) UpdateReport {
+	r := resolveNameDrift(diffModulesByName(existing, fresh, requireLayer), requireLayer)
+	return resolveOwnership(r, ownerOf, requireLayer)
+}
+
+// resolveOwnership reclassifies every Added module whose sources the configured
+// map already owns as Covered, and rescues the owning stanzas from Removed.
+//
+// Name matching cannot see a curated map that groups code differently from
+// discovery's two-segment directories: a config with domain-order and
+// domain-billing stanzas read as "add internal/domain/**, remove both", and
+// --apply wrote a catch-all that owned no file under most-specific matching
+// while the curated stanzas were reported unmatched. Ownership is the question
+// analysis actually asks, so it is the one asked here: a discovered module is
+// new only when some source in it has no configured owner.
+//
+// A module without Sources (TypeScript and Rust discovery do not enumerate
+// them) stays name-matched. Partially owned modules stay Added: the unowned
+// sources are genuinely new code. Every stanza that owns any discovered source
+// leaves Removed either way. Pure: no I/O, deterministic order.
+func resolveOwnership(r UpdateReport, ownerOf func(path string) (string, bool), requireLayer bool) UpdateReport {
+	if ownerOf == nil || len(r.Added) == 0 {
+		return r
+	}
+	var covered []CoveredModule
+	var added []ModuleDef
+	owners := map[string]struct{}{}
+	for _, def := range r.Added {
+		names, all := sourceOwners(def.Sources, ownerOf)
+		// A stanza that owns any discovered source is matched, even when the
+		// discovered module as a whole is not covered: discovery did see its code.
+		for _, n := range names {
+			owners[n] = struct{}{}
+		}
+		if !all {
+			added = append(added, def)
+			continue
+		}
+		covered = append(covered, CoveredModule{Discovered: def, Owners: names})
+	}
+
+	var removed, rescued []ExistingModule
+	for _, e := range r.Removed {
+		if _, owns := owners[e.Name]; owns {
+			rescued = append(rescued, e)
+			continue
+		}
+		removed = append(removed, e)
+	}
+	if len(covered) == 0 && len(rescued) == 0 {
+		return r
+	}
+
+	out := r
+	out.Added = added
+	out.Removed = removed
+	out.Covered = covered
+	out.StructuralInSync = len(added) == 0 && len(removed) == 0 && len(r.NameDrift) == 0 && len(r.PathDrift) == 0
+	out.Unclassified, out.Pathless, out.Issues = mergeFieldChecks(r, rescued, requireLayer)
+	return out
+}
+
+// sourceOwners returns the sorted configured owners of sources, and whether
+// every source has one. An empty source list is never fully owned.
+func sourceOwners(sources []string, ownerOf func(path string) (string, bool)) ([]string, bool) {
+	set := map[string]struct{}{}
+	all := len(sources) > 0
+	for _, src := range sources {
+		owner, ok := ownerOf(src)
+		if !ok {
+			all = false
+			continue
+		}
+		set[owner] = struct{}{}
+	}
+	names := make([]string, 0, len(set))
+	for n := range set {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names, all
 }
 
 // diffModulesByName is the name-matching structural pass. Its Issues and
@@ -358,18 +463,18 @@ func resolveNameDrift(r UpdateReport, requireLayer bool) UpdateReport {
 	out.Removed = removed
 	out.NameDrift = drift
 	out.StructuralInSync = len(added) == 0 && len(removed) == 0 && len(drift) == 0 && len(r.PathDrift) == 0
-	out.Unclassified, out.Pathless, out.Issues = mergeDriftFieldChecks(r, drift, requireLayer)
+	rescued := make([]ExistingModule, 0, len(drift))
+	for _, d := range drift {
+		rescued = append(rescued, d.Existing)
+	}
+	out.Unclassified, out.Pathless, out.Issues = mergeFieldChecks(r, rescued, requireLayer)
 	return out
 }
 
-// mergeDriftFieldChecks re-runs the per-module field checks over the stanzas
-// name-drift just rescued from Removed and merges them into the report's
-// existing results, keeping every list sorted and duplicate-free.
-func mergeDriftFieldChecks(r UpdateReport, drift []NameDrift, requireLayer bool) ([]string, []string, []ModuleIssue) {
-	mods := make([]ExistingModule, 0, len(drift))
-	for _, d := range drift {
-		mods = append(mods, d.Existing)
-	}
+// mergeFieldChecks re-runs the per-module field checks over stanzas a later
+// pass (name drift, ownership) just rescued from Removed and merges them into
+// the report's existing results, keeping every list sorted and duplicate-free.
+func mergeFieldChecks(r UpdateReport, mods []ExistingModule, requireLayer bool) ([]string, []string, []ModuleIssue) {
 	driftUnclassified, driftPathless, driftIssues := checkModuleFields(mods, requireLayer)
 	if len(driftUnclassified) == 0 && len(driftPathless) == 0 && len(driftIssues) == 0 {
 		return r.Unclassified, r.Pathless, r.Issues

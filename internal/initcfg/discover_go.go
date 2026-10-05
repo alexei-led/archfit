@@ -6,14 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
-
-// adapterExtract is the second-segment name for the extract adapter packages.
-const adapterExtract = "extract"
 
 // goListPkg mirrors the subset of `go list -json` output that we need.
 type goListPkg struct {
@@ -25,29 +24,91 @@ type goListPkg struct {
 	}
 }
 
-// discoverGo runs `go list -json ./...` from root and groups packages into
-// candidate modules. Returns modules, inter-module edges, module path, and any error.
-func discoverGo(ctx context.Context, root string, runner toolrun.Runner) ([]ModuleDef, []ModuleEdge, string, error) {
+// goMemberPackages is one Go member's `go list` result: the member directory
+// relative to the discovery root ("." for the root), its module path, and its
+// packages.
+type goMemberPackages struct {
+	rel     string
+	modPath string
+	pkgs    []goListPkg
+}
+
+// discoverGo runs `go list -e -json ./...` in every Go member directory the
+// extractor would load and groups the packages into candidate modules. Members
+// come from the extractor's own member discovery (Presence.GoMembers), so a
+// go.work monorepo with no root go.mod is enumerated member by member instead
+// of being skipped. Returns modules, inter-module edges, the first member's
+// module path, and any error.
+func discoverGo(ctx context.Context, root string, runner toolrun.Runner, members []string, goWorkOff bool) ([]ModuleDef, []ModuleEdge, string, error) {
+	var env []string
+	if goWorkOff {
+		// The extractor ignores a go.work that names no member under root; the
+		// toolchain must be told the same or `go list` refuses the module.
+		env = []string{"GOWORK=off"}
+	}
+	listed := make([]goMemberPackages, 0, len(members))
+	for _, dir := range members {
+		rel, err := filepath.Rel(root, dir)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		m, err := goListMember(ctx, runner, dir, env)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		m.rel = filepath.ToSlash(rel)
+		listed = append(listed, m)
+	}
+	if len(listed) == 0 {
+		return nil, nil, "", nil
+	}
+
+	// segments groups package paths (relative to root) by their 2-segment key.
+	segments := make(map[string][]string)
+	// pkgImports maps each package's root-relative path to the root-relative
+	// paths of the first-party packages it imports. Used to derive module edges.
+	pkgImports := make(map[string][]string)
+	for _, m := range listed {
+		for _, pkg := range m.pkgs {
+			rel := memberRelPath(m.rel, stripPrefix(pkg.ImportPath, m.modPath))
+			key := groupKey(rel)
+			segments[key] = append(segments[key], rel)
+			var intraImports []string
+			for _, imp := range pkg.Imports {
+				if impRel, ok := firstPartyImport(imp, listed); ok {
+					intraImports = append(intraImports, impRel)
+				}
+			}
+			if len(intraImports) > 0 {
+				pkgImports[rel] = intraImports
+			}
+		}
+	}
+
+	mods := buildGoModules(segments)
+	edges := buildGoEdges(segments, pkgImports)
+	return mods, edges, listed[0].modPath, nil
+}
+
+// goListMember runs `go list -e -json ./...` in one member directory and
+// returns its packages and module path. -e keeps a package that fails to load
+// (an unresolvable import, a syntax error) in the listing instead of failing
+// the run: onboarding proposes modules from directory structure, and one broken
+// package in one go.work member must not abort init or update for the tree.
+func goListMember(ctx context.Context, runner toolrun.Runner, dir string, env []string) (goMemberPackages, error) {
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    "go",
-		Args:    []string{"list", "-json", "./..."},
-		WorkDir: root,
+		Args:    []string{"list", "-e", "-json", "./..."},
+		Env:     env,
+		WorkDir: dir,
 	})
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("initcfg: go list: %w", err)
+		return goMemberPackages{}, fmt.Errorf("initcfg: go list: %w", err)
 	}
 	if out.ExitCode != 0 {
-		return nil, nil, "", fmt.Errorf("initcfg: go list exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		return goMemberPackages{}, fmt.Errorf("initcfg: go list exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 	}
-
-	var modPath string
-	// segments groups import path segments → set of full paths seen.
-	// Key is "seg1/seg2" (first 2 path segments after module root).
-	segments := make(map[string][]string)
-	// pkgImports maps each package relative path to its imported relative paths
-	// (within the same module). Used to derive module-level edges.
-	pkgImports := make(map[string][]string)
-
+	var m goMemberPackages
 	dec := json.NewDecoder(bytes.NewReader(out.Stdout))
 	for {
 		var pkg goListPkg
@@ -55,34 +116,48 @@ func discoverGo(ctx context.Context, root string, runner toolrun.Runner) ([]Modu
 			if err == io.EOF {
 				break
 			}
-			return nil, nil, "", fmt.Errorf("initcfg: parse go list output: %w", err)
+			return goMemberPackages{}, fmt.Errorf("initcfg: parse go list output: %w", err)
 		}
-		if pkg.Module != nil && pkg.Module.Path != "" && modPath == "" {
-			modPath = pkg.Module.Path
+		if pkg.Module != nil && pkg.Module.Path != "" && m.modPath == "" {
+			m.modPath = pkg.Module.Path
 		}
-		rel := stripPrefix(pkg.ImportPath, modPath)
-		if rel == "" {
-			// Root package — record as a top-level module.
-			rel = "."
+		m.pkgs = append(m.pkgs, pkg)
+	}
+	return m, nil
+}
+
+// memberRelPath joins a member's root-relative directory with a package path
+// relative to that member. The root member's own root package is ".".
+func memberRelPath(memberRel, pkgRel string) string {
+	switch {
+	case memberRel == "." && pkgRel == "":
+		return "."
+	case memberRel == ".":
+		return pkgRel
+	case pkgRel == "":
+		return memberRel
+	default:
+		return memberRel + "/" + pkgRel
+	}
+}
+
+// firstPartyImport resolves an import path to the root-relative path of a
+// package in one of the listed members, choosing the longest matching module
+// path so a nested module wins over its parent.
+func firstPartyImport(imp string, members []goMemberPackages) (string, bool) {
+	best := -1
+	for i, m := range members {
+		if m.modPath == "" || (imp != m.modPath && !strings.HasPrefix(imp, m.modPath+"/")) {
+			continue
 		}
-		key := groupKey(rel)
-		segments[key] = append(segments[key], rel)
-		// Collect intra-module imports for edge derivation.
-		var intraImports []string
-		for _, imp := range pkg.Imports {
-			impRel := stripPrefix(imp, modPath)
-			if impRel != imp { // only if the prefix was stripped (i.e. same module)
-				intraImports = append(intraImports, impRel)
-			}
-		}
-		if len(intraImports) > 0 {
-			pkgImports[rel] = intraImports
+		if best < 0 || len(m.modPath) > len(members[best].modPath) {
+			best = i
 		}
 	}
-
-	mods := buildGoModules(segments)
-	edges := buildGoEdges(segments, pkgImports)
-	return mods, edges, modPath, nil
+	if best < 0 {
+		return "", false
+	}
+	return memberRelPath(members[best].rel, stripPrefix(imp, members[best].modPath)), true
 }
 
 // buildGoEdges derives module-level dependency edges from the package-level
@@ -155,6 +230,11 @@ func groupKey(rel string) string {
 }
 
 // buildGoModules converts the segments map into sorted ModuleDef slice.
+//
+// It assigns no layer. Directory names do not prove an architectural layer,
+// and a guess that puts domain, application and adapters in one layer writes a
+// direction rule that can never fire; Render asks the owner to declare layers
+// instead.
 func buildGoModules(segments map[string][]string) []ModuleDef {
 	// Sort keys for determinism.
 	keys := make([]string, 0, len(segments))
@@ -169,27 +249,32 @@ func buildGoModules(segments map[string][]string) []ModuleDef {
 			// Skip the root package as a standalone module entry.
 			continue
 		}
-		name := moduleNameFromKey(key)
-		// Doublestar glob (classify/extractor node paths use "/"-separated package
-		// and file paths). "key/**" matches the package node "key" and its files.
-		// NOT the go-list "key/..." form, which doublestar does not match.
-		paths := []string{key + "/**"}
-		layer := inferLayerFromKey(key)
+		pkgs := append([]string(nil), segments[key]...)
+		sort.Strings(pkgs)
 
-		// Public is the importable package path itself (an import targets the package
-		// node "key"). Go cross-package imports go through exported APIs — the compiler
-		// forbids importing unexported symbols — so they are contract coupling, not
-		// intrusive. (Go's `internal/` is module-visibility, NOT BC-intrusive; do not
-		// mark it internal here, or normal shared code reads as a false leak.)
-		public := []string{key}
-		var internal []string
+		// Public is the importable package path itself (an import targets the
+		// package node "key"). Go cross-package imports go through exported APIs —
+		// the compiler forbids importing unexported symbols — so they are contract
+		// coupling, not intrusive. (Go's `internal/` is module-visibility, NOT
+		// BC-intrusive; do not mark it internal here, or normal shared code reads
+		// as a false leak.) It is emitted only when "key" itself is a package: a
+		// bare grouping directory (internal/domain holding only order/ and
+		// billing/) names no graph node, and a public entry that matches nothing
+		// is a config lint error.
+		var public []string
+		if slices.Contains(pkgs, key) {
+			public = []string{key}
+		}
 
 		mods = append(mods, ModuleDef{
-			Name:     name,
-			Paths:    paths,
-			Public:   public,
-			Internal: internal,
-			Layer:    layer,
+			Name: moduleNameFromKey(key),
+			// Doublestar glob (classify/extractor node paths use "/"-separated
+			// package and file paths). "key/**" matches the package node "key" and
+			// its files. NOT the go-list "key/..." form, which doublestar does not
+			// match.
+			Paths:   []string{key + "/**"},
+			Public:  public,
+			Sources: pkgs,
 		})
 	}
 	return mods
@@ -203,31 +288,4 @@ func moduleNameFromKey(key string) string {
 		return parts[1]
 	}
 	return strings.Join(parts, "_")
-}
-
-// inferLayerFromKey maps common Go path prefixes to architectural layer names.
-func inferLayerFromKey(key string) string {
-	parts := strings.Split(key, "/")
-	top := parts[0]
-	switch top {
-	case layerCmd:
-		return layerCmd
-	case "internal":
-		second := ""
-		if len(parts) >= 2 {
-			second = parts[1]
-		}
-		switch second {
-		case layerModel:
-			return layerModel
-		case "toolrun", adapterExtract, "output", "history", "initcfg":
-			return layerAdapter
-		case layerEngine:
-			return layerEngine
-		default:
-			return layerCore
-		}
-	default:
-		return layerCore
-	}
 }

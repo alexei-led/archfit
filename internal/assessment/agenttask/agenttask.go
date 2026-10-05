@@ -20,6 +20,28 @@ import (
 // not by import, since agenttask must not depend on the rules package.
 const matchedByModuleKey = "module"
 
+// Rule types whose violation survives any route to the target, its public API
+// included. They select a repair goal, and forbidsTarget keeps the target's
+// public surface out of their constraints.
+const (
+	ruleTypeForbiddenDependency     = "forbidden_dependency"
+	ruleTypeForbiddenLayerDirection = "forbidden_layer_direction"
+	ruleTypeCycle                   = "cycle"
+	ruleTypeNewCrossModule          = "new_cross_module_dependency"
+)
+
+// Rule types with a dedicated goal template, and the MatchedBy keys those
+// templates read: a module cycle lists its members, a pattern finding names its
+// pattern. Both agree with internal/assessment/rules by convention.
+const (
+	ruleTypeModuleCycle      = "module_cycle"
+	edgeKindModuleDependency = "module_dependency" // a module-pair finding's edge kind
+	matchedByCycleModulesKey = "cycle_modules"
+	matchedByCycleSizeKey    = "cycle_size"
+	ruleTypeForbiddenPattern = "forbidden_pattern"
+	matchedByPatternKey      = "pattern"
+)
+
 // PathResolver carries the filesystem facts filesFor needs to turn a config
 // module key, a Rust "crate::mod" module key, or a Python dotted module key
 // into a path that actually exists on disk — without agenttask itself ever
@@ -135,6 +157,16 @@ func (r PathResolver) resolve(candidate string) (string, bool) {
 	if r.exists(candidate) {
 		return candidate, true
 	}
+	if dir, ok := r.crateRootDirs[candidate]; ok {
+		// A crate-level node or module root: a package name or crate
+		// identifier, never a path. Root crates (Dir "") resolve to src.
+		if dir != "" && r.exists(dir) {
+			return dir, true
+		}
+		if src := path.Join(dir, "src"); r.exists(src) {
+			return src, true
+		}
+	}
 	if crate, modPath, ok := strings.Cut(candidate, "::"); ok {
 		if dir, ok := r.crateRootDirs[crate]; ok {
 			// Root crates carry Dir "" — path.Join drops the empty segment, so
@@ -193,6 +225,8 @@ func pythonModuleFileCandidates(modulePath string) []string {
 // is disabled). When non-empty, each task is enriched with the declarations
 // found in its referenced files (compact agent context). When empty the output
 // is structurally identical to pre-enrichment builds.
+// seams is the seam ledger. A coupling-gate finding names only a module pair,
+// so its task takes its files from that seam's qualifying edges.
 //
 // Output is sorted by FindingID; all nested slices carry a total order.
 func Build(
@@ -201,6 +235,7 @@ func Build(
 	modulePublic map[string][]string,
 	validation []string,
 	syntaxFacts []evidence.SyntaxFact,
+	seams []result.Seam,
 	resolver PathResolver,
 ) []result.AgentTask {
 	// Build a file→facts index once so the per-task lookup is O(1).
@@ -211,6 +246,10 @@ func Build(
 			factsByFile[sf.File] = append(factsByFile[sf.File], sf)
 		}
 	}
+	seamPaths := make(map[[2]string][]string, len(seams))
+	for _, s := range seams {
+		seamPaths[[2]string{s.FromModule, s.ToModule}] = s.QualifyingPaths
+	}
 
 	tasks := []result.AgentTask{}
 	for _, f := range findings {
@@ -220,17 +259,27 @@ func Build(
 		if f.Status != finding.StatusNew && f.Status != finding.StatusExpiredWaiver {
 			continue
 		}
-		files := filesFor(f, resolver)
+		seamGate := f.RuleID == finding.RuleIDCouplingGate
+		var seamEvidence []string
+		if seamGate {
+			seamEvidence = seamPaths[[2]string{f.Edge.From.Module, f.Edge.To.Module}]
+		}
+		files := filesFor(f, seamEvidence, resolver)
+		ruleType := ruleTypes[f.RuleID]
 		task := result.AgentTask{
 			FindingID:   f.ID,
 			RuleID:      f.RuleID,
-			RepairKind:  repairKind(ruleTypes[f.RuleID]),
-			Goal:        goalFor(ruleTypes[f.RuleID], f),
-			Constraints: constraintsFor(f, modulePublic),
+			RepairKind:  repairKind(ruleType),
+			Goal:        goalFor(ruleType, f),
+			Constraints: constraintsFor(f, ruleType, modulePublic),
 			Files:       files,
 			Validation:  append([]string{}, validation...),
 		}
-		if factsByFile != nil {
+		// A seam task's files span both modules — up to forty paths of
+		// evidence — and a module-cycle task's span up to fifty import sites
+		// of one module, repeated for every pair of the cycle; their
+		// declarations would bury the import to cut and dominate the report.
+		if factsByFile != nil && !seamGate && ruleType != ruleTypeModuleCycle {
 			task.Declarations = declarationsFor(files, factsByFile)
 		}
 		tasks = append(tasks, task)
@@ -248,16 +297,23 @@ func goalFor(ruleType string, f finding.Finding) string {
 		toMod = to
 	}
 	switch ruleType {
-	case "forbidden_dependency":
+	case ruleTypeForbiddenDependency:
 		return fmt.Sprintf("Remove the forbidden dependency from %s on %s; move shared behavior to a location permitted by the existing dependency rules.", from, to)
 	case "public_api_only", "internal_api_access":
 		return fmt.Sprintf("Replace the internal-API access from %s to %s with %s's public API.", from, to, toMod)
-	case "forbidden_layer_direction":
+	case ruleTypeForbiddenLayerDirection:
 		return fmt.Sprintf("Remove the layer-inverting dependency from %s to %s: inner layers must not import outer layers — introduce an abstraction in the inner layer instead.", from, to)
-	case "new_cross_module_dependency":
+	case ruleTypeNewCrossModule:
 		return fmt.Sprintf("Remove the new cross-module dependency from %s to %s. If the dependency is intentional, request an architecture-owner decision before changing policy or accepted debt.", from, to)
-	case "cycle":
+	case ruleTypeCycle:
 		return "Break the import cycle: " + f.Why
+	case ruleTypeModuleCycle:
+		fromMod, toMod := f.Edge.From.Module, f.Edge.To.Module
+		return fmt.Sprintf("Break the dependency cycle among declared modules %s by removing one direction of it: drop the %s -> %s dependency, or the dependency path from %s back to %s. Routing it through another module keeps the cycle.",
+			cycleMembers(f), fromMod, toMod, toMod, fromMod)
+	case ruleTypeForbiddenPattern:
+		return fmt.Sprintf("Remove the code in %s that matches forbidden pattern %q at the listed lines: replace it, or move that behavior to code the rule's scope does not cover.",
+			from, f.MatchedBy[matchedByPatternKey])
 	default:
 		if f.Why != "" {
 			return f.Why
@@ -266,16 +322,34 @@ func goalFor(ruleType string, f finding.Finding) string {
 	}
 }
 
+// maxGoalMemberBytes bounds the cycle member list a goal quotes; the App caps
+// goal text, and a large strongly connected component can name every module.
+const maxGoalMemberBytes = 300
+
+// cycleMembers is the member list a module-cycle goal quotes: the whole list
+// when it is short, otherwise its size and where the full list lives.
+func cycleMembers(f finding.Finding) string {
+	members := f.MatchedBy[matchedByCycleModulesKey]
+	if len(members) <= maxGoalMemberBytes {
+		return members
+	}
+	return fmt.Sprintf("(%s modules, listed in matched_by.cycle_modules)", f.MatchedBy[matchedByCycleSizeKey])
+}
+
 func repairKind(ruleType string) string {
-	if ruleType == "new_cross_module_dependency" {
+	if ruleType == ruleTypeNewCrossModule {
 		return "needs_owner_decision"
 	}
 	return "code_change"
 }
 
 // constraintsFor joins the finding's constraint text, its allowed
-// alternatives, and the target module's public surface.
-func constraintsFor(f finding.Finding, modulePublic map[string][]string) []string {
+// alternatives, and — unless the rule forbids the target route — the target
+// module's public surface. A forbidden dependency, an inverted layer, a node or
+// module cycle, or a new cross-module dependency is still a violation through
+// the target's public API, so naming that surface would route the agent
+// straight back into the violation.
+func constraintsFor(f finding.Finding, ruleType string, modulePublic map[string][]string) []string {
 	out := []string{}
 	if f.Constraint != "" {
 		out = append(out, f.Constraint)
@@ -283,10 +357,26 @@ func constraintsFor(f finding.Finding, modulePublic map[string][]string) []strin
 	for _, alt := range f.Alternatives {
 		out = append(out, "allowed alternative: "+alt)
 	}
+	if forbidsTarget(ruleType) {
+		return out
+	}
 	if pub := modulePublic[f.Edge.To.Module]; len(pub) > 0 {
 		out = append(out, fmt.Sprintf("public surface of module %q: %v", f.Edge.To.Module, pub))
 	}
 	return out
+}
+
+// forbidsTarget reports whether a rule type's violation survives any route to
+// the target, the target's public API included: the dependency is forbidden,
+// the layer stays inverted, the cycle stays closed, or the cross-module
+// dependency stays new.
+func forbidsTarget(ruleType string) bool {
+	switch ruleType {
+	case ruleTypeForbiddenDependency, ruleTypeForbiddenLayerDirection,
+		ruleTypeCycle, ruleTypeModuleCycle, ruleTypeNewCrossModule:
+		return true
+	}
+	return false
 }
 
 // declarationsFor returns the SyntaxFacts for the given files, in file + start-line
@@ -301,14 +391,14 @@ func declarationsFor(files []string, factsByFile map[string][]evidence.SyntaxFac
 }
 
 // filesFor returns the deduplicated, sorted repo-relative files involved: edge
-// endpoints plus every finding location, each resolved to a path that exists
-// on disk. An entry that cannot be resolved (e.g. a bare config module key or
-// a dotted/"::" module id copied verbatim onto Edge.From/To.Path) is dropped
+// endpoints plus every finding location, plus seamEvidence (a coupling-gate
+// finding's qualifying-edge paths), each resolved to a path that exists on
+// disk. An entry that cannot be resolved (e.g. a bare config module key or a
+// dotted/"::" module id copied verbatim onto Edge.From/To.Path) is dropped
 // rather than emitted — this is the contract agents trust blindly. When
-// dropping leaves the set empty, the finding's module root dir (config
-// paths:) is used as a last resort; if that isn't resolvable either, Files is
-// legitimately empty.
-func filesFor(f finding.Finding, r PathResolver) []string {
+// dropping leaves the set empty, a module root dir (config paths:) is used as
+// a last resort; if that isn't resolvable either, Files is legitimately empty.
+func filesFor(f finding.Finding, seamEvidence []string, r PathResolver) []string {
 	set := map[string]struct{}{}
 	add := func(candidate string) {
 		if resolved, ok := r.resolve(candidate); ok {
@@ -333,15 +423,19 @@ func filesFor(f finding.Finding, r PathResolver) []string {
 		}
 		add(p)
 	}
+	for _, p := range seamEvidence {
+		add(p)
+	}
 
 	if len(set) == 0 {
-		if mod := f.MatchedBy[matchedByModuleKey]; mod != "" {
+		for _, mod := range rootFallbackModules(f) {
 			// The root goes through resolve, not a bare dir check: a Python
 			// module's root is a dotted module-ID prefix that only the
 			// dotted-candidate probe can turn into a real path.
 			if root, ok := r.moduleRootDirs[mod]; ok && root != "" {
 				if resolved, rok := r.resolve(root); rok {
 					set[resolved] = struct{}{}
+					break
 				}
 			}
 		}
@@ -353,4 +447,19 @@ func filesFor(f finding.Finding, r PathResolver) []string {
 	}
 	sort.Strings(files)
 	return files
+}
+
+// rootFallbackModules names the modules whose declared root stands in when no
+// evidence resolved: the module a public_api_* finding is about, or the two
+// ends of a coupling-gate seam or a module_cycle pair, source first because the
+// repair starts there. A module_cycle pair over cargo-modules crate::mod
+// modules has no import site to locate.
+func rootFallbackModules(f finding.Finding) []string {
+	if mod := f.MatchedBy[matchedByModuleKey]; mod != "" {
+		return []string{mod}
+	}
+	if f.RuleID == finding.RuleIDCouplingGate || f.Edge.Kind == edgeKindModuleDependency {
+		return []string{f.Edge.From.Module, f.Edge.To.Module}
+	}
+	return nil
 }

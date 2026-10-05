@@ -45,36 +45,38 @@ The CLI changed in the 2026-07 redesign. Update old scripts before upgrading.
 
 Use this when you know the job, not the command.
 
-| I want to...                                                        | Run this                                                                                                      |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| review architecture locally without failing my shell step           | `archfit analyze -c .archfit.yaml`                                                                            |
-| fail CI on blocking findings or warnings                            | `archfit check -c .archfit.yaml`                                                                              |
-| accept the current findings as the baseline                         | `archfit baseline -c .archfit.yaml`                                                                           |
-| understand one finding in detail                                    | `archfit explain <fingerprint-prefix> -c .archfit.yaml`                                                       |
-| verify analyzers are installed, or install what archfit can install | `archfit doctor` or `archfit doctor --fix`                                                                    |
-| create the first config file for a repo                             | `archfit config init --root .`                                                                                |
-| sync an existing config to the current repo structure               | `archfit config update -c .archfit.yaml`                                                                      |
-| read the config review from a script or an agent                    | `archfit config update --json -c .archfit.yaml`                                                               |
-| see what a candidate config would measure on the same code          | `archfit config compare candidate.archfit.yaml -c .archfit.yaml`                                              |
-| draft AI labels or module metadata for review                       | `archfit config enrich <kind>` where `<kind>` is `labels`, `abstained`, `owner`, `volatility`, or `subdomain` |
+| I want to...                                                         | Run this                                                                                                      |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| review architecture locally without failing my shell step            | `archfit analyze -c .archfit.yaml`                                                                            |
+| fail CI on blocking findings or warnings                             | `archfit check -c .archfit.yaml`                                                                              |
+| accept the current findings as the baseline                          | `archfit baseline -c .archfit.yaml`                                                                           |
+| understand one finding in detail                                     | `archfit explain <fingerprint-prefix> -c .archfit.yaml`                                                       |
+| verify analyzers are installed, or install what archfit can install  | `archfit doctor` or `archfit doctor --fix`                                                                    |
+| create the first config file for a repo                              | `archfit config init --root .`                                                                                |
+| sync an existing config to the current repo structure                | `archfit config update -c .archfit.yaml`                                                                      |
+| read the config review from a script or an agent                     | `archfit config update --json -c .archfit.yaml`                                                               |
+| find rules that can never fire and config values archfit cannot read | `archfit config lint -c .archfit.yaml`                                                                        |
+| see what a candidate config would measure on the same code           | `archfit config compare candidate.archfit.yaml -c .archfit.yaml`                                              |
+| draft AI labels or module metadata for review                        | `archfit config enrich <kind>` where `<kind>` is `labels`, `abstained`, `owner`, `volatility`, or `subdomain` |
 
 ## Exit codes
 
 `archfit check` is the only command that uses all four exit codes. Its exit code
 is the architecture verdict, nothing else.
 
-| Code | Meaning                                                                                                               | Commands that produce it                                                                                                                                                                                      |
-| ---- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | `healthy` — every dimension measured, every hard gate passing, no active diagnostic. For `analyze`, any valid report. | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config compare`, `archfit config enrich ...` |
-| `1`  | `blocked` — an active hard-gate finding, or a required analyzer that did not run under `--require-tools`.             | `archfit check`; `archfit analyze` never exits `1` on a successful run                                                                                                                                        |
-| `2`  | `needs_attention` — no blocker, but an active diagnostic or a partial/unmeasured dimension.                           | `archfit check`                                                                                                                                                                                               |
-| `3`  | Usage, parse, config, or runtime error. No valid report was produced.                                                 | All commands                                                                                                                                                                                                  |
+| Code | Meaning                                                                                                                                                     | Commands that produce it                                                                                                                                                                                                             |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0`  | `healthy` — every dimension measured, every hard gate passing, no active diagnostic. For `analyze`, any valid report.                                       | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config lint`, `archfit config compare`, `archfit config enrich ...` |
+| `1`  | `blocked` — an active hard-gate finding, a required analyzer that did not run under `--require-tools`, or a tripped metric ratchet (`metrics.<name>.gate`). For `config lint`, at least one error diagnostic. | `archfit check`, `archfit config lint`; `archfit analyze` never exits `1` on a successful run |
+| `2`  | `needs_attention` — no blocker, but an active diagnostic or a partial/unmeasured dimension.                                                                 | `archfit check`                                                                                                                                                                                                                      |
+| `3`  | Usage, parse, config, or runtime error. No valid report was produced.                                                                                       | All commands                                                                                                                                                                                                                         |
 
 Notes:
 
 - `archfit analyze` always exits `0` after a successful analysis, whatever the verdict.
 - `archfit analyze --require-tools` only changes the rendered verdict. It does not change the exit code on success.
 - `archfit baseline`, `archfit explain`, `archfit doctor`, and the `config` commands are success-or-error commands: `0` or `3`.
+  `archfit config lint` is the exception: it exits `1` when it reports an error diagnostic.
 - Exit `0` is reachable when all nine dimensions are measured, hard gates pass,
   and no diagnostic is active. Missing supplied coverage, a non-comparable
   persisted baseline, incomplete declared operational topology, or an
@@ -136,23 +138,23 @@ Behavior:
 
 Flags:
 
-| Flag              | Type        | Default                           | Effect                                                                                                        | Example                                                    |
-| ----------------- | ----------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `-c, --config`    | path        | `.archfit.yaml`                   | Config file to load.                                                                                          | `archfit analyze -c ./policy/.archfit.yaml`                |
-| `--root`          | path        | directory of `--config`           | Repo root to analyze. Use when the policy file lives outside the checked-out repo.                            | `archfit analyze --root ../repo -c ./policy/.archfit.yaml` |
-| `--base`          | git ref     | none                              | Compare the current run to a base ref and report the comparison and its comparability reasons.                | `archfit analyze --base origin/main`                       |
-| `--ai-summary`    | bool        | `false`                           | Append an off-gate AI narrative review after the deterministic render. Requires `ai:` config.                 | `archfit analyze --ai-summary -c .archfit.yaml`            |
-| `--refresh`       | bool        | `false`                           | Re-run extractors, bypass cached reads, and refresh the cache with fresh results.                             | `archfit analyze --refresh -c .archfit.yaml`               |
-| `--json`          | bool        | `false`                           | Shorthand for `--format json`.                                                                                | `archfit analyze --json`                                   |
-| `--markdown`      | bool        | `false`                           | Shorthand for `--format markdown`.                                                                            | `archfit analyze --markdown > archfit-report.md`           |
-| `--sarif`         | bool        | `false`                           | Shorthand for `--format sarif`.                                                                               | `archfit analyze --sarif > archfit.sarif`                  |
-| `--format`        | enum list   | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`. Repeatable.        | `archfit analyze --format text --format json`              |
-| `--no-advisories` | bool        | `false`                           | Hide informational Balanced Coupling advisories from the output.                                              | `archfit analyze --no-advisories`                          |
-| `--min-severity`  | enum        | empty                             | Show only advisories at or above `low`, `medium`, `high`, or `critical`.                                      | `archfit analyze --min-severity high`                      |
-| `--lang`          | string list | none                              | Force named analyzers on. Repeatable. See the language setup docs for valid names.                            | `archfit analyze --lang go --lang ts`                      |
-| `--require-tools` | bool        | `false`                           | Mark missing required analyzer tools as fail in the rendered verdict. The command still exits `0` on success. | `archfit analyze --require-tools`                          |
-| `--progress`      | enum        | `auto`                            | Progress reporting on stderr: `auto`, `plain`, or `none`.                                                     | `archfit analyze --progress plain`                         |
-| `-q, --quiet`     | bool        | `false`                           | Suppress progress output.                                                                                     | `archfit analyze -q --json`                                |
+| Flag              | Type        | Default                           | Effect                                                                                                                                   | Example                                                    |
+| ----------------- | ----------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `-c, --config`    | path        | `.archfit.yaml`                   | Config file to load.                                                                                                                     | `archfit analyze -c ./policy/.archfit.yaml`                |
+| `--root`          | path        | directory of `--config`           | Repo root to analyze. Use when the policy file lives outside the checked-out repo.                                                       | `archfit analyze --root ../repo -c ./policy/.archfit.yaml` |
+| `--base`          | git ref     | none                              | Compare the current run to a base ref and report the comparison and its comparability reasons.                                           | `archfit analyze --base origin/main`                       |
+| `--ai-summary`    | bool        | `false`                           | Append an off-gate AI narrative review after the deterministic render. Requires `ai:` config.                                            | `archfit analyze --ai-summary -c .archfit.yaml`            |
+| `--refresh`       | bool        | `false`                           | Re-run extractors, bypass cached reads, and refresh the cache with fresh results.                                                        | `archfit analyze --refresh -c .archfit.yaml`               |
+| `--json`          | bool        | `false`                           | Shorthand for `--format json`.                                                                                                           | `archfit analyze --json`                                   |
+| `--markdown`      | bool        | `false`                           | Shorthand for `--format markdown`.                                                                                                       | `archfit analyze --markdown > archfit-report.md`           |
+| `--sarif`         | bool        | `false`                           | Shorthand for `--format sarif`.                                                                                                          | `archfit analyze --sarif > archfit.sarif`                  |
+| `--format`        | enum list   | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`. Repeatable.                                   | `archfit analyze --format text --format json`              |
+| `--no-advisories` | bool        | `false`                           | Drop advisory findings: Balanced Coupling advisories and violations of `gate: warn` rules. Dropped findings do not count as diagnostics. | `archfit analyze --no-advisories`                          |
+| `--min-severity`  | enum        | empty                             | Show only advisories at or above `low`, `medium`, `high`, or `critical`.                                                                 | `archfit analyze --min-severity high`                      |
+| `--lang`          | string list | none                              | Force a language on: `go`, `typescript` (`ts`), `python` (`py`), `rust` (`rs`). Repeatable. Analyzer names are rejected.                 | `archfit analyze --lang go --lang ts`                      |
+| `--require-tools` | bool        | `false`                           | Mark missing required analyzer tools as fail in the rendered verdict. The command still exits `0` on success.                            | `archfit analyze --require-tools`                          |
+| `--progress`      | enum        | `auto`                            | Progress reporting on stderr: `auto`, `plain`, or `none`.                                                                                | `archfit analyze --progress plain`                         |
+| `-q, --quiet`     | bool        | `false`                           | Suppress progress output.                                                                                                                | `archfit analyze -q --json`                                |
 
 Examples:
 
@@ -190,21 +192,21 @@ archfit check [flags]
 
 Flags:
 
-| Flag              | Type      | Default                           | Effect                                                                                                 | Example                                                  |
-| ----------------- | --------- | --------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
-| `-c, --config`    | path      | `.archfit.yaml`                   | Config file to load.                                                                                   | `archfit check -c .archfit.yaml`                         |
-| `--root`          | path      | directory of `--config`           | Repo root to analyze.                                                                                  | `archfit check --root ../repo -c ./policy/.archfit.yaml` |
-| `--base`          | git ref   | none                              | Compare the current branch against a base ref and report the comparison and its comparability reasons. | `archfit check --base origin/main`                       |
-| `--no-advisories` | bool      | `false`                           | Hide informational Balanced Coupling advisories from the output.                                       | `archfit check --no-advisories`                          |
-| `--min-severity`  | enum      | empty                             | Show only advisories at or above `low`, `medium`, `high`, or `critical`.                               | `archfit check --min-severity high`                      |
-| `--refresh`       | bool      | `false`                           | Re-run extractors and refresh the cache. Use after installing or updating analyzer tools.              | `archfit check --refresh`                                |
-| `--require-tools` | bool      | `false`                           | Exit non-zero when any required analyzer tool is missing.                                              | `archfit check --require-tools`                          |
-| `--json`          | bool      | `false`                           | Shorthand for `--format json`.                                                                         | `archfit check --json`                                   |
-| `--markdown`      | bool      | `false`                           | Shorthand for `--format markdown`.                                                                     | `archfit check --markdown > archfit-report.md`           |
-| `--sarif`         | bool      | `false`                           | Shorthand for `--format sarif`.                                                                        | `archfit check --sarif > archfit.sarif`                  |
-| `--format`        | enum list | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`. Repeatable. | `archfit check --format text --format json`              |
-| `--progress`      | enum      | `auto`                            | Progress reporting on stderr: `auto`, `plain`, or `none`.                                              | `archfit check --progress plain`                         |
-| `-q, --quiet`     | bool      | `false`                           | Suppress progress output.                                                                              | `archfit check -q --json`                                |
+| Flag              | Type      | Default                           | Effect                                                                                                                                   | Example                                                  |
+| ----------------- | --------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `-c, --config`    | path      | `.archfit.yaml`                   | Config file to load.                                                                                                                     | `archfit check -c .archfit.yaml`                         |
+| `--root`          | path      | directory of `--config`           | Repo root to analyze.                                                                                                                    | `archfit check --root ../repo -c ./policy/.archfit.yaml` |
+| `--base`          | git ref   | none                              | Compare the current branch against a base ref and report the comparison and its comparability reasons.                                   | `archfit check --base origin/main`                       |
+| `--no-advisories` | bool      | `false`                           | Drop advisory findings: Balanced Coupling advisories and violations of `gate: warn` rules. Dropped findings do not count as diagnostics. | `archfit check --no-advisories`                          |
+| `--min-severity`  | enum      | empty                             | Show only advisories at or above `low`, `medium`, `high`, or `critical`.                                                                 | `archfit check --min-severity high`                      |
+| `--refresh`       | bool      | `false`                           | Re-run extractors and refresh the cache. Use after installing or updating analyzer tools.                                                | `archfit check --refresh`                                |
+| `--require-tools` | bool      | `false`                           | Exit non-zero when any required analyzer tool is missing.                                                                                | `archfit check --require-tools`                          |
+| `--json`          | bool      | `false`                           | Shorthand for `--format json`.                                                                                                           | `archfit check --json`                                   |
+| `--markdown`      | bool      | `false`                           | Shorthand for `--format markdown`.                                                                                                       | `archfit check --markdown > archfit-report.md`           |
+| `--sarif`         | bool      | `false`                           | Shorthand for `--format sarif`.                                                                                                          | `archfit check --sarif > archfit.sarif`                  |
+| `--format`        | enum list | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`. Repeatable.                                   | `archfit check --format text --format json`              |
+| `--progress`      | enum      | `auto`                            | Progress reporting on stderr: `auto`, `plain`, or `none`.                                                                                | `archfit check --progress plain`                         |
+| `-q, --quiet`     | bool      | `false`                           | Suppress progress output.                                                                                                                | `archfit check -q --json`                                |
 
 Examples:
 
@@ -272,12 +274,12 @@ blanket migration path: review the complete capture before committing it.
 
 Flags:
 
-| Flag              | Type | Default                 | Effect                                                                | Example                                                 |
-| ----------------- | ---- | ----------------------- | --------------------------------------------------------------------- | ------------------------------------------------------- |
-| `-c, --config`    | path | `.archfit.yaml`         | Config file.                                                          | `archfit baseline -c .archfit.yaml`                     |
-| `-r, --root`      | path | directory of `--config` | Repo root to analyze.                                                 | `archfit baseline -r ../repo -c ./policy/.archfit.yaml` |
-| `--no-advisories` | bool | `false`                 | Exclude informational Balanced Coupling advisories from the baseline. | `archfit baseline --no-advisories`                      |
-| `--refresh`       | bool | `false`                 | Re-run extractors and refresh the cache.                              | `archfit baseline --refresh`                            |
+| Flag              | Type | Default                 | Effect                                                                                                          | Example                                                 |
+| ----------------- | ---- | ----------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `-c, --config`    | path | `.archfit.yaml`         | Config file.                                                                                                    | `archfit baseline -c .archfit.yaml`                     |
+| `-r, --root`      | path | directory of `--config` | Repo root to analyze.                                                                                           | `archfit baseline -r ../repo -c ./policy/.archfit.yaml` |
+| `--no-advisories` | bool | `false`                 | Exclude advisory findings from the baseline: Balanced Coupling advisories and violations of `gate: warn` rules. | `archfit baseline --no-advisories`                      |
+| `--refresh`       | bool | `false`                 | Re-run extractors and refresh the cache.                                                                        | `archfit baseline --refresh`                            |
 
 Examples:
 
@@ -400,6 +402,40 @@ Notes:
 - Use `-o -` to write the rendered config to stdout.
 - Without `--force`, an existing valid config is left untouched.
 - `--apply` requires `--ai-classify`.
+- Language presence comes from each extractor's own applicability check, the
+  same one analysis uses. A present language is written `enabled: true` (Rust:
+  `auto`); an absent one stays `auto`. Init never writes `enabled: false`.
+- Go modules come from every Go member the extractor loads: `go.work` members,
+  a root `go.mod`, or nested `go.mod` directories. A `go.work` monorepo with no
+  root `go.mod` is discovered member by member.
+- Init proposes a module only where the source inventory that `config lint`
+  and `check` read holds production code for it. A `mocks/` package, a
+  package of only generated or only test files, and a tree excluded by default
+  (`reports/`, `testdata/`, `build/`, `dist/`, `vendor/`) get no module, even
+  when `go list` or a `src/` subdirectory scan finds them. When Go and
+  TypeScript discovery propose the same directory, the Go module keeps it.
+  Rust crates from `cargo metadata` are always kept.
+- `public:` is written only for a directory that is itself a Go package with
+  production code; a bare grouping directory names no graph node.
+- Starter rules: `module_cycle` (`no-module-cycles`) always, and
+  `forbidden_layer_direction` (`no-layer-back-edges`) when discovery inferred
+  two or more layers. Each gets `gate: fail` when the init-time import graph
+  covers every module and shows no violation, and `gate: warn` with a comment
+  otherwise: the current violation count, or "no complete import graph" with a
+  `Why:` line. The graph is incomplete when TypeScript or Python modules exist
+  (their discovery builds no graph), when Rust is present (analysis adds
+  intra-crate modules), or when a Go module also owns source in another
+  language, such as TypeScript under `web/ui/`, which init's Go graph omits.
+- Init does not guess layers from directory or package names, in any language.
+  The one exception is evidence, not a name: for a Rust workspace, each crate
+  is put in a tier of the `cargo metadata` dependency graph (`layer-0` for
+  crates that depend on no other member, then one tier above the deepest crate
+  it depends on). Dev-dependencies are left out, as in analysis, so every
+  current crate edge points to an earlier tier and the rule starts with zero
+  back-edges. With fewer than two layers, init writes a commented `layers:`
+  example and a commented `no-layer-back-edges` rule: list your layers
+  innermost first, set `layer:` on each module, and uncomment the rule.
+- The generated config passes `archfit config lint`.
 
 Flags:
 
@@ -479,11 +515,18 @@ Review model:
 
 | Field             | Applied by `--apply`? | Meaning                                                                               |
 | ----------------- | --------------------- | ------------------------------------------------------------------------------------- |
-| `added_modules`   | yes                   | Modules discovery found that the config does not declare.                             |
+| `added_modules`   | yes                   | Discovered modules holding source no configured module owns.                          |
 | `path_drift`      | yes                   | Declared modules whose configured paths differ from the discovered paths.             |
 | `settings`        | yes                   | Non-module settings, such as the Rust deep-analysis defaults.                         |
 | `name_drift`      | no                    | A configured module and a discovered module own the same paths under different names. |
 | `removed_modules` | no                    | Configured modules discovery did not emit.                                            |
+
+A discovered module whose every source (Go package, Python package) a
+configured module already owns, by the same most-specific match analysis uses,
+is not added: the curated map just groups the code more finely or more coarsely
+than discovery. Its owning stanzas are not reported as removed, and their fields
+are checked. TypeScript and Rust modules carry no source list and are matched by
+name.
 
 `name_drift` and `removed_modules` are review-only. Resolving either means
 re-keying or deleting a stanza, which discards its `owner`, `subdomain`,
@@ -531,6 +574,104 @@ archfit config update --apply -c .archfit.yaml
 archfit config update --ai-classify -c .archfit.yaml
 archfit config update --ai-classify --apply -c .archfit.yaml
 archfit config update --ai-classify --refresh -c .archfit.yaml
+```
+
+## `archfit config lint`
+
+Purpose:
+
+- Report config defects that loading accepts but that silently weaken the policy.
+- Judge them against the source tree that `check` scans, without running any analyzer.
+
+Use cases:
+
+- catching a rule that can never fire after a directory rename;
+- catching a typo in `volatility:`, `subdomain:`, or `layer:` before it drops a finding;
+- a fast CI or pre-commit step next to `archfit check`.
+
+Synopsis:
+
+```sh
+archfit config lint [flags]
+```
+
+Exit codes:
+
+| Code | Meaning                                                       |
+| ---- | ------------------------------------------------------------- |
+| `0`  | No error diagnostic. Warnings and info lines may still print. |
+| `1`  | At least one error diagnostic.                                |
+| `3`  | The config cannot be read, parsed, or validated.              |
+
+Diagnostics:
+
+| Code                     | Severity                       | Meaning                                                                                                                                                                                                                                                        |
+| ------------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dead_selector`          | error (warning on `gate: off`) | A `forbidden_dependency`, `public_api_only`, `internal_api_access`, or `forbidden_pattern` (`from:` only) selector matches no scanned source, or (dependency rules) only source no dependency producer analyses. `check` lists the same rule as not evaluated. |
+| `guard_rule`             | info                           | A `guard: true` rule whose selector matches nothing, as intended.                                                                                                                                                                                              |
+| `guard_matches_source`   | warning                        | A `guard: true` rule whose selectors all match source: the guarded path exists again.                                                                                                                                                                          |
+| `unknown_volatility`     | error                          | `modules.<m>.volatility` is not `high`, `medium`, `low`, `frozen`, or `legacy`.                                                                                                                                                                                |
+| `unknown_subdomain`      | error                          | `modules.<m>.subdomain` is not `core`, `supporting`, or `generic`.                                                                                                                                                                                             |
+| `undeclared_layer`       | error                          | `modules.<m>.layer` is not declared in `layers:`.                                                                                                                                                                                                              |
+| `public_outside_module`  | error                          | A `public:` entry is outside the module's own `paths:`.                                                                                                                                                                                                        |
+| `public_matches_nothing` | error                          | A `public:` entry names no scanned package or module.                                                                                                                                                                                                          |
+| `ambiguous_ownership`    | error                          | Two modules claim the same source at equal glob specificity; the first by name silently wins.                                                                                                                                                                  |
+
+Notes:
+
+- A dead selector is decided by the predicate rule evaluation uses, over the
+  same source inventory, so lint and a `check` of the same config agree, with
+  two exceptions. Lint runs no `cargo metadata`, so it leaves selectors a Rust
+  crate could spell undecided where `check` can list them as not evaluated.
+  `check --lang` turns on a language the config switches off, which changes
+  the source in scope; lint reads the config as written. A selector spelled
+  with the Go module path (`example.com/shop/internal/x`), a leading `./`,
+  `../`, `/` or `!`, or an extglob `!(...)` never matches. Dependency-rule
+  selectors are read in each language's edge spelling; see
+  [Selectors that match nothing](configuration-reference.md#selectors-that-match-nothing).
+  A `to:` selector that names no first-party source, such as `net/http` or
+  `github.com/...`, is an external ban and is never dead. Neither is a `to:` selector that names a Go
+  standard-library package (as listed by `go list std` for the toolchain in the
+  repository) when a first-party directory shares its first segment, such as
+  `database/sql` beside a top-level `database/`.
+- Mark a rule that matches nothing on purpose, such as a ban on re-introducing
+  a deleted package, with `guard: true`.
+- Unknown `volatility`, `subdomain`, and `layer` values still load in config
+  schema v2. `analyze` and `check` print them as config warnings.
+- Rust crate selectors are not judged: crate names need `cargo metadata`, which
+  lint does not run.
+- JSON output (`--json`) is `archfit.config-lint.v1`:
+
+```json
+{
+  "schema_version": "archfit.config-lint.v1",
+  "diagnostics": [
+    {
+      "code": "dead_selector",
+      "severity": "error",
+      "path": "rules[billing_not_catalog].to",
+      "message": "to: internal/catalog/** matches no scanned source; fix the selector or set guard: true"
+    }
+  ]
+}
+```
+
+- Text output prints one line per diagnostic: `<severity> <code> <path>: <message>`.
+  A clean config prints nothing.
+
+Flags:
+
+| Flag           | Type | Default                     | Description                                                       | Example                                        |
+| -------------- | ---- | --------------------------- | ----------------------------------------------------------------- | ---------------------------------------------- |
+| `-c, --config` | path | `.archfit.yaml`             | Config file path.                                                 | `archfit config lint -c .archfit.yaml`         |
+| `-r, --root`   | path | analysis root of `--config` | Repository root to lint against, resolved as `check` resolves it. | `archfit config lint -r . -c ci/.archfit.yaml` |
+| `--json`       | bool | `false`                     | Emit the diagnostics as JSON.                                     | `archfit config lint --json`                   |
+
+Examples:
+
+```sh
+archfit config lint
+archfit config lint --json -c .archfit.yaml | jq '.diagnostics[] | select(.severity == "error")'
 ```
 
 ## `archfit config compare <candidate>`
@@ -830,6 +971,7 @@ Used by:
 - `archfit baseline`
 - `archfit explain`
 - `archfit config update`
+- `archfit config lint`
 - `archfit config compare`
 - `archfit config enrich ...`
 
@@ -854,7 +996,7 @@ archfit config update -c ./policy/.archfit.yaml
 Used by:
 
 - long form only: `archfit analyze`, `archfit check`, `archfit config compare`
-- short and long form: `archfit baseline`, `archfit explain`, `archfit config init`, `archfit config update`, `archfit config enrich ...`
+- short and long form: `archfit baseline`, `archfit explain`, `archfit config init`, `archfit config update`, `archfit config lint`, `archfit config enrich ...`
 
 Effect:
 

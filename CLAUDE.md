@@ -65,7 +65,11 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 - Every subprocess call goes through `toolrun.Runner` (interface in
   `internal/toolrun/toolrun.go`); extractors in `internal/extract/{go,ts,py,rust}`
   are out-of-process adapters. No `exec.Command` in core code — fake the `Runner`
-  in tests.
+  in tests. A child with a `WorkDir` gets `PWD=<abs WorkDir>` (os/exec refreshes
+  PWD only when `Env` is nil): Go tools trust an inherited PWD that aliases their
+  cwd, so `go list -f {{.Dir}}` echoed the shell's symlink/case-variant spelling,
+  the Go main deploy unit fell outside the canonical scan root, and `model_hash`
+  depended on the invocation path.
 - **Fact cache** (`internal/factcache`, adapter — core ring must not import it;
   see `docs/design/fact-cache.md`). Content-addressed extractor-fact store under
   `.archfit-cache/facts/`; stores facts, never scores. Runner-shaped analyzers
@@ -87,6 +91,7 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   exhaustion never produce a partial reusable key. There is no `--no-cache` flag —
   `--refresh` re-runs the extractors and writes the fresh results back
   (`cmd/archfit/refresh_test.go` pins `--no-cache` as an exit-3 usage error).
+  The Go standard-library list (`go list std`, rule-scope `GoStdlibPackages`) is cached under `facts/go-std/`, keyed ONLY on the toolchain identity `go env -json GOVERSION GOROOT GOOS GOARCH GOFLAGS GOEXPERIMENT CGO_ENABLED` probed in ScanRoot (not `GoExtractor.goVersion`, which runs without WorkDir and can name another toolchain); no input tree; only exit-0 non-empty output is cached. `config lint` (`Inventory`) passes a nil store and runs it uncached.
 - **No gitnexus.** The `.gitnexus`/`.codegraph` index dirs are excluded from file
   walks (`scope.go`), but archfit does not run the tool and does not derive any
   per-module fact from it.
@@ -202,6 +207,12 @@ init` emits v2 directly; owners update older configs manually before analysis.
   filter on Production files use this index and report the excluded count.
   Config override: top-level `file_class:` key (`FileClassDef`), projected via
   `Config.ForFileClass()` → `syntax.FileClassConfig`.
+  Rust test files are classified file-level only: `tests.rs`, `*_test.rs`,
+  `*_tests.rs`, or a path through `tests/`, `benches/`, `*_tests/` or `*-tests/`
+  (the suffix needs a separator, so `contests/` stays Production). An inline
+  `#[cfg(test)]` block inside a production file is NOT separated and still counts as
+  Production, so `forbidden_pattern` can fire in it. Configured `generated_globs`
+  still win over the convention.
 - **`archfit analyze --base <ref>`** flag. The application coordinates it
   (`StageExecutor.attachBaseComparison`, `internal/application/base_compare.go`);
   the worktree mechanics are a VCS adapter (`git.Worktree.Checkout`,
@@ -253,7 +264,11 @@ init` emits v2 directly; owners update older configs manually before analysis.
   extractor's `Extract` calls to decide whether to run. There is no
   `ProjectMarkers []string` and no marker-list fallback: a new language MUST
   supply a `ProjectPresent` that delegates to its extractor, never a hand-rolled
-  list of filenames. **A probe that disagrees with its extractor turns "we did not
+  list of filenames. `config init`/`config update` take presence from the same
+  probes (`languagePresence` in `cmd/archfit/init.go` → `initcfg.Presence`; Go
+  members from `registry.GoMembers`), write a present language `enabled: true`
+  (Rust: `auto`, so a missing cargo is a coverage gap, not a run failure —
+  `initcfg.languageMode`) and an absent one `auto`, never `false`. **A probe that disagrees with its extractor turns "we did not
   measure" into "there is nothing here"**, and gapless `absent` on a primary row
   is the ONE shape both pairing paths read as "language not present" — so
   `analyze --base` and `config compare` drop the analyzer and report confidence
@@ -277,18 +292,68 @@ init` emits v2 directly; owners update older configs manually before analysis.
   source; a new language declares its vocabulary there, not here). A selector
   the language cannot spell can never match one of its nodes, so that language
   leaves the rule's scope. The source scope is an extension scan over the
-  `from:` glob, and a glob picks up whatever sits there: archfit ships three
-  Python helper scripts it runs through uv, so `from: internal/**` put python in
+  `from:` glob, and a glob picks up whatever sits there: archfit ships Python
+  helper scripts it runs through uv, so `from: internal/**` put python in
   scope for rules whose `to:` is a Go package path, and grimp's legitimate
   absence then marked them unevaluated — 8 of 60 rules, holding `intent` at
-  `partial` permanently and putting exit 0 out of reach. The narrowing uses only
-  availability-INDEPENDENT facts: an absent producer for a language the rule CAN
-  address still leaves the rule unevaluated, which is what keeps a missing
-  analyzer honest, and a probe-based filter is the wrong axis (`.go` files with
-  no `go.mod` yield a gapless-`absent` Go row over files that genuinely went
-  unmeasured). Module-wide rules (`public_api_max`, `forbidden_layer_direction`)
-  keep the full module scope on purpose — a helper script inside a declared
-  module is a real member of its API accounting.
+  `partial` permanently. `restrictToTargetVocabulary` itself uses only
+  availability-INDEPENDENT facts: an absent producer for a language whose extractor
+  says the language IS present still leaves the rule unevaluated, which is what keeps
+  a missing analyzer honest. Extractor APPLICABILITY is a different axis and is
+  applied once, at the inventory (the rule-scope bullets below). Module-wide rules (`public_api_max`, `forbidden_layer_direction`,
+  `module_cycle`) keep the full module scope on purpose — a helper script inside
+  a declared module is a real member of its API accounting and of its edges.
+- **Internal-access rules decide from declared surfaces, rule-side**
+  (`rules.internalTarget` over `policy.ModuleMap.MatchesInternal`).
+  `public_api_only`/`internal_api_access`: a `public:` glob of the target's own
+  module never fires; any module's `internal:` glob fires; only an undeclared
+  target falls back to the extractor's `uses_internal` kind (Go `/internal/`
+  segment, TS/Python internal-glob match). Never move this into an extractor:
+  finding fingerprints hash the edge kind, so changing Go edge kinds re-keys
+  every accepted finding on those edges, under every rule.
+- **`cycle` is node-level; `module_cycle` is the declared-module check.** Go
+  edges run file -> package, so `cycle` is structurally 0 on Go.
+  `module_cycle` runs Tarjan (`relationship.Set.ModuleCycles`, sharing
+  `stronglyConnected` with `Set.Cycles`) over DECLARED modules only (`mm.Has`;
+  synthetic crate::mod and go.work members stay out) and emits one
+  `module_dependency` finding per ordered pair inside an SCC, keyed by
+  `finding.NewKeyed(rule, kind, from, to)` with empty endpoint paths.
+  `resolveEvidence` fills a module only when it is empty and has a path. Its
+  `why` names the pair and the cycle size only (a capped cycle also says how many pairs it reports); the node-level `cycle` why caps
+  its member list (`boundedMemberList`, 300 bytes) and the module-cycle goal
+  collapses a long member list to its size (`agenttask.cycleMembers`). The App
+  rejects a `why` over 500 characters, so no finding text may grow with the graph.
+- **`module_cycle` is production-only** (`rules.productionSource`). An edge counts when its importing file (a file node, or an import site with a source extension) is production:
+  - a walked file: its in-scope FileClass decides;
+  - a file declared out of scope: never;
+  - a file the LOC walk skipped (a dot directory, `target/`, `mocks/`): its path-only class with the configured `file_class` globs (`Observations.UnwalkedSourceProduction`, computed in acquisition);
+  - a file with no class at all: it counts.
+  An edge with no source-file attribution (a Rust crate dependency at `Cargo.toml`, a `crate::mod` edge) counts. The strongly connected component is computed over production edges, so finding IDs (rule, module pair) are unchanged.
+- **`module_cycle` is bounded per strongly-connected component** (`maxModuleCyclePairs = 200`, `rules_dependency.go`): the first pairs in (from, to) order are kept, so kept IDs never move; every finding carries `matched_by.cycle_pairs_total`, and a capped cycle's `why` says how many pairs it reports. Pairs past the cap surface as new once reported ones are fixed. Module-cycle and seam-gate agent tasks carry no `declarations` (`agenttask.Build`): on ccgram they were 882 KB of a 1.29 MB report.
+- **`forbidden_pattern` is the only consumer of `rules[].patterns`.** It fires
+  on production files in the LOC inventory (`FileClassIndex` minus
+  `OutOfScopeFiles`, `evaluation.inScopeFileClasses`; the LOC walk and the `sg`
+  scan ignore `exclude:` and switched-off languages) under `from:`
+  (path or convention selector — the same matcher its producer scope uses), is
+  evaluated only when the `ast-grep` pattern row is ok, and never puts matched
+  source text in a finding (the text is hashed into the ID only). A pattern run
+  `sg` rejects (exit > 1) makes that row partial, never "no match". Patterns on
+  other rule types still run and warn at Prepare; `ForPatterns` keeps
+  collecting every rule's patterns because they feed the settings hash.
+- **The rule-scope source inventory is the DECLARED analysis scope**
+  (`acquisition.declaredOutOfScope` → `Observations.OutOfScopeFiles`, skipped by
+  `evaluation.sourceInventoryFiles`). A walked source file leaves every rule's
+  scope when an effective `exclude:` glob matches it or its language is switched
+  off (`primaryDisabledByConfig`: `enabled: false` and no explicit `gate:`). The
+  exclusion set is `RunOptions.Exclusions` — merged once, never re-merged. This
+  is declared scope, not analyzer availability, and not "what the extractors
+  read": dependency-cruiser ignores `exclude:`. Metrics and file classes still
+  count the files. Vocabulary narrowing alone did not keep exit 0 reachable:
+  #40 added `internal/extract/ts/config_snapshot.cjs`, and the `.cjs` plus the
+  `.py` helpers held 7 fail-gated rules (`layer_inversion` included, through
+  module-wide scope) waiting for dependency-cruiser and grimp, although
+  `.archfit.yaml` switches TypeScript and Python off. With the declared-scope
+  inventory the self-check reaches `hard_gates: pass`.
 - **A language switched off over a language that IS PRESENT reports `disabled`,
   never `absent`** (`markDisabledPrimaries`, `internal/evidence/acquisition/coverage.go`,
   applied to `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode
@@ -340,7 +405,13 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `docs/design/architecture-baseline.md`. `DiffModules` runs the name-drift
   pass ITSELF (`resolveNameDrift`, unexported — there is no two-step call a
   consumer can get wrong), reclassifying each 1:1 add/remove pair with an equal
-  normalized path set as `NameDrift`. On top of that, `Removed` is review-only:
+  normalized path set as `NameDrift`. It then runs the ownership pass
+  (`resolveOwnership`): a discovered module whose every `Sources` entry (Go
+  package dirs; every Python dotted package and module in the subtree) the
+  configured map owns under
+  most-specific matching (`ModuleMap.ModuleFor`, injected from cmd) is
+  `Covered`, not `Added`, and its owning stanzas leave `Removed` and are
+  field-checked. TypeScript/Rust modules carry no sources and stay name-matched. On top of that, `Removed` is review-only:
   `initcfg.HasModuleEdits` (module stanzas), `initcfg.HasPendingEdits`
   (`HasModuleEdits` plus settings — the single source for "would `--apply` write
   anything"), and `buildUpdateEdits` all exclude it, so `--apply`
@@ -365,6 +436,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   same helpers `RenderUpdateReport` uses. Gating on `HasReviewSuggestions` there
   hid module gaps, name drift, unmatched and pathless stanzas exactly when apply
   had an edit to make.
+- **Onboarding proposes only what check can see** (`internal/initcfg/inventory.go`, `cmd/archfit/init.go:languagePresence`). `config init` and `config update` read the rule-scope source inventory through the same reader as `config lint` (`acquisition.Inventory`, then `evaluation.SourceInventory`, passed in `initcfg.Presence.Sources`). Discovery keeps only Go/Python/TS modules that own a production file under `moduleRuleScope`'s ownership: most-specific `ModuleFor` on the path, then on the selector. It drops mocks/, generated-only, test-only and default-excluded trees, `public:` entries that name no production node, and edges to dropped modules. Rust crates are kept unjudged, because their selectors need cargo metadata. A nil `Sources` is a discovery unit-test seam only; production always supplies it and fails loudly when the read fails. A starter rule gets `gate: fail` only when `DiscoveredConfig.ImportGraphComplete`. Otherwise it gets `gate: warn` with a `# Why:` line from `GraphGap`. The graph is incomplete when there are Python or TS modules, when Rust is present, or when a Go module owns non-Go source (prometheus `web/ui`). Init infers no layer from any directory or package name. Only a Rust workspace gets layers: topological tiers of the normal/build crate graph, with dev-dependencies excluded as in the extractor, so the starter direction rule starts with zero back-edges.
 - **`AnalysisRequest` + `AnalysisContext`** (`internal/application/analysis.go`)
   carry the per-run path and time inputs. `AnalysisRequest` is what the caller
   asks for; `AnalysisContext` is what acquisition resolved, and every later stage
@@ -400,7 +472,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
 - **Owner inheritance for auto-registered synthetic submodules**
   (`classify.AugmentModulesFromGraph`, `AugmentGoWorkspaceModules`): propagates
   `owner` from the nearest config-declared ancestor module to each synthetic module.
-  Fixes inter-submodule edges defaulting to `cross_module_different_owner` (D=10)
+  Fixes inter-submodule edges defaulting to `cross_module_different_owner` (D=7)
   on single-team repos with many cargo-modules or Go workspace members.
 - **SCIP empty-index reports `partial`/`warn`** (`internal/extract/scip/scip_strength.go`).
   When the resolved edge map is empty (`len(m)==0`), `Coverage.Status` is set
@@ -411,8 +483,10 @@ init` emits v2 directly; owners update older configs manually before analysis.
   boundary; all extractors walk this tree). `Scope.GitRoot` = `git rev-parse
 --show-toplevel` (git ops only). `Scope.SubtreePrefix = rel(GitRoot, Root)`.
   `--root` absent ⇒ ScanRoot=GitRoot, prefix="" ⇒ byte-identical. Non-git full
-  mode proceeds with `GitRoot=""` (history empty); delta mode without git is a
-  hard error.
+  mode proceeds with `GitRoot=""` (history empty) and ScanRoot = the canonical
+  ABSOLUTE `--root` or config directory (`canonicalPath` absolutizes before
+  resolving symlinks; a relative `.` root dropped every Go fact and deploy
+  unit); delta mode without git is a hard error.
   **macOS APFS case-variant `--root` (Task 25, fixed):** `snapScanRoot` in
   `internal/scope/scope.go` uses `os.SameFile` (device+inode) to snap a
   case-variant scan root to the git root's canonical path, so
@@ -435,6 +509,16 @@ init` emits v2 directly; owners update older configs manually before analysis.
   each member as a synthetic module when **≥2** members were loaded and the
   member's `RelDir != "."` and no config module already covers it — mirrors the
   Rust `::` gate. `languages.go.modules.include/exclude` scopes which members load.
+- **Go files excluded by build constraints are disclosed, never graded.** The
+  load sees only the host GOOS/GOARCH and tags, so `_windows.go` and tag-gated
+  files are never parsed. `deriveIgnoredFiles` keeps the non-test `.go` files of
+  `pkg.IgnoredFiles` (cached with the member facts — fact-cache schema `3`), and
+  the merge counts them minus config exclusions into the go/packages `Reason`
+  (`golang.BuildConstraintExclusion`) plus ONE stderr warning
+  (`goBuildConstraintWarning`). Status, `Unresolved`, the measurement profile and
+  dimension promotion do not move: the load is complete for its configuration.
+  Ceiling: a directory whose every file is excluded is dropped by `go list ./...`
+  and not counted.
 - **Per-analyzer timeout.** `analyzers.<x>.timeout` (Go duration string, e.g. `"5m"`)
   caps `scip` and `clones` (jscpd) subprocess runs. On timeout the result is
   dropped; dependent metrics report `n/a (timed out)`; the run continues on the
@@ -463,21 +547,73 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `pythonModuleFileCandidates` (`internal/model/graph/convention.go`) emits `src/`-prefixed
   candidates alongside the flat ones, mirroring `pythonFileToModuleKey`'s `src/`-stripping —
   keep the two symmetric or src-layout repos silently fail dotted-ID → file resolution.
+- **Rule scope follows extractor applicability** (`acquisition.unanalysedFiles` → `Observations.UnanalysedFiles`).
+  - A walked file is out of the scope of every rule that reads dependency edges, module-wide rules included, in two cases:
+    - Its language's primary row is gapless `absent` (`primaryAbsentFromTree`). That is the SAME predicate `buildCoverageGaps` suppresses the gap on: the extractor's own probe says the language is not present, and no explicit warn/fail `languages.<id>.gate` demands it.
+    - It is a Rust file outside every cargo workspace member, once cargo metadata has named the members.
+  - `forbidden_pattern` keeps these files; it reads the ast-grep pass.
+  - Consequence: TypeScript under `web/ui/` with no root `package.json`, and `.go` files with no `go.mod`, leave rule scope; their coverage rows already call the language absent. Before this, prometheus' starter `module_cycle` waited forever for dependency-cruiser.
+  - A dependency selector that matches only such files is listed `selector matches only source no dependency producer analyses: <side> <glob>`, guard or not. It never carries the `selector matches nothing:` prefix, which the App reads as a policy defect.
+  - `moduleRuleScope` skips a module whose walked files are all out of scope or unanalysed, instead of returning Unknown.
+- **Rust `crate::mod` scope reads the module graph** (`Observations.RustModuleNodes`, the cargo-modules nodes).
+  - A `crate::mod` selector or module path under a crate the graph covers is decidable: live or dead.
+  - Under a loaded crate the graph does not cover, it is undecidable: an absent module graph is never an empty one.
+  - Under a crate that is not loaded, it is dead.
+  - Crate roots are compared in library spelling (`my-core` → `my_core`).
+- **A guard holds while either selector matches nothing**, whatever the producer status (`vacuityScope`). Once the guarded path exists again, the guard is an ordinary rule.
+- **TypeScript never ingests installed code.** depcruise runs with `--exclude (^|/)node_modules/` (root and subtree mode), and `parseAndNormalize` drops node_modules sources and resolved targets at any depth, which makes a cache replay safe. The fact-cache source hash still excludes only the root `node_modules` (over-hash). `exclude` is not part of the TS measurement profile.
 - **agent_tasks `files[]` exist on disk (`agenttask.PathResolver`).** Every candidate
   (edge endpoints, locations, module keys) resolves index-first against the LOC walk's
-  `FileClassIndex` with an injected `onDisk` os.Stat backstop (the LOC walk skips `mocks/`,
-  `target/`, `venv/` which extractor exclusions do not) — resolve-or-drop, never a bare
-  config key or dotted/`::` id. Rust `crate::mod` probes `<dir>/src/<mod>.rs|/mod.rs`
-  then the crate dir (`src` for a root crate whose `CrateRoot.Dir` is `""`); the
-  last-resort module root from `config.ModuleRootDirs` (dotted prefix for Python globs)
-  goes through the same resolver. agenttask itself never touches the filesystem — the
-  composition root (`cmd`) owns the `onDisk` closure.
+  `FileClassIndex`, with an injected `onDisk` os.Stat backstop. The LOC walk skips
+  `mocks/`, `target/` and `venv/`, which extractor exclusions do not. The rule is
+  resolve-or-drop: never a bare config key or a dotted/`::` id.
+  - Rust crates have two spellings, and `CrateRootDirs` is keyed by both: the package
+    name (`yazi-shared`, used by crate-level nodes and selectors) and the crate
+    identifier `graph.CrateRoot.Crate` (`yazi_shared`, or a binary target's own name
+    such as `yazi`), which starts cargo-modules node IDs. The crate identifier comes
+    from the target cargo-modules graphs (`cargoPackage.crateIdentifier`: lib, else
+    first bin, with `-` turned into `_`). A package name wins a collision.
+  - A bare crate spelling resolves to the crate dir (`src` for a root crate).
+  - `crate::mod` probes `<dir>/src/<mod>.rs|/mod.rs`, then the crate dir.
+  - With no resolved evidence, the last-resort module root (`config.ModuleRootDirs`)
+    stands in for a public_api_* module, a coupling-gate seam, and a module-pair
+    (`module_dependency`, i.e. module_cycle) finding, source module first.
+  - agenttask never touches the filesystem; the composition root owns `onDisk`.
+  - A `bc/coupling_gate` finding carries only a module pair, so `agenttask.Build` takes the seam
+    ledger and resolves the paths of up to 20 qualifying edges (`relationship.Seam.QualifyingEdges`
+    → `result.Seam.QualifyingPaths`, `json:"-"`, so `seams[]` on the wire is unchanged), falling
+    back to the source, then target, module root. Seam-gate and module-cycle tasks carry no
+    `declarations`.
+- **Rules resolve Rust nodes to the declared crate module
+  (`policy.ModuleMap.ModuleForNode`).** Rules see the declared module map, never the
+  augmented one. A crate declared by package name cannot glob-match its own
+  cargo-modules nodes (`yazi_shared::url::buf`), which made same-crate edges
+  module-blind and ignored the owner's `public:`.
+  - Acquisition computes `ModuleMap.CrateOwners(graph.CrateRoots())`: package name,
+    then crate identifier, then a file in the crate dir; a root crate is never
+    claimed by its dir. The result rides `evaluation.Observations.CrateOwners`,
+    because assessment may not import `model/graph`.
+  - `Assess` attaches it with `WithCrateOwners`.
+  - `ModuleForNode(path, language)` is `ModuleFor` first, then a Rust-only fallback
+    on the segment before `::`, so a Python or Go node that shares a crate's name
+    never takes it.
+  - `sameModule`, the `MatchesInternal` owner, `LayerFor`, and
+    `new_cross_module_dependency` all use it. `ModuleFor` itself is unchanged
+    (CRITICAL fan-in).
+  - An explicit `crate::mod` `paths:` glob still wins.
+  - `classify.ancestorByKey` (synthetic-module attribute inheritance) still matches
+    module KEYS only; that is a known gap.
 - **Agent repair contracts are policy-aware and replayable.** Each task carries
   `repair_kind: code_change|needs_owner_decision`; forbidden-dependency goals
-  cannot route through a public API, and new-cross-module goals cannot use
-  baseline capture as a repair. Validation replays `--base`, `--lang`, and
-  `--require-tools`; it omits `--refresh` so cache control cannot change the
-  result.
+  cannot route through a public API, `forbidden_dependency`,
+  `forbidden_layer_direction`, `cycle`, `module_cycle`, and
+  `new_cross_module_dependency` constraints never list the target module's
+  public surface (`agenttask.forbidsTarget`: a public route keeps the
+  violation), and new-cross-module goals cannot use baseline capture as a
+  repair. One task per active gate finding: an import that
+  breaks two rules is two findings and two tasks. Validation replays `--base`,
+  `--lang`, and `--require-tools`; it omits `--refresh` so cache control cannot
+  change the result.
 - **TS coverage honesty: one unresolved ratio.** `score.tsUnresolvedRatioCeiling` (10%)
   caps `coupling_balance` confidence using `Unresolved/SpecifiersSeen` — the SAME
   specifier-denominator ratio the dependency-cruiser `Coverage.Reason` string and the
@@ -496,11 +632,60 @@ init` emits v2 directly; owners update older configs manually before analysis.
   physical tree: no dead path glob, no Go package without an owning module, no
   equal-specificity ownership tie (the catch-all shadowing bug), no rule aimed at
   a path that does not exist, no `public:` entry outside its own module or
-  without Go source, and no declared layer without a module. Two rules match
-  nothing ON PURPOSE and are allowlisted in `guardRules`: `no_stage_view` and
-  `no_analysispipeline` block the dissolved packages from returning — the test
-  fails if either guard is deleted, and also if either starts matching real
-  source. Moving a package means updating the owning `paths:` in the same commit.
+  naming no package, no undeclared layer, and no declared layer without a module.
+  The rule, public-surface, layer, and ownership-tie checks ARE the production
+  `archfit config lint` predicates (`evaluation.LintPolicy` over
+  `acquisition.Inventory`), so the engine's config is held to exactly what users
+  get. Two rules match nothing ON PURPOSE and declare `guard: true`:
+  `no_stage_view` and `no_analysispipeline` block the dissolved packages from
+  returning. The `guardRules` table names what each guards; the test fails if
+  either guard is deleted, loses `guard: true`, or starts matching real source
+  (`guard_matches_source`), and if any other rule declares `guard: true` without
+  an entry. Moving a package means updating the owning `paths:` in the same commit.
+- **A rule selector that matches nothing is never conformance**
+  (`evaluation.selectorInventory.vacuousSelector`, one predicate for check and
+  `config lint`). It applies to the selectors of `forbidden_dependency`,
+  `public_api_only`, and `internal_api_access`, and to the `from:` of
+  `forbidden_pattern` (`selectorRuleTypes`), over the declared-scope
+  inventory plus node selectors. The dependency rules match edge endpoints in
+  each language's own vocabulary (`selectorInventory.matches`): a target is the
+  module node (Go package dir, TS file, Python dotted module, Rust crate), a
+  source is the importing file for Go/TS and the module node for Python/Rust;
+  `forbidden_pattern` matches file path or node selector. Vacuous: a `from:`
+  that matches no in-scope source; a `to:` spelled as first-party source (empty
+  literal prefix, or a leading segment, cut in the selector's own vocabulary,
+  that the inventory's paths or selectors start with; a dotted leading segment
+  of a slash selector is a Go import-path domain, never first-party) that
+  matches nothing; and any selector spelled with the Go module path, a leading
+  `!`/`./`/`../`/`/`, or `!(` extglob. A `to:` naming no first-party root (`os`, `github.com/...`)
+  is an external ban, never vacuous; nor is a `to:` whose literal prefix names a
+  Go standard-library package or its parent path on segment boundaries
+  (`database/sql` beside a top-level `database/`): `Observations.GoStdlibPackages`
+  comes from `go list std` through `toolrun` in `acquisition.ruleScopeObservations`,
+  only when a Go module exists, `internal`/`vendor` dropped, nil on failure (the
+  first-party judgment then applies). Lint and check share the predicate and the
+  inventory build, but check alone has Rust crate roots, and `check --lang`
+  switches a language back on. The inventory abstains, keeping the generic
+  "rule scope cannot be established" reason, for an unsupported file type, for
+  a language whose node identities are unknown (Rust without crate roots), and
+  for a `crate::mod` selector the cargo-modules graph cannot decide (see the
+  `crate::mod` scope bullet). A Go selector spelled with a
+  loaded module path is dead even for a nested `go.mod` the run does not load:
+  the Go extractor strips every import under a loaded module path to its
+  scan-root-relative dir (pinned by
+  `TestExtract_NestedUnloadedModuleImportIsScanRootRelative`).
+  A vacuous fail-gated rule is listed in `decision.unevaluated_required_rules`
+  with the reason `selector matches nothing: <from|to> <glob>` (the App keys a
+  policy-defect reason off that prefix); a warn-gated one is a config warning
+  (`evaluation.PolicyWarnings`, noted by acquisition); both stay out of intent's
+  evaluated count. `guard: true` exempts a rule: a vacuous source side makes it
+  not applicable, a vacuous target side is ignored. Never add a "the rule
+  fired, so it is live" shortcut: lint cannot see findings, and the two would
+  disagree. `archfit config lint` exits 1 on an error diagnostic and 3 on an
+  unreadable config; unknown `volatility`/`subdomain` (vocabulary owned by
+  `policy.ModuleDef.UnknownVolatility`/`UnknownSubdomain`, pinned to classify)
+  and undeclared layers still load in schema v2 and surface as lint errors and
+  check config warnings.
 - **The primary output is `archfit.architecture-state.v1`** (`internal/model/report/state.go`,
   rendered by `internal/output/jsonout.Renderer`). `--format json` emits the
   state AT THE DOCUMENT ROOT — `verdict`, `decision`, `comparison`, `measurement`,
@@ -511,6 +696,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `TestFormatMatrix_SarifCarriesTheState`); SARIF is exempt from human LAYOUT
   parity only — the state rides in `run.properties` and finding identity (ruleId,
   ruleIndex, `archfit/v1` fingerprint) is unchanged by the cutover.
+- **Report free text is bounded once, at projection** (`boundReportText` → `reportText`, `internal/application/report_text.go`, called last in `application.ProjectReport`). A strict state consumer (the archfit App) rejects any string with a control character or U+2028/U+2029, caps free text at 500 runes and an agent task's goal/constraints at 4096, and one bad string invalidates the whole report. Tool stderr and error chains reach coverage reasons verbatim (the ts/py/rust/ast-grep extractors, `acquisition.Collect`'s `err.Error()`), and joins carry them into unevaluated-rule reasons and dimension unknowns, so the bound lives at the single projection every command and format passes through — never at an extractor. Text already one line within the bound is byte-identical; otherwise ANSI CSI is dropped, whitespace/control runs collapse to one space, and the leading text is kept, cut at 400 runes (task text 3600) with `…`. Identity material — IDs, hashes, paths, tool versions, the measurement profile, validation commands — is never rewritten. The raw text goes to stderr only (`discloseRawCoverageReasons` in `StageExecutor.Execute`, rows the sanitizer changes; written directly, not via acquisition's `note()`, which would feed it back into ConfigWarnings). Contract: `cmd/archfit/report_text_contract_test.go` + `reporttest.AppTextViolations`.
 - **`check` exit code IS the state verdict** (`application.outcomeFor`):
   `healthy` → 0, `needs_attention` → 2, `blocked` → 1, error → 3. Nothing else
   participates — a required-analyzer gate and a failing hard rule both reach the
@@ -521,7 +707,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
   corroboration, or a comparable persisted baseline honestly produces exit 2;
   none is a permanent dimension status. `make archfit` accepts 0 or 2; only 1
   fails it. A coupling advisory is a diagnostic and can never reach exit 1.
-  An applicable fail-gated rule with incomplete producer evidence is listed in
+  An applicable fail-gated rule with incomplete producer evidence, or with a
+  selector that matches nothing, is listed in
   `decision.unevaluated_required_rules`; without another blocker it sets
   `hard_gates: unmeasured` and remains exit 2. Required-rule evidence is read
   from these fields, never inferred from finding prose.
@@ -605,11 +792,22 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `metrics.<name>.gate` follows the same convention: a worsening baseline delta
   blocks when `gate` is unset. A tripped ratchet produces NO finding, so it
   reaches the verdict the same way the required-tool gate does — through
-  `evaluation.BlockingMetricRegressions` into the state's hard-gate result
+  `evaluation.blockingMetricRegressions` into the state's hard-gate result
   (`buildState`), never through the finding populations. It also raises the
   owning dimension's `gate` to `fail`, routed by the envelope's own metric list.
   Asserting only `evaluation.Result.Verdict` cannot see this: nothing reads that
-  verdict for the exit code. `MetricEntry.Enabled` is a `*bool` so a knob-only
+  verdict for the exit code. The state carries no ratchet field, so text and
+  Markdown name the ratchet (`METRIC RATCHET` / `## Metric ratchet`,
+  `ratchetRegressions`, twin helpers in console and markdown) from the
+  Document's metric deltas, and only when the contract proves it, with verdict
+  blocked. With zero active blockers and no coverage gap gating `fail`, they
+  list every metric that worsened against the accepted baseline. Otherwise
+  (`ratchetProvenDimensions`) they list the worsened metrics of each failing
+  dimension with no hard-gate finding ref — for `operations`, also no failing
+  analyzer gate; a ratchet beside a hard-gate finding in its own dimension stays
+  unnamed. Thresholds are not in the contract, so a worsened metric inside its
+  threshold is listed too; the label says "worsened", never "tripped".
+  `MetricEntry.Enabled` is a `*bool` so a knob-only
   entry (`{gate: warn}`) stays enabled — only explicit `enabled: false` disables
   the metric (`metrics.New`). `coupling_balance` does not gate at all — the only
   coupling gate is `coupling.gate.distributed_monolith`; see the coupling-gate
@@ -753,7 +951,15 @@ The extractor carries crate roots (`graph.CrateRoot`, repo-relative src dir + cr
 name from cargo metadata) on the graph. Rust facts remain crate-level for per-file
 metrics (size, churn); the per-file module-key resolver (`RustFileToModuleKey`,
 `modgraph.ModuleKeyResolver`) was removed as dead code — it was built but never
-wired to any metric.
+wired to any metric. `graph.CrateRoot` gains `Crate string`; `internal/testdata/model_surface.golden` was regenerated.
+
+Cargo dependency edges are located in the member's own `Cargo.toml`, at the line
+that declares the dependency in the table of its kind
+(`internal/extract/rust/manifest.go`, a conservative line scan that honours
+`rename`, `[target.<cfg>.…]`, `[x.dependencies.<key>]` and skips
+`[workspace.dependencies]`). A declaration it cannot place keeps line 0, and a
+member outside the scan root gets no location. Locations never enter finding IDs
+or label hashes.
 
 ## Layout
 

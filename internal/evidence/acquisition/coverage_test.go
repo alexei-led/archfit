@@ -1221,6 +1221,33 @@ func TestPyUnresolvedWarning(t *testing.T) {
 	}
 }
 
+// TestGoBuildConstraintWarning pins the one-line stderr disclosure of Go files
+// the host build configuration left unanalyzed: it echoes only the
+// build-constraint clause of the go/packages reason, whatever the row status,
+// and stays silent when the row carries no such clause.
+func TestGoBuildConstraintWarning(t *testing.T) {
+	t.Parallel()
+	const clause = "2 Go file(s) excluded by build constraints (GOOS/GOARCH, build tags) were not analyzed"
+	for _, tc := range []struct {
+		name string
+		cov  []evidence.Coverage
+		want string
+	}{
+		{name: "ok row with the clause", cov: []evidence.Coverage{{Tool: toolGoPackages, Status: evidence.StatusOK, Reason: clause}}, want: toolGoPackages + ": " + clause},
+		{name: "partial row keeps only the clause", cov: []evidence.Coverage{{Tool: toolGoPackages, Status: evidence.StatusPartial, Reason: "1 package(s) did not load completely; some imports are missing from the graph; " + clause}}, want: toolGoPackages + ": " + clause},
+		{name: "partial row without the clause", cov: []evidence.Coverage{{Tool: toolGoPackages, Status: evidence.StatusPartial, Reason: "1 package(s) did not load completely; some imports are missing from the graph"}}},
+		{name: "ok row without a reason", cov: []evidence.Coverage{{Tool: toolGoPackages, Status: evidence.StatusOK}}},
+		{name: "another tool's reason", cov: []evidence.Coverage{{Tool: toolDepCruiser, Status: evidence.StatusOK, Reason: clause}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := acquisition.GoBuildConstraintWarning(tc.cov); got != tc.want {
+				t.Errorf("GoBuildConstraintWarning(%+v) = %q, want %q", tc.cov, got, tc.want)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // CB1: skipped-pass coverage rows (P12 — syntax/scip opt-in honesty)
 // ---------------------------------------------------------------------------

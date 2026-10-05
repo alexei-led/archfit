@@ -101,7 +101,7 @@ func finalize(diag *result.Result, in FinalizeInput) Finalized {
 	trip := score.EvaluateSeamGate(diag.Seams, seamGateFor(in.Gate), in.Baseline.seamReference())
 	applySeamGate(diag, trip)
 	resolver := agenttask.NewPathResolver(in.KnownFiles, in.CrateRootDirs, in.ModuleRootDirs, in.OnDisk)
-	diag.AgentTasks = agenttask.Build(diag.Findings, in.RuleTypes, in.ModulePublic, in.ValidationCommands, diag.SyntaxFacts, resolver)
+	diag.AgentTasks = agenttask.Build(diag.Findings, in.RuleTypes, in.ModulePublic, in.ValidationCommands, diag.SyntaxFacts, diag.Seams, resolver)
 	diag.AdvisoryTasks = agenttask.BuildAdvisoryTasks(diag.Findings, in.ValidationCommands)
 	return Finalized{Score: card, GateReasons: trip.Reasons}
 }

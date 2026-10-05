@@ -191,6 +191,11 @@ type Seam struct {
 	// unit). It is the seam fact the distributed-monolith policy counts; the
 	// policy decision itself lives in assessment.
 	DistributedMonolith bool
+	// QualifyingEdges are the edges that make the seam a distributed monolith,
+	// ordered by endpoint IDs and capped (at most twenty). They are the seam
+	// gate's repair evidence — the files a blocked seam points an agent at — and
+	// are not part of the published seam record.
+	QualifyingEdges []Edge
 }
 
 // SeamScores computes the nearest-rank distribution over balance scores.

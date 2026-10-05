@@ -76,8 +76,15 @@ func resolveEvidence(s relationship.Set, mm policy.ModuleMap, findings []finding
 	}
 	out := make([]finding.Finding, 0, len(findings))
 	for _, f := range findings {
-		f.Edge.From.Module = resolve(f.Edge.From.Path)
-		f.Edge.To.Module = resolve(f.Edge.To.Path)
+		// A module-keyed finding (module_cycle) names its modules itself and
+		// carries no endpoint path to resolve them from; a pattern finding has no
+		// target at all. Only an empty module with a real path is resolved.
+		if f.Edge.From.Module == "" && f.Edge.From.Path != "" {
+			f.Edge.From.Module = resolve(f.Edge.From.Path)
+		}
+		if f.Edge.To.Module == "" && f.Edge.To.Path != "" {
+			f.Edge.To.Module = resolve(f.Edge.To.Path)
+		}
 		if edge, ok := byEdge[[3]string{f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind}]; ok {
 			f.Severity = severityFor(edge.Strength, edge.Distance)
 		}

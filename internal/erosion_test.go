@@ -22,6 +22,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 // decisionPath names the sources that turn evidence into the architecture
@@ -36,6 +39,7 @@ var decisionPath = []decisionTarget{
 	{path: "assessment/state"},                    // the metric-blind aggregator
 	{path: "assessment/evaluation/state.go"},      // the finding split feeding it
 	{path: "assessment/evaluation/dimensions.go"}, // the nine envelopes it reads
+	{path: "assessment/evaluation/selectors.go"},  // rule-selector vacuity behind unevaluated rules
 	{path: "assessment/score/gate.go"},            // the distributed-monolith seam gate
 	{path: "application/analysis.go", funcs: []string{"outcomeFor", "seamAnchor"}},
 }
@@ -121,22 +125,27 @@ func TestErosion_NoDeadArchfitRule(t *testing.T) {
 // deadRuleDetectionFires is this gate's paired violating-input fixture.
 //
 // A synthetic dead rule cannot be added to .archfit.yaml — the gate would then
-// fail on every run — so the fixture drives the predicate the gate decides on:
-// a glob naming a package that does not exist must NOT match, while a glob
-// naming one that does must. Without it, `matchesAny` silently returning true
-// for everything would leave the gate passing over a config full of dead rules.
+// fail on every run — so the fixture lints this repository with the self-config
+// carrying one rule aimed at a package that does not exist and one aimed at
+// real source, through the production predicate the gate decides on. Without
+// it, a lint that reported nothing would leave the gate passing over a config
+// full of dead rules.
 func deadRuleDetectionFires(t *testing.T) {
 	t.Helper()
-	dirs, goFiles := repoDirs(t)
-	candidates := append(append([]string{}, dirs...), goFiles...)
-
-	const dead = "internal/no-such-package-erosion-fixture/**"
-	if matchesAny(dead, candidates) {
-		t.Errorf("matchesAny(%q) = true — a rule aimed at nothing would read as live", dead)
+	cfg := loadSelfConfig(t)
+	cfg.Rules = []policy.RuleDef{
+		{ID: "fixture_dead", Type: "forbidden_dependency", Gate: "fail", From: "internal/**", To: "internal/no-such-package-erosion-fixture/**"},
+		{ID: "fixture_live", Type: "forbidden_dependency", Gate: "fail", From: "internal/**", To: "internal/assessment/**"},
 	}
-	const live = "internal/assessment/**"
-	if !matchesAny(live, candidates) {
-		t.Errorf("matchesAny(%q) = false — the check cannot see real source, so no rule can be graded", live)
+	dead := map[string]bool{}
+	for _, d := range lintFindings(lintRepo(t, cfg), evaluation.LintDeadSelector) {
+		dead[d.Path] = true
+	}
+	if !dead["rules[fixture_dead].to"] {
+		t.Error("a rule aimed at a package that does not exist was not reported dead — it would read as live")
+	}
+	if dead["rules[fixture_live].to"] {
+		t.Error("a rule aimed at real source was reported dead — the check cannot see real source")
 	}
 }
 

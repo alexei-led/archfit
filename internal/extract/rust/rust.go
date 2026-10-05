@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,6 +42,12 @@ type Extractor struct {
 	cfg                evidenceports.ExtractConfig
 	lastModuleGraphCov evidence.Coverage // cargo-modules coverage from most recent Extract call
 	lastCrateRoots     []graph.CrateRoot // crate roots from most recent Extract call
+	// lastModuleGraphCrates are the crate identifiers cargo-modules graphed in
+	// the most recent Extract call, a root-only crate (no submodule) included.
+	lastModuleGraphCrates []string
+	// lastTargetCrates are the crate names of every target of the members in
+	// lastCrateRoots, from the most recent Extract call.
+	lastTargetCrates []string
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
 	Cache *factcache.Store
 }
@@ -111,6 +118,8 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	// well-formed row instead of a zero-value Coverage{} (empty Tool/Status). The
 	// cfg.ModuleGraph branch below overwrites it when the graph actually runs.
 	e.lastModuleGraphCov = evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
+	e.lastModuleGraphCrates = nil
+	e.lastTargetCrates = nil
 	if e.cfg.Mode == evidenceports.ModeOff {
 		return graph.Facts{}, absentCoverage(""), nil
 	}
@@ -173,7 +182,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		return graph.Facts{}, evidence.Coverage{Tool: toolCargo, Version: version, Status: statusPartial, Reason: reason}, nil
 	}
 
-	facts, members, cov, err := e.parseAndNormalize(out.Stdout, version)
+	facts, members, cov, err := e.parseAndNormalize(out.Stdout, version, s.Root)
 	if err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/rust: parse output: %w", err)
 	}
@@ -183,6 +192,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	// size/cohesion metrics — the crate name is not derivable from a path alone.
 	facts.CrateRoots = crateRoots(s.Root, members)
 	e.lastCrateRoots = facts.CrateRoots
+	e.lastTargetCrates = targetCrates(facts.CrateRoots, members)
 
 	// Opt-in intra-crate module graph via cargo-modules (analyzers.cargo_modules.enabled: true).
 	// When enabled, module-level nodes and edges are merged into facts alongside the
@@ -192,10 +202,11 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	// lastModuleGraphCov so the pipeline can append it to ExtraCoverage (same pattern
 	// as complexity/clones, which also surface coverage outside Extract).
 	if e.cfg.ModuleGraph {
-		modNodes, modEdges, modCov := e.runModuleGraph(ctx, e.moduleGraphRunner(ctx, s, version), members)
+		modNodes, modEdges, modCov, graphed := e.runModuleGraph(ctx, e.moduleGraphRunner(ctx, s, version), members)
 		facts.Nodes = append(facts.Nodes, modNodes...)
 		facts.Edges = append(facts.Edges, modEdges...)
 		e.lastModuleGraphCov = modCov
+		e.lastModuleGraphCrates = graphed
 	} else {
 		e.lastModuleGraphCov = evidence.Coverage{Tool: toolCargoModules, Status: statusAbsent}
 	}
@@ -209,6 +220,23 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 // Returns absent coverage when ModuleGraph is disabled or Extract has not been called.
 func (e *Extractor) LastModuleGraphCoverage() evidence.Coverage {
 	return e.lastModuleGraphCov
+}
+
+// LastModuleGraphCrates returns the crate identifiers (CrateRoot.Crate)
+// cargo-modules graphed in the most recent Extract call. A crate with no
+// submodule contributes no crate::mod node, so only this list tells its empty
+// module graph from a missing one. Nil when the module graph did not run.
+func (e *Extractor) LastModuleGraphCrates() []string {
+	return e.lastModuleGraphCrates
+}
+
+// LastTargetCrates returns the crate names (Cargo's '-' to '_' spelling) of
+// every target cargo metadata listed for the members LastCrateRoots carries:
+// library, binaries, and the rest, sorted and unique. CrateRoot.Crate names
+// only the target cargo-modules graphs, so a binary target of a lib+bin package
+// is known only here. Nil when Extract has not been called or found no members.
+func (e *Extractor) LastTargetCrates() []string {
+	return e.lastTargetCrates
 }
 
 // LastCrateRoots returns the crate roots (repo-relative crate dir + crate
@@ -318,6 +346,21 @@ type cargoDependency struct {
 	Source *string `json:"source"`
 	// Kind is null for a normal dependency, "dev", or "build".
 	Kind *string `json:"kind"`
+	// Rename is the Cargo.toml key of a renamed dependency
+	// (`key = { package = "name" }`); null when the key is the package name.
+	Rename *string `json:"rename"`
+}
+
+// manifestKey returns the dependency's key and table kind in its Cargo.toml.
+func (d cargoDependency) manifestKey() depLineKey {
+	key := depLineKey{kind: depKindNormal, key: d.Name}
+	if d.Rename != nil && *d.Rename != "" {
+		key.key = *d.Rename
+	}
+	if d.Kind != nil {
+		key.kind = *d.Kind
+	}
+	return key
 }
 
 // included reports whether this dependency should become a graph edge. Normal
@@ -346,10 +389,11 @@ func (d cargoDependency) included(includeDev bool) bool {
 // Workspace members are the first-party set: each becomes a package:<crate>
 // node. A dependency whose crate name matches a member resolves to a package:
 // node (intra-workspace edge); any other dependency becomes an external: node.
-// Every kept dependency yields a depends_on edge located at Cargo.toml.
+// Every kept dependency yields a depends_on edge located in the member's own
+// Cargo.toml (memberManifestLocations).
 // The resolved members slice is returned so ModuleGraph can reuse it without
 // re-running cargo metadata.
-func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts, []cargoPackage, evidence.Coverage, error) {
+func (e *Extractor) parseAndNormalize(data []byte, version, root string) (graph.Facts, []cargoPackage, evidence.Coverage, error) {
 	var meta cargoMetadata
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return graph.Facts{}, nil, evidence.Coverage{}, fmt.Errorf("unmarshal: %w", err)
@@ -397,9 +441,11 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		}
 	}
 
+	rootAbs, rootOK := canonicalRoot(root)
 	for _, m := range members {
 		fromNode := graph.Node{Kind: graph.NodeKindPackage, Path: m.Name, Language: graph.LangRust}
 		emitNode(fromNode)
+		locate := memberManifestLocations(rootAbs, rootOK, m.ManifestPath)
 
 		for _, dep := range m.Dependencies {
 			if !dep.included(e.cfg.IncludeDevDeps) {
@@ -425,7 +471,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 				Kind:       graph.EdgeKindDependsOn,
 				Language:   langRust,
 				Confidence: "high",
-				Locations:  []graph.Location{{File: manifestFile}},
+				Locations:  locate(dep),
 			})
 		}
 	}
@@ -448,34 +494,63 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 	return facts, members, cov, nil
 }
 
+// memberManifestLocations returns the locator for one member's dependency
+// edges: the member's own Cargo.toml, repo-relative, at the line that declares
+// the dependency in the table of its kind (dependencyLines), or line 0 when the
+// scan cannot place it. A member whose manifest lies outside the analysed root
+// gets no location: an escaping path is no evidence, and the root manifest
+// would name a file that does not declare the dependency.
+func memberManifestLocations(rootAbs string, rootOK bool, manifestPath string) func(cargoDependency) []graph.Location {
+	file, inside := relToRoot(rootAbs, manifestPath)
+	if !rootOK || !inside || file == "" {
+		return func(cargoDependency) []graph.Location { return nil }
+	}
+	lines := readDependencyLines(manifestPath)
+	return func(dep cargoDependency) []graph.Location {
+		return []graph.Location{{File: file, Line: lines[dep.manifestKey()]}}
+	}
+}
+
 // crateRoots maps each workspace member to its repo-relative source dir and crate
 // name so the core ring can resolve a .rs path to its module key. cargo reports an
 // absolute manifest_path; members whose dir is outside the analysed root, or that
 // cannot be made relative to it, are skipped (best-effort — never fails extraction).
 // A member at the root itself yields Dir "".
 func crateRoots(root string, members []cargoPackage) []graph.CrateRoot {
-	// EvalSymlinks resolves case variants and symlinks so rootAbs matches the
-	// canonical ManifestPath reported by cargo (macOS case-insensitive FS).
-	// Falls back to Abs if the path does not exist yet (e.g. tests with fake paths).
-	rootAbs, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		rootAbs, err = filepath.Abs(root)
-		if err != nil {
-			return nil
-		}
+	rootAbs, ok := canonicalRoot(root)
+	if !ok {
+		return nil
 	}
 	out := make([]graph.CrateRoot, 0, len(members))
 	for _, m := range members {
-		rel, err := filepath.Rel(rootAbs, filepath.Dir(m.ManifestPath))
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		rel, inside := relToRoot(rootAbs, filepath.Dir(m.ManifestPath))
+		if !inside {
 			continue // outside the analysed root
 		}
-		if rel == "." {
-			rel = ""
-		}
-		out = append(out, graph.CrateRoot{Dir: filepath.ToSlash(rel), Name: m.Name})
+		out = append(out, graph.CrateRoot{Dir: rel, Name: m.Name, Crate: m.crateIdentifier()})
 	}
 	return out
+}
+
+// targetCrates lists the crate name of every target of the members roots
+// carries (members outside the analysed root are not there), in Cargo's crate
+// spelling, sorted and unique.
+func targetCrates(roots []graph.CrateRoot, members []cargoPackage) []string {
+	loaded := make(map[string]struct{}, len(roots))
+	for _, cr := range roots {
+		loaded[cr.Name] = struct{}{}
+	}
+	var out []string
+	for _, m := range members {
+		if _, ok := loaded[m.Name]; !ok {
+			continue
+		}
+		for _, t := range m.Targets {
+			out = append(out, strings.ReplaceAll(t.Name, "-", "_"))
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // absentCoverage returns a Coverage record indicating cargo was not found.

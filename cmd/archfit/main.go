@@ -48,8 +48,8 @@ const (
 // commands live under `config`; `doctor` both checks and (with --fix) installs
 // analyzer tools.
 type cli struct {
-	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" group:"analysis" help:"Analyze architecture locally: decision, score, findings (default command)."`
-	Check    CheckCmd    `cmd:"" group:"analysis" help:"Run the architecture gate. Exits non-zero on violations (1), warnings (2), or config/tool error (3). Use in CI."`
+	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" group:"analysis" help:"Analyze architecture locally: verdict, dimensions, findings (default command)."`
+	Check    CheckCmd    `cmd:"" group:"analysis" help:"Run the architecture gate. Exits 1 when blocked, 2 when it needs attention, 3 on a config or tool error. Use in CI."`
 	Baseline BaselineCmd `cmd:"" group:"analysis" help:"Accept current findings as the gate baseline."`
 	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
 
@@ -61,11 +61,13 @@ type cli struct {
 
 // ConfigCmd groups the config-authoring subcommands. init scaffolds a config (or,
 // with --ai-classify, drafts a full AI-classified config); update syncs the
-// config with the project structure; compare measures one tree under two
-// configs; enrich drafts per-dimension AI annotations for review.
+// config with the project structure; lint reports defects loading accepts;
+// compare measures one tree under two configs; enrich drafts per-dimension AI
+// annotations for review.
 type ConfigCmd struct {
 	Init    InitCmd    `cmd:"" help:"Create a starter config (use --ai-classify for an AI-classified draft)."`
 	Update  UpdateCmd  `cmd:"" help:"Sync the config with current project structure."`
+	Lint    LintCmd    `cmd:"" help:"Report config defects judged against the source tree: dead selectors, unknown values, ownership ties. Exits 1 on errors."`
 	Compare CompareCmd `cmd:"" help:"Measure one source tree under two configs and report the difference (report-only)."`
 	Enrich  EnrichCmd  `cmd:"" help:"Draft AI annotations (labels/owner/volatility/subdomain) for review."`
 }

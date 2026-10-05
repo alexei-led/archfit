@@ -56,7 +56,10 @@ type Result struct {
 func evaluate(in Input) Result {
 	raw := make([]finding.Finding, 0, in.Rules.Len())
 	for _, rule := range in.Rules.rules {
-		raw = append(raw, rule.Check(in.Relationships, rules.Evidence{PatternMatches: in.Evidence.PatternMatches, SyntaxFacts: in.Evidence.SyntaxFacts})...)
+		raw = append(raw, rule.Check(in.Relationships, rules.Evidence{
+			PatternMatches: in.Evidence.PatternMatches, SyntaxFacts: in.Evidence.SyntaxFacts, FileClasses: in.Evidence.FileClasses,
+			OutOfScopeFiles: in.Evidence.OutOfScopeFiles, UnwalkedSourceProduction: in.Evidence.UnwalkedSourceProduction,
+		})...)
 	}
 	adv := candidateFindings(in.AdvisoryCandidates)
 	adv = append(adv, staleness.Check(in.Relationships, in.Policy, in.Now)...)
