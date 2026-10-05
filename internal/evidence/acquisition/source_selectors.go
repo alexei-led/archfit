@@ -248,6 +248,12 @@ const goToolTimeout = 30 * time.Second
 // selects packages by constraint.
 var goStdIdentityVars = []string{"GOVERSION", "GOROOT", "GOOS", "GOARCH", "GOFLAGS", "GOEXPERIMENT", "CGO_ENABLED"}
 
+// goEnvJSONArgs is the argv of `go env -json <vars>`, the probe both the
+// measurement profile and the stdlib-list cache key read the toolchain through.
+func goEnvJSONArgs(vars []string) []string {
+	return append([]string{"env", "-json"}, vars...)
+}
+
 // goStdRunner wraps runner in the fact cache under a key made from the
 // toolchain identity `go env` reports in root — the same directory `go list
 // std` runs in, so a go.mod toolchain line picks the same toolchain for both.
@@ -258,8 +264,7 @@ func goStdRunner(ctx context.Context, runner toolrun.Runner, store *factcache.St
 	if store == nil {
 		return runner
 	}
-	args := append([]string{"env", "-json"}, goStdIdentityVars...)
-	identity, err := runner.Run(ctx, toolrun.ToolCmd{Name: "go", Args: args, WorkDir: root, Timeout: goToolTimeout})
+	identity, err := runner.Run(ctx, toolrun.ToolCmd{Name: "go", Args: goEnvJSONArgs(goStdIdentityVars), WorkDir: root, Timeout: goToolTimeout})
 	if err != nil || identity.ExitCode != 0 || len(bytes.TrimSpace(identity.Stdout)) == 0 {
 		return runner
 	}

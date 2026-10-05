@@ -11,6 +11,7 @@ const (
 	metricCoverage = "coverage"
 	ratchetSection = "## Metric ratchet"
 	baselineRef    = "baseline"
+	metricCycle    = "cycle"
 )
 
 // ratchetDoc is a run a metric ratchet blocked: verdict blocked, no active
@@ -28,7 +29,7 @@ func ratchetDoc() report.Document {
 	d.Metrics = []report.MetricResult{
 		{Name: metricCoverage, Value: 0.75, Delta: &worse, Direction: report.DirectionHigherIsBetter},
 		{Name: "unbalanced_edge", Value: 4, Delta: &flat, Direction: report.DirectionHigherIsWorse},
-		{Name: "cycle", Value: 2, Direction: report.DirectionHigherIsWorse},
+		{Name: metricCycle, Value: 2, Direction: report.DirectionHigherIsWorse},
 	}
 	return d
 }
@@ -71,7 +72,7 @@ func TestRender_NamesTheRatchetThatBlocked(t *testing.T) {
 			t.Errorf("ratchet section is missing %q:\n%s", want, block)
 		}
 	}
-	for _, unwanted := range []string{"unbalanced_edge", "cycle"} {
+	for _, unwanted := range []string{"unbalanced_edge", metricCycle} {
 		if strings.Contains(block, unwanted) {
 			t.Errorf("ratchet section names %q, which did not worsen:\n%s", unwanted, block)
 		}
@@ -80,7 +81,7 @@ func TestRender_NamesTheRatchetThatBlocked(t *testing.T) {
 
 // gateRef is an active hard-gate finding reference routed to a dimension.
 func gateRef(id string) report.FindingRef {
-	return report.FindingRef{ID: id, RuleID: "no_" + id, Kind: report.FindingKindGate, Severity: "high", Status: "new"}
+	return report.FindingRef{ID: id, RuleID: "no_" + id, Kind: report.FindingKindGate, Severity: report.FindingSeverityHigh, Status: "new"}
 }
 
 // TestRender_RatchetNeedsAContractProof pins the abstention: the section is

@@ -15,7 +15,10 @@ import (
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
-const evidenceSourceFile = "main.go"
+const (
+	evidenceSourceFile = "main.go"
+	evidenceGoModFile  = "go.mod"
+)
 
 func TestExtractZeroLoadedFilesUsesIndependentSourceInventory(t *testing.T) {
 	for _, tc := range []struct {
@@ -66,7 +69,7 @@ func TestExtractZeroLoadedFilesUsesIndependentSourceInventory(t *testing.T) {
 func TestExtractUnavailableBuildCacheDoesNotReportAbsent(t *testing.T) {
 	root := t.TempDir()
 	for name, content := range map[string]string{
-		"go.mod":           "module example.com/cachefailure\n\ngo 1.26\n",
+		evidenceGoModFile:  "module example.com/cachefailure\n\ngo 1.26\n",
 		evidenceSourceFile: "package cachefailure\n",
 		"blocked-cache":    "not a directory",
 	} {
@@ -100,7 +103,7 @@ func TestExtractDisclosesFilesExcludedByBuildConstraints(t *testing.T) {
 	otherOSFile := "store_" + otherOS + ".go"
 	root := t.TempDir()
 	for name, content := range map[string]string{
-		"go.mod":                        "module example.com/constrained\n\ngo 1.26\n",
+		evidenceGoModFile:               "module example.com/constrained\n\ngo 1.26\n",
 		"app.go":                        "package constrained\n",
 		otherOSFile:                     "package constrained\n\nimport _ \"os\"\n",
 		"enterprise.go":                 "//go:build customtag\n\npackage constrained\n",
@@ -116,15 +119,16 @@ func TestExtractDisclosesFilesExcludedByBuildConstraints(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	customTagFlags := []string{"-tags", "customtag"}
 	for _, tc := range []struct {
 		name string
 		cfg  evidenceports.ExtractConfig
 		want string
 	}{
 		{name: "host build", want: "3 Go file(s) excluded by build constraints"},
-		{name: "tag enabled", cfg: evidenceports.ExtractConfig{BuildFlags: []string{"-tags", "customtag"}}, want: "1 Go file(s) excluded by build constraints"},
+		{name: "tag enabled", cfg: evidenceports.ExtractConfig{BuildFlags: customTagFlags}, want: "1 Go file(s) excluded by build constraints"},
 		{name: "config exclusion wins", cfg: evidenceports.ExtractConfig{Exclusions: []string{"internal/**", otherOSFile}}, want: "1 Go file(s) excluded by build constraints"},
-		{name: "nothing left out", cfg: evidenceports.ExtractConfig{BuildFlags: []string{"-tags", "customtag"}, Exclusions: []string{otherOSFile}}},
+		{name: "nothing left out", cfg: evidenceports.ExtractConfig{BuildFlags: customTagFlags, Exclusions: []string{otherOSFile}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			loads := 0

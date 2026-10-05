@@ -97,8 +97,13 @@ type stdlibRunner struct {
 	calls  *int
 }
 
+// isGoListStd reports whether cmd is the stdlib listing `go list std`.
+func isGoListStd(cmd toolrun.ToolCmd) bool {
+	return cmd.Name == "go" && slices.Equal(cmd.Args, []string{"list", "std"})
+}
+
 func (r stdlibRunner) Run(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-	if cmd.Name == "go" && slices.Equal(cmd.Args, []string{"list", "std"}) {
+	if isGoListStd(cmd) {
 		*r.calls++
 		return toolrun.Output{Stdout: []byte(r.stdout)}, nil
 	}
@@ -138,7 +143,7 @@ type toolchainRunner struct {
 
 func (r toolchainRunner) Run(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
 	switch {
-	case cmd.Name == "go" && slices.Equal(cmd.Args, []string{"list", "std"}):
+	case isGoListStd(cmd):
 		*r.listCalls++
 		if r.listExit != 0 {
 			return toolrun.Output{ExitCode: r.listExit, Stderr: []byte("go: toolchain not available")}, nil

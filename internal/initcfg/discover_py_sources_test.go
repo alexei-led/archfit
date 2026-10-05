@@ -9,7 +9,10 @@ import (
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
-const appDomain = "app.domain"
+const (
+	appDomain = "app.domain"
+	libPkg    = "lib"
+)
 
 // TestDiscoverPy_SourcesCoverTheSubtree pins Python Sources to every dotted
 // module a discovered module's paths (mod, mod.*) claim, the way Go discovery
@@ -41,7 +44,7 @@ func TestDiscoverPy_SourcesCoverTheSubtree(t *testing.T) {
 	}
 	want := map[string][]string{
 		"domain": {appDomain, appDomain + "._private", appDomain + ".service", appDomain + ".sub", appDomain + ".sub.x"},
-		"lib":    {"lib", "lib.util"},
+		libPkg:   {libPkg, libPkg + ".util"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("sources = %v, want %v", got, want)
