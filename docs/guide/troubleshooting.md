@@ -225,7 +225,7 @@ measurable.
 If a composition-root or generated package is flagged for fanning out to many
 modules, give it a `role:` (e.g. `composition_root`) so archfit reads the fan-out
 as cohesion. See
-[configuration-reference.md](configuration-reference.md#module-role).
+[configuration-reference.md](configuration-reference.md#module-role-vs-layer).
 
 ## Reports change between runs / "output written inside analyzed root"
 

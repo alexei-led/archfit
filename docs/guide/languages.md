@@ -97,7 +97,7 @@ path with no change in output.
 
 **go.work member scoping:** use `languages.go.modules` to restrict which workspace
 members are loaded (see
-[configuration reference](configuration-reference.md#languagesgomodules)).
+[configuration reference](configuration-reference.md#languagesgo)).
 
 **Build constraints:** `go/packages` loads each package for the host
 `GOOS`/`GOARCH`, the default build tags, and any `-tags` in `GOFLAGS`. Files that

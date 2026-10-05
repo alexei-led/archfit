@@ -19,7 +19,7 @@ ifeq ($(firstword $(MAKECMDGOALS)),test)
 TEST_PKGS := $(if $(RAW_TEST_PKGS),$(foreach p,$(RAW_TEST_PKGS),$(if $(filter ./% /%,$(p)),$(p),./$(p))),./...)
 endif
 
-GOLANGCI_LINT_VERSION := v2.1.6
+GOLANGCI_LINT_VERSION := v2.12.2
 MOQ_VERSION           := v0.4.0
 
 .DEFAULT_GOAL := help

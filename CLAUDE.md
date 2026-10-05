@@ -9,7 +9,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 
 - `make build` — static binary, `CGO_ENABLED=0` → `.bin/archfit`
 - `make test` — `go test -race -coverprofile=coverage.out ./...` + `python3 internal/extract/scip/scip_reader_test.py` + `bash scripts/tests/cli_exit_contract_test.sh` (CI runs both non-Go steps too)
-- `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.1.6)
+- `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.12.2, same as CI)
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
 - `make arch-lint` — v2 architecture-state gate: `.bin/archfit check --config .archfit.yaml`; accepts `healthy` (0) and `needs_attention` (2), and fails on `blocked` (1) or `error` (3)
 - `make archfit` — compatibility alias for `make arch-lint`
