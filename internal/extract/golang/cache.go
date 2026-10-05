@@ -541,7 +541,7 @@ func unkeyedWorkspaceMods(scanRoot string, memberDirs []string, env map[string]s
 		if _, ok := keyed[dir]; ok {
 			continue
 		}
-		modData, rerr := os.ReadFile(filepath.Join(dir, "go.mod")) //nolint:gosec // dir is a go.work use entry under the analysed workspace; reading its go.mod is the purpose
+		modData, rerr := os.ReadFile(filepath.Join(dir, "go.mod"))
 		if rerr != nil {
 			continue
 		}
