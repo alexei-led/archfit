@@ -792,7 +792,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `metrics.<name>.gate` follows the same convention: a worsening baseline delta
   blocks when `gate` is unset. A tripped ratchet produces NO finding, so it
   reaches the verdict the same way the required-tool gate does — through
-  `evaluation.BlockingMetricRegressions` into the state's hard-gate result
+  `evaluation.blockingMetricRegressions` into the state's hard-gate result
   (`buildState`), never through the finding populations. It also raises the
   owning dimension's `gate` to `fail`, routed by the envelope's own metric list.
   Asserting only `evaluation.Result.Verdict` cannot see this: nothing reads that

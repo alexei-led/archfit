@@ -1,6 +1,6 @@
 # Release notes
 
-## v2.4.0 — guardrails that fire (unreleased)
+## v2.4.0 — guardrails that fire
 
 This release fixes guardrails that silently did not fire, adds the rules an
 architect needs to state module boundaries, and stops the engine from
