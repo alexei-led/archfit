@@ -160,11 +160,11 @@ const (
 
 // ClassifyTaskOrigins places every current repair task in an origin bucket.
 func ClassifyTaskOrigins(in TaskOriginEvidence) *TaskOriginDelta {
-	comparable, reasons := compareAnalyzerEvidence(in.Families, in.Head, in.Base)
+	evidenceComparable, reasons := compareAnalyzerEvidence(in.Families, in.Head, in.Base)
 	// A config-hash mismatch means the two sides did not measure the same
 	// intent, so nothing unmatched can be attributed to the code change.
 	if in.Head.Hash != in.Base.Hash {
-		comparable = false
+		evidenceComparable = false
 		reasons = append(reasons, "config: head and base config hashes differ")
 	}
 	sort.Strings(reasons)
@@ -185,7 +185,7 @@ func ClassifyTaskOrigins(in TaskOriginEvidence) *TaskOriginDelta {
 			unknown = append(unknown, t.FindingID)
 		case inBase:
 			preExisting = append(preExisting, t.FindingID)
-		case comparable:
+		case evidenceComparable:
 			introduced = append(introduced, t.FindingID)
 		default:
 			unknown = append(unknown, t.FindingID)

@@ -108,9 +108,9 @@ func testTaskOriginUnpairedReason(t *testing.T) {
 // comparison_reasons — lives in the reasons slice. Reading only the bool
 // collapses `comparable` and `comparable_with_gaps` into one bucket, and that
 // boundary IS the silent-versus-disclosed boundary the whole design rests on.
-func gitGrade(comparable bool, reasons []string) CoverageComparability {
+func gitGrade(evidenceComparable bool, reasons []string) CoverageComparability {
 	switch {
-	case !comparable:
+	case !evidenceComparable:
 		return CoverageNotComparable
 	case len(reasons) == 0:
 		return CoverageComparable
@@ -153,7 +153,7 @@ func testTaskOriginCrossPathAgreement(t *testing.T) {
 	rows := func(cs ...evidence.Coverage) []evidence.Coverage { return cs }
 
 	const (
-		comparable = CoverageComparable
+		full       = CoverageComparable
 		withGaps   = CoverageComparableWithGaps
 		notCompare = CoverageNotComparable
 	)
@@ -171,7 +171,7 @@ func testTaskOriginCrossPathAgreement(t *testing.T) {
 		wantDecision CoverageComparability
 		divergent    string
 	}{
-		{name: "ok both sides", fam: scipFamily, head: rows(covRow(toolScip, evidence.StatusOK)), base: rows(covRow(toolScip, evidence.StatusOK)), want: comparable},
+		{name: "ok both sides", fam: scipFamily, head: rows(covRow(toolScip, evidence.StatusOK)), base: rows(covRow(toolScip, evidence.StatusOK)), want: full},
 		// Every family reaching pairFamily was ACTIVATED by the effective config,
 		// so its absence is shared blindness that must be disclosed — whether or
 		// not it is in the install-hint table that emits CoverageGaps. scip is not
@@ -189,7 +189,7 @@ func testTaskOriginCrossPathAgreement(t *testing.T) {
 		// Both sides not_applicable: the language is in neither tree. gradeTool
 		// drops the analyzer from the comparison entirely (ignored), which must
 		// leave the overall grade at comparable with no detail.
-		{name: "primary absent both sides, no gap", fam: goFamily, head: rows(covRow(toolGoPackages, evidence.StatusAbsent)), base: rows(covRow(toolGoPackages, evidence.StatusAbsent)), want: comparable},
+		{name: "primary absent both sides, no gap", fam: goFamily, head: rows(covRow(toolGoPackages, evidence.StatusAbsent)), base: rows(covRow(toolGoPackages, evidence.StatusAbsent)), want: full},
 		{name: "absent against ok", fam: scipFamily, head: rows(covRow(toolScip, evidence.StatusAbsent)), base: rows(covRow(toolScip, evidence.StatusOK)), want: notCompare},
 		{
 			name: "disabled both sides", fam: scipFamily,
@@ -199,7 +199,7 @@ func testTaskOriginCrossPathAgreement(t *testing.T) {
 			// produced no finding on either side that the other could hide. `config
 			// compare` weighs TWO configs and reports the measurement neither of
 			// them buys. Same input, different question, different grade.
-			want: comparable, wantDecision: withGaps,
+			want: full, wantDecision: withGaps,
 			divergent: "a deliberate opt-out is scope for --base and lost measurement for config compare",
 		},
 		{name: "timed out both sides", fam: scipFamily, head: rows(covRow(toolScip, evidence.StatusTimedOut)), base: rows(covRow(toolScip, evidence.StatusTimedOut)), want: notCompare},
@@ -226,7 +226,7 @@ func testTaskOriginCrossPathAgreement(t *testing.T) {
 			// --base compares two TREES, so a language appearing between them is
 			// expected; `config compare` compares ONE tree, so the same status move
 			// can only have been caused by the configuration.
-			want: comparable, wantDecision: notCompare,
+			want: full, wantDecision: notCompare,
 			divergent: "--base compares two trees, config compare compares one",
 		},
 	}
