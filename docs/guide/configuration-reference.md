@@ -532,7 +532,7 @@ symbol-level strength from `rust-analyzer scip`.
 
 When an analyzer is **absent** (tool not installed or not found), its metrics
 drop to `n/a` and a coverage gap is reported with an install hint
-(see [commands](commands.md#coverage-gaps-and-required-tools)). By default the
+(see [`archfit check`](commands.md#archfit-check)). By default the
 gap is reported without setting the repository hard gate to `fail`; incomplete
 dimension or required-rule evidence can still make `check` exit `2`. Set a
 per-analyzer `gate` to make CI block on the missing tool:
