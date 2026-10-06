@@ -15,6 +15,8 @@ const (
 	modAllowOpen     = "open"
 	modAllowSealed   = "sealed"
 	modAllowAbsent   = "absent"
+	modBillingAPI    = "billing-api"
+	layerDomainName  = "domain"
 )
 
 func TestModuleFor_MostSpecificWins(t *testing.T) {
@@ -215,6 +217,76 @@ func TestDeclaresAllowlist(t *testing.T) {
 	for name, want := range map[string]bool{modAllowAbsent: false, "empty-deps": true, "empty-vis": true, "listed-deps": true, "undeclared": false} {
 		if got := mm.DeclaresAllowlist(name); got != want {
 			t.Errorf("DeclaresAllowlist(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestSelectsModule(t *testing.T) {
+	mm := BuildModuleMap(map[string]ModuleDef{
+		modAllowBilling:  {Layer: layerDomainName, Role: RoleCore},
+		modAllowShipping: {Layer: layerDomainName},
+		modBillingAPI:    {Layer: "adapter", Role: RoleAdapter},
+	})
+	tests := []struct {
+		selector string
+		want     []string
+	}{
+		{modAllowBilling, []string{modAllowBilling}},
+		{"billing*", []string{modAllowBilling, modBillingAPI}},
+		{"layer:" + layerDomainName, []string{modAllowBilling, modAllowShipping}},
+		{"role:adapter", []string{modBillingAPI}},
+		{"role:core", []string{modAllowBilling}},
+		{"layer:nowhere", nil},
+		{"layer:", nil},
+		{"role:", nil},
+		{"warehouse", nil},
+		{"**", []string{modAllowBilling, modBillingAPI, modAllowShipping}},
+	}
+	for _, tt := range tests {
+		if got := mm.ModulesSelected(tt.selector); !slices.Equal(got, tt.want) {
+			t.Errorf("ModulesSelected(%q) = %v, want %v", tt.selector, got, tt.want)
+		}
+	}
+	if mm.SelectsModule("**", "undeclared") {
+		t.Error("a selector selected an undeclared module")
+	}
+}
+
+func TestValidModuleSelector(t *testing.T) {
+	var mm ModuleMap
+	for selector, want := range map[string]bool{
+		modAllowBilling: true, "layer:" + layerDomainName: true, "role:core": true, "billing-*": true,
+		"layer:": false, "role:": false, "": false, "billing[": false,
+	} {
+		if got := mm.ValidModuleSelector(selector); got != want {
+			t.Errorf("ValidModuleSelector(%q) = %v, want %v", selector, got, want)
+		}
+	}
+}
+
+// TestDeniedDependencyReadsSelectorEntries pins that an allowlist entry is a
+// module selector: a layer, a role, or a glob admits every module it selects.
+func TestDeniedDependencyReadsSelectorEntries(t *testing.T) {
+	mm := BuildModuleMap(map[string]ModuleDef{
+		modAllowBilling:  {Layer: layerDomainName, VisibleTo: []string{"layer:" + policyTestApp, "role:composition_root"}},
+		modAllowShipping: {Layer: policyTestApp, DependsOn: []string{"bill*"}},
+		policyTestUnit:   {Role: RoleCompositionRoot},
+		modAllowOpen:     {Layer: policyTestApp},
+		modAllowSealed:   {Layer: "infra"},
+	})
+	tests := []struct {
+		from, to string
+		want     []string
+	}{
+		{modAllowShipping, modAllowBilling, nil},
+		{policyTestUnit, modAllowBilling, nil},
+		{modAllowOpen, modAllowBilling, nil},
+		{modAllowSealed, modAllowBilling, []string{allowlistVisibleTo}},
+		{modAllowShipping, modAllowOpen, []string{allowlistDependsOn}},
+	}
+	for _, tt := range tests {
+		if got := mm.DeniedDependency(tt.from, tt.to); !slices.Equal(got, tt.want) {
+			t.Errorf("DeniedDependency(%q, %q) = %v, want %v", tt.from, tt.to, got, tt.want)
 		}
 	}
 }

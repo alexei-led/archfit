@@ -133,6 +133,9 @@ func ruleDiagnostics(rules []policy.RuleDef, inv selectorInventory) []PolicyDiag
 			inv.matches(rule.Type, selectorTo, orMatchAll(rule.To)):
 			out = append(out, PolicyDiagnostic{Code: LintGuardMatchesSource, Severity: LintSeverityWarning, Path: path,
 				Message: "guard rule matches scanned source: the guarded path exists — remove the code or drop guard: true"})
+		case vacuous && moduleSide(side):
+			out = append(out, PolicyDiagnostic{Code: LintUnknownModule, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
+				Message: side + ": " + glob + " selects no declared module (no module has that name, layer, or role); fix the selector or set guard: true"})
 		case vacuous:
 			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
 				Message: side + ": " + glob + " matches no scanned source" + inv.vacuityHint(glob) +
@@ -202,7 +205,8 @@ func (inv selectorInventory) vacuityHint(glob string) string {
 // moduleValueDiagnostics reports module values the engine cannot read: an
 // unknown volatility or subdomain leaves the module's volatility undeclared, a
 // layer missing from `layers:` drops the module from layer ranking, and a
-// depends_on or visible_to entry naming no declared module allows nothing.
+// depends_on or visible_to entry that selects no declared module allows
+// nothing.
 func moduleValueDiagnostics(topology policy.TopologyView) []PolicyDiagnostic {
 	var out []PolicyDiagnostic
 	for _, name := range sortedModuleNames(topology.Modules) {
@@ -226,9 +230,9 @@ func moduleValueDiagnostics(topology policy.TopologyView) []PolicyDiagnostic {
 		}{{"depends_on", def.DependsOn}, {"visible_to", def.VisibleTo}} {
 			key := list.key
 			for i, entry := range list.entries {
-				if _, declared := topology.Modules[entry]; !declared {
+				if len(topology.ModuleMap.ModulesSelected(entry)) == 0 {
 					out = append(out, PolicyDiagnostic{Code: LintUnknownModule, Severity: LintSeverityError, Path: fmt.Sprintf("%s.%s[%d]", path, key, i),
-						Message: fmt.Sprintf("%s entry %q names no declared module; it allows nothing", key, entry)})
+						Message: fmt.Sprintf("%s entry %q names no declared module, layer, or role; it allows nothing", key, entry)})
 				}
 			}
 		}

@@ -31,6 +31,24 @@ type RuleDef struct {
 	// guard counts as evaluated while its selector matches nothing; any other
 	// rule with a selector that matches nothing is reported as not evaluated.
 	Guard bool `yaml:"guard,omitempty"`
+	// FromModule selects the importing modules of a forbidden_dependency rule
+	// instead of from: "layer:<name>" selects every module with that layer,
+	// "role:<role>" every module with that role, and any other text is a glob
+	// over declared module names. A module selector matches only edges between
+	// two different modules.
+	FromModule string `yaml:"from_module,omitempty"`
+	// ToModule selects the imported modules of a forbidden_dependency rule
+	// instead of to:, with the same selector forms as from_module.
+	ToModule string `yaml:"to_module,omitempty"`
+	// Rationale says why the rule exists. It is appended to every finding's
+	// why as " — <rationale>" and repeated in the repair task's constraints.
+	Rationale string `yaml:"rationale,omitempty"`
+	// Alternatives name what to do instead. They become the finding's
+	// allowed_alternatives and repair-task constraints.
+	Alternatives []string `yaml:"alternatives,omitempty"`
+	// Docs points at the document that explains the rule, such as an ADR. It
+	// is appended to every finding's constraint as " (see <docs>)".
+	Docs string `yaml:"docs,omitempty"`
 }
 
 // ruleTypes are the built-in `rules[].type` values, sorted. The published

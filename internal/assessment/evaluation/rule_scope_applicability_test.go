@@ -23,6 +23,14 @@ const (
 	typeModCycle = "module_cycle"
 	typeLayerDir = "forbidden_layer_direction"
 	modWebUI     = "web_ui"
+
+	reasonDepCruiserAbsent = "dependency-cruiser evidence is absent"
+	selLayerDomain         = "layer:domain"
+	selLayerNowhere        = "layer:nowhere"
+	modWarehouse           = "warehouse"
+	layerNameDomain        = "domain"
+	layerNameApp           = "app"
+	pkgHTTP                = "net/http"
 )
 
 // unevaluatedReasons maps each listed required rule to its reason.
@@ -93,7 +101,7 @@ func TestRuleScopeSkipsLanguagesTheExtractorSaysAreAbsent(t *testing.T) {
 		{name: "forbidden_layer_direction over absent typescript", modules: tsOnlyModules,
 			rule: policy.RuleDef{Type: typeLayerDir}},
 		{name: "module_cycle with the typescript producer missing", modules: tsOnlyModules, present: true,
-			rule: policy.RuleDef{Type: typeModCycle}, wantReason: "dependency-cruiser evidence is absent"},
+			rule: policy.RuleDef{Type: typeModCycle}, wantReason: reasonDepCruiserAbsent},
 		{name: "dependency rule aimed only at absent typescript",
 			rule:       policy.RuleDef{Type: ruleForbidden, From: webUIGlob, To: selBilling},
 			wantReason: onlyUnanalysed},
@@ -338,7 +346,7 @@ func TestModuleDependenciesScopeIsTheDeclaringModules(t *testing.T) {
 		{name: "allowlist on the TypeScript module", modules: map[string]policy.ModuleDef{
 			modBilling: {Paths: []string{selBilling}},
 			modWebUI:   {Paths: []string{webUIGlob}, DependsOn: []string{modBilling}},
-		}, wantReason: "dependency-cruiser evidence is absent"},
+		}, wantReason: reasonDepCruiserAbsent},
 		{name: "no module declares an allowlist", modules: map[string]policy.ModuleDef{
 			modBilling: {Paths: []string{selBilling}},
 			modWebUI:   {Paths: []string{webUIGlob}},
@@ -350,6 +358,49 @@ func TestModuleDependenciesScopeIsTheDeclaringModules(t *testing.T) {
 			in.Facts.UnanalysedFiles = nil
 			withModules(&in, tc.modules)
 			withRule(&in, policy.RuleDef{Type: typeModDeps})
+			want := map[string]string{}
+			if tc.wantReason != "" {
+				want[ruleIDScoped] = tc.wantReason
+			}
+			if got := unevaluatedReasons(diag, in); !maps.Equal(got, want) {
+				t.Fatalf("unevaluated_required_rules = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// TestModuleSelectorScopeAndVacuity pins a forbidden_dependency rule with
+// module selectors: a from_module that selects a Go module stays evaluated
+// while the TypeScript producer is missing, a from_module that selects the
+// TypeScript module waits for it unless its to_module speaks another language
+// (no producer emits a cross-language edge), a selector that selects no module is a
+// policy defect named by side, and a guard over such a selector holds.
+func TestModuleSelectorScopeAndVacuity(t *testing.T) {
+	modules := map[string]policy.ModuleDef{
+		modBilling: {Paths: []string{selBilling}, Layer: layerNameDomain},
+		modWebUI:   {Paths: []string{webUIGlob}, Layer: "ui"},
+	}
+	for _, tc := range []struct {
+		name       string
+		rule       policy.RuleDef
+		wantReason string
+	}{
+		{name: "from_module on a Go module", rule: policy.RuleDef{Type: ruleForbidden, FromModule: selLayerDomain, To: pkgHTTP}},
+		{name: "from_module on the TypeScript module", rule: policy.RuleDef{Type: ruleForbidden, FromModule: "layer:ui", To: "react"},
+			wantReason: reasonDepCruiserAbsent},
+		{name: "TypeScript module to a Go module cannot be an edge", rule: policy.RuleDef{Type: ruleForbidden, FromModule: "layer:ui", ToModule: modBilling}},
+		{name: "from_module selects nothing", rule: policy.RuleDef{Type: ruleForbidden, FromModule: selLayerNowhere, To: pkgHTTP},
+			wantReason: "selector matches nothing: from_module " + selLayerNowhere},
+		{name: "to_module selects nothing", rule: policy.RuleDef{Type: ruleForbidden, FromModule: modBilling, ToModule: modWarehouse},
+			wantReason: "selector matches nothing: to_module " + modWarehouse},
+		{name: "guard over a module selector", rule: policy.RuleDef{Type: ruleForbidden, FromModule: "**", ToModule: "legacy", Guard: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			diag, in := typescriptAbsentFixture()
+			diag.CoverageGaps = []modevidence.CoverageGap{{Tool: toolDepCruiser}}
+			in.Facts.UnanalysedFiles = nil
+			withModules(&in, modules)
+			withRule(&in, tc.rule)
 			want := map[string]string{}
 			if tc.wantReason != "" {
 				want[ruleIDScoped] = tc.wantReason

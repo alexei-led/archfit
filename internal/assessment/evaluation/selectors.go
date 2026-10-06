@@ -12,7 +12,14 @@ import (
 const (
 	selectorFrom = "from"
 	selectorTo   = "to"
+	// The module-selector sides of forbidden_dependency: they select declared
+	// modules, not source.
+	selectorFromModule = "from_module"
+	selectorToModule   = "to_module"
 )
+
+// moduleSide reports whether a selector side selects declared modules.
+func moduleSide(side string) bool { return side == selectorFromModule || side == selectorToModule }
 
 // selectorMatchesNothingPrefix starts the unevaluated-rule reason for a
 // selector that matches nothing. The App keys a policy-defect reason off it, so
@@ -230,6 +237,11 @@ func (inv selectorInventory) vacuousSelector(rule policy.RuleDef) (side, glob st
 			return s.side, s.glob, true
 		}
 	}
+	for _, s := range [...]struct{ side, selector string }{{selectorFromModule, rule.FromModule}, {selectorToModule, rule.ToModule}} {
+		if s.selector != "" && len(inv.moduleMap.ModulesSelected(s.selector)) == 0 {
+			return s.side, s.selector, true
+		}
+	}
 	return "", "", false
 }
 
@@ -291,7 +303,7 @@ func (inv selectorInventory) matches(ruleType, side, pattern string) bool {
 // analyses: the rule is aimed at code archfit cannot read relationships from
 // in this tree, which is not a selector typo.
 func (inv selectorInventory) matchesOnlyUnanalysed(ruleType, side, pattern string) bool {
-	if ruleType == ruleTypeForbiddenPattern {
+	if ruleType == ruleTypeForbiddenPattern || moduleSide(side) {
 		return false
 	}
 	for file := range inv.unanalysed {

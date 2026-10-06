@@ -121,9 +121,9 @@ func (r *forbiddenPattern) Check(_ relationship.Set, ev Evidence) []finding.Find
 		f.Edge.From = finding.Endpoint{Module: module, Path: k.file}
 		f.Locations = locs
 		f.MatchedBy = map[string]string{
-			matchedByPattern:  k.pattern,
-			matchedByFile:     k.file,
-			"locations_total": strconv.Itoa(total),
+			matchedByPattern:        k.pattern,
+			matchedByFile:           k.file,
+			matchedByLocationsTotal: strconv.Itoa(total),
 		}
 		f.Why = fmt.Sprintf("%s:%d matches forbidden pattern %q", k.file, locs[0].Line, k.pattern)
 		if total > 1 {

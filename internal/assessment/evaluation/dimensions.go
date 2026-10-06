@@ -279,6 +279,9 @@ func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observati
 		if scope, decided := vacuityScope(rule, inv); decided {
 			return scope
 		}
+		if rule.FromModule != "" || rule.ToModule != "" {
+			return moduleSelectorScope(rule, p.Topology, inv, files, f)
+		}
 		// Dependency producers are selected by the source endpoint language, but
 		// an explicitly unsupported target scope is still unevaluated: no
 		// producer can emit a relationship to that source-file vocabulary.
@@ -447,6 +450,42 @@ func moduleRuleScope(topology policy.TopologyView, inv selectorInventory) ruleSc
 	return ruleScope{status: ruleScopeNotApplicable}
 }
 
+// moduleSelectorScope is the scope of a forbidden_dependency rule with a module
+// selector. A from_module side scopes like a module rule over the modules it
+// selects (selectedModuleScope), and a from: glob like any dependency rule. A
+// to_module side keeps the languages its selected modules' source speaks,
+// since no producer emits an edge across languages; a to: glob keeps the
+// languages its spelling addresses (restrictToTargetVocabulary).
+func moduleSelectorScope(rule policy.RuleDef, topology policy.TopologyView, inv selectorInventory, files []string, f Observations) ruleScope {
+	scope := patternRuleScope(topology.ModuleMap, rule.From, files, f.SourceSelectors, inv.rustModules)
+	if rule.FromModule != "" {
+		scope = selectedModuleScope(topology, inv, topology.ModuleMap.ModulesSelected(rule.FromModule))
+	}
+	if rule.ToModule == "" {
+		if unsupportedOrAmbiguousSourcePattern(topology.ModuleMap, rule.To) &&
+			!knownSourceVocabulary(topology.ModuleMap, rule.To, files, f.SourceSelectors) {
+			return ruleScope{status: ruleScopeUnknown}
+		}
+		return restrictToTargetVocabulary(scope, topology.ModuleMap.SelectorLanguages(rule.To))
+	}
+	target := selectedModuleScope(topology, inv, topology.ModuleMap.ModulesSelected(rule.ToModule))
+	if target.status != ruleScopeApplicable {
+		return scope
+	}
+	return restrictToTargetVocabulary(scope, target.languages)
+}
+
+// selectedModuleScope is moduleRuleScope over the named declared modules only.
+func selectedModuleScope(topology policy.TopologyView, inv selectorInventory, modules []string) ruleScope {
+	selected := make(map[string]policy.ModuleDef, len(modules))
+	for _, name := range modules {
+		selected[name] = topology.Modules[name]
+	}
+	scoped := topology
+	scoped.Modules = selected
+	return moduleRuleScope(scoped, inv)
+}
+
 // allowlistRuleScope is the scope of module_dependencies: the languages of the
 // modules that declare depends_on or visible_to. A declaring module's
 // importers and targets speak its own node vocabulary, so a module that owns
@@ -454,18 +493,16 @@ func moduleRuleScope(topology policy.TopologyView, inv selectorInventory) ruleSc
 // With no declaring module the rule enforces nothing, which is a policy defect
 // reported like a selector that matches nothing.
 func allowlistRuleScope(topology policy.TopologyView, inv selectorInventory) ruleScope {
-	declaring := make(map[string]policy.ModuleDef)
-	for name, def := range topology.Modules {
+	var declaring []string
+	for name := range topology.Modules {
 		if topology.ModuleMap.DeclaresAllowlist(name) {
-			declaring[name] = def
+			declaring = append(declaring, name)
 		}
 	}
 	if len(declaring) == 0 {
 		return ruleScope{status: ruleScopeUnknown, reason: allowlistsDeclareNothing}
 	}
-	scoped := topology
-	scoped.Modules = declaring
-	return moduleRuleScope(scoped, inv)
+	return selectedModuleScope(topology, inv, declaring)
 }
 
 // allowlistsDeclareNothing is the unevaluated reason of a module_dependencies

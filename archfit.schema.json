@@ -406,14 +406,14 @@
             "type": "string"
           },
           "type": "array",
-          "description": "DependsOn is the outbound allowlist: the only declared modules this\nmodule may import. An absent key leaves the module unconstrained; an\nempty list allows no first-party module. The module_dependencies rule\nenforces it; external targets are out of its scope."
+          "description": "DependsOn is the outbound allowlist: the only declared modules this\nmodule may import. Each entry is a module name or a module selector\n(\"layer:\u003cname\u003e\", \"role:\u003crole\u003e\", or a glob over module names). An absent\nkey leaves the module unconstrained; an empty list allows no first-party\nmodule. The module_dependencies rule enforces it; external targets are\nout of its scope."
         },
         "visible_to": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "VisibleTo is the inbound allowlist: the only declared modules that may\nimport this module. An absent key leaves the module visible to every\nmodule; an importer that no module owns is always denied."
+          "description": "VisibleTo is the inbound allowlist: the only declared modules that may\nimport this module, with the same entry forms as depends_on. An absent\nkey leaves the module visible to every module; an importer that no\nmodule owns is always denied."
         }
       },
       "additionalProperties": false,
@@ -561,6 +561,29 @@
         "guard": {
           "type": "boolean",
           "description": "Guard marks an intentional guard rule whose from:/to: selector is expected\nto match nothing, such as a ban on re-introducing a deleted package. A\nguard counts as evaluated while its selector matches nothing; any other\nrule with a selector that matches nothing is reported as not evaluated."
+        },
+        "from_module": {
+          "type": "string",
+          "description": "FromModule selects the importing modules of a forbidden_dependency rule\ninstead of from: \"layer:\u003cname\u003e\" selects every module with that layer,\n\"role:\u003crole\u003e\" every module with that role, and any other text is a glob\nover declared module names. A module selector matches only edges between\ntwo different modules."
+        },
+        "to_module": {
+          "type": "string",
+          "description": "ToModule selects the imported modules of a forbidden_dependency rule\ninstead of to:, with the same selector forms as from_module."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Rationale says why the rule exists. It is appended to every finding's\nwhy as \" — \u003crationale\u003e\" and repeated in the repair task's constraints."
+        },
+        "alternatives": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Alternatives name what to do instead. They become the finding's\nallowed_alternatives and repair-task constraints."
+        },
+        "docs": {
+          "type": "string",
+          "description": "Docs points at the document that explains the rule, such as an ADR. It\nis appended to every finding's constraint as \" (see \u003cdocs\u003e)\"."
         }
       },
       "additionalProperties": false,

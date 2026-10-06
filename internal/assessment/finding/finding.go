@@ -82,6 +82,9 @@ type Finding struct {
 	Why          string                  `json:"why"`
 	Constraint   string                  `json:"constraint"`
 	Alternatives []string                `json:"allowed_alternatives,omitempty"`
+	// Rationale is the rule's declared rationale, already appended to Why. It
+	// is not serialized: the repair task repeats it in its constraints.
+	Rationale string `json:"-"`
 }
 
 // New creates a Finding with a stable fingerprint ID derived from (ruleID, from, to, kind).
