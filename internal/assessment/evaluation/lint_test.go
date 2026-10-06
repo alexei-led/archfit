@@ -411,7 +411,7 @@ func TestLintModuleSelectors(t *testing.T) {
 	modules := map[string]policy.ModuleDef{
 		"a": {Paths: []string{assessPathsA}, Layer: layerNameDomain, DependsOn: []string{"layer:" + layerNameApp, selLayerNowhere}},
 		"b": {Paths: []string{assessPathsB}, Layer: layerNameApp, Role: policy.RoleAdapter},
-		"c": {Paths: []string{"c/**"}},
+		"c": {Paths: []string{"c/main.go"}},
 	}
 	rules := []policy.RuleDef{
 		{ID: "live", Type: ruleForbidden, Gate: gateFail, FromModule: selLayerDomain, ToModule: "role:adapter"},

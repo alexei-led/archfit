@@ -133,10 +133,10 @@ func ruleDiagnostics(rules []policy.RuleDef, inv selectorInventory) []PolicyDiag
 			inv.matches(rule.Type, selectorTo, orMatchAll(rule.To)):
 			out = append(out, PolicyDiagnostic{Code: LintGuardMatchesSource, Severity: LintSeverityWarning, Path: path,
 				Message: "guard rule matches scanned source: the guarded path exists — remove the code or drop guard: true"})
-		case vacuous && moduleSide(side) && len(inv.moduleMap.ModulesSelected(glob)) == 0:
+		case vacuous && isModuleSide(side) && len(inv.moduleMap.ModulesSelected(glob)) == 0:
 			out = append(out, PolicyDiagnostic{Code: LintUnknownModule, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
 				Message: side + ": " + glob + " selects no declared module (no module has that name, layer, or role); fix the selector or set guard: true"})
-		case vacuous && moduleSide(side):
+		case vacuous && isModuleSide(side):
 			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
 				Message: side + ": " + glob + " selects only modules that own no scanned source; fix the module paths or the selector, or set guard: true"})
 		case vacuous:

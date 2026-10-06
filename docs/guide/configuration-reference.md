@@ -1225,16 +1225,23 @@ rules:
     TypeScript or Python importer, or the target of a `to` glob, re-keys it.
     The finding lists the import lines (at most 50; the full count is in
     `matched_by.locations_total`);
-  - a selector that selects no declared module, or only modules that own no
-    scanned source, still loads. A fail-gated rule goes to
-    `decision.unevaluated_required_rules` with the reason
-    `selector matches nothing: from_module <selector>` (or `to_module`), a
-    warn-gated rule prints a config warning, and `archfit config lint`
-    reports `unknown_module` (no module selected) or `dead_selector` (the
-    selected modules own no source). Selected modules that own only source no
-    dependency producer analyses give `selector matches only source no
-    dependency producer analyses: …`, as a path glob does. `guard: true`
-    exempts a selector that matches nothing, as for a path glob;
+  - a selector that selects no declared module, or only modules that
+    provably own no source, still loads. A module provably owns no source
+    when no scanned file is in it and each of its paths is a source-file path
+    that does not exist or a `crate::mod` path the module graph lacks. A
+    fail-gated rule goes to `decision.unevaluated_required_rules` with the
+    reason `selector matches nothing: from_module <selector>` (or
+    `to_module`), a warn-gated rule prints a config warning, and
+    `archfit config lint` reports `unknown_module` (no module selected) or
+    `dead_selector` (the selected modules own no source). Selected modules
+    that own only source no dependency producer analyses give
+    `selector matches only source no dependency producer analyses: …`, as a
+    path glob does. When the inventory cannot judge a selected module (a
+    directory glob with no scanned file, a Rust package name without cargo
+    metadata, a `crate::mod` path without the module graph), the rule stays
+    unevaluated with the generic scope reason, as `module_cycle` does.
+    `guard: true` exempts a selector that matches nothing, as for a path
+    glob;
   - the rule's scope is the languages of the modules a `from_module` selects,
     restricted to the languages of the modules a `to_module` selects.
 - `public_api_only` — fires on edges into internal surface, optionally filtered

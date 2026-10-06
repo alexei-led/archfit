@@ -444,15 +444,59 @@ func TestToModuleScopeNeverFallsBackToTheSourceSide(t *testing.T) {
 			t.Errorf("unevaluated reason = %q, want %q", got, want)
 		}
 	})
-	t.Run("target whose modules own no source", func(t *testing.T) {
-		diag, in := typescriptAbsentFixture()
-		withModules(&in, map[string]policy.ModuleDef{
-			modBilling: {Paths: []string{selBilling}},
-			"moved":    {Paths: []string{"internal/moved/**"}},
+	const generic = "rule scope cannot be established from the supported source inventory"
+	for _, tc := range []struct {
+		name, path, want string
+	}{
+		{"target that provably owns no source", "internal/moved/x.go", "selector matches nothing: to_module moved"},
+		{"target the inventory cannot judge from a directory glob", "internal/moved/**", generic},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			diag, in := typescriptAbsentFixture()
+			withModules(&in, map[string]policy.ModuleDef{
+				modBilling: {Paths: []string{selBilling}},
+				"moved":    {Paths: []string{tc.path}},
+			})
+			withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modBilling, ToModule: "moved"})
+			if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != tc.want {
+				t.Errorf("unevaluated reason = %q, want %q", got, tc.want)
+			}
 		})
-		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modBilling, ToModule: "moved"})
-		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != "selector matches nothing: to_module moved" {
-			t.Errorf("unevaluated reason = %q, want the stale module stanza named", got)
+	}
+}
+
+// TestRustModuleSelectorsFollowModuleRuleScope pins module selectors over Rust
+// modules: a crate::mod path the module graph lacks matches nothing; a module
+// declared by package name, whose files have no crate identity without cargo
+// metadata, abstains rather than reading as empty.
+func TestRustModuleSelectorsFollowModuleRuleScope(t *testing.T) {
+	const generic = "rule scope cannot be established from the supported source inventory"
+	t.Run("crate::mod path missing from the module graph", func(t *testing.T) {
+		diag, in := rustModuleFixture()
+		withModules(&in, map[string]policy.ModuleDef{
+			modPlace: {Paths: []string{rustModPlace}},
+			"gone":   {Paths: []string{"core::gone"}},
+		})
+		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modPlace, ToModule: "gone"})
+		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != "selector matches nothing: to_module gone" {
+			t.Errorf("unevaluated reason = %q, want the dead crate::mod module named", got)
+		}
+	})
+	t.Run("package-name module without crate roots", func(t *testing.T) {
+		diag, in := rustModuleFixture()
+		in.Facts.SourceSelectors[rustLibFile] = ""
+		withModules(&in, map[string]policy.ModuleDef{
+			rustCrate:  {Paths: []string{rustCrate}, Layer: layerNameDomain},
+			modBilling: {Paths: []string{selBilling}},
+		})
+		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: selLayerDomain, ToModule: modBilling})
+		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != generic {
+			t.Errorf("unevaluated reason = %q, want the generic abstention", got)
+		}
+		for _, d := range evaluation.LintPolicy(in.Policy, in.Facts) {
+			if strings.HasPrefix(d.Path, "rules[") {
+				t.Errorf("lint reports %+v, want a module selector it cannot judge left alone", d)
+			}
 		}
 	})
 }

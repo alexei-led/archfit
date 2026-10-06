@@ -319,10 +319,10 @@ func (mm ModuleMap) ModulesSelected(selector string) []string {
 	return out
 }
 
-// DeclaresCrateModulePath reports whether the named module declares a Rust
-// crate::mod path, which names module-graph nodes rather than files.
-func (mm ModuleMap) DeclaresCrateModulePath(name string) bool {
-	return slices.ContainsFunc(mm.modules[name].Paths, func(p string) bool { return strings.Contains(p, "::") })
+// Paths returns the declared path globs of the named module; nil for an
+// undeclared module.
+func (mm ModuleMap) Paths(name string) []string {
+	return slices.Clone(mm.modules[name].Paths)
 }
 
 // ValidModuleSelector reports whether selector is well formed: a "layer:" or
