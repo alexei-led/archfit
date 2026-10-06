@@ -115,13 +115,7 @@ func buildState(diag *result.Result, in stateInput) state.Architecture {
 func unevaluatedRequiredRules(diag *result.Result, p policy.PolicySnapshot, f Observations) []state.UnevaluatedRule {
 	var missing []state.UnevaluatedRule
 	for _, rule := range p.Gates.Rules.Rules {
-		gate := rule.Gate
-		// Match rules.New: API drift and type leaks default to warn; other
-		// omitted gates retain the fail posture of the rule wrapper.
-		if gate == "" && rule.Type != ruleTypePublicAPIChange && rule.Type != ruleTypePublicAPILeak {
-			gate = string(policy.GateFail)
-		}
-		if gate != string(policy.GateFail) {
+		if !rule.Blocks() {
 			continue
 		}
 		if reason := ruleUnevaluatedReason(diag, rule, p, f); reason != "" {
