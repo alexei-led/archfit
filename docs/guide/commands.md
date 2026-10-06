@@ -53,6 +53,9 @@ Use this when you know the job, not the command.
 | understand one finding in detail                                     | `archfit explain <fingerprint-prefix> -c .archfit.yaml`                                                       |
 | ask which module owns a path before an edit                          | `archfit policy where <path> -c .archfit.yaml`                                                                |
 | ask whether a file may import a target before an edit                | `archfit policy can-import <from> <target> -c .archfit.yaml`                                                  |
+| block an agent's stop or a commit on an architecture repair           | `archfit hook claude` (Claude Code Stop hook) or `archfit hook git` (pre-commit)                              |
+| keep the archfit rules in AGENTS.md current                          | `archfit agents-md --write` (CI: `archfit agents-md --check`)                                                 |
+| install the agent skill that matches the binary                      | `archfit skill install`                                                                                       |
 | verify analyzers are installed, or install what archfit can install  | `archfit doctor` or `archfit doctor --fix`                                                                    |
 | create the first config file for a repo                              | `archfit config init --root .`                                                                                |
 | sync an existing config to the current repo structure                | `archfit config update -c .archfit.yaml`                                                                      |
@@ -69,7 +72,7 @@ is the architecture verdict, nothing else.
 | Code | Meaning                                                                                                                                                     | Commands that produce it                                                                                                                                                                                                             |
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `0`  | `healthy` — every dimension measured, every hard gate passing, no active diagnostic. For `analyze`, any valid report.                                       | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config lint`, `archfit config compare`, `archfit config enrich ...` |
-| `1`  | `blocked` — an active hard-gate finding, a required analyzer that did not run under `--require-tools`, or a tripped metric ratchet (`metrics.<name>.gate`). For `config lint`, at least one error diagnostic. For `policy can-import`, a denied target. | `archfit check`, `archfit config lint`, `archfit policy can-import`; `archfit analyze` never exits `1` on a successful run |
+| `1`  | `blocked` — an active hard-gate finding, a required analyzer that did not run under `--require-tools`, or a tripped metric ratchet (`metrics.<name>.gate`). For `config lint`, at least one error diagnostic. For `policy can-import`, a denied target. For `hook git`, a repair or an owner decision. For `agents-md --check`, a missing or stale block. | `archfit check`, `archfit config lint`, `archfit policy can-import`, `archfit hook git`, `archfit agents-md --check`; `archfit analyze` never exits `1` on a successful run |
 | `2`  | `needs_attention` — no blocker, but an active diagnostic or a partial/unmeasured dimension. For `policy can-import`, no target denied and a target not decided. | `archfit check`, `archfit policy can-import`                                                                                                                                                                                         |
 | `3`  | Usage, parse, config, or runtime error. No valid report was produced.                                                                                       | All commands                                                                                                                                                                                                                         |
 
@@ -77,7 +80,8 @@ Notes:
 
 - `archfit analyze` always exits `0` after a successful analysis, whatever the verdict.
 - `archfit analyze --require-tools` only changes the rendered verdict. It does not change the exit code on success.
-- `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit policy where`, and the `config` commands are success-or-error commands: `0` or `3`.
+- `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit policy where`, `archfit skill install`, and the `config` commands are success-or-error commands: `0` or `3`.
+- `archfit hook claude` speaks the Claude Code hook protocol: exit `2` blocks the stop, `1` is malformed stdin, and an archfit error exits `0` with a `systemMessage` (it fails open).
   `archfit config lint` is the exception: it exits `1` when it reports an error diagnostic.
 - Exit `0` is reachable when all nine dimensions are measured, hard gates pass,
   and no diagnostic is active. Missing supplied coverage, a non-comparable
@@ -433,6 +437,72 @@ archfit policy can-import internal/relationship/scoring/scorer_book.go internal/
 archfit policy can-import web/src/app.ts web/src/db/client.ts
 archfit policy can-import src/myapp/handlers.py myapp.domain
 ```
+
+## `archfit hook claude` / `archfit hook git`
+
+Purpose:
+
+- Run the agent result (`check --format agent`) in process and map its
+  `next_action` onto a host's protocol.
+- `hook claude` is a Claude Code `Stop`/`SubagentStop` hook. It reads the event
+  on stdin. `hook git` is a git pre-commit hook.
+
+Synopsis:
+
+```sh
+archfit hook claude [--config .archfit.yaml] [--base HEAD]
+archfit hook git    [--config .archfit.yaml] [--base HEAD]
+```
+
+| Flag           | Default         | Effect                                                                                     |
+| -------------- | --------------- | ------------------------------------------------------------------------------------------ |
+| `-c, --config` | `.archfit.yaml` | Config file. `hook claude` resolves a relative path against the event `cwd`.               |
+| `--base`       | `HEAD`          | Scope ref: a repair whose findings all exist at this ref is outside the scope. Empty scopes every blocker in. |
+
+The output table of `hook claude` and the pre-commit setup are in
+[the agent feedback loop](agent-feedback.md#hooks-instructions-and-the-skill).
+`hook git` exits `1` on `repair` or `ask_owner`, `0` otherwise, and `3` when
+archfit cannot run.
+
+## `archfit agents-md`
+
+Purpose:
+
+- Render one generated block of agent instructions from the config: the agent
+  loop, the module table (paths, layer, owner, public surface, allowlists), and
+  the rules that block as sentences.
+
+Synopsis:
+
+```sh
+archfit agents-md [--write | --check] [--file AGENTS.md] [-c .archfit.yaml]
+```
+
+Without `--write` or `--check` it prints the block. `--write` replaces the text
+between `<!-- archfit:start -->` and `<!-- archfit:end -->`, or appends the
+block when the file has none. Text outside the markers stays byte-identical,
+the output is sorted with no timestamp, and a second write changes nothing.
+
+Exit codes: `0` printed, written, or current; `1` `--check` found the block
+missing or out of date; `3` usage, config, or file error (unbalanced markers
+included).
+
+## `archfit skill install`
+
+Purpose:
+
+- Install the archfit agent skill that ships in the binary, so the skill
+  matches the commands the binary has.
+
+Synopsis:
+
+```sh
+archfit skill install [--dir .claude/skills] [--force]
+```
+
+It writes `<dir>/archfit`. A file with other content is left alone and the
+command exits `3`, unless `--force` overwrites it. Files already equal to the
+binary's copy are not rewritten. Exit codes: `0` or `3`.
 
 ## `archfit doctor`
 

@@ -131,38 +131,39 @@ drafts without reviewing them first. `config init --ai-classify` without
 `--apply` is review-only (writes commented-inert suggestions; use `-o` to
 redirect to a draft file instead of `.archfit.yaml`).
 
-## Agent repair loop
+## Agent loop: ask, check, hook
 
-Fixing findings autonomously: run `archfit check --json`. Exit 0 is healthy.
-Exit 2 (`needs_attention`) has no active blocker but can mean a required rule
-was not evaluated or the baseline cannot be compared. Read
-`decision.unevaluated_required_rules` and `gate_reference` before describing
-the gate as verified; advisory-only attention does not require a code repair. Exit
-1 (`blocked`) is the one to repair. Exit 1 with an empty `agent_tasks[]` is a
-tripped metric ratchet or a required analyzer that did not run; for a ratchet,
-the text and Markdown output name the metric in a `METRIC RATCHET` /
-`## Metric ratchet` section with its accepted-baseline and current values. Do
-not fabricate evidence merely to turn 2 into 0; exit 0 is reachable when the
-repository genuinely supplies every required fact.
-Each `agent_tasks[]` entry has `repair_kind`, `goal`, `constraints`, `files`,
-and a `validation` command. `repair_kind` is `code_change` or
-`needs_owner_decision`; the latter requires a policy or accepted-debt decision.
-Forbidden-dependency and layer-direction tasks never offer the target module's
-public API as a route, in the goal or in the constraints, and
-new-cross-module goals do not recommend baseline capture as a code fix. One
-import that breaks two rules yields two tasks, one per finding ID. `files` names
-both ends of the edge plus the import sites, so it includes the forbidden
-target: change the importing side, not the target. A `bc/coupling_gate` task
-lists the files behind up to 20 of the seam's qualifying edges. With
-`--base`, a task also has `origin` (`introduced`, `pre_existing`, or
-conservatively `unknown`). Origin is triage metadata only; it never changes the
-verdict or exit code. Validation replays effective `--base`, `--lang`, and
-`--require-tools` flags. `--refresh` is intentionally omitted because
-cache-control must not change validation output. Fix within the constraints,
-then re-run `validation` verbatim. The task is done when its `finding_id` is
-gone from that run and the verdict is not `blocked`; exit 2 after a correct fix
-is not a failed repair. Never "fix" `baseline` or `waived` findings unprompted.
-Full contract: `references/agent-loop.md`.
+**1. Ask before an edit.** Before a new import across modules, run
+`archfit policy can-import <file> <target>`. It runs the rule pass `check` runs,
+under the same baseline and waivers, on that one import, in about 50 ms.
+`denied` (exit 1) names the finding ID, the rule, and the repair: do not add
+the import. `not_decided` (exit 2) means a cycle rule, the seam gate, or a
+missing analyzer can still block it: add it, then check. `allowed` names the
+allowlist or layer order that permits it. `unconstrained` is not permission.
+`archfit policy where <path>` names the owning module, its layer, allowlists,
+and the rules that select the path.
+
+**2. Check before you finish.** Run `archfit check --format agent`. It prints
+`archfit.agent-result.v1`: the verdict, ONE `next_action`, and the repairs
+grouped by edge, in at most 8 KB. Follow `next_action`:
+`repair` — change the code within each repair's `goal` and `constraints`, edit
+only the files in `edit` (never the target of a forbidden edge), then run
+`validate`; `ask_owner` — stop and report to the architecture owner;
+`restore_evidence` — install or fix the analyzer the result names;
+`report_blocked` — report the blockers, they are not from this change;
+`none` — done, even with exit 2. With `--base HEAD`, a repair whose findings
+all exist at HEAD is outside the scope of your change. Never edit the config,
+the baseline, waivers, or labels to pass, and never "fix" `baseline` or
+`waived` findings unprompted. The full JSON (`--format json`, `agent_tasks[]`)
+is in `references/agent-loop.md`.
+
+**3. Hook it in.** `archfit hook claude` is a Claude Code `Stop` and
+`SubagentStop` hook: on a dirty tree it runs the agent result against
+`--base HEAD` and exits 2 with the repair on stderr, at most once per stop; it
+fails open on an archfit error. `archfit hook git` is the pre-commit hook
+(`.pre-commit-hooks.yaml`, id `archfit`). `archfit agents-md --write` keeps a
+generated block of these rules in `AGENTS.md`; `--check` fails CI on drift.
+`archfit skill install` installs this skill from the binary that runs it.
 
 ## Coverage gaps and gate promotion
 

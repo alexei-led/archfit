@@ -257,7 +257,8 @@ edge through the extractor's `QueryEdge` and judges it with the same rule pass
 (`evaluation.JudgeEdge` over `checkRules`).
 
 **Move a package.** Update the owning module's `paths:` in `.archfit.yaml` in
-the same commit. `TestSelfModelCoversEveryGoPackage` fails on an unowned
+the same commit, and run `archfit agents-md --write` so the generated block in
+`AGENTS.md` follows (`TestAgentsMDRepositoryBlockIsCurrent`). `TestSelfModelCoversEveryGoPackage` fails on an unowned
 package and `TestSelfModelHasNoDeadPathGlobs` fails on the glob you left
 behind.
 

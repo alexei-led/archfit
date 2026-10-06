@@ -794,6 +794,20 @@ init` emits v2 directly; owners update older configs manually before analysis.
   order) > `unconstrained`; an edge whose only violations are accepted debt is
   `unconstrained`, never `allowed`. `cmd/archfit.TestPolicyCanImportAgreesWithCheck`
   pins the agreement in both directions.
+- **Hooks map `next_action` onto a host protocol** (`cmd/archfit/hook.go`). `hook
+  claude` (Stop/SubagentStop JSON on stdin, config resolved against the event
+  `cwd`, clean tree skips) exits 2 with `agentout.Brief` on stderr for
+  `repair`/`ask_owner` once (`stop_hook_active` → `systemMessage`), and fails
+  open (exit 0 + `systemMessage`) on any archfit error; malformed stdin is 1.
+  `hook git` exits 1/0/3. Both run `executeScan` in process with `--base HEAD`
+  and the pipeline's stderr discarded. These exit codes are the host protocol,
+  never the engine verdict.
+- **`AGENTS.md` carries a generated block** (`archfit agents-md`, markers
+  `<!-- archfit:start/end -->`). `TestAgentsMDRepositoryBlockIsCurrent` fails
+  when `.archfit.yaml` changes without `archfit agents-md --write`; example
+  configs are pinned by `cmd/archfit/testdata/agents-md`. The skill ships in
+  the binary (`skills/skills.go`, `//go:embed archfit`) and installs with
+  `archfit skill install`.
 - **`check` exit code IS the state verdict** (`application.outcomeFor`):
   `healthy` → 0, `needs_attention` → 2, `blocked` → 1, error → 3. Nothing else
   participates — a required-analyzer gate and a failing hard rule both reach the

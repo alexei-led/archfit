@@ -135,6 +135,63 @@ counts the active ones.
 `--format agent`, read from the repair or advisory tasks. It is absent when
 the run has neither: then re-run the command that produced the result.
 
+## Hooks, instructions, and the skill
+
+**Claude Code Stop hook.** `archfit hook claude` reads the `Stop` or
+`SubagentStop` event on stdin and resolves `--config` against the event `cwd`.
+Register it in `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "archfit hook claude" }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "archfit hook claude" }] }]
+  }
+}
+```
+
+A clean working tree (`git status --porcelain` prints nothing) skips the run.
+Otherwise the hook runs `check --format agent --base HEAD` in process. The
+`--base` ref scopes the result to the uncommitted change: a repair whose
+findings all exist at `HEAD` is outside the scope.
+
+| Result                                    | Hook output                                                                |
+| ----------------------------------------- | -------------------------------------------------------------------------- |
+| `repair` or `ask_owner`, first stop       | Exit 2. Stderr holds the IDs, `file:line`, goal, constraints, and `validate`. |
+| The same, with `stop_hook_active: true`   | Exit 0 with a `systemMessage`. The hook blocks at most once.               |
+| `restore_evidence` or `report_blocked`    | Exit 0 with a `systemMessage`.                                             |
+| `none`                                    | Exit 0, silent.                                                            |
+| An archfit error                          | Exit 0 with a `systemMessage`. The hook fails open.                        |
+| Malformed stdin                           | Exit 1.                                                                    |
+| Any other event                           | Exit 0.                                                                    |
+
+Exit 2 is the Claude Code protocol for "do not stop yet", not the engine verdict.
+
+**Git pre-commit hook.** `archfit hook git` exits 1 with the repair on stderr
+when the next action is `repair` or `ask_owner`, 0 otherwise, and 3 when
+archfit cannot run. The repository publishes it for pre-commit:
+
+```yaml
+- repo: https://github.com/alexei-led/archfit
+  rev: v2.5.0
+  hooks:
+    - id: archfit
+```
+
+It needs `archfit` on `PATH` (`language: system`).
+
+**AGENTS.md block.** `archfit agents-md --write` renders one block between
+`<!-- archfit:start -->` and `<!-- archfit:end -->` in `AGENTS.md` (`--file`
+for another file): the agent loop, the module table, and the rules that block
+as sentences, grouped by the code they constrain. Text outside the markers
+stays byte-identical, and a second write changes nothing. Run
+`archfit agents-md --check` in CI: it exits 1 when the block is missing or out
+of date.
+
+**Skill.** `archfit skill install` writes the archfit agent skill that ships in
+the binary to `.claude/skills/archfit`. It refuses to overwrite a local change
+without `--force`.
+
 ## The output has a published JSON Schema
 
 `archfit.state.schema.json` (repo root) describes the
