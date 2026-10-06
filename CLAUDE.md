@@ -61,7 +61,8 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   (`Config.PolicySnapshot()`, `Config.RunOptions()`, `Config.CoverageOptions()`,
   `Config.AnalyzerFamilies()`, `Config.ForFileClass()`). Only composition roots
   (`cmd/*`), `internal/config` itself, and `internal/configschema` may import
-  `internal/config` (enforced by `*_no_config` rules in `.archfit.yaml`).
+  `internal/config` (enforced by `visible_to` on `policy-config-adapter` and the
+  `module_dependencies` rule in `.archfit.yaml`).
 - Every subprocess call goes through `toolrun.Runner` (interface in
   `internal/toolrun/toolrun.go`); extractors in `internal/extract/{go,ts,py,rust}`
   are out-of-process adapters. No `exec.Command` in core code — fake the `Runner`
@@ -323,6 +324,21 @@ init` emits v2 directly; owners update older configs manually before analysis.
   its member list (`boundedMemberList`, 300 bytes) and the module-cycle goal
   collapses a long member list to its size (`agenttask.cycleMembers`). The App
   rejects a `why` over 500 characters, so no finding text may grow with the graph.
+- **Module allowlists** (`modules.<m>.depends_on` / `visible_to`, enforced by
+  ONE `module_dependencies` rule; predicate `policy.ModuleMap.DeniedDependency`,
+  which `policy can-import` must reuse). Absent key = unconstrained, `[]` =
+  nothing allowed (goccy keeps nil vs empty; `cloneTopology` preserves it).
+  Endpoints resolve against the DECLARED map (`ModuleForNode`), never the
+  augmented `e.FromModule`: a node only a synthetic module owns is unowned. A
+  target no declared module owns is out of scope; an unowned importer is denied
+  by every `visible_to` and keyed by its package (`relationship.ModuleKey`).
+  One finding per denied ordered module pair (`finding.NewKeyed(rule, kind,
+  from, to)`, `matched_by.violates`), production edges only, as for
+  `module_cycle`. Scope = languages of the modules that declare a list
+  (`allowlistRuleScope`); no list anywhere is `selector matches nothing: …`.
+  `ModelHash` ignores both keys (`TestModelHashIgnoresAllowlists`). The self-config
+  parity proof for the 21 retired deny rules is
+  `internal/selfmodel_allowlist_test.go`.
 - **`module_cycle` is production-only** (`rules.productionSource`). An edge counts when its importing file (a file node, or an import site with a source extension) is production:
   - a walked file: its in-scope FileClass decides;
   - a file declared out of scope: never;
@@ -606,8 +622,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
 - **Agent repair contracts are policy-aware and replayable.** Each task carries
   `repair_kind: code_change|needs_owner_decision`; forbidden-dependency goals
   cannot route through a public API, `forbidden_dependency`,
-  `forbidden_layer_direction`, `cycle`, `module_cycle`, and
-  `new_cross_module_dependency` constraints never list the target module's
+  `forbidden_layer_direction`, `cycle`, `module_cycle`, `module_dependencies`,
+  and `new_cross_module_dependency` constraints never list the target module's
   public surface (`agenttask.forbidsTarget`: a public route keeps the
   violation), and new-cross-module goals cannot use baseline capture as a
   repair. One task per active gate finding: an import that

@@ -134,8 +134,8 @@ func deadRuleDetectionFires(t *testing.T) {
 	t.Helper()
 	cfg := loadSelfConfig(t)
 	cfg.Rules = []policy.RuleDef{
-		{ID: "fixture_dead", Type: "forbidden_dependency", Gate: "fail", From: "internal/**", To: "internal/no-such-package-erosion-fixture/**"},
-		{ID: "fixture_live", Type: "forbidden_dependency", Gate: "fail", From: "internal/**", To: "internal/assessment/**"},
+		{ID: "fixture_dead", Type: "forbidden_dependency", Gate: "fail", From: globInternal, To: "internal/no-such-package-erosion-fixture/**"},
+		{ID: "fixture_live", Type: "forbidden_dependency", Gate: "fail", From: globInternal, To: "internal/assessment/**"},
 	}
 	dead := map[string]bool{}
 	for _, d := range lintFindings(lintRepo(t, cfg), evaluation.LintDeadSelector) {
