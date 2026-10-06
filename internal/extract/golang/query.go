@@ -84,6 +84,11 @@ func notExtracted(scanRoot string, cfg evidenceports.ExtractConfig, entries []mo
 		return to + " matches an exclude: glob"
 	case !inLoadedMember(scanRoot, entries, from):
 		return from + " belongs to no loaded Go module"
+	case importsC(filepath.Join(scanRoot, filepath.FromSlash(from))):
+		// With cgo off the load ignores the file; with cgo on it parses the
+		// cgo-generated copy in the build cache, which is outside the scan
+		// root, so the extractor reads no import from it either way.
+		return from + " imports \"C\", and the load reads no import from a cgo file"
 	}
 	return ""
 }
@@ -119,8 +124,7 @@ func inLoadedMember(scanRoot string, entries []modEntry, from string) bool {
 
 // buildMatches reports whether the go toolchain the run starts includes from,
 // with the context toolchainContext gives the extractor, reading the go env
-// file too (go env -w), and the CGO_ENABLED it inherits: a cgo build tag or an
-// import of "C" depends on it. With CGO_ENABLED
+// file too (go env -w), and the CGO_ENABLED it inherits for a cgo build tag. With CGO_ENABLED
 // unset, cgo depends on a C compiler this binary cannot see: when the two
 // settings disagree about from, the answer is undecided. A file that does not
 // exist yet is judged by its name.
@@ -145,11 +149,6 @@ func buildMatches(scanRoot string, buildFlags []string, from string) (match, dec
 			return f, err
 		}
 		ok, err := ctxt.MatchFile(dir, path.Base(from))
-		// MatchFile reads names and build lines only; go/build's Import drops
-		// a cgo file later, when cgo is off.
-		if !enabled && importsC(filepath.Join(dir, path.Base(from))) {
-			ok, err = false, nil
-		}
 		results = append(results, err != nil || ok)
 	}
 	for _, r := range results[1:] {
