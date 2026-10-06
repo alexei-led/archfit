@@ -190,8 +190,14 @@ func patchDefinitions(schema *jsonschema.Schema) {
 		if name == "RuleDef" {
 			// Mirror validateRules/rules.New: every rule needs a stable id for
 			// finding fingerprints/baseline matching, and an empty or
-			// unrecognized `type` is a hard load error.
+			// unrecognized `type` is a hard load error. Enumerating the types
+			// lets an editor flag a typo before the engine rejects it.
 			def.Required = []string{"id", "type"}
+			if typ, ok := def.Properties.Get("type"); ok && typ.Type == typeString && typ.Enum == nil {
+				for _, rt := range policy.RuleTypes() {
+					typ.Enum = append(typ.Enum, rt)
+				}
+			}
 		}
 		if name == "PatternDef" {
 			// Mirror validateRules (internal/config): ast-grep runs

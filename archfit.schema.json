@@ -499,7 +499,20 @@
           "type": "string"
         },
         "type": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "cycle",
+            "forbidden_dependency",
+            "forbidden_layer_direction",
+            "forbidden_pattern",
+            "internal_api_access",
+            "module_cycle",
+            "new_cross_module_dependency",
+            "public_api_change",
+            "public_api_max",
+            "public_api_only",
+            "public_api_type_leak"
+          ]
         },
         "gate": {
           "type": "string",
