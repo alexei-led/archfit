@@ -98,6 +98,7 @@ These formats apply to `archfit analyze` and `archfit check`.
 | `markdown` / `md` | saved audit reports, PR attachments, docs artifacts | Same facts as `json`, laid out for a human. Good for `archfit-report.md`.                                                                                                       |
 | `sarif`           | GitHub code scanning and other SARIF consumers      | Findings keep their rule IDs and `archfit/v1` fingerprints; the state rides in `run.properties`.                                                                                |
 | `scorecard`       | dimension-by-dimension review                       | The nine-dimension state scorecard: status, gate, confidence, denominator, metrics, and unknowns per dimension. No repository score.                                            |
+| `agent`           | coding-agent loops and hooks                        | `archfit.agent-result.v1`: the verdict, one `next_action`, and the repairs grouped by edge, in at most 8 KB. See [the agent result](agent-feedback.md#the-agent-result---format-agent). |
 
 Format rules:
 
@@ -148,7 +149,7 @@ Flags:
 | `--json`          | bool        | `false`                           | Shorthand for `--format json`.                                                                                                           | `archfit analyze --json`                                   |
 | `--markdown`      | bool        | `false`                           | Shorthand for `--format markdown`.                                                                                                       | `archfit analyze --markdown > archfit-report.md`           |
 | `--sarif`         | bool        | `false`                           | Shorthand for `--format sarif`.                                                                                                          | `archfit analyze --sarif > archfit.sarif`                  |
-| `--format`        | enum list   | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`. Repeatable.                                   | `archfit analyze --format text --format json`              |
+| `--format`        | enum list   | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`, `agent`. Repeatable.                                 | `archfit analyze --format text --format json`              |
 | `--no-advisories` | bool        | `false`                           | Drop advisory findings: Balanced Coupling advisories and violations of `gate: warn` rules. Dropped findings do not count as diagnostics. | `archfit analyze --no-advisories`                          |
 | `--min-severity`  | enum        | empty                             | Show only advisories at or above `low`, `medium`, `high`, or `critical`.                                                                 | `archfit analyze --min-severity high`                      |
 | `--lang`          | string list | none                              | Force a language on: `go`, `typescript` (`ts`), `python` (`py`), `rust` (`rs`). Repeatable. Analyzer names are rejected.                 | `archfit analyze --lang go --lang ts`                      |
@@ -204,7 +205,7 @@ Flags:
 | `--json`          | bool      | `false`                           | Shorthand for `--format json`.                                                                                                           | `archfit check --json`                                   |
 | `--markdown`      | bool      | `false`                           | Shorthand for `--format markdown`.                                                                                                       | `archfit check --markdown > archfit-report.md`           |
 | `--sarif`         | bool      | `false`                           | Shorthand for `--format sarif`.                                                                                                          | `archfit check --sarif > archfit.sarif`                  |
-| `--format`        | enum list | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`. Repeatable.                                   | `archfit check --format text --format json`              |
+| `--format`        | enum list | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`, `agent`. Repeatable.                                 | `archfit check --format text --format json`              |
 | `--progress`      | enum      | `auto`                            | Progress reporting on stderr: `auto`, `plain`, or `none`.                                                                                | `archfit check --progress plain`                         |
 | `-q, --quiet`     | bool      | `false`                           | Suppress progress output.                                                                                                                | `archfit check -q --json`                                |
 
@@ -1060,6 +1061,7 @@ Choices:
 - `md`
 - `sarif`
 - `scorecard`
+- `agent`
 
 Shorthands:
 

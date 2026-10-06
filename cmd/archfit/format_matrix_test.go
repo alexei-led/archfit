@@ -15,7 +15,7 @@ import (
 
 // Committed format-matrix fixture names, one per non-JSON renderer. The JSON
 // format's byte-identical baseline is owned by byteidentical_test.go; the
-// remaining four are captured here so every shipped renderer has a reviewed
+// remaining five are captured here so every shipped renderer has a reviewed
 // baseline.
 //
 // They live under cmd/archfit/testdata/, NOT beside the analysed fixture: a
@@ -29,6 +29,7 @@ const (
 	baselineMarkdown  = "markdown.md"
 	baselineSarif     = "sarif.json"
 	baselineScorecard = "scorecard.txt"
+	baselineAgent     = "agent.json"
 )
 
 // formatMatrix freezes the reviewed output of every non-JSON renderer. Every
@@ -43,6 +44,7 @@ var formatMatrix = []struct {
 	{format: "markdown", baseline: baselineMarkdown},
 	{format: "sarif", baseline: baselineSarif, jsonOut: true},
 	{format: "scorecard", baseline: baselineScorecard},
+	{format: "agent", baseline: baselineAgent, jsonOut: true},
 }
 
 // TestFormatMatrix_PreStateBaselines pins the rendered output of every non-JSON

@@ -1,0 +1,46 @@
+{
+  "evidence_gaps": [],
+  "next_action": "repair",
+  "omitted": {
+    "advisories": 1,
+    "repairs": 0,
+    "unevaluated_rules": 0
+  },
+  "repairs": [
+    {
+      "at": [
+        {
+          "file": "pkg/a/a.go",
+          "line": 3
+        }
+      ],
+      "constraints": [
+        "Remove the dependency or move the code"
+      ],
+      "edge": {
+        "from": "pkg/a/a.go",
+        "kind": "imports",
+        "to": "pkg/b"
+      },
+      "edit": [
+        "pkg/a/a.go"
+      ],
+      "finding_ids": [
+        "ba3803eca947bf3c1b7efa8f37854d5e"
+      ],
+      "goal": "Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.",
+      "in_scope": true,
+      "repair_kind": "code_change",
+      "rule_ids": [
+        "no_direct_b_dependency"
+      ],
+      "severity": "medium"
+    }
+  ],
+  "schema_version": "archfit.agent-result.v1",
+  "summary": "blocked: 1 repairs in scope, 0 outside scope; 0 unevaluated required rules; 0 evidence gaps; 0 worsened metrics",
+  "unevaluated_rules": [],
+  "validate": "archfit check -c \u003cROOT\u003e/.archfit.yaml --format agent",
+  "verdict": "blocked",
+  "worsened_metrics": []
+}

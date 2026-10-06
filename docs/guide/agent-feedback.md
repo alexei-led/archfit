@@ -8,7 +8,7 @@ is deterministic — same repo + same config = byte-identical output.
 
 ```text
 agent edits code
-  → archfit check [--base main] --json
+  → archfit check [--base main] --json    (or --format agent: one next_action)
   → exit 0?  healthy — done.
   → exit 2?  needs_attention — no blocking finding. Read the dimension whose
              status is not `measured`, the active diagnostic, or
@@ -25,6 +25,93 @@ agent edits code
 
 Use `check` inside repair loops and CI validation. Use `analyze` to generate
 reports, diffs, or a post-check narrative with `archfit analyze --ai-summary`.
+
+## The agent result: `--format agent`
+
+`archfit check --format agent` writes `archfit.agent-result.v1`. It is a small
+digest of the same run for a coding agent. It gives the verdict, ONE next
+action, and the repairs. The exit code stays the verdict. The full run is
+in `--format json`.
+
+```json
+{
+  "schema_version": "archfit.agent-result.v1",
+  "verdict": "blocked",
+  "next_action": "repair",
+  "summary": "blocked: 1 repairs in scope, 0 outside scope; 0 unevaluated required rules; 0 evidence gaps; 0 worsened metrics",
+  "repairs": [
+    {
+      "finding_ids": ["ba3803eca947bf3c1b7efa8f37854d5e"],
+      "rule_ids": ["no_direct_b_dependency"],
+      "repair_kind": "code_change",
+      "in_scope": true,
+      "severity": "medium",
+      "edge": { "from": "pkg/a/a.go", "to": "pkg/b", "kind": "imports" },
+      "at": [{ "file": "pkg/a/a.go", "line": 3 }],
+      "goal": "Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.",
+      "constraints": ["Remove the dependency or move the code"],
+      "edit": ["pkg/a/a.go"]
+    }
+  ],
+  "evidence_gaps": [],
+  "unevaluated_rules": [],
+  "worsened_metrics": [],
+  "omitted": { "repairs": 0, "unevaluated_rules": 0, "advisories": 1 },
+  "validate": "archfit check -c .archfit.yaml --format agent"
+}
+```
+
+The schema is `archfit.agent-result.schema.json` in the repository root.
+
+**Next action.** The first matching row wins:
+
+| `next_action`      | Condition                                                                                                   | What the agent does                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `repair`           | An in-scope repair needs a code change, or a metric ratchet blocked the run (`worsened_metrics`).            | Change the code within the constraints, then run `validate` (or the command you ran). |
+| `ask_owner`        | Every in-scope repair needs an owner decision, or a required rule has a selector that matches nothing.      | Stop and report to the architecture owner. Do not edit policy. |
+| `restore_evidence` | A required analyzer failed its gate (`evidence_gaps`), or a required rule lacks producer evidence.          | Install or fix the analyzer, then run `validate` (or the command you ran). |
+| `report_blocked`   | The verdict is `blocked`, but no repair is in scope.                                                        | Report the blockers. They are not from this change.    |
+| `none`             | Nothing to do.                                                                                              | Finish. Exit 2 with `none` is a correct finish.        |
+
+A `blocked` verdict never gives `none`.
+
+**Repairs.** archfit groups the active gate tasks by edge (`from`, `to`,
+`kind`). One import that breaks two rules gives one repair with two finding
+IDs. `repair_kind` is `code_change` when any grouped task needs a code change.
+A finding that names no dependency between two different endpoints (a
+`public_api_*` finding names its module on both sides) is its own repair.
+`goal` is the goal of the first code-change task. `constraints` holds the
+distinct constraints of all grouped tasks. `at` lists the source locations.
+`edit` lists the task files on the source side of the edge: the import sites
+and the importing file. The target of a forbidden edge is never a file to
+edit. When the edge has no location and its source node is not a file (a
+Rust `crate::mod` edge), archfit cannot tell the sides apart, and `edit` is
+empty: `edge.from` names the source. A finding that names only a module pair
+(a seam-gate finding) lists every task file, because either module can
+change. Repairs are sorted: in scope first, then code
+changes, then severity, then the lowest finding ID.
+
+**Scope.** Without `--base`, every repair is in scope. With `--base <ref>`,
+a repair is outside the scope only when every grouped task has the origin
+`pre_existing`. An `introduced` or `unknown` origin is in scope, so a
+comparison that cannot place a task never hides a blocker. To scope the result
+to your uncommitted edits, run `archfit check --format agent --base HEAD`.
+
+**Budget.** The result is one line of JSON of at most 8 KB. Every free-text
+string is at most 400 characters. When the result is larger than 8 KB,
+archfit cuts free text to 200 characters and each repair's `at`, `edit`, and
+`constraints` to 5 entries, and counts the cut entries in the repair's
+`at_omitted`, `edit_omitted`, and `constraints_omitted`. Then it moves tail
+repairs into `omitted.repairs` and tail unevaluated rules into
+`omitted.unevaluated_rules`. It always keeps the header and the first repair,
+and it sets `"truncated": true`. No ID, path, edge, or `validate` command is
+shortened. `next_action` and `summary` are decided before the cut, so the
+budget never changes them. Advisories are never listed; `omitted.advisories`
+counts the active ones.
+
+**Validate.** `validate` is the run's validation command with
+`--format agent`, read from the repair or advisory tasks. It is absent when
+the run has neither: then re-run the command that produced the result.
 
 ## The output has a published JSON Schema
 

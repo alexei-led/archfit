@@ -35,7 +35,7 @@ type metricRegression struct {
 // The thresholds (metrics.<name>.max_new / min_delta) and the per-metric gate
 // are not in the contract, so every worsened metric of a proven dimension is
 // listed, one still inside its threshold included; the section says
-// "worsened", never "tripped". The Markdown renderer keeps an identical twin.
+// "worsened", never "tripped". The Markdown and agent renderers keep identical twins.
 func ratchetRegressions(d report.Document) []metricRegression {
 	s := d.State
 	if s.Verdict != report.StateBlocked {

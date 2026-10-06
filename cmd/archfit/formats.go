@@ -1,5 +1,7 @@
 package main
 
+import "github.com/alexei-led/archfit/internal/output/agentout"
+
 // Output format name constants shared across commands and tests.
 const (
 	formatJSON      = "json"
@@ -8,4 +10,5 @@ const (
 	formatMD        = "md" // short alias for formatMarkdown
 	formatSarif     = "sarif"
 	formatScorecard = "scorecard"
+	formatAgent     = agentout.FormatName
 )
