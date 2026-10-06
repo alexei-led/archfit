@@ -22,6 +22,7 @@ const (
 	modWeb       = "web"
 	typeModCycle = "module_cycle"
 	typeLayerDir = "forbidden_layer_direction"
+	modWebUI     = "web_ui"
 )
 
 // unevaluatedReasons maps each listed required rule to its reason.
@@ -75,7 +76,7 @@ func TestRuleScopeSkipsLanguagesTheExtractorSaysAreAbsent(t *testing.T) {
 	}
 	tsOnlyModules := map[string]policy.ModuleDef{
 		modBilling: {Paths: []string{selBilling}},
-		"web_ui":   {Paths: []string{webUIGlob}},
+		modWebUI:   {Paths: []string{webUIGlob}},
 	}
 	const onlyUnanalysed = "selector matches only source no dependency producer analyses: from " + webUIGlob
 	for _, tc := range []struct {
@@ -306,6 +307,49 @@ func TestRustCrateWithEmptyModuleGraphDecidesSelectors(t *testing.T) {
 			in.Facts.RustModuleNodes = nil
 			in.Facts.RustModuleGraphCrates = []string{rustCrate}
 			withRule(&in, policy.RuleDef{Type: ruleForbidden, From: "core::legacy", To: selBilling, Guard: tc.guard})
+			want := map[string]string{}
+			if tc.wantReason != "" {
+				want[ruleIDScoped] = tc.wantReason
+			}
+			if got := unevaluatedReasons(diag, in); !maps.Equal(got, want) {
+				t.Fatalf("unevaluated_required_rules = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// TestModuleDependenciesScopeIsTheDeclaringModules pins the per-module
+// evaluability of module_dependencies: its scope is the languages of the
+// modules that declare depends_on or visible_to, so a Go-only allowlist stays
+// evaluated while the TypeScript producer is missing, an allowlist on the
+// TypeScript module waits for it, and a rule no module gives a list is a
+// policy defect.
+func TestModuleDependenciesScopeIsTheDeclaringModules(t *testing.T) {
+	const typeModDeps = "module_dependencies"
+	for _, tc := range []struct {
+		name       string
+		modules    map[string]policy.ModuleDef
+		wantReason string
+	}{
+		{name: "allowlist on a Go module", modules: map[string]policy.ModuleDef{
+			modBilling: {Paths: []string{selBilling}, VisibleTo: []string{}},
+			modWebUI:   {Paths: []string{webUIGlob}},
+		}},
+		{name: "allowlist on the TypeScript module", modules: map[string]policy.ModuleDef{
+			modBilling: {Paths: []string{selBilling}},
+			modWebUI:   {Paths: []string{webUIGlob}, DependsOn: []string{modBilling}},
+		}, wantReason: "dependency-cruiser evidence is absent"},
+		{name: "no module declares an allowlist", modules: map[string]policy.ModuleDef{
+			modBilling: {Paths: []string{selBilling}},
+			modWebUI:   {Paths: []string{webUIGlob}},
+		}, wantReason: "selector matches nothing: no module declares depends_on or visible_to"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			diag, in := typescriptAbsentFixture()
+			diag.CoverageGaps = []modevidence.CoverageGap{{Tool: toolDepCruiser}}
+			in.Facts.UnanalysedFiles = nil
+			withModules(&in, tc.modules)
+			withRule(&in, policy.RuleDef{Type: typeModDeps})
 			want := map[string]string{}
 			if tc.wantReason != "" {
 				want[ruleIDScoped] = tc.wantReason

@@ -316,8 +316,8 @@ func (r *newCrossModuleDependency) Check(s relationship.Set, _ Evidence) []findi
 		f := finding.New(r.def.ID, e, e.Locations)
 		f.Severity = finding.SeverityMedium
 		f.MatchedBy = map[string]string{
-			"from_module": fromModule,
-			"to_module":   toModule,
+			matchedByFromModule: fromModule,
+			matchedByToModule:   toModule,
 		}
 		f.Why = fmt.Sprintf("New cross-module dependency from %q (%s) to %q (%s)", fromPath, fromModule, toPath, toModule)
 		f.Constraint = "Cross-module dependencies must be reviewed and approved"
@@ -419,6 +419,13 @@ func cycleFingerprintID(ruleID string, scc []string) string {
 // ModuleCycle
 // ---------------------------------------------------------------------------
 
+// matchedByFromModule and matchedByToModule are the MatchedBy keys naming a
+// finding's module pair.
+const (
+	matchedByFromModule = "from_module"
+	matchedByToModule   = "to_module"
+)
+
 // edgeKindModuleDependency is the finding edge kind of a module-pair finding:
 // its endpoints are modules, not graph nodes.
 const edgeKindModuleDependency = "module_dependency"
@@ -513,8 +520,8 @@ func (r *moduleCycle) Check(s relationship.Set, ev Evidence) []finding.Finding {
 		f.Edge.To = finding.Endpoint{Module: p.to}
 		f.Locations = locs
 		f.MatchedBy = map[string]string{
-			"from_module":       p.from,
-			"to_module":         p.to,
+			matchedByFromModule: p.from,
+			matchedByToModule:   p.to,
 			"cycle_modules":     strings.Join(scc, ", "),
 			"cycle_size":        strconv.Itoa(len(scc)),
 			"cycle_pairs_total": strconv.Itoa(pairTotals[i]),
@@ -530,6 +537,132 @@ func (r *moduleCycle) Check(s relationship.Set, ev Evidence) []finding.Finding {
 		out = append(out, f)
 	}
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// ModuleDependencies
+// ---------------------------------------------------------------------------
+
+// validateModuleDependenciesDef rejects from/to on module_dependencies: the
+// module allowlists (depends_on, visible_to) are the rule's whole scope, so a
+// scope glob would load clean and do nothing.
+func validateModuleDependenciesDef(def policy.RuleDef) error {
+	if def.From != "" || def.To != "" {
+		return fmt.Errorf("rules: module_dependencies %q takes no from/to: it enforces the modules' depends_on and visible_to lists", def.ID)
+	}
+	return nil
+}
+
+// moduleDependencies enforces the declared module allowlists
+// (policy.ModuleMap.DeniedDependency): a module's depends_on lists the only
+// modules it may import, and its visible_to lists the only modules that may
+// import it. Endpoints resolve against the DECLARED module map
+// (ModuleForNode), so a node only a synthetic module owns (a Go workspace
+// member, a crate::mod node no crate owner claims) is unowned here.
+//
+// A target no declared module owns (an external package, unowned source) is out
+// of scope: forbidden_dependency bans external targets. An importer no declared
+// module owns is denied by every visible_to list — an allowlist fails closed.
+// Only edges that start in production code count (productionSource), as for
+// module_cycle.
+//
+// One finding per denied module pair, keyed on (rule, kind, from module, to
+// module), so moving or adding a file on that pair never re-keys it. An unowned
+// importer has no module, so its finding is keyed on the importing node's
+// package (relationship.ModuleKey: a Go package directory, a TypeScript file, a
+// Python dotted module, a Rust crate) and the target module, and that package
+// is the finding's from path.
+type moduleDependencies struct {
+	def policy.RuleDef
+	mm  policy.ModuleMap
+}
+
+func (r *moduleDependencies) ID() string { return r.def.ID }
+
+func (r *moduleDependencies) Check(s relationship.Set, ev Evidence) []finding.Finding {
+	type pair struct{ from, unownedFrom, to string }
+	sites := make(map[pair][]relationship.Location)
+	violates := make(map[pair][]string)
+	for _, e := range s.DependencyEdges() {
+		to, toOwned := r.mm.ModuleForNode(e.ToPath, e.Language)
+		if !toOwned || !productionSource(e, ev) {
+			continue
+		}
+		from, _ := r.mm.ModuleForNode(e.FromPath, e.Language)
+		denied := r.mm.DeniedDependency(from, to)
+		if len(denied) == 0 {
+			continue
+		}
+		p := pair{from: from, to: to}
+		if from == "" {
+			p.unownedFrom = relationship.ModuleKey(e.FromID)
+		}
+		sites[p] = append(sites[p], edgeLocations(e)...)
+		violates[p] = denied
+	}
+	pairs := make([]pair, 0, len(sites))
+	for p := range sites {
+		pairs = append(pairs, p)
+	}
+	sort.Slice(pairs, func(a, b int) bool {
+		if pairs[a].from != pairs[b].from {
+			return pairs[a].from < pairs[b].from
+		}
+		if pairs[a].unownedFrom != pairs[b].unownedFrom {
+			return pairs[a].unownedFrom < pairs[b].unownedFrom
+		}
+		return pairs[a].to < pairs[b].to
+	})
+	out := make([]finding.Finding, 0, len(pairs))
+	for _, p := range pairs {
+		locs, total := sortedCappedLocations(sites[p])
+		keys := strings.Join(violates[p], ",")
+		var f finding.Finding
+		if p.from != "" {
+			f = finding.NewKeyed(r.def.ID, edgeKindModuleDependency, p.from, p.to)
+			f.Edge.From = finding.Endpoint{Module: p.from}
+			f.MatchedBy = map[string]string{matchedByFromModule: p.from}
+			f.Why = fmt.Sprintf("Module %s depends on module %s, which the module allowlist denies: %s", p.from, p.to, deniedBy(violates[p], p.from, p.to))
+		} else {
+			// The empty module key cannot collide with a declared module: a
+			// module name is never empty.
+			f = finding.NewKeyed(r.def.ID, edgeKindModuleDependency, "", p.to, p.unownedFrom)
+			f.Edge.From = finding.Endpoint{Path: p.unownedFrom}
+			f.MatchedBy = map[string]string{"from_package": p.unownedFrom}
+			f.Why = fmt.Sprintf("%s, which no declared module owns, depends on module %s, whose visible_to admits only the modules it lists", p.unownedFrom, p.to)
+		}
+		f.Severity = finding.SeverityHigh
+		f.Edge.To = finding.Endpoint{Module: p.to}
+		f.Locations = locs
+		f.MatchedBy[matchedByToModule] = p.to
+		f.MatchedBy["violates"] = keys
+		f.MatchedBy["locations_total"] = strconv.Itoa(total)
+		f.Constraint = "Remove the dependency: the module allowlist denies it through every package of the target, its public API included; only the module owner can change " +
+			strings.Join(violates[p], " or ")
+		out = append(out, f)
+	}
+	return out
+}
+
+// Allowlist keys as policy.ModuleMap.DeniedDependency names them; the two
+// packages agree on the spelling by convention.
+const (
+	allowlistDependsOn = "depends_on"
+	allowlistVisibleTo = "visible_to"
+)
+
+// deniedBy says which allowlist denies the pair from -> to.
+func deniedBy(violates []string, from, to string) string {
+	parts := make([]string, 0, len(violates))
+	for _, key := range violates {
+		switch key {
+		case allowlistDependsOn:
+			parts = append(parts, from+"'s depends_on does not list "+to)
+		case allowlistVisibleTo:
+			parts = append(parts, to+"'s visible_to does not list "+from)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 // maxModuleCyclePairs caps the findings one strongly-connected component

@@ -66,6 +66,15 @@ type ModuleDef struct {
 	Role       Role      `yaml:"role,omitempty"`
 	ReviewedAt time.Time `yaml:"reviewed_at,omitempty"`
 	ReviewedBy string    `yaml:"reviewed_by"`
+	// DependsOn is the outbound allowlist: the only declared modules this
+	// module may import. An absent key leaves the module unconstrained; an
+	// empty list allows no first-party module. The module_dependencies rule
+	// enforces it; external targets are out of its scope.
+	DependsOn []string `yaml:"depends_on,omitempty"`
+	// VisibleTo is the inbound allowlist: the only declared modules that may
+	// import this module. An absent key leaves the module visible to every
+	// module; an importer that no module owns is always denied.
+	VisibleTo []string `yaml:"visible_to,omitempty"`
 }
 
 // moduleVolatilities are the volatility values classification reads, matched
@@ -234,6 +243,40 @@ func (mm ModuleMap) ModuleForNode(path, language string) (string, bool) {
 	crate, _, _ := strings.Cut(path, "::")
 	mod, ok := mm.crateModules[crate]
 	return mod, ok
+}
+
+// Allowlist keys, as module_dependencies findings name them in
+// matched_by.violates.
+const (
+	allowlistDependsOn = "depends_on"
+	allowlistVisibleTo = "visible_to"
+)
+
+// DeniedDependency reports which allowlist keys deny a dependency from module
+// from on module to, in the order depends_on, visible_to; nil allows it. from
+// is "" for an importer no declared module owns: no depends_on applies to it,
+// and a visible_to list always denies it. to must be a declared module, and a
+// dependency inside one module is never denied. This is the one predicate the
+// module_dependencies rule decides with.
+func (mm ModuleMap) DeniedDependency(from, to string) []string {
+	if from == to {
+		return nil
+	}
+	var violates []string
+	if allow := mm.modules[from].DependsOn; from != "" && allow != nil && !slices.Contains(allow, to) {
+		violates = append(violates, allowlistDependsOn)
+	}
+	if allow := mm.modules[to].VisibleTo; allow != nil && (from == "" || !slices.Contains(allow, from)) {
+		violates = append(violates, allowlistVisibleTo)
+	}
+	return violates
+}
+
+// DeclaresAllowlist reports whether the named module declares depends_on or
+// visible_to, empty lists included.
+func (mm ModuleMap) DeclaresAllowlist(name string) bool {
+	def := mm.modules[name]
+	return def.DependsOn != nil || def.VisibleTo != nil
 }
 
 // MatchesInternal reports whether the declared module surfaces make a graph-node

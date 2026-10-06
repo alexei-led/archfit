@@ -400,6 +400,20 @@
         },
         "reviewed_by": {
           "type": "string"
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "DependsOn is the outbound allowlist: the only declared modules this\nmodule may import. An absent key leaves the module unconstrained; an\nempty list allows no first-party module. The module_dependencies rule\nenforces it; external targets are out of its scope."
+        },
+        "visible_to": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "VisibleTo is the inbound allowlist: the only declared modules that may\nimport this module. An absent key leaves the module visible to every\nmodule; an importer that no module owns is always denied."
         }
       },
       "additionalProperties": false,
@@ -507,6 +521,7 @@
             "forbidden_pattern",
             "internal_api_access",
             "module_cycle",
+            "module_dependencies",
             "new_cross_module_dependency",
             "public_api_change",
             "public_api_max",

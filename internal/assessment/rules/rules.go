@@ -1,7 +1,7 @@
 // Package rules defines the Rule interface and the built-in rule
 // implementations: ForbiddenDependency, PublicAPIOnly, ForbiddenLayerDirection,
 // InternalAPIAccess, NewCrossModuleDependency, CycleRule, ModuleCycle,
-// PublicAPIMax, PublicAPIChange, PublicAPITypeLeak, ForbiddenPattern.
+// ModuleDependencies, PublicAPIMax, PublicAPIChange, PublicAPITypeLeak, ForbiddenPattern.
 package rules
 
 import (
@@ -67,6 +67,7 @@ type Rule interface {
 //	"new_cross_module_dependency" → newCrossModuleDependency
 //	"cycle"                       → cycleRule
 //	"module_cycle"                → moduleCycle
+//	"module_dependencies"         → moduleDependencies
 //	"public_api_max"              → publicAPIMax
 //	"public_api_change"           → publicAPIChange
 //	"public_api_type_leak"        → publicAPITypeLeak
@@ -108,6 +109,11 @@ func New(cfg policy.RuleConfig) ([]Rule, error) {
 				return nil, err
 			}
 			inner = &moduleCycle{def: def, mm: cfg.ModuleMap}
+		case "module_dependencies":
+			if err := validateModuleDependenciesDef(def); err != nil {
+				return nil, err
+			}
+			inner = &moduleDependencies{def: def, mm: cfg.ModuleMap}
 		case "public_api_max":
 			if err := validatePublicAPIMaxDef(def); err != nil {
 				return nil, err

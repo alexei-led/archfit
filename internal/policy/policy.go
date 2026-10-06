@@ -175,6 +175,9 @@ func cloneTopology(in TopologyView) TopologyView {
 		def.Paths = slices.Clone(def.Paths)
 		def.Public = slices.Clone(def.Public)
 		def.Internal = slices.Clone(def.Internal)
+		// slices.Clone keeps nil nil: an absent allowlist stays unconstrained.
+		def.DependsOn = slices.Clone(def.DependsOn)
+		def.VisibleTo = slices.Clone(def.VisibleTo)
 		modules[name] = def
 	}
 	external := make(map[string]ExternalSystemDef, len(in.ExternalSystems))

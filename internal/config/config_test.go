@@ -2206,3 +2206,32 @@ func TestForSyntax_Languages(t *testing.T) {
 func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)
 }
+
+// TestLoad_ModuleAllowlists pins that the allowlist keys load and that the
+// decoder keeps their absence: an absent key decodes nil (unconstrained), an
+// empty list decodes empty (allows nothing), and the policy snapshot carries
+// both distinctions to the rules.
+func TestLoad_ModuleAllowlists(t *testing.T) {
+	const modBilling = "billing"
+	cfg, err := loadConfigInline(t, "version: 2\nmodules:\n"+
+		"  billing:\n    paths: [billing/**]\n    visible_to: [shipping]\n"+
+		"  shipping:\n    paths: [shipping/**]\n    depends_on: [billing]\n"+
+		"  kernel:\n    paths: [kernel/**]\n    depends_on: []\n")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	modules := cfg.PolicySnapshot().Topology.Modules
+	for name, want := range map[string]struct{ dependsOn, visibleTo []string }{
+		modBilling: {nil, []string{"shipping"}},
+		"shipping": {[]string{modBilling}, nil},
+		"kernel":   {[]string{}, nil},
+	} {
+		def := modules[name]
+		if !slices.Equal(def.DependsOn, want.dependsOn) || (def.DependsOn == nil) != (want.dependsOn == nil) {
+			t.Errorf("%s depends_on = %#v, want %#v", name, def.DependsOn, want.dependsOn)
+		}
+		if !slices.Equal(def.VisibleTo, want.visibleTo) || (def.VisibleTo == nil) != (want.visibleTo == nil) {
+			t.Errorf("%s visible_to = %#v, want %#v", name, def.VisibleTo, want.visibleTo)
+		}
+	}
+}

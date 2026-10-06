@@ -43,6 +43,7 @@ var ruleTypes = []string{
 	"forbidden_pattern",
 	"internal_api_access",
 	"module_cycle",
+	"module_dependencies",
 	"new_cross_module_dependency",
 	"public_api_change",
 	"public_api_max",

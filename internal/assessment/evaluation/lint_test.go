@@ -335,3 +335,67 @@ func TestPublicOutsideModuleComparesWhatGlobsMatch(t *testing.T) {
 		t.Fatalf("public_outside_module = %v, want %v", outside, want)
 	}
 }
+
+// TestLintAllowlists pins the allowlist checks: an entry naming no declared
+// module is an unknown_module error (loading still accepts it, and check
+// discloses it as a config warning), and a module_dependencies rule no module
+// gives a list is a dead rule, an error unless the rule is off.
+func TestLintAllowlists(t *testing.T) {
+	const typeModDeps = "module_dependencies"
+	snapshotOf := func(modules map[string]policy.ModuleDef, rules ...policy.RuleDef) policy.PolicySnapshot {
+		topology := policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}
+		return policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{},
+			policy.GatePolicy{Rules: policy.RuleConfig{Rules: rules}}, nil, nil)
+	}
+	facts := evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
+		assessFileA: fileclass.Production, "b/b.go": fileclass.Production,
+	}}
+	type key struct{ code, severity, path string }
+	keysOf := func(diagnostics []evaluation.PolicyDiagnostic) []key {
+		out := make([]key, 0, len(diagnostics))
+		for _, d := range diagnostics {
+			out = append(out, key{d.Code, d.Severity, d.Path})
+		}
+		return out
+	}
+
+	listed := snapshotOf(map[string]policy.ModuleDef{
+		"a": {Paths: []string{assessPathsA}, DependsOn: []string{"b", "bb"}},
+		"b": {Paths: []string{assessPathsB}, VisibleTo: []string{"a", "layer:domain"}},
+	}, policy.RuleDef{ID: "boundaries", Type: typeModDeps, Gate: gateFail})
+	want := []key{
+		{evaluation.LintUnknownModule, evaluation.LintSeverityError, "modules.a.depends_on[1]"},
+		{evaluation.LintUnknownModule, evaluation.LintSeverityError, "modules.b.visible_to[1]"},
+	}
+	if got := keysOf(evaluation.LintPolicy(listed, facts)); !slices.Equal(got, want) {
+		t.Errorf("LintPolicy = %v, want %v", got, want)
+	}
+	warnings := strings.Join(evaluation.PolicyWarnings(listed, facts), "\n")
+	for _, w := range []string{
+		`modules.a.depends_on[1]: depends_on entry "bb" names no declared module`,
+		`modules.b.visible_to[1]: visible_to entry "layer:domain" names no declared module`,
+	} {
+		if !strings.Contains(warnings, w) {
+			t.Errorf("PolicyWarnings missing %q in:\n%s", w, warnings)
+		}
+	}
+
+	bare := map[string]policy.ModuleDef{"a": {Paths: []string{assessPathsA}}, "b": {Paths: []string{assessPathsB}}}
+	unlisted := snapshotOf(bare,
+		policy.RuleDef{ID: "fail_rule", Type: typeModDeps, Gate: gateFail},
+		policy.RuleDef{ID: "disabled_rule", Type: typeModDeps, Gate: string(policy.GateOff)},
+		policy.RuleDef{ID: "warn_rule", Type: typeModDeps, Gate: gateWarnPosture},
+	)
+	want = []key{
+		{evaluation.LintDeadSelector, evaluation.LintSeverityWarning, "rules[disabled_rule]"},
+		{evaluation.LintDeadSelector, evaluation.LintSeverityError, "rules[fail_rule]"},
+		{evaluation.LintDeadSelector, evaluation.LintSeverityError, "rules[warn_rule]"},
+	}
+	if got := keysOf(evaluation.LintPolicy(unlisted, facts)); !slices.Equal(got, want) {
+		t.Errorf("LintPolicy = %v, want %v", got, want)
+	}
+	warnings = strings.Join(evaluation.PolicyWarnings(unlisted, facts), "\n")
+	if want := "rules[warn_rule] is not evaluated: selector matches nothing: no module declares depends_on or visible_to"; warnings != want {
+		t.Errorf("PolicyWarnings = %q, want %q", warnings, want)
+	}
+}

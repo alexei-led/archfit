@@ -290,7 +290,7 @@ func TestFindingsRouteToTheOwningDimension(t *testing.T) {
 	t.Parallel()
 	ruleTypes := map[string]string{
 		ruleDep: ruleForbidden, "layer": "forbidden_layer_direction", "cyc": metricCycle, "modcyc": "module_cycle",
-		"newdep": "new_cross_module_dependency", "pub": "public_api_only", "max": rulePublicAPIMax,
+		"moddeps": "module_dependencies", "newdep": "new_cross_module_dependency", "pub": "public_api_only", "max": rulePublicAPIMax,
 		"leak": "public_api_type_leak", "internal": "internal_api_access", "waiver": "waiver_expiry",
 		"pattern": ruleTypePattern,
 	}
@@ -302,6 +302,7 @@ func TestFindingsRouteToTheOwningDimension(t *testing.T) {
 		{"layer", state.DimensionStructure},
 		{"cyc", state.DimensionStructure},
 		{"modcyc", state.DimensionStructure},
+		{"moddeps", state.DimensionStructure},
 		{"newdep", state.DimensionStructure},
 		{"pub", state.DimensionModularity},
 		{"max", state.DimensionModularity},
