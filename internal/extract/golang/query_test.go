@@ -147,8 +147,8 @@ func TestQueryEdgeBuildEnvironment(t *testing.T) {
 		{name: "!cgo with CGO_ENABLED=0", from: queryNoCgo, cgo: "0", extracted: true},
 		{name: "!cgo with CGO_ENABLED=1", from: queryNoCgo, cgo: "1"},
 		{name: "import \"C\" with CGO_ENABLED=0", from: queryUsesC, cgo: "0"},
-		{name: "import \"C\" with CGO_ENABLED=1", from: queryUsesC, cgo: "1"},
-		{name: "import \"C\" with CGO_ENABLED unset", from: queryUsesC},
+		{name: "import \"C\" with CGO_ENABLED=1 is undecided", from: queryUsesC, cgo: "1", undecided: true},
+		{name: "import \"C\" with CGO_ENABLED unset is undecided", from: queryUsesC, undecided: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("GOFLAGS", tc.goflags)

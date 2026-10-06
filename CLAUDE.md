@@ -776,9 +776,10 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `ProjectPresent` finds no project; Go `_test.go`,
   build-constrained under the toolchain's env (`toolchainContext`, shared with
   `countApplicableSources`, plus the go env file; unset `CGO_ENABLED` with a
-  cgo-dependent file is `not_decided`; a file that imports "C" is never
-  extracted, as `deriveFileFacts` reads only scan-root files and cgo syntax
-  comes from the build cache),
+  cgo-tagged file is `not_decided`; a file that imports "C" is not extracted
+  with `CGO_ENABLED=0` and `not_decided` otherwise: preprocessed cgo syntax
+  comes from the build cache, which `deriveFileFacts` skips, but a failed
+  preprocess falls back to the original file),
   excluded file or target, unloaded member; a switched-off
   language) and abstains where only the tool knows (`ErrNotDecidable` →
   `not_decided`: Rust, a Python target outside the packages grimp builds;

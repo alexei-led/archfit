@@ -43,6 +43,12 @@ func QueryEdge(scanRoot string, cfg evidenceports.ExtractConfig, from, target st
 	if reason := notExtracted(scanRoot, cfg, entries, from, to); reason != "" {
 		return graph.Facts{}, fmt.Errorf("go: %s: %w", reason, evidenceports.ErrNotExtracted)
 	}
+	if importsC(filepath.Join(scanRoot, filepath.FromSlash(from))) {
+		// With cgo on the load parses the cgo-generated copy in the build
+		// cache, outside the scan root, so no import is read from the file;
+		// when preprocessing fails it parses the original and reads them all.
+		return graph.Facts{}, fmt.Errorf("go: %s imports \"C\": whether check reads its imports depends on cgo preprocessing: %w", from, evidenceports.ErrNotDecidable)
+	}
 	switch match, decided := buildMatches(scanRoot, cfg.BuildFlags, from); {
 	case !decided:
 		return graph.Facts{}, fmt.Errorf("go: whether the load reads %s depends on cgo, and CGO_ENABLED is not set: %w", from, evidenceports.ErrNotDecidable)
@@ -84,11 +90,8 @@ func notExtracted(scanRoot string, cfg evidenceports.ExtractConfig, entries []mo
 		return to + " matches an exclude: glob"
 	case !inLoadedMember(scanRoot, entries, from):
 		return from + " belongs to no loaded Go module"
-	case importsC(filepath.Join(scanRoot, filepath.FromSlash(from))):
-		// With cgo off the load ignores the file; with cgo on it parses the
-		// cgo-generated copy in the build cache, which is outside the scan
-		// root, so the extractor reads no import from it either way.
-		return from + " imports \"C\", and the load reads no import from a cgo file"
+	case goEnv("CGO_ENABLED") == "0" && importsC(filepath.Join(scanRoot, filepath.FromSlash(from))):
+		return from + " imports \"C\" and cgo is off, so the load ignores it"
 	}
 	return ""
 }
