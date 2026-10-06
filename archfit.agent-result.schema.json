@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.agent-result.schema.json",
+  "$defs": {
+    "Edge": {
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "kind"
+      ]
+    },
+    "EvidenceGap": {
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "gate": {
+          "type": "string"
+        },
+        "install_cmd": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "tool",
+        "gate"
+      ]
+    },
+    "Location": {
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "file",
+        "line"
+      ]
+    },
+    "Omitted": {
+      "properties": {
+        "repairs": {
+          "type": "integer"
+        },
+        "unevaluated_rules": {
+          "type": "integer"
+        },
+        "advisories": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "repairs",
+        "unevaluated_rules",
+        "advisories"
+      ]
+    },
+    "Repair": {
+      "properties": {
+        "finding_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repair_kind": {
+          "type": "string",
+          "enum": [
+            "code_change",
+            "needs_owner_decision"
+          ]
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "introduced",
+            "pre_existing",
+            "unknown"
+          ]
+        },
+        "in_scope": {
+          "type": "boolean"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "edge": {
+          "$ref": "#/$defs/Edge"
+        },
+        "at": {
+          "items": {
+            "$ref": "#/$defs/Location"
+          },
+          "type": "array"
+        },
+        "goal": {
+          "type": "string"
+        },
+        "constraints": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "edit": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "finding_ids",
+        "rule_ids",
+        "repair_kind",
+        "in_scope",
+        "severity",
+        "at",
+        "goal",
+        "constraints",
+        "edit"
+      ]
+    },
+    "UnevaluatedRule": {
+      "properties": {
+        "rule_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "rule_id",
+        "reason"
+      ]
+    },
+    "WorsenedMetric": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "before": {
+          "type": "number"
+        },
+        "after": {
+          "type": "number"
+        },
+        "dimension": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "before",
+        "after"
+      ]
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "archfit.agent-result.v1"
+      ],
+      "description": "The only agent-result contract this binary emits."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "healthy",
+        "needs_attention",
+        "blocked"
+      ]
+    },
+    "next_action": {
+      "type": "string",
+      "enum": [
+        "repair",
+        "ask_owner",
+        "restore_evidence",
+        "report_blocked",
+        "none"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "repairs": {
+      "items": {
+        "$ref": "#/$defs/Repair"
+      },
+      "type": "array"
+    },
+    "evidence_gaps": {
+      "items": {
+        "$ref": "#/$defs/EvidenceGap"
+      },
+      "type": "array"
+    },
+    "unevaluated_rules": {
+      "items": {
+        "$ref": "#/$defs/UnevaluatedRule"
+      },
+      "type": "array"
+    },
+    "worsened_metrics": {
+      "items": {
+        "$ref": "#/$defs/WorsenedMetric"
+      },
+      "type": "array"
+    },
+    "omitted": {
+      "$ref": "#/$defs/Omitted"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "validate": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "schema_version",
+    "verdict",
+    "next_action",
+    "summary",
+    "repairs",
+    "evidence_gaps",
+    "unevaluated_rules",
+    "worsened_metrics",
+    "omitted"
+  ]
+}

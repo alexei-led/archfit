@@ -3,11 +3,9 @@ package reportschema_test
 import (
 	"bytes"
 	"encoding/json"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -125,67 +123,16 @@ func TestStateSchemaAcceptsEveryCommittedStateDocument(t *testing.T) {
 
 func compileStateSchema(t *testing.T) *jsonschema.Schema {
 	t.Helper()
-
-	raw, err := os.ReadFile(schemaFile)
-	if err != nil {
-		t.Fatalf("read %s: %v", schemaFile, err)
-	}
-	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatalf("unmarshal schema: %v", err)
-	}
-	c := jsonschema.NewCompiler()
-	const resource = "archfit.state.schema.json"
-	if err := c.AddResource(resource, doc); err != nil {
-		t.Fatalf("add schema resource: %v", err)
-	}
-	compiled, err := c.Compile(resource)
-	if err != nil {
-		t.Fatalf("compile schema: %v", err)
-	}
-	return compiled
+	return compileSchema(t, schemaFile, "archfit.state.schema.json")
 }
 
-// findStateDocuments walks the repo for JSON files whose ROOT declares the
-// state contract's schema_version. Matching on the declared version rather than
-// on a filename convention means a document only counts when it claims to BE
-// one, and nesting the state inside another document (SARIF) does not qualify.
+// findStateDocuments lists the JSON files whose ROOT declares the state
+// contract's schema_version. Matching on the declared version rather than on a
+// filename convention means a document only counts when it claims to BE one,
+// and nesting the state inside another document (SARIF) does not qualify.
 func findStateDocuments(t *testing.T) []string {
 	t.Helper()
-
-	var found []string
-	err := filepath.WalkDir(repoRoot, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if name := d.Name(); name == ".git" || name == ".archfit-cache" || name == "node_modules" {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".json") {
-			return nil
-		}
-		raw, readErr := os.ReadFile(path) //nolint:gosec // repo walk
-		if readErr != nil {
-			return nil
-		}
-		// The ROOT must claim the contract. Matching the version string anywhere
-		// in the file also catches SARIF, which carries the state nested under
-		// run.properties and is a different document with its own schema.
-		var root struct {
-			SchemaVersion string `json:"schema_version"`
-		}
-		if json.Unmarshal(raw, &root) == nil && root.SchemaVersion == report.StateSchemaVersion {
-			found = append(found, path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk repo: %v", err)
-	}
-	return found
+	return findDocuments(t, report.StateSchemaVersion)
 }
 
 func mustRel(t *testing.T, path string) string {
