@@ -369,8 +369,10 @@ func TestTransitionalContractSurfaceRatchet(t *testing.T) {
 		// Task 2 deleted internal/view (29 exported) and internal/model/module
 		// (11 exported), moving their contracts to their owners — most of them
 		// here. 40 is below the 48 those three packages published together, and
-		// like every cap in this table it may fall, never rise.
-		{pkg: modulePrefix + "internal/policy", max: 40},
+		// like every cap in this table it may fall, never rise. The one
+		// deliberate exception is RuleTypes (41): the published `rules[].type`
+		// vocabulary the config schema enumerates.
+		{pkg: modulePrefix + "internal/policy", max: 41},
 	}
 	paths := make([]string, 0, len(targets))
 	for _, tc := range targets {

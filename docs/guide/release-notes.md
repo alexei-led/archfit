@@ -1,5 +1,12 @@
 # Release notes
 
+## v2.4.1 — schema lists rule types
+
+The published config schema (`archfit.schema.json`) now enumerates the allowed
+`rules[].type` values, so editors and other JSON Schema validators flag an
+unknown type such as `forbiden_dependency` while you type. The engine behaves
+as before: it already rejected unknown rule types at load.
+
 ## v2.4.0 — guardrails that fire
 
 This release fixes guardrails that silently did not fire, adds the rules an

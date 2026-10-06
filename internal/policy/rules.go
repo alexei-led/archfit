@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"slices"
+
 	"github.com/alexei-led/archfit/internal/model/pattern"
 )
 
@@ -30,6 +32,26 @@ type RuleDef struct {
 	// rule with a selector that matches nothing is reported as not evaluated.
 	Guard bool `yaml:"guard,omitempty"`
 }
+
+// ruleTypes are the built-in `rules[].type` values, sorted. The published
+// config schema enumerates them; rules.New is the evaluator that accepts them,
+// and rules.TestRuleTypesMatchNew holds the two equal in both directions.
+var ruleTypes = []string{
+	"cycle",
+	"forbidden_dependency",
+	"forbidden_layer_direction",
+	"forbidden_pattern",
+	"internal_api_access",
+	"module_cycle",
+	"new_cross_module_dependency",
+	"public_api_change",
+	"public_api_max",
+	"public_api_only",
+	"public_api_type_leak",
+}
+
+// RuleTypes returns the built-in rule type names `rules[].type` accepts, sorted.
+func RuleTypes() []string { return slices.Clone(ruleTypes) }
 
 // RuleConfig is the rule-evaluation projection of the policy: the declared
 // rules plus the topology they resolve module identity against.

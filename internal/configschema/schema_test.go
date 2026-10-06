@@ -179,6 +179,14 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 	if !slices.Equal(ruleDef.Required, []string{"id", "type"}) {
 		t.Errorf("RuleDef.required = %v, want [id type] (rule ids feed stable finding fingerprints)", ruleDef.Required)
 	}
+	ruleTypes := policy.RuleTypes()
+	wantRuleTypes := make([]any, 0, len(ruleTypes))
+	for _, rt := range ruleTypes {
+		wantRuleTypes = append(wantRuleTypes, rt)
+	}
+	if got := ruleDef.Properties["type"].Enum; !slices.Equal(got, wantRuleTypes) {
+		t.Errorf("RuleDef.type enum = %v, want policy.RuleTypes() %v", got, wantRuleTypes)
+	}
 
 	extDef, ok := schema.Defs["ExternalSystemDef"]
 	if !ok {

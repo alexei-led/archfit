@@ -1001,7 +1001,7 @@ rules:
 | Field      | Applies to       | Description                                                                                                            |
 | ---------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `id`       | all              | Stable ID used in findings, baselines, and waivers.                                                                    |
-| `type`     | all              | Built-in rule type (see below). Unknown type is a config error.                                                        |
+| `type`     | all              | [Built-in rule type](#built-in-rule-types). Unknown type is a config error; the schema enumerates the allowed values.  |
 | `gate`     | all              | `fail` (or absent for most types), `warn`, or `off`. `public_api_change` and `public_api_type_leak` default to `warn`. |
 | `from`     | most             | Source module or path glob.                                                                                            |
 | `to`       | most             | Target module or path glob.                                                                                            |
@@ -1443,7 +1443,9 @@ alternatives to `--format`.
 ## Editor support
 
 A JSON schema (`archfit.schema.json`) ships at the repository root for YAML
-editor autocomplete and validation. Point your editor at it with a YAML language
+editor autocomplete and validation. It enumerates the allowed values of
+closed fields such as `rules[].type` ([built-in rule types](#built-in-rule-types)),
+so an editor flags a typo before `archfit` rejects the config. Point your editor at it with a YAML language
 server comment:
 
 ```yaml
