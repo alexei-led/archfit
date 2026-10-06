@@ -54,13 +54,7 @@ type Result struct {
 
 // evaluate applies rules, statuses, and metrics in their domain order.
 func evaluate(in Input) Result {
-	raw := make([]finding.Finding, 0, in.Rules.Len())
-	for _, rule := range in.Rules.rules {
-		raw = append(raw, rule.Check(in.Relationships, rules.Evidence{
-			PatternMatches: in.Evidence.PatternMatches, SyntaxFacts: in.Evidence.SyntaxFacts, FileClasses: in.Evidence.FileClasses,
-			OutOfScopeFiles: in.Evidence.OutOfScopeFiles, UnwalkedSourceProduction: in.Evidence.UnwalkedSourceProduction,
-		})...)
-	}
+	raw := checkRules(in.Rules, in.Relationships, in.Evidence)
 	adv := candidateFindings(in.AdvisoryCandidates)
 	adv = append(adv, staleness.Check(in.Relationships, in.Policy, in.Now)...)
 	adv = append(adv, staleLabelFindings(in.StaleLabelKeys)...)
@@ -128,6 +122,19 @@ func evaluate(in Input) Result {
 		}
 	}
 	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, calculated, in.Gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed, Delta: delta}
+}
+
+// checkRules runs every compiled rule over the relationships. It is the one
+// rule pass: check and `archfit policy can-import` both call it.
+func checkRules(rs Ruleset, s relationship.Set, ev RuleEvidence) []finding.Finding {
+	raw := make([]finding.Finding, 0, rs.Len())
+	for _, rule := range rs.rules {
+		raw = append(raw, rule.Check(s, rules.Evidence{
+			PatternMatches: ev.PatternMatches, SyntaxFacts: ev.SyntaxFacts, FileClasses: ev.FileClasses,
+			OutOfScopeFiles: ev.OutOfScopeFiles, UnwalkedSourceProduction: ev.UnwalkedSourceProduction,
+		})...)
+	}
+	return raw
 }
 
 func countActive(in []finding.Finding) int {
