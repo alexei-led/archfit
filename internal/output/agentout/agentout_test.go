@@ -24,6 +24,8 @@ type taskSpec struct {
 	from, to, edgeKind               string
 	files                            []string
 	line                             int
+	// loc is the location file; empty means the from node, and "-" none.
+	loc string
 }
 
 func gateTask(id, rule string) taskSpec {
@@ -43,7 +45,7 @@ func document(verdict report.StateVerdict, specs ...taskSpec) report.Document {
 			Edge: report.FindingEdge{
 				From: report.FindingEndpoint{Path: s.from}, To: report.FindingEndpoint{Path: s.to}, Kind: s.edgeKind,
 			},
-			Locations: []report.Location{{File: s.from, Line: s.line}},
+			Locations: locations(s),
 		})
 		d.State.AgentTasks = append(d.State.AgentTasks, report.AgentTask{
 			FindingID: s.id, RuleID: s.rule, RepairKind: s.kind, Origin: s.origin,
@@ -53,6 +55,17 @@ func document(verdict report.StateVerdict, specs ...taskSpec) report.Document {
 		})
 	}
 	return d
+}
+
+func locations(s taskSpec) []report.Location {
+	switch s.loc {
+	case "":
+		return []report.Location{{File: s.from, Line: s.line}}
+	case "-":
+		return nil
+	default:
+		return []report.Location{{File: s.loc, Line: s.line}}
+	}
 }
 
 func withUnevaluated(d report.Document, reasons ...string) report.Document {
@@ -166,15 +179,97 @@ func TestTwoRulesOnOneEdgeAreOneRepair(t *testing.T) {
 	}
 }
 
-func TestEditNeverListsTheTarget(t *testing.T) {
+func TestEditListsOnlyTheSourceSide(t *testing.T) {
 	t.Parallel()
-	task := gateTask("a1", "no_internal")
-	task.to = "pkg/b/internal/impl.go"
-	task.files = []string{pkgSource, "pkg/b/internal/impl.go"}
-	task.from = pkgSource
-	got := decode(t, render(t, document(report.StateBlocked, task)))
-	if want := []string{pkgSource}; !slices.Equal(got.Repairs[0].Edit, want) {
-		t.Errorf("edit = %v, want %v", got.Repairs[0].Edit, want)
+	spec := func(from, to, loc string, files ...string) taskSpec {
+		s := gateTask("a1", "no_x")
+		s.from, s.to, s.loc, s.files = from, to, loc, files
+		return s
+	}
+	for _, tc := range []struct {
+		name string
+		spec taskSpec
+		want []string
+	}{
+		{name: "go internal target file", spec: spec(pkgSource, "pkg/b/internal/impl.go", "", pkgSource, "pkg/b/internal/impl.go"), want: []string{pkgSource}},
+		{name: "go subpackage imports its parent", spec: spec("internal/foo/bar/x.go", "internal/foo", "", "internal/foo", "internal/foo/bar/x.go"), want: []string{"internal/foo/bar/x.go"}},
+		{name: "python dotted target", spec: spec("myapp.handlers", "myapp.domain", "src/myapp/handlers.py", "src/myapp/domain.py", "src/myapp/handlers.py"), want: []string{"src/myapp/handlers.py"}},
+		{name: "rust crate target", spec: spec("my-app", "my-core", "crates/my-app/Cargo.toml", "crates/my-app/Cargo.toml", "crates/my-core"), want: []string{"crates/my-app/Cargo.toml"}},
+		{name: "typescript edge without locations", spec: spec("web/a.ts", "web/b.ts", "-", "web/a.ts", "web/b.ts"), want: []string{"web/a.ts"}},
+		{name: "module pair without locations drops only the target node", spec: spec("", "", "-", "internal/x/x.go", "internal/y/y.go"), want: []string{"internal/x/x.go", "internal/y/y.go"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := decode(t, render(t, document(report.StateBlocked, tc.spec)))
+			if !slices.Equal(got.Repairs[0].Edit, tc.want) {
+				t.Errorf("edit = %v, want %v", got.Repairs[0].Edit, tc.want)
+			}
+		})
+	}
+}
+
+func TestOnlyDependenciesGroup(t *testing.T) {
+	t.Parallel()
+	apiChange := func(id string) taskSpec {
+		s := gateTask(id, "api_change")
+		s.from, s.to, s.edgeKind = "internal/api", "internal/api", ""
+		return s
+	}
+	got := decode(t, render(t, document(report.StateBlocked, apiChange("a1"), apiChange("a2"))))
+	if len(got.Repairs) != 2 {
+		t.Errorf("repairs = %d, want one per public_api finding", len(got.Repairs))
+	}
+}
+
+func TestGroupOrigin(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		origins []string
+		want    string
+		inScope bool
+	}{
+		{name: "no base", origins: []string{"", ""}, want: "", inScope: true},
+		{name: "all pre-existing", origins: []string{originPreExisting, originPreExisting}, want: originPreExisting},
+		{name: "introduced wins", origins: []string{originPreExisting, originIntroduced}, want: originIntroduced, inScope: true},
+		{name: "mixed is unknown", origins: []string{originPreExisting, originUnknown}, want: originUnknown, inScope: true},
+		{name: "missing origin is never pre-existing", origins: []string{"", originPreExisting}, want: originUnknown, inScope: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			specs := make([]taskSpec, 0, len(tc.origins))
+			for i, origin := range tc.origins {
+				s := gateTask(fmt.Sprintf("a%d", i), fmt.Sprintf("rule_%d", i))
+				s.origin = origin
+				specs = append(specs, s)
+			}
+			rep := decode(t, render(t, document(report.StateBlocked, specs...))).Repairs[0]
+			if rep.Origin != tc.want || rep.InScope != tc.inScope {
+				t.Errorf("origin %q in_scope %v, want %q %v", rep.Origin, rep.InScope, tc.want, tc.inScope)
+			}
+		})
+	}
+}
+
+func TestValidate(t *testing.T) {
+	t.Parallel()
+	advisoryOnly := document(report.StateBlocked)
+	advisoryOnly.AdvisoryTasks = []report.AdvisoryTask{{FindingID: "x", Validation: []string{validation}}}
+	for _, tc := range []struct {
+		name string
+		doc  report.Document
+		want string
+	}{
+		{name: "from a repair task", doc: document(report.StateBlocked, gateTask("a1", "no_x")), want: validation + " --format agent"},
+		{name: "from an advisory task", doc: advisoryOnly, want: validation + " --format agent"},
+		{name: "absent with no task", doc: document(report.StateNeedsAttention), want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := decode(t, render(t, tc.doc)).Validate; got != tc.want {
+				t.Errorf("validate = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -275,16 +370,33 @@ func TestBudget(t *testing.T) {
 		d := realisticDocument(1)
 		task := &d.State.AgentTasks[0]
 		for i := range 200 {
-			task.Files = append(task.Files, fmt.Sprintf("internal/relationship/file_%03d.go", i))
+			file := fmt.Sprintf("internal/relationship/file_%03d.go", i)
+			task.Files = append(task.Files, file)
+			d.State.Findings[0].Locations = append(d.State.Findings[0].Locations, report.Location{File: file, Line: 1})
 			task.Constraints = append(task.Constraints, strings.Repeat("long constraint ", 30)+strconv.Itoa(i))
 		}
 		d = withUnevaluated(d, slices.Repeat([]string{strings.Repeat("reason ", 100)}, 50)...)
-		got := decode(t, render(t, d))
+		raw := render(t, d)
+		if len(raw) > budgetBytes {
+			t.Errorf("result takes %d bytes, budget %d", len(raw), budgetBytes)
+		}
+		got := decode(t, raw)
 		if len(got.Repairs) != 1 || !got.Truncated {
 			t.Fatalf("repairs=%d truncated=%v, want the first repair kept and the result truncated", len(got.Repairs), got.Truncated)
 		}
-		if len(got.Repairs[0].Edit) > tightListLen {
-			t.Errorf("edit has %d entries, want at most %d", len(got.Repairs[0].Edit), tightListLen)
+		rep := got.Repairs[0]
+		for _, list := range []struct {
+			name          string
+			kept, omitted int
+			total         int
+		}{
+			{"at", len(rep.At), rep.AtOmitted, 201},
+			{"edit", len(rep.Edit), rep.EditOmitted, 201},
+			{"constraints", len(rep.Constraints), rep.ConstraintsOmitted, 202},
+		} {
+			if list.kept > tightListLen || list.kept+list.omitted != list.total {
+				t.Errorf("%s: kept %d + omitted %d, want at most %d kept of %d", list.name, list.kept, list.omitted, tightListLen, list.total)
+			}
 		}
 		if got.Omitted.UnevaluatedRules+len(got.UnevaluatedRules) != 50 {
 			t.Errorf("unevaluated rules lost: kept %d, omitted %d", len(got.UnevaluatedRules), got.Omitted.UnevaluatedRules)

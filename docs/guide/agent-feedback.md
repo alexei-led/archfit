@@ -67,9 +67,9 @@ The schema is `archfit.agent-result.schema.json` in the repository root.
 
 | `next_action`      | Condition                                                                                                   | What the agent does                                    |
 | ------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `repair`           | An in-scope repair needs a code change, or a metric ratchet blocked the run (`worsened_metrics`).            | Change the code within the constraints, then run `validate`. |
+| `repair`           | An in-scope repair needs a code change, or a metric ratchet blocked the run (`worsened_metrics`).            | Change the code within the constraints, then run `validate` (or the command you ran). |
 | `ask_owner`        | Every in-scope repair needs an owner decision, or a required rule has a selector that matches nothing.      | Stop and report to the architecture owner. Do not edit policy. |
-| `restore_evidence` | A required analyzer failed its gate (`evidence_gaps`), or a required rule lacks producer evidence.          | Install or fix the analyzer, then run `validate`.      |
+| `restore_evidence` | A required analyzer failed its gate (`evidence_gaps`), or a required rule lacks producer evidence.          | Install or fix the analyzer, then run `validate` (or the command you ran). |
 | `report_blocked`   | The verdict is `blocked`, but no repair is in scope.                                                        | Report the blockers. They are not from this change.    |
 | `none`             | Nothing to do.                                                                                              | Finish. Exit 2 with `none` is a correct finish.        |
 
@@ -78,10 +78,14 @@ A `blocked` verdict never gives `none`.
 **Repairs.** archfit groups the active gate tasks by edge (`from`, `to`,
 `kind`). One import that breaks two rules gives one repair with two finding
 IDs. `repair_kind` is `code_change` when any grouped task needs a code change.
+A finding that names no dependency between two different endpoints (a
+`public_api_*` finding names its module on both sides) is its own repair.
 `goal` is the goal of the first code-change task. `constraints` holds the
-distinct constraints of all grouped tasks. `edit` lists the task files outside
-the edge target: the target of a forbidden edge is never a file to edit. `at`
-lists the source locations. Repairs are sorted: in scope first, then code
+distinct constraints of all grouped tasks. `at` lists the source locations.
+`edit` lists the task files on the source side of the edge: the import sites
+and the importing file. The target of a forbidden edge is never a file to
+edit. A finding with no location and no source file (a seam-gate finding
+names only a module pair) lists every task file except the target node. Repairs are sorted: in scope first, then code
 changes, then severity, then the lowest finding ID.
 
 **Scope.** Without `--base`, every repair is in scope. With `--base <ref>`,
@@ -92,16 +96,19 @@ to your uncommitted edits, run `archfit check --format agent --base HEAD`.
 
 **Budget.** The result is one line of JSON of at most 8 KB. Every free-text
 string is at most 400 characters. When the result is larger than 8 KB,
-archfit cuts free text to 200 characters and lists to 5 entries, then moves
-tail repairs into `omitted.repairs` and tail unevaluated rules into
+archfit cuts free text to 200 characters and each repair's `at`, `edit`, and
+`constraints` to 5 entries, and counts the cut entries in the repair's
+`at_omitted`, `edit_omitted`, and `constraints_omitted`. Then it moves tail
+repairs into `omitted.repairs` and tail unevaluated rules into
 `omitted.unevaluated_rules`. It always keeps the header and the first repair,
-and it sets `"truncated": true`. IDs, paths, edges, and the `validate` command
-are never cut. `next_action` and `summary` are decided before the cut, so the
+and it sets `"truncated": true`. No ID, path, edge, or `validate` command is
+shortened. `next_action` and `summary` are decided before the cut, so the
 budget never changes them. Advisories are never listed; `omitted.advisories`
 counts the active ones.
 
-**Validate.** `validate` is the repair tasks' validation command with
-`--format agent`. It is absent when the run has no repair task.
+**Validate.** `validate` is the run's validation command with
+`--format agent`, read from the repair or advisory tasks. It is absent when
+the run has neither: then re-run the command that produced the result.
 
 ## The output has a published JSON Schema
 

@@ -751,7 +751,10 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `console.ratchetRegressions`. A blocked verdict never maps to `none`. Scope is
   origin only: a repair is out of scope only when every grouped task is
   `pre_existing`. The 8 KB budget runs after the decision and never moves it;
-  it cuts free text, never IDs, paths, edges, or `validate`. The format is
+  it shortens free text and caps repair lists (counting what it cut), never
+  an ID, path, edge, or `validate`. `edit` is the source side read from finding
+  locations and the source node, never a path compared with the target node
+  (Python/Rust node IDs are not file paths). The format is
   exempt from layout parity, like SARIF; `TestFormatMatrix_AgentDigestCarriesTheState`
   holds it to the verdict and every active gate finding. The state gets no
   agent-only field.

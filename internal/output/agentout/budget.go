@@ -1,8 +1,10 @@
 package agentout
 
 // The size budget keeps the result small enough for an agent's context and a
-// hook's stderr. Only free text is cut: IDs, paths, edges, and the validation
-// command are identity material an agent copies verbatim.
+// hook's stderr. No ID, path, edge, or validation command is ever shortened:
+// they are identity material an agent copies verbatim. Free text is shortened,
+// and over budget the lists are capped; every dropped entry is counted, in
+// Omitted or on its repair.
 const (
 	// budgetBytes is the most the encoded result may take.
 	budgetBytes = 8 * 1024
@@ -11,15 +13,18 @@ const (
 	textRunes = 400
 	// tightRunes bounds free text once the result is over budget.
 	tightRunes = 200
-	// tightListLen bounds a repair's locations and files once the result is
-	// over budget. A module-pair repair can name fifty import sites.
+	// tightListLen bounds a repair's locations, files, and constraints once
+	// the result is over budget. A module-pair repair can name fifty import
+	// sites.
 	tightListLen = 5
 )
 
 // fit encodes the result within the budget. It cuts free text first, then
 // moves tail repairs and tail unevaluated rules into Omitted. The header and
-// the first repair always stay. The next action and the summary were decided
-// on the full result, so the budget can never change them.
+// the first repair always stay, so a result whose header and first repair
+// alone exceed the budget (paths thousands of characters long) is returned
+// over it. The next action and the summary were decided on the full result,
+// so the budget can never change them.
 func fit(r Result) ([]byte, error) {
 	r = bound(r, textRunes, 0)
 	out, err := encode(r)
@@ -47,7 +52,8 @@ func fit(r Result) ([]byte, error) {
 }
 
 // bound cuts free text to maxRunes and, when maxList is positive, a repair's
-// locations and files to maxList entries. It sets Truncated when it cut
+// locations, files, and constraints to maxList entries, counting the rest on
+// the repair. It sets Truncated when it cut
 // anything. It copies every slice it changes, so the caller's result is
 // unchanged.
 func bound(r Result, maxRunes, maxList int) Result {
@@ -62,21 +68,16 @@ func bound(r Result, maxRunes, maxList int) Result {
 	repairs := make([]Repair, len(r.Repairs))
 	for i, rep := range r.Repairs {
 		rep.Goal = cut(rep.Goal)
+		if maxList > 0 {
+			rep.At = capList(rep.At, maxList, &rep.AtOmitted, &r.Truncated)
+			rep.Edit = capList(rep.Edit, maxList, &rep.EditOmitted, &r.Truncated)
+			rep.Constraints = capList(rep.Constraints, maxList, &rep.ConstraintsOmitted, &r.Truncated)
+		}
 		constraints := make([]string, len(rep.Constraints))
 		for j, c := range rep.Constraints {
 			constraints[j] = cut(c)
 		}
 		rep.Constraints = constraints
-		if maxList > 0 {
-			if len(rep.At) > maxList {
-				rep.At = rep.At[:maxList]
-				r.Truncated = true
-			}
-			if len(rep.Edit) > maxList {
-				rep.Edit = rep.Edit[:maxList]
-				r.Truncated = true
-			}
-		}
 		repairs[i] = rep
 	}
 	r.Repairs = repairs
@@ -87,6 +88,16 @@ func bound(r Result, maxRunes, maxList int) Result {
 	}
 	r.UnevaluatedRules = rules
 	return r
+}
+
+// capList keeps the first maxList entries and counts the rest.
+func capList[T any](list []T, maxList int, omitted *int, truncated *bool) []T {
+	if len(list) <= maxList {
+		return list
+	}
+	*omitted += len(list) - maxList
+	*truncated = true
+	return list[:maxList]
 }
 
 // cutRunes keeps at most n runes, ending a cut string in "…".

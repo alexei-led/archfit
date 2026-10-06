@@ -135,6 +135,15 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "at_omitted": {
+          "type": "integer"
+        },
+        "edit_omitted": {
+          "type": "integer"
+        },
+        "constraints_omitted": {
+          "type": "integer"
         }
       },
       "additionalProperties": false,

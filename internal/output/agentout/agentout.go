@@ -100,6 +100,8 @@ type Result struct {
 	// Omitted. The full run is in --format json.
 	Truncated bool `json:"truncated,omitempty"`
 	// Validate is the command that re-runs this check and prints this digest.
+	// It is absent when the run has no repair or advisory task; re-run the
+	// command that produced this result instead.
 	Validate string `json:"validate,omitempty"`
 }
 
@@ -125,8 +127,14 @@ type Repair struct {
 	Goal string `json:"goal"`
 	// Constraints are the distinct constraints of every grouped task.
 	Constraints []string `json:"constraints"`
-	// Edit are the files to change: the task files outside the edge target.
+	// Edit are the files to change: the task files on the source side of the
+	// edge (import sites and the importing node), never the target.
 	Edit []string `json:"edit"`
+	// AtOmitted, EditOmitted, and ConstraintsOmitted count the entries the
+	// size budget cut from this repair's lists.
+	AtOmitted          int `json:"at_omitted,omitempty"`
+	EditOmitted        int `json:"edit_omitted,omitempty"`
+	ConstraintsOmitted int `json:"constraints_omitted,omitempty"`
 }
 
 // Edge names one dependency by its source and target node or module.
@@ -201,7 +209,7 @@ func Build(d report.Document) Result {
 		UnevaluatedRules: unevaluatedRules(s.Decision.UnevaluatedRequiredRules),
 		WorsenedMetrics:  worsenedMetrics(d),
 		Omitted:          Omitted{Advisories: activeAdvisories(s.Findings)},
-		Validate:         validateCommand(s.AgentTasks),
+		Validate:         validateCommand(s.AgentTasks, d.AdvisoryTasks),
 	}
 	res.NextAction = decide(res)
 	res.Summary = summarize(res)
@@ -263,9 +271,17 @@ func summarize(r Result) string {
 		r.Verdict, inScope, outScope, len(r.UnevaluatedRules), len(r.EvidenceGaps), len(r.WorsenedMetrics))
 }
 
-// edgeKey groups the tasks of one dependency. A finding with no edge on
-// either side groups only with itself.
+// edgeKey groups the tasks of one dependency. A finding that names no
+// dependency groups only with itself.
 type edgeKey struct{ from, to, kind string }
+
+// isDependency reports whether a finding edge names a dependency between two
+// different endpoints. A public_api_* finding names its module on both sides
+// with no kind: one finding per declaration, each its own repair.
+func isDependency(e report.FindingEdge) bool {
+	from, to := endpoint(e.From), endpoint(e.To)
+	return from != "" && to != "" && from != to && e.Kind != ""
+}
 
 // buildRepairs groups the active gate tasks by edge: one import that breaks
 // two rules is one repair.
@@ -278,10 +294,8 @@ func buildRepairs(s report.ArchitectureState) []Repair {
 	groups := map[edgeKey][]report.AgentTask{}
 	for _, task := range s.AgentTasks {
 		key := edgeKey{from: task.FindingID}
-		if f, ok := findings[task.FindingID]; ok {
-			if from, to := endpoint(f.Edge.From), endpoint(f.Edge.To); from != "" && to != "" {
-				key = edgeKey{from: from, to: to, kind: f.Edge.Kind}
-			}
+		if f, ok := findings[task.FindingID]; ok && isDependency(f.Edge) {
+			key = edgeKey{from: endpoint(f.Edge.From), to: endpoint(f.Edge.To), kind: f.Edge.Kind}
 		}
 		if _, seen := groups[key]; !seen {
 			order = append(order, key)
@@ -308,8 +322,8 @@ func buildRepair(tasks []report.AgentTask, findings map[string]report.Finding) R
 	slices.SortFunc(tasks, func(a, b report.AgentTask) int { return strings.Compare(a.FindingID, b.FindingID) })
 	rep := Repair{RepairKind: repairNeedsOwnerDecision, InScope: true}
 	var goalTask *report.AgentTask
-	var files []string
-	targets := map[string]struct{}{}
+	var files, origins []string
+	sources, targets := map[string]struct{}{}, map[string]struct{}{}
 	locations := map[report.Location]struct{}{}
 	for i := range tasks {
 		task := &tasks[i]
@@ -321,7 +335,7 @@ func buildRepair(tasks []report.AgentTask, findings map[string]report.Finding) R
 				goalTask = task
 			}
 		}
-		rep.Origin = mergeOrigin(rep.Origin, task.Origin)
+		origins = append(origins, task.Origin)
 		for _, c := range task.Constraints {
 			if !slices.Contains(rep.Constraints, c) {
 				rep.Constraints = append(rep.Constraints, c)
@@ -338,17 +352,22 @@ func buildRepair(tasks []report.AgentTask, findings map[string]report.Finding) R
 		if rep.Edge == nil && (f.Edge.From.Path != "" || f.Edge.From.Module != "") {
 			rep.Edge = &Edge{From: endpoint(f.Edge.From), To: endpoint(f.Edge.To), Kind: f.Edge.Kind}
 		}
+		if from := f.Edge.From.Path; from != "" {
+			sources[from] = struct{}{}
+		}
 		if to := f.Edge.To.Path; to != "" && to != f.Edge.From.Path {
 			targets[to] = struct{}{}
 		}
 		for _, loc := range f.Locations {
 			locations[loc] = struct{}{}
+			sources[loc.File] = struct{}{}
 		}
 	}
 	if goalTask == nil {
 		goalTask = &tasks[0]
 	}
 	rep.Goal = goalTask.Goal
+	rep.Origin = mergeOrigins(origins)
 	rep.InScope = rep.Origin != originPreExisting
 	rep.FindingIDs = sortedUnique(rep.FindingIDs)
 	rep.RuleIDs = sortedUnique(rep.RuleIDs)
@@ -365,49 +384,56 @@ func buildRepair(tasks []report.AgentTask, findings map[string]report.Finding) R
 		}
 		return a.Line - b.Line
 	})
-	rep.Edit = editFiles(files, targets)
+	rep.Edit = editFiles(files, sources, targets)
 	return rep
 }
 
-// mergeOrigin combines the origins of the tasks on one edge. Any in-scope
-// origin keeps the repair in scope: a group is pre_existing only when every
-// task in it is.
-func mergeOrigin(acc, next string) string {
+// mergeOrigins combines the origins of the tasks on one edge. A group is
+// pre_existing only when every task in it is; any introduced task makes it
+// introduced; equal origins (none, without --base) stay as they are; any
+// other mix is unknown, which stays in scope.
+func mergeOrigins(origins []string) string {
+	all := func(want string) bool {
+		for _, o := range origins {
+			if o != want {
+				return false
+			}
+		}
+		return true
+	}
 	switch {
-	case acc == "":
-		return next
-	case acc == next:
-		return acc
-	case acc == originPreExisting:
-		return next
-	case next == originPreExisting:
-		return acc
-	case acc == originIntroduced || next == originIntroduced:
+	case all(origins[0]):
+		return origins[0]
+	case slices.Contains(origins, originIntroduced):
 		return originIntroduced
 	default:
 		return originUnknown
 	}
 }
 
-// editFiles lists the task files to change: every file outside the edge
-// target. The target of a forbidden edge is never something to edit.
-func editFiles(files []string, targets map[string]struct{}) []string {
+// editFiles lists the files to change: the task files on the source side of
+// the edge, which are the import sites and the importing node. Node IDs and
+// resolved file paths differ for Python (dotted) and Rust (crate names), so
+// the source side is read from the finding locations, never by comparing a
+// path with the target node. A finding with neither (a seam-gate finding
+// names only a module pair) lists every task file except the target node.
+func editFiles(files []string, sources, targets map[string]struct{}) []string {
+	all := sortedUnique(files)
 	out := []string{}
-	for _, file := range sortedUnique(files) {
-		if !underAny(file, targets) {
+	for _, file := range all {
+		if _, ok := sources[file]; ok {
+			out = append(out, file)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, file := range all {
+		if _, ok := targets[file]; !ok {
 			out = append(out, file)
 		}
 	}
 	return out
-}
-
-func underAny(file string, targets map[string]struct{}) bool {
-	for target := range targets {
-		if file == target || strings.HasPrefix(file, strings.TrimSuffix(target, "/")+"/") {
-			return true
-		}
-	}
-	return false
 }
 
 // repairLess orders repairs: in scope first, then code changes, then higher
@@ -477,9 +503,15 @@ func activeAdvisories(findings []report.Finding) int {
 }
 
 // validateCommand replays the run's own validation command with the agent
-// format. Every task carries the same command; a run with no task has none.
-func validateCommand(tasks []report.AgentTask) string {
+// format. Every repair task and every advisory task carries the same command;
+// a run with neither has none in the report contract.
+func validateCommand(tasks []report.AgentTask, advisories []report.AdvisoryTask) string {
 	for _, task := range tasks {
+		if len(task.Validation) > 0 {
+			return task.Validation[0] + " " + agentFormatFlag
+		}
+	}
+	for _, task := range advisories {
 		if len(task.Validation) > 0 {
 			return task.Validation[0] + " " + agentFormatFlag
 		}
