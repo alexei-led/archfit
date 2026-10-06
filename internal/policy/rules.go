@@ -47,7 +47,7 @@ type RuleDef struct {
 	// allowed_alternatives and repair-task constraints.
 	Alternatives []string `yaml:"alternatives,omitempty"`
 	// Docs points at the document that explains the rule, such as an ADR. It
-	// is appended to every finding's constraint as " (see <docs>)".
+	// is appended to every finding's why and constraint as " (see <docs>)".
 	Docs string `yaml:"docs,omitempty"`
 }
 

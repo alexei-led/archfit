@@ -190,9 +190,10 @@ func (r *gatedRule) Check(s relationship.Set, ev Evidence) []finding.Finding {
 
 // explain adds the rule's declared rationale, alternatives, and docs to one of
 // its findings: the rationale ends the why, the alternatives become allowed
-// alternatives, and the docs reference ends the constraint. A rule that
-// declares none of them leaves its findings unchanged. The text never enters
-// a finding ID, so editing it re-keys nothing.
+// alternatives, and the docs reference ends both the constraint and the why,
+// so every format that prints the why (SARIF's message among them) carries it.
+// A rule that declares none of them leaves its findings unchanged. The text
+// never enters a finding ID, so editing it re-keys nothing.
 func explain(f *finding.Finding, def policy.RuleDef) {
 	if def.Rationale != "" {
 		f.Why += " — " + def.Rationale
@@ -202,7 +203,9 @@ func explain(f *finding.Finding, def policy.RuleDef) {
 		f.Alternatives = append(f.Alternatives, def.Alternatives...)
 	}
 	if def.Docs != "" {
-		f.Constraint += " (see " + def.Docs + ")"
+		see := " (see " + def.Docs + ")"
+		f.Why += see
+		f.Constraint += see
 	}
 }
 

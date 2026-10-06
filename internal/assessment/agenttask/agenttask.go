@@ -279,10 +279,11 @@ func Build(
 		}
 		// A seam task's files span both modules — up to forty paths of
 		// evidence — and a module-pair task's (module_cycle,
-		// module_dependencies) span up to fifty import sites of one module,
-		// repeated for every pair; their declarations would bury the import to
-		// cut and dominate the report.
-		if factsByFile != nil && !seamGate && ruleType != ruleTypeModuleCycle && ruleType != ruleTypeModuleDeps {
+		// module_dependencies, a module-selector forbidden_dependency) span up
+		// to fifty import sites of one module, repeated for every pair; their
+		// declarations would bury the import to cut and dominate the report.
+		modulePair := ruleType == ruleTypeModuleCycle || ruleType == ruleTypeModuleDeps || f.Edge.Kind == edgeKindModuleDependency
+		if factsByFile != nil && !seamGate && !modulePair {
 			task.Declarations = declarationsFor(files, factsByFile)
 		}
 		tasks = append(tasks, task)

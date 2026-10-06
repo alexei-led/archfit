@@ -238,11 +238,51 @@ func (inv selectorInventory) vacuousSelector(rule policy.RuleDef) (side, glob st
 		}
 	}
 	for _, s := range [...]struct{ side, selector string }{{selectorFromModule, rule.FromModule}, {selectorToModule, rule.ToModule}} {
-		if s.selector != "" && len(inv.moduleMap.ModulesSelected(s.selector)) == 0 {
+		if s.selector == "" {
+			continue
+		}
+		if owned, analysed := inv.moduleSideSource(s.selector); !owned || !analysed {
 			return s.side, s.selector, true
 		}
 	}
 	return "", "", false
+}
+
+// moduleSideSource reports whether the modules a module selector selects own
+// in-scope source (owned) and whether some of it is analysed by a dependency
+// producer (analysed). A module side holds its rule to the same standard as a
+// path glob: selecting no module, or only modules that own no source, matches
+// nothing, and owning only source no producer analyses is the unanalysed
+// case. A selected module declared by a Rust crate::mod path owns no file;
+// the module graph judges it in rule scope, so it counts as owned and
+// analysed here.
+func (inv selectorInventory) moduleSideSource(selector string) (owned, analysed bool) {
+	selected := make(map[string]struct{})
+	for _, module := range inv.moduleMap.ModulesSelected(selector) {
+		selected[module] = struct{}{}
+		if inv.moduleMap.DeclaresCrateModulePath(module) {
+			return true, true
+		}
+	}
+	if len(selected) == 0 {
+		return false, false
+	}
+	for _, file := range inv.files {
+		module, ok := inv.moduleMap.ModuleFor(file)
+		if !ok {
+			if _, selector, _ := ruleFileSelector(inv.moduleMap, file, inv.selectors); selector != "" {
+				module, ok = inv.moduleMap.ModuleFor(selector)
+			}
+		}
+		if _, in := selected[module]; !ok || !in {
+			continue
+		}
+		owned = true
+		if _, unanalysed := inv.unanalysed[file]; !unanalysed {
+			return true, true
+		}
+	}
+	return owned, false
 }
 
 // vacuous reports whether one selector of a ruleType rule matches nothing the
@@ -303,8 +343,12 @@ func (inv selectorInventory) matches(ruleType, side, pattern string) bool {
 // analyses: the rule is aimed at code archfit cannot read relationships from
 // in this tree, which is not a selector typo.
 func (inv selectorInventory) matchesOnlyUnanalysed(ruleType, side, pattern string) bool {
-	if ruleType == ruleTypeForbiddenPattern || moduleSide(side) {
+	if ruleType == ruleTypeForbiddenPattern {
 		return false
+	}
+	if moduleSide(side) {
+		owned, analysed := inv.moduleSideSource(pattern)
+		return owned && !analysed
 	}
 	for file := range inv.unanalysed {
 		if inv.fileMatches(ruleType, side, pattern, file) {

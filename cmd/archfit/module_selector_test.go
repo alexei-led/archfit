@@ -67,7 +67,7 @@ func TestRun_Check_ModuleSelectorCarriesTheRationale(t *testing.T) {
 	if f.Edge.From.Module != fixtureModBilling || f.Edge.To.Path != "net/http" || f.Edge.Kind != "module_dependency" {
 		t.Errorf("edge = %+v, want module billing -> net/http", f.Edge)
 	}
-	if !strings.HasSuffix(f.Why, " — "+selectorRationale) || !strings.HasSuffix(f.Constraint, "(see "+selectorDocs+")") ||
+	if !strings.HasSuffix(f.Why, " — "+selectorRationale+" (see "+selectorDocs+")") || !strings.HasSuffix(f.Constraint, "(see "+selectorDocs+")") ||
 		len(f.Alternatives) != 1 || f.Alternatives[0] != selectorAlt {
 		t.Errorf("finding why/constraint/alternatives = %q / %q / %v", f.Why, f.Constraint, f.Alternatives)
 	}
@@ -103,8 +103,9 @@ func TestRun_Check_ModuleSelectorCarriesTheRationale(t *testing.T) {
 	for _, r := range sarif.Runs[0].Results {
 		if r.RuleID == ruleIDDomainNoHTTP {
 			found = true
-			if !strings.Contains(r.Message.Text, selectorRationale) || r.Properties["allowed_alternatives"] == nil {
-				t.Errorf("sarif result = %+v, want the rationale and the alternatives", r)
+			if !strings.Contains(r.Message.Text, selectorRationale) || !strings.Contains(r.Message.Text, selectorDocs) ||
+				r.Properties["allowed_alternatives"] == nil {
+				t.Errorf("sarif result = %+v, want the rationale, the docs, and the alternatives", r)
 			}
 		}
 	}

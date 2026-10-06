@@ -1090,7 +1090,7 @@ rules:
 | `to_module` | `forbidden_dependency` | Module selector for the imported side, instead of `to`. |
 | `rationale` | all | Why the rule exists. Appended to every finding's `why` as ` — <rationale>` and repeated in the repair task's `constraints`. |
 | `alternatives` | all | What to do instead. Sets the finding's `allowed_alternatives`; the repair task repeats each one in `constraints`. |
-| `docs` | all | A document reference, such as an ADR path. Appended to every finding's `constraint` as ` (see <docs>)`. |
+| `docs` | all | A document reference, such as an ADR path. Appended to every finding's `why` and `constraint` as ` (see <docs>)`, so SARIF and the repair task carry it. |
 
 `rationale`, `alternatives`, and `docs` never enter a finding ID, so editing
 them re-keys no finding. Report text is bounded at projection, so a long
@@ -1217,17 +1217,26 @@ rules:
     selects; an endpoint no declared module owns never matches it;
   - an edge inside one declared module never matches;
   - one finding per pair of sides, with `kind: module_dependency`. A module
-    side is keyed by its module (`edge.<side>.module`), a `from` glob side by
-    the importing package (`edge.from.path`), and a `to` glob side by the
-    target (`edge.to.path`), so a new or moved file keeps the finding ID. The
-    finding lists the import lines (at most 50; the full count is in
+    side is keyed by its module (`edge.<side>.module`). A `from` glob side is
+    keyed by the importing package (`edge.from.path`): a Go package directory,
+    a TypeScript file, a Python dotted module, or a Rust crate. A `to` glob
+    side is keyed by the target node (`edge.to.path`). So a new or moved file
+    keeps the finding ID on a module side and inside a Go package; moving a
+    TypeScript or Python importer, or the target of a `to` glob, re-keys it.
+    The finding lists the import lines (at most 50; the full count is in
     `matched_by.locations_total`);
-  - a selector that selects no declared module still loads. A fail-gated rule
-    goes to `decision.unevaluated_required_rules` with the reason
+  - a selector that selects no declared module, or only modules that own no
+    scanned source, still loads. A fail-gated rule goes to
+    `decision.unevaluated_required_rules` with the reason
     `selector matches nothing: from_module <selector>` (or `to_module`), a
     warn-gated rule prints a config warning, and `archfit config lint`
-    reports `unknown_module`. `guard: true` exempts it, as for a path glob;
-  - the rule's scope is the languages of the modules a `from_module` selects.
+    reports `unknown_module` (no module selected) or `dead_selector` (the
+    selected modules own no source). Selected modules that own only source no
+    dependency producer analyses give `selector matches only source no
+    dependency producer analyses: …`, as a path glob does. `guard: true`
+    exempts a selector that matches nothing, as for a path glob;
+  - the rule's scope is the languages of the modules a `from_module` selects,
+    restricted to the languages of the modules a `to_module` selects.
 - `public_api_only` — fires on edges into internal surface, optionally filtered
   by `from` and `to`. The declared surfaces decide first, in every language:
   1. a target matching a `public` glob of the module that owns it never fires;

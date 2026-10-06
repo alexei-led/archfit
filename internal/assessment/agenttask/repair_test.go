@@ -148,3 +148,30 @@ func TestTaskCarriesTheRuleRationale(t *testing.T) {
 		t.Errorf("goal = %q, want it to name module billing and net/http", tasks[0].Goal)
 	}
 }
+
+// TestModuleSelectorTaskCarriesNoDeclarations pins that a module-selector
+// forbidden_dependency task, a module-pair task with up to fifty import sites,
+// carries no declarations, like the other module-pair tasks; a path-mode
+// forbidden_dependency task keeps them.
+func TestModuleSelectorTaskCarriesNoDeclarations(t *testing.T) {
+	const importer = "pkg/a/a.go"
+	facts := []evidence.SyntaxFact{{File: importer, Kind: "function", Name: "Charge", Exported: true, StartLine: 3}}
+	for _, tc := range []struct {
+		name  string
+		kind  string
+		wantN int
+	}{
+		{"module selector", "module_dependency", 0},
+		{"path glob", "imports", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := gateFinding("sel", ruleForbidden, finding.StatusNew)
+			f.Edge.Kind = tc.kind
+			f.Locations = []relationship.Location{{File: importer, Line: 3}}
+			tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleForbidden: ruleTypeForbidden}, nil, nil, facts, nil, agenttask.PathResolver{})
+			if len(tasks) != 1 || len(tasks[0].Declarations) != tc.wantN {
+				t.Errorf("tasks = %+v, want %d declarations", tasks, tc.wantN)
+			}
+		})
+	}
+}

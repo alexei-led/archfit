@@ -468,8 +468,18 @@ func moduleSelectorScope(rule policy.RuleDef, topology policy.TopologyView, inv 
 		}
 		return restrictToTargetVocabulary(scope, topology.ModuleMap.SelectorLanguages(rule.To))
 	}
+	// A target scope that cannot be established keeps the rule unevaluated,
+	// and a target with no analysed source can receive no edge: the rule is
+	// not applicable, as when the from_module side selects no analysed source.
+	// Neither may fall back to the from side and count as evaluated.
 	target := selectedModuleScope(topology, inv, topology.ModuleMap.ModulesSelected(rule.ToModule))
-	if target.status != ruleScopeApplicable {
+	if target.status != ruleScopeApplicable || scope.status != ruleScopeApplicable {
+		if scope.status == ruleScopeUnknown {
+			return scope
+		}
+		if target.status != ruleScopeApplicable {
+			return target
+		}
 		return scope
 	}
 	return restrictToTargetVocabulary(scope, target.languages)

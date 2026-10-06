@@ -31,6 +31,7 @@ const (
 	layerNameDomain        = "domain"
 	layerNameApp           = "app"
 	pkgHTTP                = "net/http"
+	modPlace               = "place"
 )
 
 // unevaluatedReasons maps each listed required rule to its reason.
@@ -410,4 +411,48 @@ func TestModuleSelectorScopeAndVacuity(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestToModuleScopeNeverFallsBackToTheSourceSide pins the target side of a
+// module-selector rule: a to_module whose modules the inventory cannot judge
+// (a crate::mod path without the module graph) keeps the rule unevaluated with
+// that reason; a to_module whose modules own only source no producer analyses,
+// or no source at all, is reported like a path glob that matches the same
+// source. None counts as an evaluated rule.
+func TestToModuleScopeNeverFallsBackToTheSourceSide(t *testing.T) {
+	t.Run("target the inventory cannot judge", func(t *testing.T) {
+		diag, in := rustModuleFixture()
+		in.Facts.RustModuleNodes = nil
+		withModules(&in, map[string]policy.ModuleDef{
+			modBilling: {Paths: []string{selBilling}},
+			modPlace:   {Paths: []string{rustModPlace}},
+		})
+		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modBilling, ToModule: modPlace})
+		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; !strings.Contains(got, "module graph") {
+			t.Errorf("unevaluated reason = %q, want the missing module graph named", got)
+		}
+	})
+	t.Run("target with no analysed source", func(t *testing.T) {
+		diag, in := typescriptAbsentFixture()
+		withModules(&in, map[string]policy.ModuleDef{
+			modBilling: {Paths: []string{selBilling}},
+			modWebUI:   {Paths: []string{webUIGlob}},
+		})
+		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modBilling, ToModule: modWebUI})
+		want := "selector matches only source no dependency producer analyses: to_module " + modWebUI
+		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != want {
+			t.Errorf("unevaluated reason = %q, want %q", got, want)
+		}
+	})
+	t.Run("target whose modules own no source", func(t *testing.T) {
+		diag, in := typescriptAbsentFixture()
+		withModules(&in, map[string]policy.ModuleDef{
+			modBilling: {Paths: []string{selBilling}},
+			"moved":    {Paths: []string{"internal/moved/**"}},
+		})
+		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modBilling, ToModule: "moved"})
+		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != "selector matches nothing: to_module moved" {
+			t.Errorf("unevaluated reason = %q, want the stale module stanza named", got)
+		}
+	})
 }

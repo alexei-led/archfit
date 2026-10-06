@@ -351,9 +351,14 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `forbidden_dependency` keeps its original edge loop and `finding.New` IDs
   (byte-identical); the module branch (`checkModules`) skips same-module edges
   and keys `NewKeyed(rule, "module_dependency", "module:"|"path:"+side…)`. A
-  selector that selects no module is vacuous (`vacuousSelector` side
-  `from_module`/`to_module`), linted `unknown_module`. `rationale`/
-  `alternatives`/`docs` are applied once, in `rules.gatedRule` (`explain`),
+  module side is held to the path-glob standard (`moduleSideSource`): no
+  module selected, or selected modules owning no scanned source, is vacuous
+  (`selector matches nothing: from_module|to_module …`; lint `unknown_module`
+  resp. `dead_selector`), owning only unanalysed source is the unanalysed
+  reason; a `to_module` scope that cannot be established is never replaced by
+  the from side. Module-selector tasks carry no `declarations`. `rationale`/
+  `alternatives`/`docs` are applied once, in `rules.gatedRule` (`explain`;
+  docs end both the why and the constraint),
   never enter IDs; the rationale rides `finding.Finding.Rationale`
   (`json:"-"`) into the task constraints as `rationale: …`; SARIF carries it
   in the message (the why) and `allowed_alternatives` as a result property

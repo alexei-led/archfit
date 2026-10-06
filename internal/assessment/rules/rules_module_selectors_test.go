@@ -146,7 +146,8 @@ func TestForbiddenDependency_ValidatesSelectors(t *testing.T) {
 
 // TestRationaleFieldsExplainEveryFinding pins rationale, alternatives, and
 // docs on every rule type: the rationale ends the why, the alternatives
-// become allowed alternatives, the docs end the constraint, and none of them
+// become allowed alternatives, the docs end the why and the constraint (so
+// SARIF, which prints the why, carries them), and none of them
 // moves a finding ID. A rule without them leaves its findings unchanged.
 func TestRationaleFieldsExplainEveryFinding(t *testing.T) {
 	const (
@@ -173,8 +174,8 @@ func TestRationaleFieldsExplainEveryFinding(t *testing.T) {
 			if e.ID != p.ID {
 				t.Errorf("rationale moved the finding ID: %s -> %s", p.ID, e.ID)
 			}
-			if e.Why != p.Why+" — "+rationale || e.Rationale != rationale || p.Rationale != "" {
-				t.Errorf("why = %q, rationale = %q; want %q + rationale", e.Why, e.Rationale, p.Why)
+			if e.Why != p.Why+" — "+rationale+" (see "+docs+")" || e.Rationale != rationale || p.Rationale != "" {
+				t.Errorf("why = %q, rationale = %q; want %q + rationale + docs", e.Why, e.Rationale, p.Why)
 			}
 			if e.Constraint != p.Constraint+" (see "+docs+")" {
 				t.Errorf("constraint = %q, want the docs reference appended to %q", e.Constraint, p.Constraint)

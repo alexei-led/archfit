@@ -583,7 +583,7 @@
         },
         "docs": {
           "type": "string",
-          "description": "Docs points at the document that explains the rule, such as an ADR. It\nis appended to every finding's constraint as \" (see \u003cdocs\u003e)\"."
+          "description": "Docs points at the document that explains the rule, such as an ADR. It\nis appended to every finding's why and constraint as \" (see \u003cdocs\u003e)\"."
         }
       },
       "additionalProperties": false,

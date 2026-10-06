@@ -411,12 +411,14 @@ func TestLintModuleSelectors(t *testing.T) {
 	modules := map[string]policy.ModuleDef{
 		"a": {Paths: []string{assessPathsA}, Layer: layerNameDomain, DependsOn: []string{"layer:" + layerNameApp, selLayerNowhere}},
 		"b": {Paths: []string{assessPathsB}, Layer: layerNameApp, Role: policy.RoleAdapter},
+		"c": {Paths: []string{"c/**"}},
 	}
 	rules := []policy.RuleDef{
 		{ID: "live", Type: ruleForbidden, Gate: gateFail, FromModule: selLayerDomain, ToModule: "role:adapter"},
 		{ID: "glob", Type: ruleForbidden, Gate: gateFail, FromModule: "*", To: pkgHTTP},
 		{ID: "dead", Type: ruleForbidden, Gate: gateFail, FromModule: "layer:infra", To: pkgHTTP},
 		{ID: "warn_dead", Type: ruleForbidden, Gate: gateWarnPosture, From: assessPathsA, ToModule: modWarehouse},
+		{ID: "sourceless", Type: ruleForbidden, Gate: gateFail, From: assessPathsA, ToModule: "c"},
 	}
 	topology := policy.TopologyView{Modules: modules, Layers: []string{layerNameDomain, layerNameApp}, ModuleMap: policy.BuildModuleMap(modules)}
 	snapshot := policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{},
@@ -433,6 +435,7 @@ func TestLintModuleSelectors(t *testing.T) {
 	want := []key{
 		{evaluation.LintUnknownModule, evaluation.LintSeverityError, "modules.a.depends_on[1]"},
 		{evaluation.LintUnknownModule, evaluation.LintSeverityError, "rules[dead].from_module"},
+		{evaluation.LintDeadSelector, evaluation.LintSeverityError, "rules[sourceless].to_module"},
 		{evaluation.LintUnknownModule, evaluation.LintSeverityError, "rules[warn_dead].to_module"},
 	}
 	if !slices.Equal(got, want) {

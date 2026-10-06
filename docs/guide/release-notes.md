@@ -20,8 +20,8 @@ New:
 - Module selectors. `forbidden_dependency` takes `from_module` and `to_module`
   instead of `from` and `to`: `layer:<name>`, `role:<role>`, or a glob over
   module names. A module selector matches only edges between two different
-  modules, and its findings are keyed by the module pair, so a moved file keeps
-  the finding ID. Allowlist entries (`depends_on`, `visible_to`) accept the
+  modules. A module side keys its findings by the module, so a moved file
+  keeps the finding ID. Allowlist entries (`depends_on`, `visible_to`) accept the
   same selectors. A selector that selects no module makes the rule not
   evaluated (`selector matches nothing: from_module …`), and `config lint`
   reports it as `unknown_module`. See
@@ -31,7 +31,7 @@ New:
   appears in the repair task's constraints; the alternatives become the
   finding's `allowed_alternatives`, the task's constraints, and the SARIF
   result property `allowed_alternatives`; the docs reference ends the finding
-  `constraint`. None of them changes a finding ID.
+  `why` and `constraint`. None of them changes a finding ID.
 
 Contract notes:
 
