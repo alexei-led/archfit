@@ -506,7 +506,7 @@ func TestExtract_IncludeOnly(t *testing.T) {
 
 // TestExtract_SubtreePathStrip verifies that parseAndNormalize strips the
 // SubtreePrefix from node IDs and edge paths in subtree mode, so downstream
-// classify and matchesInternal work against ScanRoot-relative config globs.
+// classify and ImportEdgeKind work against ScanRoot-relative config globs.
 // The byte-identical invariant (no-op when SubtreePrefix=="") is also checked.
 func TestExtract_SubtreePathStrip(t *testing.T) {
 	// depcruise JSON with git-root-relative paths (subtree prefix "packages/api").
@@ -538,7 +538,7 @@ func TestExtract_SubtreePathStrip(t *testing.T) {
 			subtreePrefix: "",
 			wantFromPath:  "packages/api/src/index.ts",
 			wantToPath:    "packages/api/src/util.ts",
-			wantEdgeKind:  graph.EdgeKindImports, // matchesInternal won't match
+			wantEdgeKind:  graph.EdgeKindImports, // ImportEdgeKind won't match
 		},
 	}
 

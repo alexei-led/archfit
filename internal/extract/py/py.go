@@ -104,15 +104,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	// Determine the package list for grimp. An explicit PyPackage config wins;
 	// otherwise discover top-level packages under ScanRoot (dirs with __init__.py).
 	// If discovery finds nothing, fall back to the directory name (legacy behaviour).
-	var pkgs []string
-	if e.cfg.PyPackage != "" {
-		pkgs = []string{e.cfg.PyPackage}
-	} else {
-		pkgs = discoverPackages(s.Root)
-		if len(pkgs) == 0 {
-			pkgs = []string{filepath.Base(s.Root)}
-		}
-	}
+	pkgs := grimpPackages(s.Root, e.cfg.PyPackage)
 
 	// Build the command.
 	// grimp_helper --packages pkg1 pkg2 … accepts multiple top-level package names
@@ -223,6 +215,19 @@ func Applicable(root, pkg string) bool {
 // (e.g. ~42 isolated services), cross-service coupling cannot be measured
 // in one run. This is a grimp limitation; archfit does not promise
 // cross-service Python analysis in that setup.
+// grimpPackages is the package list grimp builds: the configured package, else
+// the discovered top-level packages, else the root directory's name. Only
+// modules of these packages become importers.
+func grimpPackages(root, configured string) []string {
+	if configured != "" {
+		return []string{configured}
+	}
+	if pkgs := discoverPackages(root); len(pkgs) > 0 {
+		return pkgs
+	}
+	return []string{filepath.Base(root)}
+}
+
 func discoverPackages(root string) []string {
 	if srcPkgs := packagesUnder(filepath.Join(root, "src")); len(srcPkgs) > 0 {
 		return srcPkgs // src-layout: prefer the real source packages over top-level strays
@@ -400,10 +405,7 @@ func (e *Extractor) parseAndNormalize(data []byte, root string) (graph.Facts, ev
 		emitNode(he.Importer)
 		emitNode(he.Imported)
 
-		edgeKind := graph.EdgeKindImports
-		if e.matchesInternal(he.Imported) {
-			edgeKind = graph.EdgeKindUsesInternal
-		}
+		edgeKind := ImportEdgeKind(e.cfg.Internal, he.Imported)
 
 		// Strength hint: intrusive is assigned when the edge reaches into PEP 8-private
 		// internals — either via a private module name ("pkg._internal") or via an
@@ -581,7 +583,10 @@ func hasPrivateSymbolImport(line string) bool {
 	return false
 }
 
-// matchesInternal reports whether the dotted module name matches any internal glob.
+// ImportEdgeKind is the kind of an import edge to the dotted module
+// imported: uses_internal when a configured internal glob matches it, else
+// imports. The extractor and `archfit policy can-import` share it, so a
+// queried edge keys its findings exactly as the extracted one does.
 //
 // Python internal: globs are written in DOTTED module form (e.g.
 // "myapp.b._internal.*"), the same form used by paths: and by
@@ -589,13 +594,13 @@ func hasPrivateSymbolImport(line string) bool {
 // which silently disagreed with classifyStrength (it matches the dotted path), so a
 // glob could set the uses_internal edge kind without setting strength=intrusive, or
 // vice versa. Matching the dotted form here keeps edge-kind and strength consistent.
-func (e *Extractor) matchesInternal(dotted string) bool {
-	for _, pattern := range e.cfg.Internal {
-		if matched, _ := doublestar.Match(pattern, dotted); matched {
-			return true
+func ImportEdgeKind(internal []string, imported string) graph.EdgeKind {
+	for _, pattern := range internal {
+		if matched, _ := doublestar.Match(pattern, imported); matched {
+			return graph.EdgeKindUsesInternal
 		}
 	}
-	return false
+	return graph.EdgeKindImports
 }
 
 // absentCoverage returns a Coverage record indicating the tool was not found.

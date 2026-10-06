@@ -75,7 +75,7 @@ func TestFormatMatrix_AgentDigestCarriesTheState(t *testing.T) {
 	}
 	active := 0
 	for _, f := range state.Findings {
-		if f.Kind != "gate" || (f.Status != "new" && f.Status != "expired_waiver") {
+		if f.Kind != findingKindGate || (f.Status != findingStatusNew && f.Status != "expired_waiver") {
 			continue
 		}
 		active++

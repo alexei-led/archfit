@@ -206,16 +206,8 @@ type Scored struct {
 // Score synthesises the scorecard, applies the coupling gate, attaches repair
 // tasks, and stamps the acquisition-resolved coverage evidence onto diag.
 func Score(diag *result.Result, in ScoreInput) Scored {
-	ruleTypes := make(map[string]string, len(in.Policy.Gates.Rules.Rules))
-	for _, def := range in.Policy.Gates.Rules.Rules {
-		ruleTypes[def.ID] = def.Type
-	}
-	modulePublic := make(map[string][]string, len(in.Policy.Topology.Modules))
-	for name, def := range in.Policy.Topology.Modules {
-		if len(def.Public) > 0 {
-			modulePublic[name] = def.Public
-		}
-	}
+	ruleTypes := ruleTypesOf(in.Policy)
+	modulePublic := modulePublicOf(in.Policy)
 	// A nil FileClassIndex (the LOC walk did not run) leaves knownFiles nil,
 	// which disables agent-task path resolution rather than resolving every
 	// candidate against os.Stat alone. Allocating unconditionally would make

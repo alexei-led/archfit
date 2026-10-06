@@ -598,7 +598,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 	// normPath strips the git-root-relative prefix from paths emitted by
 	// depcruise when running from the git root (subtree mode). This converts
 	// git-root-relative paths like "packages/api/src/x.ts" to ScanRoot-relative
-	// "src/x.ts" so node IDs, matchesInternal globs, and downstream classify all
+	// "src/x.ts" so node IDs, ImportEdgeKind globs, and downstream classify all
 	// work correctly against config patterns.
 	// No-op when subtreePrefix is "" — preserves byte-identical output on the
 	// non-subtree path.
@@ -697,8 +697,8 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 
 			// Determine edge kind. External targets are never internal.
 			edgeKind := graph.EdgeKindImports
-			if nodeKind == graph.NodeKindFile && e.matchesInternal(toPath) {
-				edgeKind = graph.EdgeKindUsesInternal
+			if nodeKind == graph.NodeKindFile {
+				edgeKind = ImportEdgeKind(e.cfg.Internal, toPath)
 			}
 
 			// Determine confidence.
@@ -755,14 +755,17 @@ func inThirdPartyDir(path string) bool {
 	return strings.HasPrefix(path, thirdPartyDir+"/") || strings.Contains(path, "/"+thirdPartyDir+"/")
 }
 
-// matchesInternal reports whether path matches any of the configured internal globs.
-func (e *Extractor) matchesInternal(path string) bool {
-	for _, pattern := range e.cfg.Internal {
-		if matched, _ := doublestar.Match(pattern, path); matched {
-			return true
+// ImportEdgeKind is the kind of an import edge to the first-party file
+// toPath: uses_internal when a configured internal glob matches it, else
+// imports. The extractor and `archfit policy can-import` share it, so a
+// queried edge keys its findings exactly as the extracted one does.
+func ImportEdgeKind(internal []string, toPath string) graph.EdgeKind {
+	for _, pattern := range internal {
+		if matched, _ := doublestar.Match(pattern, toPath); matched {
+			return graph.EdgeKindUsesInternal
 		}
 	}
-	return false
+	return graph.EdgeKindImports
 }
 
 // absentCoverage returns a Coverage record indicating the tool was not found.

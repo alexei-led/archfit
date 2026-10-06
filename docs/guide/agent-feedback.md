@@ -7,6 +7,7 @@ is deterministic — same repo + same config = byte-identical output.
 ## The loop
 
 ```text
+agent asks archfit policy can-import before a new cross-module import
 agent edits code
   → archfit check [--base main] --json    (or --format agent: one next_action)
   → exit 0?  healthy — done.
@@ -25,6 +26,27 @@ agent edits code
 
 Use `check` inside repair loops and CI validation. Use `analyze` to generate
 reports, diffs, or a post-check narrative with `archfit analyze --ai-summary`.
+
+## Before an edit: `archfit policy`
+
+Two queries answer before an edit, in about 50 ms. They read the config, the
+waivers, and the baseline. They run no analyzer and never read the fact cache.
+
+```text
+agent plans a new import from F to T
+  → archfit policy where F            which module owns F, its layer, allowlists, rules
+  → archfit policy can-import F T
+  → denied?        do not add it; follow the denial's goal and constraints
+  → not_decided?   add it, then run check: a cycle or seam rule may still block it
+  → allowed?       an allowlist or the layer order permits it
+  → unconstrained? no rule decides it; this is not permission
+```
+
+`can-import` judges the import with the same relationship analysis and rule
+pass as `check`, under the same baseline and waivers. A `denied` answer names
+the finding ID and the rule ID that `check` reports for the same import, and
+carries the repair goal and constraints. See
+[`archfit policy can-import`](commands.md#archfit-policy-can-import).
 
 ## The agent result: `--format agent`
 

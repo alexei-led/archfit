@@ -759,6 +759,41 @@ init` emits v2 directly; owners update older configs manually before analysis.
   exempt from layout parity, like SARIF; `TestFormatMatrix_AgentDigestCarriesTheState`
   holds it to the verdict and every active gate finding. The state gets no
   agent-only field.
+- **`archfit policy can-import` is `check`'s evaluator on one edge**
+  (`application.PolicyQueryService`, `evaluation.JudgeEdge`). The edge is
+  spelled by the extractor's own `QueryEdge` (`registry.QueryEdge`: go/ts/py;
+  Rust has none and answers `not_decided`) with the extractor's own edge-kind
+  predicate (`ImportEdgeKind`), so node IDs and finding IDs equal the extracted
+  ones. It goes through `analysis.Analyze`, the shared rule pass
+  (`evaluation.checkRules`), `status.Assign` with the persisted baseline and
+  waivers, and `agenttask.Build` for the repair text. The importing file's
+  production class comes from `acquisition.Query` with Acquire's own
+  predicates (`outOfDeclaredScope`, `loc.ClassifyFile`: the walk's class for a
+  walked file, the path-only class otherwise). The root is resolved as check
+  resolves it (`scope.Resolve`: --root, git toplevel, config dir; one
+  `git rev-parse`). No analyzer, no fact cache. `QueryEdge` drops what the
+  extractor drops (`ErrNotExtracted` → `unconstrained`: the descriptor's own
+  `ProjectPresent` finds no project; Go `_test.go`,
+  build-constrained under the toolchain's env (`toolchainContext`, shared with
+  `countApplicableSources`, plus the go env file; unset `CGO_ENABLED` with a
+  cgo-tagged file is `not_decided`; a file that imports "C" is not extracted
+  with `CGO_ENABLED=0` and `not_decided` otherwise: preprocessed cgo syntax
+  comes from the build cache, which `deriveFileFacts` skips, but a failed
+  preprocess falls back to the original file),
+  excluded file or target, unloaded member; a switched-off
+  language) and abstains where only the tool knows (`ErrNotDecidable` →
+  `not_decided`: Rust, a Python target outside the packages grimp builds;
+  an importer outside them is `ErrNotExtracted`, from `py.grimpPackages`, the
+  extractor's own package list). Edge modules for the
+  answer: `rules.DeclaredEndpoints` for allowlists, the edge's own declared
+  modules and `rules.ProductionEdge` for `module_cycle`, the augmented ones (go.work members via
+  `Facts.GoModules`) for the seam gate. Metric ratchets are not evaluated.
+  Answer order: `denied` > `not_decided` (a fail-gated
+  `module_cycle` on a cross-module edge, `cycle` off Go, the seam gate in
+  `mode: fail`) > `allowed` (an allowlist that names the pair, or the layer
+  order) > `unconstrained`; an edge whose only violations are accepted debt is
+  `unconstrained`, never `allowed`. `cmd/archfit.TestPolicyCanImportAgreesWithCheck`
+  pins the agreement in both directions.
 - **`check` exit code IS the state verdict** (`application.outcomeFor`):
   `healthy` → 0, `needs_attention` → 2, `blocked` → 1, error → 3. Nothing else
   participates — a required-analyzer gate and a failing hard rule both reach the

@@ -14,8 +14,6 @@ import (
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 
-	"github.com/bmatcuk/doublestar/v4"
-
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
@@ -154,13 +152,6 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	// same path family as pkg.Fset file paths, avoiding symlink skew that
 	// memberDirs (os.Stat-based) can introduce on macOS).
 	//
-	// modEntry holds a module path and its ScanRoot-relative dir ("." for root).
-	// Entries are sorted: longest path first (correct longest-prefix matching),
-	// then alpha for equal-length ties (determinism).
-	type modEntry struct {
-		path   string
-		relDir string
-	}
 	seenModPath := make(map[string]struct{})
 	var modEntries []modEntry
 	var goModules []graph.GoModule
@@ -176,42 +167,13 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		}
 	}
 
-	// Sort modEntries: longest path first for correct prefix matching; alpha tiebreak.
-	sort.Slice(modEntries, func(i, j int) bool {
-		li, lj := len(modEntries[i].path), len(modEntries[j].path)
-		if li != lj {
-			return li > lj
-		}
-		return modEntries[i].path < modEntries[j].path
-	})
+	sortModEntries(modEntries)
 	// Sort goModules by Path for deterministic output.
 	sort.Slice(goModules, func(i, j int) bool {
 		return goModules[i].Path < goModules[j].Path
 	})
 
-	// stripImportPath converts a Go import path to a ScanRoot-relative path.
-	// First-party imports (module path ∈ member set) are prefixed with their
-	// member's relative dir; external deps are returned unchanged.
-	// Single-member root package (relDir="."): ScanRoot-relative path is "" (node is
-	// the scan root itself). Identical to the old stripModPath root-module behavior.
-	stripImportPath := func(importPath string) string {
-		for _, m := range modEntries {
-			if importPath == m.path {
-				if m.relDir == "." {
-					return "" // root member's root package: ScanRoot-relative path is ""
-				}
-				return m.relDir
-			}
-			if strings.HasPrefix(importPath, m.path+"/") {
-				suffix := importPath[len(m.path)+1:]
-				if m.relDir == "." {
-					return suffix
-				}
-				return m.relDir + "/" + suffix
-			}
-		}
-		return importPath // external dep — unchanged
-	}
+	stripImportPath := func(importPath string) string { return stripModulePath(modEntries, importPath) }
 
 	// Merge all packages from all member facts, deduplicating by PkgPath.
 	// Iterate in member order (mfs[i] ↔ memberDirs[i]) for determinism.
@@ -319,17 +281,18 @@ func (e *GoExtractor) coverageForLoad(root string, members []string, filesSeen, 
 	return cov
 }
 
-// countApplicableSources checks applicability independently of packages.Load.
-// Selected members, Go's directory exclusions, and build constraints bound the
-// inventory so deliberately unbuilt source does not become a failed measurement.
-func (e *GoExtractor) countApplicableSources(root string, members []string) (int, error) {
+// toolchainContext is the build context of the go command the run starts:
+// GOOS and GOARCH from the environment, and the -tags of GOFLAGS then of the
+// build flags, the last one winning as on the go command line. getenv reads
+// the environment.
+func toolchainContext(getenv func(string) string, buildFlags []string) build.Context {
 	buildContext := build.Default
 	for key, target := range map[string]*string{"GOOS": &buildContext.GOOS, "GOARCH": &buildContext.GOARCH} {
-		if value := os.Getenv(key); value != "" {
+		if value := getenv(key); value != "" {
 			*target = value
 		}
 	}
-	flags := append(strings.Fields(os.Getenv("GOFLAGS")), e.cfg.BuildFlags...)
+	flags := append(strings.Fields(getenv("GOFLAGS")), buildFlags...)
 	for i, flag := range flags {
 		value, ok := strings.CutPrefix(flag, "-tags=")
 		if flag == "-tags" && i+1 < len(flags) {
@@ -339,6 +302,14 @@ func (e *GoExtractor) countApplicableSources(root string, members []string) (int
 			buildContext.BuildTags = strings.FieldsFunc(strings.Trim(value, "\"'"), func(r rune) bool { return r == ',' || r == ' ' })
 		}
 	}
+	return buildContext
+}
+
+// countApplicableSources checks applicability independently of packages.Load.
+// Selected members, Go's directory exclusions, and build constraints bound the
+// inventory so deliberately unbuilt source does not become a failed measurement.
+func (e *GoExtractor) countApplicableSources(root string, members []string) (int, error) {
+	buildContext := toolchainContext(os.Getenv, e.cfg.BuildFlags)
 	count := 0
 	for _, member := range members {
 		err := filepath.WalkDir(member, func(name string, entry fs.DirEntry, err error) error {
@@ -454,10 +425,7 @@ func (e *GoExtractor) collectNodesEdges(
 					continue
 				}
 
-				edgeKind := graph.EdgeKindImports
-				if strings.Contains(importPath, "/internal/") || strings.HasSuffix(importPath, "/internal") {
-					edgeKind = graph.EdgeKindUsesInternal
-				}
+				edgeKind := ImportEdgeKind(importPath)
 
 				key := f.RelFile + "\x00" + importPath
 				edges = append(edges, graph.Edge{
@@ -474,6 +442,60 @@ func (e *GoExtractor) collectNodesEdges(
 		}
 	}
 	return
+}
+
+// modEntry holds a module path and its ScanRoot-relative dir ("." for root).
+type modEntry struct {
+	path   string
+	relDir string
+}
+
+// sortModEntries orders entries longest path first, for correct
+// longest-prefix matching, then alphabetically for determinism.
+func sortModEntries(entries []modEntry) {
+	sort.Slice(entries, func(i, j int) bool {
+		li, lj := len(entries[i].path), len(entries[j].path)
+		if li != lj {
+			return li > lj
+		}
+		return entries[i].path < entries[j].path
+	})
+}
+
+// stripModulePath converts a Go import path to a ScanRoot-relative path.
+// First-party imports (module path ∈ member set) are prefixed with their
+// member's relative dir; external deps are returned unchanged.
+// Single-member root package (relDir="."): ScanRoot-relative path is "" (node is
+// the scan root itself). Identical to the old stripModPath root-module behavior.
+// entries must be sorted by sortModEntries.
+func stripModulePath(entries []modEntry, importPath string) string {
+	for _, m := range entries {
+		if importPath == m.path {
+			if m.relDir == "." {
+				return "" // root member's root package: ScanRoot-relative path is ""
+			}
+			return m.relDir
+		}
+		if strings.HasPrefix(importPath, m.path+"/") {
+			suffix := importPath[len(m.path)+1:]
+			if m.relDir == "." {
+				return suffix
+			}
+			return m.relDir + "/" + suffix
+		}
+	}
+	return importPath // external dep — unchanged
+}
+
+// ImportEdgeKind is the kind of an import edge to the ScanRoot-relative
+// import path: uses_internal through a Go internal/ segment, else imports. It
+// is the one predicate the extractor and `archfit policy can-import` share, so
+// a queried edge keys its findings exactly as the extracted one does.
+func ImportEdgeKind(importPath string) graph.EdgeKind {
+	if strings.Contains(importPath, "/internal/") || strings.HasSuffix(importPath, "/internal") {
+		return graph.EdgeKindUsesInternal
+	}
+	return graph.EdgeKindImports
 }
 
 // goObjectStrength maps a go/types Object to its BC integration-strength label.
@@ -664,11 +686,5 @@ func (e *GoExtractor) countConstraintExcluded(pkgs []packageFacts) int {
 
 // isExcluded reports whether path matches any of the configured exclusion globs.
 func (e *GoExtractor) isExcluded(path string) bool {
-	for _, pattern := range e.cfg.Exclusions {
-		matched, _ := doublestar.Match(pattern, path)
-		if matched {
-			return true
-		}
-	}
-	return false
+	return excluded(e.cfg.Exclusions, path)
 }
