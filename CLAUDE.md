@@ -754,7 +754,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
   it shortens free text and caps repair lists (counting what it cut), never
   an ID, path, edge, or `validate`. `edit` is the source side read from finding
   locations and the source node, never a path compared with the target node
-  (Python/Rust node IDs are not file paths). The format is
+  (Python/Rust node IDs are not file paths); an edge with neither is empty,
+  and only a module-pair finding lists every task file. The format is
   exempt from layout parity, like SARIF; `TestFormatMatrix_AgentDigestCarriesTheState`
   holds it to the verdict and every active gate finding. The state gets no
   agent-only field.

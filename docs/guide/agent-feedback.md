@@ -84,8 +84,11 @@ A finding that names no dependency between two different endpoints (a
 distinct constraints of all grouped tasks. `at` lists the source locations.
 `edit` lists the task files on the source side of the edge: the import sites
 and the importing file. The target of a forbidden edge is never a file to
-edit. A finding with no location and no source file (a seam-gate finding
-names only a module pair) lists every task file except the target node. Repairs are sorted: in scope first, then code
+edit. When the edge has no location and its source node is not a file (a
+Rust `crate::mod` edge), archfit cannot tell the sides apart, and `edit` is
+empty: `edge.from` names the source. A finding that names only a module pair
+(a seam-gate finding) lists every task file, because either module can
+change. Repairs are sorted: in scope first, then code
 changes, then severity, then the lowest finding ID.
 
 **Scope.** Without `--base`, every repair is in scope. With `--base <ref>`,

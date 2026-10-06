@@ -196,7 +196,9 @@ func TestEditListsOnlyTheSourceSide(t *testing.T) {
 		{name: "python dotted target", spec: spec("myapp.handlers", "myapp.domain", "src/myapp/handlers.py", "src/myapp/domain.py", "src/myapp/handlers.py"), want: []string{"src/myapp/handlers.py"}},
 		{name: "rust crate target", spec: spec("my-app", "my-core", "crates/my-app/Cargo.toml", "crates/my-app/Cargo.toml", "crates/my-core"), want: []string{"crates/my-app/Cargo.toml"}},
 		{name: "typescript edge without locations", spec: spec("web/a.ts", "web/b.ts", "-", "web/a.ts", "web/b.ts"), want: []string{"web/a.ts"}},
-		{name: "module pair without locations drops only the target node", spec: spec("", "", "-", "internal/x/x.go", "internal/y/y.go"), want: []string{"internal/x/x.go", "internal/y/y.go"}},
+		{name: "rust crate::mod edge without locations abstains", spec: spec("mycrate::a", "mycrate::b", "-", "crates/mycrate/src/a.rs", "crates/mycrate/src/b.rs"), want: []string{}},
+		{name: "python edge without locations abstains", spec: spec("pkg.a", "pkg.b", "-", "pkg/a.py", "pkg/b.py"), want: []string{}},
+		{name: "module pair without nodes lists every task file", spec: spec("", "", "-", "internal/x/x.go", "internal/y/y.go"), want: []string{"internal/x/x.go", "internal/y/y.go"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

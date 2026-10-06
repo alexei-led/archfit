@@ -323,7 +323,8 @@ func buildRepair(tasks []report.AgentTask, findings map[string]report.Finding) R
 	rep := Repair{RepairKind: repairNeedsOwnerDecision, InScope: true}
 	var goalTask *report.AgentTask
 	var files, origins []string
-	sources, targets := map[string]struct{}{}, map[string]struct{}{}
+	sources := map[string]struct{}{}
+	nodeEdge := false
 	locations := map[report.Location]struct{}{}
 	for i := range tasks {
 		task := &tasks[i]
@@ -352,11 +353,9 @@ func buildRepair(tasks []report.AgentTask, findings map[string]report.Finding) R
 		if rep.Edge == nil && (f.Edge.From.Path != "" || f.Edge.From.Module != "") {
 			rep.Edge = &Edge{From: endpoint(f.Edge.From), To: endpoint(f.Edge.To), Kind: f.Edge.Kind}
 		}
-		if from := f.Edge.From.Path; from != "" {
-			sources[from] = struct{}{}
-		}
-		if to := f.Edge.To.Path; to != "" && to != f.Edge.From.Path {
-			targets[to] = struct{}{}
+		if f.Edge.From.Path != "" || f.Edge.To.Path != "" {
+			nodeEdge = true
+			sources[f.Edge.From.Path] = struct{}{}
 		}
 		for _, loc := range f.Locations {
 			locations[loc] = struct{}{}
@@ -384,7 +383,7 @@ func buildRepair(tasks []report.AgentTask, findings map[string]report.Finding) R
 		}
 		return a.Line - b.Line
 	})
-	rep.Edit = editFiles(files, sources, targets)
+	rep.Edit = editFiles(files, sources, nodeEdge)
 	return rep
 }
 
@@ -413,23 +412,22 @@ func mergeOrigins(origins []string) string {
 
 // editFiles lists the files to change: the task files on the source side of
 // the edge, which are the import sites and the importing node. Node IDs and
-// resolved file paths differ for Python (dotted) and Rust (crate names), so
-// the source side is read from the finding locations, never by comparing a
-// path with the target node. A finding with neither (a seam-gate finding
-// names only a module pair) lists every task file except the target node.
-func editFiles(files []string, sources, targets map[string]struct{}) []string {
+// resolved file paths differ for Python (dotted) and Rust (crate names,
+// crate::mod), so the source side is read from the finding locations and the
+// source node, never by comparing a resolved path with the target node. When
+// the edge has a source node but neither it nor a location is a task file (a
+// location-less crate::mod edge), the side of each file is unknown and edit is
+// empty: edge.from names the source. Only a finding with no node on either
+// side (a seam-gate or module-pair finding) lists every task file, since
+// either module can be changed.
+func editFiles(files []string, sources map[string]struct{}, nodeEdge bool) []string {
 	all := sortedUnique(files)
+	if !nodeEdge {
+		return all
+	}
 	out := []string{}
 	for _, file := range all {
 		if _, ok := sources[file]; ok {
-			out = append(out, file)
-		}
-	}
-	if len(out) > 0 {
-		return out
-	}
-	for _, file := range all {
-		if _, ok := targets[file]; !ok {
 			out = append(out, file)
 		}
 	}
