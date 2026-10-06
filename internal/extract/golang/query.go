@@ -43,17 +43,17 @@ func QueryEdge(scanRoot string, cfg evidenceports.ExtractConfig, from, target st
 	if reason := notExtracted(scanRoot, cfg, entries, from, to); reason != "" {
 		return graph.Facts{}, fmt.Errorf("go: %s: %w", reason, evidenceports.ErrNotExtracted)
 	}
-	if importsC(filepath.Join(scanRoot, filepath.FromSlash(from))) {
+	match, decided := buildMatches(scanRoot, cfg.BuildFlags, from)
+	switch {
+	case decided && !match:
+		return graph.Facts{}, fmt.Errorf("go: %s is excluded by the build constraints: %w", from, evidenceports.ErrNotExtracted)
+	case !decided:
+		return graph.Facts{}, fmt.Errorf("go: whether the load reads %s depends on cgo, and CGO_ENABLED is not set: %w", from, evidenceports.ErrNotDecidable)
+	case importsC(filepath.Join(scanRoot, filepath.FromSlash(from))):
 		// With cgo on the load parses the cgo-generated copy in the build
 		// cache, outside the scan root, so no import is read from the file;
 		// when preprocessing fails it parses the original and reads them all.
 		return graph.Facts{}, fmt.Errorf("go: %s imports \"C\": whether check reads its imports depends on cgo preprocessing: %w", from, evidenceports.ErrNotDecidable)
-	}
-	switch match, decided := buildMatches(scanRoot, cfg.BuildFlags, from); {
-	case !decided:
-		return graph.Facts{}, fmt.Errorf("go: whether the load reads %s depends on cgo, and CGO_ENABLED is not set: %w", from, evidenceports.ErrNotDecidable)
-	case !match:
-		return graph.Facts{}, fmt.Errorf("go: %s is excluded by the build constraints: %w", from, evidenceports.ErrNotExtracted)
 	}
 	modules := make([]graph.GoModule, 0, len(entries))
 	for _, m := range entries {

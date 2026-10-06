@@ -18,6 +18,7 @@ const (
 	queryGoMod     = "module example.com/q\n\ngo 1.21\n"
 	queryNoCgo     = "internal/a/nocgo.go"
 	queryUsesC     = "internal/a/usesc.go"
+	queryUsesCEnt  = "internal/a/usesc_ent.go"
 )
 
 func TestQueryEdgeSpellsTheExtractedEdge(t *testing.T) {
@@ -124,6 +125,7 @@ func TestQueryEdgeBuildEnvironment(t *testing.T) {
 		queryEnt:          "//go:build enterprise\n\npackage a\n",
 		queryNoCgo:        "//go:build !cgo\n\npackage a\n",
 		queryUsesC:        "package a\n\nimport \"C\"\n",
+		queryUsesCEnt:     "//go:build enterprise\n\npackage a\n\nimport \"C\"\n",
 	} {
 		path := filepath.Join(root, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
@@ -149,6 +151,7 @@ func TestQueryEdgeBuildEnvironment(t *testing.T) {
 		{name: "import \"C\" with CGO_ENABLED=0", from: queryUsesC, cgo: "0"},
 		{name: "import \"C\" with CGO_ENABLED=1 is undecided", from: queryUsesC, cgo: "1", undecided: true},
 		{name: "import \"C\" with CGO_ENABLED unset is undecided", from: queryUsesC, undecided: true},
+		{name: "import \"C\" excluded by a build tag", from: queryUsesCEnt},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("GOFLAGS", tc.goflags)
