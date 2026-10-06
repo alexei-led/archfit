@@ -114,7 +114,8 @@ func dimensionForRule(ruleID string, ruleTypes map[string]string) string {
 		return state.DimensionCoupling
 	}
 	switch ruleTypes[ruleID] {
-	case "forbidden_dependency", "forbidden_layer_direction", "cycle", ruleTypeModuleCycle, "new_cross_module_dependency":
+	case "forbidden_dependency", "forbidden_layer_direction", "cycle", ruleTypeModuleCycle, ruleTypeModuleDependencies,
+		"new_cross_module_dependency":
 		return state.DimensionStructure
 	case "public_api_only", "public_api_max", "public_api_change", "public_api_type_leak", "internal_api_access",
 		ruleTypeForbiddenPattern:
@@ -133,6 +134,9 @@ const (
 	ruleTypePublicAPIChange = "public_api_change"
 	ruleTypePublicAPILeak   = "public_api_type_leak"
 	ruleTypeModuleCycle     = "module_cycle"
+	// ruleTypeModuleDependencies enforces the module allowlists (depends_on,
+	// visible_to); its scope is the modules that declare one.
+	ruleTypeModuleDependencies = "module_dependencies"
 	// ruleTypeForbiddenPattern reads the pattern pass, whose coverage row is
 	// patternCoverageTool.
 	ruleTypeForbiddenPattern = "forbidden_pattern"
@@ -294,6 +298,8 @@ func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observati
 			return ruleScope{status: ruleScopeNotApplicable}
 		}
 		return moduleRuleScope(p.Topology, inv)
+	case ruleTypeModuleDependencies:
+		return allowlistRuleScope(p.Topology, inv)
 	case "cycle":
 		return allSourceScope(p.Topology.ModuleMap, files)
 	case ruleTypeForbiddenPattern:
@@ -389,7 +395,7 @@ func moduleRuleScope(topology policy.TopologyView, inv selectorInventory) ruleSc
 	modulesWithFiles := make(map[string]struct{})
 	for _, file := range inv.files {
 		module, owned := owner(file)
-		if !owned {
+		if _, inScope := topology.Modules[module]; !owned || !inScope {
 			continue
 		}
 		modulesWithFiles[module] = struct{}{}
@@ -440,6 +446,32 @@ func moduleRuleScope(topology policy.TopologyView, inv selectorInventory) ruleSc
 	}
 	return ruleScope{status: ruleScopeNotApplicable}
 }
+
+// allowlistRuleScope is the scope of module_dependencies: the languages of the
+// modules that declare depends_on or visible_to. A declaring module's
+// importers and targets speak its own node vocabulary, so a module that owns
+// only Go source stays evaluated when another language's producer is missing.
+// With no declaring module the rule enforces nothing, which is a policy defect
+// reported like a selector that matches nothing.
+func allowlistRuleScope(topology policy.TopologyView, inv selectorInventory) ruleScope {
+	declaring := make(map[string]policy.ModuleDef)
+	for name, def := range topology.Modules {
+		if topology.ModuleMap.DeclaresAllowlist(name) {
+			declaring[name] = def
+		}
+	}
+	if len(declaring) == 0 {
+		return ruleScope{status: ruleScopeUnknown, reason: allowlistsDeclareNothing}
+	}
+	scoped := topology
+	scoped.Modules = declaring
+	return moduleRuleScope(scoped, inv)
+}
+
+// allowlistsDeclareNothing is the unevaluated reason of a module_dependencies
+// rule no module gives a list to enforce. It carries the selector-defect prefix
+// because a consumer reads that prefix as a policy defect, which this is.
+const allowlistsDeclareNothing = selectorMatchesNothingPrefix + "no module declares depends_on or visible_to"
 
 // rustModuleGraphMissing is the unknown-scope reason for a module declared by
 // a crate::mod path the Rust module graph does not cover.

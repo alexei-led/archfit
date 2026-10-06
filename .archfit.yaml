@@ -56,9 +56,10 @@ modules:
   # The neutral evidence vocabulary: per-fact value types plus the immutable
   # `evidence.Facts` bundle acquisition hands downstream. These types carry
   # observations only — policy, assessment, and report decisions live in their
-  # owning capabilities, and the `evidence_no_policy`/`evidence_no_config` rules
-  # below keep it that way. Run context (scope, instant, config identity, bundle
-  # paths) is owned by the application, not by this contract.
+  # owning capabilities, and the `evidence_no_policy` rule and the
+  # `policy-config-adapter` visible_to list below keep it that way. Run context
+  # (scope, instant, config identity, bundle paths) is owned by the
+  # application, not by this contract.
   evidence-contracts:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -83,6 +84,7 @@ modules:
     layer: model
     subdomain: supporting
     volatility: medium
+    depends_on: []
   # Scope resolution is a supporting boundary over an injected VCS resolver.
   analysis-scope:
     owner: alexei-led
@@ -95,6 +97,7 @@ modules:
     layer: support
     subdomain: supporting
     volatility: low
+    depends_on: []
   # File-level syntax classification is core evidence analysis, not a pure DTO.
   evidence-analysis:
     owner: alexei-led
@@ -165,8 +168,11 @@ modules:
     layer: model
     subdomain: supporting
     volatility: medium
+    depends_on: []
   # Config decoding and validation is a separate lifecycle adapter around the
-  # policy language. The domain policy package never imports this adapter.
+  # policy language. Runtime stages consume internal/policy declarations and
+  # projected views, never this adapter: only the composition roots and the
+  # config lifecycle may import it.
   policy-config-adapter:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -175,6 +181,7 @@ modules:
       - internal/config/**
     public:
       - internal/config
+    visible_to: [cli-composition, config-lifecycle, development-tools]
     layer: adapter
     subdomain: supporting
     volatility: high
@@ -225,6 +232,7 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
+  # LLM provider adapters are off-gate. Only the CLI hosts explicit LLM flows.
   provider-adapters:
     owner: alexei-led
     deploy_unit: archfit-cli
@@ -233,6 +241,7 @@ modules:
       - internal/llm/**
     public:
       - internal/llm
+    visible_to: [cli-composition]
     layer: adapter
     subdomain: generic
     volatility: medium
@@ -330,6 +339,22 @@ modules:
     subdomain: generic
     volatility: low
 rules:
+  # Module allowlists: enforces every depends_on and visible_to list under
+  # modules:. visible_to on policy-config-adapter keeps internal/config to the
+  # composition roots and the config lifecycle; on provider-adapters it keeps
+  # the off-gate LLM providers to the CLI. An importer that no module owns is
+  # denied, so a new top-level package cannot reach either one. depends_on: []
+  # keeps the shared models (evidence-contracts, analysis-scope,
+  # report-contract) free of every first-party module.
+  - id: module_boundaries
+    type: module_dependencies
+    gate: fail
+  # Cycles between declared modules. warn: the evidence-adapters <->
+  # persistence-adapters cycle in docs/design/architecture-baseline.md is
+  # accepted coupling today; this rule keeps it visible and catches a new one.
+  - id: module_cycles
+    type: module_cycle
+    gate: warn
   # Ring gate 1: core must not directly import the process boundary or extractors
   - id: core_no_toolrun
     type: forbidden_dependency
@@ -357,12 +382,6 @@ rules:
     type: forbidden_dependency
     from: internal/**
     to: internal/labels/labelsio/**
-    gate: fail
-  # LLM provider adapters are off-gate. Only cmd hosts explicit LLM flows.
-  - id: internal_no_llm
-    type: forbidden_dependency
-    from: internal/**
-    to: internal/llm/**
     gate: fail
   # Domain consumers use relationship contracts, never extractor graph internals.
   - id: assessment_no_coupling_internals
@@ -435,23 +454,10 @@ rules:
     to: internal/{relationship,evidence}/**
     gate: fail
   # Ring gate 3: model packages are pure value types
-  - id: model_no_config
-    type: forbidden_dependency
-    from: internal/model/**
-    to: internal/config
-    gate: fail
   - id: model_no_baseline
     type: forbidden_dependency
     from: internal/model/**
     to: internal/baseline
-    gate: fail
-  # Policy-language boundary: runtime stages consume internal/policy declarations,
-  # not the volatile config decoder/model. Only composition roots and the
-  # config-lifecycle adapters may import internal/config.
-  - id: policy_no_config
-    type: forbidden_dependency
-    from: internal/policy/**
-    to: internal/config
     gate: fail
   # Evidence reports observations. A policy decision inside an acquisition
   # contract means the tool boundary has started deciding architecture.
@@ -464,11 +470,6 @@ rules:
     from: internal/evidence/*.go
     to: internal/policy/**
     gate: fail
-  - id: evidence_no_config
-    type: forbidden_dependency
-    from: internal/evidence/**
-    to: internal/config
-    gate: fail
   # internal/view is dissolved: every stage contract has a capability owner. The
   # rule stays as a re-introduction guard — a new shared stage-view package is a
   # boundary regression, not a refactor.
@@ -478,81 +479,6 @@ rules:
     to: internal/view/**
     gate: fail
     guard: true
-  - id: classify_no_config
-    type: forbidden_dependency
-    from: internal/relationship/**
-    to: internal/config
-    gate: fail
-  - id: assessment_no_config
-    type: forbidden_dependency
-    from: internal/assessment/**
-    to: internal/config
-    gate: fail
-  - id: extract_no_config
-    type: forbidden_dependency
-    from: internal/extract/**
-    to: internal/config
-    gate: fail
-  - id: scope_no_config
-    type: forbidden_dependency
-    from: internal/scope/**
-    to: internal/config
-    gate: fail
-  - id: facts_no_config
-    type: forbidden_dependency
-    from: internal/relationship/facts/**
-    to: internal/config
-    gate: fail
-  - id: syntax_no_config
-    type: forbidden_dependency
-    from: internal/syntax/**
-    to: internal/config
-    gate: fail
-  - id: report_ports_no_config
-    type: forbidden_dependency
-    from: internal/report/ports/**
-    to: internal/config
-    gate: fail
-  - id: baseline_no_config
-    type: forbidden_dependency
-    from: internal/baseline/**
-    to: internal/config
-    gate: fail
-  - id: output_no_config
-    type: forbidden_dependency
-    from: internal/output/**
-    to: internal/config
-    gate: fail
-  - id: labels_no_config
-    type: forbidden_dependency
-    from: internal/relationship/labels/**
-    to: internal/config
-    gate: fail
-  - id: labels_store_no_config
-    type: forbidden_dependency
-    from: internal/labels/labelsio/**
-    to: internal/config
-    gate: fail
-  - id: toolrun_no_config
-    type: forbidden_dependency
-    from: internal/toolrun/**
-    to: internal/config
-    gate: fail
-  - id: factcache_no_config
-    type: forbidden_dependency
-    from: internal/factcache/**
-    to: internal/config
-    gate: fail
-  - id: history_no_config
-    type: forbidden_dependency
-    from: internal/history/**
-    to: internal/config
-    gate: fail
-  - id: ownership_no_config
-    type: forbidden_dependency
-    from: internal/ownership/**
-    to: internal/config
-    gate: fail
   # Stable-contract boundaries: persistence and rendering bind to the stable
   # snapshot and report contracts, never to a volatile evaluation implementation.
   # These rules pass on current source; they exist to keep it that way.
@@ -616,16 +542,6 @@ rules:
     type: forbidden_dependency
     from: internal/application/**
     to: internal/labels/labelsio/**
-    gate: fail
-  - id: application_no_provider_adapters
-    type: forbidden_dependency
-    from: internal/application/**
-    to: internal/llm/**
-    gate: fail
-  - id: application_no_config_adapter
-    type: forbidden_dependency
-    from: internal/application/**
-    to: internal/config/**
     gate: fail
   - id: application_no_cmd
     type: forbidden_dependency

@@ -76,13 +76,17 @@ func resolveEvidence(s relationship.Set, mm policy.ModuleMap, findings []finding
 	}
 	out := make([]finding.Finding, 0, len(findings))
 	for _, f := range findings {
-		// A module-keyed finding (module_cycle) names its modules itself and
-		// carries no endpoint path to resolve them from; a pattern finding has no
-		// target at all. Only an empty module with a real path is resolved.
-		if f.Edge.From.Module == "" && f.Edge.From.Path != "" {
+		// A module-pair finding (module_cycle, module_dependencies) names its
+		// modules itself: an empty module there means no declared module owns
+		// the endpoint, and its path is the unowned package, which must not
+		// borrow a synthetic module's name. A pattern finding has no target at
+		// all. Only an empty module with a real path on an edge finding is
+		// resolved.
+		modulePair := f.Edge.Kind == edgeKindModuleDependency
+		if !modulePair && f.Edge.From.Module == "" && f.Edge.From.Path != "" {
 			f.Edge.From.Module = resolve(f.Edge.From.Path)
 		}
-		if f.Edge.To.Module == "" && f.Edge.To.Path != "" {
+		if !modulePair && f.Edge.To.Module == "" && f.Edge.To.Path != "" {
 			f.Edge.To.Module = resolve(f.Edge.To.Path)
 		}
 		if edge, ok := byEdge[[3]string{f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind}]; ok {
@@ -92,6 +96,10 @@ func resolveEvidence(s relationship.Set, mm policy.ModuleMap, findings []finding
 	}
 	return out
 }
+
+// edgeKindModuleDependency is the edge kind of a module-pair finding; the
+// rules package stamps it by the same spelling.
+const edgeKindModuleDependency = "module_dependency"
 
 // moduleByPath indexes the classified relationship set by endpoint path. Its
 // edges carry the AUGMENTED module map's answer (synthetic Rust/Go-workspace

@@ -312,9 +312,10 @@ func TestEvaluateGateFindingOutranksMetricWarn(t *testing.T) {
 }
 
 // TestEvaluateKeepsTheModulesOfModuleKeyedFindings pins that evidence
-// resolution only fills an empty module: a module-keyed finding (module_cycle)
-// names its modules itself and has no endpoint path to re-derive them from, so
-// resolving its empty paths would erase both modules.
+// resolution only fills an empty module on an edge finding: a module-pair
+// finding (module_cycle, module_dependencies) names its modules itself, so
+// resolving its empty paths would erase both modules, and the empty module of
+// an unowned importer must stay empty.
 func TestEvaluateKeepsTheModulesOfModuleKeyedFindings(t *testing.T) {
 	const fromModule, toModule = "orders", "payments"
 	moduleKeyed := finding.Finding{
@@ -322,9 +323,15 @@ func TestEvaluateKeepsTheModulesOfModuleKeyedFindings(t *testing.T) {
 		Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: fromModule}, To: finding.Endpoint{Module: toModule}, Kind: "module_dependency"},
 	}
 	modules := map[string]policy.ModuleDef{assessModA: {Paths: []string{assessPathsA}}, assessModB: {Paths: []string{assessPathsB}}}
+	// An unowned importer of a visible_to module: its path is the unowned
+	// package, and a module map that would claim it must not name its module.
+	unownedImporter := finding.Finding{
+		ID: "unowned", Kind: finding.KindGate, RuleID: ruleModuleCycle, Status: finding.StatusNew, Severity: finding.SeverityHigh,
+		Edge: finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Module: toModule}, Kind: "module_dependency"},
+	}
 	got := evaluation.Evaluate(evaluation.Input{
 		Rules: evaluation.RulesetOf(stubRule{id: ruleModuleCycle, findings: []finding.Finding{
-			moduleKeyed, gateFinding("edge", pathA, pathB, finding.SeverityHigh),
+			moduleKeyed, unownedImporter, gateFinding("edge", pathA, pathB, finding.SeverityHigh),
 		}}),
 		Policy:   policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}},
 		Accepted: acceptedSet{},
@@ -332,6 +339,9 @@ func TestEvaluateKeepsTheModulesOfModuleKeyedFindings(t *testing.T) {
 	})
 	if f := findByID(t, got.Findings, "mod"); f.Edge.From.Module != fromModule || f.Edge.To.Module != toModule {
 		t.Errorf("module-keyed edge = %+v, want %s -> %s kept", f.Edge, fromModule, toModule)
+	}
+	if f := findByID(t, got.Findings, "unowned"); f.Edge.From.Module != "" || f.Edge.From.Path != pathA {
+		t.Errorf("unowned importer edge = %+v, want from path %s and no module", f.Edge, pathA)
 	}
 	if f := findByID(t, got.Findings, "edge"); f.Edge.From.Module != assessModA || f.Edge.To.Module != assessModB {
 		t.Errorf("path-keyed edge = %+v, want modules resolved from the paths", f.Edge)

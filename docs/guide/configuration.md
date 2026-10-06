@@ -24,6 +24,31 @@ aligned with the intended CI policy.
 Use `archfit analyze --config .archfit.yaml` for local review and `archfit check
 --config .archfit.yaml` for CI validation.
 
+To state the allowed module graph, give a module an allowlist instead of
+writing one deny rule per importer. `visible_to` lists the only modules that
+can import it; `depends_on` lists the only modules it can import. One
+`module_dependencies` rule enforces every list:
+
+```yaml
+modules:
+  config:
+    paths: [internal/config/**]
+    visible_to: [cli] # only the CLI reads the config adapter
+  cli:
+    paths: [cmd/**]
+  domain:
+    paths: [internal/domain/**]
+    depends_on: [] # the domain imports no other first-party module
+rules:
+  - id: boundaries
+    type: module_dependencies
+    gate: fail
+```
+
+A new package that no module owns cannot import `config` either: `visible_to`
+denies an unowned importer. See
+[Module allowlists](configuration-reference.md#module-allowlists).
+
 To see what the config still needs, run `archfit config update -c .archfit.yaml`.
 It reports structure drift, every change `--apply` would write, and per-module
 gaps such as a missing `owner:`, a module with neither `subdomain:` nor

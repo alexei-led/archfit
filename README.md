@@ -53,7 +53,7 @@ DIMENSIONS
 NOT MEASURED (11)
 
   intent — active rule conformance
-    one or more active rules lack the completed producer evidence their checks require: adapter_no_cli, extract_no_config, internal_no_labelsio…
+    one or more active rules lack the completed producer evidence their checks require: adapter_no_cli, core_no_extract, internal_no_labelsio…
   complexity — cognitive complexity
     no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
   operations — corroborated deploy unit

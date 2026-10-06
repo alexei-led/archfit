@@ -499,8 +499,9 @@ check that enforces it; the full invariant-to-check table is in
    `internal/model` package (`TestArchImports`).
 2. `internal/output/**` and renderer ports may import only `report-contract` and
    format-local helpers for completed reports. — `renderer_no_assessment`,
-   `renderer_no_relationship`, `renderer_no_evidence`, `output_no_config`,
-   `output_no_score`, `output_no_decision`, `report_adapters_no_application`.
+   `renderer_no_relationship`, `renderer_no_evidence`, `output_no_score`,
+   `output_no_decision`, `report_adapters_no_application`, and `visible_to` on
+   `policy-config-adapter`.
 3. No DOMAIN package imports `internal/model/report`. — `assessment_no_report_dtos`,
    `relationship_no_report_dtos`, `TestDomainPackagesDoNotImportReportDTOs`.
    Revised from the original wording: `internal/model/report` was kept as the
@@ -508,8 +509,9 @@ check that enforces it; the full invariant-to-check table is in
    projector and the renderers may touch it, not that nothing may.
 4. Core policy, relationship, and assessment modules cannot import adapters,
    CLI, renderers, stores, process runners, or LLM implementations. —
-   `TestArchImports`, `core_no_toolrun`, `core_no_extract`, `internal_no_llm`,
-   `internal_no_labelsio`, `core_no_cmd`, the `*_no_config` family.
+   `TestArchImports`, `core_no_toolrun`, `core_no_extract`,
+   `internal_no_labelsio`, `core_no_cmd`, and `visible_to` on
+   `policy-config-adapter` and `provider-adapters` (`module_dependencies`).
 5. Relationship Analysis cannot import Assessment and Repair. Assessment may
    import the immutable relationship contract only. — `relationship_no_assessment`,
    `assessment_no_relationship_internals`,

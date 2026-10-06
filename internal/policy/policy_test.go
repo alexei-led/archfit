@@ -101,3 +101,37 @@ func TestModelHashCoversResolvedTopology(t *testing.T) {
 		t.Error("owner and deploy unit must be distinguishable in the model hash")
 	}
 }
+
+// TestCloneKeepsAllowlistAbsence pins that a snapshot clone keeps an absent
+// allowlist nil and an empty one empty: nil leaves a module unconstrained, an
+// empty list allows nothing.
+func TestCloneKeepsAllowlistAbsence(t *testing.T) {
+	snapshot := New(TopologyView{Modules: map[string]ModuleDef{
+		modAllowOpen: {Paths: []string{"open/**"}},
+		"closed":     {Paths: []string{"closed/**"}, DependsOn: []string{}, VisibleTo: []string{}},
+	}}, RelationshipPolicy{}, AssessmentPolicy{}, GatePolicy{}, nil, nil).Clone()
+	open, closed := snapshot.Topology.Modules[modAllowOpen], snapshot.Topology.Modules["closed"]
+	if open.DependsOn != nil || open.VisibleTo != nil {
+		t.Errorf("open module lists = %#v, %#v, want nil", open.DependsOn, open.VisibleTo)
+	}
+	if closed.DependsOn == nil || closed.VisibleTo == nil {
+		t.Errorf("closed module lists = %#v, %#v, want empty, not nil", closed.DependsOn, closed.VisibleTo)
+	}
+	if got := snapshot.Gates.Rules.ModuleMap.DeniedDependency(modAllowOpen, "closed"); len(got) != 1 {
+		t.Errorf("DeniedDependency(open, closed) on the clone = %v, want visible_to", got)
+	}
+}
+
+// TestModelHashIgnoresAllowlists pins that depends_on and visible_to stay out
+// of the model fingerprint: they move neither distance nor seam identity, so an
+// allowlist edit must not make a stored comparison non-comparable through it.
+func TestModelHashIgnoresAllowlists(t *testing.T) {
+	base := map[string]ModuleDef{modAllowBilling: {Paths: []string{"billing/**"}}, modAllowShipping: {Paths: []string{"shipping/**"}}}
+	listed := map[string]ModuleDef{
+		modAllowBilling:  {Paths: []string{"billing/**"}, VisibleTo: []string{modAllowShipping}},
+		modAllowShipping: {Paths: []string{"shipping/**"}, DependsOn: []string{}},
+	}
+	if ModelHash(base) != ModelHash(listed) {
+		t.Error("ModelHash changed when only depends_on/visible_to changed")
+	}
+}

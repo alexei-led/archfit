@@ -9,6 +9,12 @@ const (
 	kernelModule   = "kernel"
 	catchallModule = "catchall"
 	kernelGlob     = "internal/model/**"
+
+	modAllowBilling  = "billing"
+	modAllowShipping = "shipping"
+	modAllowOpen     = "open"
+	modAllowSealed   = "sealed"
+	modAllowAbsent   = "absent"
 )
 
 func TestModuleFor_MostSpecificWins(t *testing.T) {
@@ -165,5 +171,50 @@ func TestMatchesInternal_DeclaredSurfacePrecedence(t *testing.T) {
 				t.Errorf("MatchesInternal(%q) = (%v, %q), want (%v, %q)", tt.path, internal, glob, tt.wantInternal, tt.wantGlob)
 			}
 		})
+	}
+}
+
+func TestDeniedDependency(t *testing.T) {
+	mm := BuildModuleMap(map[string]ModuleDef{
+		modAllowBilling:  {VisibleTo: []string{modAllowShipping}},
+		modAllowShipping: {DependsOn: []string{modAllowBilling}},
+		kernelModule:     {DependsOn: []string{}},
+		modAllowOpen:     {},
+		modAllowSealed:   {VisibleTo: []string{}},
+	})
+	tests := []struct {
+		from, to string
+		want     []string
+	}{
+		{modAllowShipping, modAllowBilling, nil},
+		{modAllowShipping, modAllowOpen, []string{allowlistDependsOn}},
+		{modAllowOpen, modAllowBilling, []string{allowlistVisibleTo}},
+		{kernelModule, modAllowBilling, []string{allowlistDependsOn, allowlistVisibleTo}},
+		{kernelModule, modAllowOpen, []string{allowlistDependsOn}},
+		{kernelModule, kernelModule, nil},
+		{modAllowOpen, modAllowShipping, nil},
+		{"", modAllowBilling, []string{allowlistVisibleTo}},
+		{"", modAllowOpen, nil},
+		{modAllowShipping, modAllowSealed, []string{allowlistDependsOn, allowlistVisibleTo}},
+		{modAllowOpen, modAllowSealed, []string{allowlistVisibleTo}},
+	}
+	for _, tt := range tests {
+		if got := mm.DeniedDependency(tt.from, tt.to); !slices.Equal(got, tt.want) {
+			t.Errorf("DeniedDependency(%q, %q) = %v, want %v", tt.from, tt.to, got, tt.want)
+		}
+	}
+}
+
+func TestDeclaresAllowlist(t *testing.T) {
+	mm := BuildModuleMap(map[string]ModuleDef{
+		modAllowAbsent: {},
+		"empty-deps":   {DependsOn: []string{}},
+		"empty-vis":    {VisibleTo: []string{}},
+		"listed-deps":  {DependsOn: []string{modAllowAbsent}},
+	})
+	for name, want := range map[string]bool{modAllowAbsent: false, "empty-deps": true, "empty-vis": true, "listed-deps": true, "undeclared": false} {
+		if got := mm.DeclaresAllowlist(name); got != want {
+			t.Errorf("DeclaresAllowlist(%q) = %v, want %v", name, got, want)
+		}
 	}
 }

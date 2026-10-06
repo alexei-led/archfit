@@ -1,5 +1,35 @@
 # Release notes
 
+## v2.5.0 — (unreleased)
+
+New:
+
+- Module allowlists. `modules.<m>.depends_on` lists the only modules a module
+  can import; `modules.<m>.visible_to` lists the only modules that can import
+  it. An absent key means no constraint; an empty list allows nothing. One new
+  rule type, `module_dependencies`, enforces both lists. An importer that no
+  declared module owns is denied by every `visible_to` list. Findings are keyed
+  by the module pair, so a new or moved file on the pair keeps the finding ID;
+  `matched_by.violates` names the list that denies the pair. Repair tasks never
+  route the dependency through the target's public API. See
+  [Module allowlists](configuration-reference.md#module-allowlists).
+- `archfit config lint` reports `unknown_module` (error) for an allowlist entry
+  that names no declared module, and `dead_selector` for a
+  `module_dependencies` rule when no module declares a list. `check` prints the
+  unknown entry as a config warning.
+
+Contract notes:
+
+- Config schema v2 gains the optional keys `depends_on` and `visible_to` and
+  the rule type `module_dependencies`. `archfit.schema.json` is regenerated.
+  Engines up to v2.4.1 reject the new keys: pin the engine before you use them.
+  The archfit App pins the engine's config schema and must re-pin it for this
+  release.
+- `model_hash` does not include the allowlists. An allowlist edit changes
+  `config_hash`, so the stored baseline becomes non-comparable until you run
+  `archfit baseline` again.
+- Configs that do not use the new keys give byte-identical output.
+
 ## v2.4.1 — schema lists rule types
 
 The published config schema (`archfit.schema.json`) now enumerates the allowed
