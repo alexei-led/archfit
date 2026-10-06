@@ -2,7 +2,6 @@
 package registry
 
 import (
-	"errors"
 	"fmt"
 	"path"
 	"slices"
@@ -290,9 +289,14 @@ func PrimaryTools() []string {
 	return tools
 }
 
-// ErrNoQueryEdge reports that the language of a queried file cannot spell an
-// edge without running its tool.
-var ErrNoQueryEdge = errors.New("no tool-free edge for this language")
+// ErrNoQueryEdge reports that a queried edge cannot be spelled without running
+// the language's tool.
+var ErrNoQueryEdge = evidenceports.ErrNotDecidable
+
+// ErrNotExtracted reports that the language's extractor would never emit the
+// queried edge (an excluded file, a test file, a build-constrained file), so
+// check never reads it.
+var ErrNotExtracted = evidenceports.ErrNotExtracted
 
 // LanguageForFile returns the registry language whose source extensions
 // include file's, or "" when none does.

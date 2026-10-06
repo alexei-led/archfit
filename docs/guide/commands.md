@@ -353,9 +353,9 @@ The answer is one line of JSON, `archfit.policy-answer.v1` with
 
 | Field                       | Meaning                                                                                                   |
 | --------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `path`                      | The path, relative to the analysis root.                                                                  |
+| `path`                      | The path, relative to the analysis root (`--root`, else the git toplevel, else the config directory, as `check` resolves it). |
 | `language`, `selector`      | The language of a source file and the node selector rules match (Go package dir, Python dotted module).   |
-| `excluded`                  | `true` when `check` never reads the path: an `exclude:` glob matches it, or its language is switched off. |
+| `excluded`                  | `true` when the path is outside the declared analysis scope: an `exclude:` glob matches it, or its language is switched off. Rule scope and metrics leave it out. The Go extractor drops its imports; dependency-cruiser and grimp still read them. |
 | `module`                    | The most specific declared module that owns the path. Absent when no module owns it.                      |
 | `layer`, `role`, `owner`    | The module's declared values. `owner` is the declared owner only; CODEOWNERS is not read.                 |
 | `public`                    | The module's public surface.                                                                              |
@@ -367,7 +367,7 @@ Flags:
 | Flag           | Type | Default                 | Effect                                       |
 | -------------- | ---- | ----------------------- | -------------------------------------------- |
 | `-c, --config` | path | `.archfit.yaml`         | Config file.                                 |
-| `--root`       | path | directory of `--config` | The root that the paths are relative to.     |
+| `--root`       | path | git toplevel, else directory of `--config` | The analysis root the paths are relative to, resolved as `check` resolves it. |
 
 Exit codes: `0` answered, `3` usage or config error.
 
@@ -379,7 +379,8 @@ Purpose:
 - Judge the import with the same relationship analysis, rule pass, baseline,
   and waivers as `check`. A denied import is the gate finding `check` would
   report for it, with the same rule ID and finding ID.
-- Run no analyzer and never read the fact cache. A query takes about 50 ms.
+- Run no analyzer and never read the fact cache. The one process it starts is
+  `git rev-parse` for the analysis root. A query takes about 50 ms.
 
 Synopsis:
 
@@ -392,9 +393,9 @@ match it:
 
 | Language   | `<target>`                                                                                   |
 | ---------- | -------------------------------------------------------------------------------------------- |
-| Go         | A package dir relative to the root, or an import path of a loaded module.                    |
+| Go         | A package dir relative to the root, or an import path of a loaded module. An import from a `_test.go` file, a file the host build constraints exclude, a file of no loaded module, or an excluded file or target is never extracted: the answer is `unconstrained`. |
 | TypeScript | The imported source file relative to the root, after resolution (not the import specifier).  |
-| Python     | A dotted module, or a `.py` file. A file maps to its dotted name with a `src/` prefix removed. |
+| Python     | A dotted module, or a `.py` file. A file maps to its dotted name with a `src/` prefix removed. A target outside the importer's top-level package and `languages.python.package` is `not_decided`: grimp drops an installed or stdlib import and spells an uninstalled one as external. |
 | Rust       | Not supported: crate roots need `cargo metadata`, so the answer is `not_decided`.             |
 
 The answer is one line of JSON, `archfit.policy-answer.v1` with
@@ -403,11 +404,14 @@ The answer is one line of JSON, `archfit.policy-answer.v1` with
 | `answer`        | Meaning                                                                                                                                       |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `denied`        | A fail-gated rule fires on the import with an active status. Each entry of `denials` has the finding ID, the rule ID, the why, and the repair `goal` and `constraints`. |
-| `not_decided`   | No rule denies the import, but a fail-gated rule that needs the whole graph can still block it: `module_cycle` on a cross-module import, `cycle` on a TypeScript or Python import, or the seam gate in `mode: fail`. Also every Rust import. `reasons` names them. |
+| `not_decided`   | No rule denies the import, but a fail-gated rule that needs the whole graph can still block it: `module_cycle` on a cross-module import, `cycle` on a TypeScript or Python import, or the seam gate in `mode: fail`. Also every Rust import and every external Python import. `reasons` names them. |
 | `allowed`       | An allowlist (`depends_on` or `visible_to`) or the layer order permits the import. `reasons` names it.                                       |
-| `unconstrained` | No rule decides the import. This is not permission. It is also the answer for an import from a file outside the declared scope, and for an import whose only violations the baseline or a waiver accepts (listed in `accepted`). |
+| `unconstrained` | No rule decides the import. This is not permission. It is also the answer for an import the extractor never reads (a switched-off language, or the Go cases above), and for an import whose only violations the baseline or a waiver accepts (listed in `accepted`). |
 
 `advisories` lists the findings of `gate: warn` rules. They never deny.
+`can-import` does not evaluate metric ratchets (`metrics.<name>.gate`): a new
+import can still worsen a ratcheted metric, and `check` then blocks. Every
+`next` therefore ends with `archfit check --format agent`.
 `next` says what to do. Never edit the policy, the baseline, or the waivers
 to turn a `denied` answer into another one.
 

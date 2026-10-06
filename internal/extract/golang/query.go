@@ -2,10 +2,15 @@ package golang
 
 import (
 	"fmt"
+	"go/build"
+	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"golang.org/x/mod/modfile"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
@@ -14,11 +19,17 @@ import (
 
 // QueryEdge builds the facts `archfit policy can-import` judges: one import
 // of target by the Go file from, spelled exactly as the extractor spells it —
-// a file node to a ScanRoot-relative package node, with the same edge kind —
-// so the rule pass keys its findings as it does on the extracted edge. target
-// is a ScanRoot-relative package dir or an import path; an import path under
-// a member module is stripped to its dir, any other is kept (an external
-// package). It reads the members' go.mod files and runs no Go tool.
+// a file node to a ScanRoot-relative package node, with the same edge kind and
+// the loaded members — so the rule pass keys its findings as it does on the
+// extracted edge. target is a ScanRoot-relative package dir or an import path;
+// an import path under a member module is stripped to its dir, any other is
+// kept (an external package).
+//
+// It wraps evidenceports.ErrNotExtracted where the extractor emits no edge: a
+// _test.go file (the load does not include tests), a file the host build
+// context excludes, a file of no loaded member, or an excluded file or target.
+// It reads go.mod files and the importing file's build constraints; it runs no
+// Go tool.
 func QueryEdge(scanRoot string, cfg evidenceports.ExtractConfig, from, target string) (graph.Facts, error) {
 	if !strings.HasSuffix(from, ".go") {
 		return graph.Facts{}, fmt.Errorf("go: %q is not a .go file", from)
@@ -28,8 +39,17 @@ func QueryEdge(scanRoot string, cfg evidenceports.ExtractConfig, from, target st
 		return graph.Facts{}, err
 	}
 	to := stripModulePath(entries, strings.TrimSuffix(target, "/"))
+	if reason := notExtracted(scanRoot, cfg, entries, from, to); reason != "" {
+		return graph.Facts{}, fmt.Errorf("go: %s: %w", reason, evidenceports.ErrNotExtracted)
+	}
+	modules := make([]graph.GoModule, 0, len(entries))
+	for _, m := range entries {
+		modules = append(modules, graph.GoModule{Path: m.path, RelDir: m.relDir})
+	}
+	sort.Slice(modules, func(i, j int) bool { return modules[i].Path < modules[j].Path })
 	return graph.Facts{
-		Language: graph.LangGo,
+		Language:  graph.LangGo,
+		GoModules: modules,
 		Nodes: []graph.Node{
 			{Kind: graph.NodeKindFile, Path: from, Language: graph.LangGo},
 			{Kind: graph.NodeKindPackage, Path: to, Language: graph.LangGo},
@@ -43,6 +63,87 @@ func QueryEdge(scanRoot string, cfg evidenceports.ExtractConfig, from, target st
 			Locations:  []graph.Location{{File: from}},
 		}},
 	}, nil
+}
+
+// notExtracted names why the extractor would emit no edge from from to the
+// stripped target to, or "" when it would.
+func notExtracted(scanRoot string, cfg evidenceports.ExtractConfig, entries []modEntry, from, to string) string {
+	switch {
+	case strings.HasSuffix(from, "_test.go"):
+		return from + " is a test file, which the load does not read"
+	case excluded(cfg.Exclusions, from):
+		return from + " matches an exclude: glob"
+	case excluded(cfg.Exclusions, to):
+		return to + " matches an exclude: glob"
+	case !inLoadedMember(scanRoot, entries, from):
+		return from + " belongs to no loaded Go module"
+	case !buildMatches(scanRoot, cfg.BuildFlags, from):
+		return from + " is excluded by the host build constraints"
+	}
+	return ""
+}
+
+// excluded reports whether an exclusion glob matches p. It is the extractor's
+// one exclusion test, for files and stripped import paths alike.
+func excluded(exclusions []string, p string) bool {
+	for _, pattern := range exclusions {
+		if matched, _ := doublestar.Match(pattern, p); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// inLoadedMember reports whether the nearest go.mod above from is a loaded
+// member: a file of a nested module the run does not load yields no edge.
+func inLoadedMember(scanRoot string, entries []modEntry, from string) bool {
+	for dir := path.Dir(from); ; dir = path.Dir(dir) {
+		if _, err := os.Stat(filepath.Join(scanRoot, filepath.FromSlash(dir), "go.mod")); err == nil {
+			for _, m := range entries {
+				if m.relDir == dir {
+					return true
+				}
+			}
+			return false
+		}
+		if dir == "." || dir == "/" {
+			return false
+		}
+	}
+}
+
+// buildMatches reports whether the host build context, with the run's -tags,
+// includes from. A file that does not exist yet is judged by its name.
+func buildMatches(scanRoot string, buildFlags []string, from string) bool {
+	ctxt := build.Default
+	// cgo availability belongs to the run's go toolchain, not to this binary
+	// (built without cgo): a cgo file is not judged excluded on that ground.
+	ctxt.CgoEnabled = true
+	ctxt.BuildTags = append(ctxt.BuildTags, buildTags(buildFlags)...)
+	ctxt.OpenFile = func(p string) (io.ReadCloser, error) {
+		f, err := os.Open(p) // #nosec G304 -- the queried source file under the scan root
+		if os.IsNotExist(err) {
+			return io.NopCloser(strings.NewReader("package p\n")), nil
+		}
+		return f, err
+	}
+	dir := filepath.Join(scanRoot, filepath.FromSlash(path.Dir(from)))
+	match, err := ctxt.MatchFile(dir, path.Base(from))
+	return err != nil || match
+}
+
+// buildTags reads the tags of a -tags flag in the run's build flags.
+func buildTags(flags []string) []string {
+	for i, flag := range flags {
+		value, ok := strings.CutPrefix(flag, "-tags=")
+		if !ok && flag == "-tags" && i+1 < len(flags) {
+			value, ok = flags[i+1], true
+		}
+		if ok {
+			return strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' })
+		}
+	}
+	return nil
 }
 
 // memberModules reads the module path of every member the extractor loads,
@@ -62,16 +163,16 @@ func memberModules(scanRoot string, cfg evidenceports.ExtractConfig) ([]modEntry
 		if err != nil {
 			continue
 		}
-		path := modfile.ModulePath(data)
+		modPath := modfile.ModulePath(data)
 		member, err := canonicalDir(dir)
-		if path == "" || err != nil {
+		if modPath == "" || err != nil {
 			continue
 		}
 		rel, err := filepath.Rel(root, member)
 		if err != nil {
 			continue
 		}
-		entries = append(entries, modEntry{path: path, relDir: filepath.ToSlash(rel)})
+		entries = append(entries, modEntry{path: modPath, relDir: filepath.ToSlash(rel)})
 	}
 	sortModEntries(entries)
 	return entries, nil

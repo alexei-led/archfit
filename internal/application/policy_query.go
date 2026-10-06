@@ -17,10 +17,11 @@ type QueriedEdge struct {
 	From string
 	// Language is the language that owns From, or "" when none does.
 	Language string
-	// Graph holds the one queried edge. Nil when OutOfScope or Undecided.
+	// Graph holds the one queried edge. Nil when NotExtracted or Undecided.
 	Graph *graph.Graph
-	// OutOfScope reports that From is outside the declared analysis scope.
-	OutOfScope bool
+	// NotExtracted says why the language's extractor would never emit the
+	// edge, so check never reads it.
+	NotExtracted string
 	// Undecided says why the edge cannot be spelled without a tool.
 	Undecided string
 	// Production says whether From is a production file.
@@ -50,11 +51,6 @@ type CanImportAnswer struct {
 	evaluation.EdgeJudgment
 }
 
-// Reasons of an answer the edge query decides before the rule pass.
-const (
-	reasonOutOfScope = "the importing file is outside the declared analysis scope (exclude: or a language switched off), so check never reads this import"
-)
-
 // PolicyQueryService answers pre-edit questions with the evaluator check
 // uses: the queried edge goes through the same relationship analysis, rule
 // pass, baseline, and waivers. It runs no extractor and no tool.
@@ -82,8 +78,8 @@ func (s PolicyQueryService) CanImport(ctx context.Context, req CanImportRequest)
 		}
 		answer := CanImportAnswer{Target: target, From: edge.From, Language: edge.Language}
 		switch {
-		case edge.OutOfScope:
-			answer.Answer, answer.Reasons = evaluation.AnswerUnconstrained, []string{reasonOutOfScope}
+		case edge.NotExtracted != "":
+			answer.Answer, answer.Reasons = evaluation.AnswerUnconstrained, []string{edge.NotExtracted}
 		case edge.Undecided != "":
 			answer.Answer, answer.Reasons = evaluation.AnswerNotDecided, []string{edge.Undecided}
 		default:

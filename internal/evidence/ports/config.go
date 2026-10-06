@@ -1,6 +1,9 @@
 package ports
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // ToolMode is the enable state of a language extractor or analyzer.
 //
@@ -41,6 +44,16 @@ func (m *ToolMode) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 	return fmt.Errorf("enabled %q is not one of: true, false, auto", s)
 }
+
+// ErrNotExtracted reports that an extractor would never emit a queried edge
+// (an excluded file, a test file, a build-constrained file), so check never
+// reads it.
+var ErrNotExtracted = errors.New("the extractor never reads this import")
+
+// ErrNotDecidable reports that a queried edge cannot be spelled without
+// running the language's tool (Rust crate roots, a Python import outside the
+// first-party package).
+var ErrNotDecidable = errors.New("no tool-free edge for this import")
 
 // ExtractConfig is the construction input for one language extractor adapter.
 // It carries only what the extractor needs to run its out-of-process tool.

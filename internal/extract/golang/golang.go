@@ -14,8 +14,6 @@ import (
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
 
-	"github.com/bmatcuk/doublestar/v4"
-
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
@@ -679,11 +677,5 @@ func (e *GoExtractor) countConstraintExcluded(pkgs []packageFacts) int {
 
 // isExcluded reports whether path matches any of the configured exclusion globs.
 func (e *GoExtractor) isExcluded(path string) bool {
-	for _, pattern := range e.cfg.Exclusions {
-		matched, _ := doublestar.Match(pattern, path)
-		if matched {
-			return true
-		}
-	}
-	return false
+	return excluded(e.cfg.Exclusions, path)
 }

@@ -2,6 +2,7 @@ package py
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
@@ -28,6 +29,10 @@ func QueryEdge(_ string, cfg evidenceports.ExtractConfig, from, target string) (
 	if imported == "" {
 		return graph.Facts{}, fmt.Errorf("python: %q is not a dotted module or a .py file", target)
 	}
+	if !firstParty(cfg, importer, imported) {
+		return graph.Facts{}, fmt.Errorf("python: %s is outside the first-party package; grimp drops an installed or stdlib import and spells an uninstalled one external: %w",
+			imported, evidenceports.ErrNotDecidable)
+	}
 	return graph.Facts{
 		Language: langPython,
 		Nodes: []graph.Node{
@@ -43,6 +48,18 @@ func QueryEdge(_ string, cfg evidenceports.ExtractConfig, from, target string) (
 			Locations:  []graph.Location{{File: from}},
 		}},
 	}, nil
+}
+
+// firstParty reports whether imported is under the importer's top-level
+// package or the configured package, the graph grimp builds. Any other import
+// is external, and whether grimp sees it depends on the installed packages.
+func firstParty(cfg evidenceports.ExtractConfig, importer, imported string) bool {
+	top := func(dotted string) string {
+		head, _, _ := strings.Cut(dotted, ".")
+		return head
+	}
+	root := top(imported)
+	return root == top(importer) || (cfg.PyPackage != "" && root == path.Base(cfg.PyPackage))
 }
 
 func moduleKey(file string) string {

@@ -40,7 +40,7 @@ type PolicyCmd struct {
 // policyFlags are the flags both queries share.
 type policyFlags struct {
 	Config string `short:"c" help:"Path to config file." default:".archfit.yaml"`
-	Root   string `help:"Repository root the paths are relative to (default: directory of --config)." type:"path"`
+	Root   string `help:"Analysis root the paths are relative to, as check resolves it (default: the git toplevel, else the directory of --config)." type:"path"`
 }
 
 // WhereCmd answers which module owns each path.
@@ -60,9 +60,9 @@ func (*WhereCmd) Help() string {
 	return `Answer which module owns each path, before an edit.
 
 It reads the config only: no analyzer runs and the fact cache is not read.
-"excluded" is true when check never reads the path (an exclude: glob or a
-language switched off). "rules" lists every rule whose selector names the path
-or its module; the list is for reading, not a verdict.
+"excluded" is true when the path is outside the declared analysis scope (an
+exclude: glob or a language switched off). "rules" lists every rule whose
+selector names the path or its module; the list is for reading, not a verdict.
 
 Exit codes:
   0  answered
@@ -85,9 +85,13 @@ Answers:
                  the repair text are in "denials")
   not_decided    no rule denies it, but a fail-gated rule that needs the whole
                  graph (a cycle rule, the seam gate in mode: fail) can still
-                 block it, or the language needs its analyzer (Rust)
+                 block it, or the import needs its analyzer (Rust, an external
+                 Python import)
   allowed        an allowlist entry or the layer order permits it
-  unconstrained  no rule decides it; this is not permission
+  unconstrained  no rule decides it, or the extractor never reads the import;
+                 this is not permission
+
+Metric ratchets are not evaluated: run check after the edit.
 
 Exit codes:
   0  no target denied, every target decided
@@ -113,7 +117,10 @@ func (c *WhereCmd) Run(deps *appDeps) error {
 	if err != nil {
 		return configLoadError(err)
 	}
-	q := newPolicyQuery(c.Config, c.Root, cfg)
+	q, err := newPolicyQuery(context.Background(), c.Config, c.Root, cfg, deps)
+	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
 	doc := whereDoc{SchemaVersion: policyAnswerSchemaVersion, Command: "where", Paths: make([]whereAnswer, 0, len(c.Paths))}
 	for _, path := range c.Paths {
 		doc.Paths = append(doc.Paths, where(cfg.PolicySnapshot(), q, path))
@@ -127,7 +134,11 @@ func (c *CanImportCmd) Run(deps *appDeps) error {
 	if err != nil {
 		return configLoadError(err)
 	}
-	answers, err := newPolicyQueryService(c.Config, c.Root, cfg).CanImport(ctx, application.CanImportRequest{
+	q, err := newPolicyQuery(ctx, c.Config, c.Root, cfg, deps)
+	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+	answers, err := newPolicyQueryService(q).CanImport(ctx, application.CanImportRequest{
 		Policy: cfg.PolicySnapshot(), BundleDir: bundleDirOf(c.Config), From: c.From, Targets: c.Targets, Now: time.Now(),
 	})
 	if err != nil {

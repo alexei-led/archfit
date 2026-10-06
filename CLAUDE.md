@@ -767,9 +767,19 @@ init` emits v2 directly; owners update older configs manually before analysis.
   ones. It goes through `analysis.Analyze`, the shared rule pass
   (`evaluation.checkRules`), `status.Assign` with the persisted baseline and
   waivers, and `agenttask.Build` for the repair text. The importing file's
-  scope and production class come from `acquisition.Query` with Acquire's own
-  predicates (`outOfDeclaredScope`, `loc.ClassifyFile`). No `toolrun.Runner`,
-  no fact cache. Answer order: `denied` > `not_decided` (a fail-gated
+  production class comes from `acquisition.Query` with Acquire's own
+  predicates (`outOfDeclaredScope`, `loc.ClassifyFile`: the walk's class for a
+  walked file, the path-only class otherwise). The root is resolved as check
+  resolves it (`scope.Resolve`: --root, git toplevel, config dir; one
+  `git rev-parse`). No analyzer, no fact cache. `QueryEdge` drops what the
+  extractor drops (`ErrNotExtracted` → `unconstrained`: Go `_test.go`,
+  build-constrained, excluded file or target, unloaded member; a switched-off
+  language) and abstains where only the tool knows (`ErrNotDecidable` →
+  `not_decided`: Rust, an external Python import). Edge modules for the
+  answer: `rules.DeclaredEndpoints` for allowlists, the edge's own declared
+  modules for `module_cycle`, the augmented ones (go.work members via
+  `Facts.GoModules`) for the seam gate. Metric ratchets are not evaluated.
+  Answer order: `denied` > `not_decided` (a fail-gated
   `module_cycle` on a cross-module edge, `cycle` off Go, the seam gate in
   `mode: fail`) > `allowed` (an allowlist that names the pair, or the layer
   order) > `unconstrained`; an edge whose only violations are accepted debt is

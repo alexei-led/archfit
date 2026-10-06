@@ -7,6 +7,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/assessment/agenttask"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
+	rulespkg "github.com/alexei-led/archfit/internal/assessment/rules"
 	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
@@ -144,10 +145,19 @@ func undecidedOrAllowed(in JudgeInput) (string, []string) {
 	rules := in.Policy.Gates.Rules
 	mm := rules.ModuleMap
 	var undecided, allowed []string
+	production := true
+	for _, p := range in.UnwalkedSourceProduction {
+		production = production && p
+	}
 	for _, e := range in.Relationships.Edges {
-		fromModule, fromOK := mm.ModuleForNode(e.FromPath, e.Language)
-		toModule, toOK := mm.ModuleForNode(e.ToPath, e.Language)
-		crossModule := fromOK && toOK && fromModule != toModule
+		// The module_dependencies rule resolves declared modules with the
+		// file fallback; module_cycle reads the edge's own modules, kept only
+		// when declared and the importer is production; the seam ledger reads
+		// them including synthetic go.work members.
+		fromModule, toModule := rulespkg.DeclaredEndpoints(mm, e)
+		allowlisted := fromModule != "" && toModule != "" && fromModule != toModule
+		moduleCycle := production && mm.Has(e.FromModule) && mm.Has(e.ToModule) && e.FromModule != e.ToModule
+		seam := e.FromModule != "" && e.ToModule != "" && e.FromModule != e.ToModule
 		for _, def := range rules.Rules {
 			if !failGated(def) {
 				continue
@@ -160,11 +170,11 @@ func undecidedOrAllowed(in JudgeInput) (string, []string) {
 					undecided = append(undecided, "rule "+def.ID+" (cycle) needs the whole import graph")
 				}
 			case ruleTypeModuleCycle:
-				if crossModule {
+				if moduleCycle {
 					undecided = append(undecided, "rule "+def.ID+" (module_cycle) needs the whole module graph")
 				}
 			case ruleTypeModuleDependencies:
-				if crossModule && mm.DeniedDependency(fromModule, toModule) == nil {
+				if allowlisted && mm.DeniedDependency(fromModule, toModule) == nil {
 					if why := allowlistReason(in.Policy.Topology.Modules, fromModule, toModule); why != "" {
 						allowed = append(allowed, why)
 					}
@@ -175,7 +185,7 @@ func undecidedOrAllowed(in JudgeInput) (string, []string) {
 				}
 			}
 		}
-		if crossModule && in.Policy.Gates.Coupling.Mode == policy.DistributedMonolithFail {
+		if seam && in.Policy.Gates.Coupling.Mode == policy.DistributedMonolithFail {
 			undecided = append(undecided, "the distributed-monolith seam gate (mode: fail) needs the whole module graph")
 		}
 	}

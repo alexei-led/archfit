@@ -14,6 +14,7 @@ import (
 	"bufio"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -95,7 +96,7 @@ func RunWithConfig(root string, cfg syntax.FileClassConfig) (map[string]int, map
 		}
 		name := d.Name()
 		if d.IsDir() {
-			if strings.HasPrefix(name, ".") || skipDirs[name] {
+			if skipDirName(name) {
 				return filepath.SkipDir
 			}
 			// Skip the Go module cache (<root>/pkg/mod): third-party deps, not
@@ -139,10 +140,35 @@ func RunWithConfig(root string, cfg syntax.FileClassConfig) (map[string]int, map
 	return locMap, classes, cov, nil
 }
 
-// ClassifyFile classifies one ScanRoot-relative source file as the walk does,
-// generated-code header sniff included, without walking the tree. lang is the
+// skipDirName reports whether the walk skips a directory by its name: a dot
+// dir, or a build-output or vendored dir (skipDirs).
+func skipDirName(name string) bool {
+	return strings.HasPrefix(name, ".") || skipDirs[name]
+}
+
+// Walked reports whether the walk visits the ScanRoot-relative file rel: no
+// dir on its path is skipped.
+func Walked(rel string) bool {
+	if strings.HasPrefix(rel, "pkg/mod/") {
+		return false
+	}
+	for dir := path.Dir(rel); dir != "." && dir != "/"; dir = path.Dir(dir) {
+		if skipDirName(path.Base(dir)) {
+			return false
+		}
+	}
+	return true
+}
+
+// ClassifyFile classifies one ScanRoot-relative source file the way a run
+// does, without walking the tree: a file the walk visits gets the walk's class,
+// generated-code header sniff included; any other file gets the path-only
+// class acquisition gives an edge source the walk never visited. lang is the
 // file's language.
 func ClassifyFile(root, rel, lang string, cfg syntax.FileClassConfig) fileclass.FileClass {
+	if !Walked(rel) {
+		return syntax.ClassifyFile(lang, rel, nil, cfg)
+	}
 	return syntax.ClassifyFile(lang, rel, readHeader(filepath.Join(root, filepath.FromSlash(rel))), cfg)
 }
 

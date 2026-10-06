@@ -1,6 +1,7 @@
 package py
 
 import (
+	"errors"
 	"testing"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
@@ -32,6 +33,14 @@ func TestQueryEdgeSpellsTheExtractedEdge(t *testing.T) {
 				t.Errorf("locations = %+v, want the importing file", e.Locations)
 			}
 		})
+	}
+	for _, external := range []string{"requests", "os.path"} {
+		if _, err := QueryEdge("", cfg, "src/myapp/handlers.py", external); !errors.Is(err, evidenceports.ErrNotDecidable) {
+			t.Errorf("an import of %s outside the first-party package must not be decidable: %v", external, err)
+		}
+	}
+	if _, err := QueryEdge("", evidenceports.ExtractConfig{PyPackage: "src/core"}, "app/main.py", "core.models"); err != nil {
+		t.Errorf("an import of the configured package is first-party: %v", err)
 	}
 	if _, err := QueryEdge("", cfg, "src/myapp/handlers.ts", "myapp.domain"); err == nil {
 		t.Error("a non-Python importer must be an error")

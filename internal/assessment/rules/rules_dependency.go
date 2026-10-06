@@ -765,6 +765,15 @@ func (r *moduleDependencies) Check(s relationship.Set, ev Evidence) []finding.Fi
 	return out
 }
 
+// DeclaredEndpoints resolves both ends of an edge to their declared modules,
+// as the module_dependencies rule does: ModuleForNode first, then, for a file
+// node, ModuleForFile. "" for an end no declared module owns.
+func DeclaredEndpoints(mm policy.ModuleMap, e relationship.Edge) (from, to string) {
+	from, _ = declaredModuleOf(mm, e.FromID, e.FromPath, e.Language)
+	to, _ = declaredModuleOf(mm, e.ToID, e.ToPath, e.Language)
+	return from, to
+}
+
 // declaredModuleOf resolves a graph node to its declared module the way
 // relationship analysis does: the node path first (ModuleForNode, which also
 // places a Rust node in the module that owns its crate), then, for a file node,
