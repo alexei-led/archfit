@@ -423,7 +423,7 @@ func mergeOrigins(origins []string) string {
 func editFiles(files []string, sources map[string]struct{}, nodeEdge bool) []string {
 	all := sortedUnique(files)
 	if !nodeEdge {
-		return all
+		return append([]string{}, all...)
 	}
 	out := []string{}
 	for _, file := range all {

@@ -210,6 +210,18 @@ func TestEditListsOnlyTheSourceSide(t *testing.T) {
 	}
 }
 
+// TestEmptyListsAreArrays pins that a repair with no task file still
+// serializes every list as an array: the schema rejects null.
+func TestEmptyListsAreArrays(t *testing.T) {
+	t.Parallel()
+	pair := gateTask("a1", "module_cycle")
+	pair.from, pair.to, pair.loc, pair.files = "", "", "-", nil
+	raw := string(render(t, document(report.StateBlocked, pair)))
+	if strings.Contains(raw, "null") {
+		t.Errorf("result serializes a null list: %s", raw)
+	}
+}
+
 func TestOnlyDependenciesGroup(t *testing.T) {
 	t.Parallel()
 	apiChange := func(id string) taskSpec {
