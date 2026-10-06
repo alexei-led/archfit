@@ -2,6 +2,8 @@ package golang
 
 import (
 	"fmt"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"path"
@@ -117,7 +119,8 @@ func inLoadedMember(scanRoot string, entries []modEntry, from string) bool {
 
 // buildMatches reports whether the go toolchain the run starts includes from,
 // with the context toolchainContext gives the extractor, reading the go env
-// file too (go env -w), and the CGO_ENABLED it inherits. With CGO_ENABLED
+// file too (go env -w), and the CGO_ENABLED it inherits: a cgo build tag or an
+// import of "C" depends on it. With CGO_ENABLED
 // unset, cgo depends on a C compiler this binary cannot see: when the two
 // settings disagree about from, the answer is undecided. A file that does not
 // exist yet is judged by its name.
@@ -142,6 +145,11 @@ func buildMatches(scanRoot string, buildFlags []string, from string) (match, dec
 			return f, err
 		}
 		ok, err := ctxt.MatchFile(dir, path.Base(from))
+		// MatchFile reads names and build lines only; go/build's Import drops
+		// a cgo file later, when cgo is off.
+		if !enabled && importsC(filepath.Join(dir, path.Base(from))) {
+			ok, err = false, nil
+		}
 		results = append(results, err != nil || ok)
 	}
 	for _, r := range results[1:] {
@@ -150,6 +158,21 @@ func buildMatches(scanRoot string, buildFlags []string, from string) (match, dec
 		}
 	}
 	return results[0], true
+}
+
+// importsC reports whether the Go file at p imports "C". A file that does not
+// exist yet or does not parse imports nothing.
+func importsC(p string) bool {
+	file, err := parser.ParseFile(token.NewFileSet(), p, nil, parser.ImportsOnly)
+	if err != nil {
+		return false
+	}
+	for _, imp := range file.Imports {
+		if imp.Path.Value == `"C"` {
+			return true
+		}
+	}
+	return false
 }
 
 // goEnv reads a go environment variable as the go command does: the process
