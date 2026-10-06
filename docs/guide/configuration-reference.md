@@ -804,6 +804,10 @@ print a config warning, and `archfit config lint` reports `undeclared_layer`,
 - `role` — optional architectural role. See [Module role vs layer](#module-role-vs-layer).
 - `reviewed_at` — date of last architecture-map review.
 - `reviewed_by` — reviewer identity.
+- `depends_on` — outbound allowlist: the only declared modules this module can
+  import. See [Module allowlists](#module-allowlists).
+- `visible_to` — inbound allowlist: the only declared modules that can import
+  this module. See [Module allowlists](#module-allowlists).
 
 `public` alone only exempts paths; it never flags an import that misses it. To
 make archfit block imports that bypass a module's public package, pair the
@@ -812,6 +816,61 @@ public package with an `internal` glob over the rest of the module, as
 `services/pricing/` is private. A nested `internal/` directory inside its own
 module is not enough on Go: the Go compiler already rejects every import of it
 from outside the parent tree, so no cross-module edge to it can exist.
+
+### Module allowlists
+
+`depends_on` and `visible_to` state the allowed module graph. The
+`module_dependencies` rule enforces both lists. Without that rule, the lists
+have no effect.
+
+```yaml
+modules:
+  billing:
+    paths: [billing/**]
+    public: [billing/api]
+    visible_to: [shipping, api-gateway] # only these modules can import billing
+  shipping:
+    paths: [shipping/**]
+    depends_on: [billing, shared-kernel] # shipping can import only these modules
+  shared-kernel:
+    paths: [shared/**]
+    depends_on: [] # imports no first-party module
+rules:
+  - id: boundaries
+    type: module_dependencies
+    gate: fail
+```
+
+Rules for `depends_on` (outbound):
+
+1. An absent key means no constraint. An empty list allows no first-party
+   module.
+2. Each import from the module into another declared module must name that
+   module in the list.
+3. A target that no declared module owns is out of scope: standard library,
+   third-party packages, and unowned first-party source. Use
+   `forbidden_dependency` to ban those.
+
+Rules for `visible_to` (inbound):
+
+1. An absent key means every module can import the module.
+2. Each importer from another declared module must be in the list.
+3. An importer that no declared module owns is always denied. The allowlist
+   fails closed: a new package outside every module cannot import a module that
+   sets `visible_to`.
+
+Each entry is the exact name of a declared module. An entry that names no
+module still loads, but it allows nothing: `analyze` and `check` print a config
+warning, and `archfit config lint` reports `unknown_module` as an error.
+
+Modules resolve against the declared `modules:` map only. Code that only an
+auto-registered module owns (a `go.work` member or a Rust `crate::mod` node
+that no declared module claims) counts as unowned. A `crate::mod` node of a
+crate that a declared module owns belongs to that module.
+
+The lists do not change `model_hash`: they move neither distance nor seam
+identity. They do change `config_hash`, so an allowlist edit makes a stored
+baseline non-comparable until you run `archfit baseline` again.
 
 ### Module role vs layer
 
@@ -1162,6 +1221,29 @@ rules:
   left out by the extractor unless the config includes them. Story files,
   `.storybook/` and tool configs such as `vitest.config.ts` are production by
   default: classify them with `file_class.test_globs` to keep them out.
+- `module_dependencies` — enforces the [module allowlists](#module-allowlists)
+  (`depends_on`, `visible_to`). It emits one finding for each denied ordered
+  module pair, also when both lists deny it; `matched_by.violates` names the
+  list or lists that deny the pair (`depends_on`, `visible_to`, or
+  `depends_on,visible_to`). The finding edge is `{module, path: ""}` on both
+  sides with `kind: module_dependency`, and its ID is keyed on the rule ID and
+  the ordered module pair, so a new or moved file on that pair keeps the ID. The
+  finding lists the import lines (sorted, at most 50; the full count is in
+  `matched_by.locations_total`). An importer that no declared module owns gets
+  one finding for each importing package (a Go package directory, a TypeScript
+  file, a Python dotted module, or a Rust crate): `edge.from.path` names the
+  package, `edge.from.module` is empty, and `matched_by.from_package` repeats
+  it. Only production edges count, as for `module_cycle`. Takes no
+  `from`/`to`: a scope glob is a config error. The rule's scope is the
+  languages of the modules that declare a list, so a missing TypeScript
+  analyzer does not hold back a rule whose lists are on Go modules. When no
+  module declares either list, the rule has nothing to enforce: a fail-gated
+  rule goes to `decision.unevaluated_required_rules` with the reason
+  `selector matches nothing: no module declares depends_on or visible_to`, and
+  `archfit config lint` reports it as `dead_selector`. A waiver matches the
+  module names: `waivers: [{rule: boundaries, from: catalog, to: billing, ...}]`.
+  The repair task never names the target module's public API: an import
+  through it is still outside the allowlist.
 - `public_api_max` — fires when any module's exported declaration count exceeds
   `max` (requires `analyzers.syntax.enabled: true`). Scoped per module. No baseline
   — static ceiling.
