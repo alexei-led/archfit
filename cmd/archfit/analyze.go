@@ -147,33 +147,9 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	rep.banner("Archfit analyzing " + analyzeTarget(req.configPath, req.root))
 	defer rep.finish()
 
-	// Runtime flags and stage progress belong to this invocation. Wire them
-	// before config preparation so the technical stage cannot silently fall
-	// back to cache reads or a nil progress callback.
-	deps.refresh = req.refresh
-	deps.progress = rep.advance
-
-	rep.advance("Loading config")
-	cfg, err := loadAnalysisConfig(ctx, req.configPath)
+	resp, cfg, err := executeScan(ctx, deps, req, rep.advance)
 	if err != nil {
-		return configLoadError(err)
-	}
-	if err := config.ApplyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-	resp, err := application.Service{Stages: newAnalyzeStages(req.configPath, req.root, cfg, deps)}.Execute(ctx, application.Request{
-		ConfigSource: req.configPath, BundleDir: filepath.Dir(req.configPath),
-		BaseRef:        req.baseRef,
-		JSON:           req.json,
-		Markdown:       req.markdown,
-		SARIF:          req.sarif,
-		Formats:        req.formats,
-		NoAdvisories:   req.noAdvisories,
-		RequireTools:   req.requireTools,
-		ValidationArgs: scanValidationArgs(req),
-	})
-	if err != nil {
-		return applicationExitError(err)
+		return err
 	}
 
 	if err := analyzeRender(deps, resp); err != nil {
@@ -194,6 +170,44 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 		return &exitError{code: code}
 	}
 	return nil
+}
+
+// executeScan loads the config and runs the analyze/check use case, returning
+// the document and the effective config. It renders nothing. advance reports
+// stage progress; nil reports none.
+func executeScan(ctx context.Context, deps *appDeps, req scanRequest, advance func(string)) (application.Response, config.Config, error) {
+	if advance == nil {
+		advance = func(string) {}
+	}
+	// Runtime flags and stage progress belong to this invocation. Wire them
+	// before config preparation so the technical stage cannot silently fall
+	// back to cache reads or a nil progress callback.
+	deps.refresh = req.refresh
+	deps.progress = advance
+
+	advance("Loading config")
+	cfg, err := loadAnalysisConfig(ctx, req.configPath)
+	if err != nil {
+		return application.Response{}, config.Config{}, configLoadError(err)
+	}
+	if err := config.ApplyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
+		return application.Response{}, config.Config{}, &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+	resp, err := application.Service{Stages: newAnalyzeStages(req.configPath, req.root, cfg, deps)}.Execute(ctx, application.Request{
+		ConfigSource: req.configPath, BundleDir: filepath.Dir(req.configPath),
+		BaseRef:        req.baseRef,
+		JSON:           req.json,
+		Markdown:       req.markdown,
+		SARIF:          req.sarif,
+		Formats:        req.formats,
+		NoAdvisories:   req.noAdvisories,
+		RequireTools:   req.requireTools,
+		ValidationArgs: scanValidationArgs(req),
+	})
+	if err != nil {
+		return application.Response{}, config.Config{}, applicationExitError(err)
+	}
+	return resp, cfg, nil
 }
 
 // applicationExitError maps a controlled use-case failure onto the CLI exit

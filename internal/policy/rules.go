@@ -69,6 +69,16 @@ var ruleTypes = []string{
 	"public_api_type_leak",
 }
 
+// Blocks reports whether the rule's active findings block the run: gate fail,
+// or no gate on a type that blocks by default. public_api_change and
+// public_api_type_leak default to warn, as rules.New applies them.
+func (d RuleDef) Blocks() bool {
+	if d.Gate == "" {
+		return d.Type != "public_api_change" && d.Type != "public_api_type_leak"
+	}
+	return d.Gate == string(GateFail)
+}
+
 // RuleTypes returns the built-in rule type names `rules[].type` accepts, sorted.
 func RuleTypes() []string { return slices.Clone(ruleTypes) }
 

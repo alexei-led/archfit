@@ -52,10 +52,13 @@ type cli struct {
 	Check    CheckCmd    `cmd:"" group:"analysis" help:"Run the architecture gate. Exits 1 when blocked, 2 when it needs attention, 3 on a config or tool error. Use in CI."`
 	Baseline BaselineCmd `cmd:"" group:"analysis" help:"Accept current findings as the gate baseline."`
 	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
+	Hook     HookCmd     `cmd:"" group:"analysis" help:"Agent and git hooks: block a stop or a commit on an architecture repair."`
 	Policy   PolicyCmd   `cmd:"" group:"analysis" help:"Pre-edit queries: which module owns a path, and whether a file may import a target."`
 
-	Doctor DoctorCmd `cmd:"" group:"setup" help:"Check analyzer/tool availability (use --fix to install missing tools)."`
-	Config ConfigCmd `cmd:"" group:"setup" help:"Create, sync, compare, and enrich the .archfit.yaml config."`
+	Doctor   DoctorCmd   `cmd:"" group:"setup" help:"Check analyzer/tool availability (use --fix to install missing tools)."`
+	Config   ConfigCmd   `cmd:"" group:"setup" help:"Create, sync, compare, and enrich the .archfit.yaml config."`
+	AgentsMD AgentsMDCmd `cmd:"" name:"agents-md" group:"setup" help:"Render the archfit block of agent instructions into AGENTS.md (--write, --check)."`
+	Skill    SkillCmd    `cmd:"" group:"setup" help:"Install the archfit agent skill that ships in this binary."`
 
 	Version versionFlag `short:"v" help:"Print version and exit."`
 }
@@ -137,6 +140,7 @@ func (v versionFlag) BeforeReset(ctx *kong.Context) error {
 // appDeps is the composition root passed via kong.Bind.
 type appDeps struct {
 	Runner toolrun.Runner
+	Stdin  io.Reader // nil → os.Stdin
 	Stdout io.Writer
 	Stderr io.Writer // nil → os.Stderr
 
@@ -153,6 +157,14 @@ type appDeps struct {
 	// refresh bypasses cache reads but still records fresh extractor facts.
 	// Set by each pipeline command from its --refresh flag before the analysis pipeline.
 	refresh bool
+}
+
+// stdin returns the configured stdin reader, falling back to os.Stdin.
+func (d *appDeps) stdin() io.Reader {
+	if d.Stdin != nil {
+		return d.Stdin
+	}
+	return os.Stdin
 }
 
 // stderr returns the configured stderr writer, falling back to os.Stderr.
@@ -196,7 +208,13 @@ func Run(args []string, stdout io.Writer) int {
 // errors, parser errors, and exitError messages — are written to stderr (not
 // stdout) so `archfit --json 2>/dev/null` yields clean JSON and CI logs separate
 // data from errors.
-func RunWithStderr(args []string, stdout, stderr io.Writer) (exitStatus int) {
+func RunWithStderr(args []string, stdout, stderr io.Writer) int {
+	return runWithIO(args, nil, stdout, stderr)
+}
+
+// runWithIO is RunWithStderr with an explicit stdin reader; nil reads os.Stdin.
+// The hook commands read their event from stdin.
+func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) (exitStatus int) {
 	// Capture controlled exits (--version, --help) via panic+recover.
 	defer func() {
 		if r := recover(); r != nil {
@@ -208,7 +226,7 @@ func RunWithStderr(args []string, stdout, stderr io.Writer) (exitStatus int) {
 		}
 	}()
 
-	deps := &appDeps{Runner: toolrun.New(), Stdout: stdout, Stderr: stderr}
+	deps := &appDeps{Runner: toolrun.New(), Stdin: stdin, Stdout: stdout, Stderr: stderr}
 
 	var c cli
 	parser, err := kong.New(&c,

@@ -155,7 +155,7 @@ func undecidedOrAllowed(in JudgeInput) (string, []string) {
 		moduleCycle := rulespkg.ProductionEdge(e, in.UnwalkedSourceProduction) && mm.Has(e.FromModule) && mm.Has(e.ToModule) && e.FromModule != e.ToModule
 		seam := e.FromModule != "" && e.ToModule != "" && e.FromModule != e.ToModule
 		for _, def := range rules.Rules {
-			if !failGated(def) {
+			if !def.Blocks() {
 				continue
 			}
 			switch def.Type {
@@ -193,12 +193,6 @@ func undecidedOrAllowed(in JudgeInput) (string, []string) {
 	default:
 		return AnswerUnconstrained, nil
 	}
-}
-
-// failGated reports whether a rule blocks: gate fail, or no gate on a type
-// that blocks by default.
-func failGated(def policy.RuleDef) bool {
-	return def.Gate == string(policy.GateFail) || def.Gate == ""
 }
 
 // allowlistReason names the allowlist that permits a dependency, or "" when

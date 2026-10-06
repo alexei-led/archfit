@@ -8,7 +8,10 @@ output.
 ## The loop
 
 ```text
+agent plans an import
+  → archfit policy can-import <file> <target>   (denied? do not add it)
 agent edits code
+  → archfit check --format agent   (one next_action), or for the full state:
   → archfit check --json
   → exit 0 or 2?  no blocker remains. (2 = needs_attention: read the active
      diagnostic or named missing evidence; never fabricate it to force 0.)

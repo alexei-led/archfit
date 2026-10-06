@@ -49,6 +49,17 @@ New:
   `check`. It exits `1` when a target is denied and `2` when a target is not
   decided. Rust imports are not decided: crate roots need `cargo metadata`.
   See [`archfit policy can-import`](commands.md#archfit-policy-can-import).
+- Agent hooks. `archfit hook claude` is a Claude Code `Stop`/`SubagentStop`
+  hook: on a dirty tree it runs the agent result against `--base HEAD` and
+  exits 2 with the repair on stderr, at most once per stop; it fails open on an
+  archfit error. `archfit hook git` is a pre-commit hook (exit 1 on a repair or
+  an owner decision), published in `.pre-commit-hooks.yaml` as id `archfit`.
+- `archfit agents-md [--write] [--check]` renders one generated block of agent
+  instructions (loop, module table, rules that block) into `AGENTS.md`;
+  `--check` exits 1 on drift.
+- `archfit skill install` installs the archfit agent skill embedded in the
+  binary. The skill is rewritten around three steps: ask (`policy can-import`),
+  check (`--format agent`), and hooks.
 
 Contract notes:
 

@@ -32,6 +32,10 @@ needs.
 
 ## Use
 
+The archfit binary embeds `skills/archfit` (`skills/skills.go`).
+`archfit skill install` writes the copy that matches the binary into
+`.claude/skills/archfit` (`--dir` for another skills directory).
+
 Point your agent harness at `skills/`, or copy the specific skill directory to
 the harness-specific skills folder.
 
