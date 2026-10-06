@@ -147,7 +147,8 @@ and the rules that select the path.
 `archfit.agent-result.v1`: the verdict, ONE `next_action`, and the repairs
 grouped by edge, in at most 8 KB. Follow `next_action`:
 `repair` — change the code within each repair's `goal` and `constraints`, edit
-only the files in `edit` (never the target of a forbidden edge), then run
+the files in `edit` (never the target of a forbidden edge; an empty `edit`
+means the source file is unknown and `edge.from` names the source), then run
 `validate`; `ask_owner` — stop and report to the architecture owner;
 `restore_evidence` — install or fix the analyzer the result names;
 `report_blocked` — report the blockers, they are not from this change;

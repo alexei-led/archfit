@@ -12,6 +12,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/alexei-led/archfit/skills"
 )
@@ -61,7 +63,9 @@ func (c *SkillInstallCmd) Run(deps *appDeps) error {
 		}
 	}
 	if len(conflicts) > 0 && !c.Force {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %s has local changes in %v; rerun with --force to overwrite them", dest, conflicts)}
+		slices.Sort(conflicts)
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %s: %s differ from this binary's copy (a local edit, or a copy from another archfit version); rerun with --force to overwrite them",
+			dest, strings.Join(conflicts, ", "))}
 	}
 	written := 0
 	for rel, content := range files {

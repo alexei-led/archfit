@@ -22,6 +22,13 @@ modules:
   b:
     paths: ["pkg/b/**"]
 `
+	hookDeadSelectorCfg = hookModules + `rules:
+  - id: no_ghost
+    type: forbidden_dependency
+    gate: fail
+    from: pkg/ghost/**
+    to: pkg/b/impl
+`
 	hookRuleCfg = hookModules + `rules:
   - id: no_b_impl
     type: forbidden_dependency
@@ -133,6 +140,16 @@ func TestHookClaude(t *testing.T) {
 				}
 				return dir
 			}, wantStdout: "failed open"},
+		{name: "archfit's own cache is not a change", event: hookEventStop,
+			repo: func(t *testing.T) string {
+				dir := hookRepo(t, hookRuleCfg, hookViolatingA, "")
+				writeFixtureFile(t, dir, ".archfit-cache/facts/x.json", "{}")
+				return dir
+			}},
+		{name: "a pre-existing dead selector is reported, not blocked", event: hookEventStop,
+			repo: func(t *testing.T) string {
+				return hookRepo(t, hookDeadSelectorCfg, hookCleanA, hookCleanA+"\n// edit\n")
+			}, wantStdout: "next_action ask_owner"},
 		{name: "another event is ignored", repo: introduced, event: "PreToolUse"},
 		{name: "malformed stdin", repo: introduced, rawStdin: "{not json", wantCode: 1, wantStderr: "malformed hook event"},
 	} {
@@ -196,6 +213,10 @@ func TestHookGit(t *testing.T) {
 		{name: "a pre-existing blocker does not", wantCode: 0,
 			repo: func(t *testing.T) string {
 				return hookRepo(t, hookRuleCfg, hookViolatingA, hookViolatingA+"\n// unrelated edit\n")
+			}},
+		{name: "a pre-existing dead selector does not block", wantCode: 0,
+			repo: func(t *testing.T) string {
+				return hookRepo(t, hookDeadSelectorCfg, hookCleanA, hookCleanA+"\n// edit\n")
 			}},
 		{name: "config is missing", wantCode: 3,
 			repo: func(t *testing.T) string { return t.TempDir() }},

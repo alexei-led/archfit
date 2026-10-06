@@ -150,16 +150,17 @@ Register it in `.claude/settings.json`:
 }
 ```
 
-A clean working tree (`git status --porcelain` prints nothing) skips the run.
+A clean working tree (`git status --porcelain` lists nothing but archfit's own
+`.archfit-cache`) skips the run.
 Otherwise the hook runs `check --format agent --base HEAD` in process. The
 `--base` ref scopes the result to the uncommitted change: a repair whose
 findings all exist at `HEAD` is outside the scope.
 
 | Result                                    | Hook output                                                                |
 | ----------------------------------------- | -------------------------------------------------------------------------- |
-| `repair` or `ask_owner`, first stop       | Exit 2. Stderr holds the IDs, `file:line`, goal, constraints, and `validate`. |
+| `repair` or `ask_owner` with an in-scope repair, first stop | Exit 2. Stderr holds the IDs, `file:line`, goal, constraints, and `validate`. |
 | The same, with `stop_hook_active: true`   | Exit 0 with a `systemMessage`. The hook blocks at most once.               |
-| `restore_evidence` or `report_blocked`    | Exit 0 with a `systemMessage`.                                             |
+| Any other action except `none`            | Exit 0 with a `systemMessage`. A dead selector or a metric ratchet is not scoped to the change, so it never blocks a stop. |
 | `none`                                    | Exit 0, silent.                                                            |
 | An archfit error                          | Exit 0 with a `systemMessage`. The hook fails open.                        |
 | Malformed stdin                           | Exit 1.                                                                    |
@@ -168,8 +169,9 @@ findings all exist at `HEAD` is outside the scope.
 Exit 2 is the Claude Code protocol for "do not stop yet", not the engine verdict.
 
 **Git pre-commit hook.** `archfit hook git` exits 1 with the repair on stderr
-when the next action is `repair` or `ask_owner`, 0 otherwise, and 3 when
-archfit cannot run. The repository publishes it for pre-commit:
+when the next action is `repair` or `ask_owner` and a repair is in scope, 0
+otherwise, and 3 when archfit cannot run. It judges the files on disk: with
+pre-commit that is the staged content plus untracked files. The repository publishes it for pre-commit:
 
 ```yaml
 - repo: https://github.com/alexei-led/archfit

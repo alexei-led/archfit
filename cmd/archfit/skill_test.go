@@ -45,7 +45,7 @@ func TestSkillInstall(t *testing.T) {
 	if err := os.WriteFile(skillFile, []byte("local edit\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if code, out := install(); code != 3 || !strings.Contains(out, "--force") {
+	if code, out := install(); code != 3 || !strings.Contains(out, "SKILL.md differ") || !strings.Contains(out, "--force") {
 		t.Errorf("install over a local change: exit %d, want 3\n%s", code, out)
 	}
 	if code, _ := install("--force"); code != 0 {

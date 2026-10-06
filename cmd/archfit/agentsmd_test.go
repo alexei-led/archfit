@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alexei-led/archfit/internal/policy"
 )
 
 const (
@@ -31,7 +33,7 @@ func TestAgentsMDGoldens(t *testing.T) {
 		name := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(cfg), "."), ".yaml") + ".md"
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			code, stdout, stderr := runArchfit(t, cmdAgentsMD, "-c", cfg)
+			code, stdout, stderr := runArchfit(t, cmdAgentsMD, "-c", cfg, "--file", filepath.Join(filepath.Dir(cfg), "AGENTS.md"))
 			if code != 0 {
 				t.Fatalf("exit = %d\n%s", code, stderr)
 			}
@@ -117,6 +119,39 @@ func TestAgentsMDWriteAndCheck(t *testing.T) {
 	}
 	if string(fixed) != string(second)+after {
 		t.Errorf("rewrite did not keep the text around the block:\n%s", fixed)
+	}
+}
+
+// TestAgentsMDAppendKeepsEveryByte pins that appending the block to a file
+// without markers changes no existing byte, whatever the file ends with.
+func TestAgentsMDAppendKeepsEveryByte(t *testing.T) {
+	t.Parallel()
+	for _, before := range []string{"", "no newline", "one\n", "three\n\n\n", "crlf\r\n"} {
+		got, err := spliceAgentsBlock([]byte(before), "BLOCK\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(string(got), before) || !strings.HasSuffix(string(got), "BLOCK\n") {
+			t.Errorf("append to %q gave %q", before, got)
+		}
+	}
+}
+
+// TestAgentsMDNamesANonDefaultConfig pins that the block's commands carry -c
+// when the config is not the default .archfit.yaml.
+func TestAgentsMDNamesANonDefaultConfig(t *testing.T) {
+	t.Parallel()
+	block := renderAgentsBlock(policy.PolicySnapshot{}, "policy/team.yaml")
+	for _, want := range []string{"archfit policy can-import -c policy/team.yaml", "archfit check -c policy/team.yaml --format agent", "`policy/team.yaml`"} {
+		if !strings.Contains(block, want) {
+			t.Errorf("block is missing %q:\n%s", want, block)
+		}
+	}
+	if strings.Contains(renderAgentsBlock(policy.PolicySnapshot{}, defaultConfigPath), " -c ") {
+		t.Error("the default config must not add -c")
+	}
+	if got := configArg("/repo/policy/team.yaml", "/repo/AGENTS.md"); got != "policy/team.yaml" {
+		t.Errorf("configArg = %q, want policy/team.yaml", got)
 	}
 }
 

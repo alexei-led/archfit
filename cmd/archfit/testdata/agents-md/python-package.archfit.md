@@ -3,9 +3,9 @@
 
 ## Architecture guardrails (archfit)
 
-- Before you add an import across modules, ask: `archfit policy can-import <file> <target>`.
+- Before you add an import across modules, ask: `archfit policy can-import -c python-package.archfit.yaml <file> <target>`.
   A `denied` answer names the rule and the repair. `unconstrained` is not permission.
-- Before you finish, run `archfit check --format agent` and follow `next_action`.
+- Before you finish, run `archfit check -c python-package.archfit.yaml --format agent` and follow `next_action`.
   `none` is a correct finish, even with exit code 2.
 - Never edit `python-package.archfit.yaml`, the baseline, waivers, or labels to make a check pass.
   Ask the architecture owner instead.

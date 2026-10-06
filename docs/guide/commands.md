@@ -81,8 +81,8 @@ Notes:
 - `archfit analyze` always exits `0` after a successful analysis, whatever the verdict.
 - `archfit analyze --require-tools` only changes the rendered verdict. It does not change the exit code on success.
 - `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit policy where`, `archfit skill install`, and the `config` commands are success-or-error commands: `0` or `3`.
-- `archfit hook claude` speaks the Claude Code hook protocol: exit `2` blocks the stop, `1` is malformed stdin, and an archfit error exits `0` with a `systemMessage` (it fails open).
   `archfit config lint` is the exception: it exits `1` when it reports an error diagnostic.
+- `archfit hook claude` speaks the Claude Code hook protocol: exit `2` blocks the stop, `1` is malformed stdin, and an archfit error exits `0` with a `systemMessage` (it fails open).
 - Exit `0` is reachable when all nine dimensions are measured, hard gates pass,
   and no diagnostic is active. Missing supplied coverage, a non-comparable
   persisted baseline, incomplete declared operational topology, or an
@@ -461,8 +461,14 @@ archfit hook git    [--config .archfit.yaml] [--base HEAD]
 
 The output table of `hook claude` and the pre-commit setup are in
 [the agent feedback loop](agent-feedback.md#hooks-instructions-and-the-skill).
-`hook git` exits `1` on `repair` or `ask_owner`, `0` otherwise, and `3` when
-archfit cannot run.
+Both hooks block only when the next action is `repair` or `ask_owner` and a
+repair is in scope. A dead selector or a metric ratchet also leads to those
+actions, but neither is scoped to the change, so the hooks report them and
+let the change through. `hook git` exits `1` on a block, `0` otherwise (other
+actions are printed on stderr), and `3` when archfit cannot run. It judges the
+files on disk: with pre-commit that is the staged content plus untracked
+files, because pre-commit stashes unstaged edits; a hook installed directly in
+`.git/hooks` also sees unstaged edits.
 
 ## `archfit agents-md`
 
@@ -480,7 +486,9 @@ archfit agents-md [--write | --check] [--file AGENTS.md] [-c .archfit.yaml]
 
 Without `--write` or `--check` it prints the block. `--write` replaces the text
 between `<!-- archfit:start -->` and `<!-- archfit:end -->`, or appends the
-block when the file has none. Text outside the markers stays byte-identical,
+block when the file has none. When `-c` names a config other than
+`.archfit.yaml`, the commands in the block carry `-c` with the config path
+relative to the file's directory. Text outside the markers stays byte-identical,
 the output is sorted with no timestamp, and a second write changes nothing.
 
 Exit codes: `0` printed, written, or current; `1` `--check` found the block
