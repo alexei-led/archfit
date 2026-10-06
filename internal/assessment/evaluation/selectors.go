@@ -324,6 +324,21 @@ func (inv selectorInventory) moduleSideState(selector string) moduleSide {
 	}
 }
 
+// ownsRustModuleNode reports whether a module-graph node that pattern matches
+// resolves to module: a crate-wide catch-all shadowed by more specific
+// modules on every node owns nothing.
+func (inv selectorInventory) ownsRustModuleNode(module, pattern string) bool {
+	for _, node := range inv.rustModules {
+		if matched, _ := doublestar.Match(pattern, node); !matched {
+			continue
+		}
+		if owner, ok := inv.moduleMap.ModuleFor(node); ok && owner == module {
+			return true
+		}
+	}
+	return false
+}
+
 // modulePathsState judges a module that owns no inventoried file by its
 // declared paths, with moduleRuleScope's rules.
 func (inv selectorInventory) modulePathsState(module string) moduleSide {
@@ -334,11 +349,9 @@ func (inv selectorInventory) modulePathsState(module string) moduleSide {
 	state := moduleSideEmpty
 	for _, pattern := range paths {
 		if strings.Contains(pattern, sepCrate) {
-			matched, decided := inv.rustModulePath(pattern)
-			switch {
-			case !decided:
+			if _, decided := inv.rustModulePath(pattern); !decided {
 				state = moduleSideUndecided
-			case matched:
+			} else if inv.ownsRustModuleNode(module, pattern) {
 				return moduleSideLive
 			}
 			continue

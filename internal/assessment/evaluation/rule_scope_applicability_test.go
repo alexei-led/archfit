@@ -466,7 +466,8 @@ func TestToModuleScopeNeverFallsBackToTheSourceSide(t *testing.T) {
 }
 
 // TestRustModuleSelectorsFollowModuleRuleScope pins module selectors over Rust
-// modules: a crate::mod path the module graph lacks matches nothing; a module
+// modules: a crate::mod path the module graph lacks, or whose every node a
+// more specific module owns, matches nothing; a module
 // declared by package name, whose files have no crate identity without cargo
 // metadata, abstains rather than reading as empty.
 func TestRustModuleSelectorsFollowModuleRuleScope(t *testing.T) {
@@ -480,6 +481,19 @@ func TestRustModuleSelectorsFollowModuleRuleScope(t *testing.T) {
 		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modPlace, ToModule: "gone"})
 		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != "selector matches nothing: to_module gone" {
 			t.Errorf("unevaluated reason = %q, want the dead crate::mod module named", got)
+		}
+	})
+	t.Run("crate-wide catch-all every node of which a specific module owns", func(t *testing.T) {
+		diag, in := rustModuleFixture()
+		in.Facts.RustModuleNodes = []string{rustModPlace, rustModTypes}
+		withModules(&in, map[string]policy.ModuleDef{
+			"remainder": {Paths: []string{"core::**"}},
+			modPlace:    {Paths: []string{rustModPlace}},
+			"types":     {Paths: []string{rustModTypes}},
+		})
+		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modPlace, ToModule: "remainder"})
+		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != "selector matches nothing: to_module remainder" {
+			t.Errorf("unevaluated reason = %q, want the fully shadowed module named", got)
 		}
 	})
 	t.Run("package-name module without crate roots", func(t *testing.T) {
