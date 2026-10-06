@@ -45,7 +45,7 @@ func hookRepo(t *testing.T, cfg, headA, worktreeA string) string {
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
-		markerGoMod:       "module example.com/test\n\ngo 1.21\n",
+		markerGoMod:       goModStub,
 		filePkgAA:         headA,
 		hookImplFile:      implSource(),
 		defaultConfigPath: cfg,
@@ -213,6 +213,18 @@ func TestHookGit(t *testing.T) {
 		{name: "a pre-existing blocker does not", wantCode: 0,
 			repo: func(t *testing.T) string {
 				return hookRepo(t, hookRuleCfg, hookViolatingA, hookViolatingA+"\n// unrelated edit\n")
+			}},
+		{name: "the first commit has no HEAD to scope against", wantCode: 1,
+			repo: func(t *testing.T) string {
+				dir := t.TempDir()
+				for name, content := range map[string]string{
+					markerGoMod: goModStub, filePkgAA: hookViolatingA,
+					hookImplFile: implSource(), defaultConfigPath: hookRuleCfg,
+				} {
+					writeFixtureFile(t, dir, name, content)
+				}
+				gitInitFixtureRepo(t, dir)
+				return dir
 			}},
 		{name: "a pre-existing dead selector does not block", wantCode: 0,
 			repo: func(t *testing.T) string {

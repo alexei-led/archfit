@@ -176,6 +176,11 @@ func blocksChange(r agentout.Result) bool {
 // hookResult runs check --format agent in process, with the pipeline's own
 // warnings kept off the hook's stderr, which the host shows to the agent.
 func hookResult(ctx context.Context, deps *appDeps, configPath, base string) (agentout.Result, error) {
+	// Before the first commit HEAD names nothing: the whole tree is the
+	// change, so every blocker is in scope.
+	if base != "" && !refExists(ctx, deps.Runner, filepath.Dir(configPath), base) {
+		base = ""
+	}
 	quiet := *deps
 	quiet.Stdout, quiet.Stderr = io.Discard, io.Discard
 	resp, _, err := executeScan(ctx, &quiet, scanRequest{
@@ -185,6 +190,12 @@ func hookResult(ctx context.Context, deps *appDeps, configPath, base string) (ag
 		return agentout.Result{}, err
 	}
 	return agentout.Build(resp.Document), nil
+}
+
+// refExists reports whether ref names a commit in the repository at dir.
+func refExists(ctx context.Context, runner toolrun.Runner, dir, ref string) bool {
+	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: gitBinary, Args: []string{"rev-parse", "--verify", "--quiet", ref + "^{commit}"}, WorkDir: dir})
+	return err == nil && out.ExitCode == 0
 }
 
 // worktreeDirty reports whether git status --porcelain prints anything in dir.

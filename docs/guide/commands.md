@@ -457,7 +457,7 @@ archfit hook git    [--config .archfit.yaml] [--base HEAD]
 | Flag           | Default         | Effect                                                                                     |
 | -------------- | --------------- | ------------------------------------------------------------------------------------------ |
 | `-c, --config` | `.archfit.yaml` | Config file. `hook claude` resolves a relative path against the event `cwd`.               |
-| `--base`       | `HEAD`          | Scope ref: a repair whose findings all exist at this ref is outside the scope. Empty scopes every blocker in. |
+| `--base`       | `HEAD`          | Scope ref: a repair whose findings all exist at this ref is outside the scope. Empty, or a ref that does not exist yet (before the first commit), scopes every blocker in. |
 
 The output table of `hook claude` and the pre-commit setup are in
 [the agent feedback loop](agent-feedback.md#hooks-instructions-and-the-skill).
