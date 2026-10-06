@@ -104,15 +104,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	// Determine the package list for grimp. An explicit PyPackage config wins;
 	// otherwise discover top-level packages under ScanRoot (dirs with __init__.py).
 	// If discovery finds nothing, fall back to the directory name (legacy behaviour).
-	var pkgs []string
-	if e.cfg.PyPackage != "" {
-		pkgs = []string{e.cfg.PyPackage}
-	} else {
-		pkgs = discoverPackages(s.Root)
-		if len(pkgs) == 0 {
-			pkgs = []string{filepath.Base(s.Root)}
-		}
-	}
+	pkgs := grimpPackages(s.Root, e.cfg.PyPackage)
 
 	// Build the command.
 	// grimp_helper --packages pkg1 pkg2 … accepts multiple top-level package names
@@ -223,6 +215,19 @@ func Applicable(root, pkg string) bool {
 // (e.g. ~42 isolated services), cross-service coupling cannot be measured
 // in one run. This is a grimp limitation; archfit does not promise
 // cross-service Python analysis in that setup.
+// grimpPackages is the package list grimp builds: the configured package, else
+// the discovered top-level packages, else the root directory's name. Only
+// modules of these packages become importers.
+func grimpPackages(root, configured string) []string {
+	if configured != "" {
+		return []string{configured}
+	}
+	if pkgs := discoverPackages(root); len(pkgs) > 0 {
+		return pkgs
+	}
+	return []string{filepath.Base(root)}
+}
+
 func discoverPackages(root string) []string {
 	if srcPkgs := packagesUnder(filepath.Join(root, "src")); len(srcPkgs) > 0 {
 		return srcPkgs // src-layout: prefer the real source packages over top-level strays

@@ -393,9 +393,9 @@ match it:
 
 | Language   | `<target>`                                                                                   |
 | ---------- | -------------------------------------------------------------------------------------------- |
-| Go         | A package dir relative to the root, or an import path of a loaded module. An import from a `_test.go` file, a file the host build constraints exclude, a file of no loaded module, or an excluded file or target is never extracted: the answer is `unconstrained`. |
+| Go         | A package dir relative to the root, or an import path of a loaded module. An import from a `_test.go` file, a file the build constraints exclude (host GOOS/GOARCH, `-tags` in the run's build flags or `GOFLAGS`, `CGO_ENABLED`), a file of no loaded module, or an excluded file or target is never extracted: the answer is `unconstrained`. |
 | TypeScript | The imported source file relative to the root, after resolution (not the import specifier).  |
-| Python     | A dotted module, or a `.py` file. A file maps to its dotted name with a `src/` prefix removed. A target outside the importer's top-level package and `languages.python.package` is `not_decided`: grimp drops an installed or stdlib import and spells an uninstalled one as external. |
+| Python     | A dotted module, or a `.py` file. A file maps to its dotted name with a `src/` prefix removed. grimp builds `languages.python.package`, else the discovered top-level packages (under `src/` when it has any). An importer outside them is never extracted (`unconstrained`). A target outside them is `not_decided`: grimp drops an installed or stdlib import and spells an uninstalled one as external. |
 | Rust       | Not supported: crate roots need `cargo metadata`, so the answer is `not_decided`.             |
 
 The answer is one line of JSON, `archfit.policy-answer.v1` with

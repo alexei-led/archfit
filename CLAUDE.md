@@ -773,9 +773,12 @@ init` emits v2 directly; owners update older configs manually before analysis.
   resolves it (`scope.Resolve`: --root, git toplevel, config dir; one
   `git rev-parse`). No analyzer, no fact cache. `QueryEdge` drops what the
   extractor drops (`ErrNotExtracted` → `unconstrained`: Go `_test.go`,
-  build-constrained, excluded file or target, unloaded member; a switched-off
+  build-constrained under the toolchain's env (`GOFLAGS` tags, `CGO_ENABLED`),
+  excluded file or target, unloaded member; a switched-off
   language) and abstains where only the tool knows (`ErrNotDecidable` →
-  `not_decided`: Rust, an external Python import). Edge modules for the
+  `not_decided`: Rust, a Python target outside the packages grimp builds;
+  an importer outside them is `ErrNotExtracted`, from `py.grimpPackages`, the
+  extractor's own package list). Edge modules for the
   answer: `rules.DeclaredEndpoints` for allowlists, the edge's own declared
   modules for `module_cycle`, the augmented ones (go.work members via
   `Facts.GoModules`) for the seam gate. Metric ratchets are not evaluated.

@@ -14,13 +14,16 @@ const (
 	queryTargetDir = "internal/b"
 	queryImporter  = "internal/a/a.go"
 	queryNever     = "internal/a/never.go"
+	queryEnt       = "internal/a/ent.go"
+	queryGoMod     = "module example.com/q\n\ngo 1.21\n"
+	queryNoCgo     = "internal/a/nocgo.go"
 )
 
 func TestQueryEdgeSpellsTheExtractedEdge(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	for name, body := range map[string]string{
-		"go.mod":           "module example.com/q\n\ngo 1.21\n",
+		evidenceGoModFile:  queryGoMod,
 		"tools/go.mod":     "module example.com/q/tools\n\ngo 1.21\n",
 		queryImporter:      "package a\n",
 		"tools/gen/gen.go": "package gen\n",
@@ -69,11 +72,11 @@ func TestQueryEdgeDropsWhatTheExtractorDrops(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	for name, body := range map[string]string{
-		"go.mod":        "module example.com/q\n\ngo 1.21\n",
-		queryImporter:   "package a\n",
-		queryNever:      "//go:build never_set_tag\n\npackage a\n",
-		"nested/go.mod": "module example.com/nested\n\ngo 1.21\n",
-		"nested/n/n.go": "package n\n",
+		evidenceGoModFile: queryGoMod,
+		queryImporter:     "package a\n",
+		queryNever:        "//go:build never_set_tag\n\npackage a\n",
+		"nested/go.mod":   "module example.com/nested\n\ngo 1.21\n",
+		"nested/n/n.go":   "package n\n",
 	} {
 		path := filepath.Join(root, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
@@ -103,6 +106,45 @@ func TestQueryEdgeDropsWhatTheExtractorDrops(t *testing.T) {
 			run := cfg
 			run.BuildFlags = tc.tags
 			_, err := QueryEdge(root, run, tc.from, tc.target)
+			if notExtracted := errors.Is(err, evidenceports.ErrNotExtracted); notExtracted == tc.extracted || (tc.extracted && err != nil) {
+				t.Errorf("err = %v, want extracted = %v", err, tc.extracted)
+			}
+		})
+	}
+}
+
+// TestQueryEdgeBuildEnvironment pins that the build filter reads the
+// environment the run's go toolchain inherits: -tags in GOFLAGS, and
+// CGO_ENABLED when it is set. Unset, a file either cgo setting includes counts.
+func TestQueryEdgeBuildEnvironment(t *testing.T) {
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		evidenceGoModFile: queryGoMod,
+		queryEnt:          "//go:build enterprise\n\npackage a\n",
+		queryNoCgo:        "//go:build !cgo\n\npackage a\n",
+	} {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name, from, goflags, cgo string
+		extracted                bool
+	}{
+		{name: "tag from GOFLAGS", from: queryEnt, goflags: "-tags=enterprise", extracted: true},
+		{name: "tag missing", from: queryEnt},
+		{name: "!cgo with CGO_ENABLED unset", from: queryNoCgo, extracted: true},
+		{name: "!cgo with CGO_ENABLED=0", from: queryNoCgo, cgo: "0", extracted: true},
+		{name: "!cgo with CGO_ENABLED=1", from: queryNoCgo, cgo: "1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("GOFLAGS", tc.goflags)
+			t.Setenv("CGO_ENABLED", tc.cgo)
+			_, err := QueryEdge(root, evidenceports.ExtractConfig{}, tc.from, queryTargetDir)
 			if notExtracted := errors.Is(err, evidenceports.ErrNotExtracted); notExtracted == tc.extracted || (tc.extracted && err != nil) {
 				t.Errorf("err = %v, want extracted = %v", err, tc.extracted)
 			}

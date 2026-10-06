@@ -246,6 +246,7 @@ func TestPolicyCanImportNotDecidedByWholeGraphRules(t *testing.T) {
 	for _, tc := range []struct {
 		name, prefix, rules string
 		args                []string
+		pyPackage           bool
 		wantCode            int
 		wantAnswer, reason  string
 	}{
@@ -253,16 +254,16 @@ func TestPolicyCanImportNotDecidedByWholeGraphRules(t *testing.T) {
 			args: []string{agreeAppFile, agreeDomainPkg}, wantCode: 2, wantAnswer: answerNotDecided, reason: "no_cycles"},
 		{name: "module_cycle from a package-dir module", rules: "  - id: no_cycles\n    type: module_cycle\n    gate: fail\n",
 			args: []string{agreeWebOK, agreeAppPkg}, wantCode: 2, wantAnswer: answerNotDecided, reason: "no_cycles"},
-		{name: "external Python import", args: []string{agreePyImporter, "requests"}, wantCode: 2, wantAnswer: answerNotDecided, reason: "first-party"},
+		{name: "external Python import", args: []string{agreePyImporter, "requests"}, pyPackage: true, wantCode: 2, wantAnswer: answerNotDecided, reason: "grimp builds"},
 		{name: "excluded Python importer is still extracted", prefix: "exclude: [\"tools/**\"]\n",
 			rules: "  - id: no_tools_b\n    type: forbidden_dependency\n    gate: fail\n    from: \"tools.*\"\n    to: tools.b\n",
-			args:  []string{agreePyImporter, "tools.b"}, wantCode: 1, wantAnswer: answerDenied},
+			args:  []string{agreePyImporter, "tools.b"}, pyPackage: true, wantCode: 1, wantAnswer: answerDenied},
 		{name: "warn-gated module_cycle decides nothing", rules: "  - id: no_cycles\n    type: module_cycle\n    gate: warn\n",
 			args: []string{agreeAppFile, agreeDomainPkg}, wantCode: 0, wantAnswer: answerAllowed, reason: "depends_on"},
 		{name: "seam gate in mode fail", prefix: "coupling:\n  gate:\n    distributed_monolith:\n      mode: fail\n",
 			args: []string{agreeAppFile, agreeDomainPkg}, wantCode: 2, wantAnswer: answerNotDecided, reason: "seam gate"},
 		{name: "node cycle on a Python import", rules: "  - id: no_node_cycles\n    type: cycle\n    gate: fail\n",
-			args: []string{agreePyImporter, "tools.b"}, wantCode: 2, wantAnswer: answerNotDecided, reason: "no_node_cycles"},
+			args: []string{agreePyImporter, "tools.b"}, pyPackage: true, wantCode: 2, wantAnswer: answerNotDecided, reason: "no_node_cycles"},
 		{name: "node cycle never forms on Go", rules: "  - id: no_node_cycles\n    type: cycle\n    gate: fail\n",
 			args: []string{agreeAppFile, agreeDomainPkg}, wantCode: 0, wantAnswer: answerAllowed, reason: "depends_on"},
 	} {
@@ -274,6 +275,17 @@ func TestPolicyCanImportNotDecidedByWholeGraphRules(t *testing.T) {
 				t.Fatal(err)
 			}
 			body = append(append([]byte(tc.prefix), body...), tc.rules...)
+			if tc.pyPackage {
+				for _, name := range []string{"tools/__init__.py", "tools/a.py", "tools/b.py"} {
+					path := filepath.Join(filepath.Dir(cfgPath), name)
+					if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(path, nil, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
 			if err := os.WriteFile(cfgPath, //nolint:gosec // test temp path
 				body, 0o600); err != nil {
 				t.Fatal(err)

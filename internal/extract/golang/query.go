@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -112,27 +113,41 @@ func inLoadedMember(scanRoot string, entries []modEntry, from string) bool {
 	}
 }
 
-// buildMatches reports whether the host build context, with the run's -tags,
-// includes from. A file that does not exist yet is judged by its name.
+// buildMatches reports whether the go toolchain the run starts includes from:
+// the host GOOS/GOARCH (or their environment overrides), the run's -tags and
+// any -tags in GOFLAGS, and the CGO_ENABLED it inherits. With CGO_ENABLED
+// unset, cgo depends on a C compiler this binary cannot see, so a file that
+// either setting includes counts as included. A file that does not exist yet
+// is judged by its name.
 func buildMatches(scanRoot string, buildFlags []string, from string) bool {
-	ctxt := build.Default
-	// cgo availability belongs to the run's go toolchain, not to this binary
-	// (built without cgo): a cgo file is not judged excluded on that ground.
-	ctxt.CgoEnabled = true
-	ctxt.BuildTags = append(ctxt.BuildTags, buildTags(buildFlags)...)
-	ctxt.OpenFile = func(p string) (io.ReadCloser, error) {
-		f, err := os.Open(p) // #nosec G304 -- the queried source file under the scan root
-		if os.IsNotExist(err) {
-			return io.NopCloser(strings.NewReader("package p\n")), nil
-		}
-		return f, err
+	tags := append(buildTags(buildFlags), buildTags(strings.Fields(os.Getenv("GOFLAGS")))...)
+	cgo := []bool{true, false}
+	switch os.Getenv("CGO_ENABLED") {
+	case "1":
+		cgo = []bool{true}
+	case "0":
+		cgo = []bool{false}
 	}
-	dir := filepath.Join(scanRoot, filepath.FromSlash(path.Dir(from)))
-	match, err := ctxt.MatchFile(dir, path.Base(from))
-	return err != nil || match
+	for _, enabled := range cgo {
+		ctxt := build.Default
+		ctxt.CgoEnabled = enabled
+		ctxt.BuildTags = append(slices.Clone(ctxt.BuildTags), tags...)
+		ctxt.OpenFile = func(p string) (io.ReadCloser, error) {
+			f, err := os.Open(p) // #nosec G304 -- the queried source file under the scan root
+			if os.IsNotExist(err) {
+				return io.NopCloser(strings.NewReader("package p\n")), nil
+			}
+			return f, err
+		}
+		dir := filepath.Join(scanRoot, filepath.FromSlash(path.Dir(from)))
+		if match, err := ctxt.MatchFile(dir, path.Base(from)); err != nil || match {
+			return true
+		}
+	}
+	return false
 }
 
-// buildTags reads the tags of a -tags flag in the run's build flags.
+// buildTags reads the tags of a -tags flag in a list of go build flags.
 func buildTags(flags []string) []string {
 	for i, flag := range flags {
 		value, ok := strings.CutPrefix(flag, "-tags=")
