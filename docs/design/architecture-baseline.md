@@ -242,6 +242,10 @@ coverage name of its own.
 `internal/model/report` and `internal/report/ports` and nothing else from
 `internal/`. If it needs a field it cannot see, add the field to the report DTO
 and populate it in `internal/application/report.go` — the single projector.
+Add its row to `formatMatrix` in `cmd/archfit/format_matrix_test.go`. A
+digest format (`sarif`, `agent`) is exempt from layout parity, not from facts:
+give it a test that it carries the state's verdict and every active gate
+finding.
 
 **Add a CLI command.** Build the stages in `cmd/archfit`, call
 `application.StageExecutor.Execute`, render through a report adapter, translate

@@ -32,6 +32,13 @@ New:
   finding's `allowed_alternatives`, the task's constraints, and the SARIF
   result property `allowed_alternatives`; the docs reference ends the finding
   `why` and `constraint`. None of them changes a finding ID.
+- `--format agent` on `check` and `analyze` writes `archfit.agent-result.v1`:
+  the verdict, one `next_action` (`repair`, `ask_owner`, `restore_evidence`,
+  `report_blocked`, or `none`), and the active gate tasks grouped by edge into
+  repairs, in at most 8 KB. With `--base`, a repair whose tasks are all
+  `pre_existing` is outside the scope. A metric ratchet block names the
+  worsened metrics. The exit code stays the verdict. See
+  [The agent result](agent-feedback.md#the-agent-result---format-agent).
 
 Contract notes:
 
@@ -45,6 +52,9 @@ Contract notes:
 - `model_hash` does not include the allowlists. An allowlist edit changes
   `config_hash`, so the stored baseline becomes non-comparable until you run
   `archfit baseline` again.
+- New published schema `archfit.agent-result.schema.json` for
+  `archfit.agent-result.v1`. The architecture state, `archfit.state.schema.json`,
+  baseline v2, and the comparison fingerprints do not change.
 - Configs that do not use the new keys give byte-identical output.
 
 ## v2.4.1 — schema lists rule types

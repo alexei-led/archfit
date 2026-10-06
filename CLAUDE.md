@@ -741,6 +741,20 @@ init` emits v2 directly; owners update older configs manually before analysis.
   parity only — the state rides in `run.properties` and finding identity (ruleId,
   ruleIndex, `archfit/v1` fingerprint) is unchanged by the cutover.
 - **Report free text is bounded once, at projection** (`boundReportText` → `reportText`, `internal/application/report_text.go`, called last in `application.ProjectReport`). A strict state consumer (the archfit App) rejects any string with a control character or U+2028/U+2029, caps free text at 500 runes and an agent task's goal/constraints at 4096, and one bad string invalidates the whole report. Tool stderr and error chains reach coverage reasons verbatim (the ts/py/rust/ast-grep extractors, `acquisition.Collect`'s `err.Error()`), and joins carry them into unevaluated-rule reasons and dimension unknowns, so the bound lives at the single projection every command and format passes through — never at an extractor. Text already one line within the bound is byte-identical; otherwise ANSI CSI is dropped, whitespace/control runs collapse to one space, and the leading text is kept, cut at 400 runes (task text 3600) with `…`. Identity material — IDs, hashes, paths, tool versions, the measurement profile, validation commands — is never rewritten. The raw text goes to stderr only (`discloseRawCoverageReasons` in `StageExecutor.Execute`, rows the sanitizer changes; written directly, not via acquisition's `note()`, which would feed it back into ConfigWarnings). Contract: `cmd/archfit/report_text_contract_test.go` + `reporttest.AppTextViolations`.
+- **`--format agent` is a digest, decided in the renderer**
+  (`internal/output/agentout`, `archfit.agent-result.v1`, schema
+  `archfit.agent-result.schema.json`). `next_action` is decided ONCE, in
+  `agentout.decide`, from the report contract only (a report adapter may not
+  import assessment): active gate tasks + origin, unevaluated required rules
+  (`selector matches nothing:` → `ask_owner`, any other reason →
+  `restore_evidence`), coverage gaps with gate `fail`, and the ratchet twin of
+  `console.ratchetRegressions`. A blocked verdict never maps to `none`. Scope is
+  origin only: a repair is out of scope only when every grouped task is
+  `pre_existing`. The 8 KB budget runs after the decision and never moves it;
+  it cuts free text, never IDs, paths, edges, or `validate`. The format is
+  exempt from layout parity, like SARIF; `TestFormatMatrix_AgentDigestCarriesTheState`
+  holds it to the verdict and every active gate finding. The state gets no
+  agent-only field.
 - **`check` exit code IS the state verdict** (`application.outcomeFor`):
   `healthy` → 0, `needs_attention` → 2, `blocked` → 1, error → 3. Nothing else
   participates — a required-analyzer gate and a failing hard rule both reach the

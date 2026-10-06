@@ -19,7 +19,7 @@ type CheckCmd struct {
 	JSON     bool     `name:"json" help:"Output format: JSON (shorthand for --format json)."`
 	Markdown bool     `name:"markdown" help:"Output format: Markdown (shorthand for --format markdown)."`
 	Sarif    bool     `name:"sarif" help:"Output format: SARIF (shorthand for --format sarif)."`
-	Format   []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard"`
+	Format   []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard, agent. Repeatable." enum:"json,text,markdown,md,sarif,scorecard,agent"`
 
 	Progress string `name:"progress" help:"Progress reporting on stderr: auto, plain, none." enum:"auto,plain,none," default:""`
 	Quiet    bool   `short:"q" help:"Suppress progress output."`
@@ -43,7 +43,8 @@ Common runs:
   archfit check -c .archfit.yaml
   archfit check --json -c .archfit.yaml
   archfit check --base origin/main --format sarif > archfit.sarif
-  archfit check --require-tools -c .archfit.yaml`
+  archfit check --require-tools -c .archfit.yaml
+  archfit check --format agent -c .archfit.yaml   # agent digest: verdict, next_action, repairs`
 }
 
 func (c *CheckCmd) Run(deps *appDeps) error {

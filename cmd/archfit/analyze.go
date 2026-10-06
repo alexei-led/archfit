@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/output/agentout"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
@@ -37,8 +38,8 @@ type AnalyzeCmd struct {
 	Sarif    bool `name:"sarif"    help:"Output format: SARIF (shorthand for --format sarif)."`
 
 	// Format is the advanced repeatable form. Default is text when no shorthand
-	// flag is set. Valid values: json, text, markdown, md, sarif, scorecard.
-	Format []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard"`
+	// flag is set. Valid values: json, text, markdown, md, sarif, scorecard, agent.
+	Format []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard, agent. Repeatable." enum:"json,text,markdown,md,sarif,scorecard,agent"`
 
 	NoAdvisories bool     `name:"no-advisories" help:"Drop advisory findings: Balanced-Coupling advisories and violations of gate: warn rules. Dropped findings do not count as diagnostics."`
 	MinSeverity  string   `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
@@ -71,6 +72,8 @@ Common runs:
 
 --format json emits archfit.architecture-state.v1: verdict, decision,
 dimensions, coverage, findings, agent_tasks, and the coupling seam ledger.
+--format agent emits archfit.agent-result.v1: the verdict, one next_action,
+and the repairs grouped by edge, in at most 8 KB.
 
 AI agents should read agent_tasks[] from JSON output, make the constrained
 repair, then rerun the validation command in that task.
@@ -227,6 +230,7 @@ func analyzeRender(deps *appDeps, resp application.Response) error {
 		formatMD:        markdown.New(),
 		formatSarif:     sarif.New(),
 		formatScorecard: scorecard.New(),
+		formatAgent:     agentout.New(),
 	}
 	for _, format := range resp.Formats {
 		r, ok := renderers[format]
@@ -256,7 +260,7 @@ func appendAISummary(ctx context.Context, deps *appDeps, cfg config.Config, conf
 func llmReviewCanUseStdout(formats []string) bool {
 	for _, format := range formats {
 		switch format {
-		case formatJSON, formatSarif, formatScorecard:
+		case formatJSON, formatSarif, formatScorecard, formatAgent:
 			return false
 		}
 	}
