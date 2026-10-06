@@ -252,6 +252,10 @@ finding.
 the verdict to an exit code. If the command needs a decision, the decision
 belongs in `internal/assessment` or `internal/relationship`, not in `cmd`.
 
+A pre-edit query (`archfit policy`) never forks the evaluator: it builds the
+edge through the extractor's `QueryEdge` and judges it with the same rule pass
+(`evaluation.JudgeEdge` over `checkRules`).
+
 **Move a package.** Update the owning module's `paths:` in `.archfit.yaml` in
 the same commit. `TestSelfModelCoversEveryGoPackage` fails on an unowned
 package and `TestSelfModelHasNoDeadPathGlobs` fails on the glob you left

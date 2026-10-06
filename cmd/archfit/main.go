@@ -52,6 +52,7 @@ type cli struct {
 	Check    CheckCmd    `cmd:"" group:"analysis" help:"Run the architecture gate. Exits 1 when blocked, 2 when it needs attention, 3 on a config or tool error. Use in CI."`
 	Baseline BaselineCmd `cmd:"" group:"analysis" help:"Accept current findings as the gate baseline."`
 	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
+	Policy   PolicyCmd   `cmd:"" group:"analysis" help:"Pre-edit queries: which module owns a path, and whether a file may import a target."`
 
 	Doctor DoctorCmd `cmd:"" group:"setup" help:"Check analyzer/tool availability (use --fix to install missing tools)."`
 	Config ConfigCmd `cmd:"" group:"setup" help:"Create, sync, compare, and enrich the .archfit.yaml config."`
@@ -86,6 +87,8 @@ Config work:
   archfit config compare candidate.archfit.yaml           # one tree, two configs, report-only
 
 CI / agent loop:
+  archfit policy can-import internal/a/a.go internal/b   # before an edit: denied, allowed, ...
+  archfit check --config .archfit.yaml --format agent    # after an edit: one next_action
   archfit check --config .archfit.yaml --base origin/main --format json
   # on exit 1, read agent_tasks[] and rerun the validation command
   archfit analyze --markdown --config .archfit.yaml > archfit-report.md

@@ -759,6 +759,22 @@ init` emits v2 directly; owners update older configs manually before analysis.
   exempt from layout parity, like SARIF; `TestFormatMatrix_AgentDigestCarriesTheState`
   holds it to the verdict and every active gate finding. The state gets no
   agent-only field.
+- **`archfit policy can-import` is `check`'s evaluator on one edge**
+  (`application.PolicyQueryService`, `evaluation.JudgeEdge`). The edge is
+  spelled by the extractor's own `QueryEdge` (`registry.QueryEdge`: go/ts/py;
+  Rust has none and answers `not_decided`) with the extractor's own edge-kind
+  predicate (`ImportEdgeKind`), so node IDs and finding IDs equal the extracted
+  ones. It goes through `analysis.Analyze`, the shared rule pass
+  (`evaluation.checkRules`), `status.Assign` with the persisted baseline and
+  waivers, and `agenttask.Build` for the repair text. The importing file's
+  scope and production class come from `acquisition.Query` with Acquire's own
+  predicates (`outOfDeclaredScope`, `loc.ClassifyFile`). No `toolrun.Runner`,
+  no fact cache. Answer order: `denied` > `not_decided` (a fail-gated
+  `module_cycle` on a cross-module edge, `cycle` off Go, the seam gate in
+  `mode: fail`) > `allowed` (an allowlist that names the pair, or the layer
+  order) > `unconstrained`; an edge whose only violations are accepted debt is
+  `unconstrained`, never `allowed`. `cmd/archfit.TestPolicyCanImportAgreesWithCheck`
+  pins the agreement in both directions.
 - **`check` exit code IS the state verdict** (`application.outcomeFor`):
   `healthy` → 0, `needs_attention` → 2, `blocked` → 1, error → 3. Nothing else
   participates — a required-analyzer gate and a failing hard rule both reach the

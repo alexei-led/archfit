@@ -51,6 +51,8 @@ Use this when you know the job, not the command.
 | fail CI on blocking findings or warnings                             | `archfit check -c .archfit.yaml`                                                                              |
 | accept the current findings as the baseline                          | `archfit baseline -c .archfit.yaml`                                                                           |
 | understand one finding in detail                                     | `archfit explain <fingerprint-prefix> -c .archfit.yaml`                                                       |
+| ask which module owns a path before an edit                          | `archfit policy where <path> -c .archfit.yaml`                                                                |
+| ask whether a file may import a target before an edit                | `archfit policy can-import <from> <target> -c .archfit.yaml`                                                  |
 | verify analyzers are installed, or install what archfit can install  | `archfit doctor` or `archfit doctor --fix`                                                                    |
 | create the first config file for a repo                              | `archfit config init --root .`                                                                                |
 | sync an existing config to the current repo structure                | `archfit config update -c .archfit.yaml`                                                                      |
@@ -67,15 +69,15 @@ is the architecture verdict, nothing else.
 | Code | Meaning                                                                                                                                                     | Commands that produce it                                                                                                                                                                                                             |
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `0`  | `healthy` — every dimension measured, every hard gate passing, no active diagnostic. For `analyze`, any valid report.                                       | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config lint`, `archfit config compare`, `archfit config enrich ...` |
-| `1`  | `blocked` — an active hard-gate finding, a required analyzer that did not run under `--require-tools`, or a tripped metric ratchet (`metrics.<name>.gate`). For `config lint`, at least one error diagnostic. | `archfit check`, `archfit config lint`; `archfit analyze` never exits `1` on a successful run |
-| `2`  | `needs_attention` — no blocker, but an active diagnostic or a partial/unmeasured dimension.                                                                 | `archfit check`                                                                                                                                                                                                                      |
+| `1`  | `blocked` — an active hard-gate finding, a required analyzer that did not run under `--require-tools`, or a tripped metric ratchet (`metrics.<name>.gate`). For `config lint`, at least one error diagnostic. For `policy can-import`, a denied target. | `archfit check`, `archfit config lint`, `archfit policy can-import`; `archfit analyze` never exits `1` on a successful run |
+| `2`  | `needs_attention` — no blocker, but an active diagnostic or a partial/unmeasured dimension. For `policy can-import`, no target denied and a target not decided. | `archfit check`, `archfit policy can-import`                                                                                                                                                                                         |
 | `3`  | Usage, parse, config, or runtime error. No valid report was produced.                                                                                       | All commands                                                                                                                                                                                                                         |
 
 Notes:
 
 - `archfit analyze` always exits `0` after a successful analysis, whatever the verdict.
 - `archfit analyze --require-tools` only changes the rendered verdict. It does not change the exit code on success.
-- `archfit baseline`, `archfit explain`, `archfit doctor`, and the `config` commands are success-or-error commands: `0` or `3`.
+- `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit policy where`, and the `config` commands are success-or-error commands: `0` or `3`.
   `archfit config lint` is the exception: it exits `1` when it reports an error diagnostic.
 - Exit `0` is reachable when all nine dimensions are measured, hard gates pass,
   and no diagnostic is active. Missing supplied coverage, a non-comparable
@@ -331,6 +333,101 @@ archfit explain 5fd7d1c9 -c .archfit.yaml
 archfit explain 5fd7d1c9 --ai-summary -c .archfit.yaml
 archfit explain 5fd7d1c9 --refresh -c .archfit.yaml
 archfit explain 5fd7d1c9 -r ../repo -c ./policy/.archfit.yaml
+```
+
+## `archfit policy where`
+
+Purpose:
+
+- Tell an agent or a person, before an edit, which module owns a path.
+- Read the config only. No analyzer runs and the fact cache is not read.
+
+Synopsis:
+
+```sh
+archfit policy where <path>... [flags]
+```
+
+The answer is one line of JSON, `archfit.policy-answer.v1` with
+`"command": "where"`. For each path it gives:
+
+| Field                       | Meaning                                                                                                   |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `path`                      | The path, relative to the analysis root.                                                                  |
+| `language`, `selector`      | The language of a source file and the node selector rules match (Go package dir, Python dotted module).   |
+| `excluded`                  | `true` when `check` never reads the path: an `exclude:` glob matches it, or its language is switched off. |
+| `module`                    | The most specific declared module that owns the path. Absent when no module owns it.                      |
+| `layer`, `role`, `owner`    | The module's declared values. `owner` is the declared owner only; CODEOWNERS is not read.                 |
+| `public`                    | The module's public surface.                                                                              |
+| `depends_on`, `visible_to`  | The module's allowlists.                                                                                  |
+| `rules`                     | Every rule whose selector names the path or its module, with `match`: `from`, `to`, `from_module`, `to_module`, `module`, or `layer`. This list is for reading. It is not a verdict. |
+
+Flags:
+
+| Flag           | Type | Default                 | Effect                                       |
+| -------------- | ---- | ----------------------- | -------------------------------------------- |
+| `-c, --config` | path | `.archfit.yaml`         | Config file.                                 |
+| `--root`       | path | directory of `--config` | The root that the paths are relative to.     |
+
+Exit codes: `0` answered, `3` usage or config error.
+
+## `archfit policy can-import`
+
+Purpose:
+
+- Tell an agent, before an edit, whether a file may import a target.
+- Judge the import with the same relationship analysis, rule pass, baseline,
+  and waivers as `check`. A denied import is the gate finding `check` would
+  report for it, with the same rule ID and finding ID.
+- Run no analyzer and never read the fact cache. A query takes about 50 ms.
+
+Synopsis:
+
+```sh
+archfit policy can-import <from> <target>... [flags]
+```
+
+`<from>` is the importing source file. `<target>` is spelled the way rules
+match it:
+
+| Language   | `<target>`                                                                                   |
+| ---------- | -------------------------------------------------------------------------------------------- |
+| Go         | A package dir relative to the root, or an import path of a loaded module.                    |
+| TypeScript | The imported source file relative to the root, after resolution (not the import specifier).  |
+| Python     | A dotted module, or a `.py` file. A file maps to its dotted name with a `src/` prefix removed. |
+| Rust       | Not supported: crate roots need `cargo metadata`, so the answer is `not_decided`.             |
+
+The answer is one line of JSON, `archfit.policy-answer.v1` with
+`"command": "can-import"`, and one entry in `answers` per target:
+
+| `answer`        | Meaning                                                                                                                                       |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `denied`        | A fail-gated rule fires on the import with an active status. Each entry of `denials` has the finding ID, the rule ID, the why, and the repair `goal` and `constraints`. |
+| `not_decided`   | No rule denies the import, but a fail-gated rule that needs the whole graph can still block it: `module_cycle` on a cross-module import, `cycle` on a TypeScript or Python import, or the seam gate in `mode: fail`. Also every Rust import. `reasons` names them. |
+| `allowed`       | An allowlist (`depends_on` or `visible_to`) or the layer order permits the import. `reasons` names it.                                       |
+| `unconstrained` | No rule decides the import. This is not permission. It is also the answer for an import from a file outside the declared scope, and for an import whose only violations the baseline or a waiver accepts (listed in `accepted`). |
+
+`advisories` lists the findings of `gate: warn` rules. They never deny.
+`next` says what to do. Never edit the policy, the baseline, or the waivers
+to turn a `denied` answer into another one.
+
+Flags: the same as `archfit policy where`.
+
+Exit codes:
+
+| Code | Meaning                                       |
+| ---- | --------------------------------------------- |
+| `0`  | No target denied, and every target decided.   |
+| `1`  | A target is denied.                           |
+| `2`  | No target denied, and a target is not decided. |
+| `3`  | Usage or config error.                        |
+
+Examples:
+
+```sh
+archfit policy can-import internal/relationship/scoring/scorer_book.go internal/toolrun
+archfit policy can-import web/src/app.ts web/src/db/client.ts
+archfit policy can-import src/myapp/handlers.py myapp.domain
 ```
 
 ## `archfit doctor`

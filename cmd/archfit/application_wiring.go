@@ -149,3 +149,22 @@ func savedDimensions(in []application.BaselineDimension) []baseline.DimensionSna
 	}
 	return out
 }
+
+// bundleDirOf is the directory that holds a config bundle: the config file's.
+func bundleDirOf(configPath string) string { return filepath.Dir(configPath) }
+
+// newPolicyQuery composes the tool-free acquisition behind `archfit policy`:
+// the analysis root (--root, else the config directory) under the config's
+// run projections.
+func newPolicyQuery(configPath, root string, cfg config.Config) acquisition.Query {
+	if root == "" {
+		root = bundleDirOf(configPath)
+	}
+	return acquisition.Query{Root: root, Options: cfg.RunOptions()}
+}
+
+// newPolicyQueryService composes `archfit policy can-import`: the tool-free
+// edge query and the persisted baseline. No runner and no fact cache.
+func newPolicyQueryService(configPath, root string, cfg config.Config) application.PolicyQueryService {
+	return application.PolicyQueryService{Edges: newPolicyQuery(configPath, root, cfg), Baseline: baselineLoaderAdapter{}}
+}

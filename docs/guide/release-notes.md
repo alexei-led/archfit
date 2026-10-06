@@ -39,6 +39,16 @@ New:
   `pre_existing` is outside the scope. A metric ratchet block names the
   worsened metrics. The exit code stays the verdict. See
   [The agent result](agent-feedback.md#the-agent-result---format-agent).
+- `archfit policy where <path>...` and `archfit policy can-import <from>
+  <target>...` answer before an edit, in about 50 ms. They read the config,
+  the waivers, and the baseline, and run no analyzer. `where` names the module
+  that owns a path, its layer, role, owner, public surface, and allowlists,
+  whether `check` reads the path, and the rules that select it. `can-import`
+  answers `denied`, `not_decided`, `allowed`, or `unconstrained` for each
+  target, with the same relationship analysis, rule pass, and finding IDs as
+  `check`. It exits `1` when a target is denied and `2` when a target is not
+  decided. Rust imports are not decided: crate roots need `cargo metadata`.
+  See [`archfit policy can-import`](commands.md#archfit-policy-can-import).
 
 Contract notes:
 
@@ -52,6 +62,8 @@ Contract notes:
 - `model_hash` does not include the allowlists. An allowlist edit changes
   `config_hash`, so the stored baseline becomes non-comparable until you run
   `archfit baseline` again.
+- New answer document `archfit.policy-answer.v1` for `archfit policy`. It
+  has no published schema yet; the App does not read it.
 - New published schema `archfit.agent-result.schema.json` for
   `archfit.agent-result.v1`. The architecture state, `archfit.state.schema.json`,
   baseline v2, and the comparison fingerprints do not change.
