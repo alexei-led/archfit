@@ -400,10 +400,7 @@ func (e *Extractor) parseAndNormalize(data []byte, root string) (graph.Facts, ev
 		emitNode(he.Importer)
 		emitNode(he.Imported)
 
-		edgeKind := graph.EdgeKindImports
-		if e.matchesInternal(he.Imported) {
-			edgeKind = graph.EdgeKindUsesInternal
-		}
+		edgeKind := ImportEdgeKind(e.cfg.Internal, he.Imported)
 
 		// Strength hint: intrusive is assigned when the edge reaches into PEP 8-private
 		// internals — either via a private module name ("pkg._internal") or via an
@@ -581,7 +578,10 @@ func hasPrivateSymbolImport(line string) bool {
 	return false
 }
 
-// matchesInternal reports whether the dotted module name matches any internal glob.
+// ImportEdgeKind is the kind of an import edge to the dotted module
+// imported: uses_internal when a configured internal glob matches it, else
+// imports. The extractor and `archfit policy can-import` share it, so a
+// queried edge keys its findings exactly as the extracted one does.
 //
 // Python internal: globs are written in DOTTED module form (e.g.
 // "myapp.b._internal.*"), the same form used by paths: and by
@@ -589,13 +589,13 @@ func hasPrivateSymbolImport(line string) bool {
 // which silently disagreed with classifyStrength (it matches the dotted path), so a
 // glob could set the uses_internal edge kind without setting strength=intrusive, or
 // vice versa. Matching the dotted form here keeps edge-kind and strength consistent.
-func (e *Extractor) matchesInternal(dotted string) bool {
-	for _, pattern := range e.cfg.Internal {
-		if matched, _ := doublestar.Match(pattern, dotted); matched {
-			return true
+func ImportEdgeKind(internal []string, imported string) graph.EdgeKind {
+	for _, pattern := range internal {
+		if matched, _ := doublestar.Match(pattern, imported); matched {
+			return graph.EdgeKindUsesInternal
 		}
 	}
-	return false
+	return graph.EdgeKindImports
 }
 
 // absentCoverage returns a Coverage record indicating the tool was not found.

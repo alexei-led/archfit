@@ -2,6 +2,9 @@
 package registry
 
 import (
+	"errors"
+	"fmt"
+	"path"
 	"slices"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
@@ -10,6 +13,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/factcache"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -55,6 +59,12 @@ type Descriptor struct {
 	// Store.RefreshMode lets a caller force fresh extraction while still writing
 	// the refreshed fact back to disk.
 	NewExtractor func(toolrun.Runner, evidenceports.ExtractConfig, *factcache.Store) evidenceports.Extractor
+	// QueryEdge builds the one-edge facts `archfit policy can-import` judges:
+	// an import of target by the source file from, spelled exactly as the
+	// language's extractor spells it, without running a tool. Nil when the
+	// language cannot spell an edge without its tool (Rust needs cargo
+	// metadata for crate roots).
+	QueryEdge func(root string, cfg evidenceports.ExtractConfig, from, target string) (graph.Facts, error)
 	// PrimaryTool is the coverage name of the dependency-graph analyzer this
 	// language unlocks (as it appears in ToolCoverage, e.g. "go/packages").
 	PrimaryTool string
@@ -93,6 +103,7 @@ var languages = []Descriptor{
 			ex.Cache = fc
 			return ex
 		},
+		QueryEdge:   golang.QueryEdge,
 		PrimaryTool: ToolGoPackages,
 		InstallHint: "https://go.dev/dl (bundled with the Go toolchain)",
 		DoctorTools: []Tool{
@@ -109,6 +120,7 @@ var languages = []Descriptor{
 			ex.Cache = fc
 			return ex
 		},
+		QueryEdge:   ts.QueryEdge,
 		PrimaryTool: ToolDepCruiser,
 		InstallHint: "npm install -g dependency-cruiser",
 		DoctorTools: []Tool{
@@ -125,6 +137,7 @@ var languages = []Descriptor{
 		NewExtractor: func(r toolrun.Runner, cfg evidenceports.ExtractConfig, _ *factcache.Store) evidenceports.Extractor {
 			return py.New(r, cfg)
 		},
+		QueryEdge:   py.QueryEdge,
 		PrimaryTool: ToolGrimp,
 		InstallHint: "uv tool install grimp / pip install grimp",
 		DoctorTools: []Tool{
@@ -275,4 +288,38 @@ func PrimaryTools() []string {
 		tools = append(tools, lang.PrimaryTool)
 	}
 	return tools
+}
+
+// ErrNoQueryEdge reports that the language of a queried file cannot spell an
+// edge without running its tool.
+var ErrNoQueryEdge = errors.New("no tool-free edge for this language")
+
+// LanguageForFile returns the registry language whose source extensions
+// include file's, or "" when none does.
+func LanguageForFile(file string) string {
+	ext := path.Ext(file)
+	for _, d := range languages {
+		if slices.Contains(graph.BuiltinConventions.Lookup(d.ID).FileExtensions, ext) {
+			return d.ID
+		}
+	}
+	return ""
+}
+
+// QueryEdge builds the one-edge facts for an import of target by the source
+// file from, through the language that owns from. It wraps ErrNoQueryEdge
+// when that language has no tool-free edge; a file no supported language
+// owns is a plain error.
+func QueryEdge(root string, cfgs Configs, from, target string) (graph.Facts, error) {
+	language := LanguageForFile(from)
+	for _, d := range languages {
+		if d.ID != language {
+			continue
+		}
+		if d.QueryEdge == nil {
+			return graph.Facts{}, fmt.Errorf("%s: %w", language, ErrNoQueryEdge)
+		}
+		return d.QueryEdge(root, cfgs[language], from, target)
+	}
+	return graph.Facts{}, fmt.Errorf("%q is not a source file of a supported language", from)
 }

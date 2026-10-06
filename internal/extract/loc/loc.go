@@ -139,6 +139,13 @@ func RunWithConfig(root string, cfg syntax.FileClassConfig) (map[string]int, map
 	return locMap, classes, cov, nil
 }
 
+// ClassifyFile classifies one ScanRoot-relative source file as the walk does,
+// generated-code header sniff included, without walking the tree. lang is the
+// file's language.
+func ClassifyFile(root, rel, lang string, cfg syntax.FileClassConfig) fileclass.FileClass {
+	return syntax.ClassifyFile(lang, rel, readHeader(filepath.Join(root, filepath.FromSlash(rel))), cfg)
+}
+
 // readHeader reads the first headerReadSize bytes of a file for the generated-
 // code marker sniff. Returns nil on any error (header sniff is then skipped).
 func readHeader(path string) []byte {
