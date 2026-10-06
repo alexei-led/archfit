@@ -48,7 +48,7 @@ rules:
 	if !strings.Contains(out, ".archfit.yaml failed to load") {
 		t.Errorf("expected doctor to surface the config load error, got:\n%s", out)
 	}
-	if !strings.Contains(out, "requires both from and to") {
+	if !strings.Contains(out, "requires from or from_module") {
 		t.Errorf("expected the load error to explain the empty globs, got:\n%s", out)
 	}
 }

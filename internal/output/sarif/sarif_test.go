@@ -242,3 +242,33 @@ func TestRender_ResultPropertiesCarryStateGrouping(t *testing.T) {
 		t.Errorf("a baselined gate finding keeps its kind: %v", baselined)
 	}
 }
+
+// TestRender_CarriesRuleRationaleAndAlternatives pins the rule rationale in
+// SARIF: the message is the finding why, which ends with the rationale, and
+// the declared alternatives ride in the result properties only when a rule
+// declares them.
+func TestRender_CarriesRuleRationaleAndAlternatives(t *testing.T) {
+	d := sampleDiagnostic()
+	d.Findings[0].Why = "a uses b internals — Domain code stays free of I/O"
+	d.Findings[0].Alternatives = []string{"Depend on a port"}
+	_, doc := render(t, d)
+	results := doc["runs"].([]any)[0].(map[string]any)["results"].([]any)
+	for _, raw := range results {
+		res := raw.(map[string]any)
+		props := res["properties"].(map[string]any)
+		alternatives, present := props["allowed_alternatives"]
+		switch res["fingerprints"].(map[string]any)["archfit/v1"] {
+		case fpGate:
+			if msg := res["message"].(map[string]any)["text"]; msg != d.Findings[0].Why {
+				t.Errorf("message = %v, want the why with its rationale", msg)
+			}
+			if got, _ := alternatives.([]any); len(got) != 1 || got[0] != "Depend on a port" {
+				t.Errorf("allowed_alternatives = %v, want [Depend on a port]", alternatives)
+			}
+		default:
+			if present {
+				t.Errorf("a finding with no alternatives carries allowed_alternatives: %v", props)
+			}
+		}
+	}
+}

@@ -367,7 +367,7 @@ func TestModuleCycle_GateAndValidation(t *testing.T) {
 
 	for _, def := range []policy.RuleDef{
 		{ID: "scoped_from", Type: typeModuleCycle, From: globBilling},
-		{ID: "scoped_to", Type: typeModuleCycle, To: "shipping/**"},
+		{ID: "scoped_to", Type: typeModuleCycle, To: globShipping},
 	} {
 		if _, err := rules.New(policy.RuleConfig{Rules: []policy.RuleDef{def}}); err == nil || !strings.Contains(err.Error(), def.ID) {
 			t.Errorf("%s: err = %v, want a config error naming the rule", def.ID, err)

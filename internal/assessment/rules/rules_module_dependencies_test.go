@@ -19,6 +19,8 @@ const (
 	violatesVisibleTo      = "visible_to"
 	violatesBoth           = "depends_on,visible_to"
 	globBilling            = "billing/**"
+	globShipping           = "shipping/**"
+	globCatalog            = "catalog/**"
 	modCoreCrate           = "core-mod"
 	modAppCrate            = "app-mod"
 )
@@ -29,9 +31,9 @@ const (
 func allowlistModules() map[string]policy.ModuleDef {
 	return map[string]policy.ModuleDef{
 		modBilling:  {Paths: []string{globBilling}, Public: []string{"billing/api"}, VisibleTo: []string{modShipping}},
-		modShipping: {Paths: []string{"shipping/**"}, DependsOn: []string{modBilling, modKernel}},
+		modShipping: {Paths: []string{globShipping}, DependsOn: []string{modBilling, modKernel}},
 		modKernel:   {Paths: []string{"shared/**"}, DependsOn: []string{}},
-		modCatalog:  {Paths: []string{"catalog/**"}},
+		modCatalog:  {Paths: []string{globCatalog}},
 	}
 }
 

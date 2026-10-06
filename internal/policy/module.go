@@ -67,13 +67,16 @@ type ModuleDef struct {
 	ReviewedAt time.Time `yaml:"reviewed_at,omitempty"`
 	ReviewedBy string    `yaml:"reviewed_by"`
 	// DependsOn is the outbound allowlist: the only declared modules this
-	// module may import. An absent key leaves the module unconstrained; an
-	// empty list allows no first-party module. The module_dependencies rule
-	// enforces it; external targets are out of its scope.
+	// module may import. Each entry is a module name or a module selector
+	// ("layer:<name>", "role:<role>", or a glob over module names). An absent
+	// key leaves the module unconstrained; an empty list allows no first-party
+	// module. The module_dependencies rule enforces it; external targets are
+	// out of its scope.
 	DependsOn []string `yaml:"depends_on,omitempty"`
 	// VisibleTo is the inbound allowlist: the only declared modules that may
-	// import this module. An absent key leaves the module visible to every
-	// module; an importer that no module owns is always denied.
+	// import this module, with the same entry forms as depends_on. An absent
+	// key leaves the module visible to every module; an importer that no
+	// module owns is always denied.
 	VisibleTo []string `yaml:"visible_to,omitempty"`
 }
 
@@ -256,20 +259,82 @@ const (
 // from on module to, in the order depends_on, visible_to; nil allows it. from
 // is "" for an importer no declared module owns: no depends_on applies to it,
 // and a visible_to list always denies it. to must be a declared module, and a
-// dependency inside one module is never denied. This is the one predicate the
-// module_dependencies rule decides with.
+// dependency inside one module is never denied. A list entry is a module
+// selector (SelectsModule). This is the one predicate the module_dependencies
+// rule decides with.
 func (mm ModuleMap) DeniedDependency(from, to string) []string {
 	if from == to {
 		return nil
 	}
 	var violates []string
-	if allow := mm.modules[from].DependsOn; from != "" && allow != nil && !slices.Contains(allow, to) {
+	if allow := mm.modules[from].DependsOn; from != "" && allow != nil && !mm.anySelects(allow, to) {
 		violates = append(violates, allowlistDependsOn)
 	}
-	if allow := mm.modules[to].VisibleTo; allow != nil && (from == "" || !slices.Contains(allow, from)) {
+	if allow := mm.modules[to].VisibleTo; allow != nil && (from == "" || !mm.anySelects(allow, from)) {
 		violates = append(violates, allowlistVisibleTo)
 	}
 	return violates
+}
+
+// anySelects reports whether one of selectors selects module.
+func (mm ModuleMap) anySelects(selectors []string, module string) bool {
+	return slices.ContainsFunc(selectors, func(selector string) bool { return mm.SelectsModule(selector, module) })
+}
+
+// Module selector prefixes. Any other selector is a glob over module names.
+const (
+	selectorLayerPrefix = "layer:"
+	selectorRolePrefix  = "role:"
+)
+
+// SelectsModule reports whether a module selector selects the declared module
+// named module: "layer:<name>" selects the modules with that layer,
+// "role:<role>" the modules with that role, and any other selector is a
+// doublestar glob over module names, so an exact name selects that module.
+// Only declared modules are ever selected.
+func (mm ModuleMap) SelectsModule(selector, module string) bool {
+	def, declared := mm.modules[module]
+	if !declared {
+		return false
+	}
+	if layer, ok := strings.CutPrefix(selector, selectorLayerPrefix); ok {
+		return layer != "" && def.Layer == layer
+	}
+	if role, ok := strings.CutPrefix(selector, selectorRolePrefix); ok {
+		return role != "" && string(def.Role) == role
+	}
+	matched, _ := doublestar.Match(selector, module)
+	return matched
+}
+
+// ModulesSelected returns the declared modules a module selector selects, in
+// name order; nil when it selects none.
+func (mm ModuleMap) ModulesSelected(selector string) []string {
+	var out []string
+	for _, name := range mm.names {
+		if mm.SelectsModule(selector, name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// Paths returns the declared path globs of the named module; nil for an
+// undeclared module.
+func (mm ModuleMap) Paths(name string) []string {
+	return slices.Clone(mm.modules[name].Paths)
+}
+
+// ValidModuleSelector reports whether selector is well formed: a "layer:" or
+// "role:" selector names a value, and a glob is a valid doublestar pattern.
+// A well-formed selector may still select no module.
+func (mm ModuleMap) ValidModuleSelector(selector string) bool {
+	for _, prefix := range []string{selectorLayerPrefix, selectorRolePrefix} {
+		if value, ok := strings.CutPrefix(selector, prefix); ok {
+			return value != ""
+		}
+	}
+	return selector != "" && doublestar.ValidatePattern(selector)
 }
 
 // DeclaresAllowlist reports whether the named module declares depends_on or

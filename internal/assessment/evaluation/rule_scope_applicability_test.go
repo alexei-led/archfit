@@ -23,6 +23,15 @@ const (
 	typeModCycle = "module_cycle"
 	typeLayerDir = "forbidden_layer_direction"
 	modWebUI     = "web_ui"
+
+	reasonDepCruiserAbsent = "dependency-cruiser evidence is absent"
+	selLayerDomain         = "layer:domain"
+	selLayerNowhere        = "layer:nowhere"
+	modWarehouse           = "warehouse"
+	layerNameDomain        = "domain"
+	layerNameApp           = "app"
+	pkgHTTP                = "net/http"
+	modPlace               = "place"
 )
 
 // unevaluatedReasons maps each listed required rule to its reason.
@@ -93,7 +102,7 @@ func TestRuleScopeSkipsLanguagesTheExtractorSaysAreAbsent(t *testing.T) {
 		{name: "forbidden_layer_direction over absent typescript", modules: tsOnlyModules,
 			rule: policy.RuleDef{Type: typeLayerDir}},
 		{name: "module_cycle with the typescript producer missing", modules: tsOnlyModules, present: true,
-			rule: policy.RuleDef{Type: typeModCycle}, wantReason: "dependency-cruiser evidence is absent"},
+			rule: policy.RuleDef{Type: typeModCycle}, wantReason: reasonDepCruiserAbsent},
 		{name: "dependency rule aimed only at absent typescript",
 			rule:       policy.RuleDef{Type: ruleForbidden, From: webUIGlob, To: selBilling},
 			wantReason: onlyUnanalysed},
@@ -338,7 +347,7 @@ func TestModuleDependenciesScopeIsTheDeclaringModules(t *testing.T) {
 		{name: "allowlist on the TypeScript module", modules: map[string]policy.ModuleDef{
 			modBilling: {Paths: []string{selBilling}},
 			modWebUI:   {Paths: []string{webUIGlob}, DependsOn: []string{modBilling}},
-		}, wantReason: "dependency-cruiser evidence is absent"},
+		}, wantReason: reasonDepCruiserAbsent},
 		{name: "no module declares an allowlist", modules: map[string]policy.ModuleDef{
 			modBilling: {Paths: []string{selBilling}},
 			modWebUI:   {Paths: []string{webUIGlob}},
@@ -359,4 +368,149 @@ func TestModuleDependenciesScopeIsTheDeclaringModules(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestModuleSelectorScopeAndVacuity pins a forbidden_dependency rule with
+// module selectors: a from_module that selects a Go module stays evaluated
+// while the TypeScript producer is missing, a from_module that selects the
+// TypeScript module waits for it unless its to_module speaks another language
+// (no producer emits a cross-language edge), a selector that selects no module is a
+// policy defect named by side, and a guard over such a selector holds.
+func TestModuleSelectorScopeAndVacuity(t *testing.T) {
+	modules := map[string]policy.ModuleDef{
+		modBilling: {Paths: []string{selBilling}, Layer: layerNameDomain},
+		modWebUI:   {Paths: []string{webUIGlob}, Layer: "ui"},
+	}
+	for _, tc := range []struct {
+		name       string
+		rule       policy.RuleDef
+		wantReason string
+	}{
+		{name: "from_module on a Go module", rule: policy.RuleDef{Type: ruleForbidden, FromModule: selLayerDomain, To: pkgHTTP}},
+		{name: "from_module on the TypeScript module", rule: policy.RuleDef{Type: ruleForbidden, FromModule: "layer:ui", To: "react"},
+			wantReason: reasonDepCruiserAbsent},
+		{name: "TypeScript module to a Go module cannot be an edge", rule: policy.RuleDef{Type: ruleForbidden, FromModule: "layer:ui", ToModule: modBilling}},
+		{name: "from_module selects nothing", rule: policy.RuleDef{Type: ruleForbidden, FromModule: selLayerNowhere, To: pkgHTTP},
+			wantReason: "selector matches nothing: from_module " + selLayerNowhere},
+		{name: "to_module selects nothing", rule: policy.RuleDef{Type: ruleForbidden, FromModule: modBilling, ToModule: modWarehouse},
+			wantReason: "selector matches nothing: to_module " + modWarehouse},
+		{name: "guard over a module selector", rule: policy.RuleDef{Type: ruleForbidden, FromModule: "**", ToModule: "legacy", Guard: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			diag, in := typescriptAbsentFixture()
+			diag.CoverageGaps = []modevidence.CoverageGap{{Tool: toolDepCruiser}}
+			in.Facts.UnanalysedFiles = nil
+			withModules(&in, modules)
+			withRule(&in, tc.rule)
+			want := map[string]string{}
+			if tc.wantReason != "" {
+				want[ruleIDScoped] = tc.wantReason
+			}
+			if got := unevaluatedReasons(diag, in); !maps.Equal(got, want) {
+				t.Fatalf("unevaluated_required_rules = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// TestToModuleScopeNeverFallsBackToTheSourceSide pins the target side of a
+// module-selector rule: a to_module whose modules the inventory cannot judge
+// (a crate::mod path without the module graph) keeps the rule unevaluated with
+// that reason; a to_module whose modules own only source no producer analyses,
+// or no source at all, is reported like a path glob that matches the same
+// source. None counts as an evaluated rule.
+func TestToModuleScopeNeverFallsBackToTheSourceSide(t *testing.T) {
+	t.Run("target the inventory cannot judge", func(t *testing.T) {
+		diag, in := rustModuleFixture()
+		in.Facts.RustModuleNodes = nil
+		withModules(&in, map[string]policy.ModuleDef{
+			modBilling: {Paths: []string{selBilling}},
+			modPlace:   {Paths: []string{rustModPlace}},
+		})
+		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modBilling, ToModule: modPlace})
+		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; !strings.Contains(got, "module graph") {
+			t.Errorf("unevaluated reason = %q, want the missing module graph named", got)
+		}
+	})
+	t.Run("target with no analysed source", func(t *testing.T) {
+		diag, in := typescriptAbsentFixture()
+		withModules(&in, map[string]policy.ModuleDef{
+			modBilling: {Paths: []string{selBilling}},
+			modWebUI:   {Paths: []string{webUIGlob}},
+		})
+		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modBilling, ToModule: modWebUI})
+		want := "selector matches only source no dependency producer analyses: to_module " + modWebUI
+		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != want {
+			t.Errorf("unevaluated reason = %q, want %q", got, want)
+		}
+	})
+	const generic = "rule scope cannot be established from the supported source inventory"
+	for _, tc := range []struct {
+		name, path, want string
+	}{
+		{"target that provably owns no source", "internal/moved/x.go", "selector matches nothing: to_module moved"},
+		{"target the inventory cannot judge from a directory glob", "internal/moved/**", generic},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			diag, in := typescriptAbsentFixture()
+			withModules(&in, map[string]policy.ModuleDef{
+				modBilling: {Paths: []string{selBilling}},
+				"moved":    {Paths: []string{tc.path}},
+			})
+			withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modBilling, ToModule: "moved"})
+			if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != tc.want {
+				t.Errorf("unevaluated reason = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRustModuleSelectorsFollowModuleRuleScope pins module selectors over Rust
+// modules: a crate::mod path the module graph lacks, or whose every node a
+// more specific module owns, matches nothing; a module
+// declared by package name, whose files have no crate identity without cargo
+// metadata, abstains rather than reading as empty.
+func TestRustModuleSelectorsFollowModuleRuleScope(t *testing.T) {
+	const generic = "rule scope cannot be established from the supported source inventory"
+	t.Run("crate::mod path missing from the module graph", func(t *testing.T) {
+		diag, in := rustModuleFixture()
+		withModules(&in, map[string]policy.ModuleDef{
+			modPlace: {Paths: []string{rustModPlace}},
+			"gone":   {Paths: []string{"core::gone"}},
+		})
+		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modPlace, ToModule: "gone"})
+		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != "selector matches nothing: to_module gone" {
+			t.Errorf("unevaluated reason = %q, want the dead crate::mod module named", got)
+		}
+	})
+	t.Run("crate-wide catch-all every node of which a specific module owns", func(t *testing.T) {
+		diag, in := rustModuleFixture()
+		in.Facts.RustModuleNodes = []string{rustModPlace, rustModTypes}
+		withModules(&in, map[string]policy.ModuleDef{
+			"remainder": {Paths: []string{"core::**"}},
+			modPlace:    {Paths: []string{rustModPlace}},
+			"types":     {Paths: []string{rustModTypes}},
+		})
+		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: modPlace, ToModule: "remainder"})
+		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != "selector matches nothing: to_module remainder" {
+			t.Errorf("unevaluated reason = %q, want the fully shadowed module named", got)
+		}
+	})
+	t.Run("package-name module without crate roots", func(t *testing.T) {
+		diag, in := rustModuleFixture()
+		in.Facts.SourceSelectors[rustLibFile] = ""
+		withModules(&in, map[string]policy.ModuleDef{
+			rustCrate:  {Paths: []string{rustCrate}, Layer: layerNameDomain},
+			modBilling: {Paths: []string{selBilling}},
+		})
+		withRule(&in, policy.RuleDef{Type: ruleForbidden, FromModule: selLayerDomain, ToModule: modBilling})
+		if got := unevaluatedReasons(diag, in)[ruleIDScoped]; got != generic {
+			t.Errorf("unevaluated reason = %q, want the generic abstention", got)
+		}
+		for _, d := range evaluation.LintPolicy(in.Policy, in.Facts) {
+			if strings.HasPrefix(d.Path, "rules[") {
+				t.Errorf("lint reports %+v, want a module selector it cannot judge left alone", d)
+			}
+		}
+	})
 }

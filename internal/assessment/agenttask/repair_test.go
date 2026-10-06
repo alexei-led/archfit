@@ -120,3 +120,58 @@ func TestModuleDependenciesTaskNamesThePairAndTheOwnerPath(t *testing.T) {
 		})
 	}
 }
+
+// TestTaskCarriesTheRuleRationale pins the one agenttask change for rule
+// rationale: the rationale follows the rule's constraint, the alternatives
+// follow it, and the target's public surface stays out for a rule that
+// forbids the route. A module-selector finding names its modules in the goal.
+func TestTaskCarriesTheRuleRationale(t *testing.T) {
+	f := finding.NewKeyed("domain_no_http", "module_dependency", "module:"+seamTo, "path:net/http")
+	f.Edge.From, f.Edge.To = finding.Endpoint{Module: seamTo}, finding.Endpoint{Path: "net/http"}
+	f.Constraint = "Remove the dependency (see docs/adr/003.md)"
+	f.Rationale = "Domain code stays free of I/O"
+	f.Alternatives = []string{"Depend on a port in the application layer"}
+	tasks := agenttask.Build([]finding.Finding{f}, map[string]string{"domain_no_http": ruleTypeForbidden},
+		map[string][]string{seamTo: {targetPublicGlob}}, nil, nil, nil, agenttask.PathResolver{})
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(tasks))
+	}
+	want := []string{
+		"Remove the dependency (see docs/adr/003.md)",
+		"rationale: Domain code stays free of I/O",
+		"allowed alternative: Depend on a port in the application layer",
+	}
+	if got := tasks[0].Constraints; strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("constraints = %q, want %q", got, want)
+	}
+	if !strings.Contains(tasks[0].Goal, "from module "+seamTo+" on net/http") {
+		t.Errorf("goal = %q, want it to name module billing and net/http", tasks[0].Goal)
+	}
+}
+
+// TestModuleSelectorTaskCarriesNoDeclarations pins that a module-selector
+// forbidden_dependency task, a module-pair task with up to fifty import sites,
+// carries no declarations, like the other module-pair tasks; a path-mode
+// forbidden_dependency task keeps them.
+func TestModuleSelectorTaskCarriesNoDeclarations(t *testing.T) {
+	const importer = "pkg/a/a.go"
+	facts := []evidence.SyntaxFact{{File: importer, Kind: "function", Name: "Charge", Exported: true, StartLine: 3}}
+	for _, tc := range []struct {
+		name  string
+		kind  string
+		wantN int
+	}{
+		{"module selector", "module_dependency", 0},
+		{"path glob", "imports", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := gateFinding("sel", ruleForbidden, finding.StatusNew)
+			f.Edge.Kind = tc.kind
+			f.Locations = []relationship.Location{{File: importer, Line: 3}}
+			tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleForbidden: ruleTypeForbidden}, nil, nil, facts, nil, agenttask.PathResolver{})
+			if len(tasks) != 1 || len(tasks[0].Declarations) != tc.wantN {
+				t.Errorf("tasks = %+v, want %d declarations", tasks, tc.wantN)
+			}
+		})
+	}
+}

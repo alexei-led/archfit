@@ -77,13 +77,18 @@ type Rule interface {
 func New(cfg policy.RuleConfig) ([]Rule, error) {
 	rs := make([]Rule, 0, len(cfg.Rules))
 	for _, def := range cfg.Rules {
+		if def.Type != "forbidden_dependency" {
+			if err := validateNoModuleSelectors(def); err != nil {
+				return nil, err
+			}
+		}
 		var inner Rule
 		switch def.Type {
 		case "forbidden_dependency":
-			if err := validateForbiddenDependencyDef(def); err != nil {
+			if err := validateForbiddenDependencyDef(def, cfg.ModuleMap); err != nil {
 				return nil, err
 			}
-			inner = &forbiddenDependency{def: def}
+			inner = &forbiddenDependency{def: def, mm: cfg.ModuleMap}
 		case "public_api_only":
 			if err := validateScopeGlobs(def); err != nil {
 				return nil, err
@@ -137,7 +142,7 @@ func New(cfg policy.RuleConfig) ([]Rule, error) {
 		if gate == "" {
 			gate = defaultGateForType(def.Type)
 		}
-		rs = append(rs, &gatedRule{inner: inner, gate: gate})
+		rs = append(rs, &gatedRule{inner: inner, gate: gate, def: def})
 	}
 	return rs, nil
 }
@@ -160,12 +165,16 @@ func defaultGateForType(ruleType string) string {
 type gatedRule struct {
 	inner Rule
 	gate  string // "off" | "warn" | "fail" | ""
+	def   policy.RuleDef
 }
 
 func (r *gatedRule) ID() string { return r.inner.ID() }
 
 func (r *gatedRule) Check(s relationship.Set, ev Evidence) []finding.Finding {
 	raw := r.inner.Check(s, ev)
+	for i := range raw {
+		explain(&raw[i], r.def)
+	}
 	switch r.gate {
 	case "off":
 		return nil
@@ -176,6 +185,27 @@ func (r *gatedRule) Check(s relationship.Set, ev Evidence) []finding.Finding {
 		return raw
 	default: // "fail" or ""
 		return raw // Kind already "gate" (default from finding.New)
+	}
+}
+
+// explain adds the rule's declared rationale, alternatives, and docs to one of
+// its findings: the rationale ends the why, the alternatives become allowed
+// alternatives, and the docs reference ends both the constraint and the why,
+// so every format that prints the why (SARIF's message among them) carries it.
+// A rule that declares none of them leaves its findings unchanged. The text
+// never enters a finding ID, so editing it re-keys nothing.
+func explain(f *finding.Finding, def policy.RuleDef) {
+	if def.Rationale != "" {
+		f.Why += " — " + def.Rationale
+		f.Rationale = def.Rationale
+	}
+	if len(def.Alternatives) > 0 {
+		f.Alternatives = append(f.Alternatives, def.Alternatives...)
+	}
+	if def.Docs != "" {
+		see := " (see " + def.Docs + ")"
+		f.Why += see
+		f.Constraint += see
 	}
 }
 

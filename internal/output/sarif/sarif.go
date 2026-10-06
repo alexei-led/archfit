@@ -257,6 +257,11 @@ func resultProperties(f report.Finding, dimension string, seamOf map[string]stri
 	if dimension != "" {
 		props["dimension"] = dimension
 	}
+	// A rule's declared alternatives; the message already ends with its
+	// rationale.
+	if len(f.Alternatives) > 0 {
+		props["allowed_alternatives"] = f.Alternatives
+	}
 	if f.Edge.From.Module != "" && f.Edge.To.Module != "" {
 		props["module_pair"] = f.Edge.From.Module + " -> " + f.Edge.To.Module
 		if id, ok := seamOf[f.Edge.From.Module+"\x00"+f.Edge.To.Module]; ok {

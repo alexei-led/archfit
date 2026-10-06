@@ -155,8 +155,9 @@ func TestLintSeparatesUnanalysedSourceFromADeadSelector(t *testing.T) {
 }
 
 // TestLintAndCheckAgreeOnVacuousRules is the parity test: every gated
-// non-guard rule lint reports as a dead selector is exactly a rule the decision
-// lists as "selector matches nothing", because both read one predicate.
+// non-guard rule lint reports as a dead selector or an unknown module selector
+// is exactly a rule the decision lists as "selector matches nothing", because
+// both read one predicate.
 func TestLintAndCheckAgreeOnVacuousRules(t *testing.T) {
 	diag, in := vacuityFixture()
 	in.Policy.Gates.Rules.Rules = nil
@@ -170,6 +171,8 @@ func TestLintAndCheckAgreeOnVacuousRules(t *testing.T) {
 		{From: selShipping, To: "net/http"},
 		{From: selJava, To: selBilling},
 		{From: assessCore, To: selBilling},
+		{FromModule: modWarehouse, To: selBilling},
+		{From: selShipping, ToModule: selLayerNowhere},
 	} {
 		rule.ID, rule.Type, rule.Gate = "r"+string(rune('a'+i)), ruleForbidden, string(policy.GateFail)
 		in.Policy.Gates.Rules.Rules = append(in.Policy.Gates.Rules.Rules, rule)
@@ -177,7 +180,7 @@ func TestLintAndCheckAgreeOnVacuousRules(t *testing.T) {
 
 	var linted []string
 	for _, d := range evaluation.LintPolicy(in.Policy, in.Facts) {
-		if d.Code == evaluation.LintDeadSelector {
+		if d.Code == evaluation.LintDeadSelector || d.Code == evaluation.LintUnknownModule && strings.HasPrefix(d.Path, "rules[") {
 			id, _, _ := strings.Cut(strings.TrimPrefix(d.Path, "rules["), "]")
 			linted = append(linted, id)
 		}
@@ -258,7 +261,7 @@ func TestDeadSelectorTellsGoStdlibFromFirstPartySource(t *testing.T) {
 	}
 	var dead []string
 	for _, d := range evaluation.LintPolicy(snapshot, facts) {
-		if d.Code == evaluation.LintDeadSelector {
+		if d.Code == evaluation.LintDeadSelector || d.Code == evaluation.LintUnknownModule && strings.HasPrefix(d.Path, "rules[") {
 			dead = append(dead, d.Path)
 		}
 	}
@@ -299,7 +302,7 @@ func TestDeadSelectorJudgesEachSelectorInItsOwnVocabulary(t *testing.T) {
 	}
 	var dead []string
 	for _, d := range evaluation.LintPolicy(snapshot, facts) {
-		if d.Code == evaluation.LintDeadSelector {
+		if d.Code == evaluation.LintDeadSelector || d.Code == evaluation.LintUnknownModule && strings.HasPrefix(d.Path, "rules[") {
 			dead = append(dead, d.Path)
 		}
 	}
@@ -397,5 +400,57 @@ func TestLintAllowlists(t *testing.T) {
 	warnings = strings.Join(evaluation.PolicyWarnings(unlisted, facts), "\n")
 	if want := "rules[warn_rule] is not evaluated: selector matches nothing: no module declares depends_on or visible_to"; warnings != want {
 		t.Errorf("PolicyWarnings = %q, want %q", warnings, want)
+	}
+}
+
+// TestLintModuleSelectors pins lint over module selectors: a rule side or an
+// allowlist entry that selects no declared module is unknown_module; a
+// selector that selects a module by layer, role, or glob is clean; a
+// warn-gated rule with such a side is a check config warning.
+func TestLintModuleSelectors(t *testing.T) {
+	modules := map[string]policy.ModuleDef{
+		"a": {Paths: []string{assessPathsA}, Layer: layerNameDomain, DependsOn: []string{"layer:" + layerNameApp, selLayerNowhere}},
+		"b": {Paths: []string{assessPathsB}, Layer: layerNameApp, Role: policy.RoleAdapter},
+		"c": {Paths: []string{"c/main.go"}},
+	}
+	rules := []policy.RuleDef{
+		{ID: "live", Type: ruleForbidden, Gate: gateFail, FromModule: selLayerDomain, ToModule: "role:adapter"},
+		{ID: "glob", Type: ruleForbidden, Gate: gateFail, FromModule: "*", To: pkgHTTP},
+		{ID: "dead", Type: ruleForbidden, Gate: gateFail, FromModule: "layer:infra", To: pkgHTTP},
+		{ID: "warn_dead", Type: ruleForbidden, Gate: gateWarnPosture, From: assessPathsA, ToModule: modWarehouse},
+		{ID: "sourceless", Type: ruleForbidden, Gate: gateFail, From: assessPathsA, ToModule: "c"},
+	}
+	topology := policy.TopologyView{Modules: modules, Layers: []string{layerNameDomain, layerNameApp}, ModuleMap: policy.BuildModuleMap(modules)}
+	snapshot := policy.New(topology, policy.RelationshipPolicy{}, policy.AssessmentPolicy{},
+		policy.GatePolicy{Rules: policy.RuleConfig{Rules: rules}}, nil, nil)
+	facts := evaluation.Observations{FileClassIndex: map[string]fileclass.FileClass{
+		assessFileA: fileclass.Production, assessFileB: fileclass.Production,
+	}}
+	type key struct{ code, severity, path string }
+	diagnostics := evaluation.LintPolicy(snapshot, facts)
+	got := make([]key, 0, len(diagnostics))
+	for _, d := range diagnostics {
+		got = append(got, key{d.Code, d.Severity, d.Path})
+	}
+	want := []key{
+		{evaluation.LintUnknownModule, evaluation.LintSeverityError, "modules.a.depends_on[1]"},
+		{evaluation.LintUnknownModule, evaluation.LintSeverityError, "rules[dead].from_module"},
+		{evaluation.LintDeadSelector, evaluation.LintSeverityError, "rules[sourceless].to_module"},
+		{evaluation.LintUnknownModule, evaluation.LintSeverityError, "rules[warn_dead].to_module"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("LintPolicy = %v, want %v", got, want)
+	}
+	warnings := strings.Join(evaluation.PolicyWarnings(snapshot, facts), "\n")
+	for _, w := range []string{
+		"rules[warn_dead] is not evaluated: selector matches nothing: to_module warehouse",
+		`modules.a.depends_on[1]: depends_on entry "layer:nowhere" names no declared module, layer, or role`,
+	} {
+		if !strings.Contains(warnings, w) {
+			t.Errorf("PolicyWarnings missing %q in:\n%s", w, warnings)
+		}
+	}
+	if strings.Contains(warnings, "rules[dead]") {
+		t.Errorf("a fail-gated vacuous rule is left to the decision, not warned:\n%s", warnings)
 	}
 }

@@ -73,7 +73,9 @@ Every ACTIVE gate finding produces one structured repair task:
 `repair_kind` is `code_change` for a finding the agent can address in source and
 `needs_owner_decision` for a policy or accepted-debt decision. Goals are
 deterministic templates per rule type; constraints carry the rule type's fixed
-constraint text plus the target module's public globs, except on
+constraint text (with the rule's `docs` reference, when declared), the rule's
+`rationale` as `rationale: <text>`, each declared alternative as
+`allowed alternative: <text>`, plus the target module's public globs, except on
 `forbidden_dependency`, `forbidden_layer_direction`, `cycle`, `module_cycle`,
 `module_dependencies`, and `new_cross_module_dependency` tasks, which never
 list the target's public surface: routing through it keeps the dependency

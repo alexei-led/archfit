@@ -279,10 +279,11 @@ func Build(
 		}
 		// A seam task's files span both modules — up to forty paths of
 		// evidence — and a module-pair task's (module_cycle,
-		// module_dependencies) span up to fifty import sites of one module,
-		// repeated for every pair; their declarations would bury the import to
-		// cut and dominate the report.
-		if factsByFile != nil && !seamGate && ruleType != ruleTypeModuleCycle && ruleType != ruleTypeModuleDeps {
+		// module_dependencies, a module-selector forbidden_dependency) span up
+		// to fifty import sites of one module, repeated for every pair; their
+		// declarations would bury the import to cut and dominate the report.
+		modulePair := ruleType == ruleTypeModuleCycle || ruleType == ruleTypeModuleDeps || f.Edge.Kind == edgeKindModuleDependency
+		if factsByFile != nil && !seamGate && !modulePair {
 			task.Declarations = declarationsFor(files, factsByFile)
 		}
 		tasks = append(tasks, task)
@@ -301,7 +302,8 @@ func goalFor(ruleType string, f finding.Finding) string {
 	}
 	switch ruleType {
 	case ruleTypeForbiddenDependency:
-		return fmt.Sprintf("Remove the forbidden dependency from %s on %s; move shared behavior to a location permitted by the existing dependency rules.", from, to)
+		return fmt.Sprintf("Remove the forbidden dependency from %s on %s; move shared behavior to a location permitted by the existing dependency rules.",
+			endpointName(f.Edge.From), endpointName(f.Edge.To))
 	case "public_api_only", "internal_api_access":
 		return fmt.Sprintf("Replace the internal-API access from %s to %s with %s's public API.", from, to, toMod)
 	case ruleTypeForbiddenLayerDirection:
@@ -332,6 +334,15 @@ func goalFor(ruleType string, f finding.Finding) string {
 	}
 }
 
+// endpointName names a finding endpoint in a goal: its path, or "module <m>"
+// for a module-selector endpoint, which has no path.
+func endpointName(e finding.Endpoint) string {
+	if e.Path == "" && e.Module != "" {
+		return "module " + e.Module
+	}
+	return e.Path
+}
+
 // maxGoalMemberBytes bounds the cycle member list a goal quotes; the App caps
 // goal text, and a large strongly connected component can name every module.
 const maxGoalMemberBytes = 300
@@ -353,16 +364,20 @@ func repairKind(ruleType string) string {
 	return "code_change"
 }
 
-// constraintsFor joins the finding's constraint text, its allowed
-// alternatives, and — unless the rule forbids the target route — the target
-// module's public surface. A forbidden dependency, an inverted layer, a node or
-// module cycle, a dependency outside a module allowlist, or a new cross-module
-// dependency is still a violation through the target's public API, so naming
-// that surface would route the agent straight back into the violation.
+// constraintsFor joins the finding's constraint text, the rule's rationale, its
+// allowed alternatives, and — unless the rule forbids the target route — the
+// target module's public surface. A forbidden dependency, an inverted layer, a
+// node or module cycle, a dependency outside a module allowlist, or a new
+// cross-module dependency is still a violation through the target's public
+// API, so naming that surface would route the agent straight back into the
+// violation.
 func constraintsFor(f finding.Finding, ruleType string, modulePublic map[string][]string) []string {
 	out := []string{}
 	if f.Constraint != "" {
 		out = append(out, f.Constraint)
+	}
+	if f.Rationale != "" {
+		out = append(out, "rationale: "+f.Rationale)
 	}
 	for _, alt := range f.Alternatives {
 		out = append(out, "allowed alternative: "+alt)

@@ -12,7 +12,14 @@ import (
 const (
 	selectorFrom = "from"
 	selectorTo   = "to"
+	// The module-selector sides of forbidden_dependency: they select declared
+	// modules, not source.
+	selectorFromModule = "from_module"
+	selectorToModule   = "to_module"
 )
+
+// isModuleSide reports whether a selector side selects declared modules.
+func isModuleSide(side string) bool { return side == selectorFromModule || side == selectorToModule }
 
 // selectorMatchesNothingPrefix starts the unevaluated-rule reason for a
 // selector that matches nothing. The App keys a policy-defect reason off it, so
@@ -230,7 +237,130 @@ func (inv selectorInventory) vacuousSelector(rule policy.RuleDef) (side, glob st
 			return s.side, s.glob, true
 		}
 	}
+	for _, s := range [...]struct{ side, selector string }{{selectorFromModule, rule.FromModule}, {selectorToModule, rule.ToModule}} {
+		if s.selector == "" {
+			continue
+		}
+		if state := inv.moduleSideState(s.selector); state == moduleSideEmpty || state == moduleSideUnanalysed {
+			return s.side, s.selector, true
+		}
+	}
 	return "", "", false
+}
+
+// moduleSide states what the modules a module selector selects give a
+// dependency rule to read.
+type moduleSide uint8
+
+const (
+	// moduleSideLive: a selected module owns analysed source, or a module-graph
+	// node of a crate::mod path.
+	moduleSideLive moduleSide = iota
+	// moduleSideUndecided: a selected module owns no inventoried file and its
+	// paths name nothing the inventory can judge (a directory glob, a Rust
+	// package name without crate roots, a crate::mod path without the module
+	// graph). Rule scope abstains on it, as moduleRuleScope does.
+	moduleSideUndecided
+	// moduleSideUnanalysed: the selected modules own only source no dependency
+	// producer analyses.
+	moduleSideUnanalysed
+	// moduleSideEmpty: no module is selected, or the selected modules provably
+	// own nothing.
+	moduleSideEmpty
+)
+
+// moduleSideState judges a module selector the way moduleRuleScope judges a
+// module: by the in-scope files each selected module owns, and for a module
+// with no owned file, by its paths — a crate::mod path against the module
+// graph, an explicit source-file path as provably empty, anything else as
+// undecidable. A module side is then held to the path-glob standard: empty
+// matches nothing, unanalysed-only is the unanalysed case, and undecidable
+// abstains instead of guessing either way.
+func (inv selectorInventory) moduleSideState(selector string) moduleSide {
+	selected := make(map[string]struct{})
+	for _, module := range inv.moduleMap.ModulesSelected(selector) {
+		selected[module] = struct{}{}
+	}
+	if len(selected) == 0 {
+		return moduleSideEmpty
+	}
+	owning := make(map[string]struct{})
+	unanalysedOnly := false
+	for _, file := range inv.files {
+		module, ok := inv.moduleMap.ModuleFor(file)
+		if !ok {
+			if _, sel, _ := ruleFileSelector(inv.moduleMap, file, inv.selectors); sel != "" {
+				module, ok = inv.moduleMap.ModuleFor(sel)
+			}
+		}
+		if _, in := selected[module]; !ok || !in {
+			continue
+		}
+		if _, unanalysed := inv.unanalysed[file]; !unanalysed {
+			return moduleSideLive
+		}
+		owning[module] = struct{}{}
+		unanalysedOnly = true
+	}
+	undecided := false
+	for module := range selected {
+		if _, owns := owning[module]; owns {
+			continue
+		}
+		switch inv.modulePathsState(module) {
+		case moduleSideLive:
+			return moduleSideLive
+		case moduleSideUndecided:
+			undecided = true
+		}
+	}
+	switch {
+	case undecided:
+		return moduleSideUndecided
+	case unanalysedOnly:
+		return moduleSideUnanalysed
+	default:
+		return moduleSideEmpty
+	}
+}
+
+// ownsRustModuleNode reports whether a module-graph node that pattern matches
+// resolves to module: a crate-wide catch-all shadowed by more specific
+// modules on every node owns nothing.
+func (inv selectorInventory) ownsRustModuleNode(module, pattern string) bool {
+	for _, node := range inv.rustModules {
+		if matched, _ := doublestar.Match(pattern, node); !matched {
+			continue
+		}
+		if owner, ok := inv.moduleMap.ModuleFor(node); ok && owner == module {
+			return true
+		}
+	}
+	return false
+}
+
+// modulePathsState judges a module that owns no inventoried file by its
+// declared paths, with moduleRuleScope's rules.
+func (inv selectorInventory) modulePathsState(module string) moduleSide {
+	paths := inv.moduleMap.Paths(module)
+	if len(paths) == 0 {
+		return moduleSideUndecided
+	}
+	state := moduleSideEmpty
+	for _, pattern := range paths {
+		if strings.Contains(pattern, sepCrate) {
+			if _, decided := inv.rustModulePath(pattern); !decided {
+				state = moduleSideUndecided
+			} else if inv.ownsRustModuleNode(module, pattern) {
+				return moduleSideLive
+			}
+			continue
+		}
+		if !explicitlySupportedSourcePattern(inv.moduleMap, pattern) {
+			state = moduleSideUndecided
+		}
+	}
+	return state
 }
 
 // vacuous reports whether one selector of a ruleType rule matches nothing the
@@ -293,6 +423,9 @@ func (inv selectorInventory) matches(ruleType, side, pattern string) bool {
 func (inv selectorInventory) matchesOnlyUnanalysed(ruleType, side, pattern string) bool {
 	if ruleType == ruleTypeForbiddenPattern {
 		return false
+	}
+	if isModuleSide(side) {
+		return inv.moduleSideState(pattern) == moduleSideUnanalysed
 	}
 	for file := range inv.unanalysed {
 		if inv.fileMatches(ruleType, side, pattern, file) {

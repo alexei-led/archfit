@@ -22,13 +22,34 @@ import (
 // ---------------------------------------------------------------------------
 
 // validateForbiddenDependencyDef validates a RuleDef for the
-// forbidden_dependency rule type. An empty from/to glob matches nothing, so
-// the rule would load clean yet never fire — a silently-vacuous gate.
-func validateForbiddenDependencyDef(def policy.RuleDef) error {
-	if def.From == "" || def.To == "" {
-		return fmt.Errorf("rules: forbidden_dependency %q requires both from and to globs", def.ID)
+// forbidden_dependency rule type. Each side takes exactly one selector: a path
+// glob (from/to) or a module selector (from_module/to_module). An empty side
+// matches nothing, so the rule would load clean yet never fire — a
+// silently-vacuous gate.
+func validateForbiddenDependencyDef(def policy.RuleDef, mm policy.ModuleMap) error {
+	for _, side := range []struct{ glob, module, globKey, moduleKey string }{
+		{def.From, def.FromModule, "from", "from_module"},
+		{def.To, def.ToModule, "to", "to_module"},
+	} {
+		switch {
+		case side.glob == "" && side.module == "":
+			return fmt.Errorf("rules: forbidden_dependency %q requires %s or %s", def.ID, side.globKey, side.moduleKey)
+		case side.glob != "" && side.module != "":
+			return fmt.Errorf("rules: forbidden_dependency %q sets both %s and %s; use one", def.ID, side.globKey, side.moduleKey)
+		case side.module != "" && !mm.ValidModuleSelector(side.module):
+			return fmt.Errorf("rules: rule %q has a malformed %s selector %q", def.ID, side.moduleKey, side.module)
+		}
 	}
 	return validateScopeGlobs(def)
+}
+
+// validateNoModuleSelectors rejects from_module/to_module on a rule type that
+// does not read them: it would load clean and select nothing.
+func validateNoModuleSelectors(def policy.RuleDef) error {
+	if def.FromModule != "" || def.ToModule != "" {
+		return fmt.Errorf("rules: %s %q takes no from_module/to_module: only forbidden_dependency reads module selectors", def.Type, def.ID)
+	}
+	return nil
 }
 
 // validateScopeGlobs rejects malformed from/to globs. doublestar.Match
@@ -46,11 +67,15 @@ func validateScopeGlobs(def policy.RuleDef) error {
 
 type forbiddenDependency struct {
 	def policy.RuleDef
+	mm  policy.ModuleMap
 }
 
 func (r *forbiddenDependency) ID() string { return r.def.ID }
 
 func (r *forbiddenDependency) Check(s relationship.Set, _ Evidence) []finding.Finding {
+	if r.def.FromModule != "" || r.def.ToModule != "" {
+		return r.checkModules(s)
+	}
 	var out []finding.Finding
 	for _, e := range s.Edges {
 		fromPath := e.FromPath
@@ -70,6 +95,98 @@ func (r *forbiddenDependency) Check(s relationship.Set, _ Evidence) []finding.Fi
 		}
 		f.Why = "Import from " + r.def.From + " to " + r.def.To + " is explicitly forbidden"
 		f.Constraint = "Remove the dependency or move the code"
+		out = append(out, f)
+	}
+	return out
+}
+
+// checkModules is forbidden_dependency with a module selector on at least one
+// side. A module side matches an endpoint whose declared module the selector
+// selects (policy.ModuleMap.SelectsModule); a glob side matches the endpoint
+// path, as without module selectors. An edge inside one declared module never
+// matches: module selectors speak about module boundaries.
+//
+// Findings are keyed per pair of side keys, never per file: a module side is
+// keyed by its module, a from: side by the importing package
+// (importingPackage), and a to: side by the target node. So moving or adding
+// an import on a forbidden module pair keeps the finding ID.
+func (r *forbiddenDependency) checkModules(s relationship.Set) []finding.Finding {
+	type endpoint struct{ module, path string }
+	type pair struct{ from, to endpoint }
+	sites := make(map[pair][]relationship.Location)
+	for _, e := range s.DependencyEdges() {
+		fromModule, fromOwned := declaredModuleOf(r.mm, e.FromID, e.FromPath, e.Language)
+		toModule, toOwned := declaredModuleOf(r.mm, e.ToID, e.ToPath, e.Language)
+		if fromOwned && toOwned && fromModule == toModule {
+			continue
+		}
+		var p pair
+		if r.def.FromModule != "" {
+			if !fromOwned || !r.mm.SelectsModule(r.def.FromModule, fromModule) {
+				continue
+			}
+			p.from.module = fromModule
+		} else {
+			if matched, _ := doublestar.Match(r.def.From, e.FromPath); !matched {
+				continue
+			}
+			p.from.path = importingPackage(e)
+		}
+		if r.def.ToModule != "" {
+			if !toOwned || !r.mm.SelectsModule(r.def.ToModule, toModule) {
+				continue
+			}
+			p.to.module = toModule
+		} else {
+			if matched, _ := doublestar.Match(r.def.To, e.ToPath); !matched {
+				continue
+			}
+			p.to.path = e.ToPath
+		}
+		sites[p] = append(sites[p], edgeLocations(e)...)
+	}
+	pairs := make([]pair, 0, len(sites))
+	for p := range sites {
+		pairs = append(pairs, p)
+	}
+	key := func(e endpoint) string {
+		if e.module != "" {
+			return "module:" + e.module
+		}
+		return "path:" + e.path
+	}
+	name := func(e endpoint) string {
+		if e.module != "" {
+			return "module " + e.module
+		}
+		return e.path
+	}
+	sort.Slice(pairs, func(a, b int) bool {
+		if ka, kb := key(pairs[a].from), key(pairs[b].from); ka != kb {
+			return ka < kb
+		}
+		return key(pairs[a].to) < key(pairs[b].to)
+	})
+	out := make([]finding.Finding, 0, len(pairs))
+	for _, p := range pairs {
+		locs, total := sortedCappedLocations(sites[p])
+		f := finding.NewKeyed(r.def.ID, edgeKindModuleDependency, key(p.from), key(p.to))
+		f.Severity = finding.SeverityHigh
+		f.Edge.From = finding.Endpoint{Module: p.from.module, Path: p.from.path}
+		f.Edge.To = finding.Endpoint{Module: p.to.module, Path: p.to.path}
+		f.Locations = locs
+		f.MatchedBy = map[string]string{matchedByLocationsTotal: strconv.Itoa(total)}
+		for k, v := range map[string]string{
+			"from_glob": r.def.From, "to_glob": r.def.To,
+			"from_module_selector": r.def.FromModule, "to_module_selector": r.def.ToModule,
+			matchedByFromModule: p.from.module, matchedByToModule: p.to.module,
+		} {
+			if v != "" {
+				f.MatchedBy[k] = v
+			}
+		}
+		f.Why = "Dependency of " + name(p.from) + " on " + name(p.to) + " is explicitly forbidden"
+		f.Constraint = "Remove the dependency; a route through the target's public API is forbidden too"
 		out = append(out, f)
 	}
 	return out
@@ -425,6 +542,9 @@ func cycleFingerprintID(ruleID string, scc []string) string {
 const (
 	matchedByFromModule = "from_module"
 	matchedByToModule   = "to_module"
+	// matchedByLocationsTotal is the full import-site count behind a
+	// finding's capped location list.
+	matchedByLocationsTotal = "locations_total"
 )
 
 // edgeKindModuleDependency is the finding edge kind of a module-pair finding:
@@ -521,12 +641,12 @@ func (r *moduleCycle) Check(s relationship.Set, ev Evidence) []finding.Finding {
 		f.Edge.To = finding.Endpoint{Module: p.to}
 		f.Locations = locs
 		f.MatchedBy = map[string]string{
-			matchedByFromModule: p.from,
-			matchedByToModule:   p.to,
-			"cycle_modules":     strings.Join(scc, ", "),
-			"cycle_size":        strconv.Itoa(len(scc)),
-			"cycle_pairs_total": strconv.Itoa(pairTotals[i]),
-			"locations_total":   strconv.Itoa(total),
+			matchedByFromModule:     p.from,
+			matchedByToModule:       p.to,
+			"cycle_modules":         strings.Join(scc, ", "),
+			"cycle_size":            strconv.Itoa(len(scc)),
+			"cycle_pairs_total":     strconv.Itoa(pairTotals[i]),
+			matchedByLocationsTotal: strconv.Itoa(total),
 		}
 		// The why names the pair and the cycle size only: a component can hold
 		// every declared module, and matched_by.cycle_modules lists them.
@@ -637,7 +757,7 @@ func (r *moduleDependencies) Check(s relationship.Set, ev Evidence) []finding.Fi
 		f.Locations = locs
 		f.MatchedBy[matchedByToModule] = p.to
 		f.MatchedBy["violates"] = keys
-		f.MatchedBy["locations_total"] = strconv.Itoa(total)
+		f.MatchedBy[matchedByLocationsTotal] = strconv.Itoa(total)
 		f.Constraint = "Remove the dependency: the module allowlist denies it through every package of the target, its public API included; only the module owner can change " +
 			strings.Join(violates[p], " or ")
 		out = append(out, f)

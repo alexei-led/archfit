@@ -17,12 +17,29 @@ New:
   that names no declared module, and `dead_selector` for a
   `module_dependencies` rule when no module declares a list. `check` prints the
   unknown entry as a config warning.
+- Module selectors. `forbidden_dependency` takes `from_module` and `to_module`
+  instead of `from` and `to`: `layer:<name>`, `role:<role>`, or a glob over
+  module names. A module selector matches only edges between two different
+  modules. A module side keys its findings by the module, so a moved file
+  keeps the finding ID. Allowlist entries (`depends_on`, `visible_to`) accept the
+  same selectors. A selector that selects no module makes the rule not
+  evaluated (`selector matches nothing: from_module …`), and `config lint`
+  reports it as `unknown_module`. See
+  [Module selectors](configuration-reference.md#module-selectors).
+- Rule rationale. Every rule type takes `rationale`, `alternatives`, and
+  `docs`. The rationale ends the finding `why` (and so the SARIF message) and
+  appears in the repair task's constraints; the alternatives become the
+  finding's `allowed_alternatives`, the task's constraints, and the SARIF
+  result property `allowed_alternatives`; the docs reference ends the finding
+  `why` and `constraint`. None of them changes a finding ID.
 
 Contract notes:
 
-- Config schema v2 gains the optional keys `depends_on` and `visible_to` and
-  the rule type `module_dependencies`. `archfit.schema.json` is regenerated.
-  Engines up to v2.4.1 reject the new keys: pin the engine before you use them.
+- Config schema v2 gains the optional module keys `depends_on` and
+  `visible_to`, the rule type `module_dependencies`, and the optional rule
+  keys `from_module`, `to_module`, `rationale`, `alternatives`, and `docs`.
+  `archfit.schema.json` is regenerated. Engines up to v2.4.1 reject the new
+  keys: pin the engine before you use them.
   The archfit App pins the engine's config schema and must re-pin it for this
   release.
 - `model_hash` does not include the allowlists. An allowlist edit changes
