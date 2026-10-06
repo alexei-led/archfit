@@ -393,7 +393,7 @@ match it:
 
 | Language   | `<target>`                                                                                   |
 | ---------- | -------------------------------------------------------------------------------------------- |
-| Go         | A package dir relative to the root, or an import path of a loaded module. An import from a `_test.go` file, a file the build constraints exclude (host GOOS/GOARCH, `-tags` in the run's build flags or `GOFLAGS`, `CGO_ENABLED`), a file of no loaded module, or an excluded file or target is never extracted: the answer is `unconstrained`. |
+| Go         | A package dir relative to the root, or an import path of a loaded module. An import from a `_test.go` file, a file the build constraints exclude (GOOS/GOARCH, the last `-tags` of `GOFLAGS` and the run's build flags, `CGO_ENABLED`; the go env file counts), a file of no loaded module, or an excluded file or target is never extracted: the answer is `unconstrained`. When `CGO_ENABLED` is not set and the cgo setting decides whether the file is built, the answer is `not_decided`. |
 | TypeScript | The imported source file relative to the root, after resolution (not the import specifier).  |
 | Python     | A dotted module, or a `.py` file. A file maps to its dotted name with a `src/` prefix removed. grimp builds `languages.python.package`, else the discovered top-level packages (under `src/` when it has any). An importer outside them is never extracted (`unconstrained`). A target outside them is `not_decided`: grimp drops an installed or stdlib import and spells an uninstalled one as external. |
 | Rust       | Not supported: crate roots need `cargo metadata`, so the answer is `not_decided`.             |
@@ -406,7 +406,7 @@ The answer is one line of JSON, `archfit.policy-answer.v1` with
 | `denied`        | A fail-gated rule fires on the import with an active status. Each entry of `denials` has the finding ID, the rule ID, the why, and the repair `goal` and `constraints`. |
 | `not_decided`   | No rule denies the import, but a fail-gated rule that needs the whole graph can still block it: `module_cycle` on a cross-module import, `cycle` on a TypeScript or Python import, or the seam gate in `mode: fail`. Also every Rust import and every external Python import. `reasons` names them. |
 | `allowed`       | An allowlist (`depends_on` or `visible_to`) or the layer order permits the import. `reasons` names it.                                       |
-| `unconstrained` | No rule decides the import. This is not permission. It is also the answer for an import the extractor never reads (a switched-off language, or the Go cases above), and for an import whose only violations the baseline or a waiver accepts (listed in `accepted`). |
+| `unconstrained` | No rule decides the import. This is not permission. It is also the answer for an import the extractor never reads (a switched-off language, a language whose project marker is missing — no `package.json`, no `pyproject.toml` — or the Go cases above), and for an import whose only violations the baseline or a waiver accepts (listed in `accepted`). |
 
 `advisories` lists the findings of `gate: warn` rules. They never deny.
 `can-import` does not evaluate metric ratchets (`metrics.<name>.gate`): a new

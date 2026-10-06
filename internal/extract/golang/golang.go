@@ -281,17 +281,18 @@ func (e *GoExtractor) coverageForLoad(root string, members []string, filesSeen, 
 	return cov
 }
 
-// countApplicableSources checks applicability independently of packages.Load.
-// Selected members, Go's directory exclusions, and build constraints bound the
-// inventory so deliberately unbuilt source does not become a failed measurement.
-func (e *GoExtractor) countApplicableSources(root string, members []string) (int, error) {
+// toolchainContext is the build context of the go command the run starts:
+// GOOS and GOARCH from the environment, and the -tags of GOFLAGS then of the
+// build flags, the last one winning as on the go command line. getenv reads
+// the environment.
+func toolchainContext(getenv func(string) string, buildFlags []string) build.Context {
 	buildContext := build.Default
 	for key, target := range map[string]*string{"GOOS": &buildContext.GOOS, "GOARCH": &buildContext.GOARCH} {
-		if value := os.Getenv(key); value != "" {
+		if value := getenv(key); value != "" {
 			*target = value
 		}
 	}
-	flags := append(strings.Fields(os.Getenv("GOFLAGS")), e.cfg.BuildFlags...)
+	flags := append(strings.Fields(getenv("GOFLAGS")), buildFlags...)
 	for i, flag := range flags {
 		value, ok := strings.CutPrefix(flag, "-tags=")
 		if flag == "-tags" && i+1 < len(flags) {
@@ -301,6 +302,14 @@ func (e *GoExtractor) countApplicableSources(root string, members []string) (int
 			buildContext.BuildTags = strings.FieldsFunc(strings.Trim(value, "\"'"), func(r rune) bool { return r == ',' || r == ' ' })
 		}
 	}
+	return buildContext
+}
+
+// countApplicableSources checks applicability independently of packages.Load.
+// Selected members, Go's directory exclusions, and build constraints bound the
+// inventory so deliberately unbuilt source does not become a failed measurement.
+func (e *GoExtractor) countApplicableSources(root string, members []string) (int, error) {
+	buildContext := toolchainContext(os.Getenv, e.cfg.BuildFlags)
 	count := 0
 	for _, member := range members {
 		err := filepath.WalkDir(member, func(name string, entry fs.DirEntry, err error) error {

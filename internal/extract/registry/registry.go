@@ -323,6 +323,11 @@ func QueryEdge(root string, cfgs Configs, from, target string) (graph.Facts, err
 		if d.QueryEdge == nil {
 			return graph.Facts{}, fmt.Errorf("%s: %w", language, ErrNoQueryEdge)
 		}
+		// The extractor emits nothing where its own applicability probe finds
+		// no project, whatever the mode.
+		if !d.ProjectPresent(root, cfgs[language]) {
+			return graph.Facts{}, fmt.Errorf("%s: no %s project under the analysis root: %w", from, language, ErrNotExtracted)
+		}
 		return d.QueryEdge(root, cfgs[language], from, target)
 	}
 	return graph.Facts{}, fmt.Errorf("%q is not a source file of a supported language", from)

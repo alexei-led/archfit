@@ -772,15 +772,18 @@ init` emits v2 directly; owners update older configs manually before analysis.
   walked file, the path-only class otherwise). The root is resolved as check
   resolves it (`scope.Resolve`: --root, git toplevel, config dir; one
   `git rev-parse`). No analyzer, no fact cache. `QueryEdge` drops what the
-  extractor drops (`ErrNotExtracted` → `unconstrained`: Go `_test.go`,
-  build-constrained under the toolchain's env (`GOFLAGS` tags, `CGO_ENABLED`),
+  extractor drops (`ErrNotExtracted` → `unconstrained`: the descriptor's own
+  `ProjectPresent` finds no project; Go `_test.go`,
+  build-constrained under the toolchain's env (`toolchainContext`, shared with
+  `countApplicableSources`, plus the go env file; unset `CGO_ENABLED` with a
+  cgo-dependent file is `not_decided`),
   excluded file or target, unloaded member; a switched-off
   language) and abstains where only the tool knows (`ErrNotDecidable` →
   `not_decided`: Rust, a Python target outside the packages grimp builds;
   an importer outside them is `ErrNotExtracted`, from `py.grimpPackages`, the
   extractor's own package list). Edge modules for the
   answer: `rules.DeclaredEndpoints` for allowlists, the edge's own declared
-  modules for `module_cycle`, the augmented ones (go.work members via
+  modules and `rules.ProductionEdge` for `module_cycle`, the augmented ones (go.work members via
   `Facts.GoModules`) for the seam gate. Metric ratchets are not evaluated.
   Answer order: `denied` > `not_decided` (a fail-gated
   `module_cycle` on a cross-module edge, `cycle` off Go, the seam gate in

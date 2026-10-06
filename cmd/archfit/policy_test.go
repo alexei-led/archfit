@@ -258,6 +258,8 @@ func TestPolicyCanImportNotDecidedByWholeGraphRules(t *testing.T) {
 		{name: "excluded Python importer is still extracted", prefix: "exclude: [\"tools/**\"]\n",
 			rules: "  - id: no_tools_b\n    type: forbidden_dependency\n    gate: fail\n    from: \"tools.*\"\n    to: tools.b\n",
 			args:  []string{agreePyImporter, "tools.b"}, pyPackage: true, wantCode: 1, wantAnswer: answerDenied},
+		{name: "TypeScript without a project", args: []string{"web/a.ts", "web/b.ts"},
+			wantCode: 0, wantAnswer: answerUnconstrain, reason: "no typescript project"},
 		{name: "warn-gated module_cycle decides nothing", rules: "  - id: no_cycles\n    type: module_cycle\n    gate: warn\n",
 			args: []string{agreeAppFile, agreeDomainPkg}, wantCode: 0, wantAnswer: answerAllowed, reason: "depends_on"},
 		{name: "seam gate in mode fail", prefix: "coupling:\n  gate:\n    distributed_monolith:\n      mode: fail\n",
@@ -276,7 +278,7 @@ func TestPolicyCanImportNotDecidedByWholeGraphRules(t *testing.T) {
 			}
 			body = append(append([]byte(tc.prefix), body...), tc.rules...)
 			if tc.pyPackage {
-				for _, name := range []string{"tools/__init__.py", "tools/a.py", "tools/b.py"} {
+				for _, name := range []string{"pyproject.toml", "tools/__init__.py", "tools/a.py", "tools/b.py"} {
 					path := filepath.Join(filepath.Dir(cfgPath), name)
 					if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 						t.Fatal(err)

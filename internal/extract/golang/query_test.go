@@ -133,18 +133,44 @@ func TestQueryEdgeBuildEnvironment(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name, from, goflags, cgo string
-		extracted                bool
+		flags                    []string
+		goenvFile                string
+		extracted, undecided     bool
 	}{
 		{name: "tag from GOFLAGS", from: queryEnt, goflags: "-tags=enterprise", extracted: true},
 		{name: "tag missing", from: queryEnt},
-		{name: "!cgo with CGO_ENABLED unset", from: queryNoCgo, extracted: true},
+		{name: "a later -tags overrides GOFLAGS", from: queryEnt, goflags: "-tags=enterprise", flags: []string{"-tags=other"}},
+		{name: "!cgo with CGO_ENABLED unset is undecided", from: queryNoCgo, undecided: true},
+		{name: "tag from the go env file", from: queryEnt, goenvFile: "GOFLAGS=-tags=enterprise\n", extracted: true},
 		{name: "!cgo with CGO_ENABLED=0", from: queryNoCgo, cgo: "0", extracted: true},
 		{name: "!cgo with CGO_ENABLED=1", from: queryNoCgo, cgo: "1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("GOFLAGS", tc.goflags)
 			t.Setenv("CGO_ENABLED", tc.cgo)
-			_, err := QueryEdge(root, evidenceports.ExtractConfig{}, tc.from, queryTargetDir)
+			if tc.cgo == "" {
+				t.Setenv("GOENV", "off")
+				if tc.goenvFile != "" {
+					file := filepath.Join(t.TempDir(), "env")
+					if err := os.WriteFile(file, []byte(tc.goenvFile), 0o600); err != nil {
+						t.Fatal(err)
+					}
+					t.Setenv("GOENV", file)
+					if err := os.Unsetenv("GOFLAGS"); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.Unsetenv("CGO_ENABLED"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := QueryEdge(root, evidenceports.ExtractConfig{BuildFlags: tc.flags}, tc.from, queryTargetDir)
+			if tc.undecided {
+				if !errors.Is(err, evidenceports.ErrNotDecidable) {
+					t.Errorf("err = %v, want not decidable", err)
+				}
+				return
+			}
 			if notExtracted := errors.Is(err, evidenceports.ErrNotExtracted); notExtracted == tc.extracted || (tc.extracted && err != nil) {
 				t.Errorf("err = %v, want extracted = %v", err, tc.extracted)
 			}

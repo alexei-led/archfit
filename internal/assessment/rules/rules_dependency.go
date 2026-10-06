@@ -836,6 +836,13 @@ func deniedBy(violates []string, from, to string) string {
 // while they were hidden does not cover.
 const maxModuleCyclePairs = 200
 
+// ProductionEdge reports whether module_cycle and module_dependencies count an
+// edge, given only the production class of edge sources the source walk never
+// visited: the rules' own productionSource.
+func ProductionEdge(e relationship.Edge, unwalkedSourceProduction map[string]bool) bool {
+	return productionSource(e, Evidence{UnwalkedSourceProduction: unwalkedSourceProduction})
+}
+
 // productionSource reports whether a dependency edge starts in production
 // code, the scope module_cycle shares with forbidden_pattern. An edge
 // attributed to source files (a file node, or import sites in source files)

@@ -2,12 +2,10 @@ package golang
 
 import (
 	"fmt"
-	"go/build"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
@@ -42,6 +40,12 @@ func QueryEdge(scanRoot string, cfg evidenceports.ExtractConfig, from, target st
 	to := stripModulePath(entries, strings.TrimSuffix(target, "/"))
 	if reason := notExtracted(scanRoot, cfg, entries, from, to); reason != "" {
 		return graph.Facts{}, fmt.Errorf("go: %s: %w", reason, evidenceports.ErrNotExtracted)
+	}
+	switch match, decided := buildMatches(scanRoot, cfg.BuildFlags, from); {
+	case !decided:
+		return graph.Facts{}, fmt.Errorf("go: whether the load reads %s depends on cgo, and CGO_ENABLED is not set: %w", from, evidenceports.ErrNotDecidable)
+	case !match:
+		return graph.Facts{}, fmt.Errorf("go: %s is excluded by the build constraints: %w", from, evidenceports.ErrNotExtracted)
 	}
 	modules := make([]graph.GoModule, 0, len(entries))
 	for _, m := range entries {
@@ -78,8 +82,6 @@ func notExtracted(scanRoot string, cfg evidenceports.ExtractConfig, entries []mo
 		return to + " matches an exclude: glob"
 	case !inLoadedMember(scanRoot, entries, from):
 		return from + " belongs to no loaded Go module"
-	case !buildMatches(scanRoot, cfg.BuildFlags, from):
-		return from + " is excluded by the host build constraints"
 	}
 	return ""
 }
@@ -113,25 +115,25 @@ func inLoadedMember(scanRoot string, entries []modEntry, from string) bool {
 	}
 }
 
-// buildMatches reports whether the go toolchain the run starts includes from:
-// the host GOOS/GOARCH (or their environment overrides), the run's -tags and
-// any -tags in GOFLAGS, and the CGO_ENABLED it inherits. With CGO_ENABLED
-// unset, cgo depends on a C compiler this binary cannot see, so a file that
-// either setting includes counts as included. A file that does not exist yet
-// is judged by its name.
-func buildMatches(scanRoot string, buildFlags []string, from string) bool {
-	tags := append(buildTags(buildFlags), buildTags(strings.Fields(os.Getenv("GOFLAGS")))...)
+// buildMatches reports whether the go toolchain the run starts includes from,
+// with the context toolchainContext gives the extractor, reading the go env
+// file too (go env -w), and the CGO_ENABLED it inherits. With CGO_ENABLED
+// unset, cgo depends on a C compiler this binary cannot see: when the two
+// settings disagree about from, the answer is undecided. A file that does not
+// exist yet is judged by its name.
+func buildMatches(scanRoot string, buildFlags []string, from string) (match, decided bool) {
 	cgo := []bool{true, false}
-	switch os.Getenv("CGO_ENABLED") {
+	switch goEnv("CGO_ENABLED") {
 	case "1":
 		cgo = []bool{true}
 	case "0":
 		cgo = []bool{false}
 	}
+	dir := filepath.Join(scanRoot, filepath.FromSlash(path.Dir(from)))
+	results := make([]bool, 0, len(cgo))
 	for _, enabled := range cgo {
-		ctxt := build.Default
+		ctxt := toolchainContext(goEnv, buildFlags)
 		ctxt.CgoEnabled = enabled
-		ctxt.BuildTags = append(slices.Clone(ctxt.BuildTags), tags...)
 		ctxt.OpenFile = func(p string) (io.ReadCloser, error) {
 			f, err := os.Open(p) // #nosec G304 -- the queried source file under the scan root
 			if os.IsNotExist(err) {
@@ -139,26 +141,44 @@ func buildMatches(scanRoot string, buildFlags []string, from string) bool {
 			}
 			return f, err
 		}
-		dir := filepath.Join(scanRoot, filepath.FromSlash(path.Dir(from)))
-		if match, err := ctxt.MatchFile(dir, path.Base(from)); err != nil || match {
-			return true
+		ok, err := ctxt.MatchFile(dir, path.Base(from))
+		results = append(results, err != nil || ok)
+	}
+	for _, r := range results[1:] {
+		if r != results[0] {
+			return false, false
 		}
 	}
-	return false
+	return results[0], true
 }
 
-// buildTags reads the tags of a -tags flag in a list of go build flags.
-func buildTags(flags []string) []string {
-	for i, flag := range flags {
-		value, ok := strings.CutPrefix(flag, "-tags=")
-		if !ok && flag == "-tags" && i+1 < len(flags) {
-			value, ok = flags[i+1], true
+// goEnv reads a go environment variable as the go command does: the process
+// environment, else the go env file (GOENV, default <user config>/go/env).
+func goEnv(key string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	file := os.Getenv("GOENV")
+	if file == "off" {
+		return ""
+	}
+	if file == "" {
+		dir, err := os.UserConfigDir()
+		if err != nil {
+			return ""
 		}
-		if ok {
-			return strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' })
+		file = filepath.Join(dir, "go", "env")
+	}
+	data, err := os.ReadFile(file) //nolint:gosec // the go env file the go command reads
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if value, ok := strings.CutPrefix(strings.TrimSpace(line), key+"="); ok {
+			return value
 		}
 	}
-	return nil
+	return ""
 }
 
 // memberModules reads the module path of every member the extractor loads,

@@ -145,10 +145,6 @@ func undecidedOrAllowed(in JudgeInput) (string, []string) {
 	rules := in.Policy.Gates.Rules
 	mm := rules.ModuleMap
 	var undecided, allowed []string
-	production := true
-	for _, p := range in.UnwalkedSourceProduction {
-		production = production && p
-	}
 	for _, e := range in.Relationships.Edges {
 		// The module_dependencies rule resolves declared modules with the
 		// file fallback; module_cycle reads the edge's own modules, kept only
@@ -156,7 +152,7 @@ func undecidedOrAllowed(in JudgeInput) (string, []string) {
 		// them including synthetic go.work members.
 		fromModule, toModule := rulespkg.DeclaredEndpoints(mm, e)
 		allowlisted := fromModule != "" && toModule != "" && fromModule != toModule
-		moduleCycle := production && mm.Has(e.FromModule) && mm.Has(e.ToModule) && e.FromModule != e.ToModule
+		moduleCycle := rulespkg.ProductionEdge(e, in.UnwalkedSourceProduction) && mm.Has(e.FromModule) && mm.Has(e.ToModule) && e.FromModule != e.ToModule
 		seam := e.FromModule != "" && e.ToModule != "" && e.FromModule != e.ToModule
 		for _, def := range rules.Rules {
 			if !failGated(def) {
