@@ -859,9 +859,12 @@ Rules for `visible_to` (inbound):
    fails closed: a new package outside every module cannot import a module that
    sets `visible_to`.
 
-Each entry is the exact name of a declared module. An entry that names no
-module still loads, but it allows nothing: `analyze` and `check` print a config
-warning, and `archfit config lint` reports `unknown_module` as an error.
+Each entry is a [module selector](#module-selectors): a module name, a
+`layer:` or `role:` selector, or a glob over module names. `visible_to:
+[layer:app]` admits every module in the `app` layer. An entry that selects no
+module still loads, but it allows nothing: `analyze` and `check` print a
+config warning, and `archfit config lint` reports `unknown_module` as an
+error.
 
 Modules resolve against the declared `modules:` map only. Code that only an
 auto-registered module owns (a `go.work` member or a Rust `crate::mod` node
@@ -871,6 +874,22 @@ crate that a declared module owns belongs to that module.
 The lists do not change `model_hash`: they move neither distance nor seam
 identity. They do change `config_hash`, so an allowlist edit makes a stored
 baseline non-comparable until you run `archfit baseline` again.
+
+### Module selectors
+
+A module selector picks declared modules. Allowlist entries (`depends_on`,
+`visible_to`) and the `from_module`/`to_module` keys of `forbidden_dependency`
+use it.
+
+| Selector       | Selects                                             |
+| -------------- | --------------------------------------------------- |
+| `layer:<name>` | Every module whose `layer` is `<name>`              |
+| `role:<role>`  | Every module whose `role` is `<role>`               |
+| Any other text | A doublestar glob over declared module names        |
+
+A plain module name is a glob that selects that one module. Selectors see
+declared modules only: an auto-registered module (a `go.work` member, a Rust
+`crate::mod` node no declared module claims) is never selected.
 
 ### Module role vs layer
 
@@ -1067,6 +1086,35 @@ rules:
 | `max`      | `public_api_max` | Integer ceiling.                                                                                                       |
 | `patterns` | `forbidden_pattern` | ast-grep patterns (`id`, `lang`, `rule`) the rule forbids. On any other type they still run but never produce a finding, and `analyze`/`check` print a warning. |
 | `guard`    | selector rules   | `true` marks a rule whose `from`/`to` selector is expected to match nothing (see below). Default `false`.              |
+| `from_module` | `forbidden_dependency` | [Module selector](#module-selectors) for the importing side, instead of `from`. |
+| `to_module` | `forbidden_dependency` | Module selector for the imported side, instead of `to`. |
+| `rationale` | all | Why the rule exists. Appended to every finding's `why` as ` — <rationale>` and repeated in the repair task's `constraints`. |
+| `alternatives` | all | What to do instead. Sets the finding's `allowed_alternatives`; the repair task repeats each one in `constraints`. |
+| `docs` | all | A document reference, such as an ADR path. Appended to every finding's `constraint` as ` (see <docs>)`. |
+
+`rationale`, `alternatives`, and `docs` never enter a finding ID, so editing
+them re-keys no finding. Report text is bounded at projection, so a long
+rationale is cut, never rejected.
+
+```yaml
+rules:
+  - id: domain_no_http
+    type: forbidden_dependency
+    from_module: "layer:domain"
+    to: net/http
+    rationale: "Domain code stays free of I/O"
+    alternatives: ["Depend on a port in the application layer"]
+    docs: docs/adr/003.md
+  # Two independent contexts ("separate ways"): one rule for each direction.
+  - id: billing_separate_from_catalog
+    type: forbidden_dependency
+    from_module: billing
+    to_module: catalog
+  - id: catalog_separate_from_billing
+    type: forbidden_dependency
+    from_module: catalog
+    to_module: billing
+```
 
 `forbidden_layer_direction` takes no `from`/`to` (or `from_layer`/`to_layer`)
 keys — it derives layer ordering from `layers:` and each endpoint's layer from
@@ -1162,6 +1210,24 @@ rules:
   globs. Both globs are **required**: an empty glob matches nothing, ever
   (`doublestar.Match("", path)` is always false; there is no empty-means-match-all
   special case), so a rule missing either is rejected as a config error at load.
+  Either side can take a [module selector](#module-selectors) instead:
+  `from_module` for `from`, `to_module` for `to`. Each side takes exactly one
+  of the two keys; both or neither is a config error. With a module selector:
+  - a module side matches an endpoint whose declared module the selector
+    selects; an endpoint no declared module owns never matches it;
+  - an edge inside one declared module never matches;
+  - one finding per pair of sides, with `kind: module_dependency`. A module
+    side is keyed by its module (`edge.<side>.module`), a `from` glob side by
+    the importing package (`edge.from.path`), and a `to` glob side by the
+    target (`edge.to.path`), so a new or moved file keeps the finding ID. The
+    finding lists the import lines (at most 50; the full count is in
+    `matched_by.locations_total`);
+  - a selector that selects no declared module still loads. A fail-gated rule
+    goes to `decision.unevaluated_required_rules` with the reason
+    `selector matches nothing: from_module <selector>` (or `to_module`), a
+    warn-gated rule prints a config warning, and `archfit config lint`
+    reports `unknown_module`. `guard: true` exempts it, as for a path glob;
+  - the rule's scope is the languages of the modules a `from_module` selects.
 - `public_api_only` — fires on edges into internal surface, optionally filtered
   by `from` and `to`. The declared surfaces decide first, in every language:
   1. a target matching a `public` glob of the module that owns it never fires;

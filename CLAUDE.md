@@ -342,6 +342,22 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `ModelHash` ignores both keys (`TestModelHashIgnoresAllowlists`). The self-config
   parity proof for the 21 retired deny rules is
   `internal/selfmodel_allowlist_test.go`.
+- **Module selectors and rule rationale** (`policy.ModuleMap.SelectsModule`,
+  the one parser: `layer:<name>`, `role:<role>`, else a doublestar glob over
+  DECLARED module names — synthetic modules are never selected). Allowlist
+  entries and `forbidden_dependency`'s `from_module`/`to_module` read it. Each
+  side takes exactly one of glob / module selector (`validateForbiddenDependencyDef`);
+  `from_module`/`to_module` on any other type is a config error. Path-only
+  `forbidden_dependency` keeps its original edge loop and `finding.New` IDs
+  (byte-identical); the module branch (`checkModules`) skips same-module edges
+  and keys `NewKeyed(rule, "module_dependency", "module:"|"path:"+side…)`. A
+  selector that selects no module is vacuous (`vacuousSelector` side
+  `from_module`/`to_module`), linted `unknown_module`. `rationale`/
+  `alternatives`/`docs` are applied once, in `rules.gatedRule` (`explain`),
+  never enter IDs; the rationale rides `finding.Finding.Rationale`
+  (`json:"-"`) into the task constraints as `rationale: …`; SARIF carries it
+  in the message (the why) and `allowed_alternatives` as a result property
+  only when declared.
 - **`module_cycle` is production-only** (`rules.productionSource`). An edge counts when its importing file (a file node, or an import site with a source extension) is production:
   - a walked file: its in-scope FileClass decides;
   - a file declared out of scope: never;

@@ -616,7 +616,7 @@ Diagnostics:
 | `public_outside_module`  | error                          | A `public:` entry is outside the module's own `paths:`.                                                                                                                                                                                                        |
 | `public_matches_nothing` | error                          | A `public:` entry names no scanned package or module.                                                                                                                                                                                                          |
 | `ambiguous_ownership`    | error                          | Two modules claim the same source at equal glob specificity; the first by name silently wins.                                                                                                                                                                  |
-| `unknown_module`         | error                          | A `modules.<m>.depends_on` or `modules.<m>.visible_to` entry names no declared module, so it allows nothing. `check` prints the same text as a config warning.                                                                                               |
+| `unknown_module`         | error (warning on `gate: off` for a rule) | A `modules.<m>.depends_on` or `modules.<m>.visible_to` entry, or a `forbidden_dependency` rule's `from_module` or `to_module`, selects no declared module, layer, or role. An allowlist entry then allows nothing, and `check` prints a config warning; a rule side makes the rule not evaluated, as a dead selector does. |
 
 Notes:
 
