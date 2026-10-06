@@ -1,0 +1,10 @@
+# The archfit git hook for pre-commit (https://pre-commit.com). It needs the
+# archfit binary on PATH (language: system) and a .archfit.yaml at the root.
+# It blocks a commit whose change needs a repair or an owner decision.
+- id: archfit
+  name: archfit architecture guardrails
+  description: Block a commit that adds an architecture violation (archfit check --format agent).
+  entry: archfit hook git
+  language: system
+  pass_filenames: false
+  require_serial: true
