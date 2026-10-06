@@ -1230,8 +1230,8 @@ rules:
   the ordered module pair, so a new or moved file on that pair keeps the ID. The
   finding lists the import lines (sorted, at most 50; the full count is in
   `matched_by.locations_total`). An importer that no declared module owns gets
-  one finding for each importing package (a Go package directory, a TypeScript
-  file, a Python dotted module, or a Rust crate): `edge.from.path` names the
+  one finding for each importing package (a Go package directory, `.` at the
+  repository root, a TypeScript file, a Python dotted module, or a Rust crate): `edge.from.path` names the
   package, `edge.from.module` is empty, and `matched_by.from_package` repeats
   it. Only production edges count, as for `module_cycle`. Takes no
   `from`/`to`: a scope glob is a config error. The rule's scope is the

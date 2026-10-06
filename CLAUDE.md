@@ -331,7 +331,10 @@ init` emits v2 directly; owners update older configs manually before analysis.
   Endpoints resolve against the DECLARED map (`ModuleForNode`), never the
   augmented `e.FromModule`: a node only a synthetic module owns is unowned. A
   target no declared module owns is out of scope; an unowned importer is denied
-  by every `visible_to` and keyed by its package (`relationship.ModuleKey`).
+  by every `visible_to` and keyed by its package (`importingPackage`; a Go file
+  goes through `ModuleForFile`, as in classify, so a package-dir `paths:` glob
+  owns it). `resolveEvidence` never back-fills a `module_dependency` finding's
+  empty module.
   One finding per denied ordered module pair (`finding.NewKeyed(rule, kind,
   from, to)`, `matched_by.violates`), production edges only, as for
   `module_cycle`. Scope = languages of the modules that declare a list

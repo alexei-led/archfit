@@ -319,7 +319,7 @@ func goalFor(ruleType string, f finding.Finding) string {
 		if from == "" {
 			from = f.Edge.From.Path + " (owned by no declared module)"
 		}
-		return fmt.Sprintf("Remove the dependency of %s on module %s, which the module allowlist (%s) denies: drop the imports at the listed sites. Routing them through %s's public API, or through another module, keeps the violation. If the dependency is intended, ask the architecture owner to change the allowlist; do not edit it yourself.",
+		return fmt.Sprintf("Remove the dependency of %s on module %s, which the module allowlist (%s) denies: drop the imports at the listed sites. Routing them through %s's public API keeps the violation. If the dependency is intended, ask the architecture owner to change the allowlist; do not edit it yourself.",
 			from, f.Edge.To.Module, f.MatchedBy[matchedByViolatesKey], f.Edge.To.Module)
 	case ruleTypeForbiddenPattern:
 		return fmt.Sprintf("Remove the code in %s that matches forbidden pattern %q at the listed lines: replace it, or move that behavior to code the rule's scope does not cover.",

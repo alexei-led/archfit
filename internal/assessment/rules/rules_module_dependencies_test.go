@@ -230,3 +230,51 @@ func TestModuleDependencies_RejectsScopeSelectors(t *testing.T) {
 		}
 	}
 }
+
+// TestModuleDependencies_ResolvesGoFilesThroughTheirPackage pins importer and
+// target resolution against a module declared by its package directory or a
+// one-segment glob: a Go file belongs to the module that owns its package, as
+// in relationship analysis, so that module's depends_on is checked and its
+// visible_to admissions hold.
+func TestModuleDependencies_ResolvesGoFilesThroughTheirPackage(t *testing.T) {
+	modules := map[string]policy.ModuleDef{
+		modBilling:  {Paths: []string{globBilling}, VisibleTo: []string{modKernel}},
+		modKernel:   {Paths: []string{"kernel"}, DependsOn: []string{}},
+		modShipping: {Paths: []string{"cmd/*"}},
+	}
+	r := newModuleDependenciesRule(t, modules)
+	tests := []struct {
+		name         string
+		edge         moduleTestEdge
+		wantFrom     string
+		wantViolates string
+	}{
+		{name: "package-dir module's empty depends_on", edge: goImport("kernel/x.go", "billing/api"),
+			wantFrom: modKernel, wantViolates: violatesDependsOn},
+		{name: "one-segment glob module importing a visible_to module", edge: goImport("cmd/tool/main.go", "billing/api"),
+			wantFrom: modShipping, wantViolates: violatesVisibleTo},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := checkProduction(r, moduleSet(tt.edge))
+			if len(got) != 1 || got[0].Edge.From.Module != tt.wantFrom || got[0].MatchedBy["violates"] != tt.wantViolates {
+				t.Fatalf("findings = %+v, want %s -> billing violating %s", got, tt.wantFrom, tt.wantViolates)
+			}
+		})
+	}
+}
+
+// TestModuleDependencies_KeysRootUnownedImportersByPackage pins that two files
+// of an unowned root package are one finding, keyed on the package ".", not on
+// either file name.
+func TestModuleDependencies_KeysRootUnownedImportersByPackage(t *testing.T) {
+	r := newModuleDependenciesRule(t, allowlistModules())
+	got := checkProduction(r, moduleSet(goImport("main.go", "billing/api"), goImport("flags.go", "billing/api")))
+	if len(got) != 1 || got[0].Edge.From.Path != "." || len(got[0].Locations) != 2 {
+		t.Fatalf("findings = %+v, want one from the root package with both sites", got)
+	}
+	renamed := checkProduction(r, moduleSet(goImport("cli.go", "billing/api")))
+	if len(renamed) != 1 || renamed[0].ID != got[0].ID {
+		t.Errorf("finding ID moved with a root file rename: %+v vs %s", renamed, got[0].ID)
+	}
+}

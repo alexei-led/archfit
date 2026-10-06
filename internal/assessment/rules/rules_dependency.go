@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	gopath "path"
 	"sort"
 	"strconv"
 	"strings"
@@ -569,7 +570,7 @@ func validateModuleDependenciesDef(def policy.RuleDef) error {
 // One finding per denied module pair, keyed on (rule, kind, from module, to
 // module), so moving or adding a file on that pair never re-keys it. An unowned
 // importer has no module, so its finding is keyed on the importing node's
-// package (relationship.ModuleKey: a Go package directory, a TypeScript file, a
+// package (importingPackage: a Go package directory, a TypeScript file, a
 // Python dotted module, a Rust crate) and the target module, and that package
 // is the finding's from path.
 type moduleDependencies struct {
@@ -584,18 +585,18 @@ func (r *moduleDependencies) Check(s relationship.Set, ev Evidence) []finding.Fi
 	sites := make(map[pair][]relationship.Location)
 	violates := make(map[pair][]string)
 	for _, e := range s.DependencyEdges() {
-		to, toOwned := r.mm.ModuleForNode(e.ToPath, e.Language)
+		to, toOwned := declaredModuleOf(r.mm, e.ToID, e.ToPath, e.Language)
 		if !toOwned || !productionSource(e, ev) {
 			continue
 		}
-		from, _ := r.mm.ModuleForNode(e.FromPath, e.Language)
+		from, _ := declaredModuleOf(r.mm, e.FromID, e.FromPath, e.Language)
 		denied := r.mm.DeniedDependency(from, to)
 		if len(denied) == 0 {
 			continue
 		}
 		p := pair{from: from, to: to}
 		if from == "" {
-			p.unownedFrom = relationship.ModuleKey(e.FromID)
+			p.unownedFrom = importingPackage(e)
 		}
 		sites[p] = append(sites[p], edgeLocations(e)...)
 		violates[p] = denied
@@ -642,6 +643,35 @@ func (r *moduleDependencies) Check(s relationship.Set, ev Evidence) []finding.Fi
 		out = append(out, f)
 	}
 	return out
+}
+
+// declaredModuleOf resolves a graph node to its declared module the way
+// relationship analysis does: the node path first (ModuleForNode, which also
+// places a Rust node in the module that owns its crate), then, for a file node,
+// the file's own package selector (ModuleForFile). Without the fallback a Go
+// file under a module declared by its package directory (paths: [internal/foo])
+// would read as unowned: its depends_on would go unchecked and every
+// visible_to would deny it.
+func declaredModuleOf(mm policy.ModuleMap, id, path, language string) (string, bool) {
+	if module, ok := mm.ModuleForNode(path, language); ok {
+		return module, true
+	}
+	if strings.HasPrefix(id, relNodeKindFile+":") {
+		return mm.ModuleForFile(path)
+	}
+	return "", false
+}
+
+// importingPackage is the identity of an unowned importer: the package of a Go
+// file (its directory, "." at the repository root), otherwise the importing
+// node's module key (a TypeScript file, a Python dotted module, a Rust crate).
+// It never names a single Go file, so a second file of the package joins the
+// same finding.
+func importingPackage(e relationship.Edge) string {
+	if strings.HasPrefix(e.FromID, relNodeKindFile+":") && gopath.Ext(e.FromPath) == ".go" {
+		return gopath.Dir(e.FromPath)
+	}
+	return relationship.ModuleKey(e.FromID)
 }
 
 // Allowlist keys as policy.ModuleMap.DeniedDependency names them; the two
