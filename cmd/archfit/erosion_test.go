@@ -19,7 +19,8 @@ import (
 // and no_dead_archfit_rule — lives in internal/erosion_test.go, which also
 // carries the name-to-owner table for all seven checks. The seventh,
 // policy_query_agreement, lives in policy_test.go beside the can-import fixture
-// it shares with the other policy query tests.
+// it shares with the other policy query tests; its TypeScript and Python
+// end-to-end cases live in policy_agreement_lang_test.go.
 //
 // Each check here runs the real command over a fixture repository, because what
 // it protects is what a user receives: the emitted state, the emitted comparison
@@ -156,7 +157,7 @@ func TestErosion_ConfigHashRequired(t *testing.T) {
 func TestErosion_ConfigHashRequiredFiresOnAMissingFingerprint(t *testing.T) {
 	t.Parallel()
 	complete := report.StateComparison{
-		Status: report.ComparisonNotRequested, ConfigHash: "cfg", ModelHash: "model-hash",
+		Status: report.ComparisonNotRequested, ConfigHash: "cfg", ClassificationHash: "class-hash", ModelHash: "model-hash",
 		RubricVersion: report.ScoreVersion,
 	}
 	if problems := comparisonFingerprintProblems(complete); len(problems) != 0 {
@@ -164,10 +165,11 @@ func TestErosion_ConfigHashRequiredFiresOnAMissingFingerprint(t *testing.T) {
 	}
 
 	for _, blank := range []report.StateComparison{
-		{Status: complete.Status, ModelHash: complete.ModelHash, RubricVersion: complete.RubricVersion},
-		{Status: complete.Status, ConfigHash: complete.ConfigHash, RubricVersion: complete.RubricVersion},
-		{Status: complete.Status, ConfigHash: complete.ConfigHash, ModelHash: complete.ModelHash},
-		{ConfigHash: complete.ConfigHash, ModelHash: complete.ModelHash, RubricVersion: complete.RubricVersion},
+		{Status: complete.Status, ClassificationHash: complete.ClassificationHash, ModelHash: complete.ModelHash, RubricVersion: complete.RubricVersion},
+		{Status: complete.Status, ConfigHash: complete.ConfigHash, ModelHash: complete.ModelHash, RubricVersion: complete.RubricVersion},
+		{Status: complete.Status, ConfigHash: complete.ConfigHash, ClassificationHash: complete.ClassificationHash, RubricVersion: complete.RubricVersion},
+		{Status: complete.Status, ConfigHash: complete.ConfigHash, ClassificationHash: complete.ClassificationHash, ModelHash: complete.ModelHash},
+		{ConfigHash: complete.ConfigHash, ClassificationHash: complete.ClassificationHash, ModelHash: complete.ModelHash, RubricVersion: complete.RubricVersion},
 	} {
 		if problems := comparisonFingerprintProblems(blank); len(problems) == 0 {
 			t.Errorf("comparisonFingerprintProblems(%+v) = none, want the missing fingerprint reported", blank)
@@ -185,7 +187,10 @@ func TestErosion_ConfigHashRequiredFiresOnAMissingFingerprint(t *testing.T) {
 func comparisonFingerprintProblems(c report.StateComparison) []string {
 	var out []string
 	if c.ConfigHash == "" {
-		out = append(out, "no config_hash: a later run cannot tell whether the policy moved under it")
+		out = append(out, "no config_hash: the App cannot bind the report to the protected policy bytes")
+	}
+	if c.ClassificationHash == "" {
+		out = append(out, "no classification_hash: a later run cannot tell whether the measured policy moved under it")
 	}
 	if c.ModelHash == "" {
 		out = append(out, "no model_hash: a module rename would read as one resolved seam plus one new seam")

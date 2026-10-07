@@ -283,13 +283,17 @@ func ruleSentence(def policy.RuleDef) string {
 	}
 }
 
+// code renders a path, glob, or selector verbatim: its whitespace is part of
+// what the rule matches. Only a bare | is escaped, so it cannot split a row.
 func code(s string) string { return "`" + strings.ReplaceAll(s, "|", "\\|") + "`" }
 
+// cell renders free text (owner, layer) on one line: a YAML block scalar's
+// line breaks would end the table row.
 func cell(s string) string {
 	if s == "" {
 		return "—"
 	}
-	return strings.ReplaceAll(s, "|", "\\|")
+	return strings.ReplaceAll(strings.Join(strings.Fields(s), " "), "|", "\\|")
 }
 
 func codeList(items []string) string {

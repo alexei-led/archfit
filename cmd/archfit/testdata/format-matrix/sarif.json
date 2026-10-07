@@ -7,6 +7,7 @@
       },
       "properties": {
         "comparison": {
+          "classification_hash": "1664f273bfac18369e4c40802f1e17408ba2b35c438f04179ab7b87a76a909a2",
           "config_hash": "0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6",
           "measurement_profile": {
             "producers": [
@@ -19,21 +20,6 @@
                 "semantics_version": "ast-grep/syntax.v1",
                 "status": "disabled",
                 "tool": "ast-grep/syntax"
-              },
-              {
-                "semantics_version": "cargo.v1",
-                "status": "absent",
-                "tool": "cargo"
-              },
-              {
-                "semantics_version": "cargo-modules.v1",
-                "status": "absent",
-                "tool": "cargo-modules"
-              },
-              {
-                "semantics_version": "dependency-cruiser.v1",
-                "status": "absent",
-                "tool": "dependency-cruiser"
               },
               {
                 "semantics_version": "deploy-unit.v2",
@@ -53,11 +39,6 @@
                 "tool_version": "\u003cTOOL_VERSION\u003e"
               },
               {
-                "semantics_version": "grimp.v2",
-                "status": "absent",
-                "tool": "grimp"
-              },
-              {
                 "semantics_version": "jscpd.v1",
                 "status": "disabled",
                 "tool": "jscpd"
@@ -75,7 +56,7 @@
             ],
             "settings_hash": "\u003cSETTINGS_HASH\u003e",
             "unknowns": [],
-            "version": "archfit.measurement.v1"
+            "version": "archfit.measurement.v2"
           },
           "model_hash": "124d0f767415a09b74bcd3206ab947f4bb01e3c7905db14a15eaed59d690ef78",
           "reasons": [],

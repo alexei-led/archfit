@@ -39,7 +39,7 @@ func PartialFromDegradedPrecision(row Coverage) bool {
 }
 
 // MeasurementProfileVersion is the supported measurement-identity contract.
-const MeasurementProfileVersion = "archfit.measurement.v1"
+const MeasurementProfileVersion = "archfit.measurement.v2"
 
 // MeasurementContract is the supported extractor manifest. Changes to facts or
 // normalization require a semantics bump; external versions remain exact-match.

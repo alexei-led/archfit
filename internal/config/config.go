@@ -80,6 +80,7 @@ func Load(_ context.Context, path string) (Config, error) {
 	if err := dec.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("config: decode %q: %w", path, deprecatedConfigHint(err))
 	}
+	normalizeRuleText(cfg.Rules)
 
 	if err := validateAll(cfg); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
@@ -87,6 +88,24 @@ func Load(_ context.Context, path string) (Config, error) {
 
 	return cfg, nil
 }
+
+// normalizeRuleText turns each rule's rationale, docs, and alternatives into one
+// trimmed line. A YAML block scalar keeps its line breaks and trailing newline,
+// and every consumer appends this text into one line: a finding's why printed
+// "(see docs/adr.md )", and the AGENTS.md list item broke. Normalizing here, once,
+// covers findings, agent tasks, SARIF, and agents-md alike.
+func normalizeRuleText(rules []policy.RuleDef) {
+	for i := range rules {
+		r := &rules[i]
+		r.Rationale = oneLine(r.Rationale)
+		r.Docs = oneLine(r.Docs)
+		for j := range r.Alternatives {
+			r.Alternatives[j] = oneLine(r.Alternatives[j])
+		}
+	}
+}
+
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // deprecatedConfigHint augments a strict-decode failure with v0.x→v1.0 migration
 // guidance when the unknown field is a key renamed or removed before v1.0. The raw

@@ -260,15 +260,16 @@ Synopsis:
 archfit baseline [flags]
 ```
 
-What it writes (`schema_version: archfit.baseline.v2`):
+What it writes (`schema_version: archfit.baseline.v3`):
 
 - Saves the baseline beside the config as `.archfit-baseline.json`.
 - Keeps the accepted finding fingerprints and the metric snapshot, so later runs
   can detect fixed findings. A Balanced Coupling advisory groups several edges
   into one finding. The baseline keeps the fingerprint of each edge in the
   group, so the group stays accepted on the next run.
-- Keeps the architecture-state reference under `state`: the four comparison
-  fingerprints (`config_hash`, `model_hash`, `labels_hash`, `rubric_version`)
+- Keeps the architecture-state reference under `state`: the comparison
+  fingerprints (`classification_hash`, `model_hash`, `labels_hash`, `rubric_version`),
+  the `config_hash` identity
   and the `measurement_profile` (producer semantics, tool versions, statuses,
   and settings hash)
   together with the facts they qualify — `hard_gate_finding_ids`,
@@ -541,10 +542,33 @@ Both hooks block only when the next action is `repair` or `ask_owner` and a
 repair is in scope. A dead selector or a metric ratchet also leads to those
 actions, but neither is scoped to the change, so the hooks report them and
 let the change through. `hook git` exits `1` on a block, `0` otherwise (other
-actions are printed on stderr), and `3` when archfit cannot run. It judges the
-files on disk: with pre-commit that is the staged content plus untracked
-files, because pre-commit stashes unstaged edits; a hook installed directly in
-`.git/hooks` also sees unstaged edits.
+actions are printed on stderr), and `3` when archfit cannot run.
+
+`hook git` judges what the commit will contain: the staged content. Unstaged
+edits and untracked files do not count, with pre-commit or with a hook in
+`.git/hooks`. It works in four steps:
+
+1. It copies the index that git hands the hook (`GIT_INDEX_FILE`; `git commit
+   -a` and `git commit <path>` use a temporary index) and writes it as a tree.
+2. It records that tree as a commit object with HEAD as its parent, under
+   the author that git will record on the real commit. No ref points to the
+   commit, and `git gc` removes it later.
+3. It checks the commit out in a temporary worktree under
+   `.archfit-cache/worktrees/` and runs `check --format agent --base <ref>`
+   there, over the whole repository, as `check -c <config>` does with no
+   `--root`. `--base` resolves in the repository, before the checkout.
+4. It removes the worktree.
+
+The working tree, the index, and the refs do not change. The config comes
+from the index, so a config that the commit removes, or a config outside the
+repository, is an error (exit `3`). The `validate` command in the output names
+the config in the repository, not the temporary worktree.
+The baseline, the labels, and the fact cache come from the config directory on
+disk, as on the `--base` side. Unmerged index entries are an error (exit `3`).
+
+Limit: the temporary worktree holds tracked files only. Like the `--base`
+side, an analyzer finds gitignored inputs (such as `node_modules`) only in the
+repository root or above it, not in a subdirectory.
 
 ## `archfit agents-md`
 

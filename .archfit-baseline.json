@@ -1,5 +1,5 @@
 {
-  "schema_version": "archfit.baseline.v2",
+  "schema_version": "archfit.baseline.v3",
   "accepted": [
     {
       "fingerprint": "1f841c4ef66c9d9a70430132618740e2",
@@ -188,12 +188,13 @@
   },
   "state": {
     "config_hash": "98827963bb190a8cdc5ca25e5eededc30c737e0ccfdb458057ae738eba4da319",
+    "classification_hash": "b960cc2884924420cb8e8e09969a77c4d93f686acb4564e4c268bb8d072f3882",
     "model_hash": "74bef56623fe4e1240964f521caa00b09c0f8f14b4a2fb95e7e53d06afc5493c",
     "labels_hash": "",
     "rubric_version": "bc_score.v7",
     "measurement_profile": {
-      "version": "archfit.measurement.v1",
-      "settings_hash": "847eb7ca8150b110fb195a55b54456a3d16ed99b7a1dcf41c3b0b10b42851a4d",
+      "version": "archfit.measurement.v2",
+      "settings_hash": "089b5d4d8f0281505ca9664d832957ec24a3dce0902cc9593087ee679fe17ae8",
       "producers": [
         {
           "tool": "ast-grep",
@@ -205,16 +206,6 @@
           "semantics_version": "ast-grep/syntax.v1",
           "tool_version": "ast-grep 0.45.3",
           "status": "ok"
-        },
-        {
-          "tool": "cargo",
-          "semantics_version": "cargo.v1",
-          "status": "absent"
-        },
-        {
-          "tool": "cargo-modules",
-          "semantics_version": "cargo-modules.v1",
-          "status": "absent"
         },
         {
           "tool": "dependency-cruiser",
@@ -258,13 +249,13 @@
           "tool": "scip",
           "semantics_version": "scip.v2",
           "tool_version": "scip-go 0.2.7",
-          "status": "partial"
+          "status": "ok"
         },
         {
           "tool": "scip-symbols",
           "semantics_version": "scip-symbols.v1",
           "tool_version": "scip-go 0.2.7",
-          "status": "partial"
+          "status": "ok"
         }
       ],
       "unknowns": []
@@ -328,18 +319,18 @@
         "gate": "warn",
         "coverage": {
           "basis": "discovered dependencies resolved inside the declared module map",
-          "observed": 668,
-          "total": 1648
+          "observed": 675,
+          "total": 1677
         },
         "metrics": [
           {
             "name": "internal_edges",
-            "value": 668,
+            "value": 675,
             "unit": "count"
           },
           {
             "name": "external_edges",
-            "value": 980,
+            "value": 1002,
             "unit": "count"
           },
           {
@@ -397,13 +388,13 @@
         "gate": "warn",
         "coverage": {
           "basis": "cross-boundary edges scored",
-          "observed": 496,
-          "total": 496
+          "observed": 503,
+          "total": 503
         },
         "metrics": [
           {
             "name": "scored_edges",
-            "value": 496,
+            "value": 503,
             "unit": "count"
           },
           {
@@ -512,12 +503,12 @@
           },
           {
             "name": "production_files",
-            "value": 291,
+            "value": 293,
             "unit": "count"
           },
           {
             "name": "production_loc",
-            "value": 64684,
+            "value": 65226,
             "unit": "count"
           },
           {
@@ -542,7 +533,7 @@
           },
           {
             "name": "functions_over_threshold",
-            "value": 184,
+            "value": 186,
             "unit": "count"
           }
         ]
@@ -553,23 +544,23 @@
         "gate": "pass",
         "coverage": {
           "basis": "classified source files",
-          "observed": 619,
-          "total": 625
+          "observed": 627,
+          "total": 633
         },
         "metrics": [
           {
             "name": "test_files",
-            "value": 328,
+            "value": 334,
             "unit": "count"
           },
           {
             "name": "production_files",
-            "value": 291,
+            "value": 293,
             "unit": "count"
           },
           {
             "name": "test_to_production_files",
-            "value": 1.127147766323024,
+            "value": 1.1399317406143346,
             "unit": "ratio"
           }
         ]

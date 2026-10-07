@@ -9,6 +9,9 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
+// profileV1 is the retired profile contract a stored reference may still carry.
+const profileV1 = "archfit.measurement.v1"
+
 func TestMeasurementProfileCompatibility(t *testing.T) {
 	profile := func() *evidence.MeasurementProfile {
 		p := measurementFixture()
@@ -23,6 +26,10 @@ func TestMeasurementProfileCompatibility(t *testing.T) {
 		{"identical", func(p *evidence.MeasurementProfile) *evidence.MeasurementProfile { return p }, ""},
 		{"missing", func(*evidence.MeasurementProfile) *evidence.MeasurementProfile { return nil }, "missing"},
 		{"unknown contract", func(p *evidence.MeasurementProfile) *evidence.MeasurementProfile { p.Version = "future"; return p }, "unsupported"},
+		{"reference is profile v1", func(p *evidence.MeasurementProfile) *evidence.MeasurementProfile {
+			p.Version = profileV1
+			return p
+		}, profileV1},
 		{"settings", func(p *evidence.MeasurementProfile) *evidence.MeasurementProfile {
 			p.SettingsHash = "changed"
 			return p
@@ -82,5 +89,14 @@ func TestConfigCompareSuppressesDeltaWithoutComparableMeasurement(t *testing.T) 
 		if cmp.Status != result.StateComparisonNonComparable {
 			t.Fatalf("missing profile compared: %+v", cmp)
 		}
+	}
+}
+
+func TestOlderProfileGivesOneReasonNamingTheVersion(t *testing.T) {
+	head, reference := measurementFixture(), measurementFixture()
+	reference.Version = profileV1
+	reasons := decision.CompareMeasurementProfiles(head, reference)
+	if len(reasons) != 1 || !strings.Contains(reasons[0], profileV1) || !strings.Contains(reasons[0], "reference") {
+		t.Errorf("reasons = %v, want exactly one that names the v1 version and the reference side", reasons)
 	}
 }

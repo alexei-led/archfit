@@ -26,7 +26,8 @@ type BaselineAnchor struct {
 	// They become non-comparability reasons rather than a silent skip.
 	SnapshotMismatches []string
 	// SeamsComparable reports that the persisted baseline carries a seam
-	// snapshot taken under the same config, module map, labels, and rubric.
+	// snapshot taken under the same classification, module map, labels, rubric,
+	// and measurement profile.
 	// False is the safe default: a baseline written before the seam ledger
 	// existed has no seams, and treating its absence as "no seams then" would
 	// report every current seam as newly introduced.

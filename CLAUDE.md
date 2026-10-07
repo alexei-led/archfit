@@ -143,8 +143,8 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   one. (Transitional: the stricter v7 qualification — strong strength, declared
   volatility, no cohesive role — lands with the volatility and gate rules.)
   `mode: fail` blocks ONLY on seams newly introduced against a **comparable**
-  reference (all four of `config_hash`, `model_hash`, `labels_hash`,
-  `rubric_version` equal); without one the gate reports the seam total, states
+  reference (all four of `classification_hash`, `model_hash`, `labels_hash`,
+  `rubric_version` equal, and the measurement profile); without one the gate reports the seam total, states
   that no new-seam count is claimed, and never blocks. A blocked run emits one
   `bc/coupling_gate` gate finding PER new seam, keyed `coupling-gate/<seamID>`
   and carrying the module pair. Advisory PROMOTION is gone: the scalar gate had
@@ -171,9 +171,22 @@ init` emits v2 directly; owners update older configs manually before analysis.
   pairs are not either — they have no import edge. Seam order is by module pair,
   and the gate re-sorts by ID so a ledger reordering cannot reorder gate findings.
 - **Comparison is strict on four fingerprints plus measurement profile** (`decision.CompareFingerprints`).
-  `config_hash` + `model_hash` (`policy.ModelHash` over the RESOLVED module map)
+  `classification_hash` (`acquisition.ClassificationHash`: the policy leaves that change
+  facts and are not modules — volatility cascade, duplicated-knowledge mode,
+  `external_systems`, `function_loc_threshold`, metrics switched off) + `model_hash` (`policy.ModelHash` over the RESOLVED module map)
   `labels_hash` (`labels.FileHash` over APPROVED entries only) +
-  `rubric_version`. Any mismatch is `non_comparable` with a reason NAMING the
+  `rubric_version`. The raw `config_hash` is IDENTITY ONLY (the App binds it to the
+  protected policy bytes) and is not a field of `decision.Fingerprints`, so it cannot
+  be compared by accident: comments, waivers, rules (not their `patterns:`, which the
+  ast-grep pass runs and the settings hash covers), `layers`, `min_severity`,
+  `depends_on`/`visible_to` and `reviewed_at` are governance and never make a run
+  non-comparable. A `languages.<id>.gate` edit matters only when it flips an
+  absent row to disabled or demands a tool for a language that is not in the tree
+  (a coverage gap makes the row applicable); supplied `coverage:` sources enter the settings hash. Every config leaf has exactly one class (model,
+  classification, profile, governance): `internal/config/classification_test.go`
+  fails on a leaf with no class, so a new key needs a decision. Each non-comparable
+  result also carries `drift[]` (`decision.DriftClass`), so a consumer reads the
+  class, never the reason text. Any mismatch is `non_comparable` with a reason NAMING the
   drifted input — never a delta with a caveat. Model hash is load-bearing: seam
   identity comes from module NAMES, so without it a rename reads as one resolved
   seam plus one new seam and a new-seam gate blocks on a no-op refactor.
@@ -187,8 +200,20 @@ init` emits v2 directly; owners update older configs manually before analysis.
   non-comparable, so `mode: fail` blocks only on code-edge changes until
   `archfit baseline` is re-run. Rationale in
   `docs/design/architecture-state-reporting.md`.
-  The measurement profile adds the normalized settings hash and producer
-  semantics/status/tool versions. Unknown or incompatible profile data makes
+  The measurement profile (`archfit.measurement.v2`) adds the settings hash and
+  producer semantics/status/tool versions. The hash covers the global settings
+  plus ONE slice per language that contributes a producer; a language row that
+  is absent, has no coverage gap, and has no source file in the inventory is
+  not applicable and leaves the profile (`profileNotApplicable`), so registering
+  a language moves no profile on a tree without it. Rule patterns are hashed in
+  sorted order; `tool_version` is one printable line of at most 128 runes
+  (`normalizeToolVersion`, a digest suffix keeps long versions distinct). A
+  reference on another profile version is ONE reason naming that version. The
+  pairing paths (`pairFamily`, `gradeTool`) read the marked coverage copy, which
+  the profile does not touch. Accepted ceiling: the inventory comes from the LOC
+  walk, which skips `testdata/`, `vendor/` and similar, so a language whose only
+  files sit there is not applicable and its per-language `syntax` flag is not
+  hashed; the alternative over-hashes every tree that merely disables a language. Unknown or incompatible profile data makes
   the comparison `non_comparable` with named reasons; external producer
   versions are exact-match until equivalence is verified. Unresolved dynamic
   dependency-cruiser inputs and unsupported TypeScript config resolution are
@@ -368,7 +393,9 @@ init` emits v2 directly; owners update older configs manually before analysis.
   never enter IDs; the rationale rides `finding.Finding.Rationale`
   (`json:"-"`) into the task constraints as `rationale: …`; SARIF carries it
   in the message (the why) and `allowed_alternatives` as a result property
-  only when declared.
+  only when declared. `config.Load` collapses all three to one trimmed line
+  (`normalizeRuleText`): a block scalar's trailing newline printed
+  `(see docs/adr.md )` and broke the `agents-md` list item.
 - **`module_cycle` is production-only** (`rules.productionSource`). An edge counts when its importing file (a file node, or an import site with a source extension) is production:
   - a walked file: its in-scope FileClass decides;
   - a file declared out of scope: never;
@@ -773,7 +800,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   and pinned to `state.RequiredFacts` (claim membership included) by
   `brief_test.go`; a new fact needs a step. `archfit baseline` is a next step
   only with zero blockers and no stored reference: a non-comparable gate
-  reference whose reasons name no fingerprint (`config_hash`…`rubric_version`,
+  reference whose reasons name no fingerprint (`classification_hash`…`rubric_version`,
   `measurement_profile`) and no `stored baseline` (the wire carries reasons,
   not hashes); a stored one that does not compare asks for review. NOT
   MEASURED reads the same step (`View.StepFor`). Code-repair blockers precede
@@ -859,10 +886,27 @@ init` emits v2 directly; owners update older configs manually before analysis.
   AND an in-scope repair (a dead selector or a ratchet is not scoped to the
   change, so it is a `systemMessage`); `stop_hook_active` → `systemMessage`;
   any archfit error fails open (exit 0 + `systemMessage`); malformed stdin is
-  1. `hook git` exits 1/0/3 on the same `blocksChange` and judges the files on
-  disk. Both run `executeScan` in process with `--base HEAD`
-  and the pipeline's stderr discarded. These exit codes are the host protocol,
-  never the engine verdict.
+  1. `hook git` exits 1/0/3 on the same `blocksChange` and judges the INDEX,
+  never the disk: `historygit.SnapshotIndex` copies the index git hands the
+  hook (`GIT_INDEX_FILE`, read through the hidden `--index-file` flag; `git
+  commit -a`/`<path>` use a temporary one, and `CleanEnv` scrubs the variable,
+  so it is passed on purpose), runs `write-tree` on the copy (write-tree writes
+  its cache-tree back, and git commit holds the real index locked), and
+  `commit-tree`s it on HEAD with `--no-gpg-sign`, a fixed date, and the
+  author `git var GIT_AUTHOR_IDENT` names (same staged tree, same SHA, same
+  checkout path; a placeholder author would win the git-author owner fallback
+  in the hook but not in CI). `Worktree.Checkout` materialises it with the
+  whole repository as the head root (as `check -c` without `--root`, never the
+  config dir); the config is read from the checkout,
+  `BundleDir` (baseline, labels, fact cache) stays the on-disk config dir
+  (`scanRequest.bundleDir`). `--base` is resolved to a SHA in the repository
+  first: inside the snapshot worktree `HEAD` names the snapshot and every
+  finding would grade pre_existing. The repair's validation command names
+  the repository config, root, and the ref as written, never the snapshot
+  that cleanup removes (`application.Request.ValidationConfig`/
+  `ValidationRoot`, `scanRequest.validationBase`). Both hooks run `executeScan` in process
+  with the pipeline's stderr discarded. These exit codes are the host
+  protocol, never the engine verdict.
 - **`AGENTS.md` carries a generated block** (`archfit agents-md`, markers
   `<!-- archfit:start/end -->`). `TestAgentsMDRepositoryBlockIsCurrent` fails
   when `.archfit.yaml` changes without `archfit agents-md --write`; example
@@ -890,7 +934,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   has watched fail is a rule nobody knows still works.
   `no_scalar_decision` + `no_dead_archfit_rule` live in `internal/erosion_test.go`
   (which carries the name→owner table); `dimension_status_required`,
-  `config_hash_required`, `label_evidence_required`, and `baseline_idempotent`
+  `config_hash_required` (config_hash AND classification_hash), `label_evidence_required`, and `baseline_idempotent`
   live in `cmd/archfit/erosion_test.go` and run the real command over a fixture
   repo. `no_scalar_decision` scopes `internal/application/analysis.go` to
   `outcomeFor`/`seamAnchor`, NOT the whole file: `AnalysisResult` still CARRIES
@@ -905,8 +949,16 @@ init` emits v2 directly; owners update older configs manually before analysis.
   edge class (allowlist, layer order, internal/public, path and module
   `forbidden_dependency`); a class check never fires on fails the gate. Its
   fixture `…FiresOnAWrongDecision` feeds the shared `agreementProblems` predicate
-  flipped decisions. TypeScript and Python are pinned at edge spelling only
-  (`QueryEdge` tests), not end to end.
+  flipped decisions. TypeScript and Python run the same comparison end to end
+  (`cmd/archfit/policy_agreement_lang_test.go`,
+  `TestErosion_PolicyQueryAgreesWithCheckTypeScript` / `…Python`) on fixtures
+  with the same five classes as Go (allowlist, layer order, internal/public,
+  path and module `forbidden_dependency`), through the real dependency-cruiser
+  and grimp (the TypeScript fixture is `.js`, which
+  dependency-cruiser parses without the `typescript` package). They skip when
+  `depcruise`/`npx` or `uv` is absent or under `-short`; `ARCHFIT_REQUIRE_TOOLS=1`
+  (set in CI, which installs the analyzers before the test step) turns each
+  skip into a failure.
 - **`measurement` is a property of the tree, never of the run**
   (`report.StateMeasurement`, populated in `application.projectArchitectureState`).
   Exactly four fields: `source_ref`, `history_depth`, `history_window`,
@@ -919,8 +971,9 @@ init` emits v2 directly; owners update older configs manually before analysis.
   records `history_window: unavailable` with depth 0 rather than leaving both
   blank, so "no history here" stays distinguishable from "the scan was never
   wired up".
-- **The four comparability fingerprints live ONLY in the root `comparison`
-  block** (`TestFingerprintsLiveOnlyInTheComparisonBlock` walks the serialised
+- **The comparability fingerprints live ONLY in the root `comparison`
+  block** (`config_hash` identity, `classification_hash`, `model_hash`, `labels_hash`,
+  `rubric_version`) (`TestFingerprintsLiveOnlyInTheComparisonBlock` walks the serialised
   wire form). A second copy is a second answer to "may these two runs be
   compared", and the copies drift. `labels_hash` is `omitempty` and absent when
   no label is approved — empty compares equal to empty, so two unlabelled repos
@@ -934,10 +987,10 @@ init` emits v2 directly; owners update older configs manually before analysis.
 - **`change_locality`'s denominator is the DECLARED module set**, not the touched
   count (`changeLocalityDimension`). Observed-over-observed is a tautology: it
   reported 100% coverage on a window that reached one module out of forty.
-- **Baseline schema v2** (`internal/baseline`, `SchemaVersion =
-"archfit.baseline.v2"`). Stores accepted findings, the metric snapshot, and the
-  architecture-state reference: the four comparison fingerprints (`config_hash`,
-  `model_hash`, `labels_hash`, `rubric_version`) and the measurement profile
+- **Baseline schema v3** (`internal/baseline`, `SchemaVersion =
+"archfit.baseline.v3"`; v3 added `classification_hash`, so v2 files are rejected). Stores accepted findings, the metric snapshot, and the
+  architecture-state reference: the comparison fingerprints (`classification_hash`,
+  `model_hash`, `labels_hash`, `rubric_version`, plus the `config_hash` identity) and the measurement profile
   travelling with the facts they qualify — hard-gate finding IDs,
   distributed-monolith seam IDs, and the nine dimension snapshots. NO repository
   scalar is written. Older schemas are
