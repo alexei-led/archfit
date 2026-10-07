@@ -93,9 +93,36 @@ func (s PolicyQueryService) CanImport(ctx context.Context, req CanImportRequest)
 			if err != nil {
 				return nil, err
 			}
-			answer.EdgeJudgment = judged
+			answer.EdgeJudgment = boundJudgmentText(judged)
 		}
+		answer.Reasons = reportTexts(answer.Reasons, maxReportTextRunes)
 		answers = append(answers, answer)
 	}
 	return answers, nil
+}
+
+// boundJudgmentText applies the report text bounds to the repair text of an
+// edge judgment. The answer never passes through ProjectReport, yet it carries
+// the same rule-derived text (a rationale, alternatives, and docs written as
+// YAML block scalars), so it is bounded here, at the one place it is built.
+// Finding and rule IDs are identity and stay as they are.
+func boundJudgmentText(j evaluation.EdgeJudgment) evaluation.EdgeJudgment {
+	j.Denials = boundEdgeFindings(j.Denials)
+	j.Accepted = boundEdgeFindings(j.Accepted)
+	j.Advisories = boundEdgeFindings(j.Advisories)
+	return j
+}
+
+func boundEdgeFindings(in []evaluation.EdgeFinding) []evaluation.EdgeFinding {
+	if in == nil {
+		return nil
+	}
+	out := make([]evaluation.EdgeFinding, len(in))
+	for i, f := range in {
+		f.Why = reportText(f.Why, maxReportTextRunes)
+		f.Goal = reportText(f.Goal, maxReportTaskTextRunes)
+		f.Constraints = reportTexts(f.Constraints, maxReportTaskTextRunes)
+		out[i] = f
+	}
+	return out
 }
