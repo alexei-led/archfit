@@ -351,19 +351,20 @@ cannot currently reach, which teaches readers to ignore the gate.
 
 ## Erosion gates
 
-Six named checks keep the contract from decaying back into the scalar report it
+Seven named checks keep the contract from decaying back into the scalar report it
 replaced. CI runs them as an explicit gate step; each has one executable owner
 and each owner proves it fires on a fixture that violates it, so none can pass
 vacuously.
 
-| Check                       | Owner                                             | What it prevents                                                  |
-| --------------------------- | ------------------------------------------------- | ----------------------------------------------------------------- |
-| `no_scalar_decision`        | `internal.TestErosion_NoScalarDecision`           | an averaged score re-entering the path from evidence to exit code |
-| `no_dead_archfit_rule`      | `internal.TestErosion_NoDeadArchfitRule`          | a rule reporting "0 violations" for a boundary nobody checks      |
-| `dimension_status_required` | `cmd/archfit.TestErosion_DimensionStatusRequired` | an envelope with no status reading as an empty, healthy result    |
-| `config_hash_required`      | `cmd/archfit.TestErosion_ConfigHashRequired`      | a delta taken across a config edit blaming the code               |
-| `label_evidence_required`   | `cmd/archfit.TestErosion_LabelEvidenceRequired`   | an unevidenced approval silencing a seam permanently              |
-| `baseline_idempotent`       | `cmd/archfit.TestErosion_BaselineIdempotent`      | a self-referential capture reporting drift that is not there      |
+| Check                       | Owner                                                | What it prevents                                                  |
+| --------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------- |
+| `no_scalar_decision`        | `internal.TestErosion_NoScalarDecision`              | an averaged score re-entering the path from evidence to exit code |
+| `no_dead_archfit_rule`      | `internal.TestErosion_NoDeadArchfitRule`             | a rule reporting "0 violations" for a boundary nobody checks      |
+| `dimension_status_required` | `cmd/archfit.TestErosion_DimensionStatusRequired`    | an envelope with no status reading as an empty, healthy result    |
+| `config_hash_required`      | `cmd/archfit.TestErosion_ConfigHashRequired`         | a delta taken across a config edit blaming the code               |
+| `label_evidence_required`   | `cmd/archfit.TestErosion_LabelEvidenceRequired`      | an unevidenced approval silencing a seam permanently              |
+| `baseline_idempotent`       | `cmd/archfit.TestErosion_BaselineIdempotent`         | a self-referential capture reporting drift that is not there      |
+| `policy_query_agreement`    | `cmd/archfit.TestErosion_PolicyQueryAgreesWithCheck` | a `can-import` answer that disagrees with the `check` gate        |
 
 `no_scalar_decision` scopes `internal/application/analysis.go` to the decision
 functions rather than the whole file, deliberately: the run result still
@@ -371,6 +372,17 @@ functions rather than the whole file, deliberately: the run result still
 internal diagnostic is not the same defect as deciding from it. The scoped rule fails
 loudly if its target function is renamed away, so it cannot silently check
 nothing.
+
+`policy_query_agreement` runs `archfit policy can-import` on every import of a
+Go fixture, then `check` on the same tree. The denials and the active gate
+findings must be equal sets of finding ID and rule ID. The fixture has one
+fail-gated rule for each edge class: a `module_dependencies` allowlist, a
+`forbidden_layer_direction` order, a `public_api_only` internal surface, and a
+path and a module `forbidden_dependency`. A class on which `check` reports no
+gate finding fails the gate, so a rule removed from the fixture cannot narrow
+it. The end-to-end check is Go only. TypeScript and Python are checked at the
+edge-spelling level only: their `QueryEdge` tests hold the query edge equal to
+the edge the extractor emits.
 
 ## Maintenance recipes
 

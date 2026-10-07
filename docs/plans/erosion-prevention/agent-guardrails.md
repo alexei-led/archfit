@@ -259,9 +259,13 @@ commands ship and an agent host without a shell needs it. Use the official
 
 ## Tests
 
-- **Agreement.** On Go, TypeScript, and Python fixtures, every edge gate
-  finding from `check --json` is `denied` by `can-import`, with the same rule
-  ID and finding ID. No tool runner call happens.
+- **Agreement.** The erosion gate `policy_query_agreement`
+  (`TestErosion_PolicyQueryAgreesWithCheck`): on a Go fixture with one rule per
+  edge class (allowlist, layer order, internal/public, path and module
+  `forbidden_dependency`), every gate finding from `check --json` is `denied`
+  by `can-import`, with the same rule ID and finding ID, and every denial is a
+  gate finding. Can-import does not touch the fact cache. TypeScript and Python
+  are checked at the edge-spelling level only, by their `QueryEdge` tests.
 - **Completeness.** Every active gate finding ID appears in a repair, or is
   counted in `omitted.repairs`.
 - **Next action.** A table test of the precedence. `none` never appears with an
@@ -281,8 +285,8 @@ commands ship and an agent host without a shell needs it. Use the official
    `agent` group: `agent hook`, `agent instructions`, `agent skill`,
    `agent can-import`, `agent where`. The
    [roadmap](erosion-roadmap.md#open-questions-for-the-owner) lists this question.
-2. **Erosion gate.** Add the `can-import` agreement test as a seventh erosion
-   gate.
+2. **Erosion gate.** Decided: the agreement test is the seventh erosion gate,
+   `policy_query_agreement`.
 3. **Stop-hook reference.** The default `--since` ref for the hook: `HEAD`, or
    the merge-base with the default branch.
 4. **Steady-state partials.** Whether `restore_evidence` fires on the normal

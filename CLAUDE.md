@@ -25,7 +25,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - Import ring: `go test ./internal/ -run TestArchImports`
 - Golden output: `go test ./internal/application/ -run TestGolden` — regenerate
   deliberately and inspect the diff; output changes are never automatic.
-- Erosion gates: `go test ./internal/ ./cmd/archfit/ -run TestErosion_` — the six
+- Erosion gates: `go test ./internal/ ./cmd/archfit/ -run TestErosion_` — the seven
   named architecture-state checks (see the erosion invariant below).
 - Dogfood gate: `make archfit` — CI runs the same target after tests/goldens. Also
   runs locally pre-push via the `arch-lint` hook in `.pre-commit-config.yaml`. The
@@ -842,8 +842,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `module_cycle` on a cross-module edge, `cycle` off Go, the seam gate in
   `mode: fail`) > `allowed` (an allowlist that names the pair, or the layer
   order) > `unconstrained`; an edge whose only violations are accepted debt is
-  `unconstrained`, never `allowed`. `cmd/archfit.TestPolicyCanImportAgreesWithCheck`
-  pins the agreement in both directions.
+  `unconstrained`, never `allowed`. The erosion gate `policy_query_agreement`
+  pins the agreement in both directions (see the erosion invariant below).
 - **Hooks map `next_action` onto a host protocol** (`cmd/archfit/hook.go`). `hook
   claude` (Stop/SubagentStop JSON on stdin, config resolved against the event
   `cwd`, a tree clean but for `.archfit-cache` skips) exits 2 with
@@ -876,7 +876,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `decision.unevaluated_required_rules`; without another blocker it sets
   `hard_gates: unmeasured` and remains exit 2. Required-rule evidence is read
   from these fields, never inferred from finding prose.
-- **Six named erosion gates** hold the architecture-state contract against decay
+- **Seven named erosion gates** hold the architecture-state contract against decay
   back into the averaged score it replaced. Each has ONE executable owner and a
   PAIRED fixture proving it fires on a violating input — a structural rule nobody
   has watched fail is a rule nobody knows still works.
@@ -891,6 +891,14 @@ init` emits v2 directly; owners update older configs manually before analysis.
   target function is renamed away, so it cannot silently check nothing.
   `label_evidence_required` is the one check whose positive case is vacuous today
   (`.archfit-labels.yaml` is `labels: []`) — its fixtures are what prove it works.
+  `policy_query_agreement` (`cmd/archfit/policy_test.go`,
+  `TestErosion_PolicyQueryAgreesWithCheck`) holds `policy can-import` denials
+  equal to `check` gate findings (ID and rule) on a Go fixture with one rule per
+  edge class (allowlist, layer order, internal/public, path and module
+  `forbidden_dependency`); a class check never fires on fails the gate. Its
+  fixture `…FiresOnAWrongDecision` feeds the shared `agreementProblems` predicate
+  flipped decisions. TypeScript and Python are pinned at edge spelling only
+  (`QueryEdge` tests), not end to end.
 - **`measurement` is a property of the tree, never of the run**
   (`report.StateMeasurement`, populated in `application.projectArchitectureState`).
   Exactly four fields: `source_ref`, `history_depth`, `history_window`,
