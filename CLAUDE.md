@@ -374,6 +374,16 @@ init` emits v2 directly; owners update older configs manually before analysis.
   - a file with no class at all: it counts.
   An edge with no source-file attribution (a Rust crate dependency at `Cargo.toml`, a `crate::mod` edge) counts. The strongly connected component is computed over production edges, so finding IDs (rule, module pair) are unchanged.
 - **`module_cycle` is bounded per strongly-connected component** (`maxModuleCyclePairs = 200`, `rules_dependency.go`): the first pairs in (from, to) order are kept, so kept IDs never move; every finding carries `matched_by.cycle_pairs_total`, and a capped cycle's `why` says how many pairs it reports. Pairs past the cap surface as new once reported ones are fixed. Module-cycle and seam-gate agent tasks carry no `declarations` (`agenttask.Build`): on ccgram they were 882 KB of a 1.29 MB report.
+- **Map completeness reads the walked source, never the graph**
+  (`evaluation.uncoveredSource`). `map/uncovered_path` is one finding per
+  directory holding production source (`RuleEvidence.FileClasses`, minus
+  `UnanalysedFiles`) that `fileOwner` places in no declared module — the same
+  owner predicate as `moduleRuleScope`; a Rust file with no crate selector
+  abstains. ID = rule + directory; at most 200 per run (path order,
+  `matched_by.uncovered_dirs_total`), 5 locations each. `module_review.gate:
+  fail` makes it a gate finding (it joins the rule findings, so baseline and
+  waivers apply); `map/dead_rule` and `map/stale_review` never gate. A
+  graph-derived check read a failed package load as "nothing unowned".
 - **`forbidden_pattern` is the only consumer of `rules[].patterns`.** It fires
   on production files in the LOC inventory (`FileClassIndex` minus
   `OutOfScopeFiles`, `evaluation.inScopeFileClasses`; the LOC walk and the `sg`

@@ -60,6 +60,14 @@ New:
 - `archfit skill install` installs the archfit agent skill embedded in the
   binary. The skill is rewritten around three steps: ask (`policy can-import`),
   check (`--format agent`), and hooks.
+- Map completeness. `map/uncovered_path` now reports each directory that holds
+  production source no declared module owns, and `module_review.gate: fail`
+  makes it a blocker: a new package outside every module fails `check`. The
+  check reads the walked source, so test, generated, vendor, excluded, and
+  unanalysed files never count, and a package that failed to load is still
+  checked. One finding per directory, at most 200 per run. The repair task asks
+  the owner (`needs_owner_decision`). `map/dead_rule` and `map/stale_review`
+  stay diagnostics. See [`module_review`](configuration-reference.md#module_review).
 
 Contract notes:
 
@@ -78,7 +86,11 @@ Contract notes:
 - New published schema `archfit.agent-result.schema.json` for
   `archfit.agent-result.v1`. The architecture state, `archfit.state.schema.json`,
   baseline v2, and the comparison fingerprints do not change.
-- Configs that do not use the new keys give byte-identical output.
+- `map/uncovered_path` changes its subject from a graph node to a directory.
+  A Go package keeps its finding ID. A finding about a single file gets a new
+  ID: the old one reads `fixed`, and the directory finding is new. Before
+  v2.5.0, `module_review.gate: fail` blocked nothing.
+- Configs that do not use the new keys or `module_review` give byte-identical output.
 
 ## v2.4.1 — schema lists rule types
 
