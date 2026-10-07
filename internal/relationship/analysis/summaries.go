@@ -13,7 +13,7 @@ import (
 	"github.com/alexei-led/archfit/internal/relationship/scoring"
 )
 
-func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnlyPair, duplicated policy.DuplicatedKnowledgePolicy, tree classify.Containment) *relationship.ClassifiedEdgeSummary {
+func buildClassifiedSummary(set relationship.Set, clones []relationship.ClonePair, duplicated policy.DuplicatedKnowledgePolicy, tree classify.Containment, modules map[string]policy.ModuleDef) *relationship.ClassifiedEdgeSummary {
 	s := &relationship.ClassifiedEdgeSummary{ByStrength: map[string]int{}, ByDistance: map[string]int{}, ByDistanceBasis: map[string]int{}, ByVolatility: map[string]int{}, BySeverity: map[string]int{}, ByBalanceDriver: map[string]int{}, ByCriticalDriver: map[string]int{}, ByModulePair: map[string]int{}, DistanceCompression: distanceCompression()}
 	for _, n := range set.Nodes {
 		if !n.FirstParty {
@@ -29,6 +29,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 	tail := tailAccumulator{}
 	sum := 0
 	span := spanAccumulator{}
+	unrated := unratedAccumulator{modules: map[string]struct{}{}}
 	for _, e := range set.Edges {
 		if e.IsDependency() {
 			s.DependencyEdges++
@@ -47,9 +48,11 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 				}
 			}
 		}
-		sum += addSummary(s, e.Classified, e.Strength, e.Distance, e.Volatility, e.Provenance)
+		qualifies := relationship.QualifiesDistributedMonolith(e.Classified.Score.Scored && e.Classified.Score.Balance > 0, e.Strength, e.Distance, e.Volatility, classify.CohesiveRole(modules[e.FromModule].Role))
+		sum += addSummary(s, e.Classified, e.Strength, e.Distance, e.Volatility, e.Provenance, qualifies)
+		unrated.addEdge(e.Classified, e.Distance, e.Volatility, e.Strength, e.FromModule, e.ToModule, modules)
 		addDriver(s, e.Classified, e.Distance, e.FromModule, e.ToModule)
-		tail.add(e.Classified, e.Distance, false)
+		tail.add(e.Classified, e.Distance, false, qualifies)
 		if e.Distance != relationship.DistanceSameModule && e.Distance != relationship.DistanceUnknown {
 			connected[e.FromModule] = struct{}{}
 			connected[e.ToModule] = struct{}{}
@@ -58,16 +61,23 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 	}
 	if policy.NormalizeDuplicatedKnowledgePolicy(duplicated) == policy.DuplicatedKnowledgePolicyScore {
 		for _, p := range clones {
-			s.CloneOnlyScored++
-			sum += addSummary(s, p.Classified, p.Strength, p.Distance, p.Volatility, relationship.Provenance{})
+			if !p.Connected {
+				s.CloneOnlyScored++
+			}
+			sum += addSummary(s, p.Classified, p.Strength, p.Distance, p.Volatility, relationship.Provenance{}, false)
+			unrated.addEdge(p.Classified, p.Distance, p.Volatility, relationship.StrengthSymmetric, p.FromModule, p.ToModule, modules)
 			addDriver(s, p.Classified, p.Distance, p.FromModule, p.ToModule)
-			tail.add(p.Classified, p.Distance, true)
+			tail.add(p.Classified, p.Distance, !p.Connected, false)
 			connected[p.FromModule] = struct{}{}
 			connected[p.ToModule] = struct{}{}
 			span.add(tree, p.FromModule, p.ToModule, p.Distance)
 		}
 	} else {
-		s.CloneOnlyAdvisory = len(clones)
+		for _, p := range clones {
+			if !p.Connected {
+				s.CloneOnlyAdvisory++
+			}
+		}
 	}
 	for k := range connected {
 		if k != "" {
@@ -80,9 +90,10 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 		s.TailRisk = tail.result(s.Scored)
 	}
 	span.apply(s.DistanceCompression)
+	s.UnratedVolatilityEdges, s.UnratedVolatilityModules = unrated.edges, unrated.names()
 	return s
 }
-func addSummary(s *relationship.ClassifiedEdgeSummary, c relationship.Classification, strength relationship.Strength, distance relationship.Distance, volatility relationship.Volatility, prov relationship.Provenance) int {
+func addSummary(s *relationship.ClassifiedEdgeSummary, c relationship.Classification, strength relationship.Strength, distance relationship.Distance, volatility relationship.Volatility, prov relationship.Provenance, qualifies bool) int {
 	s.Total++
 	if distance == relationship.DistanceSameModule {
 		s.SameModule++
@@ -114,7 +125,7 @@ func addSummary(s *relationship.ClassifiedEdgeSummary, c relationship.Classifica
 	if c.Score.Scored {
 		s.Scored++
 		s.BySeverity[string(c.Score.Band)]++
-		if c.Score.Band == relationship.SeverityCritical && coupling.DistanceIsHigh(distance) {
+		if qualifies {
 			s.DistributedMonolith++
 		}
 		return c.Score.Balance
@@ -161,7 +172,7 @@ type tailAccumulator struct {
 // 505-edge numerator over a 362-edge denominator. Band "none" (balance 9-10) is
 // a well-balanced cross-boundary edge and belongs in the balance distribution —
 // it is what makes WorstBalance and LowerDecileBalance honest.
-func (a *tailAccumulator) add(c relationship.Classification, distance relationship.Distance, clone bool) {
+func (a *tailAccumulator) add(c relationship.Classification, distance relationship.Distance, clone, qualifies bool) {
 	if !c.Score.Scored || distance == relationship.DistanceSameModule || distance == relationship.DistanceUnknown || c.Score.Balance <= 0 {
 		return
 	}
@@ -180,7 +191,7 @@ func (a *tailAccumulator) add(c relationship.Classification, distance relationsh
 	}
 	if c.Score.Band == relationship.SeverityCritical {
 		a.critical++
-		if coupling.DistanceIsHigh(distance) {
+		if qualifies {
 			a.distributed++
 		}
 	}
@@ -204,6 +215,42 @@ func distanceCompression() *relationship.DistanceCompressionSummary {
 	for _, r := range d.OmittedRungReasons {
 		out.OmittedRungReasons = append(out.OmittedRungReasons, relationship.DistanceOmittedRungReason{Rung: r.Rung, Reason: r.Reason})
 	}
+	return out
+}
+
+// unratedAccumulator finds scored edges whose volatility nobody declared. The
+// edge's effective volatility is undeclared only when no end declared high, so
+// the modules to name are the ends whose own definition declares nothing.
+type unratedAccumulator struct {
+	edges   int
+	modules map[string]struct{}
+}
+
+func (a *unratedAccumulator) addEdge(c relationship.Classification, distance relationship.Distance, v relationship.Volatility, strength relationship.Strength, from, to string, modules map[string]policy.ModuleDef) {
+	if !c.Score.Scored || c.Score.Balance <= 0 || !relationship.IsModuleBoundary(distance) {
+		return
+	}
+	if v != relationship.VolatilityUndeclared && v != relationship.VolatilityUnknown {
+		return
+	}
+	a.edges++
+	ends := []string{to}
+	if strength == relationship.StrengthFunctional || strength == relationship.StrengthSymmetric {
+		ends = append(ends, from)
+	}
+	for _, m := range ends {
+		if def, ok := modules[m]; ok && def.Volatility == "" && def.Subdomain == "" {
+			a.modules[m] = struct{}{}
+		}
+	}
+}
+
+func (a *unratedAccumulator) names() []string {
+	out := make([]string, 0, len(a.modules))
+	for m := range a.modules {
+		out = append(out, m)
+	}
+	sort.Strings(out)
 	return out
 }
 

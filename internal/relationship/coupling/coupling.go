@@ -201,10 +201,3 @@ const (
 	SeverityHigh     = relationship.SeverityHigh
 	SeverityCritical = relationship.SeverityCritical
 )
-
-// DistanceIsHigh returns true for every cross-module distance and for a declared
-// external system. Under bc_score.v7 any module boundary is the far end of the
-// in-house ladder (D=9); owner and deploy unit only name the boundary.
-func DistanceIsHigh(d Distance) bool {
-	return d == DistanceCrossModule || d == DistanceCrossModuleDiffOwner || d == DistanceCrossDeployUnit || d == DistanceExternal
-}

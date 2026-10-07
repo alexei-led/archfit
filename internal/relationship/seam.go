@@ -46,17 +46,33 @@ const (
 	SeamQuadrantTight SeamQuadrant = "tight"
 )
 
-// SeamHypothesis is the single cheapest design move for a seam. It is a
-// hypothesis, not an instruction: the tool measures the seam, a human decides
-// whether the move is worth making.
+// SeamHypothesis is the balancing guidance for a seam: a design move, or the
+// reason none is needed. It is a hypothesis, not an instruction: the tool
+// measures the seam, a human decides whether the move is worth making.
 type SeamHypothesis string
 
-// Seam balancing hypotheses.
+// Seam balancing hypotheses (bc_score.v7). BalancingHypothesis chooses all but
+// follow_rule; the assessment stage sets follow_rule when an active gate finding
+// already covers an edge of the seam.
 const (
-	SeamHypothesisReduceStrength    SeamHypothesis = "reduce_strength"
-	SeamHypothesisReduceDistance    SeamHypothesis = "reduce_distance"
+	// SeamHypothesisBalanced: band none or low, weak strength.
+	SeamHypothesisBalanced SeamHypothesis = "balanced"
+	// SeamHypothesisAcceptLowVolatility: strong coupling into a low or frozen target.
+	SeamHypothesisAcceptLowVolatility SeamHypothesis = "accept_low_volatility"
+	// SeamHypothesisIntroduceContract: intrusive coupling, or functional/model
+	// coupling into a target that declares a public surface. Re-scores as contract.
+	SeamHypothesisIntroduceContract SeamHypothesis = "introduce_contract"
+	// SeamHypothesisMoveFunctionality: symmetric coupling, a clone fact, or
+	// functional coupling into a target with no public surface. Moving the shared
+	// functionality into one module removes the boundary.
+	SeamHypothesisMoveFunctionality SeamHypothesis = "move_functionality"
+	// SeamHypothesisDeclareVolatility: flagged only because volatility is undeclared.
 	SeamHypothesisDeclareVolatility SeamHypothesis = "declare_volatility"
-	SeamHypothesisLeaveAlone        SeamHypothesis = "leave_alone"
+	// SeamHypothesisExpectedByRole: the source has a cohesive role (composition
+	// root, generated or test) and the coupling is not intrusive.
+	SeamHypothesisExpectedByRole SeamHypothesis = "expected_by_role"
+	// SeamHypothesisFollowRule: an active gate finding covers an edge of the seam.
+	SeamHypothesisFollowRule SeamHypothesis = "follow_rule"
 )
 
 // SeamRoleExpectation is what the source module's declared role says this seam

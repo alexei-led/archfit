@@ -1,6 +1,7 @@
 package evaluation
 
 import (
+	"fmt"
 	"path"
 	"sort"
 	"strconv"
@@ -923,6 +924,7 @@ func couplingDimension(diag *result.Result) state.Dimension {
 		state.FactCouplingCandidateInventory:       "no cross-boundary candidate was identified: the module map matched nothing, or every dependency left the declared modules",
 		state.FactCouplingStrength:                 "integration strength is unknown on one or more cross-boundary candidates, so no rung is invented",
 		state.FactCouplingDistance:                 "architectural distance is unknown on one or more cross-boundary candidates, so no rung is invented",
+		state.FactCouplingVolatility:               "volatility is undeclared on one or more scored cross-boundary edges, so no rung is invented",
 		state.FactExtractorResolutionWithinCeiling: "dependency-cruiser left more than a tenth of import specifiers unresolved; omitted edges may understate the candidate denominator",
 	}
 	if ce == nil || ce.Scored+ce.Abstained == 0 {
@@ -933,6 +935,11 @@ func couplingDimension(diag *result.Result) state.Dimension {
 	observed := []string{state.FactCouplingCandidateInventory}
 	if ce.Abstained == 0 {
 		observed = append(observed, state.FactCouplingStrength, state.FactCouplingDistance)
+	}
+	if ce.UnratedVolatilityEdges == 0 {
+		observed = append(observed, state.FactCouplingVolatility)
+	} else {
+		reasons[state.FactCouplingVolatility] = unratedVolatilityReason(ce.UnratedVolatilityEdges, ce.UnratedVolatilityModules)
 	}
 	if !score.TSUnresolvedPartial(*diag) {
 		observed = append(observed, state.FactExtractorResolutionWithinCeiling)
@@ -951,15 +958,35 @@ func couplingDimension(diag *result.Result) state.Dimension {
 		dim.Metrics = append(dim.Metrics,
 			count("critical_band_edges", tail.CriticalEdges, provRelationship),
 			count("high_or_worse_edges", tail.HighOrWorseEdges, provRelationship),
-			// The existing edge-level distributed-monolith count is a diagnostic
-			// fact about edges. It is not the seam policy, which counts logical
-			// module pairs and is owned by the coupling gate, not this envelope.
-			count("critical_high_distance_edges", tail.DistributedMonolithEdges, provRelationship))
+			// Edges that pass the bc_score.v7 qualification (strong strength,
+			// declared high volatility, module boundary, no cohesive role). A
+			// diagnostic fact about edges, not the seam policy, which counts
+			// logical module pairs and is owned by the coupling gate.
+			count("qualifying_edges", tail.DistributedMonolithEdges, provRelationship))
 	}
 	dim.Metrics = append(dim.Metrics, seamMetrics(diag.Seams)...)
 	dim.Metrics = append(dim.Metrics, metricValues(diag.Metrics, "unbalanced_edge")...)
 	dim.Confidence = weakest(state.ConfidenceFor(dim.Status), metricConfidence(diag.Metrics, "unbalanced_edge"))
 	return dim
+}
+
+// maxUnratedModulesNamed bounds the module list in the unrated-volatility
+// reason so the text never grows with the module map.
+const maxUnratedModulesNamed = 5
+
+// unratedVolatilityReason names the modules whose undeclared volatility leaves
+// scored edges unrated. The list is the relationship stage's sorted order.
+func unratedVolatilityReason(edges int, modules []string) string {
+	reason := fmt.Sprintf("volatility is undeclared on %d scored cross-boundary edge(s)", edges)
+	if len(modules) == 0 {
+		return reason + "; declare `volatility:` or `subdomain:` on the modules involved"
+	}
+	named := modules[:min(len(modules), maxUnratedModulesNamed)]
+	list := strings.Join(named, ", ")
+	if extra := len(modules) - len(named); extra > 0 {
+		list += fmt.Sprintf(" and %d more", extra)
+	}
+	return reason + "; declare `volatility:` or `subdomain:` on: " + list
 }
 
 // seamMetrics reports the ledger's shape: how many logical seams the edges

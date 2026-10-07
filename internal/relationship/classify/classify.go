@@ -378,37 +378,22 @@ func classify(e graph.Edge, mi moduleIndex, c Config, effectiveVol map[string]co
 
 	resolved := resolveStrength(e, mi, c)
 	str := resolved.strength
-	fromPin := resolved.fromPin
 	strengthFromLLM := resolved.fromLLM
 	strengthFromNonHighLLM := resolved.fromNonHighLLM
 
-	// --- Symmetric upgrade from clone detection ---
-	// A cross-module clone pair (a DRY violation) signals bidirectional
-	// coupling at implementation level — book ordinal 9 (Symmetric), between
-	// Functional (8) and Intrusive (10). Upgrade only when strength is still
-	// functional or unknown; config-authoritative (contract/intrusive) and
-	// human-approved pinned labels (including functional) are never overridden —
-	// fromPin guards against silently overriding a pinned functional label with Symmetric.
-	var cloneLocations []coupling.Location
-	if !fromPin && (str == coupling.StrengthFunctional || str == coupling.StrengthUnknown) {
-		if len(c.CrossModuleClonePairs) > 0 {
-			if fromMod, okF := mi.moduleFor(fromPath); okF {
-				if toMod, okT := mi.moduleFor(toPath); okT {
-					pairKey := modulePairKey(fromMod, toMod)
-					if _, hasPair := c.CrossModuleClonePairs[pairKey]; hasPair {
-						str = coupling.StrengthSymmetric
-						// The real duplicated-code locations (both sides), so the
-						// finding downstream can cite them instead of only the
-						// edge's baseline provenance (e.g. Cargo.toml:0).
-						cloneLocations = couplingLocations(c.CloneEvidence[pairKey])
-					}
-				}
-			}
-		}
-	}
+	// A clone pair never upgrades an import edge: it is its own symmetric clone
+	// fact (ClonePairs), attached to the seam by the relationship stage.
 
 	// --- Distance & volatility ---
 	dist, distBasis, vol := resolveDistanceVolatility(fromPath, toPath, mi, c, effectiveVol, extSystems)
+	// Functional and symmetric coupling ties both sides to each other's changes
+	// (Ch7), so the worse volatility of the two modules drives the edge. Contract,
+	// model and intrusive edges keep the target's volatility. A declared external
+	// target keeps its own declared volatility.
+	if (str == coupling.StrengthFunctional || str == coupling.StrengthSymmetric) &&
+		dist != coupling.DistanceUnknown && dist != coupling.DistanceExternal {
+		vol = worseVolatility(vol, classifyVolatilityEffective(fromPath, mi, modules, effectiveVol))
+	}
 
 	// --- Explicitness ---
 	// ExplicitnessHint from the extractor (AST signal) takes precedence over the
@@ -438,7 +423,6 @@ func classify(e graph.Edge, mi moduleIndex, c Config, effectiveVol map[string]co
 		Explicitness:           exp,
 		ContractRecommended:    contractRecommended,
 		DistanceBasis:          distBasis,
-		CloneLocations:         cloneLocations,
 		StrengthFromLLM:        strengthFromLLM,
 		StrengthFromNonHighLLM: strengthFromNonHighLLM,
 		Connascence:            connascenceFromHints(e.ConnascenceHints),
@@ -677,7 +661,7 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 }
 
 // moduleDistance names the boundary between two RESOLVED, distinct modules.
-// Factored out of classifyDistance so CloneOnlyPairs can compute a module-pair
+// Factored out of classifyDistance so ClonePairs can compute a module-pair
 // distance from module names alone: clone evidence carries repo file paths,
 // which for Python never match the dotted node-ID globs the path resolution in
 // classifyDistance expects.

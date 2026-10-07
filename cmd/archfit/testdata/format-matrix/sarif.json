@@ -365,7 +365,7 @@
                 "value": 0
               },
               {
-                "name": "critical_high_distance_edges",
+                "name": "qualifying_edges",
                 "provenance": [
                   "relationship/analysis"
                 ],
@@ -865,7 +865,7 @@
             "from_module": "a",
             "high_or_worse_edges": 0,
             "high_or_worse_share_pct": 0,
-            "hypothesis": "leave_alone",
+            "hypothesis": "follow_rule",
             "id": "fa39601122f1503d51aa9a4075a6dfb722880a87aef6312ec824937670724349",
             "policy": "violation",
             "quadrant": "tight",
@@ -881,18 +881,18 @@
             },
             "scored_edges": 1,
             "scores": {
-              "max": 8,
-              "mean": 8,
-              "median": 8,
-              "min": 8,
+              "max": 5,
+              "mean": 5,
+              "median": 5,
+              "min": 5,
               "n": 1,
               "p10": null,
               "p90": null
             },
-            "severity": "low",
+            "severity": "medium",
             "strength": "functional",
             "to_module": "b",
-            "volatility": "low",
+            "volatility": "medium",
             "volatility_provenance": "declared"
           }
         ],
@@ -954,7 +954,7 @@
             }
           ],
           "message": {
-            "text": "balanced coupling: functional integration strength × cross_module_different_owner distance × low volatility → low severity (unbalanced coupling → elevated maintenance effort)"
+            "text": "balanced coupling: functional integration strength × cross_module_different_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)"
           },
           "properties": {
             "dimension": "coupling",
@@ -962,7 +962,7 @@
             "kind": "advisory",
             "module_pair": "a -\u003e b",
             "seam_id": "fa39601122f1503d51aa9a4075a6dfb722880a87aef6312ec824937670724349",
-            "severity": "low",
+            "severity": "medium",
             "status": "new"
           },
           "ruleId": "bc/imbalanced_coupling",

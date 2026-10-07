@@ -80,26 +80,3 @@ func TestScoreBand_UnknownStrengthAbstains(t *testing.T) {
 		t.Errorf("unknown strength must abstain, got %+v", s)
 	}
 }
-
-// DistanceIsHigh is true for every module boundary and for a declared external
-// system; same_module and unknown are not boundaries.
-func TestDistanceIsHigh(t *testing.T) {
-	tests := []struct {
-		d    coupling.Distance
-		want bool
-	}{
-		{coupling.DistanceSameModule, false},
-		{coupling.DistanceCrossModule, true},
-		{coupling.DistanceCrossModuleDiffOwner, true},
-		{coupling.DistanceCrossDeployUnit, true},
-		{coupling.DistanceExternal, true},
-		{coupling.DistanceUnknown, false},
-	}
-	for _, tt := range tests {
-		t.Run(string(tt.d), func(t *testing.T) {
-			if got := coupling.DistanceIsHigh(tt.d); got != tt.want {
-				t.Errorf("DistanceIsHigh(%q) = %v, want %v", tt.d, got, tt.want)
-			}
-		})
-	}
-}

@@ -41,10 +41,10 @@ func setModule(c *classify.Config, name string, mutate func(*policy.ModuleDef)) 
 	c.Modules[name] = def
 }
 
-// TestCloneOnlyPairs covers when a duplicated-knowledge pair is (not) detected:
+// TestClonePairs covers when a duplicated-knowledge pair is (not) detected:
 // only a cross-module clone pair with NO import edge between the modules and no
 // human-approved label for the pair qualifies.
-func TestCloneOnlyPairs(t *testing.T) {
+func TestClonePairs(t *testing.T) {
 	t.Parallel()
 
 	emptyGraph := graph.Build(nil)
@@ -66,10 +66,10 @@ func TestCloneOnlyPairs(t *testing.T) {
 			want: 1,
 		},
 		{
-			name: "edge exists → symmetric-upgrade territory, no pair",
+			name: "edge exists → connected pair, a clone fact on the seam",
 			g:    edgeGraph,
 			cfg:  cloneOnlyCfg(nil),
-			want: 0,
+			want: 1,
 		},
 		{
 			name: "approved label (canonical order) accepts the pair",
@@ -115,38 +115,38 @@ func TestCloneOnlyPairs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := classify.CloneOnlyPairs(tt.g, tt.cfg)
+			got := classify.ClonePairs(tt.g, tt.cfg)
 			if len(got) != tt.want {
-				t.Fatalf("CloneOnlyPairs returned %d pairs, want %d: %+v", len(got), tt.want, got)
+				t.Fatalf("ClonePairs returned %d pairs, want %d: %+v", len(got), tt.want, got)
 			}
 		})
 	}
 }
 
-func TestCloneOnlyPairs_ReportOnlyDoesNotInventClassifiedEdges(t *testing.T) {
+func TestClonePairs_ReportOnlyDoesNotInventClassifiedEdges(t *testing.T) {
 	t.Parallel()
 	g := graph.Build(nil)
 	cfg := cloneOnlyCfg(nil)
 
-	pairs := classify.CloneOnlyPairs(g, cfg)
+	pairs := classify.ClonePairs(g, cfg)
 	if len(pairs) != 1 {
-		t.Fatalf("CloneOnlyPairs returned %d pairs, want 1", len(pairs))
+		t.Fatalf("ClonePairs returned %d pairs, want 1", len(pairs))
 	}
 	if idx := classify.Run(g, cfg); len(idx) != 0 {
 		t.Fatalf("classify.Run produced %d classified graph edges for clone-only evidence, want 0: %+v", len(idx), idx)
 	}
 }
 
-// TestCloneOnlyPairs_Classification verifies the scored classification: symmetric
+// TestClonePairs_Classification verifies the scored classification: symmetric
 // strength at the module-pair distance with worst-of-pair volatility, run through
 // the standard book formula — never a hardcoded severity.
-func TestCloneOnlyPairs_Classification(t *testing.T) {
+func TestClonePairs_Classification(t *testing.T) {
 	t.Parallel()
 	g := graph.Build(nil)
 
 	t.Run("flat names, undeclared volatility → medium", func(t *testing.T) {
 		t.Parallel()
-		pairs := classify.CloneOnlyPairs(g, cloneOnlyCfg(nil))
+		pairs := classify.ClonePairs(g, cloneOnlyCfg(nil))
 		if len(pairs) != 1 {
 			t.Fatalf("pairs = %d, want 1", len(pairs))
 		}
@@ -185,7 +185,7 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 			setModule(c, modNameA, func(d *policy.ModuleDef) { d.Volatility = cfgVolLow })
 			setModule(c, modNameB, func(d *policy.ModuleDef) { d.Volatility = extVolHigh })
 		})
-		pairs := classify.CloneOnlyPairs(g, cfg)
+		pairs := classify.ClonePairs(g, cfg)
 		if len(pairs) != 1 {
 			t.Fatalf("pairs = %d, want 1", len(pairs))
 		}
@@ -200,7 +200,7 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 			setModule(c, modNameA, func(d *policy.ModuleDef) { d.Owner = "team-a" })
 			setModule(c, modNameB, func(d *policy.ModuleDef) { d.Owner = "team-b" })
 		})
-		pairs := classify.CloneOnlyPairs(g, cfg)
+		pairs := classify.ClonePairs(g, cfg)
 		if len(pairs) != 1 {
 			t.Fatalf("pairs = %d, want 1", len(pairs))
 		}
@@ -224,7 +224,7 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 			setModule(c, modNameA, func(d *policy.ModuleDef) { d.Volatility = cfgVolFrozen })
 			setModule(c, modNameB, func(d *policy.ModuleDef) { d.Volatility = cfgVolFrozen })
 		})
-		pairs := classify.CloneOnlyPairs(g, cfg)
+		pairs := classify.ClonePairs(g, cfg)
 		if len(pairs) != 1 {
 			t.Fatalf("pairs = %d, want 1", len(pairs))
 		}
@@ -238,17 +238,17 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 	})
 }
 
-// TestCloneOnlyPairs_NoEvidence verifies a clone pair with NO CloneEvidence
+// TestClonePairs_NoEvidence verifies a clone pair with NO CloneEvidence
 // entry at all still classifies without panicking: c.CloneEvidence[key] on a
 // missing key returns a nil slice (Go map zero value, not a panic), so
 // pairRepresentativePaths resolves both paths to "" — honest absence, not a
 // fabricated location.
-func TestCloneOnlyPairs_NoEvidence(t *testing.T) {
+func TestClonePairs_NoEvidence(t *testing.T) {
 	t.Parallel()
 	g := graph.Build(nil)
 	cfg := twoModuleConfig(nil, modABClonePair) // CloneEvidence left unset (nil map)
 
-	pairs := classify.CloneOnlyPairs(g, cfg)
+	pairs := classify.ClonePairs(g, cfg)
 	if len(pairs) != 1 {
 		t.Fatalf("pairs = %d, want 1 (a clone pair with no evidence still classifies)", len(pairs))
 	}

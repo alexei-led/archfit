@@ -30,7 +30,7 @@ func BuildAdvisoryTasks(findings []finding.Finding, validation []string) []resul
 		tasks = append(tasks, result.AdvisoryTask{
 			FindingID: f.ID, RuleID: f.RuleID, Status: f.Status, Severity: f.Severity,
 			GroupCount: groupCount, GroupMembers: splitGroupMembers(f.MatchedBy["group_members"]),
-			Goal: advisoryTaskGoal(f, groupCount), CheapestMove: f.MatchedBy["cheapest_move"],
+			Goal: advisoryTaskGoal(f, groupCount), Hypothesis: f.MatchedBy["hypothesis"],
 			ScoreValue: parseScoreValue(f.MatchedBy["score_value"]), TopFiles: advisoryTaskFiles(f),
 			Constraints: advisoryTaskConstraints(f), Validation: append([]string(nil), validation...),
 		})
@@ -61,8 +61,8 @@ func advisoryTaskConstraints(f finding.Finding) []string {
 	if shape != "" {
 		constraints = append(constraints, "preserve or improve coupling shape: "+shape)
 	}
-	if f.MatchedBy["cheapest_move"] != "" {
-		constraints = append(constraints, "prefer cheapest_move: "+f.MatchedBy["cheapest_move"])
+	if f.MatchedBy["hypothesis"] != "" {
+		constraints = append(constraints, "prefer hypothesis: "+f.MatchedBy["hypothesis"])
 	}
 	if strings.TrimSpace(f.Constraint) != "" {
 		constraints = append(constraints, f.Constraint)

@@ -46,7 +46,7 @@ denominator: cross-boundary edges scored 1/1
 - clone_only_seams: 0 count
 - critical_band_edges: 0 count
 - high_or_worse_edges: 0 count
-- critical_high_distance_edges: 0 count
+- qualifying_edges: 0 count
 - seams: 1 count
 - distributed_monolith_seams: 0 count (1/1)
 - tight_seams: 1 count

@@ -15,6 +15,7 @@ func projectRelationshipSummary(in *relationship.ClassifiedEdgeSummary) *result.
 		ClassifiedInternalDependencies: in.ClassifiedInternalDependencies,
 		SameModuleDependencies:         in.SameModuleDependencies, DependencyModules: in.DependencyModules,
 		FirstPartyNodes: in.FirstPartyNodes, AttributedFirstPartyNodes: in.AttributedFirstPartyNodes,
+		UnratedVolatilityEdges: in.UnratedVolatilityEdges, UnratedVolatilityModules: in.UnratedVolatilityModules,
 		MeanBalance: in.MeanBalance, ByStrength: in.ByStrength, ByDistance: in.ByDistance,
 		ByDistanceBasis: in.ByDistanceBasis, ByVolatility: in.ByVolatility, BySeverity: in.BySeverity,
 		ByBalanceDriver: in.ByBalanceDriver, ByCriticalDriver: in.ByCriticalDriver, ByModulePair: in.ByModulePair,
