@@ -323,7 +323,6 @@ a second list or a separate delta schema:
 {
   "comparison": {
     "origin_status": "comparable",
-    "origin_reasons": [],
     "introduced_finding_ids": ["finding-a"],
     "resolved_finding_ids": ["finding-c"]
   },
@@ -349,7 +348,8 @@ a second list or a separate delta schema:
 - `comparison.origin_status` is `comparable` when the analyzer evidence of both
   runs pairs. Otherwise it is `unknown`. Read `origin_reasons` even when the
   status is `comparable`. It names each degraded or differing analyzer, and an
-  analyzer difference can still be relevant to the next change.
+  analyzer difference can still be relevant to the next change. The key is
+  absent when there is nothing to name.
 - `comparison.introduced_finding_ids` lists the findings the change added.
   `comparison.resolved_finding_ids` lists the base findings the change removed.
   Both keys are present (possibly `[]`) exactly when `--base` ran. When

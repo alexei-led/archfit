@@ -379,7 +379,7 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Result {
 		t.Fatalf("acquisition.Collect: %v", err)
 	}
 	relationships := relationshipanalysis.Analyze(relationshipanalysis.Input{
-		Graph: collected.Graph, Policy: runPolicy.Relationship, Mode: relationshipanalysis.Mode{Full: true},
+		Graph: collected.Graph, Policy: runPolicy.Relationship,
 	})
 	assessed, err := evaluation.Assess(evaluation.AssessInput{
 		Facts:               evaluation.Observations{Coverage: collected.Coverages, Symbols: collected.SCIPSymbols},

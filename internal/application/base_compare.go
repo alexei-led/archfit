@@ -104,7 +104,7 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 	}
 	diag := out.Diagnostic
 	return BaseEvidence{
-		Findings:           evaluation.BaseFindings(diag.Findings),
+		Findings:           decision.BaseFindings(diag.Findings),
 		Seams:              evaluation.BaseSeams(diag.Seams),
 		Coverage:           diag.ToolCoverage,
 		CoverageGaps:       diag.CoverageGaps,

@@ -385,7 +385,6 @@ func TestApprovedLabelIsReportedOnTheSeam(t *testing.T) {
 		Graph:  seamGraph(1, string(relationship.StrengthIntrusive)),
 		Policy: relationshipPolicy(twoModules()),
 		Labels: []labels.Label{fresh},
-		Mode:   analysis.Mode{Full: true},
 	})
 
 	if len(got.Assessment.StaleLabelKeys) != 0 {
@@ -412,7 +411,6 @@ func TestHandAuthoredLabelPublishesNoEvidenceHash(t *testing.T) {
 		Graph:  seamGraph(1, string(relationship.StrengthIntrusive)),
 		Policy: relationshipPolicy(twoModules()),
 		Labels: []labels.Label{fresh},
-		Mode:   analysis.Mode{Full: true},
 	})
 
 	s := seamAB(t, got)

@@ -2,7 +2,6 @@ package evaluation
 
 import (
 	"github.com/alexei-led/archfit/internal/assessment/decision"
-	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
@@ -60,13 +59,6 @@ func AttachOrigins(diag *result.Result, in OriginInput) {
 	diag.Comparison.OriginReasons = delta.Reasons
 	diag.Comparison.IntroducedFindingIDs = delta.Introduced
 	diag.Comparison.ResolvedFindingIDs = delta.Resolved
-}
-
-// BaseFindings projects a base run's findings to the identities that cross the
-// worktree boundary. Fixed entries are dropped: a finding the base run reports
-// as fixed was not observed there.
-func BaseFindings(findings []finding.Finding) []decision.BaseFinding {
-	return decision.BaseFindings(findings)
 }
 
 // BaseSeams projects a base run's qualifying distributed-monolith seams to the

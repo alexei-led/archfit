@@ -277,10 +277,9 @@ would put a plausible-looking fake in the place reserved for evidence.
 ### Measurement is a property of the tree, not of the run
 
 `StateMeasurement` publishes `source_ref`, `history_depth`, `history_window`, and
-`tool_versions` — and nothing else. A full run measures files on disk and reports
+`tool_versions` — and nothing else. Every run measures files on disk and reports
 `source_ref: worktree`; naming a commit there would claim the measured bytes
-equal it, which is false the moment the tree is dirty. Only a delta run, which
-really did diff against a resolved SHA, publishes one.
+equal it, which is false the moment the tree is dirty.
 
 A run that scanned no history records `history_window: unavailable` with depth 0
 rather than leaving both blank, so "there is no history here" stays

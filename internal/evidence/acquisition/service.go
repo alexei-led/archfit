@@ -227,7 +227,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		Observations: observations,
 		Context: application.AnalysisContext{
 			MeasurementProfile: s.measurementProfile(ctx, resolved, marked, history),
-			Scope:              resolved, BaseRef: req.BaseRef, Full: true,
+			Scope:              resolved, BaseRef: req.BaseRef,
 			Now: now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
 			ModelHash:    policy.ModelHash(runPolicy.Topology.Modules),
 			LabelsHash:   labels.FileHash(pinned),

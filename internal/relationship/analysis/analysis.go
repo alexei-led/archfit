@@ -20,18 +20,11 @@ import (
 	"github.com/alexei-led/archfit/internal/syntax"
 )
 
-// Mode contains only relationship-relevant run posture.
-type Mode struct {
-	Base string
-	Full bool
-}
-
 // Input is the relationship stage boundary. Graph and runtime signals are
 // acquired facts; policy is the sole source of classification declarations.
 type Input struct {
 	Graph             *graph.Graph
 	Policy            policy.RelationshipPolicy
-	Mode              Mode
 	Labels            []labels.Label
 	CloneClusters     []clone.Cluster
 	FileClassIndex    map[string]fileclass.FileClass
@@ -52,7 +45,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 	}
 	cfg := augmentConfig(in.Graph, classify.ConfigFrom(in.Policy))
 
-	evidenceHashes := pairEvidence(in.Graph, cfg.ModuleMap, in.Labels, in.Mode)
+	evidenceHashes := pairEvidence(in.Graph, cfg.ModuleMap, in.Labels)
 	approved, llm, stale := labels.Approved(in.Labels, evidenceHashes)
 	cfg.ApprovedLabels = approved
 	cfg.LLMLabels = llm
@@ -117,8 +110,8 @@ func cloneOnlyPairs(g *graph.Graph, cfg classify.Config) []relationship.CloneOnl
 	return out
 }
 
-func pairEvidence(g *graph.Graph, mm policy.ModuleMap, lbls []labels.Label, mode Mode) map[string]string {
-	if (!mode.Full && mode.Base != "") || len(lbls) == 0 || g == nil {
+func pairEvidence(g *graph.Graph, mm policy.ModuleMap, lbls []labels.Label) map[string]string {
+	if len(lbls) == 0 || g == nil {
 		return nil
 	}
 	wanted := make(map[string]struct{}, len(lbls))

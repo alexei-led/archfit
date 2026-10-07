@@ -209,7 +209,6 @@ func TestAnalyzeLabelPrecedence(t *testing.T) {
 				Graph:  graphWith(string(relationship.StrengthFunctional)),
 				Policy: relationshipPolicy(twoModules()),
 				Labels: []labels.Label{test.label},
-				Mode:   analysis.Mode{Full: true},
 			})
 			if s := onlyEdge(t, got).Strength; s != test.wantStrength {
 				t.Errorf("strength = %q, want %q", s, test.wantStrength)
@@ -225,41 +224,22 @@ func TestAnalyzeLabelPrecedence(t *testing.T) {
 	}
 }
 
-// A delta run sees a partial graph, so evidence hashes are not computed and
-// staleness is never asserted against incomplete evidence.
-func TestAnalyzeSkipsEvidenceHashingOnDeltaRuns(t *testing.T) {
+// Every run sees the whole graph, so a stale label is always checked: it is
+// ignored and its pair reported, never applied on unchecked evidence.
+func TestAnalyzeChecksLabelFreshness(t *testing.T) {
 	stale := labels.Label{
 		From: moduleA, To: moduleB, Strength: string(relationship.StrengthContract),
 		Status: labels.StatusApproved, Provenance: labels.ProvenanceHuman, EvidenceHash: "0000stale0000",
 	}
-	tests := []struct {
-		name          string
-		mode          analysis.Mode
-		wantStrength  relationship.Strength
-		wantStaleKeys int
-	}{
-		{
-			name: "delta run applies the label without a freshness check",
-			mode: analysis.Mode{Base: "main"}, wantStrength: relationship.StrengthContract, wantStaleKeys: 0,
-		},
-		{
-			name: "full run against a base ref still checks freshness",
-			mode: analysis.Mode{Base: "main", Full: true}, wantStrength: relationship.StrengthFunctional, wantStaleKeys: 1,
-		},
+	got := analysis.Analyze(analysis.Input{
+		Graph:  graphWith(string(relationship.StrengthFunctional)),
+		Policy: relationshipPolicy(twoModules()), Labels: []labels.Label{stale},
+	})
+	if s := onlyEdge(t, got).Strength; s != relationship.StrengthFunctional {
+		t.Errorf("strength = %q, want the stale label ignored", s)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			got := analysis.Analyze(analysis.Input{
-				Graph:  graphWith(string(relationship.StrengthFunctional)),
-				Policy: relationshipPolicy(twoModules()), Labels: []labels.Label{stale}, Mode: test.mode,
-			})
-			if s := onlyEdge(t, got).Strength; s != test.wantStrength {
-				t.Errorf("strength = %q, want %q", s, test.wantStrength)
-			}
-			if len(got.Assessment.StaleLabelKeys) != test.wantStaleKeys {
-				t.Errorf("StaleLabelKeys = %v, want %d entries", got.Assessment.StaleLabelKeys, test.wantStaleKeys)
-			}
-		})
+	if len(got.Assessment.StaleLabelKeys) != 1 {
+		t.Errorf("StaleLabelKeys = %v, want the stale pair", got.Assessment.StaleLabelKeys)
 	}
 }
 
@@ -279,7 +259,7 @@ func TestAnalyzeCountsNonHighConfidenceLLMLabels(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got := analysis.Analyze(analysis.Input{
-				Graph: graphWith(""), Policy: relationshipPolicy(twoModules()), Mode: analysis.Mode{Full: true},
+				Graph: graphWith(""), Policy: relationshipPolicy(twoModules()),
 				Labels: []labels.Label{{
 					From: moduleA, To: moduleB, Strength: string(relationship.StrengthContract),
 					Status: labels.StatusApproved, Provenance: test.provenance, Confidence: test.confidence,

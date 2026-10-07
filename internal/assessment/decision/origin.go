@@ -78,7 +78,7 @@ const (
 	// dependency-cruiser and grimp (one unresolvable specifier anywhere sets it),
 	// not a completion failure, so it must not read as "the analyzer did not
 	// run". It pairs only with itself: both sides ran, both are equally
-	// incomplete, and the degradation is disclosed in comparison_reasons with
+	// incomplete, and the degradation is disclosed in origin_reasons with
 	// each side's magnitude.
 	evidencePartialUnresolved
 	// evidencePartialDegraded — the analyzer covered every input (nothing is
@@ -105,7 +105,7 @@ const (
 // row for the same name is a genuine anomaly, not a shape to accommodate.
 type AnalyzerFamily struct {
 	// name is the analyzer's ToolCoverage name; it also labels the family in
-	// comparison_reasons.
+	// origin_reasons.
 	name string
 	// primary marks a per-language dependency-graph analyzer, the only kind
 	// whose gapless "absent" means "this language is not here".
@@ -519,7 +519,7 @@ const (
 	// disclosed with each side's count.
 	familyPairedDegradedPrecision
 	// familyPairedDegradedAbsent — the two sides pair, but the analyzer was
-	// unavailable on both. Comparable, and disclosed in comparison_reasons.
+	// unavailable on both. Comparable, and disclosed in origin_reasons.
 	familyPairedDegradedAbsent
 	// familyUnpaired — the evidence does not support attributing an origin.
 	familyUnpaired
@@ -534,7 +534,7 @@ const (
 //
 // Three shapes pair as DEGRADED rather than failing, all because SYMMETRY is the
 // safety argument (neither side ran what the other could hide behind) and all
-// disclosed in comparison_reasons, never silently:
+// disclosed in origin_reasons, never silently:
 //
 //   - Symmetric partial-with-unresolved-specifiers. For dependency-cruiser and
 //     grimp that status is the normal steady state; treating it as unusable made

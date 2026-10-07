@@ -54,8 +54,8 @@ func TestProjectReportPopulatesShadowState(t *testing.T) {
 	if state.SchemaVersion != report.StateSchemaVersion {
 		t.Errorf("SchemaVersion = %q, want %q", state.SchemaVersion, report.StateSchemaVersion)
 	}
-	if state.Measurement.SourceRef != stateHeadRef {
-		t.Errorf("Measurement.SourceRef = %q, want HEAD", state.Measurement.SourceRef)
+	if state.Measurement.SourceRef != "worktree" {
+		t.Errorf("Measurement.SourceRef = %q, want worktree", state.Measurement.SourceRef)
 	}
 	if state.Measurement.HistoryDepth != 500 || state.Measurement.HistoryWindow != "500 commits" {
 		t.Errorf("history = (%d, %q), want (500, \"500 commits\")", state.Measurement.HistoryDepth, state.Measurement.HistoryWindow)

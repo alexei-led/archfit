@@ -925,10 +925,9 @@ init` emits v2 directly; owners update older configs manually before analysis.
   Exactly four fields: `source_ref`, `history_depth`, `history_window`,
   `tool_versions`, pinned by `TestMeasurementCarriesOnlyDeterministicFields`. One
   wall-clock timestamp, absolute path, or PID here retires the byte-identity
-  contract every format baseline depends on. A full run reports
+  contract every format baseline depends on. Every run reports
   `source_ref: worktree` — it measures files on disk, and naming a commit would
-  claim the bytes equal it even on a dirty tree; only a delta run, which really
-  diffed against a resolved SHA, publishes one. A run that scanned no history
+  claim the bytes equal it even on a dirty tree. A run that scanned no history
   records `history_window: unavailable` with depth 0 rather than leaving both
   blank, so "no history here" stays distinguishable from "the scan was never
   wired up".

@@ -66,7 +66,7 @@ The registry comment says "one row here plus an extract package". In practice, a
 
 Onboarding presence already comes from the registry probes (v2.4.0). See the [release notes](../../guide/release-notes.md).
 
-An analyzer that is not a language follows steps 5, 7, 12 and 13, and needs its own coverage name. For `--base` pairing, it also needs a field in `FamilyOptions` and a family in `AnalyzerFamilies` (`internal/assessment/decision/task_origin.go`).
+An analyzer that is not a language follows steps 5, 7, 12 and 13, and needs its own coverage name. For `--base` pairing, it also needs a field in `FamilyOptions` and a family in `AnalyzerFamilies` (`internal/assessment/decision/origin.go`).
 
 ## Problems
 

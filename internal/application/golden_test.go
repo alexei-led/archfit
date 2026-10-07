@@ -82,7 +82,7 @@ func (g goldenEvidence) Acquire(ctx context.Context, _ application.AnalysisReque
 	return application.Acquired{
 		Facts:        facts,
 		Observations: evaluation.Observations{Coverage: facts.Coverage, Symbols: facts.Symbols},
-		Context:      application.AnalysisContext{Scope: sc, Full: true, Now: g.now, Policy: g.policy},
+		Context:      application.AnalysisContext{Scope: sc, Now: g.now, Policy: g.policy},
 	}, nil
 }
 

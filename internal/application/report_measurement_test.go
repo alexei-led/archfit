@@ -64,21 +64,11 @@ func TestMeasurementCarriesOnlyDeterministicFields(t *testing.T) {
 // never populated", so a repository with no git history would publish the same
 // bytes as one whose scan was simply never wired up.
 func TestMeasurementNamesTheTreeAndTheWindow(t *testing.T) {
-	t.Run("full run measures the worktree", func(t *testing.T) {
-		diagnostic := stateFixture()
-		diagnostic.Head = "" // full mode never resolves HEAD
-
-		measurement := ProjectReport(diagnostic, score.Scorecard{}).State.Measurement
-		if measurement.SourceRef != "worktree" {
-			t.Errorf("SourceRef = %q, want worktree: a full run measures files on disk, "+
-				"and naming a commit would claim the bytes equal it even on a dirty tree", measurement.SourceRef)
-		}
-	})
-
-	t.Run("delta run names the resolved ref", func(t *testing.T) {
+	t.Run("every run measures the worktree, even with a head ref", func(t *testing.T) {
 		measurement := ProjectReport(stateFixture(), score.Scorecard{}).State.Measurement
-		if measurement.SourceRef != stateHeadRef {
-			t.Errorf("SourceRef = %q, want %q", measurement.SourceRef, stateHeadRef)
+		if measurement.SourceRef != "worktree" {
+			t.Errorf("SourceRef = %q, want worktree: archfit measures files on disk, "+
+				"and naming a commit would claim the bytes equal it even on a dirty tree", measurement.SourceRef)
 		}
 	})
 

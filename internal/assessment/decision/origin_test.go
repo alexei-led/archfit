@@ -105,7 +105,7 @@ func testOriginUnpairedReason(t *testing.T) {
 //
 // The projection is the point of the guard. `--base` has no single grade field:
 // its middle state — comparable, but with the degradation named in
-// comparison_reasons — lives in the reasons slice. Reading only the bool
+// origin_reasons — lives in the reasons slice. Reading only the bool
 // collapses `comparable` and `comparable_with_gaps` into one bucket, and that
 // boundary IS the silent-versus-disclosed boundary the whole design rests on.
 func gitGrade(evidenceComparable bool, reasons []string) CoverageComparability {

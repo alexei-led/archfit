@@ -58,7 +58,7 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 	out.Dimensions = projectStateDimensions(r.State.Dimensions)
 	out.Findings = doc.Findings
 	out.AgentTasks = doc.AgentTasks
-	out.Measurement.SourceRef = sourceRef(r.Head)
+	out.Measurement.SourceRef = sourceWorktree
 	out.Measurement.ToolVersions, out.Coverage.Tools = projectStateToolCoverage(r.ToolCoverage)
 	out.Measurement.HistoryWindow = historyUnavailable
 	if h := r.VolatilityCorroboration; h != nil {
@@ -195,11 +195,10 @@ func projectStateDimension(in state.Dimension) report.DimensionState {
 	return out
 }
 
-// sourceWorktree is the measurement source ref of a full run. Archfit measures
-// the files on disk, and a full run never resolves HEAD, so naming a commit
-// here would assert that the measured bytes equal that commit — false the
-// moment the tree is dirty. Only a delta run, which really did diff against a
-// resolved SHA, publishes one.
+// sourceWorktree is the measurement source ref of every run. Archfit measures
+// the files on disk and never resolves HEAD, so naming a commit here would
+// assert that the measured bytes equal that commit — false the moment the tree
+// is dirty.
 const sourceWorktree = "worktree"
 
 // historyUnavailable is the history window of a run that scanned no history at
@@ -211,12 +210,6 @@ const historyUnavailable = "unavailable"
 // sourceRef names the tree this run measured. It is deterministic by
 // construction: two runs over the same tree publish the same value, so it can
 // ride the byte-identity contract.
-func sourceRef(head string) string {
-	if head == "" {
-		return sourceWorktree
-	}
-	return head
-}
 
 // historyWindow renders the bounded git-history window as the deterministic
 // string the measurement block publishes. An unbounded scan says so; a zero
