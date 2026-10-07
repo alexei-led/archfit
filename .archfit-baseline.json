@@ -268,13 +268,13 @@
         "gate": "warn",
         "coverage": {
           "basis": "discovered dependencies resolved inside the declared module map",
-          "observed": 669,
-          "total": 1649
+          "observed": 668,
+          "total": 1648
         },
         "metrics": [
           {
             "name": "internal_edges",
-            "value": 669,
+            "value": 668,
             "unit": "count"
           },
           {
@@ -284,7 +284,7 @@
           },
           {
             "name": "same_module_edges",
-            "value": 178,
+            "value": 177,
             "unit": "count"
           },
           {
@@ -457,7 +457,7 @@
           },
           {
             "name": "production_loc",
-            "value": 64668,
+            "value": 64667,
             "unit": "count"
           },
           {

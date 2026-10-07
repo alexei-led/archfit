@@ -532,8 +532,8 @@ func goObjectStrength(obj types.Object, dtos *dtoIndex) string {
 		// pkg.DefaultHandler() or holder.OnDone() couples on the callee's
 		// behavior exactly like a *types.Func call (mirrors computePureData's
 		// behavior-carrier exclusion). Interface-typed vars/fields need no case
-		// here: invoking one resolves the method as a *types.Func (→ functional
-		// via the default case), so the behavioral use is already captured.
+		// here: invoking one resolves the method as a *types.Func, which the
+		// *types.Func case maps to contract (interface receiver) or functional.
 		switch tn.Type().Underlying().(type) {
 		case *types.Signature, *types.Chan:
 			return strengthFunctional

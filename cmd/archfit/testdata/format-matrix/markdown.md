@@ -223,7 +223,7 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - `deploy_unit_source`: ok
 - `owner_model`: multi_owner
 - distance basis: ownership=1
-- interpretation: ownership has multiple distinct owners, so owner distance can distinguish same-owner and different-owner module edges
+- interpretation: every module boundary is D=9 (level-relative); ownership has multiple distinct owners, so a differing owner makes the token cross_module_different_owner, and severity does not change
 - connected modules in coupling sample: 2
 - distance rungs implemented: D=2, D=9, D=10; omitted/compressed: D=1, D=3, D=4, D=5, D=6, D=7, D=8
 - containment boundary crossings: 2→1

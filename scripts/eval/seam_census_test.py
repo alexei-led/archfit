@@ -64,6 +64,13 @@ class SummarizeTest(unittest.TestCase):
         self.assertEqual(got["unrated"], 1)
         self.assertEqual(got["seams"], 3)
 
+    def test_missing_severity_counts_as_none(self):
+        # production omits severity for a balanced seam
+        balanced = {"from_module": "a", "to_module": "b"}
+        got = sc.summarize(state([balanced, seam("a", "c", "critical")]))
+        self.assertEqual(got["by_severity"]["none"], 1)
+        self.assertEqual(got["by_severity"]["critical"], 1)
+
     def test_no_seams_is_all_zero(self):
         got = sc.summarize({"dimensions": {}})
         self.assertEqual(got["seams"], 0)

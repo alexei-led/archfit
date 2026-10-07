@@ -184,7 +184,7 @@ func TestV7KeyRenameChangesNothing(t *testing.T) {
 		res := analyze(modules, exampleEdge{fromFile: fileCart, toFile: "x/x.go", hint: hintCall})
 		return seamBetween(t, res, cart, "x")
 	}
-	a, b := build("sales", "cart"), build("zz-sales", "zz-cart")
+	a, b := build("sales", "cart"), build("deep/er/sales", "very/deep/er/cart")
 	if a.Severity != b.Severity || a.Distance != b.Distance || a.RawDistance.BoundaryCrossings != b.RawDistance.BoundaryCrossings || a.RawDistance.Basis != b.RawDistance.Basis {
 		t.Errorf("rename changed the seam: %+v vs %+v", a.RawDistance, b.RawDistance)
 	}

@@ -132,9 +132,9 @@ func TestContainment_ContainerAndSpan(t *testing.T) {
 // Renaming a module key must not change where it sits: the tree reads paths only.
 func TestContainment_KeyRenameInvariant(t *testing.T) {
 	a := BuildContainment(mods(map[string][]string{nameSales: {globSales}, nameCart: {globCart}}))
-	b := BuildContainment(mods(map[string][]string{"zz-sales": {globSales}, "zz-cart": {globCart}}))
+	b := BuildContainment(mods(map[string][]string{"deep/er/sales": {globSales}, "very/deep/cart": {globCart}}))
 	ca, sa := a.Span(nameSales, nameCart)
-	cb, sb := b.Span("zz-sales", "zz-cart")
+	cb, sb := b.Span("deep/er/sales", "very/deep/cart")
 	if ca != cb || sa != sb {
 		t.Errorf("rename changed span: (%d,%d) vs (%d,%d)", ca, sa, cb, sb)
 	}

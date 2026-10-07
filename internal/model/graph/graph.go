@@ -99,11 +99,14 @@ type Edge struct {
 	// A function call or an interface-method call is callable evidence and never
 	// appears here. classify reads it to decide whether a public-glob edge is
 	// still a contract or leaks a model; empty means no extractor split the two.
+	// The Go extractor sees every kind above. The SCIP reader cannot see the
+	// receiver of a method occurrence, so for TypeScript, Python and Rust only
+	// type, field, var and const uses reach this field.
 	DataStrengthHint string `json:"data_strength_hint,omitempty"`
 	// ConnascenceHints are deterministic static connascence facts reported by
 	// extractors. They are mapped into coupling.Classification for JSON/Markdown
-	// disclosure and may refine an otherwise unresolved/public-floor strength to
-	// model or functional. They never affect distance or any dynamic category.
+	// disclosure only: connascence never sets strength, distance or any dynamic
+	// category.
 	ConnascenceHints []ConnascenceHint `json:"connascence_hints,omitempty"`
 }
 

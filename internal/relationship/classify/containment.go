@@ -141,9 +141,18 @@ func (c Containment) depthOf(name string, limit int) int {
 // Parent returns the parent module, or "" for a top-level module.
 func (c Containment) Parent(name string) string { return c.parent[name] }
 
-// Depth returns the module's level: 1 for a top-level module, 0 for an
-// unknown name.
-func (c Containment) Depth(name string) int { return c.depth[name] }
+// Depth returns the module's level: 1 for a top-level module, 0 for the system
+// (the empty name). A module the tree does not know, such as a synthetic Rust or
+// go.work module, sits directly under the system at level 1.
+func (c Containment) Depth(name string) int {
+	if name == "" {
+		return 0
+	}
+	if d, ok := c.depth[name]; ok {
+		return d
+	}
+	return 1
+}
 
 // Container returns the last node both modules share: the nearest module that
 // is, or contains, both ends. An empty result means the system, the root above
@@ -166,6 +175,6 @@ func (c Containment) Container(a, b string) string {
 // the container's own depth (0 for the system).
 func (c Containment) Span(a, b string) (crossings, shared int) {
 	container := c.Container(a, b)
-	shared = c.depth[container]
-	return (c.depth[a] - shared) + (c.depth[b] - shared), shared
+	shared = c.Depth(container)
+	return (c.Depth(a) - shared) + (c.Depth(b) - shared), shared
 }

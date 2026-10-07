@@ -61,7 +61,7 @@ func newModuleIssue(code, moduleName string) ModuleIssue {
 	issue := ModuleIssue{Code: code, Module: moduleName}
 	switch code {
 	case IssueMissingOwner:
-		issue.Reason = "no `owner:` — cross-module distance falls back to code structure"
+		issue.Reason = "no `owner:` — the boundary token cannot show an owner change (severity is unchanged)"
 		issue.NextAction = fmt.Sprintf("set `owner:` on module %q", moduleName)
 	case IssueMissingVolatilityInput:
 		issue.Reason = "neither `subdomain:` nor `volatility:` — volatility stays undeclared"

@@ -1404,7 +1404,7 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 		DeclaredExternalSystems:   2,
 		RuntimeAsyncRelations:     4,
 		RuntimeAsyncKinds:         map[string]int{"message_queue": 2, "event_bus": 1, "async_task": 1},
-		Interpretation:            "same-owner is the lowest cross-module distance; this is a low socio-technical distance signal, not missing ownership",
+		Interpretation:            "every module boundary is D=9 (level-relative)",
 		RuntimeInterpretation:     "async runtime bridges reduce lifecycle coupling and therefore increase perceived distance (book Ch8), but remain report-only because archfit does not yet measure synchronous first-party runtime peers deterministically",
 	}
 	d.ClassifiedEdges = &reportmodel.ClassifiedEdgeSummary{
@@ -1466,7 +1466,7 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 		"declared external systems: 2",
 		"runtime async relations: 4",
 		"runtime async kinds: async_task=1, event_bus=1, message_queue=2",
-		"interpretation: same-owner is the lowest cross-module distance",
+		"interpretation: every module boundary is D=9",
 		"runtime interpretation: async runtime bridges reduce lifecycle coupling and therefore increase perceived distance",
 		"connected modules in coupling sample: 2",
 		"distance basis: code_structure=3, ownership=1",

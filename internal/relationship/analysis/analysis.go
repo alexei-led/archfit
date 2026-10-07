@@ -75,7 +75,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 		unmeasuredConnascence = connascence.Unmeasured
 	}
 	dynamicConnascence := buildDynamicConnascenceSignals(dynamicImports, runtimeAsyncEdges, unmeasuredConnascence)
-	classifiedEdges := buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy, classify.BuildContainment(cfg.Modules))
+	classifiedEdges := buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy, classify.BuildContainment(in.Policy.Topology.Modules))
 	distanceCandidates := append(buildStaticDistanceCandidates(in.Graph, idx, cfg.ModuleMap),
 		BuildDistanceConfigCandidates(dynamicImports, runtimeAsyncEdges, dynamicConnascence)...)
 	sortDistanceConfigCandidates(distanceCandidates)
@@ -84,7 +84,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 		Assessment: relationship.AssessmentSignals{
 			AdvisoryCandidates: advisoryCandidates(set, clones, cfg),
 			ClassifiedEdges:    classifiedEdges,
-			Seams: buildSeams(seamInput{Set: set, Config: cfg, DeclaredModules: in.Policy.Topology.Modules, Tree: classify.BuildContainment(cfg.Modules),
+			Seams: buildSeams(seamInput{Set: set, Config: cfg, DeclaredModules: in.Policy.Topology.Modules, Tree: classify.BuildContainment(in.Policy.Topology.Modules),
 				Graph: in.Graph, EvidenceHashes: evidenceHashes,
 				LabelEvidenceHashes: labels.EvidenceHashByKey(in.Labels, evidenceHashes)}),
 		},

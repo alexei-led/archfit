@@ -86,10 +86,9 @@ const (
 )
 
 // SeamDistance is the raw distance evidence behind a seam's collapsed rung.
-// The rung alone cannot be audited: cross_module is produced both by
-// two modules that genuinely share an owner and by a repository where ownership
-// is degenerate. Reporting the facts beside the level makes the difference
-// visible without changing the ordinal formula.
+// Every module boundary scores at the same rung, so the rung alone does not say
+// what changes across the seam. Reporting the owner and deploy-unit facts beside
+// the level names the boundary without changing the ordinal formula.
 type SeamDistance struct {
 	// Level is the coarse book rung the scorer consumed.
 	Level Distance
