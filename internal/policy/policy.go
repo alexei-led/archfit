@@ -21,7 +21,6 @@ type TopologyView struct {
 	Layers          []string
 	ModuleMap       ModuleMap
 	ExternalSystems map[string]ExternalSystemDef
-	ExplicitOwners  map[string]bool
 }
 
 // RelationshipPolicy contains only declarations needed to classify relationships.
@@ -185,7 +184,7 @@ func cloneTopology(in TopologyView) TopologyView {
 		def.Targets = slices.Clone(def.Targets)
 		external[name] = def
 	}
-	return TopologyView{Modules: modules, Layers: slices.Clone(in.Layers), ModuleMap: BuildModuleMap(modules), ExternalSystems: external, ExplicitOwners: maps.Clone(in.ExplicitOwners)}
+	return TopologyView{Modules: modules, Layers: slices.Clone(in.Layers), ModuleMap: BuildModuleMap(modules), ExternalSystems: external}
 }
 
 func cloneWaivers(in WaiverSet) WaiverSet {

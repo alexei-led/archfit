@@ -86,7 +86,7 @@ const (
 )
 
 // SeamDistance is the raw distance evidence behind a seam's collapsed rung.
-// The rung alone cannot be audited: cross_module_same_owner is produced both by
+// The rung alone cannot be audited: cross_module is produced both by
 // two modules that genuinely share an owner and by a repository where ownership
 // is degenerate. Reporting the facts beside the level makes the difference
 // visible without changing the ordinal formula.

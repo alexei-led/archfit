@@ -193,6 +193,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	// reads: strip the imported package path (needs the full member set, hence
 	// merge-time), drop excluded files, keep the strongest hint per pair.
 	strengthHints := make(map[string]string)
+	dataHints := make(map[string]string)
 	connascenceHints := make(map[string][]graph.ConnascenceHint)
 	for _, pf := range allPkgs {
 		for k, strength := range pf.Hints {
@@ -203,6 +204,16 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 			mk := relFile + "\x00" + stripImportPath(rawPkg)
 			if goStrengthRank[strengthHints[mk]] < goStrengthRank[strength] {
 				strengthHints[mk] = strength
+			}
+		}
+		for k, strength := range pf.DataHints {
+			relFile, rawPkg, ok := strings.Cut(k, "\x00")
+			if !ok || e.isExcluded(relFile) {
+				continue
+			}
+			mk := relFile + "\x00" + stripImportPath(rawPkg)
+			if goStrengthRank[dataHints[mk]] < goStrengthRank[strength] {
+				dataHints[mk] = strength
 			}
 		}
 		for k, hints := range pf.Connascence {
@@ -216,7 +227,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	}
 
 	nodes, edges, filesSeen, inputsMissing, precisionOnly := e.collectNodesEdges(
-		allPkgs, stripImportPath, strengthHints, connascenceHints,
+		allPkgs, stripImportPath, strengthHints, dataHints, connascenceHints,
 	)
 	// Both conditions leave the load incomplete over the tree, so both count
 	// toward Unresolved and both keep the row partial. They are NOT the same
@@ -382,7 +393,7 @@ func goPartialReason(inputsMissing, precisionOnly int) string {
 func (e *GoExtractor) collectNodesEdges(
 	pkgs []packageFacts,
 	stripImportPath func(string) string,
-	strengthHints map[string]string,
+	strengthHints, dataHints map[string]string,
 	connascenceHints map[string][]graph.ConnascenceHint,
 ) (nodes []graph.Node, edges []graph.Edge, filesSeen, inputsMissing, precisionOnly int) {
 	// seenNodes deduplicates package/file nodes within this extractor.
@@ -436,6 +447,7 @@ func (e *GoExtractor) collectNodesEdges(
 					Confidence:       "high",
 					Locations:        []graph.Location{{File: imp.LocFile, Line: imp.Line}},
 					StrengthHint:     strengthHints[key],
+					DataStrengthHint: dataHints[key],
 					ConnascenceHints: connascenceHints[key],
 				})
 			}
@@ -533,10 +545,37 @@ func goObjectStrength(obj types.Object, dtos *dtoIndex) string {
 	case *types.Const:
 		// Pure data sharing (book Ch7), same as *types.Var.
 		return strengthModel
+	case *types.Func:
+		// A method called through an interface is a contract call; package-level
+		// functions and concrete-receiver methods stay functional.
+		if sig, ok := tn.Type().(*types.Signature); ok && sig.Recv() != nil && types.IsInterface(sig.Recv().Type()) {
+			return strengthContract
+		}
+		return strengthFunctional
 	default:
-		// *types.Func (function or method) and anything unforeseen → functional.
+		// Anything unforeseen → functional.
 		return strengthFunctional
 	}
+}
+
+// goObjectDataStrength is the strongest NON-CALLABLE use an object represents,
+// or "" when the use is purely callable. Type names, data vars/fields and
+// consts classify as in goObjectStrength; a method on a concrete receiver is
+// model evidence (it needs the concrete type); package-level functions,
+// interface-method calls and func/chan-valued vars never contribute.
+func goObjectDataStrength(obj types.Object, dtos *dtoIndex) string {
+	switch tn := obj.(type) {
+	case *types.Func:
+		if sig, ok := tn.Type().(*types.Signature); ok && sig.Recv() != nil && !types.IsInterface(sig.Recv().Type()) {
+			return strengthModel
+		}
+		return ""
+	case *types.TypeName, *types.Var, *types.Const:
+		if s := goObjectStrength(obj, dtos); s != strengthFunctional {
+			return s
+		}
+	}
+	return ""
 }
 
 func goObjectConnascence(obj types.Object, dtos *dtoIndex) []graph.ConnascenceHint {

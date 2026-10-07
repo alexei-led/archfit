@@ -30,13 +30,15 @@ const (
 	StrengthUnknown    Strength = "unknown"
 )
 
-// Distance measures how far apart two modules are in the ownership hierarchy.
+// Distance names the boundary between two modules. Every module boundary sits
+// at the same rung (D=9); the token records whether the owner or the deploy
+// unit also changes across it.
 type Distance string
 
 // Distance constants name the measured ownership/deployment gap facts.
 const (
 	DistanceSameModule           Distance = "same_module"
-	DistanceCrossModuleSameOwner Distance = "cross_module_same_owner"
+	DistanceCrossModule          Distance = "cross_module"
 	DistanceCrossModuleDiffOwner Distance = "cross_module_different_owner"
 	DistanceCrossDeployUnit      Distance = "cross_deploy_unit"
 	DistanceExternal             Distance = "declared_external"
@@ -93,13 +95,12 @@ type Location struct {
 // relationship fact was derived. It carries facts, not assessment findings or
 // metric state.
 type Provenance struct {
-	ClassificationKey       string
-	DistanceBasis           string
-	StrengthFromLLM         bool
-	StrengthFromNonHighLLM  bool
-	StrengthFromConnascence bool
-	ConnascenceKinds        []string
-	CloneLocationCount      int
+	ClassificationKey      string
+	DistanceBasis          string
+	StrengthFromLLM        bool
+	StrengthFromNonHighLLM bool
+	ConnascenceKinds       []string
+	CloneLocationCount     int
 }
 
 // Score is the relationship-owned score value produced by classification.

@@ -406,3 +406,37 @@ func TestFactCache_ExplicitGoWorkContentInvalidates(t *testing.T) {
 		t.Errorf("explicit GOWORK content change must invalidate both members, got %v", loader.calls)
 	}
 }
+
+// TestFactCache_SemanticsVersionInvalidates pins that the measurement-contract
+// string rides the member key: a bump must never replay facts an older binary
+// derived under different strength semantics.
+func TestFactCache_SemanticsVersionInvalidates(t *testing.T) {
+	t.Setenv("GOFLAGS", "")
+	root, dirA, dirB := writeWorkspaceFixture(t)
+	loader := &fakeLoader{calls: map[string]int{}}
+	ex := New(evidenceports.ExtractConfig{})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ex.load = loader.load
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	orig := goSemantics
+	t.Cleanup(func() { goSemantics = orig })
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if loader.calls[dirA] != 1 || loader.calls[dirB] != 1 {
+		t.Fatalf("warm run: want cache hit, got %v", loader.calls)
+	}
+
+	goSemantics = func() string { return "go/packages.next" }
+	if _, _, err := ex.Extract(ctx, s); err != nil {
+		t.Fatalf("Extract after semantics change: %v", err)
+	}
+	if loader.calls[dirA] != 2 || loader.calls[dirB] != 2 {
+		t.Errorf("semantics change must invalidate both members, got %v", loader.calls)
+	}
+}

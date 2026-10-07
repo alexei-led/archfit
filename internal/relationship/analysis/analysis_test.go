@@ -50,7 +50,6 @@ func twoModules() map[string]policy.ModuleDef {
 func relationshipPolicy(modules map[string]policy.ModuleDef) policy.RelationshipPolicy {
 	return policy.RelationshipPolicy{Topology: policy.TopologyView{
 		Modules: modules, ModuleMap: policy.BuildModuleMap(modules),
-		ExplicitOwners: map[string]bool{moduleA: true, moduleB: true},
 	}}
 }
 

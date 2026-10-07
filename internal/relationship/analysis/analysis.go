@@ -75,7 +75,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 		unmeasuredConnascence = connascence.Unmeasured
 	}
 	dynamicConnascence := buildDynamicConnascenceSignals(dynamicImports, runtimeAsyncEdges, unmeasuredConnascence)
-	classifiedEdges := buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy)
+	classifiedEdges := buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy, classify.BuildContainment(cfg.Modules))
 	distanceCandidates := append(buildStaticDistanceCandidates(in.Graph, idx, cfg.ModuleMap),
 		BuildDistanceConfigCandidates(dynamicImports, runtimeAsyncEdges, dynamicConnascence)...)
 	sortDistanceConfigCandidates(distanceCandidates)
@@ -84,7 +84,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 		Assessment: relationship.AssessmentSignals{
 			AdvisoryCandidates: advisoryCandidates(set, clones, cfg),
 			ClassifiedEdges:    classifiedEdges,
-			Seams: buildSeams(seamInput{Set: set, Config: cfg, DeclaredModules: in.Policy.Topology.Modules,
+			Seams: buildSeams(seamInput{Set: set, Config: cfg, DeclaredModules: in.Policy.Topology.Modules, Tree: classify.BuildContainment(cfg.Modules),
 				Graph: in.Graph, EvidenceHashes: evidenceHashes,
 				LabelEvidenceHashes: labels.EvidenceHashByKey(in.Labels, evidenceHashes)}),
 		},
@@ -309,7 +309,7 @@ func buildSet(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap, modules m
 		tm, _ := moduleForNode(e.To, mm)
 		fromDef, fromClassified := modules[fm]
 		toDef, toClassified := modules[tm]
-		set.Edges = append(set.Edges, relationship.Edge{FromID: e.From, ToID: e.To, FromPath: fp, ToPath: tp, FromModule: fm, ToModule: tm, FromLayer: fromDef.Layer, ToLayer: toDef.Layer, StructureClassified: fromClassified && toClassified, Kind: string(e.Kind), Language: e.Language, Strength: cl.Strength, Distance: cl.Distance, Volatility: cl.Volatility, Severity: cl.Severity, Locations: locations(e.Locations), Provenance: relationship.Provenance{ClassificationKey: key, DistanceBasis: string(cl.DistanceBasis), StrengthFromLLM: cl.StrengthFromLLM, StrengthFromNonHighLLM: cl.StrengthFromNonHighLLM, StrengthFromConnascence: cl.StrengthFromConnascence, ConnascenceKinds: connascenceKinds(cl.Connascence), CloneLocationCount: len(cl.CloneLocations)}, Classified: classification(cl)})
+		set.Edges = append(set.Edges, relationship.Edge{FromID: e.From, ToID: e.To, FromPath: fp, ToPath: tp, FromModule: fm, ToModule: tm, FromLayer: fromDef.Layer, ToLayer: toDef.Layer, StructureClassified: fromClassified && toClassified, Kind: string(e.Kind), Language: e.Language, Strength: cl.Strength, Distance: cl.Distance, Volatility: cl.Volatility, Severity: cl.Severity, Locations: locations(e.Locations), Provenance: relationship.Provenance{ClassificationKey: key, DistanceBasis: string(cl.DistanceBasis), StrengthFromLLM: cl.StrengthFromLLM, StrengthFromNonHighLLM: cl.StrengthFromNonHighLLM, ConnascenceKinds: connascenceKinds(cl.Connascence), CloneLocationCount: len(cl.CloneLocations)}, Classified: classification(cl)})
 	}
 	return set
 }

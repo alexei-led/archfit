@@ -368,7 +368,7 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Result {
 	s := scope.Scope{Root: root, Mode: scope.ModeFull}
 
 	runPolicy := policy.New(
-		policy.TopologyView{Modules: classifyCfg.Modules, Layers: classifyCfg.Layers, ModuleMap: classifyCfg.ModuleMap, ExternalSystems: classifyCfg.ExternalSystems, ExplicitOwners: classifyCfg.ExplicitOwners},
+		policy.TopologyView{Modules: classifyCfg.Modules, Layers: classifyCfg.Layers, ModuleMap: classifyCfg.ModuleMap, ExternalSystems: classifyCfg.ExternalSystems},
 		policy.RelationshipPolicy{MinimumSeverity: classifyCfg.BCAdvisoryMinSeverity, VolatilityCascadeEnabled: classifyCfg.VolatilityCascadeEnabled, DuplicatedKnowledge: classifyCfg.DuplicatedKnowledgePolicy},
 		policy.AssessmentPolicy{}, policy.GatePolicy{Rules: cfg.ForRules(), Metrics: cfg.Metrics.MetricEntries()}, nil, nil)
 

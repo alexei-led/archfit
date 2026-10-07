@@ -114,6 +114,14 @@ check("classify kind interface → contract", r._classify(TS_TYPE, "typescript",
 check("classify kind constant → model", r._classify(TS_TERM, "typescript", NO_CONTRACT, SCIP_KIND_CONSTANT), "model")
 check("classify kind function → functional", r._classify(PY_TERM, "python", NO_CONTRACT, SCIP_KIND_FUNCTION), "functional")
 
+# _stronger_data: only contract/model occurrences contribute; model outranks contract.
+check("data none → none for functional", r._stronger_data("", "functional"), "")
+check("data none → none for intrusive", r._stronger_data("", "intrusive"), "")
+check("data contract first", r._stronger_data("", "contract"), "contract")
+check("data model outranks contract", r._stronger_data("contract", "model"), "model")
+check("data contract does not weaken model", r._stronger_data("model", "contract"), "model")
+check("data functional keeps model", r._stronger_data("model", "functional"), "model")
+
 # _connascence_kind: static categories only where symbol facts support them.
 check("connascence private → name", r._connascence_kind(PY_PRIV, "python", NO_CONTRACT), "name")
 check("connascence type → type", r._connascence_kind(RUST_TYPE, "rust", NO_CONTRACT), "type")
@@ -341,7 +349,7 @@ def run_cli_integration() -> None:
             data = json.loads(run.stdout)
             check(
                 "cli edge output includes cross-module ref",
-                {"from": "internal/mcp/server.go", "to": "internal/spot", "strength": "model", "connascence": ["type"]} in data["edges"],
+                {"from": "internal/mcp/server.go", "to": "internal/spot", "strength": "model", "data_strength": "model", "connascence": ["type"]} in data["edges"],
                 True,
             )
             check("cli symbol refs", data["symbol_refs"], [

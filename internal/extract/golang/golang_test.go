@@ -415,6 +415,10 @@ func TestExtract_StrengthHint(t *testing.T) {
 		// external_cons.go calls strings.Repeat — an EXTERNAL (stdlib) target must
 		// carry a real type-info hint so a declared external_systems seam can score
 		// at D=10 instead of abstaining (no manual hint injection anywhere here).
+		// iface_method_cons.go calls g.Greet() on a b.Greeter — an interface-method call is contract (S1), not functional.
+		{"interface method call → contract", "pkg/a/iface_method_cons.go", pkgB, graph.EdgeKindImports, hintContract},
+		// concrete_method_cons.go calls b.MakeEntity().Rename(...) — function and concrete-receiver method stay functional.
+		{"concrete method call → functional", "pkg/a/concrete_method_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
 		{"external stdlib function call → functional", "pkg/a/external_cons.go", "strings", graph.EdgeKindImports, hintFunctional},
 	}
 
@@ -524,5 +528,54 @@ func TestExtract_MissingPackage(t *testing.T) {
 	// Unresolved in facts and coverage should agree.
 	if facts.Unresolved != cov.Unresolved {
 		t.Errorf("facts.Unresolved=%d != cov.Unresolved=%d", facts.Unresolved, cov.Unresolved)
+	}
+}
+
+// TestExtract_DataStrengthHint pins the non-callable split: the data hint is the
+// strongest type/field/var/const use, a concrete-receiver method counts as model,
+// and package-level functions or func-valued vars never contribute.
+func TestExtract_DataStrengthHint(t *testing.T) {
+	root := testdataRoot(t)
+	ext := goextract.New(evidenceports.ExtractConfig{})
+	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: root, Mode: scope.ModeFull})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	cases := []struct {
+		name string
+		from string
+		to   string
+		want string
+	}{
+		{"function call only has no data", "pkg/a/a.go", pkgB, ""},
+		{"func-valued var has no data", "pkg/a/funcvar_cons.go", pkgB, ""},
+		{"interface type is contract", "pkg/a/contract_cons.go", pkgB, hintContract},
+		{"interface method call carries the interface type", "pkg/a/iface_method_cons.go", pkgB, hintContract},
+		{"dto type is dto", "pkg/a/dto_cons.go", pkgB, hintDTO},
+		{"concrete type is model", "pkg/a/model_cons.go", pkgB, hintModel},
+		{"const is model", "pkg/a/const_cons.go", pkgB, hintModel},
+		{"var is model", "pkg/a/var_cons.go", pkgB, hintModel},
+		{"concrete method is model", "pkg/a/concrete_method_cons.go", pkgB, hintModel},
+		{"callable use does not outrank data", "pkg/a/max_cons.go", pkgB, hintContract},
+		{"dto outranks contract", "pkg/a/dto_rank_cons.go", pkgB, hintDTO},
+		{"stdlib function has no data", "pkg/a/external_cons.go", "strings", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got string
+			found := false
+			for _, e := range facts.Edges {
+				if strings.HasSuffix(e.From, tc.from) && strings.HasSuffix(e.To, tc.to) {
+					got, found = e.DataStrengthHint, true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("no edge %s -> %s", tc.from, tc.to)
+			}
+			if got != tc.want {
+				t.Errorf("DataStrengthHint = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

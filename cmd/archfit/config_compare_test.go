@@ -69,9 +69,9 @@ func testCompareClassificationMix(t *testing.T) {
 		{
 			name: "owner edit moves the distance rung",
 			mutate: func(s *report.ClassifiedEdgeSummary) {
-				s.ByDistance = map[string]int{"cross_module_same_owner": 1}
+				s.ByDistance = map[string]int{"cross_module": 1}
 			},
-			wantSubstr: "distance mix: cross_module_different_owner 1 → 0, cross_module_same_owner 0 → 1",
+			wantSubstr: "distance mix: cross_module 0 → 1, cross_module_different_owner 1 → 0",
 		},
 		{
 			name: "volatility provenance moves",

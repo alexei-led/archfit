@@ -70,14 +70,14 @@ type CouplingTailRiskSummary struct {
 
 // DistanceCompressionSummary records deterministic distance-ladder coverage.
 type DistanceCompressionSummary struct {
-	CompressedMiddleRungs       bool
-	ImplementedRungs            []int
-	OmittedRungs                []int
-	OmittedRungReasons          []DistanceOmittedRungReason
-	DeterministicSplits         []string
-	CodeStructureBoundaryCounts []DistanceCount
-	CodeStructureAncestorDepths []DistanceCount
-	Rationale                   string
+	CompressedMiddleRungs     bool
+	ImplementedRungs          []int
+	OmittedRungs              []int
+	OmittedRungReasons        []DistanceOmittedRungReason
+	DeterministicSplits       []string
+	ContainmentBoundaryCounts []DistanceCount
+	ContainmentAncestorDepths []DistanceCount
+	Rationale                 string
 }
 
 // DistanceCount is one distance-evidence histogram bucket.

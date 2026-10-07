@@ -31,11 +31,11 @@ func projectRelationshipSummary(in *relationship.ClassifiedEdgeSummary) *result.
 		for _, r := range d.OmittedRungReasons {
 			out.DistanceCompression.OmittedRungReasons = append(out.DistanceCompression.OmittedRungReasons, result.DistanceOmittedRungReason{Rung: r.Rung, Reason: r.Reason})
 		}
-		for _, c := range d.CodeStructureBoundaryCounts {
-			out.DistanceCompression.CodeStructureBoundaryCounts = append(out.DistanceCompression.CodeStructureBoundaryCounts, result.DistanceCount{Value: c.Value, Count: c.Count})
+		for _, c := range d.ContainmentBoundaryCounts {
+			out.DistanceCompression.ContainmentBoundaryCounts = append(out.DistanceCompression.ContainmentBoundaryCounts, result.DistanceCount{Value: c.Value, Count: c.Count})
 		}
-		for _, c := range d.CodeStructureAncestorDepths {
-			out.DistanceCompression.CodeStructureAncestorDepths = append(out.DistanceCompression.CodeStructureAncestorDepths, result.DistanceCount{Value: c.Value, Count: c.Count})
+		for _, c := range d.ContainmentAncestorDepths {
+			out.DistanceCompression.ContainmentAncestorDepths = append(out.DistanceCompression.ContainmentAncestorDepths, result.DistanceCount{Value: c.Value, Count: c.Count})
 		}
 	}
 	if in.TailRisk != nil {
