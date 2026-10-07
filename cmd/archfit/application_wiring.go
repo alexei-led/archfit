@@ -87,7 +87,7 @@ func (baselineLoaderAdapter) Load(ctx context.Context, bundleDir string) (applic
 	out := application.Baseline{Present: b.SchemaVersion != "", Accepted: b, Metrics: b.Metrics}
 	if b.State != nil {
 		out.State = &application.BaselineStateSnapshot{
-			ConfigHash: b.State.ConfigHash, ModelHash: b.State.ModelHash,
+			ConfigHash: b.State.ConfigHash, ClassificationHash: b.State.ClassificationHash, ModelHash: b.State.ModelHash,
 			LabelsHash: b.State.LabelsHash, RubricVersion: b.State.RubricVersion,
 			MeasurementProfile: b.State.MeasurementProfile,
 			HardGateFindingIDs: b.State.HardGateFindingIDs,
@@ -123,7 +123,7 @@ func (baselineWriterAdapter) Save(ctx context.Context, path string, in applicati
 	}
 	if in.State != nil {
 		b.State = &baseline.StateSnapshot{
-			ConfigHash: in.State.ConfigHash, ModelHash: in.State.ModelHash,
+			ConfigHash: in.State.ConfigHash, ClassificationHash: in.State.ClassificationHash, ModelHash: in.State.ModelHash,
 			LabelsHash: in.State.LabelsHash, RubricVersion: in.State.RubricVersion,
 			MeasurementProfile: in.State.MeasurementProfile,
 			HardGateFindingIDs: in.State.HardGateFindingIDs,

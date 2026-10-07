@@ -140,8 +140,8 @@ func testIntegrationReachabilityDriftLifecycle(t *testing.T) {
 			t.Fatalf("root comparison status = %q, want not_requested", state.Comparison.Status)
 		}
 		reason := assertReachabilityUnmeasuredDrift(t, state, "the stored baseline was written under different inputs")
-		if !strings.Contains(reason, "config_hash") {
-			t.Fatalf("incomparable-baseline reason %q does not name the drifted config_hash", reason)
+		if !strings.Contains(reason, "classification_hash") {
+			t.Fatalf("incomparable-baseline reason %q does not name the drifted classification_hash", reason)
 		}
 		if strings.Contains(reason, "no comparable architecture-state reference is stored") {
 			t.Fatalf("incomparable-baseline reason is indistinguishable from a missing baseline: %q", reason)
@@ -409,10 +409,10 @@ func makeReachabilityBaselineIncomparable(t *testing.T, root string) {
 		t.Fatal("captured baseline has no architecture-state snapshot")
 	}
 	driftedHash := strings.Repeat("0", 64)
-	if stored.State.ConfigHash == driftedHash {
+	if stored.State.ClassificationHash == driftedHash {
 		driftedHash = strings.Repeat("1", 64)
 	}
-	stored.State.ConfigHash = driftedHash
+	stored.State.ClassificationHash = driftedHash
 	if err := baseline.Save(t.Context(), path, stored); err != nil {
 		t.Fatalf("write incomparable baseline: %v", err)
 	}

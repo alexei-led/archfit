@@ -1719,8 +1719,8 @@ func corroboratingDeploySource(source modevidence.TopologySource) bool {
 //
 // It is measured only when the stored reference agrees with this run on all
 // four fingerprints. Anything else is unmeasured with the drifted input named:
-// a reference written under a different config, module map, label set, or
-// rubric would turn a policy edit into a reported regression, and a reference
+// a reference written under a different classification, module map, label
+// set, rubric, or measurement profile would turn a policy edit into a reported regression, and a reference
 // that predates the seam ledger records no seams at all — reading that as
 // "there were none" would report every existing seam as newly introduced.
 func driftDimension(diag *result.Result, ref BaselineAnchor) state.Dimension {

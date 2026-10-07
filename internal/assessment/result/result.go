@@ -82,6 +82,7 @@ type Result struct {
 	// label set. They reach the wire only through the architecture-state
 	// comparison projection.
 	ModelHash          string                       `json:"-"`
+	ClassificationHash string                       `json:"-"`
 	LabelsHash         string                       `json:"-"`
 	MeasurementProfile *evidence.MeasurementProfile `json:"-"`
 	GateReference      *StateComparison             `json:"-"`
