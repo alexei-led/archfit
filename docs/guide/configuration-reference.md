@@ -682,7 +682,7 @@ It does not compare the bytes of `.archfit.yaml`. Each key has one class:
 | Model          | `modules` (paths, `public`, `internal`, `layer`, `subdomain`, `volatility`, `owner`, `deploy_unit`, `role`)                                                               | Changes `model_hash`.                                                                                              |
 | Classification | `coupling.volatility_cascade`, `coupling.duplicated_knowledge`, `external_systems`, `metrics.function_loc_threshold`, `metrics.<name>.enabled`                            | Changes `classification_hash`.                                                                                     |
 | Profile        | `exclude`, `languages`, `analyzers`, `coverage` (not its gate), `file_class`, `rules[].patterns`                                                                          | Changes the measurement profile.                                                                                   |
-| Profile (gate) | `languages.<id>.gate`, `analyzers.<id>.gate`, `coverage.gate`                                                                                                             | The gate value is not hashed. It matters only when it changes the status of an absent or disabled analyzer.        |
+| Profile (gate) | `languages.<id>.gate`, `analyzers.<id>.gate`, `coverage.gate`                                                                                                             | The gate value is not hashed. It matters only when it changes the status of an absent or disabled analyzer, or demands a tool for a language that is not in the tree (the gap makes that analyzer applicable).        |
 | Governance     | `rules` (except `patterns`), `waivers`, `layers`, `coupling.min_severity`, `coupling.gate`, `metrics.<name>.gate`, `min_delta`, `max_new`, `modules.<m>.depends_on`, `visible_to`, `reviewed_at`, `ai`, `outputs`, `module_review`, comments | Can change findings and what blocks. Never makes a stored reference non-comparable. |
 
 `comparison.config_hash` is the SHA-256 of the file bytes. It identifies the
@@ -695,9 +695,13 @@ the identity of the measurement conditions, separate from the four policy
 fingerprints. The object contains:
 
 - `version` — the Archfit measurement-profile contract, currently
-  `archfit.measurement.v1`;
-- `settings_hash` — the normalized extractor and acquisition settings;
-- `producers[]` — one row per evidence producer with `tool`,
+  `archfit.measurement.v2`;
+- `settings_hash` — the global settings (exclusions, file classes, syntax, rule
+  patterns, supplied coverage) plus one slice for each language that has a
+  producer in this run;
+- `producers[]` — one row per evidence producer, without the rows of languages
+  that are not in the tree (the row is absent, no coverage gap asks for it, and
+  no source file of that language exists). It has `tool`,
   `semantics_version`, `status`, and (when applicable) `tool_version`;
 - `unknowns[]` — reasons Archfit could not establish a producer or environment
   fact.

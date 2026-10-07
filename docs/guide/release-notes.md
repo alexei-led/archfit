@@ -20,6 +20,13 @@ Changed (comparability v2):
   the comparison non-comparable (`classification_hash`, `model_hash`,
   `labels_hash`, `rubric_version`, `measurement_profile`, `reference_incomplete`).
   `gate_reference.baseline_present` says whether a baseline file was loaded.
+- The measurement profile is `archfit.measurement.v2`. Its settings hash holds
+  the global settings plus one slice for each language that has a producer. A
+  language that is not in the tree (no project, no coverage gap, no source
+  file) leaves the profile, so a release that adds a language keeps the
+  baseline of a repo without it comparable. `tool_version` is one printable
+  line of at most 128 characters. A reference on profile v1 is non-comparable
+  with one reason that names the version.
 - The baseline schema is `archfit.baseline.v3` and stores `classification_hash`.
   The engine rejects v2 files. A stored v3 reference without a
   `classification_hash` is non-comparable (`reference_incomplete`).
@@ -52,6 +59,20 @@ Fixed:
   `archfit agents-md` block. A multi-line module `owner` also broke its row in
   the module table; the block now writes it on one line. Finding IDs do not
   change.
+
+Changed (hook git):
+
+- `archfit hook git` now judges the staged content, which is what the commit
+  will contain. Before this change it judged the files on disk, so an
+  unstaged fix let a staged violation through, and an untracked scratch file
+  could block a commit. The hook records the index as a commit object that no
+  ref points to, checks it out in a temporary worktree under
+  `.archfit-cache/worktrees/`, and runs the check there. The working tree, the
+  index, and the refs do not change. It reads the index that git hands the
+  hook, so `git commit -a` and `git commit <path>` work. The config comes from
+  the index; the baseline, the labels, and the fact cache come from the config
+  directory on disk. A config that the commit removes, or an unmerged index,
+  is an error (exit 3).
 
 ## v2.5.1 — (unreleased)
 

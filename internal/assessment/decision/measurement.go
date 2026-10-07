@@ -56,7 +56,9 @@ func profileUnknowns(side string, p *evidence.MeasurementProfile) []string {
 	}
 	var reasons []string
 	if p.Version != evidence.MeasurementProfileVersion {
-		reasons = append(reasons, fmt.Sprintf("measurement_profile version %q is unsupported in %s", p.Version, side))
+		// One reason that names the version: the rest of an older profile is not
+		// comparable field by field, so listing it would only bury this.
+		return []string{fmt.Sprintf("measurement_profile version %q is unsupported in %s (want %q)", p.Version, side, evidence.MeasurementProfileVersion)}
 	}
 	if p.SettingsHash == "" {
 		reasons = append(reasons, "measurement_profile.settings_hash is missing from "+side)

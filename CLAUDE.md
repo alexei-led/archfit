@@ -179,7 +179,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
   ast-grep pass runs and the settings hash covers), `layers`, `min_severity`,
   `depends_on`/`visible_to` and `reviewed_at` are governance and never make a run
   non-comparable. A `languages.<id>.gate` edit matters only when it flips an
-  absent row to disabled; supplied `coverage:` sources enter the settings hash. Every config leaf has exactly one class (model,
+  absent row to disabled or demands a tool for a language that is not in the tree
+  (a coverage gap makes the row applicable); supplied `coverage:` sources enter the settings hash. Every config leaf has exactly one class (model,
   classification, profile, governance): `internal/config/classification_test.go`
   fails on a leaf with no class, so a new key needs a decision. Each non-comparable
   result also carries `drift[]` (`decision.DriftClass`), so a consumer reads the
@@ -197,8 +198,20 @@ init` emits v2 directly; owners update older configs manually before analysis.
   non-comparable, so `mode: fail` blocks only on code-edge changes until
   `archfit baseline` is re-run. Rationale in
   `docs/design/architecture-state-reporting.md`.
-  The measurement profile adds the normalized settings hash and producer
-  semantics/status/tool versions. Unknown or incompatible profile data makes
+  The measurement profile (`archfit.measurement.v2`) adds the settings hash and
+  producer semantics/status/tool versions. The hash covers the global settings
+  plus ONE slice per language that contributes a producer; a language row that
+  is absent, has no coverage gap, and has no source file in the inventory is
+  not applicable and leaves the profile (`profileNotApplicable`), so registering
+  a language moves no profile on a tree without it. Rule patterns are hashed in
+  sorted order; `tool_version` is one printable line of at most 128 runes
+  (`normalizeToolVersion`, a digest suffix keeps long versions distinct). A
+  reference on another profile version is ONE reason naming that version. The
+  pairing paths (`pairFamily`, `gradeTool`) read the marked coverage copy, which
+  the profile does not touch. Accepted ceiling: the inventory comes from the LOC
+  walk, which skips `testdata/`, `vendor/` and similar, so a language whose only
+  files sit there is not applicable and its per-language `syntax` flag is not
+  hashed; the alternative over-hashes every tree that merely disables a language. Unknown or incompatible profile data makes
   the comparison `non_comparable` with named reasons; external producer
   versions are exact-match until equivalence is verified. Unresolved dynamic
   dependency-cruiser inputs and unsupported TypeScript config resolution are
@@ -865,10 +878,27 @@ init` emits v2 directly; owners update older configs manually before analysis.
   AND an in-scope repair (a dead selector or a ratchet is not scoped to the
   change, so it is a `systemMessage`); `stop_hook_active` → `systemMessage`;
   any archfit error fails open (exit 0 + `systemMessage`); malformed stdin is
-  1. `hook git` exits 1/0/3 on the same `blocksChange` and judges the files on
-  disk. Both run `executeScan` in process with `--base HEAD`
-  and the pipeline's stderr discarded. These exit codes are the host protocol,
-  never the engine verdict.
+  1. `hook git` exits 1/0/3 on the same `blocksChange` and judges the INDEX,
+  never the disk: `historygit.SnapshotIndex` copies the index git hands the
+  hook (`GIT_INDEX_FILE`, read through the hidden `--index-file` flag; `git
+  commit -a`/`<path>` use a temporary one, and `CleanEnv` scrubs the variable,
+  so it is passed on purpose), runs `write-tree` on the copy (write-tree writes
+  its cache-tree back, and git commit holds the real index locked), and
+  `commit-tree`s it on HEAD with `--no-gpg-sign`, a fixed date, and the
+  author `git var GIT_AUTHOR_IDENT` names (same staged tree, same SHA, same
+  checkout path; a placeholder author would win the git-author owner fallback
+  in the hook but not in CI). `Worktree.Checkout` materialises it with the
+  whole repository as the head root (as `check -c` without `--root`, never the
+  config dir); the config is read from the checkout,
+  `BundleDir` (baseline, labels, fact cache) stays the on-disk config dir
+  (`scanRequest.bundleDir`). `--base` is resolved to a SHA in the repository
+  first: inside the snapshot worktree `HEAD` names the snapshot and every
+  finding would grade pre_existing. The repair's validation command names
+  the repository config, root, and the ref as written, never the snapshot
+  that cleanup removes (`application.Request.ValidationConfig`/
+  `ValidationRoot`, `scanRequest.validationBase`). Both hooks run `executeScan` in process
+  with the pipeline's stderr discarded. These exit codes are the host
+  protocol, never the engine verdict.
 - **`AGENTS.md` carries a generated block** (`archfit agents-md`, markers
   `<!-- archfit:start/end -->`). `TestAgentsMDRepositoryBlockIsCurrent` fails
   when `.archfit.yaml` changes without `archfit agents-md --write`; example

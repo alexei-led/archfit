@@ -16,9 +16,9 @@ func TestMeasurementGoArchitectureFeaturesChangeIdentity(t *testing.T) {
 	s := &Service{Runner: toolrun.New()}
 	sc := scope.Scope{Root: t.TempDir()}
 	rows := []evidence.Coverage{{Tool: registry.ToolGoPackages, Version: "go1.26.1", Status: evidence.StatusOK}}
-	a := s.measurementProfile(context.Background(), sc, rows, nil)
+	a := s.measurementProfile(context.Background(), sc, rows, nil, nil, nil)
 	t.Setenv("GOAMD64", "v2")
-	b := s.measurementProfile(context.Background(), sc, rows, nil)
+	b := s.measurementProfile(context.Background(), sc, rows, nil, nil, nil)
 	if len(a.Unknowns) != 0 || len(b.Unknowns) != 0 {
 		t.Fatalf("effective Go environment unavailable: %v %v", a.Unknowns, b.Unknowns)
 	}

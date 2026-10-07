@@ -2,6 +2,7 @@
 package application
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -52,6 +53,12 @@ type Request struct {
 	NoAdvisories   bool
 	RequireTools   bool
 	ValidationArgs []string
+	// ValidationConfig and ValidationRoot replace the config and root a repair's
+	// validation command names; empty keeps the run's own. The staged-index git
+	// hook analyses a temporary checkout that is gone when the reader runs the
+	// command, so it names the repository instead.
+	ValidationConfig string
+	ValidationRoot   string
 }
 
 // AnalysisRequest is the narrow technical-stage input. The application owns
@@ -61,6 +68,9 @@ type AnalysisRequest struct {
 	NoAdvisories   bool
 	RequireTools   bool
 	ValidationArgs []string
+	// ValidationConfig and ValidationRoot: see Request.
+	ValidationConfig string
+	ValidationRoot   string
 	// ApplyToolGate lets a missing required analyzer stamp the verdict fail and
 	// hard-gate the run. Only analyze/check set it: baseline, explain, enrich,
 	// config compare, and the --base sub-run render a verdict but consume no
@@ -312,8 +322,8 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 	scored := evaluation.Score(&diag, evaluation.ScoreInput{
 		Policy: runCtx.Policy, Facts: facts,
 		Anchor:        seamAnchor(base, runCtx),
-		ConfigSource:  runCtx.ConfigSource,
-		ScanRoot:      runCtx.ScanRoot,
+		ConfigSource:  cmp.Or(req.ValidationConfig, runCtx.ConfigSource),
+		ScanRoot:      cmp.Or(req.ValidationRoot, runCtx.ScanRoot),
 		Root:          runCtx.Scope.Root,
 		CrateRootDirs: runCtx.CrateRootDirs, RequireTools: req.RequireTools,
 		ValidationArgs: req.ValidationArgs,
@@ -518,7 +528,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 		ConfigSource: req.ConfigSource, BundleDir: req.BundleDir,
 		BaseRef: req.BaseRef, NoAdvisories: req.NoAdvisories,
 		RequireTools: req.RequireTools, ApplyToolGate: true, DiscloseHealthWarnings: true,
-		ValidationArgs: req.ValidationArgs,
+		ValidationArgs: req.ValidationArgs, ValidationConfig: req.ValidationConfig, ValidationRoot: req.ValidationRoot,
 	})
 	if err != nil {
 		// A controlled stage failure already carries the user-facing wording; the
