@@ -24,6 +24,16 @@ Changed (comparability v2):
   The engine rejects v2 files. A stored v3 reference without a
   `classification_hash` is non-comparable (`reference_incomplete`).
 
+Fixed:
+
+- `archfit baseline` now accepts every edge of a Balanced Coupling advisory
+  group. Before this fix, it accepted only the edge that represents the group.
+  The other edges of the group then showed as `new` on the next `check`, also
+  when the tree did not change. On the archfit repository, 66 advisories showed
+  as `new` directly after a capture. The baseline file gets one entry for each
+  edge, so it can be larger. Run `archfit baseline` again to accept the full
+  groups.
+
 ## v2.5.1 — (unreleased)
 
 Two fixes. The output contract and the baseline do not change.

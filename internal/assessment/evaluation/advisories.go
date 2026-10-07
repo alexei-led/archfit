@@ -169,14 +169,12 @@ func rollup(members []finding.Finding) finding.Finding {
 	matched := make(map[string]string, len(rep.MatchedBy)+2)
 	maps.Copy(matched, rep.MatchedBy)
 	matched["group_count"] = strconv.Itoa(len(members))
-	ids := make([]string, 0, bcRollupCap)
-	for i, m := range members {
-		if i == bcRollupCap {
-			break
-		}
+	ids := make([]string, 0, len(members))
+	for _, m := range members {
 		ids = append(ids, m.ID)
 	}
-	matched["group_members"] = strings.Join(ids, ",")
+	matched["group_members"] = strings.Join(ids[:min(len(ids), bcRollupCap)], ",")
+	rep.Members = ids
 	rep.MatchedBy = matched
 	seen := map[relationship.Location]struct{}{}
 	locs := []relationship.Location{}
