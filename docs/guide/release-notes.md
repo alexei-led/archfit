@@ -49,6 +49,20 @@ Fixed:
   the module table; the block now writes it on one line. Finding IDs do not
   change.
 
+Changed (hook git):
+
+- `archfit hook git` now judges the staged content, which is what the commit
+  will contain. Before this change it judged the files on disk, so an
+  unstaged fix let a staged violation through, and an untracked scratch file
+  could block a commit. The hook records the index as a commit object that no
+  ref points to, checks it out in a temporary worktree under
+  `.archfit-cache/worktrees/`, and runs the check there. The working tree, the
+  index, and the refs do not change. It reads the index that git hands the
+  hook, so `git commit -a` and `git commit <path>` work. The config comes from
+  the index; the baseline, the labels, and the fact cache come from the config
+  directory on disk. A config that the commit removes, or an unmerged index,
+  is an error (exit 3).
+
 ## v2.5.1 — (unreleased)
 
 Two fixes. The output contract and the baseline do not change.
