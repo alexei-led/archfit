@@ -843,7 +843,7 @@ func structureDimension(diag *result.Result) state.Dimension {
 			Fact: state.FactExternalDependencyStructure,
 			Reason: strconv.Itoa(external) + " dependencies leave the declared module map (" +
 				strconv.Itoa(ce.LibraryDependencies) + " on libraries, " +
-				strconv.Itoa(ce.UnmappedFirstPartyDependencies) + " on first-party code no module owns), so their direction and layer are outside this claim",
+				strconv.Itoa(ce.UnmappedFirstPartyDependencies) + " to or from first-party code no module owns), so their direction and layer are outside this claim",
 			Owner: state.OwnerStructure,
 		})
 	}

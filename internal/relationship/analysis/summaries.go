@@ -48,12 +48,15 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 					s.SameModuleDependencies++
 				}
 			} else if firstParty[e.ToID] {
-				// First-party code on one side that no declared module owns:
-				// a gap in the module map, unlike a library import below.
+				// A first-party target, unowned or imported from unowned
+				// source: a gap in the module map, unlike a library import.
 				s.UnmappedFirstPartyDependencies++
 			} else {
 				// An external node, or a target no first-party node stands for
 				// (a Go standard-library or third-party package has no node).
+				// Ceiling: a first-party target the extractor emits no node for
+				// (a failed Go package load, the Go module root package) lands
+				// here too; the sum with the unmapped count stays exact.
 				s.LibraryDependencies++
 			}
 		}

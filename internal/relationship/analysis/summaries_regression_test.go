@@ -239,14 +239,17 @@ func TestStructureSummarySplitsOutsideMapDependencies(t *testing.T) {
 			{From: nodeA, To: "package:" + unownedPkg, Kind: graph.EdgeKindImports, Language: graph.LangGo},
 			{From: "file:" + unownedFile, To: nodeB, Kind: graph.EdgeKindImports, Language: graph.LangGo},
 			{From: "file:" + unownedFile, To: "package:fmt", Kind: graph.EdgeKindImports, Language: graph.LangGo},
+			// Ceiling: the Go module root package has no node, so an import of
+			// it reads as a library edge.
+			{From: nodeA, To: "package:", Kind: graph.EdgeKindImports, Language: graph.LangGo},
 		},
 	}})
 	s := analysis.Analyze(analysis.Input{Graph: g, Policy: relationshipPolicy(twoModules())}).Assessment.ClassifiedEdges
-	if s.DependencyEdges != 6 || s.InternalDependencies != 1 {
-		t.Fatalf("dependency/internal = %d/%d, want 6/1", s.DependencyEdges, s.InternalDependencies)
+	if s.DependencyEdges != 7 || s.InternalDependencies != 1 {
+		t.Fatalf("dependency/internal = %d/%d, want 7/1", s.DependencyEdges, s.InternalDependencies)
 	}
-	if s.LibraryDependencies != 3 || s.UnmappedFirstPartyDependencies != 2 {
-		t.Errorf("library/unmapped first-party = %d/%d, want 3/2", s.LibraryDependencies, s.UnmappedFirstPartyDependencies)
+	if s.LibraryDependencies != 4 || s.UnmappedFirstPartyDependencies != 2 {
+		t.Errorf("library/unmapped first-party = %d/%d, want 4/2", s.LibraryDependencies, s.UnmappedFirstPartyDependencies)
 	}
 }
 

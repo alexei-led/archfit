@@ -91,12 +91,14 @@ Changed (hook git):
 Changed (structure metrics):
 
 - The `structure` dimension replaces the `external_edges` metric with two
-  metrics. `library_edges` counts dependencies on libraries: an external
-  node, or a target that no first-party node stands for, such as a Go
-  standard-library package. `unmapped_first_party_edges` counts dependencies
-  that touch first-party code that no declared module owns. Only the second
-  one is a gap in the module map. Their sum equals the old `external_edges`.
-  A consumer that reads `external_edges` must read both new names.
+  metrics, decided by the target of each dependency that leaves the declared
+  module map. `unmapped_first_party_edges` counts the ones whose target is
+  first-party code: a target no module owns, or an owned target imported from
+  code no module owns. This is a gap in the module map. `library_edges` counts
+  the rest: external packages, and first-party targets the extractor has no
+  node for (for example a Go package that failed to load). Their sum equals
+  the old `external_edges`. A consumer that reads `external_edges` must read
+  both new names.
 
 ## v2.5.1 — (unreleased)
 
