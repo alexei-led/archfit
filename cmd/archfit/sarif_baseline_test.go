@@ -37,7 +37,7 @@ func TestCheckSarifMarksBaselineMembership(t *testing.T) {
 		t.Fatalf("baseline: exit %d\n%s", code, stderr)
 	}
 	writeFixtureFile(t, dir, newViolation, hookViolatingA)
-	_, after, stderr = runArchfit(t, cmdCheck, "-c", cfg, "--format=sarif")
+	_, after, stderr := runArchfit(t, cmdCheck, "-c", cfg, "--format=sarif")
 	states := map[string]int{}
 	for id, res := range sarifResults(t, after) {
 		state, _ := res["baselineState"].(string)
