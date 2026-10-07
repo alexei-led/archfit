@@ -68,7 +68,7 @@ func ruleScopeObservations(ctx context.Context, runner toolrun.Runner, store *fa
 		FileLOC: f.FileLOC, FileClassIndex: f.FileClassIndex,
 		SourceSelectors: sourceSelectorsOf(f),
 		OutOfScopeFiles: outOfScope,
-		UnanalysedFiles: unanalysedFiles(root, f, outOfScope, opts.Coverage),
+		UnanalysedFiles: unanalysedFiles(root, f, outOfScope, opts.Coverage, goMemberFilter(root, opts)),
 		UnwalkedSourceProduction: unwalkedSourceProduction(
 			f, opts.Exclusions, opts.Coverage, opts.Acquisition.FileClass),
 		RustModuleNodes:       rustModuleNodes(f),
@@ -88,11 +88,13 @@ func ruleScopeObservations(ctx context.Context, runner toolrun.Runner, store *fa
 // waiting for a dependency-cruiser run that could never happen. A Rust file
 // outside every cargo workspace member (a fuzz/ crate the workspace excludes)
 // has no crate node, so once cargo metadata named the members it is
-// unanalysed too; before that, Rust crate identities are simply unknown.
+// unanalysed too; before that, Rust crate identities are simply unknown. A Go
+// file in a member the languages.go.modules filter removed is unanalysed for
+// the same reason: the extractor never loads it.
 //
 // Files already declared out of scope are skipped: they are out of every
 // rule's scope, not merely the dependency rules'.
-func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[string]struct{}, cov CoverageOptions) map[string]struct{} {
+func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[string]struct{}, cov CoverageOptions, goMembers goMemberSplit) map[string]struct{} {
 	var roots []graph.CrateRoot
 	if f.Graph != nil {
 		roots = f.Graph.CrateRoots()
@@ -111,7 +113,8 @@ func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[strin
 			return
 		}
 		nonMember := language == graph.LangRust && len(roots) > 0 && selector == ""
-		if !absent[language] && !nonMember {
+		filteredGo := language == graph.LangGo && goMembers.removes(file)
+		if !absent[language] && !nonMember && !filteredGo {
 			return
 		}
 		if out == nil {
@@ -126,6 +129,38 @@ func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[strin
 		consider(file)
 	}
 	return out
+}
+
+// goMemberSplit is the languages.go.modules filter over the discovered Go
+// members, as scan-root-relative dirs.
+type goMemberSplit struct{ kept, removed []string }
+
+func goMemberFilter(root string, opts RunOptions) goMemberSplit {
+	kept, removed := registry.GoFilteredMembers(root, opts.Acquisition.GoExtract)
+	return goMemberSplit{kept: kept, removed: removed}
+}
+
+// removes reports whether the member that owns file — the deepest discovered
+// member dir containing it — is one the filter removed. A file in no member
+// is not the filter's to decide.
+func (s goMemberSplit) removes(file string) bool {
+	best, removed := -1, false
+	consider := func(dirs []string, isRemoved bool) {
+		for _, dir := range dirs {
+			depth := len(dir)
+			if dir == "." {
+				depth = 0
+			} else if !strings.HasPrefix(file, dir+"/") {
+				continue
+			}
+			if depth > best {
+				best, removed = depth, isRemoved
+			}
+		}
+	}
+	consider(s.kept, false)
+	consider(s.removed, true)
+	return removed
 }
 
 // unwalkedSourceProduction reports, for every dependency-edge source file the

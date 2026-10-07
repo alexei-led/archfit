@@ -4,6 +4,7 @@ package registry
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"slices"
 
 	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
@@ -210,6 +211,37 @@ func GoMembers(scanRoot string, cfg evidenceports.ExtractConfig) (dirs []string,
 		return nil, false
 	}
 	return members.Dirs, members.GoWorkOff
+}
+
+// GoFilteredMembers splits the Go members discovery finds under scanRoot into
+// the ones the languages.go.modules filter keeps and the ones it removes, as
+// scan-root-relative slash dirs ("." for scanRoot). The extractor never loads a
+// removed member, so its files are unanalysed exactly like a Rust file outside
+// every cargo member. Both are nil without a filter or when discovery fails.
+func GoFilteredMembers(scanRoot string, cfg evidenceports.ExtractConfig) (kept, removed []string) {
+	if len(cfg.GoModuleInclude) == 0 && len(cfg.GoModuleExclude) == 0 {
+		return nil, nil
+	}
+	members, err := golang.DiscoverMembers(scanRoot, cfg.Exclusions)
+	if err != nil {
+		return nil, nil
+	}
+	keep := make(map[string]bool)
+	for _, dir := range golang.FilterMembers(members.Dirs, scanRoot, cfg.GoModuleInclude, cfg.GoModuleExclude) {
+		keep[dir] = true
+	}
+	for _, dir := range members.Dirs {
+		rel, err := filepath.Rel(scanRoot, dir)
+		if err != nil {
+			continue
+		}
+		if keep[dir] {
+			kept = append(kept, filepath.ToSlash(rel))
+		} else {
+			removed = append(removed, filepath.ToSlash(rel))
+		}
+	}
+	return kept, removed
 }
 
 // GoModulePaths returns the module paths of the Go members the extractor loads

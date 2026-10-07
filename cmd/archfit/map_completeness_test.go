@@ -133,3 +133,28 @@ func TestRun_Check_ModuleReviewGateBlocksOnlyANewPackage(t *testing.T) {
 		t.Errorf("uncovered = %v, want pkg/d new and pkg/c accepted", got)
 	}
 }
+
+// TestRun_Check_ModuleReviewGateSkipsFilteredGoMembers pins applicability for
+// map completeness: a go.work member that languages.go.modules removes is never
+// loaded, so its source cannot make the map incomplete.
+func TestRun_Check_ModuleReviewGateSkipsFilteredGoMembers(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"go.work":  "go 1.21\n\nuse (\n\t./a\n\t./b\n)\n",
+		"a/go.mod": "module example.com/a\n\ngo 1.21\n",
+		"a/a.go":   "package a\n\nfunc A() {}\n",
+		"b/go.mod": "module example.com/b\n\ngo 1.21\n",
+		"b/b.go":   "package b\n\nfunc B() {}\n",
+		defaultConfigPath: "version: 2\nmodules:\n  a:\n    paths: [\"a/**\"]\n" +
+			"languages:\n  go:\n    modules:\n      include: [\"a\"]\n" +
+			"module_review:\n  gate: " + moduleReviewFail + "\n",
+	} {
+		writeFixtureFile(t, dir, name, content)
+	}
+	gitInitFixtureRepo(t, dir)
+	code, rep := checkMapCompleteness(t, dir)
+	if got := uncoveredSubjects(rep); len(got) != 0 || code == 1 {
+		t.Fatalf("exit = %d, uncovered = %v; want the filtered member b out of the map", code, got)
+	}
+}

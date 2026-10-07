@@ -1572,7 +1572,8 @@ when all of these are true:
 - It is in the analysis scope: no `exclude:` glob matches it, and its language
   is not switched off.
 - A dependency producer reads it. For example, TypeScript with no root
-  `package.json` does not count.
+  `package.json` does not count, and neither does a Go member that
+  `languages.go.modules` removes.
 
 A module owns a file when one of its `paths` globs matches the file path, or
 the file's node ID: the package directory for Go, the dotted module for Python,

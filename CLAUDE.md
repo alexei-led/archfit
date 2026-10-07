@@ -610,6 +610,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   - A walked file is out of the scope of every rule that reads dependency edges, module-wide rules included, in two cases:
     - Its language's primary row is gapless `absent` (`primaryAbsentFromTree`). That is the SAME predicate `buildCoverageGaps` suppresses the gap on: the extractor's own probe says the language is not present, and no explicit warn/fail `languages.<id>.gate` demands it.
     - It is a Rust file outside every cargo workspace member, once cargo metadata has named the members.
+    - It is a Go file whose deepest discovered member the `languages.go.modules` filter removed (`registry.GoFilteredMembers`): the extractor never loads it.
   - `forbidden_pattern` keeps these files; it reads the ast-grep pass.
   - Consequence: TypeScript under `web/ui/` with no root `package.json`, and `.go` files with no `go.mod`, leave rule scope; their coverage rows already call the language absent. Before this, prometheus' starter `module_cycle` waited forever for dependency-cruiser.
   - A dependency selector that matches only such files is listed `selector matches only source no dependency producer analyses: <side> <glob>`, guard or not. It never carries the `selector matches nothing:` prefix, which the App reads as a policy defect.
