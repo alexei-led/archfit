@@ -32,17 +32,14 @@ func skipShortWithoutRequiredTools(t *testing.T) {
 	}
 }
 
-// Rule IDs shared by the TypeScript and Python fixtures.
-const (
-	langRuleLayerOrder = "layer_order"
-	langRuleAllowlists = "allowlists"
-	langRuleWebNoCore  = "web_not_domain"
-)
-
+// langEdgeClasses are the edge classes both language fixtures must exercise,
+// the same five as the Go fixture's agreementEdgeClasses.
 var langEdgeClasses = map[string]string{
-	"allowlist":                 langRuleAllowlists,
-	"layer order":               langRuleLayerOrder,
-	"forbidden_dependency path": langRuleWebNoCore,
+	"allowlist":                   ruleAllowlists,
+	"layer order":                 ruleLayerOrder,
+	"internal/public surface":     rulePublicOnly,
+	"forbidden_dependency path":   ruleWebNotDomain,
+	"forbidden_dependency module": ruleWebNotInfra,
 }
 
 // The TypeScript fixture is JavaScript on purpose: dependency-cruiser parses
@@ -71,9 +68,13 @@ modules:
     depends_on: [domain]
   infra:
     paths: ["src/infra/**"]
+    public: ["src/infra/index.js", "src/infra/api/**"]
+    internal: ["src/infra/impl/**"]
     layer: infrastructure
   web:
     paths: ["src/web/**"]
+  worker:
+    paths: ["src/worker/**"]
 rules:
   - id: layer_order
     type: forbidden_layer_direction
@@ -81,6 +82,14 @@ rules:
   - id: allowlists
     type: module_dependencies
     gate: fail
+  - id: public_only
+    type: public_api_only
+    gate: fail
+  - id: web_not_infra
+    type: forbidden_dependency
+    gate: fail
+    from_module: web
+    to_module: infra
   - id: web_not_domain
     type: forbidden_dependency
     gate: fail
@@ -91,6 +100,8 @@ rules:
 const (
 	tsDomainIndex = "src/domain/index.js"
 	tsInfraIndex  = "src/infra/index.js"
+	tsInfraAPI    = "src/infra/api/client.js"
+	tsInfraImpl   = "src/infra/impl/pool.js"
 	tsPackageJSON = "package.json"
 )
 
@@ -100,6 +111,10 @@ var tsAgreementImports = []agreementImport{
 	{file: "src/app/infra.js", target: tsInfraIndex, want: answerDenied},
 	{file: "src/web/db.js", target: tsDomainIndex, want: answerDenied},
 	{file: "src/web/ok.js", target: "src/app/index.js", want: answerUnconstrain},
+	{file: "src/web/internal.js", target: tsInfraImpl, want: answerDenied},
+	{file: "src/web/api.js", target: tsInfraAPI, want: answerDenied},
+	{file: "src/worker/job.js", target: tsInfraAPI, want: answerUnconstrain},
+	{file: "src/worker/bad.js", target: tsInfraImpl, want: answerDenied},
 }
 
 const pyAgreementCfg = `version: 2
@@ -125,9 +140,13 @@ modules:
     depends_on: [domain]
   infra:
     paths: ["myapp.infra", "myapp.infra.**"]
+    public: ["myapp.infra", "myapp.infra.api", "myapp.infra.api.**"]
+    internal: ["myapp.infra.impl", "myapp.infra.impl.**"]
     layer: infrastructure
   web:
     paths: ["myapp.web", "myapp.web.**"]
+  worker:
+    paths: ["myapp.worker", "myapp.worker.**"]
 rules:
   - id: layer_order
     type: forbidden_layer_direction
@@ -135,6 +154,14 @@ rules:
   - id: allowlists
     type: module_dependencies
     gate: fail
+  - id: public_only
+    type: public_api_only
+    gate: fail
+  - id: web_not_infra
+    type: forbidden_dependency
+    gate: fail
+    from_module: web
+    to_module: infra
   - id: web_not_domain
     type: forbidden_dependency
     gate: fail
@@ -150,21 +177,36 @@ var pyAgreementImports = []agreementImport{
 	{file: "myapp/app/infra.py", target: "myapp.infra", want: answerDenied},
 	{file: "myapp/web/db.py", target: "myapp.domain", want: answerDenied},
 	{file: "myapp/web/ok.py", target: "myapp.app", want: answerUnconstrain},
+	{file: "myapp/web/internal.py", target: pyInfraImpl, want: answerDenied},
+	{file: "myapp/web/api.py", target: pyInfraAPI, want: answerDenied},
+	{file: "myapp/worker/job.py", target: pyInfraAPI, want: answerUnconstrain},
+	{file: "myapp/worker/bad.py", target: pyInfraImpl, want: answerDenied},
 }
+
+const (
+	pyInfraAPI  = "myapp.infra.api.client"
+	pyInfraImpl = "myapp.infra.impl.pool"
+)
 
 func writeTSAgreementRepo(t *testing.T) string {
 	t.Helper()
 	files := map[string]string{
-		tsPackageJSON:       `{"name":"agree","private":true,"type":"module"}` + "\n",
-		defaultConfigPath:   tsAgreementCfg,
-		tsDomainIndex:       "export const name = 'domain';\n",
-		"src/app/index.js":  "export const name = 'app';\n",
-		tsInfraIndex:        "export const name = 'infra';\n",
-		"src/domain/bad.js": "import { name } from '../infra/index.js';\n\nexport const bad = name;\n",
-		"src/app/app.js":    "import { name } from '../domain/index.js';\n\nexport const ok = name;\n",
-		"src/app/infra.js":  "import { name } from '../infra/index.js';\n\nexport const direct = name;\n",
-		"src/web/db.js":     "import { name } from '../domain/index.js';\n\nexport const db = name;\n",
-		"src/web/ok.js":     "import { name } from '../app/index.js';\n\nexport const ok = name;\n",
+		tsPackageJSON:         `{"name":"agree","private":true,"type":"module"}` + "\n",
+		defaultConfigPath:     tsAgreementCfg,
+		tsDomainIndex:         "export const name = 'domain';\n",
+		"src/app/index.js":    "export const name = 'app';\n",
+		tsInfraIndex:          "export const name = 'infra';\n",
+		"src/domain/bad.js":   "import { name } from '../infra/index.js';\n\nexport const bad = name;\n",
+		"src/app/app.js":      "import { name } from '../domain/index.js';\n\nexport const ok = name;\n",
+		"src/app/infra.js":    "import { name } from '../infra/index.js';\n\nexport const direct = name;\n",
+		"src/web/db.js":       "import { name } from '../domain/index.js';\n\nexport const db = name;\n",
+		"src/web/ok.js":       "import { name } from '../app/index.js';\n\nexport const ok = name;\n",
+		tsInfraAPI:            "export const client = 'api';\n",
+		tsInfraImpl:           "export const pool = 'impl';\n",
+		"src/web/internal.js": "import { pool } from '../infra/impl/pool.js';\n\nexport const direct = pool;\n",
+		"src/web/api.js":      "import { client } from '../infra/api/client.js';\n\nexport const api = client;\n",
+		"src/worker/job.js":   "import { client } from '../infra/api/client.js';\n\nexport const job = client;\n",
+		"src/worker/bad.js":   "import { pool } from '../infra/impl/pool.js';\n\nexport const bad = pool;\n",
 	}
 	return writeAgreementFiles(t, t.TempDir(), files)
 }
@@ -172,18 +214,27 @@ func writeTSAgreementRepo(t *testing.T) string {
 func writePyAgreementRepo(t *testing.T) string {
 	t.Helper()
 	files := map[string]string{
-		"pyproject.toml":           "[project]\nname = \"agree\"\nversion = \"0.1.0\"\nrequires-python = \">=3.9\"\n",
-		defaultConfigPath:          pyAgreementCfg,
-		"myapp/__init__.py":        "",
-		"myapp/domain/__init__.py": "NAME = 'domain'\n",
-		"myapp/app/__init__.py":    "NAME = 'app'\n",
-		"myapp/infra/__init__.py":  "NAME = 'infra'\n",
-		"myapp/web/__init__.py":    "",
-		"myapp/domain/bad.py":      "import myapp.infra\n",
-		"myapp/app/app.py":         "import myapp.domain\n",
-		"myapp/app/infra.py":       "import myapp.infra\n",
-		"myapp/web/db.py":          "import myapp.domain\n",
-		"myapp/web/ok.py":          "import myapp.app\n",
+		"pyproject.toml":               "[project]\nname = \"agree\"\nversion = \"0.1.0\"\nrequires-python = \">=3.9\"\n",
+		defaultConfigPath:              pyAgreementCfg,
+		"myapp/__init__.py":            "",
+		"myapp/domain/__init__.py":     "NAME = 'domain'\n",
+		"myapp/app/__init__.py":        "NAME = 'app'\n",
+		"myapp/infra/__init__.py":      "NAME = 'infra'\n",
+		"myapp/web/__init__.py":        "",
+		"myapp/domain/bad.py":          "import myapp.infra\n",
+		"myapp/app/app.py":             "import myapp.domain\n",
+		"myapp/app/infra.py":           "import myapp.infra\n",
+		"myapp/web/db.py":              "import myapp.domain\n",
+		"myapp/web/ok.py":              "import myapp.app\n",
+		"myapp/infra/api/__init__.py":  "",
+		"myapp/infra/api/client.py":    "NAME = 'api'\n",
+		"myapp/infra/impl/__init__.py": "",
+		"myapp/infra/impl/pool.py":     "NAME = 'impl'\n",
+		"myapp/worker/__init__.py":     "",
+		"myapp/web/internal.py":        "import myapp.infra.impl.pool\n",
+		"myapp/web/api.py":             "import myapp.infra.api.client\n",
+		"myapp/worker/job.py":          "import myapp.infra.api.client\n",
+		"myapp/worker/bad.py":          "import myapp.infra.impl.pool\n",
 	}
 	return writeAgreementFiles(t, t.TempDir(), files)
 }

@@ -900,8 +900,9 @@ init` emits v2 directly; owners update older configs manually before analysis.
   flipped decisions. TypeScript and Python run the same comparison end to end
   (`cmd/archfit/policy_agreement_lang_test.go`,
   `TestErosion_PolicyQueryAgreesWithCheckTypeScript` / `…Python`) on fixtures
-  with allowlist, layer-order and path `forbidden_dependency` rules, through the
-  real dependency-cruiser and grimp (the TypeScript fixture is `.js`, which
+  with the same five classes as Go (allowlist, layer order, internal/public,
+  path and module `forbidden_dependency`), through the real dependency-cruiser
+  and grimp (the TypeScript fixture is `.js`, which
   dependency-cruiser parses without the `typescript` package). They skip when
   `depcruise`/`npx` or `uv` is absent or under `-short`; `ARCHFIT_REQUIRE_TOOLS=1`
   (set in CI, which installs the analyzers before the test step) turns each

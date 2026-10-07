@@ -238,7 +238,7 @@ func assertAgreement(t *testing.T, cfgPath string, imports []agreementImport, cl
 			gates[f.ID] = f.RuleID
 		}
 	}
-	for _, problem := range agreementProblemsFor(gates, denied, classes) {
+	for _, problem := range agreementProblems(gates, denied, classes) {
 		t.Error(problem)
 	}
 }
@@ -276,13 +276,13 @@ func TestErosion_PolicyQueryAgreementFiresOnAWrongDecision(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if problems := agreementProblems(tc.gates, tc.denied); len(problems) == 0 {
+			if problems := agreementProblems(tc.gates, tc.denied, agreementEdgeClasses); len(problems) == 0 {
 				t.Errorf("agreementProblems(%v, %v) = none, want the disagreement reported", tc.gates, tc.denied)
 			}
 		})
 	}
 
-	if problems := agreementProblems(agreed, maps.Clone(agreed)); len(problems) != 0 {
+	if problems := agreementProblems(agreed, maps.Clone(agreed), agreementEdgeClasses); len(problems) != 0 {
 		t.Errorf("agreementProblems(equal decisions) = %v, want none", problems)
 	}
 }
@@ -290,14 +290,9 @@ func TestErosion_PolicyQueryAgreementFiresOnAWrongDecision(t *testing.T) {
 // agreementProblems compares check's active gate findings with can-import's
 // denials, both as finding ID -> rule ID, and lists every disagreement plus
 // every edge class check never fired on. It is the single predicate behind
-// the real-run check and its fixture.
-func agreementProblems(gates, denied map[string]string) []string {
-	return agreementProblemsFor(gates, denied, agreementEdgeClasses)
-}
-
-// agreementProblemsFor is agreementProblems over the edge classes of one
-// fixture.
-func agreementProblemsFor(gates, denied, classes map[string]string) []string {
+// the real-run check and its fixture. classes is the fixture's edge classes
+// (class name -> rule ID).
+func agreementProblems(gates, denied, classes map[string]string) []string {
 	var out []string
 	fired := map[string]bool{}
 	for id, rule := range gates {
