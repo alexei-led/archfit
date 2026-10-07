@@ -93,6 +93,13 @@ type Edge struct {
 	// classify honors it only as a fallback when config public/internal globs do
 	// not decide, so an architect's explicit declaration always wins.
 	StrengthHint string `json:"strength_hint,omitempty"`
+	// DataStrengthHint is the strongest NON-CALLABLE use behind the edge: a
+	// concrete type, field, var, const, or a method on a concrete receiver
+	// ("model"), a pure-data DTO ("dto"), or an interface type ("contract").
+	// A function call or an interface-method call is callable evidence and never
+	// appears here. classify reads it to decide whether a public-glob edge is
+	// still a contract or leaks a model; empty means no extractor split the two.
+	DataStrengthHint string `json:"data_strength_hint,omitempty"`
 	// ConnascenceHints are deterministic static connascence facts reported by
 	// extractors. They are mapped into coupling.Classification for JSON/Markdown
 	// disclosure and may refine an otherwise unresolved/public-floor strength to
