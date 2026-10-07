@@ -978,10 +978,14 @@ init` emits v2 directly; owners update older configs manually before analysis.
   re-keys them, while a rule + module-pair key would accept a new edge on an
   already-indebted pair. `qualifying_seam_ids` is stored ∩ current, so a seam
   that qualifies only in the new epoch stays new; `hard_gate_finding_ids` keeps
-  only accepted blockers. Dropped stored entries, unaccepted current findings,
-  seams that stopped qualifying, worsened metrics (the file records current
-  values), and the drift reasons (`storedComparison`, shared with the gate
-  reference) are all printed — nothing is dropped or accepted silently. It runs
+  only accepted blockers. Stored debt a waiver also covers is KEPT (check ranks
+  a baselined status above a waiver, so dropping it would turn permanent debt
+  temporary); `--no-advisories` is refused for the same reason. Dropped stored
+  entries, unaccepted current edges (one per rollup member), seams that stopped
+  qualifying, seams that qualify only now, worsened metrics (same metric
+  version and measured on both sides only; the file records current values),
+  and the drift reasons (`storedComparison`, shared with the gate reference)
+  are all printed — nothing is dropped or accepted silently. It runs
   at any drift (an owner decision: refusing would push toward a full capture,
   which accepts everything). It reads the current schema and the one before;
   `--from <path>` reads the stored file from elsewhere (the Action mounts it

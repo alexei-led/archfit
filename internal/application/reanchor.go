@@ -1,7 +1,6 @@
 package application
 
 import (
-	"slices"
 	"sort"
 
 	"github.com/alexei-led/archfit/internal/assessment/decision"
@@ -45,13 +44,17 @@ type ReanchorReport struct {
 	// Kept counts accepted entries carried forward, one per edge.
 	Kept int
 	// Dropped are stored entries no current finding matched: fixed debt, or
-	// debt whose ID changed. They are never carried forward.
+	// debt whose ID changed. They are never carried forward. Debt a waiver
+	// also covers is matched and kept: the stored file already accepted it.
 	Dropped []BaselineFinding
-	// NotAccepted are current findings with at least one edge the stored file
-	// did not accept. They stay new.
+	// NotAccepted are the current edges (a rollup member, else the finding) the
+	// stored file did not accept, one entry per edge. They stay new.
 	NotAccepted []ReanchorFinding
 	// DroppedSeams are stored qualifying seams that no longer qualify.
 	DroppedSeams []string
+	// NewSeams are seams that qualify only now. They stay out of the new file,
+	// so the seam gate counts them as new.
+	NewSeams []string
 	// WorsenedMetrics are metrics whose current value is worse than the stored
 	// one. The new file records the current value, so a ratchet resets here.
 	WorsenedMetrics []MetricChange
@@ -63,30 +66,36 @@ type ReanchorReport struct {
 // reanchor keeps from the capture only the debt the stored file already
 // accepted. A current finding's keys are its rollup members, else its own ID;
 // each key is accepted only when the stored file accepted it, so a new edge in
-// an old group stays new. Qualifying seams are the intersection, so a seam that
-// qualifies only in the new epoch counts as new, and the hard-gate IDs keep
-// only accepted blockers.
-func reanchor(capture BaselineSnapshot, current []findingKeys, metrics []report.MetricResult, stored StoredBaseline, drift []string) (BaselineSnapshot, ReanchorReport) {
+// an old group stays new. waived holds the keys of findings a waiver covers:
+// a plain capture skips them, but a re-anchor keeps the ones the stored file
+// accepted, since a baselined status outranks a waiver in check. Qualifying
+// seams are the intersection, so a seam that qualifies only in the new epoch
+// counts as new, and the hard-gate IDs keep only accepted blockers.
+func reanchor(capture BaselineSnapshot, waived []BaselineFinding, current []findingKeys, metrics []report.MetricResult, stored StoredBaseline, drift []string) (BaselineSnapshot, ReanchorReport) {
 	storedIDs := make(map[string]bool, len(stored.Accepted))
 	for _, a := range stored.Accepted {
 		storedIDs[a.Fingerprint] = true
 	}
 	rep := ReanchorReport{Dropped: []BaselineFinding{}, NotAccepted: []ReanchorFinding{}, DroppedSeams: []string{},
-		WorsenedMetrics: []MetricChange{}, DriftReasons: append([]string{}, drift...)}
+		NewSeams: []string{}, WorsenedMetrics: []MetricChange{}, DriftReasons: append([]string{}, drift...)}
 
 	out := capture
 	out.Accepted = nil
 	matched := map[string]bool{}
-	for _, a := range capture.Accepted {
-		if storedIDs[a.Fingerprint] {
+	for _, a := range append(append([]BaselineFinding(nil), capture.Accepted...), waived...) {
+		if storedIDs[a.Fingerprint] && !matched[a.Fingerprint] {
 			out.Accepted = append(out.Accepted, a)
 			matched[a.Fingerprint] = true
 		}
 	}
 	rep.Kept = len(out.Accepted)
 	for _, f := range current {
-		if slices.ContainsFunc(f.keys, func(k string) bool { return !storedIDs[k] }) {
-			rep.NotAccepted = append(rep.NotAccepted, f.ReanchorFinding)
+		for _, k := range f.keys {
+			if !storedIDs[k] {
+				edge := f.ReanchorFinding
+				edge.ID = k
+				rep.NotAccepted = append(rep.NotAccepted, edge)
+			}
 		}
 	}
 	for _, a := range stored.Accepted {
@@ -107,6 +116,8 @@ func reanchor(capture BaselineSnapshot, current []findingKeys, metrics []report.
 			currentSeams[id] = true
 			if storedSeams[id] {
 				state.QualifyingSeamIDs = append(state.QualifyingSeamIDs, id)
+			} else {
+				rep.NewSeams = append(rep.NewSeams, id)
 			}
 		}
 		for _, id := range stored.QualifyingSeamIDs {
@@ -123,15 +134,21 @@ func reanchor(capture BaselineSnapshot, current []findingKeys, metrics []report.
 		out.State = &state
 	}
 
+	// The same rule as the metric delta: only a measured value of the same
+	// metric version, with a direction, compares with the stored one.
 	for _, m := range metrics {
 		before, ok := stored.Metrics[m.Name]
-		if ok && worse(m.Direction, before.Value, m.Value) {
+		if !ok || before.Version != m.Version || m.Band == string(report.ScoreBandNA) || m.Direction == "" {
+			continue
+		}
+		if worse(m.Direction, before.Value, m.Value) {
 			rep.WorsenedMetrics = append(rep.WorsenedMetrics, MetricChange{Name: m.Name, Before: before.Value, After: m.Value})
 		}
 	}
 	sort.Slice(rep.NotAccepted, func(i, j int) bool { return rep.NotAccepted[i].ID < rep.NotAccepted[j].ID })
 	sort.Slice(rep.Dropped, func(i, j int) bool { return rep.Dropped[i].Fingerprint < rep.Dropped[j].Fingerprint })
 	sort.Strings(rep.DroppedSeams)
+	sort.Strings(rep.NewSeams)
 	return out, rep
 }
 

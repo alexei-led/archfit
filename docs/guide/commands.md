@@ -324,9 +324,15 @@ Re-anchor (`--reanchor`):
 - It keeps a qualifying seam only when the stored file also has it.
 - It writes the current metric values and the current fingerprints, so the new
   baseline is comparable.
+- It keeps stored debt that a waiver also covers. A plain capture skips that
+  finding, but the stored file already accepted it.
 - It prints each difference: the drift reasons, each stored entry that it
-  dropped, each current finding that it did not accept, each seam that no
-  longer qualifies, and each metric that got worse.
+  dropped, each current edge that it did not accept, each seam that no longer
+  qualifies, each seam that qualifies only now, and each metric that got worse.
+  It compares a metric only when both values are measured with the same metric
+  version.
+- It cannot run with `--no-advisories`. That flag would drop every accepted
+  advisory.
 - It reads the current baseline schema and the schema before it. Without a
   stored file it exits with `3`. Use a full capture for the first baseline.
 - Review the printed list before you commit. A dropped entry is fixed debt or

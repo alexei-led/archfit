@@ -42,6 +42,7 @@ func TestReanchorAcceptsOnlyStoredDebt(t *testing.T) {
 	tests := []struct {
 		name            string
 		capture         []string
+		waived          []string
 		current         []findingKeys
 		stored          []string
 		wantAccepted    []string
@@ -63,7 +64,14 @@ func TestReanchorAcceptsOnlyStoredDebt(t *testing.T) {
 			// stored edge is accepted, and the group is listed for review.
 			name:    "a new edge in an accepted group stays new",
 			capture: []string{"m1", "m2"}, current: []findingKeys{current("m1", "m1", "m2")}, stored: []string{"m1"},
-			wantAccepted: []string{"m1"}, wantNotAccepted: []string{"m1"}, wantDropped: []string{},
+			wantAccepted: []string{"m1"}, wantNotAccepted: []string{"m2"}, wantDropped: []string{},
+		},
+		{
+			// check ranks a baselined status above a waiver, so stored debt a
+			// waiver also covers stays accepted, never turns temporary.
+			name:    "stored debt a waiver also covers stays accepted",
+			capture: []string{}, waived: []string{"w", "x"}, stored: []string{"w"},
+			wantAccepted: []string{"w"}, wantNotAccepted: []string{}, wantDropped: []string{},
 		},
 		{
 			name:    "an empty stored file accepts nothing",
@@ -73,7 +81,7 @@ func TestReanchorAcceptsOnlyStoredDebt(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, rep := reanchor(BaselineSnapshot{Accepted: accepted(tc.capture...)}, tc.current, nil,
+			got, rep := reanchor(BaselineSnapshot{Accepted: accepted(tc.capture...)}, accepted(tc.waived...), tc.current, nil,
 				StoredBaseline{Accepted: accepted(tc.stored...)}, nil)
 			if ids := fingerprints(got.Accepted); !slices.Equal(ids, tc.wantAccepted) {
 				t.Errorf("accepted = %v, want %v", ids, tc.wantAccepted)
@@ -98,7 +106,7 @@ func TestReanchorIntersectsTheStateReference(t *testing.T) {
 		Accepted: accepted("a", "b"),
 		State:    &BaselineStateSnapshot{QualifyingSeamIDs: []string{"s1", "s3"}, HardGateFindingIDs: []string{"a", "b"}},
 	}
-	got, rep := reanchor(capture, []findingKeys{current("a"), current("b")}, nil, StoredBaseline{
+	got, rep := reanchor(capture, nil, []findingKeys{current("a"), current("b")}, nil, StoredBaseline{
 		Accepted: accepted("a"), QualifyingSeamIDs: []string{"s1", "s2"},
 	}, nil)
 	if !slices.Equal(got.State.QualifyingSeamIDs, []string{"s1"}) {
@@ -106,6 +114,9 @@ func TestReanchorIntersectsTheStateReference(t *testing.T) {
 	}
 	if !slices.Equal(rep.DroppedSeams, []string{"s2"}) {
 		t.Errorf("dropped seams = %v, want [s2]", rep.DroppedSeams)
+	}
+	if !slices.Equal(rep.NewSeams, []string{"s3"}) {
+		t.Errorf("new seams = %v, want [s3] reported, not hidden", rep.NewSeams)
 	}
 	if !slices.Equal(got.State.HardGateFindingIDs, []string{"a"}) {
 		t.Errorf("hard-gate IDs = %v, want only the accepted blocker", got.State.HardGateFindingIDs)
@@ -120,23 +131,34 @@ func TestReanchorIntersectsTheStateReference(t *testing.T) {
 const (
 	metricCoverage = "coverage"
 	metricCycles   = "cycles"
+	metricRescored = "rescored"
 )
 
 func TestReanchorReportsWorsenedMetrics(t *testing.T) {
+	const version = "v1"
 	stored := report.MetricSnapshot{}
-	for name, v := range map[string]float64{metricCycles: 1, metricCoverage: 0.8, "same": 3} {
+	for name, v := range map[string]float64{metricCycles: 1, metricCoverage: 0.8, "same": 3, "na": 4, metricRescored: 1, "undirected": 1} {
+		ver := version
+		if name == metricRescored {
+			ver = "v0"
+		}
 		stored[name] = struct {
 			Value   float64 `json:"value"`
 			Version string  `json:"version"`
-		}{Value: v}
+		}{Value: v, Version: ver}
 	}
 	metrics := []report.MetricResult{
-		{Name: metricCycles, Value: 2, Direction: report.DirectionHigherIsWorse},
-		{Name: metricCoverage, Value: 0.7, Direction: report.DirectionHigherIsBetter},
-		{Name: "same", Value: 3, Direction: report.DirectionHigherIsWorse},
-		{Name: "unstored", Value: 9, Direction: report.DirectionHigherIsWorse},
+		{Name: metricCycles, Value: 2, Version: version, Direction: report.DirectionHigherIsWorse},
+		{Name: metricCoverage, Value: 0.7, Version: version, Direction: report.DirectionHigherIsBetter},
+		{Name: "same", Value: 3, Version: version, Direction: report.DirectionHigherIsWorse},
+		{Name: "unstored", Value: 9, Version: version, Direction: report.DirectionHigherIsWorse},
+		// An unmeasured metric reads 0; it is not a regression.
+		{Name: "na", Value: 0, Version: version, Band: string(report.ScoreBandNA), Direction: report.DirectionHigherIsBetter},
+		// Another formula: the values do not compare.
+		{Name: metricRescored, Value: 9, Version: version, Direction: report.DirectionHigherIsWorse},
+		{Name: "undirected", Value: 0, Version: version},
 	}
-	_, rep := reanchor(BaselineSnapshot{}, nil, metrics, StoredBaseline{Metrics: stored}, nil)
+	_, rep := reanchor(BaselineSnapshot{}, nil, nil, metrics, StoredBaseline{Metrics: stored}, nil)
 	want := []MetricChange{{Name: metricCycles, Before: 1, After: 2}, {Name: metricCoverage, Before: 0.8, After: 0.7}}
 	if !slices.Equal(rep.WorsenedMetrics, want) {
 		t.Errorf("worsened = %+v, want %+v", rep.WorsenedMetrics, want)
@@ -147,8 +169,8 @@ func TestReanchorReportsWorsenedMetrics(t *testing.T) {
 func TestReanchorIsIdempotent(t *testing.T) {
 	capture := BaselineSnapshot{Accepted: accepted("a", "b", "c"), State: &BaselineStateSnapshot{QualifyingSeamIDs: []string{"s1"}}}
 	cur := []findingKeys{current("a"), current("b"), current("c")}
-	first, _ := reanchor(capture, cur, nil, StoredBaseline{Accepted: accepted("a", "c"), QualifyingSeamIDs: []string{"s1"}}, nil)
-	second, rep := reanchor(capture, cur, nil, StoredBaseline{Accepted: first.Accepted, QualifyingSeamIDs: first.State.QualifyingSeamIDs}, nil)
+	first, _ := reanchor(capture, nil, cur, nil, StoredBaseline{Accepted: accepted("a", "c"), QualifyingSeamIDs: []string{"s1"}}, nil)
+	second, rep := reanchor(capture, nil, cur, nil, StoredBaseline{Accepted: first.Accepted, QualifyingSeamIDs: first.State.QualifyingSeamIDs}, nil)
 	if !slices.Equal(fingerprints(first.Accepted), fingerprints(second.Accepted)) ||
 		!slices.Equal(first.State.QualifyingSeamIDs, second.State.QualifyingSeamIDs) || len(rep.Dropped) != 0 {
 		t.Errorf("second re-anchor differs: first %v, second %v, dropped %v", fingerprints(first.Accepted), fingerprints(second.Accepted), rep.Dropped)

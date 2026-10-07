@@ -142,6 +142,11 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 	if req.Path == "" {
 		return BaselineResponse{}, errors.New("baseline path is required")
 	}
+	if req.Reanchor != nil && req.NoAdvisories {
+		// Leaving advisories out would drop every accepted advisory the stored
+		// file carries: a re-anchor carries the stored debt as it is.
+		return BaselineResponse{}, errors.New("--reanchor cannot be combined with --no-advisories")
+	}
 	out, err := s.Stages.Execute(ctx, AnalysisRequest{
 		ConfigSource: req.ConfigPath, Root: req.Root, NoAdvisories: req.NoAdvisories,
 		SuppressGateReasons: true, EmptyBaseline: true,
@@ -161,11 +166,8 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 	}
 	skippedWaived := 0
 	var current []findingKeys
+	var waived []BaselineFinding
 	for _, f := range doc.Findings {
-		if f.Status == report.FindingStatusWaived || f.Status == report.FindingStatusExpiredWaiver {
-			skippedWaived++
-			continue
-		}
 		if f.Status == report.FindingStatusFixed || f.RuleID == finding.RuleIDCouplingGate {
 			continue
 		}
@@ -177,15 +179,22 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 		if !ok {
 			ids = []string{f.ID}
 		}
+		entries := make([]BaselineFinding, 0, len(ids))
 		for _, id := range ids {
-			snapshot.Accepted = append(snapshot.Accepted, BaselineFinding{Fingerprint: id, RuleID: f.RuleID, Kind: kind, Severity: f.Severity})
+			entries = append(entries, BaselineFinding{Fingerprint: id, RuleID: f.RuleID, Kind: kind, Severity: f.Severity})
 		}
+		if f.Status == report.FindingStatusWaived || f.Status == report.FindingStatusExpiredWaiver {
+			skippedWaived++
+			waived = append(waived, entries...)
+			continue
+		}
+		snapshot.Accepted = append(snapshot.Accepted, entries...)
 		current = append(current, findingKeys{ReanchorFinding: reanchorFinding(f), keys: ids})
 	}
 	resp := BaselineResponse{Path: req.Path, SkippedWaived: skippedWaived}
 	if req.Reanchor != nil {
 		var rep ReanchorReport
-		snapshot, rep = reanchor(snapshot, current, doc.Metrics, *req.Reanchor, storedDrift(out.Diagnostic, *req.Reanchor))
+		snapshot, rep = reanchor(snapshot, waived, current, doc.Metrics, *req.Reanchor, storedDrift(out.Diagnostic, *req.Reanchor))
 		resp.Reanchor = &rep
 	}
 	if err := s.Writer.Save(ctx, req.Path, snapshot); err != nil {

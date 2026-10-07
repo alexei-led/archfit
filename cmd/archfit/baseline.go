@@ -104,6 +104,9 @@ func writeReanchorReport(w io.Writer, r application.ReanchorReport) {
 	for _, id := range r.DroppedSeams {
 		_, _ = fmt.Fprintf(w, "  seam no longer qualifies: %s\n", id)
 	}
+	for _, id := range r.NewSeams {
+		_, _ = fmt.Fprintf(w, "  seam qualifies only now (stays new): %s\n", id)
+	}
 	for _, m := range r.WorsenedMetrics {
 		_, _ = fmt.Fprintf(w, "  metric worsened: %s %g -> %g (the new baseline records %g)\n", m.Name, m.Before, m.After, m.After)
 	}
