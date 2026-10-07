@@ -78,6 +78,8 @@ type ClassifiedEdgeSummary struct {
 	InternalDependencies           int                         `json:"-"`
 	ClassifiedInternalDependencies int                         `json:"-"`
 	SameModuleDependencies         int                         `json:"-"`
+	LibraryDependencies            int                         `json:"-"`
+	UnmappedFirstPartyDependencies int                         `json:"-"`
 	DependencyModules              int                         `json:"-"`
 	FirstPartyNodes                int                         `json:"-"`
 	AttributedFirstPartyNodes      int                         `json:"-"`

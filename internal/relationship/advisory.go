@@ -29,6 +29,8 @@ type ClassifiedEdgeSummary struct {
 	InternalDependencies           int
 	ClassifiedInternalDependencies int
 	SameModuleDependencies         int
+	LibraryDependencies            int
+	UnmappedFirstPartyDependencies int
 	DependencyModules              int
 	FirstPartyNodes                int
 	AttributedFirstPartyNodes      int

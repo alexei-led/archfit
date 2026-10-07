@@ -47,7 +47,8 @@
 ### structure
 
 - `internal_edges`: 1 count
-- `external_edges`: 0 count
+- `library_edges`: 0 count
+- `unmapped_first_party_edges`: 0 count
 - `same_module_edges`: 0 count
 - `connected_modules`: 2 count
 - `cycle`: 0 count
