@@ -158,12 +158,13 @@ func TestAgentsMDNamesANonDefaultConfig(t *testing.T) {
 // TestAgentsMDKeepsEachRuleOnOneListItem pins that multi-line config text never
 // breaks the Markdown it lands in: a block-scalar rationale and docs stay inside
 // their rule's list item, and a block-scalar owner stays inside its table row.
+// A selector is rendered verbatim: its whitespace is part of what it matches.
 func TestAgentsMDKeepsEachRuleOnOneListItem(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, ".archfit.yaml")
 	body := "version: 2\nmodules:\n  billing:\n    paths: [billing/**]\n    owner: |\n      team\n      billing\n" +
-		"rules:\n  - id: billing_no_stripe\n    type: forbidden_dependency\n    from: billing/**\n    to: stripe/**\n" +
+		"rules:\n  - id: billing_no_stripe\n    type: forbidden_dependency\n    from: billing/**\n    to: \"stripe  api/**\"\n" +
 		"    rationale: |\n      Domain code stays\n      free of I/O.\n    docs: |\n      docs/adr/0001.md\n"
 	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -173,7 +174,7 @@ func TestAgentsMDKeepsEachRuleOnOneListItem(t *testing.T) {
 		t.Fatalf("exit = %d\n%s", code, stderr)
 	}
 	for _, want := range []string{
-		"- `billing_no_stripe`: must not import `stripe/**`. Why: Domain code stays free of I/O. See docs/adr/0001.md.\n",
+		"- `billing_no_stripe`: must not import `stripe  api/**`. Why: Domain code stays free of I/O. See docs/adr/0001.md.\n",
 		"| `billing` | `billing/**` | — | team billing |",
 	} {
 		if !strings.Contains(stdout, want) {
