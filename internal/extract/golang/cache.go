@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
@@ -26,6 +28,12 @@ import (
 
 // goAnalyzer is the fact-cache subdirectory for per-member Go facts.
 const goAnalyzer = "go"
+
+// memberFactsRevision rides every member key. Bump it when the same input tree
+// yields different facts, so a binary never replays what an older one derived:
+// "2" reads the imports of cgo files (they were dropped, their parsed copy being
+// outside the scan root).
+const memberFactsRevision = "2"
 
 // loadFunc is the packages.Load seam: tests inject a fake to count per-member
 // loads; nil means the real packages.Load (fact-cache.md D5 seam 2 —
@@ -290,18 +298,69 @@ func deriveIgnoredFiles(pkg *packages.Package, root string) []string {
 	return out
 }
 
+// sourceRelFile names the source file behind a parsed syntax tree, ScanRoot-
+// relative. A cgo file is parsed from its preprocessed copy in the build cache,
+// outside the scan root; that copy opens with a //line directive naming the
+// original, so the directive-adjusted position finds the file the author wrote.
+// A file inside the root keeps its own path — an in-root //line directive (yacc,
+// stringer output) never renames it, so no edge identity moves for non-cgo code.
+// fromCopy reports that the tree is such a preprocessed copy.
+func sourceRelFile(fset *token.FileSet, pos token.Pos, root string) (rel string, fromCopy, ok bool) {
+	tf := fset.File(pos)
+	if tf == nil {
+		return "", false, false
+	}
+	rel, err := filepath.Rel(root, tf.Name())
+	if err == nil && !strings.HasPrefix(rel, "..") {
+		return filepath.ToSlash(rel), false, true
+	}
+	orig := fset.PositionFor(pos, true).Filename
+	if orig == "" || !strings.HasSuffix(orig, ".go") {
+		return "", false, false
+	}
+	rel, err = filepath.Rel(root, orig)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", false, false
+	}
+	return filepath.ToSlash(rel), true, true
+}
+
+// originalImports reads the imports the author wrote in a cgo file. The
+// preprocessed copy rewrites `import "C"` to `import _ "unsafe"` and may add
+// another `unsafe` import; reading the original keeps those out of the facts and
+// gives the same imports as the failed-preprocess fallback, which parses the
+// original, so the edges do not depend on the host's C toolchain.
+func originalImports(root, relFile string) ([]importFacts, bool) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(relFile)), nil, parser.ImportsOnly)
+	if err != nil {
+		return nil, false
+	}
+	out := make([]importFacts, 0, len(file.Imports))
+	for _, imp := range file.Imports {
+		out = append(out, importFacts{RawPath: strings.Trim(imp.Path.Value, `"`), Line: fset.Position(imp.Pos()).Line, LocFile: relFile})
+	}
+	return out, true
+}
+
 // deriveFileFacts extracts the per-file import facts collectFromFacts needs.
 // Exclusion filtering stays in the merge step so cached facts match what the
 // pre-cache collectNodesEdges saw at the same stage.
 func deriveFileFacts(pkg *packages.Package, root string) []fileFacts {
 	var files []fileFacts
 	for _, f := range pkg.Syntax {
-		absFile := pkg.Fset.File(f.Pos()).Name()
-		relFile, err := filepath.Rel(root, absFile)
-		if err != nil || strings.HasPrefix(relFile, "..") {
+		relFile, fromCopy, ok := sourceRelFile(pkg.Fset, f.Package, root)
+		if !ok {
 			continue
 		}
-		ff := fileFacts{RelFile: filepath.ToSlash(relFile)}
+		ff := fileFacts{RelFile: relFile}
+		if fromCopy {
+			if imports, read := originalImports(root, relFile); read {
+				ff.Imports = imports
+				files = append(files, ff)
+				continue
+			}
+		}
 		for _, imp := range f.Imports {
 			pos := pkg.Fset.Position(imp.Pos())
 			locFile := pos.Filename
@@ -354,15 +413,11 @@ func deriveRawHints(pkg *packages.Package, dtos *dtoIndex, root string) (map[str
 			continue
 		}
 		strength := goObjectStrength(obj, dtos)
-		tf := pkg.Fset.File(ident.Pos())
-		if tf == nil {
+		relFile, _, ok := sourceRelFile(pkg.Fset, ident.Pos(), root)
+		if !ok {
 			continue
 		}
-		relFile, err := filepath.Rel(root, tf.Name())
-		if err != nil || strings.HasPrefix(relFile, "..") {
-			continue
-		}
-		k := filepath.ToSlash(relFile) + "\x00" + obj.Pkg().Path()
+		k := relFile + "\x00" + obj.Pkg().Path()
 		if goStrengthRank[hints[k]] < goStrengthRank[strength] {
 			hints[k] = strength
 		}
@@ -419,7 +474,8 @@ func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDir
 		GoWork    string
 		GoWorkOff bool
 		Env       map[string]string
-	}{e.cfg, scanRoot, hashGoWork(scanRoot, env), goWorkOff, env})
+		Facts     string
+	}{e.cfg, scanRoot, hashGoWork(scanRoot, env), goWorkOff, env, memberFactsRevision})
 	if err != nil {
 		return nil
 	}

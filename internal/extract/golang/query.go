@@ -49,11 +49,8 @@ func QueryEdge(scanRoot string, cfg evidenceports.ExtractConfig, from, target st
 		return graph.Facts{}, fmt.Errorf("go: %s is excluded by the build constraints: %w", from, evidenceports.ErrNotExtracted)
 	case !decided:
 		return graph.Facts{}, fmt.Errorf("go: whether the load reads %s depends on cgo, and CGO_ENABLED is not set: %w", from, evidenceports.ErrNotDecidable)
-	case importsC(filepath.Join(scanRoot, filepath.FromSlash(from))):
-		// With cgo on the load parses the cgo-generated copy in the build
-		// cache, outside the scan root, so no import is read from the file;
-		// when preprocessing fails it parses the original and reads them all.
-		return graph.Facts{}, fmt.Errorf("go: %s imports \"C\": whether check reads its imports depends on cgo preprocessing: %w", from, evidenceports.ErrNotDecidable)
+	case goEnv("CGO_ENABLED") == "" && importsC(filepath.Join(scanRoot, filepath.FromSlash(from))):
+		return graph.Facts{}, fmt.Errorf("go: %s imports \"C\": whether the load reads it depends on whether cgo is on, and CGO_ENABLED is not set: %w", from, evidenceports.ErrNotDecidable)
 	}
 	modules := make([]graph.GoModule, 0, len(entries))
 	for _, m := range entries {
