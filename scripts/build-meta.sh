@@ -13,7 +13,8 @@ commit)
 	git rev-parse --short HEAD 2>/dev/null || echo none
 	;;
 date)
-	TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ HEAD 2>/dev/null || echo unknown
+	# --no-show-signature: a user's log.showSignature=true must not put gpg lines on stdout.
+	TZ=UTC git log -1 --no-show-signature --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ HEAD 2>/dev/null || echo unknown
 	;;
 *)
 	echo "usage: build-meta.sh commit|date" >&2
