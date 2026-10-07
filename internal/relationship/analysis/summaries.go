@@ -15,10 +15,12 @@ import (
 
 func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnlyPair, duplicated policy.DuplicatedKnowledgePolicy, tree classify.Containment) *relationship.ClassifiedEdgeSummary {
 	s := &relationship.ClassifiedEdgeSummary{ByStrength: map[string]int{}, ByDistance: map[string]int{}, ByDistanceBasis: map[string]int{}, ByVolatility: map[string]int{}, BySeverity: map[string]int{}, ByBalanceDriver: map[string]int{}, ByCriticalDriver: map[string]int{}, ByModulePair: map[string]int{}, DistanceCompression: distanceCompression()}
+	firstParty := make(map[string]bool, len(set.Nodes))
 	for _, n := range set.Nodes {
 		if !n.FirstParty {
 			continue
 		}
+		firstParty[n.ID] = true
 		s.FirstPartyNodes++
 		if n.BoundaryClassified {
 			s.AttributedFirstPartyNodes++
@@ -32,7 +34,8 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 	for _, e := range set.Edges {
 		if e.IsDependency() {
 			s.DependencyEdges++
-			if e.FromModule != "" && e.ToModule != "" {
+			switch {
+			case e.FromModule != "" && e.ToModule != "":
 				s.InternalDependencies++
 				// buildSet preserves the directed kind plus both module and
 				// layer placements. An empty layer on a known module is an
@@ -45,6 +48,17 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 				if e.FromModule == e.ToModule {
 					s.SameModuleDependencies++
 				}
+			case firstParty[e.ToID]:
+				// A first-party target, unowned or imported from unowned
+				// source: a gap in the module map, unlike a library import.
+				s.UnmappedFirstPartyDependencies++
+			default:
+				// An external node, or a target no first-party node stands for
+				// (a Go standard-library or third-party package has no node).
+				// Ceiling: a first-party target the extractor emits no node for
+				// (a failed Go package load, the Go module root package) lands
+				// here too; the sum with the unmapped count stays exact.
+				s.LibraryDependencies++
 			}
 		}
 		sum += addSummary(s, e.Classified, e.Strength, e.Distance, e.Volatility, e.Provenance)

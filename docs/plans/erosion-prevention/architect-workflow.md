@@ -56,8 +56,8 @@ and accepted are not defined in one place.
 
 **Small surfaces disagree.**
 
-- `external_edges` mixes library imports with first-party code that no module
-  owns.
+- `external_edges` mixed library imports with first-party code that no module
+  owned. Done in v3.0.0, see below.
 - SARIF results carry no `baselineState`, so code scanning cannot tell new
   results from accepted ones.
 - `config compare` text still prints a repository score line, which the state
@@ -137,8 +137,8 @@ chapter, and marks archfit-only terms. Human output uses these words:
 
 These have no dependency on the rest of this plan. They can ship first.
 
-- Split `external_edges` into two new metrics: `library_edges` and
-  `unmapped_first_party_edges`.
+- Done in v3.0.0: `external_edges` is split into `library_edges` and
+  `unmapped_first_party_edges`, decided by the target of the edge.
 - Set SARIF `baselineState`: `new` for a new finding, `unchanged` for an
   accepted or waived one.
 - Drop the score line from the `config compare` text.

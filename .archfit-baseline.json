@@ -329,8 +329,13 @@
             "unit": "count"
           },
           {
-            "name": "external_edges",
+            "name": "library_edges",
             "value": 1002,
+            "unit": "count"
+          },
+          {
+            "name": "unmapped_first_party_edges",
+            "value": 0,
             "unit": "count"
           },
           {
@@ -508,12 +513,12 @@
           },
           {
             "name": "production_loc",
-            "value": 65226,
+            "value": 65248,
             "unit": "count"
           },
           {
             "name": "largest_production_file_loc",
-            "value": 1938,
+            "value": 1941,
             "unit": "count"
           },
           {

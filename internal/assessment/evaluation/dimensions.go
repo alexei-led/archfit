@@ -839,7 +839,8 @@ func structureDimension(diag *result.Result) state.Dimension {
 	dim.Coverage = state.Coverage{Basis: "discovered dependencies resolved inside the declared module map", Observed: ce.InternalDependencies, Total: ce.DependencyEdges}
 	dim.Metrics = []state.MetricValue{
 		count("internal_edges", ce.InternalDependencies, provRelationship),
-		count("external_edges", external, provRelationship),
+		count("library_edges", ce.LibraryDependencies, provRelationship),
+		count("unmapped_first_party_edges", ce.UnmappedFirstPartyDependencies, provRelationship),
 		count("same_module_edges", ce.SameModuleDependencies, provRelationship),
 		count("connected_modules", ce.DependencyModules, provRelationship),
 	}
@@ -847,9 +848,11 @@ func structureDimension(diag *result.Result) state.Dimension {
 	dim.Confidence = weakest(state.ConfidenceFor(dim.Status), metricConfidence(diag.Metrics, "cycle"))
 	if external > 0 {
 		dim.Unknown = append(dim.Unknown, state.UnknownFact{
-			Fact:   state.FactExternalDependencyStructure,
-			Reason: "the target of " + strconv.Itoa(external) + " dependencies is outside the declared module map, so its direction and layer are outside this claim",
-			Owner:  state.OwnerStructure,
+			Fact: state.FactExternalDependencyStructure,
+			Reason: strconv.Itoa(external) + " dependencies leave the declared module map (" +
+				strconv.Itoa(ce.LibraryDependencies) + " on libraries, " +
+				strconv.Itoa(ce.UnmappedFirstPartyDependencies) + " to or from first-party code no module owns), so their direction and layer are outside this claim",
+			Owner: state.OwnerStructure,
 		})
 	}
 	return dim
