@@ -492,7 +492,7 @@ func projectAgentTasks(in []result.AgentTask) []report.AgentTask {
 func projectAdvisoryTasks(in []result.AdvisoryTask) []report.AdvisoryTask {
 	out := make([]report.AdvisoryTask, 0, len(in))
 	for _, t := range in {
-		out = append(out, report.AdvisoryTask{FindingID: t.FindingID, RuleID: t.RuleID, Status: string(t.Status), Severity: string(t.Severity), GroupCount: t.GroupCount, GroupMembers: t.GroupMembers, Goal: t.Goal, CheapestMove: t.CheapestMove, ScoreValue: t.ScoreValue, TopFiles: t.TopFiles, Constraints: t.Constraints, Validation: t.Validation})
+		out = append(out, report.AdvisoryTask{FindingID: t.FindingID, RuleID: t.RuleID, Status: string(t.Status), Severity: string(t.Severity), GroupCount: t.GroupCount, GroupMembers: t.GroupMembers, Goal: t.Goal, Hypothesis: t.Hypothesis, ScoreValue: t.ScoreValue, TopFiles: t.TopFiles, Constraints: t.Constraints, Validation: t.Validation})
 	}
 	return out
 }

@@ -46,8 +46,8 @@ func writeAdvisoryTasks(b *strings.Builder, tasks []report.AdvisoryTask) {
 		if len(task.GroupMembers) > 0 {
 			fmt.Fprintf(b, "  - group members: %s\n", strings.Join(task.GroupMembers, ", "))
 		}
-		if task.CheapestMove != "" {
-			fmt.Fprintf(b, "  - cheapest move: %s\n", task.CheapestMove)
+		if task.Hypothesis != "" {
+			fmt.Fprintf(b, "  - hypothesis: %s\n", task.Hypothesis)
 		}
 		if task.ScoreValue > 0 {
 			fmt.Fprintf(b, "  - score: %d/10\n", task.ScoreValue)

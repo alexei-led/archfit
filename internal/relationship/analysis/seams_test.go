@@ -188,14 +188,14 @@ func TestSeamSameOwnerNeedsTwoDeclaredOwners(t *testing.T) {
 // TestSeamCompositionRootExpectationLeavesTheSeamAlone pins the role-aware
 // diagnostic: wiring fan-out from a declared composition root is the module's
 // purpose, and saying so must not require a strength label.
-func TestSeamCompositionRootExpectationLeavesTheSeamAlone(t *testing.T) {
+func TestSeamCompositionRootExpectationIsExpectedByRole(t *testing.T) {
 	modules := twoModules()
 	def := modules[moduleA]
 	def.Role = policy.RoleCompositionRoot
 	modules[moduleA] = def
 
 	got := analysis.Analyze(analysis.Input{
-		Graph:  seamGraph(1, string(relationship.StrengthIntrusive)),
+		Graph:  seamGraph(1, string(relationship.StrengthFunctional)),
 		Policy: relationshipPolicy(modules),
 	})
 
@@ -203,8 +203,11 @@ func TestSeamCompositionRootExpectationLeavesTheSeamAlone(t *testing.T) {
 	if s.RoleExpectation != relationship.SeamRoleCompositionRoot {
 		t.Errorf("role expectation = %q, want composition_root from the declared module role", s.RoleExpectation)
 	}
-	if s.Hypothesis != relationship.SeamHypothesisLeaveAlone {
-		t.Errorf("hypothesis = %q, want leave_alone for a composition-root source", s.Hypothesis)
+	if s.Hypothesis != relationship.SeamHypothesisExpectedByRole {
+		t.Errorf("hypothesis = %q, want expected_by_role for a composition-root source", s.Hypothesis)
+	}
+	if s.DistributedMonolith {
+		t.Error("a composition root's functional fan-out must not qualify the seam")
 	}
 	if len(s.Labels) != 0 {
 		t.Errorf("labels = %v, want none: a role expectation is never encoded as a strength label", s.Labels)
@@ -224,7 +227,7 @@ func TestSeamWithoutRoleReportsNoExpectation(t *testing.T) {
 		t.Errorf("role expectation = %q, want none for a module that declared no role", s.RoleExpectation)
 	}
 	if s.Hypothesis == "" {
-		t.Error("hypothesis = empty for a scored seam, want a concrete cheapest move")
+		t.Error("hypothesis = empty for a scored seam, want a concrete move or a reason none is needed")
 	}
 }
 

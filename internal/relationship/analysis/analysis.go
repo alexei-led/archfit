@@ -56,7 +56,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 	}
 	idx := classify.Run(in.Graph, cfg)
 	set := buildSet(in.Graph, idx, cfg.ModuleMap, cfg.Modules)
-	clones := cloneOnlyPairs(in.Graph, cfg)
+	clones := clonePairsOf(in.Graph, cfg)
 	runtimeAsyncEdges := runtimeEdges(in.RuntimeSites, in.RuntimeConfidence, cfg.ModuleMap)
 	// Dynamic/lazy imports are invisible to the static graph, so they hide cycles
 	// and undercount coupling. Rolled up here as report-only evidence: never read
@@ -68,7 +68,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 		unmeasuredConnascence = connascence.Unmeasured
 	}
 	dynamicConnascence := buildDynamicConnascenceSignals(dynamicImports, runtimeAsyncEdges, unmeasuredConnascence)
-	classifiedEdges := buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy, classify.BuildContainment(in.Policy.Topology.Modules))
+	classifiedEdges := buildClassifiedSummary(set, clones, cfg.DuplicatedKnowledgePolicy, classify.BuildContainment(in.Policy.Topology.Modules), cfg.Modules)
 	distanceCandidates := append(buildStaticDistanceCandidates(in.Graph, idx, cfg.ModuleMap),
 		BuildDistanceConfigCandidates(dynamicImports, runtimeAsyncEdges, dynamicConnascence)...)
 	sortDistanceConfigCandidates(distanceCandidates)
@@ -79,7 +79,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 			ClassifiedEdges:    classifiedEdges,
 			Seams: buildSeams(seamInput{Set: set, Config: cfg, DeclaredModules: in.Policy.Topology.Modules, Tree: classify.BuildContainment(in.Policy.Topology.Modules),
 				Graph: in.Graph, EvidenceHashes: evidenceHashes,
-				LabelEvidenceHashes: labels.EvidenceHashByKey(in.Labels, evidenceHashes)}),
+				LabelEvidenceHashes: labels.EvidenceHashByKey(in.Labels, evidenceHashes), ClonePairs: seamCloneFacts(clones, cfg.DuplicatedKnowledgePolicy)}),
 		},
 		Evidence: relationship.AnalysisEvidence{
 			LLMApprovedCount:          labels.LLMApprovedCount(in.Labels, evidenceHashes),
@@ -87,7 +87,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 			RuntimeEdges:              runtimeAsyncEdges,
 			DynamicImports:            dynamicImports,
 			DynamicConnascenceSignals: dynamicConnascence,
-			CloneOnly:                 clones,
+			CloneOnly:                 cloneOnly(clones),
 			Connascence:               connascence,
 			DistanceConfigCandidates:  distanceCandidates,
 			LocalCoupling:             buildLocalCouplingSummary(set),
@@ -100,12 +100,34 @@ func Analyze(in Input) relationship.AnalysisResult {
 	return out
 }
 
-func cloneOnlyPairs(g *graph.Graph, cfg classify.Config) []relationship.CloneOnlyPair {
-	pairs := classify.CloneOnlyPairs(g, cfg)
-	out := make([]relationship.CloneOnlyPair, 0, len(pairs))
+// seamCloneFacts returns the clone facts the seam ledger may use. The
+// `advisory` setting of coupling.duplicated_knowledge keeps clone facts out of
+// seams, as it keeps them out of the headline score.
+func seamCloneFacts(pairs []relationship.ClonePair, p policy.DuplicatedKnowledgePolicy) []relationship.ClonePair {
+	if policy.NormalizeDuplicatedKnowledgePolicy(p) != policy.DuplicatedKnowledgePolicyScore {
+		return nil
+	}
+	return pairs
+}
+
+// cloneOnly keeps the clone pairs with no import edge between their modules.
+// A connected pair is a clone fact on a seam and is reported there instead.
+func cloneOnly(pairs []relationship.ClonePair) []relationship.ClonePair {
+	var out []relationship.ClonePair
+	for _, p := range pairs {
+		if !p.Connected {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func clonePairsOf(g *graph.Graph, cfg classify.Config) []relationship.ClonePair {
+	pairs := classify.ClonePairs(g, cfg)
+	out := make([]relationship.ClonePair, 0, len(pairs))
 	for _, p := range pairs {
 		locs := locations(p.Locations)
-		out = append(out, relationship.CloneOnlyPair{FromModule: p.FromModule, ToModule: p.ToModule, FromPath: p.FromPath, ToPath: p.ToPath, Strength: p.Classification.Strength, Distance: p.Classification.Distance, Volatility: p.Classification.Volatility, Severity: p.Classification.Severity, Locations: locs, Classified: classification(p.Classification)})
+		out = append(out, relationship.ClonePair{Connected: p.Connected, FromModule: p.FromModule, ToModule: p.ToModule, FromPath: p.FromPath, ToPath: p.ToPath, Strength: p.Classification.Strength, Distance: p.Classification.Distance, Volatility: p.Classification.Volatility, Severity: p.Classification.Severity, Locations: locs, Classified: classification(p.Classification)})
 	}
 	return out
 }
@@ -307,7 +329,7 @@ func buildSet(g *graph.Graph, idx coupling.Index, mm policy.ModuleMap, modules m
 	return set
 }
 func classification(in coupling.Classification) relationship.Classification {
-	return relationship.Classification{Explicitness: relationship.Explicitness(in.Explicitness), ContractRecommended: in.ContractRecommended, Score: relationship.Score{Scored: in.Score.Scored, Balance: in.Score.Balance, Value: in.Score.Value, Band: in.Score.Band, Reason: in.Score.Reason, CheapestMove: in.Score.CheapestMove, Breakdown: relationship.ScoreBreakdown{StrengthValue: in.Score.Breakdown.StrengthVal, DistanceValue: in.Score.Breakdown.DistanceVal, VolatilityValue: in.Score.Breakdown.VolatilityVal, Modularity: in.Score.Breakdown.Modularity, VolDiscount: in.Score.Breakdown.VolDiscount}}, DistanceBasis: string(in.DistanceBasis), CloneLocations: locationsFromCoupling(in.CloneLocations), Connascence: connascence(in.Connascence)}
+	return relationship.Classification{Explicitness: relationship.Explicitness(in.Explicitness), ContractRecommended: in.ContractRecommended, Score: relationship.Score{Scored: in.Score.Scored, Balance: in.Score.Balance, Value: in.Score.Value, Band: in.Score.Band, Reason: in.Score.Reason, Breakdown: relationship.ScoreBreakdown{StrengthValue: in.Score.Breakdown.StrengthVal, DistanceValue: in.Score.Breakdown.DistanceVal, VolatilityValue: in.Score.Breakdown.VolatilityVal, Modularity: in.Score.Breakdown.Modularity, VolDiscount: in.Score.Breakdown.VolDiscount}}, DistanceBasis: string(in.DistanceBasis), CloneLocations: locationsFromCoupling(in.CloneLocations), Connascence: connascence(in.Connascence)}
 }
 
 func connascence(in []coupling.ConnascenceEvidence) []relationship.ConnascenceEvidence {

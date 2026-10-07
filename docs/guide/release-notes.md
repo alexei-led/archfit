@@ -60,7 +60,7 @@ Removed:
   filled them. Use `comparison.introduced_finding_ids` and
   `comparison.resolved_finding_ids` with `--base`.
 
-### Balanced Coupling score `bc_score.v7` (part 1: strength and distance)
+### Balanced Coupling score `bc_score.v7`
 
 The formula `balance = max(|S − D|, 10 − V) + 1` does not change. The inputs
 change.
@@ -84,6 +84,34 @@ change.
   review the new seams.
 - Removed: `strength_inferred_edges` from the connascence report. The
   `distance_compression` fields `code_structure_*` are now `containment_*`.
+
+Volatility, clone facts, the seam gate and the guidance vocabulary also change:
+
+- **Volatility ties both sides for functional coupling.** Functional and
+  symmetric edges and clone facts use the worse volatility of the two modules.
+  Contract, model and intrusive edges use the target's.
+- **Undeclared volatility is unrated.** It still scores as V=10, but a seam that
+  is critical only because of it never qualifies, and its guidance is
+  `declare_volatility`. The coupling dimension has a new required fact,
+  `coupling volatility`. Coupling is `partial`, and `check` exits 2, until the
+  named modules declare `volatility:` or `subdomain:`.
+- **Clone facts replace the clone upgrade.** A clone pair no longer turns an
+  import edge into symmetric coupling. Each pair is its own symmetric fact on
+  the seam between its modules. It can set the seam's severity and guidance and
+  never makes a seam qualify.
+- **The seam gate qualifies fewer, clearer seams.** A seam qualifies when one
+  scored import edge is functional, intrusive or symmetric, crosses a module
+  boundary, has declared high volatility, and does not come from a composition
+  root, generated or test source (an intrusive edge still qualifies). The seam
+  shows its lowest-balance qualifying edge. Gate reasons name the boundary and
+  the container. Only a deploy-unit boundary is called a distributed monolith.
+- **New guidance vocabulary:** `balanced`, `accept_low_volatility`,
+  `introduce_contract`, `move_functionality`, `declare_volatility`,
+  `expected_by_role`, `follow_rule`. `leave_alone`, `reduce_strength` and
+  `reduce_distance` are gone. Advisory tasks carry `hypothesis` instead of
+  `cheapest_move`.
+- **Metric change:** the state metric `critical_high_distance_edges` is now
+  `qualifying_edges`. It counts edges that pass the qualification above.
 
 ### Fixed
 
@@ -116,6 +144,18 @@ Changed (hook git):
   the index; the baseline, the labels, and the fact cache come from the config
   directory on disk. A config that the commit removes, or an unmerged index,
   is an error (exit 3).
+
+Changed (structure metrics):
+
+- The `structure` dimension replaces the `external_edges` metric with two
+  metrics, decided by the target of each dependency that leaves the declared
+  module map. `unmapped_first_party_edges` counts the ones whose target is
+  first-party code: a target no module owns, or an owned target imported from
+  code no module owns. This is a gap in the module map. `library_edges` counts
+  the rest: external packages, and first-party targets the extractor has no
+  node for (for example a Go package that failed to load). Their sum equals
+  the old `external_edges`. A consumer that reads `external_edges` must read
+  both new names.
 
 ## v2.5.1 — (unreleased)
 

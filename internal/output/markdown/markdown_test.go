@@ -1002,7 +1002,7 @@ func TestRenderer_Render_AdvisoryTasks(t *testing.T) {
 		GroupCount:   3,
 		GroupMembers: []string{"id1", "id2"},
 		Goal:         "Review grouped advisories.",
-		CheapestMove: "reduce_distance",
+		Hypothesis:   "reduce_distance",
 		ScoreValue:   8,
 		TopFiles:     []string{taskFileA, taskFileB},
 		Constraints:  []string{"keep agent_tasks[] reserved for active gate findings"},
@@ -1020,7 +1020,7 @@ func TestRenderer_Render_AdvisoryTasks(t *testing.T) {
 		"**bc/imbalanced_coupling** [`abcdef12`]",
 		"severity: high; status: new; group_count: 3",
 		"group members: id1, id2",
-		"cheapest move: reduce_distance",
+		"hypothesis: reduce_distance",
 		"score: 8/10",
 		"top files: " + taskFileA + ", " + taskFileB,
 		"constraint: keep agent_tasks[] reserved for active gate findings",
@@ -1072,7 +1072,7 @@ func TestRenderer_Render_AdvisoryTasksCapsAtTop25(t *testing.T) {
 
 // TestRenderer_Render_BCLintMessage verifies that bc/imbalanced_coupling advisories
 // render as ARCHFIT[BC-UNBALANCED <SEV>] lint messages with strength/distance/
-// volatility, score breakdown, why, and cheapest-move fields from MatchedBy.
+// volatility, score breakdown, why, and hypothesis fields from MatchedBy.
 func TestRenderer_Render_BCLintMessage(t *testing.T) {
 	r := markdown.New()
 	d := reportmodel.NewDocument()
@@ -1085,11 +1085,11 @@ func TestRenderer_Render_BCLintMessage(t *testing.T) {
 	f.Edge.To.Path = "internal/users/repo.go"
 	f.Why = "implementation-level coupling across a deploy boundary to a volatile core module"
 	f.MatchedBy = map[string]string{
-		mbStrength:      "intrusive",
-		mbDistance:      "cross_deploy_unit",
-		mbVolatility:    "high",
-		"score":         "intrusive(+8) cross_deploy(+5) vol_high(-0) = 13->10",
-		"cheapest_move": "lower strength intrusive->contract (-5)",
+		mbStrength:   "intrusive",
+		mbDistance:   "cross_deploy_unit",
+		mbVolatility: "high",
+		"score":      "intrusive(+8) cross_deploy(+5) vol_high(-0) = 13->10",
+		"hypothesis": "lower strength intrusive->contract (-5)",
 	}
 	d.Findings = reporttest.Findings(f)
 
@@ -1107,7 +1107,7 @@ func TestRenderer_Render_BCLintMessage(t *testing.T) {
 		"volatility: high",
 		"score: intrusive(+8) cross_deploy(+5) vol_high(-0) = 13->10",
 		"why: implementation-level coupling across a deploy boundary",
-		"cheapest move: lower strength intrusive->contract (-5)",
+		"hypothesis: lower strength intrusive->contract (-5)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("BC lint message missing %q\nfull output:\n%s", want, out)

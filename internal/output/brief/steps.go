@@ -61,6 +61,7 @@ var factSteps = map[string]factStep{
 	"coupling candidate inventory":           {"declare modules that import each other: archfit config update", categoryModules},
 	"coupling strength":                      {"pin strength labels (archfit config enrich) or enable analyzers.scip", categoryOther},
 	"coupling distance":                      {"declare owner and deploy_unit for each module", categoryModules},
+	"coupling volatility":                    {"declare `volatility:` or `subdomain:` on the modules the reason names", categoryModules},
 	"extractor resolution within ceiling":    {"fix the unresolved imports the analyzer reports (see Evidence coverage)", categoryTools},
 	"local and undeclared-external coupling": {"", categoryOutOfClaim},
 	// change_locality

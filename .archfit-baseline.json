@@ -101,7 +101,7 @@
       "fingerprint": "10ebd4f5c079cb2baff9d5de735d356f",
       "rule_id": "bc/imbalanced_coupling",
       "kind": "advisory",
-      "severity": "medium"
+      "severity": "critical"
     },
     {
       "fingerprint": "ae66ef0d5fd05668821c865237e4d80a",
@@ -264,10 +264,8 @@
     "qualifying_seam_ids": [
       "efcdc1e1a6a9568dc41af954595869e8b645020c47f7fa6a70da5660c8c402fd",
       "6c85bbb28a549e6a02ca6f32271abe53c3e91f3d6ec7650e10ad9d5231c1df2b",
-      "d7033dc4479f754975f499f95b93abf5b9e25b24e01e59151ff1cc549fdc2530",
-      "f98e2982172cc84196da5bbe4fcb82c32e33832b27e1da982e02556cee252f32",
-      "cbf2863815704bef19eb79c16054b239482c351df27201f3bc7f48f0f0f83374",
       "294684873f6180efccb5beb40670d2681f957646931483ba03a8f9b74737fc20",
+      "afcd1a408c32fe0c4f64d0034436343758a99463b02d92dbf765e315acfe54db",
       "44360a5209e18c9c17ca138d830becb012857b4ddfeede35b7738c2cb1d7b5d3"
     ],
     "dimensions": [
@@ -320,7 +318,7 @@
         "coverage": {
           "basis": "discovered dependencies resolved inside the declared module map",
           "observed": 675,
-          "total": 1677
+          "total": 1679
         },
         "metrics": [
           {
@@ -329,13 +327,18 @@
             "unit": "count"
           },
           {
-            "name": "external_edges",
-            "value": 1002,
+            "name": "library_edges",
+            "value": 1004,
+            "unit": "count"
+          },
+          {
+            "name": "unmapped_first_party_edges",
+            "value": 0,
             "unit": "count"
           },
           {
             "name": "same_module_edges",
-            "value": 177,
+            "value": 176,
             "unit": "count"
           },
           {
@@ -388,13 +391,13 @@
         "gate": "warn",
         "coverage": {
           "basis": "cross-boundary edges scored",
-          "observed": 503,
-          "total": 503
+          "observed": 513,
+          "total": 513
         },
         "metrics": [
           {
             "name": "scored_edges",
-            "value": 503,
+            "value": 513,
             "unit": "count"
           },
           {
@@ -414,17 +417,17 @@
           },
           {
             "name": "critical_band_edges",
-            "value": 19,
+            "value": 28,
             "unit": "count"
           },
           {
             "name": "high_or_worse_edges",
-            "value": 19,
+            "value": 28,
             "unit": "count"
           },
           {
-            "name": "critical_high_distance_edges",
-            "value": 19,
+            "name": "qualifying_edges",
+            "value": 15,
             "unit": "count"
           },
           {
@@ -434,12 +437,12 @@
           },
           {
             "name": "distributed_monolith_seams",
-            "value": 7,
+            "value": 5,
             "unit": "count"
           },
           {
             "name": "tight_seams",
-            "value": 8,
+            "value": 14,
             "unit": "count"
           },
           {
@@ -503,17 +506,17 @@
           },
           {
             "name": "production_files",
-            "value": 293,
+            "value": 296,
             "unit": "count"
           },
           {
             "name": "production_loc",
-            "value": 65226,
+            "value": 65520,
             "unit": "count"
           },
           {
             "name": "largest_production_file_loc",
-            "value": 1938,
+            "value": 1968,
             "unit": "count"
           },
           {
@@ -523,7 +526,7 @@
           },
           {
             "name": "function_loc_p90",
-            "value": 52,
+            "value": 51,
             "unit": "count"
           },
           {
@@ -533,7 +536,7 @@
           },
           {
             "name": "functions_over_threshold",
-            "value": 186,
+            "value": 183,
             "unit": "count"
           }
         ]
@@ -544,23 +547,23 @@
         "gate": "pass",
         "coverage": {
           "basis": "classified source files",
-          "observed": 627,
-          "total": 633
+          "observed": 631,
+          "total": 637
         },
         "metrics": [
           {
             "name": "test_files",
-            "value": 334,
+            "value": 335,
             "unit": "count"
           },
           {
             "name": "production_files",
-            "value": 293,
+            "value": 296,
             "unit": "count"
           },
           {
             "name": "test_to_production_files",
-            "value": 1.1399317406143346,
+            "value": 1.1317567567567568,
             "unit": "ratio"
           }
         ]

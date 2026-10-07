@@ -178,6 +178,7 @@ const (
 	FactCouplingCandidateInventory       = "coupling candidate inventory"
 	FactCouplingStrength                 = "coupling strength"
 	FactCouplingDistance                 = "coupling distance"
+	FactCouplingVolatility               = "coupling volatility"
 	FactExtractorResolutionWithinCeiling = "extractor resolution within ceiling"
 	FactLocalAndUndeclaredCoupling       = "local and undeclared-external coupling"
 	FactEligibleCommitSample             = "eligible commit sample"
@@ -244,6 +245,7 @@ func RequiredFacts(dimension string) []RequiredFact {
 			required(FactCouplingCandidateInventory, OwnerCoupling),
 			required(FactCouplingStrength, OwnerCoupling),
 			required(FactCouplingDistance, OwnerCoupling),
+			required(FactCouplingVolatility, OwnerCoupling),
 			required(FactExtractorResolutionWithinCeiling, OwnerCoupling),
 			outOfClaim(FactLocalAndUndeclaredCoupling, OwnerCoupling),
 		}

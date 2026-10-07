@@ -43,7 +43,7 @@ const (
 func twoModules() map[string]policy.ModuleDef {
 	return map[string]policy.ModuleDef{
 		moduleA: {Paths: []string{globA}, Owner: teamA, DeployUnit: moduleA, Subdomain: subdomainCore, Volatility: volHigh},
-		moduleB: {Paths: []string{globB}, Owner: teamB, DeployUnit: moduleB, Subdomain: "supporting", Volatility: volHigh},
+		moduleB: {Paths: []string{globB}, Owner: teamB, DeployUnit: moduleB, Subdomain: subdomainSupporting, Volatility: volHigh},
 	}
 }
 
@@ -289,11 +289,11 @@ func TestAnalyzeEmitsAdvisoryCandidatesForSevereEdges(t *testing.T) {
 		},
 		{
 			name: "threshold above severity filters it out", hint: relationship.StrengthModel,
-			minSeverity: "medium", wantSeverity: relationship.SeverityLow, wantRules: nil,
+			minSeverity: string(relationship.SeverityMedium), wantSeverity: relationship.SeverityLow, wantRules: nil,
 		},
 		{
 			name: "threshold at a low severity keeps it", hint: relationship.StrengthModel,
-			minSeverity: "low", wantSeverity: relationship.SeverityLow, wantRules: []string{ruleBC},
+			minSeverity: string(relationship.SeverityLow), wantSeverity: relationship.SeverityLow, wantRules: []string{ruleBC},
 		},
 	}
 	for _, test := range tests {
@@ -323,7 +323,7 @@ func TestAnalyzeEmitsAdvisoryCandidatesForSevereEdges(t *testing.T) {
 
 // Cross-module clones with no import edge are duplicated knowledge; test files
 // are excluded because example duplication is not an architecture signal.
-func TestAnalyzeCloneOnlyPairs(t *testing.T) {
+func TestAnalyzeClonePairs(t *testing.T) {
 	const (
 		cloneA     = "a/dup.go"
 		cloneB     = "b/dup.go"

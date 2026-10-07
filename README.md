@@ -70,8 +70,8 @@ NOT MEASURED (11)
 COUPLING SEAMS (69)
 
   assessment-repair -> relationship-analysis
-    symmetric × cross_module_same_owner × high volatility · 12 critical of 18 scored · median balance 2
-    try: reduce_strength
+    functional × cross_module × high volatility · 12 critical of 18 scored · median balance 2
+    try: introduce_contract
 ```
 
 `complexity` measures the complete declared-module dependency graph: maximum
