@@ -6,6 +6,21 @@ import (
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
+const (
+	nameSales   = "sales"
+	nameCart    = "cart"
+	nameInvoice = "invoice"
+	nameStock   = "stock"
+	globAll     = "a/**"
+	fileBY      = "b/y.go"
+	fileAX1     = "a/x.go"
+	globSales   = "sales/**"
+	globCart    = "sales/cart/**"
+	nameMid     = "mid"
+	nameTop     = "top"
+	globB       = "b/**"
+)
+
 func mods(paths map[string][]string) map[string]policy.ModuleDef {
 	out := make(map[string]policy.ModuleDef, len(paths))
 	for name, p := range paths {
@@ -22,33 +37,33 @@ func TestContainment_ParentRules(t *testing.T) {
 	}{
 		{
 			name:  "recursive glob contains a nested module",
-			paths: map[string][]string{"sales": {"sales/**"}, "cart": {"sales/cart/**"}},
-			want:  map[string]string{"cart": "sales", "sales": ""},
+			paths: map[string][]string{nameSales: {globSales}, nameCart: {globCart}},
+			want:  map[string]string{nameCart: nameSales, nameSales: ""},
 		},
 		{
 			name:  "exact glob contains nothing",
-			paths: map[string][]string{"sales": {"sales"}, "cart": {"sales/cart/**"}},
-			want:  map[string]string{"cart": "", "sales": ""},
+			paths: map[string][]string{nameSales: {nameSales}, nameCart: {globCart}},
+			want:  map[string]string{nameCart: "", nameSales: ""},
 		},
 		{
 			name:  "single-level glob contains nothing",
-			paths: map[string][]string{"sales": {"sales/*"}, "cart": {"sales/cart/**"}},
-			want:  map[string]string{"cart": ""},
+			paths: map[string][]string{nameSales: {"sales/*"}, nameCart: {globCart}},
+			want:  map[string]string{nameCart: ""},
 		},
 		{
 			name:  "extension glob contains nothing",
-			paths: map[string][]string{"sales": {"sales/*.go"}, "cart": {"sales/cart/**"}},
-			want:  map[string]string{"cart": ""},
+			paths: map[string][]string{nameSales: {"sales/*.go"}, nameCart: {globCart}},
+			want:  map[string]string{nameCart: ""},
 		},
 		{
 			name:  "every root must be inside the parent",
-			paths: map[string][]string{"sales": {"sales/**"}, "mixed": {"sales/a/**", "other/b/**"}},
+			paths: map[string][]string{nameSales: {globSales}, "mixed": {"sales/a/**", "other/b/**"}},
 			want:  map[string]string{"mixed": ""},
 		},
 		{
 			name:  "longest container root wins",
-			paths: map[string][]string{"top": {"a/**"}, "mid": {"a/b/**"}, "leaf": {"a/b/c/**"}},
-			want:  map[string]string{"leaf": "mid", "mid": "top", "top": ""},
+			paths: map[string][]string{nameTop: {globAll}, nameMid: {"a/b/**"}, "leaf": {"a/b/c/**"}},
+			want:  map[string]string{"leaf": nameMid, nameMid: nameTop, nameTop: ""},
 		},
 		{
 			name:  "dotted roots for Python",
@@ -57,13 +72,13 @@ func TestContainment_ParentRules(t *testing.T) {
 		},
 		{
 			name:  "double-colon roots for Rust",
-			paths: map[string][]string{"core": {"core::**"}, "net": {"core::net::**"}},
-			want:  map[string]string{"net": "core"},
+			paths: map[string][]string{subdomainCore: {"core::**"}, "net": {"core::net::**"}},
+			want:  map[string]string{"net": subdomainCore},
 		},
 		{
 			name:  "a prefix without a separator is not inside",
-			paths: map[string][]string{"sales": {"sales/**"}, "salesforce": {"salesforce/**"}},
-			want:  map[string]string{"salesforce": "", "sales": ""},
+			paths: map[string][]string{nameSales: {globSales}, "salesforce": {"salesforce/**"}},
+			want:  map[string]string{"salesforce": "", nameSales: ""},
 		},
 		{
 			name:  "equal roots are not strictly inside",
@@ -85,21 +100,21 @@ func TestContainment_ParentRules(t *testing.T) {
 
 func TestContainment_ContainerAndSpan(t *testing.T) {
 	c := BuildContainment(mods(map[string][]string{
-		"sales":   {"sales/**"},
-		"cart":    {"sales/cart/**"},
-		"invoice": {"sales/invoice/**"},
-		"stock":   {"stock/**"},
-		"lookup":  {"stock/lookup/**"},
+		nameSales:   {globSales},
+		nameCart:    {globCart},
+		nameInvoice: {"sales/invoice/**"},
+		nameStock:   {"stock/**"},
+		"lookup":    {"stock/lookup/**"},
 	}))
 	tests := []struct {
 		a, b           string
 		container      string
 		crossings, sha int
 	}{
-		{"cart", "invoice", "sales", 2, 1},
-		{"cart", "lookup", "", 4, 0},
-		{"sales", "cart", "sales", 1, 1},
-		{"sales", "stock", "", 2, 0},
+		{nameCart, nameInvoice, nameSales, 2, 1},
+		{nameCart, "lookup", "", 4, 0},
+		{nameSales, nameCart, nameSales, 1, 1},
+		{nameSales, nameStock, "", 2, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.a+"->"+tt.b, func(t *testing.T) {
@@ -116,9 +131,9 @@ func TestContainment_ContainerAndSpan(t *testing.T) {
 
 // Renaming a module key must not change where it sits: the tree reads paths only.
 func TestContainment_KeyRenameInvariant(t *testing.T) {
-	a := BuildContainment(mods(map[string][]string{"sales": {"sales/**"}, "cart": {"sales/cart/**"}}))
-	b := BuildContainment(mods(map[string][]string{"zz-sales": {"sales/**"}, "zz-cart": {"sales/cart/**"}}))
-	ca, sa := a.Span("sales", "cart")
+	a := BuildContainment(mods(map[string][]string{nameSales: {globSales}, nameCart: {globCart}}))
+	b := BuildContainment(mods(map[string][]string{"zz-sales": {globSales}, "zz-cart": {globCart}}))
+	ca, sa := a.Span(nameSales, nameCart)
 	cb, sb := b.Span("zz-sales", "zz-cart")
 	if ca != cb || sa != sb {
 		t.Errorf("rename changed span: (%d,%d) vs (%d,%d)", ca, sa, cb, sb)

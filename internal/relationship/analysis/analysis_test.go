@@ -42,7 +42,7 @@ const (
 // module b owned by team-b, so an a→b edge is a cross-owner relationship.
 func twoModules() map[string]policy.ModuleDef {
 	return map[string]policy.ModuleDef{
-		moduleA: {Paths: []string{globA}, Owner: teamA, DeployUnit: moduleA, Subdomain: "core", Volatility: volHigh},
+		moduleA: {Paths: []string{globA}, Owner: teamA, DeployUnit: moduleA, Subdomain: subdomainCore, Volatility: volHigh},
 		moduleB: {Paths: []string{globB}, Owner: teamB, DeployUnit: moduleB, Subdomain: "supporting", Volatility: volHigh},
 	}
 }

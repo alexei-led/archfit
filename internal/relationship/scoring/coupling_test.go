@@ -16,22 +16,23 @@ func TestScoreBand_Severity(t *testing.T) {
 		v    coupling.Volatility
 	}{
 		{"frozen", coupling.VolatilityFrozen},
-		{"low", coupling.VolatilityLow},
-		{"medium", coupling.VolatilityMedium},
+		{string(coupling.VolatilityLow), coupling.VolatilityLow},
+		{string(coupling.VolatilityMedium), coupling.VolatilityMedium},
 		{"high", coupling.VolatilityHigh},
 		{"undeclared", coupling.VolatilityUndeclared},
 	}
+	nn, lo, me, cr := coupling.SeverityNone, coupling.SeverityLow, coupling.SeverityMedium, coupling.SeverityCritical
 	// balance per volatility, in the order above.
 	rows := []struct {
 		strength coupling.Strength
 		balance  []int
 		band     []coupling.Severity
 	}{
-		{coupling.StrengthContract, []int{10, 9, 9, 9, 9}, []coupling.Severity{"none", "none", "none", "none", "none"}},
-		{coupling.StrengthModel, []int{10, 8, 7, 7, 7}, []coupling.Severity{"none", "low", "low", "low", "low"}},
-		{coupling.StrengthFunctional, []int{10, 8, 5, 2, 2}, []coupling.Severity{"none", "low", "medium", "critical", "critical"}},
-		{coupling.StrengthSymmetric, []int{10, 8, 5, 1, 1}, []coupling.Severity{"none", "low", "medium", "critical", "critical"}},
-		{coupling.StrengthIntrusive, []int{10, 8, 5, 2, 2}, []coupling.Severity{"none", "low", "medium", "critical", "critical"}},
+		{coupling.StrengthContract, []int{10, 9, 9, 9, 9}, []coupling.Severity{nn, nn, nn, nn, nn}},
+		{coupling.StrengthModel, []int{10, 8, 7, 7, 7}, []coupling.Severity{nn, lo, lo, lo, lo}},
+		{coupling.StrengthFunctional, []int{10, 8, 5, 2, 2}, []coupling.Severity{nn, lo, me, cr, cr}},
+		{coupling.StrengthSymmetric, []int{10, 8, 5, 1, 1}, []coupling.Severity{nn, lo, me, cr, cr}},
+		{coupling.StrengthIntrusive, []int{10, 8, 5, 2, 2}, []coupling.Severity{nn, lo, me, cr, cr}},
 	}
 	distances := []coupling.Distance{coupling.DistanceCrossModule, coupling.DistanceCrossModuleDiffOwner, coupling.DistanceCrossDeployUnit}
 	for _, row := range rows {
@@ -45,11 +46,7 @@ func TestScoreBand_Severity(t *testing.T) {
 					if s.Balance != row.balance[i] {
 						t.Errorf("balance = %d, want %d", s.Balance, row.balance[i])
 					}
-					want := row.band[i]
-					if want == "none" {
-						want = coupling.SeverityNone
-					}
-					if s.Band != want {
+					if want := row.band[i]; s.Band != want {
 						t.Errorf("band = %q, want %q", s.Band, want)
 					}
 				})

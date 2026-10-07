@@ -20,7 +20,7 @@ const (
 	distOwnerTeamY               = "team-y"
 	distDeployUnitA              = "svc-a"
 	distDeployUnitB              = "svc-b"
-	distModCore                  = "core"
+	distModCore                  = subdomainCore
 	distModAPI                   = "api"
 )
 
@@ -66,19 +66,19 @@ func hasInt(values []int, want int) bool {
 
 func TestHierarchySpan(t *testing.T) {
 	tree := BuildContainment(map[string]policy.ModuleDef{
-		"sales":   {Paths: []string{"sales/**"}},
-		"cart":    {Paths: []string{"sales/cart/**"}},
-		"invoice": {Paths: []string{"sales/invoice/**"}},
-		"stock":   {Paths: []string{"stock/**"}},
+		nameSales:   {Paths: []string{globSales}},
+		nameCart:    {Paths: []string{globCart}},
+		nameInvoice: {Paths: []string{"sales/invoice/**"}},
+		nameStock:   {Paths: []string{"stock/**"}},
 	})
 	tests := []struct {
 		from, to       string
 		wantCrossings  int
 		wantSharedRoot int
 	}{
-		{"cart", "invoice", 2, 1},
-		{"cart", "stock", 3, 0},
-		{"sales", "cart", 1, 1},
+		{nameCart, nameInvoice, 2, 1},
+		{nameCart, nameStock, 3, 0},
+		{nameSales, nameCart, 1, 1},
 	}
 	for _, tt := range tests {
 		got := HierarchySpan(tree, tt.from, tt.to)
@@ -99,15 +99,15 @@ func TestClassifyDistance_BoundaryTokens(t *testing.T) {
 		wantDist  coupling.Distance
 		wantBasis coupling.DistanceBasis
 	}{
-		{"same module", policy.ModuleDef{Paths: []string{"a/**"}}, policy.ModuleDef{Paths: []string{"b/**"}}, "a/x.go", "a/y.go", coupling.DistanceSameModule, coupling.DistanceBasisUnknown},
-		{"unresolved target", policy.ModuleDef{Paths: []string{"a/**"}}, policy.ModuleDef{Paths: []string{"b/**"}}, "a/x.go", "zzz/y.go", coupling.DistanceUnknown, coupling.DistanceBasisUnknown},
-		{"no owner, no deploy unit", policy.ModuleDef{Paths: []string{"a/**"}}, policy.ModuleDef{Paths: []string{"b/**"}}, "a/x.go", "b/y.go", coupling.DistanceCrossModule, coupling.DistanceBasisModule},
-		{"same owner", policy.ModuleDef{Paths: []string{"a/**"}, Owner: distOwnerTeamX}, policy.ModuleDef{Paths: []string{"b/**"}, Owner: distOwnerTeamX}, "a/x.go", "b/y.go", coupling.DistanceCrossModule, coupling.DistanceBasisModule},
-		{"different owners", policy.ModuleDef{Paths: []string{"a/**"}, Owner: distOwnerTeamX}, policy.ModuleDef{Paths: []string{"b/**"}, Owner: distOwnerTeamY}, "a/x.go", "b/y.go", coupling.DistanceCrossModuleDiffOwner, coupling.DistanceBasisOwnership},
-		{"one owner empty is no owner change", policy.ModuleDef{Paths: []string{"a/**"}, Owner: distOwnerTeamX}, policy.ModuleDef{Paths: []string{"b/**"}}, "a/x.go", "b/y.go", coupling.DistanceCrossModule, coupling.DistanceBasisModule},
-		{"different deploy units", policy.ModuleDef{Paths: []string{"a/**"}, DeployUnit: distDeployUnitA}, policy.ModuleDef{Paths: []string{"b/**"}, DeployUnit: distDeployUnitB}, "a/x.go", "b/y.go", coupling.DistanceCrossDeployUnit, coupling.DistanceBasisDeployUnit},
-		{"same deploy unit", policy.ModuleDef{Paths: []string{"a/**"}, DeployUnit: distDeployUnitA}, policy.ModuleDef{Paths: []string{"b/**"}, DeployUnit: distDeployUnitA}, "a/x.go", "b/y.go", coupling.DistanceCrossModule, coupling.DistanceBasisModule},
-		{"deploy unit beats owner", policy.ModuleDef{Paths: []string{"a/**"}, Owner: distOwnerTeamX, DeployUnit: distDeployUnitA}, policy.ModuleDef{Paths: []string{"b/**"}, Owner: distOwnerTeamY, DeployUnit: distDeployUnitB}, "a/x.go", "b/y.go", coupling.DistanceCrossDeployUnit, coupling.DistanceBasisDeployUnit},
+		{"same module", policy.ModuleDef{Paths: []string{globAll}}, policy.ModuleDef{Paths: []string{globB}}, fileAX1, "a/y.go", coupling.DistanceSameModule, coupling.DistanceBasisUnknown},
+		{"unresolved target", policy.ModuleDef{Paths: []string{globAll}}, policy.ModuleDef{Paths: []string{globB}}, fileAX1, "zzz/y.go", coupling.DistanceUnknown, coupling.DistanceBasisUnknown},
+		{"no owner, no deploy unit", policy.ModuleDef{Paths: []string{globAll}}, policy.ModuleDef{Paths: []string{globB}}, fileAX1, fileBY, coupling.DistanceCrossModule, coupling.DistanceBasisModule},
+		{"same owner", policy.ModuleDef{Paths: []string{globAll}, Owner: distOwnerTeamX}, policy.ModuleDef{Paths: []string{globB}, Owner: distOwnerTeamX}, fileAX1, fileBY, coupling.DistanceCrossModule, coupling.DistanceBasisModule},
+		{"different owners", policy.ModuleDef{Paths: []string{globAll}, Owner: distOwnerTeamX}, policy.ModuleDef{Paths: []string{globB}, Owner: distOwnerTeamY}, fileAX1, fileBY, coupling.DistanceCrossModuleDiffOwner, coupling.DistanceBasisOwnership},
+		{"one owner empty is no owner change", policy.ModuleDef{Paths: []string{globAll}, Owner: distOwnerTeamX}, policy.ModuleDef{Paths: []string{globB}}, fileAX1, fileBY, coupling.DistanceCrossModule, coupling.DistanceBasisModule},
+		{"different deploy units", policy.ModuleDef{Paths: []string{globAll}, DeployUnit: distDeployUnitA}, policy.ModuleDef{Paths: []string{globB}, DeployUnit: distDeployUnitB}, fileAX1, fileBY, coupling.DistanceCrossDeployUnit, coupling.DistanceBasisDeployUnit},
+		{"same deploy unit", policy.ModuleDef{Paths: []string{globAll}, DeployUnit: distDeployUnitA}, policy.ModuleDef{Paths: []string{globB}, DeployUnit: distDeployUnitA}, fileAX1, fileBY, coupling.DistanceCrossModule, coupling.DistanceBasisModule},
+		{"deploy unit beats owner", policy.ModuleDef{Paths: []string{globAll}, Owner: distOwnerTeamX, DeployUnit: distDeployUnitA}, policy.ModuleDef{Paths: []string{globB}, Owner: distOwnerTeamY, DeployUnit: distDeployUnitB}, fileAX1, fileBY, coupling.DistanceCrossDeployUnit, coupling.DistanceBasisDeployUnit},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -123,7 +123,7 @@ func TestClassifyDistance_BoundaryTokens(t *testing.T) {
 // Module key spelling never sets distance: a flat pair and a nested pair get
 // the same token.
 func TestClassifyDistance_KeySpellingIsIrrelevant(t *testing.T) {
-	flat := map[string]policy.ModuleDef{"core": {Paths: []string{"core/**"}}, "api": {Paths: []string{"api/**"}}}
+	flat := map[string]policy.ModuleDef{subdomainCore: {Paths: []string{"core/**"}}, "api": {Paths: []string{"api/**"}}}
 	nested := map[string]policy.ModuleDef{"internal/core": {Paths: []string{"x/core/**"}}, "internal/deep/api": {Paths: []string{"y/api/**"}}}
 	d1, _ := classifyDistance("core/a.go", "api/b.go", buildModuleIndex(flat), flat)
 	d2, _ := classifyDistance("x/core/a.go", "y/api/b.go", buildModuleIndex(nested), nested)

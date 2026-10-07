@@ -29,6 +29,12 @@ const (
 )
 
 // testdataRoot returns the absolute path to testdata/golang.
+const (
+	fileAAGo         = "pkg/a/a.go"
+	fileContractCons = "pkg/a/contract_cons.go"
+	fileConstCons    = "pkg/a/const_cons.go"
+)
+
 func testdataRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -138,7 +144,7 @@ func TestExtract_IllTypedPackage(t *testing.T) {
 	}
 	write("go.mod", "module example.com/illtyped\n\ngo 1.21\n")
 	write("pkg/b/b.go", "package b\n\n// Broken does not compile: a string is not an int.\nvar Broken int = \"not an int\"\n")
-	write("pkg/a/a.go", "package a\n\nimport \"example.com/illtyped/pkg/b\"\n\nvar Use = b.Broken\n")
+	write(fileAAGo, "package a\n\nimport \"example.com/illtyped/pkg/b\"\n\nvar Use = b.Broken\n")
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
 	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
@@ -160,7 +166,7 @@ func TestExtract_IllTypedPackage(t *testing.T) {
 	}
 	// The load stayed complete: the import edge is in the graph despite the
 	// type error. That is what makes two such runs comparable.
-	if !hasEdge(facts.Edges, "pkg/a/a.go", pkgB, graph.EdgeKindImports) {
+	if !hasEdge(facts.Edges, fileAAGo, pkgB, graph.EdgeKindImports) {
 		t.Errorf("ill-typed package must still contribute its import edge; edges: %v", facts.Edges)
 	}
 
@@ -262,7 +268,7 @@ func TestExtract_SimpleImport(t *testing.T) {
 	}
 
 	// pkg/a/a.go imports pkg/b — expect an "imports" edge (repo-relative path after module prefix strip)
-	if !hasEdge(facts.Edges, "pkg/a/a.go", pkgB, graph.EdgeKindImports) {
+	if !hasEdge(facts.Edges, fileAAGo, pkgB, graph.EdgeKindImports) {
 		t.Errorf("expected imports edge from pkg/a/a.go to pkg/b; edges: %v", facts.Edges)
 	}
 }
@@ -357,13 +363,13 @@ func TestExtract_StrengthHint(t *testing.T) {
 		wantHint string
 	}{
 		// a.go calls b.Hello() (a function) → functional.
-		{"function call → functional", "pkg/a/a.go", pkgB, graph.EdgeKindImports, hintFunctional},
+		{"function call → functional", fileAAGo, pkgB, graph.EdgeKindImports, hintFunctional},
 		// contract_cons.go only takes b.Greeter as a parameter type (interface TypeName) → contract.
-		{"interface type → contract", "pkg/a/contract_cons.go", pkgB, graph.EdgeKindImports, hintContract},
+		{"interface type → contract", fileContractCons, pkgB, graph.EdgeKindImports, hintContract},
 		// model_cons.go only returns b.Config{} (concrete TypeName, no field access) → model.
 		{"concrete type → model", "pkg/a/model_cons.go", pkgB, graph.EdgeKindImports, hintModel},
 		// const_cons.go only reads b.MaxRetries — pure data sharing (book Ch7) → model, not functional.
-		{"const reference → model", "pkg/a/const_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		{"const reference → model", fileConstCons, pkgB, graph.EdgeKindImports, hintModel},
 		// var_cons.go only reads b.DefaultName — pure data sharing (book Ch7) → model, not functional.
 		{"var reference → model", "pkg/a/var_cons.go", pkgB, graph.EdgeKindImports, hintModel},
 		// max_cons.go uses b.Greeter (contract, rank 1) AND b.Hello() (functional, rank 4) → functional wins.
@@ -445,9 +451,9 @@ func TestExtract_ConnascenceHints(t *testing.T) {
 		from string
 		want string
 	}{
-		{"interface type reference", "pkg/a/contract_cons.go", graph.ConnascenceType},
-		{"constant reference", "pkg/a/const_cons.go", graph.ConnascenceMeaning},
-		{"function call", "pkg/a/a.go", graph.ConnascenceAlgorithm},
+		{"interface type reference", fileContractCons, graph.ConnascenceType},
+		{"constant reference", fileConstCons, graph.ConnascenceMeaning},
+		{"function call", fileAAGo, graph.ConnascenceAlgorithm},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -547,13 +553,13 @@ func TestExtract_DataStrengthHint(t *testing.T) {
 		to   string
 		want string
 	}{
-		{"function call only has no data", "pkg/a/a.go", pkgB, ""},
+		{"function call only has no data", fileAAGo, pkgB, ""},
 		{"func-valued var has no data", "pkg/a/funcvar_cons.go", pkgB, ""},
-		{"interface type is contract", "pkg/a/contract_cons.go", pkgB, hintContract},
+		{"interface type is contract", fileContractCons, pkgB, hintContract},
 		{"interface method call carries the interface type", "pkg/a/iface_method_cons.go", pkgB, hintContract},
 		{"dto type is dto", "pkg/a/dto_cons.go", pkgB, hintDTO},
 		{"concrete type is model", "pkg/a/model_cons.go", pkgB, hintModel},
-		{"const is model", "pkg/a/const_cons.go", pkgB, hintModel},
+		{"const is model", fileConstCons, pkgB, hintModel},
 		{"var is model", "pkg/a/var_cons.go", pkgB, hintModel},
 		{"concrete method is model", "pkg/a/concrete_method_cons.go", pkgB, hintModel},
 		{"callable use does not outrank data", "pkg/a/max_cons.go", pkgB, hintContract},
