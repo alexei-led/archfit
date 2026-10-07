@@ -264,7 +264,9 @@ What it writes (`schema_version: archfit.baseline.v2`):
 
 - Saves the baseline beside the config as `.archfit-baseline.json`.
 - Keeps the accepted finding fingerprints and the metric snapshot, so later runs
-  can detect fixed findings.
+  can detect fixed findings. A Balanced Coupling advisory groups several edges
+  into one finding. The baseline keeps the fingerprint of each edge in the
+  group, so the group stays accepted on the next run.
 - Keeps the architecture-state reference under `state`: the four comparison
   fingerprints (`config_hash`, `model_hash`, `labels_hash`, `rubric_version`)
   and the `measurement_profile` (producer semantics, tool versions, statuses,

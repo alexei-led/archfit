@@ -5,6 +5,7 @@
 package evaluation_test
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -491,6 +492,35 @@ func TestEvaluateRollsUpBCAdvisoriesByModulePairAndClassification(t *testing.T) 
 	}
 	if ids := findingIDs(got.Findings, "bc/duplicated_knowledge"); len(ids) != 1 {
 		t.Errorf("non-bc advisories = %v, want the duplicated-knowledge finding passed through untouched", ids)
+	}
+}
+
+// A rollup keeps every member ID for baseline capture, past the cap on the
+// readable group_members list.
+func TestEvaluateRollupKeepsEveryMemberPastTheDisplayCap(t *testing.T) {
+	const n = 10
+	candidates := make([]relationship.AdvisoryCandidate, 0, n)
+	want := make([]string, 0, n)
+	for i := range n {
+		id := fmt.Sprintf("adv-%02d", i)
+		want = append(want, id)
+		candidates = append(candidates, relationship.AdvisoryCandidate{
+			ID: id, RuleID: ruleBC, Severity: relationship.SeverityHigh,
+			From: fmt.Sprintf("a/%02d.go", i), To: pathB, FromModule: "a", ToModule: "b", EdgeKind: kindImports,
+			MatchedBy: map[string]string{keyStrength: strFunctional, keyDistance: distSameOwner, keyVolatility: volLow},
+		})
+	}
+
+	got := evaluation.Evaluate(evaluation.Input{
+		AdvisoryCandidates: candidates, Accepted: acceptedSet{}, IncludeAdvisories: true, Now: evaluatedAt,
+	})
+
+	rep := findByID(t, got.Findings, "adv-00")
+	if !slices.Equal(rep.Members, want) {
+		t.Errorf("Members = %v, want all %d member IDs", rep.Members, n)
+	}
+	if shown := strings.Split(rep.MatchedBy["group_members"], ","); len(shown) != 8 {
+		t.Errorf("group_members lists %d IDs, want the display cap of 8", len(shown))
 	}
 }
 
