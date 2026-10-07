@@ -20,6 +20,7 @@ const (
 	layerAdapt   = "adapter"
 	edgeImports  = "imports"
 	modMember    = "tools/member"
+	pkgBilling   = "internal/billing"
 	modPlaceRust = "core::place"
 	modTypesRust = "core::types"
 )
@@ -104,8 +105,16 @@ func TestSeamPolicyStatus(t *testing.T) {
 func TestSeamPolicyPlacesFindingsByTheGraphModule(t *testing.T) {
 	t.Parallel()
 	set := relationship.Set{Edges: []relationship.Edge{
-		{FromPath: modMember + "/run.go", ToPath: "internal/billing", FromModule: modMember, ToModule: modBilling},
+		{FromPath: modMember + "/run.go", ToPath: pkgBilling, FromModule: modMember, ToModule: modBilling, Language: goLanguage},
+		{FromPath: "main.go", ToPath: pkgBilling, FromModule: modAPI, ToModule: modBilling, Language: goLanguage},
+		{FromPath: "myapp.cli", ToPath: "myapp.core", FromModule: "py-cli", ToModule: "py-core", Language: languagePython},
 		{FromPath: modPlaceRust, ToPath: modTypesRust, FromModule: modPlaceRust, ToModule: modTypesRust},
+	}}
+	if got := seamEndpointModules(set)["."]; got != modAPI {
+		t.Errorf("root package module = %q, want %q (a dotted Python path has no directory)", got, modAPI)
+	}
+	root := finding.Finding{Kind: finding.KindGate, Status: finding.StatusNew, Edge: finding.EdgeEvidence{
+		From: finding.Endpoint{Path: "."}, To: finding.Endpoint{Module: modBilling},
 	}}
 	unowned := finding.Finding{Kind: finding.KindGate, Status: finding.StatusNew, Edge: finding.EdgeEvidence{
 		From: finding.Endpoint{Path: modMember}, To: finding.Endpoint{Module: modBilling},
@@ -114,13 +123,14 @@ func TestSeamPolicyPlacesFindingsByTheGraphModule(t *testing.T) {
 		From: finding.Endpoint{Path: modPlaceRust, Module: "core"}, To: finding.Endpoint{Path: modTypesRust, Module: "core"},
 	}}
 	diag := &result.Result{
-		Findings:            []finding.Finding{unowned, crate},
+		Findings:            []finding.Finding{unowned, crate, root},
 		SeamEndpointModules: seamEndpointModules(set),
-		Seams:               []result.Seam{{FromModule: modMember, ToModule: modBilling}, {FromModule: modPlaceRust, ToModule: modTypesRust}},
+		Seams: []result.Seam{{FromModule: modMember, ToModule: modBilling}, {FromModule: modPlaceRust, ToModule: modTypesRust},
+			{FromModule: modAPI, ToModule: modBilling}},
 	}
-	attachSeamPolicy(diag, hexagonalPolicy())
-	if got := []string{diag.Seams[0].Policy, diag.Seams[1].Policy}; got[0] != seamViolation || got[1] != seamAccepted {
-		t.Errorf("policies = %v, want [violation accepted]", got)
+	attachSeamPolicy(diag, hexagonalPolicy(layerRule))
+	if got := []string{diag.Seams[0].Policy, diag.Seams[1].Policy, diag.Seams[2].Policy}; got[0] != seamViolation || got[1] != seamAccepted || got[2] != seamViolation {
+		t.Errorf("policies = %v, want [violation accepted violation]", got)
 	}
 }
 

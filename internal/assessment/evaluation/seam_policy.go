@@ -10,6 +10,10 @@ import (
 	"github.com/alexei-led/archfit/internal/relationship"
 )
 
+// languageTypeScript is the TypeScript language id; like Go, it spells an
+// importing node as a file path.
+const languageTypeScript = "typescript"
+
 // Seam policy statuses (seams[].policy). The first matching one wins.
 const (
 	// seamViolation: an active gate finding names the pair.
@@ -78,8 +82,8 @@ func endpointModule(modules map[string]string, e finding.Endpoint) string {
 }
 
 // seamEndpointModules indexes every edge endpoint path, and the directory of
-// each importing file (the package a module-pair finding names), under the
-// module the seam ledger keys the edge by.
+// each importing Go or TypeScript file (the package a module-pair finding
+// names), under the module the seam ledger keys the edge by.
 func seamEndpointModules(s relationship.Set) map[string]string {
 	out := make(map[string]string, 2*len(s.Edges))
 	for _, e := range s.Edges {
@@ -91,10 +95,14 @@ func seamEndpointModules(s relationship.Set) map[string]string {
 		}
 	}
 	for _, e := range s.Edges {
-		if dir := path.Dir(e.FromPath); e.FromModule != "" && dir != "." {
-			if _, taken := out[dir]; !taken {
-				out[dir] = e.FromModule
-			}
+		// Only Go and TypeScript spell an importer as a file path; a dotted
+		// Python module or a crate::mod node has no directory. The root
+		// package is "." (main.go).
+		if e.FromModule == "" || (e.Language != goLanguage && e.Language != languageTypeScript) {
+			continue
+		}
+		if dir := path.Dir(e.FromPath); out[dir] == "" {
+			out[dir] = e.FromModule
 		}
 	}
 	return out
