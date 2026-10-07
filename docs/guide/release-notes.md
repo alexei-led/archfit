@@ -42,7 +42,7 @@ Fixed:
   the module table; the block now writes it on one line. Finding IDs do not
   change.
 
-Changed:
+Changed (hook git):
 
 - `archfit hook git` now judges the staged content, which is what the commit
   will contain. Before this change it judged the files on disk, so an
