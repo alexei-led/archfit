@@ -83,8 +83,14 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 		out.Comparison.Status = report.ComparisonStatus(c.Status)
 		out.Comparison.BaseRef = c.BaseRef
 		out.Comparison.Reasons = append([]string{}, c.Reasons...)
-		out.Comparison.TaskOriginStatus = c.TaskOriginStatus
-		out.Comparison.TaskOriginReasons = append([]string{}, c.TaskOriginReasons...)
+		if c.OriginStatus != "" {
+			introduced := append([]string{}, c.IntroducedFindingIDs...)
+			resolved := append([]string{}, c.ResolvedFindingIDs...)
+			out.Comparison.OriginStatus = c.OriginStatus
+			out.Comparison.OriginReasons = append([]string{}, c.OriginReasons...)
+			out.Comparison.IntroducedFindingIDs = &introduced
+			out.Comparison.ResolvedFindingIDs = &resolved
+		}
 	}
 
 	out.Seams = projectStateSeams(r.Seams)
@@ -474,6 +480,7 @@ func projectFindings(in []finding.Finding) []report.Finding {
 				To:   report.FindingEndpoint{Module: f.Edge.To.Module, Path: f.Edge.To.Path}, Kind: f.Edge.Kind,
 			},
 			MatchedBy: matchedBy, Locations: locations, Why: f.Why, Constraint: f.Constraint, Alternatives: f.Alternatives,
+			Origin: string(f.Origin),
 		})
 	}
 	return out

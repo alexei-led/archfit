@@ -126,22 +126,24 @@ scanning for inline PR annotations.
 
 ## Comparison with a Git reference (--base)
 
-`archfit check --base <ref>` adds comparison and task-origin metadata for the
+`archfit check --base <ref>` adds comparison and origin metadata for the
 selected Git reference. Its gate still evaluates the current tree against
 policy and the persisted approved baseline. `archfit analyze --base <ref>` is
 the report-only equivalent. Text/Markdown disclose comparison status and
 reference. JSON/SARIF stay the normal HEAD
 architecture-state contract; there is no separate delta schema or parallel task
-list. With `--base`, canonical JSON classifies each current `agent_tasks[]` entry
-through its optional `origin` field. This metadata never changes the verdict,
-gates, or exit code. `--require-tools` applies exactly as without `--base`.
+list. With `--base`, canonical JSON classifies each current finding through
+its optional `origin` field. Each `agent_tasks[]` entry copies it.
+`comparison.origin_status`, `origin_reasons`, `introduced_finding_ids`, and
+`resolved_finding_ids` describe the result. This metadata never changes the
+verdict, gates, or exit code. `--require-tools` applies exactly as without `--base`.
 
 `comparison.measurement_profile` records the profile version, settings hash, and
 producer semantics/status/tool versions. Symmetric completed partials carry
 `partial_basis` (`unresolved_specifiers` or `degraded_precision`); opaque
 unknowns are not made comparable by matching text. A missing or incompatible
-profile makes the comparison `non_comparable` and keeps unmatched origins
-`unknown`; observed matching findings can remain `pre_existing`.
+profile makes `comparison.status` `non_comparable`. It does not make origins
+`unknown`. Each differing producer version is named in `origin_reasons`.
 The persisted baseline used by gates is reported separately as
 `gate_reference`; `--base` never replaces it.
 

@@ -68,7 +68,7 @@ func patchAgentDefinitions(schema *jsonschema.Schema) {
 			kind.Enum = []any{"code_change", "needs_owner_decision"}
 		}
 		if origin, ok := repair.Properties.Get("origin"); ok {
-			origin.Enum = []any{"introduced", "pre_existing", "unknown"}
+			origin.Enum = originEnum
 		}
 	}
 }

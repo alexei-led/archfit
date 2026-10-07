@@ -230,6 +230,27 @@ init` emits v2 directly; owners update older configs manually before analysis.
   head-tree owners and skip its own resolution. The base sub-run is a SECOND
   acquisition service (`StageExecutor.NewBaseEvidence`), not a second call on
   the head one: no per-run state can leak between the two trees.
+- **`--base` origin is ONE classifier** (`decision.ClassifyOrigins`, attached by
+  `evaluation.AttachOrigins` in `attachBaseComparison`). It sets
+  `finding.Finding.Origin` on every non-fixed finding, copies it onto the
+  finding's agent task, and fills `comparison.origin_status`/`origin_reasons`
+  plus `introduced_finding_ids`/`resolved_finding_ids` (`*[]string`: present,
+  possibly `[]`, exactly when `--base` ran). Brief blockers, the text/Markdown
+  COMPARISON section, `--format agent` scope, hooks, and SARIF
+  `properties.origin` all read it; nothing gates on it, and `--base` never
+  replaces the accepted baseline. Matching: an exact base ID is
+  `pre_existing`; a BC rollup matches by `Members` (its ID is the smallest
+  member, so it moves when an edge joins or leaves), `pre_existing` only when
+  every member existed; a `bc/coupling_gate` finding matches its module pair
+  against the base's qualifying seams. Anything else is `introduced` only when
+  every analyzer family pairs, else `unknown`; `resolved` is claimed only then.
+  Both sides read one config file with one binary, so there is no config-hash
+  check, and a measurement-profile difference comes from the trees: it PAIRS
+  and `profileReasons` names it. The old blanket downgrade (any profile
+  difference → every task `unknown`) made origin inert on any tree whose
+  toolchain or tsconfig moved. The baseline-relative delta buckets
+  (`status.DeltaBuckets`, `ModeDelta`) were dead (`Full` was always true) and
+  are deleted, so this is the only answer to "what did this change add".
 - **`partial` means two different things and the TOOL NAME separates them, not
   `Coverage.Unresolved`** (`decision.PartialFromUnresolvedSpecifiers`, the single
   predicate both pairing paths call). dependency-cruiser and grimp mark a

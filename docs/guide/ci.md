@@ -60,7 +60,7 @@ make sure the base ref exists in the local checkout first:
 
 Use the plain gate for branch protection. Use delta mode on pull requests when
 you want the check output to show before/after drift against `origin/main`.
-Canonical JSON also adds `origin` to each current repair task:
+Canonical JSON also adds `origin` to each current finding and repair task:
 
 ```yaml
 - name: Architecture delta check (machine-readable)
@@ -69,26 +69,30 @@ Canonical JSON also adds `origin` to each current repair task:
 
 ```sh
 jq '.agent_tasks[] | select(.origin == "introduced")' archfit-state.json
+jq '.comparison.introduced_finding_ids' archfit-state.json
 ```
 
 `introduced` names work the pull request brought in; `pre_existing` is older
 debt. `unknown` means analyzer evidence differed between the two sides, so a
 missing analyzer never manufactures a new finding. The classification is
 report-only and changes neither the verdict nor the exit code. See
-[Task origin with `--base`](agent-feedback.md#task-origin-with---base).
+[Origin with `--base`](agent-feedback.md#origin-with---base).
 
-Measurement profile compatibility is part of this comparison. A missing,
-unknown, or incompatible producer/settings profile makes the comparison
-`non_comparable` and keeps affected task origins `unknown`; the reasons name the
-producer or profile field. The root `comparison` block describes this explicit
-`--base` comparison. The persisted baseline used by the gate is a separate
+`comparison.origin_status` is `comparable` when the analyzer evidence of both
+runs pairs. Otherwise it is `unknown`. A difference in the measurement profile
+does not make origins `unknown`. Both sides run one binary over one config
+file, so a profile difference comes from the trees and is part of the change.
+`comparison.origin_reasons` names each differing producer version and each
+degraded analyzer. `comparison.status` is a separate answer: it covers the
+fingerprints and the profile. The root `comparison` block describes this
+explicit `--base` comparison. The persisted baseline used by the gate is a separate
 `gate_reference` block; a base ref never becomes the gate reference.
 
 **Known ceiling — gitignored generated code.** The base side is a checkout of
 tracked files only, so a gitignored generated package (protoc, sqlc, wire, or
 mockgen output) is absent there. Go imports inside that checkout can then fail to
-load; the base `go/packages` row becomes partial and current task origins become
-`unknown`. `comparison.task_origin_reasons` discloses the cause. If a build
+load; the base `go/packages` row becomes partial and unmatched finding origins
+become `unknown`. `comparison.origin_reasons` discloses the cause. If a build
 requires generated Go packages, commit the generated package or treat the
 origin as unknown. Tools that resolve by
 walking up from the file, such as TypeScript through `node_modules`, are not

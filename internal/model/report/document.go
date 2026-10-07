@@ -13,7 +13,7 @@ type AgentTask struct {
 	Files        []string     `json:"files"`
 	Validation   []string     `json:"validation"`
 	Declarations []SyntaxFact `json:"declarations,omitempty"`
-	// Origin is set only for --base runs.
+	// Origin is set only for --base runs: the origin of the task's finding.
 	Origin string `json:"origin,omitempty"`
 }
 
@@ -24,6 +24,20 @@ const (
 	FindingStatusWaived        = "waived"
 	FindingStatusExpiredWaiver = "expired_waiver"
 	FindingStatusFixed         = "fixed"
+)
+
+// Finding origins against the --base ref of an `analyze/check --base` run.
+const (
+	OriginIntroduced  = "introduced"
+	OriginPreExisting = "pre_existing"
+	OriginUnknown     = "unknown"
+)
+
+// Origin statuses of an `analyze/check --base` run: comparable when the
+// analyzer evidence of both runs pairs, unknown otherwise.
+const (
+	OriginStatusComparable = "comparable"
+	OriginStatusUnknown    = "unknown"
 )
 
 // FindingKind values classify blocking gates and non-blocking advisories.
@@ -67,6 +81,10 @@ type Finding struct {
 	Why          string            `json:"why"`
 	Constraint   string            `json:"constraint"`
 	Alternatives []string          `json:"allowed_alternatives,omitempty"`
+	// Origin places the finding relative to the --base ref: introduced,
+	// pre_existing, or unknown. Set only for --base runs, and never on a fixed
+	// finding. Presentation only: no gate reads it.
+	Origin string `json:"origin,omitempty"`
 }
 
 // Location identifies a source location in a report finding.

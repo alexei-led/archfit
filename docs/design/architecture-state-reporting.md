@@ -177,9 +177,11 @@ These were settled before execution. They are not open questions.
 - **Baselines use one schema.** Older baseline files are rejected and must be
   regenerated after review.
 - **`agent_tasks` is projected**, not re-derived. State aggregation never builds a
-  second task list. With `--base`, the current task list carries optional
-  `origin` metadata (`introduced`, `pre_existing`, or conservative `unknown`);
-  classification never changes verdict, gates, or exit code.
+  second task list. With `--base`, one classifier gives every
+  finding optional `origin` metadata (`introduced`, `pre_existing`, or
+  conservative `unknown`). Each task copies the origin of its finding.
+  Classification is presentation only. It never changes verdict, gates, exit
+  code, or the baseline.
 - **Unobservable is unobservable.** Unsupported runtime topology and shallow or
   missing history report `partial`/`unmeasured` with named missing facts. V1
   never executes a target repository's test suite. Testability ingests coverage

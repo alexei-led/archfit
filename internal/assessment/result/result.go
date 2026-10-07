@@ -12,18 +12,6 @@ import (
 // depend on the external report DTO package.
 const SchemaVersion = "archfit.diagnostic.v2"
 
-// TaskOrigin describes where a repair task existed relative to --base.
-type TaskOrigin string
-
-const (
-	// TaskOriginIntroduced means the task has no matching base finding.
-	TaskOriginIntroduced TaskOrigin = "introduced"
-	// TaskOriginPreExisting means the stable finding was also present in base.
-	TaskOriginPreExisting TaskOrigin = "pre_existing"
-	// TaskOriginUnknown means analyzer evidence could not establish origin.
-	TaskOriginUnknown TaskOrigin = "unknown"
-)
-
 // AgentTask is the assessment repair task before report projection.
 type AgentTask struct {
 	FindingID    string                `json:"finding_id"`
@@ -34,7 +22,7 @@ type AgentTask struct {
 	Files        []string              `json:"files"`
 	Validation   []string              `json:"validation"`
 	Declarations []evidence.SyntaxFact `json:"declarations,omitempty"`
-	Origin       TaskOrigin            `json:"-"`
+	Origin       finding.Origin        `json:"-"`
 }
 
 // AdvisoryTask is the assessment advisory task before report projection.

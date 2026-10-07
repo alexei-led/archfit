@@ -181,7 +181,7 @@ package internal/model/report
   const internal/model/report.DynamicImportKindRequire untyped string
   type internal/model/report.DynamicImportSite struct{File string "json:\"file\""; Line int "json:\"line\""; Kind string "json:\"kind\""; Language string "json:\"language\""}
   type internal/model/report.FileFact struct{Module string "json:\"module\""; Files []string "json:\"files\""; InboundModuleFanIn int "json:\"inbound_module_fanin\""; OutboundDestinations int "json:\"outbound_destinations\""; LOC int "json:\"loc\""}
-  type internal/model/report.Finding struct{ID string "json:\"id\""; Kind string "json:\"kind\""; RuleID string "json:\"rule_id\""; Status string "json:\"status\""; Severity string "json:\"severity\""; Confidence string "json:\"confidence\""; Edge internal/model/report.FindingEdge "json:\"edge\""; MatchedBy map[string]string "json:\"matched_by\""; Locations []internal/model/report.Location "json:\"locations\""; Why string "json:\"why\""; Constraint string "json:\"constraint\""; Alternatives []string "json:\"allowed_alternatives,omitempty\""}
+  type internal/model/report.Finding struct{ID string "json:\"id\""; Kind string "json:\"kind\""; RuleID string "json:\"rule_id\""; Status string "json:\"status\""; Severity string "json:\"severity\""; Confidence string "json:\"confidence\""; Edge internal/model/report.FindingEdge "json:\"edge\""; MatchedBy map[string]string "json:\"matched_by\""; Locations []internal/model/report.Location "json:\"locations\""; Why string "json:\"why\""; Constraint string "json:\"constraint\""; Alternatives []string "json:\"allowed_alternatives,omitempty\""; Origin string "json:\"origin,omitempty\""}
   type internal/model/report.FindingEdge struct{From internal/model/report.FindingEndpoint "json:\"from\""; To internal/model/report.FindingEndpoint "json:\"to\""; Kind string "json:\"kind\""}
   type internal/model/report.FindingEndpoint struct{Module string "json:\"module\""; Path string "json:\"path\""}
   const internal/model/report.FindingKindAdvisory untyped string
@@ -221,6 +221,11 @@ package internal/model/report
   type internal/model/report.MetricValue struct{Name string "json:\"name\""; Value float64 "json:\"value\""; Unit string "json:\"unit\""; Denominator *internal/model/report.MetricDenominator "json:\"denominator,omitempty\""; Provenance []string "json:\"provenance,omitempty\""}
   func internal/model/report.NewArchitectureState() internal/model/report.ArchitectureState
   func internal/model/report.NewDocument() internal/model/report.Document
+  const internal/model/report.OriginIntroduced untyped string
+  const internal/model/report.OriginPreExisting untyped string
+  const internal/model/report.OriginStatusComparable untyped string
+  const internal/model/report.OriginStatusUnknown untyped string
+  const internal/model/report.OriginUnknown untyped string
   const internal/model/report.OwnerChangeLocality untyped string
   const internal/model/report.OwnerComplexity untyped string
   const internal/model/report.OwnerCoupling untyped string
@@ -252,7 +257,7 @@ package internal/model/report
   type internal/model/report.SemanticStrengthOverlayStats struct{CandidateEdges int "json:\"candidate_edges\""; Applied int "json:\"applied\""; Missed int "json:\"missed\""; Before map[string]int "json:\"before,omitempty\""; After map[string]int "json:\"after,omitempty\""}
   func internal/model/report.SortSyntaxFacts(facts []internal/model/report.SyntaxFact)
   const internal/model/report.StateBlocked internal/model/report.StateVerdict
-  type internal/model/report.StateComparison struct{Status internal/model/report.ComparisonStatus "json:\"status\""; BaseRef string "json:\"base_ref,omitempty\""; ConfigHash string "json:\"config_hash,omitempty\""; ModelHash string "json:\"model_hash,omitempty\""; LabelsHash string "json:\"labels_hash,omitempty\""; RubricVersion string "json:\"rubric_version,omitempty\""; MeasurementProfile *internal/model/report.MeasurementProfile "json:\"measurement_profile,omitempty\""; Reasons []string "json:\"reasons\""; TaskOriginStatus string "json:\"task_origin_status,omitempty\""; TaskOriginReasons []string "json:\"task_origin_reasons,omitempty\""}
+  type internal/model/report.StateComparison struct{Status internal/model/report.ComparisonStatus "json:\"status\""; BaseRef string "json:\"base_ref,omitempty\""; ConfigHash string "json:\"config_hash,omitempty\""; ModelHash string "json:\"model_hash,omitempty\""; LabelsHash string "json:\"labels_hash,omitempty\""; RubricVersion string "json:\"rubric_version,omitempty\""; MeasurementProfile *internal/model/report.MeasurementProfile "json:\"measurement_profile,omitempty\""; Reasons []string "json:\"reasons\""; OriginStatus string "json:\"origin_status,omitempty\""; OriginReasons []string "json:\"origin_reasons,omitempty\""; IntroducedFindingIDs *[]string "json:\"introduced_finding_ids,omitempty\""; ResolvedFindingIDs *[]string "json:\"resolved_finding_ids,omitempty\""}
   type internal/model/report.StateCoverage struct{Measured int "json:\"measured\""; Partial int "json:\"partial\""; Unmeasured int "json:\"unmeasured\""; Tools []internal/model/report.StateToolCoverage "json:\"tools\""}
   type internal/model/report.StateDecision struct{HardGates internal/model/report.HardGateState "json:\"hard_gates\""; UnevaluatedRequiredRules []internal/model/report.UnevaluatedRule "json:\"unevaluated_required_rules,omitempty\""; ActiveBlockers int "json:\"active_blockers\""; AttentionDimensions int "json:\"attention_dimensions\""; UnknownDimensions int "json:\"unknown_dimensions\""}
   const internal/model/report.StateHealthy internal/model/report.StateVerdict

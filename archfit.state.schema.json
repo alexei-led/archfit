@@ -45,7 +45,12 @@
           "type": "array"
         },
         "origin": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "introduced",
+            "pre_existing",
+            "unknown"
+          ]
         }
       },
       "additionalProperties": false,
@@ -255,6 +260,14 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "introduced",
+            "pre_existing",
+            "unknown"
+          ]
         }
       },
       "additionalProperties": false,
@@ -720,10 +733,26 @@
           },
           "type": "array"
         },
-        "task_origin_status": {
-          "type": "string"
+        "origin_status": {
+          "type": "string",
+          "enum": [
+            "comparable",
+            "unknown"
+          ]
         },
-        "task_origin_reasons": {
+        "origin_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "introduced_finding_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resolved_finding_ids": {
           "items": {
             "type": "string"
           },

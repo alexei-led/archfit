@@ -21,6 +21,21 @@ const (
 	StatusFixed         Status = "fixed"
 )
 
+// Origin places a finding relative to the base ref of an `analyze/check
+// --base` run. It is presentation only: no gate, verdict, or baseline reads it.
+type Origin string
+
+// Origin values. A run without --base leaves every origin empty.
+const (
+	// OriginIntroduced means the change added the finding: the base run did not
+	// observe it, and the analyzer evidence of both runs pairs.
+	OriginIntroduced Origin = "introduced"
+	// OriginPreExisting means the base run observed the finding too.
+	OriginPreExisting Origin = "pre_existing"
+	// OriginUnknown means the analyzer evidence could not establish an origin.
+	OriginUnknown Origin = "unknown"
+)
+
 // Severity represents the severity level of a finding.
 type Severity string
 
@@ -94,6 +109,9 @@ type Finding struct {
 	// serialized: matched_by.group_members carries a capped list for readers,
 	// while a baseline capture must accept every member.
 	Members []string `json:"-"`
+	// Origin is set only by an `analyze/check --base` run. Not serialized here:
+	// the report projection carries it.
+	Origin Origin `json:"-"`
 }
 
 // New creates a Finding with a stable fingerprint ID derived from (ruleID, from, to, kind).

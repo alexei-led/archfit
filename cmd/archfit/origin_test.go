@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,15 +13,16 @@ import (
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
-// TestTaskOrigin covers canonical --base task-origin reporting and verifies
-// that the classification never changes the gate exit code.
-func TestTaskOrigin(t *testing.T) {
+// TestOrigin covers canonical --base origin reporting and verifies that the
+// classification never changes the gate exit code.
+func TestOrigin(t *testing.T) {
 	t.Parallel()
-	t.Run("effective_config", testTaskOriginEffectiveConfig)
-	t.Run("check_base_json", testTaskOriginCheckBaseJSON)
+	t.Run("effective_config", testOriginEffectiveConfig)
+	t.Run("check_base_json", testOriginCheckBaseJSON)
+	t.Run("go_only_findings", testOriginGoOnlyFindings)
 }
 
-func testTaskOriginEffectiveConfig(t *testing.T) {
+func testOriginEffectiveConfig(t *testing.T) {
 	t.Parallel()
 	t.Run("module map is independent of the head config", func(t *testing.T) {
 		t.Parallel()
@@ -67,11 +69,11 @@ func testTaskOriginEffectiveConfig(t *testing.T) {
 		if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 			t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 		}
-		if got.Comparison.TaskOriginStatus == "" {
-			t.Fatalf("task_origin_status missing from canonical comparison: %s", stdout)
+		if got.Comparison.OriginStatus == "" {
+			t.Fatalf("origin_status missing from canonical comparison: %s", stdout)
 		}
-		if len(got.Comparison.TaskOriginReasons) != 0 {
-			t.Errorf("task_origin_reasons = %v, want none", got.Comparison.TaskOriginReasons)
+		if len(got.Comparison.OriginReasons) != 0 {
+			t.Errorf("origin_reasons = %v, want none", got.Comparison.OriginReasons)
 		}
 	})
 }
@@ -135,11 +137,24 @@ coupling:
 
 type taskOriginJSON struct {
 	Comparison struct {
-		Status            string   `json:"status"`
-		Reasons           []string `json:"reasons"`
-		TaskOriginStatus  string   `json:"task_origin_status"`
-		TaskOriginReasons []string `json:"task_origin_reasons"`
+		Status               string    `json:"status"`
+		Reasons              []string  `json:"reasons"`
+		OriginStatus         string    `json:"origin_status"`
+		OriginReasons        []string  `json:"origin_reasons"`
+		IntroducedFindingIDs *[]string `json:"introduced_finding_ids"`
+		ResolvedFindingIDs   *[]string `json:"resolved_finding_ids"`
 	} `json:"comparison"`
+	Findings []struct {
+		ID     string `json:"id"`
+		RuleID string `json:"rule_id"`
+		Status string `json:"status"`
+		Origin string `json:"origin"`
+		Edge   struct {
+			From struct {
+				Path string `json:"path"`
+			} `json:"from"`
+		} `json:"edge"`
+	} `json:"findings"`
 	AgentTasks []struct {
 		FindingID string `json:"finding_id"`
 		RuleID    string `json:"rule_id"`
@@ -147,7 +162,7 @@ type taskOriginJSON struct {
 	} `json:"agent_tasks"`
 }
 
-func testTaskOriginCheckBaseJSON(t *testing.T) {
+func testOriginCheckBaseJSON(t *testing.T) {
 	t.Parallel()
 	const failRule = `rules:
   - id: no-a-to-b
@@ -180,8 +195,8 @@ func testTaskOriginCheckBaseJSON(t *testing.T) {
 			if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 				t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 			}
-			if got.Comparison.TaskOriginStatus == "" {
-				t.Fatalf("task_origin_status missing: %s", stdout)
+			if got.Comparison.OriginStatus == "" {
+				t.Fatalf("origin_status missing: %s", stdout)
 			}
 			introduced := 0
 			for _, task := range got.AgentTasks {
@@ -197,5 +212,83 @@ func testTaskOriginCheckBaseJSON(t *testing.T) {
 			}
 			assertNoBaseWorktreeLeak(t, stdout)
 		})
+	}
+}
+
+// testOriginGoOnlyFindings pins the one classifier end to end on a Go-only
+// tree, where every non-Go analyzer is not applicable: one edge pre-dates the
+// base ref, one is added, one is removed. A measurement-profile change that
+// drops not-applicable producers must keep all three answers.
+func testOriginGoOnlyFindings(t *testing.T) {
+	t.Parallel()
+	const cfg = coupledModulesCfg + `rules:
+  - id: no-x-to-b
+    type: forbidden_dependency
+    gate: fail
+    from: "pkg/{a,c,d}/**"
+    to: "pkg/b/**"
+`
+	const importer = "import \"example.com/test/pkg/b/api\"\n\nfunc Use() string { return api.Secret() }\n"
+	dir := t.TempDir()
+	writeFileAt(t, dir, markerGoMod, "module example.com/test\n\ngo 1.21\n")
+	writeFileAt(t, dir, "pkg/b/api/api.go", "package api\n\nfunc Secret() string { return \"s\" }\n")
+	writeFileAt(t, dir, "pkg/a/a.go", "package a\n\n"+importer)
+	writeFileAt(t, dir, "pkg/d/d.go", "package d\n\n"+importer)
+	writeFileAt(t, dir, defaultConfigPath, cfg)
+	gitInitFixtureRepo(t, dir)
+	gitCommitAll(t, dir, "base: a and d import b")
+	if err := os.Remove(filepath.Join(dir, "pkg/d/d.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeFileAt(t, dir, "pkg/d/d.go", "package d\n")
+	writeFileAt(t, dir, "pkg/c/c.go", "package c\n\n"+importer)
+	gitCommitAll(t, dir, "head: c imports b, d no longer does")
+	cfgPath := filepath.Join(dir, defaultConfigPath)
+
+	code, stdout, stderr := runArchfit(t, cmdCheck, flagBase, diffBaseRef, fmtJSON, "-c", cfgPath)
+	if code != 1 {
+		t.Fatalf("check --base: exit = %d, want 1\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	var got taskOriginJSON
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
+	}
+	if got.Comparison.OriginStatus != "comparable" {
+		t.Fatalf("origin_status = %q, want comparable (reasons %v)", got.Comparison.OriginStatus, got.Comparison.OriginReasons)
+	}
+	byFrom := map[string]string{}
+	idByFrom := map[string]string{}
+	for _, f := range got.Findings {
+		if f.RuleID == "no-x-to-b" {
+			byFrom[f.Edge.From.Path] = f.Origin
+			idByFrom[f.Edge.From.Path] = f.ID
+		}
+	}
+	want := map[string]string{"pkg/a/a.go": "pre_existing", "pkg/c/c.go": "introduced"}
+	if !maps.Equal(byFrom, want) {
+		t.Errorf("finding origins by importer = %v, want %v", byFrom, want)
+	}
+	if ids := got.Comparison.IntroducedFindingIDs; ids == nil || !slices.Equal(*ids, []string{idByFrom["pkg/c/c.go"]}) {
+		t.Errorf("introduced_finding_ids = %v, want [%s]", ids, idByFrom["pkg/c/c.go"])
+	}
+	if ids := got.Comparison.ResolvedFindingIDs; ids == nil || len(*ids) != 1 {
+		t.Errorf("resolved_finding_ids = %v, want the removed pkg/d edge", ids)
+	}
+	for _, task := range got.AgentTasks {
+		for from, id := range idByFrom {
+			if task.FindingID == id && task.Origin != byFrom[from] {
+				t.Errorf("task %s origin = %q, finding origin = %q: one classifier, one answer", id, task.Origin, byFrom[from])
+			}
+		}
+	}
+
+	code, text, _ := runArchfit(t, cmdCheck, flagBase, diffBaseRef, "-c", cfgPath)
+	if code != 1 || !strings.Contains(text, "origin: introduced") || !strings.Contains(text, "introduced: 1  ·  resolved: 1") {
+		t.Errorf("text brief must show blocker origins and the origin counts (exit %d):\n%s", code, text)
+	}
+
+	_, plain, _ := runArchfit(t, cmdCheck, fmtJSON, "-c", cfgPath)
+	if strings.Contains(plain, `"origin`) || strings.Contains(plain, "introduced_finding_ids") {
+		t.Error("a run without --base must carry no origin key")
 	}
 }

@@ -64,6 +64,8 @@ type Blocker struct {
 	// OwnerDecision is true when the task's repair is an architecture-owner
 	// decision (repair_kind needs_owner_decision), not a code change.
 	OwnerDecision bool
+	// Origin is the finding's origin against the --base ref; empty without one.
+	Origin string
 }
 
 // View is the brief of one run.
@@ -151,7 +153,7 @@ func blockerOf(f report.Finding, task report.AgentTask) Blocker {
 	b := Blocker{
 		ShortID: shortID(f.ID), RuleID: f.RuleID, Subject: subject(f),
 		Why: strings.TrimSpace(f.Why), Goal: task.Goal, Checks: task.Validation,
-		OwnerDecision: task.RepairKind == repairNeedsOwnerDecision,
+		OwnerDecision: task.RepairKind == repairNeedsOwnerDecision, Origin: f.Origin,
 	}
 	if len(f.Locations) > 0 {
 		loc := f.Locations[0]

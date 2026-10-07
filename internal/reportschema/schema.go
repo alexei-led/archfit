@@ -62,6 +62,10 @@ func Generate(srcDir string) ([]byte, error) {
 	return append(buf, '\n'), nil
 }
 
+// originEnum is the closed vocabulary of findings[].origin and
+// agent_tasks[].origin.
+var originEnum = []any{report.OriginIntroduced, report.OriginPreExisting, report.OriginUnknown}
+
 // patchDefinitions pins the closed vocabularies the Go types express as named
 // string types, which the reflector inlines as a bare {type: string}.
 //
@@ -95,6 +99,13 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			if kind, ok := def.Properties.Get("repair_kind"); ok {
 				kind.Enum = []any{"code_change", "needs_owner_decision"}
 			}
+			if origin, ok := def.Properties.Get("origin"); ok {
+				origin.Enum = originEnum
+			}
+		case "Finding":
+			if origin, ok := def.Properties.Get("origin"); ok {
+				origin.Enum = originEnum
+			}
 		case "StateComparison":
 			if status, ok := def.Properties.Get("status"); ok {
 				status.Enum = []any{
@@ -102,6 +113,9 @@ func patchDefinitions(schema *jsonschema.Schema) {
 					string(report.ComparisonComparable),
 					string(report.ComparisonNonComparable),
 				}
+			}
+			if status, ok := def.Properties.Get("origin_status"); ok {
+				status.Enum = []any{report.OriginStatusComparable, report.OriginStatusUnknown}
 			}
 		case "DimensionState":
 			if status, ok := def.Properties.Get("status"); ok {

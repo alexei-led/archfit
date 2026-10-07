@@ -89,10 +89,12 @@ Shared analysis/check flags:
 - `--config` / `-c` — config path (default `.archfit.yaml`).
 - `--root` / `-r` where supported — repository root to analyze (default: config
   directory). Decouples the scanned repo from where the config lives.
-- `--base <ref>` — score a git ref in addition to HEAD; text/markdown show a
-  "CHANGE VS BASE" section. JSON/SARIF keep the normal HEAD architecture-state
-  contract; JSON also adds `origin` to current `agent_tasks[]` when task evidence
-  is comparable. `comparison` describes this report-only base comparison;
+- `--base <ref>` — score a git ref in addition to HEAD; text/markdown show each
+  blocker's origin and the origin counts in the COMPARISON section. JSON/SARIF
+  keep the normal HEAD architecture-state contract; JSON also adds `origin` to
+  current `findings[]` and `agent_tasks[]`, and `introduced_finding_ids` /
+  `resolved_finding_ids` to `comparison`. `comparison` describes this
+  report-only base comparison;
   `gate_reference` describes the persisted baseline used by gates.
 - `--format` — `text` (default), `json`, `markdown` (`md` is an alias),
   `sarif`, or `scorecard`. Repeatable / comma-separated.

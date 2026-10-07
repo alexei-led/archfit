@@ -221,9 +221,14 @@ const (
 // least one reason: "not comparable" with no explanation is indistinguishable
 // from a bug.
 type StateComparison struct {
-	Status            string   `json:"status"`
-	BaseRef           string   `json:"base_ref,omitempty"`
-	Reasons           []string `json:"reasons"`
-	TaskOriginStatus  string   `json:"-"`
-	TaskOriginReasons []string `json:"-"`
+	Status  string   `json:"status"`
+	BaseRef string   `json:"base_ref,omitempty"`
+	Reasons []string `json:"reasons"`
+	// OriginStatus, OriginReasons, IntroducedFindingIDs and ResolvedFindingIDs
+	// are set only by an `analyze/check --base` run; the two lists are then
+	// never nil.
+	OriginStatus         string   `json:"-"`
+	OriginReasons        []string `json:"-"`
+	IntroducedFindingIDs []string `json:"-"`
+	ResolvedFindingIDs   []string `json:"-"`
 }

@@ -253,8 +253,19 @@ type StateComparison struct {
 	RubricVersion      string              `json:"rubric_version,omitempty"`
 	MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"`
 	Reasons            []string            `json:"reasons"`
-	TaskOriginStatus   string              `json:"task_origin_status,omitempty"`
-	TaskOriginReasons  []string            `json:"task_origin_reasons,omitempty"`
+	// OriginStatus is set only with --base: comparable when the analyzer
+	// evidence of both runs pairs, unknown otherwise.
+	OriginStatus string `json:"origin_status,omitempty"`
+	// OriginReasons name each degraded or differing analyzer behind the origin
+	// classification. Set only with --base.
+	OriginReasons []string `json:"origin_reasons,omitempty"`
+	// IntroducedFindingIDs are the findings the change added. Present, as a
+	// possibly empty list, exactly when --base ran.
+	IntroducedFindingIDs *[]string `json:"introduced_finding_ids,omitempty"`
+	// ResolvedFindingIDs are the base findings the change removed. Present, as a
+	// possibly empty list, exactly when --base ran; empty when origin_status is
+	// unknown, because a vanished finding then proves nothing.
+	ResolvedFindingIDs *[]string `json:"resolved_finding_ids,omitempty"`
 }
 
 // StateMeasurement holds deterministic source, history, and tool facts only. It

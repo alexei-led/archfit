@@ -157,7 +157,7 @@ func boundReportText(doc *report.Document) {
 
 func boundComparisonText(c *report.StateComparison) {
 	c.Reasons = reportTexts(c.Reasons, maxReportTextRunes)
-	c.TaskOriginReasons = reportTexts(c.TaskOriginReasons, maxReportTextRunes)
+	c.OriginReasons = reportTexts(c.OriginReasons, maxReportTextRunes)
 }
 
 // discloseRawCoverageReasons writes, on stderr, the full reason of every
