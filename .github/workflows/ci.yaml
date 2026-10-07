@@ -70,7 +70,8 @@ jobs:
       # Erosion gates for the architecture-state contract. Named checks:
       # no_scalar_decision, no_dead_archfit_rule (internal/erosion_test.go);
       # dimension_status_required, config_hash_required, label_evidence_required,
-      # baseline_idempotent (cmd/archfit/erosion_test.go).
+      # baseline_idempotent (cmd/archfit/erosion_test.go); policy_query_agreement
+      # (cmd/archfit/policy_test.go).
       - name: CI gate — architecture-state erosion
         run: go test ./internal/ ./cmd/archfit/ -run TestErosion_ -count=1
       - name: Install architecture analyzers

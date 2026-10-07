@@ -2,11 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/alexei-led/archfit/internal/model/report"
 )
 
 const (
@@ -22,6 +26,13 @@ const (
 	agreePyImporter   = "tools/a.py"
 	answerUnconstrain = "unconstrained"
 	findingStatusNew  = "new"
+
+	// The fail-gated rules of agreementCfg, one per edge class.
+	ruleAllowlists   = "allowlists"
+	ruleLayerOrder   = "layer_order"
+	rulePublicOnly   = "public_only"
+	ruleWebNotDomain = "web_not_domain"
+	ruleWebNotInfra  = "web_not_infra"
 )
 
 const agreementCfg = `version: 2
@@ -138,11 +149,28 @@ func canImport(t *testing.T, cfgPath string, args ...string) (int, policyAnswerD
 	return code, doc
 }
 
-// TestPolicyCanImportAgreesWithCheck is the agreement test: can-import
-// denies exactly the imports check reports as active gate findings, in both
-// directions, with the same rule IDs and finding IDs. The query runs before
-// check, so it is proven not to need the fact cache check writes.
-func TestPolicyCanImportAgreesWithCheck(t *testing.T) {
+// agreementEdgeClasses names the rule of each edge class the agreement fixture
+// must exercise. A class whose rule check never fires on is not compared, so
+// deleting a rule from agreementCfg would narrow the gate in silence.
+var agreementEdgeClasses = map[string]string{
+	"allowlist":                   ruleAllowlists,
+	"layer order":                 ruleLayerOrder,
+	"internal/public surface":     rulePublicOnly,
+	"forbidden_dependency path":   ruleWebNotDomain,
+	"forbidden_dependency module": ruleWebNotInfra,
+}
+
+// TestErosion_PolicyQueryAgreesWithCheck (policy_query_agreement) asserts
+// can-import denies exactly the imports check reports as active gate findings,
+// in both directions, with the same rule IDs and finding IDs, over every edge
+// class in agreementEdgeClasses. The query runs before check, so it is proven
+// not to need the fact cache check writes.
+//
+// A pre-edit answer that disagrees with the gate is worse than no answer: an
+// agent that asked first and was told "allowed" writes the import, and check
+// then blocks it. The fixture is Go: TypeScript and Python are held to the
+// extractor's edge spelling by their QueryEdge tests only.
+func TestErosion_PolicyQueryAgreesWithCheck(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeAgreementRepo(t)
 	root := filepath.Dir(cfgPath)
@@ -192,23 +220,85 @@ func TestPolicyCanImportAgreesWithCheck(t *testing.T) {
 	}
 	gates := map[string]string{}
 	for _, f := range state.Findings {
-		if f.Kind == findingKindGate && f.Status == findingStatusNew {
+		// The statuses JudgeEdge denies on: what blocks check blocks the query.
+		if f.Kind == findingKindGate && (f.Status == findingStatusNew || f.Status == report.FindingStatusExpiredWaiver) {
 			gates[f.ID] = f.RuleID
 		}
 	}
-	if len(gates) == 0 {
-		t.Fatal("check reported no gate finding: the agreement is vacuous")
+	for _, problem := range agreementProblems(gates, denied) {
+		t.Error(problem)
 	}
+}
+
+// TestErosion_PolicyQueryAgreementFiresOnAWrongDecision proves the predicate
+// above reports a query that decides one edge class differently from check:
+// a flipped answer, a lost denial, a denial check never reports, and a denial
+// filed under another rule.
+func TestErosion_PolicyQueryAgreementFiresOnAWrongDecision(t *testing.T) {
+	t.Parallel()
+	agreed := map[string]string{
+		"f-allow": ruleAllowlists, "f-layer": ruleLayerOrder, "f-public": rulePublicOnly,
+		"f-path": ruleWebNotDomain, "f-module": ruleWebNotInfra,
+	}
+	without := func(id string) map[string]string {
+		out := maps.Clone(agreed)
+		delete(out, id)
+		return out
+	}
+	with := func(id, rule string) map[string]string {
+		out := maps.Clone(agreed)
+		out[id] = rule
+		return out
+	}
+	cases := map[string]struct{ gates, denied map[string]string }{
+		"query allows what the allowlist denies":              {gates: agreed, denied: without("f-allow")},
+		"query allows a layer inversion":                      {gates: agreed, denied: without("f-layer")},
+		"query allows an internal import":                     {gates: agreed, denied: without("f-public")},
+		"query allows a forbidden path dependency":            {gates: agreed, denied: without("f-path")},
+		"query denies what check does not report":             {gates: agreed, denied: with("f-extra", ruleAllowlists)},
+		"query files a denial under another rule":             {gates: agreed, denied: with("f-module", ruleAllowlists)},
+		"check never fires on a class, so it is not compared": {gates: without("f-layer"), denied: without("f-layer")},
+		"no gate finding at all":                              {gates: map[string]string{}, denied: map[string]string{}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if problems := agreementProblems(tc.gates, tc.denied); len(problems) == 0 {
+				t.Errorf("agreementProblems(%v, %v) = none, want the disagreement reported", tc.gates, tc.denied)
+			}
+		})
+	}
+
+	if problems := agreementProblems(agreed, maps.Clone(agreed)); len(problems) != 0 {
+		t.Errorf("agreementProblems(equal decisions) = %v, want none", problems)
+	}
+}
+
+// agreementProblems compares check's active gate findings with can-import's
+// denials, both as finding ID -> rule ID, and lists every disagreement plus
+// every edge class check never fired on. It is the single predicate behind
+// the real-run check and its fixture.
+func agreementProblems(gates, denied map[string]string) []string {
+	var out []string
+	fired := map[string]bool{}
 	for id, rule := range gates {
+		fired[rule] = true
 		if denied[id] != rule {
-			t.Errorf("check gate finding %s (%s) is not denied by can-import (got %q)", id, rule, denied[id])
+			out = append(out, fmt.Sprintf("check gate finding %s (%s) is not denied by can-import (got %q)", id, rule, denied[id]))
 		}
 	}
 	for id, rule := range denied {
 		if gates[id] != rule {
-			t.Errorf("can-import denial %s (%s) is not a check gate finding", id, rule)
+			out = append(out, fmt.Sprintf("can-import denial %s (%s) is not a check gate finding", id, rule))
 		}
 	}
+	for class, rule := range agreementEdgeClasses {
+		if !fired[rule] {
+			out = append(out, fmt.Sprintf("check reported no %s gate finding (rule %s): that class is not compared", class, rule))
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 func TestPolicyCanImportExitCodes(t *testing.T) {
@@ -413,7 +503,7 @@ func TestPolicyWhere(t *testing.T) {
 	for _, r := range app.Rules {
 		ruleIDs = append(ruleIDs, r.ID)
 	}
-	if want := []string{"layer_order", "allowlists"}; !slices.Equal(ruleIDs, want) {
+	if want := []string{ruleLayerOrder, ruleAllowlists}; !slices.Equal(ruleIDs, want) {
 		t.Errorf("rules = %v, want %v", ruleIDs, want)
 	}
 	if doc.Paths[1].Module != "" || len(doc.Paths[1].Rules) != 0 {

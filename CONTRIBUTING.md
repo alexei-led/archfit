@@ -124,7 +124,7 @@ rationale.
 
 ### Architecture-state erosion gates
 
-Six named checks keep the state report from decaying back into the averaged
+Seven named checks keep the state report from decaying back into the averaged
 score it replaced. CI runs them as an explicit step; run them locally with
 `go test ./internal/ ./cmd/archfit/ -run TestErosion_`.
 
@@ -136,6 +136,7 @@ score it replaced. CI runs them as an explicit step; run them locally with
 | `config_hash_required`      | a delta taken across a config edit blaming the code                  |
 | `label_evidence_required`   | an unevidenced approval silencing a seam permanently                 |
 | `baseline_idempotent`       | a self-referential capture reporting drift that is not there         |
+| `policy_query_agreement`    | a `can-import` answer that disagrees with the `check` gate           |
 
 Each check has a paired fixture proving it fires on a violating input, so none
 can pass because it happens to look at nothing. When you extend one, extend its

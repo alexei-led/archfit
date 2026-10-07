@@ -17,7 +17,9 @@ import (
 
 // Erosion gates (CI), behavioural half. The structural half — no_scalar_decision
 // and no_dead_archfit_rule — lives in internal/erosion_test.go, which also
-// carries the name-to-owner table for all six checks.
+// carries the name-to-owner table for all seven checks. The seventh,
+// policy_query_agreement, lives in policy_test.go beside the can-import fixture
+// it shares with the other policy query tests.
 //
 // Each check here runs the real command over a fixture repository, because what
 // it protects is what a user receives: the emitted state, the emitted comparison

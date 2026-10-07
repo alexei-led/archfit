@@ -128,6 +128,7 @@ other). The self-config reports it with the `module_cycles` rule
 | An approved label carries the evidence it rests on                                                                            | `TestErosion_LabelEvidenceRequired`                                                                                                                                                                   |
 | A baseline capture is a function of tree and config alone                                                                     | `TestErosion_BaselineIdempotent`                                                                                                                                                                      |
 | No rule aims at source that does not exist                                                                                    | `TestErosion_NoDeadArchfitRule`                                                                                                                                                                       |
+| `policy can-import` denies exactly the imports `check` gates, per edge class                                                  | `TestErosion_PolicyQueryAgreesWithCheck` (Go end to end; TS/Python `QueryEdge` spelling tests)                                                                                                        |
 
 `make archfit` runs the configured gate over archfit itself; CI runs it after
 tests and goldens, and the `arch-lint` pre-push hook runs it locally.
@@ -254,7 +255,8 @@ belongs in `internal/assessment` or `internal/relationship`, not in `cmd`.
 
 A pre-edit query (`archfit policy`) never forks the evaluator: it builds the
 edge through the extractor's `QueryEdge` and judges it with the same rule pass
-(`evaluation.JudgeEdge` over `checkRules`).
+(`evaluation.JudgeEdge` over `checkRules`). The erosion gate
+`policy_query_agreement` fails when the two disagree.
 
 **Move a package.** Update the owning module's `paths:` in `.archfit.yaml` in
 the same commit, and run `archfit agents-md --write` so the generated block in
