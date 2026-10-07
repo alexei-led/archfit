@@ -8,7 +8,67 @@
       "severity": "critical"
     },
     {
+      "fingerprint": "25583a9622c5bc1e0fee18f579fa6a12",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "2af8fb58ddd7b4ac6e437c8a8b301005",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "2b2f68b0757a3eaeb5c9244588a8ff16",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "46d1b53cf0d5c82479706ca7e3f74e52",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "50a698c4a94070e7e276fa6164316d8e",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "9a8e5d61d663876efe2854b608cfb29f",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "bf9c5ee4242875ff9d121eea63a29737",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "c63bae9ac43a663e4677d59c87aa9d83",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
       "fingerprint": "3ef835400a5770fb0e5874bf35280310",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "bd9da20f2cdaa72e29841b99517bb28b",
+      "rule_id": "bc/imbalanced_coupling",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "ec535315f78fd6a77d308ed7d9ccfc00",
       "rule_id": "bc/imbalanced_coupling",
       "kind": "advisory",
       "severity": "critical"
@@ -457,7 +517,7 @@
           },
           {
             "name": "production_loc",
-            "value": 64667,
+            "value": 64684,
             "unit": "count"
           },
           {
