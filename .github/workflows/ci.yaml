@@ -53,7 +53,24 @@ jobs:
         with:
           python-version: "3.13"
           enable-cache: false
+      - name: Install architecture analyzers
+        # Versions are pinned and the commands exercise Archfit's real adapters.
+        # zizmor: ignore[adhoc-packages]
+        run: |
+          # Precautionary, not a fix for a known break: util-linux ships
+          # /usr/bin/sg (a setgid helper) and the @ast-grep/cli postinstall
+          # cannot overwrite that path (EEXIST). On this runner npm's global bin
+          # precedes /usr/bin so `sg` already resolved to ast-grep — the gate
+          # step below proves it — but the ordering is the runner image's
+          # choice, not ours. The Dockerfile frees the slot for the same reason.
+          sudo rm -f /usr/bin/sg
+          npm install -g jscpd@5.0.11 @ast-grep/cli@0.44.0 dependency-cruiser@17.4.3
+          rustup toolchain install 1.98.0 --profile minimal
+          go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Run tests
+        env:
+          ARCHFIT_REQUIRE_TOOLS: "1"
         run: go test -race -coverprofile=coverage.out ./...
       - name: SCIP reader tests (python)
         run: python3 internal/extract/scip/scip_reader_test.py
@@ -71,24 +88,11 @@ jobs:
       # no_scalar_decision, no_dead_archfit_rule (internal/erosion_test.go);
       # dimension_status_required, config_hash_required, label_evidence_required,
       # baseline_idempotent (cmd/archfit/erosion_test.go); policy_query_agreement
-      # (cmd/archfit/policy_test.go).
+      # (cmd/archfit/policy_test.go, policy_agreement_lang_test.go).
       - name: CI gate — architecture-state erosion
+        env:
+          ARCHFIT_REQUIRE_TOOLS: "1"
         run: go test ./internal/ ./cmd/archfit/ -run TestErosion_ -count=1
-      - name: Install architecture analyzers
-        # Versions are pinned and the commands exercise Archfit's real adapters.
-        # zizmor: ignore[adhoc-packages]
-        run: |
-          # Precautionary, not a fix for a known break: util-linux ships
-          # /usr/bin/sg (a setgid helper) and the @ast-grep/cli postinstall
-          # cannot overwrite that path (EEXIST). On this runner npm's global bin
-          # precedes /usr/bin so `sg` already resolved to ast-grep — the gate
-          # step below proves it — but the ordering is the runner image's
-          # choice, not ours. The Dockerfile frees the slot for the same reason.
-          sudo rm -f /usr/bin/sg
-          npm install -g jscpd@5.0.11 @ast-grep/cli@0.44.0 dependency-cruiser@17.4.3
-          rustup toolchain install 1.98.0 --profile minimal
-          go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: CI gate — `sg` resolves to ast-grep, not util-linux
         # A silent analyzer is worse than a missing one: the coverage row still
         # names a tool, so nothing looks wrong. This is the check that answers

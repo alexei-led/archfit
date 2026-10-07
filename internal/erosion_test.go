@@ -13,6 +13,7 @@
 //	label_evidence_required   TestErosion_LabelEvidenceRequired     (cmd/archfit)
 //	baseline_idempotent       TestErosion_BaselineIdempotent        (cmd/archfit)
 //	policy_query_agreement    TestErosion_PolicyQueryAgreesWithCheck (cmd/archfit, policy_test.go)
+//	                          TestErosion_PolicyQueryAgreesWithCheck{TypeScript,Python} (cmd/archfit, policy_agreement_lang_test.go)
 package arch_test
 
 import (
