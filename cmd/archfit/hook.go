@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	historygit "github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/output/agentout"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -256,12 +257,18 @@ func stagedHookResult(ctx context.Context, deps *appDeps, configPath, base, inde
 		return agentout.Result{}, err
 	}
 	// The run's validation command names the snapshot, which cleanup removes.
-	// Point it at the repository, with the ref as the caller wrote it.
-	result.Validate = strings.ReplaceAll(result.Validate, root, gitRoot)
-	// A ref that needs shell quoting (HEAD~1) keeps its resolved SHA.
-	if baseSHA != "" && !strings.ContainsAny(base, " \t\n'\"\\$`!#&;()*<>?[]^{|}~") {
-		result.Validate = strings.ReplaceAll(result.Validate, "--base "+baseSHA, "--base "+base)
+	// Point it at the repository, with the ref as the caller wrote it. Each
+	// argument is matched and written in its shell-quoted form, so a path that
+	// needs quoting stays one argument.
+	q := evaluation.ShellQuoteArg
+	pairs := []string{
+		"-c " + q(stagedConfig), "-c " + q(filepath.Join(gitRoot, configRel)),
+		"--root " + q(root), "--root " + q(gitRoot),
 	}
+	if baseSHA != "" {
+		pairs = append(pairs, "--base "+q(baseSHA), "--base "+q(base))
+	}
+	result.Validate = strings.NewReplacer(pairs...).Replace(result.Validate)
 	return result, nil
 }
 

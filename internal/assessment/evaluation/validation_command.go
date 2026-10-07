@@ -12,12 +12,15 @@ func validationCommand(configPath, root string, extraArgs ...string) string {
 	}
 	args = append(args, extraArgs...)
 	for i := range args {
-		args[i] = shellQuoteArg(args[i])
+		args[i] = ShellQuoteArg(args[i])
 	}
 	return strings.Join(args, " ")
 }
 
-func shellQuoteArg(arg string) string {
+// ShellQuoteArg quotes one argument of a validation command for a POSIX
+// shell. A caller that rewrites a path inside the command matches and writes
+// the argument in this form, so the command stays one argument per path.
+func ShellQuoteArg(arg string) string {
 	if arg == "" {
 		return "''"
 	}

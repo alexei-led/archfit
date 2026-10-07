@@ -325,6 +325,36 @@ func TestHookGit(t *testing.T) {
 	}
 }
 
+// TestHookGitValidateNamesTheRepository pins the repair's validate command on
+// a repository path that needs shell quoting: it names the config and root in
+// the repository, quoted as one argument each, never the removed snapshot.
+func TestHookGitValidateNamesTheRepository(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "team's repo")
+	for name, content := range map[string]string{
+		markerGoMod: goModStub, filePkgAA: hookCleanA, hookImplFile: implSource(), defaultConfigPath: hookRuleCfg,
+	} {
+		writeFixtureFile(t, dir, name, content)
+	}
+	gitInitFixtureRepo(t, dir)
+	gitCommitFixture(t, dir)
+	writeFixtureFile(t, dir, filePkgAA, hookViolatingA)
+	gitFixture(t, dir, "add", "-A")
+	repo, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runHook(t, "", "git", "-c", filepath.Join(dir, defaultConfigPath))
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1\n%s", code, stderr)
+	}
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'" }
+	want := "archfit check -c " + quote(filepath.Join(repo, defaultConfigPath)) + " --root " + quote(repo) + " --base HEAD --format agent"
+	if !strings.Contains(stderr, want) {
+		t.Errorf("stderr is missing the validate command %q:\n%s", want, stderr)
+	}
+}
+
 // gitIndexState is the index and worktree state a hook must leave alone: the
 // index bytes, the status, and every ref.
 func gitIndexState(t *testing.T, dir string) string {
