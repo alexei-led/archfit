@@ -265,7 +265,9 @@ commands ship and an agent host without a shell needs it. Use the official
   `forbidden_dependency`), every gate finding from `check --json` is `denied`
   by `can-import`, with the same rule ID and finding ID, and every denial is a
   gate finding. Can-import does not touch the fact cache. TypeScript and Python
-  are checked at the edge-spelling level only, by their `QueryEdge` tests.
+  run the same comparison end to end over the same five classes
+  (`policy_agreement_lang_test.go`, `ARCHFIT_REQUIRE_TOOLS=1` in CI); their
+  `QueryEdge` tests pin the edge spelling.
 - **Completeness.** Every active gate finding ID appears in a repair, or is
   counted in `omitted.repairs`.
 - **Next action.** A table test of the precedence. `none` never appears with an
