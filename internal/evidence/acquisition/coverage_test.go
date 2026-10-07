@@ -945,6 +945,13 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 		if !found {
 			t.Errorf("expected decision task for app.util, got: %v", tasks)
 		}
+		// The book scorer reads undeclared volatility as the worst case; the
+		// task must say so, never that the scorer abstains.
+		for _, t2 := range tasks {
+			if strings.Contains(t2, "abstain") || !strings.Contains(t2, "V=10") {
+				t.Errorf("decision task misstates the scorer: %s", t2)
+			}
+		}
 		// app.core has subdomain set — must NOT appear.
 		for _, t2 := range tasks {
 			if strings.Contains(t2, "app.core") {

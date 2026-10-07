@@ -5,6 +5,20 @@
 - **Attention:** 2 dimension(s) flagged — 1 diagnostic(s)
 - **Coverage:** 5 measured / 2 partial / 2 unmeasured (of 9)
 
+## Blockers (1)
+
+- **`ba3803ec` no_direct_b_dependency** — pkg/a/a.go -> pkg/b
+  - location: `pkg/a/a.go:3`
+  - why: Import from pkg/a/** to pkg/b/** is explicitly forbidden
+  - goal: Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.
+  - check: `archfit check -c <ROOT>/.archfit.yaml`
+
+## Next steps
+
+1. Fix blocker ba3803ec (no_direct_b_dependency).
+2. Supply a test coverage report for the current tree in the coverage: section.
+3. Commit a deploy manifest for each deploy_unit.
+
 ## Dimensions
 
 | Dimension | Status | Gate | Confidence | Denominator | Findings |
@@ -115,13 +129,7 @@
 | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- |
 | a → b | functional | cross_module_different_owner | low | 1 | 0 | 8 | tight | leave_alone |
 
-## Top actionable findings
-
-### Blocking (1)
-
-- **no_direct_b_dependency** [medium] — Import from pkg/a/** to pkg/b/** is explicitly forbidden
-
-### Diagnostic (1)
+## Diagnostics (1)
 
 - **bc/imbalanced_coupling** [low] — balanced coupling: functional integration strength × cross_module_different_owner distance × low volatility → low severity (unbalanced coupling → elevated maintenance effort)
 
@@ -129,6 +137,7 @@
 
 - **Status:** not_requested
 - **Reference:** none
+- **Config hash:** `0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6`
 
 ## Gate reference
 
@@ -138,29 +147,20 @@
 
 ## Not measured (14)
 
-- **modularity — inferred public surface** (owner: assessment/metrics): no declared module states a public surface, so inferring one is outside this claim
-- **change_locality — eligible commit sample** (owner: history/git): the history scan returned no eligible commit (ok), so co-change cannot be distinguished from a stable tree
-- **change_locality — commit-to-module attribution** (owner: history/git): the history scan is incomplete, so not every eligible commit has a complete module attribution
-- **complexity — function length distribution** (owner: syntax+evidence/acquisition): ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution
-- **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
-- **testability — supplied coverage units** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage units were observed
-- **testability — coverage path resolution** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage paths were available to resolve
-- **testability — coverage module attribution** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage was available to attribute to declared modules
-- **testability — coverage freshness** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage freshness could be established
-- **operations — corroborated deploy unit** (owner: policy+evidence/acquisition): one or more declared modules have no independently corroborating deploy manifest
-- **operations — observed runtime topology** (owner: policy+evidence/acquisition): committed manifests corroborate declared deploy units; they do not observe what is actually running
-- **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts are a separate report family and have no collector in v1
-- **drift — admissible persisted reference** (owner: assessment/decision): no comparable architecture-state reference is stored
-- **drift — complete two-sided seam identity** (owner: assessment/decision): two-sided seam identity cannot be compared without an admissible persisted reference
-# archfit report
-
-**Config hash:** `0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6`
-
-## Summary
-
-- gate findings: 1
-- warnings: 1
-- waivers used: 0
+- **modularity — inferred public surface** (owner: assessment/metrics): no declared module states a public surface, so inferring one is outside this claim (out of claim — no action)
+- **change_locality — eligible commit sample** (owner: history/git): the history scan returned no eligible commit (ok), so co-change cannot be distinguished from a stable tree → run on a full checkout with commit history (in CI, fetch-depth: 0)
+- **change_locality — commit-to-module attribution** (owner: history/git): the history scan is incomplete, so not every eligible commit has a complete module attribution → run on a full checkout with commit history (in CI, fetch-depth: 0)
+- **complexity — function length distribution** (owner: syntax+evidence/acquisition): ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution (out of claim — no action)
+- **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure (out of claim — no action)
+- **testability — supplied coverage units** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage units were observed → supply a test coverage report for the current tree in the coverage: section
+- **testability — coverage path resolution** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage paths were available to resolve → supply a test coverage report for the current tree in the coverage: section
+- **testability — coverage module attribution** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage was available to attribute to declared modules → supply a test coverage report for the current tree in the coverage: section
+- **testability — coverage freshness** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage freshness could be established → supply a test coverage report for the current tree in the coverage: section
+- **operations — corroborated deploy unit** (owner: policy+evidence/acquisition): one or more declared modules have no independently corroborating deploy manifest → commit a deploy manifest for each deploy_unit
+- **operations — observed runtime topology** (owner: policy+evidence/acquisition): committed manifests corroborate declared deploy units; they do not observe what is actually running (out of claim — no action)
+- **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts are a separate report family and have no collector in v1 (out of claim — no action)
+- **drift — admissible persisted reference** (owner: assessment/decision): no comparable architecture-state reference is stored → fix the blockers, then record a gate reference: archfit baseline, with the same -c and --root as this run
+- **drift — complete two-sided seam identity** (owner: assessment/decision): two-sided seam identity cannot be compared without an admissible persisted reference → fix the blockers, then record a gate reference: archfit baseline, with the same -c and --root as this run
 
 ## Metrics
 
@@ -186,10 +186,6 @@ Report-only. Source-control touch frequency is supporting evidence for Ch9 volat
 - source: git_history
 - status: ok
 - caveat: Supporting evidence only. Git history can reflect both essential and accidental volatility and never changes scoring or gate verdicts.
-
-## Gate findings (1)
-
-- **no_direct_b_dependency** [medium] new — pkg/a/a.go → pkg/b: Import from pkg/a/** to pkg/b/** is explicitly forbidden
 
 ## Agent tasks (1)
 

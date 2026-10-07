@@ -62,7 +62,9 @@ archfit analyze -c .archfit.yaml
 
 This is the report-only readout. `VERDICT` is the headline judgment, `COVERAGE`
 says how many of the nine dimensions were actually measured, and each dimension
-states its own denominator. There is no repository score.
+states its own denominator. There is no repository score. `BLOCKERS` and
+`NEXT STEPS` come first when there is something to do; each `NOT MEASURED` fact
+ends with the step that closes it. The [glossary](glossary.md) defines the terms.
 
 Sample output:
 
@@ -85,6 +87,7 @@ NOT MEASURED (5)
 
   complexity — cognitive complexity
     no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
+    (out of claim — no action)
 
 COUPLING SEAMS (67)
 

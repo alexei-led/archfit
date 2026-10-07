@@ -5,6 +5,20 @@ BLOCKING   1 active  ·  hard gates: fail
 ATTENTION  2 dimension(s) flagged  ·  1 diagnostic(s)
 COVERAGE   5 measured · 2 partial · 2 unmeasured  (of 9)
 
+BLOCKERS (1)
+
+  ba3803ec no_direct_b_dependency  pkg/a/a.go -> pkg/b
+    pkg/a/a.go:3
+    why:   Import from pkg/a/** to pkg/b/** is explicitly forbidden
+    goal:  Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.
+    check: archfit check -c <ROOT>/.archfit.yaml
+
+NEXT STEPS
+
+  1. Fix blocker ba3803ec (no_direct_b_dependency).
+  2. Supply a test coverage report for the current tree in the coverage: section.
+  3. Commit a deploy manifest for each deploy_unit.
+
 DIMENSIONS
 
   intent          measured    gate: pass            confidence: high     declared rules evaluated 1/1
@@ -72,32 +86,46 @@ NOT MEASURED (14)
 
   modularity — inferred public surface
     no declared module states a public surface, so inferring one is outside this claim
+    (out of claim — no action)
   change_locality — eligible commit sample
     the history scan returned no eligible commit (ok), so co-change cannot be distinguished from a stable tree
+    → run on a full checkout with commit history (in CI, fetch-depth: 0)
   change_locality — commit-to-module attribution
     the history scan is incomplete, so not every eligible commit has a complete module attribution
+    → run on a full checkout with commit history (in CI, fetch-depth: 0)
   complexity — function length distribution
     ast-grep supplied no complete function or method extent for part or all of the out-of-claim size distribution
+    (out of claim — no action)
   complexity — cognitive complexity
     no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
+    (out of claim — no action)
   testability — supplied coverage units
     coverage is disabled, so no supplied coverage units were observed
+    → supply a test coverage report for the current tree in the coverage: section
   testability — coverage path resolution
     coverage is disabled, so no supplied coverage paths were available to resolve
+    → supply a test coverage report for the current tree in the coverage: section
   testability — coverage module attribution
     coverage is disabled, so no supplied coverage was available to attribute to declared modules
+    → supply a test coverage report for the current tree in the coverage: section
   testability — coverage freshness
     coverage is disabled, so no supplied coverage freshness could be established
+    → supply a test coverage report for the current tree in the coverage: section
   operations — corroborated deploy unit
     one or more declared modules have no independently corroborating deploy manifest
+    → commit a deploy manifest for each deploy_unit
   operations — observed runtime topology
     committed manifests corroborate declared deploy units; they do not observe what is actually running
+    (out of claim — no action)
   operations — supply-chain inventory
     SBOM and vulnerability facts are a separate report family and have no collector in v1
+    (out of claim — no action)
   drift — admissible persisted reference
     no comparable architecture-state reference is stored
+    → fix the blockers, then record a gate reference: archfit baseline, with the same -c and --root as this run
   drift — complete two-sided seam identity
     two-sided seam identity cannot be compared without an admissible persisted reference
+    → fix the blockers, then record a gate reference: archfit baseline, with the same -c and --root as this run
 
 COUPLING SEAMS (1)
 
@@ -105,13 +133,9 @@ COUPLING SEAMS (1)
     functional × cross_module_different_owner × low volatility · 0 critical of 1 scored · median balance 8
     try: leave_alone
 
-TOP ACTIONABLE FINDINGS
+DIAGNOSTICS (1)
 
-  BLOCKING (1)
-    · no_direct_b_dependency [medium] — Import from pkg/a/** to pkg/b/** is explicitly forbidden
-
-  DIAGNOSTIC (1)
-    · bc/imbalanced_coupling [low] — balanced coupling: functional integration strength × cross_module_different_owner distance × low …
+  · bc/imbalanced_coupling [low] — balanced coupling: functional integration strength × cross_module_different_owner distance × low …
 
 COMPARISON
 

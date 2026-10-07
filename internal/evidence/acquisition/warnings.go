@@ -50,7 +50,8 @@ func buildConfigWarnings(lint []string, toolWarnings []string) []string {
 func buildJudgmentDecisionTasks(modules map[string]policy.ModuleDef, lbls []labels.Label, configPath string) []string {
 	var out []string
 
-	// 1. Modules missing subdomain and volatility — scorer abstains on volatility.
+	// 1. Modules missing subdomain and volatility — the book scorer reads an
+	//    undeclared volatility as V=10, the worst case.
 	names := make([]string, 0, len(modules))
 	for name := range modules {
 		names = append(names, name)
@@ -61,7 +62,7 @@ func buildJudgmentDecisionTasks(modules map[string]policy.ModuleDef, lbls []labe
 		if def.Subdomain == "" && def.Volatility == "" {
 			out = append(out,
 				"decision needed: module "+name+" has no subdomain or volatility declared — "+
-					"scorer abstains on volatility for its edges; "+
+					"the scorer uses V=10 (the worst case) for its edges; "+
 					"add `subdomain: core|supporting|generic` or `volatility: high|medium|low` "+
 					"to modules."+name+" in "+configPath)
 		}

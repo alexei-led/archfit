@@ -236,3 +236,42 @@ func TestCondenseKeepsShortStringsWhole(t *testing.T) {
 		t.Fatalf("condense(%q, 100) = %q", short, got)
 	}
 }
+
+// TestRenderState_BriefLeadsWithBlockers pins the brief order: the blocker,
+// with its full why, comes before the dimensions, and a NOT MEASURED fact names
+// the step that closes it.
+func TestRenderState_BriefLeadsWithBlockers(t *testing.T) {
+	s := stateWith()
+	s.Findings[0].Locations = []report.Location{{File: "pkg/a/a.go", Line: 12}}
+	s.Findings[0].Why = strings.Repeat("long why ", 20) + "end"
+	out := render(t, s)
+	blockers, dims := strings.Index(out, "BLOCKERS (1)"), strings.Index(out, "DIMENSIONS")
+	if blockers < 0 || blockers > dims {
+		t.Fatalf("BLOCKERS must precede DIMENSIONS:\n%s", out)
+	}
+	for _, want := range []string{"pkg/a/a.go:12", "end\n", "NEXT STEPS\n\n  1. Fix blocker gate-1 ", "→ report it as an archfit defect"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Count(out, "pkg/a/a.go:12") != 1 {
+		t.Errorf("the blocker must be listed once:\n%s", out)
+	}
+}
+
+// TestRenderState_VerdictSaysWhyWithNoFinding: a needs-attention run with no
+// active finding names the dimensions whose evidence is incomplete.
+func TestRenderState_VerdictSaysWhyWithNoFinding(t *testing.T) {
+	s := report.NewArchitectureState()
+	s.Verdict = report.StateNeedsAttention
+	s.Decision.HardGates = report.HardGatePass
+	for _, d := range []*report.DimensionState{&s.Dimensions.Intent, &s.Dimensions.Structure, &s.Dimensions.Modularity,
+		&s.Dimensions.Coupling, &s.Dimensions.ChangeLocality, &s.Dimensions.Complexity, &s.Dimensions.Drift} {
+		d.Status = report.MeasurementMeasured
+	}
+	s.Dimensions.Testability.Status = report.MeasurementPartial
+	out := render(t, s)
+	if !strings.Contains(out, "VERDICT    NEEDS ATTENTION — evidence incomplete: testability, operations\n") {
+		t.Errorf("the verdict must say why:\n%s", out)
+	}
+}

@@ -31,7 +31,6 @@ func TestConfigCompare(t *testing.T) {
 	t.Run("protected_files", testCompareProtectedFiles)
 	t.Run("exit_codes", testCompareExitCodes)
 	t.Run("stderr_side_labels", testCompareStderrSideLabels)
-	t.Run("score_line", testCompareScoreLine)
 	t.Run("id_preview", testCompareIDPreview)
 	t.Run("classification_mix", testCompareClassificationMix)
 }
@@ -354,9 +353,13 @@ func testCompareMeasurementLoss(t *testing.T) {
 		t.Errorf("text report must list the measurement-loss warning:\n%s", stdout)
 	}
 	// The no-ranking guardrail is the footer itself: it is the only line that
-	// tells a reader a higher candidate score is not a better configuration.
+	// tells a reader a difference is not a better configuration.
 	if !strings.Contains(stdout, configCompareFooter) {
 		t.Errorf("the report must carry the no-ranking footer:\n%s", stdout)
+	}
+	// The architecture state has no repository score, so neither does the text.
+	if strings.Contains(stdout, "score:") {
+		t.Errorf("the text report prints a repository score line:\n%s", stdout)
 	}
 }
 
@@ -615,50 +618,6 @@ func testCompareExitCodes(t *testing.T) {
 			}
 			if tc.candidate == missing && strings.Contains(stderr, "config init") {
 				t.Errorf("a missing candidate must not suggest scaffolding a config:\n%s", stderr)
-			}
-		})
-	}
-}
-
-// testCompareScoreLine pins the nil-delta split: unmeasured on both sides is not
-// a difference, unmeasured on exactly one side is.
-func testCompareScoreLine(t *testing.T) {
-	t.Parallel()
-	measured := func(v int) report.Scorecard {
-		return report.Scorecard{Overall: v, OverallBand: report.ScoreBandMixed}
-	}
-	unmeasured := report.Scorecard{OverallBand: report.ScoreBandNA}
-	delta := func(v int) *int { return &v }
-
-	tests := []struct {
-		name        string
-		current     report.Scorecard
-		candidate   report.Scorecard
-		delta       *int
-		wantChanged bool
-		wantSubstr  string
-	}{
-		{name: "equal measured scores", current: measured(71), candidate: measured(71), delta: delta(0)},
-		{name: "score moved", current: measured(71), candidate: measured(64), delta: delta(-7), wantChanged: true, wantSubstr: "-7"},
-		{name: "candidate unmeasured", current: measured(71), candidate: unmeasured, wantChanged: true, wantSubstr: "delta unknown"},
-		{name: "current unmeasured", current: unmeasured, candidate: measured(71), wantChanged: true, wantSubstr: scoreUnmeasured},
-		{name: "both unmeasured", current: unmeasured, candidate: unmeasured},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			line, changed := scoreCompareLine(tc.current, tc.candidate, tc.delta)
-			if changed != tc.wantChanged {
-				t.Fatalf("changed = %v, want %v (line %q)", changed, tc.wantChanged, line)
-			}
-			if !changed {
-				if line != "" {
-					t.Errorf("an unchanged score must render no line, got %q", line)
-				}
-				return
-			}
-			if !strings.Contains(line, tc.wantSubstr) {
-				t.Errorf("line %q does not carry %q", line, tc.wantSubstr)
 			}
 		})
 	}

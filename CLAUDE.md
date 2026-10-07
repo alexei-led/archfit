@@ -757,6 +757,22 @@ init` emits v2 directly; owners update older configs manually before analysis.
   parity only — the state rides in `run.properties` and finding identity (ruleId,
   ruleIndex, `archfit/v1` fingerprint) is unchanged by the cutover.
 - **Report free text is bounded once, at projection** (`boundReportText` → `reportText`, `internal/application/report_text.go`, called last in `application.ProjectReport`). A strict state consumer (the archfit App) rejects any string with a control character or U+2028/U+2029, caps free text at 500 runes and an agent task's goal/constraints at 4096, and one bad string invalidates the whole report. Tool stderr and error chains reach coverage reasons verbatim (the ts/py/rust/ast-grep extractors, `acquisition.Collect`'s `err.Error()`), and joins carry them into unevaluated-rule reasons and dimension unknowns, so the bound lives at the single projection every command and format passes through — never at an extractor. Text already one line within the bound is byte-identical; otherwise ANSI CSI is dropped, whitespace/control runs collapse to one space, and the leading text is kept, cut at 400 runes (task text 3600) with `…`. Identity material — IDs, hashes, paths, tool versions, the measurement profile, validation commands — is never rewritten. The raw text goes to stderr only (`discloseRawCoverageReasons` in `StageExecutor.Execute`, rows the sanitizer changes; written directly, not via acquisition's `note()`, which would feed it back into ConfigWarnings). Contract: `cmd/archfit/report_text_contract_test.go` + `reporttest.AppTextViolations`.
+- **Text and Markdown share one brief** (`internal/output/brief`, report
+  contract only). Blockers (uncapped: short ID, subject, first `file:line`,
+  full why, task goal + validation), NEXT STEPS (≤5), diagnostics with
+  declared-rule findings before `bc/`/`map/`/`labels/`, and `brief.Step` for
+  every NOT MEASURED fact. The fact→step table is keyed on the wire fact names
+  and pinned to `state.RequiredFacts` (claim membership included) by
+  `brief_test.go`; a new fact needs a step. `archfit baseline` is a next step
+  only with zero blockers and no stored reference: a non-comparable gate
+  reference whose reasons name no fingerprint (`config_hash`…`rubric_version`,
+  `measurement_profile`) and no `stored baseline` (the wire carries reasons,
+  not hashes); a stored one that does not compare asks for review. NOT
+  MEASURED reads the same step (`View.StepFor`). Code-repair blockers precede
+  owner decisions, and dead selectors precede missing evidence — the
+  `agentout.decide` order. Synthetic IDs keep their prefix in the short ID. Its dead-selector split reuses agentout's
+  `selector matches nothing:` prefix. Markdown has ONE H1. Canonical finding
+  order (JSON/SARIF/index) is untouched.
 - **`--format agent` is a digest, decided in the renderer**
   (`internal/output/agentout`, `archfit.agent-result.v1`, schema
   `archfit.agent-result.schema.json`). `next_action` is decided ONCE, in

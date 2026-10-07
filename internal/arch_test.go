@@ -804,15 +804,21 @@ func isReportAdapter(pkgPath string) bool {
 
 // reportAdapterForbids reports whether a report adapter importing imp would
 // breach the report boundary. Adapters render a finished contract: they may
-// reach the report DTOs and the rendering port, plus anything outside internal/
+// reach the report DTOs and the rendering port, the shared brief view model
+// (itself a report adapter held to this rule), plus anything outside internal/
 // (stdlib and vendored formatters), and nothing else. Reaching into Assessment
 // or Relationship internals would let a renderer re-derive a fact instead of
-// presenting the one the pipeline decided.
+// presenting the one the pipeline decided; one format importing another would
+// couple their layouts.
 func reportAdapterForbids(imp string) bool {
 	if !strings.HasPrefix(imp, modulePrefix+"internal/") {
 		return false
 	}
-	return imp != modulePrefix+"internal/model/report" && imp != modulePrefix+"internal/report/ports"
+	switch imp {
+	case modulePrefix + "internal/model/report", modulePrefix + "internal/report/ports", modulePrefix + "internal/output/brief":
+		return false
+	}
+	return true
 }
 
 // TestReportBoundaryRuleFiresOnDomainImports is the executable fixture behind
@@ -830,6 +836,9 @@ func TestReportBoundaryRuleFiresOnDomainImports(t *testing.T) {
 		{name: "renderer reads report DTOs", pkg: modulePrefix + "internal/output/jsonout", imp: modulePrefix + "internal/model/report", adapter: true},
 		{name: "renderer reads the rendering port", pkg: modulePrefix + "internal/output/console", imp: modulePrefix + "internal/report/ports", adapter: true},
 		{name: "renderer reads stdlib", pkg: modulePrefix + "internal/output/sarif", imp: "encoding/json", adapter: true},
+		{name: "renderer reads the shared brief", pkg: modulePrefix + "internal/output/console", imp: modulePrefix + "internal/output/brief", adapter: true},
+		{name: "renderer imports another format", pkg: modulePrefix + "internal/output/console", imp: modulePrefix + "internal/output/markdown", adapter: true, forbid: true},
+		{name: "the brief is held to the same rule", pkg: modulePrefix + "internal/output/brief", imp: modulePrefix + "internal/assessment/state", adapter: true, forbid: true},
 		{name: "renderer reaches into assessment", pkg: modulePrefix + "internal/output/markdown", imp: modulePrefix + "internal/assessment/score", adapter: true, forbid: true},
 		{name: "renderer reaches into relationship", pkg: modulePrefix + "internal/output/scorecard", imp: modulePrefix + "internal/relationship/classify", adapter: true, forbid: true},
 		{name: "renderer reaches into application", pkg: modulePrefix + "internal/report/ports", imp: modulePrefix + "internal/application", adapter: true, forbid: true},
