@@ -38,116 +38,46 @@ func twoModuleConfig(publicGlobs []string, clonePairs map[string]struct{}) class
 // "modA" < "modB" lexicographically so the key is always modA\x00modB.
 var modABClonePair = map[string]struct{}{modABKey: {}}
 
-// TestClonePairUpgradesStrengthToSymmetric verifies that a cross-module clone pair
-// upgrades strength from functional (or unknown) to Symmetric (book ordinal 9).
-// This changes severity and score — clone pairs are NOT purely descriptive.
-func TestClonePairUpgradesStrengthToSymmetric(t *testing.T) {
+// A clone pair never changes an import edge. It is its own symmetric clone fact
+// (ClonePairs), so the edge keeps the strength its own evidence gave it.
+func TestClonePairLeavesEdgeStrengthAlone(t *testing.T) {
 	t.Parallel()
 
-	// Two identical edges differing only in whether a clone pair is present.
-	// StrengthHint=functional → without clone: Functional; with clone: Symmetric.
-	edge := graph.Edge{
-		From:         fileFromA,
-		To:           fileToB,
-		Kind:         graph.EdgeKindImports,
-		StrengthHint: hintFunctional,
-	}
-
-	cfgWithClone := twoModuleConfig(nil, modABClonePair)
-	cfgWithout := twoModuleConfig(nil, nil)
-
+	edge := graph.Edge{From: fileFromA, To: fileToB, Kind: graph.EdgeKindImports, StrengthHint: hintFunctional}
 	g := makeGraph([]graph.Edge{edge})
 	key := edgeKey(edge)
 
-	clWith := classify.Run(g, cfgWithClone)[key]
-	clWithout := classify.Run(g, cfgWithout)[key]
+	clWith := classify.Run(g, twoModuleConfig(nil, modABClonePair))[key]
+	clWithout := classify.Run(g, twoModuleConfig(nil, nil))[key]
 
-	// With clone pair: strength upgraded to Symmetric.
-	if clWith.Strength != coupling.StrengthSymmetric {
-		t.Errorf("with clone: Strength = %q, want %q", clWith.Strength, coupling.StrengthSymmetric)
+	if clWith.Strength != coupling.StrengthFunctional || clWithout.Strength != coupling.StrengthFunctional {
+		t.Errorf("strengths = %q with clone, %q without, want functional both", clWith.Strength, clWithout.Strength)
 	}
-
-	// Without clone pair: strength stays at functional (from hint).
-	if clWithout.Strength != coupling.StrengthFunctional {
-		t.Errorf("without clone: Strength = %q, want %q", clWithout.Strength, coupling.StrengthFunctional)
+	if clWith.Score.Value != clWithout.Score.Value {
+		t.Errorf("Score.Value = %d with clone, %d without, want equal", clWith.Score.Value, clWithout.Score.Value)
 	}
-
-	// Symmetric (ordinal 9) > Functional (ordinal 8) → scores must differ.
-	if clWith.Score.Value == clWithout.Score.Value {
-		t.Errorf("Score.Value identical (%d); Symmetric and Functional should produce different scores", clWith.Score.Value)
+	if len(clWith.CloneLocations) != 0 {
+		t.Errorf("edge CloneLocations = %v, want none: the locations belong to the clone fact", clWith.CloneLocations)
 	}
 }
 
-// TestFlatNameEdgeScoresSameOwnerAfterP1Fix verifies that a flat-named
-// (single-segment) edge in a degenerate-owner repo classifies as
-// cross_module (not diff_owner) and scores Medium under the book
-// formula — the P1 fix for false tight-coupling on single-team flat-named repos.
-//
-// Case: StrengthSymmetric (S=9, via clone pair), Distance=SameOwner (D=4),
-// Volatility=high (V=10, via subdomain:core).
-// balance = max(|S-D|, 10-V)+1 = max(|9-4|, 10-10)+1 = max(5,0)+1 = 6.
-// ScoreBand(6) = Medium.
-//
-// Pre-fix: flat names → DiffOwner (D=7) → balance = max(|9-7|, 0)+1 = 3 → High.
-func TestFlatNameEdgeScoresSameOwnerAfterP1Fix(t *testing.T) {
+// A flat-named edge across a bare module boundary scores at D=9: functional
+// coupling into a core module is critical whatever the key spelling.
+func TestFlatNameEdgeScoresAtTheBoundaryRung(t *testing.T) {
 	t.Parallel()
 
-	const (
-		flatModA = "core"
-		flatModB = "api"
-	)
-	flatFileA := "file:" + flatModA + "/x.go"
-	flatFileB := "file:" + flatModB + "/y.go"
-	// "api" < "core" lexicographically → sorted key is "api\x00core".
-	var clonePairKey string
-	if flatModB < flatModA {
-		clonePairKey = flatModB + "\x00" + flatModA
-	} else {
-		clonePairKey = flatModA + "\x00" + flatModB
-	}
+	cfg := classify.Config{Modules: map[string]policy.ModuleDef{
+		"core": {Paths: []string{"core/**"}, Subdomain: subdomainCore},
+		"api":  {Paths: []string{"api/**"}},
+	}}
+	edge := graph.Edge{From: "file:core/x.go", To: "file:api/y.go", Kind: graph.EdgeKindImports, StrengthHint: hintFunctional}
+	cl := classify.Run(makeGraph([]graph.Edge{edge}), cfg)[edgeKey(edge)]
 
-	cfg := classify.Config{
-		Modules: map[string]policy.ModuleDef{
-			flatModA: {
-				Paths:     []string{flatModA + "/**"},
-				Subdomain: "core", // → high volatility
-			},
-			flatModB: {
-				Paths: []string{flatModB + "/**"},
-			},
-		},
-		CrossModuleClonePairs: map[string]struct{}{clonePairKey: {}},
-	}
-
-	edge := graph.Edge{
-		From:         flatFileA,
-		To:           flatFileB,
-		Kind:         graph.EdgeKindImports,
-		StrengthHint: hintFunctional, // upgraded to Symmetric by clone pair
-	}
-
-	g := makeGraph([]graph.Edge{edge})
-	idx := classify.Run(g, cfg)
-	key := edgeKey(edge)
-	cl, ok := idx[key]
-	if !ok {
-		t.Fatal("edge not in classification index")
-	}
-
-	// Flat names, no owners: a bare module boundary.
 	if cl.Distance != coupling.DistanceCrossModule {
 		t.Errorf("Distance = %q, want cross_module", cl.Distance)
 	}
-	// Clone pair upgrades strength to Symmetric.
-	if cl.Strength != coupling.StrengthSymmetric {
-		t.Errorf("Strength = %q, want symmetric (clone pair upgrade)", cl.Strength)
-	}
-	// balance = max(|9-9|, 10-10)+1 = 1 → critical.
-	const wantBalance = 1
-	if cl.Score.Balance != wantBalance {
-		t.Errorf("Score.Balance = %d, want %d (S=9, D=9, V=10)", cl.Score.Balance, wantBalance)
-	}
-	if cl.Score.Band != coupling.SeverityCritical {
-		t.Errorf("Score.Band = %q, want critical", cl.Score.Band)
+	// V = worse(core high, api undeclared) = high: S=8, D=9, V=10 → 2.
+	if cl.Score.Balance != 2 || cl.Score.Band != coupling.SeverityCritical {
+		t.Errorf("score = %d %q, want 2 critical", cl.Score.Balance, cl.Score.Band)
 	}
 }

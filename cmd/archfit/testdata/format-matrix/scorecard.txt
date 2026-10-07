@@ -23,7 +23,8 @@ denominator: declared rules evaluated 1/1
 owner: relationship/facts
 denominator: discovered dependencies resolved inside the declared module map 1/1
 - internal_edges: 1 count
-- external_edges: 0 count
+- library_edges: 0 count
+- unmapped_first_party_edges: 0 count
 - same_module_edges: 0 count
 - connected_modules: 2 count
 - cycle: 0 count
@@ -46,7 +47,7 @@ denominator: cross-boundary edges scored 1/1
 - clone_only_seams: 0 count
 - critical_band_edges: 0 count
 - high_or_worse_edges: 0 count
-- critical_high_distance_edges: 0 count
+- qualifying_edges: 0 count
 - seams: 1 count
 - distributed_monolith_seams: 0 count (1/1)
 - tight_seams: 1 count

@@ -135,77 +135,7 @@ func (BookScorer) Score(c coupling.Classification) coupling.EdgeScore {
 			VolatilityVal: v,
 			Modularity:    modularity,
 		},
-		CheapestMove: bookCheapestMove(c, band),
 	}
-}
-
-// bookCheapestMove returns the single dimension change that raises balance the
-// most (i.e. drops the severity band the most). Tie-break: strength > distance.
-//
-// coupling.Volatility is never offered as a move: strength and distance are design
-// properties an engineer can change, but volatility comes from the domain
-// (Ch9) — Ch11's remediation levers are reducing strength or distance only.
-// When neither single-rung move drops the band, no move is offered.
-func bookCheapestMove(c coupling.Classification, currentBand coupling.Severity) string {
-	if currentBand == coupling.SeverityNone {
-		return ""
-	}
-
-	bestDrop := 0
-	bestLabel := ""
-
-	tryMove := func(label string, modified coupling.Classification) {
-		got := BookScorer{}.Score(modified)
-		if !got.Scored {
-			return
-		}
-		drop := bandRank(currentBand) - bandRank(got.Band)
-		if drop > bestDrop {
-			bestDrop = drop
-			bestLabel = label
-		}
-	}
-
-	if next, ok := bookLowerStrength(c.Strength); ok {
-		mod := c
-		mod.Strength = next
-		tryMove(moveReduceStrength, mod)
-	}
-	if next, ok := bookLowerDistance(c.Distance); ok {
-		mod := c
-		mod.Distance = next
-		tryMove(moveReduceDistance, mod)
-	}
-
-	return bestLabel
-}
-
-// bookLowerStrength is like lowerStrength but skips coupling.StrengthUnknown.
-// coupling.StrengthUnknown causes BookScorer to abstain, so tryMove would silently drop
-// the suggestion; this ladder jumps directly from Functional to Model.
-func bookLowerStrength(s coupling.Strength) (coupling.Strength, bool) {
-	switch s {
-	case coupling.StrengthIntrusive:
-		return coupling.StrengthSymmetric, true
-	case coupling.StrengthSymmetric:
-		return coupling.StrengthFunctional, true
-	case coupling.StrengthFunctional:
-		return coupling.StrengthModel, true // skip coupling.StrengthUnknown
-	case coupling.StrengthModel:
-		return coupling.StrengthContract, true
-	default:
-		return s, false
-	}
-}
-
-// bookLowerDistance offers the only distance move left on the v7 ladder: a
-// declared external system brought in-house. Every module boundary is the same
-// rung, so there is no smaller step between modules.
-func bookLowerDistance(d coupling.Distance) (coupling.Distance, bool) {
-	if d == coupling.DistanceExternal {
-		return coupling.DistanceCrossDeployUnit, true
-	}
-	return d, false
 }
 
 // abs returns the absolute value of x.

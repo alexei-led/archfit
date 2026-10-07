@@ -18,13 +18,16 @@ const (
 	duplicatedKnowledgeRule = modelrule.RuleIDDuplicatedKnowledge
 )
 
-func advisoryCandidates(set relationship.Set, clones []relationship.CloneOnlyPair, cfg classify.Config) []relationship.AdvisoryCandidate {
+func advisoryCandidates(set relationship.Set, clones []relationship.ClonePair, cfg classify.Config) []relationship.AdvisoryCandidate {
 	out := make([]relationship.AdvisoryCandidate, 0, len(set.Edges)+len(clones))
 	for _, edge := range set.Edges {
 		if edge.Severity == relationship.SeverityNone || !severityAtLeast(edge.Severity, cfg.BCAdvisoryMinSeverity) {
 			continue
 		}
-		matched := classificationMatched(edge.Classified, edge.Strength, edge.Distance, edge.Volatility)
+		matched := classificationMatched(edge.Classified, edge.Strength, edge.Distance, edge.Volatility, relationship.BalancingHypothesis(relationship.HypothesisInput{
+			Strength: edge.Strength, Volatility: edge.Volatility, Band: edge.Severity,
+			TargetPublic: len(cfg.Modules[edge.ToModule].Public) > 0, CohesiveRole: classify.CohesiveRole(cfg.Modules[edge.FromModule].Role),
+		}))
 		locs := append([]relationship.Location(nil), edge.Locations...)
 		locs = appendLocations(locs, edge.Classified.CloneLocations)
 		out = append(out, relationship.AdvisoryCandidate{
@@ -35,10 +38,16 @@ func advisoryCandidates(set relationship.Set, clones []relationship.CloneOnlyPai
 		})
 	}
 	for _, pair := range clones {
+		if pair.Connected {
+			continue // a clone fact on a seam, reported there; this rule means "no import edge"
+		}
 		if pair.Severity == relationship.SeverityNone || !severityAtLeast(pair.Severity, cfg.BCAdvisoryMinSeverity) {
 			continue
 		}
-		matched := classificationMatched(pair.Classified, pair.Strength, pair.Distance, pair.Volatility)
+		matched := classificationMatched(pair.Classified, pair.Strength, pair.Distance, pair.Volatility, relationship.BalancingHypothesis(relationship.HypothesisInput{
+			Strength: relationship.StrengthSymmetric, Volatility: pair.Volatility, Band: pair.Severity, Clone: true,
+			TargetPublic: len(cfg.Modules[pair.ToModule].Public) > 0, CohesiveRole: classify.CohesiveRole(cfg.Modules[pair.FromModule].Role),
+		}))
 		matched["score_policy"] = string(policy.NormalizeDuplicatedKnowledgePolicy(cfg.DuplicatedKnowledgePolicy))
 		out = append(out, relationship.AdvisoryCandidate{
 			ID: duplicatedKnowledgeID(pair.FromModule, pair.ToModule), RuleID: duplicatedKnowledgeRule,
@@ -52,7 +61,7 @@ func advisoryCandidates(set relationship.Set, clones []relationship.CloneOnlyPai
 	return out
 }
 
-func classificationMatched(cl relationship.Classification, strength relationship.Strength, distance relationship.Distance, volatility relationship.Volatility) map[string]string {
+func classificationMatched(cl relationship.Classification, strength relationship.Strength, distance relationship.Distance, volatility relationship.Volatility, hypothesis relationship.SeamHypothesis) map[string]string {
 	matched := map[string]string{"strength": string(strength), "distance": string(distance), "volatility": string(volatility)}
 	if cl.DistanceBasis != "" && cl.DistanceBasis != "unknown" {
 		matched["distance_basis"] = cl.DistanceBasis
@@ -63,8 +72,8 @@ func classificationMatched(cl relationship.Classification, strength relationship
 		matched["score_band"] = string(cl.Score.Band)
 		matched["score_version"] = relationshipScoreVersion
 	}
-	if cl.Score.CheapestMove != "" {
-		matched["cheapest_move"] = cl.Score.CheapestMove
+	if hypothesis != "" {
+		matched["hypothesis"] = string(hypothesis)
 	}
 	return matched
 }

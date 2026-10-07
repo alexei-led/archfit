@@ -132,7 +132,15 @@ layer, and cycle facts for every internally resolved edge.
 
 **Out-of-claim:** Direction and layer of edges whose targets leave the declared
 module map; those edges remain counted and disclosed, but they make no claim
-about this repository's internal structure.
+about this repository's internal structure. They are counted in two metrics, decided by the target alone:
+`unmapped_first_party_edges` (the target is a first-party node: an unowned
+target, or an owned target imported from unowned source) and `library_edges`
+(every other such edge: an external node, or a target that no first-party
+node stands for, such as a Go standard-library package). Ceiling: a
+first-party target that the extractor emits no node for (a Go package that
+failed to load, the Go module's root package, a filtered go.work member)
+counts as `library_edges`. Unowned source that imports only libraries shows
+in neither count; `map/uncovered_path` reports it from the walked source.
 
 **Measured when:** `A(structure)` is true, every applicable primary dependency
 inventory completed, and every internally resolved edge has its in-claim
@@ -196,9 +204,14 @@ cross-boundary candidate: an internal edge, a declared-external edge, or a
 score-bearing clone-only pair.
 
 **Required facts:** `coupling_candidate_inventory`, `coupling_strength`,
-`coupling_distance`, and `extractor_resolution_within_ceiling`. Strength and
-distance are required for every candidate in the scored-plus-abstained
-denominator. TypeScript resolution satisfies the last fact only when unresolved
+`coupling_distance`, `coupling_volatility`, and
+`extractor_resolution_within_ceiling`. Strength and distance are required for
+every candidate in the scored-plus-abstained denominator. `coupling_volatility`
+is observed when every volatility-bearing end of each scored candidate is
+declared, inherited or cascaded, or one declared end is already high.
+Functional, symmetric, and clone facts have two such ends. Volatility that nobody declared makes coupling `partial` and
+`check` exit 2; the unknown reason names the modules to declare
+`volatility:` or `subdomain:` on. TypeScript resolution satisfies the last fact only when unresolved
 specifiers are no more than 10 percent of specifiers seen.
 
 **Denominator:** Scored cross-boundary candidates over scored plus abstained
@@ -214,11 +227,12 @@ systems. They are separate local-coupling or external-hygiene facts and cannot
 establish cross-boundary balance.
 
 **Measured when:** `A(coupling)` is true, the candidate inventory is observed,
-every denominator member has both strength and distance, and TypeScript
+every denominator member has strength, distance, and rated volatility, and TypeScript
 resolution is within the 10 percent ceiling or proved not applicable.
 
 **Partial when:** The candidate inventory is observed, but one or more
-candidates abstain for unknown strength or distance, or TypeScript unresolved
+candidates abstain for unknown strength or distance, a scored candidate has
+undeclared volatility, or TypeScript unresolved
 specifiers exceed the 10 percent ceiling.
 
 **Unmeasured when:** No in-scope cross-boundary candidate was identified, or no

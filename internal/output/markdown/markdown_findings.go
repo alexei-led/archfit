@@ -58,7 +58,7 @@ func writeBCAdvisories(b *strings.Builder, advisories []report.Finding) {
 //	  integration strength: <s>   distance: <d>   volatility: <v>
 //	  score: <value>/10 (<band>) [<scorer>]
 //	  why: <why>
-//	  cheapest move: <move>
+//	  hypothesis: <move>
 func writeBCLintMessage(b *strings.Builder, f report.Finding) {
 	from := f.Edge.From.Path
 	to := f.Edge.To.Path
@@ -83,7 +83,7 @@ func writeBCLintMessage(b *strings.Builder, f report.Finding) {
 	scorer := f.MatchedBy["score"] // scorer name (e.g. "multiplicative")
 	scoreValue := f.MatchedBy["score_value"]
 	scoreBand := f.MatchedBy["score_band"]
-	cheapestMove := f.MatchedBy["cheapest_move"]
+	hypothesis := f.MatchedBy["hypothesis"]
 	why := strings.TrimSpace(f.Why)
 
 	if strength != "" || distance != "" || volatility != "" {
@@ -103,8 +103,8 @@ func writeBCLintMessage(b *strings.Builder, f report.Finding) {
 		}
 		fmt.Fprintf(b, "  why: %s\n", why)
 	}
-	if cheapestMove != "" {
-		fmt.Fprintf(b, "  cheapest move: %s\n", cheapestMove)
+	if hypothesis != "" {
+		fmt.Fprintf(b, "  hypothesis: %s\n", hypothesis)
 	}
 	if n := rollupCount(f); n > 1 {
 		members := f.MatchedBy["group_members"]

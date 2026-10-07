@@ -136,12 +136,20 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   **v2**). It counts logical seams — one ordered module pair, however many
   imports express it — not edges. `score.EvaluateSeamGate` + `applySeamGate` run
   inside `evaluation.Score` (`internal/assessment/evaluation/finalize.go`),
-  before `agenttask.Build`. A seam qualifies when it has at least one scored
-  source-graph edge in the critical band across a module boundary
-  (`coupling.DistanceIsHigh`; under v7 every boundary is D=9); it is built from
-  the FULL classified edge set, so no severity/baseline/waiver filter can hide
-  one. (Transitional: the stricter v7 qualification — strong strength, declared
-  volatility, no cohesive role — lands with the volatility and gate rules.)
+  before `agenttask.Build`. A seam qualifies when one scored source-graph IMPORT
+  edge passes `relationship.QualifiesDistributedMonolith`: strength functional,
+  intrusive or symmetric (a pinned label; a clone fact is never an edge), a
+  module boundary (D=9), effective volatility `high` from a declared, inherited
+  or cascade end (undeclared is UNRATED and never qualifies), and a source that
+  is not a cohesive role (`composition_root`, `generated`, `test`) unless the
+  coupling is intrusive. Medium volatility and clone facts never qualify. Every
+  qualifying edge is critical, so qualification is a subset of severity. The seam
+  shows its lowest-balance qualifying edge as the DRIVING edge (strength,
+  volatility, quadrant, hypothesis), and gate reasons name the boundary and
+  container (`orders -> pricing: functional coupling across the owner boundary
+  at high volatility (container system)`); only a deploy-unit boundary
+  says "distributed monolith". The seam set is built from the FULL classified
+  edge set, so no severity/baseline/waiver filter can hide one.
   `mode: fail` blocks ONLY on seams newly introduced against a **comparable**
   reference (all four of `classification_hash`, `model_hash`, `labels_hash`,
   `rubric_version` equal, and the measurement profile); without one the gate reports the seam total, states
@@ -168,7 +176,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
   distance facts beside the collapsed rung, the book Ch10 quadrant, the labels in
   effect, and a balancing hypothesis. Same-module edges (a different fractal
   level) and unresolved targets (external hygiene) are NOT seams; clone-only
-  pairs are not either — they have no import edge. Seam order is by module pair,
+  pairs are not either — they have no import edge, though a clone fact between
+  connected modules rides on the seam. Seam order is by module pair,
   and the gate re-sorts by ID so a ledger reordering cannot reorder gate findings.
 - **Comparison is strict on four fingerprints plus measurement profile** (`decision.CompareFingerprints`).
   `classification_hash` (`acquisition.ClassificationHash`: the policy leaves that change
@@ -1114,23 +1123,42 @@ with the entry's volatility (default low); those count in
 module resolution — a module-resolved target is never re-labelled external,
 even when the edge's source is unresolved.
 
-**Symmetric from clones:** when `analyzers.clones` detects a cross-module clone
-pair, the edge strength is upgraded to `StrengthSymmetric` (S=9) only when the
-edge's strength is still `functional` or `unknown` — config-authoritative
-`contract`/`intrusive`, type-info `model`/`dto`, and approved pinned labels are
-never overridden.
+**Clone facts (bc_score.v7):** a clone pair never upgrades an import edge. Each
+cross-module clone pair (unless a reviewer approved it) is its own symmetric
+fact (S=9, D=9, worse volatility of the pair; `classify.ClonePairs`). A pair
+whose modules share an import edge is `Connected`: `attachCloneFacts` adds it to
+the A→B or B→A seam (the one whose seam ID sorts first when both exist). It
+counts in the seam's `scored_edges`, never in `edges`, can set the seam's
+severity and hypothesis, and never makes a seam qualify. The `advisory` setting
+of `coupling.duplicated_knowledge` keeps clone facts out of the headline score.
+
+**Volatility on both sides:** contract, model and intrusive edges use the
+target's effective V (cascade included). Functional and symmetric edges and
+clone facts use the worse of the two ends (`worseVolatility`: declared `high`
+outranks undeclared, which outranks medium, low, frozen). Undeclared still
+scores as V=10 but is UNRATED: `ClassifiedEdgeSummary.UnratedVolatilityEdges`
+feeds the required coupling fact `coupling volatility`, so coupling is
+`partial` (and `check` exits 2) until the named modules declare `volatility:` or
+`subdomain:`.
+
+**Balancing hypothesis** (`relationship.BalancingHypothesis`, one function for
+the seam ledger, advisories and agent-task constraints; the scorer no longer
+computes moves): `balanced`, `accept_low_volatility`, `introduce_contract`,
+`move_functionality`, `declare_volatility`, `expected_by_role`, and
+`follow_rule` (set in assessment `attachSeamPolicy` when an active gate finding
+covers the pair). A test sweeps the table: every flagged seam gets a move that
+re-scores to low or better, or a non-move reason.
 
 **`bc/duplicated_knowledge` (clone pair without an import edge):**
-`classify.CloneOnlyPairs` builds each cross-module clone pair whose modules share
-NO import edge (StrengthSymmetric, module-pair distance, worst-of-pair
+`classify.ClonePairs` builds each cross-module clone pair whose modules share
+NO import edge (`Connected == false`) (StrengthSymmetric, module-pair distance, worst-of-pair
 volatility). Default `coupling.duplicated_knowledge: score` includes the pair in
 `ClassifiedEdges` and `coupling_balance` as a score-bearing coupling fact; it
 may also surface as a `bc/duplicated_knowledge` advisory after severity/baseline/
 waiver filtering. `advisory` preserves the v4 behavior: advisory-only, held out
 of the headline score. It is never promoted by the coupling gate (promotion
-matches `RuleIDBCImbalanced` only). Ceiling: a pair WITH an edge is owned by the
-symmetric-upgrade path above, so clone evidence on a contract/model/
-intrusive-strength edge surfaces nowhere — deliberate.
+matches `RuleIDBCImbalanced` only). A pair WITH an edge is a clone fact on that
+seam (see above), not a clone-only pair.
 
 **Same-module edges are scored but report-only (`local_coupling`):** classify
 scores same-module edges at the book's D=2 rung; they surface in the

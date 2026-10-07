@@ -227,7 +227,7 @@ func TestApplySeamGate_IgnoresTheRepositoryScore(t *testing.T) {
 
 // TestFinalize_PreservesPerEdgeAdvisoryEvidence pins that retiring gate
 // promotion did not cost the per-edge evidence a reviewer reads. A coupling
-// advisory still carries its own cheapest move and score value, so `explain`
+// advisory still carries its own hypothesis and score value, so `explain`
 // and the advisory task list can still say what to change and why.
 func TestFinalize_PreservesPerEdgeAdvisoryEvidence(t *testing.T) {
 	t.Parallel()
@@ -239,7 +239,7 @@ func TestFinalize_PreservesPerEdgeAdvisoryEvidence(t *testing.T) {
 				From: finding.Endpoint{Module: "a", Path: fileModuleA},
 				To:   finding.Endpoint{Module: "b", Path: fileModuleB},
 			},
-			MatchedBy: map[string]string{"cheapest_move": "reduce_strength", "score_value": "3",
+			MatchedBy: map[string]string{"hypothesis": "reduce_strength", "score_value": "3",
 				"group_count": "2", "group_members": "bc-1,bc-2"},
 		}},
 	}
@@ -258,8 +258,8 @@ func TestFinalize_PreservesPerEdgeAdvisoryEvidence(t *testing.T) {
 		t.Fatalf("advisory tasks = %+v, want one for the coupling advisory", diag.AdvisoryTasks)
 	}
 	task := diag.AdvisoryTasks[0]
-	if task.CheapestMove != "reduce_strength" {
-		t.Errorf("cheapest_move = %q, want the per-edge remediation preserved", task.CheapestMove)
+	if task.Hypothesis != "reduce_strength" {
+		t.Errorf("hypothesis = %q, want the per-edge remediation preserved", task.Hypothesis)
 	}
 	if task.ScoreValue != 3 {
 		t.Errorf("score_value = %d, want the per-edge balance preserved", task.ScoreValue)

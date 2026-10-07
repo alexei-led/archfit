@@ -55,7 +55,8 @@ func dimensionsFixture() (*result.Result, evaluation.StateInput) {
 		ClassifiedEdges: &result.ClassifiedEdgeSummary{
 			Total: 20, Scored: 10, Abstained: 2, SameModule: 3, External: 5, ConnectedModules: 2,
 			DependencyEdges: 20, InternalDependencies: 15, ClassifiedInternalDependencies: 15,
-			SameModuleDependencies: 3, DependencyModules: 2, FirstPartyNodes: 2, AttributedFirstPartyNodes: 2,
+			SameModuleDependencies: 3, LibraryDependencies: 3, UnmappedFirstPartyDependencies: 2,
+			DependencyModules: 2, FirstPartyNodes: 2, AttributedFirstPartyNodes: 2,
 			TailRisk: &result.CouplingTailRiskSummary{CriticalEdges: 1, HighOrWorseEdges: 3, DistributedMonolithEdges: 0},
 		},
 		VolatilityCorroboration: &modevidence.VolatilityCorroboration{
@@ -749,7 +750,8 @@ func TestStructureUsesTheDependencyOnlyDenominator(t *testing.T) {
 		t.Errorf("structure coverage = %d/%d, want dependency-only 15/20", dim.Coverage.Observed, dim.Coverage.Total)
 	}
 	for name, want := range map[string]float64{
-		"internal_edges": 15, "external_edges": 5, "same_module_edges": 3, "connected_modules": 2,
+		"internal_edges": 15, "library_edges": 3, "unmapped_first_party_edges": 2,
+		"same_module_edges": 3, "connected_modules": 2,
 	} {
 		if got, ok := dimensionMetricValue(dim.Metrics, name); !ok || got != want {
 			t.Errorf("metric %q = %v (found=%t), want %v", name, got, ok, want)
@@ -983,6 +985,78 @@ func TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope(t *testin
 				t.Errorf("names the unresolved imports = %v, want %v (unknown: %+v)", named, tc.wantUnknown, dim.Unknown)
 			}
 		})
+	}
+}
+
+func TestCouplingDimension_UnratedVolatilityMakesItPartial(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		edges      int
+		modules    []string
+		wantStatus state.MeasurementStatus
+		wantReason string
+	}{
+		{name: "every end rated", wantStatus: state.Measured},
+		{name: "one module named", edges: 3, modules: []string{"a"}, wantStatus: state.Partial,
+			wantReason: "volatility is undeclared on 3 scored cross-boundary edge(s); declare `volatility:` or `subdomain:` on: a"},
+		{name: "five modules all named", edges: 9, modules: []string{"a", "b", "c", "d", "e"}, wantStatus: state.Partial,
+			wantReason: "volatility is undeclared on 9 scored cross-boundary edge(s); declare `volatility:` or `subdomain:` on: a, b, c, d, e"},
+		{name: "more than five are counted", edges: 9, modules: []string{"a", "b", "c", "d", "e", "f", "g"}, wantStatus: state.Partial,
+			wantReason: "volatility is undeclared on 9 scored cross-boundary edge(s); declare `volatility:` or `subdomain:` on: a, b, c, d, e and 2 more"},
+		{name: "no module list", edges: 1, wantStatus: state.Partial,
+			wantReason: "volatility is undeclared on 1 scored cross-boundary edge(s); declare `volatility:` or `subdomain:` on the modules involved"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			diag := &result.Result{
+				Findings: []finding.Finding{},
+				ClassifiedEdges: &result.ClassifiedEdgeSummary{
+					Total: 10, Scored: 10, ConnectedModules: 2,
+					UnratedVolatilityEdges: tc.edges, UnratedVolatilityModules: tc.modules,
+				},
+			}
+			dim := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).Coupling
+			if dim.Status != tc.wantStatus {
+				t.Fatalf("status = %q, want %q (unknown %+v)", dim.Status, tc.wantStatus, dim.Unknown)
+			}
+			var got string
+			for _, u := range dim.Unknown {
+				if u.Fact == state.FactCouplingVolatility {
+					got = u.Reason
+				}
+			}
+			if got != tc.wantReason {
+				t.Errorf("reason = %q, want %q", got, tc.wantReason)
+			}
+		})
+	}
+}
+
+func TestCouplingDimension_QualifyingEdgesMetric(t *testing.T) {
+	t.Parallel()
+	diag := &result.Result{
+		Findings: []finding.Finding{},
+		ClassifiedEdges: &result.ClassifiedEdgeSummary{
+			Total: 4, Scored: 4, ConnectedModules: 2,
+			TailRisk: &result.CouplingTailRiskSummary{DistributedMonolithEdges: 2},
+		},
+	}
+	dim := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).Coupling
+	found := false
+	for _, m := range dim.Metrics {
+		if m.Name == "critical_high_distance_edges" {
+			t.Errorf("old metric name still emitted")
+		}
+		if m.Name == "qualifying_edges" {
+			found = true
+			if m.Value != 2 {
+				t.Errorf("qualifying_edges = %v, want 2", m.Value)
+			}
+		}
+	}
+	if !found {
+		t.Error("qualifying_edges metric missing")
 	}
 }
 
