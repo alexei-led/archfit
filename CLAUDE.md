@@ -777,9 +777,10 @@ init` emits v2 directly; owners update older configs manually before analysis.
   build-constrained under the toolchain's env (`toolchainContext`, shared with
   `countApplicableSources`, plus the go env file; unset `CGO_ENABLED` with a
   cgo-tagged file is `not_decided`; a file that imports "C" is not extracted
-  with `CGO_ENABLED=0` and `not_decided` otherwise: preprocessed cgo syntax
-  comes from the build cache, which `deriveFileFacts` skips, but a failed
-  preprocess falls back to the original file),
+  with `CGO_ENABLED=0` and is read otherwise: with cgo on the load parses a
+  preprocessed copy in the build cache, and `sourceRelFile` maps it back to the
+  original through its `//line` directive; a failed preprocess parses the
+  original),
   excluded file or target, unloaded member; a switched-off
   language) and abstains where only the tool knows (`ErrNotDecidable` →
   `not_decided`: Rust, a Python target outside the packages grimp builds;

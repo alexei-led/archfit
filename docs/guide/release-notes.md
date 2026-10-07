@@ -80,6 +80,21 @@ Contract notes:
   baseline v2, and the comparison fingerprints do not change.
 - Configs that do not use the new keys give byte-identical output.
 
+Fixed:
+
+- The Go extractor dropped the imports of every Go file that imports `"C"` when
+  cgo preprocessing succeeded. The load parses a preprocessed copy in the build
+  cache, outside the scan root, and the extractor skipped it. Edges, rule
+  violations, cycles and coupling facts from cgo files were missing. The
+  extractor now maps the copy back to the original file. Edge IDs, locations
+  and strength hints of a cgo file match those of a plain file.
+  `archfit policy can-import` reads a cgo file when `CGO_ENABLED=1`. A failed
+  cgo preprocess still makes the `go/packages` row `partial`, and a cgo file
+  that cgo-off ignores is still counted in the build-constraint disclosure.
+- Cached Go facts from older binaries are not reused (the cache key has a new
+  facts revision). The measurement profile and the settings hash do not change.
+  Repositories without cgo files give byte-identical output.
+
 ## v2.4.1 — schema lists rule types
 
 The published config schema (`archfit.schema.json`) now enumerates the allowed

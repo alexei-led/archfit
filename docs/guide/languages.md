@@ -110,6 +110,14 @@ constraints ...`). The coverage status does not change: the load is complete for
 the configuration it ran under, so dimension promotion and comparability do not
 move.
 
+**cgo files:** with cgo on, `go/packages` parses a preprocessed copy of a file
+that imports `"C"`. archfit maps that copy back to the original file, so the
+imports of a cgo file reach the rules, cycle checks and coupling facts like any
+other import. If preprocessing fails (for example, a missing C header), archfit
+reads the imports from the original file and the `go/packages` row is
+`partial`; archfit never reads such a package as complete. Before v2.5.0 archfit dropped the
+imports of cgo files when preprocessing succeeded.
+
 - To analyze another platform or tag set, run archfit under it, for example
   `GOOS=windows archfit check` or `GOFLAGS=-tags=enterprise archfit check`.
 - To remove files that are never built on purpose from the count (for example
