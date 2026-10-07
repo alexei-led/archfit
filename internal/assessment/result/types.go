@@ -182,6 +182,9 @@ type Seam struct {
 	RoleExpectation      string                `json:"role_expectation,omitempty"`
 	Hypothesis           string                `json:"hypothesis,omitempty"`
 	DistributedMonolith  bool                  `json:"distributed_monolith,omitempty"`
+	// Policy is the seam's policy status: violation, accepted, advisory,
+	// allowed, or observed (the first that matches).
+	Policy string `json:"policy,omitempty"`
 	// QualifyingPaths are the node paths and import-site files of the seam's
 	// capped qualifying edges, in edge order. They are repair evidence for a
 	// seam-gate task and never part of the published seam record.

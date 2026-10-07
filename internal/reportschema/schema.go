@@ -111,6 +111,10 @@ func patchDefinitions(schema *jsonschema.Schema) {
 					string(report.MeasurementUnmeasured),
 				}
 			}
+		case "Seam":
+			if policy, ok := def.Properties.Get("policy"); ok {
+				policy.Enum = []any{"violation", "accepted", "advisory", "allowed", "observed"}
+			}
 		case "SeamScoreDistribution":
 			// p10/p90 are *int and serialize as null below ten samples: a
 			// percentile nobody can compute is reported as absent, never as 0.

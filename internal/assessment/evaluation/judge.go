@@ -151,7 +151,6 @@ func undecidedOrAllowed(in JudgeInput) (string, []string) {
 		// when declared and the importer is production; the seam ledger reads
 		// them including synthetic go.work members.
 		fromModule, toModule := rulespkg.DeclaredEndpoints(mm, e)
-		allowlisted := fromModule != "" && toModule != "" && fromModule != toModule
 		moduleCycle := rulespkg.ProductionEdge(e, in.UnwalkedSourceProduction) && mm.Has(e.FromModule) && mm.Has(e.ToModule) && e.FromModule != e.ToModule
 		seam := e.FromModule != "" && e.ToModule != "" && e.FromModule != e.ToModule
 		for _, def := range rules.Rules {
@@ -170,10 +169,8 @@ func undecidedOrAllowed(in JudgeInput) (string, []string) {
 					undecided = append(undecided, "rule "+def.ID+" (module_cycle) needs the whole module graph")
 				}
 			case ruleTypeModuleDependencies:
-				if allowlisted && mm.DeniedDependency(fromModule, toModule) == nil {
-					if why := allowlistReason(in.Policy.Topology.Modules, fromModule, toModule); why != "" {
-						allowed = append(allowed, why)
-					}
+				if why := allowlistPermission(mm, in.Policy.Topology.Modules, fromModule, toModule); why != "" {
+					allowed = append(allowed, why)
 				}
 			case ruleTypeLayerOrder:
 				if why := layerReason(mm, rules.Layers, e); why != "" {

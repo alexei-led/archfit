@@ -258,6 +258,7 @@ modules:
       - internal/reportschema/**
     public:
       - internal/output/agentout
+      - internal/output/archmap
       - internal/output/console
       - internal/output/jsonout
       - internal/output/markdown

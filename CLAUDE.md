@@ -773,6 +773,23 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `agentout.decide` order. Synthetic IDs keep their prefix in the short ID. Its dead-selector split reuses agentout's
   `selector matches nothing:` prefix. Markdown has ONE H1. Canonical finding
   order (JSON/SARIF/index) is untouched.
+- **`seams[].policy` and `archfit map`** (`evaluation.attachSeamPolicy`, run in
+  `Score` after `finalize`; `internal/output/archmap`; `cmd/archfit/map.go`).
+  Status, first match: active gate finding on the pair → `violation`;
+  baselined/waived gate finding → `accepted` (never `allowed`); active
+  advisory (baselined/waived advisories name nothing) → `advisory`;
+  `pairPermitted` (fail-gated allowlist via `allowlistPermission`, shared
+  with `can-import`, or module layer order) → `allowed`; else `observed`. A
+  finding's pair is its endpoint paths placed through
+  `Result.SeamEndpointModules` (the graph's module per path, built in
+  `Assess`), falling back to the finding's module — module-pair findings with
+  an unowned importer, mixed-side rules and Rust `crate::mod` edges name
+  declared modules or none. `--no-advisories` changes advisory seams.
+  `TestSeamAllowedAgreesWithCanImport` pins the allowed half to `JudgeEdge`
+  (can-import may still say `not_decided` for a whole-graph rule the run has
+  decided). The key is `omitempty` only so older
+  state documents validate. `map` reads the report plus config layers/modules,
+  draws outermost first, exits 0/3, and `--focus` counts omitted seams.
 - **`--format agent` is a digest, decided in the renderer**
   (`internal/output/agentout`, `archfit.agent-result.v1`, schema
   `archfit.agent-result.schema.json`). `next_action` is decided ONCE, in

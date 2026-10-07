@@ -81,6 +81,16 @@ New:
   needs-attention verdict with no finding says why
   (`NEEDS ATTENTION — evidence incomplete: …`). Diagnostics list the findings
   of warn-gated rules before the coupling advisories.
+- `archfit map [--format mermaid|text] [--focus MODULE]...` draws the declared
+  modules, outermost layer first, and the seams between them with their policy
+  status and integration strength: a violation is a thick arrow, accepted debt
+  a dotted one. `--focus` keeps the named modules and their neighbours and
+  counts the omitted seams by status. It reads the same run as `check` and adds
+  no report document. See [`archfit map`](commands.md#archfit-map).
+- The architecture state gains `seams[].policy`: `violation`, `accepted`,
+  `advisory`, `allowed` (a fail-gated allowlist or layer rule permits the pair,
+  with the permission predicate of `policy can-import`), or `observed`. A
+  baselined gate finding reads `accepted`, never `allowed`.
 - New [glossary](glossary.md): archfit terms, wire terms, and the book terms
   and chapters they map to.
 
@@ -108,8 +118,9 @@ Contract notes:
 - New answer document `archfit.policy-answer.v1` for `archfit policy`. It
   has no published schema yet; the App does not read it.
 - New published schema `archfit.agent-result.schema.json` for
-  `archfit.agent-result.v1`. The architecture state, `archfit.state.schema.json`,
-  baseline v2, and the comparison fingerprints do not change.
+  `archfit.agent-result.v1`. Baseline v2 and the comparison fingerprints do
+  not change. The architecture state changes only by the optional
+  `seams[].policy` key below.
 - Markdown is one document with one H1. The second H1 (`# archfit report`),
   its config-hash line, `## Summary`, and `## Gate findings` are gone: the
   blockers are in `## Blockers`, the config hash is in `## Comparison`, and
@@ -117,14 +128,21 @@ Contract notes:
   replaced by `## Blockers` and `## Diagnostics`; text replaces
   `TOP ACTIONABLE FINDINGS` with `BLOCKERS` and `DIAGNOSTICS`. Scripts that
   parse those headings must change.
-- JSON and SARIF change only in two texts: the undeclared-volatility entry in
-  `config_warnings`, and the `why` (and SARIF message) of a critical
-  low-distance `bc/imbalanced_coupling` finding. Finding IDs do not change.
+- Apart from `seams[].policy`, JSON and SARIF change only in two texts: the
+  undeclared-volatility entry in `config_warnings`, and the `why` (and SARIF
+  message) of a critical low-distance `bc/imbalanced_coupling` finding.
+  Finding IDs do not change.
+- `archfit.architecture-state.v1` gains the optional key `seams[].policy`;
+  `archfit.state.schema.json` is regenerated, so JSON and SARIF (the state in
+  `run.properties`) carry one new key per seam. The archfit App needs a decoder
+  before it can show the status, and must re-pin the state schema for this
+  release.
 - `map/uncovered_path` changes its subject from a graph node to a directory.
   A Go package keeps its finding ID. A finding about a single file gets a new
   ID: the old one reads `fixed`, and the directory finding is new. Before
   v2.5.0, `module_review.gate: fail` blocked nothing.
-- Configs that do not use the new keys or `module_review` give byte-identical output.
+- Configs that do not use the new keys or `module_review` give the same
+  output, except for the `seams[].policy` key and the two texts above.
 
 Fixed:
 

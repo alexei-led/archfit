@@ -1,0 +1,18 @@
+ARCHITECTURE MAP
+
+MODULES (outermost layer first)
+
+  entrypoint       api
+  adapter          stripe
+  application      orders
+  domain           billing
+  (no layer)       audit
+
+SEAMS (6)
+
+  accepted   api -> billing  (functional)
+  allowed    api -> stripe  (functional)
+  violation  billing -> stripe  (functional)
+  observed   orders -> audit  (functional)
+  allowed    orders -> billing  (functional)
+  allowed    stripe -> orders  (unknown)

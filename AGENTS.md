@@ -77,7 +77,7 @@ This project is indexed by GitNexus as **archfit** (11188 symbols, 36851 relatio
 | `policy-config-adapter` | `internal/config/**` | adapter | alexei-led | `internal/config` | any | `cli-composition`, `config-lifecycle`, `development-tools` |
 | `provider-adapters` | `internal/llm/**` | adapter | alexei-led | `internal/llm` | any | `cli-composition` |
 | `relationship-analysis` | `internal/relationship/**` | core | alexei-led | `internal/relationship`, `internal/relationship/coupling`, `internal/relationship/facts`, `internal/relationship/labels` | any | any |
-| `report-adapters` | `internal/output/**`, `internal/reportschema/**` | adapter | alexei-led | `internal/output/agentout`, `internal/output/console`, `internal/output/jsonout`, `internal/output/markdown`, `internal/output/sarif`, `internal/output/scorecard`, `internal/reportschema` | any | any |
+| `report-adapters` | `internal/output/**`, `internal/reportschema/**` | adapter | alexei-led | `internal/output/agentout`, `internal/output/archmap`, `internal/output/console`, `internal/output/jsonout`, `internal/output/markdown`, `internal/output/sarif`, `internal/output/scorecard`, `internal/reportschema` | any | any |
 | `report-contract` | `internal/model/report/**`, `internal/report/ports/**` | model | alexei-led | `internal/model/report`, `internal/report/ports` | none | any |
 
 Layers, inner to outer: `model`, `support`, `core`, `application`, `adapter`, `cmd`. A layer may import only itself and layers inner to it.

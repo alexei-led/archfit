@@ -343,6 +343,13 @@ type Seam struct {
 	RoleExpectation      string                `json:"role_expectation,omitempty"`
 	Hypothesis           string                `json:"hypothesis,omitempty"`
 	DistributedMonolith  bool                  `json:"distributed_monolith,omitempty"`
+	// Policy is what the policy says about the pair, the first that matches:
+	// violation (an active gate finding names it), accepted (a baselined or
+	// waived gate finding), advisory (another active finding), allowed (a
+	// fail-gated allowlist or layer rule permits it), or observed. Every
+	// assessed seam carries one; the key is optional only so documents written
+	// before it existed still validate.
+	Policy string `json:"policy,omitempty"`
 }
 
 // ArchitectureState is the versioned architecture-state report contract. It has

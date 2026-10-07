@@ -95,7 +95,13 @@ type Result struct {
 	ModuleGraphComplexity *ModuleGraphComplexity `json:"-"`
 	// Seams is the logical coupling seam ledger, one record per ordered module
 	// pair. It reaches the wire only through the architecture-state contract.
-	Seams                    []Seam                             `json:"-"`
+	Seams []Seam `json:"-"`
+	// SeamEndpointModules maps each graph-node path an edge names (and the
+	// directory of an importing file) to the module the seam ledger keys it
+	// under, synthetic go.work and crate::mod modules included. The seam
+	// policy places a finding on its seam through it, since a module-pair or
+	// mixed-side finding names declared modules only, or none.
+	SeamEndpointModules      map[string]string                  `json:"-"`
 	DistanceContext          *evidence.DistanceContext          `json:"distance_context,omitempty"`
 	DistanceConfigCandidates []evidence.DistanceConfigCandidate `json:"distance_config_candidates,omitempty"`
 	VolatilityCorroboration  *evidence.VolatilityCorroboration  `json:"volatility_corroboration,omitempty"`

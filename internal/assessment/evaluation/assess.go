@@ -163,6 +163,7 @@ func Assess(in AssessInput) (Assessed, error) {
 		in.Accepted = status.Empty{}
 	}
 	diag := project(in, ruleset, newMetricset(in.Policy.Gates.Metrics))
+	diag.SeamEndpointModules = seamEndpointModules(in.Relationships)
 	diag.OwnerSource = in.OwnerSource
 	diag.VolatilityCorroboration = in.VolatilityCorroboration
 	return Assessed{
@@ -236,6 +237,7 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	})
 	diag.CoverageGaps = in.CoverageGaps
 	diag.ConfigWarnings = in.ConfigWarnings
+	attachSeamPolicy(diag, in.Policy)
 	// The tool gate runs before the state is built, not inside the returned
 	// literal: it can rewrite the verdict, and the state must classify the
 	// finalized run, not the one halfway through it.

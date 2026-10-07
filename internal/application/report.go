@@ -131,7 +131,7 @@ func projectStateSeams(in []result.Seam) []report.Seam {
 			CriticalSharePct: s.CriticalSharePct, HighOrWorseSharePct: s.HighOrWorseSharePct,
 			Labels: s.Labels, LabelEvidenceHash: s.LabelEvidenceHash, Confidence: s.Confidence,
 			RoleExpectation: s.RoleExpectation, Hypothesis: s.Hypothesis,
-			DistributedMonolith: s.DistributedMonolith,
+			DistributedMonolith: s.DistributedMonolith, Policy: s.Policy,
 		})
 	}
 	return out
