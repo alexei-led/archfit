@@ -250,13 +250,18 @@ type StateComparison struct {
 	Status             ComparisonStatus    `json:"status"`
 	BaseRef            string              `json:"base_ref,omitempty"`
 	ConfigHash         string              `json:"config_hash,omitempty"`
+	ClassificationHash string              `json:"classification_hash,omitempty"`
 	ModelHash          string              `json:"model_hash,omitempty"`
 	LabelsHash         string              `json:"labels_hash,omitempty"`
 	RubricVersion      string              `json:"rubric_version,omitempty"`
 	MeasurementProfile *MeasurementProfile `json:"measurement_profile,omitempty"`
 	Reasons            []string            `json:"reasons"`
-	TaskOriginStatus   string              `json:"task_origin_status,omitempty"`
-	TaskOriginReasons  []string            `json:"task_origin_reasons,omitempty"`
+	Drift              []string            `json:"drift,omitempty"`
+	// BaselinePresent is set on gate_reference only: true when a baseline file
+	// was loaded (comparable or not), false when there was none.
+	BaselinePresent   *bool    `json:"baseline_present,omitempty"`
+	TaskOriginStatus  string   `json:"task_origin_status,omitempty"`
+	TaskOriginReasons []string `json:"task_origin_reasons,omitempty"`
 }
 
 // StateMeasurement holds deterministic source, history, and tool facts only. It
