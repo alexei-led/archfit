@@ -263,3 +263,45 @@ func TestRoundTrip_StateSnapshot(t *testing.T) {
 		t.Errorf("dimension = %+v, want %+v", gotDim, wantDim)
 	}
 }
+
+func TestLoadForReanchor(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr string
+		wantIDs []string
+	}{
+		{name: "missing file is an error", wantErr: "read"},
+		{name: "current schema is read", content: `{"schema_version":"` + baseline.SchemaVersion + `","accepted":[{"fingerprint":"aa","rule_id":"r"}]}`, wantIDs: []string{"aa"}},
+		{name: "the previous schema is read", content: `{"schema_version":"archfit.baseline.v2","accepted":[{"fingerprint":"bb","rule_id":"r"}]}`, wantIDs: []string{"bb"}},
+		{name: "an older schema is refused", content: `{"schema_version":"archfit.baseline.v1","accepted":[]}`, wantErr: "cannot be re-anchored"},
+		{name: "malformed JSON is refused", content: `{`, wantErr: "parse"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "baseline.json")
+			if tc.content != "" {
+				if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			b, err := baseline.LoadForReanchor(context.Background(), path)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want one containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ids []string
+			for _, a := range b.Accepted {
+				ids = append(ids, a.Fingerprint)
+			}
+			if !slices.Equal(ids, tc.wantIDs) {
+				t.Errorf("accepted = %v, want %v", ids, tc.wantIDs)
+			}
+		})
+	}
+}

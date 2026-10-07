@@ -320,6 +320,9 @@ func validateRules(rules []policy.RuleDef) error {
 		if id == "" {
 			return fmt.Errorf("rules[#%d].id is required", i)
 		}
+		if modelrule.IsMetricRatchet(id) {
+			return fmt.Errorf("rules[%s].id may not start with %q: that prefix names a tripped metric ratchet", id, modelrule.RuleIDMetricPrefix)
+		}
 		if err := validateGate(fmt.Sprintf("rules[%s]", id), r.Gate); err != nil {
 			return err
 		}

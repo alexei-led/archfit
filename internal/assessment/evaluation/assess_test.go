@@ -74,7 +74,7 @@ func assessInput() evaluation.AssessInput {
 			ClassifiedEdges: &relationship.ClassifiedEdgeSummary{Total: 1, Scored: 1},
 		},
 		Policy:       assessPolicy(),
-		Scope:        scope.Scope{Root: assessRoot, Mode: scope.ModeFull},
+		Scope:        scope.Scope{Root: assessRoot},
 		Now:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		Advisory:     true,
 		ConfigSource: assessCfgPath,

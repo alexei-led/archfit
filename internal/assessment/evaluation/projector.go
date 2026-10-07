@@ -4,7 +4,6 @@ import (
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
-	"github.com/alexei-led/archfit/internal/scope"
 )
 
 // project evaluates the assessment stages and assembles the diagnostic. Every
@@ -41,7 +40,6 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 		AdvisoryCandidates: in.RelationshipSignals.AdvisoryCandidates,
 		StaleLabelKeys:     in.RelationshipSignals.StaleLabelKeys,
 		IncludeAdvisories:  in.Advisory,
-		Delta:              in.Scope.Mode == scope.ModeDelta,
 	})
 	resolvedFindings := assessed.Findings
 	metricResults := assessed.Metrics
@@ -59,11 +57,6 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 	// graph and file LOC, attached here as report-only evidence. Never read by
 	// the verdict or any gate. Empty when SCIP is off/absent.
 	fileFacts := in.Facts.FileFacts
-
-	// Delta bucketing (Task 3c): in delta mode, group findings by how they relate
-	// to the baseline and the changed-file set so the report does not read like a
-	// full-repo dump. Report-only; never enters the verdict. Nil outside delta mode.
-	delta := assessed.Delta
 
 	classifiedEdges := projectRelationshipSummary(in.RelationshipSignals.ClassifiedEdges)
 	graphComplexity := moduleGraphComplexity(in.Policy.Topology.Modules, in.Relationships)
@@ -90,7 +83,6 @@ func project(in AssessInput, rules Ruleset, metrics Metricset) result.Result {
 		ClassifiedEdges:         classifiedEdges,
 		ModuleGraphComplexity:   graphComplexity,
 		Seams:                   projectSeams(in.RelationshipSignals.Seams),
-		Delta:                   delta,
 		Summary: result.Summary{
 			GateFindings: gateNew,
 			Warnings:     warnings,

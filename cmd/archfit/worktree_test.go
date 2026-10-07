@@ -82,7 +82,7 @@ func makeDiffFixtureRepo(t *testing.T) (string, string) {
 }
 
 // TestDiffCmd_Formats covers every --base render: the text decision report, the
-// JSON diagnostic (schema parity plus task-origin metadata and its path
+// JSON diagnostic (schema parity plus origin metadata and its path
 // isolation), and the Markdown report. One exported test with subtests —
 // cmd/archfit sits at its public_api_max ceiling.
 func TestDiffCmd_Formats(t *testing.T) {

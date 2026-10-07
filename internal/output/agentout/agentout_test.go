@@ -100,13 +100,12 @@ func TestNextActionPrecedence(t *testing.T) {
 	ownerTask.kind = repairNeedsOwnerDecision
 	ownerTask.from, ownerTask.to = "internal/c/c.go", "internal/d"
 	preExisting := gateTask("c3", "no_x")
-	preExisting.origin = originPreExisting
+	preExisting.origin = report.OriginPreExisting
 	introduced := gateTask("d4", "no_x")
 	introduced.origin = "introduced"
 	unknown := gateTask("e5", "no_x")
 	unknown.origin = "unknown"
-	ratchet := document(report.StateBlocked)
-	ratchet.Metrics = []report.MetricResult{{Name: "coverage", Value: 0.4, Delta: new(-0.1)}}
+	ratchet := document(report.StateBlocked, gateTask("m1", "metric/coverage"))
 	requiredTool := document(report.StateBlocked)
 	requiredTool.CoverageGaps = []report.CoverageGap{{Tool: "sg", Gate: string(report.GateFail)}}
 	warnTool := document(report.StateNeedsAttention)
@@ -122,6 +121,7 @@ func TestNextActionPrecedence(t *testing.T) {
 		{name: "introduced origin is in scope", doc: document(report.StateBlocked, introduced), want: ActionRepair},
 		{name: "unknown origin is in scope", doc: document(report.StateBlocked, unknown), want: ActionRepair},
 		{name: "ratchet block", doc: ratchet, want: ActionRepair},
+		{name: "ratchets that cannot be evaluated need the owner", doc: withUnevaluated(document(report.StateNeedsAttention), "reference not comparable (drift: rubric_version): 5 metric ratchets cannot be evaluated"), want: ActionAskOwner},
 		{name: "only owner decisions", doc: document(report.StateBlocked, ownerTask), want: ActionAskOwner},
 		{name: "dead selector", doc: withUnevaluated(document(report.StateNeedsAttention), "selector matches nothing: from internal/x/**"), want: ActionAskOwner},
 		{name: "dead selector beats missing evidence", doc: withUnevaluated(document(report.StateNeedsAttention), "go/packages evidence is partial", "selector matches nothing: to x"), want: ActionAskOwner},
@@ -244,10 +244,10 @@ func TestGroupOrigin(t *testing.T) {
 		inScope bool
 	}{
 		{name: "no base", origins: []string{"", ""}, want: "", inScope: true},
-		{name: "all pre-existing", origins: []string{originPreExisting, originPreExisting}, want: originPreExisting},
-		{name: "introduced wins", origins: []string{originPreExisting, originIntroduced}, want: originIntroduced, inScope: true},
-		{name: "mixed is unknown", origins: []string{originPreExisting, originUnknown}, want: originUnknown, inScope: true},
-		{name: "missing origin is never pre-existing", origins: []string{"", originPreExisting}, want: originUnknown, inScope: true},
+		{name: "all pre-existing", origins: []string{report.OriginPreExisting, report.OriginPreExisting}, want: report.OriginPreExisting},
+		{name: "introduced wins", origins: []string{report.OriginPreExisting, report.OriginIntroduced}, want: report.OriginIntroduced, inScope: true},
+		{name: "mixed is unknown", origins: []string{report.OriginPreExisting, report.OriginUnknown}, want: report.OriginUnknown, inScope: true},
+		{name: "missing origin is never pre-existing", origins: []string{"", report.OriginPreExisting}, want: report.OriginUnknown, inScope: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -290,7 +290,7 @@ func TestValidate(t *testing.T) {
 func TestRepairOrder(t *testing.T) {
 	t.Parallel()
 	out := gateTask("a0", "no_x")
-	out.origin, out.from = originPreExisting, "internal/out.go"
+	out.origin, out.from = report.OriginPreExisting, "internal/out.go"
 	owner := gateTask("a1", "new_dep")
 	owner.kind, owner.from = repairNeedsOwnerDecision, "internal/owner.go"
 	low := gateTask("a2", "no_x")

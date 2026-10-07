@@ -64,7 +64,7 @@ func marshalSyntaxEntries(t *testing.T, entries []map[string]any) []byte {
 	return b
 }
 
-var syntaxScope = scope.Scope{Root: "/repo", Mode: scope.ModeFull}
+var syntaxScope = scope.Scope{Root: "/repo"}
 
 func TestSyntax_AbsentTool_ReturnsAbsentCoverageNoError(t *testing.T) {
 	a := astgrep.New(absentRunner())

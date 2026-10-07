@@ -95,7 +95,7 @@ func TestWorkspaceFixture_CoverageOK(t *testing.T) {
 	dir := materializeWorkspaceFixture(t)
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	_, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	_, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestWorkspaceFixture_TwoGoModules(t *testing.T) {
 	dir := materializeWorkspaceFixture(t)
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestWorkspaceFixture_NodeIDsScanRootRelative(t *testing.T) {
 	dir := materializeWorkspaceFixture(t)
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestWorkspaceFixture_OutOfScopeGoWork(t *testing.T) {
 	copyFixtureFile(t, filepath.Join(dir, "b", "api", "api.go"), filepath.Join(checkout, "api", "api.go"))
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: checkout, Mode: scope.ModeFull})
+	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: checkout})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestWorkspaceFixture_CrossModuleEdgeFirstPartyWithStrengthHint(t *testing.T
 	dir := materializeWorkspaceFixture(t)
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestWorkspaceFixture_Regression_SingleLoadAtRoot(t *testing.T) {
 
 	// Now run the new per-member Extract and verify it succeeds where old failed.
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}

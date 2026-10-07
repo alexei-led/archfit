@@ -41,12 +41,10 @@ func New() *Renderer { return &Renderer{} }
 func (r *Renderer) Format() string { return "markdown" }
 
 // Render writes the BC-aligned Markdown report for d to w: the architecture
-// state headline first — naming the metrics behind a metric-ratchet block from
-// the document's metric deltas — then the detailed audit.
+// state headline first, then the detailed audit.
 func (r *Renderer) Render(d report.Document, w io.Writer) error {
-	regressions := ratchetRegressions(d)
-	view := brief.Build(brief.Input{State: d.State, CoverageGaps: d.CoverageGaps, MetricRatchet: len(regressions) > 0})
-	if err := writeState(d.State, view, regressions, w); err != nil {
+	view := brief.Build(brief.Input{State: d.State, CoverageGaps: d.CoverageGaps})
+	if err := writeState(d.State, view, w); err != nil {
 		return err
 	}
 	if err := r.renderAudit(d, w); err != nil {
@@ -74,8 +72,6 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 // headline and "PASS (exit 0)" three sections later, with the exit claim false.
 func (r *Renderer) renderAudit(d report.Document, w io.Writer) error {
 	var b strings.Builder
-
-	writeDelta(&b, d)
 
 	// Split metrics: BC-primary vs beyond-BC.
 	var primaryMetrics, beyondMetrics []report.MetricResult

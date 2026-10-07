@@ -358,11 +358,9 @@ type MetricDelta struct {
 // Delta is one dimension's change against the comparison reference. A
 // non-comparable reference yields reasons and no numbers.
 type Delta struct {
-	Status           ComparisonStatus
-	Reasons          []string
-	Metrics          []MetricDelta
-	NewFindings      []string
-	ResolvedFindings []string
+	Status  ComparisonStatus
+	Reasons []string
+	Metrics []MetricDelta
 }
 
 // Coverage is a dimension's denominator: what was counted, how much of it was
@@ -474,11 +472,6 @@ type Architecture struct {
 	// blocks without producing a finding, so it is carried separately rather
 	// than faked as one.
 	RequiredToolFailure bool
-	// MetricRegressions names the metrics whose accepted-baseline delta worsened
-	// past a blocking threshold. Like RequiredToolFailure it blocks without
-	// producing a finding, so a blocked run with zero active blockers can still
-	// name its cause.
-	MetricRegressions []string
 }
 
 // ConfidenceFor is the confidence a measurement status supports on its own.

@@ -20,7 +20,6 @@ const (
 	fixtureJSON           = `{"edges":[{"importer":"myapp.a","imported":"myapp.b","line":5},{"importer":"myapp.a","imported":"myapp.b._internal.impl","line":6}],"unresolved":0}`
 	unresolvedFixtureJSON = `{"edges":[],"unresolved":2,"unresolved_imports":[{"importer":"myapp.a","imported":"httpx","line":3,"line_contents":"import httpx"},{"importer":"myapp.a","imported":"boto3.session","line":4,"line_contents":"from boto3.session import Session"}]}`
 	testPkgName           = "myapp"
-	testScopeMode         = "full"
 	testRoot              = "../../../testdata/py"
 
 	modMyappA        = "module:myapp.a"
@@ -57,7 +56,7 @@ func TestExtract_Parse(t *testing.T) {
 	}
 	e := py.New(mock, cfg)
 
-	facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+	facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -132,7 +131,7 @@ func TestExtract_WithUnresolved(t *testing.T) {
 	}
 	e := py.New(mock, cfg)
 
-	facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+	facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -196,7 +195,7 @@ func TestExtract_UnresolvedReasonSummarizesTopRoots(t *testing.T) {
 	}
 
 	e := py.New(mock, evidenceports.ExtractConfig{PyPackage: testPkgName, Mode: evidenceports.ModeAuto})
-	_, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+	_, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -237,7 +236,7 @@ func TestExtract_SymbolLevelStrength(t *testing.T) {
 	cfg := evidenceports.ExtractConfig{PyPackage: testPkgName, Mode: evidenceports.ModeAuto}
 	e := py.New(mock, cfg)
 
-	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -307,7 +306,7 @@ func TestExtract_ModuleLevelIntrusiveStillDetected(t *testing.T) {
 	cfg := evidenceports.ExtractConfig{PyPackage: testPkgName, Mode: evidenceports.ModeAuto}
 	e := py.New(mock, cfg)
 
-	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -347,7 +346,7 @@ func TestExtract_ToolAbsentAuto(t *testing.T) {
 	}
 	e := py.New(mock, cfg)
 
-	facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+	facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot})
 	if err != nil {
 		t.Fatalf("Extract: unexpected error: %v", err)
 	}
@@ -382,7 +381,7 @@ func TestExtract_NonZeroExit(t *testing.T) {
 	t.Run("auto degrades to partial coverage", func(t *testing.T) {
 		cfg := evidenceports.ExtractConfig{PyPackage: testPkgName, Mode: evidenceports.ModeAuto}
 		e := py.New(mock, cfg)
-		facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+		facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot})
 		if err != nil {
 			t.Fatalf("auto mode must not error on grimp helper non-zero exit; got %v", err)
 		}
@@ -397,7 +396,7 @@ func TestExtract_NonZeroExit(t *testing.T) {
 	t.Run("on hard-errors", func(t *testing.T) {
 		cfg := evidenceports.ExtractConfig{PyPackage: testPkgName, Mode: evidenceports.ModeOn}
 		e := py.New(mock, cfg)
-		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode}); err == nil {
+		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot}); err == nil {
 			t.Error("ModeOn must hard-error on grimp helper non-zero exit")
 		}
 	})
@@ -440,7 +439,7 @@ func TestFirstPartyPackages_IncludesDiscoveredAndConfiguredRoots(t *testing.T) {
 	}
 
 	e := py.New(mock, evidenceports.ExtractConfig{PyPackage: "tests", Paths: []string{"prefect.blocks.**", "tests.**"}, Mode: evidenceports.ModeAuto})
-	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root, Mode: testScopeMode}); err != nil {
+	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
 
@@ -491,7 +490,7 @@ func TestExtract_MultiPackageArgs(t *testing.T) {
 	}
 
 	e := py.New(mock, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
-	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root, Mode: testScopeMode}); err != nil {
+	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
 

@@ -1,7 +1,7 @@
 package decision
 
 import (
-	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -11,27 +11,27 @@ import (
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
-// TestTaskOriginClassification covers the `--base` task-origin classification: how tasks are placed
+// TestOriginClassification covers the `--base` origin classification: how findings are placed
 // (introduced / pre-existing / unknown), which analyzer evidence is comparable,
 // which families are active for a config, and the end-to-end `check --base
 // --json` contract at every gate exit code.
 //
 // One exported test function by design — cmd/archfit sits at its public_api_max
 // ceiling, so new coverage arrives as subtests, never as new exported names.
-func TestTaskOriginClassification(t *testing.T) {
+func TestOriginClassification(t *testing.T) {
 	t.Parallel()
-	t.Run("origin", testTaskOriginBuckets)
-	t.Run("analyzer_evidence", testTaskOriginAnalyzerEvidence)
-	t.Run("base_finding_ids", testTaskOriginBaseFindingIDs)
-	t.Run("cross_path_agreement", testTaskOriginCrossPathAgreement)
-	t.Run("unpaired_reason", testTaskOriginUnpairedReason)
+	t.Run("origin", testOriginBuckets)
+	t.Run("analyzer_evidence", testOriginAnalyzerEvidence)
+	t.Run("base_finding_ids", testOriginBaseFindingIDs)
+	t.Run("cross_path_agreement", testOriginCrossPathAgreement)
+	t.Run("unpaired_reason", testOriginUnpairedReason)
 }
 
-// testTaskOriginUnpairedReason pins the wording of the one output that explains
+// testOriginUnpairedReason pins the wording of the one output that explains
 // why a delta could not be attributed. When the asymmetry that blocked pairing
 // lives BELOW the raw coverage status, printing the status twice states two
 // identical facts as the reason they could not be compared.
-func testTaskOriginUnpairedReason(t *testing.T) {
+func testOriginUnpairedReason(t *testing.T) {
 	t.Parallel()
 	goFam := AnalyzerFamily{name: toolGoPackages, primary: true}
 	goGap := []evidence.CoverageGap{{Tool: toolGoPackages}}
@@ -105,7 +105,7 @@ func testTaskOriginUnpairedReason(t *testing.T) {
 //
 // The projection is the point of the guard. `--base` has no single grade field:
 // its middle state — comparable, but with the degradation named in
-// comparison_reasons — lives in the reasons slice. Reading only the bool
+// origin_reasons — lives in the reasons slice. Reading only the bool
 // collapses `comparable` and `comparable_with_gaps` into one bucket, and that
 // boundary IS the silent-versus-disclosed boundary the whole design rests on.
 func gitGrade(evidenceComparable bool, reasons []string) CoverageComparability {
@@ -119,7 +119,7 @@ func gitGrade(evidenceComparable bool, reasons []string) CoverageComparability {
 	}
 }
 
-// testTaskOriginCrossPathAgreement drives ONE table of coverage shapes through
+// testOriginCrossPathAgreement drives ONE table of coverage shapes through
 // BOTH comparison paths — pairFamily here and gradeTool behind
 // `config compare` — and asserts they reach the same three-valued grade.
 //
@@ -132,7 +132,7 @@ func gitGrade(evidenceComparable bool, reasons []string) CoverageComparability {
 // full grade, requires a reason exactly when a grade is not `comparable`, and
 // asserts documented divergences POSITIVELY, so a row whose comment claims a
 // divergence fails once the paths converge.
-func testTaskOriginCrossPathAgreement(t *testing.T) {
+func testOriginCrossPathAgreement(t *testing.T) {
 	t.Parallel()
 	partial := func(tool string, unresolved int) evidence.Coverage {
 		c := covRow(tool, evidence.StatusPartial)
@@ -304,184 +304,204 @@ func assertGradeDisclosed(t *testing.T, path string, grade CoverageComparability
 // scipFamily is the non-primary analyzer family the cross-path table compares on.
 var scipFamily = AnalyzerFamily{name: toolScip}
 
-// taskOriginRef is the base ref label used by the pure-comparison subtests.
-const taskOriginRef = "main"
-
 // toolGoPackages is the Go primary analyzer's coverage name, restated locally:
 // assessment compares coverage rows by name and never imports the extractors.
 const toolGoPackages = "go/packages"
 
-// couplingGateFindingID mirrors evaluation's synthetic coupling-gate finding ID.
-// The origin comparison must place it as unknown-origin without depending on
-// the evaluator that emits it.
-const couplingGateFindingID = "coupling-gate"
+const ruleForbidden = "arch/forbidden"
 
 func covRow(tool, status string) evidence.Coverage {
 	return evidence.Coverage{Tool: tool, Status: status}
 }
 
-func agentTask(findingID, ruleID string) result.AgentTask {
-	return result.AgentTask{FindingID: findingID, RuleID: ruleID}
+func gateFinding(id string) finding.Finding {
+	return finding.Finding{ID: id, RuleID: ruleForbidden, Kind: finding.KindGate, Status: finding.StatusNew}
+}
+
+func rollupFinding(id string, members ...string) finding.Finding {
+	return finding.Finding{ID: id, RuleID: finding.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusNew, Members: members}
+}
+
+// seamGateAB is the ID seamGateFinding gives the a -> b seam.
+const seamGateAB = "coupling-gate/a-b"
+
+func seamGateFinding(from, to string) finding.Finding {
+	return finding.Finding{ID: "coupling-gate/" + from + "-" + to, RuleID: finding.RuleIDCouplingGate, Kind: finding.KindGate,
+		Status: finding.StatusNew, Edge: finding.EdgeEvidence{From: finding.Endpoint{Module: from}, To: finding.Endpoint{Module: to}}}
 }
 
 // goPrimaryFamily is the single-family fixture used by the origin table: the
-// pairing rules themselves are covered by testTaskOriginAnalyzerEvidence.
+// pairing rules themselves are covered by testOriginAnalyzerEvidence.
 var goPrimaryFamily = []AnalyzerFamily{{name: toolGoPackages, primary: true}}
 
-func testTaskOriginBuckets(t *testing.T) {
+func testOriginBuckets(t *testing.T) {
 	t.Parallel()
-	const hash = "cfg-hash"
-	comparableSide := AnalyzerEvidence{Coverage: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusOK)}, Hash: hash}
-	partialSide := AnalyzerEvidence{Coverage: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusPartial)}, Hash: hash}
+	okSide := AnalyzerEvidence{Coverage: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusOK)}}
+	partialSide := AnalyzerEvidence{Coverage: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusPartial)}}
+	fixed := gateFinding("gone")
+	fixed.Status = finding.StatusFixed
 
 	tests := []struct {
-		name            string
-		tasks           []result.AgentTask
-		baseIDs         []string
-		base            AnalyzerEvidence
-		wantIntroduced  []string
-		wantPreExisting []string
-		wantUnknown     []string
-		wantStatus      string
+		name           string
+		head           []finding.Finding
+		base           []BaseFinding
+		baseSeams      []ModulePair
+		baseSide       AnalyzerEvidence
+		wantOrigins    map[string]finding.Origin
+		wantIntroduced []string
+		wantResolved   []string
+		wantStatus     string
 	}{
 		{
-			name:            "exact base match is pre-existing",
-			tasks:           []result.AgentTask{agentTask("f1", "arch/forbidden")},
-			baseIDs:         []string{"f1"},
-			base:            comparableSide,
-			wantPreExisting: []string{"f1"},
-			wantStatus:      TaskOriginComparable,
+			name: "exact base match is pre-existing", head: []finding.Finding{gateFinding("f1")},
+			base: []BaseFinding{{ID: "f1"}}, baseSide: okSide,
+			wantOrigins: map[string]finding.Origin{"f1": finding.OriginPreExisting}, wantStatus: OriginComparable,
 		},
 		{
-			name:           "unmatched task with comparable evidence is introduced",
-			tasks:          []result.AgentTask{agentTask("f2", "arch/forbidden")},
-			baseIDs:        []string{"f1"},
-			base:           comparableSide,
-			wantIntroduced: []string{"f2"},
-			wantStatus:     TaskOriginComparable,
+			name: "unmatched finding with comparable evidence is introduced", head: []finding.Finding{gateFinding("f2")},
+			base: []BaseFinding{{ID: "f1"}}, baseSide: okSide,
+			wantOrigins:    map[string]finding.Origin{"f2": finding.OriginIntroduced},
+			wantIntroduced: []string{"f2"}, wantResolved: []string{"f1"}, wantStatus: OriginComparable,
 		},
 		{
-			// A base entry the base run reported as fixed is dropped by
-			// BaseFindingIDs, so the same ID on head is genuinely new work.
-			name:           "base fixed entry does not make a task pre-existing",
-			tasks:          []result.AgentTask{agentTask("f1", "arch/forbidden")},
-			baseIDs:        nil,
-			base:           comparableSide,
-			wantIntroduced: []string{"f1"},
-			wantStatus:     TaskOriginComparable,
+			name: "unavailable evidence makes an unmatched finding unknown and claims nothing resolved",
+			head: []finding.Finding{gateFinding("f2")}, base: []BaseFinding{{ID: "f1"}}, baseSide: partialSide,
+			wantOrigins: map[string]finding.Origin{"f2": finding.OriginUnknown}, wantStatus: OriginUnknown,
 		},
 		{
-			name:        "unavailable analyzer evidence makes an unmatched task unknown",
-			tasks:       []result.AgentTask{agentTask("f2", "arch/forbidden")},
-			baseIDs:     []string{"f1"},
-			base:        partialSide,
-			wantUnknown: []string{"f2"},
-			wantStatus:  TaskOriginUnknown,
+			name: "an exact match survives unavailable evidence", head: []finding.Finding{gateFinding("f1")},
+			base: []BaseFinding{{ID: "f1"}}, baseSide: partialSide,
+			wantOrigins: map[string]finding.Origin{"f1": finding.OriginPreExisting}, wantStatus: OriginUnknown,
 		},
 		{
-			// Incomplete evidence never downgrades an exact ID match.
-			name:            "exact match survives unavailable evidence",
-			tasks:           []result.AgentTask{agentTask("f1", "arch/forbidden")},
-			baseIDs:         []string{"f1"},
-			base:            partialSide,
-			wantPreExisting: []string{"f1"},
-			wantStatus:      TaskOriginComparable,
+			name: "a fixed finding gets no origin and is never introduced", head: []finding.Finding{fixed},
+			baseSide: okSide, wantOrigins: map[string]finding.Origin{}, wantStatus: OriginComparable,
 		},
 		{
-			name:        "synthetic coupling-gate task is unknown before ID matching",
-			tasks:       []result.AgentTask{agentTask(couplingGateFindingID, finding.RuleIDCouplingGate)},
-			baseIDs:     []string{couplingGateFindingID},
-			base:        comparableSide,
-			wantUnknown: []string{couplingGateFindingID},
-			wantStatus:  TaskOriginUnknown,
+			// The representative is the smallest member ID: dropping the old
+			// representative "a" moves the rollup ID to "b" although no edge is new.
+			name: "a rollup whose representative left stays pre-existing",
+			head: []finding.Finding{rollupFinding("b", "b", "c")},
+			base: []BaseFinding{{ID: "a", Members: []string{"a", "b", "c"}}}, baseSide: okSide,
+			wantOrigins: map[string]finding.Origin{"b": finding.OriginPreExisting}, wantStatus: OriginComparable,
 		},
 		{
-			name:    "config hash mismatch makes every unmatched task unknown",
-			tasks:   []result.AgentTask{agentTask("f1", "arch/forbidden"), agentTask("f2", "arch/forbidden")},
-			baseIDs: []string{"f1"},
-			base: AnalyzerEvidence{
-				Coverage: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusOK)},
-				Hash:     "other-hash",
-			},
-			wantPreExisting: []string{"f1"},
-			wantUnknown:     []string{"f2"},
-			wantStatus:      TaskOriginUnknown,
+			name: "a rollup that gained an edge is introduced even when its ID existed",
+			head: []finding.Finding{rollupFinding("a", "a", "b", "z")},
+			base: []BaseFinding{{ID: "a", Members: []string{"a", "b"}}}, baseSide: okSide,
+			wantOrigins:    map[string]finding.Origin{"a": finding.OriginIntroduced},
+			wantIntroduced: []string{"a"}, wantStatus: OriginComparable,
 		},
 		{
-			name:            "lists use a stable sorted order",
-			tasks:           []result.AgentTask{agentTask("z", "r"), agentTask("a", "r"), agentTask("m", "r"), agentTask("b", "r")},
-			baseIDs:         []string{"m", "b"},
-			base:            comparableSide,
-			wantIntroduced:  []string{"a", "z"},
-			wantPreExisting: []string{"b", "m"},
-			wantStatus:      TaskOriginComparable,
+			name:        "a base rollup is resolved only when every edge is gone",
+			head:        []finding.Finding{rollupFinding("b", "b")},
+			base:        []BaseFinding{{ID: "a", Members: []string{"a", "b"}}, {ID: "x", Members: []string{"x", "y"}}},
+			baseSide:    okSide,
+			wantOrigins: map[string]finding.Origin{"b": finding.OriginPreExisting}, wantResolved: []string{"x"},
+			wantStatus: OriginComparable,
 		},
 		{
-			name:       "clean run still emits the block with empty lists",
-			base:       comparableSide,
-			wantStatus: TaskOriginComparable,
+			name: "a seam that qualified in base is pre-existing", head: []finding.Finding{seamGateFinding("a", "b")},
+			baseSeams: []ModulePair{{From: "a", To: "b"}}, baseSide: okSide,
+			wantOrigins: map[string]finding.Origin{seamGateAB: finding.OriginPreExisting}, wantStatus: OriginComparable,
+		},
+		{
+			name: "a seam that did not qualify in base is introduced", head: []finding.Finding{seamGateFinding("a", "b")},
+			baseSeams: []ModulePair{{From: "b", To: "a"}}, baseSide: okSide,
+			wantOrigins:    map[string]finding.Origin{seamGateAB: finding.OriginIntroduced},
+			wantIntroduced: []string{seamGateAB}, wantStatus: OriginComparable,
+		},
+		{
+			name: "lists use a stable sorted order",
+			head: []finding.Finding{gateFinding("z"), gateFinding("a"), gateFinding("m"), gateFinding("b")},
+			base: []BaseFinding{{ID: "q"}, {ID: "m"}, {ID: "b"}, {ID: "c"}}, baseSide: okSide,
+			wantOrigins: map[string]finding.Origin{"z": finding.OriginIntroduced, "a": finding.OriginIntroduced,
+				"m": finding.OriginPreExisting, "b": finding.OriginPreExisting},
+			wantIntroduced: []string{"a", "z"}, wantResolved: []string{"c", "q"}, wantStatus: OriginComparable,
+		},
+		{
+			// A ratchet compares against the accepted baseline, which the base
+			// run never reads, so the base tree cannot place it.
+			name:        "a metric ratchet finding is unknown even with paired evidence",
+			head:        []finding.Finding{{ID: "metric-ratchet", RuleID: "metric/cycles", Kind: finding.KindGate, Status: finding.StatusNew}},
+			baseSide:    okSide,
+			wantOrigins: map[string]finding.Origin{"metric-ratchet": finding.OriginUnknown}, wantStatus: OriginComparable,
+		},
+		{
+			name: "a clean run still has empty lists", baseSide: okSide,
+			wantOrigins: map[string]finding.Origin{}, wantStatus: OriginComparable,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := ClassifyTaskOrigins(TaskOriginEvidence{
-				BaseRef:        taskOriginRef,
-				Tasks:          tc.tasks,
-				BaseFindingIDs: tc.baseIDs,
-				Head: AnalyzerEvidence{
-					Coverage: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusOK)},
-					Hash:     hash,
-				},
-				Base:     tc.base,
-				Families: goPrimaryFamily,
+			got := ClassifyOrigins(OriginEvidence{
+				Findings: tc.head, BaseFindings: tc.base, BaseSeams: tc.baseSeams,
+				Head: okSide, Base: tc.baseSide, Families: goPrimaryFamily,
 			})
-			if got == nil {
-				t.Fatal("ClassifyTaskOrigins returned nil; the block must always be present with --base")
+			if got.Status != tc.wantStatus {
+				t.Errorf("status = %q, want %q", got.Status, tc.wantStatus)
 			}
-			if got.BaseRef != taskOriginRef {
-				t.Errorf("base_ref = %q, want %q", got.BaseRef, taskOriginRef)
+			if !maps.Equal(got.Origins, tc.wantOrigins) {
+				t.Errorf("origins = %v, want %v", got.Origins, tc.wantOrigins)
 			}
-			if got.ComparisonStatus != tc.wantStatus {
-				t.Errorf("comparison_status = %q, want %q", got.ComparisonStatus, tc.wantStatus)
+			assertIDs(t, "introduced_finding_ids", got.Introduced, tc.wantIntroduced)
+			assertIDs(t, "resolved_finding_ids", got.Resolved, tc.wantResolved)
+			if got.Reasons == nil {
+				t.Error("origin reasons must be a non-null array")
 			}
-			assertIDs(t, "introduced_finding_ids", got.IntroducedFindingIDs, tc.wantIntroduced)
-			assertIDs(t, "pre_existing_finding_ids", got.PreExistingFindingIDs, tc.wantPreExisting)
-			assertIDs(t, "unknown_origin_finding_ids", got.UnknownOriginFindingIDs, tc.wantUnknown)
-			if got.ComparisonReasons == nil {
-				t.Error("comparison_reasons must be a non-null array")
-			}
-			assertNonNullJSONArrays(t, got)
 		})
 	}
 
 	// The whole point of the partial split: on a TypeScript or Python repo the
 	// primary analyzer reports partial on both sides as its steady state. Before
-	// the split that pinned every unmatched task to unknown, which made the
+	// the split that pinned every unmatched finding to unknown, which made the
 	// origin delta inert on those languages.
-	t.Run("symmetric unresolved partial still places an unmatched task", func(t *testing.T) {
+	t.Run("symmetric unresolved partial still places an unmatched finding", func(t *testing.T) {
 		t.Parallel()
 		unresolvedSide := func(n int) AnalyzerEvidence {
 			row := covRow(toolDepCruiser, evidence.StatusPartial)
 			row.Unresolved = n
-			return AnalyzerEvidence{Coverage: []evidence.Coverage{row}, Hash: hash}
+			return AnalyzerEvidence{Coverage: []evidence.Coverage{row}}
 		}
-		got := ClassifyTaskOrigins(TaskOriginEvidence{
-			BaseRef:        taskOriginRef,
-			Tasks:          []result.AgentTask{agentTask("f2", "arch/forbidden")},
-			BaseFindingIDs: []string{"f1"},
-			Head:           unresolvedSide(4),
-			Base:           unresolvedSide(6),
-			Families:       []AnalyzerFamily{{name: toolDepCruiser, primary: true}},
+		got := ClassifyOrigins(OriginEvidence{
+			Findings: []finding.Finding{gateFinding("f2")}, BaseFindings: []BaseFinding{{ID: "f1"}},
+			Head: unresolvedSide(4), Base: unresolvedSide(6),
+			Families: []AnalyzerFamily{{name: toolDepCruiser, primary: true}},
 		})
-		assertIDs(t, "introduced_finding_ids", got.IntroducedFindingIDs, []string{"f2"})
-		assertIDs(t, "unknown_origin_finding_ids", got.UnknownOriginFindingIDs, nil)
-		if got.ComparisonStatus != TaskOriginComparable {
-			t.Errorf("comparison_status = %q, want %q", got.ComparisonStatus, TaskOriginComparable)
+		assertIDs(t, "introduced_finding_ids", got.Introduced, []string{"f2"})
+		if got.Status != OriginComparable {
+			t.Errorf("status = %q, want %q", got.Status, OriginComparable)
 		}
-		if len(got.ComparisonReasons) != 1 {
-			t.Fatalf("comparison_reasons = %v, want the degradation disclosed", got.ComparisonReasons)
+		if len(got.Reasons) != 1 {
+			t.Fatalf("reasons = %v, want the degradation disclosed", got.Reasons)
+		}
+	})
+
+	// One binary and one config measured both trees, so a profile difference
+	// came from the trees: it pairs and is named, never a blanket unknown.
+	t.Run("a measurement profile difference pairs and is named", func(t *testing.T) {
+		t.Parallel()
+		profile := func(settings, version string) *evidence.MeasurementProfile {
+			return &evidence.MeasurementProfile{SettingsHash: settings, Producers: []evidence.MeasurementProducer{
+				{Tool: toolGoPackages, SemanticsVersion: "go/packages.v1", ToolVersion: version, Status: evidence.StatusOK},
+			}}
+		}
+		head, base := okSide, okSide
+		head.Profile, base.Profile = profile("aaaaaaaaaaaaaaaa", "go1.25.3"), profile("bbbbbbbbbbbbbbbb", "go1.25.1")
+		got := ClassifyOrigins(OriginEvidence{
+			Findings: []finding.Finding{gateFinding("f2")}, Head: head, Base: base, Families: goPrimaryFamily,
+		})
+		if got.Origins["f2"] != finding.OriginIntroduced || got.Status != OriginComparable {
+			t.Errorf("origin = %q, status = %q; a tree-driven profile difference must not unpair", got.Origins["f2"], got.Status)
+		}
+		want := []string{
+			"go/packages: tool version differs (head go1.25.3, base go1.25.1)",
+			"measurement settings: head aaaaaaaaaaaa, base bbbbbbbbbbbb — tree-derived inputs differ (Go environment, TypeScript config)",
+		}
+		if !slices.Equal(got.Reasons, want) {
+			t.Errorf("reasons = %v, want %v", got.Reasons, want)
 		}
 	})
 }
@@ -502,18 +522,7 @@ func assertIDs(t *testing.T, field string, got, want []string) {
 	}
 }
 
-func assertNonNullJSONArrays(t *testing.T, d *TaskOriginDelta) {
-	t.Helper()
-	raw, err := json.Marshal(d)
-	if err != nil {
-		t.Fatalf("marshal task origin delta: %v", err)
-	}
-	if strings.Contains(string(raw), "null") {
-		t.Errorf("task origin delta must never serialise a null list: %s", raw)
-	}
-}
-
-func testTaskOriginAnalyzerEvidence(t *testing.T) {
+func testOriginAnalyzerEvidence(t *testing.T) {
 	t.Parallel()
 	goFam := AnalyzerFamily{name: toolGoPackages, primary: true}
 	dcFam := AnalyzerFamily{name: toolDepCruiser, primary: true}
@@ -683,41 +692,25 @@ func testTaskOriginAnalyzerEvidence(t *testing.T) {
 			covRow(toolGoPackages, evidence.StatusTimedOut),
 			covRow(toolJscpd, evidence.StatusOK),
 		}}
-		delta := ClassifyTaskOrigins(TaskOriginEvidence{BaseRef: taskOriginRef, Head: head, Base: base, Families: fams})
-		if len(delta.ComparisonReasons) != 2 {
-			t.Fatalf("comparison_reasons = %v, want one per unavailable family", delta.ComparisonReasons)
+		delta := ClassifyOrigins(OriginEvidence{Head: head, Base: base, Families: fams})
+		if len(delta.Reasons) != 2 {
+			t.Fatalf("reasons = %v, want one per unavailable family", delta.Reasons)
 		}
-		if !slices.IsSorted(delta.ComparisonReasons) {
-			t.Errorf("comparison_reasons must be sorted: %v", delta.ComparisonReasons)
+		if !slices.IsSorted(delta.Reasons) {
+			t.Errorf("reasons must be sorted: %v", delta.Reasons)
 		}
 	})
 }
-func testTaskOriginBaseFindingIDs(t *testing.T) {
+func testOriginBaseFindingIDs(t *testing.T) {
 	t.Parallel()
-	got := BaseFindingIDs([]finding.Finding{
-		{ID: "z", Kind: string(finding.KindAdvisory), Status: finding.StatusNew},
-		{ID: "gone", Kind: string(finding.KindGate), Status: finding.StatusFixed},
-		{ID: "a", Kind: string(finding.KindGate), Status: finding.StatusWaived},
-		{ID: "m", Kind: string(finding.KindAdvisory), Status: finding.StatusExpiredWaiver},
+	got := BaseFindings([]finding.Finding{
+		{ID: "z", Kind: finding.KindAdvisory, Status: finding.StatusNew, Members: []string{"z", "zz"}},
+		{ID: "gone", Kind: finding.KindGate, Status: finding.StatusFixed},
+		{ID: "a", Kind: finding.KindGate, Status: finding.StatusWaived},
+		{ID: "m", Kind: finding.KindAdvisory, Status: finding.StatusExpiredWaiver},
 	})
-	if want := []string{"a", "m", "z"}; !slices.Equal(got, want) {
-		t.Errorf("BaseFindingIDs = %v, want %v (fixed dropped, sorted, kind ignored)", got, want)
+	want := []BaseFinding{{ID: "a"}, {ID: "m"}, {ID: "z", Members: []string{"z", "zz"}}}
+	if !slices.EqualFunc(got, want, func(a, b BaseFinding) bool { return a.ID == b.ID && slices.Equal(a.Members, b.Members) }) {
+		t.Errorf("BaseFindings = %v, want %v (fixed dropped, sorted, kind ignored, members kept)", got, want)
 	}
 }
-
-// testTaskOriginEffectiveConfig covers the base sub-run's config contract: it gets
-// the caller's effective config (flag overrides included) through an independent
-// module map, so the head pipeline's owner and deploy-unit backfill cannot leak
-// head-tree evidence into the base measurement.
-
-// taskOriginFixtureRepo builds a two-commit Go repo: the base commit holds only
-// pkg/b, the head commit adds a pkg/a → pkg/b importer. The head run therefore
-// carries a cross-module edge the base ref does not, and BOTH sides compile, so
-// go/packages reports ok on both and the evidence is genuinely comparable.
-
-// taskOriginOwnerFixtureRepo builds a two-commit Go repo whose CODE stays put and
-// whose OWNERSHIP moves: pkg/a → pkg/b exists in both commits, but the base
-// commit gives the whole tree one owner while the head commit splits it in two.
-// Neither module declares an owner, so each side must resolve its own from its
-// own CODEOWNERS — which is exactly what the head pipeline's owner backfill
-// would destroy if the base run shared its module map.

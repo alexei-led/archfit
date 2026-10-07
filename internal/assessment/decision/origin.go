@@ -1,27 +1,40 @@
-// Package decision owns task-origin classification for `analyze/check --base <ref>`.
+// Package decision owns origin classification for `analyze/check --base <ref>`.
 //
 // The base sub-run already produces a full diagnostic; this file turns the two
-// sides into report-only task metadata: which of the CURRENT
-// repair tasks the change introduced, which pre-date the base ref, and which
-// cannot be placed at all.
+// sides into report-only metadata: which CURRENT findings the change
+// introduced, which pre-date the base ref, which cannot be placed at all, and
+// which base findings the change resolved. It is the one origin classifier:
+// findings, agent tasks, the brief, the agent digest, hooks, and SARIF all read
+// what it decides.
 //
 // The comparison is pure and conservative:
 //   - Only stable finding IDs are matched. Lifecycle labels (new/waived/…) and
-//     gate-vs-advisory promotion are ignored — the same seam keeps its ID.
-//   - An unmatched task is "introduced" only when every ACTIVE finding-producing
-//     analyzer family covered both sides equivalently. Missing, timed-out, or
-//     asymmetric evidence yields "unknown", never a false "introduced".
+//     gate-vs-advisory promotion are ignored — the same edge keeps its ID.
+//   - A Balanced Coupling rollup is matched by its members, never by its
+//     representative's ID: the representative is the smallest member ID, so it
+//     changes when an edge joins or leaves the group.
+//   - A seam-gate finding is matched by its module pair against the base's
+//     qualifying seams: seam identity is the ordered module pair (seam.v1).
+//   - An unmatched finding is "introduced", and a vanished base finding is
+//     "resolved", only when every ACTIVE finding-producing analyzer family
+//     covered both sides equivalently. Missing, timed-out, or asymmetric
+//     evidence yields "unknown", never a false "introduced" or "resolved".
 //   - SYMMETRIC degradations still pair, because neither side could have
 //     produced a finding the other hid: a "partial" from unresolved import
 //     specifiers (the normal dependency-cruiser/grimp state), a "partial" whose
 //     inputs are all present with only edge precision degraded (go/packages when
 //     a package does not type-check), and an analyzer unavailable on both sides.
-//     All stay comparable and all always name themselves in comparison_reasons —
+//     All stay comparable and all always name themselves in origin_reasons —
 //     pairing them silently would trade one half of the defect for the other.
+//   - Both sides run one binary over one config file, so a measurement-profile
+//     difference comes from the trees themselves (a toolchain line in go.mod, a
+//     tsconfig change) and is part of the change. It pairs, and each differing
+//     producer and settings hash is named in origin_reasons.
 //
-// Isolation: the only base-side inputs are finding IDs, coverage rows/gaps, and
-// the config hash (see baseEvidence in worktree.go). Base paths, locations, and
-// validation commands name a temporary worktree that is already deleted.
+// Isolation: the only base-side inputs are finding IDs with their rollup
+// members, qualifying seam module pairs, coverage rows/gaps, and the
+// measurement profile. Base paths, locations, and validation commands name a
+// temporary worktree that is already deleted.
 package decision
 
 import (
@@ -30,7 +43,6 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 )
 
@@ -66,7 +78,7 @@ const (
 	// dependency-cruiser and grimp (one unresolvable specifier anywhere sets it),
 	// not a completion failure, so it must not read as "the analyzer did not
 	// run". It pairs only with itself: both sides ran, both are equally
-	// incomplete, and the degradation is disclosed in comparison_reasons with
+	// incomplete, and the degradation is disclosed in origin_reasons with
 	// each side's magnitude.
 	evidencePartialUnresolved
 	// evidencePartialDegraded — the analyzer covered every input (nothing is
@@ -93,123 +105,224 @@ const (
 // row for the same name is a genuine anomaly, not a shape to accommodate.
 type AnalyzerFamily struct {
 	// name is the analyzer's ToolCoverage name; it also labels the family in
-	// comparison_reasons.
+	// origin_reasons.
 	name string
 	// primary marks a per-language dependency-graph analyzer, the only kind
 	// whose gapless "absent" means "this language is not here".
 	primary bool
 }
 
-// AnalyzerEvidence is one side's analyzer coverage plus the config hash that
-// produced it.
+// AnalyzerEvidence is one side's analyzer coverage plus the measurement
+// profile that describes how it was produced.
 type AnalyzerEvidence struct {
 	Coverage []evidence.Coverage
 	Gaps     []evidence.CoverageGap
-	Hash     string
+	Profile  *evidence.MeasurementProfile
 }
 
-// TaskOriginEvidence is the complete input to the pure origin comparison.
-type TaskOriginEvidence struct {
-	BaseRef string
-	// Tasks are the CURRENT run's agent_tasks[] — the repair work being placed.
-	Tasks []result.AgentTask
-	// BaseFindingIDs are the base run's observed finding IDs (fixed excluded).
-	BaseFindingIDs []string
-	Head           AnalyzerEvidence
-	Base           AnalyzerEvidence
-	Families       []AnalyzerFamily
+// BaseFinding is one finding the base run observed: its stable ID and, for a
+// rollup, the IDs of every edge it stands for.
+type BaseFinding struct {
+	ID      string
+	Members []string
 }
 
-// BaseFindingIDs projects the base diagnostic's observed findings to their
-// stable IDs. Fixed entries are dropped: a finding the base run reports as fixed
-// was not observed there, so it cannot make a current task pre-existing.
-func BaseFindingIDs(findings []finding.Finding) []string {
-	return baseFindingIDs(findings)
+// ModulePair is one ordered module pair: the identity of a seam.
+type ModulePair struct {
+	From, To string
 }
 
-func baseFindingIDs(findings []finding.Finding) []string {
-	ids := make([]string, 0, len(findings))
+// OriginEvidence is the complete input to the pure origin comparison.
+type OriginEvidence struct {
+	// Findings are the CURRENT run's findings. Fixed entries get no origin.
+	Findings []finding.Finding
+	// BaseFindings are the base run's observed findings (fixed excluded).
+	BaseFindings []BaseFinding
+	// BaseSeams are the base run's qualifying distributed-monolith seams.
+	BaseSeams []ModulePair
+	Head      AnalyzerEvidence
+	Base      AnalyzerEvidence
+	Families  []AnalyzerFamily
+}
+
+// BaseFindings projects the base diagnostic's observed findings. Fixed entries
+// are dropped: a finding the base run reports as fixed was not observed there,
+// so it cannot make a current finding pre-existing.
+func BaseFindings(findings []finding.Finding) []BaseFinding {
+	out := make([]BaseFinding, 0, len(findings))
 	for _, f := range findings {
 		if f.Status == finding.StatusFixed {
 			continue
 		}
-		ids = append(ids, f.ID)
+		out = append(out, BaseFinding{ID: f.ID, Members: append([]string(nil), f.Members...)})
 	}
-	sort.Strings(ids)
-	return ids
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
-// TaskOriginDelta places current repair tasks relative to the selected base.
-// It is an internal classification result; the report projection attaches each
-// origin to its canonical agent task.
-type TaskOriginDelta struct {
-	BaseRef                 string
-	ComparisonStatus        string
-	IntroducedFindingIDs    []string
-	PreExistingFindingIDs   []string
-	UnknownOriginFindingIDs []string
-	ComparisonReasons       []string
+// OriginDelta places the current findings relative to the selected base.
+type OriginDelta struct {
+	// Status is OriginComparable when the analyzer evidence pairs, so both
+	// introduced and resolved could be established; OriginUnknown otherwise.
+	Status  string
+	Reasons []string
+	// Origins holds the origin of every current finding that is not fixed.
+	Origins map[string]finding.Origin
+	// Introduced and Resolved are sorted, never nil.
+	Introduced []string
+	Resolved   []string
 }
 
 const (
-	// TaskOriginComparable means task origins were established.
-	TaskOriginComparable = "comparable"
-	// TaskOriginUnknown means at least one task origin was uncertain.
-	TaskOriginUnknown = "unknown"
+	// OriginComparable means introduced and resolved findings were established.
+	OriginComparable = "comparable"
+	// OriginUnknown means the analyzer evidence did not pair, so an unmatched
+	// finding is unknown and no finding is claimed resolved.
+	OriginUnknown = "unknown"
 )
 
-// ClassifyTaskOrigins places every current repair task in an origin bucket.
-func ClassifyTaskOrigins(in TaskOriginEvidence) *TaskOriginDelta {
-	evidenceComparable, reasons := compareAnalyzerEvidence(in.Families, in.Head, in.Base)
-	// A config-hash mismatch means the two sides did not measure the same
-	// intent, so nothing unmatched can be attributed to the code change.
-	if in.Head.Hash != in.Base.Hash {
-		evidenceComparable = false
-		reasons = append(reasons, "config: head and base config hashes differ")
-	}
+// ClassifyOrigins places every current finding in an origin bucket and lists
+// the base findings the change resolved.
+func ClassifyOrigins(in OriginEvidence) OriginDelta {
+	paired, reasons := compareAnalyzerEvidence(in.Families, in.Head, in.Base)
+	reasons = append(reasons, profileReasons(in.Families, in.Head.Profile, in.Base.Profile)...)
 	sort.Strings(reasons)
-
-	base := make(map[string]struct{}, len(in.BaseFindingIDs))
-	for _, id := range in.BaseFindingIDs {
-		base[id] = struct{}{}
-	}
-
-	introduced, preExisting, unknown := []string{}, []string{}, []string{}
-	for _, t := range in.Tasks {
-		_, inBase := base[t.FindingID]
-		switch {
-		// The synthetic coupling-gate task is per-run trip state with no stable
-		// base counterpart — decided before ID matching so it can never be
-		// mistaken for a repaired or introduced seam.
-		case t.RuleID == finding.RuleIDCouplingGate:
-			unknown = append(unknown, t.FindingID)
-		case inBase:
-			preExisting = append(preExisting, t.FindingID)
-		case evidenceComparable:
-			introduced = append(introduced, t.FindingID)
-		default:
-			unknown = append(unknown, t.FindingID)
-		}
-	}
-	sort.Strings(introduced)
-	sort.Strings(preExisting)
-	sort.Strings(unknown)
-
-	status := TaskOriginComparable
-	if len(unknown) > 0 {
-		status = TaskOriginUnknown
-	}
 	if reasons == nil {
 		reasons = []string{}
 	}
-	return &TaskOriginDelta{
-		BaseRef:                 in.BaseRef,
-		ComparisonStatus:        status,
-		IntroducedFindingIDs:    introduced,
-		PreExistingFindingIDs:   preExisting,
-		UnknownOriginFindingIDs: unknown,
-		ComparisonReasons:       reasons,
+
+	baseIDs := map[string]struct{}{}
+	for _, b := range in.BaseFindings {
+		for _, id := range findingKeys(b.ID, b.Members) {
+			baseIDs[id] = struct{}{}
+		}
 	}
+	baseSeams := make(map[ModulePair]struct{}, len(in.BaseSeams))
+	for _, s := range in.BaseSeams {
+		baseSeams[s] = struct{}{}
+	}
+
+	out := OriginDelta{Status: OriginUnknown, Reasons: reasons, Origins: map[string]finding.Origin{},
+		Introduced: []string{}, Resolved: []string{}}
+	if paired {
+		out.Status = OriginComparable
+	}
+	headIDs := map[string]struct{}{}
+	for _, f := range in.Findings {
+		if f.Status == finding.StatusFixed {
+			continue
+		}
+		keys := findingKeys(f.ID, f.Members)
+		for _, id := range keys {
+			headIDs[id] = struct{}{}
+		}
+		// A metric ratchet compares against the accepted baseline, not against
+		// the base tree, and the base run reads no baseline: it cannot say
+		// whether the change introduced the regression.
+		if finding.IsMetricRatchet(f.RuleID) {
+			out.Origins[f.ID] = finding.OriginUnknown
+			continue
+		}
+		var existed bool
+		if f.RuleID == finding.RuleIDCouplingGate {
+			_, existed = baseSeams[ModulePair{From: f.Edge.From.Module, To: f.Edge.To.Module}]
+		} else {
+			existed = containsAll(baseIDs, keys)
+		}
+		switch {
+		case existed:
+			out.Origins[f.ID] = finding.OriginPreExisting
+		case paired:
+			out.Origins[f.ID] = finding.OriginIntroduced
+			out.Introduced = append(out.Introduced, f.ID)
+		default:
+			out.Origins[f.ID] = finding.OriginUnknown
+		}
+	}
+	if paired {
+		for _, b := range in.BaseFindings {
+			if !containsAny(headIDs, findingKeys(b.ID, b.Members)) {
+				out.Resolved = append(out.Resolved, b.ID)
+			}
+		}
+	}
+	sort.Strings(out.Introduced)
+	sort.Strings(out.Resolved)
+	return out
+}
+
+// findingKeys is what identifies a finding across the two runs: a rollup's
+// members, else its own ID.
+func findingKeys(id string, members []string) []string {
+	if len(members) > 0 {
+		return members
+	}
+	return []string{id}
+}
+
+func containsAll(set map[string]struct{}, keys []string) bool {
+	for _, k := range keys {
+		if _, ok := set[k]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func containsAny(set map[string]struct{}, keys []string) bool {
+	for _, k := range keys {
+		if _, ok := set[k]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// profileReasons names each way the two measurement profiles differ for the
+// active families, plus a differing settings hash. A difference never unpairs
+// a family: one binary and one config measured both trees, so the difference
+// came from the trees and belongs to the change. Naming it keeps that visible.
+func profileReasons(fams []AnalyzerFamily, head, base *evidence.MeasurementProfile) []string {
+	if head == nil || base == nil {
+		return nil
+	}
+	var reasons []string
+	if head.SettingsHash != base.SettingsHash {
+		reasons = append(reasons, fmt.Sprintf(
+			"measurement settings: head %s, base %s — tree-derived inputs differ (Go environment, TypeScript config)",
+			shortHash(head.SettingsHash), shortHash(base.SettingsHash)))
+	}
+	for _, f := range fams {
+		h, hok := producerOf(head, f.name)
+		b, bok := producerOf(base, f.name)
+		if !hok || !bok {
+			continue
+		}
+		if h.ToolVersion != b.ToolVersion {
+			reasons = append(reasons, fmt.Sprintf("%s: tool version differs (head %s, base %s)", f.name, h.ToolVersion, b.ToolVersion))
+		}
+		if h.SemanticsVersion != b.SemanticsVersion {
+			reasons = append(reasons, fmt.Sprintf("%s: semantics version differs (head %s, base %s)", f.name, h.SemanticsVersion, b.SemanticsVersion))
+		}
+		if h.PartialBasis != b.PartialBasis {
+			reasons = append(reasons, fmt.Sprintf("%s: partial basis differs (head %q, base %q)", f.name, h.PartialBasis, b.PartialBasis))
+		}
+	}
+	return reasons
+}
+
+// producerOf returns the profile's single producer row for tool. A missing or
+// duplicated row is the coverage pairing's business, not this disclosure's.
+func producerOf(p *evidence.MeasurementProfile, tool string) (evidence.MeasurementProducer, bool) {
+	var found evidence.MeasurementProducer
+	n := 0
+	for _, producer := range p.Producers {
+		if producer.Tool == tool {
+			found = producer
+			n++
+		}
+	}
+	return found, n == 1
 }
 
 // CompareAnalyzerEvidence reports whether every active analyzer family covered
@@ -413,7 +526,7 @@ const (
 	// disclosed with each side's count.
 	familyPairedDegradedPrecision
 	// familyPairedDegradedAbsent — the two sides pair, but the analyzer was
-	// unavailable on both. Comparable, and disclosed in comparison_reasons.
+	// unavailable on both. Comparable, and disclosed in origin_reasons.
 	familyPairedDegradedAbsent
 	// familyUnpaired — the evidence does not support attributing an origin.
 	familyUnpaired
@@ -428,7 +541,7 @@ const (
 //
 // Three shapes pair as DEGRADED rather than failing, all because SYMMETRY is the
 // safety argument (neither side ran what the other could hide behind) and all
-// disclosed in comparison_reasons, never silently:
+// disclosed in origin_reasons, never silently:
 //
 //   - Symmetric partial-with-unresolved-specifiers. For dependency-cruiser and
 //     grimp that status is the normal steady state; treating it as unusable made

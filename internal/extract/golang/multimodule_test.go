@@ -86,7 +86,7 @@ func TestExtract_MultiModule_CrossModuleStrengthHint(t *testing.T) {
 	dir := buildWorkspace(t)
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestExtract_MultiModule_ScanRootRelativeIDs(t *testing.T) {
 	dir := buildWorkspace(t)
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestExtract_NestedUnloadedModuleImportIsScanRootRelative(t *testing.T) {
 	writeTestFile(t, filepath.Join(dir, "cmd", "main.go"),
 		"package main\n\nimport \"example.com/repo/api/x\"\n\nfunc main() { _ = x.X() }\n")
 
-	facts, _, err := goextract.New(evidenceports.ExtractConfig{}).Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, _, err := goextract.New(evidenceports.ExtractConfig{}).Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestExtract_MultiModule_GoModulesPopulated(t *testing.T) {
 	dir := buildWorkspace(t)
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestExtract_MultiModule_SortedOutput(t *testing.T) {
 	dir := buildWorkspace(t)
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	s := scope.Scope{Root: dir, Mode: scope.ModeFull}
+	s := scope.Scope{Root: dir}
 
 	facts1, _, err := ext.Extract(context.Background(), s)
 	if err != nil {
@@ -259,7 +259,7 @@ import _ "example.com/broken/notexist"
 `)
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	_, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	_, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Skipf("Extract returned fatal error (platform-dependent, skip): %v", err)
 	}

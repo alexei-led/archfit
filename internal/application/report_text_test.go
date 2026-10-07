@@ -9,6 +9,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/alexei-led/archfit/internal/assessment/decision"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/score"
@@ -151,7 +152,7 @@ func TestProjectedStatePassesTheConsumerTextRules(t *testing.T) {
 	r.State.Dimensions.Intent.Coverage.Basis = long
 	r.State.Dimensions.Intent.Unknown = []state.UnknownFact{{Fact: long, Reason: long, Owner: "intent"}}
 	r.State.Dimensions.Drift.Delta = &state.Delta{Status: textStatusNonComparable, Reasons: []string{long}}
-	r.Comparison = &result.StateComparison{Status: textStatusNonComparable, BaseRef: "main", Reasons: []string{long}, TaskOriginReasons: []string{long}}
+	r.Comparison = &result.StateComparison{Status: textStatusNonComparable, BaseRef: "main", Reasons: []string{long}, OriginStatus: decision.OriginUnknown, OriginReasons: []string{long}}
 	r.GateReference = &result.StateComparison{Status: textStatusNonComparable, Reasons: []string{long}}
 
 	doc := ProjectReport(r, score.Scorecard{})

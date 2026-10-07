@@ -110,7 +110,7 @@ These formats apply to `archfit analyze` and `archfit check`.
 The `text` and Markdown brief uses the words in the [glossary](glossary.md):
 a blocker is an active gate finding, a diagnostic an active advisory finding.
 Blockers are never capped. NEXT STEPS lists at most five steps in this order:
-blockers, a metric ratchet, rules and analyzers that need evidence, the gate
+blockers (a tripped metric ratchet is one), rules and analyzers that need evidence, the gate
 reference, module decisions, then coverage or deploy-unit evidence. It offers
 `archfit baseline` only when no blocker is active and no reference is stored;
 a stored reference that does not compare asks for a review first, and NOT
@@ -302,6 +302,8 @@ Flags:
 | `-r, --root`      | path | directory of `--config` | Repo root to analyze.                                                                                           | `archfit baseline -r ../repo -c ./policy/.archfit.yaml` |
 | `--no-advisories` | bool | `false`                 | Exclude advisory findings from the baseline: Balanced Coupling advisories and violations of `gate: warn` rules. | `archfit baseline --no-advisories`                      |
 | `--refresh`       | bool | `false`                 | Re-run extractors and refresh the cache.                                                                        | `archfit baseline --refresh`                            |
+| `--reanchor`      | bool | `false`                 | Keep only the debt the stored baseline accepted. Accept no new finding. See below.                              | `archfit baseline --reanchor`                           |
+| `--from`          | path | baseline beside config  | Stored baseline that `--reanchor` reads. Requires `--reanchor`.                                                 | `archfit baseline --reanchor --from old.json`           |
 
 Examples:
 
@@ -309,7 +311,32 @@ Examples:
 archfit baseline -c .archfit.yaml
 archfit baseline --no-advisories -c .archfit.yaml
 archfit baseline --refresh -r . -c .archfit.yaml
+archfit baseline --reanchor -c .archfit.yaml
 ```
+
+Re-anchor (`--reanchor`):
+
+- Use it after an engine upgrade makes the stored baseline `non_comparable`.
+  A full capture would also accept new debt. A re-anchor does not.
+- It measures the tree like a full capture. Then it keeps a finding only when
+  the stored file accepted the same finding ID. For a Balanced Coupling group,
+  it keeps each edge that the stored file accepted.
+- It keeps a qualifying seam only when the stored file also has it.
+- It writes the current metric values and the current fingerprints, so the new
+  baseline is comparable.
+- It keeps stored debt that a waiver also covers. A plain capture skips that
+  finding, but the stored file already accepted it.
+- It prints each difference: the drift reasons, each stored entry that it
+  dropped, each current edge that it did not accept, each seam that no longer
+  qualifies, each seam that qualifies only now, and each metric that got worse.
+  It compares a metric only when both values are measured with the same metric
+  version.
+- It cannot run with `--no-advisories`. That flag would drop every accepted
+  advisory.
+- It reads the current baseline schema and the schema before it. Without a
+  stored file it exits with `3`. Use a full capture for the first baseline.
+- Review the printed list before you commit. A dropped entry is fixed debt or
+  debt whose ID changed. An unaccepted finding stays `new` and can block.
 
 ## `archfit explain <fingerprint>`
 
@@ -539,9 +566,10 @@ archfit hook git    [--config .archfit.yaml] [--base HEAD]
 The output table of `hook claude` and the pre-commit setup are in
 [the agent feedback loop](agent-feedback.md#hooks-instructions-and-the-skill).
 Both hooks block only when the next action is `repair` or `ask_owner` and a
-repair is in scope. A dead selector or a metric ratchet also leads to those
+repair is in scope. A dead selector or an unmeasured ratchet also leads to those
 actions, but neither is scoped to the change, so the hooks report them and
-let the change through. `hook git` exits `1` on a block, `0` otherwise (other
+let the change through. A tripped ratchet is a repair task like any other
+blocker, so it blocks. `hook git` exits `1` on a block, `0` otherwise (other
 actions are printed on stderr), and `3` when archfit cannot run.
 
 `hook git` judges what the commit will contain: the staged content. Unstaged
@@ -1304,14 +1332,19 @@ Effect:
 
 - Compares the current branch against a git ref such as `main` or `origin/main`.
 - Adds the canonical base comparison and comparability reasons to the normal output.
-- In JSON, classifies each current `agent_tasks[]` entry with optional `origin`:
-  `introduced`, `pre_existing`, or conservative `unknown`. Evidence differences
-  are named in `comparison.task_origin_reasons`; there is no parallel task list
-  or separate delta schema. See
-  [Task origin with `--base`](agent-feedback.md#task-origin-with---base).
+- In JSON, classifies each current finding with optional `origin`:
+  `introduced`, `pre_existing`, or conservative `unknown`. Each `agent_tasks[]`
+  entry copies the origin of its finding. SARIF results carry
+  `properties.origin`. Text and Markdown show `origin: <value>` on each blocker
+  and an `origin: <status> · introduced: N · resolved: M` line in the
+  comparison section. Evidence differences are named in
+  `comparison.origin_reasons`. `comparison.introduced_finding_ids` and
+  `comparison.resolved_finding_ids` list the findings the change added and
+  removed. There is no parallel list or separate delta schema. See
+  [Origin with `--base`](agent-feedback.md#origin-with---base).
 - The root `comparison` block describes this base comparison and carries the
   current run's `measurement_profile`. An unknown or incompatible profile makes
-  the comparison `non_comparable` and keeps affected task origins `unknown`.
+  `comparison.status` `non_comparable`. It does not make origins `unknown`.
   The persisted baseline used for hard-gate and drift comparisons is reported
   separately as `gate_reference`; `--base` never replaces it.
 - Never changes the verdict or exit code. A base worktree or pipeline error exits

@@ -52,12 +52,9 @@ func (f fakeResolver) Changed(_ context.Context, _, _ string) ([]string, error) 
 func TestResolve_Full(t *testing.T) {
 	r := fakeResolver{root: fakeRoot}
 
-	s, err := scope.Resolve(context.Background(), scope.Config{Full: true}, r)
+	s, err := scope.Resolve(context.Background(), scope.Config{}, r)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if s.Mode != scope.ModeFull {
-		t.Errorf("mode: got %q, want %q", s.Mode, scope.ModeFull)
 	}
 	if s.Root != fakeRoot {
 		t.Errorf("root: got %q, want %q", s.Root, fakeRoot)
@@ -75,16 +72,12 @@ func TestResolve_Full(t *testing.T) {
 
 func TestResolve_FullWithBase(t *testing.T) {
 	// Full scan + a base ref: Changed is computed (so diff mode can measure deltas)
-	// but the mode stays full — a full scorecard scan, no finding-delta. Resolve
-	// sorts the changed list.
+	// while the whole tree is still scanned. Resolve sorts the changed list.
 	r := fakeResolver{root: fakeRoot, changed: []string{"two.go", "one.go"}}
 
-	s, err := scope.Resolve(context.Background(), scope.Config{Full: true, Base: baseBranch}, r)
+	s, err := scope.Resolve(context.Background(), scope.Config{Base: baseBranch}, r)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if s.Mode != scope.ModeFull {
-		t.Errorf("mode: got %q, want %q (full scan, not delta)", s.Mode, scope.ModeFull)
 	}
 	if got := s.Changed; len(got) != 2 || got[0] != "one.go" || got[1] != "two.go" {
 		t.Errorf("changed: got %v, want sorted [one.go two.go]", got)
@@ -94,64 +87,15 @@ func TestResolve_FullWithBase(t *testing.T) {
 	}
 }
 
-func TestResolve_Delta(t *testing.T) {
-	// Changed files arrive unsorted: Resolve must sort them — the
-	// determinism contract does not depend on resolver discipline.
-	r := fakeResolver{root: fakeRoot, head: "abc123", changed: []string{"z.go", "a.go"}}
-
-	s, err := scope.Resolve(context.Background(), scope.Config{Base: baseBranch}, r)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if s.Mode != scope.ModeDelta {
-		t.Errorf("mode: got %q, want %q", s.Mode, scope.ModeDelta)
-	}
-	if s.Root != fakeRoot {
-		t.Errorf("root: got %q, want %q", s.Root, fakeRoot)
-	}
-	if s.GitRoot != fakeRoot {
-		t.Errorf("git root: got %q, want %q", s.GitRoot, fakeRoot)
-	}
-	if s.SubtreePrefix != "" {
-		t.Errorf("subtree prefix: got %q, want empty (root==gitroot)", s.SubtreePrefix)
-	}
-	if s.Head != "abc123" {
-		t.Errorf("head: got %q, want %q", s.Head, "abc123")
-	}
-	want := []string{"a.go", "z.go"}
-	if len(s.Changed) != len(want) {
-		t.Fatalf("changed len: got %d, want %d", len(s.Changed), len(want))
-	}
-	for i, f := range want {
-		if s.Changed[i] != f {
-			t.Errorf("changed[%d]: got %q, want %q", i, s.Changed[i], f)
-		}
-	}
-}
-
-// TestResolve_ResolverError_DeltaMode verifies that a RepoRoot error is a hard
-// error in delta mode (no git → no diff base).
-func TestResolve_ResolverError_DeltaMode(t *testing.T) {
-	r := fakeResolver{err: errors.New("not a git repo")}
-
-	_, err := scope.Resolve(context.Background(), scope.Config{Base: baseBranch}, r)
-	if err == nil {
-		t.Fatal("expected error in delta mode with no git, got nil")
-	}
-}
-
-// TestResolve_NonGitFullMode verifies that a RepoRoot error in full mode is
+// TestResolve_NonGit verifies that a RepoRoot error is
 // non-fatal: GitRoot is set to "" and analysis continues.
-func TestResolve_NonGitFullMode(t *testing.T) {
+func TestResolve_NonGit(t *testing.T) {
 	r := fakeResolver{err: errors.New("not a git repo")}
 
 	// WorkDir acts as the fallback scan root when both cfg.Root and gitRoot are empty.
-	s, err := scope.Resolve(context.Background(), scope.Config{Full: true, WorkDir: "/some/dir"}, r)
+	s, err := scope.Resolve(context.Background(), scope.Config{WorkDir: "/some/dir"}, r)
 	if err != nil {
-		t.Fatalf("full mode with non-git dir must not error; got: %v", err)
-	}
-	if s.Mode != scope.ModeFull {
-		t.Errorf("mode: got %q, want %q", s.Mode, scope.ModeFull)
+		t.Fatalf("non-git dir must not error; got: %v", err)
 	}
 	if s.GitRoot != "" {
 		t.Errorf("git root: got %q, want empty (non-git)", s.GitRoot)
@@ -180,7 +124,7 @@ func TestResolve_NonGitRelativeWorkDirIsCanonical(t *testing.T) {
 	}
 	t.Chdir(alias)
 
-	s, err := scope.Resolve(context.Background(), scope.Config{Full: true, WorkDir: "."}, fakeResolver{err: errors.New("not a git repo")})
+	s, err := scope.Resolve(context.Background(), scope.Config{WorkDir: "."}, fakeResolver{err: errors.New("not a git repo")})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -198,7 +142,6 @@ func TestResolve_ScanRootVsGitRoot(t *testing.T) {
 	r := fakeResolver{root: gitTop}
 
 	s, err := scope.Resolve(context.Background(), scope.Config{
-		Full: true,
 		Root: subdir,
 	}, r)
 	if err != nil {
@@ -221,7 +164,7 @@ func TestResolve_ScanRootVsGitRoot(t *testing.T) {
 func TestResolve_RootAbsent_PrefixEmpty(t *testing.T) {
 	r := fakeResolver{root: fakeRoot}
 
-	s, err := scope.Resolve(context.Background(), scope.Config{Full: true}, r)
+	s, err := scope.Resolve(context.Background(), scope.Config{}, r)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -259,9 +202,6 @@ func TestResolve_ScanRootVsGitRoot_Delta(t *testing.T) {
 	if s.SubtreePrefix != "cmd" {
 		t.Errorf("subtree prefix: got %q, want %q", s.SubtreePrefix, "cmd")
 	}
-	if s.Mode != scope.ModeDelta {
-		t.Errorf("mode: got %q, want %q", s.Mode, scope.ModeDelta)
-	}
 }
 
 // TestSubtreePrefix_NotUnderGitRoot verifies that a cfg.Root outside the git
@@ -273,7 +213,6 @@ func TestSubtreePrefix_NotUnderGitRoot(t *testing.T) {
 	r := fakeResolver{root: gitTop}
 
 	s, err := scope.Resolve(context.Background(), scope.Config{
-		Full: true,
 		Root: outside,
 	}, r)
 	if err != nil {

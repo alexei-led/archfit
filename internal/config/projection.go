@@ -155,7 +155,7 @@ func (c Config) AcquisitionOptions() acquire.Options {
 }
 
 // AnalyzerFamilies projects config into the optional finding-producing
-// analyzer families used by task-origin comparison.
+// analyzer families used by origin comparison.
 func (c Config) AnalyzerFamilies() application.AnalyzerFamilies {
 	return application.AnalyzerFamilies{
 		Patterns:     len(c.ForPatterns()) > 0,

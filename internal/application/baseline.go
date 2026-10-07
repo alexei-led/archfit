@@ -101,6 +101,10 @@ type BaselineRequest struct {
 	Root         string
 	Path         string
 	NoAdvisories bool
+	// Reanchor, when set, keeps only the debt this stored baseline accepted:
+	// the capture carries accepted debt into a new epoch and accepts nothing
+	// new.
+	Reanchor *StoredBaseline
 }
 
 // BaselineResponse identifies the persisted baseline and temporary findings
@@ -108,6 +112,8 @@ type BaselineRequest struct {
 type BaselineResponse struct {
 	Path          string
 	SkippedWaived int
+	// Reanchor is set only for a re-anchor and says what it kept and left out.
+	Reanchor *ReanchorReport
 }
 
 // BaselineService owns the baseline use case.
@@ -126,12 +132,20 @@ type BaselineService struct {
 // accepting a group's representative split the group on the next run, exposed
 // its siblings as new representatives, and wrote a different file every time.
 // Two captures over an unchanged tree never settled.
+//
+// A re-anchor (req.Reanchor) is the same capture filtered by the stored file:
+// a pure function of tree, config, and that file.
 func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (BaselineResponse, error) {
 	if s.Stages.Preparer == nil || s.Stages.Evidence == nil || s.Writer == nil {
 		return BaselineResponse{}, errors.New("baseline stages are required")
 	}
 	if req.Path == "" {
 		return BaselineResponse{}, errors.New("baseline path is required")
+	}
+	if req.Reanchor != nil && req.NoAdvisories {
+		// Leaving advisories out would drop every accepted advisory the stored
+		// file carries: a re-anchor carries the stored debt as it is.
+		return BaselineResponse{}, errors.New("--reanchor cannot be combined with --no-advisories")
 	}
 	out, err := s.Stages.Execute(ctx, AnalysisRequest{
 		ConfigSource: req.ConfigPath, Root: req.Root, NoAdvisories: req.NoAdvisories,
@@ -151,11 +165,9 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 		}
 	}
 	skippedWaived := 0
+	var current []findingKeys
+	var waived []BaselineFinding
 	for _, f := range doc.Findings {
-		if f.Status == report.FindingStatusWaived || f.Status == report.FindingStatusExpiredWaiver {
-			skippedWaived++
-			continue
-		}
 		if f.Status == report.FindingStatusFixed || f.RuleID == finding.RuleIDCouplingGate {
 			continue
 		}
@@ -167,14 +179,28 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 		if !ok {
 			ids = []string{f.ID}
 		}
+		entries := make([]BaselineFinding, 0, len(ids))
 		for _, id := range ids {
-			snapshot.Accepted = append(snapshot.Accepted, BaselineFinding{Fingerprint: id, RuleID: f.RuleID, Kind: kind, Severity: f.Severity})
+			entries = append(entries, BaselineFinding{Fingerprint: id, RuleID: f.RuleID, Kind: kind, Severity: f.Severity})
 		}
+		if f.Status == report.FindingStatusWaived || f.Status == report.FindingStatusExpiredWaiver {
+			skippedWaived++
+			waived = append(waived, entries...)
+			continue
+		}
+		snapshot.Accepted = append(snapshot.Accepted, entries...)
+		current = append(current, findingKeys{ReanchorFinding: reanchorFinding(f), keys: ids})
+	}
+	resp := BaselineResponse{Path: req.Path, SkippedWaived: skippedWaived}
+	if req.Reanchor != nil {
+		var rep ReanchorReport
+		snapshot, rep = reanchor(snapshot, waived, current, doc.Metrics, *req.Reanchor, storedDrift(out.Diagnostic, *req.Reanchor))
+		resp.Reanchor = &rep
 	}
 	if err := s.Writer.Save(ctx, req.Path, snapshot); err != nil {
 		return BaselineResponse{}, fmt.Errorf("save baseline: %w", err)
 	}
-	return BaselineResponse{Path: req.Path, SkippedWaived: skippedWaived}, nil
+	return resp, nil
 }
 
 // baselineState projects the run into the architecture-state reference a later
@@ -217,6 +243,15 @@ func documentMetrics(doc report.Document) report.MetricSnapshot {
 			Value   float64 `json:"value"`
 			Version string  `json:"version"`
 		}{Value: m.Value, Version: m.Version}
+	}
+	return out
+}
+
+// reanchorFinding names a current finding for the re-anchor report.
+func reanchorFinding(f report.Finding) ReanchorFinding {
+	out := ReanchorFinding{ID: f.ID, RuleID: f.RuleID, FromModule: f.Edge.From.Module, ToModule: f.Edge.To.Module, Path: f.Edge.From.Path}
+	if len(f.Locations) > 0 && f.Locations[0].File != "" {
+		out.Path = f.Locations[0].File
 	}
 	return out
 }

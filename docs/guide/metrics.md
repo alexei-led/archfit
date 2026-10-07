@@ -52,23 +52,20 @@ upward (delta > `max_new`), ratio metrics (`encapsulation`, `coverage`) worsen
 downward (drop > `min_delta`). Per-metric `gate`/threshold knobs are documented
 in the [configuration reference](configuration-reference.md#metrics).
 
-A blocking metric delta produces no finding and no agent task, but it fails the
-gate of the dimension that owns the metric. The text and Markdown output add a
-`METRIC RATCHET` / `## Metric ratchet` section whenever the report proves a
-ratchet blocked:
+A blocking metric delta is a finding. The rule ID is `metric/<name>`. The
+finding gives the value before and after and the threshold, it fails the gate of
+the dimension that owns the metric, and it has a repair task. It is a blocker
+in the exit code, SARIF, text, Markdown and the agent digest, like any other.
+With `gate: warn` it is an advisory. A rule-only waiver on `metric/<name>` (no
+`from` or `to`) accepts it for a time. `archfit baseline` cannot accept it: a
+capture has no baseline, so it has no delta.
 
-- With zero `active_blockers` and no required analyzer failing its gate, only a
-  ratchet can block, so the section lists every metric that worsened.
-- Otherwise it lists the worsened metrics of each dimension whose gate is
-  `fail` with no hard-gate finding routed to it (for `operations`, also no
-  required analyzer failing its gate). A ratchet in a dimension that also holds
-  a hard-gate finding cannot be told apart from that finding and is not named.
-
-Each entry shows the baseline and current values and the dimension gate,
-followed by the `gate_reference` status and reasons and the next step: fix the
-regression, or have an owner review the new value and re-run `archfit baseline`.
-The thresholds are not in the report, so a worsened metric that stayed inside
-its threshold is listed too. The JSON state has no field for the ratchet yet.
+A ratchet compares only against a reference that compares with the run. If the
+baseline's reference does not compare (the classification, the module map, the
+labels, the score version or the measurement profile changed), no delta exists.
+The run then lists one unevaluated entry, `metric_ratchets`, with the drift
+classes. `hard_gates` is `unmeasured` and the exit code is `2`, never `1`. With
+no baseline file there is no ratchet and no entry.
 
 `archfit check`'s exit code IS this verdict: `0` healthy, `2` needs_attention,
 `1` blocked, `3` tool/config error. Exit 0 is reachable when all nine dimensions

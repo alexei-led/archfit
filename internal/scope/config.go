@@ -1,6 +1,6 @@
 package scope
 
-// Config is the scope-resolution request: the analysis boundary, the diff mode,
+// Config is the scope-resolution request: the analysis boundary, the changed-file base,
 // and the exclusions every walk shares.
 type Config struct {
 	// Root is the absolute path of the analysis boundary (ScanRoot). When
@@ -9,7 +9,6 @@ type Config struct {
 	// last resort)". Callers (cmd) are responsible for making this absolute.
 	Root       string
 	Base       string // git ref to diff against (empty = none)
-	Full       bool   // if true, full-repo mode (no diff)
 	Exclusions []string
 	WorkDir    string // working directory for git commands; empty = process cwd
 }

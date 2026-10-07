@@ -23,11 +23,10 @@ type stateInput struct {
 	// RequiredToolFailure is the required-analyzer gate result. It blocks
 	// without producing a finding, so it cannot be inferred from the findings.
 	RequiredToolFailure bool
-	// MetricRegressions names the metrics whose accepted-baseline delta worsened
-	// past a blocking `metrics.<name>.gate` threshold. Same shape and same
-	// reason as RequiredToolFailure: the user named a hard gate in config and it
-	// produces no finding to classify.
-	MetricRegressions []string
+	// Ratchets is the stored reference as the metric ratchets see it. A ratchet
+	// decides only against a comparable reference; against any other it is
+	// unmeasured, never passed and never blocked.
+	Ratchets RatchetReference
 	// Drift is the stored architecture-state reference and its comparability.
 	// It is the same anchor the seam gate reads, so the drift dimension and the
 	// gate can never disagree about whether a comparison was admissible.
@@ -75,6 +74,11 @@ func classifyFindings(findings []finding.Finding, ruleTypes map[string]string) c
 			out.diagnostics = append(out.diagnostics, ref)
 		}
 		dim := dimensionForRule(f.RuleID, ruleTypes)
+		if finding.IsMetricRatchet(f.RuleID) {
+			// The owning dimension is the one that publishes the metric, which
+			// only the built dimensions know; buildDimensions places it.
+			dim = f.RuleID
+		}
 		out.byDimension[dim] = append(out.byDimension[dim], ref)
 	}
 	return out
@@ -94,12 +98,13 @@ func buildState(diag *result.Result, in stateInput) state.Architecture {
 	split := classifyFindings(diag.Findings, in.RuleTypes)
 	st.Blockers, st.Diagnostics = split.blockers, split.diagnostics
 	st.RequiredToolFailure = in.RequiredToolFailure
-	st.MetricRegressions = in.MetricRegressions
 	st.Dimensions = buildDimensions(diag, in, split.byDimension)
-	markRegressedDimensions(&st.Dimensions, in.MetricRegressions)
 	unevaluated := unevaluatedRequiredRules(diag, in.Policy, in.Facts)
+	if u, ok := in.Ratchets.unevaluated(in.Policy.Gates.Metrics); ok {
+		unevaluated = append(unevaluated, u)
+	}
 	hardGates := state.HardGatePass
-	if in.RequiredToolFailure || len(in.MetricRegressions) > 0 || len(st.Blockers) > 0 {
+	if in.RequiredToolFailure || len(st.Blockers) > 0 {
 		hardGates = state.HardGateFail
 	}
 	st.Verdict, st.Decision = state.Decide(state.DecisionInput{
@@ -176,29 +181,4 @@ func producerIncompleteReason(diag *result.Result, tool string) string {
 		reason += ": " + row.Reason
 	}
 	return reason
-}
-
-// markRegressedDimensions raises the gate of every dimension that owns a
-// blocking metric regression.
-//
-// The routing is the envelope's own metric list, not a second name table: a
-// metric is disclosed under the dimension that already collected it, so the two
-// cannot drift apart. The gate is only ever raised — a dimension already
-// warning or failing from a finding keeps that result.
-func markRegressedDimensions(dims *state.Dimensions, regressed []string) {
-	if len(regressed) == 0 {
-		return
-	}
-	names := make(map[string]struct{}, len(regressed))
-	for _, name := range regressed {
-		names[name] = struct{}{}
-	}
-	for _, dim := range dims.Each() {
-		for _, m := range dim.Metrics {
-			if _, ok := names[m.Name]; ok {
-				dim.Gate = state.GateFail
-				break
-			}
-		}
-	}
 }

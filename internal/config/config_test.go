@@ -995,6 +995,10 @@ func TestLoad_ValidatesWaivers(t *testing.T) {
 			waiver: "  - rule: bc/imbalanced_coupling\n    from: checkout/**\n    to: pricing/**\n    reason: migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
 		},
 		{
+			name:   "a metric ratchet takes a rule-only waiver",
+			waiver: "  - rule: metric/cycle\n    reason: accepted regression\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+		},
+		{
 			name:   "edge-less synthetic rule",
 			waiver: "  - rule: map/uncovered_path\n    reason: module migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
 		},
@@ -2233,5 +2237,12 @@ func TestLoad_ModuleAllowlists(t *testing.T) {
 		if !slices.Equal(def.VisibleTo, want.visibleTo) || (def.VisibleTo == nil) != (want.visibleTo == nil) {
 			t.Errorf("%s visible_to = %#v, want %#v", name, def.VisibleTo, want.visibleTo)
 		}
+	}
+}
+
+func TestLoad_RejectsRuleIDsInTheMetricRatchetNamespace(t *testing.T) {
+	_, err := loadConfigInline(t, "version: 2\nrules:\n  - id: metric/no-db\n    type: forbidden_dependency\n    from: a/**\n    to: b/**\n")
+	if err == nil || !strings.Contains(err.Error(), "metric ratchet") {
+		t.Fatalf("Load error = %v, want the metric/ prefix rejected", err)
 	}
 }

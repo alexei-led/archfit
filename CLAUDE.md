@@ -25,7 +25,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - Import ring: `go test ./internal/ -run TestArchImports`
 - Golden output: `go test ./internal/application/ -run TestGolden` — regenerate
   deliberately and inspect the diff; output changes are never automatic.
-- Erosion gates: `go test ./internal/ ./cmd/archfit/ -run TestErosion_` — the seven
+- Erosion gates: `go test ./internal/ ./cmd/archfit/ -run TestErosion_` — the eight
   named architecture-state checks (see the erosion invariant below).
 - Dogfood gate: `make archfit` — CI runs the same target after tests/goldens. Also
   runs locally pre-push via the `arch-lint` hook in `.pre-commit-config.yaml`. The
@@ -266,6 +266,27 @@ init` emits v2 directly; owners update older configs manually before analysis.
   head-tree owners and skip its own resolution. The base sub-run is a SECOND
   acquisition service (`StageExecutor.NewBaseEvidence`), not a second call on
   the head one: no per-run state can leak between the two trees.
+- **`--base` origin is ONE classifier** (`decision.ClassifyOrigins`, attached by
+  `evaluation.AttachOrigins` in `attachBaseComparison`). It sets
+  `finding.Finding.Origin` on every non-fixed finding, copies it onto the
+  finding's agent task, and fills `comparison.origin_status`/`origin_reasons`
+  plus `introduced_finding_ids`/`resolved_finding_ids` (`*[]string`: present,
+  possibly `[]`, exactly when `--base` ran). Brief blockers, the text/Markdown
+  COMPARISON section, `--format agent` scope, hooks, and SARIF
+  `properties.origin` all read it; nothing gates on it, and `--base` never
+  replaces the accepted baseline. Matching: an exact base ID is
+  `pre_existing`; a BC rollup matches by `Members` (its ID is the smallest
+  member, so it moves when an edge joins or leaves), `pre_existing` only when
+  every member existed; a `bc/coupling_gate` finding matches its module pair
+  against the base's qualifying seams. Anything else is `introduced` only when
+  every analyzer family pairs, else `unknown`; `resolved` is claimed only then.
+  Both sides read one config file with one binary, so there is no config-hash
+  check, and a measurement-profile difference comes from the trees: it PAIRS
+  and `profileReasons` names it. The old blanket downgrade (any profile
+  difference → every task `unknown`) made origin inert on any tree whose
+  toolchain or tsconfig moved. The baseline-relative delta buckets
+  (`status.DeltaBuckets`, `ModeDelta`) were dead (`Full` was always true) and
+  are deleted, so this is the only answer to "what did this change add".
 - **`partial` means two different things and the TOOL NAME separates them, not
   `Coverage.Unresolved`** (`decision.PartialFromUnresolvedSpecifiers`, the single
   predicate both pairing paths call). dependency-cruiser and grimp mark a
@@ -579,11 +600,11 @@ init` emits v2 directly; owners update older configs manually before analysis.
 - **scanRoot vs gitRoot decoupling.** `Scope.Root` = ScanRoot (the analysis
   boundary; all extractors walk this tree). `Scope.GitRoot` = `git rev-parse
 --show-toplevel` (git ops only). `Scope.SubtreePrefix = rel(GitRoot, Root)`.
-  `--root` absent ⇒ ScanRoot=GitRoot, prefix="" ⇒ byte-identical. Non-git full
-  mode proceeds with `GitRoot=""` (history empty) and ScanRoot = the canonical
+  `--root` absent ⇒ ScanRoot=GitRoot, prefix="" ⇒ byte-identical. A non-git
+  run proceeds with `GitRoot=""` (history empty) and ScanRoot = the canonical
   ABSOLUTE `--root` or config directory (`canonicalPath` absolutizes before
   resolving symlinks; a relative `.` root dropped every Go fact and deploy
-  unit); delta mode without git is a hard error.
+  unit). Every run scans the whole tree: there is no delta scope mode.
   **macOS APFS case-variant `--root` (Task 25, fixed):** `snapScanRoot` in
   `internal/scope/scope.go` uses `os.SameFile` (device+inode) to snap a
   case-variant scan root to the git root's canonical path, so
@@ -799,7 +820,13 @@ init` emits v2 directly; owners update older configs manually before analysis.
   (`cmd/archfit.TestFormatMatrix_CrossFormatParity`,
   `TestFormatMatrix_SarifCarriesTheState`); SARIF is exempt from human LAYOUT
   parity only — the state rides in `run.properties` and finding identity (ruleId,
-  ruleIndex, `archfit/v1` fingerprint) is unchanged by the cutover.
+  ruleIndex, `archfit/v1` fingerprint) is unchanged by the cutover. Each
+  result carries `partialFingerprints.primaryLocationLineHash` = finding ID;
+  `baselineState` ONLY when `gate_reference.baseline_present` is true, by
+  baseline membership alone (baseline → unchanged, fixed → absent, else new —
+  waived included: status matching tries the baseline first, so a waived
+  finding is not in it); `suppressions` (external, accepted) for baselined
+  and waived. Never `updated`. GitHub ignores both baseline fields.
 - **Report free text is bounded once, at projection** (`boundReportText` → `reportText`, `internal/application/report_text.go`, called last in `application.ProjectReport`). A strict state consumer (the archfit App) rejects any string with a control character or U+2028/U+2029, caps free text at 500 runes and an agent task's goal/constraints at 4096, and one bad string invalidates the whole report. Tool stderr and error chains reach coverage reasons verbatim (the ts/py/rust/ast-grep extractors, `acquisition.Collect`'s `err.Error()`), and joins carry them into unevaluated-rule reasons and dimension unknowns, so the bound lives at the single projection every command and format passes through — never at an extractor. Text already one line within the bound is byte-identical; otherwise ANSI CSI is dropped, whitespace/control runs collapse to one space, and the leading text is kept, cut at 400 runes (task text 3600) with `…`. Identity material — IDs, hashes, paths, tool versions, the measurement profile, validation commands — is never rewritten. The raw text goes to stderr only (`discloseRawCoverageReasons` in `StageExecutor.Execute`, rows the sanitizer changes; written directly, not via acquisition's `note()`, which would feed it back into ConfigWarnings). `policy can-import` builds its answer without `ProjectReport`, so `PolicyQueryService.CanImport` applies the same bound (`boundJudgmentText`) to `why`, `goal`, `constraints` and `reasons`; a new command that emits rule or tool text without the projection must call `reportText` itself. Contract: `cmd/archfit/report_text_contract_test.go` + `reporttest.AppTextViolations`.
 - **Text and Markdown share one brief** (`internal/output/brief`, report
   contract only). Blockers (uncapped: short ID, subject, first `file:line`,
@@ -840,8 +867,9 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `agentout.decide`, from the report contract only (a report adapter may not
   import assessment): active gate tasks + origin, unevaluated required rules
   (`selector matches nothing:` → `ask_owner`, any other reason →
-  `restore_evidence`), coverage gaps with gate `fail`, and the ratchet twin of
-  `console.ratchetRegressions`. A blocked verdict never maps to `none`. Scope is
+  `restore_evidence`; `reference not comparable` → `ask_owner`, the owner moves
+  the reference), coverage gaps with gate `fail`. A tripped ratchet is an
+  ordinary `metric/<name>` repair task. A blocked verdict never maps to `none`. Scope is
   origin only: a repair is out of scope only when every grouped task is
   `pre_existing`. The 8 KB budget runs after the decision and never moves it;
   it shortens free text and caps repair lists (counting what it cut), never
@@ -892,7 +920,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   claude` (Stop/SubagentStop JSON on stdin, config resolved against the event
   `cwd`, a tree clean but for `.archfit-cache` skips) exits 2 with
   `agentout.Brief` on stderr only when `blocksChange`: `repair`/`ask_owner`
-  AND an in-scope repair (a dead selector or a ratchet is not scoped to the
+  AND an in-scope repair (a dead selector or an unmeasured ratchet is not scoped to the
   change, so it is a `systemMessage`); `stop_hook_active` → `systemMessage`;
   any archfit error fails open (exit 0 + `systemMessage`); malformed stdin is
   1. `hook git` exits 1/0/3 on the same `blocksChange` and judges the INDEX,
@@ -937,13 +965,16 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `decision.unevaluated_required_rules`; without another blocker it sets
   `hard_gates: unmeasured` and remains exit 2. Required-rule evidence is read
   from these fields, never inferred from finding prose.
-- **Seven named erosion gates** hold the architecture-state contract against decay
+- **Eight named erosion gates** hold the architecture-state contract against decay
   back into the averaged score it replaced. Each has ONE executable owner and a
   PAIRED fixture proving it fires on a violating input — a structural rule nobody
   has watched fail is a rule nobody knows still works.
   `no_scalar_decision` + `no_dead_archfit_rule` live in `internal/erosion_test.go`
   (which carries the name→owner table); `dimension_status_required`,
-  `config_hash_required` (config_hash AND classification_hash), `label_evidence_required`, and `baseline_idempotent`
+  `config_hash_required` (config_hash AND classification_hash), `label_evidence_required`, `baseline_idempotent`,
+  and `ratchet_requires_comparable_reference` (a worse metric against a reference that
+  does not compare is `hard_gates: unmeasured`, exit 2; the same fixture with a
+  comparable reference blocks with a `metric/<name>` finding)
   live in `cmd/archfit/erosion_test.go` and run the real command over a fixture
   repo. `no_scalar_decision` scopes `internal/application/analysis.go` to
   `outcomeFor`/`seamAnchor`, NOT the whole file: `AnalysisResult` still CARRIES
@@ -973,10 +1004,9 @@ init` emits v2 directly; owners update older configs manually before analysis.
   Exactly four fields: `source_ref`, `history_depth`, `history_window`,
   `tool_versions`, pinned by `TestMeasurementCarriesOnlyDeterministicFields`. One
   wall-clock timestamp, absolute path, or PID here retires the byte-identity
-  contract every format baseline depends on. A full run reports
+  contract every format baseline depends on. Every run reports
   `source_ref: worktree` — it measures files on disk, and naming a commit would
-  claim the bytes equal it even on a dirty tree; only a delta run, which really
-  diffed against a resolved SHA, publishes one. A run that scanned no history
+  claim the bytes equal it even on a dirty tree. A run that scanned no history
   records `history_window: unavailable` with depth 0 rather than leaving both
   blank, so "no history here" stays distinguishable from "the scan was never
   wired up".
@@ -1010,7 +1040,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `decision.CompareFingerprints` finds all four equal, and the SAME anchor feeds
   both the seam gate and the drift dimension, so the two cannot disagree about
   whether a comparison was admissible.
-- **`archfit baseline` capture is a pure function of tree + config**
+- **`archfit baseline` capture is a pure function of tree + config**, and
+  `--reanchor` of tree + config + the stored file
   (`BaselineService.Execute` runs with `EmptyBaseline: true`). Reading the file it
   was about to overwrite made the capture self-referential: BC advisories roll up
   per `(module pair, strength, distance, volatility, STATUS)`, so accepting a
@@ -1024,6 +1055,28 @@ init` emits v2 directly; owners update older configs manually before analysis.
   held only the representative left its siblings `new`: right after a capture,
   `check` on the unchanged tree reported 66 BC findings as new on this repo
   (`TestRun_Baseline_AcceptsEveryBCGroupMember`).
+  **`--reanchor` carries accepted debt across an epoch and accepts nothing new**
+  (`application.reanchor`, `baseline.LoadForReanchor`). It runs the same
+  capture, then keeps an edge key (rollup member, else finding ID) only when
+  the stored `accepted[]` holds it: the owner chose exact-ID matching, because
+  finding IDs hash rule + paths + edge kind and no epoch change in v3.0.0
+  re-keys them, while a rule + module-pair key would accept a new edge on an
+  already-indebted pair. `qualifying_seam_ids` is stored ∩ current, so a seam
+  that qualifies only in the new epoch stays new; `hard_gate_finding_ids` keeps
+  only accepted blockers. Stored debt a waiver also covers is KEPT (check ranks
+  a baselined status above a waiver, so dropping it would turn permanent debt
+  temporary); `--no-advisories` is refused for the same reason. Dropped stored
+  entries, unaccepted current edges (one per rollup member), seams that stopped
+  qualifying, seams that qualify only now, worsened metrics (same metric
+  version and measured on both sides only; the file records current values),
+  and the drift reasons (`storedComparison`, shared with the gate reference)
+  are all printed — nothing is dropped or accepted silently. It runs
+  at any drift (an owner decision: refusing would push toward a full capture,
+  which accepts everything). It reads the current schema and the one before;
+  `--from <path>` reads the stored file from elsewhere (the Action mounts it
+  read-only outside the config directory the engine writes to); a missing
+  stored file is exit 3. `TestBaselineReanchor` pins it end to end, including
+  idempotence.
   Capture also skips findings covered by temporary waivers, including expired
   waivers, and prints the count; it never silently turns temporary exceptions
   into permanent accepted debt. A profile mismatch or incomplete seam snapshot
@@ -1038,23 +1091,25 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `fail`/unset is blocking; exceptions: `public_api_change` and
   `public_api_type_leak` default to `warn` when unset). An unknown `type` value is a config error.
   `metrics.<name>.gate` follows the same convention: a worsening baseline delta
-  blocks when `gate` is unset. A tripped ratchet produces NO finding, so it
-  reaches the verdict the same way the required-tool gate does — through
-  `evaluation.blockingMetricRegressions` into the state's hard-gate result
-  (`buildState`), never through the finding populations. It also raises the
-  owning dimension's `gate` to `fail`, routed by the envelope's own metric list.
-  Asserting only `evaluation.Result.Verdict` cannot see this: nothing reads that
-  verdict for the exit code. The state carries no ratchet field, so text and
-  Markdown name the ratchet (`METRIC RATCHET` / `## Metric ratchet`,
-  `ratchetRegressions`, twin helpers in console and markdown) from the
-  Document's metric deltas, and only when the contract proves it, with verdict
-  blocked. With zero active blockers and no coverage gap gating `fail`, they
-  list every metric that worsened against the accepted baseline. Otherwise
-  (`ratchetProvenDimensions`) they list the worsened metrics of each failing
-  dimension with no hard-gate finding ref — for `operations`, also no failing
-  analyzer gate; a ratchet beside a hard-gate finding in its own dimension stays
-  unnamed. Thresholds are not in the contract, so a worsened metric inside its
-  threshold is listed too; the label says "worsened", never "tripped".
+  blocks when `gate` is unset. A tripped ratchet is ONE FINDING,
+  `metric/<name>` (`evaluation.ratchetFindings`, ID = `NewKeyed("metric/<name>",
+  "metric_ratchet", name)`, never keyed by the values, so a rule-only waiver
+  keeps matching). `matched_by` and `why` carry `before`, `after`, `delta` and
+  the `threshold`; a gate is a blocker with a `code_change` repair task whose
+  constraint says not to accept it by re-running `archfit baseline`; `gate:
+  warn` yields an advisory; `off` yields nothing. It routes to the dimension
+  whose envelope publishes the metric (`routeRatchets`), so the exit code, SARIF,
+  text, Markdown and the agent digest need no ratchet-only path (the old
+  `blockingMetricRegressions`, `MetricRegressions` and the three `ratchetRegressions`
+  twins are gone). Baseline capture runs with no baseline, so it has no delta and
+  cannot accept a ratchet: only a waiver or a reviewed `archfit baseline` moves it.
+  **A ratchet compares only against a reference that compares with this run**
+  (`application.assess` passes `BaseMetrics` only when `Baseline.Comparison` is
+  comparable; metric versions are still checked by `ComputeDelta`). With a baseline
+  file whose reference does not compare, no delta exists and the run lists ONE
+  unevaluated entry `metric_ratchets` (`reference not comparable (drift: …): N
+  metric ratchets cannot be evaluated`): `hard_gates: unmeasured`, exit 2, never 1
+  and never a silent pass. No baseline file means no ratchet and no entry.
   `MetricEntry.Enabled` is a `*bool` so a knob-only
   entry (`{gate: warn}`) stays enabled — only explicit `enabled: false` disables
   the metric (`metrics.New`). `coupling_balance` does not gate at all — the only
