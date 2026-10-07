@@ -729,7 +729,15 @@
           "value": 1
         },
         {
-          "name": "external_edges",
+          "name": "library_edges",
+          "provenance": [
+            "relationship/analysis"
+          ],
+          "unit": "count",
+          "value": 0
+        },
+        {
+          "name": "unmapped_first_party_edges",
           "provenance": [
             "relationship/analysis"
           ],
