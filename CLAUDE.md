@@ -924,8 +924,16 @@ init` emits v2 directly; owners update older configs manually before analysis.
   edge class (allowlist, layer order, internal/public, path and module
   `forbidden_dependency`); a class check never fires on fails the gate. Its
   fixture `…FiresOnAWrongDecision` feeds the shared `agreementProblems` predicate
-  flipped decisions. TypeScript and Python are pinned at edge spelling only
-  (`QueryEdge` tests), not end to end.
+  flipped decisions. TypeScript and Python run the same comparison end to end
+  (`cmd/archfit/policy_agreement_lang_test.go`,
+  `TestErosion_PolicyQueryAgreesWithCheckTypeScript` / `…Python`) on fixtures
+  with the same five classes as Go (allowlist, layer order, internal/public,
+  path and module `forbidden_dependency`), through the real dependency-cruiser
+  and grimp (the TypeScript fixture is `.js`, which
+  dependency-cruiser parses without the `typescript` package). They skip when
+  `depcruise`/`npx` or `uv` is absent or under `-short`; `ARCHFIT_REQUIRE_TOOLS=1`
+  (set in CI, which installs the analyzers before the test step) turns each
+  skip into a failure.
 - **`measurement` is a property of the tree, never of the run**
   (`report.StateMeasurement`, populated in `application.projectArchitectureState`).
   Exactly four fields: `source_ref`, `history_depth`, `history_window`,
