@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"os"
@@ -303,24 +304,43 @@ func deriveIgnoredFiles(pkg *packages.Package, root string) []string {
 // original, so the directive-adjusted position finds the file the author wrote.
 // A file inside the root keeps its own path — an in-root //line directive (yacc,
 // stringer output) never renames it, so no edge identity moves for non-cgo code.
-func sourceRelFile(fset *token.FileSet, pos token.Pos, root string) (string, bool) {
+// fromCopy reports that the tree is such a preprocessed copy.
+func sourceRelFile(fset *token.FileSet, pos token.Pos, root string) (rel string, fromCopy, ok bool) {
 	tf := fset.File(pos)
 	if tf == nil {
-		return "", false
+		return "", false, false
 	}
 	rel, err := filepath.Rel(root, tf.Name())
 	if err == nil && !strings.HasPrefix(rel, "..") {
-		return filepath.ToSlash(rel), true
+		return filepath.ToSlash(rel), false, true
 	}
 	orig := fset.PositionFor(pos, true).Filename
 	if orig == "" || !strings.HasSuffix(orig, ".go") {
-		return "", false
+		return "", false, false
 	}
 	rel, err = filepath.Rel(root, orig)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		return "", false
+		return "", false, false
 	}
-	return filepath.ToSlash(rel), true
+	return filepath.ToSlash(rel), true, true
+}
+
+// originalImports reads the imports the author wrote in a cgo file. The
+// preprocessed copy rewrites `import "C"` to `import _ "unsafe"` and may add
+// another `unsafe` import; reading the original keeps those out of the facts and
+// gives the same imports as the failed-preprocess fallback, which parses the
+// original, so the edges do not depend on the host's C toolchain.
+func originalImports(root, relFile string) ([]importFacts, bool) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(relFile)), nil, parser.ImportsOnly)
+	if err != nil {
+		return nil, false
+	}
+	out := make([]importFacts, 0, len(file.Imports))
+	for _, imp := range file.Imports {
+		out = append(out, importFacts{RawPath: strings.Trim(imp.Path.Value, `"`), Line: fset.Position(imp.Pos()).Line, LocFile: relFile})
+	}
+	return out, true
 }
 
 // deriveFileFacts extracts the per-file import facts collectFromFacts needs.
@@ -329,11 +349,18 @@ func sourceRelFile(fset *token.FileSet, pos token.Pos, root string) (string, boo
 func deriveFileFacts(pkg *packages.Package, root string) []fileFacts {
 	var files []fileFacts
 	for _, f := range pkg.Syntax {
-		relFile, ok := sourceRelFile(pkg.Fset, f.Package, root)
+		relFile, fromCopy, ok := sourceRelFile(pkg.Fset, f.Package, root)
 		if !ok {
 			continue
 		}
 		ff := fileFacts{RelFile: relFile}
+		if fromCopy {
+			if imports, read := originalImports(root, relFile); read {
+				ff.Imports = imports
+				files = append(files, ff)
+				continue
+			}
+		}
 		for _, imp := range f.Imports {
 			pos := pkg.Fset.Position(imp.Pos())
 			locFile := pos.Filename
@@ -386,7 +413,7 @@ func deriveRawHints(pkg *packages.Package, dtos *dtoIndex, root string) (map[str
 			continue
 		}
 		strength := goObjectStrength(obj, dtos)
-		relFile, ok := sourceRelFile(pkg.Fset, ident.Pos(), root)
+		relFile, _, ok := sourceRelFile(pkg.Fset, ident.Pos(), root)
 		if !ok {
 			continue
 		}

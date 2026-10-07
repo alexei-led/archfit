@@ -86,14 +86,20 @@ Fixed:
   cgo preprocessing succeeded. The load parses a preprocessed copy in the build
   cache, outside the scan root, and the extractor skipped it. Edges, rule
   violations, cycles and coupling facts from cgo files were missing. The
-  extractor now maps the copy back to the original file. Edge IDs, locations
-  and strength hints of a cgo file match those of a plain file.
+  extractor now maps the copy back to the original file and reads the imports
+  the author wrote (including `import "C"`, as before for a failed preprocess),
+  not the rewrite cmd/cgo makes. Edge IDs, locations and strength hints of a
+  cgo file are built like those of a plain file, and do not depend on whether
+  the host has a working C toolchain.
   `archfit policy can-import` reads a cgo file when `CGO_ENABLED=1`. A failed
   cgo preprocess still makes the `go/packages` row `partial`, and a cgo file
   that cgo-off ignores is still counted in the build-constraint disclosure.
 - Cached Go facts from older binaries are not reused (the cache key has a new
-  facts revision). The measurement profile and the settings hash do not change.
-  Repositories without cgo files give byte-identical output.
+  facts revision). The measurement profile and the settings hash do not change, so
+  a baseline stored by an older binary still compares as comparable. On a
+  repository with cgo files, the new edges read as introduced against it: run
+  `archfit baseline` again after reviewing them. Repositories without cgo files
+  give byte-identical output.
 
 ## v2.4.1 — schema lists rule types
 

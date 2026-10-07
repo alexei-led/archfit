@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -23,7 +25,7 @@ func writeCgoFixture(t *testing.T) string {
 		goModFile:     "module example.com/cg\n\ngo 1.21\n",
 		"b/b.go":      "package b\n\nfunc B() int { return 1 }\n",
 		"a/plain.go":  "package a\n\nimport \"example.com/cg/b\"\n\nfunc Plain() int { return b.B() }\n",
-		"a/native.go": "package a\n\n/*\nstatic int one(void) { return 1; }\n*/\nimport \"C\"\n\nimport \"example.com/cg/b\"\n\nfunc Native() int { return int(C.one()) + b.B() }\n",
+		"a/native.go": "package a\n\n/*\nstatic int one(void) { return 1; }\n*/\nimport \"C\"\n\nimport (\n\t\"unsafe\"\n\n\t\"example.com/cg/b\"\n)\n\nvar _ unsafe.Pointer\n\nfunc Native() int { return int(C.one()) + b.B() }\n",
 	}
 	for name, body := range files {
 		p := filepath.Join(dir, filepath.FromSlash(name))
@@ -55,6 +57,23 @@ func edgeFrom(facts graph.Facts, from string) *graph.Edge {
 	return nil
 }
 
+// edgeTargets lists the package nodes a file imports, sorted.
+func edgeTargets(facts graph.Facts, from string) []string {
+	id := graph.Node{Kind: graph.NodeKindFile, Path: from}.ID()
+	var out []string
+	for _, e := range facts.Edges {
+		if e.From == id {
+			out = append(out, e.To)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// wantNativeTargets is what the author wrote in native.go: the preprocessed copy
+// also carries cmd/cgo's rewrite of import "C", which must not leak into facts.
+var wantNativeTargets = []string{"package:C", "package:b", "package:unsafe"}
+
 func TestExtract_CgoFileKeepsItsImports(t *testing.T) {
 	requireCgo(t)
 	dir := writeCgoFixture(t)
@@ -77,6 +96,9 @@ func TestExtract_CgoFileKeepsItsImports(t *testing.T) {
 	}
 	if h := edgeFrom(facts, "a/native.go").StrengthHint; h != edgeFrom(facts, "a/plain.go").StrengthHint || h == "" {
 		t.Errorf("cgo file strength hint = %q, want the same non-empty hint as the plain file", h)
+	}
+	if got := edgeTargets(facts, "a/native.go"); !slices.Equal(got, wantNativeTargets) {
+		t.Errorf("native.go imports = %v, want %v", got, wantNativeTargets)
 	}
 	if cov.FilesSeen != 3 {
 		t.Errorf("FilesSeen = %d, want 3 (b.go, plain.go, native.go)", cov.FilesSeen)
@@ -102,7 +124,7 @@ func TestExtract_CgoOffDisclosesTheIgnoredFile(t *testing.T) {
 func TestExtract_CgoPreprocessFailureStaysPartialWithImports(t *testing.T) {
 	requireCgo(t)
 	dir := writeCgoFixture(t)
-	broken := "package a\n\n/*\n#include <archfit_missing_header.h>\n*/\nimport \"C\"\n\nimport \"example.com/cg/b\"\n\nfunc Native() int { return int(C.one()) + b.B() }\n"
+	broken := "package a\n\n/*\n#include <archfit_missing_header.h>\n*/\nimport \"C\"\n\nimport (\n\t\"unsafe\"\n\n\t\"example.com/cg/b\"\n)\n\nvar _ unsafe.Pointer\n\nfunc Native() int { return int(C.one()) + b.B() }\n"
 	if err := os.WriteFile(filepath.Join(dir, "a", "native.go"), []byte(broken), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +136,7 @@ func TestExtract_CgoPreprocessFailureStaysPartialWithImports(t *testing.T) {
 	if cov.Status == "ok" {
 		t.Errorf("status = ok after a failed cgo preprocess; want a disclosed gap (reason %q)", cov.Reason)
 	}
-	if edgeFrom(facts, "a/native.go") == nil {
-		t.Error("no edge from the original cgo file; the fallback parse must keep its imports")
+	if got := edgeTargets(facts, "a/native.go"); !slices.Equal(got, wantNativeTargets) {
+		t.Errorf("fallback native.go imports = %v, want the same as a successful preprocess: %v", got, wantNativeTargets)
 	}
 }
