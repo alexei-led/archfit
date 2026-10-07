@@ -43,11 +43,11 @@ The only capture mode is a full capture: it accepts all current findings that no
 
 | Fingerprint         | What it hashes today                                                                                                                                                                                                                                 |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_hash`       | The raw bytes of `.archfit.yaml` (`configHash` in `internal/evidence/acquisition/service.go`). A comment edit changes it.                                                                                                                            |
+| `config_hash`       | The raw bytes of `.archfit.yaml`. Identity only since v3.0.0: `classification_hash` is the comparison input.                                                                                                                            |
 | `model_hash`        | The resolved module map, after CODEOWNERS owners and detected deploy units are filled in                                                                                                                                                             |
 | `labels_hash`       | The approved entries of `.archfit-labels.yaml`. Empty when none is approved.                                                                                                                                                                         |
 | `rubric_version`    | The coupling score version, today `bc_score.v6`                                                                                                                                                                                                      |
-| Measurement profile | `archfit.measurement.v1`. The settings hash covers the extractor config of every registered language, exclusions, file classes, syntax, patterns, the Go environment and the TypeScript config. The producer list includes absent and disabled rows. |
+| Measurement profile | `archfit.measurement.v2` (shipped in v3.0.0). The settings hash covers the global settings plus one slice per applicable language (extractor config, syntax flag, Go environment or TypeScript config). Not-applicable rows leave the producer list. |
 
 `CompareMeasurementProfiles` (`internal/assessment/decision/measurement.go`) also refuses a profile with an unknown producer, an unknown tool version, or a partial row that has no accepted partial basis.
 

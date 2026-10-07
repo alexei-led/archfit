@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -35,14 +36,20 @@ func (s *Service) measurementProfile(ctx context.Context, sc scope.Scope, rows [
 	p := &evidence.MeasurementProfile{Version: evidence.MeasurementProfileVersion, Producers: []evidence.MeasurementProducer{}, Unknowns: []string{}}
 	global := map[string]any{
 		"exclusions": s.Options.Exclusions,
-		"file_class": s.Options.Acquisition.FileClass, "syntax": s.Options.Syntax,
+		"file_class": s.Options.Acquisition.FileClass,
+		// Syntax.Languages names every language that is not switched off, so it is
+		// per-language state: it goes into each language slice, not the global part.
+		"syntax_enabled":    s.Options.Syntax.Enabled,
 		"patterns":          sortedPatterns(s.Options.Patterns),
 		"supplied_coverage": suppliedCoverageSettings(s.Options.SuppliedCoverage),
 	}
 	byLanguage := map[string]map[string]any{}
 	slice := func(lang string) map[string]any {
 		if byLanguage[lang] == nil {
-			byLanguage[lang] = map[string]any{"extractor": s.Options.Extractors[lang]}
+			byLanguage[lang] = map[string]any{
+				"extractor": s.Options.Extractors[lang],
+				"syntax":    slices.Contains(s.Options.Syntax.Languages, lang),
+			}
 		}
 		return byLanguage[lang]
 	}

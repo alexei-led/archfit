@@ -6,6 +6,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	ports "github.com/alexei-led/archfit/internal/evidence/ports"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
@@ -105,5 +106,38 @@ func eq(t *testing.T, got, want string) {
 	t.Helper()
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// The settings hash must not read configuration of a language that is not in
+// the tree: not its extractor config, and not its syntax flag.
+func TestProfileV2SettingsIgnoreNotApplicableLanguageConfig(t *testing.T) {
+	configured := func(pyPackage string, syntaxLangs ...string) *Service {
+		s := goOnlyService()
+		s.Options.Extractors = registry.Configs{"go": {Src: "."}, "python": {PyPackage: pyPackage}}
+		s.Options.Syntax = ports.SyntaxConfig{Enabled: true, Languages: syntaxLangs}
+		return s
+	}
+	goRow := evidence.Coverage{Tool: registry.ToolGoPackages, Version: goToolVersion, Status: evidence.StatusOK}
+	grimp := evidence.Coverage{Tool: registry.ToolGrimp, Status: evidence.StatusAbsent}
+	hash := func(s *Service, files map[string]fileclass.FileClass) string {
+		return s.measurementProfile(context.Background(), scope.Scope{Root: "/r"}, []evidence.Coverage{goRow, grimp}, nil, files, nil).SettingsHash
+	}
+	goFiles := map[string]fileclass.FileClass{"main.go": fileclass.Production}
+	pyFiles := map[string]fileclass.FileClass{"main.go": fileclass.Production, "pkg/a.py": fileclass.Production}
+
+	base := hash(configured("one", "go", "python"), goFiles)
+	if hash(configured("two", "go", "python"), goFiles) != base {
+		t.Error("python extractor config moved the hash on a tree with no python")
+	}
+	if hash(configured("one", "go"), goFiles) != base {
+		t.Error("switching python out of the syntax languages moved the hash on a tree with no python")
+	}
+	applicable := hash(configured("one", "go", "python"), pyFiles)
+	if applicable == base {
+		t.Error("a python file in the tree did not add the python slice")
+	}
+	if hash(configured("two", "go", "python"), pyFiles) == applicable {
+		t.Error("python extractor config did not move the hash once python is in the tree")
 	}
 }

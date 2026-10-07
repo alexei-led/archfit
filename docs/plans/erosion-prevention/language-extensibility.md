@@ -4,7 +4,7 @@
 
 This page explains how archfit adds a language or an analyzer today, what goes wrong, and what the plan changes.
 archfit supports Go, TypeScript, Python and Rust. The next planned language is the JVM (Java, Kotlin, Scala) through a SCIP indexer.
-None of the plan items on this page is built.
+The measurement-profile half of language-addition invariance shipped in v3.0.0. The published coverage rows and the other items on this page are not built.
 The [roadmap](erosion-roadmap.md) owns the wave order. [Erosion tracking](erosion-tracking.md) owns the measurement profile v2 rules for comparability.
 
 ## Terms

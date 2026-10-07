@@ -179,7 +179,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
   ast-grep pass runs and the settings hash covers), `layers`, `min_severity`,
   `depends_on`/`visible_to` and `reviewed_at` are governance and never make a run
   non-comparable. A `languages.<id>.gate` edit matters only when it flips an
-  absent row to disabled; supplied `coverage:` sources enter the settings hash. Every config leaf has exactly one class (model,
+  absent row to disabled or demands a tool for a language that is not in the tree
+  (a coverage gap makes the row applicable); supplied `coverage:` sources enter the settings hash. Every config leaf has exactly one class (model,
   classification, profile, governance): `internal/config/classification_test.go`
   fails on a leaf with no class, so a new key needs a decision. Each non-comparable
   result also carries `drift[]` (`decision.DriftClass`), so a consumer reads the
