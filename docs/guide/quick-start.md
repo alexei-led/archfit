@@ -92,7 +92,7 @@ NOT MEASURED (5)
 COUPLING SEAMS (67)
 
   assessment-repair -> relationship-analysis
-    functional × cross_module_same_owner × high volatility · 12 critical of 34 scored · median balance 7
+    functional × cross_module × high volatility · 12 critical of 34 scored · median balance 7
     try: introduce_contract
 ```
 

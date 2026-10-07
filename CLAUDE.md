@@ -147,7 +147,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   shows its lowest-balance qualifying edge as the DRIVING edge (strength,
   volatility, quadrant, hypothesis), and gate reasons name the boundary and
   container (`orders -> pricing: functional coupling across the owner boundary
-  into high-volatility pricing (container system)`); only a deploy-unit boundary
+  at high volatility (container system)`); only a deploy-unit boundary
   says "distributed monolith". The seam set is built from the FULL classified
   edge set, so no severity/baseline/waiver filter can hide one.
   `mode: fail` blocks ONLY on seams newly introduced against a **comparable**

@@ -218,9 +218,7 @@ func (a *seamAccumulator) seam(in seamInput, volatility map[string]classify.Modu
 		DistributedMonolith: a.distributed,
 		QualifyingEdges:     a.qualifyingEdges(),
 	}
-	if vp, ok := volatility[a.to]; ok {
-		s.VolatilityProvenance = string(vp.Reported())
-	}
+	s.VolatilityProvenance = a.volatilityProvenance(volatility)
 	s.Labels, s.LabelEvidenceHash = seamLabels(in, a.from, a.to)
 	s.Confidence = seamConfidence(a.scored, a.abstained, a.nonHighLLM)
 	a.applyDrivingFact(&s, toDef, classify.CohesiveRole(fromDef.Role))
@@ -240,14 +238,32 @@ func (a *seamAccumulator) applyDrivingFact(s *relationship.Seam, toDef policy.Mo
 		in.Strength, in.Volatility, in.Band = e.Strength, e.Volatility, e.Classified.Score.Band
 	case a.worstClone != nil:
 		c := a.worstClone
+		s.Strength, s.Volatility = relationship.StrengthSymmetric, c.Volatility
 		in.Strength, in.Volatility, in.Band, in.Clone = relationship.StrengthSymmetric, c.Volatility, c.Classified.Score.Band, true
 	case a.worst != nil:
 		e := a.worst
+		s.Strength, s.Volatility = e.Strength, e.Volatility
 		in.Strength, in.Volatility, in.Band = e.Strength, e.Volatility, e.Classified.Score.Band
 	default:
 		return
 	}
 	s.Hypothesis = relationship.BalancingHypothesis(in)
+}
+
+// volatilityProvenance reports where the seam's volatility came from. It reads
+// the target, unless the target's own volatility is undeclared and the source's
+// is not: functional coupling can take its high volatility from the source side.
+func (a *seamAccumulator) volatilityProvenance(by map[string]classify.ModuleVolatility) string {
+	to, okTo := by[a.to]
+	from, okFrom := by[a.from]
+	switch {
+	case okTo && okFrom && to.Reported() == classify.VolatilitySourceUndeclared && from.Reported() != classify.VolatilitySourceUndeclared:
+		return string(from.Reported())
+	case okTo:
+		return string(to.Reported())
+	default:
+		return ""
+	}
 }
 
 // lowerEdge reports whether e outranks cur as the driving edge: the lower
@@ -312,7 +328,10 @@ func (a *seamAccumulator) addClone(p *relationship.ClonePair) {
 	if sc.Band == relationship.SeverityCritical || sc.Band == relationship.SeverityHigh {
 		a.highOrWorse++
 	}
-	if a.worst == nil || sc.Balance < a.worst.Classified.Score.Balance {
+	// A clone fact is symmetric (S=9): at an equal balance it outranks an edge of
+	// lower strength, as lowerEdge does between edges.
+	if a.worst == nil || sc.Balance < a.worst.Classified.Score.Balance ||
+		(sc.Balance == a.worst.Classified.Score.Balance && sc.Breakdown.StrengthValue > a.worstStrength) {
 		a.worstClone = p
 		a.worstStrength, a.worstDistOr = sc.Breakdown.StrengthValue, sc.Breakdown.DistanceValue
 	}

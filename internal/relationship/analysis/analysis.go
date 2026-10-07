@@ -86,7 +86,7 @@ func Analyze(in Input) relationship.AnalysisResult {
 			ClassifiedEdges:    classifiedEdges,
 			Seams: buildSeams(seamInput{Set: set, Config: cfg, DeclaredModules: in.Policy.Topology.Modules, Tree: classify.BuildContainment(in.Policy.Topology.Modules),
 				Graph: in.Graph, EvidenceHashes: evidenceHashes,
-				LabelEvidenceHashes: labels.EvidenceHashByKey(in.Labels, evidenceHashes), ClonePairs: clones}),
+				LabelEvidenceHashes: labels.EvidenceHashByKey(in.Labels, evidenceHashes), ClonePairs: seamCloneFacts(clones, cfg.DuplicatedKnowledgePolicy)}),
 		},
 		Evidence: relationship.AnalysisEvidence{
 			LLMApprovedCount:          labels.LLMApprovedCount(in.Labels, evidenceHashes),
@@ -105,6 +105,16 @@ func Analyze(in Input) relationship.AnalysisResult {
 		out.Assessment.StaleLabelKeys = append(out.Assessment.StaleLabelKeys, labels.Key(l.From, l.To))
 	}
 	return out
+}
+
+// seamCloneFacts returns the clone facts the seam ledger may use. The
+// `advisory` setting of coupling.duplicated_knowledge keeps clone facts out of
+// seams, as it keeps them out of the headline score.
+func seamCloneFacts(pairs []relationship.ClonePair, p policy.DuplicatedKnowledgePolicy) []relationship.ClonePair {
+	if policy.NormalizeDuplicatedKnowledgePolicy(p) != policy.DuplicatedKnowledgePolicyScore {
+		return nil
+	}
+	return pairs
 }
 
 // cloneOnly keeps the clone pairs with no import edge between their modules.

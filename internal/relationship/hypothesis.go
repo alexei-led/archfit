@@ -14,7 +14,8 @@ type HypothesisInput struct {
 	// TargetPublic is true when the target module declares a public surface.
 	TargetPublic bool
 	// CohesiveRole is true when the source module is a composition root, or its
-	// sources are generated or test code.
+	// sources are generated or test code. A clone fact has no source side, so the
+	// role never applies to it.
 	CohesiveRole bool
 }
 
@@ -34,7 +35,7 @@ func BalancingHypothesis(in HypothesisInput) SeamHypothesis {
 		return SeamHypothesisBalanced
 	}
 	switch {
-	case in.CohesiveRole && in.Strength != StrengthIntrusive:
+	case in.CohesiveRole && !in.Clone && in.Strength != StrengthIntrusive:
 		return SeamHypothesisExpectedByRole
 	case in.Volatility == VolatilityUndeclared || in.Volatility == VolatilityUnknown:
 		return SeamHypothesisDeclareVolatility

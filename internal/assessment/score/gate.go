@@ -116,8 +116,8 @@ func seamReason(s result.Seam) string {
 	default:
 		across = "module boundary"
 	}
-	reason := fmt.Sprintf("%s -> %s: %s coupling across the %s into %s-volatility %s",
-		s.FromModule, s.ToModule, s.Strength, across, s.Volatility, s.ToModule)
+	reason := fmt.Sprintf("%s -> %s: %s coupling across the %s at %s volatility",
+		s.FromModule, s.ToModule, s.Strength, across, s.Volatility)
 	if container != "" {
 		reason += fmt.Sprintf(" (container %s)", container)
 	}

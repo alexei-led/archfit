@@ -11,12 +11,12 @@ import (
 	"github.com/alexei-led/archfit/internal/relationship/scoring"
 )
 
-// ClonePair is a cross-module clone pair (analyzers.clones) between two
-// modules that share NO import-graph edge in either direction — the book's
-// "duplicated knowledge" (Ch7): functional coupling through shared logic that
-// is invisible to the import graph. The symmetric-strength upgrade in classify
-// only fires on an existing edge, so without this detection copy-paste drift
-// between unconnected modules changes no metric, finding, or score.
+// ClonePair is a cross-module clone pair (analyzers.clones) — the book's
+// "duplicated knowledge" (Ch7): functional coupling through shared logic. When
+// the two modules share no import-graph edge the pair is invisible to the
+// import graph, and without this detection copy-paste drift between them changes
+// no metric, finding, or score. When they do share an edge the pair is Connected
+// and becomes a clone fact on that seam; it never changes the edge itself.
 //
 // The Classification is scored through the standard book formula with
 // StrengthSymmetric at the module-pair distance and the worst-of-pair

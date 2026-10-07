@@ -38,6 +38,9 @@ func advisoryCandidates(set relationship.Set, clones []relationship.ClonePair, c
 		})
 	}
 	for _, pair := range clones {
+		if pair.Connected {
+			continue // a clone fact on a seam, reported there; this rule means "no import edge"
+		}
 		if pair.Severity == relationship.SeverityNone || !severityAtLeast(pair.Severity, cfg.BCAdvisoryMinSeverity) {
 			continue
 		}

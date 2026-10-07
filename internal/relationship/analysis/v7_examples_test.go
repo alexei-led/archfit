@@ -66,6 +66,7 @@ func requireScore(t *testing.T, res relationship.AnalysisResult, wantStrength re
 }
 
 const (
+	fileAPIX            = "a/api/x.go"
 	fileOrders          = "orders/o.go"
 	subdomainSupporting = "supporting"
 	volMedium           = "medium"
@@ -329,14 +330,14 @@ func TestV7CloneFactAttachesToSeam(t *testing.T) {
 		d.Public = []string{k + "/api/**"}
 		modules[k] = d
 	}
-	g := exampleGraph(exampleEdge{fromFile: "a/api/x.go", toFile: "b/api/y.go", hint: hintInterface})
+	g := exampleGraph(exampleEdge{fromFile: fileAPIX, toFile: "b/api/y.go", hint: hintInterface})
 	cloneA, cloneB := "a/dup.go", "b/dup.go"
 	res := analysis.Analyze(analysis.Input{
 		Graph: g, Policy: relationshipPolicy(modules),
 		CloneClusters: []clone.Cluster{{Files: []string{cloneA, cloneB}, Lines: 40, Locations: []clone.LineRange{{StartLine: 1}, {StartLine: 2}}}},
 		FileClassIndex: map[string]fileclass.FileClass{
 			cloneA: fileclass.Production, cloneB: fileclass.Production,
-			"a/api/x.go": fileclass.Production, "b/api/y.go": fileclass.Production,
+			fileAPIX: fileclass.Production, "b/api/y.go": fileclass.Production,
 		},
 	})
 	s := seamBetween(t, res, "a", "b")
@@ -357,5 +358,83 @@ func TestV7CloneFactAttachesToSeam(t *testing.T) {
 	}
 	if edge := onlyEdge(t, res); edge.Strength != relationship.StrengthContract {
 		t.Errorf("edge strength = %s, want contract: a clone never upgrades an import edge", edge.Strength)
+	}
+}
+
+func cloneSetup() (map[string]policy.ModuleDef, analysis.Input) {
+	modules := map[string]policy.ModuleDef{
+		"a": core("team", "svc", "a/**"),
+		"b": core("team", "svc", "b/**"),
+	}
+	for _, k := range []string{"a", "b"} {
+		d := modules[k]
+		d.Public = []string{k + "/api/**"}
+		modules[k] = d
+	}
+	cloneA, cloneB := "a/dup.go", "b/dup.go"
+	in := analysis.Input{
+		CloneClusters: []clone.Cluster{{Files: []string{cloneA, cloneB}, Lines: 40, Locations: []clone.LineRange{{StartLine: 1}, {StartLine: 2}}}},
+		FileClassIndex: map[string]fileclass.FileClass{
+			cloneA: fileclass.Production, cloneB: fileclass.Production,
+			fileAPIX: fileclass.Production, "b/api/y.go": fileclass.Production,
+		},
+	}
+	return modules, in
+}
+
+// With imports in both directions the clone fact attaches to exactly one seam:
+// the one whose ID sorts first. It is never counted twice.
+func TestV7CloneFactAttachesToExactlyOneSeam(t *testing.T) {
+	modules, in := cloneSetup()
+	in.Graph = exampleGraph(
+		exampleEdge{fromFile: fileAPIX, toFile: "b/api/y.go", hint: hintInterface},
+		exampleEdge{fromFile: "b/api/y.go", toFile: fileAPIX, hint: hintInterface},
+	)
+	in.Policy = relationshipPolicy(modules)
+	res := analysis.Analyze(in)
+	ab, ba := seamBetween(t, res, "a", "b"), seamBetween(t, res, "b", "a")
+	withClone, without := ab, ba
+	if ba.ScoredEdges > ab.ScoredEdges {
+		withClone, without = ba, ab
+	}
+	if withClone.ScoredEdges != 2 || without.ScoredEdges != 1 {
+		t.Fatalf("scored facts = %d and %d, want 2 on one seam and 1 on the other", withClone.ScoredEdges, without.ScoredEdges)
+	}
+	if relationship.SeamID(withClone.FromModule, withClone.ToModule) > relationship.SeamID(without.FromModule, without.ToModule) {
+		t.Error("the clone fact must attach to the seam whose ID sorts first")
+	}
+}
+
+// `coupling.duplicated_knowledge: advisory` keeps clone facts out of seams and
+// out of the headline score. A connected pair never becomes a clone-only
+// advisory: it is a fact on the seam, and the rule means "no import edge".
+func TestV7CloneFactPolicyAndAdvisories(t *testing.T) {
+	modules, in := cloneSetup()
+	in.Graph = exampleGraph(exampleEdge{fromFile: fileAPIX, toFile: "b/api/y.go", hint: hintInterface})
+
+	score := relationshipPolicy(modules)
+	score.DuplicatedKnowledge = policy.DuplicatedKnowledgePolicyScore
+	in.Policy = score
+	got := analysis.Analyze(in)
+	s := seamBetween(t, got, "a", "b")
+	if s.ScoredEdges != 2 {
+		t.Errorf("score mode: scored = %d, want 2", s.ScoredEdges)
+	}
+	for _, c := range got.Assessment.AdvisoryCandidates {
+		if c.RuleID == ruleClone {
+			t.Errorf("a connected clone pair produced a %s advisory: %+v", ruleClone, c)
+		}
+	}
+	if tr := got.Assessment.ClassifiedEdges.TailRisk; tr != nil && tr.CloneOnlyScored != 0 {
+		t.Errorf("tail_risk clone-only scored = %d, want 0: the pair is connected", tr.CloneOnlyScored)
+	}
+
+	advisory := relationshipPolicy(modules)
+	advisory.DuplicatedKnowledge = policy.DuplicatedKnowledgePolicyAdvisory
+	in.Policy = advisory
+	got = analysis.Analyze(in)
+	s = seamBetween(t, got, "a", "b")
+	if s.ScoredEdges != 1 || s.Severity != relationship.SeverityNone {
+		t.Errorf("advisory mode: scored = %d severity %q, want 1 and none: clone facts stay out of seams", s.ScoredEdges, s.Severity)
 	}
 }

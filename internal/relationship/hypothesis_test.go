@@ -70,6 +70,7 @@ func TestBalancingHypothesis_Rules(t *testing.T) {
 		{"flagged only because volatility is undeclared", relationship.HypothesisInput{Strength: relationship.StrengthFunctional, Volatility: relationship.VolatilityUndeclared, Band: relationship.SeverityCritical}, relationship.SeamHypothesisDeclareVolatility},
 		{"cohesive source, functional", relationship.HypothesisInput{Strength: relationship.StrengthFunctional, Volatility: relationship.VolatilityHigh, Band: relationship.SeverityCritical, CohesiveRole: true}, relationship.SeamHypothesisExpectedByRole},
 		{"cohesive source, intrusive is still a move", relationship.HypothesisInput{Strength: relationship.StrengthIntrusive, Volatility: relationship.VolatilityHigh, Band: relationship.SeverityCritical, CohesiveRole: true}, relationship.SeamHypothesisIntroduceContract},
+		{"clone fact ignores a cohesive source role", relationship.HypothesisInput{Strength: relationship.StrengthSymmetric, Volatility: relationship.VolatilityHigh, Band: relationship.SeverityCritical, Clone: true, CohesiveRole: true}, relationship.SeamHypothesisMoveFunctionality},
 		{"abstained strength gives no answer", relationship.HypothesisInput{Strength: relationship.StrengthUnknown, Band: relationship.SeverityNone}, ""},
 	}
 	for _, tt := range tests {

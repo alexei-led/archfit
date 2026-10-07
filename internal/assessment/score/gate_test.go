@@ -161,10 +161,10 @@ func TestSeamReasonNamesBoundaryAndContainer(t *testing.T) {
 		basis string
 		want  string
 	}{
-		{"deploy_unit@system", "orders -> pricing: functional coupling across the deploy-unit boundary (a distributed monolith) into high-volatility pricing (container system)"},
-		{"ownership@sales", "orders -> pricing: functional coupling across the owner boundary into high-volatility pricing (container sales)"},
-		{"module_boundary@system", "orders -> pricing: functional coupling across the module boundary into high-volatility pricing (container system)"},
-		{"", "orders -> pricing: functional coupling across the module boundary into high-volatility pricing"},
+		{"deploy_unit@system", "orders -> pricing: functional coupling across the deploy-unit boundary (a distributed monolith) at high volatility (container system)"},
+		{"ownership@sales", "orders -> pricing: functional coupling across the owner boundary at high volatility (container sales)"},
+		{"module_boundary@system", "orders -> pricing: functional coupling across the module boundary at high volatility (container system)"},
+		{"", "orders -> pricing: functional coupling across the module boundary at high volatility"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.basis, func(t *testing.T) {

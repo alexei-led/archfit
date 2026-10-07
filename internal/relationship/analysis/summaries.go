@@ -67,7 +67,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.ClonePai
 			sum += addSummary(s, p.Classified, p.Strength, p.Distance, p.Volatility, relationship.Provenance{}, false)
 			unrated.addEdge(p.Classified, p.Distance, p.Volatility, relationship.StrengthSymmetric, p.FromModule, p.ToModule, modules)
 			addDriver(s, p.Classified, p.Distance, p.FromModule, p.ToModule)
-			tail.add(p.Classified, p.Distance, true, false)
+			tail.add(p.Classified, p.Distance, !p.Connected, false)
 			connected[p.FromModule] = struct{}{}
 			connected[p.ToModule] = struct{}{}
 			span.add(tree, p.FromModule, p.ToModule, p.Distance)

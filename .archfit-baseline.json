@@ -116,70 +116,16 @@
       "severity": "critical"
     },
     {
-      "fingerprint": "ddf7c0494b0538048eecd0262eb93f22",
-      "rule_id": "bc/duplicated_knowledge",
-      "kind": "advisory",
-      "severity": "critical"
-    },
-    {
-      "fingerprint": "f81b552c68f13ff16f2a7c792b70f86f",
-      "rule_id": "bc/duplicated_knowledge",
-      "kind": "advisory",
-      "severity": "critical"
-    },
-    {
-      "fingerprint": "aa24d763a69687f2484c6b92d6833a32",
-      "rule_id": "bc/duplicated_knowledge",
-      "kind": "advisory",
-      "severity": "critical"
-    },
-    {
       "fingerprint": "d8aa67ce1be41a3fa6804d4939180b42",
       "rule_id": "bc/duplicated_knowledge",
       "kind": "advisory",
       "severity": "critical"
     },
     {
-      "fingerprint": "11e92f00dd5cabf901c6d43fc7bd9507",
-      "rule_id": "bc/duplicated_knowledge",
-      "kind": "advisory",
-      "severity": "critical"
-    },
-    {
-      "fingerprint": "98acbfe47521c88396d50e50ae7a8ca7",
-      "rule_id": "bc/duplicated_knowledge",
-      "kind": "advisory",
-      "severity": "critical"
-    },
-    {
-      "fingerprint": "71f34b94eab2cec072bd714482a54a24",
-      "rule_id": "bc/duplicated_knowledge",
-      "kind": "advisory",
-      "severity": "medium"
-    },
-    {
       "fingerprint": "82c798195ae7edc20ad3b3066a0053e8",
       "rule_id": "bc/duplicated_knowledge",
       "kind": "advisory",
       "severity": "medium"
-    },
-    {
-      "fingerprint": "75e1e5c9493da94a17ad3ddc9094e45e",
-      "rule_id": "bc/duplicated_knowledge",
-      "kind": "advisory",
-      "severity": "critical"
-    },
-    {
-      "fingerprint": "ce0d0a1df0c548028f8aa1c9daa79c60",
-      "rule_id": "bc/duplicated_knowledge",
-      "kind": "advisory",
-      "severity": "critical"
-    },
-    {
-      "fingerprint": "684d137917d69bacf0c7dbba5abb1d1b",
-      "rule_id": "bc/duplicated_knowledge",
-      "kind": "advisory",
-      "severity": "critical"
     },
     {
       "fingerprint": "b088715ad4f2e2debcb026bd942f6c67",
@@ -569,7 +515,7 @@
           },
           {
             "name": "production_loc",
-            "value": 64923,
+            "value": 64956,
             "unit": "count"
           },
           {
