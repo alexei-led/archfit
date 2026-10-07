@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"maps"
 	"strings"
 	"time"
 
@@ -163,10 +162,6 @@ func (c Config) ForExtract(lang string) evidenceports.ExtractConfig {
 	return ec
 }
 
-// ExplicitOwnersView exposes the ownership provenance needed by policy
-// projections without exposing Config's mutable bookkeeping map.
-func (c Config) ExplicitOwnersView() map[string]bool { return maps.Clone(c.explicitOwners) }
-
 // ForClassify returns the legacy ClassifyConfig adapter. New relationship
 // consumers use the application boundary's policy.PolicySnapshot conversion;
 // this remains for transitional callers.
@@ -176,7 +171,6 @@ func (c Config) ForClassify() classify.Config {
 		Layers:                    c.Layers,
 		ModuleMap:                 policy.BuildModuleMap(c.Modules),
 		BCAdvisoryMinSeverity:     c.Coupling.MinSeverity,
-		ExplicitOwners:            c.explicitOwners,
 		VolatilityCascadeEnabled:  c.Coupling.VolatilityCascade,
 		ExternalSystems:           c.ExternalSystems,
 		DuplicatedKnowledgePolicy: policy.NormalizeDuplicatedKnowledgePolicy(c.Coupling.DuplicatedKnowledge),

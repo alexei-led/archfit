@@ -36,7 +36,7 @@ type Distance = relationship.Distance
 // metric with vendor noise).
 const (
 	DistanceSameModule           = relationship.DistanceSameModule
-	DistanceCrossModuleSameOwner = relationship.DistanceCrossModuleSameOwner
+	DistanceCrossModule          = relationship.DistanceCrossModule
 	DistanceCrossModuleDiffOwner = relationship.DistanceCrossModuleDiffOwner
 	DistanceCrossDeployUnit      = relationship.DistanceCrossDeployUnit
 	DistanceExternal             = relationship.DistanceExternal
@@ -124,9 +124,9 @@ type DistanceBasis string
 // same_module and unknown-distance edges and omits from JSON output via omitempty.
 const (
 	DistanceBasisUnknown    DistanceBasis = ""                  // same_module or unknown distance
-	DistanceBasisStructure  DistanceBasis = "code_structure"    // structural tree-distance fallback
-	DistanceBasisOwnership  DistanceBasis = "ownership"         // explicit or multi-owner signal
-	DistanceBasisDeployUnit DistanceBasis = "deploy_unit"       // differing deploy units (absolute)
+	DistanceBasisModule     DistanceBasis = "module_boundary"   // a module boundary with no owner or deploy-unit change
+	DistanceBasisOwnership  DistanceBasis = "ownership"         // the owner changes across the boundary
+	DistanceBasisDeployUnit DistanceBasis = "deploy_unit"       // the deploy unit changes across the boundary
 	DistanceBasisExternal   DistanceBasis = "declared_external" // target matched an external_systems entry
 )
 
@@ -180,14 +180,8 @@ type Classification struct {
 	// confidence was not high. Report-only — score confidence consumes the applied
 	// edge count rather than raw approved-label rows.
 	StrengthFromNonHighLLM bool `json:"strength_from_non_high_llm,omitempty"`
-	// StrengthFromConnascence records that a deterministic static connascence fact
-	// (meaning/algorithm/position) refined an otherwise unresolved or public-floor
-	// strength to model or functional. Report-only disclosure of a deterministic
-	// fallback path; never affects distance, explicitness, or confidence bands.
-	StrengthFromConnascence bool `json:"strength_from_connascence,omitempty"`
 	// Connascence carries deterministic static connascence evidence for this edge.
-	// The summary block is report-only; the evidence may also refine an otherwise
-	// unresolved/public-floor strength through StrengthFromConnascence.
+	// The evidence is report-only: it never sets strength, distance or volatility.
 	Connascence []ConnascenceEvidence `json:"connascence,omitempty"`
 }
 
@@ -208,12 +202,9 @@ const (
 	SeverityCritical = relationship.SeverityCritical
 )
 
-// DistanceIsHigh returns true for distances that represent a large socio-technical
-// gap — a different owner, a separate deployment unit, or a declared external
-// system (a different vendor entirely). These are the only distances at which
-// tight coupling is a genuine "distributed monolith"; coupling at
-// cross_module_same_owner (a single owner/binary) is local, and its cascade is
-// cheap, so it must not be framed as distributed-monolith risk.
+// DistanceIsHigh returns true for every cross-module distance and for a declared
+// external system. Under bc_score.v7 any module boundary is the far end of the
+// in-house ladder (D=9); owner and deploy unit only name the boundary.
 func DistanceIsHigh(d Distance) bool {
-	return d == DistanceCrossModuleDiffOwner || d == DistanceCrossDeployUnit || d == DistanceExternal
+	return d == DistanceCrossModule || d == DistanceCrossModuleDiffOwner || d == DistanceCrossDeployUnit || d == DistanceExternal
 }

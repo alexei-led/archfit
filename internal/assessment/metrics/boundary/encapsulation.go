@@ -15,7 +15,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// EncapsulationMetric (encapsulation.v1)
+// EncapsulationMetric (encapsulation.v2)
 // ---------------------------------------------------------------------------
 
 // EncapsulationMetric measures, among cross-boundary edges that take a stance on
@@ -33,8 +33,10 @@ type EncapsulationMetric struct{}
 // Name returns "encapsulation".
 func (m EncapsulationMetric) Name() string { return "encapsulation" }
 
-// Version returns "encapsulation.v1".
-func (m EncapsulationMetric) Version() string { return "encapsulation.v1" }
+// Version returns "encapsulation.v2". v2 follows bc_score.v7: contract now counts
+// interface-method calls and calls through a declared public surface, so the same
+// ratio is not comparable with v1 values.
+func (m EncapsulationMetric) Version() string { return "encapsulation.v2" }
 
 // Calculate computes the encapsulation ratio from cross-boundary edge classifications.
 //

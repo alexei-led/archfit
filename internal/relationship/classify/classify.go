@@ -39,9 +39,10 @@ const (
 // For each edge:
 //   - Strength: contract if the target path matches a public glob of any module;
 //     intrusive if it matches an internal glob; unknown otherwise.
-//   - Distance: derived from module ownership (same_module /
-//     cross_module_same_owner / cross_module_different_owner / cross_deploy_unit).
-//     When either endpoint cannot be resolved to a module, distance is unknown.
+//   - Distance: same_module, or one of three tokens for a module boundary
+//     (cross_module / cross_module_different_owner / cross_deploy_unit) that all
+//     score at D=9. When either endpoint cannot be resolved to a module,
+//     distance is unknown.
 //   - Volatility: derived from the to-module's subdomain field
 //     (core→high, supporting→low, generic→low, ""/"unknown"→unknown).
 //   - Explicitness: explicit when strength=contract; implicit when strength=intrusive;
@@ -55,15 +56,11 @@ func Run(g *graph.Graph, c Config) coupling.Index {
 	idx := make(coupling.Index)
 	scorer := scoring.DefaultScorer()
 
-	// Pre-compute per-run invariants so classifyDistance does not rebuild maps on
-	// every edge. Both results depend only on config (loaded once before Run).
-	degenerateExplicit, degenerateOwners := ownerDegeneracy(c)
-
 	effectiveVol := computeEffectiveVolatility(g, mm, c)
 	extSystems := buildExternalSystemIndex(c.ExternalSystems)
 
 	for _, e := range g.Edges() {
-		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners, effectiveVol, extSystems)
+		cl := classify(e, mm, c, effectiveVol, extSystems)
 		// Score every edge whose distance is known. Same-module edges score at
 		// the book's same-module rung (D=2) and surface the Ch10 local-complexity
 		// quadrant in the local_coupling report block; unknown-distance edges are
@@ -374,7 +371,7 @@ func matchesAnyGlob(path string, globs []string) bool {
 // ExplicitnessHint on the edge overrides the config-glob-derived explicitness
 // when non-empty ("explicit" or "implicit"). Severity is set in Run after the
 // book score is computed (cl.Score.Band → cl.Severity).
-func classify(e graph.Edge, mi moduleIndex, c Config, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) coupling.Classification {
+func classify(e graph.Edge, mi moduleIndex, c Config, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) coupling.Classification {
 	modules := c.Modules
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
@@ -384,7 +381,6 @@ func classify(e graph.Edge, mi moduleIndex, c Config, degenerateExplicit, degene
 	fromPin := resolved.fromPin
 	strengthFromLLM := resolved.fromLLM
 	strengthFromNonHighLLM := resolved.fromNonHighLLM
-	strengthFromConnascence := resolved.fromConnascence
 
 	// --- Symmetric upgrade from clone detection ---
 	// A cross-module clone pair (a DRY violation) signals bidirectional
@@ -412,7 +408,7 @@ func classify(e graph.Edge, mi moduleIndex, c Config, degenerateExplicit, degene
 	}
 
 	// --- Distance & volatility ---
-	dist, distBasis, vol := resolveDistanceVolatility(fromPath, toPath, e.Language, mi, c, degenerateExplicit, degenerateOwners, effectiveVol, extSystems)
+	dist, distBasis, vol := resolveDistanceVolatility(fromPath, toPath, mi, c, effectiveVol, extSystems)
 
 	// --- Explicitness ---
 	// ExplicitnessHint from the extractor (AST signal) takes precedence over the
@@ -436,17 +432,16 @@ func classify(e graph.Edge, mi moduleIndex, c Config, degenerateExplicit, degene
 		isGenericSubdomain(toPath, mi, modules)
 
 	return coupling.Classification{
-		Strength:                str,
-		Distance:                dist,
-		Volatility:              vol,
-		Explicitness:            exp,
-		ContractRecommended:     contractRecommended,
-		DistanceBasis:           distBasis,
-		CloneLocations:          cloneLocations,
-		StrengthFromLLM:         strengthFromLLM,
-		StrengthFromNonHighLLM:  strengthFromNonHighLLM,
-		StrengthFromConnascence: strengthFromConnascence,
-		Connascence:             connascenceFromHints(e.ConnascenceHints),
+		Strength:               str,
+		Distance:               dist,
+		Volatility:             vol,
+		Explicitness:           exp,
+		ContractRecommended:    contractRecommended,
+		DistanceBasis:          distBasis,
+		CloneLocations:         cloneLocations,
+		StrengthFromLLM:        strengthFromLLM,
+		StrengthFromNonHighLLM: strengthFromNonHighLLM,
+		Connascence:            connascenceFromHints(e.ConnascenceHints),
 	}
 }
 
@@ -499,16 +494,8 @@ func connascenceKind(kind string) (coupling.ConnascenceKind, bool) {
 	}
 }
 
-// resolveDistanceVolatility computes the composite distance (with the role cap
-// and the declared-external upgrade) and the effective volatility for an edge.
-//
-// Role-aware downgrade: a composition root (or a generated/test module) reaches
-// into the modules it wires by design — that fan-out is cohesion, not high-
-// distance coupling — so its outbound edges must never be scored as unbalanced.
-// Cap the source's outbound distance below the high-distance threshold; this
-// single point flows to the continuous Score (and hence Severity) and every
-// distance-reading metric (unbalanced_edge, encapsulation, …).
-// The basis stays as-is: it reflects what drove the original signal, not the cap.
+// resolveDistanceVolatility computes the distance token and the effective
+// volatility for an edge.
 //
 // Declared external system (`external_systems:`), book Ch10 Example 1: a
 // declared cross-vendor integration seam sits at the distance ladder's far end
@@ -519,15 +506,10 @@ func connascenceKind(kind string) (coupling.ConnascenceKind, bool) {
 // match is gated on the TARGET's own resolution, not the composite distance:
 // classifyDistance also returns DistanceUnknown when only the SOURCE is
 // unresolved, and an edge into a real declared module must never be re-labelled
-// external just because an external glob overlaps that module's path space. The
-// match runs after the role cap deliberately: a composition root's edge to an
-// external vendor system is a real integration seam, not its own cohesive wiring.
-func resolveDistanceVolatility(fromPath, toPath, lang string, mi moduleIndex, c Config, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) (coupling.Distance, coupling.DistanceBasis, coupling.Volatility) {
+// external just because an external glob overlaps that module's path space.
+func resolveDistanceVolatility(fromPath, toPath string, mi moduleIndex, c Config, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) (coupling.Distance, coupling.DistanceBasis, coupling.Volatility) {
 	modules := c.Modules
-	dist, distBasis := classifyDistance(fromPath, toPath, lang, mi, modules, c.ExplicitOwners, degenerateExplicit, degenerateOwners)
-	if fromMod, ok := mi.moduleFor(fromPath); ok && cohesiveRole(modules[fromMod].Role) {
-		dist = capDistanceForRole(dist)
-	}
+	dist, distBasis := classifyDistance(fromPath, toPath, mi, modules)
 	if dist == coupling.DistanceUnknown {
 		if _, toOK := mi.moduleFor(toPath); !toOK {
 			if v, ok := extSystems.match(toPath); ok {
@@ -567,11 +549,10 @@ func classifyStrength(toPath string, mi moduleIndex) coupling.Strength {
 }
 
 type strengthResolution struct {
-	strength        coupling.Strength
-	fromPin         bool
-	fromLLM         bool
-	fromNonHighLLM  bool
-	fromConnascence bool
+	strength       coupling.Strength
+	fromPin        bool
+	fromLLM        bool
+	fromNonHighLLM bool
 }
 
 // resolveStrength applies the shared pre-clone strength precedence for one
@@ -601,34 +582,20 @@ func resolveStrength(e graph.Edge, mi moduleIndex, c Config) strengthResolution 
 			}
 		}
 	}
-	// Refine a public-glob contract floor to the hint's public-coupling kind when no
-	// human label pinned it. This is what makes coupling_balance sensitive to
-	// integration strength instead of reading every public edge as the weakest
-	// (contract) kind. The hint can only raise the kind among the public kinds; it
-	// never lowers a public edge to intrusive (the glob floor). Exception: a
-	// pure-data DTO across a declared public boundary IS the book's explicit
-	// integration contract — the floor stands unrefined.
-	if !fromPin && str == coupling.StrengthContract && e.StrengthHint != graph.StrengthHintDTO {
-		if k := strengthFromHint(e.StrengthHint); isPublicKind(k) {
-			str = k
-		}
+	// A public-glob match is the integration CONTRACT: the target declared this
+	// surface as its published interface, so a call through it is contract
+	// coupling. A callable hint (function, method, interface method) never
+	// raises that floor. Only DATA evidence does — a concrete non-DTO type,
+	// field, var or const, or a method on a concrete receiver — because that
+	// couples the caller to the target's model. A pure-data DTO across a
+	// declared public boundary IS the book's explicit integration contract.
+	if !fromPin && str == coupling.StrengthContract && e.DataStrengthHint == string(coupling.StrengthModel) {
+		str = coupling.StrengthModel
 	}
-	connascenceStrength := strengthFromConnascenceHints(e.ConnascenceHints)
-	strengthFromConnascence := false
-	if !fromPin && str == coupling.StrengthContract && isPublicKind(connascenceStrength) && connascenceStrength != coupling.StrengthContract {
-		str = connascenceStrength
-		strengthFromConnascence = true
-	}
-	// Unknown (no glob, no label) falls back to the hint, then deterministic
-	// connascence evidence. Connascence meaning proves shared data/model; algorithm
-	// or position proves behavioral coupling. Name/type alone remain insufficient to
-	// distinguish model from contract without a direct symbol-strength fact.
+	// Unknown (no glob, no label) falls back to the extractor or SCIP hint.
+	// Connascence is report-only evidence and never sets strength.
 	if str == coupling.StrengthUnknown {
 		str = strengthFromHint(e.StrengthHint)
-	}
-	if str == coupling.StrengthUnknown && connascenceStrength != coupling.StrengthUnknown {
-		str = connascenceStrength
-		strengthFromConnascence = true
 	}
 
 	// An approved llm-provenance label fills ONLY a cell every static source
@@ -651,59 +618,10 @@ func resolveStrength(e graph.Edge, mi moduleIndex, c Config) strengthResolution 
 		}
 	}
 	return strengthResolution{
-		strength:        str,
-		fromPin:         fromPin,
-		fromLLM:         strengthFromLLM,
-		fromNonHighLLM:  strengthFromNonHighLLM,
-		fromConnascence: strengthFromConnascence,
-	}
-}
-
-func strengthFromConnascenceHints(hints []graph.ConnascenceHint) coupling.Strength {
-	best := coupling.StrengthUnknown
-	for _, hint := range hints {
-		candidate := strengthFromConnascenceKind(hint.Kind)
-		if connascenceStrengthRank(candidate) > connascenceStrengthRank(best) {
-			best = candidate
-		}
-	}
-	return best
-}
-
-func strengthFromConnascenceKind(kind string) coupling.Strength {
-	switch kind {
-	case graph.ConnascenceMeaning:
-		return coupling.StrengthModel
-	case graph.ConnascenceAlgorithm, graph.ConnascencePosition:
-		return coupling.StrengthFunctional
-	default:
-		return coupling.StrengthUnknown
-	}
-}
-
-func connascenceStrengthRank(s coupling.Strength) int {
-	switch s {
-	case coupling.StrengthFunctional:
-		return 2
-	case coupling.StrengthModel:
-		return 1
-	default:
-		return 0
-	}
-}
-
-// isPublicKind reports whether a strength is one of the public-coupling kinds —
-// contract (published interface), model (shared concrete type), or functional
-// (function call). These are the kinds a public-glob edge may legitimately refine
-// to. Intrusive (internals reach), symmetric (clone-derived), and unknown are
-// excluded: a public-glob floor must never be lowered to intrusive, and the
-// symmetric upgrade is applied separately from clone evidence.
-func isPublicKind(s coupling.Strength) bool {
-	switch s {
-	case coupling.StrengthContract, coupling.StrengthModel, coupling.StrengthFunctional:
-		return true
-	default:
-		return false
+		strength:       str,
+		fromPin:        fromPin,
+		fromLLM:        strengthFromLLM,
+		fromNonHighLLM: strengthFromNonHighLLM,
 	}
 }
 
@@ -717,9 +635,9 @@ func isPublicKind(s coupling.Strength) bool {
 // globs still take precedence (see classify): the hint is a fallback only.
 func strengthFromHint(hint string) coupling.Strength {
 	// A DTO hint without a declared public boundary is just a shared concrete
-	// type — model. The boundary declaration is what makes a DTO a contract;
-	// that case is handled at the floor-refinement site in classify, which
-	// checks the raw hint before calling this mapping.
+	// type — model. The boundary declaration is what makes a DTO a contract:
+	// across a public glob the floor stands, because only a "model" data hint
+	// raises it (see resolveStrength).
 	if hint == graph.StrengthHintDTO {
 		return coupling.StrengthModel
 	}
@@ -732,22 +650,18 @@ func strengthFromHint(hint string) coupling.Strength {
 	}
 }
 
-// classifyDistance computes the composite distance for a cross-module edge using
-// a precedence chain rather than a flat max, so that explicit config is never
-// overridden by the structural fallback:
+// classifyDistance names the boundary of an edge. A module boundary is the far
+// end of the in-house ladder (D=9), so the token only records what else changes
+// across it, in this order:
 //
-//  1. A differing deploy unit is an absolute boundary → cross_deploy_unit.
-//  2. Hand-authored ownership on EITHER endpoint is authoritative — BUT only when
-//     the explicit-owner sub-map is NOT degenerate (i.e. at least two distinct
-//     owners exist among explicitly-owned modules). A single-owner repo where every
-//     module carries the same explicit owner yields no useful signal: Step 2 falls
-//     through to Step 3 and Step 4 in that case so code structure dominates.
-//  3. A real resolver ownership signal (≥2 distinct owners, not the single
-//     git-author degenerate case) is authoritative too → ownership decides.
-//  4. Otherwise (degenerate or no ownership) fall back to code structure.
+//  1. A differing deploy unit → cross_deploy_unit (basis deploy_unit).
+//  2. Two non-empty, differing owners → cross_module_different_owner
+//     (basis ownership).
+//  3. Otherwise → cross_module (basis module_boundary).
 //
-// The returned DistanceBasis records which signal drove the final distance value.
-func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map[string]policy.ModuleDef, explicitOwners map[string]bool, degenerateExplicit, degenerateOwners bool) (coupling.Distance, coupling.DistanceBasis) {
+// The token never moves severity. An owner change can relabel a seam; it cannot
+// make one qualify.
+func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[string]policy.ModuleDef) (coupling.Distance, coupling.DistanceBasis) {
 	fromMod, fromOK := mi.moduleFor(fromPath)
 	toMod, toOK := mi.moduleFor(toPath)
 
@@ -759,47 +673,23 @@ func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map
 		return coupling.DistanceSameModule, coupling.DistanceBasisUnknown
 	}
 
-	return moduleDistance(fromMod, toMod, lang, modules, explicitOwners, degenerateExplicit, degenerateOwners)
+	return moduleDistance(fromMod, toMod, modules)
 }
 
-// moduleDistance computes the composite distance between two RESOLVED, distinct
-// modules — steps 1–4 of the precedence chain documented on classifyDistance.
+// moduleDistance names the boundary between two RESOLVED, distinct modules.
 // Factored out of classifyDistance so CloneOnlyPairs can compute a module-pair
 // distance from module names alone: clone evidence carries repo file paths,
 // which for Python never match the dotted node-ID globs the path resolution in
 // classifyDistance expects.
-func moduleDistance(fromMod, toMod, lang string, modules map[string]policy.ModuleDef, explicitOwners map[string]bool, degenerateExplicit, degenerateOwners bool) (coupling.Distance, coupling.DistanceBasis) {
-	fromDef := modules[fromMod]
-	toDef := modules[toMod]
-
-	deploy := deployDistance(fromDef.DeployUnit, toDef.DeployUnit)
-	if deploy == coupling.DistanceCrossDeployUnit {
-		return deploy, coupling.DistanceBasisDeployUnit // a deploy boundary is absolute
+func moduleDistance(fromMod, toMod string, modules map[string]policy.ModuleDef) (coupling.Distance, coupling.DistanceBasis) {
+	fromDef, toDef := modules[fromMod], modules[toMod]
+	if fromDef.DeployUnit != "" && toDef.DeployUnit != "" && fromDef.DeployUnit != toDef.DeployUnit {
+		return coupling.DistanceCrossDeployUnit, coupling.DistanceBasisDeployUnit
 	}
-
-	// Step 2: explicit hand-authored ownership on either endpoint fires only when
-	// the explicit-owner sub-map is NOT degenerate (not all same owner). When every
-	// explicitly-owned module shares a single owner (e.g. a single-team repo with
-	// owner: alexei-led on all modules), Step 2 falls through so code structure
-	// dominates — ownershipDistance("alexei-led","alexei-led") → SameOwner for every
-	// edge, which would flatten all distances and defeat the structural signal.
-	// degenerateExplicit is pre-computed once per Run to avoid rebuilding the map
-	// on every edge.
-	if explicitOwners[fromMod] || explicitOwners[toMod] {
-		if !degenerateExplicit {
-			return maxDistance(ownershipDistance(fromDef.Owner, toDef.Owner), deploy), coupling.DistanceBasisOwnership
-		}
+	if fromDef.Owner != "" && toDef.Owner != "" && fromDef.Owner != toDef.Owner {
+		return coupling.DistanceCrossModuleDiffOwner, coupling.DistanceBasisOwnership
 	}
-
-	// Step 3: a real resolver ownership signal (≥2 distinct owners) is authoritative.
-	// degenerateOwners is pre-computed once per Run to avoid rebuilding the full
-	// module→owner map on every edge.
-	if !degenerateOwners {
-		return maxDistance(ownershipDistance(fromDef.Owner, toDef.Owner), deploy), coupling.DistanceBasisOwnership
-	}
-
-	// Step 4: git-author degenerate or no ownership → code structure.
-	return maxDistance(codeStructureDistance(fromMod, toMod, lang), deploy), coupling.DistanceBasisStructure
+	return coupling.DistanceCrossModule, coupling.DistanceBasisModule
 }
 
 // classifyVolatility derives domain volatility for the to-module from declared

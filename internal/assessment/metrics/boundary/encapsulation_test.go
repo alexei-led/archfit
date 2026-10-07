@@ -162,7 +162,7 @@ func TestEncapsulation_ZeroContractIsRealNotNA(t *testing.T) {
 func TestEncapsulation_DeltaComputed(t *testing.T) {
 	// Baseline has encapsulation=0.8; current value=0.6 → delta=-0.2
 	baseline := assessmentresult.MetricSnapshot{
-		"encapsulation": {Value: 0.8, Version: "encapsulation.v1"},
+		"encapsulation": {Value: 0.8, Version: "encapsulation.v2"},
 	}
 
 	nodeA := metricstest.Node{Kind: metricstest.NodeKindFile, Path: pathA}

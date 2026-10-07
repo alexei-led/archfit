@@ -11,41 +11,33 @@ import (
 	"github.com/alexei-led/archfit/internal/relationship"
 )
 
-// ---------------------------------------------------------------------------
-// Distance rank for ordered comparison (used by unbalanced_edge)
-// ---------------------------------------------------------------------------
-
-// distanceRank maps a Distance to a numeric rank for >= comparisons.
-// Higher rank = greater distance. Unknown returns -1.
-func distanceRank(d relationship.Distance) int {
+// isModuleBoundary reports whether a distance token names a module boundary.
+// Under bc_score.v7 every boundary sits at the same rung (D=9), so owner and
+// deploy unit no longer separate "far" edges from "near" ones. Declared external
+// systems stay out of this metric, as before.
+func isModuleBoundary(d relationship.Distance) bool {
 	switch d {
-	case relationship.DistanceSameModule:
-		return 0
-	case relationship.DistanceCrossModuleSameOwner:
-		return 1
-	case relationship.DistanceCrossModuleDiffOwner:
-		return 2
-	case relationship.DistanceCrossDeployUnit:
-		return 3
-	default: // DistanceUnknown, DistanceExternal (declared seams stay out of this frozen v2 metric)
-		return -1
+	case relationship.DistanceCrossModule, relationship.DistanceCrossModuleDiffOwner, relationship.DistanceCrossDeployUnit:
+		return true
+	default:
+		return false
 	}
 }
 
 // ---------------------------------------------------------------------------
-// UnbalancedEdgeMetric (unbalanced_edge.v2)
+// UnbalancedEdgeMetric (unbalanced_edge.v3)
 // ---------------------------------------------------------------------------
 
 // UnbalancedEdgeMetric counts edges where strength=intrusive AND
-// distance>=cross_module_different_owner AND volatility=high (spec §10.4).
+// distance=any module boundary AND volatility=high (spec §10.4).
 // The primary value is the count of new_high edges.
 type UnbalancedEdgeMetric struct{}
 
 // Name returns "unbalanced_edge".
 func (m UnbalancedEdgeMetric) Name() string { return "unbalanced_edge" }
 
-// Version returns "unbalanced_edge.v2".
-func (m UnbalancedEdgeMetric) Version() string { return "unbalanced_edge.v2" }
+// Version returns "unbalanced_edge.v3".
+func (m UnbalancedEdgeMetric) Version() string { return "unbalanced_edge.v3" }
 
 // Calculate counts high-risk unbalanced edges and cross-references findings for status.
 func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) assessmentresult.MetricResult {
@@ -65,14 +57,13 @@ func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) assessmentresult.
 	}
 
 	var newHigh, candidates, candidatesKnownVol int
-	crossModuleDiffOwnerRank := distanceRank(relationship.DistanceCrossModuleDiffOwner)
 
 	for _, e := range in.Relationships.DependencyEdges() {
-		// High-risk: intrusive AND distance>=cross_module_different_owner AND high volatility.
+		// High-risk: intrusive AND a module boundary AND high volatility.
 		if e.Strength != relationship.StrengthIntrusive {
 			continue
 		}
-		if distanceRank(e.Distance) < crossModuleDiffOwnerRank {
+		if !isModuleBoundary(e.Distance) {
 			continue
 		}
 		// This edge is a candidate (intrusive + far). Whether it is *unbalanced*
@@ -124,7 +115,7 @@ func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) assessmentresult.
 		Confidence: confidence,
 		Version:    m.Version(),
 		Mode:       result.ModeCount,
-		Definition: "intrusive edges with cross-module ownership and high volatility",
+		Definition: "intrusive edges across a module boundary into a high-volatility target",
 		Delta:      delta,
 		Direction:  assessmentresult.DirectionHigherIsWorse,
 	}
@@ -142,7 +133,7 @@ func (m UnbalancedEdgeMetric) naResult() assessmentresult.MetricResult {
 		Confidence: result.ConfidenceLow,
 		Version:    m.Version(),
 		Mode:       result.ModeCount,
-		Definition: "intrusive edges with cross-module ownership and high volatility",
+		Definition: "intrusive edges across a module boundary into a high-volatility target",
 		Delta:      nil,
 		Direction:  assessmentresult.DirectionHigherIsWorse,
 	}

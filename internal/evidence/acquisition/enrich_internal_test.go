@@ -46,7 +46,7 @@ func TestEnrichEdges_ScipDoesNotOverrideGoTypeInfoStrength(t *testing.T) {
 		"src/a.ts\x00src/b.ts":              string(coupling.StrengthFunctional),
 	}
 
-	overlay := enrichEdges(context.Background(), evidenceports.NopSymbolResolver{}, true, strengths, nil, facts)
+	overlay := enrichEdges(context.Background(), evidenceports.NopSymbolResolver{}, true, strengths, nil, nil, facts)
 
 	if got := facts.Edges[0].StrengthHint; got != string(coupling.StrengthModel) {
 		t.Errorf("Go type-info StrengthHint = %q, want model; SCIP must not override compiler-grade Go strength", got)
@@ -83,7 +83,7 @@ func TestEnrichEdges_SemanticOverlayCountsHitsAndMissesByLanguage(t *testing.T) 
 		"demo::api\x00demo::core":     string(coupling.StrengthFunctional),
 	}
 
-	report := enrichEdges(context.Background(), evidenceports.NopSymbolResolver{}, true, strengths, nil, facts).report()
+	report := enrichEdges(context.Background(), evidenceports.NopSymbolResolver{}, true, strengths, nil, nil, facts).report()
 	if report == nil {
 		t.Fatal("overlay report = nil")
 	}
@@ -122,7 +122,7 @@ func TestEnrichEdges_SemanticOverlayTracksZeroHitScipRuns(t *testing.T) {
 		{From: testFilePkgA, To: testFilePkgB, Kind: graph.EdgeKindImports, Language: graph.LangGo},
 	}}
 
-	report := enrichEdges(context.Background(), evidenceports.NopSymbolResolver{}, true, nil, nil, facts).report()
+	report := enrichEdges(context.Background(), evidenceports.NopSymbolResolver{}, true, nil, nil, nil, facts).report()
 	if report == nil {
 		t.Fatal("overlay report = nil, want zero-hit SCIP counters")
 	}
@@ -146,7 +146,7 @@ func TestEnrichEdges_SemanticOverlayOmittedWhenScipDidNotRun(t *testing.T) {
 		{From: testFileSrcA, To: testFileSrcB, Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
 	}}
 
-	report := enrichEdges(context.Background(), evidenceports.NopSymbolResolver{}, false, nil, nil, facts).report()
+	report := enrichEdges(context.Background(), evidenceports.NopSymbolResolver{}, false, nil, nil, nil, facts).report()
 	if report != nil {
 		t.Fatalf("overlay report = %+v, want nil when SCIP did not run", report)
 	}
@@ -167,6 +167,32 @@ func TestTracksSemanticStrengthOverlay(t *testing.T) {
 		got := tracksSemanticStrengthOverlay(evidence.Coverage{Tool: "scip", Status: tt.status})
 		if got != tt.want {
 			t.Errorf("tracksSemanticStrengthOverlay(%q) = %t, want %t", tt.status, got, tt.want)
+		}
+	}
+}
+
+func TestEnrichEdges_DataStrengthFromScipSkipsGoTypeInfoEdges(t *testing.T) {
+	facts := graph.Facts{Edges: []graph.Edge{
+		{From: testFilePkgA, To: testFilePkgB, Kind: graph.EdgeKindImports, Language: graph.LangGo, StrengthHint: string(coupling.StrengthFunctional)},
+		{From: testFileSrcA, To: testFileSrcB, Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
+		{From: "file:src/c.ts", To: "file:src/d.ts", Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
+	}}
+	strengths := map[string]string{
+		"pkg/a/a.go\x00pkg/b/b.go": string(coupling.StrengthFunctional),
+		"src/a.ts\x00src/b.ts":     string(coupling.StrengthFunctional),
+		"src/c.ts\x00src/d.ts":     string(coupling.StrengthFunctional),
+	}
+	data := map[string]string{
+		"pkg/a/a.go\x00pkg/b/b.go": string(coupling.StrengthModel),
+		"src/a.ts\x00src/b.ts":     string(coupling.StrengthModel),
+	}
+
+	enrichEdges(context.Background(), evidenceports.NopSymbolResolver{}, true, strengths, data, nil, facts)
+
+	want := []string{"", string(coupling.StrengthModel), ""}
+	for i, w := range want {
+		if got := facts.Edges[i].DataStrengthHint; got != w {
+			t.Errorf("edge %d DataStrengthHint = %q, want %q", i, got, w)
 		}
 	}
 }

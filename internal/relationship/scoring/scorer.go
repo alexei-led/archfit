@@ -67,13 +67,13 @@ var strengthOrdinal = map[coupling.Strength]int{
 
 // distanceOrdinal maps coupling.Distance to its risk ordinal (values frozen — see consts above).
 // same_module=0: co-located, no boundary crossed.
-// cross_module_same_owner=1: nearby boundary, shared accountability.
+// cross_module=1: nearby boundary, shared accountability.
 // unknown=2: unresolved; default to cross-module risk.
 // cross_module_diff_owner=3: separate accountability boundaries.
 // cross_deploy_unit=5: highest deployment boundary.
 var distanceOrdinal = map[coupling.Distance]int{
 	coupling.DistanceSameModule:           distanceOrdinalSameModule,
-	coupling.DistanceCrossModuleSameOwner: distanceOrdinalCrossModuleSameOwner,
+	coupling.DistanceCrossModule:          distanceOrdinalCrossModuleSameOwner,
 	coupling.DistanceUnknown:              distanceOrdinalUnknown,
 	coupling.DistanceCrossModuleDiffOwner: distanceOrdinalCrossModuleDiffOwner,
 	coupling.DistanceCrossDeployUnit:      distanceOrdinalCrossDeployUnit,

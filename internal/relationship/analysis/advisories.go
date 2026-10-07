@@ -13,7 +13,7 @@ import (
 	"github.com/alexei-led/archfit/internal/relationship/coupling"
 )
 
-const relationshipScoreVersion = "bc_score.v6"
+const relationshipScoreVersion = "bc_score.v7"
 const (
 	bcImbalancedRule        = modelrule.RuleIDBCImbalancedCoupling
 	duplicatedKnowledgeRule = modelrule.RuleIDDuplicatedKnowledge

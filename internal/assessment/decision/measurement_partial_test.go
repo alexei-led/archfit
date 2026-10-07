@@ -56,7 +56,7 @@ func TestMeasurementIncompleteOrOpaqueEvidenceStillAbstains(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := measurementFixture()
-			p.Producers = []evidence.MeasurementProducer{{Tool: primaryTool, SemanticsVersion: primaryTool + ".v1", ToolVersion: partialGoVersion, Status: evidence.StatusPartial, PartialBasis: evidence.PartialDegradedPrecision}}
+			p.Producers = []evidence.MeasurementProducer{{Tool: primaryTool, SemanticsVersion: primarySemantics(), ToolVersion: partialGoVersion, Status: evidence.StatusPartial, PartialBasis: evidence.PartialDegradedPrecision}}
 			tc.mutate(p)
 			if reasons := decision.CompareMeasurementProfiles(p, p); len(reasons) == 0 {
 				t.Fatal("equal incomplete evidence was treated as proof")
@@ -64,11 +64,16 @@ func TestMeasurementIncompleteOrOpaqueEvidenceStillAbstains(t *testing.T) {
 		})
 	}
 	partial := measurementFixture()
-	partial.Producers = []evidence.MeasurementProducer{{Tool: primaryTool, SemanticsVersion: primaryTool + ".v1", ToolVersion: partialGoVersion, Status: evidence.StatusPartial, PartialBasis: evidence.PartialDegradedPrecision}}
+	partial.Producers = []evidence.MeasurementProducer{{Tool: primaryTool, SemanticsVersion: primarySemantics(), ToolVersion: partialGoVersion, Status: evidence.StatusPartial, PartialBasis: evidence.PartialDegradedPrecision}}
 	complete := measurementFixture()
 	complete.Producers = append([]evidence.MeasurementProducer(nil), partial.Producers...)
 	complete.Producers[0].Status, complete.Producers[0].PartialBasis = evidence.StatusOK, ""
 	if reasons := decision.CompareMeasurementProfiles(complete, partial); !strings.Contains(strings.Join(reasons, ";"), "availability differs") {
 		t.Fatalf("asymmetric evidence compared: %v", reasons)
 	}
+}
+
+func primarySemantics() string {
+	v, _ := evidence.MeasurementContract(primaryTool)
+	return v
 }

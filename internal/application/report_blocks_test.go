@@ -43,7 +43,7 @@ func populatedResult() result.Result {
 	r.RuntimeAsync = []evidence.RuntimeAsyncModule{{Module: "a", IntegrationKind: blockQueue, Count: 2, Confidence: "low"}}
 	r.RuntimeAsyncEdges = []evidence.RuntimeAsyncEdge{{FromModule: "a", Target: blockNats, IntegrationKind: blockQueue, Count: 1, Confidence: "low",
 		Sites: []evidence.RuntimeAsyncSite{{File: blockFileA, Line: 7, Library: blockNats, IntegrationKind: blockQueue, Language: "go"}}}}
-	r.Connascence = &evidence.ConnascenceReport{EdgesWithEvidence: 2, AbstainedEdges: 1, TotalEvidence: 3, StrengthInferredEdges: 1,
+	r.Connascence = &evidence.ConnascenceReport{EdgesWithEvidence: 2, AbstainedEdges: 1, TotalEvidence: 3,
 		ByKind: map[string]int{"name": 3}, BySource: map[string]int{"go/types": 3}, Unmeasured: []string{"timing"},
 		Roadmap: []evidence.ConnascenceRoadmapItem{{Kind: "name", CurrentStatus: "deterministic_static", Sources: []string{"go/types"}, RelatedSignals: []string{"x"}, UpgradeTrigger: "y"}}}
 	r.DistanceContext = &evidence.DistanceContext{OwnerModel: "codeowners", DistanceBasis: map[string]int{"code_structure": 3}, DeployUnitDetectedModules: 1,
