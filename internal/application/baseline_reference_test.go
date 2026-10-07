@@ -10,12 +10,12 @@ import (
 )
 
 func headContext() AnalysisContext {
-	return AnalysisContext{ConfigHash: "cfg", ModelHash: "mod", LabelsHash: "lbl", MeasurementProfile: referenceProfile()}
+	return AnalysisContext{ClassificationHash: "cls", ModelHash: "mod", LabelsHash: "lbl", MeasurementProfile: referenceProfile()}
 }
 
 func matchingSnapshot() *BaselineStateSnapshot {
 	return &BaselineStateSnapshot{
-		ConfigHash: "cfg", ModelHash: "mod", LabelsHash: "lbl", RubricVersion: report.ScoreVersion,
+		ClassificationHash: "cls", ModelHash: "mod", LabelsHash: "lbl", RubricVersion: report.ScoreVersion,
 		QualifyingSeamIDs:  []string{"seam-1"},
 		MeasurementProfile: referenceProfile(),
 	}
@@ -47,9 +47,9 @@ func TestSeamAnchor(t *testing.T) {
 			wantComparable: true,
 		},
 		{
-			name:          "config drift names config_hash",
-			base:          Baseline{State: drifted(func(s *BaselineStateSnapshot) { s.ConfigHash = driftedFingerprint })},
-			wantReasonHas: keyConfigHash,
+			name:          "classification drift names classification_hash",
+			base:          Baseline{State: drifted(func(s *BaselineStateSnapshot) { s.ClassificationHash = driftedFingerprint })},
+			wantReasonHas: keyClassificationHash,
 		},
 		{
 			name:          "module rename names model_hash",

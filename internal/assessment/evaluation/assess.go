@@ -123,6 +123,7 @@ type AssessInput struct {
 	ScanRoot              string
 	ConfigHash            string
 	ModelHash             string
+	ClassificationHash    string
 	LabelsHash            string
 	PrimaryExtractorTools []string
 	OwnerSource           string

@@ -22,6 +22,7 @@ type BaseEvidence struct {
 	CoverageGaps       []modevidence.CoverageGap
 	ConfigHash         string
 	ModelHash          string
+	ClassificationHash string
 	LabelsHash         string
 	MeasurementProfile *modevidence.MeasurementProfile
 }
@@ -61,9 +62,9 @@ func (s StageExecutor) attachBaseComparison(ctx context.Context, req AnalysisReq
 		return &ExecutionError{Message: fmt.Sprintf("score base (%s): %v", req.BaseRef, err)}
 	}
 	diag.Comparison = decision.CompareFingerprints(req.BaseRef,
-		decision.Fingerprints{ConfigHash: diag.ConfigHash, ModelHash: diag.ModelHash,
+		decision.Fingerprints{ClassificationHash: diag.ClassificationHash, ModelHash: diag.ModelHash,
 			LabelsHash: diag.LabelsHash, RubricVersion: report.ScoreVersion, MeasurementProfile: diag.MeasurementProfile},
-		decision.Fingerprints{ConfigHash: evidence.ConfigHash, ModelHash: evidence.ModelHash,
+		decision.Fingerprints{ClassificationHash: evidence.ClassificationHash, ModelHash: evidence.ModelHash,
 			LabelsHash: evidence.LabelsHash, RubricVersion: report.ScoreVersion, MeasurementProfile: evidence.MeasurementProfile})
 	evaluation.AttachTaskOrigins(diag, evaluation.TaskOriginInput{
 		BaseRef: req.BaseRef, BaseFindingIDs: evidence.FindingIDs,
@@ -113,6 +114,7 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 		CoverageGaps:       diag.CoverageGaps,
 		ConfigHash:         diag.ConfigHash,
 		ModelHash:          diag.ModelHash,
+		ClassificationHash: diag.ClassificationHash,
 		LabelsHash:         diag.LabelsHash,
 		MeasurementProfile: diag.MeasurementProfile,
 	}, nil

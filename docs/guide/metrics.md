@@ -159,8 +159,8 @@ vulnerability state remain separate, out-of-claim report families.
 
 ### `drift` dimension
 
-Drift is baseline-driven. A persisted `archfit.baseline.v2` state reference must
-match `config_hash`, resolved `model_hash`, approved `labels_hash`, and
+Drift is baseline-driven. A persisted `archfit.baseline.v3` state reference must
+match `classification_hash`, resolved `model_hash`, approved `labels_hash`, and
 `rubric_version`. When comparable, the denominator is the union of qualifying
 distributed-monolith seam identities on the current and stored sides; the metrics
 `new_seams` and `resolved_seams` have provenance `assessment/evaluation`.
