@@ -857,13 +857,18 @@ init` emits v2 directly; owners update older configs manually before analysis.
   commit -a`/`<path>` use a temporary one, and `CleanEnv` scrubs the variable,
   so it is passed on purpose), runs `write-tree` on the copy (write-tree writes
   its cache-tree back, and git commit holds the real index locked), and
-  `commit-tree`s it on HEAD with a fixed identity and date (same staged tree,
-  same SHA, same checkout path) and `--no-gpg-sign`. `Worktree.Checkout`
-  materialises it as the head root; the config is read from the checkout,
+  `commit-tree`s it on HEAD with `--no-gpg-sign`, a fixed date, and the
+  author `git var GIT_AUTHOR_IDENT` names (same staged tree, same SHA, same
+  checkout path; a placeholder author would win the git-author owner fallback
+  in the hook but not in CI). `Worktree.Checkout` materialises it with the
+  whole repository as the head root (as `check -c` without `--root`, never the
+  config dir); the config is read from the checkout,
   `BundleDir` (baseline, labels, fact cache) stays the on-disk config dir
   (`scanRequest.bundleDir`). `--base` is resolved to a SHA in the repository
   first: inside the snapshot worktree `HEAD` names the snapshot and every
-  finding would grade pre_existing. Both hooks run `executeScan` in process
+  finding would grade pre_existing. The result's `validate` is rewritten
+  from the snapshot paths back to the repository (cleanup removes the
+  snapshot). Both hooks run `executeScan` in process
   with the pipeline's stderr discarded. These exit codes are the host
   protocol, never the engine verdict.
 - **`AGENTS.md` carries a generated block** (`archfit agents-md`, markers

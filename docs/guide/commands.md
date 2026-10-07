@@ -547,15 +547,19 @@ edits and untracked files do not count, with pre-commit or with a hook in
 
 1. It copies the index that git hands the hook (`GIT_INDEX_FILE`; `git commit
    -a` and `git commit <path>` use a temporary index) and writes it as a tree.
-2. It records that tree as a commit object with HEAD as its parent. No ref
-   points to the commit, and `git gc` removes it later.
+2. It records that tree as a commit object with HEAD as its parent, under
+   the author that git will record on the real commit. No ref points to the
+   commit, and `git gc` removes it later.
 3. It checks the commit out in a temporary worktree under
    `.archfit-cache/worktrees/` and runs `check --format agent --base <ref>`
-   there. `--base` resolves in the repository, before the checkout.
+   there, over the whole repository, as `check -c <config>` does with no
+   `--root`. `--base` resolves in the repository, before the checkout.
 4. It removes the worktree.
 
 The working tree, the index, and the refs do not change. The config comes
-from the index, so a config that the commit removes is an error (exit `3`).
+from the index, so a config that the commit removes, or a config outside the
+repository, is an error (exit `3`). The `validate` command in the output names
+the config in the repository, not the temporary worktree.
 The baseline, the labels, and the fact cache come from the config directory on
 disk, as on the `--base` side. Unmerged index entries are an error (exit `3`).
 

@@ -11,13 +11,36 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
-// snapshotIdentity is the fixed author and committer of an index snapshot. A
-// fixed identity and date make the snapshot commit a pure function of the
-// staged tree and its parent, so the same staged content always gets the same
-// SHA and checks out at the same path.
-var snapshotIdentity = []string{
-	"GIT_AUTHOR_NAME=archfit", "GIT_AUTHOR_EMAIL=archfit@localhost", "GIT_AUTHOR_DATE=2000-01-01T00:00:00Z",
-	"GIT_COMMITTER_NAME=archfit", "GIT_COMMITTER_EMAIL=archfit@localhost", "GIT_COMMITTER_DATE=2000-01-01T00:00:00Z",
+// snapshotDate is the fixed author and committer date of an index snapshot. A
+// fixed date makes the snapshot commit a pure function of the staged tree, its
+// parent, and the author, so the same staged content always gets the same SHA
+// and checks out at the same path.
+const snapshotDate = "2000-01-01T00:00:00Z"
+
+// fallbackName and fallbackEmail sign a snapshot when git knows no identity.
+const (
+	fallbackName  = "archfit"
+	fallbackEmail = "archfit@localhost"
+)
+
+// snapshotIdentity is the author git will record on the real commit, at the
+// fixed date. The run's git-author owner fallback reads the snapshot as the
+// newest commit, so a placeholder author would be credited with every staged
+// file and could take a module's ownership in the hook but not in CI.
+func snapshotIdentity(ctx context.Context, runner toolrun.Runner, gitRoot string) []string {
+	name, email := fallbackName, fallbackEmail
+	if ident, err := runGit(ctx, runner, gitRoot, nil, "var", "GIT_AUTHOR_IDENT"); err == nil {
+		// "Name <email> 1700000000 +0000"
+		if n, rest, ok := strings.Cut(ident, " <"); ok {
+			if e, _, ok := strings.Cut(rest, ">"); ok {
+				name, email = n, e
+			}
+		}
+	}
+	return []string{
+		"GIT_AUTHOR_NAME=" + name, "GIT_AUTHOR_EMAIL=" + email, "GIT_AUTHOR_DATE=" + snapshotDate,
+		"GIT_COMMITTER_NAME=" + name, "GIT_COMMITTER_EMAIL=" + email, "GIT_COMMITTER_DATE=" + snapshotDate,
+	}
 }
 
 // SnapshotIndex records the staged content of the repository at gitRoot as a
@@ -56,7 +79,7 @@ func SnapshotIndex(ctx context.Context, runner toolrun.Runner, gitRoot, indexFil
 	if parent, perr := ResolveCommit(ctx, gitRoot, "HEAD", runner); perr == nil {
 		args = append(args, "-p", parent)
 	}
-	return runGit(ctx, runner, gitRoot, snapshotIdentity, args...)
+	return runGit(ctx, runner, gitRoot, snapshotIdentity(ctx, runner, gitRoot), args...)
 }
 
 // runGit runs one git command in dir with the git-redirect variables scrubbed

@@ -221,6 +221,10 @@ func stagedHookResult(ctx context.Context, deps *appDeps, configPath, base, inde
 			return agentout.Result{}, err
 		}
 	}
+	configRel, err := pathInRepo(gitRoot, configAbs)
+	if err != nil {
+		return agentout.Result{}, err
+	}
 	snapshot, err := historygit.SnapshotIndex(ctx, deps.Runner, gitRoot, indexFile)
 	if err != nil {
 		return agentout.Result{}, fmt.Errorf("record the index: %w", err)
@@ -228,23 +232,52 @@ func stagedHookResult(ctx context.Context, deps *appDeps, configPath, base, inde
 	// The base ref is resolved here, in the repository: inside the snapshot
 	// worktree HEAD names the snapshot itself, and every finding would read
 	// as pre-existing.
+	baseSHA := ""
 	if base != "" {
-		if base, err = historygit.ResolveCommit(ctx, gitRoot, base, deps.Runner); err != nil {
-			// Before the first commit HEAD names nothing: the whole tree is
-			// the change, so every blocker is in scope.
-			base = ""
+		// Before the first commit HEAD names nothing: the whole tree is the
+		// change, so every blocker is in scope.
+		if sha, rerr := historygit.ResolveCommit(ctx, gitRoot, base, deps.Runner); rerr == nil {
+			baseSHA = sha
 		}
 	}
-	root, cleanup, err := historygit.Worktree{Runner: deps.Runner}.Checkout(ctx, snapshot, gitRoot, configDir)
+	// The scan boundary is the whole repository, as for check -c <config>
+	// with no --root: the snapshot worktree's root, never the config's directory.
+	root, cleanup, err := historygit.Worktree{Runner: deps.Runner}.Checkout(ctx, snapshot, gitRoot, gitRoot)
 	defer cleanup()
 	if err != nil {
 		return agentout.Result{}, fmt.Errorf("check out the index: %w", err)
 	}
-	stagedConfig := filepath.Join(root, filepath.Base(configAbs))
+	stagedConfig := filepath.Join(root, configRel)
 	if _, err := os.Stat(stagedConfig); err != nil {
 		return agentout.Result{}, fmt.Errorf("config %s is not in the index: stage it first", configPath)
 	}
-	return runAgentCheck(ctx, deps, scanRequest{configPath: stagedConfig, root: root, bundleDir: configDir, baseRef: base})
+	result, err := runAgentCheck(ctx, deps, scanRequest{configPath: stagedConfig, root: root, bundleDir: configDir, baseRef: baseSHA})
+	if err != nil {
+		return agentout.Result{}, err
+	}
+	// The run's validation command names the snapshot, which cleanup removes.
+	// Point it at the repository, with the ref as the caller wrote it.
+	result.Validate = strings.ReplaceAll(result.Validate, root, gitRoot)
+	// A ref that needs shell quoting (HEAD~1) keeps its resolved SHA.
+	if baseSHA != "" && !strings.ContainsAny(base, " \t\n'\"\\$`!#&;()*<>?[]^{|}~") {
+		result.Validate = strings.ReplaceAll(result.Validate, "--base "+baseSHA, "--base "+base)
+	}
+	return result, nil
+}
+
+// pathInRepo returns configAbs relative to gitRoot, through symlinks and a
+// case-variant spelling, or an error when the config lies outside the
+// repository: hook git reads the config from the index.
+func pathInRepo(gitRoot, configAbs string) (string, error) {
+	resolved := configAbs
+	if dir, err := filepath.EvalSymlinks(filepath.Dir(configAbs)); err == nil {
+		resolved = filepath.Join(dir, filepath.Base(configAbs))
+	}
+	rel, err := filepath.Rel(gitRoot, historygit.SnapToRoot(gitRoot, resolved))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("config %s is outside the repository %s: hook git reads it from the index", configAbs, gitRoot)
+	}
+	return rel, nil
 }
 
 // runAgentCheck runs check --format agent in process, with the pipeline's own

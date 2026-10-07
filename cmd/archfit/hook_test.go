@@ -208,17 +208,30 @@ func TestHookClaudeStderrCarriesTheRepair(t *testing.T) {
 // neither blocks nor excuses a commit.
 func TestHookGit(t *testing.T) {
 	t.Parallel()
-	const untrackedFile = "pkg/a/extra.go"
+	const (
+		untrackedFile = "pkg/a/extra.go"
+		nestedConfig  = "policy/archfit.yaml"
+	)
 	for _, tc := range []struct {
 		name     string
 		repo     func(*testing.T) string
+		config   string // repository-relative; empty is .archfit.yaml
 		args     func(t *testing.T, dir string) []string
 		wantCode int
 		wantErr  string
 	}{
 		{name: "a staged repair blocks the commit", wantCode: 1,
+			// The repair names the repository, never the removed snapshot.
+			wantErr: "--base HEAD --format agent",
 			repo: func(t *testing.T) string {
 				dir := hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA)
+				gitFixture(t, dir, "add", "-A")
+				return dir
+			}},
+		{name: "a config below the root still scans the whole repository", wantCode: 1, config: nestedConfig,
+			repo: func(t *testing.T) string {
+				dir := hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA)
+				writeFixtureFile(t, dir, nestedConfig, hookRuleCfg)
 				gitFixture(t, dir, "add", "-A")
 				return dir
 			}},
@@ -286,7 +299,11 @@ func TestHookGit(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := tc.repo(t)
-			args := []string{"git", "-c", filepath.Join(dir, defaultConfigPath)}
+			config := tc.config
+			if config == "" {
+				config = defaultConfigPath
+			}
+			args := []string{"git", "-c", filepath.Join(dir, config)}
 			if tc.args != nil {
 				args = append(args, tc.args(t, dir)...)
 			}
@@ -297,6 +314,9 @@ func TestHookGit(t *testing.T) {
 			}
 			if !strings.Contains(stderr, tc.wantErr) {
 				t.Errorf("stderr = %q, want %q", stderr, tc.wantErr)
+			}
+			if strings.Contains(stderr, cacheDirName+"/worktrees") {
+				t.Errorf("stderr names the temporary snapshot checkout:\n%s", stderr)
 			}
 			if after := gitIndexState(t, dir); after != before {
 				t.Errorf("the hook changed the index or the worktree:\nbefore %s\nafter  %s", before, after)
@@ -313,8 +333,8 @@ func gitIndexState(t *testing.T, dir string) string {
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	status, _ := exec.Command("git", "-C", dir, "status", "--porcelain", "--untracked-files=all", "--", ".", ":!"+cacheDirName).Output() //nolint:gosec // fixture repo
-	refs, _ := exec.Command("git", "-C", dir, "for-each-ref").Output()                                                                   //nolint:gosec // fixture repo
+	status, _ := exec.Command("git", "-C", dir, "status", "--porcelain", "--untracked-files=all", "--", ".", ":(exclude,glob)**/"+cacheDirName+"/**").Output() //nolint:gosec // fixture repo
+	refs, _ := exec.Command("git", "-C", dir, "for-each-ref").Output()                                                                                         //nolint:gosec // fixture repo
 	return fmt.Sprintf("index=%x status=%q refs=%q", sha256.Sum256(index), status, refs)
 }
 
