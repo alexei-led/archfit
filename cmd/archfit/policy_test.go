@@ -110,6 +110,13 @@ func writeAgreementRepo(t *testing.T) string {
 		files[imp.file] = "package " + imp.pkg + "\n\nimport " + alias + "x \"example.com/agree/" + imp.target + "\"\n\n" +
 			"var _ = " + alias + "x.Name\n"
 	}
+	return writeAgreementFiles(t, dir, files)
+}
+
+// writeAgreementFiles writes files under dir, makes it a git repo, and
+// returns the path of its config.
+func writeAgreementFiles(t *testing.T, dir string, files map[string]string) string {
+	t.Helper()
 	for name, content := range files {
 		path := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
@@ -168,15 +175,21 @@ var agreementEdgeClasses = map[string]string{
 //
 // A pre-edit answer that disagrees with the gate is worse than no answer: an
 // agent that asked first and was told "allowed" writes the import, and check
-// then blocks it. The fixture is Go: TypeScript and Python are held to the
-// extractor's edge spelling by their QueryEdge tests only.
+// then blocks it. The fixture is Go; TypeScript and Python run the same
+// comparison in policy_agreement_lang_test.go.
 func TestErosion_PolicyQueryAgreesWithCheck(t *testing.T) {
 	t.Parallel()
-	cfgPath := writeAgreementRepo(t)
+	assertAgreement(t, writeAgreementRepo(t), agreementImports, agreementEdgeClasses)
+}
+
+// assertAgreement runs can-import over every import and check over the repo
+// behind cfgPath, and reports each place their decisions differ.
+func assertAgreement(t *testing.T, cfgPath string, imports []agreementImport, classes map[string]string) {
+	t.Helper()
 	root := filepath.Dir(cfgPath)
 
 	denied := map[string]string{} // finding ID -> rule ID, from can-import
-	for _, imp := range agreementImports {
+	for _, imp := range imports {
 		code, doc := canImport(t, cfgPath, imp.file, imp.target)
 		if len(doc.Answers) != 1 || doc.Answers[0].Answer != imp.want {
 			t.Errorf("can-import %s %s = %+v, want %s", imp.file, imp.target, doc.Answers, imp.want)
@@ -225,7 +238,7 @@ func TestErosion_PolicyQueryAgreesWithCheck(t *testing.T) {
 			gates[f.ID] = f.RuleID
 		}
 	}
-	for _, problem := range agreementProblems(gates, denied) {
+	for _, problem := range agreementProblemsFor(gates, denied, classes) {
 		t.Error(problem)
 	}
 }
@@ -279,6 +292,12 @@ func TestErosion_PolicyQueryAgreementFiresOnAWrongDecision(t *testing.T) {
 // every edge class check never fired on. It is the single predicate behind
 // the real-run check and its fixture.
 func agreementProblems(gates, denied map[string]string) []string {
+	return agreementProblemsFor(gates, denied, agreementEdgeClasses)
+}
+
+// agreementProblemsFor is agreementProblems over the edge classes of one
+// fixture.
+func agreementProblemsFor(gates, denied, classes map[string]string) []string {
 	var out []string
 	fired := map[string]bool{}
 	for id, rule := range gates {
@@ -292,7 +311,7 @@ func agreementProblems(gates, denied map[string]string) []string {
 			out = append(out, fmt.Sprintf("can-import denial %s (%s) is not a check gate finding", id, rule))
 		}
 	}
-	for class, rule := range agreementEdgeClasses {
+	for class, rule := range classes {
 		if !fired[rule] {
 			out = append(out, fmt.Sprintf("check reported no %s gate finding (rule %s): that class is not compared", class, rule))
 		}
