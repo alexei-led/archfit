@@ -272,3 +272,67 @@ func TestRender_CarriesRuleRationaleAndAlternatives(t *testing.T) {
 		}
 	}
 }
+
+// TestRender_BaselineStateFollowsBaselineMembership pins the SARIF 2.1.0
+// baseline fields. baselineState answers one question — is this result in the
+// accepted baseline — so it is written only when a baseline file was loaded:
+// a baselined finding is unchanged, a finding the baseline no longer sees is
+// absent, and every other one is new, a waived one included (the baseline is
+// matched before waivers, so a waived finding is not in it). Acceptance is a
+// separate fact: a baselined or waived result carries an external, accepted
+// suppression. partialFingerprints carry the location-independent finding ID.
+func TestRender_BaselineStateFollowsBaselineMembership(t *testing.T) {
+	const (
+		idNew, idBaseline, idWaived, idExpired, idFixed = "f-new", "f-baseline", "f-waived", "f-expired", "f-fixed"
+		stateNew                                        = "new"
+	)
+	findings := []finding.Finding{
+		{ID: idNew, Kind: finding.KindGate, RuleID: ruleInternal, Status: finding.StatusNew},
+		{ID: idBaseline, Kind: finding.KindGate, RuleID: ruleInternal, Status: finding.StatusBaseline},
+		{ID: idWaived, Kind: finding.KindGate, RuleID: ruleInternal, Status: finding.StatusWaived},
+		{ID: idExpired, Kind: finding.KindGate, RuleID: ruleInternal, Status: finding.StatusExpiredWaiver},
+		{ID: idFixed, Kind: finding.KindGate, RuleID: ruleInternal, Status: finding.StatusFixed},
+	}
+	present, missing := true, false
+	tests := []struct {
+		name      string
+		reference *reportmodel.StateComparison
+		state     map[string]string // finding ID → baselineState; absent key means no baselineState
+	}{
+		{name: "a loaded baseline", reference: &reportmodel.StateComparison{BaselinePresent: &present},
+			state: map[string]string{idNew: stateNew, idBaseline: "unchanged", idWaived: stateNew, idExpired: stateNew, idFixed: "absent"}},
+		{name: "no baseline file", reference: &reportmodel.StateComparison{BaselinePresent: &missing}},
+		{name: "no gate reference"},
+	}
+	wantSuppressed := map[string]bool{idBaseline: true, idWaived: true}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d := sampleDiagnostic()
+			d.Findings = reporttest.Findings(findings...)
+			d.State.GateReference = tc.reference
+			_, doc := render(t, d)
+			for _, raw := range doc["runs"].([]any)[0].(map[string]any)["results"].([]any) {
+				res := raw.(map[string]any)
+				id := res["fingerprints"].(map[string]any)["archfit/v1"].(string)
+				got, _ := res["baselineState"].(string)
+				if got != tc.state[id] {
+					t.Errorf("%s baselineState = %q, want %q", id, got, tc.state[id])
+				}
+				sup, _ := res["suppressions"].([]any)
+				if wantSuppressed[id] != (len(sup) == 1) {
+					t.Errorf("%s suppressions = %v, want suppressed=%t", id, sup, wantSuppressed[id])
+				}
+				if len(sup) == 1 {
+					s := sup[0].(map[string]any)
+					if s["kind"] != "external" || s["status"] != "accepted" || s["justification"] == "" {
+						t.Errorf("%s suppression = %v, want an external accepted suppression with a justification", id, s)
+					}
+				}
+				pf, _ := res["partialFingerprints"].(map[string]any)
+				if pf["primaryLocationLineHash"] != id {
+					t.Errorf("%s partialFingerprints = %v, want primaryLocationLineHash = the finding ID", id, pf)
+				}
+			}
+		})
+	}
+}

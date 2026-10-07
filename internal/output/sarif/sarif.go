@@ -5,7 +5,10 @@
 // Mapping:
 //   - one run; one driver rule per distinct finding RuleID;
 //   - one result per finding — level: error (active gate), warning (advisory),
-//     note (baselined/waived/fixed);
+//     note (baselined/waived/fixed); baselineState (only when a baseline file
+//     was loaded) says whether the result is in the baseline, suppressions mark
+//     a baselined or waived result as accepted, and partialFingerprints carry
+//     the finding ID so code scanning matches alerts across line moves;
 //   - the architecture state rides in run.properties (SARIF has no dimension or
 //     verdict concept); finding identity — ruleId, ruleIndex, and the
 //     archfit/v1 fingerprint — is unchanged by the state cutover, so an existing
@@ -74,13 +77,24 @@ type automationID struct {
 }
 
 type result struct {
-	RuleID       string            `json:"ruleId"`
-	RuleIndex    int               `json:"ruleIndex"`
-	Level        string            `json:"level"`
-	Message      message           `json:"message"`
-	Locations    []location        `json:"locations,omitempty"`
-	Fingerprints map[string]string `json:"fingerprints"`
-	Properties   map[string]any    `json:"properties,omitempty"`
+	RuleID              string            `json:"ruleId"`
+	RuleIndex           int               `json:"ruleIndex"`
+	Level               string            `json:"level"`
+	Message             message           `json:"message"`
+	Locations           []location        `json:"locations,omitempty"`
+	Fingerprints        map[string]string `json:"fingerprints"`
+	PartialFingerprints map[string]string `json:"partialFingerprints"`
+	BaselineState       string            `json:"baselineState,omitempty"`
+	Suppressions        []suppression     `json:"suppressions,omitempty"`
+	Properties          map[string]any    `json:"properties,omitempty"`
+}
+
+// suppression marks a result the project accepted outside the source: in the
+// archfit baseline or by a config waiver (SARIF §3.35).
+type suppression struct {
+	Kind          string `json:"kind"`
+	Status        string `json:"status"`
+	Justification string `json:"justification"`
 }
 
 type message struct {
@@ -125,9 +139,15 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 
 	dimensionOf := findingDimensions(d.State)
 	seamOf := seamIDsByModulePair(d.State.Seams)
+	baselineLoaded := baselineLoaded(d.State)
 	results := make([]result, 0, len(d.Findings))
 	for _, f := range d.Findings {
-		results = append(results, toResult(f, ruleIndex[f.RuleID], dimensionOf[f.ID], seamOf))
+		res := toResult(f, ruleIndex[f.RuleID], dimensionOf[f.ID], seamOf)
+		if baselineLoaded {
+			res.BaselineState = baselineState(f)
+		}
+		res.Suppressions = suppressionsFor(f)
+		results = append(results, res)
 	}
 
 	doc := log{
@@ -240,7 +260,11 @@ func toResult(f report.Finding, ruleIdx int, dimension string, seamOf map[string
 		Message:      message{Text: text},
 		Locations:    locs,
 		Fingerprints: map[string]string{"archfit/v1": f.ID},
-		Properties:   resultProperties(f, dimension, seamOf),
+		// GitHub code scanning matches alerts across runs on this key and
+		// computes a line-content hash when it is missing. The finding ID does
+		// not move when the code around it moves.
+		PartialFingerprints: map[string]string{"primaryLocationLineHash": f.ID},
+		Properties:          resultProperties(f, dimension, seamOf),
 	}
 }
 
@@ -272,6 +296,42 @@ func resultProperties(f report.Finding, dimension string, seamOf map[string]stri
 		}
 	}
 	return props
+}
+
+// baselineLoaded reports whether the run read a baseline file. Without one no
+// result was compared against a baseline, so no result carries baselineState.
+func baselineLoaded(s report.ArchitectureState) bool {
+	return s.GateReference != nil && s.GateReference.BaselinePresent != nil && *s.GateReference.BaselinePresent
+}
+
+// baselineState says whether a result is in the accepted baseline (SARIF
+// §3.27.24): a baselined finding is unchanged, a baseline entry this run no
+// longer sees is absent, and every other finding is new. A waived finding is
+// new too: status assignment matches the baseline before waivers, so a waived
+// finding is not in the baseline; its acceptance rides in suppressions.
+// "updated" is never used: archfit does not track a changed result.
+func baselineState(f report.Finding) string {
+	switch f.Status {
+	case report.FindingStatusBaseline:
+		return "unchanged"
+	case report.FindingStatusFixed:
+		return "absent"
+	default:
+		return "new"
+	}
+}
+
+// suppressionsFor marks a baselined or a waived finding as accepted. An expired
+// waiver no longer accepts its finding, which is active again.
+func suppressionsFor(f report.Finding) []suppression {
+	switch f.Status {
+	case report.FindingStatusBaseline:
+		return []suppression{{Kind: "external", Status: "accepted", Justification: "accepted in the archfit baseline"}}
+	case report.FindingStatusWaived:
+		return []suppression{{Kind: "external", Status: "accepted", Justification: "waived in the archfit config"}}
+	default:
+		return nil
+	}
 }
 
 // levelFor maps finding kind+status to a SARIF level: active gate findings are
