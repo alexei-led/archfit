@@ -1586,16 +1586,15 @@ directory, so it does not change when files are added. The finding has these
 - `subject`: the directory.
 - `uncovered_files`: the number of unowned files in it. `locations` lists at
   most five of them.
-- `uncovered_dirs_total`: the number of unowned directories in the run.
 - `suggested_path`: a `paths:` glob that owns every unowned file in the
   directory, when one glob can do it. A bare directory owns only a Go
   package. TypeScript and Rust need a glob over the files (`web/src/**`),
   Python needs a dotted glob (`acme.ops.**`), and a root directory needs a
   glob over the extension (`*.go`).
 
-A run reports at most 200 directories that the baseline did not accept, in
-path order. It always reports a directory that the baseline accepted, so a
-new directory is never hidden behind accepted ones. The repair task asks the
+A run reports every unowned directory, in path order. There is no limit on
+the count, so `archfit baseline` accepts all of them and a new directory is
+never hidden. The repair task asks the
 architecture owner which module owns the directory
 (`repair_kind: needs_owner_decision`) and names `suggested_path`. In a delta
 run, a change to any file directly in the directory touches the finding.

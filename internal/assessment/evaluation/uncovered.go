@@ -10,19 +10,10 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
 )
-
-// maxUncoveredDirs bounds the map/uncovered_path findings of one run that the
-// baseline has not accepted; the first directories in path order are kept. An
-// accepted directory is always reported: dropping it would read as fixed, and
-// the baseline that accepted it came from a bounded run. Without a bound, a
-// config that declares no module would report every directory of the
-// repository.
-const maxUncoveredDirs = 200
 
 // maxUncoveredLocations bounds the files one finding lists: enough for a
 // repair task to name the directory's source, never a list that grows with it.
@@ -33,7 +24,6 @@ const maxUncoveredLocations = 5
 const (
 	matchedBySubject        = "subject"
 	matchedByUncoveredFiles = "uncovered_files"
-	matchedByUncoveredDirs  = "uncovered_dirs_total"
 	// matchedBySuggestedPath is a paths: glob that owns every unowned file of
 	// the directory, in the files' own vocabulary; absent when no single glob
 	// is safe to suggest.
@@ -63,8 +53,12 @@ type unownedFile struct {
 //
 // The finding is a gate finding when module_review.gate is fail, otherwise an
 // advisory. Its ID hashes the rule and the directory only, so it stays stable
-// while files are added to the directory.
-func uncoveredSource(ev RuleEvidence, p policy.AssessmentPolicy, gate policy.GateMode, accepted status.AcceptedSet) []finding.Finding {
+// while files are added to the directory. Each finding is bounded (a directory
+// and at most maxUncoveredLocations files); the count is not: a cap would make
+// `archfit baseline`, which captures every finding of one run, accept fewer
+// directories than the next check reports, and a bound applied after the
+// baseline reads accepted debt as fixed.
+func uncoveredSource(ev RuleEvidence, p policy.AssessmentPolicy, gate policy.GateMode) []finding.Finding {
 	if !p.Staleness.Enabled {
 		return nil
 	}
@@ -90,19 +84,10 @@ func uncoveredSource(ev RuleEvidence, p policy.AssessmentPolicy, gate policy.Gat
 		dir := path.Dir(file)
 		byDir[dir] = append(byDir[dir], unownedFile{path: file, language: language, selector: selector})
 	}
-	var fresh, known []string
+	dirs := make([]string, 0, len(byDir))
 	for dir := range byDir {
-		if accepted != nil && accepted.HasFingerprint(fingerprint(finding.RuleIDMapUncoveredPath, dir)) {
-			known = append(known, dir)
-			continue
-		}
-		fresh = append(fresh, dir)
+		dirs = append(dirs, dir)
 	}
-	total := strconv.Itoa(len(fresh) + len(known))
-	sort.Strings(fresh)
-	dirs := make([]string, 0, len(known)+min(len(fresh), maxUncoveredDirs))
-	dirs = append(dirs, known...)
-	dirs = append(dirs, fresh[:min(len(fresh), maxUncoveredDirs)]...)
 	sort.Strings(dirs)
 	kind := finding.KindAdvisory
 	if gate == policy.GateFail {
@@ -119,7 +104,6 @@ func uncoveredSource(ev RuleEvidence, p policy.AssessmentPolicy, gate policy.Gat
 		matched := map[string]string{
 			matchedBySubject:        dir,
 			matchedByUncoveredFiles: strconv.Itoa(len(files)),
-			matchedByUncoveredDirs:  total,
 		}
 		if glob := suggestedPath(dir, files); glob != "" {
 			matched[matchedBySuggestedPath] = glob

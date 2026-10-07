@@ -380,11 +380,12 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `UnanalysedFiles`) that `fileOwner` places in no declared module — the same
   owner predicate as `moduleRuleScope`; a Rust file with no crate selector
   abstains; `ruleProducerScope` attaches the observed crate owners so both
-  read one module map. ID = rule + directory; at most 200 directories the
-  baseline has NOT accepted (an accepted one is always kept — dropping it
-  reads as `fixed` — so the cap never hides a new package), 5 locations each,
-  plus a verified `matched_by.suggested_path` glob (a bare directory owns only
-  a Go package). `module_review.gate:
+  read one module map. ID = rule + directory; 5 locations each, plus a
+  verified `matched_by.suggested_path` glob (a bare directory owns only a Go
+  package). The finding COUNT is deliberately unbounded: `archfit baseline`
+  captures one run, so any cap either accepts fewer directories than check
+  reports (false block) or, applied after the baseline, reads accepted debt
+  as `fixed`. `module_review.gate:
   fail` makes it a gate finding (it joins the rule findings, so baseline and
   waivers apply); `map/dead_rule` and `map/stale_review` never gate. A
   graph-derived check read a failed package load as "nothing unowned".

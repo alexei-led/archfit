@@ -3,7 +3,6 @@ package evaluation_test
 import (
 	"fmt"
 	"slices"
-	"strconv"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
@@ -219,29 +218,6 @@ func TestUncoveredSourceIDIsStableAndBounded(t *testing.T) {
 	}
 }
 
-func TestUncoveredSourceCapsFindingsInPathOrder(t *testing.T) {
-	t.Parallel()
-	const dirs = 205
-	ev := evaluation.RuleEvidence{FileClasses: map[string]fileclass.FileClass{}}
-	for i := range dirs {
-		ev.FileClasses[fmt.Sprintf("pkg%03d/x.go", i)] = fileclass.Production
-	}
-	got := uncoveredFindings(evaluateUncovered(ev, uncoveredPolicy(billingModules()), "", acceptedSet{}))
-	if len(got) != 200 {
-		t.Fatalf("findings = %d, want the cap of 200", len(got))
-	}
-	seen := make(map[string]bool, len(got))
-	for _, f := range got {
-		seen[f.MatchedBy[matchedSubject]] = true
-		if f.MatchedBy["uncovered_dirs_total"] != strconv.Itoa(dirs) {
-			t.Fatalf("uncovered_dirs_total = %q, want %d", f.MatchedBy["uncovered_dirs_total"], dirs)
-		}
-	}
-	if !seen["pkg000"] || !seen["pkg199"] || seen["pkg200"] {
-		t.Errorf("kept dirs are not the first 200 in path order")
-	}
-}
-
 func TestModuleReviewFailBlocksOnlyUncoveredSource(t *testing.T) {
 	t.Parallel()
 	p := uncoveredPolicy(map[string]policy.ModuleDef{
@@ -260,19 +236,32 @@ func TestModuleReviewFailBlocksOnlyUncoveredSource(t *testing.T) {
 	}
 }
 
-func TestUncoveredSourceCapAppliesOnlyToNewDirectories(t *testing.T) {
+// TestUncoveredSourceBaselineAcceptsEveryDirectory pins the baseline round
+// trip on a large unowned tree: capture accepts every finding of one run, so
+// the next check on the same tree has no blocker, and one new package is the
+// one blocker. A count bound breaks it either way: capture would accept fewer
+// directories than check reports, or a bound after the baseline would read
+// accepted debt as fixed.
+func TestUncoveredSourceBaselineAcceptsEveryDirectory(t *testing.T) {
 	t.Parallel()
+	const dirs = 250
 	p := uncoveredPolicy(billingModules())
 	ev := evaluation.RuleEvidence{FileClasses: map[string]fileclass.FileClass{}}
-	for i := range 200 {
+	for i := range dirs {
 		ev.FileClasses[fmt.Sprintf("pkg%03d/x.go", i)] = fileclass.Production
 	}
-	first := uncoveredFindings(evaluateUncovered(ev, p, policy.GateFail, acceptedSet{}))
-	accepted := make(acceptedSet, 0, len(first))
-	for _, f := range first {
+	captured := uncoveredFindings(evaluateUncovered(ev, p, policy.GateFail, acceptedSet{}))
+	if len(captured) != dirs {
+		t.Fatalf("captured = %d, want every one of the %d directories", len(captured), dirs)
+	}
+	accepted := make(acceptedSet, 0, len(captured))
+	for _, f := range captured {
 		accepted = append(accepted, status.AcceptedEntry{Fingerprint: f.ID, RuleID: ruleUncovered})
 	}
-	ev.FileClasses["pkg200/x.go"] = fileclass.Production
+	if res := evaluateUncovered(ev, p, policy.GateFail, accepted); res.GateFindings != 0 {
+		t.Fatalf("GateFindings on the baselined tree = %d, want 0", res.GateFindings)
+	}
+	ev.FileClasses["pkg999/x.go"] = fileclass.Production
 	res := evaluateUncovered(ev, p, policy.GateFail, accepted)
 	got := uncoveredFindings(res)
 	for _, f := range got {
@@ -280,12 +269,8 @@ func TestUncoveredSourceCapAppliesOnlyToNewDirectories(t *testing.T) {
 			t.Fatalf("accepted directory %s reads fixed although it is still unowned", f.MatchedBy[matchedSubject])
 		}
 	}
-	if len(got) != 201 {
-		t.Fatalf("findings = %d, want 200 accepted plus the new one", len(got))
-	}
-	if !slices.Contains(subjects(got), "pkg200") || res.GateFindings != 1 {
-		t.Fatalf("new dir kept = %t, GateFindings = %d; want the new directory reported as the one blocker",
-			slices.Contains(subjects(got), "pkg200"), res.GateFindings)
+	if !slices.Contains(subjects(got), "pkg999") || res.GateFindings != 1 {
+		t.Fatalf("GateFindings = %d, want the new directory as the one blocker", res.GateFindings)
 	}
 }
 
