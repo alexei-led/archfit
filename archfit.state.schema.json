@@ -570,6 +570,16 @@
         },
         "distributed_monolith": {
           "type": "boolean"
+        },
+        "policy": {
+          "type": "string",
+          "enum": [
+            "violation",
+            "accepted",
+            "advisory",
+            "allowed",
+            "observed"
+          ]
         }
       },
       "additionalProperties": false,

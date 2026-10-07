@@ -236,6 +236,7 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	})
 	diag.CoverageGaps = in.CoverageGaps
 	diag.ConfigWarnings = in.ConfigWarnings
+	attachSeamPolicy(diag, in.Policy)
 	// The tool gate runs before the state is built, not inside the returned
 	// literal: it can rewrite the verdict, and the state must classify the
 	// finalized run, not the one halfway through it.

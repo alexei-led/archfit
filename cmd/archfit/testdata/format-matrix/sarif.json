@@ -886,6 +886,7 @@
             "high_or_worse_share_pct": 0,
             "hypothesis": "leave_alone",
             "id": "fa39601122f1503d51aa9a4075a6dfb722880a87aef6312ec824937670724349",
+            "policy": "violation",
             "quadrant": "tight",
             "raw_distance": {
               "basis": "ownership",
