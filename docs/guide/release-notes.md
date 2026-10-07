@@ -1,5 +1,26 @@
 # Release notes
 
+## v2.5.1 — (unreleased)
+
+Two fixes. The output contract and the baseline do not change.
+
+Fixed:
+
+- `archfit policy can-import` now gives one bounded line for every free-text
+  field. A rule `rationale`, `alternatives`, or `docs` written as a YAML block
+  scalar (`rationale: |` or `>`) put line breaks and long text into the `why`,
+  `goal`, and `constraints` of the answer. A strict consumer rejects such a
+  string. `check`, `analyze`, and the other report formats already bound this
+  text. The answer now uses the same rule: runs of whitespace and control
+  characters become one space, and text over 400 runes (3600 for `goal` and
+  `constraints`) is cut with an ellipsis. Text that is already one short line
+  does not change. Finding IDs and rule IDs do not change.
+- Release binaries and the container image print the real commit and build
+  date for `--version`. Before this fix they printed
+  `commit none, built unknown`. The date is the commit time in UTC, so two
+  builds of one commit print the same string. `make build` uses the same
+  values.
+
 ## v2.5.0 — agent guardrails
 
 This release lets an architect state module boundaries as allowlists and

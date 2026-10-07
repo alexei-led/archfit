@@ -9,8 +9,8 @@ ARCHFIT_CONFIG := .archfit.yaml
 ARCHFIT_REPORT := docs/reports/archfit-report.md
 
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-COMMIT    := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
-DATE      := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+COMMIT    := $(shell sh scripts/build-meta.sh commit)
+DATE      := $(shell sh scripts/build-meta.sh date)
 
 LDFLAGS   := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
@@ -149,6 +149,7 @@ docker-build: ## build multi-arch Docker image for linux/amd64 and linux/arm64
 	docker buildx build \
 		--platform linux/amd64,linux/arm64 \
 		-t ghcr.io/alexei-led/$(BINARY):$(VERSION) \
+		--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) \
 		.
 
 ## docker-push: push multi-arch Docker image to GHCR (requires docker login ghcr.io)
@@ -157,6 +158,7 @@ docker-push: ## push multi-arch image to ghcr.io (run: docker login ghcr.io firs
 	docker buildx build \
 		--platform linux/amd64,linux/arm64 \
 		-t ghcr.io/alexei-led/$(BINARY):$(VERSION) \
+		--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) \
 		--push \
 		.
 

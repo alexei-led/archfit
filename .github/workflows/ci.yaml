@@ -140,7 +140,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           go build -trimpath \
-            -ldflags="-s -w -X main.version=${GITHUB_REF_NAME:-dev}" \
+            -ldflags="-s -w -X main.version=${GITHUB_REF_NAME:-dev} -X main.commit=$(sh scripts/build-meta.sh commit) -X main.date=$(sh scripts/build-meta.sh date)" \
             -o "dist/archfit-${GOOS}-${GOARCH}" \
             ./cmd/archfit
       - name: Upload artifact
