@@ -355,3 +355,44 @@ func TestRun_Baseline_KeepsNativeAdvisoryKind(t *testing.T) {
 		t.Fatal("fixture regression: baseline persisted no BC advisory")
 	}
 }
+
+// TestRun_Baseline_AcceptsEveryBCGroupMember pins that a capture accepts every
+// edge a BC rollup stands for, not only its representative. Status is assigned
+// per edge before the rollup, so a baseline holding only the representative
+// left its siblings new: they formed a second group on the very next check of
+// the unchanged tree.
+func TestRun_Baseline_AcceptsEveryBCGroupMember(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeCoupledRepo(t, distributedMonolithCfg)
+	writeFileAt(t, filepath.Dir(cfgPath), "pkg/a/c.go", "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n"+
+		"func UseSecretToo() string { return impl.Secret() }\n")
+
+	var buf bytes.Buffer
+	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh}, &buf); code != 0 {
+		t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
+	}
+	buf.Reset()
+	if code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath}, &buf); code == 3 {
+		t.Fatalf("check: exit = %d\noutput:\n%s", code, buf.String())
+	}
+	var state report.ArchitectureState
+	if err := json.Unmarshal(buf.Bytes(), &state); err != nil {
+		t.Fatalf("unmarshal JSON output: %v", err)
+	}
+	sawGroup := false
+	for _, f := range state.Findings {
+		if f.RuleID != ruleIDBCImbalanced {
+			continue
+		}
+		if f.MatchedBy["group_count"] == "2" {
+			sawGroup = true
+		}
+		if f.Status != report.FindingStatusBaseline {
+			t.Errorf("BC finding %s status = %q after capturing the unchanged tree, want %q (group_count %s)",
+				f.ID, f.Status, report.FindingStatusBaseline, f.MatchedBy["group_count"])
+		}
+	}
+	if !sawGroup {
+		t.Fatal("fixture regression: no BC rollup of two edges")
+	}
+}

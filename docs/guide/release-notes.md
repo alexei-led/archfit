@@ -1,5 +1,17 @@
 # Release notes
 
+## v3.0.0 — (unreleased)
+
+Fixed:
+
+- `archfit baseline` now accepts every edge of a Balanced Coupling advisory
+  group. Before this fix, it accepted only the edge that represents the group.
+  The other edges of the group then showed as `new` on the next `check`, also
+  when the tree did not change. On the archfit repository, 66 advisories showed
+  as `new` directly after a capture. The baseline file gets one entry for each
+  edge, so it can be larger. Run `archfit baseline` again to accept the full
+  groups.
+
 ## v2.5.1 — (unreleased)
 
 Two fixes. The output contract and the baseline do not change.
@@ -70,7 +82,7 @@ New:
   worsened metrics. The exit code stays the verdict. See
   [The agent result](agent-feedback.md#the-agent-result---format-agent).
 - `archfit policy where <path>...` and `archfit policy can-import <from>
-  <target>...` answer before an edit, in about 50 ms. They read the config,
+<target>...` answer before an edit, in about 50 ms. They read the config,
   the waivers, and the baseline, and run no analyzer. `where` names the module
   that owns a path, its layer, role, owner, public surface, and allowlists,
   whether `check` reads the path, and the rules that select it. `can-import`
@@ -300,7 +312,7 @@ Fixed:
   hold dependency or module rules unevaluated waiting for a producer that
   cannot run. An explicit `languages.<id>.gate` keeps them in scope. A selector
   that matches only such source is reported as `selector matches only source no
-  dependency producer analyses: <side> <glob>`.
+dependency producer analyses: <side> <glob>`.
 - `module_cycle` counts only production edges. An import from a test,
   generated or vendored file, or from a file declared out of scope, no longer
   closes a module cycle. Files the source walk skips (such as `.storybook/`) are

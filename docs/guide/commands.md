@@ -54,7 +54,7 @@ Use this when you know the job, not the command.
 | ask which module owns a path before an edit                          | `archfit policy where <path> -c .archfit.yaml`                                                                |
 | ask whether a file may import a target before an edit                | `archfit policy can-import <from> <target> -c .archfit.yaml`                                                  |
 | draw the modules and seams with what the policy says about each      | `archfit map -c .archfit.yaml > architecture.mmd`                                                             |
-| block an agent's stop or a commit on an architecture repair           | `archfit hook claude` (Claude Code Stop hook) or `archfit hook git` (pre-commit)                              |
+| block an agent's stop or a commit on an architecture repair          | `archfit hook claude` (Claude Code Stop hook) or `archfit hook git` (pre-commit)                              |
 | keep the archfit rules in AGENTS.md current                          | `archfit agents-md --write` (CI: `archfit agents-md --check`)                                                 |
 | install the agent skill that matches the binary                      | `archfit skill install`                                                                                       |
 | verify analyzers are installed, or install what archfit can install  | `archfit doctor` or `archfit doctor --fix`                                                                    |
@@ -70,12 +70,12 @@ Use this when you know the job, not the command.
 `archfit check` is the only command that uses all four exit codes. Its exit code
 is the architecture verdict, nothing else.
 
-| Code | Meaning                                                                                                                                                     | Commands that produce it                                                                                                                                                                                                             |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `0`  | `healthy` — every dimension measured, every hard gate passing, no active diagnostic. For `analyze`, any valid report.                                       | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config lint`, `archfit config compare`, `archfit config enrich ...` |
-| `1`  | `blocked` — an active hard-gate finding, a required analyzer that did not run under `--require-tools`, or a tripped metric ratchet (`metrics.<name>.gate`). For `config lint`, at least one error diagnostic. For `policy can-import`, a denied target. For `hook git`, a repair or an owner decision. For `agents-md --check`, a missing or stale block. | `archfit check`, `archfit config lint`, `archfit policy can-import`, `archfit hook git`, `archfit agents-md --check`; `archfit analyze` never exits `1` on a successful run |
-| `2`  | `needs_attention` — no blocker, but an active diagnostic or a partial/unmeasured dimension. For `policy can-import`, no target denied and a target not decided. | `archfit check`, `archfit policy can-import`                                                                                                                                                                                         |
-| `3`  | Usage, parse, config, or runtime error. No valid report was produced.                                                                                       | All commands                                                                                                                                                                                                                         |
+| Code | Meaning                                                                                                                                                                                                                                                                                                                                                   | Commands that produce it                                                                                                                                                                                                             |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0`  | `healthy` — every dimension measured, every hard gate passing, no active diagnostic. For `analyze`, any valid report.                                                                                                                                                                                                                                     | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config lint`, `archfit config compare`, `archfit config enrich ...` |
+| `1`  | `blocked` — an active hard-gate finding, a required analyzer that did not run under `--require-tools`, or a tripped metric ratchet (`metrics.<name>.gate`). For `config lint`, at least one error diagnostic. For `policy can-import`, a denied target. For `hook git`, a repair or an owner decision. For `agents-md --check`, a missing or stale block. | `archfit check`, `archfit config lint`, `archfit policy can-import`, `archfit hook git`, `archfit agents-md --check`; `archfit analyze` never exits `1` on a successful run                                                          |
+| `2`  | `needs_attention` — no blocker, but an active diagnostic or a partial/unmeasured dimension. For `policy can-import`, no target denied and a target not decided.                                                                                                                                                                                           | `archfit check`, `archfit policy can-import`                                                                                                                                                                                         |
+| `3`  | Usage, parse, config, or runtime error. No valid report was produced.                                                                                                                                                                                                                                                                                     | All commands                                                                                                                                                                                                                         |
 
 Notes:
 
@@ -98,14 +98,14 @@ Notes:
 
 These formats apply to `archfit analyze` and `archfit check`.
 
-| Format            | Best for                                            | Notes                                                                                                                                                                           |
-| ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Format            | Best for                                            | Notes                                                                                                                                                                                             |
+| ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `text`            | terminal use, local review, quick CI logs           | Default. The brief: headline, blockers (ID, `file:line`, why, goal, check command), next steps, nine dimensions, unmeasured facts with the step that closes each, seams, diagnostics, comparison. |
-| `json`            | automation, bots, custom dashboards, agent loops    | `archfit.architecture-state.v1` at the document root. Use this when a script needs `agent_tasks[]`, findings, dimensions, comparison/gate-reference status, or the seam ledger. |
-| `markdown` / `md` | saved audit reports, PR attachments, docs artifacts | The same brief as `text`, as one Markdown document with one H1, followed by the detailed audit sections. Good for `archfit-report.md`.                                         |
-| `sarif`           | GitHub code scanning and other SARIF consumers      | Findings keep their rule IDs and `archfit/v1` fingerprints; the state rides in `run.properties`.                                                                                |
-| `scorecard`       | dimension-by-dimension review                       | The nine-dimension state scorecard: status, gate, confidence, denominator, metrics, and unknowns per dimension. No repository score.                                            |
-| `agent`           | coding-agent loops and hooks                        | `archfit.agent-result.v1`: the verdict, one `next_action`, and the repairs grouped by edge, in at most 8 KB. See [the agent result](agent-feedback.md#the-agent-result---format-agent). |
+| `json`            | automation, bots, custom dashboards, agent loops    | `archfit.architecture-state.v1` at the document root. Use this when a script needs `agent_tasks[]`, findings, dimensions, comparison/gate-reference status, or the seam ledger.                   |
+| `markdown` / `md` | saved audit reports, PR attachments, docs artifacts | The same brief as `text`, as one Markdown document with one H1, followed by the detailed audit sections. Good for `archfit-report.md`.                                                            |
+| `sarif`           | GitHub code scanning and other SARIF consumers      | Findings keep their rule IDs and `archfit/v1` fingerprints; the state rides in `run.properties`.                                                                                                  |
+| `scorecard`       | dimension-by-dimension review                       | The nine-dimension state scorecard: status, gate, confidence, denominator, metrics, and unknowns per dimension. No repository score.                                                              |
+| `agent`           | coding-agent loops and hooks                        | `archfit.agent-result.v1`: the verdict, one `next_action`, and the repairs grouped by edge, in at most 8 KB. See [the agent result](agent-feedback.md#the-agent-result---format-agent).           |
 
 The `text` and Markdown brief uses the words in the [glossary](glossary.md):
 a blocker is an active gate finding, a diagnostic an active advisory finding.
@@ -167,7 +167,7 @@ Flags:
 | `--json`          | bool        | `false`                           | Shorthand for `--format json`.                                                                                                           | `archfit analyze --json`                                   |
 | `--markdown`      | bool        | `false`                           | Shorthand for `--format markdown`.                                                                                                       | `archfit analyze --markdown > archfit-report.md`           |
 | `--sarif`         | bool        | `false`                           | Shorthand for `--format sarif`.                                                                                                          | `archfit analyze --sarif > archfit.sarif`                  |
-| `--format`        | enum list   | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`, `agent`. Repeatable.                                 | `archfit analyze --format text --format json`              |
+| `--format`        | enum list   | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`, `agent`. Repeatable.                          | `archfit analyze --format text --format json`              |
 | `--no-advisories` | bool        | `false`                           | Drop advisory findings: Balanced Coupling advisories and violations of `gate: warn` rules. Dropped findings do not count as diagnostics. | `archfit analyze --no-advisories`                          |
 | `--min-severity`  | enum        | empty                             | Show only advisories at or above `low`, `medium`, `high`, or `critical`.                                                                 | `archfit analyze --min-severity high`                      |
 | `--lang`          | string list | none                              | Force a language on: `go`, `typescript` (`ts`), `python` (`py`), `rust` (`rs`). Repeatable. Analyzer names are rejected.                 | `archfit analyze --lang go --lang ts`                      |
@@ -223,7 +223,7 @@ Flags:
 | `--json`          | bool      | `false`                           | Shorthand for `--format json`.                                                                                                           | `archfit check --json`                                   |
 | `--markdown`      | bool      | `false`                           | Shorthand for `--format markdown`.                                                                                                       | `archfit check --markdown > archfit-report.md`           |
 | `--sarif`         | bool      | `false`                           | Shorthand for `--format sarif`.                                                                                                          | `archfit check --sarif > archfit.sarif`                  |
-| `--format`        | enum list | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`, `agent`. Repeatable.                                 | `archfit check --format text --format json`              |
+| `--format`        | enum list | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown` (`md` alias), `sarif`, `scorecard`, `agent`. Repeatable.                          | `archfit check --format text --format json`              |
 | `--progress`      | enum      | `auto`                            | Progress reporting on stderr: `auto`, `plain`, or `none`.                                                                                | `archfit check --progress plain`                         |
 | `-q, --quiet`     | bool      | `false`                           | Suppress progress output.                                                                                                                | `archfit check -q --json`                                |
 
@@ -264,7 +264,9 @@ What it writes (`schema_version: archfit.baseline.v2`):
 
 - Saves the baseline beside the config as `.archfit-baseline.json`.
 - Keeps the accepted finding fingerprints and the metric snapshot, so later runs
-  can detect fixed findings.
+  can detect fixed findings. A Balanced Coupling advisory groups several edges
+  into one finding. The baseline keeps the fingerprint of each edge in the
+  group, so the group stays accepted on the next run.
 - Keeps the architecture-state reference under `state`: the four comparison
   fingerprints (`config_hash`, `model_hash`, `labels_hash`, `rubric_version`)
   and the `measurement_profile` (producer semantics, tool versions, statuses,
@@ -367,22 +369,22 @@ archfit policy where <path>... [flags]
 The answer is one line of JSON, `archfit.policy-answer.v1` with
 `"command": "where"`. For each path it gives:
 
-| Field                       | Meaning                                                                                                   |
-| --------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `path`                      | The path, relative to the analysis root (`--root`, else the git toplevel, else the config directory, as `check` resolves it). |
-| `language`, `selector`      | The language of a source file and the node selector rules match (Go package dir, Python dotted module).   |
-| `excluded`                  | `true` when the path is outside the declared analysis scope: an `exclude:` glob matches it, or its language is switched off. Rule scope and metrics leave it out. The Go extractor drops its imports; dependency-cruiser and grimp still read them. |
-| `module`                    | The most specific declared module that owns the path. Absent when no module owns it.                      |
-| `layer`, `role`, `owner`    | The module's declared values. `owner` is the declared owner only; CODEOWNERS is not read.                 |
-| `public`                    | The module's public surface.                                                                              |
-| `depends_on`, `visible_to`  | The module's allowlists.                                                                                  |
-| `rules`                     | Every rule whose selector names the path or its module, with `match`: `from`, `to`, `from_module`, `to_module`, `module`, or `layer`. This list is for reading. It is not a verdict. |
+| Field                      | Meaning                                                                                                                                                                                                                                             |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                     | The path, relative to the analysis root (`--root`, else the git toplevel, else the config directory, as `check` resolves it).                                                                                                                       |
+| `language`, `selector`     | The language of a source file and the node selector rules match (Go package dir, Python dotted module).                                                                                                                                             |
+| `excluded`                 | `true` when the path is outside the declared analysis scope: an `exclude:` glob matches it, or its language is switched off. Rule scope and metrics leave it out. The Go extractor drops its imports; dependency-cruiser and grimp still read them. |
+| `module`                   | The most specific declared module that owns the path. Absent when no module owns it.                                                                                                                                                                |
+| `layer`, `role`, `owner`   | The module's declared values. `owner` is the declared owner only; CODEOWNERS is not read.                                                                                                                                                           |
+| `public`                   | The module's public surface.                                                                                                                                                                                                                        |
+| `depends_on`, `visible_to` | The module's allowlists.                                                                                                                                                                                                                            |
+| `rules`                    | Every rule whose selector names the path or its module, with `match`: `from`, `to`, `from_module`, `to_module`, `module`, or `layer`. This list is for reading. It is not a verdict.                                                                |
 
 Flags:
 
-| Flag           | Type | Default                 | Effect                                       |
-| -------------- | ---- | ----------------------- | -------------------------------------------- |
-| `-c, --config` | path | `.archfit.yaml`         | Config file.                                 |
+| Flag           | Type | Default                                    | Effect                                                                        |
+| -------------- | ---- | ------------------------------------------ | ----------------------------------------------------------------------------- |
+| `-c, --config` | path | `.archfit.yaml`                            | Config file.                                                                  |
 | `--root`       | path | git toplevel, else directory of `--config` | The analysis root the paths are relative to, resolved as `check` resolves it. |
 
 Exit codes: `0` answered, `3` usage or config error.
@@ -407,21 +409,21 @@ archfit policy can-import <from> <target>... [flags]
 `<from>` is the importing source file. `<target>` is spelled the way rules
 match it:
 
-| Language   | `<target>`                                                                                   |
-| ---------- | -------------------------------------------------------------------------------------------- |
+| Language   | `<target>`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Go         | A package dir relative to the root, or an import path of a loaded module. An import from a `_test.go` file, a file the build constraints exclude (GOOS/GOARCH, the last `-tags` of `GOFLAGS` and the run's build flags, `CGO_ENABLED`; the go env file counts), a file of no loaded module, a file that imports `"C"` while `CGO_ENABLED=0`, or an excluded file or target is never extracted: the answer is `unconstrained`. When `CGO_ENABLED` is not set and a cgo build tag decides whether the file is built, or the file imports `"C"` (cgo may be on or off), the answer is `not_decided`. With `CGO_ENABLED=1` a file that imports `"C"` is read like any other file. |
-| TypeScript | The imported source file relative to the root, after resolution (not the import specifier).  |
-| Python     | A dotted module, or a `.py` file. A file maps to its dotted name with a `src/` prefix removed. grimp builds `languages.python.package`, else the discovered top-level packages (under `src/` when it has any). An importer outside them is never extracted (`unconstrained`). A target outside them is `not_decided`: grimp drops an installed or stdlib import and spells an uninstalled one as external. |
-| Rust       | Not supported: crate roots need `cargo metadata`, so the answer is `not_decided`.             |
+| TypeScript | The imported source file relative to the root, after resolution (not the import specifier).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Python     | A dotted module, or a `.py` file. A file maps to its dotted name with a `src/` prefix removed. grimp builds `languages.python.package`, else the discovered top-level packages (under `src/` when it has any). An importer outside them is never extracted (`unconstrained`). A target outside them is `not_decided`: grimp drops an installed or stdlib import and spells an uninstalled one as external.                                                                                                                                                                                                                                                                    |
+| Rust       | Not supported: crate roots need `cargo metadata`, so the answer is `not_decided`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 The answer is one line of JSON, `archfit.policy-answer.v1` with
 `"command": "can-import"`, and one entry in `answers` per target:
 
-| `answer`        | Meaning                                                                                                                                       |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `denied`        | A fail-gated rule fires on the import with an active status. Each entry of `denials` has the finding ID, the rule ID, the why, and the repair `goal` and `constraints`. |
-| `not_decided`   | No rule denies the import, but a fail-gated rule that needs the whole graph can still block it: `module_cycle` on a cross-module import, `cycle` on a TypeScript or Python import, or the seam gate in `mode: fail`. Also every Rust import and every external Python import. `reasons` names them. |
-| `allowed`       | An allowlist (`depends_on` or `visible_to`) or the layer order permits the import. `reasons` names it.                                       |
+| `answer`        | Meaning                                                                                                                                                                                                                                                                                                                                                    |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `denied`        | A fail-gated rule fires on the import with an active status. Each entry of `denials` has the finding ID, the rule ID, the why, and the repair `goal` and `constraints`.                                                                                                                                                                                    |
+| `not_decided`   | No rule denies the import, but a fail-gated rule that needs the whole graph can still block it: `module_cycle` on a cross-module import, `cycle` on a TypeScript or Python import, or the seam gate in `mode: fail`. Also every Rust import and every external Python import. `reasons` names them.                                                        |
+| `allowed`       | An allowlist (`depends_on` or `visible_to`) or the layer order permits the import. `reasons` names it.                                                                                                                                                                                                                                                     |
 | `unconstrained` | No rule decides the import. This is not permission. It is also the answer for an import the extractor never reads (a switched-off language, a language whose project marker is missing — no `package.json`, no `pyproject.toml` — or the Go cases above), and for an import whose only violations the baseline or a waiver accepts (listed in `accepted`). |
 
 `advisories` lists the findings of `gate: warn` rules. They never deny.
@@ -435,12 +437,12 @@ Flags: the same as `archfit policy where`.
 
 Exit codes:
 
-| Code | Meaning                                       |
-| ---- | --------------------------------------------- |
-| `0`  | No target denied, and every target decided.   |
-| `1`  | A target is denied.                           |
+| Code | Meaning                                        |
+| ---- | ---------------------------------------------- |
+| `0`  | No target denied, and every target decided.    |
+| `1`  | A target is denied.                            |
 | `2`  | No target denied, and a target is not decided. |
-| `3`  | Usage or config error.                        |
+| `3`  | Usage or config error.                         |
 
 Examples:
 
@@ -474,13 +476,13 @@ a `go.work` member (`(undeclared)` in text).
 
 Each seam has one status, the first that matches:
 
-| Status      | Condition                                                                 | Mermaid arrow |
-| ----------- | ------------------------------------------------------------------------- | ------------- |
-| `violation` | An active gate finding names the pair.                                    | `==>`         |
-| `accepted`  | A gate finding on the pair is baselined or waived. This is not permission. | `-.->`        |
-| `advisory`  | Another active finding names the pair. A baselined or waived advisory does not count. | `-->` |
-| `allowed`   | A fail-gated allowlist (`depends_on`, `visible_to`) or layer rule permits the pair, with the permission predicate of `policy can-import`. | `-->` |
-| `observed`  | No finding names the pair and no rule decides it.                         | `-->`         |
+| Status      | Condition                                                                                                                                 | Mermaid arrow |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `violation` | An active gate finding names the pair.                                                                                                    | `==>`         |
+| `accepted`  | A gate finding on the pair is baselined or waived. This is not permission.                                                                | `-.->`        |
+| `advisory`  | Another active finding names the pair. A baselined or waived advisory does not count.                                                     | `-->`         |
+| `allowed`   | A fail-gated allowlist (`depends_on`, `visible_to`) or layer rule permits the pair, with the permission predicate of `policy can-import`. | `-->`         |
+| `observed`  | No finding names the pair and no rule decides it.                                                                                         | `-->`         |
 
 A finding names a pair through the modules the run puts its edge endpoints
 under, `go.work` members and Rust `crate::mod` modules included. With
@@ -494,12 +496,12 @@ map reads a finished run, which has evaluated those rules.
 
 Flags:
 
-| Flag         | Default    | Meaning                                                                                              |
-| ------------ | ---------- | ---------------------------------------------------------------------------------------------------- |
-| `--format`   | `mermaid`  | `mermaid` (a `flowchart TB`) or `text`.                                                              |
-| `--focus`    | none       | Keep this module, its direct neighbours, and the seams that touch it. Repeatable. The output counts the omitted seams by status, so a hidden violation always leaves a trace. |
-| `--refresh`  | `false`    | Re-run the extractors and refresh the cache.                                                         |
-| `-c`, `--root`, `--progress`, `-q` | | As for `check`.                                                                     |
+| Flag                               | Default   | Meaning                                                                                                                                                                       |
+| ---------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--format`                         | `mermaid` | `mermaid` (a `flowchart TB`) or `text`.                                                                                                                                       |
+| `--focus`                          | none      | Keep this module, its direct neighbours, and the seams that touch it. Repeatable. The output counts the omitted seams by status, so a hidden violation always leaves a trace. |
+| `--refresh`                        | `false`   | Re-run the extractors and refresh the cache.                                                                                                                                  |
+| `-c`, `--root`, `--progress`, `-q` |           | As for `check`.                                                                                                                                                               |
 
 Exit codes: `0`, or `3` on an error or a `--focus` module that is neither
 declared nor a seam endpoint. The verdict never changes the exit code; use
@@ -528,9 +530,9 @@ archfit hook claude [--config .archfit.yaml] [--base HEAD]
 archfit hook git    [--config .archfit.yaml] [--base HEAD]
 ```
 
-| Flag           | Default         | Effect                                                                                     |
-| -------------- | --------------- | ------------------------------------------------------------------------------------------ |
-| `-c, --config` | `.archfit.yaml` | Config file. `hook claude` resolves a relative path against the event `cwd`.               |
+| Flag           | Default         | Effect                                                                                                                                                                     |
+| -------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-c, --config` | `.archfit.yaml` | Config file. `hook claude` resolves a relative path against the event `cwd`.                                                                                               |
 | `--base`       | `HEAD`          | Scope ref: a repair whose findings all exist at this ref is outside the scope. Empty, or a ref that does not exist yet (before the first commit), scopes every blocker in. |
 
 The output table of `hook claude` and the pre-commit setup are in
@@ -859,17 +861,17 @@ Exit codes:
 
 Diagnostics:
 
-| Code                     | Severity                       | Meaning                                                                                                                                                                                                                                                        |
-| ------------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dead_selector`          | error (warning on `gate: off`) | A `forbidden_dependency`, `public_api_only`, `internal_api_access`, or `forbidden_pattern` (`from:` only) selector matches no scanned source, or (dependency rules) only source no dependency producer analyses. A `module_dependencies` rule when no module declares `depends_on` or `visible_to`. `check` lists the same rule as not evaluated. |
-| `guard_rule`             | info                           | A `guard: true` rule whose selector matches nothing, as intended.                                                                                                                                                                                              |
-| `guard_matches_source`   | warning                        | A `guard: true` rule whose selectors all match source: the guarded path exists again.                                                                                                                                                                          |
-| `unknown_volatility`     | error                          | `modules.<m>.volatility` is not `high`, `medium`, `low`, `frozen`, or `legacy`.                                                                                                                                                                                |
-| `unknown_subdomain`      | error                          | `modules.<m>.subdomain` is not `core`, `supporting`, or `generic`.                                                                                                                                                                                             |
-| `undeclared_layer`       | error                          | `modules.<m>.layer` is not declared in `layers:`.                                                                                                                                                                                                              |
-| `public_outside_module`  | error                          | A `public:` entry is outside the module's own `paths:`.                                                                                                                                                                                                        |
-| `public_matches_nothing` | error                          | A `public:` entry names no scanned package or module.                                                                                                                                                                                                          |
-| `ambiguous_ownership`    | error                          | Two modules claim the same source at equal glob specificity; the first by name silently wins.                                                                                                                                                                  |
+| Code                     | Severity                                  | Meaning                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dead_selector`          | error (warning on `gate: off`)            | A `forbidden_dependency`, `public_api_only`, `internal_api_access`, or `forbidden_pattern` (`from:` only) selector matches no scanned source, or (dependency rules) only source no dependency producer analyses. A `module_dependencies` rule when no module declares `depends_on` or `visible_to`. `check` lists the same rule as not evaluated.                                                          |
+| `guard_rule`             | info                                      | A `guard: true` rule whose selector matches nothing, as intended.                                                                                                                                                                                                                                                                                                                                          |
+| `guard_matches_source`   | warning                                   | A `guard: true` rule whose selectors all match source: the guarded path exists again.                                                                                                                                                                                                                                                                                                                      |
+| `unknown_volatility`     | error                                     | `modules.<m>.volatility` is not `high`, `medium`, `low`, `frozen`, or `legacy`.                                                                                                                                                                                                                                                                                                                            |
+| `unknown_subdomain`      | error                                     | `modules.<m>.subdomain` is not `core`, `supporting`, or `generic`.                                                                                                                                                                                                                                                                                                                                         |
+| `undeclared_layer`       | error                                     | `modules.<m>.layer` is not declared in `layers:`.                                                                                                                                                                                                                                                                                                                                                          |
+| `public_outside_module`  | error                                     | A `public:` entry is outside the module's own `paths:`.                                                                                                                                                                                                                                                                                                                                                    |
+| `public_matches_nothing` | error                                     | A `public:` entry names no scanned package or module.                                                                                                                                                                                                                                                                                                                                                      |
+| `ambiguous_ownership`    | error                                     | Two modules claim the same source at equal glob specificity; the first by name silently wins.                                                                                                                                                                                                                                                                                                              |
 | `unknown_module`         | error (warning on `gate: off` for a rule) | A `modules.<m>.depends_on` or `modules.<m>.visible_to` entry, or a `forbidden_dependency` rule's `from_module` or `to_module`, selects no declared module, layer, or role. An allowlist entry then allows nothing, and `check` prints a config warning; a rule side makes the rule not evaluated, as a dead selector does. A rule side whose selected modules provably own no source is a `dead_selector`. |
 
 Notes:
@@ -969,11 +971,11 @@ Notes:
 
 Report model:
 
-| Section                 | Meaning                                                                                                                                                                                                                                                                                                                                                                                        |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `coverage evidence`     | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences.                                                                                                                                                                                                                                                                               |
+| Section                 | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coverage evidence`     | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences.                                                                                                                                                                                                                                                                                                                                                                            |
 | measurement differences | Only what changed: the one-sided finding IDs, the classified-edge counts, and the classification mix (strength, distance, distance basis, volatility, severity, and volatility provenance). There is no score line: the architecture state has no repository score (`--json` keeps `scorecard` and `score_delta`). Nothing changed prints `No change in findings, edge counts, or classification mix.` — a claim about those measurements, not a claim that the two configs are equivalent. |
-| measurement loss        | Warnings raised when the candidate measured less of the same tree.                                                                                                                                                                                                                                                                                                                             |
+| measurement loss        | Warnings raised when the candidate measured less of the same tree.                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 Coverage grades:
 

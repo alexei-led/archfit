@@ -89,6 +89,11 @@ type Finding struct {
 	// Rationale is the rule's declared rationale, already appended to Why. It
 	// is not serialized: the repair task repeats it in its constraints.
 	Rationale string `json:"-"`
+	// Members are the IDs of every finding a rollup stands for, sorted, the
+	// representative included. Empty for a finding that is not a rollup. Not
+	// serialized: matched_by.group_members carries a capped list for readers,
+	// while a baseline capture must accept every member.
+	Members []string `json:"-"`
 }
 
 // New creates a Finding with a stable fingerprint ID derived from (ruleID, from, to, kind).
