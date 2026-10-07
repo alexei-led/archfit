@@ -82,7 +82,7 @@ package internal/model/graph
   type internal/model/graph.ConventionRegistry map[string]internal/model/graph.NodeConvention
   func (internal/model/graph.ConventionRegistry).Lookup(lang string) internal/model/graph.NodeConvention
   type internal/model/graph.CrateRoot struct{Dir string; Name string; Crate string}
-  type internal/model/graph.Edge struct{From string "json:\"from\""; To string "json:\"to\""; Kind internal/model/graph.EdgeKind "json:\"kind\""; Language string "json:\"language\""; Confidence string "json:\"confidence\""; Locations []internal/model/graph.Location "json:\"locations\""; ExplicitnessHint string "json:\"explicitness_hint,omitempty\""; StrengthHint string "json:\"strength_hint,omitempty\""; ConnascenceHints []internal/model/graph.ConnascenceHint "json:\"connascence_hints,omitempty\""}
+  type internal/model/graph.Edge struct{From string "json:\"from\""; To string "json:\"to\""; Kind internal/model/graph.EdgeKind "json:\"kind\""; Language string "json:\"language\""; Confidence string "json:\"confidence\""; Locations []internal/model/graph.Location "json:\"locations\""; ExplicitnessHint string "json:\"explicitness_hint,omitempty\""; StrengthHint string "json:\"strength_hint,omitempty\""; DataStrengthHint string "json:\"data_strength_hint,omitempty\""; ConnascenceHints []internal/model/graph.ConnascenceHint "json:\"connascence_hints,omitempty\""}
   type internal/model/graph.EdgeKind string
   const internal/model/graph.EdgeKindBelongsTo internal/model/graph.EdgeKind
   const internal/model/graph.EdgeKindDependsOn internal/model/graph.EdgeKind
