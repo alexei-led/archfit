@@ -47,9 +47,9 @@ const (
 	compareLabelCandidate = "[candidate] "
 )
 
-// scoreUnmeasured is how an unmeasured (band n/a) side renders in the text
-// report. Never a number: coupling_balance abstains rather than invent one.
-const scoreUnmeasured = "n/a"
+// unmeasuredText is how a side with no classified-edge summary renders in the
+// text report. Never a number: an absent measurement is not a zero.
+const unmeasuredText = "n/a"
 
 // CompareCmd measures one source tree under two configurations and reports the
 // difference. It is report-only and never writes.
@@ -226,17 +226,18 @@ func writeConfigCompareJSON(w io.Writer, doc configCompareDoc) error {
 // configCompareDiffLines compares came out the same.
 //
 // It names those measurements rather than claiming identity in general. The
-// broad claim was false: the differences section reads the overall score, the
-// one-sided finding IDs, the four edge counters and the classification mix, and
-// nothing else in the two diagnostics. A future measurement added without a diff
+// broad claim was false: the differences section reads the one-sided finding
+// IDs, the four edge counters and the classification mix, and nothing else in
+// the two diagnostics. The text prints no repository score: the architecture
+// state has none, and --json keeps the scorecard for the AI review. A future measurement added without a diff
 // line would silently widen a claim written as "no differences"; it cannot widen
 // this one.
-const configCompareIdentityLine = "No change in score, findings, edge counts, or classification mix."
+const configCompareIdentityLine = "No change in findings, edge counts, or classification mix."
 
 // configCompareFooter states the one thing a reader must not conclude from a
-// score that moved.
+// difference.
 const configCompareFooter = "Report only: two measurements of one source tree. " +
-	"A higher candidate score is not evidence that the candidate configuration is better."
+	"A difference is not evidence that the candidate configuration is better."
 
 // renderConfigCompareText writes the short report: the coverage grade in its own
 // section (it qualifies everything below it, including an identity result), then
@@ -279,9 +280,6 @@ func renderConfigCompareText(
 // shows differences, not a full scorecard dump.
 func configCompareDiffLines(current, candidate application.CompareSide, res application.CompareResult) []string {
 	var lines []string
-	if line, changed := scoreCompareLine(current.Document.Score, candidate.Document.Score, res.ScoreDelta); changed {
-		lines = append(lines, line)
-	}
 	if ids := res.Findings.CurrentOnlyIDs; len(ids) > 0 {
 		lines = append(lines, fmt.Sprintf("findings only under the current config (%d): %s", len(ids), summariseIDs(ids)))
 	}
@@ -403,7 +401,7 @@ func edgeCompareLine(current, candidate *report.ClassifiedEdgeSummary) (string, 
 
 func edgeCountsText(s *report.ClassifiedEdgeSummary) string {
 	if s == nil {
-		return scoreUnmeasured
+		return unmeasuredText
 	}
 	return fmt.Sprintf("%d total / %d scored / %d abstained / %d external",
 		s.Total, s.Scored, s.Abstained, s.External)
@@ -420,33 +418,4 @@ func summariseIDs(ids []string) string {
 	}
 	return fmt.Sprintf("%s, … %d more (see --json)",
 		strings.Join(ids[:compareIDPreview], ", "), len(ids)-compareIDPreview)
-}
-
-// scoreCompareLine renders the overall-score row and reports whether it is a
-// difference at all.
-//
-// The nil-delta cases are deliberately split. Unmeasured on BOTH sides is not a
-// difference — neither configuration produced a number, and saying so as a
-// "change" would invent one. Unmeasured on exactly ONE side IS a difference, and
-// an important one: a configuration that stopped measuring coupling entirely is
-// exactly what this command exists to expose.
-func scoreCompareLine(current, candidate report.Scorecard, delta *int) (string, bool) {
-	switch {
-	case delta != nil && *delta != 0:
-		return fmt.Sprintf("score: %s → %s (%+d)", scoreText(current), scoreText(candidate), *delta), true
-	case delta != nil:
-		return "", false
-	case current.OverallBand.Unmeasured() && candidate.OverallBand.Unmeasured():
-		return "", false
-	default:
-		return fmt.Sprintf("score: %s → %s (delta unknown: measurement is unmeasured or non-comparable)",
-			scoreText(current), scoreText(candidate)), true
-	}
-}
-
-func scoreText(sc report.Scorecard) string {
-	if sc.OverallBand.Unmeasured() {
-		return scoreUnmeasured
-	}
-	return fmt.Sprintf("%d (%s)", sc.Overall, sc.OverallBand)
 }

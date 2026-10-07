@@ -99,12 +99,21 @@ These formats apply to `archfit analyze` and `archfit check`.
 
 | Format            | Best for                                            | Notes                                                                                                                                                                           |
 | ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `text`            | terminal use, local review, quick CI logs           | Default. Headline, nine dimensions, unmeasured facts, seams, actionable findings, comparison.                                                                                   |
+| `text`            | terminal use, local review, quick CI logs           | Default. The brief: headline, blockers (ID, `file:line`, why, goal, check command), next steps, nine dimensions, unmeasured facts with the step that closes each, seams, diagnostics, comparison. |
 | `json`            | automation, bots, custom dashboards, agent loops    | `archfit.architecture-state.v1` at the document root. Use this when a script needs `agent_tasks[]`, findings, dimensions, comparison/gate-reference status, or the seam ledger. |
-| `markdown` / `md` | saved audit reports, PR attachments, docs artifacts | Same facts as `json`, laid out for a human. Good for `archfit-report.md`.                                                                                                       |
+| `markdown` / `md` | saved audit reports, PR attachments, docs artifacts | The same brief as `text`, as one Markdown document with one H1, followed by the detailed audit sections. Good for `archfit-report.md`.                                         |
 | `sarif`           | GitHub code scanning and other SARIF consumers      | Findings keep their rule IDs and `archfit/v1` fingerprints; the state rides in `run.properties`.                                                                                |
 | `scorecard`       | dimension-by-dimension review                       | The nine-dimension state scorecard: status, gate, confidence, denominator, metrics, and unknowns per dimension. No repository score.                                            |
 | `agent`           | coding-agent loops and hooks                        | `archfit.agent-result.v1`: the verdict, one `next_action`, and the repairs grouped by edge, in at most 8 KB. See [the agent result](agent-feedback.md#the-agent-result---format-agent). |
+
+The `text` and Markdown brief uses the words in the [glossary](glossary.md):
+a blocker is an active gate finding, a diagnostic an active advisory finding.
+Blockers are never capped. NEXT STEPS lists at most five steps in this order:
+blockers, a metric ratchet, rules and analyzers that need evidence, the gate
+reference, module decisions, then coverage or deploy-unit evidence. It offers
+`archfit baseline` only when no blocker is active and no reference is stored.
+Every NOT MEASURED fact ends with the step that closes it, or with
+`(out of claim — no action)`.
 
 Format rules:
 
@@ -898,7 +907,7 @@ Report model:
 | Section                 | Meaning                                                                                                                                                                                                                                                                                                                                                                                        |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `coverage evidence`     | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences.                                                                                                                                                                                                                                                                               |
-| measurement differences | Only what changed: the overall score, the one-sided finding IDs, the classified-edge counts, and the classification mix (strength, distance, distance basis, volatility, severity, and volatility provenance). Nothing changed prints `No change in score, findings, edge counts, or classification mix.` — a claim about those measurements, not a claim that the two configs are equivalent. |
+| measurement differences | Only what changed: the one-sided finding IDs, the classified-edge counts, and the classification mix (strength, distance, distance basis, volatility, severity, and volatility provenance). There is no score line: the architecture state has no repository score (`--json` keeps `scorecard` and `score_delta`). Nothing changed prints `No change in findings, edge counts, or classification mix.` — a claim about those measurements, not a claim that the two configs are equivalent. |
 | measurement loss        | Warnings raised when the candidate measured less of the same tree.                                                                                                                                                                                                                                                                                                                             |
 
 Coverage grades:

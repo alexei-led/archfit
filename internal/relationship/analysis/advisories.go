@@ -119,7 +119,7 @@ func bcRiskClause(edge relationship.Edge) string {
 		if coupling.DistanceIsHigh(edge.Distance) {
 			return strength + " across a high-distance boundary to " + volatility + " → distributed-monolith risk"
 		}
-		return strength + " to " + volatility + " at low distance → local cascade (cheap to change; not a distributed monolith)"
+		return strength + " to " + volatility + " at low distance → local cascade (contained, not a distributed monolith)"
 	case relationship.SeverityHigh:
 		if coupling.DistanceIsHigh(edge.Distance) {
 			return strength + " across a boundary to " + volatility + " → likely cascading changes"
