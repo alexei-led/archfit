@@ -1,36 +1,45 @@
 # Release notes
 
-## v2.5.0 — (unreleased)
+## v2.5.0 — agent guardrails
+
+This release lets an architect state module boundaries as allowlists and
+module selectors, and lets an agent ask the policy before an edit and get a
+short, actionable result after it. `map/uncovered_path` can now block, and a
+new `archfit map` command draws the declared modules and their seams. The
+baseline schema and the comparison fingerprints do not change. The
+architecture state gains one optional key, `seams[].policy`. Read the
+"Upgrade notes" list before you enable this release in CI.
 
 New:
 
 - Module allowlists. `modules.<m>.depends_on` lists the only modules a module
-  can import; `modules.<m>.visible_to` lists the only modules that can import
-  it. An absent key means no constraint; an empty list allows nothing. One new
+  can import. `modules.<m>.visible_to` lists the only modules that can import
+  it. An absent key means no constraint. An empty list allows nothing. One new
   rule type, `module_dependencies`, enforces both lists. An importer that no
   declared module owns is denied by every `visible_to` list. Findings are keyed
-  by the module pair, so a new or moved file on the pair keeps the finding ID;
+  by the module pair, so a new or moved file on the pair keeps the finding ID.
   `matched_by.violates` names the list that denies the pair. Repair tasks never
   route the dependency through the target's public API. See
   [Module allowlists](configuration-reference.md#module-allowlists).
 - `archfit config lint` reports `unknown_module` (error) for an allowlist entry
-  that names no declared module, and `dead_selector` for a
+  that selects no declared module, and `dead_selector` for a
   `module_dependencies` rule when no module declares a list. `check` prints the
   unknown entry as a config warning.
 - Module selectors. `forbidden_dependency` takes `from_module` and `to_module`
   instead of `from` and `to`: `layer:<name>`, `role:<role>`, or a glob over
-  module names. A module selector matches only edges between two different
-  modules. A module side keys its findings by the module, so a moved file
-  keeps the finding ID. Allowlist entries (`depends_on`, `visible_to`) accept the
-  same selectors. A selector that selects no module makes the rule not
-  evaluated (`selector matches nothing: from_module …`), and `config lint`
-  reports it as `unknown_module`. See
+  declared module names. A module selector matches only edges between two
+  different modules. A module side keys its findings by the module, so a moved
+  file keeps the finding ID. Allowlist entries (`depends_on`, `visible_to`)
+  accept the same selectors. A fail-gated rule whose selector selects no
+  module is not evaluated (`selector matches nothing: from_module …`). A
+  warn-gated one gives a config warning. `config lint` reports both as
+  `unknown_module`, and `guard: true` exempts the rule. See
   [Module selectors](configuration-reference.md#module-selectors).
 - Rule rationale. Every rule type takes `rationale`, `alternatives`, and
   `docs`. The rationale ends the finding `why` (and so the SARIF message) and
-  appears in the repair task's constraints; the alternatives become the
+  appears in the repair task's constraints. The alternatives become the
   finding's `allowed_alternatives`, the task's constraints, and the SARIF
-  result property `allowed_alternatives`; the docs reference ends the finding
+  result property `allowed_alternatives`. The docs reference ends the finding
   `why` and `constraint`. None of them changes a finding ID.
 - `--format agent` on `check` and `analyze` writes `archfit.agent-result.v1`:
   the verdict, one `next_action` (`repair`, `ask_owner`, `restore_evidence`,
@@ -47,19 +56,25 @@ New:
   answers `denied`, `not_decided`, `allowed`, or `unconstrained` for each
   target, with the same relationship analysis, rule pass, and finding IDs as
   `check`. It exits `1` when a target is denied and `2` when a target is not
-  decided. Rust imports are not decided: crate roots need `cargo metadata`.
-  See [`archfit policy can-import`](commands.md#archfit-policy-can-import).
+  decided. Rules that need the whole graph (a fail-gated `module_cycle` on a
+  cross-module edge, `cycle` outside Go, the seam gate in `mode: fail`) give
+  `not_decided`, and so do Rust imports, because crate roots need
+  `cargo metadata`. Metric ratchets are not evaluated. See
+  [`archfit policy can-import`](commands.md#archfit-policy-can-import).
 - Agent hooks. `archfit hook claude` is a Claude Code `Stop`/`SubagentStop`
-  hook: on a dirty tree it runs the agent result against `--base HEAD` and
-  exits 2 with the repair on stderr, at most once per stop; it fails open on an
-  archfit error. `archfit hook git` is a pre-commit hook (exit 1 on a repair or
-  an owner decision), published in `.pre-commit-hooks.yaml` as id `archfit`.
+  hook. On a dirty tree it runs the agent result against `--base HEAD`. It
+  exits 2 with the repair on stderr only when a repair is in scope, at most
+  once per stop, and it fails open on an archfit error. `archfit hook git` is a
+  pre-commit hook: exit 1 on an in-scope repair or owner decision. It judges
+  the files on disk. The repository publishes it in `.pre-commit-hooks.yaml`
+  as id `archfit`.
 - `archfit agents-md [--write] [--check]` renders one generated block of agent
-  instructions (loop, module table, rules that block) into `AGENTS.md`;
+  instructions (loop, module table, rules that block) into `AGENTS.md`.
   `--check` exits 1 on drift.
 - `archfit skill install` installs the archfit agent skill embedded in the
-  binary. The skill is rewritten around three steps: ask (`policy can-import`),
-  check (`--format agent`), and hooks.
+  binary. It does not overwrite a local change without `--force`. The skill is
+  rewritten around three steps: ask (`policy can-import`), check
+  (`--format agent`), and hooks.
 - Map completeness. `map/uncovered_path` now reports each directory that holds
   production source no declared module owns, and `module_review.gate: fail`
   makes it a blocker: a new package outside every module fails `check`. The
@@ -67,15 +82,15 @@ New:
   unanalysed files never count, and a package that failed to load is still
   checked. One finding per directory, with at most five file locations.
   `matched_by.suggested_path` gives a `paths:` glob that owns the directory.
-  The repair task asks the owner (`needs_owner_decision`). `map/dead_rule` and `map/stale_review`
-  stay diagnostics. See [`module_review`](configuration-reference.md#module_review).
-
+  The repair task asks the owner (`needs_owner_decision`). `map/dead_rule` and
+  `map/stale_review` stay diagnostics. See
+  [`module_review`](configuration-reference.md#module_review).
 - The brief. Text and Markdown now open with BLOCKERS: every active gate
   finding, never capped, with its short ID, rule, subject, `file:line`, full
   `why`, the repair goal, and the command that checks the fix. NEXT STEPS
   follows, at most five, in this order: blockers, a metric ratchet, rules and
   analyzers that need evidence, the gate reference, module decisions, and
-  coverage or deploy-unit evidence; `archfit baseline` is offered only with no
+  coverage or deploy-unit evidence. `archfit baseline` is offered only with no
   active blocker and no stored reference. Every NOT MEASURED fact ends with
   the step that closes it, or with `(out of claim — no action)`. A
   needs-attention verdict with no finding says why
@@ -93,56 +108,10 @@ New:
   baselined gate finding reads `accepted`, never `allowed`.
 - New [glossary](glossary.md): archfit terms, wire terms, and the book terms
   and chapters they map to.
-
-Fixes:
-
-- The undeclared-volatility config warning said the scorer abstains on
-  volatility. The scorer uses V=10, the worst case; the warning now says so.
-- A critical coupling advisory at low distance no longer says "cheap to
-  change".
-- `config compare` text no longer prints a repository score line; `--json`
-  keeps `scorecard` and `score_delta`.
-
-Contract notes:
-
-- Config schema v2 gains the optional module keys `depends_on` and
-  `visible_to`, the rule type `module_dependencies`, and the optional rule
-  keys `from_module`, `to_module`, `rationale`, `alternatives`, and `docs`.
-  `archfit.schema.json` is regenerated. Engines up to v2.4.1 reject the new
-  keys: pin the engine before you use them.
-  The archfit App pins the engine's config schema and must re-pin it for this
-  release.
-- `model_hash` does not include the allowlists. An allowlist edit changes
-  `config_hash`, so the stored baseline becomes non-comparable until you run
-  `archfit baseline` again.
-- New answer document `archfit.policy-answer.v1` for `archfit policy`. It
-  has no published schema yet; the App does not read it.
-- New published schema `archfit.agent-result.schema.json` for
-  `archfit.agent-result.v1`. Baseline v2 and the comparison fingerprints do
-  not change. The architecture state changes only by the optional
-  `seams[].policy` key below.
-- Markdown is one document with one H1. The second H1 (`# archfit report`),
-  its config-hash line, `## Summary`, and `## Gate findings` are gone: the
-  blockers are in `## Blockers`, the config hash is in `## Comparison`, and
-  every finding stays in the finding index. `## Top actionable findings` is
-  replaced by `## Blockers` and `## Diagnostics`; text replaces
-  `TOP ACTIONABLE FINDINGS` with `BLOCKERS` and `DIAGNOSTICS`. Scripts that
-  parse those headings must change.
-- Apart from `seams[].policy`, JSON and SARIF change only in two texts: the
-  undeclared-volatility entry in `config_warnings`, and the `why` (and SARIF
-  message) of a critical low-distance `bc/imbalanced_coupling` finding.
-  Finding IDs do not change.
-- `archfit.architecture-state.v1` gains the optional key `seams[].policy`;
-  `archfit.state.schema.json` is regenerated, so JSON and SARIF (the state in
-  `run.properties`) carry one new key per seam. The archfit App needs a decoder
-  before it can show the status, and must re-pin the state schema for this
-  release.
-- `map/uncovered_path` changes its subject from a graph node to a directory.
-  A Go package keeps its finding ID. A finding about a single file gets a new
-  ID: the old one reads `fixed`, and the directory finding is new. Before
-  v2.5.0, `module_review.gate: fail` blocked nothing.
-- Configs that do not use the new keys or `module_review` give the same
-  output, except for the `seams[].policy` key and the two texts above.
+- For contributors: a seventh named erosion gate, `policy_query_agreement`,
+  holds `policy can-import` denials equal to `check` gate findings. The check
+  runs end to end on Go. TypeScript and Python are checked at the edge-spelling
+  level only.
 
 Fixed:
 
@@ -158,12 +127,61 @@ Fixed:
   `archfit policy can-import` reads a cgo file when `CGO_ENABLED=1`. A failed
   cgo preprocess still makes the `go/packages` row `partial`, and a cgo file
   that cgo-off ignores is still counted in the build-constraint disclosure.
-- Cached Go facts from older binaries are not reused (the cache key has a new
-  facts revision). The measurement profile and the settings hash do not change, so
-  a baseline stored by an older binary still compares as comparable. On a
-  repository with cgo files, the new edges read as introduced against it: run
-  `archfit baseline` again after reviewing them. Repositories without cgo files
-  give byte-identical output.
+- The undeclared-volatility config warning said the scorer abstains on
+  volatility. The scorer uses V=10, the worst case. The warning now says so.
+- A critical coupling advisory at low distance no longer says "cheap to
+  change".
+- `config compare` text no longer prints a repository score line. `--json`
+  keeps `scorecard` and `score_delta`.
+
+Upgrade notes:
+
+- New optional config keys. Config schema v2 gains the module keys
+  `depends_on` and `visible_to`, the rule type `module_dependencies`, and the
+  rule keys `from_module`, `to_module`, `rationale`, `alternatives`, and
+  `docs`. `archfit.schema.json` is regenerated. Engines up to v2.4.1 reject the
+  new keys, so pin the engine at v2.5.0 or later before you use them.
+- New state key. `archfit.architecture-state.v1` gains the optional key
+  `seams[].policy`, and `archfit.state.schema.json` is regenerated. JSON and
+  SARIF (the state in `run.properties`) carry one new key per seam. Baseline v2
+  and the comparison fingerprints do not change.
+- The archfit App pins both schemas. It must re-pin `archfit.schema.json` and
+  `archfit.state.schema.json` at this release, and it needs a decoder for
+  `seams[].policy` before it can show the status.
+- New documents. `archfit.agent-result.v1` has a published schema,
+  `archfit.agent-result.schema.json`. `archfit.policy-answer.v1` (the answer of
+  `archfit policy`) has no published schema yet; the App does not read it.
+- `module_review.gate: fail` now blocks. Before v2.5.0 it blocked nothing. If
+  your config sets it, run `check` before you upgrade CI: each directory of
+  unowned production source is now a blocker. Add the directory to a module's
+  `paths:` (`matched_by.suggested_path` gives a glob), accept it with
+  `archfit baseline`, or set `gate: warn`. `map/uncovered_path` now names a
+  directory, not a graph node. A Go package keeps its finding ID. A finding
+  about a single file gets a new ID: the old one reads `fixed`, and the
+  directory finding is new.
+- Repositories with cgo files: the new cgo edges read as introduced against a
+  baseline from an older binary. The measurement profile and the settings hash
+  do not change, so that baseline still compares. Review the new findings,
+  then run `archfit baseline` again. Repositories without cgo files give
+  byte-identical output. Cached Go facts from older binaries are not reused
+  (the cache key has a new facts revision), so the first run re-reads Go.
+- `model_hash` does not include the allowlists. An allowlist edit changes
+  `config_hash`, so the stored baseline becomes non-comparable until you run
+  `archfit baseline` again.
+- Text and Markdown layouts change. Markdown is one document with one H1. The
+  second H1 (`# archfit report`), its config-hash line, `## Summary`, and
+  `## Gate findings` are gone: the blockers are in `## Blockers`, the config
+  hash is in `## Comparison`, and every finding stays in the finding index.
+  `## Top actionable findings` is replaced by `## Blockers` and
+  `## Diagnostics`. Text replaces `TOP ACTIONABLE FINDINGS` with `BLOCKERS` and
+  `DIAGNOSTICS`. Scripts that parse those headings must change.
+- Apart from `seams[].policy`, JSON and SARIF change only in two texts: the
+  undeclared-volatility entry in `config_warnings`, and the `why` (and SARIF
+  message) of a critical low-distance `bc/imbalanced_coupling` finding.
+  Finding IDs do not change.
+- Configs that do not use the new keys or `module_review` give the same
+  output, except for `seams[].policy`, the two texts above, and the new edges
+  of cgo files.
 
 ## v2.4.1 — schema lists rule types
 
