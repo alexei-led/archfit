@@ -175,13 +175,15 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `labels_hash` (`labels.FileHash` over APPROVED entries only) +
   `rubric_version`. The raw `config_hash` is IDENTITY ONLY (the App binds it to the
   protected policy bytes) and is not a field of `decision.Fingerprints`, so it cannot
-  be compared by accident: comments, waivers, rules, gates, `layers`,
-  `min_severity`, `depends_on`/`visible_to` and `reviewed_at` are governance and never
-  make a run non-comparable. Every config leaf has exactly one class (model,
+  be compared by accident: comments, waivers, rules (not their `patterns:`, which the
+  ast-grep pass runs and the settings hash covers), `layers`, `min_severity`,
+  `depends_on`/`visible_to` and `reviewed_at` are governance and never make a run
+  non-comparable. A `languages.<id>.gate` edit matters only when it flips an
+  absent row to disabled; supplied `coverage:` sources enter the settings hash. Every config leaf has exactly one class (model,
   classification, profile, governance): `internal/config/classification_test.go`
   fails on a leaf with no class, so a new key needs a decision. Each non-comparable
-  result also carries `drift[]` (`decision.DriftClass`), and `OnlyDrift` is how a
-  consumer decides whether it may cross the drift. Any mismatch is `non_comparable` with a reason NAMING the
+  result also carries `drift[]` (`decision.DriftClass`), so a consumer reads the
+  class, never the reason text. Any mismatch is `non_comparable` with a reason NAMING the
   drifted input — never a delta with a caveat. Model hash is load-bearing: seam
   identity comes from module NAMES, so without it a rename reads as one resolved
   seam plus one new seam and a new-seam gate blocks on a no-op refactor.

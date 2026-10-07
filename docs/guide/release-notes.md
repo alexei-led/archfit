@@ -12,7 +12,8 @@ Changed (comparability v2):
   `external_systems`, `metrics.function_loc_threshold`, and metrics switched off
   with `enabled: false`. A comment, a waiver, a rule, a gate, `layers`,
   `coupling.min_severity`, `depends_on`, `visible_to`, or `reviewed_at` edit no
-  longer makes the stored reference non-comparable.
+  longer makes the stored reference non-comparable. A `patterns:` edit in a
+  rule still does, because the pattern pass is a measurement input.
 - `config_hash` stays in `comparison` as the identity of the file. It is no
   longer compared.
 - `comparison` and `gate_reference` carry `drift[]`: the input classes that made

@@ -146,29 +146,3 @@ func TestCompareFingerprintsNamesDriftClasses(t *testing.T) {
 		})
 	}
 }
-
-func TestOnlyDrift(t *testing.T) {
-	drift := func(status string, classes ...string) *result.StateComparison {
-		return &result.StateComparison{Status: status, Drift: classes}
-	}
-	rubricAndProfile := []decision.DriftClass{decision.DriftRubric, decision.DriftProfile}
-	tests := []struct {
-		name string
-		cmp  *result.StateComparison
-		want bool
-	}{
-		{"comparable has nothing to cross", drift(result.StateComparisonComparable), false},
-		{"nil", nil, false},
-		{"allowed classes only", drift(result.StateComparisonNonComparable, "rubric_version", "measurement_profile"), true},
-		{"one class outside the allowed set", drift(result.StateComparisonNonComparable, "rubric_version", "labels_hash"), false},
-		{"incomplete reference is never implied", drift(result.StateComparisonNonComparable, "reference_incomplete"), false},
-		{"non-comparable with no class", drift(result.StateComparisonNonComparable), false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := decision.OnlyDrift(tc.cmp, rubricAndProfile...); got != tc.want {
-				t.Errorf("OnlyDrift = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}

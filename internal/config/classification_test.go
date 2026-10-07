@@ -26,19 +26,20 @@ const (
 
 // leafClasses maps a config path to its class. A segment `*` matches one
 // segment (a map key). The most specific entry wins, so a subtree default stays
-// safe: an unlisted field under `modules` is model, which over-hashes. A new
+// safe for modules because policy.TestModelHashCoversEveryModuleField fails on a
+// ModuleDef field that is neither hashed nor deliberately governance. A new
 // top-level key matches nothing and fails TestEveryConfigLeafHasOneClass, so it
 // needs a decision.
 var leafClasses = map[string]leafClass{
 	"version":                        classGovernance,
 	"exclude":                        classProfile,
 	"languages":                      classProfile,
-	"languages.*.gate":               classGovernance,
+	"languages.*.gate":               classProfile, // reaches the profile only through the producer status it changes
 	"analyzers":                      classProfile,
-	"analyzers.*.gate":               classGovernance,
+	"analyzers.*.gate":               classProfile,    // same: a demanded gate changes whether an absent row is not applicable
 	"analyzers.*.timeout":            classGovernance, // a timeout shows as a producer status
 	"coverage":                       classProfile,
-	"coverage.gate":                  classGovernance,
+	"coverage.gate":                  classProfile, // same, through the supplied-coverage producer status
 	"ai":                             classGovernance,
 	"coupling.min_severity":          classGovernance, // filters advisories, not facts
 	"coupling.duplicated_knowledge":  classClassification,
@@ -51,6 +52,7 @@ var leafClasses = map[string]leafClass{
 	"modules.*.reviewed_at":          classGovernance,
 	"modules.*.reviewed_by":          classGovernance,
 	"external_systems":               classClassification,
+	"rules.patterns":                 classProfile, // the ast-grep pass runs these, so they enter the settings hash
 	"rules":                          classGovernance,
 	"waivers":                        classGovernance,
 	"metrics.function_loc_threshold": classClassification,

@@ -2,7 +2,6 @@ package decision
 
 import (
 	"fmt"
-	"slices"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/model/evidence"
@@ -14,7 +13,7 @@ import (
 // input moved. "Not comparable" with no reason is indistinguishable from a bug.
 type Fingerprints struct {
 	// ClassificationHash covers the policy leaves that change the compared
-	// facts and are not modules (policy.ClassificationHash). The raw config
+	// facts and are not modules (acquisition.ClassificationHash). The raw config
 	// bytes are deliberately NOT a comparison input: comments, waivers, rules and
 	// `reviewed_at` are governance and must never make a run non-comparable.
 	ClassificationHash string
@@ -99,22 +98,6 @@ func CompareFingerprints(baseRef string, head, base Fingerprints) *result.StateC
 		out.Reasons = append(out.Reasons, reasons...)
 	}
 	return out
-}
-
-// OnlyDrift reports whether c is non-comparable ONLY through the allowed drift
-// classes. A comparable comparison has no drift and answers false: there is
-// nothing to cross. An unknown or incomplete reference is never allowed
-// implicitly, so DriftReferenceIncomplete must be named to be crossed.
-func OnlyDrift(c *result.StateComparison, allowed ...DriftClass) bool {
-	if c == nil || c.Status != result.StateComparisonNonComparable || len(c.Drift) == 0 {
-		return false
-	}
-	for _, drift := range c.Drift {
-		if !slices.Contains(allowed, DriftClass(drift)) {
-			return false
-		}
-	}
-	return true
 }
 
 // NonComparableState reports a comparison that could not be attempted at all,

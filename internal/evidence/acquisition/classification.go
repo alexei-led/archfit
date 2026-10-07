@@ -37,7 +37,7 @@ func ClassificationHash(p policy.PolicySnapshot) string {
 		}
 	}
 	sort.Strings(disabled)
-	write("disabled_metrics", strings.Join(disabled, "\x02"))
+	write("disabled_metrics", strconv.Quote(strings.Join(disabled, ",")))
 	names := make([]string, 0, len(p.Topology.ExternalSystems))
 	for name := range p.Topology.ExternalSystems {
 		names = append(names, name)
@@ -51,7 +51,11 @@ func ClassificationHash(p policy.PolicySnapshot) string {
 		}
 		targets := slices.Clone(def.Targets)
 		sort.Strings(targets)
-		write("external", name, volatility, strings.Join(targets, "\x02"))
+		quoted := make([]string, len(targets))
+		for i, target := range targets {
+			quoted[i] = strconv.Quote(target) // quoting keeps ["a","b"] distinct from ["a\x02b"]
+		}
+		write("external", strconv.Quote(name), volatility, strings.Join(quoted, ","))
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

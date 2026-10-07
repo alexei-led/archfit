@@ -121,7 +121,7 @@ type AnalysisContext struct {
 	ModelHash  string
 	LabelsHash string
 	// ClassificationHash is the comparison input for the policy leaves that
-	// change facts (policy.ClassificationHash). ConfigHash stays the raw-byte
+	// change facts (acquisition.ClassificationHash). ConfigHash stays the raw-byte
 	// identity of the file and is never compared.
 	ClassificationHash string
 	MeasurementProfile *modevidence.MeasurementProfile
@@ -340,7 +340,8 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 // seamAnchor projects the persisted baseline into the seam gate's reference.
 //
 // The reference is comparable only when the stored snapshot was written under
-// the same config, module map, labels, and rubric. Everything else abstains
+// the same classification, module map, labels, rubric, and measurement
+// profile. Everything else abstains
 // with a named cause: a baseline that records no seams because it predates the
 // ledger is not evidence that there were none, and reading it that way would
 // report every existing seam as newly introduced.
@@ -369,8 +370,7 @@ func headFingerprints(runCtx AnalysisContext) decision.Fingerprints {
 
 // Comparison decides whether the stored reference may be compared with this
 // run, and which input classes drifted when it may not (decision.DriftClass).
-// It is the one comparability answer: the seam gate, gate_reference and
-// `baseline --reanchor` all read it.
+// It is the one comparability answer: the seam gate and gate_reference read it.
 func (b Baseline) Comparison(runCtx AnalysisContext) *result.StateComparison {
 	cmp := baselineComparison(b, runCtx)
 	present := b.Present

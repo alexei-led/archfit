@@ -1,8 +1,10 @@
 package acquisition
 
 import (
+	"encoding/json"
 	"testing"
 
+	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 	"github.com/alexei-led/archfit/internal/policy"
 )
 
@@ -64,5 +66,29 @@ func TestClassificationHash(t *testing.T) {
 				t.Errorf("hash changed = %v, want %v", got != want, tt.changed)
 			}
 		})
+	}
+}
+
+func TestSuppliedCoverageSettingsHashGovernanceOut(t *testing.T) {
+	base := suppliedcoverage.Options{Enabled: true, Gate: "warn", Sources: []suppliedcoverage.Source{{Path: "cover.out", Format: "go-coverprofile"}}}
+	hash := func(o suppliedcoverage.Options) string {
+		data, err := json.Marshal(suppliedCoverageSettings(o))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	gate, path, off := base, base, base
+	gate.Gate = "fail"
+	path.Sources = []suppliedcoverage.Source{{Path: "other.out", Format: "go-coverprofile"}}
+	off.Enabled = false
+	if hash(base) != hash(gate) {
+		t.Error("coverage.gate changed the settings: it decides what blocks, not what is measured")
+	}
+	if hash(base) == hash(path) {
+		t.Error("changing a coverage source path did not change the settings")
+	}
+	if hash(base) == hash(off) {
+		t.Error("switching supplied coverage off did not change the settings")
 	}
 }
