@@ -932,6 +932,9 @@
           "message": {
             "text": "Import from pkg/a/** to pkg/b/** is explicitly forbidden"
           },
+          "partialFingerprints": {
+            "primaryLocationLineHash": "ba3803eca947bf3c1b7efa8f37854d5e"
+          },
           "properties": {
             "dimension": "structure",
             "gate": true,
@@ -963,6 +966,9 @@
           ],
           "message": {
             "text": "balanced coupling: functional integration strength × cross_module_different_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)"
+          },
+          "partialFingerprints": {
+            "primaryLocationLineHash": "07af466df8bfd6e77ee485ac01c50a17"
           },
           "properties": {
             "dimension": "coupling",
