@@ -141,8 +141,8 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   (`coupling.DistanceIsHigh`); it is built from the FULL classified edge set, so
   no severity/baseline/waiver filter can hide one.
   `mode: fail` blocks ONLY on seams newly introduced against a **comparable**
-  reference (all four of `config_hash`, `model_hash`, `labels_hash`,
-  `rubric_version` equal); without one the gate reports the seam total, states
+  reference (all four of `classification_hash`, `model_hash`, `labels_hash`,
+  `rubric_version` equal, and the measurement profile); without one the gate reports the seam total, states
   that no new-seam count is claimed, and never blocks. A blocked run emits one
   `bc/coupling_gate` gate finding PER new seam, keyed `coupling-gate/<seamID>`
   and carrying the module pair. Advisory PROMOTION is gone: the scalar gate had
@@ -169,9 +169,21 @@ init` emits v2 directly; owners update older configs manually before analysis.
   pairs are not either — they have no import edge. Seam order is by module pair,
   and the gate re-sorts by ID so a ledger reordering cannot reorder gate findings.
 - **Comparison is strict on four fingerprints plus measurement profile** (`decision.CompareFingerprints`).
-  `config_hash` + `model_hash` (`policy.ModelHash` over the RESOLVED module map)
+  `classification_hash` (`acquisition.ClassificationHash`: the policy leaves that change
+  facts and are not modules — volatility cascade, duplicated-knowledge mode,
+  `external_systems`, `function_loc_threshold`, metrics switched off) + `model_hash` (`policy.ModelHash` over the RESOLVED module map)
   `labels_hash` (`labels.FileHash` over APPROVED entries only) +
-  `rubric_version`. Any mismatch is `non_comparable` with a reason NAMING the
+  `rubric_version`. The raw `config_hash` is IDENTITY ONLY (the App binds it to the
+  protected policy bytes) and is not a field of `decision.Fingerprints`, so it cannot
+  be compared by accident: comments, waivers, rules (not their `patterns:`, which the
+  ast-grep pass runs and the settings hash covers), `layers`, `min_severity`,
+  `depends_on`/`visible_to` and `reviewed_at` are governance and never make a run
+  non-comparable. A `languages.<id>.gate` edit matters only when it flips an
+  absent row to disabled; supplied `coverage:` sources enter the settings hash. Every config leaf has exactly one class (model,
+  classification, profile, governance): `internal/config/classification_test.go`
+  fails on a leaf with no class, so a new key needs a decision. Each non-comparable
+  result also carries `drift[]` (`decision.DriftClass`), so a consumer reads the
+  class, never the reason text. Any mismatch is `non_comparable` with a reason NAMING the
   drifted input — never a delta with a caveat. Model hash is load-bearing: seam
   identity comes from module NAMES, so without it a rename reads as one resolved
   seam plus one new seam and a new-seam gate blocks on a no-op refactor.
@@ -786,7 +798,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   and pinned to `state.RequiredFacts` (claim membership included) by
   `brief_test.go`; a new fact needs a step. `archfit baseline` is a next step
   only with zero blockers and no stored reference: a non-comparable gate
-  reference whose reasons name no fingerprint (`config_hash`…`rubric_version`,
+  reference whose reasons name no fingerprint (`classification_hash`…`rubric_version`,
   `measurement_profile`) and no `stored baseline` (the wire carries reasons,
   not hashes); a stored one that does not compare asks for review. NOT
   MEASURED reads the same step (`View.StepFor`). Code-repair blockers precede
@@ -903,7 +915,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   has watched fail is a rule nobody knows still works.
   `no_scalar_decision` + `no_dead_archfit_rule` live in `internal/erosion_test.go`
   (which carries the name→owner table); `dimension_status_required`,
-  `config_hash_required`, `label_evidence_required`, and `baseline_idempotent`
+  `config_hash_required` (config_hash AND classification_hash), `label_evidence_required`, and `baseline_idempotent`
   live in `cmd/archfit/erosion_test.go` and run the real command over a fixture
   repo. `no_scalar_decision` scopes `internal/application/analysis.go` to
   `outcomeFor`/`seamAnchor`, NOT the whole file: `AnalysisResult` still CARRIES
@@ -931,8 +943,9 @@ init` emits v2 directly; owners update older configs manually before analysis.
   records `history_window: unavailable` with depth 0 rather than leaving both
   blank, so "no history here" stays distinguishable from "the scan was never
   wired up".
-- **The four comparability fingerprints live ONLY in the root `comparison`
-  block** (`TestFingerprintsLiveOnlyInTheComparisonBlock` walks the serialised
+- **The comparability fingerprints live ONLY in the root `comparison`
+  block** (`config_hash` identity, `classification_hash`, `model_hash`, `labels_hash`,
+  `rubric_version`) (`TestFingerprintsLiveOnlyInTheComparisonBlock` walks the serialised
   wire form). A second copy is a second answer to "may these two runs be
   compared", and the copies drift. `labels_hash` is `omitempty` and absent when
   no label is approved — empty compares equal to empty, so two unlabelled repos
@@ -946,10 +959,10 @@ init` emits v2 directly; owners update older configs manually before analysis.
 - **`change_locality`'s denominator is the DECLARED module set**, not the touched
   count (`changeLocalityDimension`). Observed-over-observed is a tautology: it
   reported 100% coverage on a window that reached one module out of forty.
-- **Baseline schema v2** (`internal/baseline`, `SchemaVersion =
-"archfit.baseline.v2"`). Stores accepted findings, the metric snapshot, and the
-  architecture-state reference: the four comparison fingerprints (`config_hash`,
-  `model_hash`, `labels_hash`, `rubric_version`) and the measurement profile
+- **Baseline schema v3** (`internal/baseline`, `SchemaVersion =
+"archfit.baseline.v3"`; v3 added `classification_hash`, so v2 files are rejected). Stores accepted findings, the metric snapshot, and the
+  architecture-state reference: the comparison fingerprints (`classification_hash`,
+  `model_hash`, `labels_hash`, `rubric_version`, plus the `config_hash` identity) and the measurement profile
   travelling with the facts they qualify — hard-gate finding IDs,
   distributed-monolith seam IDs, and the nine dimension snapshots. NO repository
   scalar is written. Older schemas are

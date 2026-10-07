@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/model/evidence"
@@ -21,7 +22,7 @@ func (s *Service) measurementProfile(ctx context.Context, sc scope.Scope, rows [
 	settings := map[string]any{
 		"extractors": s.Options.Extractors, "exclusions": s.Options.Exclusions,
 		"file_class": s.Options.Acquisition.FileClass, "syntax": s.Options.Syntax,
-		"patterns": s.Options.Patterns,
+		"patterns": s.Options.Patterns, "supplied_coverage": suppliedCoverageSettings(s.Options.SuppliedCoverage),
 	}
 	for _, row := range rows {
 		if row.Tool == "" {
@@ -114,4 +115,13 @@ func (s *Service) measurementGoEnv(ctx context.Context, root string) (map[string
 		return nil, false
 	}
 	return env, true
+}
+
+// suppliedCoverageSettings is the supplied-coverage config that changes what is
+// measured: whether it is on and which artifacts it reads. The gate decides what
+// blocks, so it never enters the hash. Artifact bytes are not hashed either:
+// they change on every CI run, and freshness is checked per run.
+func suppliedCoverageSettings(o suppliedcoverage.Options) suppliedcoverage.Options {
+	o.Gate = ""
+	return o
 }

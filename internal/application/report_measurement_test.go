@@ -18,16 +18,16 @@ import (
 // second copy elsewhere in the document is a second answer to "may these two
 // runs be compared", and the two copies would drift.
 const (
-	keyConfigHash    = "config_hash"
-	keyModelHash     = "model_hash"
-	keyLabelsHash    = "labels_hash"
-	keyRubricVersion = "rubric_version"
+	keyClassificationHash = "classification_hash"
+	keyModelHash          = "model_hash"
+	keyLabelsHash         = "labels_hash"
+	keyRubricVersion      = "rubric_version"
 )
 
 // gitSource is the volatility-corroboration source name used by the fixtures.
 const gitSource = "git"
 
-var fingerprintKeys = []string{keyConfigHash, keyModelHash, keyLabelsHash, keyRubricVersion}
+var fingerprintKeys = []string{keyClassificationHash, keyModelHash, keyLabelsHash, keyRubricVersion}
 
 // TestMeasurementCarriesOnlyDeterministicFields pins the measurement block's
 // field set. Every field here must be a property of the measured tree, the

@@ -224,6 +224,12 @@ type StateComparison struct {
 	Status  string   `json:"status"`
 	BaseRef string   `json:"base_ref,omitempty"`
 	Reasons []string `json:"reasons"`
+	// Drift lists the input classes that made the comparison non-comparable
+	// (decision.DriftClass values), in the order the reasons name them.
+	Drift []string `json:"drift,omitempty"`
+	// BaselinePresent is set on the gate reference only: whether a baseline
+	// file was loaded at all, as a fact a renderer need not parse from reasons.
+	BaselinePresent *bool `json:"baseline_present,omitempty"`
 	// OriginStatus, OriginReasons, IntroducedFindingIDs and ResolvedFindingIDs
 	// are set only by an `analyze/check --base` run; the two lists are then
 	// never nil.
