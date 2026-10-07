@@ -208,7 +208,10 @@ init` emits v2 directly; owners update older configs manually before analysis.
   (`normalizeToolVersion`, a digest suffix keeps long versions distinct). A
   reference on another profile version is ONE reason naming that version. The
   pairing paths (`pairFamily`, `gradeTool`) read the marked coverage copy, which
-  the profile does not touch. Unknown or incompatible profile data makes
+  the profile does not touch. Accepted ceiling: the inventory comes from the LOC
+  walk, which skips `testdata/`, `vendor/` and similar, so a language whose only
+  files sit there is not applicable and its per-language `syntax` flag is not
+  hashed; the alternative over-hashes every tree that merely disables a language. Unknown or incompatible profile data makes
   the comparison `non_comparable` with named reasons; external producer
   versions are exact-match until equivalence is verified. Unresolved dynamic
   dependency-cruiser inputs and unsupported TypeScript config resolution are
