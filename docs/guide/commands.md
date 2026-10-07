@@ -301,6 +301,8 @@ Flags:
 | `-r, --root`      | path | directory of `--config` | Repo root to analyze.                                                                                           | `archfit baseline -r ../repo -c ./policy/.archfit.yaml` |
 | `--no-advisories` | bool | `false`                 | Exclude advisory findings from the baseline: Balanced Coupling advisories and violations of `gate: warn` rules. | `archfit baseline --no-advisories`                      |
 | `--refresh`       | bool | `false`                 | Re-run extractors and refresh the cache.                                                                        | `archfit baseline --refresh`                            |
+| `--reanchor`      | bool | `false`                 | Keep only the debt the stored baseline accepted. Accept no new finding. See below.                              | `archfit baseline --reanchor`                           |
+| `--from`          | path | baseline beside config  | Stored baseline that `--reanchor` reads. Requires `--reanchor`.                                                 | `archfit baseline --reanchor --from old.json`           |
 
 Examples:
 
@@ -308,7 +310,26 @@ Examples:
 archfit baseline -c .archfit.yaml
 archfit baseline --no-advisories -c .archfit.yaml
 archfit baseline --refresh -r . -c .archfit.yaml
+archfit baseline --reanchor -c .archfit.yaml
 ```
+
+Re-anchor (`--reanchor`):
+
+- Use it after an engine upgrade makes the stored baseline `non_comparable`.
+  A full capture would also accept new debt. A re-anchor does not.
+- It measures the tree like a full capture. Then it keeps a finding only when
+  the stored file accepted the same finding ID. For a Balanced Coupling group,
+  it keeps each edge that the stored file accepted.
+- It keeps a qualifying seam only when the stored file also has it.
+- It writes the current metric values and the current fingerprints, so the new
+  baseline is comparable.
+- It prints each difference: the drift reasons, each stored entry that it
+  dropped, each current finding that it did not accept, each seam that no
+  longer qualifies, and each metric that got worse.
+- It reads the current baseline schema and the schema before it. Without a
+  stored file it exits with `3`. Use a full capture for the first baseline.
+- Review the printed list before you commit. A dropped entry is fixed debt or
+  debt whose ID changed. An unaccepted finding stays `new` and can block.
 
 ## `archfit explain <fingerprint>`
 

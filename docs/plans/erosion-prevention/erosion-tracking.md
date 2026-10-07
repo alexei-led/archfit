@@ -144,7 +144,7 @@ Constraint: `pairFamily` reads the marked coverage copy, the copy that acquisiti
 
 `--reanchor` re-keys accepted debt across a profile or scoring epoch without accepting new debt. Full capture stays for first adoption.
 
-**Open decision: the matching key.** `--reanchor` keeps a current finding only when it matches a stored accepted finding. The key for that match is not decided. Matching on the finding ID drops debt whose ID changes in the new epoch. A coarser key, such as rule and module pair, keeps that debt but can accept a new finding on the same pair.
+**Decided (2026-10-07): exact finding ID plus a review report.** `--reanchor` keeps a current finding only when the stored file accepted the same ID. For a Balanced Coupling group, it matches each edge. Finding IDs hash the rule, the paths and the edge kind, and no v3.0.0 change re-keys them. A coarser key, such as rule and module pair, would accept a new edge on a pair that already has debt, and the stored v2 file has no module pairs. Every dropped entry and every unaccepted finding is printed for the reviewer. A later epoch that changes the ID formula computes the old ID of each current finding and matches it exactly.
 
 ### 3.6 Ratchets compare only with a comparable reference
 

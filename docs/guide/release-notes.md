@@ -2,6 +2,17 @@
 
 ## v3.0.0 — (unreleased)
 
+New:
+
+- `archfit baseline --reanchor` carries the accepted debt of the stored
+  baseline into a new engine release. It accepts no new finding. It keeps a
+  finding only when the stored file accepted the same finding ID, and it keeps
+  a qualifying seam only when the stored file has it too. It prints each
+  dropped entry, each unaccepted finding, each seam that stopped qualifying,
+  each metric that got worse, and the reasons why the stored reference stopped
+  comparing. `--from <path>` reads the stored file from another place. Use a
+  full `archfit baseline` only for the first baseline.
+
 Fixed:
 
 - `archfit baseline` now accepts every edge of a Balanced Coupling advisory

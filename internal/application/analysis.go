@@ -364,13 +364,19 @@ func headFingerprints(runCtx AnalysisContext) decision.Fingerprints {
 }
 
 func baselineComparison(base Baseline, runCtx AnalysisContext) *result.StateComparison {
+	return storedComparison(base, headFingerprints(runCtx))
+}
+
+// storedComparison is the one answer to whether a stored baseline compares
+// with a run's fingerprints: the gate reference and a re-anchor both read it.
+func storedComparison(base Baseline, head decision.Fingerprints) *result.StateComparison {
 	if base.State == nil {
 		if !base.Present {
 			return decision.NonComparableState("baseline", "no baseline file was loaded")
 		}
 		return decision.NonComparableState("baseline", "stored baseline has no architecture-state snapshot")
 	}
-	cmp := decision.CompareFingerprints("baseline", headFingerprints(runCtx), decision.Fingerprints{
+	cmp := decision.CompareFingerprints("baseline", head, decision.Fingerprints{
 		ConfigHash: base.State.ConfigHash, ModelHash: base.State.ModelHash,
 		LabelsHash: base.State.LabelsHash, RubricVersion: base.State.RubricVersion,
 		MeasurementProfile: base.State.MeasurementProfile,

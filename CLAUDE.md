@@ -940,7 +940,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `decision.CompareFingerprints` finds all four equal, and the SAME anchor feeds
   both the seam gate and the drift dimension, so the two cannot disagree about
   whether a comparison was admissible.
-- **`archfit baseline` capture is a pure function of tree + config**
+- **`archfit baseline` capture is a pure function of tree + config**, and
+  `--reanchor` of tree + config + the stored file
   (`BaselineService.Execute` runs with `EmptyBaseline: true`). Reading the file it
   was about to overwrite made the capture self-referential: BC advisories roll up
   per `(module pair, strength, distance, volatility, STATUS)`, so accepting a
@@ -954,6 +955,24 @@ init` emits v2 directly; owners update older configs manually before analysis.
   held only the representative left its siblings `new`: right after a capture,
   `check` on the unchanged tree reported 66 BC findings as new on this repo
   (`TestRun_Baseline_AcceptsEveryBCGroupMember`).
+  **`--reanchor` carries accepted debt across an epoch and accepts nothing new**
+  (`application.reanchor`, `baseline.LoadForReanchor`). It runs the same
+  capture, then keeps an edge key (rollup member, else finding ID) only when
+  the stored `accepted[]` holds it: the owner chose exact-ID matching, because
+  finding IDs hash rule + paths + edge kind and no epoch change in v3.0.0
+  re-keys them, while a rule + module-pair key would accept a new edge on an
+  already-indebted pair. `qualifying_seam_ids` is stored ∩ current, so a seam
+  that qualifies only in the new epoch stays new; `hard_gate_finding_ids` keeps
+  only accepted blockers. Dropped stored entries, unaccepted current findings,
+  seams that stopped qualifying, worsened metrics (the file records current
+  values), and the drift reasons (`storedComparison`, shared with the gate
+  reference) are all printed — nothing is dropped or accepted silently. It runs
+  at any drift (an owner decision: refusing would push toward a full capture,
+  which accepts everything). It reads the current schema and the one before;
+  `--from <path>` reads the stored file from elsewhere (the Action mounts it
+  read-only outside the config directory the engine writes to); a missing
+  stored file is exit 3. `TestBaselineReanchor` pins it end to end, including
+  idempotence.
   Capture also skips findings covered by temporary waivers, including expired
   waivers, and prints the count; it never silently turns temporary exceptions
   into permanent accepted debt. A profile mismatch or incomplete seam snapshot
