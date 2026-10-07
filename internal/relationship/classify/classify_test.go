@@ -662,6 +662,7 @@ const (
 	filePkgAAGo = "file:pkg/a/a.go"
 	filePkgBBGo = "file:pkg/b/b.go"
 	filePkgAXGo = "file:pkg/a/x.go"
+	fileAX      = "pkg/a/x.go"
 	filePkgBYGo = "file:pkg/b/y.go"
 
 	modKeySvcX = "services/x"
@@ -1147,10 +1148,10 @@ func TestRun_BoundaryTokenFollowsOwnerNotSpelling(t *testing.T) {
 		from, to string
 		want     coupling.Distance
 	}{
-		{"siblings, one owner", [3]string{ownerTeamX, ownerTeamX, ownerTeamX}, "pkg/a/x.go", "pkg/b/y.go", coupling.DistanceCrossModule},
-		{"distant subtrees, one owner stay cross_module", [3]string{ownerTeamX, ownerTeamX, ownerTeamX}, "pkg/a/x.go", modKeySvcX + "/y.go", coupling.DistanceCrossModule},
-		{"siblings, two owners", [3]string{ownerTeamX, ownerTeamY, ownerTeamX}, "pkg/a/x.go", "pkg/b/y.go", coupling.DistanceCrossModuleDiffOwner},
-		{"no owners declared", [3]string{}, "pkg/a/x.go", modKeySvcX + "/y.go", coupling.DistanceCrossModule},
+		{"siblings, one owner", [3]string{ownerTeamX, ownerTeamX, ownerTeamX}, fileAX, "pkg/b/y.go", coupling.DistanceCrossModule},
+		{"distant subtrees, one owner stay cross_module", [3]string{ownerTeamX, ownerTeamX, ownerTeamX}, fileAX, modKeySvcX + "/y.go", coupling.DistanceCrossModule},
+		{"siblings, two owners", [3]string{ownerTeamX, ownerTeamY, ownerTeamX}, fileAX, "pkg/b/y.go", coupling.DistanceCrossModuleDiffOwner},
+		{"no owners declared", [3]string{}, fileAX, modKeySvcX + "/y.go", coupling.DistanceCrossModule},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1212,7 +1213,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 		}
 		// No explicit owners — degenerate, structure fallback fires.
 		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
-		e := importEdge("pkg/a/x.go", "pkg/b/y.go")
+		e := importEdge(fileAX, "pkg/b/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
 		if cl.DistanceBasis != coupling.DistanceBasisModule {
 			t.Errorf("DistanceBasis = %q, want code_structure", cl.DistanceBasis)
@@ -1226,7 +1227,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 		}
 		// Mark both as explicit via production path so Step 2 fires (non-degenerate).
 		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
-		e := importEdge("pkg/a/x.go", "pkg/b/y.go")
+		e := importEdge(fileAX, "pkg/b/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
 		if cl.DistanceBasis != coupling.DistanceBasisOwnership {
 			t.Errorf("DistanceBasis = %q, want ownership", cl.DistanceBasis)
@@ -1240,7 +1241,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 		}
 		// Deploy unit is Step 1 (absolute); ExplicitOwners irrelevant here.
 		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
-		e := importEdge("pkg/a/x.go", "pkg/b/y.go")
+		e := importEdge(fileAX, "pkg/b/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
 		if cl.DistanceBasis != coupling.DistanceBasisDeployUnit {
 			t.Errorf("DistanceBasis = %q, want deploy_unit", cl.DistanceBasis)
@@ -1256,7 +1257,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 		}
 		// Same-module edge; basis is unknown regardless of ownership config.
 		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
-		e := importEdge("pkg/a/x.go", "pkg/a/y.go")
+		e := importEdge(fileAX, "pkg/a/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
 		if cl.DistanceBasis != coupling.DistanceBasisUnknown {
 			t.Errorf("DistanceBasis = %q, want empty (unknown)", cl.DistanceBasis)

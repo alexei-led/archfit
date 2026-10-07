@@ -15,7 +15,7 @@ import (
 func TestModuleVocabularyMatchesPolicyValidation(t *testing.T) {
 	for _, value := range []string{
 		"high", "High", "medium", "low", "frozen", "legacy", "LEGACY",
-		"core", "Core", "supporting", "generic",
+		subdomainCore, "Core", "supporting", "generic",
 		"hgih", "critical", "cor", "domain", "undeclared",
 	} {
 		for _, def := range []policy.ModuleDef{

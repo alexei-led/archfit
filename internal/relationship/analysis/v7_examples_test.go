@@ -19,7 +19,7 @@ type exampleEdge struct {
 
 func exampleGraph(edges ...exampleEdge) *graph.Graph {
 	var nodes []graph.Node
-	var es []graph.Edge
+	es := make([]graph.Edge, 0, len(edges))
 	seen := map[string]bool{}
 	node := func(path string) {
 		if !seen[path] {
@@ -64,13 +64,14 @@ func requireScore(t *testing.T, res relationship.AnalysisResult, wantStrength re
 }
 
 const (
+	fileCart      = "sales/cart/c.go"
 	hintInterface = "contract"
 	hintCall      = "functional"
 	hintIntrusive = "intrusive"
 )
 
 func core(owner, deploy string, paths ...string) policy.ModuleDef {
-	return policy.ModuleDef{Paths: paths, Owner: owner, DeployUnit: deploy, Subdomain: "core"}
+	return policy.ModuleDef{Paths: paths, Owner: owner, DeployUnit: deploy, Subdomain: subdomainCore}
 }
 
 // Example 1: one owner, one deploy unit. `orders` calls an interface in
@@ -126,7 +127,7 @@ func TestV7Example4_PortCallAcrossDeployUnits(t *testing.T) {
 		"web":       core("team-a", "web", "web/**"),
 		"inventory": core("team-b", "inventory", "inventory/**"),
 	}
-	modules["inventory"] = policy.ModuleDef{Paths: []string{"inventory/**"}, Public: []string{"inventory/api/**"}, Owner: "team-b", DeployUnit: "inventory", Subdomain: "core"}
+	modules["inventory"] = policy.ModuleDef{Paths: []string{"inventory/**"}, Public: []string{"inventory/api/**"}, Owner: "team-b", DeployUnit: "inventory", Subdomain: subdomainCore}
 	res := analyze(modules, exampleEdge{fromFile: "web/w.go", toFile: "inventory/api/r.go", hint: hintInterface})
 	e := requireScore(t, res, relationship.StrengthContract, 9, relationship.SeverityNone)
 	if e.Distance != relationship.DistanceCrossDeployUnit {
@@ -150,8 +151,8 @@ func TestV7Example5_NestedModulesScoreAlike(t *testing.T) {
 		"lookup":  core("team", "svc", "stock/lookup/**"),
 	}
 	res := analyze(modules,
-		exampleEdge{fromFile: "sales/cart/c.go", toFile: "sales/invoice/i.go", hint: hintCall},
-		exampleEdge{fromFile: "sales/cart/c.go", toFile: "stock/lookup/l.go", hint: hintCall},
+		exampleEdge{fromFile: fileCart, toFile: "sales/invoice/i.go", hint: hintCall},
+		exampleEdge{fromFile: fileCart, toFile: "stock/lookup/l.go", hint: hintCall},
 	)
 	sibling := seamBetween(t, res, "cart", "invoice")
 	cross := seamBetween(t, res, "cart", "lookup")
@@ -180,7 +181,7 @@ func TestV7KeyRenameChangesNothing(t *testing.T) {
 			cart:  core("team", "svc", "sales/cart/**"),
 			"x":   core("team", "svc", "x/**"),
 		}
-		res := analyze(modules, exampleEdge{fromFile: "sales/cart/c.go", toFile: "x/x.go", hint: hintCall})
+		res := analyze(modules, exampleEdge{fromFile: fileCart, toFile: "x/x.go", hint: hintCall})
 		return seamBetween(t, res, cart, "x")
 	}
 	a, b := build("sales", "cart"), build("zz-sales", "zz-cart")

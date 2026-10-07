@@ -17,6 +17,11 @@ const (
 	testFileSrcB = "file:src/b.ts"
 )
 
+const (
+	keyGoAB = "pkg/a/a.go\x00pkg/b/b.go"
+	keyTSAB = "src/a.ts\x00src/b.ts"
+)
+
 func TestEnrichEdges_ScipDoesNotOverrideGoTypeInfoStrength(t *testing.T) {
 	facts := graph.Facts{Edges: []graph.Edge{
 		{
@@ -41,9 +46,9 @@ func TestEnrichEdges_ScipDoesNotOverrideGoTypeInfoStrength(t *testing.T) {
 		},
 	}}
 	strengths := map[string]string{
-		"pkg/a/a.go\x00pkg/b/b.go":          string(coupling.StrengthFunctional),
+		keyGoAB:                             string(coupling.StrengthFunctional),
 		"pkg/a/unknown.go\x00pkg/b/func.go": string(coupling.StrengthFunctional),
-		"src/a.ts\x00src/b.ts":              string(coupling.StrengthFunctional),
+		keyTSAB:                             string(coupling.StrengthFunctional),
 	}
 
 	overlay := enrichEdges(context.Background(), evidenceports.NopSymbolResolver{}, true, strengths, nil, nil, facts)
@@ -78,7 +83,7 @@ func TestEnrichEdges_SemanticOverlayCountsHitsAndMissesByLanguage(t *testing.T) 
 		{From: "file:src/missed.ts", To: "file:src/unknown.ts", Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
 	}}
 	strengths := map[string]string{
-		"src/a.ts\x00src/b.ts":        string(coupling.StrengthModel),
+		keyTSAB:                       string(coupling.StrengthModel),
 		"myapp.api\x00myapp.services": string(coupling.StrengthIntrusive),
 		"demo::api\x00demo::core":     string(coupling.StrengthFunctional),
 	}
@@ -178,13 +183,13 @@ func TestEnrichEdges_DataStrengthFromScipSkipsGoTypeInfoEdges(t *testing.T) {
 		{From: "file:src/c.ts", To: "file:src/d.ts", Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
 	}}
 	strengths := map[string]string{
-		"pkg/a/a.go\x00pkg/b/b.go": string(coupling.StrengthFunctional),
-		"src/a.ts\x00src/b.ts":     string(coupling.StrengthFunctional),
-		"src/c.ts\x00src/d.ts":     string(coupling.StrengthFunctional),
+		keyGoAB:                string(coupling.StrengthFunctional),
+		keyTSAB:                string(coupling.StrengthFunctional),
+		"src/c.ts\x00src/d.ts": string(coupling.StrengthFunctional),
 	}
 	data := map[string]string{
-		"pkg/a/a.go\x00pkg/b/b.go": string(coupling.StrengthModel),
-		"src/a.ts\x00src/b.ts":     string(coupling.StrengthModel),
+		keyGoAB: string(coupling.StrengthModel),
+		keyTSAB: string(coupling.StrengthModel),
 	}
 
 	enrichEdges(context.Background(), evidenceports.NopSymbolResolver{}, true, strengths, data, nil, facts)
