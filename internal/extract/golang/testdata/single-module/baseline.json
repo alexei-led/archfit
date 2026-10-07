@@ -33,21 +33,6 @@
           "tool": "ast-grep/syntax"
         },
         {
-          "semantics_version": "cargo.v1",
-          "status": "absent",
-          "tool": "cargo"
-        },
-        {
-          "semantics_version": "cargo-modules.v1",
-          "status": "absent",
-          "tool": "cargo-modules"
-        },
-        {
-          "semantics_version": "dependency-cruiser.v1",
-          "status": "absent",
-          "tool": "dependency-cruiser"
-        },
-        {
           "semantics_version": "deploy-unit.v2",
           "status": "ok",
           "tool": "deploy-unit"
@@ -63,11 +48,6 @@
           "status": "ok",
           "tool": "go/packages",
           "tool_version": "\u003cTOOL_VERSION\u003e"
-        },
-        {
-          "semantics_version": "grimp.v2",
-          "status": "absent",
-          "tool": "grimp"
         },
         {
           "semantics_version": "jscpd.v1",
@@ -87,7 +67,7 @@
       ],
       "settings_hash": "\u003cSETTINGS_HASH\u003e",
       "unknowns": [],
-      "version": "archfit.measurement.v1"
+      "version": "archfit.measurement.v2"
     },
     "model_hash": "124d0f767415a09b74bcd3206ab947f4bb01e3c7905db14a15eaed59d690ef78",
     "reasons": [],

@@ -222,11 +222,12 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	for _, warning := range evaluation.PolicyWarnings(runPolicy, observations) {
 		note(warning)
 	}
+	coverageGaps := buildCoverageGaps(marked, s.Options.Coverage, resolved.Root)
 	return application.Acquired{
 		Facts:        snapshot,
 		Observations: observations,
 		Context: application.AnalysisContext{
-			MeasurementProfile: s.measurementProfile(ctx, resolved, marked, history),
+			MeasurementProfile: s.measurementProfile(ctx, resolved, marked, coverageGaps, collected.FileClassIndex, history),
 			Scope:              resolved, BaseRef: req.BaseRef, Full: true,
 			Now: now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
 			ModelHash:          policy.ModelHash(runPolicy.Topology.Modules),
@@ -237,7 +238,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 			OwnerSource: ownerSource, OwnerWarnings: ownerWarnings,
 			ConfigWarnings:            configWarnings(s.lint(runPolicy.Topology.Modules), warnings, runPolicy.Topology.Modules, pinned, configPath),
 			MarkedCoverage:            marked,
-			CoverageGaps:              buildCoverageGaps(marked, s.Options.Coverage, resolved.Root),
+			CoverageGaps:              coverageGaps,
 			CrateRootDirs:             crateRootDirs,
 			VolatilityCorroboration:   history,
 			DeployUnitDetectedModules: len(collected.DeployUnitsByModule),

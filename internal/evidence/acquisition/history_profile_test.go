@@ -24,7 +24,7 @@ func TestSuccessfulUnmatchedHistoryRemainsComparable(t *testing.T) {
 		t.Fatalf("successful history became absent: %+v", history)
 	}
 	s := Service{Runner: runner}
-	profile := s.measurementProfile(context.Background(), scope.Scope{GitRoot: "/repo"}, nil, history)
+	profile := s.measurementProfile(context.Background(), scope.Scope{GitRoot: "/repo"}, nil, nil, nil, history)
 	if reasons := decision.CompareMeasurementProfiles(profile, profile); len(reasons) != 0 {
 		t.Fatalf("successful no-match history is not comparable: %v", reasons)
 	}
