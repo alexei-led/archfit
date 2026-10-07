@@ -42,9 +42,15 @@ jobs:
         run: |
           mkdir -p dist
           go build -trimpath \
-            -ldflags="-s -w -X main.version=${GITHUB_REF_NAME:?}" \
+            -ldflags="-s -w -X main.version=${GITHUB_REF_NAME:?} -X main.commit=$(sh scripts/build-meta.sh commit) -X main.date=$(sh scripts/build-meta.sh date)" \
             -o "dist/archfit-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}" \
             ./cmd/archfit
+      - name: Check version string
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: |
+          out="$("dist/archfit-${GITHUB_REF_NAME}-linux-amd64" --version)"
+          echo "$out"
+          case "$out" in *"commit none"* | *"built unknown"*) echo "version string lacks build metadata" >&2; exit 1 ;; esac
       - name: Upload binary artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -76,6 +82,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - name: Build metadata
+        id: meta
+        run: |
+          echo "commit=$(sh scripts/build-meta.sh commit)" >> "$GITHUB_OUTPUT"
+          echo "date=$(sh scripts/build-meta.sh date)" >> "$GITHUB_OUTPUT"
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
@@ -86,6 +97,8 @@ jobs:
           outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             VERSION=${{ github.ref_name }}
+            COMMIT=${{ steps.meta.outputs.commit }}
+            DATE=${{ steps.meta.outputs.date }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
