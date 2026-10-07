@@ -990,52 +990,36 @@ Declaring `subdomain: supporting` never implies medium — it implies low.
 
 Balanced Coupling classification uses module metadata:
 
-- target `public` match → `contract` strength;
+- target `public` match → `contract` strength, unless data evidence raises it to `model`;
 - target `internal` match → `intrusive` strength;
 - `volatility` or `subdomain` → target volatility.
 
-Distance is a **composite** of three signals, not a single-winner precedence chain:
+Distance is **level-relative** (bc_score.v7). The token names the boundary and
+the rung is fixed:
 
-1. **Code structure** — always-available baseline. Sibling or parent-child packages
-   (shared subtree) → `cross_module_same_owner`; different subtrees →
-   `cross_module_different_owner`. Two unrelated flat (single-segment) names have
-   no tree evidence of separate teams, so they stay at the honest floor:
-   `cross_module_same_owner`.
-2. **Ownership** — contributes only when ownership is informative. In repos where
-   every module has the same owner (single-maintainer or one-team repos), ownership
-   becomes **neutral** and does not collapse far-apart modules to "same owner = low
-   risk". When multiple distinct owners exist, ownership overrides code structure.
-3. **Deploy unit** — absolute boundary. If the two modules have different
-   `deploy_unit` values, distance is always `cross_deploy_unit` regardless of owner
-   or structure.
+1. same module → `same_module`, D=2 (report-only `local_coupling`);
+2. different `deploy_unit` on the two modules → `cross_deploy_unit`, D=9;
+3. two non-empty `owner` values that differ → `cross_module_different_owner`, D=9;
+4. otherwise → `cross_module`, D=9.
 
-Composite resolution order (first applicable wins):
+A target that no module owns and that matches an `external_systems:` entry is
+`declared_external`, D=10. A module-resolved target is never re-labelled
+external.
 
-1. same module → `same_module`;
-2. different `deploy_unit` on the two modules → `cross_deploy_unit`;
-3. ownership is informative (two or more distinct owners in the repo) →
-   same owner → `cross_module_same_owner`; different (or one unknown) →
-   `cross_module_different_owner`;
-4. otherwise → code structure decides (shared subtree or unrelated flat names →
-   `cross_module_same_owner`; different subtrees → `cross_module_different_owner`).
+Owner and deploy unit never move severity. Module key spelling decides nothing.
+Nested `paths:` roots (a glob without a trailing `/**`) form a containment tree;
+each seam reports `raw_distance.basis` as `<boundary>@<container>`, where the
+container is the last node both sides share (`system` when they share none).
 
 A detected runtime async bridge is recorded as report-only evidence in the
 `runtime_async` JSON field per module and the `runtime_async_edges` field per
 source-module→runtime-target relation; it does not annotate graph edges, does not
 affect distance or score, and does not change the gate verdict.
 
-The `distance_basis` field on each advisory edge (`code_structure`, `ownership`,
-or `deploy_unit`) shows which signal drove the composite, so the result is
-auditable. Analyze output also includes `distance_context`, whose `owner_model`
-identifies `single_owner_degenerate`, `multi_owner`, or `no_owner_signal`; its
-`interpretation` explains when low same-owner distance is an intentional
-socio-technical signal rather than missing ownership.
-
-> **Small-OSS note:** a repo with one maintainer is not a flat distance space.
-> Code structure is the baseline and still distinguishes close vs far modules.
-> Same-owner is the lowest cross-module distance; it is a low socio-technical
-> distance signal. Ownership only contributes when there are genuinely distinct
-> owners to compare.
+The `distance_basis` field on each advisory edge (`module_boundary`, `ownership`,
+or `deploy_unit`) shows which boundary the token names. Analyze output also
+includes `distance_context`, whose `owner_model` identifies
+`single_owner_degenerate`, `multi_owner`, or `no_owner_signal`.
 
 ## `external_systems`
 

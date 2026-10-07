@@ -497,7 +497,7 @@ func TestOnboarding_MocksAndGeneratedTrees_GeneratedConfigEvaluates(t *testing.T
 	root := writeOnboardingRepo(t, mocksAndGeneratedFiles())
 	cfgPath, generated := initAndLint(t, root)
 	for _, want := range []string{
-		"  pkg_chaos:\n    paths:\n      - \"pkg/chaos/**\"\n    public:\n      - \"pkg/chaos\"\n",
+		"  pkg_chaos:\n    paths:\n      - \"pkg/chaos/**\"\n",
 		"  pkg_runtime:\n    paths:\n      - \"pkg/runtime/**\"\n",
 		"  cmd:\n    paths:\n      - \"cmd/**\"\n",
 		"  - id: " + ruleIDStarterModuleCycles + "\n    type: module_cycle\n    gate: fail\n",
@@ -505,6 +505,9 @@ func TestOnboarding_MocksAndGeneratedTrees_GeneratedConfigEvaluates(t *testing.T
 		if !strings.Contains(generated, want) {
 			t.Errorf("generated config missing %q:\n%s", want, generated)
 		}
+	}
+	if strings.Contains(generated, "public:") {
+		t.Errorf("generated Go config declares a public surface; the owner declares those:\n%s", generated)
 	}
 	for _, trap := range []string{"mocks", "api/gen", "test/e2e", "reports/render"} {
 		if strings.Contains(generated, "\""+trap+"/**\"") {

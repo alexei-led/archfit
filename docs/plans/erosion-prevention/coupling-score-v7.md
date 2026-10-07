@@ -12,7 +12,8 @@ ships once, in the breaking v3.0.0 release, with the comparability work in
 [erosion-tracking.md](erosion-tracking.md). The release plan is in
 [erosion-roadmap.md](erosion-roadmap.md).
 
-**Status:** not built. The current contract is in
+**Status:** built in v3.0.0. The shipped contract is
+[bc-measurement-v7.md](../../design/bc-measurement-v7.md). The v6 contract is in
 [bc-measurement-v4.md](../../design/bc-measurement-v4.md) and
 [20260705-bc-score-v6.md](../../design/20260705-bc-score-v6.md).
 **Decisions:** distance is level-relative (D=9 at any module boundary), and a

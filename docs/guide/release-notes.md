@@ -135,6 +135,10 @@ Volatility, clone facts, the seam gate and the guidance vocabulary also change:
   `cheapest_move`.
 - **Metric change:** the state metric `critical_high_distance_edges` is now
   `qualifying_edges`. It counts edges that pass the qualification above.
+- **`config init` writes no `public:` entry for Go modules.** A `public:` target is
+  now the integration contract, so the owner declares each published surface.
+  New design page: `docs/design/bc-measurement-v7.md`. The guides describe the
+  v7 rules.
 
 ### Fixed
 

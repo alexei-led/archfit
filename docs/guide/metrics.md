@@ -212,7 +212,7 @@ metric scores against a git ref.
 
 ### `coupling_balance` (diagnostic; never gates)
 
-> **Scorer version:** `bc_score.v6` — Khononov Ch10 book formula, with clone-only duplicated knowledge scored by default and transitive inferred-volatility cascade when enabled.
+> **Scorer version:** `bc_score.v7` — Khononov Ch10 book formula with level-relative distance (D=9 at any module boundary), ports and `public:` targets as contract, both-sides volatility for functional coupling, and clone facts attached to seams. See the [v7 design](../design/bc-measurement-v7.md).
 
 - **Represents:** how well the distribution of coupling across module boundaries
   respects the strength × distance × volatility balance rule. High score means
@@ -245,11 +245,11 @@ inherited: M, cascade: K` (plus `undeclared: U` when nonzero; JSON:
   `classified_edges.by_distance_basis`, `classified_edges.distance_compression`,
   and `classified_edges.tail_risk`; Markdown renders the same in **Distance
   confidence**. `distance_context.owner_model` calls out `single_owner_degenerate`
-  repos explicitly: same-owner is a real low socio-technical distance signal, not
-  missing ownership. `distance_context.distance_basis` and
+  repos explicitly. Under bc_score.v7 an owner never lowers distance: every module
+  boundary is D=9 and the owner only names the boundary token. `distance_context.distance_basis` and
   `classified_edges.by_distance_basis` show which deterministic signal selected
-  each rung, which middle Ch8 rungs remain compressed, and whether the mean hides
-  a lower-tail hot spot. `classified_edges.by_balance_driver` and
+  each rung (`distance_compression` reports the rungs 2, 9 and 10 and the
+  containment depth), and whether the mean hides a lower-tail hot spot. `classified_edges.by_balance_driver` and
   `classified_edges.by_critical_driver` show whether `|S-D|` or `10-V` drove the
   result. `classified_edges.by_module_pair` shows concentration by boundary.
   The score dimension also reports `raw_value` and `cap_applied` when a cap
@@ -260,16 +260,15 @@ inherited: M, cascade: K` (plus `undeclared: U` when nonzero; JSON:
 
 ### `unbalanced_edge`
 
-> **Breaking change (v0.3.0):** `metric_version` bumped to `unbalanced_edge.v2` — the
-> distance composite (code-structure + deploy-unit + degenerate-owner suppression) and
-> the removal of git-churn from gate volatility changed the metric's input semantics.
-> Re-run `archfit baseline` if you have a pinned baseline from v0.2.x or earlier.
+> **Breaking change (v3.0.0):** `metric_version` is `unbalanced_edge.v3`. Distance
+> is level-relative (D=9 at any module boundary), so an owner difference no
+> longer qualifies an edge. Re-run `archfit baseline` after you review the new seams.
 
 - **Represents:** count of **new, high-risk** imbalanced edges — the worst corner
   of the balance rule.
-- **Computed:** an edge qualifies when it is `intrusive` **and** at distance
-  ≥ `cross_module_different_owner` **and** `high` volatility **and** new (not
-  already in the baseline). The reported value is the count of such edges.
+- **Computed:** an edge qualifies when it is `intrusive` **and** crosses a module
+  boundary **and** has `high` volatility **and** is new (not already in the
+  baseline). The reported value is the count of such edges.
 - **Scored:** `0` qualifying edges → `strong`; any → `critical`. If intrusive
   cross-module candidates exist but none has known volatility → `n/a` (honest
   indeterminate, not a clean zero).
@@ -508,7 +507,7 @@ Every cross-boundary edge is classified on the four lenses below
 | Lens         | Values (ordered)                                                                                                                    | Derived from                                                                                                                         |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                                      | public/internal globs, visibility, SCIP symbol kind, pinned labels                                                                   |
-| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` < `declared_external` (+`unknown`) | module map, `owner`, `deploy_unit`, declared `external_systems` seam                                                                 |
+| Distance     | `same_module` (D=2) < `cross_module` = `cross_module_different_owner` = `cross_deploy_unit` (D=9) < `declared_external` (D=10) (+`unknown`) | module map; `owner` and `deploy_unit` name the boundary, never the rung; declared `external_systems` seam                            |
 | Volatility   | `low` < `medium` < `high` (+`undeclared`, `unknown`)                                                                                | explicit `volatility:`, then `subdomain:`; optional strong-coupling cascade; else `undeclared` (no path/name guessing, no git churn) |
 | Explicitness | `explicit`, `implicit` (+`unknown`)                                                                                                 | strength (contract→explicit, intrusive→implicit) or AST hint                                                                         |
 | Severity     | (none) < `low` < `medium` < `high` < `critical`                                                                                     | the balance rule over the four above                                                                                                 |
