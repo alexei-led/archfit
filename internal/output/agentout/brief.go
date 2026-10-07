@@ -35,9 +35,6 @@ func Brief(r Result) string {
 			fmt.Fprintf(&b, "  edit: %s%s\n", strings.Join(rep.Edit, ", "), more(rep.EditOmitted))
 		}
 	}
-	for _, m := range r.WorsenedMetrics {
-		fmt.Fprintf(&b, "worsened metric: %s %s -> %s\n", m.Name, formatValue(m.Before), formatValue(m.After))
-	}
 	for _, rule := range r.UnevaluatedRules {
 		fmt.Fprintf(&b, "unevaluated rule: %s: %s\n", rule.RuleID, rule.Reason)
 	}
@@ -55,8 +52,4 @@ func more(omitted int) string {
 		return ""
 	}
 	return fmt.Sprintf(" (+%d more)", omitted)
-}
-
-func formatValue(v float64) string {
-	return strconv.FormatFloat(v, 'f', -1, 64)
 }

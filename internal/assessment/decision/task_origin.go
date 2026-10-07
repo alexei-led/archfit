@@ -180,8 +180,10 @@ func ClassifyTaskOrigins(in TaskOriginEvidence) *TaskOriginDelta {
 		switch {
 		// The synthetic coupling-gate task is per-run trip state with no stable
 		// base counterpart — decided before ID matching so it can never be
-		// mistaken for a repaired or introduced seam.
-		case t.RuleID == finding.RuleIDCouplingGate:
+		// mistaken for a repaired or introduced seam. A metric ratchet compares
+		// against the accepted baseline, not against the base tree, so the base
+		// run (which has no baseline) cannot say whether the change introduced it.
+		case t.RuleID == finding.RuleIDCouplingGate || finding.IsMetricRatchet(t.RuleID):
 			unknown = append(unknown, t.FindingID)
 		case inBase:
 			preExisting = append(preExisting, t.FindingID)

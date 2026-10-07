@@ -4,7 +4,7 @@
 // on a fixture that violates it — a structural rule nobody has watched fail is
 // a rule nobody knows still works.
 //
-// The seven names and their owners:
+// The eight names and their owners:
 //
 //	no_scalar_decision        TestErosion_NoScalarDecision          (this file)
 //	no_dead_archfit_rule      TestErosion_NoDeadArchfitRule         (this file)
@@ -14,6 +14,7 @@
 //	baseline_idempotent       TestErosion_BaselineIdempotent        (cmd/archfit)
 //	policy_query_agreement    TestErosion_PolicyQueryAgreesWithCheck (cmd/archfit, policy_test.go)
 //	                          TestErosion_PolicyQueryAgreesWithCheck{TypeScript,Python} (cmd/archfit, policy_agreement_lang_test.go)
+//	ratchet_requires_comparable_reference TestErosion_RatchetRequiresComparableReference (cmd/archfit)
 package arch_test
 
 import (

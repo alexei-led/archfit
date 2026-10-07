@@ -105,8 +105,7 @@ func TestNextActionPrecedence(t *testing.T) {
 	introduced.origin = "introduced"
 	unknown := gateTask("e5", "no_x")
 	unknown.origin = "unknown"
-	ratchet := document(report.StateBlocked)
-	ratchet.Metrics = []report.MetricResult{{Name: "coverage", Value: 0.4, Delta: new(-0.1)}}
+	ratchet := document(report.StateBlocked, gateTask("m1", "metric/coverage"))
 	requiredTool := document(report.StateBlocked)
 	requiredTool.CoverageGaps = []report.CoverageGap{{Tool: "sg", Gate: string(report.GateFail)}}
 	warnTool := document(report.StateNeedsAttention)
@@ -122,6 +121,7 @@ func TestNextActionPrecedence(t *testing.T) {
 		{name: "introduced origin is in scope", doc: document(report.StateBlocked, introduced), want: ActionRepair},
 		{name: "unknown origin is in scope", doc: document(report.StateBlocked, unknown), want: ActionRepair},
 		{name: "ratchet block", doc: ratchet, want: ActionRepair},
+		{name: "ratchets that cannot be evaluated need the owner", doc: withUnevaluated(document(report.StateNeedsAttention), "reference not comparable (drift: rubric_version): 5 metric ratchets cannot be evaluated"), want: ActionAskOwner},
 		{name: "only owner decisions", doc: document(report.StateBlocked, ownerTask), want: ActionAskOwner},
 		{name: "dead selector", doc: withUnevaluated(document(report.StateNeedsAttention), "selector matches nothing: from internal/x/**"), want: ActionAskOwner},
 		{name: "dead selector beats missing evidence", doc: withUnevaluated(document(report.StateNeedsAttention), "go/packages evidence is partial", "selector matches nothing: to x"), want: ActionAskOwner},

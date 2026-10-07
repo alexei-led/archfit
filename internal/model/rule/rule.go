@@ -1,6 +1,8 @@
 // Package rule contains neutral identities shared by policy and assessment.
 package rule
 
+import "strings"
+
 // Synthetic finding IDs emitted without a declared policy rule.
 const (
 	// RuleIDBCImbalancedCoupling identifies the balanced-coupling advisory.
@@ -17,7 +19,15 @@ const (
 	RuleIDMapStaleReview = "map/stale_review"
 	// RuleIDLabelsStale identifies stale pinned-label evidence.
 	RuleIDLabelsStale = "labels/stale"
+	// RuleIDMetricPrefix starts the ID of a tripped metric ratchet: the rule ID
+	// is the prefix plus the metric name ("metric/cycle").
+	RuleIDMetricPrefix = "metric/"
 )
+
+// IsMetricRatchet reports whether ruleID names a tripped metric ratchet.
+func IsMetricRatchet(ruleID string) bool {
+	return strings.HasPrefix(ruleID, RuleIDMetricPrefix)
+}
 
 // WaiverScope classifies synthetic findings that may be named without a declared rule.
 type WaiverScope string
@@ -33,6 +43,9 @@ const (
 
 // SyntheticWaiverScope returns the waiver behavior for an assessment-owned finding ID.
 func SyntheticWaiverScope(ruleID string) WaiverScope {
+	if IsMetricRatchet(ruleID) {
+		return WaiverScopeEdgeless
+	}
 	switch ruleID {
 	case RuleIDMapUncoveredPath, RuleIDMapDeadRule, RuleIDMapStaleReview:
 		return WaiverScopeEdgeless

@@ -71,6 +71,10 @@ const (
 // matches nothing: a policy defect for the owner, not missing evidence.
 const deadSelectorPrefix = "selector matches nothing:"
 
+// unmeasuredRatchetPrefix starts the reason of an unevaluated ratchet entry:
+// the stored reference does not compare, so only the owner can move it.
+const unmeasuredRatchetPrefix = "reference not comparable"
+
 // agentFormatFlag is appended to the replayed validation command, so the
 // re-run produces this same digest.
 const agentFormatFlag = "--format " + FormatName
@@ -92,8 +96,6 @@ type Result struct {
 	EvidenceGaps []EvidenceGap `json:"evidence_gaps"`
 	// UnevaluatedRules are the fail-gated rules the run could not evaluate.
 	UnevaluatedRules []UnevaluatedRule `json:"unevaluated_rules"`
-	// WorsenedMetrics name the metrics behind a metric-ratchet block.
-	WorsenedMetrics []WorsenedMetric `json:"worsened_metrics"`
 	// Omitted counts what the result leaves out.
 	Omitted Omitted `json:"omitted"`
 	// Truncated is true when the size budget cut text or moved entries into
@@ -157,15 +159,6 @@ type UnevaluatedRule struct {
 	Reason string `json:"reason"`
 }
 
-// WorsenedMetric is one metric that worsened against the accepted baseline in
-// a run a metric ratchet blocked.
-type WorsenedMetric struct {
-	Name      string  `json:"name"`
-	Before    float64 `json:"before"`
-	After     float64 `json:"after"`
-	Dimension string  `json:"dimension,omitempty"`
-}
-
 // Omitted counts entries the result does not list.
 type Omitted struct {
 	// Repairs moved out by the size budget.
@@ -207,7 +200,6 @@ func Build(d report.Document) Result {
 		Repairs:          buildRepairs(s),
 		EvidenceGaps:     evidenceGaps(d.CoverageGaps),
 		UnevaluatedRules: unevaluatedRules(s.Decision.UnevaluatedRequiredRules),
-		WorsenedMetrics:  worsenedMetrics(d),
 		Omitted:          Omitted{Advisories: activeAdvisories(s.Findings)},
 		Validate:         validateCommand(s.AgentTasks, d.AdvisoryTasks),
 	}
@@ -231,7 +223,7 @@ func decide(r Result) NextAction {
 	}
 	deadSelector, missingEvidence := false, false
 	for _, rule := range r.UnevaluatedRules {
-		if strings.HasPrefix(rule.Reason, deadSelectorPrefix) {
+		if strings.HasPrefix(rule.Reason, deadSelectorPrefix) || strings.HasPrefix(rule.Reason, unmeasuredRatchetPrefix) {
 			deadSelector = true
 		} else {
 			missingEvidence = true
@@ -244,7 +236,7 @@ func decide(r Result) NextAction {
 		}
 	}
 	switch {
-	case inScopeCode > 0 || len(r.WorsenedMetrics) > 0:
+	case inScopeCode > 0:
 		return ActionRepair
 	case inScope > 0 || deadSelector:
 		return ActionAskOwner
@@ -267,8 +259,8 @@ func summarize(r Result) string {
 			outScope++
 		}
 	}
-	return fmt.Sprintf("%s: %d repairs in scope, %d outside scope; %d unevaluated required rules; %d evidence gaps; %d worsened metrics",
-		r.Verdict, inScope, outScope, len(r.UnevaluatedRules), len(r.EvidenceGaps), len(r.WorsenedMetrics))
+	return fmt.Sprintf("%s: %d repairs in scope, %d outside scope; %d unevaluated required rules; %d evidence gaps",
+		r.Verdict, inScope, outScope, len(r.UnevaluatedRules), len(r.EvidenceGaps))
 }
 
 // edgeKey groups the tasks of one dependency. A finding that names no
@@ -477,15 +469,6 @@ func unevaluatedRules(rules []report.UnevaluatedRule) []UnevaluatedRule {
 	out := make([]UnevaluatedRule, 0, len(rules))
 	for _, r := range rules {
 		out = append(out, UnevaluatedRule{RuleID: r.RuleID, Reason: r.Reason})
-	}
-	return out
-}
-
-func worsenedMetrics(d report.Document) []WorsenedMetric {
-	regressions := ratchetRegressions(d)
-	out := make([]WorsenedMetric, 0, len(regressions))
-	for _, r := range regressions {
-		out = append(out, WorsenedMetric{Name: r.name, Before: roundValue(r.before), After: roundValue(r.after), Dimension: r.dimension})
 	}
 	return out
 }

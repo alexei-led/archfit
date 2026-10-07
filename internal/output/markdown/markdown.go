@@ -44,9 +44,8 @@ func (r *Renderer) Format() string { return "markdown" }
 // state headline first — naming the metrics behind a metric-ratchet block from
 // the document's metric deltas — then the detailed audit.
 func (r *Renderer) Render(d report.Document, w io.Writer) error {
-	regressions := ratchetRegressions(d)
-	view := brief.Build(brief.Input{State: d.State, CoverageGaps: d.CoverageGaps, MetricRatchet: len(regressions) > 0})
-	if err := writeState(d.State, view, regressions, w); err != nil {
+	view := brief.Build(brief.Input{State: d.State, CoverageGaps: d.CoverageGaps})
+	if err := writeState(d.State, view, w); err != nil {
 		return err
 	}
 	if err := r.renderAudit(d, w); err != nil {

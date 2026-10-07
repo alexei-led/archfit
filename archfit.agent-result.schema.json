@@ -175,29 +175,6 @@
         "rule_id",
         "reason"
       ]
-    },
-    "WorsenedMetric": {
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "before": {
-          "type": "number"
-        },
-        "after": {
-          "type": "number"
-        },
-        "dimension": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "name",
-        "before",
-        "after"
-      ]
     }
   },
   "properties": {
@@ -247,12 +224,6 @@
       },
       "type": "array"
     },
-    "worsened_metrics": {
-      "items": {
-        "$ref": "#/$defs/WorsenedMetric"
-      },
-      "type": "array"
-    },
     "omitted": {
       "$ref": "#/$defs/Omitted"
     },
@@ -273,7 +244,6 @@
     "repairs",
     "evidence_gaps",
     "unevaluated_rules",
-    "worsened_metrics",
     "omitted"
   ]
 }

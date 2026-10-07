@@ -77,7 +77,6 @@ in `--format json`.
   ],
   "evidence_gaps": [],
   "unevaluated_rules": [],
-  "worsened_metrics": [],
   "omitted": { "repairs": 0, "unevaluated_rules": 0, "advisories": 1 },
   "validate": "archfit check -c .archfit.yaml --format agent"
 }
@@ -89,7 +88,7 @@ The schema is `archfit.agent-result.schema.json` in the repository root.
 
 | `next_action`      | Condition                                                                                                   | What the agent does                                    |
 | ------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `repair`           | An in-scope repair needs a code change, or a metric ratchet blocked the run (`worsened_metrics`).            | Change the code within the constraints, then run `validate` (or the command you ran). |
+| `repair`           | An in-scope repair needs a code change. A tripped metric ratchet is such a repair (`metric/<name>`).   | Change the code within the constraints, then run `validate` (or the command you ran). |
 | `ask_owner`        | Every in-scope repair needs an owner decision, or a required rule has a selector that matches nothing.      | Stop and report to the architecture owner. Do not edit policy. |
 | `restore_evidence` | A required analyzer failed its gate (`evidence_gaps`), or a required rule lacks producer evidence.          | Install or fix the analyzer, then run `validate` (or the command you ran). |
 | `report_blocked`   | The verdict is `blocked`, but no repair is in scope.                                                        | Report the blockers. They are not from this change.    |

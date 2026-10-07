@@ -27,9 +27,8 @@ func (r *Renderer) Format() string { return "console" }
 // Render writes the document's architecture state as terminal text, and names
 // the metrics behind a metric-ratchet block from the document's metric deltas.
 func (r *Renderer) Render(d report.Document, w io.Writer) error {
-	regressions := ratchetRegressions(d)
-	view := brief.Build(brief.Input{State: d.State, CoverageGaps: d.CoverageGaps, MetricRatchet: len(regressions) > 0})
-	return writeState(d.State, view, regressions, w)
+	view := brief.Build(brief.Input{State: d.State, CoverageGaps: d.CoverageGaps})
+	return writeState(d.State, view, w)
 }
 
 // RenderState writes the architecture state as terminal-native plain text: the
@@ -47,17 +46,16 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 // The state alone carries no metric deltas, so it cannot name a tripped
 // metric ratchet; Render, which holds the whole document, can.
 func RenderState(s report.ArchitectureState, w io.Writer) error {
-	return writeState(s, brief.Build(brief.Input{State: s}), nil, w)
+	return writeState(s, brief.Build(brief.Input{State: s}), w)
 }
 
-func writeState(s report.ArchitectureState, view brief.View, regressions []metricRegression, w io.Writer) error {
+func writeState(s report.ArchitectureState, view brief.View, w io.Writer) error {
 	var b strings.Builder
 
 	b.WriteString("ARCHITECTURE STATE\n\n")
 	writeHeadline(&b, s, view.VerdictReason)
 	writeBlockers(&b, view.Blockers)
 	writeNextSteps(&b, view.NextSteps)
-	writeMetricRatchet(&b, s.GateReference, regressions)
 	writeDimensions(&b, s.Dimensions)
 	writeUnknowns(&b, s.Dimensions, view)
 	writeSeams(&b, s.Seams)

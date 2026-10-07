@@ -22,17 +22,16 @@ import (
 // The state alone carries no metric deltas, so it cannot name a tripped
 // metric ratchet; Render, which holds the whole document, can.
 func RenderState(s report.ArchitectureState, w io.Writer) error {
-	return writeState(s, brief.Build(brief.Input{State: s}), nil, w)
+	return writeState(s, brief.Build(brief.Input{State: s}), w)
 }
 
-func writeState(s report.ArchitectureState, view brief.View, regressions []metricRegression, w io.Writer) error {
+func writeState(s report.ArchitectureState, view brief.View, w io.Writer) error {
 	var b strings.Builder
 
 	b.WriteString("# archfit — architecture state\n\n")
 	writeStateHeadline(&b, s, view.VerdictReason)
 	writeBlockers(&b, view.Blockers)
 	writeNextSteps(&b, view.NextSteps)
-	writeMetricRatchet(&b, s.GateReference, regressions)
 	writeDimensionTable(&b, s.Dimensions)
 	writeDimensionMetrics(&b, s.Dimensions)
 	writeCoverageTable(&b, s.Coverage)

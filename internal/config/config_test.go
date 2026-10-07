@@ -995,6 +995,10 @@ func TestLoad_ValidatesWaivers(t *testing.T) {
 			waiver: "  - rule: bc/imbalanced_coupling\n    from: checkout/**\n    to: pricing/**\n    reason: migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
 		},
 		{
+			name:   "a metric ratchet takes a rule-only waiver",
+			waiver: "  - rule: metric/cycle\n    reason: accepted regression\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
+		},
+		{
 			name:   "edge-less synthetic rule",
 			waiver: "  - rule: map/uncovered_path\n    reason: module migration\n    approved_by: '@owner'\n    expires: '2099-01-01'\n",
 		},

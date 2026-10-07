@@ -56,7 +56,12 @@ const (
 	// source no declared module owns. module_review.gate: fail makes it a
 	// gate finding.
 	RuleIDMapUncoveredPath = modelrule.RuleIDMapUncoveredPath
+	// RuleIDMetricPrefix starts the rule ID of a tripped metric ratchet.
+	RuleIDMetricPrefix = modelrule.RuleIDMetricPrefix
 )
+
+// IsMetricRatchet reports whether ruleID names a tripped metric ratchet.
+func IsMetricRatchet(ruleID string) bool { return modelrule.IsMetricRatchet(ruleID) }
 
 // Endpoint identifies one side of a finding edge (resolved at diagnostic assembly).
 type Endpoint struct {
