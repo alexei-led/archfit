@@ -6,12 +6,34 @@ manager choices, and PATH checks, see [Tooling reference](tooling.md).
 
 ## Install the archfit CLI
 
-Install from source with Go. Use a release tag, not `@latest`, in scripts and
-repeatable docs:
+Install a release binary. Homebrew (macOS and Linux) installs the latest
+release:
 
 ```sh
-go install github.com/alexei-led/archfit/cmd/archfit@v0.6.1
+brew install alexei-led/tap/archfit
 ```
+
+Or download the binary for your platform from the
+[release page](https://github.com/alexei-led/archfit/releases) and check it
+against `SHA256SUMS`. Use a release tag in scripts and repeatable docs:
+
+```sh
+curl -fsSLO https://github.com/alexei-led/archfit/releases/download/v2.5.0/archfit-v2.5.0-linux-amd64
+curl -fsSLO https://github.com/alexei-led/archfit/releases/download/v2.5.0/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
+install -m 0755 archfit-v2.5.0-linux-amd64 /usr/local/bin/archfit
+```
+
+To build from source, check out a release tag and build with Go:
+
+```sh
+git clone --branch v2.5.0 --depth 1 https://github.com/alexei-led/archfit.git
+cd archfit && make build   # writes .bin/archfit
+```
+
+Do not use `go install github.com/alexei-led/archfit/cmd/archfit@<version>`.
+The module path has no `/v2` suffix, so Go rejects a `v2.x` tag, and `@latest`
+installs the last `v1` release.
 
 Check the binary and available analyzers:
 
@@ -229,7 +251,7 @@ Use Docker when you want the bundled toolchain instead of installing language
 analysis tools on the host:
 
 ```sh
-docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.6.1 \
+docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v2.5.0 \
   check --config /repo/.archfit.yaml
 ```
 
