@@ -55,7 +55,8 @@ func dimensionsFixture() (*result.Result, evaluation.StateInput) {
 		ClassifiedEdges: &result.ClassifiedEdgeSummary{
 			Total: 20, Scored: 10, Abstained: 2, SameModule: 3, External: 5, ConnectedModules: 2,
 			DependencyEdges: 20, InternalDependencies: 15, ClassifiedInternalDependencies: 15,
-			SameModuleDependencies: 3, DependencyModules: 2, FirstPartyNodes: 2, AttributedFirstPartyNodes: 2,
+			SameModuleDependencies: 3, LibraryDependencies: 3, UnmappedFirstPartyDependencies: 2,
+			DependencyModules: 2, FirstPartyNodes: 2, AttributedFirstPartyNodes: 2,
 			TailRisk: &result.CouplingTailRiskSummary{CriticalEdges: 1, HighOrWorseEdges: 3, DistributedMonolithEdges: 0},
 		},
 		VolatilityCorroboration: &modevidence.VolatilityCorroboration{
@@ -749,7 +750,8 @@ func TestStructureUsesTheDependencyOnlyDenominator(t *testing.T) {
 		t.Errorf("structure coverage = %d/%d, want dependency-only 15/20", dim.Coverage.Observed, dim.Coverage.Total)
 	}
 	for name, want := range map[string]float64{
-		"internal_edges": 15, "external_edges": 5, "same_module_edges": 3, "connected_modules": 2,
+		"internal_edges": 15, "library_edges": 3, "unmapped_first_party_edges": 2,
+		"same_module_edges": 3, "connected_modules": 2,
 	} {
 		if got, ok := dimensionMetricValue(dim.Metrics, name); !ok || got != want {
 			t.Errorf("metric %q = %v (found=%t), want %v", name, got, ok, want)

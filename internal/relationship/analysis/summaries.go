@@ -15,10 +15,12 @@ import (
 
 func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnlyPair, duplicated policy.DuplicatedKnowledgePolicy, tree classify.Containment) *relationship.ClassifiedEdgeSummary {
 	s := &relationship.ClassifiedEdgeSummary{ByStrength: map[string]int{}, ByDistance: map[string]int{}, ByDistanceBasis: map[string]int{}, ByVolatility: map[string]int{}, BySeverity: map[string]int{}, ByBalanceDriver: map[string]int{}, ByCriticalDriver: map[string]int{}, ByModulePair: map[string]int{}, DistanceCompression: distanceCompression()}
+	firstParty := make(map[string]bool, len(set.Nodes))
 	for _, n := range set.Nodes {
 		if !n.FirstParty {
 			continue
 		}
+		firstParty[n.ID] = true
 		s.FirstPartyNodes++
 		if n.BoundaryClassified {
 			s.AttributedFirstPartyNodes++
@@ -45,6 +47,14 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 				if e.FromModule == e.ToModule {
 					s.SameModuleDependencies++
 				}
+			} else if firstParty[e.ToID] {
+				// First-party code on one side that no declared module owns:
+				// a gap in the module map, unlike a library import below.
+				s.UnmappedFirstPartyDependencies++
+			} else {
+				// An external node, or a target no first-party node stands for
+				// (a Go standard-library or third-party package has no node).
+				s.LibraryDependencies++
 			}
 		}
 		sum += addSummary(s, e.Classified, e.Strength, e.Distance, e.Volatility, e.Provenance)

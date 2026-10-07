@@ -214,6 +214,42 @@ func TestStructureSummaryKeepsDependencyAndBoundaryDenominators(t *testing.T) {
 	}
 }
 
+// TestStructureSummarySplitsOutsideMapDependencies pins the split of the
+// dependencies that leave the declared module map: a library target (an
+// external node, or a target no first-party node stands for, such as a Go
+// standard-library package) is not the same fact as first-party code no module
+// owns, and only the second is a gap in the module map.
+func TestStructureSummarySplitsOutsideMapDependencies(t *testing.T) {
+	const (
+		unownedFile = "tools/gen.go"
+		unownedPkg  = "tools"
+	)
+	g := graph.Build([]graph.Facts{{
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindFile, Path: fileA, Language: graph.LangGo},
+			{Kind: graph.NodeKindFile, Path: fileB, Language: graph.LangGo},
+			{Kind: graph.NodeKindFile, Path: unownedFile, Language: graph.LangGo},
+			{Kind: graph.NodeKindPackage, Path: unownedPkg, Language: graph.LangGo},
+			{Kind: graph.NodeKindExternal, Path: libNATS, Language: graph.LangGo},
+		},
+		Edges: []graph.Edge{
+			{From: nodeA, To: nodeB, Kind: graph.EdgeKindImports, Language: graph.LangGo},
+			{From: nodeA, To: "external:" + libNATS, Kind: graph.EdgeKindImports, Language: graph.LangGo},
+			{From: nodeA, To: "package:fmt", Kind: graph.EdgeKindImports, Language: graph.LangGo},
+			{From: nodeA, To: "package:" + unownedPkg, Kind: graph.EdgeKindImports, Language: graph.LangGo},
+			{From: "file:" + unownedFile, To: nodeB, Kind: graph.EdgeKindImports, Language: graph.LangGo},
+			{From: "file:" + unownedFile, To: "package:fmt", Kind: graph.EdgeKindImports, Language: graph.LangGo},
+		},
+	}})
+	s := analysis.Analyze(analysis.Input{Graph: g, Policy: relationshipPolicy(twoModules())}).Assessment.ClassifiedEdges
+	if s.DependencyEdges != 6 || s.InternalDependencies != 1 {
+		t.Fatalf("dependency/internal = %d/%d, want 6/1", s.DependencyEdges, s.InternalDependencies)
+	}
+	if s.LibraryDependencies != 3 || s.UnmappedFirstPartyDependencies != 2 {
+		t.Errorf("library/unmapped first-party = %d/%d, want 3/2", s.LibraryDependencies, s.UnmappedFirstPartyDependencies)
+	}
+}
+
 func sumCounts(m map[string]int) int {
 	total := 0
 	for _, n := range m {
