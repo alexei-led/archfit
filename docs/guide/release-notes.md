@@ -4,6 +4,13 @@
 
 Fixed:
 
+- `archfit baseline` now accepts every edge of a Balanced Coupling advisory
+  group. Before this fix, it accepted only the edge that represents the group.
+  The other edges of the group then showed as `new` on the next `check`, also
+  when the tree did not change. On the archfit repository, 66 advisories showed
+  as `new` directly after a capture. The baseline file gets one entry for each
+  edge, so it can be larger. Run `archfit baseline` again to accept the full
+  groups.
 - A rule `rationale`, `docs`, or `alternatives` written as a YAML block scalar
   (`rationale: |` or `>`) is now one line everywhere. The config loader turns
   every run of whitespace into one space and trims the ends. Before this fix,
