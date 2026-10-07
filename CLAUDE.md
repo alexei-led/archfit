@@ -336,7 +336,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   owns it). `resolveEvidence` never back-fills a `module_dependency` finding's
   empty module.
   One finding per denied ordered module pair (`finding.NewKeyed(rule, kind,
-from, to)`, `matched_by.violates`), production edges only, as for
+  from, to)`, `matched_by.violates`), production edges only, as for
   `module_cycle`. Scope = languages of the modules that declare a list
   (`allowlistRuleScope`); no list anywhere is `selector matches nothing: …`.
   `ModelHash` ignores both keys (`TestModelHashIgnoresAllowlists`). The self-config
@@ -354,7 +354,7 @@ from, to)`, `matched_by.violates`), production edges only, as for
   module side is judged like `moduleRuleScope` judges a module
   (`moduleSideState`): live when a selected module owns analysed source or a
   module-graph node; empty (`selector matches nothing: from_module|to_module
-…`; lint `unknown_module` when nothing is selected, else `dead_selector`)
+  …`; lint `unknown_module` when nothing is selected, else `dead_selector`)
   when nothing is selected or every selected module provably owns nothing (no
   owned file, and only explicit source-file paths or `crate::mod` paths the
   graph lacks); unanalysed-only gets the unanalysed reason; anything the
@@ -372,7 +372,7 @@ from, to)`, `matched_by.violates`), production edges only, as for
   - a file declared out of scope: never;
   - a file the LOC walk skipped (a dot directory, `target/`, `mocks/`): its path-only class with the configured `file_class` globs (`Observations.UnwalkedSourceProduction`, computed in acquisition);
   - a file with no class at all: it counts.
-    An edge with no source-file attribution (a Rust crate dependency at `Cargo.toml`, a `crate::mod` edge) counts. The strongly connected component is computed over production edges, so finding IDs (rule, module pair) are unchanged.
+  An edge with no source-file attribution (a Rust crate dependency at `Cargo.toml`, a `crate::mod` edge) counts. The strongly connected component is computed over production edges, so finding IDs (rule, module pair) are unchanged.
 - **`module_cycle` is bounded per strongly-connected component** (`maxModuleCyclePairs = 200`, `rules_dependency.go`): the first pairs in (from, to) order are kept, so kept IDs never move; every finding carries `matched_by.cycle_pairs_total`, and a capped cycle's `why` says how many pairs it reports. Pairs past the cap surface as new once reported ones are fixed. Module-cycle and seam-gate agent tasks carry no `declarations` (`agenttask.Build`): on ccgram they were 882 KB of a 1.29 MB report.
 - **Map completeness reads the walked source, never the graph**
   (`evaluation.uncoveredSource`). `map/uncovered_path` is one finding per
@@ -386,7 +386,7 @@ from, to)`, `matched_by.violates`), production edges only, as for
   captures one run, so any cap either accepts fewer directories than check
   reports (false block) or, applied after the baseline, reads accepted debt
   as `fixed`. `module_review.gate:
-fail` makes it a gate finding (it joins the rule findings, so baseline and
+  fail` makes it a gate finding (it joins the rule findings, so baseline and
   waivers apply); `map/dead_rule` and `map/stale_review` never gate. A
   graph-derived check read a failed package load as "nothing unowned".
 - **`forbidden_pattern` is the only consumer of `rules[].patterns`.** It fires
@@ -845,16 +845,16 @@ fail` makes it a gate finding (it joins the rule findings, so baseline and
   `unconstrained`, never `allowed`. The erosion gate `policy_query_agreement`
   pins the agreement in both directions (see the erosion invariant below).
 - **Hooks map `next_action` onto a host protocol** (`cmd/archfit/hook.go`). `hook
-claude` (Stop/SubagentStop JSON on stdin, config resolved against the event
+  claude` (Stop/SubagentStop JSON on stdin, config resolved against the event
   `cwd`, a tree clean but for `.archfit-cache` skips) exits 2 with
   `agentout.Brief` on stderr only when `blocksChange`: `repair`/`ask_owner`
   AND an in-scope repair (a dead selector or a ratchet is not scoped to the
   change, so it is a `systemMessage`); `stop_hook_active` → `systemMessage`;
   any archfit error fails open (exit 0 + `systemMessage`); malformed stdin is
   1. `hook git` exits 1/0/3 on the same `blocksChange` and judges the files on
-     disk. Both run `executeScan` in process with `--base HEAD`
-     and the pipeline's stderr discarded. These exit codes are the host protocol,
-     never the engine verdict.
+  disk. Both run `executeScan` in process with `--base HEAD`
+  and the pipeline's stderr discarded. These exit codes are the host protocol,
+  never the engine verdict.
 - **`AGENTS.md` carries a generated block** (`archfit agents-md`, markers
   `<!-- archfit:start/end -->`). `TestAgentsMDRepositoryBlockIsCurrent` fails
   when `.archfit.yaml` changes without `archfit agents-md --write`; example
