@@ -84,6 +84,11 @@ func (baselineLoaderAdapter) Load(ctx context.Context, bundleDir string) (applic
 	if err != nil {
 		return application.Baseline{}, err
 	}
+	return applicationBaseline(b), nil
+}
+
+// applicationBaseline converts a baseline file into the application view.
+func applicationBaseline(b baseline.Baseline) application.Baseline {
 	out := application.Baseline{Present: b.SchemaVersion != "", Accepted: b, Metrics: b.Metrics}
 	if b.State != nil {
 		out.State = &application.BaselineStateSnapshot{
@@ -95,7 +100,7 @@ func (baselineLoaderAdapter) Load(ctx context.Context, bundleDir string) (applic
 			Dimensions:         loadedDimensions(b.State.Dimensions),
 		}
 	}
-	return out, nil
+	return out
 }
 
 func loadedDimensions(in []baseline.DimensionSnapshot) []application.BaselineDimension {

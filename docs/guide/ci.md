@@ -194,6 +194,16 @@ and seam comparisons abstain until an owner-approved capture supplies the new
 identity. Check `gate_reference` explicitly; a non-comparable reference is not
 evidence that the PR introduced no new coupling.
 
+After an engine upgrade, the stored reference can become `non_comparable`.
+Then use `archfit baseline --reanchor` instead of a full capture. It keeps only
+the debt that the stored file accepted, and it prints every difference. New
+findings stay `new`:
+
+```sh
+archfit baseline --reanchor -c .archfit.yaml
+archfit check -c .archfit.yaml
+```
+
 If you automate this in CI, do it in a separate manual or scheduled workflow
 that opens a pull request with the baseline diff. Do not let a PR job silently
 rewrite its own gate input.

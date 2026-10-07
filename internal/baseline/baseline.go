@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/model/evidence"
@@ -148,6 +149,30 @@ func Load(_ context.Context, path string) (Baseline, error) {
 			path, b.SchemaVersion, SchemaVersion)
 	}
 
+	return b, nil
+}
+
+// reanchorSchemas are the schemas a re-anchor may read: the current one and
+// the one before it, so an engine upgrade can carry its accepted debt forward.
+var reanchorSchemas = []string{SchemaVersion, "archfit.baseline.v2"}
+
+// LoadForReanchor reads the stored baseline a re-anchor carries forward. Unlike
+// Load, a missing file is an error (there is no debt to carry), and the schema
+// before the current one is accepted: a re-anchor reads only accepted[],
+// metrics and the state reference, which that schema already has.
+func LoadForReanchor(_ context.Context, path string) (Baseline, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from trusted CLI input
+	if err != nil {
+		return Baseline{}, fmt.Errorf("baseline: read %s: %w", path, err)
+	}
+	var b Baseline
+	if err := json.Unmarshal(data, &b); err != nil {
+		return Baseline{}, fmt.Errorf("baseline: parse %s: %w", path, err)
+	}
+	if !slices.Contains(reanchorSchemas, b.SchemaVersion) {
+		return Baseline{}, fmt.Errorf("schema version %q in %s cannot be re-anchored: want one of %v — review it and capture with `archfit baseline`",
+			b.SchemaVersion, path, reanchorSchemas)
+	}
 	return b, nil
 }
 

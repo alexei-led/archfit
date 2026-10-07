@@ -72,6 +72,17 @@ Removed:
   filled them. Use `comparison.introduced_finding_ids` and
   `comparison.resolved_finding_ids` with `--base`.
 
+New:
+
+- `archfit baseline --reanchor` carries the accepted debt of the stored
+  baseline into a new engine release. It accepts no new finding. It keeps a
+  finding only when the stored file accepted the same finding ID, and it keeps
+  a qualifying seam only when the stored file has it too. It prints each
+  dropped entry, each unaccepted finding, each seam that stopped qualifying,
+  each metric that got worse, and the reasons why the stored reference stopped
+  comparing. `--from <path>` reads the stored file from another place. Use a
+  full `archfit baseline` only for the first baseline.
+
 ### Balanced Coupling score `bc_score.v7`
 
 The formula `balance = max(|S − D|, 10 − V) + 1` does not change. The inputs
