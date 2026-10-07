@@ -111,6 +111,10 @@ type scanRequest struct {
 	configPath string
 	root       string
 	baseRef    string
+	// bundleDir holds the baseline, labels, and fact cache; empty means the
+	// config's directory. The staged-index hook reads its config from a
+	// temporary checkout but keeps these on disk.
+	bundleDir string
 
 	json     bool
 	markdown bool
@@ -193,8 +197,12 @@ func executeScan(ctx context.Context, deps *appDeps, req scanRequest, advance fu
 	if err := config.ApplyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
 		return application.Response{}, config.Config{}, &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
+	bundleDir := req.bundleDir
+	if bundleDir == "" {
+		bundleDir = filepath.Dir(req.configPath)
+	}
 	resp, err := application.Service{Stages: newAnalyzeStages(req.configPath, req.root, cfg, deps)}.Execute(ctx, application.Request{
-		ConfigSource: req.configPath, BundleDir: filepath.Dir(req.configPath),
+		ConfigSource: req.configPath, BundleDir: bundleDir,
 		BaseRef:        req.baseRef,
 		JSON:           req.json,
 		Markdown:       req.markdown,

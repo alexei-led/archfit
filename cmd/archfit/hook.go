@@ -12,9 +12,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
+	historygit "github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/output/agentout"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -51,6 +53,9 @@ type HookClaudeCmd struct {
 // HookGitCmd is the git pre-commit hook.
 type HookGitCmd struct {
 	hookFlags
+	// IndexFile is the index git commit hands its hooks: git commit -a and git
+	// commit <path> stage into a temporary one. Hidden: git sets it, a user does not.
+	IndexFile string `name:"index-file" env:"GIT_INDEX_FILE" hidden:"" help:"Index to judge (default: GIT_INDEX_FILE, else the repository's index)."`
 }
 
 func (*HookClaudeCmd) Help() string {
@@ -84,12 +89,18 @@ func (*HookGitCmd) Help() string {
     hooks:
       - id: archfit
 
-It runs check --format agent --base <ref> in the current directory, over the
-files on disk: with pre-commit that is the staged content plus untracked
-files (pre-commit stashes unstaged edits); a hook installed directly in
-.git/hooks also sees unstaged edits. Exit 1 with the repair on stderr when
-the next action is repair or ask_owner and a repair is in scope, 0 otherwise
-(other actions are printed), and 3 when archfit cannot run.`
+It judges what the commit will contain: the staged content (the index git
+hands the hook in GIT_INDEX_FILE), never unstaged edits or untracked files.
+It records the index as an unreachable commit object, checks it out in a
+temporary worktree under .archfit-cache/worktrees, and runs check --format
+agent --base <ref> there; the working tree, the index, and every ref stay as
+they are. The config comes from the index; the baseline, labels, and fact
+cache come from the config's directory on disk.
+
+Exit 1 with the repair on stderr when the next action is repair or ask_owner
+and a repair is in scope, 0 otherwise (other actions are printed), and 3 when
+archfit cannot run (no git repository, unmerged index entries, or a config
+that is not in the index).`
 }
 
 // claudeHookEvent is the part of the Claude Code hook event the hook reads.
@@ -142,7 +153,7 @@ func (c *HookClaudeCmd) Run(deps *appDeps) error {
 }
 
 func (c *HookGitCmd) Run(deps *appDeps) error {
-	result, err := hookResult(context.Background(), deps, c.Config, c.Base)
+	result, err := stagedHookResult(context.Background(), deps, c.Config, c.Base, c.IndexFile)
 	if err != nil {
 		return &exitError{code: 3, msg: "archfit hook: " + err.Error()}
 	}
@@ -173,19 +184,76 @@ func blocksChange(r agentout.Result) bool {
 	return r.Omitted.Repairs > 0
 }
 
-// hookResult runs check --format agent in process, with the pipeline's own
-// warnings kept off the hook's stderr, which the host shows to the agent.
+// hookResult runs check --format agent over the files on disk: the Claude
+// hook judges the agent's edits, which are not staged.
 func hookResult(ctx context.Context, deps *appDeps, configPath, base string) (agentout.Result, error) {
 	// Before the first commit HEAD names nothing: the whole tree is the
 	// change, so every blocker is in scope.
 	if base != "" && !refExists(ctx, deps.Runner, filepath.Dir(configPath), base) {
 		base = ""
 	}
+	return runAgentCheck(ctx, deps, scanRequest{configPath: configPath, baseRef: base})
+}
+
+// stagedHookResult runs check --format agent over the index rather than the
+// files on disk: the index is recorded as an unreachable commit
+// (historygit.SnapshotIndex) and checked out in a temporary worktree, which is
+// the head side of the run. The baseline, labels, and fact cache stay in the
+// config's directory on disk, as on the --base side.
+//
+// The checkout holds tracked files only. Gitignored inputs an analyzer
+// resolves through (node_modules, generated code) come from the surrounding
+// repository, as for --base, so a node_modules below the repository root is
+// not seen.
+func stagedHookResult(ctx context.Context, deps *appDeps, configPath, base, indexFile string) (agentout.Result, error) {
+	configAbs, err := filepath.Abs(configPath)
+	if err != nil {
+		return agentout.Result{}, err
+	}
+	configDir := filepath.Dir(configAbs)
+	gitRoot, err := historygit.RepoRoot(ctx, configDir, deps.Runner)
+	if err != nil {
+		return agentout.Result{}, fmt.Errorf("hook git needs a git repository: %w", err)
+	}
+	if indexFile != "" {
+		// git hands a hook a path relative to the hook's working directory.
+		if indexFile, err = filepath.Abs(indexFile); err != nil {
+			return agentout.Result{}, err
+		}
+	}
+	snapshot, err := historygit.SnapshotIndex(ctx, deps.Runner, gitRoot, indexFile)
+	if err != nil {
+		return agentout.Result{}, fmt.Errorf("record the index: %w", err)
+	}
+	// The base ref is resolved here, in the repository: inside the snapshot
+	// worktree HEAD names the snapshot itself, and every finding would read
+	// as pre-existing.
+	if base != "" {
+		if base, err = historygit.ResolveCommit(ctx, gitRoot, base, deps.Runner); err != nil {
+			// Before the first commit HEAD names nothing: the whole tree is
+			// the change, so every blocker is in scope.
+			base = ""
+		}
+	}
+	root, cleanup, err := historygit.Worktree{Runner: deps.Runner}.Checkout(ctx, snapshot, gitRoot, configDir)
+	defer cleanup()
+	if err != nil {
+		return agentout.Result{}, fmt.Errorf("check out the index: %w", err)
+	}
+	stagedConfig := filepath.Join(root, filepath.Base(configAbs))
+	if _, err := os.Stat(stagedConfig); err != nil {
+		return agentout.Result{}, fmt.Errorf("config %s is not in the index: stage it first", configPath)
+	}
+	return runAgentCheck(ctx, deps, scanRequest{configPath: stagedConfig, root: root, bundleDir: configDir, baseRef: base})
+}
+
+// runAgentCheck runs check --format agent in process, with the pipeline's own
+// warnings kept off the hook's stderr, which the host shows to the agent.
+func runAgentCheck(ctx context.Context, deps *appDeps, req scanRequest) (agentout.Result, error) {
 	quiet := *deps
 	quiet.Stdout, quiet.Stderr = io.Discard, io.Discard
-	resp, _, err := executeScan(ctx, &quiet, scanRequest{
-		configPath: configPath, baseRef: base, formats: []string{formatAgent}, progress: "none", quiet: true,
-	}, nil)
+	req.formats, req.progress, req.quiet = []string{formatAgent}, "none", true
+	resp, _, err := executeScan(ctx, &quiet, req, nil)
 	if err != nil {
 		return agentout.Result{}, err
 	}

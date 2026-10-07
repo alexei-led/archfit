@@ -851,10 +851,21 @@ init` emits v2 directly; owners update older configs manually before analysis.
   AND an in-scope repair (a dead selector or a ratchet is not scoped to the
   change, so it is a `systemMessage`); `stop_hook_active` → `systemMessage`;
   any archfit error fails open (exit 0 + `systemMessage`); malformed stdin is
-  1. `hook git` exits 1/0/3 on the same `blocksChange` and judges the files on
-  disk. Both run `executeScan` in process with `--base HEAD`
-  and the pipeline's stderr discarded. These exit codes are the host protocol,
-  never the engine verdict.
+  1. `hook git` exits 1/0/3 on the same `blocksChange` and judges the INDEX,
+  never the disk: `historygit.SnapshotIndex` copies the index git hands the
+  hook (`GIT_INDEX_FILE`, read through the hidden `--index-file` flag; `git
+  commit -a`/`<path>` use a temporary one, and `CleanEnv` scrubs the variable,
+  so it is passed on purpose), runs `write-tree` on the copy (write-tree writes
+  its cache-tree back, and git commit holds the real index locked), and
+  `commit-tree`s it on HEAD with a fixed identity and date (same staged tree,
+  same SHA, same checkout path) and `--no-gpg-sign`. `Worktree.Checkout`
+  materialises it as the head root; the config is read from the checkout,
+  `BundleDir` (baseline, labels, fact cache) stays the on-disk config dir
+  (`scanRequest.bundleDir`). `--base` is resolved to a SHA in the repository
+  first: inside the snapshot worktree `HEAD` names the snapshot and every
+  finding would grade pre_existing. Both hooks run `executeScan` in process
+  with the pipeline's stderr discarded. These exit codes are the host
+  protocol, never the engine verdict.
 - **`AGENTS.md` carries a generated block** (`archfit agents-md`, markers
   `<!-- archfit:start/end -->`). `TestAgentsMDRepositoryBlockIsCurrent` fails
   when `.archfit.yaml` changes without `archfit agents-md --write`; example
