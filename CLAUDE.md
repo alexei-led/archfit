@@ -965,6 +965,12 @@ init` emits v2 directly; owners update older configs manually before analysis.
   new representatives, and wrote a different file every time. Three captures on
   this repo produced 108, 164, then 148 accepted entries and never settled
   (`cmd/archfit.TestRun_Baseline_IsIdempotent`).
+  Capture accepts EVERY edge a BC rollup stands for (`finding.Finding.Members`,
+  `json:"-"`, set in `rollup`; `matched_by.group_members` stays capped at 8 for
+  readers). Status is assigned per edge before the rollup, so a baseline that
+  held only the representative left its siblings `new`: right after a capture,
+  `check` on the unchanged tree reported 66 BC findings as new on this repo
+  (`TestRun_Baseline_AcceptsEveryBCGroupMember`).
   Capture also skips findings covered by temporary waivers, including expired
   waivers, and prints the count; it never silently turns temporary exceptions
   into permanent accepted debt. A profile mismatch or incomplete seam snapshot

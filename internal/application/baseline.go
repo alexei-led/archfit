@@ -139,6 +139,14 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 	}
 	doc := ProjectReport(out.Diagnostic, out.Score)
 	snapshot := BaselineSnapshot{Metrics: documentMetrics(doc), State: baselineState(out.Diagnostic)}
+	// Status is assigned per edge before BC advisories are rolled up, so a
+	// rollup is accepted only when every edge it stands for is accepted.
+	members := make(map[string][]string)
+	for _, f := range out.Diagnostic.Findings {
+		if len(f.Members) > 0 {
+			members[f.ID] = f.Members
+		}
+	}
 	skippedWaived := 0
 	for _, f := range doc.Findings {
 		if f.Status == report.FindingStatusWaived || f.Status == report.FindingStatusExpiredWaiver {
@@ -152,7 +160,13 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 		if f.RuleID == finding.RuleIDBCImbalanced {
 			kind = report.FindingKindAdvisory
 		}
-		snapshot.Accepted = append(snapshot.Accepted, BaselineFinding{Fingerprint: f.ID, RuleID: f.RuleID, Kind: kind, Severity: f.Severity})
+		ids, ok := members[f.ID]
+		if !ok {
+			ids = []string{f.ID}
+		}
+		for _, id := range ids {
+			snapshot.Accepted = append(snapshot.Accepted, BaselineFinding{Fingerprint: id, RuleID: f.RuleID, Kind: kind, Severity: f.Severity})
+		}
 	}
 	if err := s.Writer.Save(ctx, req.Path, snapshot); err != nil {
 		return BaselineResponse{}, fmt.Errorf("save baseline: %w", err)
