@@ -672,6 +672,22 @@ stderr, and the run emits one `bc/coupling_gate` gate finding **per newly
 introduced seam**, each naming its module pair, so `agent_tasks[]` points at
 the seams that blocked rather than at unrelated advisories.
 
+### Which keys decide comparability
+
+Archfit compares two runs only when the inputs that change measured facts agree.
+It does not compare the bytes of `.archfit.yaml`. Each key has one class:
+
+| Class          | Keys                                                                                                                                                                      | Effect of an edit                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Model          | `modules` (paths, `public`, `internal`, `layer`, `subdomain`, `volatility`, `owner`, `deploy_unit`, `role`)                                                               | Changes `model_hash`.                                                                                              |
+| Classification | `coupling.volatility_cascade`, `coupling.duplicated_knowledge`, `external_systems`, `metrics.function_loc_threshold`, `metrics.<name>.enabled`                            | Changes `classification_hash`.                                                                                     |
+| Profile        | `exclude`, `languages`, `analyzers`, `coverage` (not its gate), `file_class`, `rules[].patterns`                                                                          | Changes the measurement profile.                                                                                   |
+| Profile (gate) | `languages.<id>.gate`, `analyzers.<id>.gate`, `coverage.gate`                                                                                                             | The gate value is not hashed. It matters only when it changes the status of an absent or disabled analyzer.        |
+| Governance     | `rules` (except `patterns`), `waivers`, `layers`, `coupling.min_severity`, `coupling.gate`, `metrics.<name>.gate`, `min_delta`, `max_new`, `modules.<m>.depends_on`, `visible_to`, `reviewed_at`, `ai`, `outputs`, `module_review`, comments | Can change findings and what blocks. Never makes a stored reference non-comparable. |
+
+`comparison.config_hash` is the SHA-256 of the file bytes. It identifies the
+file, and the App binds it to the protected policy. It is not compared.
+
 ### Measurement compatibility
 
 Every architecture-state run carries `comparison.measurement_profile`. It is
@@ -871,9 +887,9 @@ auto-registered module owns (a `go.work` member or a Rust `crate::mod` node
 that no declared module claims) counts as unowned. A `crate::mod` node of a
 crate that a declared module owns belongs to that module.
 
-The lists do not change `model_hash`: they move neither distance nor seam
-identity. They do change `config_hash`, so an allowlist edit makes a stored
-baseline non-comparable until you run `archfit baseline` again.
+The lists change neither `model_hash` nor `classification_hash`: they move
+neither distance nor seam identity. An allowlist edit changes findings, not
+comparability, so the stored baseline stays comparable.
 
 ### Module selectors
 
@@ -1093,8 +1109,11 @@ rules:
 | `docs` | all | A document reference, such as an ADR path. Appended to every finding's `why` and `constraint` as ` (see <docs>)`, so SARIF and the repair task carry it. |
 
 `rationale`, `alternatives`, and `docs` never enter a finding ID, so editing
-them re-keys no finding. Report text is bounded at projection, so a long
-rationale is cut, never rejected.
+them re-keys no finding. archfit reads each of them as one line: when the
+config loads, every run of whitespace, line breaks included, becomes one space,
+and the ends are trimmed. So a YAML block scalar (`rationale: |` or `>`) is
+safe in findings and in the `archfit agents-md` block. Report text is bounded
+at projection, so a long rationale is cut, never rejected.
 
 ```yaml
 rules:

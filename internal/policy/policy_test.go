@@ -1,7 +1,9 @@
 package policy
 
 import (
+	"reflect"
 	"testing"
+	"time"
 )
 
 const (
@@ -133,5 +135,38 @@ func TestModelHashIgnoresAllowlists(t *testing.T) {
 	}
 	if ModelHash(base) != ModelHash(listed) {
 		t.Error("ModelHash changed when only depends_on/visible_to changed")
+	}
+}
+
+// TestModelHashCoversEveryModuleField fails when a ModuleDef field is added
+// that ModelHash does not read and that is not a deliberate governance field.
+// The config leaf-class test treats an unlisted `modules` field as model, so
+// without this a new field would be labelled hashed while moving no hash.
+func TestModelHashCoversEveryModuleField(t *testing.T) {
+	governance := map[string]bool{"DependsOn": true, "VisibleTo": true, "ReviewedAt": true, "ReviewedBy": true}
+	typ := reflect.TypeOf(ModuleDef{})
+	empty := map[string]ModuleDef{"m": {}}
+	want := ModelHash(empty)
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		def := ModuleDef{}
+		value := reflect.ValueOf(&def).Elem().Field(i)
+		switch value.Kind() {
+		case reflect.String:
+			value.SetString("x")
+		case reflect.Slice:
+			value.Set(reflect.ValueOf([]string{"x"}))
+		case reflect.Struct:
+			value.Set(reflect.ValueOf(time.Unix(1, 0).UTC()))
+		default:
+			t.Fatalf("ModuleDef.%s has kind %s: teach this test how to set it", field.Name, value.Kind())
+		}
+		changed := ModelHash(map[string]ModuleDef{"m": def}) != want
+		if changed == governance[field.Name] {
+			t.Errorf("ModuleDef.%s: ModelHash changed = %v, governance = %v: hash it, or list it as governance on purpose", field.Name, changed, governance[field.Name])
+		}
 	}
 }

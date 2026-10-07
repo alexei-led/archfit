@@ -39,7 +39,7 @@ Text and Markdown use the human term. JSON and SARIF use the wire term.
 | measured / partial / unmeasured     | none                                  | archfit-only | Whether every required fact of a dimension was observed.                                                      |
 | out of claim                        | none                                  | archfit-only | A fact a dimension does not claim to measure. A NOT MEASURED line marks it "no action".                       |
 | gate reference                      | none                                  | archfit-only | The stored baseline that the seam gate and the drift dimension compare against.                               |
-| fingerprint                         | none                                  | archfit-only | `config_hash`, `model_hash`, `labels_hash`, `rubric_version`. Two runs compare only when all match.           |
+| fingerprint                         | none                                  | archfit-only | `classification_hash`, `model_hash`, `labels_hash`, `rubric_version`. Two runs compare only when all match.           |
 | agent task                          | none                                  | archfit-only | The repair contract of one blocker: goal, files, constraints, and check command.                              |
 
 ## Where each term appears

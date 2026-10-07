@@ -126,7 +126,7 @@ Frozen exit table:
 
 ### Comparison is strict
 
-Any `config_hash` / `model_hash` / `labels_hash` / `rubric_version` mismatch makes
+Any `classification_hash` / `model_hash` / `labels_hash` / `rubric_version` mismatch makes
 the run `non_comparable` with stated reasons — never a numerical delta computed
 across incomparable models. No project option may weaken this. A module rename
 changes the model hash, so it cannot surface as a comparable resolved/new seam.

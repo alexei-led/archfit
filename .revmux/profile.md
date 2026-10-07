@@ -18,7 +18,7 @@
   language), a finding on code outside the declared scope.
 - Non-determinism: cold vs warm or run-to-run output differs (map order, wall clock, absolute
   paths, PIDs). Byte-identical JSON is a contract.
-- Contract drift: a new key in `archfit.architecture-state.v1`, baseline v2, or the comparison
+- Contract drift: a new key in `archfit.architecture-state.v1`, baseline v3, or the comparison
   fingerprints without a deliberate version change (the App rejects unknown keys); a finding ID
   that re-keys for unchanged code; unbounded strings or lists the App caps reject.
 - Invariant breaks: core-ring packages importing `os`/`os/exec`/YAML/adapters; stages importing

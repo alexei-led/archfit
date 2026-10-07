@@ -714,6 +714,9 @@
         "config_hash": {
           "type": "string"
         },
+        "classification_hash": {
+          "type": "string"
+        },
         "model_hash": {
           "type": "string"
         },
@@ -731,6 +734,15 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "drift": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "baseline_present": {
+          "type": "boolean"
         },
         "task_origin_status": {
           "type": "string"

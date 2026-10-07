@@ -2,6 +2,28 @@
 
 ## v3.0.0 — (unreleased)
 
+One breaking release. Users re-anchor the baseline once.
+
+Changed (comparability v2):
+
+- Comparability no longer reads the raw bytes of `.archfit.yaml`. A new
+  `comparison.classification_hash` covers only the policy leaves that change
+  measured facts: `coupling.volatility_cascade`, `coupling.duplicated_knowledge`,
+  `external_systems`, `metrics.function_loc_threshold`, and metrics switched off
+  with `enabled: false`. A comment, a waiver, a rule, a gate, `layers`,
+  `coupling.min_severity`, `depends_on`, `visible_to`, or `reviewed_at` edit no
+  longer makes the stored reference non-comparable. A `patterns:` edit in a
+  rule still does, because the pattern pass is a measurement input.
+- `config_hash` stays in `comparison` as the identity of the file. It is no
+  longer compared.
+- `comparison` and `gate_reference` carry `drift[]`: the input classes that made
+  the comparison non-comparable (`classification_hash`, `model_hash`,
+  `labels_hash`, `rubric_version`, `measurement_profile`, `reference_incomplete`).
+  `gate_reference.baseline_present` says whether a baseline file was loaded.
+- The baseline schema is `archfit.baseline.v3` and stores `classification_hash`.
+  The engine rejects v2 files. A stored v3 reference without a
+  `classification_hash` is non-comparable (`reference_incomplete`).
+
 Fixed:
 
 - `archfit baseline` now accepts every edge of a Balanced Coupling advisory
@@ -11,6 +33,14 @@ Fixed:
   as `new` directly after a capture. The baseline file gets one entry for each
   edge, so it can be larger. Run `archfit baseline` again to accept the full
   groups.
+- A rule `rationale`, `docs`, or `alternatives` written as a YAML block scalar
+  (`rationale: |` or `>`) is now one line everywhere. The config loader turns
+  every run of whitespace into one space and trims the ends. Before this fix,
+  the trailing line break of `docs` printed `(see docs/adr.md )` in a finding's
+  `why`, and a multi-line `rationale` broke its list item in the
+  `archfit agents-md` block. A multi-line module `owner` also broke its row in
+  the module table; the block now writes it on one line. Finding IDs do not
+  change.
 
 ## v2.5.1 — (unreleased)
 
