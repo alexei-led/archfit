@@ -132,7 +132,12 @@ layer, and cycle facts for every internally resolved edge.
 
 **Out-of-claim:** Direction and layer of edges whose targets leave the declared
 module map; those edges remain counted and disclosed, but they make no claim
-about this repository's internal structure.
+about this repository's internal structure. They are counted in two metrics:
+`library_edges` (the target is a library: an external node, or a target that
+no first-party node stands for, such as a Go standard-library package) and
+`unmapped_first_party_edges` (first-party code that no declared module owns,
+on either side). Only the second one is a gap in the module map;
+`map/uncovered_path` reports that gap from the walked source.
 
 **Measured when:** `A(structure)` is true, every applicable primary dependency
 inventory completed, and every internally resolved edge has its in-claim

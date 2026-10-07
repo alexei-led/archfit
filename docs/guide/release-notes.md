@@ -88,6 +88,16 @@ Changed (hook git):
   directory on disk. A config that the commit removes, or an unmerged index,
   is an error (exit 3).
 
+Changed (structure metrics):
+
+- The `structure` dimension replaces the `external_edges` metric with two
+  metrics. `library_edges` counts dependencies on libraries: an external
+  node, or a target that no first-party node stands for, such as a Go
+  standard-library package. `unmapped_first_party_edges` counts dependencies
+  that touch first-party code that no declared module owns. Only the second
+  one is a gap in the module map. Their sum equals the old `external_edges`.
+  A consumer that reads `external_edges` must read both new names.
+
 ## v2.5.1 — (unreleased)
 
 Two fixes. The output contract and the baseline do not change.
