@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -79,6 +80,10 @@ def abstention_rate(row: dict[str, Any]) -> float:
 def resolve_binary(archfit: str) -> str:
     """Make the binary path absolute: the child runs with cwd set to the repo,
     and a relative path would be looked up there."""
+    if os.sep not in archfit:
+        found = shutil.which(archfit)
+        if found:
+            return str(Path(found).resolve())
     return str(Path(archfit).resolve())
 
 

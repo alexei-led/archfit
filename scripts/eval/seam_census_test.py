@@ -92,6 +92,12 @@ class ResolveBinaryTest(unittest.TestCase):
         self.assertEqual(got, str(Path(".bin/archfit").resolve()))
 
 
+    def test_bare_command_is_found_on_path(self):
+        got = sc.resolve_binary("sh")
+        self.assertTrue(Path(got).is_absolute())
+        self.assertNotEqual(got, str(Path("sh").resolve()))
+
+
 class ParseReposTest(unittest.TestCase):
     def test_accepts_label_dir(self):
         self.assertEqual(sc.parse_repos(["a=/x", "b=/y"]), {"a": "/x", "b": "/y"})
