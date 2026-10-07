@@ -4,14 +4,15 @@
 // on a fixture that violates it — a structural rule nobody has watched fail is
 // a rule nobody knows still works.
 //
-// The six names and their owners:
+// The seven names and their owners:
 //
-//	no_scalar_decision        TestErosion_NoScalarDecision        (this file)
-//	no_dead_archfit_rule      TestErosion_NoDeadArchfitRule       (this file)
-//	dimension_status_required TestErosion_DimensionStatusRequired (cmd/archfit)
-//	config_hash_required      TestErosion_ConfigHashRequired      (cmd/archfit)
-//	label_evidence_required   TestErosion_LabelEvidenceRequired   (cmd/archfit)
-//	baseline_idempotent       TestErosion_BaselineIdempotent      (cmd/archfit)
+//	no_scalar_decision        TestErosion_NoScalarDecision          (this file)
+//	no_dead_archfit_rule      TestErosion_NoDeadArchfitRule         (this file)
+//	dimension_status_required TestErosion_DimensionStatusRequired   (cmd/archfit)
+//	config_hash_required      TestErosion_ConfigHashRequired        (cmd/archfit)
+//	label_evidence_required   TestErosion_LabelEvidenceRequired     (cmd/archfit)
+//	baseline_idempotent       TestErosion_BaselineIdempotent        (cmd/archfit)
+//	policy_query_agreement    TestErosion_PolicyQueryAgreesWithCheck (cmd/archfit, policy_test.go)
 package arch_test
 
 import (
