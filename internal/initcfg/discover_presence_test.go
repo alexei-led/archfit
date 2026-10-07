@@ -49,8 +49,8 @@ func TestDiscover_GoWorkMembers(t *testing.T) {
 		got[m.Name] = mod{m.Paths, m.Public, m.Sources}
 	}
 	want := map[string]mod{
-		testModLibShared: {[]string{"lib/shared/**"}, []string{"lib/shared"}, []string{"lib/shared", "lib/shared/hook"}},
-		testModSvcA:      {[]string{"svc/a/**"}, []string{"svc/a"}, []string{"svc/a", "svc/a/api"}},
+		testModLibShared: {[]string{"lib/shared/**"}, nil, []string{"lib/shared", "lib/shared/hook"}},
+		testModSvcA:      {[]string{"svc/a/**"}, nil, []string{"svc/a", "svc/a/api"}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("modules = %+v, want %+v", got, want)
@@ -70,9 +70,9 @@ func TestDiscover_GoWorkMembers(t *testing.T) {
 	}
 }
 
-// TestDiscover_PublicOnlyForPackageDirs: a grouping directory that holds no Go
-// files is not a graph node, so it gets no public entry (lint would reject it).
-func TestDiscover_PublicOnlyForPackageDirs(t *testing.T) {
+// TestDiscover_GoModulesDeclareNoPublicSurface: under bc_score.v7 a public:
+// entry claims a published contract, so discovery never writes one for Go.
+func TestDiscover_GoModulesDeclareNoPublicSurface(t *testing.T) {
 	root := t.TempDir()
 	writeGoMod(t, root)
 	runner := mockRunner(`{"ImportPath":"github.com/example/myapp/internal/domain/order","Module":{"Path":"github.com/example/myapp"}}
@@ -81,12 +81,13 @@ func TestDiscover_PublicOnlyForPackageDirs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	public := map[string][]string{}
-	for _, m := range cfg.Modules {
-		public[m.Name] = m.Public
+	if len(cfg.Modules) == 0 {
+		t.Fatal("no modules discovered")
 	}
-	if want := map[string][]string{"app": {"internal/app"}, testModDomain: nil}; !reflect.DeepEqual(public, want) {
-		t.Errorf("public = %v, want %v", public, want)
+	for _, m := range cfg.Modules {
+		if len(m.Public) != 0 {
+			t.Errorf("module %s public = %v, want none", m.Name, m.Public)
+		}
 	}
 }
 

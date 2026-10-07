@@ -53,14 +53,19 @@ change-propagating — the coupling. Four levels, strongest to weakest
 | ------------ | ------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `intrusive`  | 10      | Depends on private interfaces / implementation details not meant to be shared.                    | `internal:` globs, Go `internal/`, `_private.py`, SCIP "private" symbol kind. |
 | `symmetric`  | 9       | Duplicated functionality — both sides must change together (DRY violation across a boundary).     | Cross-module clone pair detected by the clone detector (`analyzers.clones`).  |
-| `functional` | 8       | Shares knowledge of business requirements; the two must change together when requirements change. | Config-declared or SCIP function/method-level reference.                      |
-| `model`      | 3       | Shares a domain model / schema that must be updated in both when the model changes.               | Shared exported type, SCIP concrete-class symbol kind.                        |
-| `contract`   | 1       | Integrates through an explicit, intention-revealing contract that hides implementation.           | `public:` globs, SCIP Protocol/ABC/interface symbol kind.                     |
+| `functional` | 8       | Shares knowledge of business requirements; the two must change together when requirements change. | A call or reference into a non-public module surface (Go function, concrete-receiver method, func/chan var; SCIP function kind). |
+| `model`      | 3       | Shares a domain model / schema that must be updated in both when the model changes.               | Data evidence: a concrete non-DTO type, field, var or const; a method on a concrete receiver (Go); SCIP concrete data symbol. |
+| `contract`   | 1       | Integrates through an explicit, intention-revealing contract that hides implementation.           | A `public:` target; a call to an interface type or interface method; a data-only DTO struct. |
 
-`contract` and `intrusive` are decided deterministically from config globs and
-visibility. `symmetric` is assigned when clone detection finds duplicated logic
-crossing a module boundary. `model` and `functional` are inferred from symbol
-kinds (SCIP) or config-declared, and refined under human review by
+A `public:` target is the integration contract (bc_score.v7). A call through a
+public surface, and any call to an interface method, is `contract`. Only data
+evidence raises a public target to `model`. An `internal:` target is
+`intrusive`. A call into a non-public module is `functional`. Each cross-module
+clone pair is its own `symmetric` fact on the seam between its modules; it never
+upgrades an import edge. Go reads the object kind from compiler type info, so
+SCIP does not override it. For TypeScript, Python and Rust, SCIP symbol kinds
+refine the extractor hint. Pinned labels set strength, refined under human
+review by
 `archfit config enrich` (see [LLM enrichment](llm-enrich.md)). When nothing classifies
 an edge, its strength is `unknown` — the edge is **abstained** (excluded from
 scoring), never assigned an invented ordinal.
@@ -71,10 +76,8 @@ directly.
 #### Connascence evidence — what shared knowledge was seen
 
 Connascence (book Ch6) is a lower-level vocabulary for the same shared knowledge
-that drives integration strength. `archfit` now reports deterministic static
-connascence as evidence, not as another score. The connascence report stays
-report-only, but deterministic `meaning` and `algorithm` evidence may refine an
-otherwise unresolved strength to `model` or `functional`:
+that drives integration strength. `archfit` reports deterministic static
+connascence as evidence, not as another score. It never sets strength:
 
 | Connascence kind | Status in archfit                                                        |
 | ---------------- | ------------------------------------------------------------------------ |
@@ -107,51 +110,38 @@ different teams < different deploy units).
 > two objects in different microservices.
 > — <https://coupling.dev/posts/dimensions-of-coupling/distance/>
 
-`archfit` levels, nearest to farthest:
+`archfit` levels, nearest to farthest. Distance is **level-relative**: any
+module boundary is D=9, the book's rung for an in-house service.
 
-| Level                          | Derived from                                                         |
-| ------------------------------ | -------------------------------------------------------------------- |
-| `same_module`                  | Both endpoints map to the same module.                               |
-| `cross_module_same_owner`      | Same `owner`, or sibling/parent-child packages when no owner is set. |
-| `cross_module_different_owner` | Different `owner`, or unrelated/flat packages by code structure.     |
-| `cross_deploy_unit`            | Both endpoints set `deploy_unit` and they differ.                    |
+| Level                          | D  | Derived from                                                         |
+| ------------------------------ | -- | -------------------------------------------------------------------- |
+| `same_module`                  | 2  | Both endpoints map to the same module (`local_coupling`, report-only). |
+| `cross_module`                 | 9  | Two modules. Same owner (or no owner) and same deploy unit.         |
+| `cross_module_different_owner` | 9  | Two modules with different, non-empty `owner` values.                |
+| `cross_deploy_unit`            | 9  | Both modules set `deploy_unit` and the values differ.                |
+| `declared_external`            | 10 | The target matches an `external_systems:` entry.                     |
 
-`owner` and `deploy_unit` are config fields precisely because they change
-distance: the same import can be cheap (same team, same service) or expensive
-(two teams, two deploy units). `archfit` treats
-`cross_module_different_owner` and `cross_deploy_unit` as **high** distance.
+The token names the boundary. It never moves the score: the three cross-module
+levels all score at D=9. `owner` and `deploy_unit` still matter, because they
+decide the token, the `raw_distance.basis` text (`<boundary>@<container>`) and
+the wording of the gate reason. Only a deploy-unit boundary is called a
+distributed monolith. Module key spelling decides nothing: renaming a module or
+nesting it differently leaves every score unchanged.
 
-Distance is a composite of three signals. A deploy boundary is absolute. When
-multiple distinct owners exist, ownership overrides code structure. In repos with
-a single maintainer or one team everywhere, ownership is **neutral** — it does not
-collapse far-apart modules to "same owner = low risk". Code structure (package-tree
-position) is the always-available baseline and distinguishes close from far modules
-regardless of owner count. Because the current score compresses the book's middle
-D=3–7 rungs, the distance-confidence report also discloses raw code-structure
-boundary crossings and shared-ancestor depths so you can see how far the common
-ancestor really is without guessing. See the
-[configuration reference](configuration-reference.md) for the exact composite order.
+Nested modules form a **containment tree** from the `paths:` globs. A seam
+reports the container it sits in (the last node both sides share), so a seam
+inside `sales` reads `module_boundary@sales`, and two modules with no common
+ancestor read `@system`. Plain folders add no level.
 
-**Owner resolution is single-dominant-owner per module** (the value declared in
-config, or the most-frequent owner from CODEOWNERS / git-author history). Two
-consequences to know when reading `cross_module_different_owner`:
 
-- A CODEOWNERS that lists a **common team first on most lines** (e.g. a
-  `* @org/maintainers` catch-all, or a maintainers team co-listed on every rule)
-  resolves nearly every module to that one owner, so cross-team distance
-  under-reports. archfit keeps the first owner per line, not the owner set.
-- A CODEOWNERS that **does not cover the analyzed source** (only `/docs`, or the
-  backend package has no rule) resolves to a single or empty owner → owner
-  distance is neutral and the score falls back to code-structure distance.
-
-Both are faithful reflections of the repo's declared ownership, not bugs — but if
-you want cross-team coupling to register, declare `owner:` per module explicitly.
-The `owner_source` field (`config` | `codeowners` | `git` | `git_timeout` |
-`codeowners_no_match` | `none`) in the Markdown "Distance confidence" section
-tells you which path produced the owners. The two degraded sources — a
-CODEOWNERS file that matched none of the configured modules, or a git-author
-history walk that timed out — also emit a stderr warning instead of silently
-falling back to code-structure distance.
+**Owner resolution** takes one owner per module: the value declared in config, or
+the most-frequent owner from CODEOWNERS or git-author history. The owner decides
+only the `cross_module_different_owner` token and the seam's raw owner facts. It
+never changes a score or makes a seam qualify. The `owner_source` field
+(`config` | `codeowners` | `git` | `git_timeout` | `codeowners_no_match` |
+`none`) tells you which path produced the owners. The two degraded sources, a
+CODEOWNERS file that matched none of the configured modules and a git-author
+history walk that timed out, also emit a stderr warning.
 
 **Deviation from the book:** Khononov also counts _runtime coupling_ (synchronous
 vs asynchronous integration) and lifecycle coupling as part of distance. `archfit`
@@ -278,9 +268,8 @@ Ordinal anchors (book-exact):
 | Strength   | Symmetric (clone-detected DRY) | 9       |
 | Strength   | Intrusive                      | 10      |
 | Distance   | `same_module`                  | 2       |
-| Distance   | `cross_module_same_owner`      | 4       |
-| Distance   | `cross_module_different_owner` | 7       |
-| Distance   | `cross_deploy_unit`            | 9       |
+| Distance   | any module boundary            | 9       |
+| Distance   | `declared_external`            | 10      |
 | Volatility | `supporting` / `generic`       | 3       |
 | Volatility | `core`                         | 10      |
 
@@ -289,16 +278,17 @@ Balance maps to severity bands: 1–2 → `critical`, 3–4 → `high`,
 
 Three things worth noting:
 
-- **The distributed monolith** (S=Intrusive/Symmetric, D=cross_deploy_unit,
-  V=core): `max(|10−9|, 10−10) + 1 = 1` → `critical`. The worst pattern
-  scores 1 exactly as the book says.
+- **The worst pattern** (S=Intrusive/Symmetric, a module boundary at D=9,
+  V=high): `max(|10−9|, 10−10) + 1 = 2` (symmetric: 1) → `critical`. Across a
+  module boundary an edge is critical exactly when it is strong (functional,
+  symmetric or intrusive) and V is 10. The high band cannot occur there.
 - **Asymmetric (modular) cases score well.** A Contract edge across a deploy
   boundary (S=1, D=9, V=10): `max(8, 0) + 1 = 9` → `none`. Low strength
   over high distance is balanced — the formula rewards it.
-- **Over-decoupling is also visible.** Contract coupling across a tiny
-  same-module distance with high volatility (S=1, D=2, V=10):
-  `max(1, 0) + 1 = 2` → `critical`. The seam is more ceremony than the
-  relationship warrants.
+- **Ports are contract.** A call to an interface method, or through a
+  `public:` surface, is contract coupling. Across a module boundary (S=1, D=9,
+  V=10) it scores `max(8, 0) + 1 = 9` → `none`. The same call into a
+  non-public package of a high-volatility module is functional and scores 2.
 
 When strength or distance cannot be classified (`unknown`), the edge is
 **abstained** — excluded from scoring rather than assigned an invented ordinal.
@@ -312,7 +302,7 @@ clone pairs with no import edge are clone-only duplicated knowledge; by default
 (`coupling.duplicated_knowledge: score`) they enter `coupling_balance` as
 symmetric-strength coupling facts and may also surface as `bc/duplicated_knowledge`
 advisories after severity filtering. Set the policy to `advisory` to preserve
-the v4 report-only behavior. `ScoreVersion` is `bc_score.v6`; the v6 change makes the opt-in inferred-volatility cascade transitive instead of one-hop.
+the v4 report-only behavior. `ScoreVersion` is `bc_score.v7`. See the [v7 design](../design/bc-measurement-v7.md) for the strength, distance, volatility and clone-fact rules.
 
 ---
 
@@ -347,8 +337,8 @@ Book alignment status in the deterministic gate:
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Book-exact       | Ch10 formula, published strength ordinals, scored cross-module `coupling_balance`, and abstain-not-fake for unknown S or D.                                    |
 | Sound adaptation | Static extractor facts mapped onto book strength/connascence vocabulary; same-module `local_coupling`; transitive Ch9 cascade.                                 |
-| Policy choice    | Compressed middle distance rungs, declared-only external seams, clone-only score/advisory policy, conservative undeclared V=10.                                |
-| Report-only      | `connascence`, `local_coupling`, `runtime_async`, `runtime_async_edges`, `dynamic_imports`, `distance_config_candidates`, distance compression, and tail risk. |
+| Policy choice    | Level-relative distance (D=2, 9, 10), declared-only external seams, clone-only score/advisory policy, conservative undeclared V=10.                                |
+| Report-only      | `connascence`, `local_coupling`, `runtime_async`, `runtime_async_edges`, `dynamic_imports`, `distance_config_candidates`, and tail risk. |
 | Out of scope     | Dynamic connascence scoring, runtime/lifecycle distance scoring, churn-derived volatility scoring, and LLM-only gate changes.                                  |
 
 The workflow: change code → `archfit check` → deterministic finding or

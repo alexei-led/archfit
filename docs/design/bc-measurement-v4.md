@@ -1,5 +1,8 @@
 # Balanced Coupling measurement engine — design v6.0
 
+> **Superseded by [bc-measurement-v7.md](bc-measurement-v7.md)** for strength,
+> distance, volatility and clone rules (`bc_score.v7`, v3.0.0).
+
 Date: 2026-07-05. Status: SHIPPED. Supersedes `bc-measurement-v3.md` (archived
 under `docs/archived/design/`). The v3 doc recorded the move to Khononov's
 published formula; v4 changed classification feeding that formula; v5 changes

@@ -516,14 +516,16 @@ Notes that bite most often:
   run fails (proc-macro/codegen) are named in the coverage reason and confidence
   drops to medium — partial, never silent.
 - **Clone detection is opt-in.** `analyzers.clones.enabled: true` plus `jscpd`
-  (`npm install -g jscpd@5.0.11`) upgrades cross-module clone pairs to
-  `StrengthSymmetric` (S=9) in the BC scorer. Clone-only pairs with no import
+  (`npm install -g jscpd@5.0.11`) turns each cross-module clone pair into a
+  `symmetric` (S=9) clone fact in the BC scorer. A pair never upgrades an import edge. Clone-only pairs with no import
   edge enter `coupling_balance` by default under `coupling.duplicated_knowledge: score`.
   `false` or absent → no clone signal.
-- **Strength precision is language-asymmetric (bc_score.v6).** Go classifies
+- **Strength precision is language-asymmetric (bc_score.v7).** Go classifies
   `const`/`var` uses as `model` (pure-data sharing) and pure-data DTO structs
   crossing a declared `public:` boundary as `contract` directly from compiler
-  type info. Rust gets const/static→model precision via `analyzers.scip`
+  type info. A call to an interface type or interface method is `contract`, and
+  a concrete type, field or concrete-receiver method used across a `public:`
+  boundary is `model`. SCIP never overrides the Go result. Rust gets const/static→model precision via `analyzers.scip`
   (rust-analyzer terms). Python and TypeScript built-in extractors stay
   conservative, but SCIP symbol-kind metadata can refine interface/protocol/trait
   references to `contract`, concrete data symbols to `model`, and functions to

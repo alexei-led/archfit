@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
@@ -252,20 +251,10 @@ func buildGoModules(segments map[string][]string) []ModuleDef {
 		pkgs := append([]string(nil), segments[key]...)
 		sort.Strings(pkgs)
 
-		// Public is the importable package path itself (an import targets the
-		// package node "key"). Go cross-package imports go through exported APIs —
-		// the compiler forbids importing unexported symbols — so they are contract
-		// coupling, not intrusive. (Go's `internal/` is module-visibility, NOT
-		// BC-intrusive; do not mark it internal here, or normal shared code reads
-		// as a false leak.) It is emitted only when "key" itself is a package: a
-		// bare grouping directory (internal/domain holding only order/ and
-		// billing/) names no graph node, and a public entry that matches nothing
-		// is a config lint error.
-		var public []string
-		if slices.Contains(pkgs, key) {
-			public = []string{key}
-		}
-
+		// No public: entry. Under bc_score.v7 a public: target is the integration
+		// contract, so an entry claims a published surface; discovery cannot know
+		// which packages are one, and guessing the package itself turned every
+		// cross-module call into contract coupling. The owner declares surfaces.
 		mods = append(mods, ModuleDef{
 			Name: moduleNameFromKey(key),
 			// Doublestar glob (classify/extractor node paths use "/"-separated
@@ -273,7 +262,6 @@ func buildGoModules(segments map[string][]string) []ModuleDef {
 			// its files. NOT the go-list "key/..." form, which doublestar does not
 			// match.
 			Paths:   []string{key + "/**"},
-			Public:  public,
 			Sources: pkgs,
 		})
 	}
