@@ -53,12 +53,6 @@ type Config struct {
 	ModuleReview    ModuleReviewConfig                  `yaml:"module_review"`
 	FileClass       FileClassDef                        `yaml:"file_class"`
 	Outputs         OutputsConfig                       `yaml:"outputs"`
-
-	// explicitOwners records which modules had a hand-authored `owner:` in YAML,
-	// populated by Load before any resolver fill. Distinguishes a user's explicit
-	// ownership (authoritative for distance) from a resolver-filled owner (e.g. the
-	// git-author degenerate fallback). Not a YAML field; the decoder ignores it.
-	explicitOwners map[string]bool
 }
 
 // Load reads and strictly decodes an archfit.yaml file at path.
@@ -92,15 +86,6 @@ func Load(_ context.Context, path string) (Config, error) {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 
-	// Record hand-authored owners BEFORE any resolver fill (FillMissingOwners runs
-	// later in the pipeline). Anything here is explicit; an Owner set later without
-	// an entry here is resolver-filled.
-	cfg.explicitOwners = make(map[string]bool)
-	for name, def := range cfg.Modules {
-		if def.Owner != "" {
-			cfg.explicitOwners[name] = true
-		}
-	}
 	return cfg, nil
 }
 
@@ -140,25 +125,6 @@ func deprecatedConfigHint(err error) error {
 		return fmt.Errorf("%w\nhint: coupling.gate.min_band and max_drop were retired in schema v2; %s", err, manualMigrationHint)
 	}
 	return err
-}
-
-// WithExplicitOwners marks the named modules as having hand-authored owners and
-// returns the updated config. Test seam: tests build Config literals directly,
-// bypassing Load (which populates the explicit-owner set), so they use this to
-// exercise the explicit-owner precedence branch in classify.
-//
-// It mirrors Load's invariant exactly: a module is marked only if it actually
-// carries a non-empty Owner. Marking an ownerless module would route
-// classifyDistance into ownershipDistance("", other), which is a footgun this
-// guard removes by construction — explicitOwners[m] always implies Owner != "".
-func (c Config) WithExplicitOwners(modules ...string) Config {
-	c.explicitOwners = make(map[string]bool, len(modules))
-	for _, m := range modules {
-		if c.Modules[m].Owner != "" {
-			c.explicitOwners[m] = true
-		}
-	}
-	return c
 }
 
 // Level literals shared by bcSeverities, externalVolatilities, and Default().

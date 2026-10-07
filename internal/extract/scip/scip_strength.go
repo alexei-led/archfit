@@ -54,10 +54,11 @@ const (
 // readerOutput mirrors the JSON emitted by scip_reader.py.
 type readerOutput struct {
 	Edges []struct {
-		From        string   `json:"from"`
-		To          string   `json:"to"`
-		Strength    string   `json:"strength"`
-		Connascence []string `json:"connascence"`
+		From         string   `json:"from"`
+		To           string   `json:"to"`
+		Strength     string   `json:"strength"`
+		DataStrength string   `json:"data_strength"`
+		Connascence  []string `json:"connascence"`
 	} `json:"edges"`
 	Symbols []struct {
 		Symbol string `json:"symbol"`
@@ -416,6 +417,38 @@ func parseReaderEdges(stdout []byte) (map[string]string, error) {
 	m := make(map[string]string, len(ro.Edges))
 	for _, e := range ro.Edges {
 		m[e.From+"\x00"+e.To] = e.Strength
+	}
+	return m, nil
+}
+
+// DataStrengths returns, per SCIP edge keyed "<from>\x00<to>", the strongest
+// non-callable strength (contract or model) the edge's references carry. Edges
+// with no such reference are absent. It shares the Strengths pipeline cache.
+func (a *Adapter) DataStrengths(ctx context.Context, s scope.Scope) (map[string]string, evidence.Coverage, error) {
+	ro, partial, ok := a.runSCIPPipeline(ctx, s.Root, toolName)
+	if !ok {
+		return nil, partial, nil
+	}
+	m, perr := parseReaderDataStrengths(ro.raw)
+	if perr != nil {
+		return nil, partial, nil
+	}
+	return m, evidence.Coverage{Tool: toolName, Version: scipIdentity(ro.indexer, ro.version), Status: evidence.StatusOK}, nil
+}
+
+func parseReaderDataStrengths(stdout []byte) (map[string]string, error) {
+	var ro readerOutput
+	if err := json.Unmarshal(stdout, &ro); err != nil {
+		return nil, err
+	}
+	if ro.Error != "" {
+		return nil, errReader(ro.Error)
+	}
+	m := make(map[string]string, len(ro.Edges))
+	for _, e := range ro.Edges {
+		if e.DataStrength != "" {
+			m[e.From+"\x00"+e.To] = e.DataStrength
+		}
 	}
 	return m, nil
 }

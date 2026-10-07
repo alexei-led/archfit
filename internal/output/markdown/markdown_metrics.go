@@ -63,7 +63,7 @@ func writeBeyondBCMetrics(b *strings.Builder, metrics []report.MetricResult) {
 
 // writeDistanceConfidence renders the "Distance confidence" section summarising
 // how the distance dimension was resolved for this run.
-// code_structure is always-on; ownership and deploy_unit come from tool coverage.
+// Every module boundary scores D=9; ownership and deploy_unit only name the boundary.
 // Unresolved modules are counted from extractor coverage records.
 func writeDistanceConfidence(b *strings.Builder, d report.Document) {
 	// owner_source is a first-class diagnostic field (config|codeowners|git|none).
@@ -79,7 +79,7 @@ func writeDistanceConfidence(b *strings.Builder, d report.Document) {
 	}
 
 	b.WriteString("\n## Distance confidence\n\n")
-	b.WriteString("- `code_structure`: always on (deterministic tree-distance baseline)\n")
+	b.WriteString("- `module_boundary`: always on (any module boundary is D=9, level-relative)\n")
 	if ownerSrc != "" {
 		fmt.Fprintf(b, "- `owner_source`: %s\n", ownerSrc)
 	} else {
@@ -123,11 +123,11 @@ func writeDistanceConfidence(b *strings.Builder, d report.Document) {
 		}
 		if dc := ce.DistanceCompression; dc != nil {
 			fmt.Fprintf(b, "- distance rungs implemented: %s; omitted/compressed: %s\n", formatInts(dc.ImplementedRungs), formatInts(dc.OmittedRungs))
-			if len(dc.CodeStructureBoundaryCounts) > 0 {
-				fmt.Fprintf(b, "- code-structure boundary crossings: %s\n", formatDistanceCounts(dc.CodeStructureBoundaryCounts))
+			if len(dc.ContainmentBoundaryCounts) > 0 {
+				fmt.Fprintf(b, "- containment boundary crossings: %s\n", formatDistanceCounts(dc.ContainmentBoundaryCounts))
 			}
-			if len(dc.CodeStructureAncestorDepths) > 0 {
-				fmt.Fprintf(b, "- code-structure shared-ancestor depth: %s\n", formatDistanceCounts(dc.CodeStructureAncestorDepths))
+			if len(dc.ContainmentAncestorDepths) > 0 {
+				fmt.Fprintf(b, "- containment shared-ancestor depth: %s\n", formatDistanceCounts(dc.ContainmentAncestorDepths))
 			}
 			if dc.Rationale != "" {
 				fmt.Fprintf(b, "- distance compression: %s\n", dc.Rationale)
@@ -344,9 +344,6 @@ func writeConnascenceSummary(b *strings.Builder, r *report.ConnascenceReport) {
 	fmt.Fprintf(b, "- edges with evidence: %d\n", r.EdgesWithEvidence)
 	fmt.Fprintf(b, "- abstained edges: %d\n", r.AbstainedEdges)
 	fmt.Fprintf(b, "- total evidence facts: %d\n", r.TotalEvidence)
-	if r.StrengthInferredEdges > 0 {
-		fmt.Fprintf(b, "- strength inferred from connascence: %d edges\n", r.StrengthInferredEdges)
-	}
 	if len(r.ByKind) > 0 {
 		fmt.Fprintf(b, "- by kind: %s\n", formatCounts(r.ByKind))
 	}

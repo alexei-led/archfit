@@ -103,8 +103,8 @@ func outputInsideRootWarning(root, dir string) string {
 // resolution did not produce usable module owners despite a signal that it
 // should have — a CODEOWNERS file existed but matched none of the configured
 // modules, or the git-author history walk timed out before finishing. Both
-// cases silently degrade coupling distance to code_structure without ever
-// telling the caller. Plain SourceNone (no CODEOWNERS, no git data) is
+// cases silently degrade the seam boundary label from
+// cross_module_different_owner to cross_module without ever telling the caller. Plain SourceNone (no CODEOWNERS, no git data) is
 // deliberately excluded — the ownership package documents that as a clean
 // "nothing to attribute" result, not a degradation, and SourceGit (the
 // designed CODEOWNERS→git fallback) is expected behaviour, not a defect.
@@ -115,10 +115,10 @@ func ownerDegradationWarning(src ownership.Source) string {
 		return "owner resolution: a CODEOWNERS file was found but matched none of the configured " +
 			"modules (owner_source=codeowners_no_match) — its rules may simply not cover any module " +
 			"path (benign), or the --root/subtree case or module path globs are wrong; coupling " +
-			"distance falls back to code_structure"
+			"seam boundaries stay labelled cross_module (the owner change is not visible)"
 	case ownership.SourceGitTimeout:
 		return "owner resolution: the git-author history walk timed out before resolving any owner " +
-			"(owner_source=git_timeout) — coupling distance falls back to code_structure"
+			"(owner_source=git_timeout) — seam boundaries stay labelled cross_module (the owner change is not visible)"
 	default:
 		return ""
 	}

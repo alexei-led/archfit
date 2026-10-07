@@ -13,7 +13,7 @@ import (
 // all four are included in the calibration report.
 //
 //   - edge0: intrusive + cross_deploy_unit + high  → additive critical
-//   - edge1: contract  + cross_module_same_owner + low → additive low/none (XOR: high strength, low distance)
+//   - edge1: contract  + cross_module + low → additive low/none (XOR: high strength, low distance)
 //   - edge2: functional + cross_deploy_unit + low  → additive: 5+5-2=8→high; multi: XOR≈0, low floor → disagree likely
 //   - edge3: contract  + cross_module_different_owner + high → additive: 0+3-0=3→low
 func syntheticIndex() coupling.Index {
@@ -25,7 +25,7 @@ func syntheticIndex() coupling.Index {
 		},
 		"c\x00d\x00imports": {
 			Strength:   coupling.StrengthContract,
-			Distance:   coupling.DistanceCrossModuleSameOwner,
+			Distance:   coupling.DistanceCrossModule,
 			Volatility: coupling.VolatilityLow,
 		},
 		"e\x00f\x00imports": {
@@ -107,7 +107,7 @@ func TestCompare_XOREdgesNotCritical(t *testing.T) {
 	// XOR edges: high strength + low distance OR low strength + high distance
 	// Both scorers should not reach critical for these.
 	//
-	// edge1: contract(0) + cross_module_same_owner(1) + low → additive: 0+1-2=-1→0→none
+	// edge1: contract(0) + cross_module(1) + low → additive: 0+1-2=-1→0→none
 	// edge3: contract(0) + cross_module_different_owner(3) + high → additive: 0+3-0=3→low
 	idx := syntheticIndex()
 	r := calibrate.Compare(".", idx, scoring.AdditiveScorer{}, scoring.MultiplicativeScorer{})

@@ -178,16 +178,16 @@ func TestRun(t *testing.T) {
 			name:     "cross-module same-owner — different module, same owner",
 			edge:     importEdge("services/a/impl.go", "services/c/api/client.go"),
 			wantStr:  coupling.StrengthContract,
-			wantDist: coupling.DistanceCrossModuleSameOwner, // both owner=team-x
-			wantVol:  coupling.VolatilityLow,                // c.subdomain = "generic"
+			wantDist: coupling.DistanceCrossModule, // both owner=team-x
+			wantVol:  coupling.VolatilityLow,       // c.subdomain = "generic"
 			wantExp:  coupling.ExplicitnessExplicit,
 		},
 		{
 			name:     "cross-module different owner same deploy-unit — a and d",
 			edge:     importEdge("services/a/impl.go", "services/d/api/types.go"),
 			wantStr:  coupling.StrengthContract,
-			wantDist: coupling.DistanceCrossModuleSameOwner, // both owner=team-x
-			wantVol:  coupling.VolatilityUndeclared,         // d resolves but d.subdomain = ""
+			wantDist: coupling.DistanceCrossModule,  // both owner=team-x
+			wantVol:  coupling.VolatilityUndeclared, // d resolves but d.subdomain = ""
 			wantExp:  coupling.ExplicitnessExplicit,
 		},
 		{
@@ -202,7 +202,7 @@ func TestRun(t *testing.T) {
 			name:     "undeclared subdomain — module resolves but no subdomain/volatility",
 			edge:     importEdge("services/a/impl.go", "services/d/internal/impl.go"),
 			wantStr:  coupling.StrengthUnknown, // d has no internal globs defined
-			wantDist: coupling.DistanceCrossModuleSameOwner,
+			wantDist: coupling.DistanceCrossModule,
 			wantVol:  coupling.VolatilityUndeclared, // d resolves; no subdomain/volatility/path match
 			wantExp:  coupling.ExplicitnessUnknown,
 		},
@@ -335,8 +335,8 @@ func TestRun_RegistersRustModuleGraphNodes(t *testing.T) {
 	if !ok {
 		t.Fatalf("edge not found in index")
 	}
-	if cl.Distance != coupling.DistanceCrossModuleSameOwner {
-		t.Errorf("Distance = %q, want cross_module_same_owner (registered sibling modules)", cl.Distance)
+	if cl.Distance != coupling.DistanceCrossModule {
+		t.Errorf("Distance = %q, want cross_module (registered sibling modules)", cl.Distance)
 	}
 	if cl.Strength != coupling.StrengthFunctional {
 		t.Errorf("Strength = %q, want functional (from hint)", cl.Strength)
@@ -535,13 +535,12 @@ func TestRun_Severity(t *testing.T) {
 			wantSeverity: coupling.SeverityLow,
 		},
 		{
-			// contract (S=1) + cross_module_same_owner (D=4) + generic/low (V=3):
-			// max(|1-4|=3, 10-3=7)+1=8 → low.
-			// (BalanceResult returned none; book formula correctly scores low — volatile
-			// seam even across a near boundary.)
-			name:         "contract cross-module-same-owner low-vol → low (book formula)",
+			// contract (S=1) + cross_module (D=9) + generic/low (V=3):
+			// max(|1-9|=8, 10-3=7)+1=9 → none (a published contract across a boundary
+			// is the loose quadrant, whatever the owner).
+			name:         "contract cross-module low-vol → none (loose quadrant)",
 			edge:         importEdge("services/a/impl.go", "services/c/api/client.go"),
-			wantSeverity: coupling.SeverityLow,
+			wantSeverity: coupling.SeverityNone,
 		},
 		{
 			// same-module edge: no severity computed
@@ -663,6 +662,7 @@ const (
 	filePkgAAGo = "file:pkg/a/a.go"
 	filePkgBBGo = "file:pkg/b/b.go"
 	filePkgAXGo = "file:pkg/a/x.go"
+	fileAX      = "pkg/a/x.go"
 	filePkgBYGo = "file:pkg/b/y.go"
 
 	modKeySvcX = "services/x"
@@ -726,16 +726,16 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		}
 	})
 
-	t.Run("public glob without label refines to hint kind", func(t *testing.T) {
-		// No human label: the public-glob contract floor is refined to the hint's
-		// kind (functional here), not left at the weakest contract default.
+	t.Run("public glob without label stays contract despite a functional hint", func(t *testing.T) {
+		// No human label: the public glob is the target's declared contract. The
+		// functional hint is a CALL through it, which never raises the floor.
 		withGlobs := map[string]policy.ModuleDef{
 			"a": {Paths: []string{globPkgA}},
 			"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
 		}
 		idx := classify.Run(g, classify.Config{Modules: withGlobs})
-		if got := idx[key].Strength; got != coupling.StrengthFunctional {
-			t.Errorf("strength = %q, want functional (hint refines public-glob floor)", got)
+		if got := idx[key].Strength; got != coupling.StrengthContract {
+			t.Errorf("strength = %q, want contract (a callable hint never raises the public floor)", got)
 		}
 	})
 
@@ -867,15 +867,17 @@ func TestRun_LLMLabelPrecedence(t *testing.T) {
 	})
 }
 
-// TestRun_PublicGlobFloorRefinement is the F2 regression guard: a public-glob
-// match is a not-intrusive floor whose KIND is the hint's public-coupling kind,
-// while an internal glob stays authoritatively intrusive and a public floor is
-// never lowered to intrusive by a hint.
+// TestRun_PublicGlobFloorRefinement pins the v7 strength rules for a public
+// glob: the target declared this surface as its integration contract, so the
+// floor is contract and a CALLABLE hint (function, method, interface method)
+// never raises it. Only DATA evidence (a "model" data hint) lifts it to model.
+// An internal glob stays authoritatively intrusive, and a hint never lowers the
+// floor.
 func TestRun_PublicGlobFloorRefinement(t *testing.T) {
-	build := func(hint string) (*graph.Graph, string) {
+	build := func(hint, data string) (*graph.Graph, string) {
 		e := graph.Edge{
 			From: filePkgAAGo, To: filePkgBBGo,
-			Kind: graph.EdgeKindImports, StrengthHint: hint,
+			Kind: graph.EdgeKindImports, StrengthHint: hint, DataStrengthHint: data,
 		}
 		g := graph.Build([]graph.Facts{{
 			Language: "go",
@@ -900,30 +902,37 @@ func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 		"a": {Paths: []string{globPkgA}},
 		"b": {Paths: []string{globPkgB}},
 	}
+	model := string(coupling.StrengthModel)
+	contract := string(coupling.StrengthContract)
 	cases := []struct {
 		name    string
 		modules map[string]policy.ModuleDef
 		hint    string
+		data    string
 		want    coupling.Strength
 	}{
-		{"public + model hint → model", publicB, string(coupling.StrengthModel), coupling.StrengthModel},
-		{"public + contract hint → contract", publicB, string(coupling.StrengthContract), coupling.StrengthContract},
-		{"public + functional hint → functional", publicB, hintFunctional, coupling.StrengthFunctional},
-		{"public + no hint → contract floor", publicB, "", coupling.StrengthContract},
-		{"public + intrusive hint → contract (floor not lowered)", publicB, hintIntrusive, coupling.StrengthContract},
-		{"internal glob → intrusive (authoritative)", internalB, hintFunctional, coupling.StrengthIntrusive},
+		{"public + no hint → contract floor", publicB, "", "", coupling.StrengthContract},
+		{"public + contract hint → contract", publicB, contract, "", coupling.StrengthContract},
+		{"public + functional hint (a call) → contract: a callable never raises the floor", publicB, hintFunctional, "", coupling.StrengthContract},
+		{"public + model hint without data evidence → contract", publicB, model, "", coupling.StrengthContract},
+		{"public + functional hint + model data → model", publicB, hintFunctional, model, coupling.StrengthModel},
+		{"public + model hint + model data → model", publicB, model, model, coupling.StrengthModel},
+		{"public + contract data → contract", publicB, hintFunctional, contract, coupling.StrengthContract},
+		{"public + intrusive hint → contract (floor not lowered)", publicB, hintIntrusive, "", coupling.StrengthContract},
+		{"internal glob → intrusive (authoritative)", internalB, hintFunctional, model, coupling.StrengthIntrusive},
 		// A pure-data DTO across a declared public boundary IS the book's explicit
-		// integration contract — the floor stands, the hint must not raise it.
-		{"public + dto hint → contract (DTO is the boundary contract)", publicB, graph.StrengthHintDTO, coupling.StrengthContract},
-		// Without the boundary declaration the same DTO is just a shared concrete
-		// type: the declaration is what makes it a contract (book Ch10).
-		{"no glob + dto hint → model (no declared boundary)", noGlobB, graph.StrengthHintDTO, coupling.StrengthModel},
-		// An internal glob stays authoritative regardless of the DTO hint.
-		{"internal + dto hint → intrusive (authoritative)", internalB, graph.StrengthHintDTO, coupling.StrengthIntrusive},
+		// integration contract — the floor stands.
+		{"public + dto hint + dto data → contract", publicB, graph.StrengthHintDTO, graph.StrengthHintDTO, coupling.StrengthContract},
+		// Without the boundary declaration the hint decides: a call is functional,
+		// an interface method is contract, a DTO is just a shared concrete type.
+		{"no glob + functional hint → functional", noGlobB, hintFunctional, "", coupling.StrengthFunctional},
+		{"no glob + contract hint (interface method) → contract", noGlobB, contract, "", coupling.StrengthContract},
+		{"no glob + dto hint → model (no declared boundary)", noGlobB, graph.StrengthHintDTO, graph.StrengthHintDTO, coupling.StrengthModel},
+		{"internal + dto hint → intrusive (authoritative)", internalB, graph.StrengthHintDTO, graph.StrengthHintDTO, coupling.StrengthIntrusive},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			g, key := build(tc.hint)
+			g, key := build(tc.hint, tc.data)
 			idx := classify.Run(g, classify.Config{Modules: tc.modules})
 			if got := idx[key].Strength; got != tc.want {
 				t.Errorf("strength = %q, want %q", got, tc.want)
@@ -932,11 +941,9 @@ func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 	}
 }
 
-// TestRun_ContractRecommended verifies the generic-subdomain contract advisory:
-// ContractRecommended is set when the to-module is a generic subdomain and the
-// strength is non-contract; it is NOT set when strength is contract, the edge is
-// same-module, or the to-module is not a generic subdomain.
-func TestRun_StrengthFallbackFromConnascence(t *testing.T) {
+// Connascence is report-only evidence: whatever kinds an extractor reports, it
+// never sets or raises strength (bc_score.v7 S3).
+func TestRun_ConnascenceNeverSetsStrength(t *testing.T) {
 	build := func(hints []graph.ConnascenceHint) (*graph.Graph, string) {
 		e := graph.Edge{
 			From: filePkgAAGo, To: filePkgBBGo,
@@ -961,33 +968,35 @@ func TestRun_StrengthFallbackFromConnascence(t *testing.T) {
 		"b": {Paths: []string{globPkgB}},
 	}
 	cases := []struct {
-		name         string
-		modules      map[string]policy.ModuleDef
-		hints        []graph.ConnascenceHint
-		want         coupling.Strength
-		wantInferred bool
+		name    string
+		modules map[string]policy.ModuleDef
+		kind    string
+		want    coupling.Strength
 	}{
-		{"unknown + algorithm connascence → functional", noGlobB, []graph.ConnascenceHint{{Kind: graph.ConnascenceAlgorithm, Source: sourceGoTypes}}, coupling.StrengthFunctional, true},
-		{"unknown + meaning connascence → model", noGlobB, []graph.ConnascenceHint{{Kind: graph.ConnascenceMeaning, Source: sourceGoTypes}}, coupling.StrengthModel, true},
-		{"unknown + type connascence stays unknown", noGlobB, []graph.ConnascenceHint{{Kind: graph.ConnascenceType, Source: sourceGoTypes}}, coupling.StrengthUnknown, false},
-		{"public floor + algorithm connascence → functional", publicB, []graph.ConnascenceHint{{Kind: graph.ConnascenceAlgorithm, Source: sourceGoTypes}}, coupling.StrengthFunctional, true},
-		{"public floor + meaning connascence → model", publicB, []graph.ConnascenceHint{{Kind: graph.ConnascenceMeaning, Source: sourceGoTypes}}, coupling.StrengthModel, true},
-		{"public floor + type connascence stays contract", publicB, []graph.ConnascenceHint{{Kind: graph.ConnascenceType, Source: sourceGoTypes}}, coupling.StrengthContract, false},
+		{"unknown + algorithm stays unknown", noGlobB, graph.ConnascenceAlgorithm, coupling.StrengthUnknown},
+		{"unknown + meaning stays unknown", noGlobB, graph.ConnascenceMeaning, coupling.StrengthUnknown},
+		{"unknown + position stays unknown", noGlobB, graph.ConnascencePosition, coupling.StrengthUnknown},
+		{"public floor + algorithm stays contract", publicB, graph.ConnascenceAlgorithm, coupling.StrengthContract},
+		{"public floor + meaning stays contract", publicB, graph.ConnascenceMeaning, coupling.StrengthContract},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			g, key := build(tc.hints)
+			g, key := build([]graph.ConnascenceHint{{Kind: tc.kind, Source: sourceGoTypes}})
 			idx := classify.Run(g, classify.Config{Modules: tc.modules})
 			if got := idx[key].Strength; got != tc.want {
 				t.Fatalf("strength = %q, want %q", got, tc.want)
 			}
-			if got := idx[key].StrengthFromConnascence; got != tc.wantInferred {
-				t.Fatalf("StrengthFromConnascence = %t, want %t", got, tc.wantInferred)
+			if len(idx[key].Connascence) == 0 {
+				t.Fatal("connascence evidence was dropped; it must stay report-only evidence")
 			}
 		})
 	}
 }
 
+// TestRun_ContractRecommended verifies the generic-subdomain contract advisory:
+// ContractRecommended is set when the to-module is a generic subdomain and the
+// strength is non-contract; it is NOT set when strength is contract, the edge is
+// same-module, or the to-module is not a generic subdomain.
 func TestRun_ContractRecommended(t *testing.T) {
 	modules := map[string]policy.ModuleDef{
 		subdomainCore: {
@@ -1093,72 +1102,6 @@ func TestRun_ContractRecommended(t *testing.T) {
 	}
 }
 
-// TestRun_DegenerateOwnerSuppression verifies degenerate-owner suppression (design §4.2):
-//   - When ALL modules share a single owner (git-author fallback degenerate case),
-//     ownership distance contributes nothing and code-structure distance dominates.
-//   - When modules have DISTINCT owners (real CODEOWNERS repo), ownership distance
-//     applies normally and the max() composite picks it up.
-func TestRun_DegenerateOwnerSuppression(t *testing.T) {
-	importEdge := func(from, to string) graph.Edge {
-		return graph.Edge{
-			From: "file:" + from, To: "file:" + to,
-			Kind: graph.EdgeKindImports, Language: "go",
-		}
-	}
-
-	t.Run("degenerate: single owner everywhere — code-structure dominates", func(t *testing.T) {
-		// All modules have the same owner. isDegenerateOwnerMap returns true,
-		// so ownership contributes DistanceSameModule (no signal).
-		//
-		// Module names use path structure so codeStructureDistance works correctly:
-		//   "pkg/a" and "pkg/b" are siblings → structural = SameOwner.
-		//   "pkg/a" and "services/x" are distant trees → structural = DiffOwner.
-		modules := map[string]policy.ModuleDef{
-			modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX},
-			modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamX},
-			modKeySvcX: {Paths: []string{globSvcX}, Owner: ownerTeamX},
-		}
-		// No explicit owners — degenerate case exercises the code-structure fallback.
-		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
-
-		// Siblings (pkg/a ↔ pkg/b): structural = SameOwner; ownership suppressed → composite = SameOwner.
-		e1 := importEdge("pkg/a/x.go", "pkg/b/y.go")
-		cl1 := classify.Run(makeGraph([]graph.Edge{e1}), cfg)[edgeKey(e1)]
-		if cl1.Distance != coupling.DistanceCrossModuleSameOwner {
-			t.Errorf("siblings with degenerate owner: Distance = %q, want %q (code-structure should dominate)",
-				cl1.Distance, coupling.DistanceCrossModuleSameOwner)
-		}
-
-		// Distant subtrees (pkg/a ↔ services/x): structural = DiffOwner; ownership suppressed → composite = DiffOwner.
-		e2 := importEdge("pkg/a/x.go", modKeySvcX+"/y.go")
-		cl2 := classify.Run(makeGraph([]graph.Edge{e2}), cfg)[edgeKey(e2)]
-		if cl2.Distance != coupling.DistanceCrossModuleDiffOwner {
-			t.Errorf("distant subtrees with degenerate owner: Distance = %q, want %q (code-structure should dominate)",
-				cl2.Distance, coupling.DistanceCrossModuleDiffOwner)
-		}
-	})
-
-	t.Run("multi-owner: distinct owners — ownership distance applies", func(t *testing.T) {
-		// Two modules with DISTINCT owners (not degenerate). isDegenerateOwnerMap returns false.
-		// For sibling modules: code-structure = SameOwner, ownership = DiffOwner.
-		// max(SameOwner, DiffOwner) = DiffOwner — ownership lifts the result.
-		modules := map[string]policy.ModuleDef{
-			modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX},
-			modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamY},
-		}
-		// Explicit distinct owners → Step 2 fires (non-degenerate explicit map).
-		cfg := config.Config{Version: 1, Modules: modules}.
-			WithExplicitOwners(modKeyPkgA, modKeyPkgB).ForClassify()
-
-		e := importEdge("pkg/a/x.go", "pkg/b/y.go")
-		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
-		if cl.Distance != coupling.DistanceCrossModuleDiffOwner {
-			t.Errorf("siblings with distinct owners: Distance = %q, want %q (ownership should lift result)",
-				cl.Distance, coupling.DistanceCrossModuleDiffOwner)
-		}
-	})
-}
-
 // TestRun_VolatilityUndeclaredWithoutConfig verifies classify.Run produces
 // VolatilityUndeclared (not Unknown) for a resolved module with no explicit
 // volatility or subdomain: the module is known, only its volatility is a config
@@ -1192,45 +1135,37 @@ func TestRun_VolatilityUndeclaredWithoutConfig(t *testing.T) {
 	}
 }
 
-// TestRun_SingleOwnerFarModulesStayFar verifies that in a single-owner repo
-// (degenerate owner map), modules in different code subtrees still classify as
-// DiffOwner — code structure dominates and differentiates near from far even
-// when every module shares the same owner.
-func TestRun_SingleOwnerFarModulesStayFar(t *testing.T) {
-	// All three modules have the same owner → degenerate → ownership suppressed.
-	modules := map[string]policy.ModuleDef{
-		modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerTeamX},
-		modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamX},
-		modKeySvcX: {Paths: []string{globSvcX}, Owner: ownerTeamX},
-	}
-	// No explicit owners — degenerate case, code structure dominates.
-	cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
-
+// TestRun_BoundaryTokenFollowsOwnerNotSpelling: every module boundary scores at
+// the same rung, and the token only records an owner change. The names of the
+// modules and how far apart they sit in the tree decide nothing.
+func TestRun_BoundaryTokenFollowsOwnerNotSpelling(t *testing.T) {
 	importEdge := func(from, to string) graph.Edge {
-		return graph.Edge{
-			From: "file:" + from, To: "file:" + to,
-			Kind: graph.EdgeKindImports, Language: "go",
-		}
+		return graph.Edge{From: "file:" + from, To: "file:" + to, Kind: graph.EdgeKindImports, Language: "go"}
 	}
-
-	// Siblings (pkg/a → pkg/b): code structure = SameOwner → composite = SameOwner.
-	eSib := importEdge("pkg/a/x.go", "pkg/b/y.go")
-	clSib := classify.Run(makeGraph([]graph.Edge{eSib}), cfg)[edgeKey(eSib)]
-	if clSib.Distance != coupling.DistanceCrossModuleSameOwner {
-		t.Errorf("siblings single-owner: Distance = %q, want cross_module_same_owner", clSib.Distance)
+	tests := []struct {
+		name     string
+		owners   [3]string // pkg/a, pkg/b, services/x
+		from, to string
+		want     coupling.Distance
+	}{
+		{"siblings, one owner", [3]string{ownerTeamX, ownerTeamX, ownerTeamX}, fileAX, "pkg/b/y.go", coupling.DistanceCrossModule},
+		{"distant subtrees, one owner stay cross_module", [3]string{ownerTeamX, ownerTeamX, ownerTeamX}, fileAX, modKeySvcX + "/y.go", coupling.DistanceCrossModule},
+		{"siblings, two owners", [3]string{ownerTeamX, ownerTeamY, ownerTeamX}, fileAX, "pkg/b/y.go", coupling.DistanceCrossModuleDiffOwner},
+		{"no owners declared", [3]string{}, fileAX, modKeySvcX + "/y.go", coupling.DistanceCrossModule},
 	}
-	if clSib.DistanceBasis != coupling.DistanceBasisStructure {
-		t.Errorf("siblings single-owner: DistanceBasis = %q, want code_structure", clSib.DistanceBasis)
-	}
-
-	// Distant subtrees (pkg/a → services/x): code structure = DiffOwner → composite = DiffOwner.
-	eFar := importEdge("pkg/a/x.go", modKeySvcX+"/y.go")
-	clFar := classify.Run(makeGraph([]graph.Edge{eFar}), cfg)[edgeKey(eFar)]
-	if clFar.Distance != coupling.DistanceCrossModuleDiffOwner {
-		t.Errorf("distant subtrees single-owner: Distance = %q, want cross_module_different_owner", clFar.Distance)
-	}
-	if clFar.DistanceBasis != coupling.DistanceBasisStructure {
-		t.Errorf("distant subtrees single-owner: DistanceBasis = %q, want code_structure", clFar.DistanceBasis)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			modules := map[string]policy.ModuleDef{
+				modKeyPkgA: {Paths: []string{globPkgA}, Owner: tc.owners[0]},
+				modKeyPkgB: {Paths: []string{globPkgB}, Owner: tc.owners[1]},
+				modKeySvcX: {Paths: []string{globSvcX}, Owner: tc.owners[2]},
+			}
+			e := importEdge(tc.from, tc.to)
+			cl := classify.Run(makeGraph([]graph.Edge{e}), classify.Config{Modules: modules})[edgeKey(e)]
+			if cl.Distance != tc.want {
+				t.Errorf("Distance = %q, want %q", cl.Distance, tc.want)
+			}
+		})
 	}
 }
 
@@ -1246,8 +1181,7 @@ func TestRun_MultiOwnerSiblingsLifted(t *testing.T) {
 		modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamY},
 	}
 	// Both modules carry explicit hand-authored owners (distinct) → Step 2 fires.
-	cfg := config.Config{Version: 1, Modules: modules}.
-		WithExplicitOwners(modKeyPkgA, modKeyPkgB).ForClassify()
+	cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
 
 	e := graph.Edge{
 		From: "file:pkg/a/x.go", To: "file:pkg/b/y.go",
@@ -1259,76 +1193,6 @@ func TestRun_MultiOwnerSiblingsLifted(t *testing.T) {
 	}
 	if cl.DistanceBasis != coupling.DistanceBasisOwnership {
 		t.Errorf("siblings distinct owners: DistanceBasis = %q, want ownership", cl.DistanceBasis)
-	}
-}
-
-// TestSmallOSSDistanceFixture models a 1-2 maintainer OSS repo and proves that
-// code distance still differentiates nearby and distant modules even when all
-// ownership resolves to a single author. The DistanceBasis must be "code_structure"
-// on every edge (degenerate-owner suppression active).
-func TestSmallOSSDistanceFixture(t *testing.T) {
-	// Typical small OSS repo: one or two maintainers, same owner everywhere.
-	// Code structure must be the sole differentiator.
-	const soleOwner = "alice"
-	modules := map[string]policy.ModuleDef{
-		"cmd/tool":       {Paths: []string{"cmd/tool/**"}, Owner: soleOwner},
-		"internal/core":  {Paths: []string{"internal/core/**"}, Owner: soleOwner},
-		"internal/store": {Paths: []string{"internal/store/**"}, Owner: soleOwner},
-		"pkg/api":        {Paths: []string{"pkg/api/**"}, Owner: soleOwner},
-	}
-	// No explicit owners — degenerate case, code structure is the sole differentiator.
-	cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
-
-	importEdge := func(from, to string) graph.Edge {
-		return graph.Edge{
-			From: "file:" + from, To: "file:" + to,
-			Kind: graph.EdgeKindImports, Language: "go",
-		}
-	}
-
-	tests := []struct {
-		name      string
-		from, to  string
-		wantDist  coupling.Distance
-		wantBasis coupling.DistanceBasis
-	}{
-		{
-			// internal/core and internal/store share the "internal" parent → siblings → SameOwner.
-			name:      "internal siblings — nearby",
-			from:      "internal/core/domain.go",
-			to:        "internal/store/repo.go",
-			wantDist:  coupling.DistanceCrossModuleSameOwner,
-			wantBasis: coupling.DistanceBasisStructure,
-		},
-		{
-			// cmd/tool → internal/core: different top-level subtrees → DiffOwner.
-			name:      "cmd to internal — distant",
-			from:      "cmd/tool/main.go",
-			to:        "internal/core/domain.go",
-			wantDist:  coupling.DistanceCrossModuleDiffOwner,
-			wantBasis: coupling.DistanceBasisStructure,
-		},
-		{
-			// pkg/api → internal/store: different top-level subtrees → DiffOwner.
-			name:      "pkg to internal — distant",
-			from:      "pkg/api/handler.go",
-			to:        "internal/store/repo.go",
-			wantDist:  coupling.DistanceCrossModuleDiffOwner,
-			wantBasis: coupling.DistanceBasisStructure,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			e := importEdge(tc.from, tc.to)
-			cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
-			if cl.Distance != tc.wantDist {
-				t.Errorf("Distance = %q, want %q", cl.Distance, tc.wantDist)
-			}
-			if cl.DistanceBasis != tc.wantBasis {
-				t.Errorf("DistanceBasis = %q, want %q", cl.DistanceBasis, tc.wantBasis)
-			}
-		})
 	}
 }
 
@@ -1349,9 +1213,9 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 		}
 		// No explicit owners — degenerate, structure fallback fires.
 		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
-		e := importEdge("pkg/a/x.go", "pkg/b/y.go")
+		e := importEdge(fileAX, "pkg/b/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
-		if cl.DistanceBasis != coupling.DistanceBasisStructure {
+		if cl.DistanceBasis != coupling.DistanceBasisModule {
 			t.Errorf("DistanceBasis = %q, want code_structure", cl.DistanceBasis)
 		}
 	})
@@ -1362,9 +1226,8 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 			modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerTeamY},
 		}
 		// Mark both as explicit via production path so Step 2 fires (non-degenerate).
-		cfg := config.Config{Version: 1, Modules: modules}.
-			WithExplicitOwners(modKeyPkgA, modKeyPkgB).ForClassify()
-		e := importEdge("pkg/a/x.go", "pkg/b/y.go")
+		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
+		e := importEdge(fileAX, "pkg/b/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
 		if cl.DistanceBasis != coupling.DistanceBasisOwnership {
 			t.Errorf("DistanceBasis = %q, want ownership", cl.DistanceBasis)
@@ -1378,7 +1241,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 		}
 		// Deploy unit is Step 1 (absolute); ExplicitOwners irrelevant here.
 		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
-		e := importEdge("pkg/a/x.go", "pkg/b/y.go")
+		e := importEdge(fileAX, "pkg/b/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
 		if cl.DistanceBasis != coupling.DistanceBasisDeployUnit {
 			t.Errorf("DistanceBasis = %q, want deploy_unit", cl.DistanceBasis)
@@ -1394,7 +1257,7 @@ func TestRun_DistanceBasisPopulated(t *testing.T) {
 		}
 		// Same-module edge; basis is unknown regardless of ownership config.
 		cfg := config.Config{Version: 1, Modules: modules}.ForClassify()
-		e := importEdge("pkg/a/x.go", "pkg/a/y.go")
+		e := importEdge(fileAX, "pkg/a/y.go")
 		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
 		if cl.DistanceBasis != coupling.DistanceBasisUnknown {
 			t.Errorf("DistanceBasis = %q, want empty (unknown)", cl.DistanceBasis)
@@ -1461,50 +1324,6 @@ func TestRun_SmallOSSDeployUnitBoundaryStaysFar(t *testing.T) {
 	}
 	if cl.DistanceBasis != coupling.DistanceBasisDeployUnit {
 		t.Errorf("DistanceBasis = %q, want deploy_unit", cl.DistanceBasis)
-	}
-}
-
-// TestRun_ExplicitOwnerSingleSameOwner verifies that when ALL modules carry the
-// same explicit owner (degenerate explicit-owner map), Step 2 falls through and
-// code structure dominates — distance_basis must be "code_structure", not
-// "ownership". This is the archfit self-scan scenario: every module has
-// owner: alexei-led, so without this guard all distances collapse to SameOwner.
-func TestRun_ExplicitOwnerSingleSameOwner(t *testing.T) {
-	const ownerAlexei = "alexei-led"
-	modules := map[string]policy.ModuleDef{
-		modKeyPkgA: {Paths: []string{globPkgA}, Owner: ownerAlexei},
-		modKeyPkgB: {Paths: []string{globPkgB}, Owner: ownerAlexei},
-		modKeySvcX: {Paths: []string{globSvcX}, Owner: ownerAlexei},
-	}
-	cfg := config.Config{Version: 1, Modules: modules}.
-		WithExplicitOwners(modKeyPkgA, modKeyPkgB, modKeySvcX)
-	classifyCfg := cfg.ForClassify()
-
-	importEdge := func(from, to string) graph.Edge {
-		return graph.Edge{
-			From: "file:" + from, To: "file:" + to,
-			Kind: graph.EdgeKindImports, Language: "go",
-		}
-	}
-
-	// Siblings (pkg/a → pkg/b): code structure = SameOwner → composite = SameOwner.
-	eSib := importEdge("pkg/a/x.go", "pkg/b/y.go")
-	clSib := classify.Run(makeGraph([]graph.Edge{eSib}), classifyCfg)[edgeKey(eSib)]
-	if clSib.Distance != coupling.DistanceCrossModuleSameOwner {
-		t.Errorf("siblings all-same-owner explicit: Distance = %q, want cross_module_same_owner (code structure)", clSib.Distance)
-	}
-	if clSib.DistanceBasis != coupling.DistanceBasisStructure {
-		t.Errorf("siblings all-same-owner explicit: DistanceBasis = %q, want code_structure", clSib.DistanceBasis)
-	}
-
-	// Distant subtrees (pkg/a → services/x): code structure = DiffOwner → composite = DiffOwner.
-	eFar := importEdge("pkg/a/x.go", modKeySvcX+"/y.go")
-	clFar := classify.Run(makeGraph([]graph.Edge{eFar}), classifyCfg)[edgeKey(eFar)]
-	if clFar.Distance != coupling.DistanceCrossModuleDiffOwner {
-		t.Errorf("distant all-same-owner explicit: Distance = %q, want cross_module_different_owner (code structure)", clFar.Distance)
-	}
-	if clFar.DistanceBasis != coupling.DistanceBasisStructure {
-		t.Errorf("distant all-same-owner explicit: DistanceBasis = %q, want code_structure", clFar.DistanceBasis)
 	}
 }
 
@@ -1756,7 +1575,7 @@ func TestAugmentGoWorkspaceModules_ConfigGlobWins(t *testing.T) {
 // TestAugmentModulesFromGraph_OwnerInheritance verifies that a synthetic Rust
 // submodule inherits the owner of its nearest config-declared ancestor (the crate
 // module). Without this fix, inter-submodule edges classify as different_owner
-// instead of cross_module_same_owner (the herdr regression).
+// instead of cross_module (the herdr regression).
 func TestAugmentModulesFromGraph_OwnerInheritance(t *testing.T) {
 	// classify.Config declares the crate-level module with owner="team-x".
 	// cargo-modules graph produces submodule nodes "mycrate::a" and "mycrate::b"
@@ -1786,14 +1605,14 @@ func TestAugmentModulesFromGraph_OwnerInheritance(t *testing.T) {
 		}
 	}
 
-	// The inter-submodule edge must classify as cross_module_same_owner, not different_owner.
+	// The inter-submodule edge must classify as cross_module, not different_owner.
 	idx := classify.Run(g, classify.Config{Modules: augmented})
 	cl, ok := idx[edgeKey(e)]
 	if !ok {
 		t.Fatalf("edge not found in index after augmentation")
 	}
-	if cl.Distance != coupling.DistanceCrossModuleSameOwner {
-		t.Errorf("Distance = %q, want cross_module_same_owner (submodules share inherited owner)", cl.Distance)
+	if cl.Distance != coupling.DistanceCrossModule {
+		t.Errorf("Distance = %q, want cross_module (submodules share inherited owner)", cl.Distance)
 	}
 }
 

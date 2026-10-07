@@ -19,7 +19,7 @@ func TestMeasurementPartialBasisVocabulary(t *testing.T) {
 			doc.Verdict = report.StateNeedsAttention
 			doc.Comparison.MeasurementProfile = &report.MeasurementProfile{
 				Version: "archfit.measurement.v1", SettingsHash: "fixture",
-				Producers: []report.MeasurementProducer{{Tool: "go/packages", SemanticsVersion: "go/packages.v1", ToolVersion: "go1.26.0", Status: "partial", PartialBasis: tc.basis}},
+				Producers: []report.MeasurementProducer{{Tool: "go/packages", SemanticsVersion: "go/packages.v2", ToolVersion: "go1.26.0", Status: "partial", PartialBasis: tc.basis}},
 				Unknowns:  []string{},
 			}
 			raw, err := json.Marshal(doc)

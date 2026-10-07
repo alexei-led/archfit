@@ -847,7 +847,7 @@ Issue codes:
 
 | Code                       | Condition                                                                          |
 | -------------------------- | ---------------------------------------------------------------------------------- |
-| `missing_owner`            | The module has no `owner:`, so cross-module distance falls back to code structure. |
+| `missing_owner`            | The module has no `owner:`, so the boundary token cannot show an owner change (severity is unchanged). |
 | `missing_volatility_input` | The module has neither `subdomain:` nor `volatility:`. Either field closes it.     |
 | `missing_layer`            | The module has no `layer:` while a `forbidden_layer_direction` rule is not `off`.  |
 

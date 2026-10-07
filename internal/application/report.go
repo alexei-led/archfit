@@ -357,7 +357,7 @@ func projectConnascence(in *evidence.ConnascenceReport) *report.ConnascenceRepor
 	if in == nil {
 		return nil
 	}
-	out := &report.ConnascenceReport{EdgesWithEvidence: in.EdgesWithEvidence, AbstainedEdges: in.AbstainedEdges, TotalEvidence: in.TotalEvidence, StrengthInferredEdges: in.StrengthInferredEdges, ByKind: in.ByKind, BySource: in.BySource, Unmeasured: in.Unmeasured, Roadmap: make([]report.ConnascenceRoadmapItem, len(in.Roadmap))}
+	out := &report.ConnascenceReport{EdgesWithEvidence: in.EdgesWithEvidence, AbstainedEdges: in.AbstainedEdges, TotalEvidence: in.TotalEvidence, ByKind: in.ByKind, BySource: in.BySource, Unmeasured: in.Unmeasured, Roadmap: make([]report.ConnascenceRoadmapItem, len(in.Roadmap))}
 	for i, v := range in.Roadmap {
 		out.Roadmap[i] = report.ConnascenceRoadmapItem{Kind: v.Kind, CurrentStatus: v.CurrentStatus, Sources: v.Sources, RelatedSignals: v.RelatedSignals, UpgradeTrigger: v.UpgradeTrigger}
 	}
@@ -456,11 +456,11 @@ func projectDistanceCompression(in *result.DistanceCompressionSummary) *report.D
 		out.OmittedRungReasons = append(out.OmittedRungReasons, report.DistanceOmittedRungReason{Rung: r.Rung, Reason: r.Reason})
 	}
 	out.DeterministicSplits = append(out.DeterministicSplits, in.DeterministicSplits...)
-	for _, c := range in.CodeStructureBoundaryCounts {
-		out.CodeStructureBoundaryCounts = append(out.CodeStructureBoundaryCounts, report.DistanceCount{Value: c.Value, Count: c.Count})
+	for _, c := range in.ContainmentBoundaryCounts {
+		out.ContainmentBoundaryCounts = append(out.ContainmentBoundaryCounts, report.DistanceCount{Value: c.Value, Count: c.Count})
 	}
-	for _, c := range in.CodeStructureAncestorDepths {
-		out.CodeStructureAncestorDepths = append(out.CodeStructureAncestorDepths, report.DistanceCount{Value: c.Value, Count: c.Count})
+	for _, c := range in.ContainmentAncestorDepths {
+		out.ContainmentAncestorDepths = append(out.ContainmentAncestorDepths, report.DistanceCount{Value: c.Value, Count: c.Count})
 	}
 	return out
 }

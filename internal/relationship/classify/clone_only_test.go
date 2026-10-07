@@ -164,18 +164,18 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 		if cl.Strength != coupling.StrengthSymmetric {
 			t.Errorf("Strength = %s, want symmetric", cl.Strength)
 		}
-		if cl.Distance != coupling.DistanceCrossModuleSameOwner {
-			t.Errorf("Distance = %s, want cross_module_same_owner (flat names, no owners)", cl.Distance)
+		if cl.Distance != coupling.DistanceCrossModule {
+			t.Errorf("Distance = %s, want cross_module (flat names, no owners)", cl.Distance)
 		}
 		if cl.Volatility != coupling.VolatilityUndeclared {
 			t.Errorf("Volatility = %s, want undeclared", cl.Volatility)
 		}
-		// Book formula: S=9, D=4, V=10 → max(|9-4|, 10-10)+1 = 6 → medium.
-		if cl.Score.Value != 6 {
-			t.Errorf("Score.Value = %d, want 6", cl.Score.Value)
+		// Book formula: S=9, D=9, V=10 → max(|9-9|, 10-10)+1 = 1 → critical.
+		if cl.Score.Value != 1 {
+			t.Errorf("Score.Value = %d, want 1", cl.Score.Value)
 		}
-		if cl.Severity != coupling.SeverityMedium {
-			t.Errorf("Severity = %s, want medium", cl.Severity)
+		if cl.Severity != coupling.SeverityCritical {
+			t.Errorf("Severity = %s, want critical", cl.Severity)
 		}
 	})
 
@@ -194,12 +194,11 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 		}
 	})
 
-	t.Run("distinct explicit owners → diff-owner distance, high severity", func(t *testing.T) {
+	t.Run("distinct owners → diff-owner token, same severity", func(t *testing.T) {
 		t.Parallel()
 		cfg := cloneOnlyCfg(func(c *classify.Config) {
 			setModule(c, modNameA, func(d *policy.ModuleDef) { d.Owner = "team-a" })
 			setModule(c, modNameB, func(d *policy.ModuleDef) { d.Owner = "team-b" })
-			c.ExplicitOwners = map[string]bool{modNameA: true, modNameB: true}
 		})
 		pairs := classify.CloneOnlyPairs(g, cfg)
 		if len(pairs) != 1 {
@@ -209,12 +208,13 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 		if cl.Distance != coupling.DistanceCrossModuleDiffOwner {
 			t.Errorf("Distance = %s, want cross_module_different_owner", cl.Distance)
 		}
-		// Book formula: S=9, D=7, V=10 → max(|9-7|, 10-10)+1 = 3 → high.
-		if cl.Score.Value != 3 {
-			t.Errorf("Score.Value = %d, want 3", cl.Score.Value)
+		// The owner change only names the boundary: S=9, D=9, V=10 → 1 → critical,
+		// exactly like the same-owner pair.
+		if cl.Score.Value != 1 {
+			t.Errorf("Score.Value = %d, want 1", cl.Score.Value)
 		}
-		if cl.Severity != coupling.SeverityHigh {
-			t.Errorf("Severity = %s, want high", cl.Severity)
+		if cl.Severity != coupling.SeverityCritical {
+			t.Errorf("Severity = %s, want critical", cl.Severity)
 		}
 	})
 

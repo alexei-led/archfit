@@ -27,6 +27,8 @@ type seamInput struct {
 	// above: that one is this run's evidence, and a hand-authored label with no
 	// stored hash must publish nothing rather than borrow it.
 	LabelEvidenceHashes map[string]string
+	// Tree is the containment tree of the classified module map.
+	Tree classify.Containment
 }
 
 // buildSeams groups the classified cross-boundary edges into one record per
@@ -167,7 +169,7 @@ func (a *seamAccumulator) keepWorst(e *relationship.Edge) {
 
 func (a *seamAccumulator) seam(in seamInput, volatility map[string]classify.ModuleVolatility) relationship.Seam {
 	fromDef, toDef := in.Config.Modules[a.from], in.Config.Modules[a.to]
-	span := classify.HierarchySpan(a.from, a.to)
+	span := classify.HierarchySpan(in.Tree, a.from, a.to)
 	denominator := a.scored + a.abstained
 	s := relationship.Seam{
 		ID:             relationship.SeamID(a.from, a.to),
@@ -182,7 +184,7 @@ func (a *seamAccumulator) seam(in seamInput, volatility map[string]classify.Modu
 		Severity:       a.severity,
 		RawDistance: relationship.SeamDistance{
 			Level:             a.distance,
-			Basis:             a.worstBasis(),
+			Basis:             a.worstBasis(in.Tree, a.from, a.to),
 			FromOwner:         fromDef.Owner,
 			ToOwner:           toDef.Owner,
 			SameOwner:         fromDef.Owner != "" && fromDef.Owner == toDef.Owner,
@@ -236,14 +238,22 @@ func (a *seamAccumulator) qualifyingEdges() []relationship.Edge {
 	return out
 }
 
-// worstBasis is the distance basis of the edge that drives the seam. An
-// abstained-only seam has no scored edge to point at, so it reports no basis
-// rather than a borrowed one.
-func (a *seamAccumulator) worstBasis() string {
+// systemContainer names the container of two top-level modules: the system.
+const systemContainer = "system"
+
+// worstBasis is the boundary of the edge that drives the seam, joined to the
+// container both sides share: "<boundary>@<container>". An abstained-only seam
+// has no scored edge to point at, so it reports no basis rather than a borrowed
+// one.
+func (a *seamAccumulator) worstBasis(tree classify.Containment, from, to string) string {
 	if a.worst == nil {
 		return ""
 	}
-	return a.worst.Classified.DistanceBasis
+	container := tree.Container(from, to)
+	if container == "" {
+		container = systemContainer
+	}
+	return a.worst.Classified.DistanceBasis + "@" + container
 }
 
 // seamLabels reports the approved label keys in effect for this seam and the
@@ -361,7 +371,7 @@ var (
 	}
 	distanceRanks = map[relationship.Distance]int{
 		relationship.DistanceUnknown: 0, relationship.DistanceSameModule: 1,
-		relationship.DistanceCrossModuleSameOwner: 2, relationship.DistanceCrossModuleDiffOwner: 3,
+		relationship.DistanceCrossModule: 2, relationship.DistanceCrossModuleDiffOwner: 3,
 		relationship.DistanceCrossDeployUnit: 4, relationship.DistanceExternal: 5,
 	}
 	severityRanks = map[relationship.Severity]int{

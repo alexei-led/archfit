@@ -33,7 +33,7 @@
                 "tool_version": "\u003cTOOL_VERSION\u003e"
               },
               {
-                "semantics_version": "go/packages.v1",
+                "semantics_version": "go/packages.v2",
                 "status": "ok",
                 "tool": "go/packages",
                 "tool_version": "\u003cTOOL_VERSION\u003e"
@@ -49,7 +49,7 @@
                 "tool": "loc"
               },
               {
-                "semantics_version": "scip.v1",
+                "semantics_version": "scip.v2",
                 "status": "disabled",
                 "tool": "scip"
               }
@@ -60,7 +60,7 @@
           },
           "model_hash": "124d0f767415a09b74bcd3206ab947f4bb01e3c7905db14a15eaed59d690ef78",
           "reasons": [],
-          "rubric_version": "bc_score.v6",
+          "rubric_version": "bc_score.v7",
           "status": "not_requested"
         },
         "coverage": {
@@ -411,7 +411,7 @@
               {
                 "name": "unbalanced_edge",
                 "provenance": [
-                  "assessment/metrics/unbalanced_edge.v2"
+                  "assessment/metrics/unbalanced_edge.v3"
                 ],
                 "unit": "count",
                 "value": 0
@@ -803,7 +803,7 @@
             "definition": "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
             "direction": "higher_is_better",
             "display": "n/a",
-            "metric_version": "encapsulation.v1",
+            "metric_version": "encapsulation.v2",
             "mode": "ratio",
             "name": "encapsulation",
             "value": 0
@@ -811,10 +811,10 @@
           {
             "band": "strong",
             "confidence": "high",
-            "definition": "intrusive edges with cross-module ownership and high volatility",
+            "definition": "intrusive edges across a module boundary into a high-volatility target",
             "direction": "higher_is_worse",
             "display": "0 new high-risk unbalanced edges",
-            "metric_version": "unbalanced_edge.v2",
+            "metric_version": "unbalanced_edge.v3",
             "mode": "count",
             "name": "unbalanced_edge",
             "value": 0
@@ -870,7 +870,7 @@
             "policy": "violation",
             "quadrant": "tight",
             "raw_distance": {
-              "basis": "ownership",
+              "basis": "ownership@system",
               "boundary_crossings": 2,
               "from_owner": "team-a",
               "level": "cross_module_different_owner",

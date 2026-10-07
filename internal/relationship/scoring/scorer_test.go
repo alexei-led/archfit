@@ -47,7 +47,7 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 			name: "XOR cohesive functional+same_owner low_vol",
 			c: coupling.Classification{
 				Strength:   coupling.StrengthFunctional,
-				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Distance:   coupling.DistanceCrossModule,
 				Volatility: coupling.VolatilityLow,
 			},
 			wantBand:  coupling.SeverityLow,
@@ -80,7 +80,7 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 			name: "contract+same_owner+low_vol → none (floor 0)",
 			c: coupling.Classification{
 				Strength:   coupling.StrengthContract,
-				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Distance:   coupling.DistanceCrossModule,
 				Volatility: coupling.VolatilityLow,
 			},
 			wantBand:  coupling.SeverityNone,
@@ -176,7 +176,7 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 			name: "XOR cohesive functional+same_owner+high_vol",
 			c: coupling.Classification{
 				Strength:   coupling.StrengthFunctional,
-				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Distance:   coupling.DistanceCrossModule,
 				Volatility: coupling.VolatilityHigh,
 			},
 			wantBand:  coupling.SeverityMedium,
@@ -225,7 +225,7 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 			name: "intrusive floor: intrusive+same_owner+low_vol → at least low",
 			c: coupling.Classification{
 				Strength:   coupling.StrengthIntrusive,
-				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Distance:   coupling.DistanceCrossModule,
 				Volatility: coupling.VolatilityLow,
 			},
 			wantBand:  coupling.SeverityLow,
@@ -238,7 +238,7 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 			name: "contract+same_owner+low_vol → none",
 			c: coupling.Classification{
 				Strength:   coupling.StrengthContract,
-				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Distance:   coupling.DistanceCrossModule,
 				Volatility: coupling.VolatilityLow,
 			},
 			wantBand:  coupling.SeverityNone,
@@ -302,7 +302,7 @@ func TestAdditiveScorer_CheapestMove(t *testing.T) {
 			name: "already none → empty",
 			c: coupling.Classification{
 				Strength:   coupling.StrengthContract,
-				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Distance:   coupling.DistanceCrossModule,
 				Volatility: coupling.VolatilityLow,
 			},
 			wantEmpty: true,
@@ -356,7 +356,7 @@ func TestMultiplicativeScorer_IntrusiveFloor(t *testing.T) {
 	s := MultiplicativeScorer{}
 	distances := []coupling.Distance{
 		coupling.DistanceSameModule,
-		coupling.DistanceCrossModuleSameOwner,
+		coupling.DistanceCrossModule,
 		coupling.DistanceCrossModuleDiffOwner,
 		coupling.DistanceCrossDeployUnit,
 		coupling.DistanceUnknown,
@@ -434,7 +434,7 @@ func TestVolatilityUndeclaredScoresLikeUnknown(t *testing.T) {
 		{coupling.StrengthFunctional, coupling.DistanceCrossModuleDiffOwner},
 		{coupling.StrengthIntrusive, coupling.DistanceCrossDeployUnit},
 		{coupling.StrengthContract, coupling.DistanceCrossDeployUnit},
-		{coupling.StrengthModel, coupling.DistanceCrossModuleSameOwner},
+		{coupling.StrengthModel, coupling.DistanceCrossModule},
 		// coupling.StrengthUnknown/coupling.DistanceUnknown: BookScorer abstains for both — still equal.
 		{coupling.StrengthUnknown, coupling.DistanceUnknown},
 	}

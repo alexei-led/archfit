@@ -42,7 +42,32 @@ New:
   comparing. `--from <path>` reads the stored file from another place. Use a
   full `archfit baseline` only for the first baseline.
 
-Fixed:
+### Balanced Coupling score `bc_score.v7` (part 1: strength and distance)
+
+The formula `balance = max(|S − D|, 10 − V) + 1` does not change. The inputs
+change.
+
+- **Distance is level-relative.** Any module boundary is D=9. The same module is
+  2. A declared `external_systems:` target is 10. The distance token only names
+  the boundary: `cross_deploy_unit`, `cross_module_different_owner`, or the new
+  `cross_module` (it replaces `cross_module_same_owner`). Owner and deploy unit
+  never change severity, and module key spelling decides nothing. The role cap
+  and the key-based structural distance are removed.
+- **A `public:` target is the integration contract.** A call through a public
+  surface, and any call to an interface method, is contract coupling. Only data
+  evidence (a concrete type, field, var, const, or a method on a concrete
+  receiver) raises it to model. New field `Edge.DataStrengthHint`.
+- **Connascence never sets strength.** It stays report-only evidence.
+- **Seams** report `raw_distance.basis` as `<boundary>@<container>`. The
+  container comes from the containment tree that `paths:` globs declare.
+- Measurement contracts `go/packages.v2` and `scip.v2`. The fact-cache schema is
+  `4`. Metric versions `unbalanced_edge.v3` and `encapsulation.v2`.
+- Stored baselines become non-comparable. Run `archfit baseline` after you
+  review the new seams.
+- Removed: `strength_inferred_edges` from the connascence report. The
+  `distance_compression` fields `code_structure_*` are now `containment_*`.
+
+### Fixed
 
 - `archfit baseline` now accepts every edge of a Balanced Coupling advisory
   group. Before this fix, it accepted only the edge that represents the group.

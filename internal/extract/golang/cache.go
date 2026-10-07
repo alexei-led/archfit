@@ -22,6 +22,7 @@ import (
 	"golang.org/x/tools/go/packages"
 
 	"github.com/alexei-led/archfit/internal/factcache"
+	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -34,6 +35,15 @@ const goAnalyzer = "go"
 // "2" reads the imports of cgo files (they were dropped, their parsed copy being
 // outside the scan root).
 const memberFactsRevision = "2"
+
+// goSemantics is the measurement-contract version of the go/packages producer,
+// a package var so a test can prove the member key moves with it. The same
+// string feeds the measurement profile, so a semantics bump cannot replay facts
+// an older binary derived.
+var goSemantics = func() string {
+	v, _ := evidence.MeasurementContract("go/packages")
+	return v
+}
 
 // loadFunc is the packages.Load seam: tests inject a fake to count per-member
 // loads; nil means the real packages.Load (fact-cache.md D5 seam 2 —
@@ -79,6 +89,8 @@ type packageFacts struct {
 	// Hints maps relFile+"\x00"+rawImportedPkgPath to the strongest BC
 	// integration-strength label seen (buildStrengthHints, pre-strip).
 	Hints map[string]string `json:"hints,omitempty"`
+	// DataHints is Hints restricted to non-callable uses (goObjectDataStrength).
+	DataHints map[string]string `json:"data_hints,omitempty"`
 	// Connascence maps relFile+"\x00"+rawImportedPkgPath to deterministic
 	// go/types connascence facts seen for that import target.
 	Connascence map[string][]graph.ConnascenceHint `json:"connascence,omitempty"`
@@ -248,7 +260,7 @@ func deriveMemberFacts(pkgs []*packages.Package, root string) (mf memberFacts, c
 		pf.IgnoredFiles = deriveIgnoredFiles(pkg, root)
 		if !pf.Synthetic {
 			pf.Files = deriveFileFacts(pkg, root)
-			pf.Hints, pf.Connascence = deriveRawHints(pkg, dtos, root)
+			pf.Hints, pf.DataHints, pf.Connascence = deriveRawHints(pkg, dtos, root)
 		}
 		mf.Packages = append(mf.Packages, pf)
 	}
@@ -399,12 +411,13 @@ func deriveFileFacts(pkg *packages.Package, root string) []fileFacts {
 // Imported package paths stay RAW and no exclusion filter runs here — module
 // stripping needs the full member set and exclusions are config, so both are
 // applied at merge time in Extract.
-func deriveRawHints(pkg *packages.Package, dtos *dtoIndex, root string) (map[string]string, map[string][]graph.ConnascenceHint) {
+func deriveRawHints(pkg *packages.Package, dtos *dtoIndex, root string) (hints, dataHints map[string]string, connascence map[string][]graph.ConnascenceHint) {
 	if pkg.TypesInfo == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	hints := make(map[string]string)
-	connascence := make(map[string][]graph.ConnascenceHint)
+	hints = make(map[string]string)
+	dataHints = make(map[string]string)
+	connascence = make(map[string][]graph.ConnascenceHint)
 	for ident, obj := range pkg.TypesInfo.Uses {
 		if obj.Pkg() == nil || obj.Pkg().Path() == pkg.PkgPath {
 			continue
@@ -421,15 +434,21 @@ func deriveRawHints(pkg *packages.Package, dtos *dtoIndex, root string) (map[str
 		if goStrengthRank[hints[k]] < goStrengthRank[strength] {
 			hints[k] = strength
 		}
+		if data := goObjectDataStrength(obj, dtos); data != "" && goStrengthRank[dataHints[k]] < goStrengthRank[data] {
+			dataHints[k] = data
+		}
 		connascence[k] = appendConnascenceHints(connascence[k], goObjectConnascence(obj, dtos)...)
 	}
 	if len(hints) == 0 {
 		hints = nil
 	}
+	if len(dataHints) == 0 {
+		dataHints = nil
+	}
 	if len(connascence) == 0 {
 		connascence = nil
 	}
-	return hints, connascence
+	return hints, dataHints, connascence
 }
 
 func appendConnascenceHints(dst []graph.ConnascenceHint, hints ...graph.ConnascenceHint) []graph.ConnascenceHint {
@@ -475,7 +494,8 @@ func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDir
 		GoWorkOff bool
 		Env       map[string]string
 		Facts     string
-	}{e.cfg, scanRoot, hashGoWork(scanRoot, env), goWorkOff, env, memberFactsRevision})
+		Semantics string
+	}{e.cfg, scanRoot, hashGoWork(scanRoot, env), goWorkOff, env, memberFactsRevision, goSemantics()})
 	if err != nil {
 		return nil
 	}

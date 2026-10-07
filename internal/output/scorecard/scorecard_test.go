@@ -62,7 +62,7 @@ const golden = `# archfit architecture state
 **Hard gates:** pass — 0 active blocker(s)
 **Attention:** 1 dimension(s) flagged
 **Coverage:** 1 measured / 0 partial / 8 unmeasured (of 9)
-**Rubric version:** bc_score.v6
+**Rubric version:** bc_score.v7
 **Config hash:** ` + "`abc123`" + `
 
 ## Dimensions

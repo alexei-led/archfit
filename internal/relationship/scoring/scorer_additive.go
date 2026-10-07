@@ -123,8 +123,8 @@ func lowerDistance(d coupling.Distance) (coupling.Distance, bool) {
 	case coupling.DistanceCrossModuleDiffOwner:
 		return coupling.DistanceUnknown, true
 	case coupling.DistanceUnknown:
-		return coupling.DistanceCrossModuleSameOwner, true
-	case coupling.DistanceCrossModuleSameOwner:
+		return coupling.DistanceCrossModule, true
+	case coupling.DistanceCrossModule:
 		return coupling.DistanceSameModule, true
 	default:
 		return d, false
