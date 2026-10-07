@@ -204,9 +204,14 @@ cross-boundary candidate: an internal edge, a declared-external edge, or a
 score-bearing clone-only pair.
 
 **Required facts:** `coupling_candidate_inventory`, `coupling_strength`,
-`coupling_distance`, and `extractor_resolution_within_ceiling`. Strength and
-distance are required for every candidate in the scored-plus-abstained
-denominator. TypeScript resolution satisfies the last fact only when unresolved
+`coupling_distance`, `coupling_volatility`, and
+`extractor_resolution_within_ceiling`. Strength and distance are required for
+every candidate in the scored-plus-abstained denominator. `coupling_volatility`
+is observed when every volatility-bearing end of each scored candidate is
+declared, inherited or cascaded, or one declared end is already high.
+Functional, symmetric, and clone facts have two such ends. Volatility that nobody declared makes coupling `partial` and
+`check` exit 2; the unknown reason names the modules to declare
+`volatility:` or `subdomain:` on. TypeScript resolution satisfies the last fact only when unresolved
 specifiers are no more than 10 percent of specifiers seen.
 
 **Denominator:** Scored cross-boundary candidates over scored plus abstained
@@ -222,11 +227,12 @@ systems. They are separate local-coupling or external-hygiene facts and cannot
 establish cross-boundary balance.
 
 **Measured when:** `A(coupling)` is true, the candidate inventory is observed,
-every denominator member has both strength and distance, and TypeScript
+every denominator member has strength, distance, and rated volatility, and TypeScript
 resolution is within the 10 percent ceiling or proved not applicable.
 
 **Partial when:** The candidate inventory is observed, but one or more
-candidates abstain for unknown strength or distance, or TypeScript unresolved
+candidates abstain for unknown strength or distance, a scored candidate has
+undeclared volatility, or TypeScript unresolved
 specifiers exceed the 10 percent ceiling.
 
 **Unmeasured when:** No in-scope cross-boundary candidate was identified, or no

@@ -68,7 +68,7 @@
 - `clone_only_seams`: 0 count
 - `critical_band_edges`: 0 count
 - `high_or_worse_edges`: 0 count
-- `critical_high_distance_edges`: 0 count
+- `qualifying_edges`: 0 count
 - `seams`: 1 count
 - `distributed_monolith_seams`: 0 count (1/1)
 - `tight_seams`: 1 count
@@ -128,11 +128,11 @@
 
 | Seam | Strength | Distance | Volatility | Scored | Critical | Median | Quadrant | Try |
 | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| a → b | functional | cross_module_different_owner | low | 1 | 0 | 8 | tight | leave_alone |
+| a → b | functional | cross_module_different_owner | medium | 1 | 0 | 5 | tight | follow_rule |
 
 ## Diagnostics (1)
 
-- **bc/imbalanced_coupling** [low] — balanced coupling: functional integration strength × cross_module_different_owner distance × low volatility → low severity (unbalanced coupling → elevated maintenance effort)
+- **bc/imbalanced_coupling** [medium] — balanced coupling: functional integration strength × cross_module_different_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 
 ## Comparison
 
@@ -202,10 +202,11 @@ Integration strength × distance × volatility lint messages.
 Severity: `none` · `low` · `medium` · `high` · `critical`.
 
 ```
-ARCHFIT[BC-UNBALANCED LOW] pkg/a/a.go -> pkg/b  [07af466d]
-  integration strength: functional    distance: cross_module_different_owner    volatility: low
-  score: 8/10 (low) [book]
-  why: balanced coupling: functional integration strength × cross_module_different_owner distance × low volatility → low severity (unbalanced coupling → elevated maintenance effort)
+ARCHFIT[BC-UNBALANCED MEDIUM] pkg/a/a.go -> pkg/b  [07af466d]
+  integration strength: functional    distance: cross_module_different_owner    volatility: medium
+  score: 5/10 (medium) [book]
+  why: balanced coupling: functional integration strength × cross_module_different_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+  hypothesis: move_functionality
 ```
 
 
@@ -237,7 +238,7 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - D=6 compressed: owner and deploy unit name the boundary; they do not change the rung
 - D=7 compressed: level-relative distance: owner changes relabel a seam, they never lower or raise D
 - D=8 compressed: library-like seams remain compressed: undeclared libraries stay excluded, while declared external_systems score at D=10
-- tail risk: worst balance 8/10; lower-decile balance 8/10; high-or-worse edges 0/1 (0%); critical 0; distributed-monolith 0
+- tail risk: worst balance 5/10; lower-decile balance 5/10; high-or-worse edges 0/1 (0%); critical 0; distributed-monolith 0
 
 ## Coverage
 

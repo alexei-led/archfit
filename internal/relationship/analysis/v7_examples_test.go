@@ -6,6 +6,8 @@ package analysis_test
 import (
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/model/clone"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/policy"
 	"github.com/alexei-led/archfit/internal/relationship"
@@ -64,10 +66,15 @@ func requireScore(t *testing.T, res relationship.AnalysisResult, wantStrength re
 }
 
 const (
-	fileCart      = "sales/cart/c.go"
-	hintInterface = "contract"
-	hintCall      = "functional"
-	hintIntrusive = "intrusive"
+	fileAPIX            = "a/api/x.go"
+	fileAPIY            = "b/api/y.go"
+	fileOrders          = "orders/o.go"
+	subdomainSupporting = "supporting"
+	volMedium           = "medium"
+	fileCart            = "sales/cart/c.go"
+	hintInterface       = "contract"
+	hintCall            = "functional"
+	hintIntrusive       = "intrusive"
 )
 
 func core(owner, deploy string, paths ...string) policy.ModuleDef {
@@ -87,7 +94,7 @@ func TestV7Example1_PortCallInOneService(t *testing.T) {
 				keys[0]: core("team", "svc", "orders/**"),
 				keys[1]: core("team", "svc", "billing/**"),
 			}
-			res := analyze(modules, exampleEdge{fromFile: "orders/o.go", toFile: "billing/b.go", hint: hintInterface})
+			res := analyze(modules, exampleEdge{fromFile: fileOrders, toFile: "billing/b.go", hint: hintInterface})
 			requireScore(t, res, relationship.StrengthContract, 9, relationship.SeverityNone)
 		})
 	}
@@ -106,7 +113,7 @@ func TestV7Example2_InternalReachInOneService(t *testing.T) {
 		band      relationship.Severity
 	}{
 		{"core", 2, relationship.SeverityCritical},
-		{"supporting", 8, relationship.SeverityLow},
+		{subdomainSupporting, 8, relationship.SeverityLow},
 	}
 	for _, tt := range tests {
 		t.Run(tt.subdomain, func(t *testing.T) {
@@ -187,5 +194,248 @@ func TestV7KeyRenameChangesNothing(t *testing.T) {
 	a, b := build("sales", "cart"), build("deep/er/sales", "very/deep/er/cart")
 	if a.Severity != b.Severity || a.Distance != b.Distance || a.RawDistance.BoundaryCrossings != b.RawDistance.BoundaryCrossings || a.RawDistance.Basis != b.RawDistance.Basis {
 		t.Errorf("rename changed the seam: %+v vs %+v", a.RawDistance, b.RawDistance)
+	}
+}
+
+// Example 3: two teams, one deploy unit. `orders` (core) calls the non-public
+// `pricing/engine` (supporting). Functional coupling ties both sides, so V is the
+// worse of the two: high. The seam qualifies. Through `pricing/api`, a declared
+// public surface, the same call is contract and balanced.
+func TestV7Example3_FunctionalCallTiesBothSides(t *testing.T) {
+	modules := map[string]policy.ModuleDef{
+		"orders":  core("team-a", "svc", "orders/**"),
+		"pricing": {Paths: []string{"pricing/**"}, Public: []string{"pricing/api/**"}, Owner: "team-b", DeployUnit: "svc", Subdomain: subdomainSupporting},
+	}
+	res := analyze(modules, exampleEdge{fromFile: fileOrders, toFile: "pricing/engine/e.go", hint: hintCall})
+	e := requireScore(t, res, relationship.StrengthFunctional, 2, relationship.SeverityCritical)
+	if e.Volatility != relationship.VolatilityHigh {
+		t.Errorf("volatility = %s, want high: the worse of core and supporting", e.Volatility)
+	}
+	s := seamBetween(t, res, "orders", "pricing")
+	if !s.DistributedMonolith {
+		t.Error("functional coupling into a non-public module must qualify the seam")
+	}
+	if s.Hypothesis != relationship.SeamHypothesisIntroduceContract {
+		t.Errorf("hypothesis = %q, want introduce_contract: the target declares a public surface", s.Hypothesis)
+	}
+
+	through := analyze(modules, exampleEdge{fromFile: fileOrders, toFile: "pricing/api/p.go", hint: hintCall})
+	requireScore(t, through, relationship.StrengthContract, 9, relationship.SeverityNone)
+}
+
+// Example 6: no volatility declared anywhere. An interface call is contract and
+// balanced. A call to a concrete function scores critical, but nobody declared
+// the volatility, so the seam is unrated: it never qualifies, it says
+// declare_volatility, and the coupling summary counts the unrated edge.
+func TestV7Example6_UndeclaredVolatilityIsUnrated(t *testing.T) {
+	modules := map[string]policy.ModuleDef{
+		"app":      {Paths: []string{"app/**"}},
+		"adapters": {Paths: []string{"adapters/**"}},
+		"rules":    {Paths: []string{"rules/**"}},
+	}
+	res := analyze(modules,
+		exampleEdge{fromFile: "app/a.go", toFile: "adapters/s.go", hint: hintInterface},
+		exampleEdge{fromFile: "app/a.go", toFile: "rules/d.go", hint: hintCall},
+	)
+	port := seamBetween(t, res, "app", "adapters")
+	if port.Severity != relationship.SeverityNone || port.DistributedMonolith {
+		t.Errorf("port seam = %q qualifying %t, want none and not qualifying", port.Severity, port.DistributedMonolith)
+	}
+	concrete := seamBetween(t, res, "app", "rules")
+	if concrete.Severity != relationship.SeverityCritical {
+		t.Errorf("concrete seam severity = %q, want critical", concrete.Severity)
+	}
+	if concrete.DistributedMonolith {
+		t.Error("an unrated seam must not qualify")
+	}
+	if concrete.Hypothesis != relationship.SeamHypothesisDeclareVolatility {
+		t.Errorf("hypothesis = %q, want declare_volatility", concrete.Hypothesis)
+	}
+	s := res.Assessment.ClassifiedEdges
+	if s.UnratedVolatilityEdges != 2 {
+		t.Errorf("unrated edges = %d, want 2 (both edges end in undeclared volatility)", s.UnratedVolatilityEdges)
+	}
+	if got := s.UnratedVolatilityModules; len(got) != 3 {
+		t.Errorf("unrated modules = %v, want app, adapters, rules", got)
+	}
+}
+
+// The qualification rule: strong strength, a module boundary, declared high
+// volatility, and no cohesive source role unless the coupling is intrusive.
+// Every qualifying edge is critical, so the gate set is a subset of the severity set.
+func TestV7QualificationRule(t *testing.T) {
+	type tc struct {
+		name     string
+		hint     string
+		srcVol   string
+		dstVol   string
+		role     policy.Role
+		want     bool
+		wantBand relationship.Severity
+	}
+	tests := []tc{
+		{"functional, high", hintCall, volHigh, volHigh, "", true, relationship.SeverityCritical},
+		{"functional, source high, target low", hintCall, volHigh, volLow, "", true, relationship.SeverityCritical},
+		{"functional, both low", hintCall, volLow, volLow, "", false, relationship.SeverityLow},
+		{"functional, medium never qualifies", hintCall, volMedium, volMedium, "", false, relationship.SeverityMedium},
+		{"functional, undeclared is unrated", hintCall, "", "", "", false, relationship.SeverityCritical},
+		{"functional from a composition root", hintCall, volHigh, volHigh, policy.RoleCompositionRoot, false, relationship.SeverityCritical},
+		{"functional from generated code", hintCall, volHigh, volHigh, policy.RoleGenerated, false, relationship.SeverityCritical},
+		{"functional from test code", hintCall, volHigh, volHigh, policy.RoleTest, false, relationship.SeverityCritical},
+		{"intrusive, high", hintIntrusive, volHigh, volHigh, "", true, relationship.SeverityCritical},
+		{"intrusive from a composition root still qualifies", hintIntrusive, volHigh, volHigh, policy.RoleCompositionRoot, true, relationship.SeverityCritical},
+		{"interface call is contract", hintInterface, volHigh, volHigh, "", false, relationship.SeverityNone},
+		{"model coupling is below the bar", "model", volHigh, volHigh, "", false, relationship.SeverityLow},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			modules := map[string]policy.ModuleDef{
+				"src": {Paths: []string{"src/**"}, Volatility: tt.srcVol, Role: tt.role, Internal: nil},
+				"dst": {Paths: []string{"dst/**"}, Volatility: tt.dstVol},
+			}
+			if tt.hint == hintIntrusive {
+				d := modules["dst"]
+				d.Internal = []string{"dst/internal/**"}
+				modules["dst"] = d
+			}
+			toFile := "dst/d.go"
+			if tt.hint == hintIntrusive {
+				toFile = "dst/internal/d.go"
+			}
+			res := analyze(modules, exampleEdge{fromFile: "src/s.go", toFile: toFile, hint: tt.hint})
+			s := seamBetween(t, res, "src", "dst")
+			if s.DistributedMonolith != tt.want {
+				t.Errorf("qualifies = %t, want %t (severity %q)", s.DistributedMonolith, tt.want, s.Severity)
+			}
+			if s.Severity != tt.wantBand {
+				t.Errorf("severity = %q, want %q", s.Severity, tt.wantBand)
+			}
+			if s.DistributedMonolith && s.Severity != relationship.SeverityCritical {
+				t.Errorf("a qualifying seam is critical, got %q", s.Severity)
+			}
+		})
+	}
+}
+
+// A clone fact attaches to the seam between its modules, scores like an edge,
+// and sets the seam's severity and hypothesis, but it never adds an edge and
+// never makes the seam qualify.
+func TestV7CloneFactAttachesToSeam(t *testing.T) {
+	modules := map[string]policy.ModuleDef{
+		"a": core("team", "svc", "a/**"),
+		"b": core("team", "svc", "b/**"),
+	}
+	// "a" and "b" both declare a public surface so the import is a plain contract.
+	for _, k := range []string{"a", "b"} {
+		d := modules[k]
+		d.Public = []string{k + "/api/**"}
+		modules[k] = d
+	}
+	g := exampleGraph(exampleEdge{fromFile: fileAPIX, toFile: fileAPIY, hint: hintInterface})
+	cloneA, cloneB := "a/dup.go", "b/dup.go"
+	res := analysis.Analyze(analysis.Input{
+		Graph: g, Policy: relationshipPolicy(modules),
+		CloneClusters: []clone.Cluster{{Files: []string{cloneA, cloneB}, Lines: 40, Locations: []clone.LineRange{{StartLine: 1}, {StartLine: 2}}}},
+		FileClassIndex: map[string]fileclass.FileClass{
+			cloneA: fileclass.Production, cloneB: fileclass.Production,
+			fileAPIX: fileclass.Production, fileAPIY: fileclass.Production,
+		},
+	})
+	s := seamBetween(t, res, "a", "b")
+	if s.Edges != 1 || s.ScoredEdges != 2 {
+		t.Errorf("edges = %d, scored = %d, want 1 edge and 2 scored facts (edge + clone fact)", s.Edges, s.ScoredEdges)
+	}
+	if s.Severity != relationship.SeverityCritical {
+		t.Errorf("severity = %q, want critical from the symmetric clone fact", s.Severity)
+	}
+	if s.DistributedMonolith {
+		t.Error("a clone fact must never qualify a seam")
+	}
+	if s.Hypothesis != relationship.SeamHypothesisMoveFunctionality {
+		t.Errorf("hypothesis = %q, want move_functionality for a clone fact", s.Hypothesis)
+	}
+	if len(res.Evidence.CloneOnly) != 0 {
+		t.Errorf("clone-only block = %+v, want empty: the pair is a fact on the seam", res.Evidence.CloneOnly)
+	}
+	if edge := onlyEdge(t, res); edge.Strength != relationship.StrengthContract {
+		t.Errorf("edge strength = %s, want contract: a clone never upgrades an import edge", edge.Strength)
+	}
+}
+
+func cloneSetup() (map[string]policy.ModuleDef, analysis.Input) {
+	modules := map[string]policy.ModuleDef{
+		"a": core("team", "svc", "a/**"),
+		"b": core("team", "svc", "b/**"),
+	}
+	for _, k := range []string{"a", "b"} {
+		d := modules[k]
+		d.Public = []string{k + "/api/**"}
+		modules[k] = d
+	}
+	cloneA, cloneB := "a/dup.go", "b/dup.go"
+	in := analysis.Input{
+		CloneClusters: []clone.Cluster{{Files: []string{cloneA, cloneB}, Lines: 40, Locations: []clone.LineRange{{StartLine: 1}, {StartLine: 2}}}},
+		FileClassIndex: map[string]fileclass.FileClass{
+			cloneA: fileclass.Production, cloneB: fileclass.Production,
+			fileAPIX: fileclass.Production, fileAPIY: fileclass.Production,
+		},
+	}
+	return modules, in
+}
+
+// With imports in both directions the clone fact attaches to exactly one seam:
+// the one whose ID sorts first. It is never counted twice.
+func TestV7CloneFactAttachesToExactlyOneSeam(t *testing.T) {
+	modules, in := cloneSetup()
+	in.Graph = exampleGraph(
+		exampleEdge{fromFile: fileAPIX, toFile: fileAPIY, hint: hintInterface},
+		exampleEdge{fromFile: fileAPIY, toFile: fileAPIX, hint: hintInterface},
+	)
+	in.Policy = relationshipPolicy(modules)
+	res := analysis.Analyze(in)
+	ab, ba := seamBetween(t, res, "a", "b"), seamBetween(t, res, "b", "a")
+	withClone, without := ab, ba
+	if ba.ScoredEdges > ab.ScoredEdges {
+		withClone, without = ba, ab
+	}
+	if withClone.ScoredEdges != 2 || without.ScoredEdges != 1 {
+		t.Fatalf("scored facts = %d and %d, want 2 on one seam and 1 on the other", withClone.ScoredEdges, without.ScoredEdges)
+	}
+	if relationship.SeamID(withClone.FromModule, withClone.ToModule) > relationship.SeamID(without.FromModule, without.ToModule) {
+		t.Error("the clone fact must attach to the seam whose ID sorts first")
+	}
+}
+
+// `coupling.duplicated_knowledge: advisory` keeps clone facts out of seams and
+// out of the headline score. A connected pair never becomes a clone-only
+// advisory: it is a fact on the seam, and the rule means "no import edge".
+func TestV7CloneFactPolicyAndAdvisories(t *testing.T) {
+	modules, in := cloneSetup()
+	in.Graph = exampleGraph(exampleEdge{fromFile: fileAPIX, toFile: fileAPIY, hint: hintInterface})
+
+	score := relationshipPolicy(modules)
+	score.DuplicatedKnowledge = policy.DuplicatedKnowledgePolicyScore
+	in.Policy = score
+	got := analysis.Analyze(in)
+	s := seamBetween(t, got, "a", "b")
+	if s.ScoredEdges != 2 {
+		t.Errorf("score mode: scored = %d, want 2", s.ScoredEdges)
+	}
+	for _, c := range got.Assessment.AdvisoryCandidates {
+		if c.RuleID == ruleClone {
+			t.Errorf("a connected clone pair produced a %s advisory: %+v", ruleClone, c)
+		}
+	}
+	if tr := got.Assessment.ClassifiedEdges.TailRisk; tr != nil && tr.CloneOnlyScored != 0 {
+		t.Errorf("tail_risk clone-only scored = %d, want 0: the pair is connected", tr.CloneOnlyScored)
+	}
+
+	advisory := relationshipPolicy(modules)
+	advisory.DuplicatedKnowledge = policy.DuplicatedKnowledgePolicyAdvisory
+	in.Policy = advisory
+	got = analysis.Analyze(in)
+	s = seamBetween(t, got, "a", "b")
+	if s.ScoredEdges != 1 || s.Severity != relationship.SeverityNone {
+		t.Errorf("advisory mode: scored = %d severity %q, want 1 and none: clone facts stay out of seams", s.ScoredEdges, s.Severity)
 	}
 }

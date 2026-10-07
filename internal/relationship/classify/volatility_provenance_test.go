@@ -140,14 +140,14 @@ func TestSyntheticModuleVolatilityOverride_HerdrShape(t *testing.T) {
 		To:           crateNodeS,
 		Kind:         graph.EdgeKindDependsOn,
 		Language:     langRust,
-		StrengthHint: hintFunctional,
+		StrengthHint: string(coupling.StrengthModel),
 	}
 	eToSibling := graph.Edge{
 		From:         crateNodeS,
 		To:           crateNodeA,
 		Kind:         graph.EdgeKindDependsOn,
 		Language:     langRust,
-		StrengthHint: hintFunctional,
+		StrengthHint: string(coupling.StrengthModel),
 	}
 	g := makeGraph([]graph.Edge{eToState, eToSibling})
 

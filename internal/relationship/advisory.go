@@ -55,6 +55,12 @@ type ClassifiedEdgeSummary struct {
 	LLMLowConfidenceEdges          int
 	VolatilityProvenance           *VolatilityProvenance
 	DistanceCompression            *DistanceCompressionSummary
+	// UnratedVolatilityEdges counts scored cross-boundary edges and clone facts
+	// whose effective volatility is undeclared or unknown: V=10 enters the
+	// formula, but nobody declared it. UnratedVolatilityModules names the modules
+	// that leave them unrated, sorted.
+	UnratedVolatilityEdges   int
+	UnratedVolatilityModules []string
 }
 
 // CouplingTailRiskSummary records lower-tail relationship statistics.
@@ -123,7 +129,7 @@ type AnalysisEvidence struct {
 	// keyed here so no consumer has to re-derive the augmented module map.
 	DynamicImports            []evidence.DynamicImport
 	DynamicConnascenceSignals *evidence.DynamicConnascenceSignals
-	CloneOnly                 []CloneOnlyPair
+	CloneOnly                 []ClonePair
 	Connascence               *evidence.ConnascenceReport
 	DistanceConfigCandidates  []evidence.DistanceConfigCandidate
 	LocalCoupling             []evidence.LocalCouplingModule
