@@ -8,10 +8,11 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/output/brief"
 )
 
 // RenderState writes the architecture state as the Markdown report's headline:
-// the decision, the nine dimension envelopes, the coverage summary, the coupling
+// the decision, the blockers and next steps, the nine dimension envelopes, the coverage summary, the coupling
 // seam ledger, the comparison and its comparability reasons, and what could not
 // be measured. It leads the detailed audit that Render produces.
 //
@@ -21,20 +22,22 @@ import (
 // The state alone carries no metric deltas, so it cannot name a tripped
 // metric ratchet; Render, which holds the whole document, can.
 func RenderState(s report.ArchitectureState, w io.Writer) error {
-	return writeState(s, nil, w)
+	return writeState(s, brief.Build(brief.Input{State: s}), nil, w)
 }
 
-func writeState(s report.ArchitectureState, regressions []metricRegression, w io.Writer) error {
+func writeState(s report.ArchitectureState, view brief.View, regressions []metricRegression, w io.Writer) error {
 	var b strings.Builder
 
 	b.WriteString("# archfit — architecture state\n\n")
-	writeStateHeadline(&b, s)
+	writeStateHeadline(&b, s, view.VerdictReason)
+	writeBlockers(&b, view.Blockers)
+	writeNextSteps(&b, view.NextSteps)
 	writeMetricRatchet(&b, s.GateReference, regressions)
 	writeDimensionTable(&b, s.Dimensions)
 	writeDimensionMetrics(&b, s.Dimensions)
 	writeCoverageTable(&b, s.Coverage)
 	writeSeamLedger(&b, s.Seams)
-	writeActionableFindings(&b, s)
+	writeDiagnostics(&b, view.Diagnostics)
 	writeStateComparison(&b, s.Comparison)
 	writeGateReference(&b, s.GateReference)
 	writeStateUnknowns(&b, s.Dimensions)
@@ -53,9 +56,13 @@ func writeGateReference(b *strings.Builder, c *report.StateComparison) {
 	}
 }
 
-func writeStateHeadline(b *strings.Builder, s report.ArchitectureState) {
+func writeStateHeadline(b *strings.Builder, s report.ArchitectureState, reason string) {
 	_, diagnostics := statePopulations(s.Dimensions)
-	fmt.Fprintf(b, "- **Verdict:** %s\n", stateVerdictPhrase(s.Verdict))
+	verdict := stateVerdictPhrase(s.Verdict)
+	if reason != "" {
+		verdict += " — " + reason
+	}
+	fmt.Fprintf(b, "- **Verdict:** %s\n", verdict)
 	fmt.Fprintf(b, "- **Blocking:** %d active — hard gates: %s\n", s.Decision.ActiveBlockers, s.Decision.HardGates)
 	fmt.Fprintf(b, "- **Attention:** %d dimension(s) flagged — %d diagnostic(s)\n", s.Decision.AttentionDimensions, diagnostics)
 	fmt.Fprintf(b, "- **Coverage:** %d measured / %d partial / %d unmeasured (of %d)\n",
@@ -190,56 +197,63 @@ func dash(v string) string {
 	return v
 }
 
-// findingListCap bounds each rendered population; the full list is in
-// --format json.
-const findingListCap = 20
+// diagnosticListCap bounds the rendered diagnostics; blockers are never
+// capped, and the full list is in --format json.
+const diagnosticListCap = 20
 
-func writeActionableFindings(b *strings.Builder, s report.ArchitectureState) {
-	blocking, advisory := splitActionable(s)
-	if len(blocking) == 0 && len(advisory) == 0 {
+// writeBlockers lists every active blocker with its short ID, rule, subject,
+// first location, full why, repair goal, and check commands.
+func writeBlockers(b *strings.Builder, blockers []brief.Blocker) {
+	if len(blockers) == 0 {
 		return
 	}
-	b.WriteString("\n## Top actionable findings\n")
-	writeFindingList(b, "Blocking", blocking)
-	writeFindingList(b, "Diagnostic", advisory)
-}
-
-// splitActionable selects the findings the dimension envelopes reference, in
-// the document's own finding order. Only active findings are referenced, so a
-// baselined or waived one cannot reappear here as work to do.
-func splitActionable(s report.ArchitectureState) (blocking, advisory []report.Finding) {
-	active := map[string]string{}
-	for _, dim := range s.Dimensions.All() {
-		for _, ref := range dim.Findings {
-			active[ref.ID] = ref.Kind
+	fmt.Fprintf(b, "\n## Blockers (%d)\n\n", len(blockers))
+	for _, bl := range blockers {
+		fmt.Fprintf(b, "- **`%s` %s** — %s\n", bl.ShortID, bl.RuleID, bl.Subject)
+		if bl.Location != "" {
+			more := ""
+			if bl.MoreLocations > 0 {
+				more = fmt.Sprintf(" (+%d more)", bl.MoreLocations)
+			}
+			fmt.Fprintf(b, "  - location: `%s`%s\n", bl.Location, more)
+		}
+		fmt.Fprintf(b, "  - why: %s\n", oneLine(bl.Why))
+		if bl.Goal != "" {
+			fmt.Fprintf(b, "  - goal: %s\n", oneLine(bl.Goal))
+		}
+		for _, check := range bl.Checks {
+			fmt.Fprintf(b, "  - check: `%s`\n", check)
 		}
 	}
-	for _, f := range s.Findings {
-		kind, ok := active[f.ID]
-		if !ok {
-			continue
-		}
-		if kind == report.FindingKindGate {
-			blocking = append(blocking, f)
-			continue
-		}
-		advisory = append(advisory, f)
-	}
-	return blocking, advisory
 }
 
-func writeFindingList(b *strings.Builder, label string, findings []report.Finding) {
+func writeNextSteps(b *strings.Builder, steps []string) {
+	if len(steps) == 0 {
+		return
+	}
+	b.WriteString("\n## Next steps\n\n")
+	for i, step := range steps {
+		fmt.Fprintf(b, "%d. %s\n", i+1, step)
+	}
+}
+
+func writeDiagnostics(b *strings.Builder, findings []report.Finding) {
 	if len(findings) == 0 {
 		return
 	}
-	fmt.Fprintf(b, "\n### %s (%d)\n\n", label, len(findings))
+	fmt.Fprintf(b, "\n## Diagnostics (%d)\n\n", len(findings))
 	for i, f := range findings {
-		if i == findingListCap {
-			fmt.Fprintf(b, "\n_… +%d more (see `--format json`)_\n", len(findings)-findingListCap)
+		if i == diagnosticListCap {
+			fmt.Fprintf(b, "\n_… +%d more (see `--format json`)_\n", len(findings)-diagnosticListCap)
 			break
 		}
-		fmt.Fprintf(b, "- **%s** [%s] — %s\n", f.RuleID, f.Severity, strings.TrimSpace(strings.ReplaceAll(f.Why, "\n", " ")))
+		fmt.Fprintf(b, "- **%s** [%s] — %s\n", f.RuleID, f.Severity, oneLine(f.Why))
 	}
+}
+
+// oneLine folds a multi-line text onto one line without cutting it.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // writeFindingIndex appends every finding in the document's canonical order
@@ -265,6 +279,9 @@ func writeStateComparison(b *strings.Builder, c report.StateComparison) {
 		target = "none"
 	}
 	fmt.Fprintf(b, "- **Status:** %s\n- **Reference:** %s\n", c.Status, target)
+	if c.ConfigHash != "" {
+		fmt.Fprintf(b, "- **Config hash:** `%s`\n", c.ConfigHash)
+	}
 	for _, reason := range c.Reasons {
 		fmt.Fprintf(b, "- %s\n", strings.TrimSpace(reason))
 	}
@@ -286,6 +303,6 @@ func writeStateUnknowns(b *strings.Builder, dims report.Dimensions) {
 	}
 	fmt.Fprintf(b, "\n## Not measured (%d)\n\n", len(rows))
 	for _, r := range rows {
-		fmt.Fprintf(b, "- **%s — %s** (owner: %s): %s\n", r.dimension, r.fact.Fact, r.fact.Owner, strings.TrimSpace(r.fact.Reason))
+		fmt.Fprintf(b, "- **%s — %s** (owner: %s): %s %s\n", r.dimension, r.fact.Fact, r.fact.Owner, strings.TrimSpace(r.fact.Reason), brief.Step(r.fact.Fact))
 	}
 }

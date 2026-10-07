@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/internal/output/brief"
 	reportports "github.com/alexei-led/archfit/internal/report/ports"
 )
 
@@ -43,7 +44,9 @@ func (r *Renderer) Format() string { return "markdown" }
 // state headline first — naming the metrics behind a metric-ratchet block from
 // the document's metric deltas — then the detailed audit.
 func (r *Renderer) Render(d report.Document, w io.Writer) error {
-	if err := writeState(d.State, ratchetRegressions(d), w); err != nil {
+	regressions := ratchetRegressions(d)
+	view := brief.Build(brief.Input{State: d.State, CoverageGaps: d.CoverageGaps, MetricRatchet: len(regressions) > 0})
+	if err := writeState(d.State, view, regressions, w); err != nil {
 		return err
 	}
 	if err := r.renderAudit(d, w); err != nil {
@@ -59,14 +62,11 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 	return err
 }
 
-// renderAudit writes the detailed BC-aligned Markdown audit for d to w.
-// Sections follow design §8:
-//  1. Verdict + config_hash + tool/coverage
-//  2. Gate violations (rules)
-//  3. Balanced Coupling advisories — lint-message format
-//  4. Supporting structural metrics (beyond Balanced Coupling)
-//  5. Distance confidence
-//  6. Agent tasks
+// renderAudit writes the detailed BC-aligned Markdown audit for d to w, as more
+// H2 sections of the one document the state headline opened: metrics and the
+// report-only evidence blocks, agent tasks, Balanced Coupling advisories in
+// lint-message format, supporting structural metrics, distance confidence, and
+// tool coverage. Blockers are listed once, in the state's Blockers section.
 //
 // The audit deliberately restates no verdict. The state headline above it
 // already decided one, and the legacy pass/warn/fail vocabulary maps to a
@@ -74,16 +74,6 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 // headline and "PASS (exit 0)" three sections later, with the exit claim false.
 func (r *Renderer) renderAudit(d report.Document, w io.Writer) error {
 	var b strings.Builder
-
-	b.WriteString("# archfit report\n\n")
-	if d.ConfigHash != "" {
-		fmt.Fprintf(&b, "**Config hash:** `%s`\n", d.ConfigHash)
-	}
-
-	b.WriteString("\n## Summary\n\n")
-	fmt.Fprintf(&b, "- gate findings: %d\n", d.Summary.GateFindings)
-	fmt.Fprintf(&b, "- warnings: %d\n", d.Summary.Warnings)
-	fmt.Fprintf(&b, "- waivers used: %d\n", d.Summary.WaiversUsed)
 
 	writeDelta(&b, d)
 
@@ -132,13 +122,7 @@ func (r *Renderer) renderAudit(d report.Document, w io.Writer) error {
 
 	writeConfigWarnings(&b, d.ConfigWarnings)
 
-	gate, advisories := splitFindings(d.Findings)
-	if len(gate) > 0 {
-		fmt.Fprintf(&b, "\n## Gate findings (%d)\n\n", len(gate))
-		for _, f := range gate {
-			writeGateFinding(&b, f)
-		}
-	}
+	_, advisories := splitFindings(d.Findings)
 
 	writeAgentTasks(&b, d.AgentTasks)
 

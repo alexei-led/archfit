@@ -70,6 +70,29 @@ New:
   The repair task asks the owner (`needs_owner_decision`). `map/dead_rule` and `map/stale_review`
   stay diagnostics. See [`module_review`](configuration-reference.md#module_review).
 
+- The brief. Text and Markdown now open with BLOCKERS: every active gate
+  finding, never capped, with its short ID, rule, subject, `file:line`, full
+  `why`, the repair goal, and the command that checks the fix. NEXT STEPS
+  follows, at most five, in this order: blockers, a metric ratchet, rules and
+  analyzers that need evidence, the gate reference, module decisions, and
+  coverage or deploy-unit evidence; `archfit baseline` is offered only with no
+  active blocker and no stored reference. Every NOT MEASURED fact ends with
+  the step that closes it, or with `(out of claim — no action)`. A
+  needs-attention verdict with no finding says why
+  (`NEEDS ATTENTION — evidence incomplete: …`). Diagnostics list the findings
+  of warn-gated rules before the coupling advisories.
+- New [glossary](glossary.md): archfit terms, wire terms, and the book terms
+  and chapters they map to.
+
+Fixes:
+
+- The undeclared-volatility config warning said the scorer abstains on
+  volatility. The scorer uses V=10, the worst case; the warning now says so.
+- A critical coupling advisory at low distance no longer says "cheap to
+  change".
+- `config compare` text no longer prints a repository score line; `--json`
+  keeps `scorecard` and `score_delta`.
+
 Contract notes:
 
 - Config schema v2 gains the optional module keys `depends_on` and
@@ -87,6 +110,16 @@ Contract notes:
 - New published schema `archfit.agent-result.schema.json` for
   `archfit.agent-result.v1`. The architecture state, `archfit.state.schema.json`,
   baseline v2, and the comparison fingerprints do not change.
+- Markdown is one document with one H1. The second H1 (`# archfit report`),
+  its config-hash line, `## Summary`, and `## Gate findings` are gone: the
+  blockers are in `## Blockers`, the config hash is in `## Comparison`, and
+  every finding stays in the finding index. `## Top actionable findings` is
+  replaced by `## Blockers` and `## Diagnostics`; text replaces
+  `TOP ACTIONABLE FINDINGS` with `BLOCKERS` and `DIAGNOSTICS`. Scripts that
+  parse those headings must change.
+- JSON and SARIF change only in two texts: the undeclared-volatility entry in
+  `config_warnings`, and the `why` (and SARIF message) of a critical
+  low-distance `bc/imbalanced_coupling` finding. Finding IDs do not change.
 - `map/uncovered_path` changes its subject from a graph node to a directory.
   A Go package keeps its finding ID. A finding about a single file gets a new
   ID: the old one reads `fixed`, and the directory finding is new. Before

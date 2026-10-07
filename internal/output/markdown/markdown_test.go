@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	secGate                   = "Gate findings"
+	secGate                   = "## Blockers"
 	secAdvisories             = "Advisories"
 	secBCAdvisories           = "Balanced Coupling advisories"
 	secBeyondBC               = "Supporting structural metrics (beyond Balanced Coupling)"
@@ -81,6 +81,39 @@ func TestRenderer_Format(t *testing.T) {
 }
 
 // makeGateFinding creates a gate finding for testing.
+// activate makes every finding of d active in its architecture state, the
+// way assessment references active findings from the dimension envelopes.
+func activate(d *reportmodel.Document) {
+	d.State.Findings = d.Findings
+	d.State.Dimensions.Structure.Findings = nil
+	for _, f := range d.Findings {
+		d.State.Dimensions.Structure.Findings = append(d.State.Dimensions.Structure.Findings,
+			reportmodel.FindingRef{ID: f.ID, RuleID: f.RuleID, Kind: f.Kind, Status: f.Status})
+	}
+}
+
+// TestRenderer_Render_OneH1 pins the Markdown document to one H1: the state
+// headline opens it, and every audit section is an H2 beneath it.
+func TestRenderer_Render_OneH1(t *testing.T) {
+	d := reportmodel.NewDocument()
+	d.Findings = reporttest.Findings(makeGateFinding("forbidden_dep", finding.SeverityHigh, finding.StatusNew), makeAdvisoryFinding("bc/imbalanced_coupling"))
+	activate(&d)
+	d.ConfigHash = "abc"
+	var buf bytes.Buffer
+	if err := markdown.New().Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	h1 := 0
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.HasPrefix(line, "# ") {
+			h1++
+		}
+	}
+	if h1 != 1 {
+		t.Errorf("H1 headings = %d, want 1\nfull output:\n%s", h1, buf.String())
+	}
+}
+
 func makeGateFinding(ruleID string, sev finding.Severity, status finding.Status) finding.Finding {
 	f := finding.New(ruleID, relationship.Edge{
 		FromID: "pkg/a",
@@ -113,7 +146,7 @@ func TestRenderer_Render_EmptyDiagnostic(t *testing.T) {
 
 	// Required sections always present. The audit restates no verdict: the
 	// state headline above it already owns the exit-table meaning.
-	for _, want := range []string{"# archfit — architecture state", "Verdict", "Summary"} {
+	for _, want := range []string{"# archfit — architecture state", "Verdict"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)
 		}
@@ -660,6 +693,7 @@ func TestRenderer_Render_GateFindings(t *testing.T) {
 		makeGateFinding("forbidden_dep", finding.SeverityHigh, finding.StatusNew),
 		makeGateFinding("cycle", finding.SeverityCritical, finding.StatusNew),
 	)
+	activate(&d)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -763,6 +797,7 @@ func TestRenderer_Render_ExceptionInventory(t *testing.T) {
 	d.Summary.WaiversUsed = 1
 	waived := makeGateFinding("forbidden_dep", finding.SeverityLow, finding.StatusWaived)
 	d.Findings = reporttest.Findings(waived)
+	d.State.Findings = d.Findings
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -771,12 +806,17 @@ func TestRenderer_Render_ExceptionInventory(t *testing.T) {
 
 	out := buf.String()
 
-	if !strings.Contains(out, secGate) {
-		t.Errorf("output missing Exception Inventory section\nfull output:\n%s", out)
+	// A waived finding is not a blocker; the finding index keeps it with its
+	// status, so the exception stays visible.
+	if strings.Contains(out, secGate) {
+		t.Errorf("a waived finding must not be listed as a blocker\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "| `"+waived.ID+"` | waived | forbidden_dep |") {
+		t.Errorf("finding index missing the waived finding\nfull output:\n%s", out)
 	}
 }
 
-func TestRenderer_Render_Top10GateTruncation(t *testing.T) {
+func TestRenderer_Render_BlockersAreNotCapped(t *testing.T) {
 	r := markdown.New()
 	d := reportmodel.NewDocument()
 	d.Verdict = reportmodel.VerdictFail
@@ -789,6 +829,7 @@ func TestRenderer_Render_Top10GateTruncation(t *testing.T) {
 		d.Findings = append(d.Findings, reporttest.Findings(f)...)
 	}
 	d.Summary.GateFindings = 15
+	activate(&d)
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -797,13 +838,12 @@ func TestRenderer_Render_Top10GateTruncation(t *testing.T) {
 
 	out := buf.String()
 
-	// Full violation list has all 15; gate section is truncated to 10.
-	// We can't count rows easily, but verify both sections exist.
-	if !strings.Contains(out, secGate) {
-		t.Errorf("output missing Critical Gate Violations\nfull output:\n%s", out)
+	// Blockers are never capped: every active gate finding is listed once.
+	if !strings.Contains(out, secGate+" (15)") {
+		t.Errorf("output missing the 15 blockers\nfull output:\n%s", out)
 	}
-	if !strings.Contains(out, secGate) {
-		t.Errorf("output missing Full Violation List\nfull output:\n%s", out)
+	if got := strings.Count(out, "- **`"); got != 15 {
+		t.Errorf("blocker entries = %d, want 15\nfull output:\n%s", got, out)
 	}
 }
 
@@ -1233,6 +1273,7 @@ func TestRenderer_Render_ConfigHash(t *testing.T) {
 		d := reportmodel.NewDocument()
 		d.Verdict = reportmodel.VerdictPass
 		d.ConfigHash = "abc123def456"
+		d.State.Comparison.ConfigHash = d.ConfigHash
 
 		var buf bytes.Buffer
 		if err := r.Render(d, &buf); err != nil {

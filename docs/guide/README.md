@@ -25,6 +25,8 @@ small references while configuring a repo.
 - [Dogfooding](dogfooding.md) — how archfit runs on itself; signals vs.
   violations.
 - [Commands](commands.md) — common commands, formats, and exit codes.
+- [Glossary](glossary.md) — archfit terms, their wire names, and the book
+  terms they map to.
 - [Caching](caching.md) — the extractor fact cache: what invalidates it,
   `--refresh`, eviction, reset.
 - [CI](ci.md) — basic CI and pull-request usage.

@@ -38,6 +38,11 @@ COVERAGE   6 measured · 3 partial · 0 unmeasured  (of 9)
 No blockers. Use this run for architecture-improvement planning,
 not to stop development.
 
+NEXT STEPS
+
+  1. Restore the analyzers the rules read: archfit doctor --fix.
+  2. Commit a deploy manifest for each deploy_unit.
+
 DIMENSIONS
 
   intent          partial     gate: pass            confidence: medium   declared rules evaluated 53/60
@@ -54,10 +59,13 @@ NOT MEASURED (11)
 
   intent — active rule conformance
     one or more active rules lack the completed producer evidence their checks require: adapter_no_cli, core_no_extract, internal_no_labelsio…
+    → restore the analyzers the rules read: archfit doctor --fix
   complexity — cognitive complexity
     no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure
+    (out of claim — no action)
   operations — corroborated deploy unit
     one or more declared modules have no independently corroborating deploy manifest
+    → commit a deploy manifest for each deploy_unit
 
 COUPLING SEAMS (69)
 
