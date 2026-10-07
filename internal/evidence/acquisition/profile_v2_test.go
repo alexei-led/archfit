@@ -10,11 +10,15 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/model/evidence"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
-const goToolVersion = "go1.26.0"
+const (
+	goToolVersion = "go1.26.0"
+	mainGoFile    = "main.go"
+)
 
 func goOnlyService() *Service {
 	return &Service{Runner: &toolrun.RunnerMock{RunFunc: func(context.Context, toolrun.ToolCmd) (toolrun.Output, error) {
@@ -35,7 +39,7 @@ func producerTools(p *evidence.MeasurementProfile) []string {
 func TestProfileV2IgnoresNotApplicableLanguages(t *testing.T) {
 	s := goOnlyService()
 	goRow := evidence.Coverage{Tool: registry.ToolGoPackages, Version: goToolVersion, Status: evidence.StatusOK}
-	index := map[string]fileclass.FileClass{"main.go": fileclass.Production}
+	index := map[string]fileclass.FileClass{mainGoFile: fileclass.Production}
 	without := s.measurementProfile(context.Background(), scope.Scope{Root: "/r"}, []evidence.Coverage{goRow}, nil, index, nil)
 	absent := []evidence.Coverage{goRow,
 		{Tool: registry.ToolGrimp, Status: evidence.StatusAbsent},
@@ -114,7 +118,7 @@ func eq(t *testing.T, got, want string) {
 func TestProfileV2SettingsIgnoreNotApplicableLanguageConfig(t *testing.T) {
 	configured := func(pyPackage string, syntaxLangs ...string) *Service {
 		s := goOnlyService()
-		s.Options.Extractors = registry.Configs{"go": {Src: "."}, "python": {PyPackage: pyPackage}}
+		s.Options.Extractors = registry.Configs{"go": {Src: "."}, graph.LangPython: {PyPackage: pyPackage}}
 		s.Options.Syntax = ports.SyntaxConfig{Enabled: true, Languages: syntaxLangs}
 		return s
 	}
@@ -123,21 +127,21 @@ func TestProfileV2SettingsIgnoreNotApplicableLanguageConfig(t *testing.T) {
 	hash := func(s *Service, files map[string]fileclass.FileClass) string {
 		return s.measurementProfile(context.Background(), scope.Scope{Root: "/r"}, []evidence.Coverage{goRow, grimp}, nil, files, nil).SettingsHash
 	}
-	goFiles := map[string]fileclass.FileClass{"main.go": fileclass.Production}
-	pyFiles := map[string]fileclass.FileClass{"main.go": fileclass.Production, "pkg/a.py": fileclass.Production}
+	goFiles := map[string]fileclass.FileClass{mainGoFile: fileclass.Production}
+	pyFiles := map[string]fileclass.FileClass{mainGoFile: fileclass.Production, "pkg/a.py": fileclass.Production}
 
-	base := hash(configured("one", "go", "python"), goFiles)
-	if hash(configured("two", "go", "python"), goFiles) != base {
+	base := hash(configured("one", "go", graph.LangPython), goFiles)
+	if hash(configured("two", "go", graph.LangPython), goFiles) != base {
 		t.Error("python extractor config moved the hash on a tree with no python")
 	}
 	if hash(configured("one", "go"), goFiles) != base {
 		t.Error("switching python out of the syntax languages moved the hash on a tree with no python")
 	}
-	applicable := hash(configured("one", "go", "python"), pyFiles)
+	applicable := hash(configured("one", "go", graph.LangPython), pyFiles)
 	if applicable == base {
 		t.Error("a python file in the tree did not add the python slice")
 	}
-	if hash(configured("two", "go", "python"), pyFiles) == applicable {
+	if hash(configured("two", "go", graph.LangPython), pyFiles) == applicable {
 		t.Error("python extractor config did not move the hash once python is in the tree")
 	}
 }
