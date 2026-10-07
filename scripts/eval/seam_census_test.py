@@ -85,6 +85,13 @@ class SummarizeTest(unittest.TestCase):
         self.assertEqual(sc.abstention_rate(sc.summarize(state([], 0, 0))), 0.0)
 
 
+class ResolveBinaryTest(unittest.TestCase):
+    def test_relative_path_becomes_absolute_from_caller_cwd(self):
+        got = sc.resolve_binary(".bin/archfit")
+        self.assertTrue(Path(got).is_absolute())
+        self.assertEqual(got, str(Path(".bin/archfit").resolve()))
+
+
 class ParseReposTest(unittest.TestCase):
     def test_accepts_label_dir(self):
         self.assertEqual(sc.parse_repos(["a=/x", "b=/y"]), {"a": "/x", "b": "/y"})

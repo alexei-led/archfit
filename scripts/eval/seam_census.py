@@ -76,6 +76,12 @@ def abstention_rate(row: dict[str, Any]) -> float:
     return row["abstained_edges"] / total if total else 0.0
 
 
+def resolve_binary(archfit: str) -> str:
+    """Make the binary path absolute: the child runs with cwd set to the repo,
+    and a relative path would be looked up there."""
+    return str(Path(archfit).resolve())
+
+
 def run_analyze(archfit: str, label: str, directory: str) -> dict[str, Any]:
     env = dict(os.environ)
     env.setdefault("RUSTUP_TOOLCHAIN", PINNED_RUST_TOOLCHAIN)
@@ -132,10 +138,11 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as err:
         print(err, file=sys.stderr)
         return 2
+    archfit = resolve_binary(args.archfit)
     rows: dict[str, dict[str, Any]] = {}
     detail: dict[str, Any] = {}
     for label, directory in repos.items():
-        state = run_analyze(args.archfit, label, directory)
+        state = run_analyze(archfit, label, directory)
         rows[label] = summarize(state)
         detail[label] = {
             "summary": rows[label],
