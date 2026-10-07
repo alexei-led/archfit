@@ -75,7 +75,7 @@ func TestExtract_NonGoDir_Absent(t *testing.T) {
 		t.Fatalf("write README: %v", err)
 	}
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	s := scope.Scope{Root: dir, Mode: scope.ModeFull}
+	s := scope.Scope{Root: dir}
 
 	_, cov, err := ext.Extract(context.Background(), s)
 	if err != nil {
@@ -99,7 +99,7 @@ func TestExtract_MemberLoadFailure(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "go.work"), []byte(goWork), 0o600); err != nil {
 		t.Fatalf("write go.work: %v", err)
 	}
-	s := scope.Scope{Root: dir, Mode: scope.ModeFull}
+	s := scope.Scope{Root: dir}
 
 	t.Run("auto degrades to partial coverage", func(t *testing.T) {
 		ext := goextract.New(evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
@@ -147,7 +147,7 @@ func TestExtract_IllTypedPackage(t *testing.T) {
 	write(fileAAGo, "package a\n\nimport \"example.com/illtyped/pkg/b\"\n\nvar Use = b.Broken\n")
 
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestExtract_IllTypedPackage(t *testing.T) {
 			}
 		}
 		_, missCov, err := goextract.New(evidenceports.ExtractConfig{}).
-			Extract(context.Background(), scope.Scope{Root: missDir, Mode: scope.ModeFull})
+			Extract(context.Background(), scope.Scope{Root: missDir})
 		if err != nil {
 			t.Fatalf("Extract: %v", err)
 		}
@@ -228,7 +228,7 @@ func TestExtract_IllTypedPackage(t *testing.T) {
 			}
 		}
 		_, mixedCov, err := goextract.New(evidenceports.ExtractConfig{}).
-			Extract(context.Background(), scope.Scope{Root: mixedDir, Mode: scope.ModeFull})
+			Extract(context.Background(), scope.Scope{Root: mixedDir})
 		if err != nil {
 			t.Fatalf("Extract: %v", err)
 		}
@@ -256,7 +256,7 @@ func TestExtract_IllTypedPackage(t *testing.T) {
 func TestExtract_SimpleImport(t *testing.T) {
 	root := testdataRoot(t)
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	s := scope.Scope{Root: root, Mode: scope.ModeFull}
+	s := scope.Scope{Root: root}
 
 	facts, cov, err := ext.Extract(context.Background(), s)
 	if err != nil {
@@ -281,7 +281,7 @@ func TestExtract_InternalAccess(t *testing.T) {
 	ext := goextract.New(evidenceports.ExtractConfig{
 		BuildFlags: []string{"-tags", "extractortest"},
 	})
-	s := scope.Scope{Root: root, Mode: scope.ModeFull}
+	s := scope.Scope{Root: root}
 
 	facts, _, err := ext.Extract(context.Background(), s)
 	if err != nil {
@@ -300,7 +300,7 @@ func TestExtract_ExcludedPath(t *testing.T) {
 	ext := goextract.New(evidenceports.ExtractConfig{
 		Exclusions: []string{"**/pkg/b/**", "pkg/b/**"},
 	})
-	s := scope.Scope{Root: root, Mode: scope.ModeFull}
+	s := scope.Scope{Root: root}
 
 	facts, _, err := ext.Extract(context.Background(), s)
 	if err != nil {
@@ -348,7 +348,7 @@ func edgeConnascenceKinds(edges []graph.Edge, fromSuffix, toSuffix string, kind 
 func TestExtract_StrengthHint(t *testing.T) {
 	root := testdataRoot(t)
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	s := scope.Scope{Root: root, Mode: scope.ModeFull}
+	s := scope.Scope{Root: root}
 
 	facts, _, err := ext.Extract(context.Background(), s)
 	if err != nil {
@@ -441,7 +441,7 @@ func TestExtract_StrengthHint(t *testing.T) {
 func TestExtract_ConnascenceHints(t *testing.T) {
 	root := testdataRoot(t)
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: root, Mode: scope.ModeFull})
+	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: root})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -478,7 +478,7 @@ func TestExtract_StrengthHint_UsesInternal(t *testing.T) {
 	ext := goextract.New(evidenceports.ExtractConfig{
 		BuildFlags: []string{"-tags", "extractortest"},
 	})
-	s := scope.Scope{Root: root, Mode: scope.ModeFull}
+	s := scope.Scope{Root: root}
 
 	facts, _, err := ext.Extract(context.Background(), s)
 	if err != nil {
@@ -500,7 +500,7 @@ func TestExtract_StrengthHint_NoHintForExcluded(t *testing.T) {
 	ext := goextract.New(evidenceports.ExtractConfig{
 		Exclusions: []string{"**/pkg/b/**", "pkg/b/**"},
 	})
-	s := scope.Scope{Root: root, Mode: scope.ModeFull}
+	s := scope.Scope{Root: root}
 
 	facts, _, err := ext.Extract(context.Background(), s)
 	if err != nil {
@@ -518,7 +518,7 @@ func TestExtract_StrengthHint_NoHintForExcluded(t *testing.T) {
 func TestExtract_MissingPackage(t *testing.T) {
 	root := testdataRoot(t)
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	s := scope.Scope{Root: root, Mode: scope.ModeFull}
+	s := scope.Scope{Root: root}
 
 	// This test validates that extraction completes without error even when
 	// packages have resolution issues. The testdata module is self-contained
@@ -543,7 +543,7 @@ func TestExtract_MissingPackage(t *testing.T) {
 func TestExtract_DataStrengthHint(t *testing.T) {
 	root := testdataRoot(t)
 	ext := goextract.New(evidenceports.ExtractConfig{})
-	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: root, Mode: scope.ModeFull})
+	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: root})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}

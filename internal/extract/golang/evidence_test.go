@@ -52,7 +52,7 @@ func TestExtractZeroLoadedFilesUsesIndependentSourceInventory(t *testing.T) {
 			ex.load = func(*packages.Config, ...string) ([]*packages.Package, error) {
 				return []*packages.Package{{PkgPath: "./...", Errors: []packages.Error{{Msg: "build cache unavailable", Kind: packages.ListError}}}}, nil
 			}
-			_, coverage, err := ex.Extract(context.Background(), scope.Scope{Root: root, Mode: scope.ModeFull})
+			_, coverage, err := ex.Extract(context.Background(), scope.Scope{Root: root})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -80,7 +80,7 @@ func TestExtractUnavailableBuildCacheDoesNotReportAbsent(t *testing.T) {
 	t.Setenv("GOCACHE", filepath.Join(root, "blocked-cache"))
 	t.Setenv("GOWORK", "off")
 	ext := New(evidenceports.ExtractConfig{})
-	_, coverage, err := ext.Extract(context.Background(), scope.Scope{Root: root, Mode: scope.ModeFull})
+	_, coverage, err := ext.Extract(context.Background(), scope.Scope{Root: root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestExtractDisclosesFilesExcludedByBuildConstraints(t *testing.T) {
 			}
 			reasons := make([]string, 0, 2)
 			for range 2 {
-				_, coverage, err := ex.Extract(context.Background(), scope.Scope{Root: root, Mode: scope.ModeFull})
+				_, coverage, err := ex.Extract(context.Background(), scope.Scope{Root: root})
 				if err != nil {
 					t.Fatal(err)
 				}

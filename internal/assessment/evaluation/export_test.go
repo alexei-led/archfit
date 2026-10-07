@@ -40,9 +40,13 @@ var (
 	ApplyToolGate     = applyToolGate
 	BuildState        = buildState
 	BuildDimensions   = buildDimensions
-
-	// BlockingMetricRegressions is the metric half of the hard-gate result.
-	// Nothing outside this package computes it — Score does — so it is exposed
-	// only so the metric-gating table can assert the path the exit code takes.
-	BlockingMetricRegressions = blockingMetricRegressions
 )
+
+// Unevaluated exposes the unmeasured-ratchet decision to the behavior tests.
+func (r RatchetReference) Unevaluated(cfg map[string]policy.MetricConfig) (string, bool) {
+	rule, ok := r.unevaluated(cfg)
+	return rule.Reason, ok
+}
+
+// RatchetFindings exposes the ratchet finding builder to the behavior tests.
+var RatchetFindings = ratchetFindings

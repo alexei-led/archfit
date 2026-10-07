@@ -13,11 +13,13 @@ import (
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
-// BaseEvidence carries only stable finding IDs, analyzer coverage, and
-// fingerprints across the temporary worktree boundary. Base paths, locations,
-// validation commands, and declarations never cross into head output.
+// BaseEvidence carries only stable finding identities, qualifying seam module
+// pairs, analyzer coverage, and fingerprints across the temporary worktree
+// boundary. Base paths, locations, validation commands, and declarations never
+// cross into head output.
 type BaseEvidence struct {
-	FindingIDs         []string
+	Findings           []decision.BaseFinding
+	Seams              []decision.ModulePair
 	Coverage           []modevidence.Coverage
 	CoverageGaps       []modevidence.CoverageGap
 	ConfigHash         string
@@ -66,27 +68,21 @@ func (s StageExecutor) attachBaseComparison(ctx context.Context, req AnalysisReq
 			LabelsHash: diag.LabelsHash, RubricVersion: report.ScoreVersion, MeasurementProfile: diag.MeasurementProfile},
 		decision.Fingerprints{ClassificationHash: evidence.ClassificationHash, ModelHash: evidence.ModelHash,
 			LabelsHash: evidence.LabelsHash, RubricVersion: report.ScoreVersion, MeasurementProfile: evidence.MeasurementProfile})
-	evaluation.AttachTaskOrigins(diag, evaluation.TaskOriginInput{
-		BaseRef: req.BaseRef, BaseFindingIDs: evidence.FindingIDs,
-		HeadCoverage: diag.ToolCoverage, HeadGaps: diag.CoverageGaps, HeadConfigHash: diag.ConfigHash,
-		BaseCoverage: evidence.Coverage, BaseGaps: evidence.CoverageGaps, BaseConfigHash: evidence.ConfigHash,
+	// Both sides read one config file, so no config-hash check belongs here, and
+	// a measurement-profile difference came from the trees: origin pairs it and
+	// names it rather than downgrading every finding to unknown.
+	evaluation.AttachOrigins(diag, evaluation.OriginInput{
+		BaseRef: req.BaseRef, BaseFindings: evidence.Findings, BaseSeams: evidence.Seams,
+		HeadCoverage: diag.ToolCoverage, HeadGaps: diag.CoverageGaps, HeadProfile: diag.MeasurementProfile,
+		BaseCoverage: evidence.Coverage, BaseGaps: evidence.CoverageGaps, BaseProfile: evidence.MeasurementProfile,
 		PrimaryTools: runCtx.PrimaryExtractorTools, Patterns: s.Analyzers.Patterns, Syntax: s.Analyzers.Syntax,
 		SCIP: s.Analyzers.SCIP, Clones: s.Analyzers.Clones, CargoModules: s.Analyzers.CargoModules,
 	})
-	if reasons := decision.CompareMeasurementProfiles(diag.MeasurementProfile, evidence.MeasurementProfile); len(reasons) > 0 {
-		for i := range diag.AgentTasks {
-			if diag.AgentTasks[i].Origin != result.TaskOriginPreExisting {
-				diag.AgentTasks[i].Origin = result.TaskOriginUnknown
-			}
-		}
-		diag.Comparison.TaskOriginStatus = result.StateComparisonNonComparable
-		diag.Comparison.TaskOriginReasons = append(diag.Comparison.TaskOriginReasons, reasons...)
-	}
 	return nil
 }
 
 // scoreBaseTree runs the full stage sequence over the base worktree and returns
-// only stable finding, coverage, and fingerprint evidence. The base diagnostic
+// only stable finding, seam, coverage, and fingerprint evidence. The base diagnostic
 // is dropped before returning, so no base path or location reaches head output.
 //
 // Progress is silenced — the head run already announced "Comparing against base"
@@ -109,7 +105,8 @@ func (s StageExecutor) scoreBaseTree(ctx context.Context, req AnalysisRequest, r
 	}
 	diag := out.Diagnostic
 	return BaseEvidence{
-		FindingIDs:         evaluation.BaseFindingIDs(diag.Findings),
+		Findings:           decision.BaseFindings(diag.Findings),
+		Seams:              evaluation.BaseSeams(diag.Seams),
 		Coverage:           diag.ToolCoverage,
 		CoverageGaps:       diag.CoverageGaps,
 		ConfigHash:         diag.ConfigHash,

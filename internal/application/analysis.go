@@ -121,7 +121,6 @@ type PolicyPreparer interface {
 type AnalysisContext struct {
 	Scope      scope.Scope
 	BaseRef    string
-	Full       bool
 	Now        time.Time
 	ConfigHash string
 	// ModelHash and LabelsHash fingerprint the module model and the approved
@@ -261,7 +260,7 @@ func relate(acquired Acquired) relationship.AnalysisResult {
 	facts, runCtx := acquired.Facts, acquired.Context
 	return analysis.Analyze(analysis.Input{
 		Graph: facts.Graph, Policy: runCtx.Policy.Relationship,
-		Mode: analysis.Mode{Base: runCtx.BaseRef, Full: runCtx.Full}, Labels: runCtx.PinnedLabels,
+		Labels:        runCtx.PinnedLabels,
 		CloneClusters: facts.Clones, FileClassIndex: facts.FileClassIndex,
 		RuntimeSites: facts.RuntimeAsyncSites, RuntimeConfidence: facts.RuntimeConfidence,
 		DynamicImportSites: facts.DynamicImports,
@@ -293,9 +292,21 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 	facts := acquired.Observations
 	s.reportPhase("Analyzing dependencies")
 	relationships := relate(acquired)
+	// A ratchet compares only against a reference that compares with this run:
+	// a metric delta across a policy, model, rubric or profile change is not a
+	// code change. Against any other reference no delta is computed at all.
+	reference := base.Comparison(runCtx)
+	ratchets := evaluation.RatchetReference{
+		Present: base.Present, Comparable: reference.Status == result.StateComparisonComparable,
+		Metrics: result.MetricSnapshot(base.Metrics), Drift: reference.Drift,
+	}
+	var baseMetrics result.MetricSnapshot
+	if ratchets.Comparable {
+		baseMetrics = ratchets.Metrics
+	}
 	assessed, err := evaluation.Assess(evaluation.AssessInput{
 		Facts: facts, Relationships: relationships.Relationships, RelationshipSignals: relationships.Assessment, Policy: runCtx.Policy,
-		Accepted: base.Accepted, BaseMetrics: result.MetricSnapshot(base.Metrics),
+		Accepted: base.Accepted, BaseMetrics: baseMetrics,
 		Scope: runCtx.Scope, Now: runCtx.Now, BaseRef: req.BaseRef,
 		Advisory:     !req.NoAdvisories,
 		ConfigSource: runCtx.ConfigSource, ScanRoot: runCtx.ScanRoot, ConfigHash: runCtx.ConfigHash,
@@ -322,6 +333,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 	scored := evaluation.Score(&diag, evaluation.ScoreInput{
 		Policy: runCtx.Policy, Facts: facts,
 		Anchor:        seamAnchor(base, runCtx),
+		Ratchets:      ratchets,
 		ConfigSource:  cmp.Or(req.ValidationConfig, runCtx.ConfigSource),
 		ScanRoot:      cmp.Or(req.ValidationRoot, runCtx.ScanRoot),
 		Root:          runCtx.Scope.Root,

@@ -27,7 +27,7 @@ func ProjectReport(r result.Result, sc score.Scorecard) report.Document {
 		PrimaryExtractorTools: r.PrimaryExtractorTools, ConfigWarnings: r.ConfigWarnings,
 		ClassifiedEdges: projectClassifiedEdges(r.ClassifiedEdges), DistanceContext: projectDistanceContext(r.DistanceContext),
 		DistanceConfigCandidates: projectDistanceConfigCandidates(r.DistanceConfigCandidates), VolatilityCorroboration: projectVolatilityCorroboration(r.VolatilityCorroboration),
-		LocalCoupling: projectLocalCoupling(r.LocalCoupling), Delta: projectDelta(r.Delta), Summary: report.Summary(r.Summary),
+		LocalCoupling: projectLocalCoupling(r.LocalCoupling), Summary: report.Summary(r.Summary),
 	}
 	doc.Score = projectScorecard(sc)
 	doc.State = projectArchitectureState(r, doc)
@@ -59,7 +59,7 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 	out.Dimensions = projectStateDimensions(r.State.Dimensions)
 	out.Findings = doc.Findings
 	out.AgentTasks = doc.AgentTasks
-	out.Measurement.SourceRef = sourceRef(r.Head)
+	out.Measurement.SourceRef = sourceWorktree
 	out.Measurement.ToolVersions, out.Coverage.Tools = projectStateToolCoverage(r.ToolCoverage)
 	out.Measurement.HistoryWindow = historyUnavailable
 	if h := r.VolatilityCorroboration; h != nil {
@@ -85,8 +85,14 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 		out.Comparison.BaseRef = c.BaseRef
 		out.Comparison.Reasons = append([]string{}, c.Reasons...)
 		out.Comparison.Drift = slices.Clone(c.Drift)
-		out.Comparison.TaskOriginStatus = c.TaskOriginStatus
-		out.Comparison.TaskOriginReasons = append([]string{}, c.TaskOriginReasons...)
+		if c.OriginStatus != "" {
+			introduced := append([]string{}, c.IntroducedFindingIDs...)
+			resolved := append([]string{}, c.ResolvedFindingIDs...)
+			out.Comparison.OriginStatus = c.OriginStatus
+			out.Comparison.OriginReasons = append([]string{}, c.OriginReasons...)
+			out.Comparison.IntroducedFindingIDs = &introduced
+			out.Comparison.ResolvedFindingIDs = &resolved
+		}
 	}
 
 	out.Seams = projectStateSeams(r.Seams)
@@ -182,7 +188,6 @@ func projectStateDimension(in state.Dimension) report.DimensionState {
 	if in.Delta != nil {
 		delta := &report.DimensionDelta{
 			Status: report.ComparisonStatus(in.Delta.Status), Reasons: in.Delta.Reasons,
-			NewFindings: in.Delta.NewFindings, ResolvedFindings: in.Delta.ResolvedFindings,
 		}
 		for _, m := range in.Delta.Metrics {
 			delta.Metrics = append(delta.Metrics, report.MetricDelta{Name: m.Name, Before: m.Before, After: m.After, Change: m.Change})
@@ -192,11 +197,10 @@ func projectStateDimension(in state.Dimension) report.DimensionState {
 	return out
 }
 
-// sourceWorktree is the measurement source ref of a full run. Archfit measures
-// the files on disk, and a full run never resolves HEAD, so naming a commit
-// here would assert that the measured bytes equal that commit — false the
-// moment the tree is dirty. Only a delta run, which really did diff against a
-// resolved SHA, publishes one.
+// sourceWorktree is the measurement source ref of every run. Archfit measures
+// the files on disk and never resolves HEAD, so naming a commit here would
+// assert that the measured bytes equal that commit — false the moment the tree
+// is dirty.
 const sourceWorktree = "worktree"
 
 // historyUnavailable is the history window of a run that scanned no history at
@@ -208,12 +212,6 @@ const historyUnavailable = "unavailable"
 // sourceRef names the tree this run measured. It is deterministic by
 // construction: two runs over the same tree publish the same value, so it can
 // ride the byte-identity contract.
-func sourceRef(head string) string {
-	if head == "" {
-		return sourceWorktree
-	}
-	return head
-}
 
 // historyWindow renders the bounded git-history window as the deterministic
 // string the measurement block publishes. An unbounded scan says so; a zero
@@ -414,13 +412,6 @@ func projectMetrics(in []result.MetricResult) []report.MetricResult {
 	return out
 }
 
-func projectDelta(in *result.DeltaReport) *report.DeltaReport {
-	if in == nil {
-		return nil
-	}
-	return &report.DeltaReport{New: in.New, Existing: in.Existing, Resolved: in.Resolved, SeverityChanged: in.SeverityChanged, TouchedByDelta: in.TouchedByDelta}
-}
-
 func projectClassifiedEdges(in *result.ClassifiedEdgeSummary) *report.ClassifiedEdgeSummary {
 	if in == nil {
 		return nil
@@ -484,6 +475,7 @@ func projectFindings(in []finding.Finding) []report.Finding {
 				To:   report.FindingEndpoint{Module: f.Edge.To.Module, Path: f.Edge.To.Path}, Kind: f.Edge.Kind,
 			},
 			MatchedBy: matchedBy, Locations: locations, Why: f.Why, Constraint: f.Constraint, Alternatives: f.Alternatives,
+			Origin: string(f.Origin),
 		})
 	}
 	return out

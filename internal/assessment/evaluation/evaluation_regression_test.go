@@ -98,7 +98,7 @@ func TestEvaluateLabelsFindingEndpointsWithoutAMatchingEdge(t *testing.T) {
 	}}
 	// The finding names the same two endpoints but a kind no edge carries, so
 	// FindByFindingEdge cannot match it.
-	f := gateFinding(fpGate, pathA, pathB, finding.SeverityHigh)
+	f := gateFinding(fpGate, finding.SeverityHigh)
 	f.Edge.Kind = metricCycle
 
 	got := evaluation.Evaluate(evaluation.Input{
@@ -120,7 +120,7 @@ func TestEvaluateLabelsFindingEndpointsFromConfiguredModules(t *testing.T) {
 		moduleB: {Paths: []string{assessPathsB}},
 	}
 	got := evaluation.Evaluate(evaluation.Input{
-		Rules:    evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding(fpGate, pathA, pathB, finding.SeverityHigh)}}),
+		Rules:    evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding(fpGate, finding.SeverityHigh)}}),
 		Policy:   policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}},
 		Accepted: acceptedSet{}, Now: evaluatedAt,
 	})

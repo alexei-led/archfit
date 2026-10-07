@@ -49,15 +49,6 @@ type Summary struct {
 	WaiversUsed  int `json:"waivers_used"`
 }
 
-// DeltaReport groups finding IDs by their relationship to the baseline.
-type DeltaReport struct {
-	New             []string `json:"new,omitempty"`
-	Existing        []string `json:"existing,omitempty"`
-	Resolved        []string `json:"resolved,omitempty"`
-	SeverityChanged []string `json:"severity_changed,omitempty"`
-	TouchedByDelta  []string `json:"touched_by_delta,omitempty"`
-}
-
 // ModuleGraphComplexity is the architecture-level distribution over the
 // declared module graph. It stays internal to assessment; the architecture-state
 // envelope publishes the individual metrics.
@@ -242,7 +233,12 @@ type StateComparison struct {
 	Drift []string `json:"drift,omitempty"`
 	// BaselinePresent is set on the gate reference only: whether a baseline
 	// file was loaded at all, as a fact a renderer need not parse from reasons.
-	BaselinePresent   *bool    `json:"baseline_present,omitempty"`
-	TaskOriginStatus  string   `json:"-"`
-	TaskOriginReasons []string `json:"-"`
+	BaselinePresent *bool `json:"baseline_present,omitempty"`
+	// OriginStatus, OriginReasons, IntroducedFindingIDs and ResolvedFindingIDs
+	// are set only by an `analyze/check --base` run; the two lists are then
+	// never nil.
+	OriginStatus         string   `json:"-"`
+	OriginReasons        []string `json:"-"`
+	IntroducedFindingIDs []string `json:"-"`
+	ResolvedFindingIDs   []string `json:"-"`
 }

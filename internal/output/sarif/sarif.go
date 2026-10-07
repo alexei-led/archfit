@@ -257,6 +257,9 @@ func resultProperties(f report.Finding, dimension string, seamOf map[string]stri
 	if dimension != "" {
 		props["dimension"] = dimension
 	}
+	if f.Origin != "" {
+		props["origin"] = f.Origin
+	}
 	// A rule's declared alternatives; the message already ends with its
 	// rationale.
 	if len(f.Alternatives) > 0 {

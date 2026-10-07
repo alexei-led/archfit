@@ -50,7 +50,6 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 	}
 
 	writeComparison(&b, s.Comparison)
-	writeDelta(&b, d.Delta)
 	writeRequiredToolsMissing(&b, d.CoverageGaps)
 	writeFindingIndex(&b, s.Findings)
 
@@ -132,29 +131,6 @@ func writeComparison(b *strings.Builder, c report.StateComparison) {
 	fmt.Fprintf(b, "- status: %s\n- reference: %s\n", c.Status, target)
 	for _, reason := range c.Reasons {
 		fmt.Fprintf(b, "- %s\n", strings.TrimSpace(reason))
-	}
-}
-
-// writeDelta appends the finding-lifecycle bucket counts for a delta run, so a
-// reader sees how many findings this change introduced, resolved, or merely
-// touched versus pre-existing debt. Counts only — the per-finding lists live in
-// the markdown and JSON output. Omitted outside delta mode.
-func writeDelta(b *strings.Builder, delta *report.DeltaReport) {
-	if delta == nil {
-		return
-	}
-	b.WriteString("\n## Delta\n\n")
-	for _, row := range []struct {
-		label string
-		ids   []string
-	}{
-		{"new", delta.New},
-		{"severity changed", delta.SeverityChanged},
-		{"touched by this change", delta.TouchedByDelta},
-		{"pre-existing", delta.Existing},
-		{"resolved", delta.Resolved},
-	} {
-		fmt.Fprintf(b, "- %s: %d\n", row.label, len(row.ids))
 	}
 }
 

@@ -8,7 +8,7 @@
 // report adapter may import only the report DTOs (internal/arch_test.go), so
 // the decision reads the state the pipeline already decided: active gate tasks
 // with their origin, the unevaluated required rules, the required-analyzer
-// gaps, and the metric deltas behind a ratchet block.
+// gaps. A tripped metric ratchet is an ordinary repair task.
 package agentout
 
 import (
@@ -35,8 +35,8 @@ type NextAction string
 
 // Next actions, in precedence order: the first matching one wins.
 const (
-	// ActionRepair: an in-scope repair needs a code change, or a metric
-	// ratchet blocked the run.
+	// ActionRepair: an in-scope repair needs a code change (a tripped metric
+	// ratchet is such a repair).
 	ActionRepair NextAction = "repair"
 	// ActionAskOwner: every in-scope repair needs an owner decision, or a
 	// required rule has a selector that matches nothing (a policy defect).
@@ -58,18 +58,17 @@ const (
 	repairNeedsOwnerDecision = "needs_owner_decision"
 )
 
-// originPreExisting is the only task origin outside the scope of a change.
+// report.OriginPreExisting is the only origin outside the scope of a change.
 // introduced, unknown, and an absent origin (no --base) are in scope, so a
-// comparison that could not place a task never hides a blocker.
-const (
-	originPreExisting = "pre_existing"
-	originIntroduced  = "introduced"
-	originUnknown     = "unknown"
-)
+// comparison that could not place a finding never hides a blocker.
 
 // deadSelectorPrefix is the unevaluated-rule reason prefix for a selector that
 // matches nothing: a policy defect for the owner, not missing evidence.
 const deadSelectorPrefix = "selector matches nothing:"
+
+// unmeasuredRatchetPrefix starts the reason of an unevaluated ratchet entry:
+// the stored reference does not compare, so only the owner can move it.
+const unmeasuredRatchetPrefix = "reference not comparable"
 
 // agentFormatFlag is appended to the replayed validation command, so the
 // re-run produces this same digest.
@@ -92,8 +91,6 @@ type Result struct {
 	EvidenceGaps []EvidenceGap `json:"evidence_gaps"`
 	// UnevaluatedRules are the fail-gated rules the run could not evaluate.
 	UnevaluatedRules []UnevaluatedRule `json:"unevaluated_rules"`
-	// WorsenedMetrics name the metrics behind a metric-ratchet block.
-	WorsenedMetrics []WorsenedMetric `json:"worsened_metrics"`
 	// Omitted counts what the result leaves out.
 	Omitted Omitted `json:"omitted"`
 	// Truncated is true when the size budget cut text or moved entries into
@@ -157,15 +154,6 @@ type UnevaluatedRule struct {
 	Reason string `json:"reason"`
 }
 
-// WorsenedMetric is one metric that worsened against the accepted baseline in
-// a run a metric ratchet blocked.
-type WorsenedMetric struct {
-	Name      string  `json:"name"`
-	Before    float64 `json:"before"`
-	After     float64 `json:"after"`
-	Dimension string  `json:"dimension,omitempty"`
-}
-
 // Omitted counts entries the result does not list.
 type Omitted struct {
 	// Repairs moved out by the size budget.
@@ -207,7 +195,6 @@ func Build(d report.Document) Result {
 		Repairs:          buildRepairs(s),
 		EvidenceGaps:     evidenceGaps(d.CoverageGaps),
 		UnevaluatedRules: unevaluatedRules(s.Decision.UnevaluatedRequiredRules),
-		WorsenedMetrics:  worsenedMetrics(d),
 		Omitted:          Omitted{Advisories: activeAdvisories(s.Findings)},
 		Validate:         validateCommand(s.AgentTasks, d.AdvisoryTasks),
 	}
@@ -231,7 +218,7 @@ func decide(r Result) NextAction {
 	}
 	deadSelector, missingEvidence := false, false
 	for _, rule := range r.UnevaluatedRules {
-		if strings.HasPrefix(rule.Reason, deadSelectorPrefix) {
+		if strings.HasPrefix(rule.Reason, deadSelectorPrefix) || strings.HasPrefix(rule.Reason, unmeasuredRatchetPrefix) {
 			deadSelector = true
 		} else {
 			missingEvidence = true
@@ -244,7 +231,7 @@ func decide(r Result) NextAction {
 		}
 	}
 	switch {
-	case inScopeCode > 0 || len(r.WorsenedMetrics) > 0:
+	case inScopeCode > 0:
 		return ActionRepair
 	case inScope > 0 || deadSelector:
 		return ActionAskOwner
@@ -267,8 +254,8 @@ func summarize(r Result) string {
 			outScope++
 		}
 	}
-	return fmt.Sprintf("%s: %d repairs in scope, %d outside scope; %d unevaluated required rules; %d evidence gaps; %d worsened metrics",
-		r.Verdict, inScope, outScope, len(r.UnevaluatedRules), len(r.EvidenceGaps), len(r.WorsenedMetrics))
+	return fmt.Sprintf("%s: %d repairs in scope, %d outside scope; %d unevaluated required rules; %d evidence gaps",
+		r.Verdict, inScope, outScope, len(r.UnevaluatedRules), len(r.EvidenceGaps))
 }
 
 // edgeKey groups the tasks of one dependency. A finding that names no
@@ -367,7 +354,7 @@ func buildRepair(tasks []report.AgentTask, findings map[string]report.Finding) R
 	}
 	rep.Goal = goalTask.Goal
 	rep.Origin = mergeOrigins(origins)
-	rep.InScope = rep.Origin != originPreExisting
+	rep.InScope = rep.Origin != report.OriginPreExisting
 	rep.FindingIDs = sortedUnique(rep.FindingIDs)
 	rep.RuleIDs = sortedUnique(rep.RuleIDs)
 	if rep.Constraints == nil {
@@ -403,10 +390,10 @@ func mergeOrigins(origins []string) string {
 	switch {
 	case all(origins[0]):
 		return origins[0]
-	case slices.Contains(origins, originIntroduced):
-		return originIntroduced
+	case slices.Contains(origins, report.OriginIntroduced):
+		return report.OriginIntroduced
 	default:
-		return originUnknown
+		return report.OriginUnknown
 	}
 }
 
@@ -477,15 +464,6 @@ func unevaluatedRules(rules []report.UnevaluatedRule) []UnevaluatedRule {
 	out := make([]UnevaluatedRule, 0, len(rules))
 	for _, r := range rules {
 		out = append(out, UnevaluatedRule{RuleID: r.RuleID, Reason: r.Reason})
-	}
-	return out
-}
-
-func worsenedMetrics(d report.Document) []WorsenedMetric {
-	regressions := ratchetRegressions(d)
-	out := make([]WorsenedMetric, 0, len(regressions))
-	for _, r := range regressions {
-		out = append(out, WorsenedMetric{Name: r.name, Before: roundValue(r.before), After: roundValue(r.after), Dimension: r.dimension})
 	}
 	return out
 }

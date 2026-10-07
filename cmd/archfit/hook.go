@@ -74,7 +74,7 @@ A clean working tree (git status --porcelain lists nothing but archfit's own
                                     exit 2; stderr holds the repair for the agent
   the same, with stop_hook_active   exit 0 with a systemMessage: it blocks once
   any other action but none         exit 0 with a systemMessage (a dead selector
-                                    or a metric ratchet is not scoped to the change)
+                                    or an unmeasured ratchet is not scoped to the change)
   none                              exit 0, silent
   archfit error                     exit 0 with a systemMessage (fails open)
   malformed stdin                   exit 1
@@ -169,9 +169,11 @@ func (c *HookGitCmd) Run(deps *appDeps) error {
 }
 
 // blocksChange reports whether a hook blocks: the next action is repair or
-// ask_owner and an in-scope repair exists. A dead selector or a metric
-// ratchet also leads to those actions, but neither is scoped to the change:
-// both may predate it, so a hook reports them and lets the change through.
+// ask_owner and an in-scope repair exists. A dead selector or an unmeasured
+// ratchet (the stored reference does not compare) also leads to those actions,
+// but neither is scoped to the change: both may predate it, so a hook reports
+// them and lets the change through. A tripped ratchet is a repair task like any
+// other blocker, so it blocks.
 func blocksChange(r agentout.Result) bool {
 	if r.NextAction != agentout.ActionRepair && r.NextAction != agentout.ActionAskOwner {
 		return false

@@ -84,7 +84,7 @@ func (s PolicyQueryService) CanImport(ctx context.Context, req CanImportRequest)
 			answer.Answer, answer.Reasons = evaluation.AnswerNotDecided, []string{edge.Undecided}
 		default:
 			related := analysis.Analyze(analysis.Input{
-				Graph: edge.Graph, Policy: req.Policy.Relationship, Mode: analysis.Mode{Full: true},
+				Graph: edge.Graph, Policy: req.Policy.Relationship,
 			})
 			judged, err := evaluation.JudgeEdge(evaluation.JudgeInput{
 				Relationships: related.Relationships, Policy: req.Policy,

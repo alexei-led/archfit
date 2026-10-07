@@ -621,7 +621,7 @@ func TestCompareCoverage_RowCount(t *testing.T) {
 }
 
 // TestCompareCoverage_PrimaryAbsent pins the per-side gap condition, the same
-// rule the task-origin classifier applies: a coverage gap says THIS configuration
+// rule the origin classifier applies: a coverage gap says THIS configuration
 // expected the analyzer to run, so a gap on one side only is an asymmetry, not
 // shared blindness. An equal primary absent pair drops out only when neither
 // side gapped; an equal gap on both sides is shared blindness.

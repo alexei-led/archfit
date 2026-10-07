@@ -16,10 +16,9 @@
 //
 // Each label carries an evidence hash — a content hash of the import-graph
 // edges between the module pair at enrich time (config-module namespace, so
-// it works on every run, no SCIP required). On full runs a mismatch means the
-// dependency surface changed since the label was reviewed: the label is
-// ignored and a labels/stale advisory is emitted. Delta runs see a partial
-// graph and skip the freshness check; human approval is the authority there.
+// it works on every run, no SCIP required). A mismatch means the dependency
+// surface changed since the label was reviewed: the label is ignored and a
+// labels/stale advisory is emitted.
 package labels
 
 import (
@@ -114,7 +113,7 @@ func HashItems(items []string) string {
 // A label is stale when its stored EvidenceHash disagrees with the current
 // evidence for the pair (same rule as Approved). Empty EvidenceHash (hand-authored),
 // a pair with no current evidence (edges gone — label is moot), and a nil
-// evidence map (delta run: partial graph) all pass without the check.
+// evidence map (no graph was measured) all pass without the check.
 func isEffective(l Label, evidence map[string]string) bool {
 	if l.Status != StatusApproved {
 		return false
@@ -137,8 +136,8 @@ func isEffective(l Label, evidence map[string]string) bool {
 // pair's import-graph edges). Freshness: a label whose EvidenceHash does not
 // match existing evidence is STALE — not applied. A label with an empty
 // EvidenceHash (hand-authored), or whose pair has no current evidence (the
-// edges are gone — the label is moot), or when evidence is nil (delta run:
-// partial graph), applies/passes without the check.
+// edges are gone — the label is moot), or when evidence is nil (no graph was
+// measured), applies/passes without the check.
 func Approved(lbls []Label, evidence map[string]string) (approved, llmApproved map[string]string, stale []Label) {
 	approved = map[string]string{}
 	llmApproved = map[string]string{}

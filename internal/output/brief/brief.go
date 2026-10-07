@@ -26,6 +26,10 @@ const ShortIDLen = 8
 // the same prefix, so the human step and the agent's next_action agree.
 const deadSelectorPrefix = "selector matches nothing:"
 
+// unmeasuredRatchetPrefix starts the reason of an unevaluated ratchet entry: the stored
+// reference does not compare, which the reference step below already answers.
+const unmeasuredRatchetPrefix = "reference not comparable"
+
 // repairNeedsOwnerDecision is the agent-task repair kind of a blocker an owner
 // decides; agentout reads the same value.
 const repairNeedsOwnerDecision = "needs_owner_decision"
@@ -40,9 +44,6 @@ type Input struct {
 	State report.ArchitectureState
 	// CoverageGaps are the analyzers a run wanted and could not use.
 	CoverageGaps []report.CoverageGap
-	// MetricRatchet is true when a metric ratchet blocked the run; the
-	// renderer names the worsened metrics itself.
-	MetricRatchet bool
 }
 
 // Blocker is one active gate finding with what a reader needs to act on it.
@@ -64,6 +65,8 @@ type Blocker struct {
 	// OwnerDecision is true when the task's repair is an architecture-owner
 	// decision (repair_kind needs_owner_decision), not a code change.
 	OwnerDecision bool
+	// Origin is the finding's origin against the --base ref; empty without one.
+	Origin string
 }
 
 // View is the brief of one run.
@@ -151,7 +154,7 @@ func blockerOf(f report.Finding, task report.AgentTask) Blocker {
 	b := Blocker{
 		ShortID: shortID(f.ID), RuleID: f.RuleID, Subject: subject(f),
 		Why: strings.TrimSpace(f.Why), Goal: task.Goal, Checks: task.Validation,
-		OwnerDecision: task.RepairKind == repairNeedsOwnerDecision,
+		OwnerDecision: task.RepairKind == repairNeedsOwnerDecision, Origin: f.Origin,
 	}
 	if len(f.Locations) > 0 {
 		loc := f.Locations[0]
@@ -215,7 +218,7 @@ func evidenceReason(dims report.Dimensions) string {
 	return "evidence incomplete: " + strings.Join(names, ", ")
 }
 
-// nextSteps orders what to do: blockers, the metric ratchet, rules and
+// nextSteps orders what to do: blockers, rules and
 // analyzers that need evidence, the gate reference, module decisions, then
 // the evidence that closes a measured gap. Steps repeat nothing and stop at
 // MaxNextSteps.
@@ -247,9 +250,6 @@ func nextSteps(in Input, blockers []Blocker, reference string) []string {
 		}
 		add("Fix blocker " + b.ShortID + " (" + b.RuleID + ").")
 	}
-	if in.MetricRatchet {
-		add("Restore the worsened metrics listed under METRIC RATCHET.")
-	}
 	rules := in.State.Decision.UnevaluatedRequiredRules
 	for _, rule := range rules {
 		if strings.HasPrefix(rule.Reason, deadSelectorPrefix) {
@@ -257,7 +257,7 @@ func nextSteps(in Input, blockers []Blocker, reference string) []string {
 		}
 	}
 	for _, rule := range rules {
-		if !strings.HasPrefix(rule.Reason, deadSelectorPrefix) {
+		if !strings.HasPrefix(rule.Reason, deadSelectorPrefix) && !strings.HasPrefix(rule.Reason, unmeasuredRatchetPrefix) {
 			add("Restore the evidence rule " + rule.RuleID + " needs: archfit doctor --fix.")
 		}
 	}

@@ -176,9 +176,11 @@ func Assess(in AssessInput) (Assessed, error) {
 // ScoreInput carries the explicit values scoring, the coupling gate, and repair
 // tasks need on top of the assessed diagnostic.
 type ScoreInput struct {
-	Policy         policy.PolicySnapshot
-	Facts          Observations
-	Anchor         BaselineAnchor
+	Policy policy.PolicySnapshot
+	Facts  Observations
+	Anchor BaselineAnchor
+	// Ratchets is the stored reference as the metric ratchets see it.
+	Ratchets       RatchetReference
 	ConfigSource   string
 	ScanRoot       string
 	Root           string
@@ -245,8 +247,8 @@ func Score(diag *result.Result, in ScoreInput) Scored {
 	hardGate := in.ApplyToolGate && applyToolGate(diag, in.RequireTools)
 	diag.State = buildState(diag, stateInput{
 		Policy: in.Policy, Facts: in.Facts, RuleTypes: ruleTypes, RequiredToolFailure: hardGate,
-		MetricRegressions: blockingMetricRegressions(diag.Metrics, in.Policy.Gates.Metrics),
-		Drift:             in.Anchor,
+		Ratchets: in.Ratchets,
+		Drift:    in.Anchor,
 	})
 	return Scored{Score: finalized.Score, GateReasons: finalized.GateReasons, HardGate: hardGate}
 }

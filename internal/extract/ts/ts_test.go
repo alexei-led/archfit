@@ -22,7 +22,6 @@ const (
 	launcherBunx     = "bunx"
 	launcherBunxPath = "/usr/bin/bunx"
 	tsconfigName     = "tsconfig.json"
-	modeFull         = "full"
 	sourceDepCruise  = "dependency-cruiser"
 )
 
@@ -447,7 +446,6 @@ func TestExtract_IncludeOnly(t *testing.T) {
 				Root:          root,
 				GitRoot:       filepath.Dir(root),
 				SubtreePrefix: tt.subtreePrefix,
-				Mode:          modeFull,
 			}
 			if _, _, err := extractor.Extract(context.Background(), s); err != nil {
 				t.Fatalf("Extract: %v", err)
@@ -573,7 +571,6 @@ func TestExtract_SubtreePathStrip(t *testing.T) {
 				Root:          root,
 				GitRoot:       filepath.Dir(root),
 				SubtreePrefix: tt.subtreePrefix,
-				Mode:          modeFull,
 			}
 			facts, _, err := extractor.Extract(context.Background(), s)
 			if err != nil {
@@ -658,7 +655,6 @@ func TestExtract_TSConfigSubdir(t *testing.T) {
 		Root:          pkg,
 		GitRoot:       gitRoot,
 		SubtreePrefix: "packages/pkg-a",
-		Mode:          modeFull,
 	}
 	if _, _, err := extractor.Extract(context.Background(), s); err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -719,7 +715,6 @@ func TestExtract_TSConfigSubdir_RootFallback(t *testing.T) {
 		Root:          pkg,
 		GitRoot:       gitRoot,
 		SubtreePrefix: "packages/pkg-a",
-		Mode:          modeFull,
 	}
 	if _, _, err := extractor.Extract(context.Background(), s); err != nil {
 		t.Fatalf("Extract: %v", err)

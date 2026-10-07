@@ -110,7 +110,7 @@ These formats apply to `archfit analyze` and `archfit check`.
 The `text` and Markdown brief uses the words in the [glossary](glossary.md):
 a blocker is an active gate finding, a diagnostic an active advisory finding.
 Blockers are never capped. NEXT STEPS lists at most five steps in this order:
-blockers, a metric ratchet, rules and analyzers that need evidence, the gate
+blockers (a tripped metric ratchet is one), rules and analyzers that need evidence, the gate
 reference, module decisions, then coverage or deploy-unit evidence. It offers
 `archfit baseline` only when no blocker is active and no reference is stored;
 a stored reference that does not compare asks for a review first, and NOT
@@ -566,9 +566,10 @@ archfit hook git    [--config .archfit.yaml] [--base HEAD]
 The output table of `hook claude` and the pre-commit setup are in
 [the agent feedback loop](agent-feedback.md#hooks-instructions-and-the-skill).
 Both hooks block only when the next action is `repair` or `ask_owner` and a
-repair is in scope. A dead selector or a metric ratchet also leads to those
+repair is in scope. A dead selector or an unmeasured ratchet also leads to those
 actions, but neither is scoped to the change, so the hooks report them and
-let the change through. `hook git` exits `1` on a block, `0` otherwise (other
+let the change through. A tripped ratchet is a repair task like any other
+blocker, so it blocks. `hook git` exits `1` on a block, `0` otherwise (other
 actions are printed on stderr), and `3` when archfit cannot run.
 
 `hook git` judges what the commit will contain: the staged content. Unstaged
@@ -1331,14 +1332,19 @@ Effect:
 
 - Compares the current branch against a git ref such as `main` or `origin/main`.
 - Adds the canonical base comparison and comparability reasons to the normal output.
-- In JSON, classifies each current `agent_tasks[]` entry with optional `origin`:
-  `introduced`, `pre_existing`, or conservative `unknown`. Evidence differences
-  are named in `comparison.task_origin_reasons`; there is no parallel task list
-  or separate delta schema. See
-  [Task origin with `--base`](agent-feedback.md#task-origin-with---base).
+- In JSON, classifies each current finding with optional `origin`:
+  `introduced`, `pre_existing`, or conservative `unknown`. Each `agent_tasks[]`
+  entry copies the origin of its finding. SARIF results carry
+  `properties.origin`. Text and Markdown show `origin: <value>` on each blocker
+  and an `origin: <status> · introduced: N · resolved: M` line in the
+  comparison section. Evidence differences are named in
+  `comparison.origin_reasons`. `comparison.introduced_finding_ids` and
+  `comparison.resolved_finding_ids` list the findings the change added and
+  removed. There is no parallel list or separate delta schema. See
+  [Origin with `--base`](agent-feedback.md#origin-with---base).
 - The root `comparison` block describes this base comparison and carries the
   current run's `measurement_profile`. An unknown or incompatible profile makes
-  the comparison `non_comparable` and keeps affected task origins `unknown`.
+  `comparison.status` `non_comparable`. It does not make origins `unknown`.
   The persisted baseline used for hard-gate and drift comparisons is reported
   separately as `gate_reference`; `--base` never replaces it.
 - Never changes the verdict or exit code. A base worktree or pipeline error exits

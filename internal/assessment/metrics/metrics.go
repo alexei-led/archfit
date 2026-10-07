@@ -47,27 +47,54 @@ func adapt[In any](c Calculator[In], project func(signal.CollectedSignals) In) M
 	return wrapped[In]{c: c, project: project}
 }
 
-// New returns all metrics in a fixed order — the order the engine reports them,
-// which golden output depends on. Each metric is adapted from its typed
-// Calculator to the uniform Metric via its family projection.
-func New(metricsCfg map[string]policy.MetricEntry) []Metric {
-	all := []Metric{
-		adapt(boundary.EncapsulationMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(boundary.UnbalancedEdgeMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(boundary.CycleMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(boundary.CoverageMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(modularity.BlastRadiusMetric{}, signal.CollectedSignals.AsCommon),
-	}
+// entry pairs a metric with whether it can ratchet: only metrics that compute a
+// delta against the stored snapshot can trip one. blast_radius is informational.
+type entry struct {
+	metric   Metric
+	ratchets bool
+}
 
-	// Honor explicit `metrics.<name>.enabled: false` config: metrics default
-	// to enabled — absent entries and knob-only entries ({gate: warn}) both
-	// run; only an explicit false disables.
+// registry is the one ordered list of metrics, in the order the engine reports
+// them (golden output depends on it).
+func registry() []entry {
+	return []entry{
+		{adapt(boundary.EncapsulationMetric{}, signal.CollectedSignals.AsCommon), true},
+		{adapt(boundary.UnbalancedEdgeMetric{}, signal.CollectedSignals.AsCommon), true},
+		{adapt(boundary.CycleMetric{}, signal.CollectedSignals.AsCommon), true},
+		{adapt(boundary.CoverageMetric{}, signal.CollectedSignals.AsCommon), true},
+		{adapt(modularity.BlastRadiusMetric{}, signal.CollectedSignals.AsCommon), false},
+	}
+}
+
+// enabled reports whether explicit `metrics.<name>.enabled: false` left the
+// metric on. Metrics default to enabled: absent entries and knob-only entries
+// ({gate: warn}) both run; only an explicit false disables.
+func enabled(metricsCfg map[string]policy.MetricEntry, name string) bool {
+	entry, configured := metricsCfg[name]
+	return !configured || entry.Enabled == nil || *entry.Enabled
+}
+
+// New returns all enabled metrics in a fixed order — the order the engine
+// reports them. Each metric is adapted from its typed Calculator to the uniform
+// Metric via its family projection.
+func New(metricsCfg map[string]policy.MetricEntry) []Metric {
+	all := registry()
 	out := make([]Metric, 0, len(all))
-	for _, m := range all {
-		if entry, configured := metricsCfg[m.Name()]; configured && entry.Enabled != nil && !*entry.Enabled {
-			continue
+	for _, e := range all {
+		if enabled(metricsCfg, e.metric.Name()) {
+			out = append(out, e.metric)
 		}
-		out = append(out, m)
+	}
+	return out
+}
+
+// RatchetNames lists the enabled metrics that can trip a ratchet.
+func RatchetNames(metricsCfg map[string]policy.MetricEntry) []string {
+	var out []string
+	for _, e := range registry() {
+		if e.ratchets && enabled(metricsCfg, e.metric.Name()) {
+			out = append(out, e.metric.Name())
+		}
 	}
 	return out
 }

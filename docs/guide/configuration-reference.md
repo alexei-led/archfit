@@ -709,7 +709,9 @@ fingerprints. The object contains:
 Comparisons require compatible settings and producer semantics, availability,
 and supported external tool versions. An unknown or incompatible profile makes
 the comparison `non_comparable` with named reasons; Archfit does not invent a
-delta. This applies to both `--base` task origin and `config compare`. The
+delta. This applies to `config compare` and to `comparison.status` under
+`--base`. A profile difference does not change `--base` origin; it is named in
+`comparison.origin_reasons`. The
 Unresolved dynamic dependency-cruiser configuration inputs and unsupported
 TypeScript config resolution are recorded as unknown profile inputs and disable
 comparability. The
@@ -1555,8 +1557,9 @@ metrics:
 Setting a knob on a metric of the wrong kind (e.g. `min_delta` on `cycle`) is
 a config error, not a silent no-op. `blast_radius` is informational and never
 gates — it accepts only `enabled`. Metric gates fire only against a baseline
-(`.archfit-baseline.json`); without a stored value for the metric there is no
-delta and nothing to trip.
+(`.archfit-baseline.json`) whose reference compares with the run; without a stored
+value for the metric, or against a reference that does not compare, there is no
+delta and nothing to trip. A tripped gate is a `metric/<name>` finding.
 
 ## `module_review`
 

@@ -18,21 +18,17 @@ import (
 //
 // The same facts appear here as in --format json; only the layout differs. There
 // is no repository score, because there is no repository score.
-//
-// The state alone carries no metric deltas, so it cannot name a tripped
-// metric ratchet; Render, which holds the whole document, can.
 func RenderState(s report.ArchitectureState, w io.Writer) error {
-	return writeState(s, brief.Build(brief.Input{State: s}), nil, w)
+	return writeState(s, brief.Build(brief.Input{State: s}), w)
 }
 
-func writeState(s report.ArchitectureState, view brief.View, regressions []metricRegression, w io.Writer) error {
+func writeState(s report.ArchitectureState, view brief.View, w io.Writer) error {
 	var b strings.Builder
 
 	b.WriteString("# archfit — architecture state\n\n")
 	writeStateHeadline(&b, s, view.VerdictReason)
 	writeBlockers(&b, view.Blockers)
 	writeNextSteps(&b, view.NextSteps)
-	writeMetricRatchet(&b, s.GateReference, regressions)
 	writeDimensionTable(&b, s.Dimensions)
 	writeDimensionMetrics(&b, s.Dimensions)
 	writeCoverageTable(&b, s.Coverage)
@@ -217,6 +213,9 @@ func writeBlockers(b *strings.Builder, blockers []brief.Blocker) {
 			}
 			fmt.Fprintf(b, "  - location: `%s`%s\n", bl.Location, more)
 		}
+		if bl.Origin != "" {
+			fmt.Fprintf(b, "  - origin: %s\n", bl.Origin)
+		}
 		fmt.Fprintf(b, "  - why: %s\n", oneLine(bl.Why))
 		if bl.Goal != "" {
 			fmt.Fprintf(b, "  - goal: %s\n", oneLine(bl.Goal))
@@ -285,6 +284,22 @@ func writeStateComparison(b *strings.Builder, c report.StateComparison) {
 	for _, reason := range c.Reasons {
 		fmt.Fprintf(b, "- %s\n", strings.TrimSpace(reason))
 	}
+	if c.OriginStatus == "" {
+		return
+	}
+	fmt.Fprintf(b, "- **Origin:** %s — introduced %d, resolved %d\n",
+		c.OriginStatus, idCount(c.IntroducedFindingIDs), idCount(c.ResolvedFindingIDs))
+	for _, reason := range c.OriginReasons {
+		fmt.Fprintf(b, "  - %s\n", strings.TrimSpace(reason))
+	}
+}
+
+// idCount counts an optional ID list; nil means the list was not requested.
+func idCount(ids *[]string) int {
+	if ids == nil {
+		return 0
+	}
+	return len(*ids)
 }
 
 func writeStateUnknowns(b *strings.Builder, dims report.Dimensions, view brief.View) {

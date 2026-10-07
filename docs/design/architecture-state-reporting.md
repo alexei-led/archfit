@@ -177,9 +177,11 @@ These were settled before execution. They are not open questions.
 - **Baselines use one schema.** Older baseline files are rejected and must be
   regenerated after review.
 - **`agent_tasks` is projected**, not re-derived. State aggregation never builds a
-  second task list. With `--base`, the current task list carries optional
-  `origin` metadata (`introduced`, `pre_existing`, or conservative `unknown`);
-  classification never changes verdict, gates, or exit code.
+  second task list. With `--base`, one classifier gives every
+  finding optional `origin` metadata (`introduced`, `pre_existing`, or
+  conservative `unknown`). Each task copies the origin of its finding.
+  Classification is presentation only. It never changes verdict, gates, exit
+  code, or the baseline.
 - **Unobservable is unobservable.** Unsupported runtime topology and shallow or
   missing history report `partial`/`unmeasured` with named missing facts. V1
   never executes a target repository's test suite. Testability ingests coverage
@@ -275,10 +277,9 @@ would put a plausible-looking fake in the place reserved for evidence.
 ### Measurement is a property of the tree, not of the run
 
 `StateMeasurement` publishes `source_ref`, `history_depth`, `history_window`, and
-`tool_versions` — and nothing else. A full run measures files on disk and reports
+`tool_versions` — and nothing else. Every run measures files on disk and reports
 `source_ref: worktree`; naming a commit there would claim the measured bytes
-equal it, which is false the moment the tree is dirty. Only a delta run, which
-really did diff against a resolved SHA, publishes one.
+equal it, which is false the moment the tree is dirty.
 
 A run that scanned no history records `history_window: unavailable` with depth 0
 rather than leaving both blank, so "there is no history here" stays

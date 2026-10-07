@@ -41,7 +41,7 @@ var _ application.SourceInventoryReader = Inventory{}
 // SourceInventory implements application.SourceInventoryReader.
 func (i Inventory) SourceInventory(ctx context.Context, root string) (evaluation.Observations, error) {
 	sc := i.Options.Scope
-	sc.WorkDir, sc.Root, sc.Full = scanDir(root, filepath.Dir(i.ConfigPath)), root, true
+	sc.WorkDir, sc.Root = scanDir(root, filepath.Dir(i.ConfigPath)), root
 	resolved, err := scope.Resolve(ctx, sc, gitResolver{workDir: sc.WorkDir, runner: i.Runner})
 	if err != nil {
 		return evaluation.Observations{}, err

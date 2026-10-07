@@ -27,9 +27,50 @@ Changed (comparability v2):
   baseline of a repo without it comparable. `tool_version` is one printable
   line of at most 128 characters. A reference on profile v1 is non-comparable
   with one reason that names the version.
+- A tripped metric ratchet is now a finding, `metric/<name>`. It carries the
+  value before and after and the threshold, and it has a repair task. It
+  appears in the exit code, SARIF, text, Markdown and the agent digest like any
+  other blocker. `gate: warn` gives an advisory. A waiver on `metric/<name>`
+  takes no `from` or `to`. The old `METRIC RATCHET` section, the
+  `worsened_metrics` field of `archfit.agent-result.v1`, and the separate
+  ratchet path are removed.
+- A ratchet decides only against a reference that compares with the run. Against
+  a baseline that does not compare, a worse metric gives `hard_gates:
+  unmeasured` (exit 2), with one unevaluated entry `metric_ratchets` that names
+  the drift. It no longer gives exit 1 from a policy-only edit. With no baseline
+  file there is no ratchet.
 - The baseline schema is `archfit.baseline.v3` and stores `classification_hash`.
   The engine rejects v2 files. A stored v3 reference without a
   `classification_hash` is non-comparable (`reference_incomplete`).
+
+Changed (origin):
+
+- `--base` now gives an origin to every finding, not only to agent tasks.
+  One classifier decides it. Each finding gets `origin`: `introduced`,
+  `pre_existing`, or `unknown`. A `fixed` finding gets no origin. Each agent
+  task copies the origin of its finding.
+- The `comparison` block gets `introduced_finding_ids` and
+  `resolved_finding_ids`. Both lists are present only with `--base`, and then
+  they are always arrays. `resolved_finding_ids` is empty when the origin
+  status is `unknown`.
+- `comparison.task_origin_status` is now `comparison.origin_status`.
+  `comparison.task_origin_reasons` is now `comparison.origin_reasons`.
+- A measurement profile difference between the base and the head no longer
+  makes every origin `unknown`. Both sides use one binary and one config, so
+  the difference comes from the trees, for example a `toolchain` line in
+  `go.mod`. The origin reasons name each difference.
+- A Balanced Coupling advisory group is matched by its edges. Before, a group
+  could show as `introduced` when only its representative edge changed.
+- A `bc/coupling_gate` finding now gets a real origin from the base run's
+  seams. Before, it was always `unknown`.
+- Text and Markdown show the origin of each blocker and the origin counts in
+  the comparison section. SARIF results carry `properties.origin`.
+
+Removed:
+
+- `dimensions.<name>.delta.new_findings` and `resolved_findings`. No run
+  filled them. Use `comparison.introduced_finding_ids` and
+  `comparison.resolved_finding_ids` with `--base`.
 
 New:
 
