@@ -56,8 +56,8 @@ func TestProjectReportPopulatesShadowState(t *testing.T) {
 	if state.SchemaVersion != report.StateSchemaVersion {
 		t.Errorf("SchemaVersion = %q, want %q", state.SchemaVersion, report.StateSchemaVersion)
 	}
-	if state.Measurement.SourceRef != stateHeadRef {
-		t.Errorf("Measurement.SourceRef = %q, want HEAD", state.Measurement.SourceRef)
+	if state.Measurement.SourceRef != "worktree" {
+		t.Errorf("Measurement.SourceRef = %q, want worktree", state.Measurement.SourceRef)
 	}
 	if state.Measurement.HistoryDepth != 500 || state.Measurement.HistoryWindow != "500 commits" {
 		t.Errorf("history = (%d, %q), want (500, \"500 commits\")", state.Measurement.HistoryDepth, state.Measurement.HistoryWindow)
@@ -158,8 +158,7 @@ func TestShadowStateProjectsEveryEnvelopeField(t *testing.T) {
 	measured.Findings = []state.FindingRef{{ID: "f1", RuleID: "dep", Kind: report.FindingKindGate, Severity: stateSevHigh, Status: configUpdateTestNew}}
 	measured.Unknown = []state.UnknownFact{{Fact: "x", Reason: "y", Owner: state.OwnerStructure}}
 	measured.Delta = &state.Delta{Status: state.ComparisonNonComparable, Reasons: []string{"r"},
-		Metrics:     []state.MetricDelta{{Name: stateMetricEdges, Before: 5, After: 7, Change: 2}},
-		NewFindings: []string{"f1"}}
+		Metrics: []state.MetricDelta{{Name: stateMetricEdges, Before: 5, After: 7, Change: 2}}}
 	diagnostic.State.Dimensions.Structure = measured
 
 	got := ProjectReport(diagnostic, score.Scorecard{}).State.Dimensions.Structure
@@ -172,8 +171,7 @@ func TestShadowStateProjectsEveryEnvelopeField(t *testing.T) {
 		Findings: []report.FindingRef{{ID: "f1", RuleID: "dep", Kind: report.FindingKindGate, Severity: stateSevHigh, Status: configUpdateTestNew}},
 		Unknown:  []report.UnknownFact{{Fact: "x", Reason: "y", Owner: state.OwnerStructure}},
 		Delta: &report.DimensionDelta{Status: report.ComparisonNonComparable, Reasons: []string{"r"},
-			Metrics:     []report.MetricDelta{{Name: stateMetricEdges, Before: 5, After: 7, Change: 2}},
-			NewFindings: []string{"f1"}},
+			Metrics: []report.MetricDelta{{Name: stateMetricEdges, Before: 5, After: 7, Change: 2}}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("projected envelope =\n%+v\nwant\n%+v", got, want)

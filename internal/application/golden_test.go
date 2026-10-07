@@ -69,7 +69,7 @@ type goldenEvidence struct {
 }
 
 func (g goldenEvidence) Acquire(ctx context.Context, _ application.AnalysisRequest) (application.Acquired, error) {
-	sc := scope.Scope{Root: g.root, Mode: scope.ModeFull}
+	sc := scope.Scope{Root: g.root}
 	collected, err := acquisition.Collect(ctx, acquisition.Input{
 		Scope:      sc,
 		Extractors: []evidenceports.Extractor{goextract.New(evidenceports.ExtractConfig{})},
@@ -82,7 +82,7 @@ func (g goldenEvidence) Acquire(ctx context.Context, _ application.AnalysisReque
 	return application.Acquired{
 		Facts:        facts,
 		Observations: evaluation.Observations{Coverage: facts.Coverage, Symbols: facts.Symbols},
-		Context:      application.AnalysisContext{Scope: sc, Full: true, Now: g.now, Policy: g.policy},
+		Context:      application.AnalysisContext{Scope: sc, Now: g.now, Policy: g.policy},
 	}, nil
 }
 

@@ -113,7 +113,7 @@ change. Repairs are sorted: in scope first, then code
 changes, then severity, then the lowest finding ID.
 
 **Scope.** Without `--base`, every repair is in scope. With `--base <ref>`,
-a repair is outside the scope only when every grouped task has the origin
+a repair is outside the scope only when every grouped finding has the origin
 `pre_existing`. An `introduced` or `unknown` origin is in scope, so a
 comparison that cannot place a task never hides a blocker. To scope the result
 to your uncommitted edits, run `archfit check --format agent --base HEAD`.
@@ -263,8 +263,9 @@ and `--require-tools`) so the repair is checked under the same conditions.
 `--refresh` is deliberately not serialized: cache-control must not change the
 validation result. `--no-advisories` and output-format flags are not part of
 the validation contract.
-With `--base`, each current task also carries `origin`: `introduced`,
-`pre_existing`, or `unknown`. `unknown` means analyzer evidence was asymmetric;
+With `--base`, each current finding also carries `origin`: `introduced`,
+`pre_existing`, or `unknown`. Each task copies the origin of its finding.
+`unknown` means analyzer evidence was asymmetric;
 it is never upgraded to `introduced`. Origin is triage metadata and never
 changes the verdict, a gate, or the exit code. `agent_tasks[]` is gate-only, and
 advisory findings stay out of this channel.
@@ -315,16 +316,23 @@ Only `bc/imbalanced_coupling` findings are rolled up (cap 8 members per
 group); `bc/duplicated_knowledge` findings pass through individually and
 never carry a `group_count`.
 
-## Task origin with `--base`
+## Origin with `--base`
 
-`--base <ref>` classifies the current repair tasks in canonical JSON. It does
-not create a second task list or a separate delta schema:
+`--base <ref>` classifies every current finding in canonical JSON. One
+classifier serves findings, repair tasks, and SARIF results. It does not create
+a second list or a separate delta schema:
 
 ```json
 {
   "comparison": {
-    "task_origin_status": "comparable"
+    "origin_status": "comparable",
+    "introduced_finding_ids": ["finding-a"],
+    "resolved_finding_ids": ["finding-c"]
   },
+  "findings": [
+    { "id": "finding-a", "origin": "introduced" },
+    { "id": "finding-b", "origin": "pre_existing" }
+  ],
   "agent_tasks": [
     { "finding_id": "finding-a", "origin": "introduced" },
     { "finding_id": "finding-b", "origin": "pre_existing" }
@@ -332,28 +340,47 @@ not create a second task list or a separate delta schema:
 }
 ```
 
-- `introduced` — the base run had no matching stable finding ID and all active
-  finding-producing analyzers had comparable evidence.
-- `pre_existing` — the base run observed the same stable finding ID.
-- `unknown` — evidence could not place the task. Treat it as possibly
+- `introduced` — the base run did not observe the finding, and every active
+  finding-producing analyzer family had comparable evidence.
+- `pre_existing` — the base run observed the same stable finding ID. This holds
+  even when the evidence is degraded.
+- `unknown` — evidence could not place the finding. Treat it as possibly
   introduced; missing evidence never manufactures an `introduced` result.
-- `comparison.task_origin_status` is `unknown` when at least one task is unknown.
-  When present, read `task_origin_reasons` even when the status is `comparable`:
-  with no tasks,
-  or when all tasks match the base, an analyzer difference can still be relevant
-  to the next change.
+- `findings[].origin` is present only with `--base`. A `fixed` finding never
+  carries it. `agent_tasks[].origin` is a copy of the origin of its finding.
+- `comparison.origin_status` is `comparable` when the analyzer evidence of both
+  runs pairs. Otherwise it is `unknown`. Read `origin_reasons` even when the
+  status is `comparable`. It names each degraded or differing analyzer, and an
+  analyzer difference can still be relevant to the next change. The key is
+  absent when there is nothing to name.
+- `comparison.introduced_finding_ids` lists the findings the change added.
+  `comparison.resolved_finding_ids` lists the base findings the change removed.
+  Both keys are present (possibly `[]`) exactly when `--base` ran. When
+  `origin_status` is `unknown`, `resolved_finding_ids` is empty, because a
+  vanished finding then proves nothing.
 
-A missing or duplicated coverage row, timeout, unfinished partial run, one-sided
-analyzer evidence, or config-hash mismatch makes unmatched tasks `unknown` and
-names the reason. The synthetic `bc/coupling_gate` task is per-run trip state,
-not a stable base finding, so its origin is always `unknown`.
+Two findings use a different match rule:
 
-Measurement compatibility is part of this comparison. The run publishes a
-`comparison.measurement_profile` with a profile version, settings hash, and
-the producer/tool versions and statuses that supplied the evidence. A missing,
-unknown, or incompatible profile makes the comparison `non_comparable` and
-keeps unmatched task origins `unknown`; observed matching findings can still be
-`pre_existing`. Reasons name the producer or profile field. The reference and
+- A `bc/imbalanced_coupling` rollup is matched by its member edges, not by its
+  representative ID. It is `pre_existing` only when every member edge existed in
+  the base run. One new member edge makes it `introduced`.
+- A `bc/coupling_gate` finding is `pre_existing` when its module pair was a
+  qualifying distributed-monolith seam in the base run. Otherwise it follows
+  the general rule: `introduced` when the evidence pairs, else `unknown`.
+
+A missing or duplicated coverage row, timeout, unfinished partial run, or
+one-sided analyzer evidence makes an unmatched finding `unknown` and names the
+reason. The config hash is not checked, because both sides read one config file.
+
+The run publishes a `comparison.measurement_profile` with a profile version,
+settings hash, and the producer/tool versions and statuses that supplied the
+evidence. A missing, unknown, or incompatible profile makes `comparison.status`
+`non_comparable`. It does not make origins `unknown`. Both sides run one binary
+over one config file, so a profile difference comes from the trees (for example
+a `toolchain` line in `go.mod` or a `tsconfig` change). It is part of the
+change. The sides still pair. Each differing producer tool version, semantics
+version, and partial basis, and a differing settings hash, is named in
+`origin_reasons`. The reference and
 status in `comparison` describe `--base`; its fingerprints describe the current
 run. The persisted baseline used
 by the gate is reported separately as `gate_reference`, so a base comparison
@@ -378,10 +405,11 @@ the bounded history query sufficient.
 
 The safety argument is symmetry: neither side ran evidence the other could hide
 behind. Asymmetric absence or partial evidence remains unknown. Matching uses
-stable finding IDs only; lifecycle labels and gate-versus-advisory promotion do
-not change origin, and a base finding reported as fixed does not make a current
-task pre-existing. Origin remains triage metadata: it never changes the verdict,
-a gate, or the exit code.
+stable finding IDs, with the rollup and seam rules above; lifecycle labels and
+gate-versus-advisory promotion do not change origin, and a base finding reported
+as fixed does not make a current finding pre-existing. Origin remains
+presentation only: it never changes the verdict, a gate, the exit code, or the
+baseline.
 
 ## Optional AI narrative
 

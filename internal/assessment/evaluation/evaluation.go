@@ -40,7 +40,6 @@ type Input struct {
 	AdvisoryCandidates []relationship.AdvisoryCandidate
 	StaleLabelKeys     []string
 	IncludeAdvisories  bool
-	Delta              bool
 }
 
 // Result contains gate findings, metric values, and the verdict inputs produced
@@ -52,7 +51,6 @@ type Result struct {
 	GateFindings int
 	Warnings     int
 	WaiversUsed  int
-	Delta        *result.DeltaReport
 }
 
 // evaluate applies rules, statuses, and metrics in their domain order.
@@ -132,14 +130,7 @@ func evaluate(in Input) Result {
 		visible = append(append(append([]finding.Finding(nil), base...), adv...), ruleAdv...)
 		warnings = countActive(adv) + countActive(ruleAdv)
 	}
-	var delta *result.DeltaReport
-	if in.Delta {
-		buckets := status.DeltaBuckets(visible, in.Accepted, in.ChangedFiles)
-		if !buckets.Empty() {
-			delta = &result.DeltaReport{New: buckets.New, Existing: buckets.Existing, Resolved: buckets.Resolved, SeverityChanged: buckets.SeverityChanged, TouchedByDelta: buckets.TouchedByDelta}
-		}
-	}
-	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed, Delta: delta}
+	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed}
 }
 
 // checkRules runs every compiled rule over the relationships. It is the one

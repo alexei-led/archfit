@@ -1,3 +1,3 @@
-// Package scope resolves the analysis scope: the repo root, changed files
-// (delta mode), and the mode (full vs delta) for a run.
+// Package scope resolves the analysis scope: the repo root and the files
+// changed since a base ref.
 package scope

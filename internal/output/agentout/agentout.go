@@ -58,14 +58,9 @@ const (
 	repairNeedsOwnerDecision = "needs_owner_decision"
 )
 
-// originPreExisting is the only task origin outside the scope of a change.
+// report.OriginPreExisting is the only origin outside the scope of a change.
 // introduced, unknown, and an absent origin (no --base) are in scope, so a
-// comparison that could not place a task never hides a blocker.
-const (
-	originPreExisting = "pre_existing"
-	originIntroduced  = "introduced"
-	originUnknown     = "unknown"
-)
+// comparison that could not place a finding never hides a blocker.
 
 // deadSelectorPrefix is the unevaluated-rule reason prefix for a selector that
 // matches nothing: a policy defect for the owner, not missing evidence.
@@ -359,7 +354,7 @@ func buildRepair(tasks []report.AgentTask, findings map[string]report.Finding) R
 	}
 	rep.Goal = goalTask.Goal
 	rep.Origin = mergeOrigins(origins)
-	rep.InScope = rep.Origin != originPreExisting
+	rep.InScope = rep.Origin != report.OriginPreExisting
 	rep.FindingIDs = sortedUnique(rep.FindingIDs)
 	rep.RuleIDs = sortedUnique(rep.RuleIDs)
 	if rep.Constraints == nil {
@@ -395,10 +390,10 @@ func mergeOrigins(origins []string) string {
 	switch {
 	case all(origins[0]):
 		return origins[0]
-	case slices.Contains(origins, originIntroduced):
-		return originIntroduced
+	case slices.Contains(origins, report.OriginIntroduced):
+		return report.OriginIntroduced
 	default:
-		return originUnknown
+		return report.OriginUnknown
 	}
 }
 

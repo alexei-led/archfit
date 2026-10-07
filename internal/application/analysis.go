@@ -121,7 +121,6 @@ type PolicyPreparer interface {
 type AnalysisContext struct {
 	Scope      scope.Scope
 	BaseRef    string
-	Full       bool
 	Now        time.Time
 	ConfigHash string
 	// ModelHash and LabelsHash fingerprint the module model and the approved
@@ -261,7 +260,7 @@ func relate(acquired Acquired) relationship.AnalysisResult {
 	facts, runCtx := acquired.Facts, acquired.Context
 	return analysis.Analyze(analysis.Input{
 		Graph: facts.Graph, Policy: runCtx.Policy.Relationship,
-		Mode: analysis.Mode{Base: runCtx.BaseRef, Full: runCtx.Full}, Labels: runCtx.PinnedLabels,
+		Labels:        runCtx.PinnedLabels,
 		CloneClusters: facts.Clones, FileClassIndex: facts.FileClassIndex,
 		RuntimeSites: facts.RuntimeAsyncSites, RuntimeConfidence: facts.RuntimeConfidence,
 		DynamicImportSites: facts.DynamicImports,

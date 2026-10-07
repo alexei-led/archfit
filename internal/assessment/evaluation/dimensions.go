@@ -1767,7 +1767,6 @@ func driftDimension(diag *result.Result, ref BaselineAnchor) state.Dimension {
 	if !ref.SeamsComparable {
 		reasons := ref.driftReasons()
 		dim.Delta = &state.Delta{Status: state.ComparisonNonComparable, Reasons: reasons}
-		attachFindingBuckets(dim.Delta, diag.Delta)
 		applyPromotion(&dim, nil, nil, map[string]string{
 			state.FactAdmissiblePersistedReference: reasons[0],
 			state.FactCompleteTwoSidedSeamIdentity: "two-sided seam identity cannot be compared without an admissible persisted reference",
@@ -1816,19 +1815,7 @@ func driftDimension(diag *result.Result, ref BaselineAnchor) state.Dimension {
 		{Name: "resolved_seams", Value: float64(resolvedSeams), Unit: unitCount, Provenance: []string{provAssessment}},
 	}
 	dim.Delta = &state.Delta{Status: state.ComparisonComparable}
-	attachFindingBuckets(dim.Delta, diag.Delta)
 	return dim
-}
-
-// attachFindingBuckets carries the finding-level lifecycle buckets onto a drift
-// delta. Accepted finding fingerprints remain valid lifecycle evidence even
-// when fingerprint drift makes metric or seam comparisons non-comparable.
-func attachFindingBuckets(delta *state.Delta, d *result.DeltaReport) {
-	if d == nil {
-		return
-	}
-	delta.NewFindings = d.New
-	delta.ResolvedFindings = d.Resolved
 }
 
 // qualifyingSeamIDs lists this run's distributed-monolith seam IDs in stable

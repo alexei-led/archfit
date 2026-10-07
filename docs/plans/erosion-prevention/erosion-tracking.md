@@ -67,7 +67,7 @@ A blocked run emits one `bc/coupling_gate` finding for each new seam.
 ### Comparison with `--base`
 
 `archfit analyze --base <ref>` and `check --base <ref>` score a second worktree and print a delta. This comparison is report-only. It never replaces the baseline as the gate reference.
-Today it gives an origin (`introduced`, `pre_existing` or `unknown`) to agent tasks only, not to findings. Any measurement profile difference sets every task that is not `pre_existing` to `unknown` (`internal/application/base_compare.go`).
+Since 3.3 (v3.0.0), one classifier (`decision.ClassifyOrigins`) gives every finding an origin (`introduced`, `pre_existing` or `unknown`), and agent tasks copy it. A measurement profile difference pairs and is named in `origin_reasons`.
 
 ### In the App
 
@@ -100,7 +100,6 @@ The ratchet path (amber) skips the comparability check. That is a defect.
 | A ratchet has no finding (fixed in v3.0.0) | Agents got no repair task. The App named no blocker.                                                                                                                                 | Fixed: ratchets are `metric/<name>` findings now |
 | `unbalanced_edge` cannot trip        | Capture counts every far intrusive high-volatility edge as new. Check counts only edges whose finding is not accepted. The delta is then never positive once the count is 1 or more. | `internal/assessment/metrics/boundary/unbalanced_edge.go`. Unverified: code read only.                         |
 | Only full capture                    | Every re-capture accepts all current findings, also findings that an engine upgrade exposed.                                                                                         | `archfit baseline` has no other mode                                                                           |
-| Origin collapses                     | Any unrelated profile difference sets every task origin to `unknown`. Exit 2 cannot say "this change added it".                                                                      | Blanket downgrade in `base_compare.go`                                                                         |
 
 ## Plan for v3.0.0
 

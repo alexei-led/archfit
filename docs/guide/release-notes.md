@@ -43,6 +43,35 @@ Changed (comparability v2):
   The engine rejects v2 files. A stored v3 reference without a
   `classification_hash` is non-comparable (`reference_incomplete`).
 
+Changed (origin):
+
+- `--base` now gives an origin to every finding, not only to agent tasks.
+  One classifier decides it. Each finding gets `origin`: `introduced`,
+  `pre_existing`, or `unknown`. A `fixed` finding gets no origin. Each agent
+  task copies the origin of its finding.
+- The `comparison` block gets `introduced_finding_ids` and
+  `resolved_finding_ids`. Both lists are present only with `--base`, and then
+  they are always arrays. `resolved_finding_ids` is empty when the origin
+  status is `unknown`.
+- `comparison.task_origin_status` is now `comparison.origin_status`.
+  `comparison.task_origin_reasons` is now `comparison.origin_reasons`.
+- A measurement profile difference between the base and the head no longer
+  makes every origin `unknown`. Both sides use one binary and one config, so
+  the difference comes from the trees, for example a `toolchain` line in
+  `go.mod`. The origin reasons name each difference.
+- A Balanced Coupling advisory group is matched by its edges. Before, a group
+  could show as `introduced` when only its representative edge changed.
+- A `bc/coupling_gate` finding now gets a real origin from the base run's
+  seams. Before, it was always `unknown`.
+- Text and Markdown show the origin of each blocker and the origin counts in
+  the comparison section. SARIF results carry `properties.origin`.
+
+Removed:
+
+- `dimensions.<name>.delta.new_findings` and `resolved_findings`. No run
+  filled them. Use `comparison.introduced_finding_ids` and
+  `comparison.resolved_finding_ids` with `--base`.
+
 ### Balanced Coupling score `bc_score.v7`
 
 The formula `balance = max(|S − D|, 10 − V) + 1` does not change. The inputs

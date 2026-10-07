@@ -39,7 +39,7 @@ func TestEvaluateAcceptedAdvisoryLifecycle(t *testing.T) {
 					{Fingerprint: nativeID, RuleID: ruleBC, Kind: finding.KindAdvisory},
 				},
 				Metrics:           evaluation.MetricsetOf(findingPopulationMetric{}),
-				IncludeAdvisories: true, Delta: true, Now: evaluatedAt,
+				IncludeAdvisories: true, Now: evaluatedAt,
 			}
 			if tc.warnLive {
 				in.Rules = evaluation.RulesetOf(stubRule{id: ruleWarn, findings: []finding.Finding{warnRuleFinding(fpWarnAdv)}})
@@ -74,9 +74,6 @@ func TestEvaluateAcceptedAdvisoryLifecycle(t *testing.T) {
 			if got.Warnings != active || got.GateFindings != 0 {
 				t.Errorf("warnings/gate findings = %d/%d, want %d/0", got.Warnings, got.GateFindings, active)
 			}
-			if got.Delta == nil || len(got.Delta.Existing) != active || len(got.Delta.Resolved) != 2-active {
-				t.Errorf("delta = %+v, want %d existing and %d resolved", got.Delta, active, 2-active)
-			}
 			wantMetric := 0.0
 			if tc.warnLive {
 				wantMetric = 1
@@ -86,7 +83,7 @@ func TestEvaluateAcceptedAdvisoryLifecycle(t *testing.T) {
 			}
 			in.IncludeAdvisories = false
 			hidden := evaluation.Evaluate(in)
-			if len(hidden.Findings) != 0 || hidden.Warnings != 0 || hidden.Delta != nil {
+			if len(hidden.Findings) != 0 || hidden.Warnings != 0 {
 				t.Errorf("hidden advisories leaked: %+v", hidden)
 			}
 			if hidden.Verdict != got.Verdict || hidden.Metrics[0].Value != got.Metrics[0].Value {
@@ -133,7 +130,7 @@ func TestEvaluateRemovedCouplingAdvisoriesKeepEachAcceptedID(t *testing.T) {
 		{Fingerprint: "removed-bc-b", RuleID: ruleBC, Kind: finding.KindAdvisory},
 	}
 	got := evaluation.Evaluate(evaluation.Input{
-		Accepted: accepted, IncludeAdvisories: true, Delta: true, Now: evaluatedAt,
+		Accepted: accepted, IncludeAdvisories: true, Now: evaluatedAt,
 	})
 	if len(got.Findings) != len(accepted) {
 		t.Errorf("findings = %+v, want one fixed finding per accepted ID", got.Findings)
@@ -151,9 +148,6 @@ func TestEvaluateRemovedCouplingAdvisoriesKeepEachAcceptedID(t *testing.T) {
 		if count != 1 {
 			t.Errorf("accepted ID %s emitted %d times, want once", entry.Fingerprint, count)
 		}
-	}
-	if got.Delta == nil || len(got.Delta.Resolved) != len(accepted) {
-		t.Errorf("delta = %+v, want both accepted IDs resolved", got.Delta)
 	}
 	if got.Warnings != 0 || got.GateFindings != 0 || got.Verdict != result.VerdictPass {
 		t.Errorf("removed advisories affect decision: %+v", got)

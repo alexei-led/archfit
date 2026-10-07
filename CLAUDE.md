@@ -266,6 +266,27 @@ init` emits v2 directly; owners update older configs manually before analysis.
   head-tree owners and skip its own resolution. The base sub-run is a SECOND
   acquisition service (`StageExecutor.NewBaseEvidence`), not a second call on
   the head one: no per-run state can leak between the two trees.
+- **`--base` origin is ONE classifier** (`decision.ClassifyOrigins`, attached by
+  `evaluation.AttachOrigins` in `attachBaseComparison`). It sets
+  `finding.Finding.Origin` on every non-fixed finding, copies it onto the
+  finding's agent task, and fills `comparison.origin_status`/`origin_reasons`
+  plus `introduced_finding_ids`/`resolved_finding_ids` (`*[]string`: present,
+  possibly `[]`, exactly when `--base` ran). Brief blockers, the text/Markdown
+  COMPARISON section, `--format agent` scope, hooks, and SARIF
+  `properties.origin` all read it; nothing gates on it, and `--base` never
+  replaces the accepted baseline. Matching: an exact base ID is
+  `pre_existing`; a BC rollup matches by `Members` (its ID is the smallest
+  member, so it moves when an edge joins or leaves), `pre_existing` only when
+  every member existed; a `bc/coupling_gate` finding matches its module pair
+  against the base's qualifying seams. Anything else is `introduced` only when
+  every analyzer family pairs, else `unknown`; `resolved` is claimed only then.
+  Both sides read one config file with one binary, so there is no config-hash
+  check, and a measurement-profile difference comes from the trees: it PAIRS
+  and `profileReasons` names it. The old blanket downgrade (any profile
+  difference → every task `unknown`) made origin inert on any tree whose
+  toolchain or tsconfig moved. The baseline-relative delta buckets
+  (`status.DeltaBuckets`, `ModeDelta`) were dead (`Full` was always true) and
+  are deleted, so this is the only answer to "what did this change add".
 - **`partial` means two different things and the TOOL NAME separates them, not
   `Coverage.Unresolved`** (`decision.PartialFromUnresolvedSpecifiers`, the single
   predicate both pairing paths call). dependency-cruiser and grimp mark a
@@ -579,11 +600,11 @@ init` emits v2 directly; owners update older configs manually before analysis.
 - **scanRoot vs gitRoot decoupling.** `Scope.Root` = ScanRoot (the analysis
   boundary; all extractors walk this tree). `Scope.GitRoot` = `git rev-parse
 --show-toplevel` (git ops only). `Scope.SubtreePrefix = rel(GitRoot, Root)`.
-  `--root` absent ⇒ ScanRoot=GitRoot, prefix="" ⇒ byte-identical. Non-git full
-  mode proceeds with `GitRoot=""` (history empty) and ScanRoot = the canonical
+  `--root` absent ⇒ ScanRoot=GitRoot, prefix="" ⇒ byte-identical. A non-git
+  run proceeds with `GitRoot=""` (history empty) and ScanRoot = the canonical
   ABSOLUTE `--root` or config directory (`canonicalPath` absolutizes before
   resolving symlinks; a relative `.` root dropped every Go fact and deploy
-  unit); delta mode without git is a hard error.
+  unit). Every run scans the whole tree: there is no delta scope mode.
   **macOS APFS case-variant `--root` (Task 25, fixed):** `snapScanRoot` in
   `internal/scope/scope.go` uses `os.SameFile` (device+inode) to snap a
   case-variant scan root to the git root's canonical path, so
@@ -977,10 +998,9 @@ init` emits v2 directly; owners update older configs manually before analysis.
   Exactly four fields: `source_ref`, `history_depth`, `history_window`,
   `tool_versions`, pinned by `TestMeasurementCarriesOnlyDeterministicFields`. One
   wall-clock timestamp, absolute path, or PID here retires the byte-identity
-  contract every format baseline depends on. A full run reports
+  contract every format baseline depends on. Every run reports
   `source_ref: worktree` — it measures files on disk, and naming a commit would
-  claim the bytes equal it even on a dirty tree; only a delta run, which really
-  diffed against a resolved SHA, publishes one. A run that scanned no history
+  claim the bytes equal it even on a dirty tree. A run that scanned no history
   records `history_window: unavailable` with depth 0 rather than leaving both
   blank, so "no history here" stays distinguishable from "the scan was never
   wired up".

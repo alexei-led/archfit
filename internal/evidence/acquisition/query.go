@@ -35,7 +35,7 @@ var _ application.EdgeQuery = Query{}
 // the one process the query starts.
 func NewQuery(ctx context.Context, configPath, root string, opts RunOptions, runner toolrun.Runner) (Query, error) {
 	sc := opts.Scope
-	sc.WorkDir, sc.Root, sc.Full = scanDir(root, filepath.Dir(configPath)), root, true
+	sc.WorkDir, sc.Root = scanDir(root, filepath.Dir(configPath)), root
 	resolved, err := scope.Resolve(ctx, sc, gitResolver{workDir: sc.WorkDir, runner: runner})
 	if err != nil {
 		return Query{}, err

@@ -155,11 +155,9 @@ type MetricDelta struct {
 // DimensionDelta is one dimension's change against the comparison reference.
 // A non-comparable reference yields reasons and no numbers.
 type DimensionDelta struct {
-	Status           ComparisonStatus `json:"status"`
-	Reasons          []string         `json:"reasons,omitempty"`
-	Metrics          []MetricDelta    `json:"metrics,omitempty"`
-	NewFindings      []string         `json:"new_findings,omitempty"`
-	ResolvedFindings []string         `json:"resolved_findings,omitempty"`
+	Status  ComparisonStatus `json:"status"`
+	Reasons []string         `json:"reasons,omitempty"`
+	Metrics []MetricDelta    `json:"metrics,omitempty"`
 }
 
 // DimensionCoverage is a dimension's denominator: what was counted, how much of
@@ -259,9 +257,20 @@ type StateComparison struct {
 	Drift              []string            `json:"drift,omitempty"`
 	// BaselinePresent is set on gate_reference only: true when a baseline file
 	// was loaded (comparable or not), false when there was none.
-	BaselinePresent   *bool    `json:"baseline_present,omitempty"`
-	TaskOriginStatus  string   `json:"task_origin_status,omitempty"`
-	TaskOriginReasons []string `json:"task_origin_reasons,omitempty"`
+	BaselinePresent *bool `json:"baseline_present,omitempty"`
+	// OriginStatus is set only with --base: comparable when the analyzer
+	// evidence of both runs pairs, unknown otherwise.
+	OriginStatus string `json:"origin_status,omitempty"`
+	// OriginReasons name each degraded or differing analyzer behind the origin
+	// classification. Set only with --base.
+	OriginReasons []string `json:"origin_reasons,omitempty"`
+	// IntroducedFindingIDs are the findings the change added. Present, as a
+	// possibly empty list, exactly when --base ran.
+	IntroducedFindingIDs *[]string `json:"introduced_finding_ids,omitempty"`
+	// ResolvedFindingIDs are the base findings the change removed. Present, as a
+	// possibly empty list, exactly when --base ran; empty when origin_status is
+	// unknown, because a vanished finding then proves nothing.
+	ResolvedFindingIDs *[]string `json:"resolved_finding_ids,omitempty"`
 }
 
 // StateMeasurement holds deterministic source, history, and tool facts only. It

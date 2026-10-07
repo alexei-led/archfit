@@ -1305,14 +1305,19 @@ Effect:
 
 - Compares the current branch against a git ref such as `main` or `origin/main`.
 - Adds the canonical base comparison and comparability reasons to the normal output.
-- In JSON, classifies each current `agent_tasks[]` entry with optional `origin`:
-  `introduced`, `pre_existing`, or conservative `unknown`. Evidence differences
-  are named in `comparison.task_origin_reasons`; there is no parallel task list
-  or separate delta schema. See
-  [Task origin with `--base`](agent-feedback.md#task-origin-with---base).
+- In JSON, classifies each current finding with optional `origin`:
+  `introduced`, `pre_existing`, or conservative `unknown`. Each `agent_tasks[]`
+  entry copies the origin of its finding. SARIF results carry
+  `properties.origin`. Text and Markdown show `origin: <value>` on each blocker
+  and an `origin: <status> · introduced: N · resolved: M` line in the
+  comparison section. Evidence differences are named in
+  `comparison.origin_reasons`. `comparison.introduced_finding_ids` and
+  `comparison.resolved_finding_ids` list the findings the change added and
+  removed. There is no parallel list or separate delta schema. See
+  [Origin with `--base`](agent-feedback.md#origin-with---base).
 - The root `comparison` block describes this base comparison and carries the
   current run's `measurement_profile`. An unknown or incompatible profile makes
-  the comparison `non_comparable` and keeps affected task origins `unknown`.
+  `comparison.status` `non_comparable`. It does not make origins `unknown`.
   The persisted baseline used for hard-gate and drift comparisons is reported
   separately as `gate_reference`; `--base` never replaces it.
 - Never changes the verdict or exit code. A base worktree or pipeline error exits

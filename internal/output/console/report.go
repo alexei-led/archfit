@@ -277,6 +277,9 @@ func writeBlockers(b *strings.Builder, blockers []brief.Blocker) {
 			}
 			fmt.Fprintf(b, "    %s%s\n", bl.Location, more)
 		}
+		if bl.Origin != "" {
+			fmt.Fprintf(b, "    origin: %s\n", bl.Origin)
+		}
 		fmt.Fprintf(b, "    why:   %s\n", oneLine(bl.Why))
 		if bl.Goal != "" {
 			fmt.Fprintf(b, "    goal:  %s\n", oneLine(bl.Goal))
@@ -326,6 +329,22 @@ func writeComparison(b *strings.Builder, c report.StateComparison) {
 	for _, reason := range c.Reasons {
 		fmt.Fprintf(b, "    %s\n", condense(reason, 140))
 	}
+	if c.OriginStatus == "" {
+		return
+	}
+	fmt.Fprintf(b, "  origin: %s  ·  introduced: %d  ·  resolved: %d\n",
+		c.OriginStatus, idCount(c.IntroducedFindingIDs), idCount(c.ResolvedFindingIDs))
+	for _, reason := range c.OriginReasons {
+		fmt.Fprintf(b, "    %s\n", condense(reason, 140))
+	}
+}
+
+// idCount counts an optional ID list; nil means the list was not requested.
+func idCount(ids *[]string) int {
+	if ids == nil {
+		return 0
+	}
+	return len(*ids)
 }
 
 // writeFindingIndex appends every finding in the document's canonical order

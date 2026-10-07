@@ -93,7 +93,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 
 	sc := s.Options.Scope
-	sc.WorkDir, sc.Root, sc.Base, sc.Full = scanDir(root, bundleDir), root, req.BaseRef, true
+	sc.WorkDir, sc.Root, sc.Base = scanDir(root, bundleDir), root, req.BaseRef
 	s.reportPhase("Discovering project")
 	resolved, err := scope.Resolve(ctx, sc, gitResolver{workDir: sc.WorkDir, runner: s.Runner})
 	if err != nil {
@@ -228,7 +228,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		Observations: observations,
 		Context: application.AnalysisContext{
 			MeasurementProfile: s.measurementProfile(ctx, resolved, marked, coverageGaps, collected.FileClassIndex, history),
-			Scope:              resolved, BaseRef: req.BaseRef, Full: true,
+			Scope:              resolved, BaseRef: req.BaseRef,
 			Now: now, ConfigHash: configHash(configPath), PrimaryExtractorTools: registry.PrimaryTools(),
 			ModelHash:          policy.ModelHash(runPolicy.Topology.Modules),
 			ClassificationHash: ClassificationHash(runPolicy),
@@ -437,9 +437,9 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 }
 
 // configHash returns the sha256 hex digest of the raw config file bytes at
-// path, or "" when the file cannot be read. It is the run's config identity:
-// two runs with the same hash analysed the same policy text, so the task-origin
-// delta can tell a code change from a policy change.
+// path, or "" when the file cannot be read. It is the run's config identity
+// (the App binds it to the protected policy digest); comparability reads the
+// classification hash instead.
 func configHash(path string) string {
 	b, err := os.ReadFile(path) //#nosec G304 -- path comes from the --config CLI flag, not arbitrary user input
 	if err != nil {
