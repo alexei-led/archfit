@@ -379,8 +379,12 @@ init` emits v2 directly; owners update older configs manually before analysis.
   directory holding production source (`RuleEvidence.FileClasses`, minus
   `UnanalysedFiles`) that `fileOwner` places in no declared module — the same
   owner predicate as `moduleRuleScope`; a Rust file with no crate selector
-  abstains. ID = rule + directory; at most 200 per run (path order,
-  `matched_by.uncovered_dirs_total`), 5 locations each. `module_review.gate:
+  abstains; `ruleProducerScope` attaches the observed crate owners so both
+  read one module map. ID = rule + directory; at most 200 directories the
+  baseline has NOT accepted (an accepted one is always kept — dropping it
+  reads as `fixed` — so the cap never hides a new package), 5 locations each,
+  plus a verified `matched_by.suggested_path` glob (a bare directory owns only
+  a Go package). `module_review.gate:
   fail` makes it a gate finding (it joins the rule findings, so baseline and
   waivers apply); `map/dead_rule` and `map/stale_review` never gate. A
   graph-derived check read a failed package load as "nothing unowned".

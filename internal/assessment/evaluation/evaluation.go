@@ -62,7 +62,7 @@ func evaluate(in Input) Result {
 	// An uncovered-source gate finding joins the rule findings, so baseline
 	// acceptance and waivers treat it as any other blocker; the advisory form
 	// stays with the staleness advisories.
-	for _, f := range uncoveredSource(in.Evidence, in.Policy, in.ModuleReview) {
+	for _, f := range uncoveredSource(in.Evidence, in.Policy, in.ModuleReview, in.Accepted) {
 		if f.Kind == finding.KindGate {
 			raw = append(raw, f)
 		} else {

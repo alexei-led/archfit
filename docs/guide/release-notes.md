@@ -65,8 +65,9 @@ New:
   makes it a blocker: a new package outside every module fails `check`. The
   check reads the walked source, so test, generated, vendor, excluded, and
   unanalysed files never count, and a package that failed to load is still
-  checked. One finding per directory, at most 200 per run. The repair task asks
-  the owner (`needs_owner_decision`). `map/dead_rule` and `map/stale_review`
+  checked. One finding per directory, at most 200 new directories per run.
+  `matched_by.suggested_path` gives a `paths:` glob that owns the directory.
+  The repair task asks the owner (`needs_owner_decision`). `map/dead_rule` and `map/stale_review`
   stay diagnostics. See [`module_review`](configuration-reference.md#module_review).
 
 Contract notes:

@@ -1580,12 +1580,25 @@ or the crate for Rust. A Rust file whose crate is unknown (no `cargo metadata`)
 is not checked.
 
 There is one finding for each directory. Its ID comes from the rule ID and the
-directory, so it does not change when files are added. `matched_by.subject` is
-the directory, `matched_by.uncovered_files` is its count of unowned files, and
-`locations` lists at most five of them. A run reports at most 200 directories,
-in path order; `matched_by.uncovered_dirs_total` gives the full count. The
-repair task asks the architecture owner which module owns the directory
-(`repair_kind: needs_owner_decision`).
+directory, so it does not change when files are added. The finding has these
+`matched_by` keys:
+
+- `subject`: the directory.
+- `uncovered_files`: the number of unowned files in it. `locations` lists at
+  most five of them.
+- `uncovered_dirs_total`: the number of unowned directories in the run.
+- `suggested_path`: a `paths:` glob that owns every unowned file in the
+  directory, when one glob can do it. A bare directory owns only a Go
+  package. TypeScript and Rust need a glob over the files (`web/src/**`),
+  Python needs a dotted glob (`acme.ops.**`), and a root directory needs a
+  glob over the extension (`*.go`).
+
+A run reports at most 200 directories that the baseline did not accept, in
+path order. It always reports a directory that the baseline accepted, so a
+new directory is never hidden behind accepted ones. The repair task asks the
+architecture owner which module owns the directory
+(`repair_kind: needs_owner_decision`) and names `suggested_path`. In a delta
+run, a change to any file directly in the directory touches the finding.
 
 `stale_after` uses Go duration syntax. Use `2160h` for 90 days.
 

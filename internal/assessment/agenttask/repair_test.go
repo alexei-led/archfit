@@ -180,10 +180,11 @@ func TestModuleSelectorTaskCarriesNoDeclarations(t *testing.T) {
 // module owns a directory is a config decision, so the task asks the owner and
 // still points at the directory's files.
 func TestUncoveredSourceTaskAsksTheOwner(t *testing.T) {
-	const file = "tools/gen/main.go"
+	const genDir = "tools/gen"
+	const file = genDir + "/main.go"
 	f := finding.Finding{
 		ID: "uncovered", Kind: finding.KindGate, RuleID: finding.RuleIDMapUncoveredPath, Status: finding.StatusNew,
-		MatchedBy: map[string]string{"subject": "tools/gen"},
+		MatchedBy: map[string]string{"subject": genDir, "suggested_path": "tools/gen/**"},
 		Locations: []relationship.Location{{File: file}},
 	}
 	resolver := agenttask.NewPathResolver(map[string]struct{}{file: {}}, nil, nil, nil)
@@ -195,8 +196,15 @@ func TestUncoveredSourceTaskAsksTheOwner(t *testing.T) {
 	if task.RepairKind != "needs_owner_decision" {
 		t.Errorf("repair_kind = %q, want needs_owner_decision", task.RepairKind)
 	}
-	if !strings.Contains(task.Goal, "tools/gen") || !strings.Contains(task.Goal, "architecture owner") {
-		t.Errorf("goal = %q, want it to name the directory and the owner", task.Goal)
+	for _, want := range []string{genDir, "architecture owner", `"tools/gen/**"`} {
+		if !strings.Contains(task.Goal, want) {
+			t.Errorf("goal = %q, want it to contain %s", task.Goal, want)
+		}
+	}
+	f.MatchedBy = map[string]string{"subject": genDir}
+	generic := agenttask.Build([]finding.Finding{f}, nil, nil, nil, nil, nil, resolver)[0].Goal
+	if !strings.Contains(generic, "dotted Python module") {
+		t.Errorf("goal without a suggestion = %q, want it to say what a glob must match", generic)
 	}
 	if len(task.Files) != 1 || task.Files[0] != file {
 		t.Errorf("files = %v, want [%s]", task.Files, file)

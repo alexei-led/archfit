@@ -2,11 +2,13 @@ package evaluation_test
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/assessment/status"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/policy"
 )
@@ -20,6 +22,8 @@ const (
 	moduleBilling  = "billing"
 	matchedSubject = "subject"
 	rustURLFile    = "crates/shared/src/url.rs"
+	pyRunFile      = "src/acme/ops/run.py"
+	rootMainGo     = "main.go"
 )
 
 func uncoveredPolicy(modules map[string]policy.ModuleDef) policy.AssessmentPolicy {
@@ -98,7 +102,7 @@ func TestUncoveredSourceReportsProductionSourceOnly(t *testing.T) {
 		{
 			name: "python dotted glob owns the module file",
 			ev: evaluation.RuleEvidence{FileClasses: map[string]fileclass.FileClass{
-				"src/acme/billing/charge.py": fileclass.Production, "src/acme/ops/run.py": fileclass.Production,
+				"src/acme/billing/charge.py": fileclass.Production, pyRunFile: fileclass.Production,
 			}},
 			mods:  map[string]policy.ModuleDef{moduleBilling: {Paths: []string{"acme.billing.**"}}},
 			wants: []string{"src/acme/ops"},
@@ -122,7 +126,7 @@ func TestUncoveredSourceReportsProductionSourceOnly(t *testing.T) {
 		},
 		{
 			name:  "no declared module leaves every production dir unowned",
-			ev:    evaluation.RuleEvidence{FileClasses: map[string]fileclass.FileClass{uncoveredFile: fileclass.Production, "main.go": fileclass.Production}},
+			ev:    evaluation.RuleEvidence{FileClasses: map[string]fileclass.FileClass{uncoveredFile: fileclass.Production, rootMainGo: fileclass.Production}},
 			wants: []string{".", uncoveredDir},
 		},
 	}
@@ -253,5 +257,79 @@ func TestModuleReviewFailBlocksOnlyUncoveredSource(t *testing.T) {
 	}
 	if res.GateFindings != 1 {
 		t.Errorf("GateFindings = %d, want 1", res.GateFindings)
+	}
+}
+
+func TestUncoveredSourceCapAppliesOnlyToNewDirectories(t *testing.T) {
+	t.Parallel()
+	p := uncoveredPolicy(billingModules())
+	ev := evaluation.RuleEvidence{FileClasses: map[string]fileclass.FileClass{}}
+	for i := range 200 {
+		ev.FileClasses[fmt.Sprintf("pkg%03d/x.go", i)] = fileclass.Production
+	}
+	first := uncoveredFindings(evaluateUncovered(ev, p, policy.GateFail, acceptedSet{}))
+	accepted := make(acceptedSet, 0, len(first))
+	for _, f := range first {
+		accepted = append(accepted, status.AcceptedEntry{Fingerprint: f.ID, RuleID: ruleUncovered})
+	}
+	ev.FileClasses["pkg200/x.go"] = fileclass.Production
+	res := evaluateUncovered(ev, p, policy.GateFail, accepted)
+	got := uncoveredFindings(res)
+	for _, f := range got {
+		if f.Status == finding.StatusFixed {
+			t.Fatalf("accepted directory %s reads fixed although it is still unowned", f.MatchedBy[matchedSubject])
+		}
+	}
+	if len(got) != 201 {
+		t.Fatalf("findings = %d, want 200 accepted plus the new one", len(got))
+	}
+	if !slices.Contains(subjects(got), "pkg200") || res.GateFindings != 1 {
+		t.Fatalf("new dir kept = %t, GateFindings = %d; want the new directory reported as the one blocker",
+			slices.Contains(subjects(got), "pkg200"), res.GateFindings)
+	}
+}
+
+// TestUncoveredSourceSuggestsAGlobThatOwnsTheDirectory pins the repair hint: the
+// suggested paths: glob, added to a module, leaves the directory owned. A bare
+// directory owns only a Go package, so TypeScript, Python, and root files each
+// need their own spelling.
+func TestUncoveredSourceSuggestsAGlobThatOwnsTheDirectory(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		files     map[string]fileclass.FileClass
+		selectors map[string]string
+		want      string
+	}{
+		{name: "go package", files: map[string]fileclass.FileClass{uncoveredFile: fileclass.Production}, want: "tools/gen/**"},
+		{name: "go root files", files: map[string]fileclass.FileClass{rootMainGo: fileclass.Production}, want: "*.go"},
+		{name: "typescript directory", files: map[string]fileclass.FileClass{"web/src/a.ts": fileclass.Production, "web/src/b.ts": fileclass.Production}, want: "web/src/**"},
+		{name: "python package modules", files: map[string]fileclass.FileClass{pyRunFile: fileclass.Production}, want: "acme.ops.**"},
+		{name: "python package with init", files: map[string]fileclass.FileClass{
+			"src/acme/ops/__init__.py": fileclass.Production, pyRunFile: fileclass.Production,
+		}, want: "{acme.ops,acme.ops.**}"},
+		{name: "python top-level module", files: map[string]fileclass.FileClass{"run.py": fileclass.Production}},
+		{name: "mixed root languages", files: map[string]fileclass.FileClass{rootMainGo: fileclass.Production, "app.ts": fileclass.Production}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ev := evaluation.RuleEvidence{FileClasses: tc.files, SourceSelectors: tc.selectors}
+			got := uncoveredFindings(evaluateUncovered(ev, uncoveredPolicy(billingModules()), "", acceptedSet{}))
+			if len(got) != 1 {
+				t.Fatalf("findings = %d, want 1", len(got))
+			}
+			glob := got[0].MatchedBy["suggested_path"]
+			if glob != tc.want {
+				t.Fatalf("suggested_path = %q, want %q", glob, tc.want)
+			}
+			if glob == "" {
+				return
+			}
+			mods := billingModules()
+			mods["owner"] = policy.ModuleDef{Paths: []string{glob}}
+			if after := uncoveredFindings(evaluateUncovered(ev, uncoveredPolicy(mods), "", acceptedSet{})); len(after) != 0 {
+				t.Errorf("after adding %q the directory is still unowned: %v", glob, subjects(after))
+			}
+		})
 	}
 }
