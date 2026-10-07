@@ -182,6 +182,10 @@ Upgrade notes:
 - Configs that do not use the new keys or `module_review` give the same
   output, except for `seams[].policy`, the two texts above, and the new edges
   of cgo files.
+- Install with Homebrew (`brew install alexei-led/tap/archfit`), a release
+  binary, or the Docker image. `go install …/cmd/archfit@v2.5.0` fails, because
+  the module path has no `/v2` suffix, and `@latest` installs the last `v1`
+  release. The [install guide](install.md#install-the-archfit-cli) now says so.
 
 ## v2.4.1 — schema lists rule types
 

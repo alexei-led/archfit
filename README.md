@@ -136,8 +136,9 @@ Goal, constraints, the files to touch, and the command that proves the fix.
 ## Quick start
 
 ```sh
-# install (or use the Docker image with all analyzers bundled: ghcr.io/alexei-led/archfit)
-go install github.com/alexei-led/archfit/cmd/archfit@latest
+# install (or a release binary, or the Docker image with all analyzers bundled:
+# ghcr.io/alexei-led/archfit — see docs/guide/install.md)
+brew install alexei-led/tap/archfit
 
 archfit doctor                      # check which analyzers are available
 archfit config init --root .        # generate a starter .archfit.yaml
