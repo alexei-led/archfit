@@ -20,6 +20,13 @@ Changed (comparability v2):
   the comparison non-comparable (`classification_hash`, `model_hash`,
   `labels_hash`, `rubric_version`, `measurement_profile`, `reference_incomplete`).
   `gate_reference.baseline_present` says whether a baseline file was loaded.
+- The measurement profile is `archfit.measurement.v2`. Its settings hash holds
+  the global settings plus one slice for each language that has a producer. A
+  language that is not in the tree (no project, no coverage gap, no source
+  file) leaves the profile, so a release that adds a language keeps the
+  baseline of a repo without it comparable. `tool_version` is one printable
+  line of at most 128 characters. A reference on profile v1 is non-comparable
+  with one reason that names the version.
 - The baseline schema is `archfit.baseline.v3` and stores `classification_hash`.
   The engine rejects v2 files. A stored v3 reference without a
   `classification_hash` is non-comparable (`reference_incomplete`).

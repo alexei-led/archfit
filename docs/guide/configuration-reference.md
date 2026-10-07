@@ -695,9 +695,13 @@ the identity of the measurement conditions, separate from the four policy
 fingerprints. The object contains:
 
 - `version` — the Archfit measurement-profile contract, currently
-  `archfit.measurement.v1`;
-- `settings_hash` — the normalized extractor and acquisition settings;
-- `producers[]` — one row per evidence producer with `tool`,
+  `archfit.measurement.v2`;
+- `settings_hash` — the global settings (exclusions, file classes, syntax, rule
+  patterns, supplied coverage) plus one slice for each language that has a
+  producer in this run;
+- `producers[]` — one row per evidence producer, without the rows of languages
+  that are not in the tree (the row is absent, no coverage gap asks for it, and
+  no source file of that language exists). It has `tool`,
   `semantics_version`, `status`, and (when applicable) `tool_version`;
 - `unknowns[]` — reasons Archfit could not establish a producer or environment
   fact.

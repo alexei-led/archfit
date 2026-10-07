@@ -197,8 +197,17 @@ init` emits v2 directly; owners update older configs manually before analysis.
   non-comparable, so `mode: fail` blocks only on code-edge changes until
   `archfit baseline` is re-run. Rationale in
   `docs/design/architecture-state-reporting.md`.
-  The measurement profile adds the normalized settings hash and producer
-  semantics/status/tool versions. Unknown or incompatible profile data makes
+  The measurement profile (`archfit.measurement.v2`) adds the settings hash and
+  producer semantics/status/tool versions. The hash covers the global settings
+  plus ONE slice per language that contributes a producer; a language row that
+  is absent, has no coverage gap, and has no source file in the inventory is
+  not applicable and leaves the profile (`profileNotApplicable`), so registering
+  a language moves no profile on a tree without it. Rule patterns are hashed in
+  sorted order; `tool_version` is one printable line of at most 128 runes
+  (`normalizeToolVersion`, a digest suffix keeps long versions distinct). A
+  reference on another profile version is ONE reason naming that version. The
+  pairing paths (`pairFamily`, `gradeTool`) read the marked coverage copy, which
+  the profile does not touch. Unknown or incompatible profile data makes
   the comparison `non_comparable` with named reasons; external producer
   versions are exact-match until equivalence is verified. Unresolved dynamic
   dependency-cruiser inputs and unsupported TypeScript config resolution are
