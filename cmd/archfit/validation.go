@@ -1,13 +1,16 @@
 package main
 
-import "slices"
+import (
+	"cmp"
+	"slices"
+)
 
 const requireToolsFlag = "--require-tools"
 
 func scanValidationArgs(req scanRequest) []string {
 	var args []string
-	if req.baseRef != "" {
-		args = append(args, "--base", req.baseRef)
+	if base := cmp.Or(req.validationBase, req.baseRef); base != "" {
+		args = append(args, "--base", base)
 	}
 	languages := slices.Clone(req.lang)
 	slices.Sort(languages)

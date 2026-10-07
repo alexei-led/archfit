@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -201,18 +203,66 @@ func TestHookClaudeStderrCarriesTheRepair(t *testing.T) {
 	}
 }
 
+// TestHookGit pins that the pre-commit hook judges the index — what the commit
+// will contain — and never the files on disk: an unstaged or untracked edit
+// neither blocks nor excuses a commit.
 func TestHookGit(t *testing.T) {
 	t.Parallel()
+	const (
+		untrackedFile = "pkg/a/extra.go"
+		nestedConfig  = "policy/archfit.yaml"
+	)
 	for _, tc := range []struct {
 		name     string
 		repo     func(*testing.T) string
+		config   string // repository-relative; empty is .archfit.yaml
+		args     func(t *testing.T, dir string) []string
 		wantCode int
+		wantErr  string
 	}{
-		{name: "a repair blocks the commit", wantCode: 1,
-			repo: func(t *testing.T) string { return hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA) }},
-		{name: "a pre-existing blocker does not", wantCode: 0,
+		{name: "a staged repair blocks the commit", wantCode: 1,
+			// The repair names the repository, never the removed snapshot.
+			wantErr: "--base HEAD --format agent",
 			repo: func(t *testing.T) string {
-				return hookRepo(t, hookRuleCfg, hookViolatingA, hookViolatingA+"\n// unrelated edit\n")
+				dir := hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA)
+				gitFixture(t, dir, "add", "-A")
+				return dir
+			}},
+		{name: "a config below the root still scans the whole repository", wantCode: 1, config: nestedConfig,
+			repo: func(t *testing.T) string {
+				dir := hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA)
+				writeFixtureFile(t, dir, nestedConfig, hookRuleCfg)
+				gitFixture(t, dir, "add", "-A")
+				return dir
+			}},
+		{name: "an unstaged repair does not", wantCode: 0,
+			repo: func(t *testing.T) string { return hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA) }},
+		{name: "an unstaged fix does not excuse a staged repair", wantCode: 1,
+			repo: func(t *testing.T) string {
+				dir := hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA)
+				gitFixture(t, dir, "add", "-A")
+				writeFixtureFile(t, dir, filePkgAA, hookCleanA)
+				return dir
+			}},
+		{name: "an untracked file is not part of the commit", wantCode: 0,
+			repo: func(t *testing.T) string {
+				dir := hookRepo(t, hookRuleCfg, hookCleanA, "")
+				writeFixtureFile(t, dir, untrackedFile, hookViolatingA)
+				return dir
+			}},
+		{name: "git commit <path> passes a temporary index", wantCode: 1,
+			repo: func(t *testing.T) string { return hookRepo(t, hookRuleCfg, hookCleanA, hookViolatingA) },
+			args: func(t *testing.T, dir string) []string {
+				index := filepath.Join(t.TempDir(), "next-index")
+				gitFixtureEnv(t, dir, []string{"GIT_INDEX_FILE=" + index}, "read-tree", "HEAD")
+				gitFixtureEnv(t, dir, []string{"GIT_INDEX_FILE=" + index}, "add", filePkgAA)
+				return []string{"--index-file", index}
+			}},
+		{name: "a pre-existing blocker does not block", wantCode: 0,
+			repo: func(t *testing.T) string {
+				dir := hookRepo(t, hookRuleCfg, hookViolatingA, hookViolatingA+"\n// unrelated edit\n")
+				gitFixture(t, dir, "add", "-A")
+				return dir
 			}},
 		{name: "the first commit has no HEAD to scope against", wantCode: 1,
 			repo: func(t *testing.T) string {
@@ -224,22 +274,111 @@ func TestHookGit(t *testing.T) {
 					writeFixtureFile(t, dir, name, content)
 				}
 				gitInitFixtureRepo(t, dir)
+				gitFixture(t, dir, "add", "-A")
 				return dir
 			}},
 		{name: "a pre-existing dead selector does not block", wantCode: 0,
 			repo: func(t *testing.T) string {
-				return hookRepo(t, hookDeadSelectorCfg, hookCleanA, hookCleanA+"\n// edit\n")
+				dir := hookRepo(t, hookDeadSelectorCfg, hookCleanA, hookCleanA+"\n// edit\n")
+				gitFixture(t, dir, "add", "-A")
+				return dir
 			}},
-		{name: "config is missing", wantCode: 3,
-			repo: func(t *testing.T) string { return t.TempDir() }},
+		{name: "a config the commit removes is an error", wantCode: 3, wantErr: "not in the index",
+			repo: func(t *testing.T) string {
+				dir := hookRepo(t, hookRuleCfg, hookCleanA, "")
+				gitFixture(t, dir, "rm", "-q", "--cached", defaultConfigPath)
+				return dir
+			}},
+		{name: "outside a git repository is an error", wantCode: 3,
+			repo: func(t *testing.T) string {
+				dir := t.TempDir()
+				writeFixtureFile(t, dir, defaultConfigPath, hookRuleCfg)
+				return dir
+			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := tc.repo(t)
-			code, _, stderr := runHook(t, "", "git", "-c", filepath.Join(dir, defaultConfigPath))
+			config := tc.config
+			if config == "" {
+				config = defaultConfigPath
+			}
+			args := []string{"git", "-c", filepath.Join(dir, config)}
+			if tc.args != nil {
+				args = append(args, tc.args(t, dir)...)
+			}
+			before := gitIndexState(t, dir)
+			code, _, stderr := runHook(t, "", args...)
 			if code != tc.wantCode {
 				t.Errorf("exit = %d, want %d\n%s", code, tc.wantCode, stderr)
 			}
+			if !strings.Contains(stderr, tc.wantErr) {
+				t.Errorf("stderr = %q, want %q", stderr, tc.wantErr)
+			}
+			if strings.Contains(stderr, cacheDirName+"/worktrees") {
+				t.Errorf("stderr names the temporary snapshot checkout:\n%s", stderr)
+			}
+			if after := gitIndexState(t, dir); after != before {
+				t.Errorf("the hook changed the index or the worktree:\nbefore %s\nafter  %s", before, after)
+			}
 		})
+	}
+}
+
+// TestHookGitValidateNamesTheRepository pins the repair's validate command on
+// a repository path that needs shell quoting: it names the config and root in
+// the repository, quoted as one argument each, never the removed snapshot.
+func TestHookGitValidateNamesTheRepository(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "team's repo")
+	for name, content := range map[string]string{
+		markerGoMod: goModStub, filePkgAA: hookCleanA, hookImplFile: implSource(), defaultConfigPath: hookRuleCfg,
+	} {
+		writeFixtureFile(t, dir, name, content)
+	}
+	gitInitFixtureRepo(t, dir)
+	gitCommitFixture(t, dir)
+	writeFixtureFile(t, dir, filePkgAA, hookViolatingA)
+	gitFixture(t, dir, "add", "-A")
+	repo, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runHook(t, "", "git", "-c", filepath.Join(dir, defaultConfigPath))
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1\n%s", code, stderr)
+	}
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'" }
+	want := "archfit check -c " + quote(filepath.Join(repo, defaultConfigPath)) + " --root " + quote(repo) + " --base HEAD --format agent"
+	if !strings.Contains(stderr, want) {
+		t.Errorf("stderr is missing the validate command %q:\n%s", want, stderr)
+	}
+}
+
+// gitIndexState is the index and worktree state a hook must leave alone: the
+// index bytes, the status, and every ref.
+func gitIndexState(t *testing.T, dir string) string {
+	t.Helper()
+	index, err := os.ReadFile(filepath.Join(dir, ".git", "index")) //nolint:gosec // fixture path
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	status, _ := exec.Command("git", "-C", dir, "status", "--porcelain", "--untracked-files=all", "--", ".", ":(exclude,glob)**/"+cacheDirName+"/**").Output() //nolint:gosec // fixture repo
+	refs, _ := exec.Command("git", "-C", dir, "for-each-ref").Output()                                                                                         //nolint:gosec // fixture repo
+	return fmt.Sprintf("index=%x status=%q refs=%q", sha256.Sum256(index), status, refs)
+}
+
+func gitFixture(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	gitFixtureEnv(t, dir, nil, args...)
+}
+
+func gitFixtureEnv(t *testing.T, dir string, env []string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...) //nolint:gosec // fixed git binary, controlled test args
+	cmd.Dir = dir
+	cmd.Env = append(scrubGitFixtureEnv(os.Environ()), env...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 }
