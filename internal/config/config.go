@@ -32,7 +32,7 @@ import (
 //   - coupling       — Balanced-Coupling advisory tuning
 //   - layers/modules — the architecture map
 //   - rules/waivers  — gates and their approved deviations
-//   - module_review  — staleness gating of the module declarations
+//   - module_review  — review of the module declarations; can block on unowned source
 //   - file_class / outputs — classification overrides and output formats
 type Config struct {
 	Version   int                         `yaml:"version" jsonschema:"required"`

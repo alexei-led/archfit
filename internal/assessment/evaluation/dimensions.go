@@ -387,12 +387,8 @@ func moduleRuleScope(topology policy.TopologyView, inv selectorInventory) ruleSc
 		return ruleScope{status: ruleScopeNotApplicable}
 	}
 	owner := func(file string) (string, bool) {
-		_, selector, _ := ruleFileSelector(topology.ModuleMap, file, inv.selectors)
-		module, owned := topology.ModuleMap.ModuleFor(file)
-		if !owned && selector != "" {
-			module, owned = topology.ModuleMap.ModuleFor(selector)
-		}
-		return module, owned
+		language, selector, _ := ruleFileSelector(topology.ModuleMap, file, inv.selectors)
+		return fileOwner(topology.ModuleMap, file, language, selector)
 	}
 	languages := make(map[string]struct{})
 	modulesWithFiles := make(map[string]struct{})

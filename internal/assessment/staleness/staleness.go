@@ -1,7 +1,11 @@
-// Package staleness detects map-quality advisory findings: uncovered paths,
-// dead module rules, and stale reviewed_at timestamps.
+// Package staleness detects map-quality advisory findings: dead module rules
+// and stale reviewed_at timestamps. Production source no module owns is the
+// evaluation package's map completeness check, because it reads the source
+// inventory rather than the graph.
 //
-// All findings carry kind "advisory" and never contribute to gate verdicts.
+// All findings carry kind "advisory" and never contribute to gate verdicts:
+// a dead glob depends on producer completeness and a stale review on the
+// clock, so neither may block a change.
 package staleness
 
 import (
@@ -23,7 +27,7 @@ import (
 const defaultThreshold = 90 * 24 * time.Hour
 
 // Check inspects the relationship set against the assessment policy and returns
-// advisory findings for any of the three staleness conditions.
+// advisory findings for both staleness conditions.
 func Check(s relationship.Set, cfg policy.AssessmentPolicy, now time.Time) []finding.Finding {
 	modules, enabled, threshold := cfg.Topology.Modules, cfg.Staleness.Enabled, cfg.Staleness.Threshold
 	if !enabled {
@@ -34,33 +38,11 @@ func Check(s relationship.Set, cfg policy.AssessmentPolicy, now time.Time) []fin
 		threshold = defaultThreshold
 	}
 
-	uncovered := uncoveredPaths(s, modules)
 	dead := deadRules(s, modules)
 	stale := staleReviews(modules, threshold, now)
-	findings := make([]finding.Finding, 0, len(uncovered)+len(dead)+len(stale))
-	findings = append(findings, uncovered...)
+	findings := make([]finding.Finding, 0, len(dead)+len(stale))
 	findings = append(findings, dead...)
 	findings = append(findings, stale...)
-	return findings
-}
-
-// uncoveredPaths returns one advisory finding per package or file node that
-// is not claimed by any module's paths globs.
-func uncoveredPaths(s relationship.Set, modules map[string]policy.ModuleDef) []finding.Finding {
-	var findings []finding.Finding
-	for _, n := range s.Nodes {
-		if n.Kind != "package" && n.Kind != "file" {
-			continue
-		}
-		if !claimedByAnyModule(n.Path, modules) {
-			f := advisoryFinding(
-				modelrule.RuleIDMapUncoveredPath,
-				fmt.Sprintf("node %q is not covered by any module paths glob", n.Path),
-				n.Path,
-			)
-			findings = append(findings, f)
-		}
-	}
 	return findings
 }
 
@@ -120,19 +102,6 @@ func staleReviews(modules map[string]policy.ModuleDef, threshold time.Duration, 
 		}
 	}
 	return findings
-}
-
-// claimedByAnyModule reports whether path is matched by at least one paths
-// glob across all modules.
-func claimedByAnyModule(path string, modules map[string]policy.ModuleDef) bool {
-	for _, def := range modules {
-		for _, pattern := range def.Paths {
-			if matched, _ := doublestar.Match(pattern, path); matched {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // patternMatchesAnyNode reports whether pattern matches the path of at least

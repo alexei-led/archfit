@@ -655,7 +655,11 @@ func TestEvaluateEmitsStalenessAdvisoriesFromPolicy(t *testing.T) {
 	set := relationship.Set{Nodes: []relationship.Node{
 		{ID: "file:unmapped/x.go", Path: "unmapped/x.go", Kind: "file", Language: "go", FirstParty: true},
 	}}
-	pol := policy.AssessmentPolicy{Staleness: policy.StalenessPolicy{Enabled: true, Threshold: 24 * time.Hour}}
+	modules := map[string]policy.ModuleDef{"ghost": {Paths: []string{"ghost/**"}}}
+	pol := policy.AssessmentPolicy{
+		Topology:  policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)},
+		Staleness: policy.StalenessPolicy{Enabled: true, Threshold: 24 * time.Hour},
+	}
 
 	off := evaluation.Evaluate(evaluation.Input{
 		Relationships: set, Accepted: acceptedSet{}, IncludeAdvisories: true, Now: evaluatedAt,

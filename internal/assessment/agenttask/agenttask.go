@@ -42,6 +42,7 @@ const (
 	matchedByCycleSizeKey    = "cycle_size"
 	ruleTypeForbiddenPattern = "forbidden_pattern"
 	matchedByPatternKey      = "pattern"
+	matchedBySubjectKey      = "subject"
 )
 
 // PathResolver carries the filesystem facts filesFor needs to turn a config
@@ -271,7 +272,7 @@ func Build(
 		task := result.AgentTask{
 			FindingID:   f.ID,
 			RuleID:      f.RuleID,
-			RepairKind:  repairKind(ruleType),
+			RepairKind:  repairKind(ruleType, f.RuleID),
 			Goal:        goalFor(ruleType, f),
 			Constraints: constraintsFor(f, ruleType, modulePublic),
 			Files:       files,
@@ -295,6 +296,10 @@ func Build(
 // goalFor instantiates the rule type's repair-goal template with the finding's
 // edge. Unknown rule types fall back to the finding's Why text — never empty.
 func goalFor(ruleType string, f finding.Finding) string {
+	if f.RuleID == finding.RuleIDMapUncoveredPath {
+		return fmt.Sprintf("Ask the architecture owner which declared module owns the production source in %s: add the directory to that module's paths in the archfit config, or declare a new module for it. Do not move the code to satisfy the check.",
+			f.MatchedBy[matchedBySubjectKey])
+	}
 	from, to := f.Edge.From.Path, f.Edge.To.Path
 	toMod := f.Edge.To.Module
 	if toMod == "" {
@@ -357,8 +362,8 @@ func cycleMembers(f finding.Finding) string {
 	return fmt.Sprintf("(%s modules, listed in matched_by.cycle_modules)", f.MatchedBy[matchedByCycleSizeKey])
 }
 
-func repairKind(ruleType string) string {
-	if ruleType == ruleTypeNewCrossModule {
+func repairKind(ruleType, ruleID string) string {
+	if ruleType == ruleTypeNewCrossModule || ruleID == finding.RuleIDMapUncoveredPath {
 		return "needs_owner_decision"
 	}
 	return "code_change"

@@ -52,6 +52,10 @@ const (
 	// RuleIDCouplingGate is the synthetic finding a tripped coupling gate emits
 	// when it has no promotable advisory.
 	RuleIDCouplingGate = modelrule.RuleIDCouplingGate
+	// RuleIDMapUncoveredPath is the map completeness finding: production
+	// source no declared module owns. module_review.gate: fail makes it a
+	// gate finding.
+	RuleIDMapUncoveredPath = modelrule.RuleIDMapUncoveredPath
 )
 
 // Endpoint identifies one side of a finding edge (resolved at diagnostic assembly).

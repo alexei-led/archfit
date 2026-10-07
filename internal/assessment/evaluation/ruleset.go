@@ -23,6 +23,11 @@ type RuleEvidence struct {
 	OutOfScopeFiles map[string]struct{}
 	// UnwalkedSourceProduction is Observations.UnwalkedSourceProduction.
 	UnwalkedSourceProduction map[string]bool
+	// UnanalysedFiles, SourceSelectors and CrateOwners are the Observations
+	// fields of the same names; the map completeness check reads them.
+	UnanalysedFiles map[string]struct{}
+	SourceSelectors map[string]string
+	CrateOwners     map[string]string
 }
 
 // Ruleset is the compiled policy rule set. Stage adapters build one and hand it
