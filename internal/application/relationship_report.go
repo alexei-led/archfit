@@ -96,14 +96,15 @@ func countRuntimeAsyncKinds(edges []modevidence.RuntimeAsyncEdge) map[string]int
 func distanceInterpretation(model string, deployUnitDetectedModules, declaredExternalSystems int) string {
 	suffix := ""
 	if deployUnitDetectedModules > 0 || declaredExternalSystems > 0 {
-		suffix = "; deploy_unit and declared external_systems evidence can still raise distance when configured/detected"
+		suffix = "; a differing deploy_unit names the boundary cross_deploy_unit and a declared external_systems target scores at D=10"
 	}
+	const boundary = "every module boundary is D=9 (level-relative)"
 	switch model {
 	case ownerModelSingleOwnerDegenerate:
-		return "same-owner is the lowest cross-module distance; this is a low socio-technical distance signal, not missing ownership" + suffix
+		return boundary + "; with one owner the boundary token is cross_module, which is not missing ownership" + suffix
 	case ownerModelMultiOwner:
-		return "ownership has multiple distinct owners, so owner distance can distinguish same-owner and different-owner module edges" + suffix
+		return boundary + "; ownership has multiple distinct owners, so a differing owner makes the token cross_module_different_owner, and severity does not change" + suffix
 	default:
-		return "ownership is absent or unresolved, so distance uses code structure plus deterministic deploy_unit and declared external_systems evidence" + suffix
+		return boundary + "; ownership is absent or unresolved, so the token is cross_module unless a deploy_unit differs" + suffix
 	}
 }

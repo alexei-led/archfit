@@ -13,7 +13,7 @@ import (
 // scorer gives, so no text may call it cheap to change.
 func TestCouplingAdvisoryNeverCallsACriticalEdgeCheap(t *testing.T) {
 	for _, sev := range []relationship.Severity{relationship.SeverityCritical, relationship.SeverityHigh, relationship.SeverityMedium} {
-		for _, dist := range []relationship.Distance{relationship.DistanceCrossModuleSameOwner, relationship.DistanceCrossDeployUnit} {
+		for _, dist := range []relationship.Distance{relationship.DistanceCrossModule, relationship.DistanceCrossDeployUnit} {
 			why := analysis.BCAdvisoryWhy(relationship.Edge{
 				Strength: relationship.StrengthModel, Distance: dist, Volatility: relationship.VolatilityHigh, Severity: sev,
 			})

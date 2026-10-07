@@ -63,7 +63,7 @@ func richDiagnostic() result.Result {
 		metric("blast_radius", 1, "info", "high"),
 	}
 	d.Findings = []finding.Finding{
-		bcAdv("a", "b", "functional", "cross_module_same_owner", "medium", 5, "medium", "medium", 3),
+		bcAdv("a", "b", "functional", "cross_module", "medium", 5, "medium", "medium", 3),
 	}
 	d.ToolCoverage = []evidence.Coverage{
 		okCov("go/packages"), okCov("scip"), okCov("ast-grep"), okCov("jscpd"),
@@ -157,7 +157,7 @@ func TestCouplingBalance(t *testing.T) {
 
 	t.Run("balanced low-effort edges score high", func(t *testing.T) {
 		got := cb(
-			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 2, sevNone, "low", 10),
+			bcAdv("a", "b", "contract", "cross_module", "low", 2, sevNone, "low", 10),
 		)
 		if got.Value < 61 {
 			t.Errorf("low-effort value = %d, want serviceable+ (≥61)", got.Value)
@@ -166,7 +166,7 @@ func TestCouplingBalance(t *testing.T) {
 
 	t.Run("a single worst-case edge caps at mixed", func(t *testing.T) {
 		got := cb(
-			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 1, sevNone, "low", 100),
+			bcAdv("a", "b", "contract", "cross_module", "low", 1, sevNone, "low", 100),
 			bcAdv("c", "d", "intrusive", "cross_deploy_unit", "high", 10, "critical", "critical", 1),
 		)
 		if got.Value > 60 {
@@ -176,7 +176,7 @@ func TestCouplingBalance(t *testing.T) {
 
 	t.Run("pervasive worst-case caps at poor", func(t *testing.T) {
 		got := cb(
-			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 1, sevNone, "low", 50),
+			bcAdv("a", "b", "contract", "cross_module", "low", 1, sevNone, "low", 50),
 			bcAdv("c", "d", "intrusive", "cross_deploy_unit", "high", 10, "critical", "critical", 10),
 		)
 		if got.Value > 40 {

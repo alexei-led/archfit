@@ -33,7 +33,7 @@ func (c Config) PolicySnapshot() policy.PolicySnapshot {
 			deployUnits[name] = def.DeployUnit
 		}
 	}
-	topology := policy.TopologyView{Modules: c.Modules, Layers: c.Layers, ModuleMap: policy.BuildModuleMap(c.Modules), ExternalSystems: c.ExternalSystems, ExplicitOwners: c.ExplicitOwnersView()}
+	topology := policy.TopologyView{Modules: c.Modules, Layers: c.Layers, ModuleMap: policy.BuildModuleMap(c.Modules), ExternalSystems: c.ExternalSystems}
 	relationship := policy.RelationshipPolicy{MinimumSeverity: c.Coupling.MinSeverity, VolatilityCascadeEnabled: c.Coupling.VolatilityCascade, DuplicatedKnowledge: policy.NormalizeDuplicatedKnowledgePolicy(c.Coupling.DuplicatedKnowledge)}
 	stale := c.ForStaleness()
 	assessment := policy.AssessmentPolicy{

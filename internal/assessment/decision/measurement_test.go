@@ -15,7 +15,7 @@ const profileV1 = "archfit.measurement.v1"
 func TestMeasurementProfileCompatibility(t *testing.T) {
 	profile := func() *evidence.MeasurementProfile {
 		p := measurementFixture()
-		p.Producers = append(p.Producers, evidence.MeasurementProducer{Tool: "scip", SemanticsVersion: "scip.v1", ToolVersion: "scip-go 0.2.7", Status: evidence.StatusOK})
+		p.Producers = append(p.Producers, evidence.MeasurementProducer{Tool: "scip", SemanticsVersion: "scip.v2", ToolVersion: "scip-go 0.2.7", Status: evidence.StatusOK})
 		return p
 	}
 	for _, tc := range []struct {

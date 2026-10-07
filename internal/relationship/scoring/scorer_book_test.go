@@ -30,8 +30,8 @@ func TestBookScorer_OrdinalsAndFormulaPinned(t *testing.T) {
 
 	distances := map[coupling.Distance]int{
 		coupling.DistanceSameModule:           2,
-		coupling.DistanceCrossModuleSameOwner: 4,
-		coupling.DistanceCrossModuleDiffOwner: 7,
+		coupling.DistanceCrossModule:          9,
+		coupling.DistanceCrossModuleDiffOwner: 9,
 		coupling.DistanceCrossDeployUnit:      9,
 		coupling.DistanceExternal:             10,
 	}
@@ -175,17 +175,42 @@ func TestBookScorer_BookExamples(t *testing.T) {
 			wantBand:    coupling.SeverityCritical,
 			wantScored:  true,
 		},
-		// Same shape one distance rung out: model/cross_module_same_owner/high.
+		// Level-relative distance: model coupling across a module boundary is far
+		// enough to be healthy (|3-9|=6, +1 = 7 → low), where v6 called it critical.
 		{
-			name: "ball of mud at module seam: model/cross_module_same_owner/high",
+			name: "model across a module boundary: model/cross_module/high",
 			c: coupling.Classification{
 				Strength:   coupling.StrengthModel,
-				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Distance:   coupling.DistanceCrossModule,
 				Volatility: coupling.VolatilityHigh,
 			},
-			// |3-4|=1, 10-10=0, max(1,0)+1=2 → critical.
+			wantBalance: 7,
+			wantBand:    coupling.SeverityLow,
+			wantScored:  true,
+		},
+		// Ch13 layer case: functional coupling between layers of one service scores 2.
+		{
+			name: "functional between layers: functional/cross_module/high",
+			c: coupling.Classification{
+				Strength:   coupling.StrengthFunctional,
+				Distance:   coupling.DistanceCrossModule,
+				Volatility: coupling.VolatilityHigh,
+			},
 			wantBalance: 2,
 			wantBand:    coupling.SeverityCritical,
+			wantScored:  true,
+		},
+		// Port case: a call through a published interface is contract and scores 9
+		// at any boundary, for any volatility.
+		{
+			name: "port call: contract/cross_deploy/high",
+			c: coupling.Classification{
+				Strength:   coupling.StrengthContract,
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Volatility: coupling.VolatilityHigh,
+			},
+			wantBalance: 9,
+			wantBand:    coupling.SeverityNone,
 			wantScored:  true,
 		},
 		// Frozen legacy: S=10(intrusive), D=9(cross_deploy), V=1(frozen).
@@ -259,11 +284,11 @@ func TestBookScorer_FourCorners(t *testing.T) {
 			c:           coupling.Classification{Strength: coupling.StrengthContract, Distance: coupling.DistanceCrossDeployUnit, Volatility: coupling.VolatilityHigh},
 			wantBalance: 9, wantBand: coupling.SeverityNone, wantScored: true,
 		},
-		// Ball of mud proxy: model/cross_module_same_owner/high → 2, critical.
+		// Model across a boundary: model/cross_module/high → 7, low.
 		{
-			name:        "ball of mud",
-			c:           coupling.Classification{Strength: coupling.StrengthModel, Distance: coupling.DistanceCrossModuleSameOwner, Volatility: coupling.VolatilityHigh},
-			wantBalance: 2, wantBand: coupling.SeverityCritical, wantScored: true,
+			name:        "model across a boundary",
+			c:           coupling.Classification{Strength: coupling.StrengthModel, Distance: coupling.DistanceCrossModule, Volatility: coupling.VolatilityHigh},
+			wantBalance: 7, wantBand: coupling.SeverityLow, wantScored: true,
 		},
 	}
 	for _, tt := range tests {
@@ -295,7 +320,7 @@ func TestLocalComplexity(t *testing.T) {
 		{coupling.StrengthFunctional, coupling.DistanceSameModule, false},
 		{coupling.StrengthSymmetric, coupling.DistanceSameModule, false},
 		{coupling.StrengthIntrusive, coupling.DistanceSameModule, false},
-		{coupling.StrengthContract, coupling.DistanceCrossModuleSameOwner, false},
+		{coupling.StrengthContract, coupling.DistanceCrossModule, false},
 		{coupling.StrengthModel, coupling.DistanceCrossDeployUnit, false},
 	}
 	for _, tt := range tests {
@@ -428,7 +453,7 @@ func TestBookScorer_VolatilityConservative(t *testing.T) {
 func TestBookScorer_BalanceRange(t *testing.T) {
 	s := BookScorer{}
 	strengths := []coupling.Strength{coupling.StrengthContract, coupling.StrengthModel, coupling.StrengthFunctional, coupling.StrengthSymmetric, coupling.StrengthIntrusive}
-	distances := []coupling.Distance{coupling.DistanceSameModule, coupling.DistanceCrossModuleSameOwner, coupling.DistanceCrossModuleDiffOwner, coupling.DistanceCrossDeployUnit, coupling.DistanceExternal}
+	distances := []coupling.Distance{coupling.DistanceSameModule, coupling.DistanceCrossModule, coupling.DistanceCrossModuleDiffOwner, coupling.DistanceCrossDeployUnit, coupling.DistanceExternal}
 	vols := []coupling.Volatility{coupling.VolatilityFrozen, coupling.VolatilityLow, coupling.VolatilityMedium, coupling.VolatilityHigh, coupling.VolatilityUndeclared, coupling.VolatilityUnknown}
 
 	for _, str := range strengths {
@@ -460,7 +485,7 @@ func TestBookScorer_BalanceRange(t *testing.T) {
 func TestBookCheapestMove_NoVolatilityLever(t *testing.T) {
 	s := BookScorer{}
 	strengths := []coupling.Strength{coupling.StrengthContract, coupling.StrengthModel, coupling.StrengthFunctional, coupling.StrengthSymmetric, coupling.StrengthIntrusive}
-	distances := []coupling.Distance{coupling.DistanceSameModule, coupling.DistanceCrossModuleSameOwner, coupling.DistanceCrossModuleDiffOwner, coupling.DistanceCrossDeployUnit, coupling.DistanceExternal}
+	distances := []coupling.Distance{coupling.DistanceSameModule, coupling.DistanceCrossModule, coupling.DistanceCrossModuleDiffOwner, coupling.DistanceCrossDeployUnit, coupling.DistanceExternal}
 	vols := []coupling.Volatility{coupling.VolatilityFrozen, coupling.VolatilityLow, coupling.VolatilityMedium, coupling.VolatilityHigh, coupling.VolatilityUndeclared, coupling.VolatilityUnknown}
 
 	for _, str := range strengths {
@@ -495,22 +520,13 @@ func TestBookCheapestMove_Cases(t *testing.T) {
 			want: moveReduceStrength,
 		},
 		{
-			// |10-7|=3, V=10 → balance 4 (high). coupling.Distance→same_owner: |10-4|=6 → 7 (low).
-			name: "distance drop wins",
-			c:    coupling.Classification{Strength: coupling.StrengthIntrusive, Distance: coupling.DistanceCrossModuleDiffOwner, Volatility: coupling.VolatilityHigh},
-			want: moveReduceDistance,
-		},
-		{
-			// |8-7|=1, V=6 → balance 5 (medium). One-rung strength/distance moves both
-			// land on balance 5 again; only the (removed) volatility lever dropped the
-			// band. No move offered — honest silence beats an unsanctioned lever.
-			name: "formerly lower_volatility → no move",
+			// |8-9|=1, V=6 → balance 5 (medium). strength→model: |3-9|=6 → 7 (low).
+			name: "medium volatility still offers a strength move",
 			c:    coupling.Classification{Strength: coupling.StrengthFunctional, Distance: coupling.DistanceCrossModuleDiffOwner, Volatility: coupling.VolatilityMedium},
-			want: "",
+			want: moveReduceStrength,
 		},
 		{
-			// |8-7|=1, V=10 → balance 2 (critical). Formerly declare_volatility (drop 3);
-			// now the best sanctioned move: strength→model → balance 5 (medium, drop 2).
+			// |8-9|=1, V=10 → balance 2 (critical). strength→model → balance 7 (low).
 			name: "formerly declare_volatility → reduce_strength",
 			c:    coupling.Classification{Strength: coupling.StrengthFunctional, Distance: coupling.DistanceCrossModuleDiffOwner, Volatility: coupling.VolatilityUndeclared},
 			want: moveReduceStrength,
@@ -524,6 +540,19 @@ func TestBookCheapestMove_Cases(t *testing.T) {
 				t.Errorf("CheapestMove = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// A module boundary is the top in-house rung, so the only distance move left is
+// bringing a declared external system in-house.
+func TestBookLowerDistance(t *testing.T) {
+	for _, d := range []coupling.Distance{coupling.DistanceSameModule, coupling.DistanceCrossModule, coupling.DistanceCrossModuleDiffOwner, coupling.DistanceCrossDeployUnit, coupling.DistanceUnknown} {
+		if next, ok := bookLowerDistance(d); ok {
+			t.Errorf("bookLowerDistance(%s) = %s, want no move", d, next)
+		}
+	}
+	if next, ok := bookLowerDistance(coupling.DistanceExternal); !ok || next != coupling.DistanceCrossDeployUnit {
+		t.Errorf("bookLowerDistance(external) = %s, %v", next, ok)
 	}
 }
 

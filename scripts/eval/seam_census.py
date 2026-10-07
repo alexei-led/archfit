@@ -44,7 +44,8 @@ def summarize(state: dict[str, Any]) -> dict[str, Any]:
         "coupling_status": coupling.get("status", "missing"),
         "seams": len(seams),
         "by_severity": {
-            s: sum(1 for x in seams if x.get("severity") == s) for s in SEVERITIES
+            s: sum(1 for x in seams if (x.get("severity") or "none") == s)
+            for s in SEVERITIES
         },
         "qualifying": sum(1 for x in seams if x.get("distributed_monolith")),
         "unrated": sum(1 for x in seams if x.get("confidence") == "unrated"),

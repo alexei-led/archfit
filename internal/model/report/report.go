@@ -8,7 +8,7 @@ const RubricVersion = 1
 
 // ScoreVersion identifies the published Balanced Coupling measurement contract.
 // Bump it when scorer ordinals, normalization, or severity mapping changes.
-const ScoreVersion = "bc_score.v6"
+const ScoreVersion = "bc_score.v7"
 
 // ScoreBand is a qualitative label for a 0-100 dimension value.
 type ScoreBand string
@@ -146,7 +146,7 @@ type ClassifiedEdgeSummary struct {
 	// ByDistance counts cross-boundary edges by distance label.
 	ByDistance map[string]int `json:"by_distance,omitempty"`
 	// ByDistanceBasis counts cross-boundary edges by the deterministic signal that
-	// selected their distance rung: code_structure, ownership, deploy_unit, or
+	// named their distance token: module_boundary, ownership, deploy_unit, or
 	// declared_external. Unknown/same-module edges have no basis and are omitted.
 	ByDistanceBasis map[string]int `json:"by_distance_basis,omitempty"`
 	// ByVolatility counts cross-boundary edges by volatility label.
@@ -159,12 +159,10 @@ type ClassifiedEdgeSummary struct {
 	ByCriticalDriver map[string]int `json:"by_critical_driver,omitempty"`
 	// ByModulePair counts scored edges by resolved source and target module.
 	ByModulePair map[string]int `json:"by_module_pair,omitempty"`
-	// DistributedMonolith counts the genuine distributed-monolith edges: those in
-	// the critical band AND at high distance (different owner or deploy unit). The
-	// critical band alone is NOT distributed-monolith — a critical edge at
-	// cross_module_same_owner is local coupling; inspect its strength and volatility
-	// drivers separately. Only this count may be framed as "distributed-monolith
-	// risk"; it never changes the balance value.
+	// DistributedMonolith counts critical edges across a module boundary. Under
+	// bc_score.v7 every boundary is D=9, so this is the transitional count that the
+	// strict v7 qualification (strong strength, declared volatility, no cohesive
+	// role) replaces. It never changes the balance value.
 	DistributedMonolith int `json:"distributed_monolith,omitempty"`
 	// External is the count of cross-boundary edges whose target is NOT a declared
 	// module (Distance == unknown: stdlib, third-party, undeclared packages). These
@@ -236,16 +234,16 @@ type CouplingTailRiskSummary struct {
 
 // DistanceCompressionSummary records archfit's deterministic distance-ladder
 // coverage. It makes compressed Ch8 middle rungs visible in JSON/Markdown so a
-// D=4/D=7 result is not mistaken for full book precision.
+// D=2/D=9/D=10 ladder is not mistaken for full book precision.
 type DistanceCompressionSummary struct {
-	CompressedMiddleRungs       bool                        `json:"compressed_middle_rungs"`
-	ImplementedRungs            []int                       `json:"implemented_rungs,omitempty"`
-	OmittedRungs                []int                       `json:"omitted_rungs,omitempty"`
-	OmittedRungReasons          []DistanceOmittedRungReason `json:"omitted_rung_reasons,omitempty"`
-	DeterministicSplits         []string                    `json:"deterministic_splits,omitempty"`
-	CodeStructureBoundaryCounts []DistanceCount             `json:"code_structure_boundary_counts,omitempty"`
-	CodeStructureAncestorDepths []DistanceCount             `json:"code_structure_ancestor_depths,omitempty"`
-	Rationale                   string                      `json:"rationale,omitempty"`
+	CompressedMiddleRungs     bool                        `json:"compressed_middle_rungs"`
+	ImplementedRungs          []int                       `json:"implemented_rungs,omitempty"`
+	OmittedRungs              []int                       `json:"omitted_rungs,omitempty"`
+	OmittedRungReasons        []DistanceOmittedRungReason `json:"omitted_rung_reasons,omitempty"`
+	DeterministicSplits       []string                    `json:"deterministic_splits,omitempty"`
+	ContainmentBoundaryCounts []DistanceCount             `json:"containment_boundary_counts,omitempty"`
+	ContainmentAncestorDepths []DistanceCount             `json:"containment_ancestor_depths,omitempty"`
+	Rationale                 string                      `json:"rationale,omitempty"`
 }
 
 // DistanceCount is one deterministic distance-evidence histogram bucket.

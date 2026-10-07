@@ -11,7 +11,7 @@ import (
 
 // roleModules returns two modules — "src" (the edge source, role applied by the
 // caller) and "dst" (a core/high-volatility target with an internal glob) — owned
-// by distinct teams so the base distance is cross_module_different_owner.
+// by distinct teams so the boundary token is cross_module_different_owner.
 func roleModules(srcRole policy.Role) map[string]policy.ModuleDef {
 	return map[string]policy.ModuleDef{
 		"src": {
@@ -28,88 +28,32 @@ func roleModules(srcRole policy.Role) map[string]policy.ModuleDef {
 	}
 }
 
-// TestRun_RoleSuppressesOutboundImbalance verifies that a cohesive-role source
-// (composition_root/generated/test) has its high-distance fan-out capped to
-// cross_module_same_owner while ordinary roles (adapter/core/shared_model/none)
-// keep the full cross_module_diff_owner distance.
-//
-// With the book formula (bc_score.v3) the severity for capped edges is no longer
-// forced to SeverityNone: intrusive+same_owner+high_vol (S=10,D=4,V=10) →
-// max(|10-4|=6, 10-10=0)+1=7 → SeverityLow. This is correct — the distance cap
-// moves the edge out of the distributed-monolith zone, but the intrusive+volatile
-// coupling is still a local advisory finding.
-func TestRun_RoleSuppressesOutboundImbalance(t *testing.T) {
-	// Intrusive (target hits dst's internal glob), cross-module, different owner,
-	// high volatility. Base classification (no role): intrusive+diff_owner+high_vol
-	// (S=10,D=7,V=10) → max(3,0)+1=4 → SeverityHigh.
+// TestRun_RoleDoesNotChangeEdgeScoring: the source's declared role no longer
+// caps distance. Under bc_score.v7 every module boundary is D=9, so a
+// composition root's fan-out scores like anyone else's; the role is read later,
+// at the seam, where it explains the seam instead of hiding its edges.
+func TestRun_RoleDoesNotChangeEdgeScoring(t *testing.T) {
+	// Intrusive (the target hits dst's internal glob), cross-module, different
+	// owner, high volatility: S=10, D=9, V=10 → max(1,0)+1 = 2 → critical.
 	edge := graph.Edge{
 		From: "file:src/main.go", To: "file:dst/internal/db.go",
 		Kind: graph.EdgeKindImports, Language: "go",
 	}
-
-	tests := []struct {
-		name         string
-		role         policy.Role
-		wantSeverity coupling.Severity
-		wantDistance coupling.Distance
-	}{
-		// Capped to same_owner: S=10,D=4,V=10 → max(6,0)+1=7 → low (not none).
-		{"composition_root → distance capped, severity low", policy.RoleCompositionRoot, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
-		{"generated → distance capped, severity low", policy.RoleGenerated, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
-		{"test → distance capped, severity low", policy.RoleTest, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
-		// Uncapped: S=10,D=7,V=10 → max(3,0)+1=4 → high.
-		{"adapter → still flagged", policy.RoleAdapter, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
-		{"core → still flagged", policy.RoleCore, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
-		{"shared_model → still flagged", policy.RoleSharedModel, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
-		{"no role → still flagged", policy.Role(""), coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := classify.Config{Modules: roleModules(tc.role)}
-			cl, ok := classify.Run(makeGraph([]graph.Edge{edge}), cfg)[edgeKey(edge)]
+	for _, role := range []policy.Role{
+		policy.RoleCompositionRoot, policy.RoleGenerated, policy.RoleTest,
+		policy.RoleAdapter, policy.RoleCore, policy.RoleSharedModel, policy.Role(""),
+	} {
+		t.Run(string(role), func(t *testing.T) {
+			cl, ok := classify.Run(makeGraph([]graph.Edge{edge}), classify.Config{Modules: roleModules(role)})[edgeKey(edge)]
 			if !ok {
-				t.Fatalf("edge not classified")
+				t.Fatal("edge not classified")
 			}
-			if cl.Severity != tc.wantSeverity {
-				t.Errorf("Severity = %q, want %q (dist=%q str=%q vol=%q)",
-					cl.Severity, tc.wantSeverity, cl.Distance, cl.Strength, cl.Volatility)
+			if cl.Severity != coupling.SeverityCritical {
+				t.Errorf("Severity = %q, want critical (dist=%q str=%q vol=%q)", cl.Severity, cl.Distance, cl.Strength, cl.Volatility)
 			}
-			if cl.Distance != tc.wantDistance {
-				t.Errorf("Distance = %q, want %q", cl.Distance, tc.wantDistance)
+			if cl.Distance != coupling.DistanceCrossModuleDiffOwner {
+				t.Errorf("Distance = %q, want %q: a role must not cap distance", cl.Distance, coupling.DistanceCrossModuleDiffOwner)
 			}
 		})
-	}
-}
-
-// TestRun_RoleDoesNotAffectInboundEdges verifies the cap applies to the source's
-// outbound edges only: an edge INTO a composition_root keeps its real distance,
-// so a genuine imbalance pointing at the wiring module is not hidden.
-func TestRun_RoleDoesNotAffectInboundEdges(t *testing.T) {
-	modules := map[string]policy.ModuleDef{
-		"wire": {
-			Paths:     []string{"wire/**"},
-			Internal:  []string{"wire/internal/**"},
-			Owner:     ownerTeamX,
-			Role:      policy.RoleCompositionRoot,
-			Subdomain: subdomainCore,
-		},
-		"caller": {
-			Paths: []string{"caller/**"},
-			Owner: ownerTeamY,
-		},
-	}
-	// caller (no role) → wire/internal: intrusive, diff owner, high vol → high.
-	edge := graph.Edge{
-		From: "file:caller/x.go", To: "file:wire/internal/secret.go",
-		Kind: graph.EdgeKindImports, Language: "go",
-	}
-	cfg := classify.Config{Modules: modules}
-	cl := classify.Run(makeGraph([]graph.Edge{edge}), cfg)[edgeKey(edge)]
-	if cl.Severity != coupling.SeverityHigh {
-		t.Errorf("inbound edge Severity = %q, want %q — role must cap outbound only", cl.Severity, coupling.SeverityHigh)
-	}
-	if cl.Distance != coupling.DistanceCrossModuleDiffOwner {
-		t.Errorf("inbound edge Distance = %q, want %q", cl.Distance, coupling.DistanceCrossModuleDiffOwner)
 	}
 }

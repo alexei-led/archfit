@@ -47,9 +47,6 @@ func CloneOnlyPairs(g *graph.Graph, c Config) []CloneOnlyPair {
 	mi := buildModuleIndex(c.Modules)
 	scorer := scoring.DefaultScorer()
 
-	// Owner-degeneracy precomputes — same invariants as Run.
-	degenerateExplicit, degenerateOwners := ownerDegeneracy(c)
-
 	effectiveVol := computeEffectiveVolatility(g, mi, c)
 	connected := connectedModulePairs(g, mi)
 
@@ -80,7 +77,7 @@ func CloneOnlyPairs(g *graph.Graph, c Config) []CloneOnlyPair {
 		locs := c.CloneEvidence[key]
 		fromPath, toPath := pairRepresentativePaths(locs, fromMod, toMod, mi)
 
-		dist, basis := moduleDistance(fromMod, toMod, cloneLang(fromPath), c.Modules, c.ExplicitOwners, degenerateExplicit, degenerateOwners)
+		dist, basis := moduleDistance(fromMod, toMod, c.Modules)
 		cl := coupling.Classification{
 			// Duplicated knowledge is bidirectional implementation-level
 			// coupling with no visible connection: symmetric and implicit.

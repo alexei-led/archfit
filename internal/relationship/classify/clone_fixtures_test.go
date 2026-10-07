@@ -80,7 +80,7 @@ func TestClonePairUpgradesStrengthToSymmetric(t *testing.T) {
 
 // TestFlatNameEdgeScoresSameOwnerAfterP1Fix verifies that a flat-named
 // (single-segment) edge in a degenerate-owner repo classifies as
-// cross_module_same_owner (not diff_owner) and scores Medium under the book
+// cross_module (not diff_owner) and scores Medium under the book
 // formula — the P1 fix for false tight-coupling on single-team flat-named repos.
 //
 // Case: StrengthSymmetric (S=9, via clone pair), Distance=SameOwner (D=4),
@@ -134,20 +134,20 @@ func TestFlatNameEdgeScoresSameOwnerAfterP1Fix(t *testing.T) {
 		t.Fatal("edge not in classification index")
 	}
 
-	// After P1 fix: flat names in degenerate-owner repo → SameOwner.
-	if cl.Distance != coupling.DistanceCrossModuleSameOwner {
-		t.Errorf("Distance = %q, want cross_module_same_owner (P1 fix)", cl.Distance)
+	// Flat names, no owners: a bare module boundary.
+	if cl.Distance != coupling.DistanceCrossModule {
+		t.Errorf("Distance = %q, want cross_module", cl.Distance)
 	}
 	// Clone pair upgrades strength to Symmetric.
 	if cl.Strength != coupling.StrengthSymmetric {
 		t.Errorf("Strength = %q, want symmetric (clone pair upgrade)", cl.Strength)
 	}
-	// balance = max(|9-4|, 10-10)+1 = 6 → Medium.
-	const wantBalance = 6
+	// balance = max(|9-9|, 10-10)+1 = 1 → critical.
+	const wantBalance = 1
 	if cl.Score.Balance != wantBalance {
-		t.Errorf("Score.Balance = %d, want %d (S=9, D=4, V=10)", cl.Score.Balance, wantBalance)
+		t.Errorf("Score.Balance = %d, want %d (S=9, D=9, V=10)", cl.Score.Balance, wantBalance)
 	}
-	if cl.Score.Band != coupling.SeverityMedium {
-		t.Errorf("Score.Band = %q, want medium", cl.Score.Band)
+	if cl.Score.Band != coupling.SeverityCritical {
+		t.Errorf("Score.Band = %q, want critical", cl.Score.Band)
 	}
 }

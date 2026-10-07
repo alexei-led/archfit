@@ -58,7 +58,7 @@ func assessRelationships() relationship.Set {
 		Edges: []relationship.Edge{{
 			FromPath: assessFileA, ToPath: assessFileB, FromModule: assessModA, ToModule: assessModB,
 			Kind: "imports", Strength: relationship.StrengthFunctional,
-			Distance: relationship.DistanceCrossModuleSameOwner,
+			Distance: relationship.DistanceCrossModule,
 		}},
 	}
 }

@@ -97,10 +97,8 @@ func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, con
 // user turn. Separated from explainNarrative so it can be unit-tested without
 // a live provider.
 //
-// distance_basis is included so the LLM knows whether distance was derived from
-// ownership boundaries or the code-structure fallback (single-owner repos).
-// When the fallback was used, a (degenerate_owner_map) qualifier is appended
-// to prevent cross-team framing on single-owner codebases.
+// distance_basis is included so the LLM knows which boundary named the distance
+// token: a module boundary, an owner change, or a deploy-unit change.
 func buildExplainPromptReport(f report.Finding, diag report.Document) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Finding:\n  rule: %s\n  severity: %s\n  status: %s\n  edge: %s -> %s (%s)\n  modules: %s -> %s\n  why: %s\n  constraint: %s\n",
@@ -108,11 +106,7 @@ func buildExplainPromptReport(f report.Finding, diag report.Document) string {
 		f.Edge.From.Module, f.Edge.To.Module, f.Why, f.Constraint)
 	if strength, ok := f.MatchedBy["strength"]; ok {
 		distanceBasis := f.MatchedBy["distance_basis"]
-		distanceLabel := f.MatchedBy["distance"]
-		if distanceBasis == distanceBasisCodeStructure {
-			distanceLabel += " (degenerate_owner_map)"
-		}
-		fmt.Fprintf(&b, "  strength: %s  distance: %s  distance_basis: %s\n", strength, distanceLabel, distanceBasis)
+		fmt.Fprintf(&b, "  strength: %s  distance: %s  distance_basis: %s\n", strength, f.MatchedBy["distance"], distanceBasis)
 	}
 	for _, mod := range []string{f.Edge.From.Module, f.Edge.To.Module} {
 		fmt.Fprintf(&b, "%s", moduleFactLine(diag, mod))
