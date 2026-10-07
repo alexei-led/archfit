@@ -170,8 +170,12 @@ Exit 2 is the Claude Code protocol for "do not stop yet", not the engine verdict
 
 **Git pre-commit hook.** `archfit hook git` exits 1 with the repair on stderr
 when the next action is `repair` or `ask_owner` and a repair is in scope, 0
-otherwise, and 3 when archfit cannot run. It judges the files on disk: with
-pre-commit that is the staged content plus untracked files. The repository publishes it for pre-commit:
+otherwise, and 3 when archfit cannot run. It judges the staged content, which
+is what the commit will contain: unstaged edits and untracked files do not
+count. It checks the index out in a temporary worktree and leaves the working
+tree, the index, and the refs as they are (see
+[`archfit hook git`](commands.md#archfit-hook-claude--archfit-hook-git)). The
+repository publishes it for pre-commit:
 
 ```yaml
 - repo: https://github.com/alexei-led/archfit

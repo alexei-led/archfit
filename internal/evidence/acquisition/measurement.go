@@ -5,53 +5,96 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
 	"github.com/alexei-led/archfit/internal/extract/registry"
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
+	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
-func (s *Service) measurementProfile(ctx context.Context, sc scope.Scope, rows []evidence.Coverage, history *evidence.VolatilityCorroboration) *evidence.MeasurementProfile {
+// measurementProfile builds the measurement identity of this run (profile v2).
+//
+// The settings hash covers the global settings plus ONE slice per language that
+// contributes a producer. A language whose primary row is not applicable —
+// absent, no coverage gap, and no source file of that language in the
+// inventory — contributes no row and no slice, so a release that registers a new
+// language leaves the profile of every tree without that language unchanged.
+func (s *Service) measurementProfile(ctx context.Context, sc scope.Scope, rows []evidence.Coverage, gaps []evidence.CoverageGap, fileIndex map[string]fileclass.FileClass, history *evidence.VolatilityCorroboration) *evidence.MeasurementProfile {
 	p := &evidence.MeasurementProfile{Version: evidence.MeasurementProfileVersion, Producers: []evidence.MeasurementProducer{}, Unknowns: []string{}}
-	settings := map[string]any{
-		"extractors": s.Options.Extractors, "exclusions": s.Options.Exclusions,
-		"file_class": s.Options.Acquisition.FileClass, "syntax": s.Options.Syntax,
-		"patterns": s.Options.Patterns, "supplied_coverage": suppliedCoverageSettings(s.Options.SuppliedCoverage),
+	global := map[string]any{
+		"exclusions": s.Options.Exclusions,
+		"file_class": s.Options.Acquisition.FileClass,
+		// Syntax.Languages names every language that is not switched off, so it is
+		// per-language state: it goes into each language slice, not the global part.
+		"syntax_enabled":    s.Options.Syntax.Enabled,
+		"patterns":          sortedPatterns(s.Options.Patterns),
+		"supplied_coverage": suppliedCoverageSettings(s.Options.SuppliedCoverage),
+	}
+	byLanguage := map[string]map[string]any{}
+	slice := func(lang string) map[string]any {
+		if byLanguage[lang] == nil {
+			byLanguage[lang] = map[string]any{
+				"extractor": s.Options.Extractors[lang],
+				"syntax":    slices.Contains(s.Options.Syntax.Languages, lang),
+			}
+		}
+		return byLanguage[lang]
+	}
+	inventory := inventoryExtensions(fileIndex)
+	gapped := make(map[string]bool, len(gaps))
+	for _, gap := range gaps {
+		gapped[gap.Tool] = true
 	}
 	for _, row := range rows {
 		if row.Tool == "" {
 			continue
 		}
+		lang := toolLanguage[row.Tool]
+		if lang != "" && profileNotApplicable(row, lang, gapped, inventory) {
+			continue
+		}
 		semantics, _ := evidence.MeasurementContract(row.Tool)
-		version := strings.TrimSpace(row.Version)
+		version := normalizeToolVersion(row.Version)
 		if row.Status == evidence.StatusAbsent || row.Status == evidence.StatusDisabled {
 			version = ""
 		}
 		p.Producers = append(p.Producers, evidence.MeasurementProducer{Tool: row.Tool, SemanticsVersion: semantics, ToolVersion: version, Status: row.Status, PartialBasis: measurementPartialBasis(row)})
-		if row.Tool == registry.ToolGoPackages && row.Status != evidence.StatusAbsent && row.Status != evidence.StatusDisabled {
+		if lang == "" {
+			continue
+		}
+		sl := slice(lang)
+		ran := row.Status != evidence.StatusAbsent && row.Status != evidence.StatusDisabled
+		if row.Tool == registry.ToolGoPackages && ran {
 			env, ok := s.measurementGoEnv(ctx, sc.Root)
 			if !ok {
 				p.Unknowns = append(p.Unknowns, "go/packages build environment is unknown")
 			} else {
-				settings["go_environment"] = env
+				sl["go_environment"] = env
 			}
 		}
-		if row.Tool == registry.ToolDepCruiser && row.Status != evidence.StatusAbsent && row.Status != evidence.StatusDisabled {
+		if row.Tool == registry.ToolDepCruiser && ran {
 			if row.MeasurementSettingsHash != "" {
-				settings["typescript_config"] = row.MeasurementSettingsHash
+				sl["typescript_config"] = row.MeasurementSettingsHash
 				continue
 			}
 			hash, err := ts.MeasurementConfigHash(sc, s.Options.Extractors["typescript"])
 			if err != nil {
 				p.Unknowns = append(p.Unknowns, "dependency-cruiser measurement configuration is unknown")
 			} else {
-				settings["typescript_config"] = hash
+				sl["typescript_config"] = hash
 			}
 		}
 	}
@@ -59,11 +102,11 @@ func (s *Service) measurementProfile(ctx context.Context, sc scope.Scope, rows [
 	historyProducer := evidence.MeasurementProducer{Tool: "git-history", SemanticsVersion: historySemantics, Status: evidence.StatusAbsent}
 	if history != nil {
 		historyProducer.Status = history.Status
-		historyProducer.ToolVersion = s.measurementToolVersion(ctx, sc.GitRoot, "git")
+		historyProducer.ToolVersion = normalizeToolVersion(s.measurementToolVersion(ctx, sc.GitRoot, "git"))
 	}
 	p.Producers = append(p.Producers, historyProducer)
 	sort.Slice(p.Producers, func(i, j int) bool { return p.Producers[i].Tool < p.Producers[j].Tool })
-	data, err := json.Marshal(settings)
+	data, err := json.Marshal(map[string]any{"global": global, "languages": byLanguage})
 	if err != nil {
 		p.Unknowns = append(p.Unknowns, "measurement settings could not be encoded")
 	} else {
@@ -71,6 +114,89 @@ func (s *Service) measurementProfile(ctx context.Context, sc scope.Scope, rows [
 		p.SettingsHash = hex.EncodeToString(hash[:])
 	}
 	return p
+}
+
+// toolLanguage maps a language-bound producer to its language ID. Cross-language
+// producers (SCIP, ast-grep, jscpd, git history) are not in it: they always
+// belong to the profile.
+var toolLanguage = buildToolLanguage()
+
+func buildToolLanguage() map[string]string {
+	out := map[string]string{registry.ToolCargoModules: "rust"}
+	for _, lang := range registry.All() {
+		out[lang.PrimaryTool] = lang.ID
+	}
+	return out
+}
+
+// profileNotApplicable reports that a language-bound row says nothing about this
+// tree: the extractor found no project, no coverage gap asks for the tool, and
+// no file of that language sits in the source inventory. Every other absent row
+// stays in the profile, so a missing analyzer over present source fails closed.
+func profileNotApplicable(row evidence.Coverage, lang string, gapped, inventory map[string]bool) bool {
+	if row.Status != evidence.StatusAbsent || gapped[row.Tool] {
+		return false
+	}
+	for _, ext := range graph.BuiltinConventions[lang].FileExtensions {
+		if inventory[ext] {
+			return false
+		}
+	}
+	return true
+}
+
+func inventoryExtensions(index map[string]fileclass.FileClass) map[string]bool {
+	out := map[string]bool{}
+	for file := range index {
+		out[strings.ToLower(path.Ext(file))] = true
+	}
+	return out
+}
+
+// sortedPatterns makes rule order irrelevant: reordering two rules moves no fact.
+func sortedPatterns(patterns pattern.Config) []string {
+	out := make([]string, 0, len(patterns))
+	for _, def := range patterns {
+		data, err := json.Marshal(def)
+		if err != nil {
+			data = []byte(fmt.Sprint(def))
+		}
+		out = append(out, string(data))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// maxToolVersionLen is the consumer's bound for a tool version string.
+const maxToolVersionLen = 128
+
+// normalizeToolVersion reduces a tool's --version output to one printable line
+// of at most maxToolVersionLen runes. Text beyond the bound is replaced by a
+// digest of the whole string, so two different long versions stay different.
+func normalizeToolVersion(raw string) string {
+	line := ""
+	for _, l := range strings.Split(raw, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			line = l
+			break
+		}
+	}
+	line = strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return ' '
+		}
+		if !unicode.IsPrint(r) {
+			return -1
+		}
+		return r
+	}, line)
+	line = strings.Join(strings.Fields(line), " ")
+	if utf8.RuneCountInString(line) <= maxToolVersionLen {
+		return line
+	}
+	sum := sha256.Sum256([]byte(strings.TrimSpace(raw)))
+	const suffix = 13 // "~" plus 12 hex
+	return string([]rune(line)[:maxToolVersionLen-suffix]) + "~" + hex.EncodeToString(sum[:])[:12]
 }
 
 func measurementPartialBasis(row evidence.Coverage) evidence.MeasurementPartialBasis {

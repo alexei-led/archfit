@@ -19,7 +19,8 @@ import (
 // and no_dead_archfit_rule — lives in internal/erosion_test.go, which also
 // carries the name-to-owner table for all seven checks. The seventh,
 // policy_query_agreement, lives in policy_test.go beside the can-import fixture
-// it shares with the other policy query tests.
+// it shares with the other policy query tests; its TypeScript and Python
+// end-to-end cases live in policy_agreement_lang_test.go.
 //
 // Each check here runs the real command over a fixture repository, because what
 // it protects is what a user receives: the emitted state, the emitted comparison

@@ -38,7 +38,7 @@ func TestHistoryCrateUncertaintyRespectsDeclaredScope(t *testing.T) {
 				t.Fatalf("history = %+v, want %s", history, tc.wantStatus)
 			}
 			service := Service{Runner: runner}
-			profile := service.measurementProfile(context.Background(), scope.Scope{GitRoot: "/repo"}, nil, history)
+			profile := service.measurementProfile(context.Background(), scope.Scope{GitRoot: "/repo"}, nil, nil, nil, history)
 			reasons := decision.CompareMeasurementProfiles(profile, profile)
 			if (len(reasons) == 0) != tc.wantComparable {
 				t.Fatalf("comparable = %t, want %t, reasons=%v", len(reasons) == 0, tc.wantComparable, reasons)

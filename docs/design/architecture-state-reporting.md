@@ -366,6 +366,7 @@ vacuously.
 | `label_evidence_required`   | `cmd/archfit.TestErosion_LabelEvidenceRequired`      | an unevidenced approval silencing a seam permanently              |
 | `baseline_idempotent`       | `cmd/archfit.TestErosion_BaselineIdempotent`         | a self-referential capture reporting drift that is not there      |
 | `policy_query_agreement`    | `cmd/archfit.TestErosion_PolicyQueryAgreesWithCheck` | a `can-import` answer that disagrees with the `check` gate        |
+| `policy_query_agreement`    | `cmd/archfit.TestErosion_PolicyQueryAgreesWithCheck{TypeScript,Python}` | the same disagreement on TypeScript and Python, end to end |
 
 `no_scalar_decision` scopes `internal/application/analysis.go` to the decision
 functions rather than the whole file, deliberately: the run result still
@@ -381,9 +382,13 @@ fail-gated rule for each edge class: a `module_dependencies` allowlist, a
 `forbidden_layer_direction` order, a `public_api_only` internal surface, and a
 path and a module `forbidden_dependency`. A class on which `check` reports no
 gate finding fails the gate, so a rule removed from the fixture cannot narrow
-it. The end-to-end check is Go only. TypeScript and Python are checked at the
-edge-spelling level only: their `QueryEdge` tests hold the query edge equal to
-the edge the extractor emits.
+it. TypeScript and Python run the same comparison end to end
+(`cmd/archfit/policy_agreement_lang_test.go`) through the real
+dependency-cruiser and grimp, over the same five classes (allowlist, layer
+order, internal/public surface, path and module `forbidden_dependency`). They
+skip when the analyzer is absent, unless `ARCHFIT_REQUIRE_TOOLS=1`, which CI
+sets. Their `QueryEdge` tests still hold the query edge equal to the edge the
+extractor emits.
 
 ## Maintenance recipes
 
