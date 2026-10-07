@@ -139,11 +139,11 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 
 	dimensionOf := findingDimensions(d.State)
 	seamOf := seamIDsByModulePair(d.State.Seams)
-	baselineLoaded := baselineLoaded(d.State)
+	compared := baselineLoaded(d.State)
 	results := make([]result, 0, len(d.Findings))
 	for _, f := range d.Findings {
 		res := toResult(f, ruleIndex[f.RuleID], dimensionOf[f.ID], seamOf)
-		if baselineLoaded {
+		if compared {
 			res.BaselineState = baselineState(f)
 		}
 		res.Suppressions = suppressionsFor(f)

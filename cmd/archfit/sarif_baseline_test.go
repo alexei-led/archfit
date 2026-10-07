@@ -23,10 +23,10 @@ func TestCheckSarifMarksBaselineMembership(t *testing.T) {
 	gitCommitFixture(t, dir)
 	cfg := filepath.Join(dir, defaultConfigPath)
 
-	if code, _, stderr := runArchfit(t, cmdCheck, "-c", cfg, "--format=sarif"); code != 1 {
+	code, before, stderr := runArchfit(t, cmdCheck, "-c", cfg, "--format=sarif")
+	if code != 1 {
 		t.Fatalf("check before baseline: exit %d\n%s", code, stderr)
 	}
-	_, before, _ := runArchfit(t, cmdCheck, "-c", cfg, "--format=sarif")
 	for id, res := range sarifResults(t, before) {
 		if _, ok := res["baselineState"]; ok {
 			t.Errorf("%s carries baselineState with no baseline file", id)
@@ -37,7 +37,7 @@ func TestCheckSarifMarksBaselineMembership(t *testing.T) {
 		t.Fatalf("baseline: exit %d\n%s", code, stderr)
 	}
 	writeFixtureFile(t, dir, newViolation, hookViolatingA)
-	_, after, stderr := runArchfit(t, cmdCheck, "-c", cfg, "--format=sarif")
+	_, after, stderr = runArchfit(t, cmdCheck, "-c", cfg, "--format=sarif")
 	states := map[string]int{}
 	for id, res := range sarifResults(t, after) {
 		state, _ := res["baselineState"].(string)
