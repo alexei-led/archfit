@@ -267,6 +267,9 @@ type ruleScope struct {
 // rule (`guard: true`) matches nothing on purpose, so its empty selector is
 // not a defect.
 func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observations) ruleScope {
+	// The observed crate owners place a Rust file whose crate a module declares
+	// by another spelling, exactly as map completeness places it (fileOwner).
+	p.Topology.ModuleMap = p.Topology.ModuleMap.WithCrateOwners(f.CrateOwners)
 	inv := newSelectorInventory(p.Topology.ModuleMap, sourceInventoryFiles(f), f)
 	files := inv.analysedFiles()
 	switch rule.Type {
@@ -387,12 +390,8 @@ func moduleRuleScope(topology policy.TopologyView, inv selectorInventory) ruleSc
 		return ruleScope{status: ruleScopeNotApplicable}
 	}
 	owner := func(file string) (string, bool) {
-		_, selector, _ := ruleFileSelector(topology.ModuleMap, file, inv.selectors)
-		module, owned := topology.ModuleMap.ModuleFor(file)
-		if !owned && selector != "" {
-			module, owned = topology.ModuleMap.ModuleFor(selector)
-		}
-		return module, owned
+		language, selector, _ := ruleFileSelector(topology.ModuleMap, file, inv.selectors)
+		return fileOwner(topology.ModuleMap, file, language, selector)
 	}
 	languages := make(map[string]struct{})
 	modulesWithFiles := make(map[string]struct{})

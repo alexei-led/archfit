@@ -1,6 +1,7 @@
 package status
 
 import (
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -262,6 +263,10 @@ func DeltaBuckets(findings []finding.Finding, accepted AcceptedSet, changed []st
 // not by import, since status must not depend on the rules package.
 const matchedByModuleKey = "module"
 
+// matchedBySubject is the matched_by key that names a map finding's subject:
+// the directory of a map/uncovered_path finding.
+const matchedBySubject = "subject"
+
 // touchesChanged reports whether f sits on a file in changed. Locations carry
 // the real file evidence; edge endpoints are checked too, matching across path
 // granularities (a finding path can be a package directory while changed lists
@@ -272,6 +277,15 @@ const matchedByModuleKey = "module"
 // "docs" owning src/domain/** next to a real docs/ dir) must not count as a
 // touch. With no locations the endpoints remain the only, best-effort evidence.
 func touchesChanged(f *finding.Finding, changed []string) bool {
+	// A map completeness finding names a directory and lists only a sample of
+	// its files: any changed file directly in that directory touches it.
+	if f.RuleID == finding.RuleIDMapUncoveredPath {
+		for _, c := range changed {
+			if path.Dir(c) == f.MatchedBy[matchedBySubject] {
+				return true
+			}
+		}
+	}
 	hasLoc := false
 	for _, loc := range f.Locations {
 		if loc.File == "" {

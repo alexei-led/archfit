@@ -484,3 +484,29 @@ func TestDeltaBuckets_Sorted(t *testing.T) {
 func slicesEqual(a, b []string) bool {
 	return slices.Equal(a, b)
 }
+
+// TestDeltaBuckets_UncoveredDirectoryIsTouchedByAnyFileInIt pins delta
+// attribution for a map completeness finding: it lists only a sample of its
+// directory's files, so a change to an unlisted file there still touches it,
+// while a change in a subdirectory (its own finding) does not.
+func TestDeltaBuckets_UncoveredDirectoryIsTouchedByAnyFileInIt(t *testing.T) {
+	uncovered := finding.Finding{
+		ID: "cccccccccccccccccccccccccccccccc", RuleID: finding.RuleIDMapUncoveredPath, Kind: kindGate,
+		Status: finding.StatusBaseline, MatchedBy: map[string]string{"subject": "tools/gen"},
+		Locations: []relationship.Location{{File: "tools/gen/a.go"}},
+	}
+	accepted := fakeAccepted{{Fingerprint: uncovered.ID, RuleID: uncovered.RuleID, Kind: kindGate}}
+	for _, tc := range []struct {
+		changed string
+		touched bool
+	}{
+		{changed: "tools/gen/f.go", touched: true},
+		{changed: "tools/gen/sub/x.go", touched: false},
+		{changed: "tools/other.go", touched: false},
+	} {
+		r := status.DeltaBuckets([]finding.Finding{uncovered}, accepted, []string{tc.changed})
+		if got := len(r.TouchedByDelta) == 1; got != tc.touched {
+			t.Errorf("changed %s: touched = %t, want %t", tc.changed, got, tc.touched)
+		}
+	}
+}

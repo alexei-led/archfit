@@ -606,9 +606,11 @@ rules:
   - id: arch_public_api_type_leak
     type: public_api_type_leak
     gate: warn
+# Map completeness: production source no module owns blocks the run. Dead
+# globs and stale reviews stay advisory under fail.
 module_review:
   stale_after: 2160h # 90 days
-  gate: warn
+  gate: fail
 languages:
   go:
     enabled: true

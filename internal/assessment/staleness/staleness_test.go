@@ -18,14 +18,10 @@ const (
 	modAuth      = "auth"
 )
 
-// Node kinds the relationship contract carries, restated locally: staleness
-// consumes relationship.Set and never sees the extractor graph that names them.
-const (
-	nodeKindRepo     = "repo"
-	nodeKindModule   = "module"
-	nodeKindPackage  = "package"
-	nodeKindExternal = "external"
-)
+// nodeKindPackage is the package node kind the relationship contract carries,
+// restated locally: staleness consumes relationship.Set and never sees the
+// extractor graph that names it.
+const nodeKindPackage = "package"
 
 // buildGraph builds a relationship.Set fixture. Node IDs follow the contract's
 // "kind:path" form, which is what NodePath and ModuleKey read.
@@ -76,34 +72,6 @@ func TestCheck_DisabledReturnsNil(t *testing.T) {
 	}
 }
 
-func TestCheck_UncoveredPath(t *testing.T) {
-	// Package node with no matching module glob → uncovered_path.
-	// A second node that IS claimed → no uncovered_path for it.
-	g := buildGraph([]relationship.Node{
-		{Kind: nodeKindPackage, Path: "internal/foo/foo.go"},
-		{Kind: nodeKindPackage, Path: "internal/bar/bar.go"},
-	})
-	cfg := stalenessCase{
-		Enabled: true,
-		Modules: map[string]policy.ModuleDef{
-			// Only claims internal/bar/**.
-			"bar": {Paths: []string{globBarAll}},
-		},
-	}
-	findings := staleness.Check(g, assessmentPolicy(cfg), time.Now())
-
-	uncovered := byRule(findings, "map/uncovered_path")
-	dead := byRule(findings, "map/dead_rule")
-
-	if len(uncovered) != 1 || uncovered[0].MatchedBy["subject"] != "internal/foo/foo.go" {
-		t.Errorf("uncovered_path: want subject internal/foo/foo.go, got %v", uncovered)
-	}
-	// globBarAll matches internal/bar/bar.go → no dead rule.
-	if len(dead) != 0 {
-		t.Errorf("dead_rule: expected none, got %v", dead)
-	}
-}
-
 func TestCheck_DeadRule(t *testing.T) {
 	// Module whose paths glob matches no graph node → dead_rule finding.
 	g := buildGraph([]relationship.Node{
@@ -119,14 +87,9 @@ func TestCheck_DeadRule(t *testing.T) {
 	findings := staleness.Check(g, assessmentPolicy(cfg), time.Now())
 
 	dead := byRule(findings, "map/dead_rule")
-	uncovered := byRule(findings, "map/uncovered_path")
 
 	if len(dead) != 1 || dead[0].MatchedBy["subject"] != globGhostAll {
 		t.Errorf("dead_rule: want subject %s, got %v", globGhostAll, dead)
-	}
-	// internal/bar/bar.go is claimed → no uncovered path.
-	if len(uncovered) != 0 {
-		t.Errorf("uncovered_path: expected none, got %v", uncovered)
 	}
 }
 
@@ -235,26 +198,6 @@ func TestCheck_DefaultThreshold(t *testing.T) {
 	}
 }
 
-func TestCheck_NonPackageNodesNotUncovered(t *testing.T) {
-	// Repo/module/external nodes are not candidates for uncovered_path.
-	g := buildGraph([]relationship.Node{
-		{Kind: nodeKindRepo, Path: "."},
-		{Kind: nodeKindModule, Path: "internal/auth"},
-		{Kind: nodeKindExternal, Path: "github.com/some/lib"},
-	})
-	cfg := stalenessCase{
-		Enabled: true,
-		Modules: map[string]policy.ModuleDef{},
-	}
-	findings := staleness.Check(g, assessmentPolicy(cfg), time.Now())
-
-	for _, f := range findings {
-		if f.RuleID == "map/uncovered_path" {
-			t.Errorf("non-package node must not generate uncovered_path: %+v", f)
-		}
-	}
-}
-
 func TestCheck_AllFindingsAreAdvisory(t *testing.T) {
 	// Every finding returned by Check must carry Kind == "advisory".
 	now := time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC)
@@ -275,7 +218,6 @@ func TestCheck_AllFindingsAreAdvisory(t *testing.T) {
 			},
 			// ghost: dead glob → dead_rule
 			"ghost": {Paths: []string{globGhostAll}},
-			// internal/uncovered/b.go not claimed → uncovered_path
 		},
 	}
 	findings := staleness.Check(g, assessmentPolicy(cfg), now)
@@ -290,8 +232,7 @@ func TestCheck_AllFindingsAreAdvisory(t *testing.T) {
 	}
 }
 
-func TestCheck_EmptyGraph_NoUncovered(t *testing.T) {
-	// Empty graph → no uncovered_path; dead_rule fires for every pattern.
+func TestCheck_EmptyGraph_DeadRuleForEveryPattern(t *testing.T) {
 	g := buildGraph(nil)
 	cfg := stalenessCase{
 		Enabled: true,
@@ -301,12 +242,8 @@ func TestCheck_EmptyGraph_NoUncovered(t *testing.T) {
 	}
 	findings := staleness.Check(g, assessmentPolicy(cfg), time.Now())
 
-	uncovered := byRule(findings, "map/uncovered_path")
 	dead := byRule(findings, "map/dead_rule")
 
-	if len(uncovered) != 0 {
-		t.Errorf("empty graph: expected 0 uncovered_path, got %d", len(uncovered))
-	}
 	if len(dead) != 1 {
 		t.Errorf("empty graph: expected 1 dead_rule for internal/foo/**, got %d", len(dead))
 	}

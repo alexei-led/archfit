@@ -26,7 +26,7 @@ external_systems — declared external integration seams scored at D=10
 rules           — executable architecture constraints
 waivers         — approved temporary deviations from rules
 metrics         — metric policy settings
-module_review   — staleness gating of the module declarations
+module_review   — review of the module declarations; can block on unowned source
 file_class      — file-class override patterns
 outputs         — output format preferences
 ```
@@ -1537,19 +1537,68 @@ delta and nothing to trip.
 
 ## `module_review`
 
-`module_review` enables staleness gating of the module declarations:
+`module_review` turns on the review of the module declarations:
 
 ```yaml
 module_review:
   stale_after: 2160h
-  gate: warn
+  gate: fail
 ```
 
-Checks include:
+The review gives three findings:
 
-- graph nodes not covered by any module `paths` glob;
-- module `paths` globs that match no graph nodes;
-- modules whose `reviewed_at` is older than `stale_after`.
+| Rule ID              | Finding                                                         | Can block |
+| -------------------- | --------------------------------------------------------------- | --------- |
+| `map/uncovered_path` | A directory holds production source that no module owns.        | Yes       |
+| `map/dead_rule`      | A module `paths` glob matches no graph node.                    | No        |
+| `map/stale_review`   | A module `reviewed_at` is older than `stale_after`.             | No        |
+
+`gate` sets how `map/uncovered_path` affects the verdict:
+
+- `fail` makes each finding a blocker, so `check` exits `1`. A finding that the
+  baseline accepts does not block. A new package outside every module blocks.
+- `warn`, or no `gate` with `stale_after` set, makes each finding a diagnostic.
+- `off` turns the review off.
+
+`map/dead_rule` depends on a complete dependency graph, and `map/stale_review`
+depends on the clock, so both stay diagnostics with `gate: fail`.
+
+`map/uncovered_path` reads the files that `check` walks, not the dependency
+graph, so a package that failed to load is still checked. A file counts only
+when all of these are true:
+
+- Its file class is production. Test, generated, and vendor files do not
+  count.
+- It is in the analysis scope: no `exclude:` glob matches it, and its language
+  is not switched off.
+- A dependency producer reads it. For example, TypeScript with no root
+  `package.json` does not count, and neither does a Go member that
+  `languages.go.modules` removes.
+
+A module owns a file when one of its `paths` globs matches the file path, or
+the file's node ID: the package directory for Go, the dotted module for Python,
+or the crate for Rust. A Rust file whose crate is unknown (no `cargo metadata`)
+is not checked.
+
+There is one finding for each directory. Its ID comes from the rule ID and the
+directory, so it does not change when files are added. The finding has these
+`matched_by` keys:
+
+- `subject`: the directory.
+- `uncovered_files`: the number of unowned files in it. `locations` lists at
+  most five of them.
+- `suggested_path`: a `paths:` glob that owns every unowned file in the
+  directory, when one glob can do it. A bare directory owns only a Go
+  package. TypeScript and Rust need a glob over the files (`web/src/**`),
+  Python needs a dotted glob (`acme.ops.**`), and a root directory needs a
+  glob over the extension (`*.go`).
+
+A run reports every unowned directory, in path order. There is no limit on
+the count, so `archfit baseline` accepts all of them and a new directory is
+never hidden. The repair task asks the
+architecture owner which module owns the directory
+(`repair_kind: needs_owner_decision`) and names `suggested_path`. In a delta
+run, a change to any file directly in the directory touches the finding.
 
 `stale_after` uses Go duration syntax. Use `2160h` for 90 days.
 

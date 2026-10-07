@@ -21,18 +21,21 @@ import (
 // Input is the assessment stage boundary. Every value is an assessment or
 // relationship contract; adapters and graph internals stay outside this package.
 type Input struct {
-	Relationships      relationship.Set
-	Evidence           RuleEvidence
-	Rules              Ruleset
-	Metrics            Metricset
-	Signals            signal.RunSignals
-	Symbols            symbol.Graph
-	Coverage           []evidence.Coverage
-	ChangedFiles       []string
-	Baseline           result.MetricSnapshot
-	Accepted           status.AcceptedSet
-	Policy             policy.AssessmentPolicy
-	Gates              map[string]policy.MetricConfig
+	Relationships relationship.Set
+	Evidence      RuleEvidence
+	Rules         Ruleset
+	Metrics       Metricset
+	Signals       signal.RunSignals
+	Symbols       symbol.Graph
+	Coverage      []evidence.Coverage
+	ChangedFiles  []string
+	Baseline      result.MetricSnapshot
+	Accepted      status.AcceptedSet
+	Policy        policy.AssessmentPolicy
+	Gates         map[string]policy.MetricConfig
+	// ModuleReview is the module_review gate mode: fail makes production
+	// source no declared module owns a gate finding.
+	ModuleReview       policy.GateMode
 	Now                time.Time
 	AdvisoryCandidates []relationship.AdvisoryCandidate
 	StaleLabelKeys     []string
@@ -56,6 +59,16 @@ type Result struct {
 func evaluate(in Input) Result {
 	raw := checkRules(in.Rules, in.Relationships, in.Evidence)
 	adv := candidateFindings(in.AdvisoryCandidates)
+	// An uncovered-source gate finding joins the rule findings, so baseline
+	// acceptance and waivers treat it as any other blocker; the advisory form
+	// stays with the staleness advisories.
+	for _, f := range uncoveredSource(in.Evidence, in.Policy, in.ModuleReview) {
+		if f.Kind == finding.KindGate {
+			raw = append(raw, f)
+		} else {
+			adv = append(adv, f)
+		}
+	}
 	adv = append(adv, staleness.Check(in.Relationships, in.Policy, in.Now)...)
 	adv = append(adv, staleLabelFindings(in.StaleLabelKeys)...)
 	tagged := status.Assign(raw, in.Accepted, in.Policy.Waivers, in.Now, finding.KindGate, adv...)

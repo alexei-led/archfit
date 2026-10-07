@@ -514,3 +514,20 @@ func TestRustModuleSelectorsFollowModuleRuleScope(t *testing.T) {
 		}
 	})
 }
+
+// TestModuleRuleScopeOwnsRustFilesThroughCrateOwners pins one ownership for
+// rule scope and map completeness: a crate declared by a spelling no file
+// selector carries still owns its files through the observed crate owners, so
+// a module-wide rule over it is evaluated rather than held unknown.
+func TestModuleRuleScopeOwnsRustFilesThroughCrateOwners(t *testing.T) {
+	diag, in := rustModuleFixture()
+	withModules(&in, map[string]policy.ModuleDef{
+		"engine":   {Paths: []string{"core_engine"}},
+		modBilling: {Paths: []string{selBilling}},
+	})
+	in.Facts.CrateOwners = map[string]string{rustCrate: "engine"}
+	withRule(&in, policy.RuleDef{Type: typeModCycle})
+	if got := unevaluatedReasons(diag, in); len(got) != 0 {
+		t.Fatalf("unevaluated_required_rules = %v, want the module-wide rule evaluated", got)
+	}
+}

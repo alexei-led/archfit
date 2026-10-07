@@ -374,6 +374,21 @@ init` emits v2 directly; owners update older configs manually before analysis.
   - a file with no class at all: it counts.
   An edge with no source-file attribution (a Rust crate dependency at `Cargo.toml`, a `crate::mod` edge) counts. The strongly connected component is computed over production edges, so finding IDs (rule, module pair) are unchanged.
 - **`module_cycle` is bounded per strongly-connected component** (`maxModuleCyclePairs = 200`, `rules_dependency.go`): the first pairs in (from, to) order are kept, so kept IDs never move; every finding carries `matched_by.cycle_pairs_total`, and a capped cycle's `why` says how many pairs it reports. Pairs past the cap surface as new once reported ones are fixed. Module-cycle and seam-gate agent tasks carry no `declarations` (`agenttask.Build`): on ccgram they were 882 KB of a 1.29 MB report.
+- **Map completeness reads the walked source, never the graph**
+  (`evaluation.uncoveredSource`). `map/uncovered_path` is one finding per
+  directory holding production source (`RuleEvidence.FileClasses`, minus
+  `UnanalysedFiles`) that `fileOwner` places in no declared module — the same
+  owner predicate as `moduleRuleScope`; a Rust file with no crate selector
+  abstains; `ruleProducerScope` attaches the observed crate owners so both
+  read one module map. ID = rule + directory; 5 locations each, plus a
+  verified `matched_by.suggested_path` glob (a bare directory owns only a Go
+  package). The finding COUNT is deliberately unbounded: `archfit baseline`
+  captures one run, so any cap either accepts fewer directories than check
+  reports (false block) or, applied after the baseline, reads accepted debt
+  as `fixed`. `module_review.gate:
+  fail` makes it a gate finding (it joins the rule findings, so baseline and
+  waivers apply); `map/dead_rule` and `map/stale_review` never gate. A
+  graph-derived check read a failed package load as "nothing unowned".
 - **`forbidden_pattern` is the only consumer of `rules[].patterns`.** It fires
   on production files in the LOC inventory (`FileClassIndex` minus
   `OutOfScopeFiles`, `evaluation.inScopeFileClasses`; the LOC walk and the `sg`
@@ -595,6 +610,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   - A walked file is out of the scope of every rule that reads dependency edges, module-wide rules included, in two cases:
     - Its language's primary row is gapless `absent` (`primaryAbsentFromTree`). That is the SAME predicate `buildCoverageGaps` suppresses the gap on: the extractor's own probe says the language is not present, and no explicit warn/fail `languages.<id>.gate` demands it.
     - It is a Rust file outside every cargo workspace member, once cargo metadata has named the members.
+    - It is a Go file whose deepest discovered member the `languages.go.modules` filter removed (`registry.GoFilteredMembers`): the extractor never loads it.
   - `forbidden_pattern` keeps these files; it reads the ast-grep pass.
   - Consequence: TypeScript under `web/ui/` with no root `package.json`, and `.go` files with no `go.mod`, leave rule scope; their coverage rows already call the language absent. Before this, prometheus' starter `module_cycle` waited forever for dependency-cruiser.
   - A dependency selector that matches only such files is listed `selector matches only source no dependency producer analyses: <side> <glob>`, guard or not. It never carries the `selector matches nothing:` prefix, which the App reads as a policy defect.

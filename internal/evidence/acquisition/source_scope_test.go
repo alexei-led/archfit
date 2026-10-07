@@ -130,10 +130,32 @@ func TestUnanalysedFilesFollowTheExtractorsOwnApplicability(t *testing.T) {
 				FileClassIndex: map[string]fileclass.FileClass{pyFile: fileclass.Production},
 				Graph:          tc.graph,
 			}
-			if got := unanalysedFiles(tc.root, f, tc.out, tc.cov); !maps.Equal(got, tc.want) {
+			if got := unanalysedFiles(tc.root, f, tc.out, tc.cov, goMemberSplit{}); !maps.Equal(got, tc.want) {
 				t.Fatalf("unanalysedFiles = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestUnanalysedFilesSkipGoMembersTheModuleFilterRemoves pins Go applicability
+// under languages.go.modules: the extractor never loads a member the filter
+// removes, so its files are unanalysed, while a kept member nested inside a
+// removed one, and a file in no member, are not.
+func TestUnanalysedFilesSkipGoMembersTheModuleFilterRemoves(t *testing.T) {
+	split := goMemberSplit{kept: []string{"a", "b/keep"}, removed: []string{".", "b"}}
+	f := evidencecontract.Facts{FileLOC: map[string]int{
+		"a/x.go": 1, "b/y.go": 1, "b/keep/z.go": 1, "root.go": 1, "web/app.ts": 1,
+	}}
+	cov := CoverageOptions{ProjectPresent: map[string]func(string) bool{
+		registry.ToolGoPackages: func(string) bool { return true },
+		registry.ToolDepCruiser: func(string) bool { return true },
+	}}
+	want := map[string]struct{}{"b/y.go": {}, "root.go": {}}
+	if got := unanalysedFiles("/repo", f, nil, cov, split); !maps.Equal(got, want) {
+		t.Fatalf("unanalysedFiles = %v, want %v", got, want)
+	}
+	if got := unanalysedFiles("/repo", f, nil, cov, goMemberSplit{}); len(got) != 0 {
+		t.Fatalf("unanalysedFiles without a filter = %v, want none", got)
 	}
 }
 

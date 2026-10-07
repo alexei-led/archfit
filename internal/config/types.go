@@ -141,9 +141,10 @@ type CoverageSource struct {
 	MaxFacts    *int   `yaml:"max_facts,omitempty" jsonschema:"minimum=1,default=1000000"`
 }
 
-// ModuleReviewConfig configures staleness gating of the module declarations:
-// archfit warns (or fails) when a module's `reviewed_at` is older than
-// stale_after, nudging a periodic re-check of the architecture map.
+// ModuleReviewConfig configures the review of the module declarations:
+// production source no module owns (map/uncovered_path, a blocker when gate is
+// fail), module paths globs that match nothing, and modules whose
+// `reviewed_at` is older than stale_after. Only unowned source can block.
 type ModuleReviewConfig struct {
 	StaleAfter string `yaml:"stale_after,omitempty"`
 	Gate       string `yaml:"gate,omitempty"`

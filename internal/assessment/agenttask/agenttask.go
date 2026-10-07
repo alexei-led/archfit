@@ -34,14 +34,16 @@ const (
 // templates read: a module cycle lists its members, a pattern finding names its
 // pattern. Both agree with internal/assessment/rules by convention.
 const (
-	ruleTypeModuleCycle      = "module_cycle"
-	ruleTypeModuleDeps       = "module_dependencies"
-	edgeKindModuleDependency = "module_dependency" // a module-pair finding's edge kind
-	matchedByViolatesKey     = "violates"
-	matchedByCycleModulesKey = "cycle_modules"
-	matchedByCycleSizeKey    = "cycle_size"
-	ruleTypeForbiddenPattern = "forbidden_pattern"
-	matchedByPatternKey      = "pattern"
+	ruleTypeModuleCycle       = "module_cycle"
+	ruleTypeModuleDeps        = "module_dependencies"
+	edgeKindModuleDependency  = "module_dependency" // a module-pair finding's edge kind
+	matchedByViolatesKey      = "violates"
+	matchedByCycleModulesKey  = "cycle_modules"
+	matchedByCycleSizeKey     = "cycle_size"
+	ruleTypeForbiddenPattern  = "forbidden_pattern"
+	matchedByPatternKey       = "pattern"
+	matchedBySubjectKey       = "subject"
+	matchedBySuggestedPathKey = "suggested_path"
 )
 
 // PathResolver carries the filesystem facts filesFor needs to turn a config
@@ -271,7 +273,7 @@ func Build(
 		task := result.AgentTask{
 			FindingID:   f.ID,
 			RuleID:      f.RuleID,
-			RepairKind:  repairKind(ruleType),
+			RepairKind:  repairKind(ruleType, f.RuleID),
 			Goal:        goalFor(ruleType, f),
 			Constraints: constraintsFor(f, ruleType, modulePublic),
 			Files:       files,
@@ -295,6 +297,9 @@ func Build(
 // goalFor instantiates the rule type's repair-goal template with the finding's
 // edge. Unknown rule types fall back to the finding's Why text — never empty.
 func goalFor(ruleType string, f finding.Finding) string {
+	if f.RuleID == finding.RuleIDMapUncoveredPath {
+		return uncoveredGoal(f)
+	}
 	from, to := f.Edge.From.Path, f.Edge.To.Path
 	toMod := f.Edge.To.Module
 	if toMod == "" {
@@ -334,6 +339,20 @@ func goalFor(ruleType string, f finding.Finding) string {
 	}
 }
 
+// uncoveredGoal asks the owner to place a directory of unowned production
+// source in a module. A bare directory in paths: owns only a Go package, so the
+// goal names the glob the finding verified to own every unowned file, or says
+// what a glob must match when no single one is safe.
+func uncoveredGoal(f finding.Finding) string {
+	dir := f.MatchedBy[matchedBySubjectKey]
+	how := "add a paths: glob that matches each file's path or its module node (Go package directory, dotted Python module, Rust crate)"
+	if glob := f.MatchedBy[matchedBySuggestedPathKey]; glob != "" {
+		how = fmt.Sprintf("add the paths: glob %q, which owns every unowned file there", glob)
+	}
+	return fmt.Sprintf("Ask the architecture owner which declared module owns the production source in %s. Then %s to that module in the archfit config, or declare a new module with it. Do not move the code to satisfy the check.",
+		dir, how)
+}
+
 // endpointName names a finding endpoint in a goal: its path, or "module <m>"
 // for a module-selector endpoint, which has no path.
 func endpointName(e finding.Endpoint) string {
@@ -357,8 +376,8 @@ func cycleMembers(f finding.Finding) string {
 	return fmt.Sprintf("(%s modules, listed in matched_by.cycle_modules)", f.MatchedBy[matchedByCycleSizeKey])
 }
 
-func repairKind(ruleType string) string {
-	if ruleType == ruleTypeNewCrossModule {
+func repairKind(ruleType, ruleID string) string {
+	if ruleType == ruleTypeNewCrossModule || ruleID == finding.RuleIDMapUncoveredPath {
 		return "needs_owner_decision"
 	}
 	return "code_change"
