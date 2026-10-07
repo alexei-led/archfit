@@ -48,7 +48,7 @@ func TestBaselineReanchor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(stored, data, 0o600); err != nil {
+	if err := os.WriteFile(stored, data, 0o600); err != nil { //nolint:gosec // stored derives from t.TempDir()
 		t.Fatal(err)
 	}
 

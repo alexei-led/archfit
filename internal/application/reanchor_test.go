@@ -115,22 +115,29 @@ func TestReanchorIntersectsTheStateReference(t *testing.T) {
 	}
 }
 
+// Metric names of the worsened-metrics table: one higher-is-better, one
+// higher-is-worse.
+const (
+	metricCoverage = "coverage"
+	metricCycles   = "cycles"
+)
+
 func TestReanchorReportsWorsenedMetrics(t *testing.T) {
 	stored := report.MetricSnapshot{}
-	for name, v := range map[string]float64{"cycles": 1, "coverage": 0.8, "same": 3} {
+	for name, v := range map[string]float64{metricCycles: 1, metricCoverage: 0.8, "same": 3} {
 		stored[name] = struct {
 			Value   float64 `json:"value"`
 			Version string  `json:"version"`
 		}{Value: v}
 	}
 	metrics := []report.MetricResult{
-		{Name: "cycles", Value: 2, Direction: report.DirectionHigherIsWorse},
-		{Name: "coverage", Value: 0.7, Direction: report.DirectionHigherIsBetter},
+		{Name: metricCycles, Value: 2, Direction: report.DirectionHigherIsWorse},
+		{Name: metricCoverage, Value: 0.7, Direction: report.DirectionHigherIsBetter},
 		{Name: "same", Value: 3, Direction: report.DirectionHigherIsWorse},
 		{Name: "unstored", Value: 9, Direction: report.DirectionHigherIsWorse},
 	}
 	_, rep := reanchor(BaselineSnapshot{}, nil, metrics, StoredBaseline{Metrics: stored}, nil)
-	want := []MetricChange{{Name: "cycles", Before: 1, After: 2}, {Name: "coverage", Before: 0.8, After: 0.7}}
+	want := []MetricChange{{Name: metricCycles, Before: 1, After: 2}, {Name: metricCoverage, Before: 0.8, After: 0.7}}
 	if !slices.Equal(rep.WorsenedMetrics, want) {
 		t.Errorf("worsened = %+v, want %+v", rep.WorsenedMetrics, want)
 	}
