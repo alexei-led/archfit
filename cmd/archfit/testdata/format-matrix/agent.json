@@ -38,9 +38,8 @@
     }
   ],
   "schema_version": "archfit.agent-result.v1",
-  "summary": "blocked: 1 repairs in scope, 0 outside scope; 0 unevaluated required rules; 0 evidence gaps; 0 worsened metrics",
+  "summary": "blocked: 1 repairs in scope, 0 outside scope; 0 unevaluated required rules; 0 evidence gaps",
   "unevaluated_rules": [],
   "validate": "archfit check -c \u003cROOT\u003e/.archfit.yaml --format agent",
-  "verdict": "blocked",
-  "worsened_metrics": []
+  "verdict": "blocked"
 }

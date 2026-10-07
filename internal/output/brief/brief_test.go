@@ -165,13 +165,13 @@ func TestNextStepsOrderAndBound(t *testing.T) {
 	}
 	s.Dimensions.Testability.Unknown = []report.UnknownFact{{Fact: state.FactSuppliedCoverageUnits}, {Fact: state.FactAssertionQuality}}
 	s.Dimensions.Operations.Unknown = []report.UnknownFact{{Fact: state.FactOwnerProvenance}}
-	got := Build(Input{State: s, MetricRatchet: true, CoverageGaps: []report.CoverageGap{{Tool: "dependency-cruiser"}}}).NextSteps
+	got := Build(Input{State: s, CoverageGaps: []report.CoverageGap{{Tool: "dependency-cruiser"}}}).NextSteps
 	want := []string{
 		stepFixBlocker,
-		"Restore the worsened metrics listed under METRIC RATCHET.",
 		"Ask the owner to fix rule dead: its selector matches nothing (archfit config lint).",
 		"Restore the evidence rule partial needs: archfit doctor --fix.",
 		"Install or fix the missing analyzers (dependency-cruiser): archfit doctor --fix.",
+		"Declare owner for each module or add CODEOWNERS.",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("next steps =\n%q\nwant\n%q", got, want)

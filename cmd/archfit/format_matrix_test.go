@@ -129,10 +129,9 @@ func TestFormatMatrix_ExitCodesUnchanged(t *testing.T) {
 			// here is the implicit green result the contract prevents.
 			{name: "clean", cfg: func(t *testing.T) string { return writeCheckFixtureRepo(t, "golang") }, want: 2},
 			{name: "violated", cfg: writeViolatingRepo, want: 1},
-			// A tripped metric ratchet blocks without producing a finding, so
-			// it reaches the exit code only through the state's hard-gate
-			// result. It shipped broken once precisely because this table had
-			// no case for it: every other blocking path has a gate finding.
+			// A tripped metric ratchet is a metric/<name> gate finding, so it
+			// reaches the exit code like any blocker. It shipped broken once
+			// precisely because this table had no case for it.
 			{name: "metric regression", cfg: writeMetricRegressionRepo, want: 1},
 			{name: "missing config", cfg: func(t *testing.T) string {
 				return filepath.Join(t.TempDir(), "nope.yaml")
@@ -151,26 +150,21 @@ func TestFormatMatrix_ExitCodesUnchanged(t *testing.T) {
 }
 
 // TestFormatMatrix_RatchetBlockIsNamed pins the human channel of a metric
-// ratchet: the block produces no finding and no agent task, so text and
-// Markdown must both name the metric that worsened, with the accepted-baseline
-// and current values and the next step. The fixture raises the stored coverage
-// value by one, so coverage is the one metric that worsened.
+// ratchet: the tripped ratchet is a blocker, so text and Markdown both name its
+// rule, the metric, and the accepted-baseline and current values. The fixture
+// raises the stored coverage value by one, so coverage is the one metric that
+// worsened.
 func TestFormatMatrix_RatchetBlockIsNamed(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeMetricRegressionRepo(t)
-	for _, tc := range []struct {
-		format, section, metric string
-	}{
-		{formatText, "METRIC RATCHET (1)", "  coverage: "},
-		{formatMarkdown, "## Metric ratchet", "| coverage | "},
-	} {
-		code, stdout, stderr := runArchfit(t, cmdCheck, "-c", cfgPath, "--format="+tc.format)
+	for _, format := range []string{formatText, formatMarkdown} {
+		code, stdout, stderr := runArchfit(t, cmdCheck, "-c", cfgPath, "--format="+format)
 		if code != 1 {
-			t.Fatalf("check --format=%s: exit = %d, want 1 (ratchet block)\nstderr:\n%s", tc.format, code, stderr)
+			t.Fatalf("check --format=%s: exit = %d, want 1 (ratchet block)\nstderr:\n%s", format, code, stderr)
 		}
-		for _, want := range []string{tc.section, tc.metric, "archfit baseline"} {
+		for _, want := range []string{ratchetCoverageRule, "metric coverage worsened from"} {
 			if !strings.Contains(stdout, want) {
-				t.Errorf("--format=%s is missing %q:\n%s", tc.format, want, stdout)
+				t.Errorf("--format=%s is missing %q:\n%s", format, want, stdout)
 			}
 		}
 	}

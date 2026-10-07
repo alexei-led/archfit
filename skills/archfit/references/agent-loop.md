@@ -16,8 +16,8 @@ agent edits code
   → exit 0 or 2?  no blocker remains. (2 = needs_attention: read the active
      diagnostic or named missing evidence; never fabricate it to force 0.)
   → exit 1?  read agent_tasks[] — goal, constraints, files, validation
-     (empty agent_tasks[]: a metric ratchet or a required analyzer blocked;
-      the text/Markdown METRIC RATCHET section names the metric)
+     (empty agent_tasks[]: a required analyzer blocked; a tripped metric
+      ratchet is a task for the rule metric/<name>)
   → fix within the constraints; change the importing side of the edge
   → run the task's validation command verbatim
   → done when that run no longer lists the task's finding_id and is not

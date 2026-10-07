@@ -17,7 +17,7 @@ import (
 
 // Erosion gates (CI), behavioural half. The structural half — no_scalar_decision
 // and no_dead_archfit_rule — lives in internal/erosion_test.go, which also
-// carries the name-to-owner table for all seven checks. The seventh,
+// carries the name-to-owner table for all eight checks. The seventh,
 // policy_query_agreement, lives in policy_test.go beside the can-import fixture
 // it shares with the other policy query tests; its TypeScript and Python
 // end-to-end cases live in policy_agreement_lang_test.go.
@@ -363,4 +363,113 @@ func baselineCaptureIgnoresItsOwnFile(t *testing.T) {
 	if got := capture(); !bytes.Equal(got, clean) {
 		t.Errorf("capture over an unchanged tree depends on the baseline it overwrites\nwant:\n%s\ngot:\n%s", clean, got)
 	}
+}
+
+// TestErosion_RatchetRequiresComparableReference
+// (ratchet_requires_comparable_reference) asserts a metric ratchet decides only
+// against a reference that compares with the run.
+//
+// A metric delta across a policy, model, rubric or profile change is not a code
+// change. Against such a reference a worse metric must be unmeasured (exit 2,
+// `hard_gates: unmeasured`), never a block and never a pass. The same fixture
+// with a comparable reference must block with a `metric/<name>` gate finding,
+// so the gate cannot pass by never firing.
+// ratchetCoverageRule is the rule ID of the coverage metric's ratchet finding.
+const ratchetCoverageRule = "metric/coverage"
+
+func TestErosion_RatchetRequiresComparableReference(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeMetricRegressionRepo(t)
+
+	code, stdout, stderr := runArchfit(t, cmdCheck, "-c", cfgPath, "--format="+formatJSON)
+	if code != 1 {
+		t.Fatalf("comparable reference: exit = %d, want 1 (ratchet block)\nstderr:\n%s", code, stderr)
+	}
+	var blocked report.ArchitectureState
+	if err := json.Unmarshal([]byte(stdout), &blocked); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !hasRatchetFinding(blocked) {
+		t.Fatal("fixture regression: a comparable reference did not produce a metric/<name> finding, so the gate would pass vacuously")
+	}
+
+	path := filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath)
+	stored, err := baseline.Load(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.State.ClassificationHash = strings.Repeat("0", 64)
+	if err := baseline.Save(context.Background(), path, stored); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runArchfit(t, cmdCheck, "-c", cfgPath, "--format="+formatJSON)
+	if code != 2 {
+		t.Fatalf("non-comparable reference: exit = %d, want 2 (unmeasured)\nstderr:\n%s", code, stderr)
+	}
+	var unmeasured report.ArchitectureState
+	if err := json.Unmarshal([]byte(stdout), &unmeasured); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, problem := range ratchetReferenceProblems(unmeasured) {
+		t.Errorf("non-comparable reference: %s", problem)
+	}
+}
+
+// TestErosion_RatchetRequiresComparableReferenceFiresOnAWrongDecision proves the
+// predicate reports a ratchet that decided against a reference that does not
+// compare.
+func TestErosion_RatchetRequiresComparableReferenceFiresOnAWrongDecision(t *testing.T) {
+	t.Parallel()
+	nonComparable := func() report.ArchitectureState {
+		s := report.ArchitectureState{GateReference: &report.StateComparison{Status: report.ComparisonNonComparable}}
+		s.Decision.HardGates = report.HardGateUnmeasured
+		s.Decision.UnevaluatedRequiredRules = []report.UnevaluatedRule{{RuleID: "metric_ratchets", Reason: "reference not comparable (drift: rubric_version): 3 metric ratchets cannot be evaluated"}}
+		return s
+	}
+	if problems := ratchetReferenceProblems(nonComparable()); len(problems) != 0 {
+		t.Fatalf("ratchetReferenceProblems(correct) = %v, want none", problems)
+	}
+	decided := nonComparable()
+	decided.Findings = []report.Finding{{RuleID: ratchetCoverageRule, Kind: report.FindingKindGate}}
+	passed := nonComparable()
+	passed.Decision.HardGates = report.HardGatePass
+	silent := nonComparable()
+	silent.Decision.UnevaluatedRequiredRules = nil
+	for name, state := range map[string]report.ArchitectureState{"blocked": decided, "passed": passed, "silent": silent} {
+		if problems := ratchetReferenceProblems(state); len(problems) == 0 {
+			t.Errorf("%s: ratchetReferenceProblems = none, want the wrong decision reported", name)
+		}
+	}
+}
+
+func hasRatchetFinding(s report.ArchitectureState) bool {
+	for _, f := range s.Findings {
+		if strings.HasPrefix(f.RuleID, "metric/") {
+			return true
+		}
+	}
+	return false
+}
+
+// ratchetReferenceProblems lists how a run that holds a baseline which does not
+// compare still let a metric ratchet decide.
+func ratchetReferenceProblems(s report.ArchitectureState) []string {
+	if s.GateReference == nil || s.GateReference.Status == report.ComparisonComparable {
+		return nil
+	}
+	var out []string
+	if hasRatchetFinding(s) {
+		out = append(out, "a metric/<name> finding exists although the reference does not compare")
+	}
+	if s.Decision.HardGates != report.HardGateUnmeasured {
+		out = append(out, "hard_gates is "+string(s.Decision.HardGates)+", want unmeasured: the ratchets were not evaluated")
+	}
+	named := false
+	for _, rule := range s.Decision.UnevaluatedRequiredRules {
+		named = named || rule.RuleID == "metric_ratchets"
+	}
+	if !named {
+		out = append(out, "unevaluated_required_rules does not name metric_ratchets: the cause is invisible")
+	}
+	return out
 }

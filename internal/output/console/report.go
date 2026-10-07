@@ -24,12 +24,10 @@ func New() *Renderer { return &Renderer{} }
 // Format returns "console".
 func (r *Renderer) Format() string { return "console" }
 
-// Render writes the document's architecture state as terminal text, and names
-// the metrics behind a metric-ratchet block from the document's metric deltas.
+// Render writes the document's architecture state as terminal text.
 func (r *Renderer) Render(d report.Document, w io.Writer) error {
-	regressions := ratchetRegressions(d)
-	view := brief.Build(brief.Input{State: d.State, CoverageGaps: d.CoverageGaps, MetricRatchet: len(regressions) > 0})
-	return writeState(d.State, view, regressions, w)
+	view := brief.Build(brief.Input{State: d.State, CoverageGaps: d.CoverageGaps})
+	return writeState(d.State, view, w)
 }
 
 // RenderState writes the architecture state as terminal-native plain text: the
@@ -43,21 +41,17 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 // acts on is a named blocker, a flagged dimension, or an unmeasured one. No
 // Markdown, no wide tables, no color — scannable in a terminal and safe to pipe
 // (timing and progress live on stderr, not here).
-//
-// The state alone carries no metric deltas, so it cannot name a tripped
-// metric ratchet; Render, which holds the whole document, can.
 func RenderState(s report.ArchitectureState, w io.Writer) error {
-	return writeState(s, brief.Build(brief.Input{State: s}), nil, w)
+	return writeState(s, brief.Build(brief.Input{State: s}), w)
 }
 
-func writeState(s report.ArchitectureState, view brief.View, regressions []metricRegression, w io.Writer) error {
+func writeState(s report.ArchitectureState, view brief.View, w io.Writer) error {
 	var b strings.Builder
 
 	b.WriteString("ARCHITECTURE STATE\n\n")
 	writeHeadline(&b, s, view.VerdictReason)
 	writeBlockers(&b, view.Blockers)
 	writeNextSteps(&b, view.NextSteps)
-	writeMetricRatchet(&b, s.GateReference, regressions)
 	writeDimensions(&b, s.Dimensions)
 	writeUnknowns(&b, s.Dimensions, view)
 	writeSeams(&b, s.Seams)
@@ -95,13 +89,12 @@ func writeHeadline(b *strings.Builder, s report.ArchitectureState, reason string
 	kv(b, "COVERAGE", fmt.Sprintf("%d measured · %d partial · %d unmeasured  (of %d)",
 		s.Coverage.Measured, s.Coverage.Partial, s.Coverage.Unmeasured, report.DimensionCount))
 	// The reassurance is keyed on the VERDICT, never on the finding count alone.
-	// A required-tool policy failure and a tripped metric ratchet both block
-	// without producing a finding, so "no blockers … not to stop development"
-	// over a BLOCKED run tells the reader to ignore the exit code the same run
+	// A required-tool policy failure blocks without producing a finding, so
+	// "no blockers … not to stop development" over a BLOCKED run tells the reader to ignore the exit code the same run
 	// just returned.
 	switch {
 	case s.Verdict == report.StateBlocked && blockers == 0:
-		b.WriteString("\nBlocked by a hard gate that produces no finding — a required\nanalyzer or a metric ratchet. See the dimension(s) below reporting\ngate: fail.\n")
+		b.WriteString("\nBlocked by a hard gate that produces no finding — a required\nanalyzer. See the dimension(s) below reporting gate: fail.\n")
 	case s.Decision.HardGates == report.HardGateUnmeasured:
 		b.WriteString("\nRequired architecture checks could not be completed. Supply the\nmissing evidence before treating this run as a passed gate.\n")
 	case blockers == 0:

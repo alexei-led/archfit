@@ -110,7 +110,7 @@ These formats apply to `archfit analyze` and `archfit check`.
 The `text` and Markdown brief uses the words in the [glossary](glossary.md):
 a blocker is an active gate finding, a diagnostic an active advisory finding.
 Blockers are never capped. NEXT STEPS lists at most five steps in this order:
-blockers, a metric ratchet, rules and analyzers that need evidence, the gate
+blockers (a tripped metric ratchet is one), rules and analyzers that need evidence, the gate
 reference, module decisions, then coverage or deploy-unit evidence. It offers
 `archfit baseline` only when no blocker is active and no reference is stored;
 a stored reference that does not compare asks for a review first, and NOT
@@ -539,9 +539,10 @@ archfit hook git    [--config .archfit.yaml] [--base HEAD]
 The output table of `hook claude` and the pre-commit setup are in
 [the agent feedback loop](agent-feedback.md#hooks-instructions-and-the-skill).
 Both hooks block only when the next action is `repair` or `ask_owner` and a
-repair is in scope. A dead selector or a metric ratchet also leads to those
+repair is in scope. A dead selector or an unmeasured ratchet also leads to those
 actions, but neither is scoped to the change, so the hooks report them and
-let the change through. `hook git` exits `1` on a block, `0` otherwise (other
+let the change through. A tripped ratchet is a repair task like any other
+blocker, so it blocks. `hook git` exits `1` on a block, `0` otherwise (other
 actions are printed on stderr), and `3` when archfit cannot run.
 
 `hook git` judges what the commit will contain: the staged content. Unstaged

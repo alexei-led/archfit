@@ -17,9 +17,6 @@ type agentResult struct {
 		RuleIDs    []string `json:"rule_ids"`
 		Edit       []string `json:"edit"`
 	} `json:"repairs"`
-	WorsenedMetrics []struct {
-		Name string `json:"name"`
-	} `json:"worsened_metrics"`
 	Omitted struct {
 		Repairs int `json:"repairs"`
 	} `json:"omitted"`
@@ -92,8 +89,8 @@ func TestFormatMatrix_AgentDigestCarriesTheState(t *testing.T) {
 }
 
 // TestFormatMatrix_AgentDigestNamesTheRatchet pins the agent channel of a
-// metric ratchet: the block produces no finding and no task, so the digest
-// names the worsened metric and still tells the agent to repair.
+// metric ratchet: a tripped ratchet is a gate finding with a repair task, so
+// the digest carries one repair for it and tells the agent to repair.
 func TestFormatMatrix_AgentDigestNamesTheRatchet(t *testing.T) {
 	t.Parallel()
 	code, raw, stderr := runArchfit(t, cmdCheck, "-c", writeMetricRegressionRepo(t), "--progress=none", "--format="+formatAgent)
@@ -101,10 +98,7 @@ func TestFormatMatrix_AgentDigestNamesTheRatchet(t *testing.T) {
 		t.Fatalf("check --format agent: exit = %d, want 1 (ratchet block)\nstderr:\n%s", code, stderr)
 	}
 	got := decodeAgentResult(t, raw)
-	if got.NextAction != "repair" || len(got.Repairs) != 0 {
-		t.Errorf("next_action = %q with %d repairs, want repair with none", got.NextAction, len(got.Repairs))
-	}
-	if len(got.WorsenedMetrics) != 1 || got.WorsenedMetrics[0].Name != "coverage" {
-		t.Errorf("worsened_metrics = %+v, want [coverage]", got.WorsenedMetrics)
+	if got.NextAction != "repair" || len(got.Repairs) != 1 || len(got.Repairs[0].RuleIDs) != 1 || got.Repairs[0].RuleIDs[0] != ratchetCoverageRule {
+		t.Errorf("next_action = %q, repairs = %+v, want repair with one metric/coverage repair", got.NextAction, got.Repairs)
 	}
 }

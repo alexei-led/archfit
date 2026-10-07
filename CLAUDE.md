@@ -25,7 +25,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - Import ring: `go test ./internal/ -run TestArchImports`
 - Golden output: `go test ./internal/application/ -run TestGolden` — regenerate
   deliberately and inspect the diff; output changes are never automatic.
-- Erosion gates: `go test ./internal/ ./cmd/archfit/ -run TestErosion_` — the seven
+- Erosion gates: `go test ./internal/ ./cmd/archfit/ -run TestErosion_` — the eight
   named architecture-state checks (see the erosion invariant below).
 - Dogfood gate: `make archfit` — CI runs the same target after tests/goldens. Also
   runs locally pre-push via the `arch-lint` hook in `.pre-commit-config.yaml`. The
@@ -840,8 +840,9 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `agentout.decide`, from the report contract only (a report adapter may not
   import assessment): active gate tasks + origin, unevaluated required rules
   (`selector matches nothing:` → `ask_owner`, any other reason →
-  `restore_evidence`), coverage gaps with gate `fail`, and the ratchet twin of
-  `console.ratchetRegressions`. A blocked verdict never maps to `none`. Scope is
+  `restore_evidence`; `reference not comparable` → `ask_owner`, the owner moves
+  the reference), coverage gaps with gate `fail`. A tripped ratchet is an
+  ordinary `metric/<name>` repair task. A blocked verdict never maps to `none`. Scope is
   origin only: a repair is out of scope only when every grouped task is
   `pre_existing`. The 8 KB budget runs after the decision and never moves it;
   it shortens free text and caps repair lists (counting what it cut), never
@@ -892,7 +893,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   claude` (Stop/SubagentStop JSON on stdin, config resolved against the event
   `cwd`, a tree clean but for `.archfit-cache` skips) exits 2 with
   `agentout.Brief` on stderr only when `blocksChange`: `repair`/`ask_owner`
-  AND an in-scope repair (a dead selector or a ratchet is not scoped to the
+  AND an in-scope repair (a dead selector or an unmeasured ratchet is not scoped to the
   change, so it is a `systemMessage`); `stop_hook_active` → `systemMessage`;
   any archfit error fails open (exit 0 + `systemMessage`); malformed stdin is
   1. `hook git` exits 1/0/3 on the same `blocksChange` and judges the INDEX,
@@ -937,13 +938,16 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `decision.unevaluated_required_rules`; without another blocker it sets
   `hard_gates: unmeasured` and remains exit 2. Required-rule evidence is read
   from these fields, never inferred from finding prose.
-- **Seven named erosion gates** hold the architecture-state contract against decay
+- **Eight named erosion gates** hold the architecture-state contract against decay
   back into the averaged score it replaced. Each has ONE executable owner and a
   PAIRED fixture proving it fires on a violating input — a structural rule nobody
   has watched fail is a rule nobody knows still works.
   `no_scalar_decision` + `no_dead_archfit_rule` live in `internal/erosion_test.go`
   (which carries the name→owner table); `dimension_status_required`,
-  `config_hash_required` (config_hash AND classification_hash), `label_evidence_required`, and `baseline_idempotent`
+  `config_hash_required` (config_hash AND classification_hash), `label_evidence_required`, `baseline_idempotent`,
+  and `ratchet_requires_comparable_reference` (a worse metric against a reference that
+  does not compare is `hard_gates: unmeasured`, exit 2; the same fixture with a
+  comparable reference blocks with a `metric/<name>` finding)
   live in `cmd/archfit/erosion_test.go` and run the real command over a fixture
   repo. `no_scalar_decision` scopes `internal/application/analysis.go` to
   `outcomeFor`/`seamAnchor`, NOT the whole file: `AnalysisResult` still CARRIES
@@ -1038,23 +1042,25 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `fail`/unset is blocking; exceptions: `public_api_change` and
   `public_api_type_leak` default to `warn` when unset). An unknown `type` value is a config error.
   `metrics.<name>.gate` follows the same convention: a worsening baseline delta
-  blocks when `gate` is unset. A tripped ratchet produces NO finding, so it
-  reaches the verdict the same way the required-tool gate does — through
-  `evaluation.blockingMetricRegressions` into the state's hard-gate result
-  (`buildState`), never through the finding populations. It also raises the
-  owning dimension's `gate` to `fail`, routed by the envelope's own metric list.
-  Asserting only `evaluation.Result.Verdict` cannot see this: nothing reads that
-  verdict for the exit code. The state carries no ratchet field, so text and
-  Markdown name the ratchet (`METRIC RATCHET` / `## Metric ratchet`,
-  `ratchetRegressions`, twin helpers in console and markdown) from the
-  Document's metric deltas, and only when the contract proves it, with verdict
-  blocked. With zero active blockers and no coverage gap gating `fail`, they
-  list every metric that worsened against the accepted baseline. Otherwise
-  (`ratchetProvenDimensions`) they list the worsened metrics of each failing
-  dimension with no hard-gate finding ref — for `operations`, also no failing
-  analyzer gate; a ratchet beside a hard-gate finding in its own dimension stays
-  unnamed. Thresholds are not in the contract, so a worsened metric inside its
-  threshold is listed too; the label says "worsened", never "tripped".
+  blocks when `gate` is unset. A tripped ratchet is ONE FINDING,
+  `metric/<name>` (`evaluation.ratchetFindings`, ID = `NewKeyed("metric/<name>",
+  "metric_ratchet", name)`, never keyed by the values, so a rule-only waiver
+  keeps matching). `matched_by` and `why` carry `before`, `after`, `delta` and
+  the `threshold`; a gate is a blocker with a `code_change` repair task whose
+  constraint says not to accept it by re-running `archfit baseline`; `gate:
+  warn` yields an advisory; `off` yields nothing. It routes to the dimension
+  whose envelope publishes the metric (`routeRatchets`), so the exit code, SARIF,
+  text, Markdown and the agent digest need no ratchet-only path (the old
+  `blockingMetricRegressions`, `MetricRegressions` and the three `ratchetRegressions`
+  twins are gone). Baseline capture runs with no baseline, so it has no delta and
+  cannot accept a ratchet: only a waiver or a reviewed `archfit baseline` moves it.
+  **A ratchet compares only against a reference that compares with this run**
+  (`application.assess` passes `BaseMetrics` only when `Baseline.Comparison` is
+  comparable; metric versions are still checked by `ComputeDelta`). With a baseline
+  file whose reference does not compare, no delta exists and the run lists ONE
+  unevaluated entry `metric_ratchets` (`reference not comparable (drift: …): N
+  metric ratchets cannot be evaluated`): `hard_gates: unmeasured`, exit 2, never 1
+  and never a silent pass. No baseline file means no ratchet and no entry.
   `MetricEntry.Enabled` is a `*bool` so a knob-only
   entry (`{gate: warn}`) stays enabled — only explicit `enabled: false` disables
   the metric (`metrics.New`). `coupling_balance` does not gate at all — the only
