@@ -58,8 +58,8 @@ and accepted are not defined in one place.
 
 - `external_edges` mixed library imports with first-party code that no module
   owned. Done in v3.0.0, see below.
-- SARIF results carry no `baselineState`, so code scanning cannot tell new
-  results from accepted ones.
+- SARIF results carried no `baselineState`, so a consumer could not tell new
+  results from accepted ones. Done in v3.0.0, see below.
 - `config compare` text still prints a repository score line, which the state
   contract dropped.
 
@@ -139,8 +139,10 @@ These have no dependency on the rest of this plan. They can ship first.
 
 - Done in v3.0.0: `external_edges` is split into `library_edges` and
   `unmapped_first_party_edges`, decided by the target of the edge.
-- Set SARIF `baselineState`: `new` for a new finding, `unchanged` for an
-  accepted or waived one.
+- Done in v3.0.0: SARIF `baselineState` by baseline membership (baselined
+  `unchanged`, fixed `absent`, every other finding `new`, a waived one
+  included), an `external`, `accepted` suppression on a baselined or waived
+  result, and `partialFingerprints.primaryLocationLineHash` = finding ID.
 - Drop the score line from the `config compare` text.
 
 ## 2.7 Architecture map

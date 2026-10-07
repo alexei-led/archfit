@@ -180,6 +180,15 @@ Changed (structure metrics):
   the old `external_edges`. A consumer that reads `external_edges` must read
   both new names.
 
+Changed (SARIF):
+
+- Each SARIF result now carries `partialFingerprints.primaryLocationLineHash`
+  (the finding ID), so GitHub code scanning keeps one alert when the code
+  around it moves. When the run loaded a baseline file, each result also
+  carries `baselineState`: `unchanged` for a baselined finding, `absent` for a
+  baseline entry the run no longer sees, and `new` for every other finding. A
+  baselined or waived result carries an `external`, `accepted` suppression.
+
 ## v2.5.1 — (unreleased)
 
 Two fixes. The output contract and the baseline do not change.

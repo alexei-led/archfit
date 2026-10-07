@@ -434,6 +434,18 @@ locations and stable `archfit/v1` fingerprints. Metrics and the verdict ride
 in `runs[0].properties`. Pipe it to GitHub code scanning to get findings as
 inline PR annotations.
 
+Each result also carries the SARIF baseline fields:
+
+| Field | Value |
+| --- | --- |
+| `baselineState` | Written only when the run loaded a baseline file (`gate_reference.baseline_present`). `unchanged` for a baselined finding, `absent` for a baseline entry that this run no longer sees, `new` for every other finding. A waived finding is `new`: a waiver accepts a finding, it does not put it in the baseline. archfit never writes `updated`. |
+| `suppressions` | One `{kind: external, status: accepted}` entry for a baselined or a waived finding. An expired waiver accepts nothing, so its finding has none. |
+| `partialFingerprints.primaryLocationLineHash` | The finding ID. GitHub code scanning matches alerts across runs on this key, so an alert does not move when the code around it moves. |
+
+GitHub code scanning ignores `baselineState` and `suppressions`: it tracks new
+and fixed alerts per branch itself. Other SARIF consumers, such as the VS Code
+SARIF viewer, read them.
+
 ## The dimensions an agent sees
 
 - **Gate findings** — boundary violations (forbidden deps, internal access,
