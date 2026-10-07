@@ -82,7 +82,7 @@ func TestRun_Check_BriefBaselineStep(t *testing.T) {
 	if code := Run([]string{cmdBaseline, "-c", cfg, flagRefresh}, &buf); code != 0 {
 		t.Fatalf("baseline exit = %d\n%s", code, buf.String())
 	}
-	writeFixtureFile(t, dir, defaultConfigPath, hookModules+"module_review:\n  gate: warn\n")
+	writeFixtureFile(t, dir, defaultConfigPath, hookModules+"coupling:\n  volatility_cascade: true\n")
 	if out := check(); !strings.Contains(out, review) || strings.Contains(out, record) {
 		t.Fatalf("drifted reference: want the review step, never a blanket baseline\n%s", out)
 	}

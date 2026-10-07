@@ -115,11 +115,15 @@ type AnalysisContext struct {
 	Now        time.Time
 	ConfigHash string
 	// ModelHash and LabelsHash fingerprint the module model and the approved
-	// label set. With ConfigHash and the rubric version they are the four
-	// inputs a numerical comparison needs to agree on; any mismatch makes the
+	// label set. With the classification hash and the rubric version they are
+	// the four inputs a numerical comparison needs to agree on; any mismatch makes the
 	// comparison non-comparable rather than a delta nobody can justify.
-	ModelHash          string
-	LabelsHash         string
+	ModelHash  string
+	LabelsHash string
+	// ClassificationHash is the comparison input for the policy leaves that
+	// change facts (acquisition.ClassificationHash). ConfigHash stays the raw-byte
+	// identity of the file and is never compared.
+	ClassificationHash string
 	MeasurementProfile *modevidence.MeasurementProfile
 	ConfigSource       string
 	BundleDir          string
@@ -285,7 +289,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		Scope: runCtx.Scope, Now: runCtx.Now, BaseRef: req.BaseRef,
 		Advisory:     !req.NoAdvisories,
 		ConfigSource: runCtx.ConfigSource, ScanRoot: runCtx.ScanRoot, ConfigHash: runCtx.ConfigHash,
-		ModelHash: runCtx.ModelHash, LabelsHash: runCtx.LabelsHash,
+		ModelHash: runCtx.ModelHash, LabelsHash: runCtx.LabelsHash, ClassificationHash: runCtx.ClassificationHash,
 		PrimaryExtractorTools: runCtx.PrimaryExtractorTools, OwnerSource: runCtx.OwnerSource,
 		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
 		CoverageGaps: runCtx.CoverageGaps, VolatilityCorroboration: runCtx.VolatilityCorroboration,
@@ -296,7 +300,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 	}
 	diag := assessed.Diagnostic
 	diag.MeasurementProfile = runCtx.MeasurementProfile
-	diag.GateReference = baselineComparison(base, runCtx)
+	diag.GateReference = base.Comparison(runCtx)
 	attachRelationshipEvidence(&diag, relationships.Evidence)
 	diag.DistanceContext = buildDistanceContext(diag, runCtx.Policy, runCtx.DeployUnitDetectedModules)
 	if req.DiscloseHealthWarnings {
@@ -336,7 +340,8 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 // seamAnchor projects the persisted baseline into the seam gate's reference.
 //
 // The reference is comparable only when the stored snapshot was written under
-// the same config, module map, labels, and rubric. Everything else abstains
+// the same classification, module map, labels, rubric, and measurement
+// profile. Everything else abstains
 // with a named cause: a baseline that records no seams because it predates the
 // ledger is not evidence that there were none, and reading it that way would
 // report every existing seam as newly introduced.
@@ -344,7 +349,7 @@ func seamAnchor(base Baseline, runCtx AnalysisContext) evaluation.BaselineAnchor
 	if base.State == nil {
 		return evaluation.BaselineAnchor{}
 	}
-	cmp := baselineComparison(base, runCtx)
+	cmp := base.Comparison(runCtx)
 	if cmp.Status != result.StateComparisonComparable {
 		return evaluation.BaselineAnchor{
 			NonComparableReason: "the stored baseline was written under different inputs",
@@ -357,10 +362,20 @@ func seamAnchor(base Baseline, runCtx AnalysisContext) evaluation.BaselineAnchor
 // headFingerprints are this run's policy and measurement comparison inputs.
 func headFingerprints(runCtx AnalysisContext) decision.Fingerprints {
 	return decision.Fingerprints{
-		ConfigHash: runCtx.ConfigHash, ModelHash: runCtx.ModelHash,
+		ClassificationHash: runCtx.ClassificationHash, ModelHash: runCtx.ModelHash,
 		LabelsHash: runCtx.LabelsHash, RubricVersion: report.ScoreVersion,
 		MeasurementProfile: runCtx.MeasurementProfile,
 	}
+}
+
+// Comparison decides whether the stored reference may be compared with this
+// run, and which input classes drifted when it may not (decision.DriftClass).
+// It is the one comparability answer: the seam gate and gate_reference read it.
+func (b Baseline) Comparison(runCtx AnalysisContext) *result.StateComparison {
+	cmp := baselineComparison(b, runCtx)
+	present := b.Present
+	cmp.BaselinePresent = &present
+	return cmp
 }
 
 func baselineComparison(base Baseline, runCtx AnalysisContext) *result.StateComparison {
@@ -377,13 +392,14 @@ func storedComparison(base Baseline, head decision.Fingerprints) *result.StateCo
 		return decision.NonComparableState("baseline", "stored baseline has no architecture-state snapshot")
 	}
 	cmp := decision.CompareFingerprints("baseline", head, decision.Fingerprints{
-		ConfigHash: base.State.ConfigHash, ModelHash: base.State.ModelHash,
+		ClassificationHash: base.State.ClassificationHash, ModelHash: base.State.ModelHash,
 		LabelsHash: base.State.LabelsHash, RubricVersion: base.State.RubricVersion,
 		MeasurementProfile: base.State.MeasurementProfile,
 	})
 	if base.State.QualifyingSeamIDs == nil {
 		cmp.Status = result.StateComparisonNonComparable
 		cmp.Reasons = append(cmp.Reasons, "stored baseline qualifying_seam_ids snapshot is missing or null")
+		cmp.Drift = append(cmp.Drift, string(decision.DriftReferenceIncomplete))
 	}
 	return cmp
 }

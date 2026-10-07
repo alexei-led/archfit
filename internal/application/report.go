@@ -1,6 +1,7 @@
 package application
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
@@ -68,12 +69,12 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 
 	out.Comparison = report.StateComparison{
 		Status: report.ComparisonNotRequested, Reasons: []string{},
-		ConfigHash: r.ConfigHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
+		ConfigHash: r.ConfigHash, ClassificationHash: r.ClassificationHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
 		RubricVersion:      report.ScoreVersion,
 		MeasurementProfile: projectMeasurementProfile(r.MeasurementProfile),
 	}
 	if c := r.GateReference; c != nil {
-		out.GateReference = &report.StateComparison{Status: report.ComparisonStatus(c.Status), BaseRef: c.BaseRef, Reasons: append([]string{}, c.Reasons...)}
+		out.GateReference = &report.StateComparison{Status: report.ComparisonStatus(c.Status), BaseRef: c.BaseRef, Reasons: append([]string{}, c.Reasons...), Drift: slices.Clone(c.Drift), BaselinePresent: c.BaselinePresent}
 	}
 	if c := r.Comparison; c != nil {
 		// The comparison verdict is decided where both sides exist (the base
@@ -83,6 +84,7 @@ func projectArchitectureState(r result.Result, doc report.Document) report.Archi
 		out.Comparison.Status = report.ComparisonStatus(c.Status)
 		out.Comparison.BaseRef = c.BaseRef
 		out.Comparison.Reasons = append([]string{}, c.Reasons...)
+		out.Comparison.Drift = slices.Clone(c.Drift)
 		out.Comparison.TaskOriginStatus = c.TaskOriginStatus
 		out.Comparison.TaskOriginReasons = append([]string{}, c.TaskOriginReasons...)
 	}

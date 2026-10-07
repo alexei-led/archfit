@@ -153,7 +153,7 @@ type findingKeys struct {
 // storedDrift names each input that makes the stored reference differ from
 // this run, through the comparison the gate reference itself uses.
 func storedDrift(r result.Result, stored StoredBaseline) []string {
-	head := decision.Fingerprints{ConfigHash: r.ConfigHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
+	head := decision.Fingerprints{ClassificationHash: r.ClassificationHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
 		RubricVersion: report.ScoreVersion, MeasurementProfile: r.MeasurementProfile}
 	return storedComparison(Baseline{Present: true, State: stored.State}, head).Reasons
 }

@@ -17,10 +17,12 @@ import (
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
-// SchemaVersion is the schema_version this binary writes. Schema v2 stores the
+// SchemaVersion is the schema_version this binary writes. Schema v3 stores the
 // architecture-state reference (fingerprints, hard-gate findings, seams, and
-// dimension snapshots) and no repository scalar.
-const SchemaVersion = "archfit.baseline.v2"
+// dimension snapshots) and no repository scalar. v3 adds classification_hash,
+// the comparison input that replaced the raw config hash: a v2 file cannot say
+// which policy it was measured under, so it is rejected rather than guessed.
+const SchemaVersion = "archfit.baseline.v3"
 
 // AcceptedFinding records a finding that has been accepted into the baseline.
 // Fingerprint is the SHA256 hex ID from finding.New; RuleID is the rule that produced it.
@@ -69,7 +71,10 @@ type DimensionSnapshot struct {
 // a dimension or seam delta may be claimed only when these inputs still match, so a
 // reader can tell a code change from a policy change without guessing.
 type StateSnapshot struct {
+	// ConfigHash is the raw-byte identity of the policy file, kept for the App's
+	// integrity binding. Comparability reads ClassificationHash instead.
 	ConfigHash         string                       `json:"config_hash"`
+	ClassificationHash string                       `json:"classification_hash"`
 	ModelHash          string                       `json:"model_hash"`
 	LabelsHash         string                       `json:"labels_hash"`
 	RubricVersion      string                       `json:"rubric_version"`

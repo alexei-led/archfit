@@ -300,7 +300,7 @@ func gapTools(gaps []report.CoverageGap) string {
 // cannot be compared: the four comparison fingerprints and the measurement
 // profile, named by their wire keys, and a stored baseline whose state or seam
 // snapshot is incomplete. Only a missing baseline file gives none of them.
-var storedReasonPrefixes = []string{"config_hash", "model_hash", "labels_hash", "rubric_version", "measurement_profile", "stored baseline"}
+var storedReasonPrefixes = []string{"classification_hash", "model_hash", "labels_hash", "rubric_version", "measurement_profile", "stored baseline"}
 
 // Gate-reference steps.
 const (

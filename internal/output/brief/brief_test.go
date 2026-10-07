@@ -221,7 +221,7 @@ func TestReferenceStep(t *testing.T) {
 		{name: "comparable", ref: &report.StateComparison{Status: report.ComparisonComparable}, want: ""},
 		{name: "missing, no blocker", ref: missing, want: stepRecordReference},
 		{name: "missing with a blocker fixes the blockers first", ref: missing, blockers: 1, want: stepBlockersFirst},
-		{name: "config drift asks for review", ref: stored("config_hash differs between the two runs (a vs b): a policy change is not a code change"), blockers: 1, want: stepReviewReference},
+		{name: "classification drift asks for review", ref: stored("classification_hash differs between the two runs (a vs b): a policy change is not a code change"), blockers: 1, want: stepReviewReference},
 		{name: "profile drift asks for review", ref: stored("measurement_profile is missing from reference"), want: stepReviewReference},
 		{name: "incomplete seam snapshot asks for review", ref: stored("stored baseline qualifying_seam_ids snapshot is missing or null"), want: stepReviewReference},
 		{name: "missing state snapshot asks for review", ref: stored("stored baseline has no architecture-state snapshot"), want: stepReviewReference},

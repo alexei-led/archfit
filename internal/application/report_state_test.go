@@ -20,6 +20,7 @@ import (
 const (
 	stateHeadRef    = "HEAD"
 	stateConfigHash = "cfg-hash"
+	stateClassHash  = "class-hash"
 	// driftedFingerprint stands in for any fingerprint that moved between runs.
 	driftedFingerprint = "other"
 	stateToolSCIP      = "scip"
@@ -34,6 +35,7 @@ func stateFixture() result.Result {
 	diagnostic.Verdict = result.VerdictWarn
 	diagnostic.Head = stateHeadRef
 	diagnostic.ConfigHash = stateConfigHash
+	diagnostic.ClassificationHash = stateClassHash
 	diagnostic.ToolCoverage = []evidence.Coverage{
 		{Tool: "go/packages", Version: "go1.24", Status: evidence.StatusOK},
 		{Tool: stateToolSCIP, Status: evidence.StatusPartial, Reason: "empty index"},
@@ -201,7 +203,7 @@ func TestShadowStateCoverageCountsTheProjectedEnvelopes(t *testing.T) {
 // named reason — never a numerical delta with a caveat attached.
 func TestStateComparisonIsStrictAndExplains(t *testing.T) {
 	head := decision.Fingerprints{
-		ConfigHash: stateConfigHash, ModelHash: "model-hash", LabelsHash: "labels-hash",
+		ClassificationHash: stateClassHash, ModelHash: "model-hash", LabelsHash: "labels-hash",
 		RubricVersion:      report.ScoreVersion,
 		MeasurementProfile: referenceProfile(),
 	}
@@ -219,7 +221,8 @@ func TestStateComparisonIsStrictAndExplains(t *testing.T) {
 		}
 		// The fingerprints are reported regardless: they are what a later run
 		// compares against, so a report that omits them cannot be compared at all.
-		if state.Comparison.ConfigHash != head.ConfigHash ||
+		if state.Comparison.ConfigHash != stateConfigHash ||
+			state.Comparison.ClassificationHash != head.ClassificationHash ||
 			state.Comparison.ModelHash != head.ModelHash ||
 			state.Comparison.LabelsHash != head.LabelsHash ||
 			state.Comparison.RubricVersion != report.ScoreVersion {
@@ -232,10 +235,10 @@ func TestStateComparisonIsStrictAndExplains(t *testing.T) {
 		base       decision.Fingerprints
 		wantReason string
 	}{
-		{"config differs", decision.Fingerprints{ConfigHash: driftedFingerprint, ModelHash: head.ModelHash, LabelsHash: head.LabelsHash, RubricVersion: head.RubricVersion}, keyConfigHash},
-		{"model differs", decision.Fingerprints{ConfigHash: head.ConfigHash, ModelHash: driftedFingerprint, LabelsHash: head.LabelsHash, RubricVersion: head.RubricVersion}, keyModelHash},
-		{"labels differ", decision.Fingerprints{ConfigHash: head.ConfigHash, ModelHash: head.ModelHash, LabelsHash: driftedFingerprint, RubricVersion: head.RubricVersion}, keyLabelsHash},
-		{"rubric differs", decision.Fingerprints{ConfigHash: head.ConfigHash, ModelHash: head.ModelHash, LabelsHash: head.LabelsHash, RubricVersion: "bc_score.v5"}, keyRubricVersion},
+		{"classification differs", decision.Fingerprints{ClassificationHash: driftedFingerprint, ModelHash: head.ModelHash, LabelsHash: head.LabelsHash, RubricVersion: head.RubricVersion}, keyClassificationHash},
+		{"model differs", decision.Fingerprints{ClassificationHash: head.ClassificationHash, ModelHash: driftedFingerprint, LabelsHash: head.LabelsHash, RubricVersion: head.RubricVersion}, keyModelHash},
+		{"labels differ", decision.Fingerprints{ClassificationHash: head.ClassificationHash, ModelHash: head.ModelHash, LabelsHash: driftedFingerprint, RubricVersion: head.RubricVersion}, keyLabelsHash},
+		{"rubric differs", decision.Fingerprints{ClassificationHash: head.ClassificationHash, ModelHash: head.ModelHash, LabelsHash: head.LabelsHash, RubricVersion: "bc_score.v5"}, keyRubricVersion},
 	}
 	for _, tc := range mismatches {
 		t.Run(tc.name, func(t *testing.T) {
