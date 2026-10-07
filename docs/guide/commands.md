@@ -260,13 +260,14 @@ Synopsis:
 archfit baseline [flags]
 ```
 
-What it writes (`schema_version: archfit.baseline.v2`):
+What it writes (`schema_version: archfit.baseline.v3`):
 
 - Saves the baseline beside the config as `.archfit-baseline.json`.
 - Keeps the accepted finding fingerprints and the metric snapshot, so later runs
   can detect fixed findings.
-- Keeps the architecture-state reference under `state`: the four comparison
-  fingerprints (`config_hash`, `model_hash`, `labels_hash`, `rubric_version`)
+- Keeps the architecture-state reference under `state`: the comparison
+  fingerprints (`classification_hash`, `model_hash`, `labels_hash`, `rubric_version`),
+  the `config_hash` identity
   and the `measurement_profile` (producer semantics, tool versions, statuses,
   and settings hash)
   together with the facts they qualify — `hard_gate_finding_ids`,

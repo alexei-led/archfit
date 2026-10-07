@@ -2,6 +2,7 @@ package decision
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/model/evidence"
@@ -12,8 +13,11 @@ import (
 // They are separate values, not one combined hash, so a mismatch can say WHICH
 // input moved. "Not comparable" with no reason is indistinguishable from a bug.
 type Fingerprints struct {
-	// ConfigHash covers the normalized configuration.
-	ConfigHash string
+	// ClassificationHash covers the policy leaves that change the compared
+	// facts and are not modules (policy.ClassificationHash). The raw config
+	// bytes are deliberately NOT a comparison input: comments, waivers, rules and
+	// `reviewed_at` are governance and must never make a run non-comparable.
+	ClassificationHash string
 	// ModelHash covers the canonical module map and its surface globs. Seam
 	// identity is derived from module names, so a rename here would otherwise
 	// read as one resolved seam plus one new seam.
@@ -27,19 +31,35 @@ type Fingerprints struct {
 	MeasurementProfile *evidence.MeasurementProfile
 }
 
-// fingerprintInputs names each fingerprint for the mismatch reason.
+// DriftClass names the kind of input that moved between two runs. A consumer
+// that may cross some drift (a re-anchor crosses a scoring epoch or a profile
+// change, never a policy edit) reads the class, not the reason text.
+type DriftClass string
+
+// Drift classes. The first four are the fingerprint names, so a class is also
+// the prefix of its reason.
+const (
+	DriftClassification      DriftClass = "classification_hash"
+	DriftModel               DriftClass = "model_hash"
+	DriftLabels              DriftClass = "labels_hash"
+	DriftRubric              DriftClass = "rubric_version"
+	DriftProfile             DriftClass = "measurement_profile"
+	DriftReferenceIncomplete DriftClass = "reference_incomplete"
+)
+
+// fields names each fingerprint for the mismatch reason.
 func (f Fingerprints) fields() [4]struct {
-	name  string
+	class DriftClass
 	value string
 } {
 	return [4]struct {
-		name  string
+		class DriftClass
 		value string
 	}{
-		{"config_hash", f.ConfigHash},
-		{"model_hash", f.ModelHash},
-		{"labels_hash", f.LabelsHash},
-		{"rubric_version", f.RubricVersion},
+		{DriftClassification, f.ClassificationHash},
+		{DriftModel, f.ModelHash},
+		{DriftLabels, f.LabelsHash},
+		{DriftRubric, f.RubricVersion},
 	}
 }
 
@@ -60,15 +80,41 @@ func CompareFingerprints(baseRef string, head, base Fingerprints) *result.StateC
 			continue
 		}
 		out.Status = result.StateComparisonNonComparable
+		class := headFields[i].class
+		if baseFields[i].value == "" && class == DriftClassification {
+			// A reference written before the classification hash existed says
+			// nothing about the policy it was measured under.
+			out.Drift = append(out.Drift, string(DriftReferenceIncomplete))
+			out.Reasons = append(out.Reasons, "classification_hash is missing from the reference: it predates comparability v2")
+			continue
+		}
+		out.Drift = append(out.Drift, string(class))
 		out.Reasons = append(out.Reasons, fmt.Sprintf(
 			"%s differs between the two runs (%s vs %s): a policy change is not a code change",
-			headFields[i].name, shortHash(headFields[i].value), shortHash(baseFields[i].value)))
+			class, shortHash(headFields[i].value), shortHash(baseFields[i].value)))
 	}
 	if reasons := CompareMeasurementProfiles(head.MeasurementProfile, base.MeasurementProfile); len(reasons) > 0 {
 		out.Status = result.StateComparisonNonComparable
+		out.Drift = append(out.Drift, string(DriftProfile))
 		out.Reasons = append(out.Reasons, reasons...)
 	}
 	return out
+}
+
+// OnlyDrift reports whether c is non-comparable ONLY through the allowed drift
+// classes. A comparable comparison has no drift and answers false: there is
+// nothing to cross. An unknown or incomplete reference is never allowed
+// implicitly, so DriftReferenceIncomplete must be named to be crossed.
+func OnlyDrift(c *result.StateComparison, allowed ...DriftClass) bool {
+	if c == nil || c.Status != result.StateComparisonNonComparable || len(c.Drift) == 0 {
+		return false
+	}
+	for _, drift := range c.Drift {
+		if !slices.Contains(allowed, DriftClass(drift)) {
+			return false
+		}
+	}
+	return true
 }
 
 // NonComparableState reports a comparison that could not be attempted at all,
@@ -76,6 +122,7 @@ func CompareFingerprints(baseRef string, head, base Fingerprints) *result.StateC
 func NonComparableState(baseRef, reason string) *result.StateComparison {
 	return &result.StateComparison{
 		Status: result.StateComparisonNonComparable, BaseRef: baseRef, Reasons: []string{reason},
+		Drift: []string{string(DriftReferenceIncomplete)},
 	}
 }
 

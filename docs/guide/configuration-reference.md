@@ -672,6 +672,21 @@ stderr, and the run emits one `bc/coupling_gate` gate finding **per newly
 introduced seam**, each naming its module pair, so `agent_tasks[]` points at
 the seams that blocked rather than at unrelated advisories.
 
+### Which keys decide comparability
+
+Archfit compares two runs only when the inputs that change measured facts agree.
+It does not compare the bytes of `.archfit.yaml`. Each key has one class:
+
+| Class          | Keys                                                                                                                                                                           | Effect of an edit                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Model          | `modules` (paths, `public`, `internal`, `layer`, `subdomain`, `volatility`, `owner`, `deploy_unit`, `role`)                                                                    | Changes `model_hash`.                                                              |
+| Classification | `coupling.volatility_cascade`, `coupling.duplicated_knowledge`, `external_systems`, `metrics.function_loc_threshold`, `metrics.<name>.enabled`                                 | Changes `classification_hash`.                                                     |
+| Profile        | `exclude`, `languages`, `analyzers`, `coverage`, `file_class`                                                                                                                  | Changes the measurement profile.                                                   |
+| Governance     | `rules`, `waivers`, `layers`, `coupling.min_severity`, `coupling.gate`, `metrics.<name>.gate`, `min_delta`, `max_new`, `modules.<m>.depends_on`, `visible_to`, `reviewed_at`, `ai`, `outputs`, `module_review`, gates, comments | Can change findings and what blocks. Never makes a stored reference non-comparable. |
+
+`comparison.config_hash` is the SHA-256 of the file bytes. It identifies the
+file, and the App binds it to the protected policy. It is not compared.
+
 ### Measurement compatibility
 
 Every architecture-state run carries `comparison.measurement_profile`. It is

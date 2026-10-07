@@ -46,7 +46,10 @@ type BaselineDimension struct {
 // delta may be claimed only when all four still match this run, so a policy
 // change can never be reported as a code change.
 type BaselineStateSnapshot struct {
+	// ConfigHash is the raw-byte identity of the policy file. It is stored for
+	// the App's integrity binding and is never compared.
 	ConfigHash         string
+	ClassificationHash string
 	ModelHash          string
 	LabelsHash         string
 	RubricVersion      string
@@ -165,7 +168,7 @@ func (s BaselineService) Execute(ctx context.Context, req BaselineRequest) (Base
 // facts, so a snapshot can never pair one run's seams with another run's hashes.
 func baselineState(r result.Result) *BaselineStateSnapshot {
 	out := &BaselineStateSnapshot{
-		ConfigHash: r.ConfigHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
+		ConfigHash: r.ConfigHash, ClassificationHash: r.ClassificationHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
 		RubricVersion: report.ScoreVersion, MeasurementProfile: r.MeasurementProfile,
 		HardGateFindingIDs: []string{},
 		QualifyingSeamIDs:  []string{},

@@ -18,6 +18,7 @@
     }
   ],
   "comparison": {
+    "classification_hash": "a2c20cf1d218f300152ecd58bc4d1ec3b15218eb38770b7b408ea99a2c275c7d",
     "config_hash": "0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6",
     "measurement_profile": {
       "producers": [
@@ -925,6 +926,10 @@
   ],
   "gate_reference": {
     "base_ref": "baseline",
+    "baseline_present": false,
+    "drift": [
+      "reference_incomplete"
+    ],
     "reasons": [
       "no baseline file was loaded"
     ],

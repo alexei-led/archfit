@@ -17,7 +17,7 @@ const (
 
 func fingerprints() decision.Fingerprints {
 	return decision.Fingerprints{
-		ConfigHash: "cfg", ModelHash: "model", LabelsHash: "labels", RubricVersion: "bc_score.v6",
+		ClassificationHash: "cls", ModelHash: "model", LabelsHash: "labels", RubricVersion: "bc_score.v6",
 		MeasurementProfile: measurementFixture(),
 	}
 }
@@ -34,8 +34,8 @@ func TestCompareFingerprints(t *testing.T) {
 	}{
 		{name: "identical fingerprints compare", mutate: func(*decision.Fingerprints) {}, wantStatus: result.StateComparisonComparable},
 		{
-			name: "a config edit is not comparable", mutate: func(f *decision.Fingerprints) { f.ConfigHash = driftedHash },
-			wantStatus: result.StateComparisonNonComparable, wantReason: "config_hash",
+			name: "a classification edit is not comparable", mutate: func(f *decision.Fingerprints) { f.ClassificationHash = driftedHash },
+			wantStatus: result.StateComparisonNonComparable, wantReason: "classification_hash",
 		},
 		{
 			// Seam identity comes from module NAMES, so a rename would read as
@@ -82,7 +82,7 @@ func TestCompareFingerprints(t *testing.T) {
 // drifted inputs names all of them: fixing one and finding the comparison still
 // refused, with no new information, is the failure mode.
 func TestCompareFingerprintsReportsEveryMismatch(t *testing.T) {
-	base := decision.Fingerprints{ConfigHash: "x", ModelHash: "y", LabelsHash: "z", RubricVersion: "w", MeasurementProfile: measurementFixture()}
+	base := decision.Fingerprints{ClassificationHash: "x", ModelHash: "y", LabelsHash: "z", RubricVersion: "w", MeasurementProfile: measurementFixture()}
 
 	got := decision.CompareFingerprints(comparisonBaseRef, fingerprints(), base)
 	if len(got.Reasons) != 4 {
@@ -120,5 +120,55 @@ func TestNonComparableStateCarriesTheCallerReason(t *testing.T) {
 	}
 	if len(got.Reasons) != 1 || got.Reasons[0] != reason {
 		t.Errorf("reasons = %v, want exactly the caller's reason", got.Reasons)
+	}
+}
+
+func TestCompareFingerprintsNamesDriftClasses(t *testing.T) {
+	tests := []struct {
+		name      string
+		mutate    func(*decision.Fingerprints)
+		wantDrift []string
+	}{
+		{"nothing moved", func(*decision.Fingerprints) {}, nil},
+		{"classification", func(f *decision.Fingerprints) { f.ClassificationHash = driftedHash }, []string{"classification_hash"}},
+		{"reference predates classification_hash", func(f *decision.Fingerprints) { f.ClassificationHash = "" }, []string{"reference_incomplete"}},
+		{"model and rubric", func(f *decision.Fingerprints) { f.ModelHash, f.RubricVersion = driftedHash, "bc_score.v5" }, []string{"model_hash", "rubric_version"}},
+		{"profile", func(f *decision.Fingerprints) { f.MeasurementProfile = nil }, []string{"measurement_profile"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			base := fingerprints()
+			tc.mutate(&base)
+			got := decision.CompareFingerprints(comparisonBaseRef, fingerprints(), base)
+			if strings.Join(got.Drift, ",") != strings.Join(tc.wantDrift, ",") {
+				t.Errorf("Drift = %v, want %v (reasons %v)", got.Drift, tc.wantDrift, got.Reasons)
+			}
+		})
+	}
+}
+
+func TestOnlyDrift(t *testing.T) {
+	drift := func(status string, classes ...string) *result.StateComparison {
+		return &result.StateComparison{Status: status, Drift: classes}
+	}
+	rubricAndProfile := []decision.DriftClass{decision.DriftRubric, decision.DriftProfile}
+	tests := []struct {
+		name string
+		cmp  *result.StateComparison
+		want bool
+	}{
+		{"comparable has nothing to cross", drift(result.StateComparisonComparable), false},
+		{"nil", nil, false},
+		{"allowed classes only", drift(result.StateComparisonNonComparable, "rubric_version", "measurement_profile"), true},
+		{"one class outside the allowed set", drift(result.StateComparisonNonComparable, "rubric_version", "labels_hash"), false},
+		{"incomplete reference is never implied", drift(result.StateComparisonNonComparable, "reference_incomplete"), false},
+		{"non-comparable with no class", drift(result.StateComparisonNonComparable), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := decision.OnlyDrift(tc.cmp, rubricAndProfile...); got != tc.want {
+				t.Errorf("OnlyDrift = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
