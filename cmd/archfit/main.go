@@ -54,6 +54,7 @@ type cli struct {
 	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
 	Hook     HookCmd     `cmd:"" group:"analysis" help:"Agent and git hooks: block a stop or a commit on an architecture repair."`
 	Policy   PolicyCmd   `cmd:"" group:"analysis" help:"Pre-edit queries: which module owns a path, and whether a file may import a target."`
+	Map      MapCmd      `cmd:"" group:"analysis" help:"Draw the modules and seams with their policy status (Mermaid or text)."`
 
 	Doctor   DoctorCmd   `cmd:"" group:"setup" help:"Check analyzer/tool availability (use --fix to install missing tools)."`
 	Config   ConfigCmd   `cmd:"" group:"setup" help:"Create, sync, compare, and enrich the .archfit.yaml config."`

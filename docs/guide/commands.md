@@ -53,6 +53,7 @@ Use this when you know the job, not the command.
 | understand one finding in detail                                     | `archfit explain <fingerprint-prefix> -c .archfit.yaml`                                                       |
 | ask which module owns a path before an edit                          | `archfit policy where <path> -c .archfit.yaml`                                                                |
 | ask whether a file may import a target before an edit                | `archfit policy can-import <from> <target> -c .archfit.yaml`                                                  |
+| draw the modules and seams with what the policy says about each      | `archfit map -c .archfit.yaml > architecture.mmd`                                                             |
 | block an agent's stop or a commit on an architecture repair           | `archfit hook claude` (Claude Code Stop hook) or `archfit hook git` (pre-commit)                              |
 | keep the archfit rules in AGENTS.md current                          | `archfit agents-md --write` (CI: `archfit agents-md --check`)                                                 |
 | install the agent skill that matches the binary                      | `archfit skill install`                                                                                       |
@@ -80,7 +81,7 @@ Notes:
 
 - `archfit analyze` always exits `0` after a successful analysis, whatever the verdict.
 - `archfit analyze --require-tools` only changes the rendered verdict. It does not change the exit code on success.
-- `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit policy where`, `archfit skill install`, and the `config` commands are success-or-error commands: `0` or `3`.
+- `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit map`, `archfit policy where`, `archfit skill install`, and the `config` commands are success-or-error commands: `0` or `3`.
   `archfit config lint` is the exception: it exits `1` when it reports an error diagnostic.
 - `archfit hook claude` speaks the Claude Code hook protocol: exit `2` blocks the stop, `1` is malformed stdin, and an archfit error exits `0` with a `systemMessage` (it fails open).
 - Exit `0` is reachable when all nine dimensions are measured, hard gates pass,
@@ -447,6 +448,61 @@ Examples:
 archfit policy can-import internal/relationship/scoring/scorer_book.go internal/toolrun
 archfit policy can-import web/src/app.ts web/src/db/client.ts
 archfit policy can-import src/myapp/handlers.py myapp.domain
+```
+
+## `archfit map`
+
+Purpose:
+
+- Draw the declared modules in layer order and the seams between them.
+- Show, for each seam, what the policy says about it and its integration
+  strength.
+- Read the same run `check` makes. It adds no report document: the status is
+  `seams[].policy` of the architecture state.
+
+Synopsis:
+
+```sh
+archfit map [-c .archfit.yaml] [--root DIR] [--format mermaid|text] [--focus MODULE]...
+```
+
+Layers are drawn outermost first (the reverse of `layers:`, which lists the
+innermost layer first), so a permitted dependency points down. A module with a
+layer that `layers:` does not rank comes next, then a module with no layer,
+then a seam endpoint that no module declares (a `go.work` member).
+
+Each seam has one status, the first that matches:
+
+| Status      | Condition                                                                 | Mermaid arrow |
+| ----------- | ------------------------------------------------------------------------- | ------------- |
+| `violation` | An active gate finding names the pair.                                    | `==>`         |
+| `accepted`  | A gate finding on the pair is baselined or waived. This is not permission. | `-.->`        |
+| `advisory`  | Another active finding names the pair.                                    | `-->`         |
+| `allowed`   | A fail-gated allowlist (`depends_on`, `visible_to`) or layer rule permits the pair, as `policy can-import` decides it. | `-->` |
+| `observed`  | No finding names the pair and no rule decides it.                         | `-->`         |
+
+A finding names a pair through the modules of its edge. With `--no-advisories`
+on `check`, the report has no advisory findings, so those seams read `allowed`
+or `observed` in `seams[].policy`.
+
+Flags:
+
+| Flag         | Default    | Meaning                                                                                              |
+| ------------ | ---------- | ---------------------------------------------------------------------------------------------------- |
+| `--format`   | `mermaid`  | `mermaid` (a `flowchart TB`) or `text`.                                                              |
+| `--focus`    | none       | Keep this module, its direct neighbours, and the seams that touch it. Repeatable. The output counts the omitted seams by status, so a hidden violation always leaves a trace. |
+| `--refresh`  | `false`    | Re-run the extractors and refresh the cache.                                                         |
+| `-c`, `--root`, `--progress`, `-q` | | As for `check`.                                                                     |
+
+Exit codes: `0`, or `3` on an error or a `--focus` module that is neither
+declared nor a seam endpoint. The verdict never changes the exit code; use
+`check` for the gate.
+
+Examples:
+
+```sh
+archfit map -c .archfit.yaml > architecture.mmd
+archfit map --format text --focus billing
 ```
 
 ## `archfit hook claude` / `archfit hook git`

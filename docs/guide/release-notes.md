@@ -81,6 +81,16 @@ New:
   needs-attention verdict with no finding says why
   (`NEEDS ATTENTION — evidence incomplete: …`). Diagnostics list the findings
   of warn-gated rules before the coupling advisories.
+- `archfit map [--format mermaid|text] [--focus MODULE]...` draws the declared
+  modules, outermost layer first, and the seams between them with their policy
+  status and integration strength: a violation is a thick arrow, accepted debt
+  a dotted one. `--focus` keeps the named modules and their neighbours and
+  counts the omitted seams by status. It reads the same run as `check` and adds
+  no report document. See [`archfit map`](commands.md#archfit-map).
+- The architecture state gains `seams[].policy`: `violation`, `accepted`,
+  `advisory`, `allowed` (a fail-gated allowlist or layer rule permits the pair,
+  as `policy can-import` decides it), or `observed`. A baselined finding reads
+  `accepted`, never `allowed`.
 - New [glossary](glossary.md): archfit terms, wire terms, and the book terms
   and chapters they map to.
 
@@ -120,6 +130,11 @@ Contract notes:
 - JSON and SARIF change only in two texts: the undeclared-volatility entry in
   `config_warnings`, and the `why` (and SARIF message) of a critical
   low-distance `bc/imbalanced_coupling` finding. Finding IDs do not change.
+- `archfit.architecture-state.v1` gains the optional key `seams[].policy`;
+  `archfit.state.schema.json` is regenerated, so JSON and SARIF (the state in
+  `run.properties`) carry one new key per seam. The archfit App needs a decoder
+  before it can show the status, and must re-pin the state schema for this
+  release.
 - `map/uncovered_path` changes its subject from a graph node to a directory.
   A Go package keeps its finding ID. A finding about a single file gets a new
   ID: the old one reads `fixed`, and the directory finding is new. Before

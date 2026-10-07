@@ -18,6 +18,7 @@ Text and Markdown use the human term. JSON and SARIF use the wire term.
 | analyzer coverage | `coverage`, `coverage_gaps`                 | Which analyzers ran and what they saw. It is not test coverage.              |
 | test coverage     | `coverage:` config section, `testability`   | A coverage report you supply. archfit never runs your tests.                 |
 | seam              | `seams[]`                                   | One ordered module pair with at least one import edge.                       |
+| seam status       | `seams[].policy`                             | What the policy says about a seam: violation, accepted, advisory, allowed, or observed. |
 | next step         | none                                        | A line of the text and Markdown brief. JSON carries the facts it comes from. |
 
 ## Book terms

@@ -1,0 +1,12 @@
+ARCHITECTURE MAP
+
+MODULES (outermost layer first)
+
+  application      orders
+  (no layer)       audit
+
+SEAMS (1)
+
+  observed   orders -> audit  (functional)
+
+OMITTED BY --focus: 5 seams (1 accepted, 3 allowed, 1 violation)

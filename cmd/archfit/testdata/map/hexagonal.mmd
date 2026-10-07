@@ -1,0 +1,12 @@
+flowchart TB
+  m0["api · entrypoint"]
+  m1["stripe · adapter"]
+  m2["orders · application"]
+  m3["billing · domain"]
+  m4["audit"]
+  m0 -.->|"accepted · functional"| m3
+  m0 -->|"allowed · functional"| m1
+  m3 ==>|"violation · functional"| m1
+  m2 -->|"observed · functional"| m4
+  m2 -->|"allowed · functional"| m3
+  m1 -->|"allowed · unknown"| m2
