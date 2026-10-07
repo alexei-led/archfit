@@ -221,45 +221,6 @@ func TestRenderer_RequiredToolsMissingAbsentWhenEmpty(t *testing.T) {
 	}
 }
 
-// TestRenderer_Delta asserts the finding-lifecycle bucket block renders for a
-// delta run and is omitted when there is no delta.
-func TestRenderer_Delta(t *testing.T) {
-	d := goldenDocument()
-	d.Delta = &reportmodel.DeltaReport{
-		New:             []string{"n1", "n2"},
-		SeverityChanged: []string{"s1"},
-		TouchedByDelta:  []string{"t1"},
-		Resolved:        []string{"r1"},
-	}
-
-	var buf bytes.Buffer
-	if err := render(d, &buf); err != nil {
-		t.Fatalf("Render: %v", err)
-	}
-	out := buf.String()
-
-	for _, want := range []string{
-		"## Delta",
-		"- new: 2",
-		"- severity changed: 1",
-		"- touched by this change: 1",
-		"- pre-existing: 0",
-		"- resolved: 1",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("delta block missing %q\nfull output:\n%s", want, out)
-		}
-	}
-
-	var plain bytes.Buffer
-	if err := render(goldenDocument(), &plain); err != nil {
-		t.Fatalf("Render plain: %v", err)
-	}
-	if strings.Contains(plain.String(), "## Delta") {
-		t.Errorf("non-delta scorecard should not contain a Delta block\nfull output:\n%s", plain.String())
-	}
-}
-
 // TestRenderer_EmptyDocument asserts the renderer never panics on a zero
 // document and still emits all nine dimension blocks.
 func TestRenderer_EmptyDocument(t *testing.T) {

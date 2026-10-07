@@ -78,7 +78,7 @@ func TestExtract_CgoFileKeepsItsImports(t *testing.T) {
 	requireCgo(t)
 	dir := writeCgoFixture(t)
 
-	facts, cov, err := goextract.New(evidenceports.ExtractConfig{}).Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, cov, err := goextract.New(evidenceports.ExtractConfig{}).Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestExtract_CgoOffDisclosesTheIgnoredFile(t *testing.T) {
 	dir := writeCgoFixture(t)
 	t.Setenv("CGO_ENABLED", "0")
 
-	facts, cov, err := goextract.New(evidenceports.ExtractConfig{}).Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, cov, err := goextract.New(evidenceports.ExtractConfig{}).Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestExtract_CgoPreprocessFailureStaysPartialWithImports(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	facts, cov, err := goextract.New(evidenceports.ExtractConfig{}).Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	facts, cov, err := goextract.New(evidenceports.ExtractConfig{}).Extract(context.Background(), scope.Scope{Root: dir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}

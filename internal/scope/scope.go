@@ -1,10 +1,9 @@
-// Package scope resolves the analysis scope: the repo root, changed files
-// (delta mode), and the mode (full vs delta) for a run.
+// Package scope resolves the analysis scope: the repo root and the files
+// changed since a base ref.
 package scope
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -108,34 +107,18 @@ func MergeExclusions(configured []string) []string {
 	return out
 }
 
-// ScopeMode distinguishes full-repo analysis from delta (diff-based) analysis.
-// The name is intentionally ScopeMode (not Mode) to match the design contract
-// shared across packages; the stutter is acceptable here.
-//
-//nolint:revive // ScopeMode is the design-specified name; used as scope.ScopeMode across packages intentionally
-type ScopeMode string
-
-const (
-	// ModeDelta analyses only files changed between Base and Head.
-	ModeDelta ScopeMode = "delta"
-	// ModeFull analyses the entire repository.
-	ModeFull ScopeMode = "full"
-)
-
 // Scope carries the resolved analysis scope for a single run.
 type Scope struct {
-	// Base is the git ref used as the diff base in delta mode; empty in full mode.
+	// Base is the git ref changes are measured against; empty when none.
 	Base string
-	// Head is the resolved HEAD SHA in delta mode; empty in full mode.
-	Head string
 	// Changed is the sorted list of repo-relative files changed since Base.
-	// Nil/empty in full mode.
+	// Empty when no base was given or git could not diff.
 	Changed []string
 	// Root is the absolute path of the analysis boundary (ScanRoot). All
 	// extractors walk this directory. Equal to GitRoot when --root is absent.
 	Root string
 	// GitRoot is the absolute path to the git repository toplevel, or empty
-	// when the directory is not inside a git repository (non-git full-mode runs).
+	// when the directory is not inside a git repository (non-git runs).
 	// Git operations (history, diff) use this as their working root.
 	GitRoot string
 	// SubtreePrefix is the GitRoot-relative path from GitRoot to Root
@@ -143,8 +126,6 @@ type Scope struct {
 	// GitRoot is empty (non-git). Git history consumers use this to scope
 	// commands to the subtree (Task 3).
 	SubtreePrefix string
-	// Mode indicates whether this is a delta or full-repo run.
-	Mode ScopeMode
 }
 
 // Resolver supplies the version-control queries scope resolution needs.
@@ -159,11 +140,10 @@ type Resolver interface {
 	Changed(ctx context.Context, base, head string) ([]string, error)
 }
 
-// Resolve determines the Scope for a run.
+// Resolve determines the Scope for a run. The whole tree is always scanned.
 //
-// It resolves the git root via the Resolver. In full mode a failing resolver
-// (e.g. non-git directory) is non-fatal: GitRoot is set to "" and analysis
-// continues. In delta mode a failing resolver is a hard error (no git → no diff).
+// It resolves the git root via the Resolver. A failing resolver (e.g. a
+// non-git directory) is non-fatal: GitRoot is set to "" and analysis continues.
 //
 // The analysis boundary (Scope.Root) is set from cfg.Root when non-empty;
 // otherwise it falls back to the git root; when both are empty it falls back to
@@ -171,67 +151,31 @@ type Resolver interface {
 // does not depend on resolver discipline.
 func Resolve(ctx context.Context, cfg Config, r Resolver) (Scope, error) {
 	gitRoot, rootErr := r.RepoRoot(ctx)
-
-	if cfg.Full {
-		// Non-git directories are analysable in full mode: degrade gracefully.
-		if rootErr != nil {
-			gitRoot = ""
-		}
-		gitRoot = canonicalPath(gitRoot)
-		scanRoot := snapScanRoot(gitRoot, resolveScanRoot(cfg, gitRoot))
-		prefix := subtreePrefix(gitRoot, scanRoot)
-		// When a base ref is given (analyze --base), compute the changed-file set
-		// for per-change metrics, while still scanning the full tree. Mode stays
-		// ModeFull, so no finding-delta is produced (deltaReport gates on ModeDelta).
-		// Best-effort: a git failure here leaves Changed empty rather than aborting
-		// the full scan.
-		var changed []string
-		if cfg.Base != "" && gitRoot != "" {
-			if head, herr := r.HeadRef(ctx); herr == nil {
-				if c, cerr := r.Changed(ctx, cfg.Base, head); cerr == nil {
-					changed = rebaseChangedFiles(prefix, c)
-					sort.Strings(changed)
-				}
-			}
-		}
-		return Scope{
-			Root:          scanRoot,
-			GitRoot:       gitRoot,
-			SubtreePrefix: prefix,
-			Base:          cfg.Base,
-			Changed:       changed,
-			Mode:          ModeFull,
-		}, nil
-	}
-
-	// Delta mode requires git — no git means no diff base.
 	if rootErr != nil {
-		return Scope{}, fmt.Errorf("scope: resolve repo root: %w", rootErr)
+		gitRoot = ""
 	}
-
 	gitRoot = canonicalPath(gitRoot)
-	head, err := r.HeadRef(ctx)
-	if err != nil {
-		return Scope{}, fmt.Errorf("scope: resolve HEAD: %w", err)
-	}
-
-	changed, err := r.Changed(ctx, cfg.Base, head)
-	if err != nil {
-		return Scope{}, fmt.Errorf("scope: resolve changed files: %w", err)
-	}
 	scanRoot := snapScanRoot(gitRoot, resolveScanRoot(cfg, gitRoot))
 	prefix := subtreePrefix(gitRoot, scanRoot)
-	changed = rebaseChangedFiles(prefix, changed)
-	sort.Strings(changed)
-
+	// When a base ref is given (analyze --base), compute the changed-file set
+	// for per-change metrics, while still scanning the full tree.
+	// Best-effort: a git failure here leaves Changed empty rather than aborting
+	// the scan.
+	var changed []string
+	if cfg.Base != "" && gitRoot != "" {
+		if head, herr := r.HeadRef(ctx); herr == nil {
+			if c, cerr := r.Changed(ctx, cfg.Base, head); cerr == nil {
+				changed = rebaseChangedFiles(prefix, c)
+				sort.Strings(changed)
+			}
+		}
+	}
 	return Scope{
-		Base:          cfg.Base,
-		Head:          head,
-		Changed:       changed,
 		Root:          scanRoot,
 		GitRoot:       gitRoot,
 		SubtreePrefix: prefix,
-		Mode:          ModeDelta,
+		Base:          cfg.Base,
+		Changed:       changed,
 	}, nil
 }
 

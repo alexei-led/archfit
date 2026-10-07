@@ -356,11 +356,9 @@ type MetricDelta struct {
 // Delta is one dimension's change against the comparison reference. A
 // non-comparable reference yields reasons and no numbers.
 type Delta struct {
-	Status           ComparisonStatus
-	Reasons          []string
-	Metrics          []MetricDelta
-	NewFindings      []string
-	ResolvedFindings []string
+	Status  ComparisonStatus
+	Reasons []string
+	Metrics []MetricDelta
 }
 
 // Coverage is a dimension's denominator: what was counted, how much of it was

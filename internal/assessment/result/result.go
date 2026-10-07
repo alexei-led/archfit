@@ -106,7 +106,6 @@ type Result struct {
 	DistanceConfigCandidates []evidence.DistanceConfigCandidate `json:"distance_config_candidates,omitempty"`
 	VolatilityCorroboration  *evidence.VolatilityCorroboration  `json:"volatility_corroboration,omitempty"`
 	LocalCoupling            []evidence.LocalCouplingModule     `json:"local_coupling,omitempty"`
-	Delta                    *DeltaReport                       `json:"delta,omitempty"`
 	Summary                  Summary                            `json:"summary"`
 	// State is the architecture-state result. It rides the assessment result
 	// rather than a parallel return value so every stage carries the same verdict

@@ -75,8 +75,6 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 func (r *Renderer) renderAudit(d report.Document, w io.Writer) error {
 	var b strings.Builder
 
-	writeDelta(&b, d)
-
 	// Split metrics: BC-primary vs beyond-BC.
 	var primaryMetrics, beyondMetrics []report.MetricResult
 	for _, m := range d.Metrics {

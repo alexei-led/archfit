@@ -49,15 +49,6 @@ type Summary struct {
 	WaiversUsed  int `json:"waivers_used"`
 }
 
-// DeltaReport groups finding IDs by their relationship to the baseline.
-type DeltaReport struct {
-	New             []string `json:"new,omitempty"`
-	Existing        []string `json:"existing,omitempty"`
-	Resolved        []string `json:"resolved,omitempty"`
-	SeverityChanged []string `json:"severity_changed,omitempty"`
-	TouchedByDelta  []string `json:"touched_by_delta,omitempty"`
-}
-
 // ModuleGraphComplexity is the architecture-level distribution over the
 // declared module graph. It stays internal to assessment; the architecture-state
 // envelope publishes the individual metrics.

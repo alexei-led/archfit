@@ -100,7 +100,7 @@ func absentRunner() *toolrun.RunnerMock {
 	}
 }
 
-var testScope = scope.Scope{Root: "/repo", Mode: scope.ModeFull}
+var testScope = scope.Scope{Root: "/repo"}
 
 var singlePatternCfg = pattern.Config{
 	{ID: patternUnsafe, Lang: "go", Rule: "unsafe.Pointer($X)"},

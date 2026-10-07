@@ -1,6 +1,6 @@
 // Behavior tests for the assessment evaluation seam. They pin what Evaluate
 // decides — findings, waivers, statuses, advisory filtering and rollup, metric
-// gating, verdict, and delta buckets — so the capability migration can move
+// gating, and verdict — so the capability migration can move
 // ownership without moving semantics.
 package evaluation_test
 
@@ -77,11 +77,11 @@ func (m stubMetric) Calculate(signal.CollectedSignals) result.MetricResult {
 var _ rules.Rule = stubRule{}
 var _ metrics.Metric = stubMetric{}
 
-func gateFinding(id, from, to string, sev finding.Severity) finding.Finding {
+func gateFinding(id string, sev finding.Severity) finding.Finding {
 	return finding.Finding{
 		ID: id, Kind: finding.KindGate, RuleID: ruleForbidden, Status: finding.StatusNew, Severity: sev,
-		Edge:      finding.EdgeEvidence{From: finding.Endpoint{Path: from}, To: finding.Endpoint{Path: to}, Kind: kindImports},
-		Locations: []relationship.Location{{File: from, Line: 3}},
+		Edge:      finding.EdgeEvidence{From: finding.Endpoint{Path: pathA}, To: finding.Endpoint{Path: pathB}, Kind: kindImports},
+		Locations: []relationship.Location{{File: pathA, Line: 3}},
 	}
 }
 
@@ -134,7 +134,7 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 	}{
 		{
 			name:        "unmatched gate finding is new and fails",
-			findings:    []finding.Finding{gateFinding(fpNew, pathA, pathB, finding.SeverityHigh)},
+			findings:    []finding.Finding{gateFinding(fpNew, finding.SeverityHigh)},
 			accepted:    acceptedSet{},
 			wantStatus:  map[string]finding.Status{fpNew: finding.StatusNew},
 			wantGateNew: 1,
@@ -142,7 +142,7 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 		},
 		{
 			name:        "accepted fingerprint is baselined and does not gate",
-			findings:    []finding.Finding{gateFinding(fpAccepted, pathA, pathB, finding.SeverityHigh)},
+			findings:    []finding.Finding{gateFinding(fpAccepted, finding.SeverityHigh)},
 			accepted:    acceptedSet{{Fingerprint: fpAccepted, Kind: finding.KindGate}},
 			wantStatus:  map[string]finding.Status{fpAccepted: finding.StatusBaseline},
 			wantGateNew: 0,
@@ -150,7 +150,7 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 		},
 		{
 			name:     "unexpired waiver suppresses the gate and is counted",
-			findings: []finding.Finding{gateFinding(fpWaived, pathA, pathB, finding.SeverityHigh)},
+			findings: []finding.Finding{gateFinding(fpWaived, finding.SeverityHigh)},
 			accepted: acceptedSet{},
 			waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{
 				{Rule: ruleForbidden, From: pathA, To: pathB, Expires: future},
@@ -162,7 +162,7 @@ func TestEvaluateAssignsGateStatusAndCounts(t *testing.T) {
 		},
 		{
 			name:     "expired waiver re-gates the finding",
-			findings: []finding.Finding{gateFinding(fpExpired, pathA, pathB, finding.SeverityHigh)},
+			findings: []finding.Finding{gateFinding(fpExpired, finding.SeverityHigh)},
 			accepted: acceptedSet{},
 			waivers: policy.WaiverSet{Waivers: []policy.WaiverDef{
 				{Rule: ruleForbidden, From: pathA, To: pathB, Expires: past},
@@ -301,7 +301,7 @@ func TestEvaluateMetricGating(t *testing.T) {
 
 func TestEvaluateGateFindingOutranksMetricWarn(t *testing.T) {
 	got := evaluation.Evaluate(evaluation.Input{
-		Rules:    evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", pathA, pathB, finding.SeverityHigh)}}),
+		Rules:    evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", finding.SeverityHigh)}}),
 		Metrics:  evaluation.MetricsetOf(stubMetric{res: metricValue(new(float64(-1)), result.DirectionHigherIsBetter)}),
 		Gates:    map[string]policy.MetricConfig{metricName: {Gate: string(policy.GateWarn)}},
 		Accepted: acceptedSet{},
@@ -332,7 +332,7 @@ func TestEvaluateKeepsTheModulesOfModuleKeyedFindings(t *testing.T) {
 	}
 	got := evaluation.Evaluate(evaluation.Input{
 		Rules: evaluation.RulesetOf(stubRule{id: ruleModuleCycle, findings: []finding.Finding{
-			moduleKeyed, unownedImporter, gateFinding("edge", pathA, pathB, finding.SeverityHigh),
+			moduleKeyed, unownedImporter, gateFinding("edge", finding.SeverityHigh),
 		}}),
 		Policy:   policy.AssessmentPolicy{Topology: policy.TopologyView{Modules: modules, ModuleMap: policy.BuildModuleMap(modules)}},
 		Accepted: acceptedSet{},
@@ -594,7 +594,7 @@ func TestEvaluateResolvesGateEvidenceFromRelationships(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			got := evaluation.Evaluate(evaluation.Input{
 				Relationships: relationship.Set{Edges: test.edges},
-				Rules:         evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", pathA, pathB, finding.SeverityCritical)}}),
+				Rules:         evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: []finding.Finding{gateFinding("f1", finding.SeverityCritical)}}),
 				Accepted:      acceptedSet{},
 				Now:           evaluatedAt,
 			})
@@ -607,65 +607,6 @@ func TestEvaluateResolvesGateEvidenceFromRelationships(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestEvaluateDeltaBuckets(t *testing.T) {
-	const (
-		fpNew      = "11111111111111111111111111111111"
-		fpExisting = "22222222222222222222222222222222"
-		fpTouched  = "33333333333333333333333333333333"
-		fpFixed    = "44444444444444444444444444444444"
-	)
-	findings := []finding.Finding{
-		gateFinding(fpNew, pathA, pathB, finding.SeverityHigh),
-		gateFinding(fpExisting, "c/c.go", "d/d.go", finding.SeverityHigh),
-		gateFinding(fpTouched, "e/e.go", "f/f.go", finding.SeverityHigh),
-	}
-	accepted := acceptedSet{
-		{Fingerprint: fpExisting, Kind: finding.KindGate},
-		{Fingerprint: fpTouched, Kind: finding.KindGate},
-		{Fingerprint: fpFixed, Kind: finding.KindGate, RuleID: ruleForbidden},
-	}
-
-	t.Run("delta off returns no report", func(t *testing.T) {
-		got := evaluation.Evaluate(evaluation.Input{
-			Rules: evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: findings}), Accepted: accepted, Now: evaluatedAt,
-		})
-		if got.Delta != nil {
-			t.Fatalf("Delta = %+v, want nil when delta mode is off", got.Delta)
-		}
-	})
-
-	t.Run("delta on buckets by lifecycle and touched files", func(t *testing.T) {
-		got := evaluation.Evaluate(evaluation.Input{
-			Rules: evaluation.RulesetOf(stubRule{id: ruleForbidden, findings: findings}), Accepted: accepted,
-			ChangedFiles: []string{"e/e.go"}, Delta: true, Now: evaluatedAt,
-		})
-		if got.Delta == nil {
-			t.Fatal("Delta = nil, want a report")
-		}
-		for _, tc := range []struct {
-			label string
-			got   []string
-			want  []string
-		}{
-			{"New", got.Delta.New, []string{fpNew}},
-			{"Existing", got.Delta.Existing, []string{fpExisting}},
-			{"TouchedByDelta", got.Delta.TouchedByDelta, []string{fpTouched}},
-			{"Resolved", got.Delta.Resolved, []string{fpFixed}},
-		} {
-			if !slices.Equal(tc.got, tc.want) {
-				t.Errorf("Delta.%s = %v, want %v", tc.label, tc.got, tc.want)
-			}
-		}
-	})
-
-	t.Run("delta on with no findings returns no report", func(t *testing.T) {
-		got := evaluation.Evaluate(evaluation.Input{Accepted: acceptedSet{}, Delta: true, Now: evaluatedAt})
-		if got.Delta != nil {
-			t.Fatalf("Delta = %+v, want nil when every bucket is empty", got.Delta)
-		}
-	})
 }
 
 func TestEvaluateEmptyInputIsPassWithNoFindings(t *testing.T) {

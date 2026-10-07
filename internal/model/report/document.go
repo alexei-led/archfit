@@ -121,7 +121,6 @@ type Document struct {
 	DistanceConfigCandidates  []DistanceConfigCandidate  `json:"distance_config_candidates,omitempty"`
 	VolatilityCorroboration   *VolatilityCorroboration   `json:"volatility_corroboration,omitempty"`
 	LocalCoupling             []LocalCouplingModule      `json:"local_coupling,omitempty"`
-	Delta                     *DeltaReport               `json:"delta,omitempty"`
 	Summary                   Summary                    `json:"summary"`
 
 	// Score is the computed scorecard used by config comparison and the AI review.

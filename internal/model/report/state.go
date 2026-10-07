@@ -155,11 +155,9 @@ type MetricDelta struct {
 // DimensionDelta is one dimension's change against the comparison reference.
 // A non-comparable reference yields reasons and no numbers.
 type DimensionDelta struct {
-	Status           ComparisonStatus `json:"status"`
-	Reasons          []string         `json:"reasons,omitempty"`
-	Metrics          []MetricDelta    `json:"metrics,omitempty"`
-	NewFindings      []string         `json:"new_findings,omitempty"`
-	ResolvedFindings []string         `json:"resolved_findings,omitempty"`
+	Status  ComparisonStatus `json:"status"`
+	Reasons []string         `json:"reasons,omitempty"`
+	Metrics []MetricDelta    `json:"metrics,omitempty"`
 }
 
 // DimensionCoverage is a dimension's denominator: what was counted, how much of

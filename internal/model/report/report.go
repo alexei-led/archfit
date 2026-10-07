@@ -117,27 +117,6 @@ type Summary struct {
 	WaiversUsed  int `json:"waivers_used"`
 }
 
-// DeltaReport groups a delta run's findings by how they relate to the baseline
-// and the changed-file set, so a reviewer can separate what this change
-// introduced, resolved, or merely touched from pre-existing issues — instead of
-// a delta run reading like a full-repo dump. Each slice holds finding IDs that
-// join back to findings[]; buckets are mutually exclusive. Populated in delta
-// mode only; the whole block is omitted otherwise (pointer + omitempty).
-type DeltaReport struct {
-	// New holds findings absent from the baseline (introduced by this change).
-	New []string `json:"new,omitempty"`
-	// Existing holds baseline findings still present and not on a changed file.
-	Existing []string `json:"existing,omitempty"`
-	// Resolved holds baseline findings no longer detected (status fixed).
-	Resolved []string `json:"resolved,omitempty"`
-	// SeverityChanged holds baseline findings whose severity differs from the
-	// severity recorded in the baseline.
-	SeverityChanged []string `json:"severity_changed,omitempty"`
-	// TouchedByDelta holds pre-existing findings on a file this change touched —
-	// debt a reviewer is well-placed to clear while already in the file.
-	TouchedByDelta []string `json:"touched_by_delta,omitempty"`
-}
-
 // ClassifiedEdgeSummary holds aggregate distribution counts over the
 // coupling.Index produced by classify.Run plus score-bearing clone-only
 // duplicated-knowledge pairs when that policy is enabled. Stdlib-only (no

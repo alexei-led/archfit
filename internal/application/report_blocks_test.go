@@ -55,7 +55,6 @@ func populatedResult() result.Result {
 		TopTouched: []evidence.VolatilityTouch{{Module: "a", TouchCommits: 9, DeclaredVolatility: stateSevHigh}}}
 	r.LocalCoupling = []evidence.LocalCouplingModule{{Module: "a", ScoredEdges: 4, AbstainedEdges: 1, ComplexityEdges: 2, ComplexitySharePct: 50, MeanBalance: 3.5,
 		WorstOffenders: []evidence.LocalCouplingEdge{{From: blockFileA, To: "a/b.go", Strength: mergeContract, Balance: 2, Band: "critical", File: blockFileA, Line: 3}}}}
-	r.Delta = &result.DeltaReport{New: []string{"n"}, Existing: []string{"e"}, Resolved: []string{"r"}, SeverityChanged: []string{"s"}, TouchedByDelta: []string{"t"}}
 
 	return r
 }
@@ -116,9 +115,6 @@ func reportBlockChecks(doc report.Document) []blockCheck {
 		{"local coupling", func() bool {
 			return len(doc.LocalCoupling) == 1 && len(doc.LocalCoupling[0].WorstOffenders) == 1 &&
 				doc.LocalCoupling[0].WorstOffenders[0].Band == "critical"
-		}},
-		{"delta", func() bool {
-			return doc.Delta != nil && len(doc.Delta.TouchedByDelta) == 1 && len(doc.Delta.SeverityChanged) == 1
 		}},
 	}
 }

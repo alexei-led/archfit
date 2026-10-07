@@ -365,7 +365,7 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) result.Result {
 	extractor := goextract.New(evidenceports.ExtractConfig{})
 	base := baseline.Baseline{SchemaVersion: baseline.SchemaVersion}
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	s := scope.Scope{Root: root, Mode: scope.ModeFull}
+	s := scope.Scope{Root: root}
 
 	runPolicy := policy.New(
 		policy.TopologyView{Modules: classifyCfg.Modules, Layers: classifyCfg.Layers, ModuleMap: classifyCfg.ModuleMap, ExternalSystems: classifyCfg.ExternalSystems, ExplicitOwners: classifyCfg.ExplicitOwners},

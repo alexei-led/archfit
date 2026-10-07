@@ -96,18 +96,6 @@
             "$ref": "#/$defs/MetricDelta"
           },
           "type": "array"
-        },
-        "new_findings": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "resolved_findings": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         }
       },
       "additionalProperties": false,

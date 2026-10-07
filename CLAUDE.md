@@ -541,11 +541,11 @@ init` emits v2 directly; owners update older configs manually before analysis.
 - **scanRoot vs gitRoot decoupling.** `Scope.Root` = ScanRoot (the analysis
   boundary; all extractors walk this tree). `Scope.GitRoot` = `git rev-parse
 --show-toplevel` (git ops only). `Scope.SubtreePrefix = rel(GitRoot, Root)`.
-  `--root` absent ⇒ ScanRoot=GitRoot, prefix="" ⇒ byte-identical. Non-git full
-  mode proceeds with `GitRoot=""` (history empty) and ScanRoot = the canonical
+  `--root` absent ⇒ ScanRoot=GitRoot, prefix="" ⇒ byte-identical. A non-git
+  run proceeds with `GitRoot=""` (history empty) and ScanRoot = the canonical
   ABSOLUTE `--root` or config directory (`canonicalPath` absolutizes before
   resolving symlinks; a relative `.` root dropped every Go fact and deploy
-  unit); delta mode without git is a hard error.
+  unit). Every run scans the whole tree: there is no delta scope mode.
   **macOS APFS case-variant `--root` (Task 25, fixed):** `snapScanRoot` in
   `internal/scope/scope.go` uses `os.SameFile` (device+inode) to snap a
   case-variant scan root to the git root's canonical path, so

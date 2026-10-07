@@ -26,7 +26,7 @@ func ProjectReport(r result.Result, sc score.Scorecard) report.Document {
 		PrimaryExtractorTools: r.PrimaryExtractorTools, ConfigWarnings: r.ConfigWarnings,
 		ClassifiedEdges: projectClassifiedEdges(r.ClassifiedEdges), DistanceContext: projectDistanceContext(r.DistanceContext),
 		DistanceConfigCandidates: projectDistanceConfigCandidates(r.DistanceConfigCandidates), VolatilityCorroboration: projectVolatilityCorroboration(r.VolatilityCorroboration),
-		LocalCoupling: projectLocalCoupling(r.LocalCoupling), Delta: projectDelta(r.Delta), Summary: report.Summary(r.Summary),
+		LocalCoupling: projectLocalCoupling(r.LocalCoupling), Summary: report.Summary(r.Summary),
 	}
 	doc.Score = projectScorecard(sc)
 	doc.State = projectArchitectureState(r, doc)
@@ -180,7 +180,6 @@ func projectStateDimension(in state.Dimension) report.DimensionState {
 	if in.Delta != nil {
 		delta := &report.DimensionDelta{
 			Status: report.ComparisonStatus(in.Delta.Status), Reasons: in.Delta.Reasons,
-			NewFindings: in.Delta.NewFindings, ResolvedFindings: in.Delta.ResolvedFindings,
 		}
 		for _, m := range in.Delta.Metrics {
 			delta.Metrics = append(delta.Metrics, report.MetricDelta{Name: m.Name, Before: m.Before, After: m.After, Change: m.Change})
@@ -410,13 +409,6 @@ func projectMetrics(in []result.MetricResult) []report.MetricResult {
 		out = append(out, report.MetricResult{Name: m.Name, Value: m.Value, Display: m.Display, Band: m.Band, Confidence: m.Confidence, Version: m.Version, Mode: m.Mode, Definition: m.Definition, Delta: m.Delta, Direction: report.Direction(m.Direction)})
 	}
 	return out
-}
-
-func projectDelta(in *result.DeltaReport) *report.DeltaReport {
-	if in == nil {
-		return nil
-	}
-	return &report.DeltaReport{New: in.New, Existing: in.Existing, Resolved: in.Resolved, SeverityChanged: in.SeverityChanged, TouchedByDelta: in.TouchedByDelta}
 }
 
 func projectClassifiedEdges(in *result.ClassifiedEdgeSummary) *report.ClassifiedEdgeSummary {

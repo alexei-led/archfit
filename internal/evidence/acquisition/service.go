@@ -93,7 +93,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 
 	sc := s.Options.Scope
-	sc.WorkDir, sc.Root, sc.Base, sc.Full = scanDir(root, bundleDir), root, req.BaseRef, true
+	sc.WorkDir, sc.Root, sc.Base = scanDir(root, bundleDir), root, req.BaseRef
 	s.reportPhase("Discovering project")
 	resolved, err := scope.Resolve(ctx, sc, gitResolver{workDir: sc.WorkDir, runner: s.Runner})
 	if err != nil {
