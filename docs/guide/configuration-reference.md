@@ -1093,8 +1093,11 @@ rules:
 | `docs` | all | A document reference, such as an ADR path. Appended to every finding's `why` and `constraint` as ` (see <docs>)`, so SARIF and the repair task carry it. |
 
 `rationale`, `alternatives`, and `docs` never enter a finding ID, so editing
-them re-keys no finding. Report text is bounded at projection, so a long
-rationale is cut, never rejected.
+them re-keys no finding. archfit reads each of them as one line: when the
+config loads, every run of whitespace, line breaks included, becomes one space,
+and the ends are trimmed. So a YAML block scalar (`rationale: |` or `>`) is
+safe in findings and in the `archfit agents-md` block. Report text is bounded
+at projection, so a long rationale is cut, never rejected.
 
 ```yaml
 rules:

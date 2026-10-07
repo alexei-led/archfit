@@ -1,5 +1,18 @@
 # Release notes
 
+## v3.0.0 — (unreleased)
+
+Fixed:
+
+- A rule `rationale`, `docs`, or `alternatives` written as a YAML block scalar
+  (`rationale: |` or `>`) is now one line everywhere. The config loader turns
+  every run of whitespace into one space and trims the ends. Before this fix,
+  the trailing line break of `docs` printed `(see docs/adr.md )` in a finding's
+  `why`, and a multi-line `rationale` broke its list item in the
+  `archfit agents-md` block. A multi-line module `owner` also broke its row in
+  the module table; the block now writes it on one line. Finding IDs do not
+  change.
+
 ## v2.5.1 — (unreleased)
 
 Two fixes. The output contract and the baseline do not change.

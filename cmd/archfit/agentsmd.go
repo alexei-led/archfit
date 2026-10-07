@@ -283,13 +283,19 @@ func ruleSentence(def policy.RuleDef) string {
 	}
 }
 
-func code(s string) string { return "`" + strings.ReplaceAll(s, "|", "\\|") + "`" }
+// code and cell keep config text inside its table cell or list item: a YAML
+// block scalar's line breaks would end the row, and a bare | would split it.
+func code(s string) string { return "`" + tableText(s) + "`" }
 
 func cell(s string) string {
 	if s == "" {
 		return "—"
 	}
-	return strings.ReplaceAll(s, "|", "\\|")
+	return tableText(s)
+}
+
+func tableText(s string) string {
+	return strings.ReplaceAll(strings.Join(strings.Fields(s), " "), "|", "\\|")
 }
 
 func codeList(items []string) string {
