@@ -2,11 +2,13 @@ package evaluation
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
+	"github.com/alexei-led/archfit/internal/assessment/metrics"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/assessment/state"
 	"github.com/alexei-led/archfit/internal/policy"
@@ -80,16 +82,21 @@ func ratchetThreshold(m result.MetricResult, c policy.MetricConfig) string {
 	return "min_delta " + ratchetNumber(metricMinDelta(c))
 }
 
-// ratchetNumber prints a metric value without float noise.
+// ratchetNumber prints a metric value rounded to six places, so a delta never
+// shows subtraction noise ("-0.20000000000000007").
 func ratchetNumber(v float64) string {
-	return strconv.FormatFloat(v, 'f', -1, 64)
+	return strconv.FormatFloat(math.Round(v*1e6)/1e6, 'f', -1, 64) // six places hide subtraction noise
 }
 
-// ratchetMetricNames lists the metrics a stored snapshot holds that a blocking
-// ratchet would compare: not switched off, not warn-only.
+// ratchetMetricNames lists the metrics a blocking ratchet would compare: they
+// can ratchet at all (blast_radius cannot), are enabled, hold a value in the
+// stored snapshot, and are neither switched off nor warn-only.
 func ratchetMetricNames(snapshot result.MetricSnapshot, cfg map[string]policy.MetricConfig) []string {
 	names := make([]string, 0, len(snapshot))
-	for name := range snapshot {
+	for _, name := range metrics.RatchetNames(cfg) {
+		if _, stored := snapshot[name]; !stored {
+			continue
+		}
 		if g := cfg[name].Gate; g == string(policy.GateOff) || g == string(policy.GateWarn) {
 			continue
 		}

@@ -539,9 +539,10 @@ archfit hook git    [--config .archfit.yaml] [--base HEAD]
 The output table of `hook claude` and the pre-commit setup are in
 [the agent feedback loop](agent-feedback.md#hooks-instructions-and-the-skill).
 Both hooks block only when the next action is `repair` or `ask_owner` and a
-repair is in scope. A dead selector or a metric ratchet also leads to those
+repair is in scope. A dead selector or an unmeasured ratchet also leads to those
 actions, but neither is scoped to the change, so the hooks report them and
-let the change through. `hook git` exits `1` on a block, `0` otherwise (other
+let the change through. A tripped ratchet is a repair task like any other
+blocker, so it blocks. `hook git` exits `1` on a block, `0` otherwise (other
 actions are printed on stderr), and `3` when archfit cannot run.
 
 `hook git` judges what the commit will contain: the staged content. Unstaged

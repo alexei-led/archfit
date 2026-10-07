@@ -47,3 +47,6 @@ func (r RatchetReference) Unevaluated(cfg map[string]policy.MetricConfig) (strin
 	rule, ok := r.unevaluated(cfg)
 	return rule.Reason, ok
 }
+
+// RatchetFindings exposes the ratchet finding builder to the behavior tests.
+var RatchetFindings = ratchetFindings

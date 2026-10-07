@@ -85,6 +85,13 @@ func gateFor(d state.Dimension) state.GateState {
 	if d.Gate == state.GateFail {
 		return state.GateFail
 	}
+	// A tripped ratchet fails the dimension that owns its metric even when that
+	// dimension is unmeasured: the metric was compared, so the blocker is real.
+	for _, ref := range d.Findings {
+		if ref.Kind == finding.KindGate && finding.IsMetricRatchet(ref.RuleID) {
+			return state.GateFail
+		}
+	}
 	if d.Status == state.Unmeasured {
 		return state.GateNotApplicable
 	}

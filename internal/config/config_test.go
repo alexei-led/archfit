@@ -2239,3 +2239,10 @@ func TestLoad_ModuleAllowlists(t *testing.T) {
 		}
 	}
 }
+
+func TestLoad_RejectsRuleIDsInTheMetricRatchetNamespace(t *testing.T) {
+	_, err := loadConfigInline(t, "version: 2\nrules:\n  - id: metric/no-db\n    type: forbidden_dependency\n    from: a/**\n    to: b/**\n")
+	if err == nil || !strings.Contains(err.Error(), "metric ratchet") {
+		t.Fatalf("Load error = %v, want the metric/ prefix rejected", err)
+	}
+}

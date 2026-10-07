@@ -8,7 +8,7 @@
 // report adapter may import only the report DTOs (internal/arch_test.go), so
 // the decision reads the state the pipeline already decided: active gate tasks
 // with their origin, the unevaluated required rules, the required-analyzer
-// gaps, and the metric deltas behind a ratchet block.
+// gaps. A tripped metric ratchet is an ordinary repair task.
 package agentout
 
 import (
@@ -35,8 +35,8 @@ type NextAction string
 
 // Next actions, in precedence order: the first matching one wins.
 const (
-	// ActionRepair: an in-scope repair needs a code change, or a metric
-	// ratchet blocked the run.
+	// ActionRepair: an in-scope repair needs a code change (a tripped metric
+	// ratchet is such a repair).
 	ActionRepair NextAction = "repair"
 	// ActionAskOwner: every in-scope repair needs an owner decision, or a
 	// required rule has a selector that matches nothing (a policy defect).

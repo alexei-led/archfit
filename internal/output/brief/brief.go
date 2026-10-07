@@ -216,7 +216,7 @@ func evidenceReason(dims report.Dimensions) string {
 	return "evidence incomplete: " + strings.Join(names, ", ")
 }
 
-// nextSteps orders what to do: blockers, the metric ratchet, rules and
+// nextSteps orders what to do: blockers, rules and
 // analyzers that need evidence, the gate reference, module decisions, then
 // the evidence that closes a measured gap. Steps repeat nothing and stop at
 // MaxNextSteps.

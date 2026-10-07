@@ -18,9 +18,6 @@ import (
 //
 // The same facts appear here as in --format json; only the layout differs. There
 // is no repository score, because there is no repository score.
-//
-// The state alone carries no metric deltas, so it cannot name a tripped
-// metric ratchet; Render, which holds the whole document, can.
 func RenderState(s report.ArchitectureState, w io.Writer) error {
 	return writeState(s, brief.Build(brief.Input{State: s}), w)
 }
