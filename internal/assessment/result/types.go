@@ -119,14 +119,14 @@ type CouplingTailRiskSummary struct {
 
 // DistanceCompressionSummary records deterministic distance-ladder coverage.
 type DistanceCompressionSummary struct {
-	CompressedMiddleRungs       bool                        `json:"compressed_middle_rungs"`
-	ImplementedRungs            []int                       `json:"implemented_rungs,omitempty"`
-	OmittedRungs                []int                       `json:"omitted_rungs,omitempty"`
-	OmittedRungReasons          []DistanceOmittedRungReason `json:"omitted_rung_reasons,omitempty"`
-	DeterministicSplits         []string                    `json:"deterministic_splits,omitempty"`
-	CodeStructureBoundaryCounts []DistanceCount             `json:"code_structure_boundary_counts,omitempty"`
-	CodeStructureAncestorDepths []DistanceCount             `json:"code_structure_ancestor_depths,omitempty"`
-	Rationale                   string                      `json:"rationale,omitempty"`
+	CompressedMiddleRungs     bool                        `json:"compressed_middle_rungs"`
+	ImplementedRungs          []int                       `json:"implemented_rungs,omitempty"`
+	OmittedRungs              []int                       `json:"omitted_rungs,omitempty"`
+	OmittedRungReasons        []DistanceOmittedRungReason `json:"omitted_rung_reasons,omitempty"`
+	DeterministicSplits       []string                    `json:"deterministic_splits,omitempty"`
+	ContainmentBoundaryCounts []DistanceCount             `json:"containment_boundary_counts,omitempty"`
+	ContainmentAncestorDepths []DistanceCount             `json:"containment_ancestor_depths,omitempty"`
+	Rationale                 string                      `json:"rationale,omitempty"`
 }
 
 // DistanceCount is one distance-evidence histogram bucket.

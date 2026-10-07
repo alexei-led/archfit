@@ -66,7 +66,7 @@ func TestAnalysisResultOwnsOnlyRelationshipFacts(t *testing.T) {
 func TestSetDependencyContract(t *testing.T) {
 	dependency := Edge{
 		FromID: "package:" + testModuleA, ToID: "package:" + testModuleB, FromPath: testModuleA, ToPath: testModuleB,
-		Kind: testImportKind, Strength: StrengthContract, Distance: DistanceCrossModuleSameOwner, Volatility: VolatilityHigh,
+		Kind: testImportKind, Strength: StrengthContract, Distance: DistanceCrossModule, Volatility: VolatilityHigh,
 	}
 	set := Set{
 		Nodes: []Node{{ID: dependency.FromID, Module: testModuleA, FirstParty: true}},

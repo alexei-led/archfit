@@ -266,7 +266,7 @@ func (d *detector) detectGoMember(ctx context.Context, member string, workOff bo
 			// module (confirmed on prometheus: promql/promqltest tagged solely
 			// because of promql/promqltest/cmd/migrate/main.go, 3 directories
 			// deep, while 13 sibling promtool imports into the same tree
-			// correctly resolved cross_module_same_owner).
+			// correctly resolved cross_module).
 			if !d.mm.IsModuleRoot(rel) {
 				continue
 			}

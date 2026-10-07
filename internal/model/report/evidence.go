@@ -250,14 +250,13 @@ type ConnascenceRoadmapItem struct {
 // ConnascenceReport summarizes deterministic static connascence evidence from
 // classified dependency edges. Report-only.
 type ConnascenceReport struct {
-	EdgesWithEvidence     int                      `json:"edges_with_evidence"`
-	AbstainedEdges        int                      `json:"abstained_edges"`
-	TotalEvidence         int                      `json:"total_evidence"`
-	StrengthInferredEdges int                      `json:"strength_inferred_edges,omitempty"`
-	ByKind                map[string]int           `json:"by_kind,omitempty"`
-	BySource              map[string]int           `json:"by_source,omitempty"`
-	Unmeasured            []string                 `json:"unmeasured,omitempty"`
-	Roadmap               []ConnascenceRoadmapItem `json:"roadmap,omitempty"`
+	EdgesWithEvidence int                      `json:"edges_with_evidence"`
+	AbstainedEdges    int                      `json:"abstained_edges"`
+	TotalEvidence     int                      `json:"total_evidence"`
+	ByKind            map[string]int           `json:"by_kind,omitempty"`
+	BySource          map[string]int           `json:"by_source,omitempty"`
+	Unmeasured        []string                 `json:"unmeasured,omitempty"`
+	Roadmap           []ConnascenceRoadmapItem `json:"roadmap,omitempty"`
 }
 
 // DistanceContext explains how distance evidence should be read for this run.

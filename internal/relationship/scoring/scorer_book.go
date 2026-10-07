@@ -34,12 +34,14 @@ const (
 // coupling.Distance ordinals (Ch8): lower = closer/safer.
 // bookDistanceExternal is the ladder's far end (book Ch10 Example 1,
 // cross-vendor integration) — reserved for config-declared external systems.
+//
+// Distance is level-relative: any module boundary is the far end of the
+// in-house ladder (Ch10 puts in-house services at 9 and vendors at 10), so
+// owner and deploy unit name the boundary without moving the rung.
 const (
-	bookDistanceSameModule           = 2
-	bookDistanceCrossModuleSameOwner = 4
-	bookDistanceCrossModuleDiffOwner = 7
-	bookDistanceCrossDeployUnit      = 9
-	bookDistanceExternal             = 10
+	bookDistanceSameModule = 2
+	bookDistanceBoundary   = 9
+	bookDistanceExternal   = 10
 )
 
 // coupling.Volatility ordinals (Ch9): lower = more stable = safer.
@@ -66,9 +68,9 @@ var bookStrengthOrdinal = map[coupling.Strength]int{
 // coupling.DistanceUnknown is absent — unknown distance causes abstention.
 var bookDistanceOrdinal = map[coupling.Distance]int{
 	coupling.DistanceSameModule:           bookDistanceSameModule,
-	coupling.DistanceCrossModuleSameOwner: bookDistanceCrossModuleSameOwner,
-	coupling.DistanceCrossModuleDiffOwner: bookDistanceCrossModuleDiffOwner,
-	coupling.DistanceCrossDeployUnit:      bookDistanceCrossDeployUnit,
+	coupling.DistanceCrossModule:          bookDistanceBoundary,
+	coupling.DistanceCrossModuleDiffOwner: bookDistanceBoundary,
+	coupling.DistanceCrossDeployUnit:      bookDistanceBoundary,
 	coupling.DistanceExternal:             bookDistanceExternal,
 }
 
@@ -196,26 +198,14 @@ func bookLowerStrength(s coupling.Strength) (coupling.Strength, bool) {
 	}
 }
 
-// bookLowerDistance is like lowerDistance but skips coupling.DistanceUnknown.
-// coupling.DistanceUnknown causes BookScorer to abstain, so tryMove would silently drop
-// the suggestion; this ladder jumps directly from CrossModuleDiffOwner to CrossModuleSameOwner.
-// coupling.DistanceCrossModuleSameOwner is the terminal rung: the next step down is
-// coupling.DistanceSameModule, which is not a distance reduction but a module merge — a
-// design change that moves the edge out of cross-module coupling entirely (its
-// score would report in local_coupling, not coupling_balance), so it is not
-// offered as a "reduce_distance" remediation.
+// bookLowerDistance offers the only distance move left on the v7 ladder: a
+// declared external system brought in-house. Every module boundary is the same
+// rung, so there is no smaller step between modules.
 func bookLowerDistance(d coupling.Distance) (coupling.Distance, bool) {
-	switch d {
-	case coupling.DistanceExternal:
-		return coupling.DistanceCrossDeployUnit, true // bring the seam in-house
-	case coupling.DistanceCrossDeployUnit:
-		return coupling.DistanceCrossModuleDiffOwner, true
-	case coupling.DistanceCrossModuleDiffOwner:
-		return coupling.DistanceCrossModuleSameOwner, true // skip coupling.DistanceUnknown
-	// coupling.DistanceCrossModuleSameOwner is terminal — further reduction collapses to cohesion
-	default:
-		return d, false
+	if d == coupling.DistanceExternal {
+		return coupling.DistanceCrossDeployUnit, true
 	}
+	return d, false
 }
 
 // abs returns the absolute value of x.

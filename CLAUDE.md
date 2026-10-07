@@ -130,16 +130,18 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 - **Severity source is `cl.Score.Band`** (`classify.go`, `Run`). `cl.Severity =
 cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   old discrete severity table and is no longer called anywhere. Do not re-introduce
-  it; the book formula (`ScoreVersion = "bc_score.v6"`) is the single severity source.
+  it; the book formula (`ScoreVersion = "bc_score.v7"`) is the single severity source.
 - **Coupling gate is the distributed-monolith SEAM rule**
   (`coupling.gate.distributed_monolith: {mode, max_new_seams}`, config schema
   **v2**). It counts logical seams — one ordered module pair, however many
   imports express it — not edges. `score.EvaluateSeamGate` + `applySeamGate` run
   inside `evaluation.Score` (`internal/assessment/evaluation/finalize.go`),
-  before `agenttask.Build`. A seam qualifies when it has at least one active
-  source-graph edge in the critical band at high distance
-  (`coupling.DistanceIsHigh`); it is built from the FULL classified edge set, so
-  no severity/baseline/waiver filter can hide one.
+  before `agenttask.Build`. A seam qualifies when it has at least one scored
+  source-graph edge in the critical band across a module boundary
+  (`coupling.DistanceIsHigh`; under v7 every boundary is D=9); it is built from
+  the FULL classified edge set, so no severity/baseline/waiver filter can hide
+  one. (Transitional: the stricter v7 qualification — strong strength, declared
+  volatility, no cohesive role — lands with the volatility and gate rules.)
   `mode: fail` blocks ONLY on seams newly introduced against a **comparable**
   reference (all four of `classification_hash`, `model_hash`, `labels_hash`,
   `rubric_version` equal, and the measurement profile); without one the gate reports the seam total, states
@@ -152,9 +154,9 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   run trains readers to ignore the line that matters.
   `internal/arch_test.go:TestSeamGateIsScoreBlind` forbids `Scorecard`/`Overall`
   in `score/gate.go`: the repository scalar must not reach the gate that
-  replaced it. Self-config evidence (2026-08-26): 380 scored edges, all
-  `cross_module_same_owner`, 78 critical, **0** at high distance → 0 qualifying
-  seams, which is why the self-config stays `mode: warn`.
+  replaced it. Self-config stays `mode: warn`: under v6 it had 0 qualifying
+  seams (every edge sat at D=4), and the v7 qualifiers still need a by-hand
+  review before anyone enables `fail`.
 - **Config schema v2 is the only analysable schema.** `config.SchemaVersion = 2`;
   `analyze`/`check` reject every other version and unknown config keys. `config
 init` emits v2 directly; owners update older configs manually before analysis.
@@ -558,8 +560,8 @@ init` emits v2 directly; owners update older configs manually before analysis.
 - **Owner inheritance for auto-registered synthetic submodules**
   (`classify.AugmentModulesFromGraph`, `AugmentGoWorkspaceModules`): propagates
   `owner` from the nearest config-declared ancestor module to each synthetic module.
-  Fixes inter-submodule edges defaulting to `cross_module_different_owner` (D=7)
-  on single-team repos with many cargo-modules or Go workspace members.
+  Fixes inter-submodule edges defaulting to the `cross_module_different_owner`
+  token on single-team repos with many cargo-modules or Go workspace members.
 - **SCIP empty-index reports `partial`/`warn`** (`internal/extract/scip/scip_strength.go`).
   When the resolved edge map is empty (`len(m)==0`), `Coverage.Status` is set
   to `StatusPartial` with reason
@@ -610,8 +612,9 @@ init` emits v2 directly; owners update older configs manually before analysis.
   dropped; dependent metrics report `n/a (timed out)`; the run continues on the
   verdict from the remaining analyzers.
 - **Go edge strength** comes from `go/packages` type info (`NeedTypesInfo`): the
-  resolved object kind (interface→contract, pure-data DTO struct or its
-  fields→dto, concrete type→model, const/var use→model, func or func/chan-valued
+  resolved object kind (interface type or interface-method call→contract,
+  pure-data DTO struct or its fields→dto, concrete type→model, const/var
+  use→model, package-level func, concrete-receiver method or func/chan-valued
   var→functional) is compiler-grade ground truth, so SCIP does **not** override
   it — `enrichEdges`
   keeps the Go type-info hint and uses SCIP strength only where type-info is absent
@@ -619,12 +622,17 @@ init` emits v2 directly; owners update older configs manually before analysis.
   imports to a blanket `functional`; letting it override flattened
   `coupling_balance`'s strength signal. For TS/Py/Rust (heuristic extractor hints)
   SCIP **does** override — it is their precision upgrade. Unclassified edges stay
-  `unknown` (abstain-not-fake). A public-glob match is a not-intrusive _floor_
-  whose kind the hint refines (classify.go); an internal-glob match is
-  authoritative intrusive. The `dto` hint (rank 2, between contract and model)
-  resolves to Contract only across a config-declared `public:` boundary — it is
-  Go-only; Python/TS extraction can't see object kinds, Rust gets const/static
-  precision via rust-analyzer SCIP terms instead (`docs/design/bc-measurement-v4.md`).
+  `unknown` (abstain-not-fake). **A `public:` target is the integration
+  contract** (bc_score.v7): a public-glob match is contract and a CALLABLE hint
+  (function call, method, interface method) never raises it. Only data evidence
+  does — `Edge.DataStrengthHint == "model"`, the strongest non-callable use per
+  (file, package) that the Go extractor and the SCIP reader emit (a concrete
+  non-DTO type, field, var, const, or a method on a concrete receiver). A DTO
+  stays contract across a public boundary and is model elsewhere. An
+  internal-glob match is authoritative intrusive. Connascence never sets
+  strength: it is report-only evidence. Python/TS extraction can't see object
+  kinds, so TypeScript without SCIP keeps public value imports at contract and
+  reads every other runtime import as functional (`docs/design/bc-measurement-v4.md`).
 - **Python module globs are DOTTED, not file paths.** grimp emits dotted node IDs
   (`prefect.states`); `paths:`/`public:`/`internal:` and rule `from:`/`to:` all match the
   dotted node ID via `doublestar.Match`. Write `prefect.**`, NOT `src/prefect/**` — a slash
@@ -1046,12 +1054,25 @@ init` emits v2 directly; owners update older configs manually before analysis.
 
 ## Coupling scorer — key design facts
 
-`ScoreVersion = "bc_score.v6"` (`internal/model/report/report.go`) — it is part
+`ScoreVersion = "bc_score.v7"` (`internal/model/report/report.go`) — it is part
 of the published report contract; `internal/relationship/analysis` carries a
 private `relationshipScoreVersion` mirror that must stay in step.
 The formula implementation lives in `internal/relationship/scoring/scorer_book.go`:
 `balance = max(|S−D|, 10−V) + 1` (Khononov Ch10 verbatim).
 Ordinals frozen as named constants — changing any is a breaking metric change.
+
+**Distance is level-relative (bc_score.v7).** Any module boundary is D=9 (Ch10
+puts in-house services at 9, vendors at 10); the same module is 2; a declared
+`external_systems:` target is 10. The distance TOKEN only names the boundary:
+`cross_deploy_unit` (deploy units differ), `cross_module_different_owner` (two
+non-empty owners differ), else `cross_module`. Owner and deploy unit never move
+severity, and module key spelling decides nothing. The role cap, key-based
+structural distance and owner-degeneracy logic are deleted. The containment
+tree (`classify.BuildContainment`, from declared `paths:` only: a root is a glob
+without a trailing `/**`, `.**` or `::**`) gives each seam a container and the
+boundary-crossing counts; `raw_distance.basis` reads `<boundary>@<container>`
+(`system` when the pair shares no module). Across a boundary the high band cannot
+occur: an edge is critical exactly when it is strong and V is 10.
 
 **Abstain-not-fake:** when strength OR distance is `unknown`, the edge is
 unscored (`EdgeScore.Scored = false`). No invented ordinals. Genuine internal

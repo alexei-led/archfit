@@ -45,11 +45,6 @@ type Config struct {
 	// Rust crate's Cargo.toml:0). Empty when clone detection produced no
 	// line-location data, or is disabled.
 	CloneEvidence map[string][]graph.Location
-	// ExplicitOwners marks modules whose `owner:` was hand-authored in YAML.
-	// classifyDistance treats explicit ownership as authoritative, so an explicit
-	// `owner: same-team` is not overridden by the code-structure fallback even in
-	// a single-author (degenerate) repo.
-	ExplicitOwners map[string]bool
 	// VolatilityCascadeEnabled enables inferred volatility propagation: a module
 	// strongly coupled (strength ≥ functional) to a high-effective-volatility
 	// module inherits high effective volatility. The cascade runs to a deterministic
@@ -74,7 +69,6 @@ func ConfigFrom(p policy.RelationshipPolicy) Config {
 		Layers:                    p.Topology.Layers,
 		ModuleMap:                 p.Topology.ModuleMap,
 		BCAdvisoryMinSeverity:     p.MinimumSeverity,
-		ExplicitOwners:            p.Topology.ExplicitOwners,
 		VolatilityCascadeEnabled:  p.VolatilityCascadeEnabled,
 		ExternalSystems:           p.Topology.ExternalSystems,
 		DuplicatedKnowledgePolicy: p.DuplicatedKnowledge,

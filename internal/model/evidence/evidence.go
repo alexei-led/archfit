@@ -332,9 +332,6 @@ type ConnascenceReport struct {
 	// TotalEvidence counts individual connascence facts. A single edge may carry
 	// multiple facts, e.g. name + type.
 	TotalEvidence int `json:"total_evidence"`
-	// StrengthInferredEdges counts classified edges whose strength was refined by
-	// deterministic static connascence evidence rather than a direct strength hint.
-	StrengthInferredEdges int `json:"strength_inferred_edges,omitempty"`
 	// ByKind counts evidence by Ch6 static category: name, type, meaning,
 	// algorithm, and position when deterministically measured.
 	ByKind map[string]int `json:"by_kind,omitempty"`

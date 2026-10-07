@@ -13,7 +13,7 @@ import (
 	"github.com/alexei-led/archfit/internal/relationship/scoring"
 )
 
-func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnlyPair, duplicated policy.DuplicatedKnowledgePolicy) *relationship.ClassifiedEdgeSummary {
+func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnlyPair, duplicated policy.DuplicatedKnowledgePolicy, tree classify.Containment) *relationship.ClassifiedEdgeSummary {
 	s := &relationship.ClassifiedEdgeSummary{ByStrength: map[string]int{}, ByDistance: map[string]int{}, ByDistanceBasis: map[string]int{}, ByVolatility: map[string]int{}, BySeverity: map[string]int{}, ByBalanceDriver: map[string]int{}, ByCriticalDriver: map[string]int{}, ByModulePair: map[string]int{}, DistanceCompression: distanceCompression()}
 	for _, n := range set.Nodes {
 		if !n.FirstParty {
@@ -54,7 +54,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 			connected[e.FromModule] = struct{}{}
 			connected[e.ToModule] = struct{}{}
 		}
-		span.add(e.FromModule, e.ToModule, e.Distance, e.Classified)
+		span.add(tree, e.FromModule, e.ToModule, e.Distance)
 	}
 	if policy.NormalizeDuplicatedKnowledgePolicy(duplicated) == policy.DuplicatedKnowledgePolicyScore {
 		for _, p := range clones {
@@ -64,7 +64,7 @@ func buildClassifiedSummary(set relationship.Set, clones []relationship.CloneOnl
 			tail.add(p.Classified, p.Distance, true)
 			connected[p.FromModule] = struct{}{}
 			connected[p.ToModule] = struct{}{}
-			span.add(p.FromModule, p.ToModule, p.Distance, p.Classified)
+			span.add(tree, p.FromModule, p.ToModule, p.Distance)
 		}
 	} else {
 		s.CloneOnlyAdvisory = len(clones)
@@ -209,11 +209,11 @@ func distanceCompression() *relationship.DistanceCompressionSummary {
 
 type spanAccumulator struct{ boundary, ancestor map[int]int }
 
-func (a *spanAccumulator) add(from, to string, distance relationship.Distance, c relationship.Classification) {
-	if c.DistanceBasis != "code_structure" || distance == relationship.DistanceSameModule || distance == relationship.DistanceUnknown || from == "" || to == "" {
+func (a *spanAccumulator) add(tree classify.Containment, from, to string, distance relationship.Distance) {
+	if distance == relationship.DistanceSameModule || distance == relationship.DistanceUnknown || distance == relationship.DistanceExternal || from == "" || to == "" {
 		return
 	}
-	span := classify.HierarchySpan(from, to)
+	span := classify.HierarchySpan(tree, from, to)
 	if span.BoundaryCrossings <= 0 {
 		return
 	}
@@ -228,8 +228,8 @@ func (a spanAccumulator) apply(d *relationship.DistanceCompressionSummary) {
 	if d == nil {
 		return
 	}
-	d.CodeStructureBoundaryCounts = distanceCounts(a.boundary)
-	d.CodeStructureAncestorDepths = distanceCounts(a.ancestor)
+	d.ContainmentBoundaryCounts = distanceCounts(a.boundary)
+	d.ContainmentAncestorDepths = distanceCounts(a.ancestor)
 }
 func distanceCounts(m map[int]int) []relationship.DistanceCount {
 	if len(m) == 0 {
@@ -255,9 +255,6 @@ func buildConnascenceSummary(set relationship.Set) *evidence.ConnascenceReport {
 			continue
 		}
 		r.EdgesWithEvidence++
-		if e.Provenance.StrengthFromConnascence {
-			r.StrengthInferredEdges++
-		}
 		for _, v := range e.Classified.Connascence {
 			r.TotalEvidence++
 			r.ByKind[v.Kind]++

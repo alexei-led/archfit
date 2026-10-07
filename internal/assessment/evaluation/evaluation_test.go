@@ -37,7 +37,7 @@ const (
 	keyDistance     = "distance"
 	keyVolatility   = "volatility"
 	strFunctional   = "functional"
-	distSameOwner   = "cross_module_same_owner"
+	distSameOwner   = "cross_module"
 	volLow          = "low"
 )
 

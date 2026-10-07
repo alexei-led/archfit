@@ -639,3 +639,23 @@ func TestCargoWorkspaceMembers_TimeoutMapsToStatusTimedOut(t *testing.T) {
 		t.Errorf("status = %q, want %q (cargo timeout must not be absorbed as absent)", cov.Status, reportmodel.StatusTimedOut)
 	}
 }
+
+func TestParseReaderDataStrengths(t *testing.T) {
+	fixture := `{"edges":[
+		{"from":"myapp.a","to":"myapp.types","strength":"functional","data_strength":"model"},
+		{"from":"myapp.a","to":"myapp.iface","strength":"contract","data_strength":"contract"},
+		{"from":"myapp.a","to":"myapp.fn","strength":"functional","data_strength":""}]}`
+	m, err := parseReaderDataStrengths([]byte(fixture))
+	if err != nil {
+		t.Fatalf("parseReaderDataStrengths: %v", err)
+	}
+	want := map[string]string{"myapp.a\x00myapp.types": "model", "myapp.a\x00myapp.iface": "contract"}
+	if len(m) != len(want) {
+		t.Fatalf("got %v, want %v", m, want)
+	}
+	for k, v := range want {
+		if m[k] != v {
+			t.Errorf("%q = %q, want %q", k, m[k], v)
+		}
+	}
+}

@@ -218,19 +218,23 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 
 ## Distance confidence
 
-- `code_structure`: always on (deterministic tree-distance baseline)
+- `module_boundary`: always on (any module boundary is D=9, level-relative)
 - `owner_source`: config
 - `deploy_unit_source`: ok
 - `owner_model`: multi_owner
 - distance basis: ownership=1
-- interpretation: ownership has multiple distinct owners, so owner distance can distinguish same-owner and different-owner module edges
+- interpretation: every module boundary is D=9 (level-relative); ownership has multiple distinct owners, so a differing owner makes the token cross_module_different_owner, and severity does not change
 - connected modules in coupling sample: 2
-- distance rungs implemented: D=2, D=4, D=7, D=9, D=10; omitted/compressed: D=1, D=3, D=5, D=6, D=8
-- distance compression: D=3/D=5/D=6/D=8 remain compressed: current graph/config facts distinguish same module, same owner, different owner, deploy unit, and declared vendor seam, but not finer package/library distance without guessing.
+- distance rungs implemented: D=2, D=9, D=10; omitted/compressed: D=1, D=3, D=4, D=5, D=6, D=7, D=8
+- containment boundary crossings: 2→1
+- containment shared-ancestor depth: 0→1
+- distance compression: Distance is level-relative (Ch10, Ch12, Ch13): inside one codebase the module boundary is the far end. Owner and deploy unit name the boundary and never move the rung.
 - D=1 compressed: object/member-level distance is not available from module dependency edges
 - D=3 compressed: current facts distinguish same module vs cross-module, but not object/package micro-distance
+- D=4 compressed: level-relative distance: a module boundary is the far end of the in-house ladder, so no cross-module edge scores below 9
 - D=5 compressed: package/library middle distance is not split without explicit stable package-boundary metadata
-- D=6 compressed: intermediate ownership/library distance has no deterministic signal beyond owner and tree structure
+- D=6 compressed: owner and deploy unit name the boundary; they do not change the rung
+- D=7 compressed: level-relative distance: owner changes relabel a seam, they never lower or raise D
 - D=8 compressed: library-like seams remain compressed: undeclared libraries stay excluded, while declared external_systems score at D=10
 - tail risk: worst balance 8/10; lower-decile balance 8/10; high-or-worse edges 0/1 (0%); critical 0; distributed-monolith 0
 

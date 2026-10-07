@@ -46,6 +46,11 @@ import tempfile
 
 RANK = {"contract": 1, "model": 2, "functional": 3, "intrusive": 4}
 ABSTRACT_BASES = ("/Protocol#", "/ABC#")  # python protocol/abc markers
+# Data strength: strongest NON-CALLABLE use behind an edge. Only occurrences
+# classified contract or model contribute; functional/intrusive ones are callable
+# or private-access evidence and are ignored.
+DATA_RANK = {"contract": 1, "model": 2}
+
 CONNASCENCE_RANK = {"name": 1, "type": 2, "meaning": 3, "algorithm": 4}
 
 # Numeric SymbolInformation.Kind values from the embedded SCIP proto. The reader
@@ -224,6 +229,15 @@ def _classify(symbol: str, lang: str, contract: set[str], kind: int = KIND_UNSPE
     if sfx == "term" and lang == "rust":
         return "model"
     return "functional"
+
+
+def _stronger_data(current: str, st: str) -> str:
+    """Fold one occurrence strength into an edge's data strength ("" = none)."""
+    if st not in DATA_RANK:
+        return current
+    if not current or DATA_RANK[st] > DATA_RANK[current]:
+        return st
+    return current
 
 
 def _connascence_kind(symbol: str, lang: str, contract: set[str], kind: int = KIND_UNSPECIFIED) -> str:
@@ -450,6 +464,7 @@ def main() -> None:
 
     edges: dict[tuple[str, str], str] = {}
     edge_connascence: dict[tuple[str, str], set[str]] = {}
+    edge_data: dict[tuple[str, str], str] = {}
     refs = {k: 0 for k in RANK}
 
     symbols_out, symbol_refs_out, intra_refs_out = _compute_symbols(idx, root, lang)
@@ -483,6 +498,7 @@ def main() -> None:
             key = (a, b)
             if key not in edges or RANK[st] > RANK[edges[key]]:
                 edges[key] = st
+            edge_data[key] = _stronger_data(edge_data.get(key, ""), st)
             edge_connascence.setdefault(key, set()).add(_connascence_kind(occ.symbol, lang, contract, kind))
 
     print(json.dumps({
@@ -491,6 +507,7 @@ def main() -> None:
                 "from": a,
                 "to": b,
                 "strength": st,
+                "data_strength": edge_data.get((a, b), ""),
                 "connascence": sorted(edge_connascence.get((a, b), set()), key=lambda k: (CONNASCENCE_RANK.get(k, 99), k)),
             }
             for (a, b), st in sorted(edges.items())

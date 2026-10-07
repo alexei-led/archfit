@@ -43,7 +43,7 @@ func TestBuildDistanceContextSingleOwnerDegenerate(t *testing.T) {
 	if got.DeployUnitDetectedModules != 1 {
 		t.Fatalf("deploy_unit_detected_modules = %d, want 1", got.DeployUnitDetectedModules)
 	}
-	if !strings.Contains(got.Interpretation, "low socio-technical distance") {
+	if !strings.Contains(got.Interpretation, "with one owner the boundary token is cross_module") {
 		t.Fatalf("interpretation does not explain low-distance one-owner repos: %q", got.Interpretation)
 	}
 }
@@ -61,7 +61,7 @@ func TestBuildDistanceContextNoOwnerSignal(t *testing.T) {
 	if !strings.Contains(got.Interpretation, "ownership is absent or unresolved") {
 		t.Fatalf("interpretation = %q, want absent-ownership explanation", got.Interpretation)
 	}
-	if strings.Contains(got.Interpretation, "can still raise distance") {
+	if strings.Contains(got.Interpretation, "cross_deploy_unit") {
 		t.Fatalf("interpretation should omit the evidence suffix with no evidence: %q", got.Interpretation)
 	}
 }
@@ -79,7 +79,7 @@ func TestBuildDistanceContextNoOwnerWithExternalEvidence(t *testing.T) {
 	if got.DeclaredExternalSystems != 1 {
 		t.Fatalf("declared_external_systems = %d, want 1", got.DeclaredExternalSystems)
 	}
-	if !strings.Contains(got.Interpretation, "can still raise distance") {
+	if !strings.Contains(got.Interpretation, "scores at D=10") {
 		t.Fatalf("interpretation should include the evidence suffix: %q", got.Interpretation)
 	}
 }
@@ -123,7 +123,7 @@ func TestBuildDistanceContextMultiOwner(t *testing.T) {
 	if got.OwnerModel != wantOwnerModelMultiOwner {
 		t.Fatalf("owner_model = %q, want %q", got.OwnerModel, wantOwnerModelMultiOwner)
 	}
-	if !strings.Contains(got.Interpretation, "different-owner") {
+	if !strings.Contains(got.Interpretation, "cross_module_different_owner") {
 		t.Fatalf("interpretation = %q, want different-owner explanation", got.Interpretation)
 	}
 }
