@@ -8,6 +8,8 @@ import (
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
+const layerDomain = "domain"
+
 func render(t *testing.T, in Input, format string) string {
 	t.Helper()
 	var b strings.Builder
@@ -18,12 +20,12 @@ func render(t *testing.T, in Input, format string) string {
 }
 
 func TestDrawRankPutsOutermostLayersFirst(t *testing.T) {
-	layers := []string{"domain", "application", "entrypoint"}
+	layers := []string{layerDomain, "application", "entrypoint"}
 	for _, tc := range []struct {
 		layer string
 		want  int
 	}{
-		{"entrypoint", 0}, {"application", 1}, {"domain", 2}, {"adapter", 3}, {"", 4},
+		{"entrypoint", 0}, {"application", 1}, {layerDomain, 2}, {"adapter", 3}, {"", 4},
 	} {
 		if got := drawRank(layers, tc.layer); got != tc.want {
 			t.Errorf("drawRank(%q) = %d, want %d", tc.layer, got, tc.want)
@@ -44,6 +46,21 @@ func TestRenderKeepsEveryEndpointAndQuotesLabels(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("mermaid missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// TestUndeclaredEndpointsComeLast: a seam endpoint no module declares is drawn
+// after every declared module, unlayered ones included, whatever its name.
+func TestUndeclaredEndpointsComeLast(t *testing.T) {
+	in := Input{
+		Modules: []Module{{Name: "audit"}, {Name: "billing", Layer: layerDomain}},
+		Layers:  []string{layerDomain},
+		Seams:   []report.Seam{{FromModule: "aaa/member", ToModule: "billing", Policy: "observed"}},
+	}
+	out := render(t, in, FormatText)
+	billing, audit, member := strings.Index(out, "billing\n"), strings.Index(out, "audit\n"), strings.Index(out, "(undeclared)     aaa/member")
+	if billing < 0 || audit < billing || member < audit {
+		t.Errorf("want billing, then audit, then the undeclared member:\n%s", out)
 	}
 }
 

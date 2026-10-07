@@ -468,8 +468,9 @@ archfit map [-c .archfit.yaml] [--root DIR] [--format mermaid|text] [--focus MOD
 
 Layers are drawn outermost first (the reverse of `layers:`, which lists the
 innermost layer first), so a permitted dependency points down. A module with a
-layer that `layers:` does not rank comes next, then a module with no layer,
-then a seam endpoint that no module declares (a `go.work` member).
+layer that `layers:` does not rank comes next, then a module with no layer
+(`(no layer)` in text), then a seam endpoint that no module declares, such as
+a `go.work` member (`(undeclared)` in text).
 
 Each seam has one status, the first that matches:
 
@@ -477,13 +478,19 @@ Each seam has one status, the first that matches:
 | ----------- | ------------------------------------------------------------------------- | ------------- |
 | `violation` | An active gate finding names the pair.                                    | `==>`         |
 | `accepted`  | A gate finding on the pair is baselined or waived. This is not permission. | `-.->`        |
-| `advisory`  | Another active finding names the pair.                                    | `-->`         |
-| `allowed`   | A fail-gated allowlist (`depends_on`, `visible_to`) or layer rule permits the pair, as `policy can-import` decides it. | `-->` |
+| `advisory`  | Another active finding names the pair. A baselined or waived advisory does not count. | `-->` |
+| `allowed`   | A fail-gated allowlist (`depends_on`, `visible_to`) or layer rule permits the pair, with the permission predicate of `policy can-import`. | `-->` |
 | `observed`  | No finding names the pair and no rule decides it.                         | `-->`         |
 
-A finding names a pair through the modules of its edge. With `--no-advisories`
-on `check`, the report has no advisory findings, so those seams read `allowed`
-or `observed` in `seams[].policy`.
+A finding names a pair through the modules the run puts its edge endpoints
+under, `go.work` members and Rust `crate::mod` modules included. With
+`--no-advisories` on `check`, the report has no advisory findings, so those
+seams read `allowed` or `observed` in `seams[].policy`.
+
+`policy can-import` can answer `not_decided` for a pair the map shows as
+`allowed`. It judges one edge before an edit, so a fail-gated whole-graph rule
+(`module_cycle`, `cycle`, the seam gate in `mode: fail`) is still open. The
+map reads a finished run, which has evaluated those rules.
 
 Flags:
 

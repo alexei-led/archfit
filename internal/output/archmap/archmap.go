@@ -27,8 +27,12 @@ const (
 	policyAccepted  = "accepted"
 )
 
-// noLayer labels a module the configured layer order does not rank.
-const noLayer = "(no layer)"
+// Labels for a module with no layer, and for a seam endpoint no module
+// declares (a go.work member).
+const (
+	noLayer    = "(no layer)"
+	undeclared = "(undeclared)"
+)
 
 // ErrUnknownFocus is returned when a --focus module is neither declared nor an
 // endpoint of any seam.
@@ -56,6 +60,7 @@ type Input struct {
 // node is one module drawn on the map.
 type node struct {
 	name, layer string
+	declared    bool
 	rank        int // position in drawing order: outermost ranked layer first
 }
 
@@ -86,9 +91,9 @@ func Render(in Input, format string, w io.Writer) error {
 }
 
 func build(in Input) (view, error) {
-	layerOf := map[string]string{}
+	layerOf, declared := map[string]string{}, map[string]bool{}
 	for _, m := range in.Modules {
-		layerOf[m.Name] = m.Layer
+		layerOf[m.Name], declared[m.Name] = m.Layer, true
 	}
 	for _, s := range in.Seams {
 		for _, name := range []string{s.FromModule, s.ToModule} {
@@ -119,7 +124,11 @@ func build(in Input) (view, error) {
 		if len(in.Focus) > 0 && !keep[name] {
 			continue
 		}
-		v.nodes = append(v.nodes, node{name: name, layer: layer, rank: drawRank(in.Layers, layer)})
+		rank := drawRank(in.Layers, layer)
+		if !declared[name] {
+			rank = len(in.Layers) + 2
+		}
+		v.nodes = append(v.nodes, node{name: name, layer: layer, declared: declared[name], rank: rank})
 	}
 	sort.Slice(v.nodes, func(i, j int) bool {
 		if v.nodes[i].rank != v.nodes[j].rank {
@@ -132,7 +141,7 @@ func build(in Input) (view, error) {
 
 // drawRank orders layers outermost first, so a permitted dependency points
 // down: the configured order is innermost first. A layer the order does not
-// rank, then no layer, come last.
+// rank, then no layer, come last; build puts undeclared endpoints after them.
 func drawRank(layers []string, layer string) int {
 	if i := slices.Index(layers, layer); i >= 0 {
 		return len(layers) - 1 - i
@@ -194,7 +203,10 @@ func writeText(b *strings.Builder, v view) {
 	b.WriteString("ARCHITECTURE MAP\n\nMODULES (outermost layer first)\n\n")
 	for _, n := range v.nodes {
 		layer := n.layer
-		if layer == "" {
+		switch {
+		case !n.declared:
+			layer = undeclared
+		case layer == "":
 			layer = noLayer
 		}
 		fmt.Fprintf(b, "  %-16s %s\n", layer, n.name)

@@ -163,6 +163,7 @@ func Assess(in AssessInput) (Assessed, error) {
 		in.Accepted = status.Empty{}
 	}
 	diag := project(in, ruleset, newMetricset(in.Policy.Gates.Metrics))
+	diag.SeamEndpointModules = seamEndpointModules(in.Relationships)
 	diag.OwnerSource = in.OwnerSource
 	diag.VolatilityCorroboration = in.VolatilityCorroboration
 	return Assessed{

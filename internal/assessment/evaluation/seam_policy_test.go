@@ -10,15 +10,18 @@ import (
 )
 
 const (
-	modAPI      = "api"
-	modOrders   = "orders"
-	modBilling  = "billing"
-	modStripe   = "stripe"
-	layerEntry  = "entrypoint"
-	layerApp    = "application"
-	layerDom    = "domain"
-	layerAdapt  = "adapter"
-	edgeImports = "imports"
+	modAPI       = "api"
+	modOrders    = "orders"
+	modBilling   = "billing"
+	modStripe    = "stripe"
+	layerEntry   = "entrypoint"
+	layerApp     = "application"
+	layerDom     = "domain"
+	layerAdapt   = "adapter"
+	edgeImports  = "imports"
+	modMember    = "tools/member"
+	modPlaceRust = "core::place"
+	modTypesRust = "core::types"
 )
 
 // hexagonalPolicy declares four modules on three ranked layers (domain inner,
@@ -68,6 +71,8 @@ func TestSeamPolicyStatus(t *testing.T) {
 			findings: []finding.Finding{pairFinding(gate, finding.StatusWaived, modBilling, modStripe), pairFinding(advisory, finding.StatusNew, modBilling, modStripe)}},
 		{name: "advisory only", from: modAPI, to: modOrders, rules: []policy.RuleDef{layerRule}, want: seamAdvisory,
 			findings: []finding.Finding{pairFinding(advisory, finding.StatusNew, modAPI, modOrders)}},
+		{name: "a baselined advisory names nothing", from: modOrders, to: modBilling, rules: []policy.RuleDef{allowlistRule}, want: seamAllowed,
+			findings: []finding.Finding{pairFinding(advisory, finding.StatusBaseline, modOrders, modBilling), pairFinding(advisory, finding.StatusWaived, modOrders, modBilling)}},
 		{name: "a fixed finding names nothing", from: modBilling, to: modStripe, want: seamObserved,
 			findings: []finding.Finding{pairFinding(gate, finding.StatusFixed, modBilling, modStripe)}},
 		{name: "a finding on the reverse pair does not count", from: modStripe, to: modBilling, want: seamObserved,
@@ -91,9 +96,39 @@ func TestSeamPolicyStatus(t *testing.T) {
 	}
 }
 
+// TestSeamPolicyPlacesFindingsByTheGraphModule pins how a finding reaches its
+// seam: through the module the seam ledger keys its endpoint path under. A
+// module-pair finding whose importer no declared module owns, a mixed-side
+// finding, and a Rust crate::mod edge all name a declared module, or none,
+// while the seam names the graph's module.
+func TestSeamPolicyPlacesFindingsByTheGraphModule(t *testing.T) {
+	t.Parallel()
+	set := relationship.Set{Edges: []relationship.Edge{
+		{FromPath: modMember + "/run.go", ToPath: "internal/billing", FromModule: modMember, ToModule: modBilling},
+		{FromPath: modPlaceRust, ToPath: modTypesRust, FromModule: modPlaceRust, ToModule: modTypesRust},
+	}}
+	unowned := finding.Finding{Kind: finding.KindGate, Status: finding.StatusNew, Edge: finding.EdgeEvidence{
+		From: finding.Endpoint{Path: modMember}, To: finding.Endpoint{Module: modBilling},
+	}}
+	crate := finding.Finding{Kind: finding.KindGate, Status: finding.StatusBaseline, Edge: finding.EdgeEvidence{
+		From: finding.Endpoint{Path: modPlaceRust, Module: "core"}, To: finding.Endpoint{Path: modTypesRust, Module: "core"},
+	}}
+	diag := &result.Result{
+		Findings:            []finding.Finding{unowned, crate},
+		SeamEndpointModules: seamEndpointModules(set),
+		Seams:               []result.Seam{{FromModule: modMember, ToModule: modBilling}, {FromModule: modPlaceRust, ToModule: modTypesRust}},
+	}
+	attachSeamPolicy(diag, hexagonalPolicy())
+	if got := []string{diag.Seams[0].Policy, diag.Seams[1].Policy}; got[0] != seamViolation || got[1] != seamAccepted {
+		t.Errorf("policies = %v, want [violation accepted]", got)
+	}
+}
+
 // TestSeamAllowedAgreesWithCanImport pins the seam status to the edge answer
-// of `archfit policy can-import`: with no finding on the pair, a seam is
-// allowed exactly when can-import answers allowed for an edge across it.
+// of `archfit policy can-import`: with no finding on the pair and no
+// whole-graph rule (which can-import leaves not_decided for one edge and the
+// run decides), a seam is allowed exactly when can-import answers allowed for
+// an edge across it.
 func TestSeamAllowedAgreesWithCanImport(t *testing.T) {
 	t.Parallel()
 	pkg := map[string]string{modAPI: "internal/api", modOrders: "internal/orders", modBilling: "internal/billing", modStripe: "internal/stripe"}

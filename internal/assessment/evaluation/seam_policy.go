@@ -1,11 +1,13 @@
 package evaluation
 
 import (
+	"path"
 	"slices"
 
 	"github.com/alexei-led/archfit/internal/assessment/finding"
 	"github.com/alexei-led/archfit/internal/assessment/result"
 	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/internal/relationship"
 )
 
 // Seam policy statuses (seams[].policy). The first matching one wins.
@@ -27,22 +29,25 @@ const (
 // attachSeamPolicy sets the policy status of every seam from the findings the
 // report publishes and the permission predicate `archfit policy can-import`
 // uses. It runs after finalize, which adds the seam-gate findings. A finding
-// names a pair through its edge's modules; a fixed one names nothing.
+// names the pair of its edge endpoints, each placed under the module the seam
+// ledger uses for it; a fixed finding, or a baselined or waived advisory,
+// names nothing.
 func attachSeamPolicy(diag *result.Result, p policy.PolicySnapshot) {
 	type pair struct{ from, to string }
 	rank := map[pair]int{}
 	for _, f := range diag.Findings {
 		r := 0
+		active := f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver
 		switch {
 		case f.Status == finding.StatusFixed:
-		case f.Kind == finding.KindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver):
+		case f.Kind == finding.KindGate && active:
 			r = 3
 		case f.Kind == finding.KindGate:
 			r = 2
-		default:
+		case active:
 			r = 1
 		}
-		k := pair{f.Edge.From.Module, f.Edge.To.Module}
+		k := pair{endpointModule(diag.SeamEndpointModules, f.Edge.From), endpointModule(diag.SeamEndpointModules, f.Edge.To)}
 		rank[k] = max(rank[k], r)
 	}
 	for i := range diag.Seams {
@@ -54,43 +59,75 @@ func attachSeamPolicy(diag *result.Result, p policy.PolicySnapshot) {
 			s.Policy = seamAccepted
 		case 1:
 			s.Policy = seamAdvisory
-		default:
+		case 0:
 			s.Policy = seamObserved
-			if len(pairPermission(p, s.FromModule, s.ToModule)) > 0 {
+			if pairPermitted(p, s.FromModule, s.ToModule) {
 				s.Policy = seamAllowed
 			}
 		}
 	}
 }
 
-// pairPermission names what permits a dependency from declared module from on
-// declared module to: an allowlist that names the pair, or the layer order,
-// each only under a fail-gated rule that enforces it. Empty means no rule
-// decides the pair. A module no config declares (a go.work member) has no
-// allowlist and no layer, so nothing permits it.
-func pairPermission(p policy.PolicySnapshot, from, to string) []string {
+// endpointModule is the seam-ledger module of one finding endpoint: the module
+// the graph puts its path under, else the module the finding names.
+func endpointModule(modules map[string]string, e finding.Endpoint) string {
+	if m, ok := modules[e.Path]; ok && e.Path != "" {
+		return m
+	}
+	return e.Module
+}
+
+// seamEndpointModules indexes every edge endpoint path, and the directory of
+// each importing file (the package a module-pair finding names), under the
+// module the seam ledger keys the edge by.
+func seamEndpointModules(s relationship.Set) map[string]string {
+	out := make(map[string]string, 2*len(s.Edges))
+	for _, e := range s.Edges {
+		if e.FromModule != "" {
+			out[e.FromPath] = e.FromModule
+		}
+		if e.ToModule != "" {
+			out[e.ToPath] = e.ToModule
+		}
+	}
+	for _, e := range s.Edges {
+		if dir := path.Dir(e.FromPath); e.FromModule != "" && dir != "." {
+			if _, taken := out[dir]; !taken {
+				out[dir] = e.FromModule
+			}
+		}
+	}
+	return out
+}
+
+// pairPermitted reports whether a fail-gated rule permits a dependency from
+// declared module from on declared module to: an allowlist that names the
+// pair, or the layer order. It is the permission half of `archfit policy
+// can-import`; the run itself has evaluated the whole-graph rules can-import
+// leaves not_decided for one edge. A module no config declares (a go.work
+// member) has no allowlist and no layer, so nothing permits it.
+func pairPermitted(p policy.PolicySnapshot, from, to string) bool {
 	rules := p.Gates.Rules
 	mm := rules.ModuleMap
 	if !mm.Has(from) || !mm.Has(to) || from == to {
-		return nil
+		return false
 	}
-	var reasons []string
 	for _, def := range rules.Rules {
 		if !def.Blocks() {
 			continue
 		}
 		switch def.Type {
 		case ruleTypeModuleDependencies:
-			if why := allowlistPermission(mm, p.Topology.Modules, from, to); why != "" {
-				reasons = append(reasons, why)
+			if allowlistPermission(mm, p.Topology.Modules, from, to) != "" {
+				return true
 			}
 		case ruleTypeLayerOrder:
-			if why := moduleLayerReason(mm, rules.Layers, from, to); why != "" {
-				reasons = append(reasons, why)
+			if moduleLayerPermits(mm, rules.Layers, from, to) {
+				return true
 			}
 		}
 	}
-	return sortedUnique(reasons)
+	return false
 }
 
 // allowlistPermission names the allowlist that permits a dependency between
@@ -103,21 +140,19 @@ func allowlistPermission(mm policy.ModuleMap, modules map[string]policy.ModuleDe
 	return allowlistReason(modules, from, to)
 }
 
-// moduleLayerReason names the layer order that permits module from to depend
-// on module to: both layers ranked, and the dependency points from an outer
-// (higher-rank) layer to the same or an inner one. Empty otherwise.
-func moduleLayerReason(mm policy.ModuleMap, layers []string, from, to string) string {
+// moduleLayerPermits reports whether the layer order permits module from to
+// depend on module to: both layers ranked, and the dependency points from an
+// outer (higher-rank) layer to the same or an inner one, as the layer rule
+// judges an edge.
+func moduleLayerPermits(mm policy.ModuleMap, layers []string, from, to string) bool {
 	fromLayer, ok := mm.LayerForName(from)
 	if !ok {
-		return ""
+		return false
 	}
 	toLayer, ok := mm.LayerForName(to)
 	if !ok {
-		return ""
+		return false
 	}
 	fromRank, toRank := slices.Index(layers, fromLayer), slices.Index(layers, toLayer)
-	if fromRank < 0 || toRank < 0 || fromRank < toRank {
-		return ""
-	}
-	return "layer " + fromLayer + " may depend on layer " + toLayer
+	return fromRank >= 0 && toRank >= 0 && fromRank >= toRank
 }
