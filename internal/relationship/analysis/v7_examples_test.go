@@ -67,6 +67,7 @@ func requireScore(t *testing.T, res relationship.AnalysisResult, wantStrength re
 
 const (
 	fileAPIX            = "a/api/x.go"
+	fileAPIY            = "b/api/y.go"
 	fileOrders          = "orders/o.go"
 	subdomainSupporting = "supporting"
 	volMedium           = "medium"
@@ -330,14 +331,14 @@ func TestV7CloneFactAttachesToSeam(t *testing.T) {
 		d.Public = []string{k + "/api/**"}
 		modules[k] = d
 	}
-	g := exampleGraph(exampleEdge{fromFile: fileAPIX, toFile: "b/api/y.go", hint: hintInterface})
+	g := exampleGraph(exampleEdge{fromFile: fileAPIX, toFile: fileAPIY, hint: hintInterface})
 	cloneA, cloneB := "a/dup.go", "b/dup.go"
 	res := analysis.Analyze(analysis.Input{
 		Graph: g, Policy: relationshipPolicy(modules),
 		CloneClusters: []clone.Cluster{{Files: []string{cloneA, cloneB}, Lines: 40, Locations: []clone.LineRange{{StartLine: 1}, {StartLine: 2}}}},
 		FileClassIndex: map[string]fileclass.FileClass{
 			cloneA: fileclass.Production, cloneB: fileclass.Production,
-			fileAPIX: fileclass.Production, "b/api/y.go": fileclass.Production,
+			fileAPIX: fileclass.Production, fileAPIY: fileclass.Production,
 		},
 	})
 	s := seamBetween(t, res, "a", "b")
@@ -376,7 +377,7 @@ func cloneSetup() (map[string]policy.ModuleDef, analysis.Input) {
 		CloneClusters: []clone.Cluster{{Files: []string{cloneA, cloneB}, Lines: 40, Locations: []clone.LineRange{{StartLine: 1}, {StartLine: 2}}}},
 		FileClassIndex: map[string]fileclass.FileClass{
 			cloneA: fileclass.Production, cloneB: fileclass.Production,
-			fileAPIX: fileclass.Production, "b/api/y.go": fileclass.Production,
+			fileAPIX: fileclass.Production, fileAPIY: fileclass.Production,
 		},
 	}
 	return modules, in
@@ -387,8 +388,8 @@ func cloneSetup() (map[string]policy.ModuleDef, analysis.Input) {
 func TestV7CloneFactAttachesToExactlyOneSeam(t *testing.T) {
 	modules, in := cloneSetup()
 	in.Graph = exampleGraph(
-		exampleEdge{fromFile: fileAPIX, toFile: "b/api/y.go", hint: hintInterface},
-		exampleEdge{fromFile: "b/api/y.go", toFile: fileAPIX, hint: hintInterface},
+		exampleEdge{fromFile: fileAPIX, toFile: fileAPIY, hint: hintInterface},
+		exampleEdge{fromFile: fileAPIY, toFile: fileAPIX, hint: hintInterface},
 	)
 	in.Policy = relationshipPolicy(modules)
 	res := analysis.Analyze(in)
@@ -410,7 +411,7 @@ func TestV7CloneFactAttachesToExactlyOneSeam(t *testing.T) {
 // advisory: it is a fact on the seam, and the rule means "no import edge".
 func TestV7CloneFactPolicyAndAdvisories(t *testing.T) {
 	modules, in := cloneSetup()
-	in.Graph = exampleGraph(exampleEdge{fromFile: fileAPIX, toFile: "b/api/y.go", hint: hintInterface})
+	in.Graph = exampleGraph(exampleEdge{fromFile: fileAPIX, toFile: fileAPIY, hint: hintInterface})
 
 	score := relationshipPolicy(modules)
 	score.DuplicatedKnowledge = policy.DuplicatedKnowledgePolicyScore
