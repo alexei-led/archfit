@@ -3,6 +3,7 @@ package score
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/alexei-led/archfit/internal/assessment/result"
 )
@@ -95,11 +96,32 @@ func EvaluateSeamGate(seams []result.Seam, gate SeamGate, ref SeamReference) Sea
 		"%d newly introduced distributed-monolith seam(s) exceed coupling.gate.distributed_monolith.max_new_seams %d",
 		len(out.New), gate.MaxNewSeams))
 	for _, s := range out.New {
-		out.Reasons = append(out.Reasons, fmt.Sprintf(
-			"%s -> %s: %s coupling at %s (%d critical of %d scored edges)",
-			s.FromModule, s.ToModule, s.Strength, s.Distance, s.CriticalEdges, s.ScoredEdges))
+		out.Reasons = append(out.Reasons, seamReason(s))
 	}
 	return out
+}
+
+// seamReason names what the seam crosses and where: the boundary and the
+// container both sides share. The raw distance basis reads
+// "<boundary>@<container>", so the reason never needs the seam's score. Only a
+// deploy-unit boundary is called a distributed monolith.
+func seamReason(s result.Seam) string {
+	boundary, container, _ := strings.Cut(s.RawDistance.Basis, "@")
+	var across string
+	switch boundary {
+	case "deploy_unit":
+		across = "deploy-unit boundary (a distributed monolith)"
+	case "ownership":
+		across = "owner boundary"
+	default:
+		across = "module boundary"
+	}
+	reason := fmt.Sprintf("%s -> %s: %s coupling across the %s at %s volatility",
+		s.FromModule, s.ToModule, s.Strength, across, s.Volatility)
+	if container != "" {
+		reason += fmt.Sprintf(" (container %s)", container)
+	}
+	return reason
 }
 
 // qualifyingSeams selects the distributed-monolith seams in stable ID order.

@@ -16,17 +16,19 @@ import (
 	"github.com/alexei-led/archfit/internal/model/report"
 )
 
-// coupledModulesCfg declares two modules with different owners and no rules, so
+// coupledModulesCfg declares two high-volatility modules with different owners and no rules, so
 // Any FAIL from `archfit check` on the fixture repo comes from the coupling gate alone.
 const coupledModulesCfg = `version: 2
 modules:
   a:
     paths: ["pkg/a/**"]
     owner: team-a
+    volatility: high
   b:
     paths: ["pkg/b/**"]
     internal: ["pkg/b/internal/**"]
     owner: team-b
+    volatility: high
 `
 
 // writeCoupledRepo creates a minimal Go repo with one cross-module edge
@@ -66,11 +68,13 @@ modules:
     paths: ["pkg/a/**"]
     owner: team-a
     deploy_unit: svc-a
+    volatility: high
   b:
     paths: ["pkg/b/**"]
     internal: ["pkg/b/internal/**"]
     owner: team-b
     deploy_unit: svc-b
+    volatility: high
 `
 
 // TestRun_Check_DistributedMonolithSeamIsDiagnostic pins the default posture: a

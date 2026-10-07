@@ -13,9 +13,12 @@ import (
 // modABKey is the sorted null-delimited key for the modA→modB pair used in label maps.
 const modABKey = modNameA + "\x00" + modNameB
 
-// TestSymmetricStrengthUpgrade covers the clone-pair → Symmetric upgrade path
-// and all cases where the upgrade must NOT fire (authoritative labels).
-func TestSymmetricStrengthUpgrade(t *testing.T) {
+// emptyGraph is a graph with no import edge between any module pair.
+var emptyGraph = graph.Build(nil)
+
+// TestCloneNeverUpgradesEdgeStrength: whatever else a clone pair does, it leaves
+// the strength of an import edge to the edge's own evidence, labels included.
+func TestCloneNeverUpgradesEdgeStrength(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -25,105 +28,40 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 		wantStrength coupling.Strength
 	}{
 		{
-			name: "clone pair + functional hint → symmetric",
-			edge: graph.Edge{
-				From:         fileFromA,
-				To:           fileToB,
-				Kind:         graph.EdgeKindImports,
-				StrengthHint: hintFunctional,
-			},
+			name:         "functional hint stays functional",
+			edge:         graph.Edge{From: fileFromA, To: fileToB, Kind: graph.EdgeKindImports, StrengthHint: hintFunctional},
 			cfg:          twoModuleConfig(nil, modABClonePair),
-			wantStrength: coupling.StrengthSymmetric,
+			wantStrength: coupling.StrengthFunctional,
 		},
 		{
-			name: "clone pair + unknown strength → symmetric",
-			edge: graph.Edge{
-				From: fileFromA,
-				To:   fileToB,
-				Kind: graph.EdgeKindImports,
-				// no StrengthHint → unknown
-			},
+			name:         "unknown strength stays unknown",
+			edge:         graph.Edge{From: fileFromA, To: fileToB, Kind: graph.EdgeKindImports},
 			cfg:          twoModuleConfig(nil, modABClonePair),
-			wantStrength: coupling.StrengthSymmetric,
+			wantStrength: coupling.StrengthUnknown,
 		},
 		{
-			name: "clone pair + contract glob → contract (not overridden)",
-			edge: graph.Edge{
-				From: fileFromA,
-				To:   "file:services/b/api/b.go",
-				Kind: graph.EdgeKindImports,
-				// no StrengthHint — glob match makes it contract
-			},
-			// services/b/api/** is a public (contract) glob; clone pair also present
+			name:         "contract glob stays contract",
+			edge:         graph.Edge{From: fileFromA, To: "file:services/b/api/b.go", Kind: graph.EdgeKindImports},
 			cfg:          twoModuleConfig([]string{publicB}, modABClonePair),
 			wantStrength: coupling.StrengthContract,
 		},
 		{
-			name: "clone pair + pinned model label → model (not overridden)",
-			edge: graph.Edge{
-				From: fileFromA,
-				To:   fileToB,
-				Kind: graph.EdgeKindImports,
-				// no StrengthHint — pinned label provides model
-			},
+			name: "pinned label stays pinned",
+			edge: graph.Edge{From: fileFromA, To: fileToB, Kind: graph.EdgeKindImports},
 			cfg: classify.Config{
-				Modules: map[string]policy.ModuleDef{
-					modNameA: {Paths: []string{pathsA}},
-					modNameB: {Paths: []string{pathsB}},
-				},
-				ApprovedLabels: map[string]string{
-					// key must be sorted: modA < modB
-					modABKey: string(coupling.StrengthModel),
-				},
+				Modules:               map[string]policy.ModuleDef{modNameA: {Paths: []string{pathsA}}, modNameB: {Paths: []string{pathsB}}},
+				ApprovedLabels:        map[string]string{modABKey: string(coupling.StrengthFunctional)},
 				CrossModuleClonePairs: modABClonePair,
 			},
-			// model is not functional/unknown → upgrade must not fire
-			wantStrength: coupling.StrengthModel,
-		},
-		{
-			name: "no clone pair + functional → functional",
-			edge: graph.Edge{
-				From:         fileFromA,
-				To:           fileToB,
-				Kind:         graph.EdgeKindImports,
-				StrengthHint: hintFunctional,
-			},
-			cfg:          twoModuleConfig(nil, nil),
-			wantStrength: coupling.StrengthFunctional,
-		},
-		{
-			name: "clone pair + pinned functional label → functional (not overridden)",
-			edge: graph.Edge{
-				From: fileFromA,
-				To:   fileToB,
-				Kind: graph.EdgeKindImports,
-				// no StrengthHint — pinned label provides functional
-			},
-			cfg: classify.Config{
-				Modules: map[string]policy.ModuleDef{
-					modNameA: {Paths: []string{pathsA}},
-					modNameB: {Paths: []string{pathsB}},
-				},
-				ApprovedLabels: map[string]string{
-					// human pinned this edge as functional
-					modABKey: string(coupling.StrengthFunctional),
-				},
-				CrossModuleClonePairs: modABClonePair,
-			},
-			// functional is a pinned human judgment — clone upgrade must not override it.
 			wantStrength: coupling.StrengthFunctional,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			g := makeGraph([]graph.Edge{tt.edge})
-			idx := classify.Run(g, tt.cfg)
-			key := edgeKey(tt.edge)
-			cl, ok := idx[key]
+			cl, ok := classify.Run(makeGraph([]graph.Edge{tt.edge}), tt.cfg)[edgeKey(tt.edge)]
 			if !ok {
-				t.Fatalf("edge key %q not in index", key)
+				t.Fatal("edge not in index")
 			}
 			if cl.Strength != tt.wantStrength {
 				t.Errorf("Strength = %q, want %q", cl.Strength, tt.wantStrength)
@@ -132,130 +70,113 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 	}
 }
 
-// TestSymmetricDistributedMonolithDetected is an integration test proving that
-// the book's distributed-monolith pattern is detected end-to-end:
-// two modules in different deploy units with a clone pair and high volatility
-// produce balance=1 (SeverityCritical) — the worst coupling score.
-//
-// Book formula: S=9 (Symmetric), D=9 (CrossDeployUnit), V=10 (high/core)
-// modularity=|9-9|=0, volRescue=10-10=0, balance=max(0,0)+1=1 → critical.
-func TestSymmetricDistributedMonolithDetected(t *testing.T) {
+// TestFunctionalEdgeVolatilityIsWorseOfBothSides: functional and symmetric
+// coupling ties both sides (Ch7), so the worse volatility of source and target
+// drives the edge. Contract, model and intrusive edges keep the target's.
+func TestFunctionalEdgeVolatilityIsWorseOfBothSides(t *testing.T) {
 	t.Parallel()
 
-	edge := graph.Edge{
-		From:         "file:services/a/a.go",
-		To:           "file:services/b/b.go",
-		Kind:         graph.EdgeKindImports,
-		StrengthHint: hintFunctional,
+	const (
+		high, low, med, frozen = "high", "low", "medium", "frozen"
+	)
+	tests := []struct {
+		name     string
+		strength coupling.Strength
+		src, dst string // declared volatility ("" = undeclared)
+		want     coupling.Volatility
+	}{
+		{"functional: high source, low target", coupling.StrengthFunctional, high, low, coupling.VolatilityHigh},
+		{"functional: low source, high target", coupling.StrengthFunctional, low, high, coupling.VolatilityHigh},
+		{"functional: both low", coupling.StrengthFunctional, low, low, coupling.VolatilityLow},
+		{"functional: medium and low", coupling.StrengthFunctional, med, low, coupling.VolatilityMedium},
+		{"functional: frozen and low", coupling.StrengthFunctional, frozen, low, coupling.VolatilityLow},
+		{"functional: undeclared source, low target is unrated", coupling.StrengthFunctional, "", low, coupling.VolatilityUndeclared},
+		{"functional: declared high beats undeclared", coupling.StrengthFunctional, high, "", coupling.VolatilityHigh},
+		{"symmetric: high source, low target", coupling.StrengthSymmetric, high, low, coupling.VolatilityHigh},
+		{"model keeps the target volatility", coupling.StrengthModel, high, low, coupling.VolatilityLow},
+		{"contract keeps the target volatility", coupling.StrengthContract, high, low, coupling.VolatilityLow},
+		{"intrusive keeps the target volatility", coupling.StrengthIntrusive, high, low, coupling.VolatilityLow},
 	}
-
-	cfg := classify.Config{
-		Modules: map[string]policy.ModuleDef{
-			"svc-a": {
-				Paths:      []string{"services/a/**"},
-				DeployUnit: "svc-a",
-				Subdomain:  subdomainCore, // volatility=high (10)
-			},
-			"svc-b": {
-				Paths:      []string{"services/b/**"},
-				DeployUnit: "svc-b",
-				Subdomain:  subdomainCore, // volatility=high (10)
-			},
-		},
-		// Clone pair between the two deploy units.
-		CrossModuleClonePairs: map[string]struct{}{
-			"svc-a\x00svc-b": {},
-		},
-	}
-
-	g := makeGraph([]graph.Edge{edge})
-	idx := classify.Run(g, cfg)
-	key := edgeKey(edge)
-	cl, ok := idx[key]
-	if !ok {
-		t.Fatalf("edge key %q not in index", key)
-	}
-
-	if cl.Strength != coupling.StrengthSymmetric {
-		t.Errorf("Strength = %q, want %q", cl.Strength, coupling.StrengthSymmetric)
-	}
-	if cl.Distance != coupling.DistanceCrossDeployUnit {
-		t.Errorf("Distance = %q, want %q", cl.Distance, coupling.DistanceCrossDeployUnit)
-	}
-	if cl.Volatility != coupling.VolatilityHigh {
-		t.Errorf("Volatility = %q, want %q", cl.Volatility, coupling.VolatilityHigh)
-	}
-	if cl.Score.Balance != 1 {
-		t.Errorf("Score.Balance = %d, want 1 (distributed monolith)", cl.Score.Balance)
-	}
-	if cl.Score.Band != coupling.SeverityCritical {
-		t.Errorf("Score.Band = %q, want %q", cl.Score.Band, coupling.SeverityCritical)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := classify.Config{Modules: map[string]policy.ModuleDef{
+				modNameA: {Paths: []string{pathsA}, Volatility: tt.src},
+				modNameB: {Paths: []string{pathsB}, Volatility: tt.dst},
+			}}
+			edge := graph.Edge{From: fileFromA, To: fileToB, Kind: graph.EdgeKindImports, StrengthHint: string(tt.strength)}
+			cl := classify.Run(makeGraph([]graph.Edge{edge}), cfg)[edgeKey(edge)]
+			if cl.Strength != tt.strength {
+				t.Fatalf("Strength = %q, want %q", cl.Strength, tt.strength)
+			}
+			if cl.Volatility != tt.want {
+				t.Errorf("Volatility = %q, want %q", cl.Volatility, tt.want)
+			}
+		})
 	}
 }
 
-// TestSymmetricUpgradeCarriesCloneLocations verifies that when a cross-module
-// clone pair upgrades an edge's strength to Symmetric, the real duplicated-code
-// locations (both sides) supplied via ClassifyConfig.CloneEvidence are attached
-// to the resulting Classification — not just the module-pair boolean. This is
-// what lets the downstream finding cite jscpd's actual file:line instead of
-// only the edge's baseline provenance (e.g. a Rust crate's Cargo.toml:0) (B6).
-func TestSymmetricUpgradeCarriesCloneLocations(t *testing.T) {
+// TestClonePairIsASymmetricFact: a clone pair between two deploy units is its
+// own symmetric fact at D=9 and V=10: balance 1, the worst coupling score. When
+// the modules also share an import edge the pair is marked Connected.
+func TestClonePairIsASymmetricFact(t *testing.T) {
 	t.Parallel()
 
-	edge := graph.Edge{
-		From:         fileFromA,
-		To:           fileToB,
-		Kind:         graph.EdgeKindImports,
-		StrengthHint: hintFunctional,
-		// Baseline location — mimics a Rust crate's Cargo.toml:0 provenance.
-		Locations: []graph.Location{{File: "crate_a/Cargo.toml", Line: 0}},
-	}
-
-	wantLocs := []graph.Location{
-		{File: "crate_a/src/lib.rs", Line: 12},
-		{File: "crate_b/src/lib.rs", Line: 40},
-	}
-	wantCouplingLocs := []coupling.Location{
-		{File: "crate_a/src/lib.rs", Line: 12},
-		{File: "crate_b/src/lib.rs", Line: 40},
-	}
 	cfg := classify.Config{
 		Modules: map[string]policy.ModuleDef{
-			modNameA: {Paths: []string{pathsA}},
-			modNameB: {Paths: []string{pathsB}},
+			"svc-a": {Paths: []string{"services/a/**"}, DeployUnit: "svc-a", Subdomain: subdomainCore},
+			"svc-b": {Paths: []string{"services/b/**"}, DeployUnit: "svc-b", Subdomain: subdomainCore},
 		},
-		CrossModuleClonePairs: modABClonePair,
-		CloneEvidence: map[string][]graph.Location{
-			modABKey: wantLocs,
-		},
+		CrossModuleClonePairs: map[string]struct{}{"svc-a\x00svc-b": {}},
 	}
+	edge := graph.Edge{From: "file:services/a/a.go", To: "file:services/b/b.go", Kind: graph.EdgeKindImports, StrengthHint: hintFunctional}
 
-	g := makeGraph([]graph.Edge{edge})
-	idx := classify.Run(g, cfg)
-	key := edgeKey(edge)
-	cl, ok := idx[key]
-	if !ok {
-		t.Fatalf("edge key %q not in index", key)
+	tests := []struct {
+		name          string
+		g             *graph.Graph
+		wantConnected bool
+	}{
+		{"import edge present", makeGraph([]graph.Edge{edge}), true},
+		{"no import edge", emptyGraph, false},
 	}
-	if cl.Strength != coupling.StrengthSymmetric {
-		t.Fatalf("Strength = %q, want %q (clone upgrade did not fire)", cl.Strength, coupling.StrengthSymmetric)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			pairs := classify.ClonePairs(tt.g, cfg)
+			if len(pairs) != 1 {
+				t.Fatalf("pairs = %d, want 1", len(pairs))
+			}
+			p := pairs[0]
+			if p.Connected != tt.wantConnected {
+				t.Errorf("Connected = %t, want %t", p.Connected, tt.wantConnected)
+			}
+			cl := p.Classification
+			if cl.Strength != coupling.StrengthSymmetric || cl.Distance != coupling.DistanceCrossDeployUnit || cl.Score.Balance != 1 || cl.Score.Band != coupling.SeverityCritical {
+				t.Errorf("fact = %s %s balance %d %s, want symmetric cross_deploy_unit 1 critical", cl.Strength, cl.Distance, cl.Score.Balance, cl.Score.Band)
+			}
+		})
 	}
-	if !slices.Equal(cl.CloneLocations, wantCouplingLocs) {
-		t.Errorf("CloneLocations = %v, want %v", cl.CloneLocations, wantCouplingLocs)
-	}
+}
 
-	// A pair with no CloneEvidence entry (e.g. an older jscpd report with no
-	// line-location data) must not synthesize a location — CloneLocations stays
-	// nil, and the finding falls back to the edge's baseline Locations only.
-	cfgNoEvidence := classify.Config{
-		Modules:               cfg.Modules,
-		CrossModuleClonePairs: modABClonePair,
+// TestClonePairCarriesEvidenceLocations: the real duplicated-code locations (both
+// sides) travel with the clone fact, so the finding cites jscpd's file:line. A
+// pair with no evidence synthesizes none.
+func TestClonePairCarriesEvidenceLocations(t *testing.T) {
+	t.Parallel()
+
+	wantLocs := []graph.Location{{File: "crate_a/src/lib.rs", Line: 12}, {File: "crate_b/src/lib.rs", Line: 40}}
+	wantCoupling := []coupling.Location{{File: "crate_a/src/lib.rs", Line: 12}, {File: "crate_b/src/lib.rs", Line: 40}}
+	modules := map[string]policy.ModuleDef{modNameA: {Paths: []string{pathsA}}, modNameB: {Paths: []string{pathsB}}}
+
+	with := classify.ClonePairs(emptyGraph, classify.Config{
+		Modules: modules, CrossModuleClonePairs: modABClonePair,
+		CloneEvidence: map[string][]graph.Location{modABKey: wantLocs},
+	})
+	if len(with) != 1 || !slices.Equal(with[0].Classification.CloneLocations, wantCoupling) {
+		t.Fatalf("pairs = %+v, want one pair carrying %v", with, wantCoupling)
 	}
-	clNoEvidence := classify.Run(g, cfgNoEvidence)[key]
-	if clNoEvidence.Strength != coupling.StrengthSymmetric {
-		t.Fatalf("Strength = %q, want %q (clone upgrade did not fire)", clNoEvidence.Strength, coupling.StrengthSymmetric)
-	}
-	if len(clNoEvidence.CloneLocations) != 0 {
-		t.Errorf("CloneLocations = %v, want empty (no CloneEvidence configured)", clNoEvidence.CloneLocations)
+	without := classify.ClonePairs(emptyGraph, classify.Config{Modules: modules, CrossModuleClonePairs: modABClonePair})
+	if len(without) != 1 || len(without[0].Classification.CloneLocations) != 0 {
+		t.Errorf("pairs = %+v, want one pair with no locations", without)
 	}
 }

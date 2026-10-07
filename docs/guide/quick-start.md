@@ -92,8 +92,8 @@ NOT MEASURED (5)
 COUPLING SEAMS (67)
 
   assessment-repair -> relationship-analysis
-    functional × cross_module_same_owner × high volatility · 12 critical of 34 scored · median balance 7
-    try: reduce_strength
+    functional × cross_module × high volatility · 12 critical of 34 scored · median balance 7
+    try: introduce_contract
 ```
 
 **If something looks wrong:** Do not baseline or gate a run you do not trust. Fix config path globs, language settings, or missing analyzer tools first, then rerun until the findings match the repo you meant to analyze.

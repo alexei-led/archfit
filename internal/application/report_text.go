@@ -116,7 +116,7 @@ func boundReportText(doc *report.Document) {
 	for i := range doc.AdvisoryTasks {
 		t := &doc.AdvisoryTasks[i]
 		t.Goal = reportText(t.Goal, maxReportTaskTextRunes)
-		t.CheapestMove = reportText(t.CheapestMove, maxReportTaskTextRunes)
+		t.Hypothesis = reportText(t.Hypothesis, maxReportTaskTextRunes)
 		t.Constraints = reportTexts(t.Constraints, maxReportTaskTextRunes)
 	}
 	for i := range doc.ToolCoverage {

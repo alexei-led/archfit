@@ -47,7 +47,7 @@ DIMENSIONS
     clone_only_seams: 0 count
     critical_band_edges: 0 count
     high_or_worse_edges: 0 count
-    critical_high_distance_edges: 0 count
+    qualifying_edges: 0 count
     seams: 1 count
     distributed_monolith_seams: 0 count (1/1)
     tight_seams: 1 count
@@ -131,12 +131,12 @@ NOT MEASURED (14)
 COUPLING SEAMS (1)
 
   a -> b
-    functional × cross_module_different_owner × low volatility · 0 critical of 1 scored · median balance 8
-    try: leave_alone
+    functional × cross_module_different_owner × medium volatility · 0 critical of 1 scored · median balance 5
+    try: follow_rule
 
 DIAGNOSTICS (1)
 
-  · bc/imbalanced_coupling [low] — balanced coupling: functional integration strength × cross_module_different_owner distance × low …
+  · bc/imbalanced_coupling [medium] — balanced coupling: functional integration strength × cross_module_different_owner distance × medi…
 
 COMPARISON
 

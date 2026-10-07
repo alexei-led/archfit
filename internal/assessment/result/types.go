@@ -83,6 +83,8 @@ type ClassifiedEdgeSummary struct {
 	DependencyModules              int                         `json:"-"`
 	FirstPartyNodes                int                         `json:"-"`
 	AttributedFirstPartyNodes      int                         `json:"-"`
+	UnratedVolatilityEdges         int                         `json:"-"`
+	UnratedVolatilityModules       []string                    `json:"-"`
 	MeanBalance                    float64                     `json:"mean_balance"`
 	TailRisk                       *CouplingTailRiskSummary    `json:"tail_risk,omitempty"`
 	ByStrength                     map[string]int              `json:"by_strength,omitempty"`
