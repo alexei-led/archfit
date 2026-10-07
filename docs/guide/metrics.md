@@ -248,8 +248,8 @@ inherited: M, cascade: K` (plus `undeclared: U` when nonzero; JSON:
   `classified_edges.by_distance_basis`, `classified_edges.distance_compression`,
   and `classified_edges.tail_risk`; Markdown renders the same in **Distance
   confidence**. `distance_context.owner_model` calls out `single_owner_degenerate`
-  repos explicitly: same-owner is a real low socio-technical distance signal, not
-  missing ownership. `distance_context.distance_basis` and
+  repos explicitly. Under bc_score.v7 an owner never lowers distance: every module
+  boundary is D=9 and the owner only names the boundary token. `distance_context.distance_basis` and
   `classified_edges.by_distance_basis` show which deterministic signal selected
   each rung (`distance_compression` reports the rungs 2, 9 and 10 and the
   containment depth), and whether the mean hides a lower-tail hot spot. `classified_edges.by_balance_driver` and

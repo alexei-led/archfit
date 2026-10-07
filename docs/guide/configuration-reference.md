@@ -996,10 +996,13 @@ Distance is **level-relative** (bc_score.v7). The token names the boundary and
 the rung is fixed:
 
 1. same module → `same_module`, D=2 (report-only `local_coupling`);
-2. target matches an `external_systems:` entry → `declared_external`, D=10;
-3. different `deploy_unit` on the two modules → `cross_deploy_unit`, D=9;
-4. two non-empty `owner` values that differ → `cross_module_different_owner`, D=9;
-5. otherwise → `cross_module`, D=9.
+2. different `deploy_unit` on the two modules → `cross_deploy_unit`, D=9;
+3. two non-empty `owner` values that differ → `cross_module_different_owner`, D=9;
+4. otherwise → `cross_module`, D=9.
+
+A target that no module owns and that matches an `external_systems:` entry is
+`declared_external`, D=10. A module-resolved target is never re-labelled
+external.
 
 Owner and deploy unit never move severity. Module key spelling decides nothing.
 Nested `paths:` roots (a glob without a trailing `/**`) form a containment tree;

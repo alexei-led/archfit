@@ -67,7 +67,9 @@ seam flagged only because of it never qualifies, and its guidance is
 
 A clone pair does not upgrade an import edge. Each cross-module pair is its own
 symmetric fact (S=9, D=9, worse V). A pair whose modules share an import edge
-attaches to one seam; it counts in `scored_edges`, can set severity and
+attaches to one seam (only with `coupling.duplicated_knowledge: score`, the
+default; `advisory` keeps clone facts out of seams); it counts in
+`scored_edges`, can set severity and
 hypothesis, and never makes a seam qualify.
 
 ### Severity across a module boundary
@@ -124,9 +126,12 @@ these names and fail when a rule changes.
 
 ## Limits
 
-- TypeScript without SCIP reads every runtime import as functional, and a repo
-  without `public:` reads every cross-module call as functional. Measure before
-  you enable `mode: fail`.
+- Without a `public:` target, a call that is not to an interface reads as
+  functional. TypeScript without SCIP reads every runtime import as functional
+  unless the target matches a `public:` glob. Measure before you enable
+  `mode: fail`.
+- `config init` for TypeScript still writes the whole module as `public:`, so
+  those imports read as contract until the owner narrows the surface.
 - SCIP does not see the receiver of a method, so concrete-method data evidence
   exists only for Go.
 - `config init` does not write `public:` for Go. A `public:` entry claims a

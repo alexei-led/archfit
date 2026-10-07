@@ -51,11 +51,11 @@ change-propagating — the coupling. Four levels, strongest to weakest
 
 | Level        | Ordinal | Meaning                                                                                           | `archfit` signal                                                              |
 | ------------ | ------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `intrusive`  | 10      | Depends on private interfaces / implementation details not meant to be shared.                    | `internal:` globs, Go `internal/`, `_private.py`, SCIP "private" symbol kind. |
+| `intrusive`  | 10      | Depends on private interfaces / implementation details not meant to be shared.                    | `internal:` globs, `_private.py`, SCIP "private" symbol kind. |
 | `symmetric`  | 9       | Duplicated functionality — both sides must change together (DRY violation across a boundary).     | Cross-module clone pair detected by the clone detector (`analyzers.clones`).  |
-| `functional` | 8       | Shares knowledge of business requirements; the two must change together when requirements change. | A call or reference into a non-public module surface (Go function, concrete-receiver method, func/chan var; SCIP function kind). |
-| `model`      | 3       | Shares a domain model / schema that must be updated in both when the model changes.               | Data evidence: a concrete non-DTO type, field, var or const; a method on a concrete receiver (Go); SCIP concrete data symbol. |
-| `contract`   | 1       | Integrates through an explicit, intention-revealing contract that hides implementation.           | A `public:` target; a call to an interface type or interface method; a data-only DTO struct. |
+| `functional` | 8       | Shares knowledge of business requirements; the two must change together when requirements change. | A call or reference into a non-public module surface (Go function, concrete-receiver method, func/chan var; SCIP function kind). The same use of a `public:` target is contract. |
+| `model`      | 3       | Shares a domain model / schema that must be updated in both when the model changes.               | Data evidence on a `public:` target: a concrete non-DTO type, field, var, const, or a method on a concrete receiver (Go; SCIP concrete data symbol). A DTO is model outside a `public:` target. |
+| `contract`   | 1       | Integrates through an explicit, intention-revealing contract that hides implementation.           | A `public:` target; a call to an interface type or interface method; a data-only DTO struct across a `public:` boundary. |
 
 A `public:` target is the integration contract (bc_score.v7). A call through a
 public surface, and any call to an interface method, is `contract`. Only data
