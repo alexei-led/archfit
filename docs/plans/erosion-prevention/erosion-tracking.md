@@ -60,9 +60,9 @@ A blocked run emits one `bc/coupling_gate` finding for each new seam.
 ### Metric ratchets
 
 - A ratchet with `gate: fail`, or no gate, blocks when the metric delta passes `min_delta` or `max_new`. A `warn` gate never blocks.
-- A tripped ratchet produces no finding. It reaches the verdict through `blockingMetricRegressions` (`internal/assessment/evaluation/evaluation.go`) and the hard-gate result.
+- A tripped ratchet is a `metric/<name>` finding (shipped in v3.0.0). It has before and after values and a repair task.
 - When a ratchet blocks, text and Markdown list each worsened metric with its baseline and current values (v2.4.0). Thresholds are not in the report, so a metric inside its threshold is listed too.
-- The ratchet reads the stored metric snapshot without a comparability check. `assess` passes `base.Metrics` whatever the reference status is.
+- A ratchet decides only against a comparable reference (shipped in v3.0.0). Against any other it is unmeasured: one `metric_ratchets` entry in `unevaluated_required_rules`, `hard_gates: unmeasured`, exit 2.
 
 ### Comparison with `--base`
 
@@ -97,7 +97,7 @@ The ratchet path (amber) skips the comparability check. That is a defect.
 | A comment edit breaks comparability  | One YAML comment, waiver or `reviewed_at` edit makes the reference `non_comparable`. A blocked new seam then becomes exit 2.                                                         | `config_hash` hashes raw bytes and decides comparability                                                       |
 | A new producer breaks every baseline | An engine release that registers a language changes the settings hash on every tree, also where that language is absent.                                                             | The settings hash covers every registered `ExtractConfig`. Absent rows enter the producer list.                |
 | Ratchets ignore comparability        | A policy-only edit can give exit 1 with zero findings.                                                                                                                               | `assess` passes the stored metrics unconditionally                                                             |
-| A ratchet has no finding             | Agents get no repair task. The App names no blocker.                                                                                                                                 | Ratchets go through `blockingMetricRegressions` (`internal/assessment/evaluation/evaluation.go`), not findings |
+| A ratchet has no finding (fixed in v3.0.0) | Agents got no repair task. The App named no blocker.                                                                                                                                 | Fixed: ratchets are `metric/<name>` findings now |
 | `unbalanced_edge` cannot trip        | Capture counts every far intrusive high-volatility edge as new. Check counts only edges whose finding is not accepted. The delta is then never positive once the count is 1 or more. | `internal/assessment/metrics/boundary/unbalanced_edge.go`. Unverified: code read only.                         |
 | Only full capture                    | Every re-capture accepts all current findings, also findings that an engine upgrade exposed.                                                                                         | `archfit baseline` has no other mode                                                                           |
 
@@ -178,7 +178,7 @@ flowchart LR
 
 ## Open decisions
 
-- **Ratchet findings.** Recommended: a tripped ratchet emits one `metric/<name>` gate finding with before and after values and a repair task, and `blockingMetricRegressions` (`internal/assessment/evaluation/evaluation.go`) goes. This changes a CLAUDE.md invariant.
+- **Ratchet findings.** Decided and shipped in v3.0.0: a tripped ratchet emits one `metric/<name>` gate finding with before and after values and a repair task. The separate ratchet path is gone.
 - **Classification hash or `model_hash`.** A new `classification_hash` gives clear reasons, but adds a fifth fingerprint, a wire key and an App decoder change. Folding the leaves into `model_hash` keeps four fingerprints, with coarser reasons.
 - **Class of `layers`, `min_severity`, `depends_on` and `visible_to`.** Governance or classification is open.
 - **`unbalanced_edge`.** A fact count of all far intrusive edges into high-volatility modules fixes the inert delta. Fold the fact-count fix into the single `unbalanced_edge.v3` bump in [coupling score v7](coupling-score-v7.md).

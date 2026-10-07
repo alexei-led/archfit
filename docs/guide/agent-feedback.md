@@ -16,8 +16,8 @@ agent edits code
              `decision.unevaluated_required_rules`. Supply the named missing
              fact; never treat yellow as a fabricated healthy zero.
   → exit 1?  blocked — read agent_tasks[] — goal, constraints, files, validation
-             (empty agent_tasks[]: a metric ratchet or a required analyzer
-             blocked; the text/Markdown METRIC RATCHET section names the metric)
+             (empty agent_tasks[]: a required analyzer blocked; a tripped
+             metric ratchet is a task, rule metric/<name>)
   → fix within the constraints
   → run the task's validation command
   → done when that run no longer lists the task's finding_id and is not blocked
@@ -60,7 +60,7 @@ in `--format json`.
   "schema_version": "archfit.agent-result.v1",
   "verdict": "blocked",
   "next_action": "repair",
-  "summary": "blocked: 1 repairs in scope, 0 outside scope; 0 unevaluated required rules; 0 evidence gaps; 0 worsened metrics",
+  "summary": "blocked: 1 repairs in scope, 0 outside scope; 0 unevaluated required rules; 0 evidence gaps",
   "repairs": [
     {
       "finding_ids": ["ba3803eca947bf3c1b7efa8f37854d5e"],
@@ -77,7 +77,6 @@ in `--format json`.
   ],
   "evidence_gaps": [],
   "unevaluated_rules": [],
-  "worsened_metrics": [],
   "omitted": { "repairs": 0, "unevaluated_rules": 0, "advisories": 1 },
   "validate": "archfit check -c .archfit.yaml --format agent"
 }
@@ -89,7 +88,7 @@ The schema is `archfit.agent-result.schema.json` in the repository root.
 
 | `next_action`      | Condition                                                                                                   | What the agent does                                    |
 | ------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `repair`           | An in-scope repair needs a code change, or a metric ratchet blocked the run (`worsened_metrics`).            | Change the code within the constraints, then run `validate` (or the command you ran). |
+| `repair`           | An in-scope repair needs a code change. A tripped metric ratchet is such a repair (`metric/<name>`).   | Change the code within the constraints, then run `validate` (or the command you ran). |
 | `ask_owner`        | Every in-scope repair needs an owner decision, or a required rule has a selector that matches nothing.      | Stop and report to the architecture owner. Do not edit policy. |
 | `restore_evidence` | A required analyzer failed its gate (`evidence_gaps`), or a required rule lacks producer evidence.          | Install or fix the analyzer, then run `validate` (or the command you ran). |
 | `report_blocked`   | The verdict is `blocked`, but no repair is in scope.                                                        | Report the blockers. They are not from this change.    |
@@ -160,7 +159,7 @@ findings all exist at `HEAD` is outside the scope.
 | ----------------------------------------- | -------------------------------------------------------------------------- |
 | `repair` or `ask_owner` with an in-scope repair, first stop | Exit 2. Stderr holds the IDs, `file:line`, goal, constraints, and `validate`. |
 | The same, with `stop_hook_active: true`   | Exit 0 with a `systemMessage`. The hook blocks at most once.               |
-| Any other action except `none`            | Exit 0 with a `systemMessage`. A dead selector or a metric ratchet is not scoped to the change, so it never blocks a stop. |
+| Any other action except `none`            | Exit 0 with a `systemMessage`. A dead selector or an unmeasured ratchet is not scoped to the change, so it never blocks a stop. |
 | `none`                                    | Exit 0, silent.                                                            |
 | An archfit error                          | Exit 0 with a `systemMessage`. The hook fails open.                        |
 | Malformed stdin                           | Exit 1.                                                                    |

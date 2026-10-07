@@ -216,6 +216,13 @@ func ClassifyOrigins(in OriginEvidence) OriginDelta {
 		for _, id := range keys {
 			headIDs[id] = struct{}{}
 		}
+		// A metric ratchet compares against the accepted baseline, not against
+		// the base tree, and the base run reads no baseline: it cannot say
+		// whether the change introduced the regression.
+		if finding.IsMetricRatchet(f.RuleID) {
+			out.Origins[f.ID] = finding.OriginUnknown
+			continue
+		}
 		var existed bool
 		if f.RuleID == finding.RuleIDCouplingGate {
 			_, existed = baseSeams[ModulePair{From: f.Edge.From.Module, To: f.Edge.To.Module}]

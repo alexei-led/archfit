@@ -300,6 +300,10 @@ func goalFor(ruleType string, f finding.Finding) string {
 	if f.RuleID == finding.RuleIDMapUncoveredPath {
 		return uncoveredGoal(f)
 	}
+	if finding.IsMetricRatchet(f.RuleID) {
+		return fmt.Sprintf("Restore the %s metric to its accepted value %s; it is now %s. Find what worsened it in this change and undo that, or ask the architecture owner to review the new value before accepting it.",
+			f.MatchedBy["metric"], f.MatchedBy["before"], f.MatchedBy["after"])
+	}
 	from, to := f.Edge.From.Path, f.Edge.To.Path
 	toMod := f.Edge.To.Module
 	if toMod == "" {

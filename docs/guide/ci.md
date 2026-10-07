@@ -223,10 +223,9 @@ cache-control must not change the validation result. Fix only that scope, then
 run the command verbatim. The task is done when that run no longer lists its
 `finding_id` and the verdict is not `blocked`; exit 2 can remain.
 
-Exit 1 with an empty `agent_tasks[]` is a block no finding carries: a tripped
-metric ratchet (`metrics.<name>.gate`) or a required analyzer that did not run.
-For a ratchet, the text and Markdown output name the metric that worsened, its
-accepted-baseline and current values, and the `gate_reference` status. Fix the
+Exit 1 with an empty `agent_tasks[]` is a block no finding carries: a required
+analyzer that did not run. A tripped metric ratchet is not one of those: it is a
+task for the rule `metric/<name>`, with the values before and after. Fix the
 regression, or have an owner review the new value and re-run `archfit baseline`.
 
 If exit `2` includes `decision.unevaluated_required_rules`, resolve the named

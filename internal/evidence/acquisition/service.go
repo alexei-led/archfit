@@ -437,9 +437,9 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 }
 
 // configHash returns the sha256 hex digest of the raw config file bytes at
-// path, or "" when the file cannot be read. It is the run's config identity:
-// two runs with the same hash analysed the same policy text, so the task-origin
-// delta can tell a code change from a policy change.
+// path, or "" when the file cannot be read. It is the run's config identity
+// (the App binds it to the protected policy digest); comparability reads the
+// classification hash instead.
 func configHash(path string) string {
 	b, err := os.ReadFile(path) //#nosec G304 -- path comes from the --config CLI flag, not arbitrary user input
 	if err != nil {

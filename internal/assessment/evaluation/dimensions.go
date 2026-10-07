@@ -64,6 +64,7 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 		Operations:     operationsDimension(diag, in.Policy, in.Facts, in.RequiredToolFailure),
 		Drift:          driftDimension(diag, in.Drift),
 	}
+	routeRatchets(&dims, routed)
 	for _, dim := range dims.Each() {
 		if refs := routed[dim.Name]; len(refs) > 0 {
 			dim.Findings = refs
@@ -84,6 +85,13 @@ func buildDimensions(diag *result.Result, in stateInput, routed map[string][]sta
 func gateFor(d state.Dimension) state.GateState {
 	if d.Gate == state.GateFail {
 		return state.GateFail
+	}
+	// A tripped ratchet fails the dimension that owns its metric even when that
+	// dimension is unmeasured: the metric was compared, so the blocker is real.
+	for _, ref := range d.Findings {
+		if ref.Kind == finding.KindGate && finding.IsMetricRatchet(ref.RuleID) {
+			return state.GateFail
+		}
 	}
 	if d.Status == state.Unmeasured {
 		return state.GateNotApplicable
@@ -1952,4 +1960,32 @@ func classOf(index map[string]fileclass.FileClass, file string) fileclass.FileCl
 		return class
 	}
 	return fileclass.Production
+}
+
+// routeRatchets moves each metric ratchet finding to the dimension that
+// publishes its metric, read from the built envelopes so the routing cannot
+// drift from the metric lists. A metric no envelope publishes (n/a) is intent's.
+func routeRatchets(dims *state.Dimensions, routed map[string][]state.FindingRef) {
+	keys := make([]string, 0)
+	for key := range routed {
+		if finding.IsMetricRatchet(key) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		owner := state.DimensionIntent
+		name := strings.TrimPrefix(key, finding.RuleIDMetricPrefix)
+	search:
+		for _, dim := range dims.Each() {
+			for _, m := range dim.Metrics {
+				if m.Name == name {
+					owner = dim.Name
+					break search
+				}
+			}
+		}
+		routed[owner] = append(routed[owner], routed[key]...)
+		delete(routed, key)
+	}
 }

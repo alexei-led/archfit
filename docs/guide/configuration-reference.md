@@ -1557,8 +1557,9 @@ metrics:
 Setting a knob on a metric of the wrong kind (e.g. `min_delta` on `cycle`) is
 a config error, not a silent no-op. `blast_radius` is informational and never
 gates — it accepts only `enabled`. Metric gates fire only against a baseline
-(`.archfit-baseline.json`); without a stored value for the metric there is no
-delta and nothing to trip.
+(`.archfit-baseline.json`) whose reference compares with the run; without a stored
+value for the metric, or against a reference that does not compare, there is no
+delta and nothing to trip. A tripped gate is a `metric/<name>` finding.
 
 ## `module_review`
 

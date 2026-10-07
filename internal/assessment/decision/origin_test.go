@@ -420,6 +420,14 @@ func testOriginBuckets(t *testing.T) {
 			wantIntroduced: []string{"a", "z"}, wantResolved: []string{"c", "q"}, wantStatus: OriginComparable,
 		},
 		{
+			// A ratchet compares against the accepted baseline, which the base
+			// run never reads, so the base tree cannot place it.
+			name:        "a metric ratchet finding is unknown even with paired evidence",
+			head:        []finding.Finding{{ID: "metric-ratchet", RuleID: "metric/cycles", Kind: finding.KindGate, Status: finding.StatusNew}},
+			baseSide:    okSide,
+			wantOrigins: map[string]finding.Origin{"metric-ratchet": finding.OriginUnknown}, wantStatus: OriginComparable,
+		},
+		{
 			name: "a clean run still has empty lists", baseSide: okSide,
 			wantOrigins: map[string]finding.Origin{}, wantStatus: OriginComparable,
 		},

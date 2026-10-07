@@ -283,6 +283,7 @@ package internal/model/report
   type internal/model/report.VolatilityProvenance struct{Declared int "json:\"declared\""; Inherited int "json:\"inherited\""; Cascade int "json:\"cascade\""; Undeclared int "json:\"undeclared\""}
   type internal/model/report.VolatilityTouch struct{Module string "json:\"module\""; TouchCommits int "json:\"touch_commits\""; DeclaredVolatility string "json:\"declared_volatility,omitempty\""}
 package internal/model/rule
+  func internal/model/rule.IsMetricRatchet(ruleID string) bool
   const internal/model/rule.RuleIDBCImbalancedCoupling untyped string
   const internal/model/rule.RuleIDCouplingGate untyped string
   const internal/model/rule.RuleIDDuplicatedKnowledge untyped string
@@ -290,6 +291,7 @@ package internal/model/rule
   const internal/model/rule.RuleIDMapDeadRule untyped string
   const internal/model/rule.RuleIDMapStaleReview untyped string
   const internal/model/rule.RuleIDMapUncoveredPath untyped string
+  const internal/model/rule.RuleIDMetricPrefix untyped string
   func internal/model/rule.SyntheticWaiverScope(ruleID string) internal/model/rule.WaiverScope
   type internal/model/rule.WaiverScope string
   const internal/model/rule.WaiverScopeEdge internal/model/rule.WaiverScope

@@ -78,6 +78,11 @@ func evaluate(in Input) Result {
 	for _, metric := range in.Metrics.metrics {
 		calculated = append(calculated, metric.Calculate(collected))
 	}
+	// A tripped ratchet is a finding like any other: it takes its status from
+	// the waivers (never from the accepted set, which a capture cannot fill —
+	// it runs with no baseline, so it has no delta to trip), and then joins the
+	// gate and advisory populations below.
+	tagged = append(tagged, status.Assign(ratchetFindings(calculated, in.Gates), status.Empty{}, in.Policy.Waivers, in.Now, finding.KindGate)...)
 	gates := make([]finding.Finding, 0, len(tagged))
 	advisories := 0
 	for _, f := range tagged {
@@ -125,7 +130,7 @@ func evaluate(in Input) Result {
 		visible = append(append(append([]finding.Finding(nil), base...), adv...), ruleAdv...)
 		warnings = countActive(adv) + countActive(ruleAdv)
 	}
-	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, calculated, in.Gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed}
+	return Result{Findings: visible, Metrics: calculated, Verdict: computeVerdict(gates, advisories), GateFindings: gateNew, Warnings: warnings, WaiversUsed: waiversUsed}
 }
 
 // checkRules runs every compiled rule over the relationships. It is the one
@@ -151,71 +156,20 @@ func countActive(in []finding.Finding) int {
 	return n
 }
 
-func computeVerdict(gates []finding.Finding, ms []result.MetricResult, cfg map[string]policy.MetricConfig, advisories int) result.Verdict {
+// computeVerdict is the assessment verdict. A tripped metric ratchet is a gate
+// (or advisory) finding like any other, so the verdict reads findings only.
+func computeVerdict(gates []finding.Finding, advisories int) result.Verdict {
 	for _, f := range gates {
 		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
 			return result.VerdictFail
 		}
 	}
-	verdict := result.VerdictPass
-	for _, m := range ms {
-		c := cfg[m.Name]
-		if !metricBreach(m, c) {
-			continue
-		}
-		if c.Gate == string(policy.GateWarn) {
-			verdict = result.VerdictWarn
-			continue
-		}
-		return result.VerdictFail
-	}
-	if verdict == result.VerdictPass && advisories > 0 {
+	if advisories > 0 {
 		return result.VerdictWarn
 	}
-	return verdict
+	return result.VerdictPass
 }
 
-// metricBreach reports whether a metric's accepted-baseline delta worsened past
-// its configured threshold. It is the single breach predicate: the assessment
-// verdict and the architecture state's hard-gate result read the same rule, so
-// they can never disagree about whether a ratchet was tripped.
-//
-// Direction is the metric's own: a count metric worsens upward past `max_new`,
-// a ratio metric worsens downward past `min_delta`. A metric with no delta was
-// never compared, and `gate: off` opted out of the comparison entirely.
-func metricBreach(m result.MetricResult, c policy.MetricConfig) bool {
-	if m.Delta == nil || c.Gate == string(policy.GateOff) {
-		return false
-	}
-	if m.Direction == result.DirectionHigherIsWorse {
-		return *m.Delta > float64(metricMaxNew(c))
-	}
-	return *m.Delta < -metricMinDelta(c)
-}
-
-// blockingMetricRegressions names the metrics whose baseline delta worsened
-// past a threshold whose gate BLOCKS — `fail`, or unset, which is the
-// documented default. A `warn` gate is diagnostic and never appears here.
-//
-// A tripped ratchet produces no finding, so — exactly like the required-tool
-// policy failure — it cannot be inferred from the finding populations and has
-// to be carried into the architecture state explicitly. Without it the
-// documented `metrics.<name>.gate` contract is a knob that decodes, validates,
-// and decides nothing.
-//
-// Names are returned in the caller's metric order, which is the metric
-// registration order, so the disclosure is deterministic.
-func blockingMetricRegressions(ms []result.MetricResult, cfg map[string]policy.MetricConfig) []string {
-	out := make([]string, 0, len(ms))
-	for _, m := range ms {
-		c := cfg[m.Name]
-		if c.Gate == string(policy.GateWarn) || !metricBreach(m, c) {
-			continue
-		}
-		out = append(out, m.Name)
-	}
-	return out
-}
 func metricMinDelta(c policy.MetricConfig) float64 {
 	if c.MinDelta != nil {
 		return *c.MinDelta
