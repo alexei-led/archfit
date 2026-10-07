@@ -40,7 +40,7 @@ func writeState(s report.ArchitectureState, view brief.View, regressions []metri
 	writeDiagnostics(&b, view.Diagnostics)
 	writeStateComparison(&b, s.Comparison)
 	writeGateReference(&b, s.GateReference)
-	writeStateUnknowns(&b, s.Dimensions)
+	writeStateUnknowns(&b, s.Dimensions, view)
 
 	_, err := io.WriteString(w, b.String())
 	return err
@@ -287,7 +287,7 @@ func writeStateComparison(b *strings.Builder, c report.StateComparison) {
 	}
 }
 
-func writeStateUnknowns(b *strings.Builder, dims report.Dimensions) {
+func writeStateUnknowns(b *strings.Builder, dims report.Dimensions, view brief.View) {
 	type row struct {
 		dimension string
 		fact      report.UnknownFact
@@ -303,6 +303,6 @@ func writeStateUnknowns(b *strings.Builder, dims report.Dimensions) {
 	}
 	fmt.Fprintf(b, "\n## Not measured (%d)\n\n", len(rows))
 	for _, r := range rows {
-		fmt.Fprintf(b, "- **%s — %s** (owner: %s): %s %s\n", r.dimension, r.fact.Fact, r.fact.Owner, strings.TrimSpace(r.fact.Reason), brief.Step(r.fact.Fact))
+		fmt.Fprintf(b, "- **%s — %s** (owner: %s): %s %s\n", r.dimension, r.fact.Fact, r.fact.Owner, strings.TrimSpace(r.fact.Reason), view.StepFor(r.fact.Fact))
 	}
 }

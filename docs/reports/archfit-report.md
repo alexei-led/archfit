@@ -2,7 +2,7 @@
 
 - **Verdict:** NEEDS ATTENTION
 - **Blocking:** 0 active — hard gates: pass
-- **Attention:** 2 dimension(s) flagged — 76 diagnostic(s)
+- **Attention:** 2 dimension(s) flagged — 71 diagnostic(s)
 - **Coverage:** 6 measured / 2 partial / 1 unmeasured (of 9)
 
 ## Next steps
@@ -16,9 +16,9 @@
 | Dimension | Status | Gate | Confidence | Denominator | Findings |
 | --- | --- | --- | --- | --- | ---: |
 | intent | measured | pass | high | declared rules evaluated 41/41 | 0 |
-| structure | measured | warn | high | discovered dependencies resolved inside the declared module map 664/1631 | 2 |
+| structure | measured | warn | high | discovered dependencies resolved inside the declared module map 664/1632 | 2 |
 | modularity | measured | pass | high | declared modules with a declared public surface 17/18 | 0 |
-| coupling | measured | warn | high | cross-boundary edges scored 492/492 | 74 |
+| coupling | measured | warn | high | cross-boundary edges scored 492/492 | 69 |
 | change_locality | measured | pass | high | declared modules touched in the scanned history window 18/18 | 0 |
 | complexity | measured | pass | high | declared modules with complete dependency-chain and degree values 18/18 | 0 |
 | testability | partial | pass | medium | classified source files 608/614 | 0 |
@@ -39,7 +39,7 @@
 ### structure
 
 - `internal_edges`: 664 count
-- `external_edges`: 967 count
+- `external_edges`: 968 count
 - `same_module_edges`: 177 count
 - `connected_modules`: 18 count
 - `cycle`: 0 count
@@ -57,7 +57,7 @@
 - `abstained_edges`: 0 count
 - `declared_external_edges`: 0 count
 - `clone_only_seams`: 5 count
-- `critical_band_edges`: 83 count
+- `critical_band_edges`: 99 count
 - `high_or_worse_edges`: 110 count
 - `critical_high_distance_edges`: 0 count
 - `seams`: 72 count
@@ -77,12 +77,12 @@
 - `module_fan_in_p90`: 9 count (18/18)
 - `module_fan_out_p90`: 9 count (18/18)
 - `production_files`: 286 count
-- `production_loc`: 64065 count
+- `production_loc`: 64118 count
 - `largest_production_file_loc`: 1938 count
-- `function_loc_p50`: 20 count (2686/2686)
-- `function_loc_p90`: 53 count (2686/2686)
-- `function_loc_max`: 280 count (2686/2686)
-- `functions_over_threshold`: 189 count (2686/2686)
+- `function_loc_p50`: 20 count (2690/2690)
+- `function_loc_p90`: 53 count (2690/2690)
+- `function_loc_max`: 280 count (2690/2690)
+- `functions_over_threshold`: 189 count (2690/2690)
 
 ### testability
 
@@ -112,8 +112,8 @@
 
 | Tool | Status | Reason |
 | --- | --- | --- |
-| scip | partial | — |
-| scip-symbols | partial | — |
+| scip | ok | — |
+| scip-symbols | ok | — |
 | go/packages | ok | — |
 | dependency-cruiser | absent | — |
 | grimp | absent | — |
@@ -129,53 +129,53 @@
 
 | Seam | Strength | Distance | Volatility | Scored | Critical | Median | Quadrant | Try |
 | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| assessment-repair → relationship-analysis | symmetric | cross_module_same_owner | high | 21 | 14 | 2 | low_cohesion | reduce_strength |
-| analysis-application → assessment-repair | symmetric | cross_module_same_owner | high | 20 | 9 | 4 | low_cohesion | reduce_strength |
-| assessment-repair → architecture-policy | functional | cross_module_same_owner | high | 24 | 8 | 4 | low_cohesion | reduce_strength |
+| assessment-repair → relationship-analysis | symmetric | cross_module_same_owner | high | 21 | 15 | 2 | low_cohesion | reduce_strength |
+| assessment-repair → architecture-policy | functional | cross_module_same_owner | high | 24 | 11 | 4 | low_cohesion | reduce_strength |
+| analysis-application → assessment-repair | symmetric | cross_module_same_owner | high | 20 | 10 | 2 | low_cohesion | reduce_strength |
 | evidence-acquisition → evidence-adapters | symmetric | cross_module_same_owner | high | 24 | 7 | 4 | low_cohesion | reduce_strength |
-| relationship-analysis → architecture-policy | functional | cross_module_same_owner | high | 12 | 5 | 4 | low_cohesion | reduce_strength |
-| policy-config-adapter → evidence-adapters | functional | cross_module_same_owner | high | 7 | 5 | 2 | low_cohesion | reduce_strength |
+| relationship-analysis → architecture-policy | functional | cross_module_same_owner | high | 12 | 6 | 2 | low_cohesion | reduce_strength |
+| policy-config-adapter → evidence-adapters | functional | cross_module_same_owner | high | 7 | 6 | 2 | low_cohesion | reduce_strength |
+| analysis-application → relationship-analysis | functional | cross_module_same_owner | high | 9 | 5 | 2 | low_cohesion | reduce_strength |
 | evidence-adapters → persistence-adapters | functional | cross_module_same_owner | high | 13 | 4 | 5 | low_cohesion | reduce_strength |
 | analysis-application → architecture-policy | model | cross_module_same_owner | high | 4 | 4 | 2 | low_cohesion | reduce_strength |
-| analysis-application → relationship-analysis | functional | cross_module_same_owner | high | 9 | 4 | 4 | low_cohesion | reduce_strength |
+| cli-composition → analysis-application | functional | cross_module_same_owner | high | 14 | 3 | 5 | low_cohesion | leave_alone |
 | cli-composition → policy-config-adapter | functional | cross_module_same_owner | high | 16 | 3 | 5 | low_cohesion | leave_alone |
 | evidence-adapters → relationship-analysis | model | cross_module_same_owner | high | 2 | 2 | 2 | low_cohesion | reduce_strength |
+| cli-composition → config-lifecycle | symmetric | cross_module_same_owner | high | 6 | 2 | 6 | low_cohesion | leave_alone |
 | evidence-acquisition → architecture-policy | functional | cross_module_same_owner | high | 5 | 2 | 5 | low_cohesion | reduce_strength |
 | cli-composition → persistence-adapters | functional | cross_module_same_owner | high | 4 | 2 | 2 | low_cohesion | leave_alone |
 | development-tools → relationship-analysis | functional | cross_module_same_owner | high | 4 | 2 | 2 | low_cohesion | leave_alone |
-| cli-composition → analysis-application | functional | cross_module_same_owner | high | 14 | 1 | 5 | low_cohesion | leave_alone |
+| evidence-acquisition → analysis-application | model | cross_module_same_owner | high | 3 | 2 | 2 | low_cohesion | reduce_strength |
 | cli-composition → evidence-adapters | functional | cross_module_same_owner | high | 11 | 1 | 5 | low_cohesion | leave_alone |
 | evidence-acquisition → assessment-repair | functional | cross_module_same_owner | high | 2 | 1 | 2 | low_cohesion | reduce_strength |
 | architecture-tests → assessment-repair | model | cross_module_same_owner | high | 1 | 1 | 2 | low_cohesion | reduce_strength |
-| policy-config-adapter → relationship-analysis | model | cross_module_same_owner | high | 1 | 1 | 2 | low_cohesion | reduce_strength |
-| evidence-adapters → architecture-policy | functional | cross_module_same_owner | high | 2 | 1 | 2 | low_cohesion | reduce_strength |
 
 _… +52 more seams (see `--format json`)_
 
-## Diagnostics (76)
+## Diagnostics (71)
 
 - **module_cycles** [high] — Module evidence-adapters depends on persistence-adapters, and the two are in a dependency cycle among 2 declared modules
 - **module_cycles** [high] — Module persistence-adapters depends on evidence-adapters, and the two are in a dependency cycle among 2 declared modules
 - **bc/imbalanced_coupling** [critical] — balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (contained, not a distributed monolith))
-- **bc/imbalanced_coupling** [high] — balanced coupling: contract integration strength × cross_module_same_owner distance × high volatility → high severity (contract coupling to a volatile target at low distance → cascading changes contained to one owner)
 - **bc/imbalanced_coupling** [critical] — balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (contained, not a distributed monolith))
 - **bc/imbalanced_coupling** [medium] — balanced coupling: symmetric integration strength × cross_module_same_owner distance × high volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 - **bc/imbalanced_coupling** [medium] — balanced coupling: contract integration strength × cross_module_same_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 - **bc/imbalanced_coupling** [medium] — balanced coupling: model integration strength × cross_module_same_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)
-- **bc/imbalanced_coupling** [high] — balanced coupling: contract integration strength × cross_module_same_owner distance × high volatility → high severity (contract coupling to a volatile target at low distance → cascading changes contained to one owner)
 - **bc/imbalanced_coupling** [medium] — balanced coupling: functional integration strength × cross_module_same_owner distance × high volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 - **bc/imbalanced_coupling** [critical] — balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (contained, not a distributed monolith))
 - **bc/imbalanced_coupling** [medium] — balanced coupling: model integration strength × cross_module_same_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)
-- **bc/imbalanced_coupling** [high] — balanced coupling: contract integration strength × cross_module_same_owner distance × high volatility → high severity (contract coupling to a volatile target at low distance → cascading changes contained to one owner)
 - **bc/imbalanced_coupling** [medium] — balanced coupling: functional integration strength × cross_module_same_owner distance × high volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 - **bc/imbalanced_coupling** [critical] — balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (contained, not a distributed monolith))
 - **bc/imbalanced_coupling** [medium] — balanced coupling: contract integration strength × cross_module_same_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 - **bc/imbalanced_coupling** [medium] — balanced coupling: model integration strength × cross_module_same_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 - **bc/imbalanced_coupling** [medium] — balanced coupling: symmetric integration strength × cross_module_same_owner distance × medium volatility → medium severity (unbalanced coupling → elevated maintenance effort)
-- **bc/imbalanced_coupling** [high] — balanced coupling: contract integration strength × cross_module_same_owner distance × high volatility → high severity (contract coupling to a volatile target at low distance → cascading changes contained to one owner)
 - **bc/imbalanced_coupling** [critical] — balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (contained, not a distributed monolith))
+- **bc/imbalanced_coupling** [medium] — balanced coupling: symmetric integration strength × cross_module_same_owner distance × high volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+- **bc/imbalanced_coupling** [medium] — balanced coupling: functional integration strength × cross_module_same_owner distance × high volatility → medium severity (unbalanced coupling → elevated maintenance effort)
+- **bc/imbalanced_coupling** [critical] — balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (contained, not a distributed monolith))
+- **bc/imbalanced_coupling** [medium] — balanced coupling: functional integration strength × cross_module_same_owner distance × high volatility → medium severity (unbalanced coupling → elevated maintenance effort)
 
-_… +56 more (see `--format json`)_
+_… +51 more (see `--format json`)_
 
 ## Comparison
 
@@ -189,13 +189,11 @@ _… +56 more (see `--format json`)_
 - **Reference:** `baseline`
 - config_hash differs between the two runs (32ff53dc91af vs c02a9e2a2f43): a policy change is not a code change
 - model_hash differs between the two runs (9ce12c865be1 vs 9afa91be2d55): a policy change is not a code change
-- measurement_profile producer scip has incomplete evidence (partial) in head
-- measurement_profile producer scip-symbols has incomplete evidence (partial) in head
 - measurement_profile is missing from reference
 
 ## Not measured (12)
 
-- **structure — external dependency structure** (owner: relationship/facts): the target of 967 dependencies is outside the declared module map, so its direction and layer are outside this claim (out of claim — no action)
+- **structure — external dependency structure** (owner: relationship/facts): the target of 968 dependencies is outside the declared module map, so its direction and layer are outside this claim (out of claim — no action)
 - **change_locality — essential vs accidental volatility** (owner: history/git): commit frequency corroborates a declared volatility; it cannot establish one (out of claim — no action)
 - **complexity — cognitive complexity** (owner: syntax+evidence/acquisition): no cognitive-complexity analyzer is claimed; module-graph shape is the architecture-level measure (out of claim — no action)
 - **testability — supplied coverage units** (owner: syntax/fileclass): coverage is disabled, so no supplied coverage units were observed → supply a test coverage report for the current tree in the coverage: section
@@ -205,27 +203,35 @@ _… +56 more (see `--format json`)_
 - **operations — corroborated deploy unit** (owner: policy+evidence/acquisition): one or more declared modules have no independently corroborating deploy manifest → commit a deploy manifest for each deploy_unit
 - **operations — observed runtime topology** (owner: policy+evidence/acquisition): committed manifests corroborate declared deploy units; they do not observe what is actually running (out of claim — no action)
 - **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts are a separate report family and have no collector in v1 (out of claim — no action)
-- **drift — admissible persisted reference** (owner: assessment/decision): the stored baseline was written under different inputs → once the findings are reviewed, record a gate reference: archfit baseline
-- **drift — complete two-sided seam identity** (owner: assessment/decision): two-sided seam identity cannot be compared without an admissible persisted reference → once the findings are reviewed, record a gate reference: archfit baseline
+- **drift — admissible persisted reference** (owner: assessment/decision): the stored baseline was written under different inputs → review why the gate reference does not compare (GATE REFERENCE) before you record a new one
+- **drift — complete two-sided seam identity** (owner: assessment/decision): two-sided seam identity cannot be compared without an admissible persisted reference → review why the gate reference does not compare (GATE REFERENCE) before you record a new one
 
 ## Metrics
 
 - **encapsulation**: n/a — n/a (low confidence)
 - **unbalanced_edge**: 0 new high-risk unbalanced edges — strong
 
+## Structural facts (neutral evidence)
+
+126 modules; top 5 per axis (full list in `--format json`):
+
+- inbound module fan-in: internal/model/evidence (51), internal/model/graph (32), internal/policy (32), internal/relationship (32), internal/toolrun (30)
+- outbound destinations: cmd/archfit (42), internal/evidence/acquisition (27), internal/assessment/evaluation (20), internal_test (20), internal/application (19)
+- LOC: cmd/archfit (7009), internal/initcfg (5514), internal/assessment/evaluation (5207), internal/application (3169), internal/relationship/analysis (2086)
+
 ## Syntax surface (neutral evidence)
 
-3635 declaration(s) extracted by ast-grep (full list in `--format json`):
+3639 declaration(s) extracted by ast-grep (full list in `--format json`):
 
 - annotation: 1
 - enum: 1
-- function: 2223
+- function: 2226
 - interface: 45
-- method: 463
+- method: 464
 - struct: 520
 - type_alias: 67
 - type_leak: 315
-- exported (public API): 3319
+- exported (public API): 3323
 
 Per module:
 
@@ -246,7 +252,7 @@ Per module:
 - policy-config-adapter: 160
 - provider-adapters: 30
 - relationship-analysis: 284
-- report-adapters: 166
+- report-adapters: 170
 - report-contract: 107
 
 ### Public API
@@ -285,17 +291,18 @@ Per module:
 - `TestOutcomeExitCodeOwnsCLIOutcomeTranslation` (function)
 - `TestRunScanRejectsFormatConflictBeforeConfigLoad` (function)
 - `TestRunScanWiresRefreshAndProgressBeforePreparation` (function)
-- ... +3299 more exported declarations (use `--format json`)
+- ... +3303 more exported declarations (use `--format json`)
 
 ## Connascence evidence (deterministic)
 
 Report-only. Static facts only; semantic and dynamic categories without deterministic evidence stay unmeasured.
 
-- edges with evidence: 1626
+- edges with evidence: 1627
 - abstained edges: 5
-- total evidence facts: 4262
-- by kind: algorithm=1140, meaning=409, name=1626, type=1087
-- by source: go/types=4262
+- total evidence facts: 6171
+- strength inferred from connascence: 71 edges
+- by kind: algorithm=1394, meaning=851, name=2291, type=1635
+- by source: go/types=4266, scip=1905
 - unmeasured: position, execution, timing, value, identity
 - roadmap: name=deterministic_static, type=deterministic_static, meaning=deterministic_static, algorithm=deterministic_static, position=unmeasured_static, execution=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges), timing=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges), value=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges), identity=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges)
 
@@ -350,13 +357,13 @@ Report-only. Source-control touch frequency is supporting evidence for Ch9 volat
 
 Top touched modules:
 
-- **cli-composition**: 180 commit(s) [declared volatility=medium]
+- **cli-composition**: 182 commit(s) [declared volatility=medium]
 - **evidence-adapters**: 114 commit(s) [declared volatility=medium]
 - **config-lifecycle**: 87 commit(s) [declared volatility=medium]
 - **policy-config-adapter**: 75 commit(s) [declared volatility=high]
 - **assessment-repair**: 60 commit(s) [declared volatility=high]
 
-## Advisory tasks (55)
+## Advisory tasks (51)
 
 Report-only rollups from grouped advisories; these do not affect verdict or gate status.
 - **bc/imbalanced_coupling** [`2ff049a7`] Review 3 same-shape Balanced-Coupling advisory edges from analysis-application to architecture-policy and reduce the coupling risk without changing gate policy.
@@ -370,9 +377,9 @@ Report-only rollups from grouped advisories; these do not affect verdict or gate
   - constraint: preserve or improve coupling shape: strength=model, distance=cross_module_same_owner, volatility=high
   - constraint: prefer cheapest_move: reduce_strength
   - validate: `archfit check -c .archfit.yaml`
-- **bc/imbalanced_coupling** [`499d6f0c`] Review 8 same-shape Balanced-Coupling advisory edges from analysis-application to assessment-repair and reduce the coupling risk without changing gate policy.
-  - severity: critical; status: new; group_count: 8
-  - group members: 499d6f0c19e84b00db0bf9e6d9fc0a0d, 5f32df6c7a80d4502aa9ef635567d328, 6b7786f551449325fafa7e87281e25f9, 781faa92ba09bc38dab9f7474e345930, bac595ad96d976c901f09e50962ac0e7, c7b702dff75403dcc58a2a93a04b0e94, cf8373bf8903ca9840144950b2324e80, daa5c812154dc135b8bd5df2a5a2e631
+- **bc/imbalanced_coupling** [`2e1590e3`] Review 9 same-shape Balanced-Coupling advisory edges from analysis-application to assessment-repair and reduce the coupling risk without changing gate policy.
+  - severity: critical; status: new; group_count: 9
+  - group members: 2e1590e3580d6096c9ef526ef72d1595, 499d6f0c19e84b00db0bf9e6d9fc0a0d, 5f32df6c7a80d4502aa9ef635567d328, 6b7786f551449325fafa7e87281e25f9, 781faa92ba09bc38dab9f7474e345930, bac595ad96d976c901f09e50962ac0e7, c7b702dff75403dcc58a2a93a04b0e94, cf8373bf8903ca9840144950b2324e80
   - cheapest move: reduce_strength
   - score: 2/10
   - top files: internal/application/analysis.go, internal/application/base_compare.go, internal/application/baseline.go, internal/application/relationship_report.go, internal/application/report.go
@@ -390,23 +397,23 @@ Report-only rollups from grouped advisories; these do not affect verdict or gate
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=symmetric, distance=cross_module_same_owner, volatility=high
   - validate: `archfit check -c .archfit.yaml`
-- **bc/imbalanced_coupling** [`3b3a0035`] Review 2 same-shape Balanced-Coupling advisory edges from analysis-application to evidence-contracts and reduce the coupling risk without changing gate policy.
-  - severity: medium; status: baseline; group_count: 2
-  - group members: 3b3a0035c0f9a137bf5df57ffaf9161b, 4615d49132092a7113ecc8067314fc1e
+- **bc/imbalanced_coupling** [`2cc4ff1f`] Review 2 same-shape Balanced-Coupling advisory edges from analysis-application to evidence-contracts and reduce the coupling risk without changing gate policy.
+  - severity: medium; status: new; group_count: 2
+  - group members: 2cc4ff1fdf50fcbe4a39b2f9afcb7493, 81716c06d3e6351857b461e684667a87
   - score: 5/10
-  - top files: internal/application/base_compare.go, internal/application/report.go
+  - top files: internal/application/analysis.go, internal/application/baseline.go
   - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=contract, distance=cross_module_same_owner, volatility=medium
   - validate: `archfit check -c .archfit.yaml`
-- **bc/imbalanced_coupling** [`2cc4ff1f`] Review 5 same-shape Balanced-Coupling advisory edges from analysis-application to evidence-contracts and reduce the coupling risk without changing gate policy.
-  - severity: medium; status: new; group_count: 5
-  - group members: 2cc4ff1fdf50fcbe4a39b2f9afcb7493, 52bfd50b6fa2f79a86c95672af211c64, 80b17afe77a58a5122ae47a27213b396, 81716c06d3e6351857b461e684667a87, 8ebe12ee50b033fc6bbb0e2eb7884e20
+- **bc/imbalanced_coupling** [`52bfd50b`] Review 4 same-shape Balanced-Coupling advisory edges from analysis-application to evidence-contracts and reduce the coupling risk without changing gate policy.
+  - severity: medium; status: new; group_count: 4
+  - group members: 52bfd50b6fa2f79a86c95672af211c64, 6b79ec12f5ed02cb8aa3cf8b25c46a0d, 80b17afe77a58a5122ae47a27213b396, 8ebe12ee50b033fc6bbb0e2eb7884e20
   - score: 5/10
-  - top files: internal/application/analysis.go, internal/application/baseline.go, internal/application/relationship_report.go, internal/application/report_text.go
+  - top files: internal/application/analysis.go, internal/application/policy_query.go, internal/application/relationship_report.go, internal/application/report_text.go
   - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
   - constraint: keep agent_tasks[] reserved for active gate findings
-  - constraint: preserve or improve coupling shape: strength=contract, distance=cross_module_same_owner, volatility=medium
+  - constraint: preserve or improve coupling shape: strength=model, distance=cross_module_same_owner, volatility=medium
   - validate: `archfit check -c .archfit.yaml`
 - **bc/imbalanced_coupling** [`3ef83540`] Review 2 same-shape Balanced-Coupling advisory edges from analysis-application to relationship-analysis and reduce the coupling risk without changing gate policy.
   - severity: medium; status: new; group_count: 2
@@ -417,25 +424,16 @@ Report-only rollups from grouped advisories; these do not affect verdict or gate
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=functional, distance=cross_module_same_owner, volatility=high
   - validate: `archfit check -c .archfit.yaml`
-- **bc/imbalanced_coupling** [`55d937f9`] Review 3 same-shape Balanced-Coupling advisory edges from analysis-application to relationship-analysis and reduce the coupling risk without changing gate policy.
-  - severity: critical; status: new; group_count: 3
-  - group members: 55d937f911ce6b7a354a73aef82c01cc, 9c396f88e33fd4632815029b08249e14, ef3e28e610acf5df3aececcb8b96764c
+- **bc/imbalanced_coupling** [`55d937f9`] Review 4 same-shape Balanced-Coupling advisory edges from analysis-application to relationship-analysis and reduce the coupling risk without changing gate policy.
+  - severity: critical; status: new; group_count: 4
+  - group members: 55d937f911ce6b7a354a73aef82c01cc, 9c396f88e33fd4632815029b08249e14, af440bc871e12427303d9930385db551, ef3e28e610acf5df3aececcb8b96764c
   - cheapest move: reduce_strength
   - score: 2/10
-  - top files: internal/application/analysis.go, internal/application/capture.go, internal/application/enrich.go
+  - top files: internal/application/analysis.go, internal/application/capture.go, internal/application/enrich.go, internal/application/relationship_report.go
   - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=model, distance=cross_module_same_owner, volatility=high
   - constraint: prefer cheapest_move: reduce_strength
-  - validate: `archfit check -c .archfit.yaml`
-- **bc/imbalanced_coupling** [`367ede3d`] Review 2 same-shape Balanced-Coupling advisory edges from analysis-application to report-contract and reduce the coupling risk without changing gate policy.
-  - severity: medium; status: baseline; group_count: 2
-  - group members: 367ede3d7f17ccc5bc5251a927be6db7, 6793028290cda533ad5cb1fe502698a9
-  - score: 5/10
-  - top files: internal/application/compare.go, internal/application/explain.go
-  - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
-  - constraint: keep agent_tasks[] reserved for active gate findings
-  - constraint: preserve or improve coupling shape: strength=contract, distance=cross_module_same_owner, volatility=medium
   - validate: `archfit check -c .archfit.yaml`
 - **bc/imbalanced_coupling** [`0d17f93d`] Review 4 same-shape Balanced-Coupling advisory edges from analysis-application to report-contract and reduce the coupling risk without changing gate policy.
   - severity: medium; status: new; group_count: 4
@@ -446,15 +444,6 @@ Report-only rollups from grouped advisories; these do not affect verdict or gate
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=model, distance=cross_module_same_owner, volatility=medium
   - validate: `archfit check -c .archfit.yaml`
-- **bc/imbalanced_coupling** [`4928bbc7`] Review 3 same-shape Balanced-Coupling advisory edges from assessment-repair to architecture-policy and reduce the coupling risk without changing gate policy.
-  - severity: high; status: new; group_count: 3
-  - group members: 4928bbc7cc6af3ad3d3e884be4d1e3f6, 844f053bccc64638e1355c0ccde2c74f, ded385d022d1f711950a2fa8ed1d67af
-  - score: 4/10
-  - top files: internal/assessment/evaluation/finalize.go, internal/assessment/metrics/metrics.go, internal/assessment/status/status.go
-  - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
-  - constraint: keep agent_tasks[] reserved for active gate findings
-  - constraint: preserve or improve coupling shape: strength=contract, distance=cross_module_same_owner, volatility=high
-  - validate: `archfit check -c .archfit.yaml`
 - **bc/imbalanced_coupling** [`43daa0c9`] Review 11 same-shape Balanced-Coupling advisory edges from assessment-repair to architecture-policy and reduce the coupling risk without changing gate policy.
   - severity: medium; status: new; group_count: 11
   - group members: 43daa0c91bacd482d5ac9ba560dd211e, 455acb12fb6bc8dc6bf8a8416d1a7661, 4c89874a384dea9db132e2e31d24d0af, 5a5ae9f159fb8fd7d2bfd93d10bc9c2a, 71ec017e3902c4bfad1bfde3db7de350, 744edeaae5b7fd628ebdfc37ebed4a63, 7da7c9997f570a6d4cfd4fdf1fca0393, b6c441e6a53d2965735ca16328b0848f
@@ -464,31 +453,31 @@ Report-only rollups from grouped advisories; these do not affect verdict or gate
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=functional, distance=cross_module_same_owner, volatility=high
   - validate: `archfit check -c .archfit.yaml`
-- **bc/imbalanced_coupling** [`5655b0a3`] Review 7 same-shape Balanced-Coupling advisory edges from assessment-repair to architecture-policy and reduce the coupling risk without changing gate policy.
-  - severity: critical; status: new; group_count: 7
-  - group members: 5655b0a3b20b149603ec28ba8e5a89df, 662cb3ccc21d240995e0102d889efe96, b9750e7ae76edb08e68b50dd7e5418fe, ca9d038dca3f61e305a1b884a9135624, d660aa240ae2f1d6a8fa1f10dba37172, f791b7772383ea8c5154650cf5de7c93, fb5d853245e30faf0dcef7ca9562ada1
+- **bc/imbalanced_coupling** [`4928bbc7`] Review 10 same-shape Balanced-Coupling advisory edges from assessment-repair to architecture-policy and reduce the coupling risk without changing gate policy.
+  - severity: critical; status: new; group_count: 10
+  - group members: 4928bbc7cc6af3ad3d3e884be4d1e3f6, 5655b0a3b20b149603ec28ba8e5a89df, 662cb3ccc21d240995e0102d889efe96, 844f053bccc64638e1355c0ccde2c74f, b9750e7ae76edb08e68b50dd7e5418fe, ca9d038dca3f61e305a1b884a9135624, d660aa240ae2f1d6a8fa1f10dba37172, ded385d022d1f711950a2fa8ed1d67af
   - cheapest move: reduce_strength
   - score: 2/10
-  - top files: internal/assessment/evaluation/advisories.go, internal/assessment/evaluation/complexity.go, internal/assessment/evaluation/inventory.go, internal/assessment/finding/finding.go, internal/assessment/rules/rules.go, internal/assessment/staleness/staleness.go
+  - top files: internal/assessment/evaluation/advisories.go, internal/assessment/evaluation/complexity.go, internal/assessment/evaluation/finalize.go, internal/assessment/evaluation/inventory.go, internal/assessment/finding/finding.go, internal/assessment/metrics/metrics.go, internal/assessment/rules/rules.go, internal/assessment/staleness/staleness.go
   - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=model, distance=cross_module_same_owner, volatility=high
   - constraint: prefer cheapest_move: reduce_strength
   - validate: `archfit check -c .archfit.yaml`
-- **bc/imbalanced_coupling** [`261cf14b`] Review 15 same-shape Balanced-Coupling advisory edges from assessment-repair to evidence-contracts and reduce the coupling risk without changing gate policy.
-  - severity: medium; status: new; group_count: 15
-  - group members: 261cf14b927a372b977880be97fae663, 32aa0a8d9b525561b895230003bfcd8f, 52ab4e7c9c9797741ec665fe3ca63d65, 5529af17393932bd5258cce67b79f4ee, 648d97e461b0a5af85490566837fcf26, 84fd83626c7ccd40cb31cf5a11186635, 94ef434560797a80798b50a195ff1c9d, a54099ba4cad069f2b876d062dd363c6
+- **bc/imbalanced_coupling** [`261cf14b`] Review 12 same-shape Balanced-Coupling advisory edges from assessment-repair to evidence-contracts and reduce the coupling risk without changing gate policy.
+  - severity: medium; status: new; group_count: 12
+  - group members: 261cf14b927a372b977880be97fae663, 32aa0a8d9b525561b895230003bfcd8f, 52ab4e7c9c9797741ec665fe3ca63d65, 5529af17393932bd5258cce67b79f4ee, 84fd83626c7ccd40cb31cf5a11186635, 94ef434560797a80798b50a195ff1c9d, a54099ba4cad069f2b876d062dd363c6, a551977891de7500f28bd7a62a9c103e
   - score: 5/10
-  - top files: internal/assessment/agenttask/agenttask.go, internal/assessment/decision/state_comparison.go, internal/assessment/evaluation/assess.go, internal/assessment/evaluation/complexity.go, internal/assessment/evaluation/evaluation.go, internal/assessment/evaluation/projector.go, internal/assessment/evaluation/ruleset.go, internal/assessment/evaluation/task_origin.go
+  - top files: internal/assessment/decision/state_comparison.go, internal/assessment/evaluation/assess.go, internal/assessment/evaluation/evaluation.go, internal/assessment/evaluation/projector.go, internal/assessment/evaluation/ruleset.go, internal/assessment/evaluation/task_origin.go, internal/assessment/rules/rules.go, internal/assessment/signals/signal.go
   - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=contract, distance=cross_module_same_owner, volatility=medium
   - validate: `archfit check -c .archfit.yaml`
-- **bc/imbalanced_coupling** [`320ae359`] Review 14 same-shape Balanced-Coupling advisory edges from assessment-repair to evidence-contracts and reduce the coupling risk without changing gate policy.
-  - severity: medium; status: new; group_count: 14
-  - group members: 320ae359fba984604d56d4a447acfbfe, 53f990a03a781a06df644737e16f4ad8, 701989929e62f5b5b2295de4ce2c86b8, 7a646ee19e64da05e1e8601767e44263, 7c7671290ef3fb5d01e3ca6f3721edee, 846cc62a7b022f3d5545ff16d1b7b532, 8ea9a6926178f36d81560ff9aa942ed3, 9ea72f252f6dbe80b434586d017fcac6
+- **bc/imbalanced_coupling** [`320ae359`] Review 17 same-shape Balanced-Coupling advisory edges from assessment-repair to evidence-contracts and reduce the coupling risk without changing gate policy.
+  - severity: medium; status: new; group_count: 17
+  - group members: 320ae359fba984604d56d4a447acfbfe, 53f990a03a781a06df644737e16f4ad8, 648d97e461b0a5af85490566837fcf26, 701989929e62f5b5b2295de4ce2c86b8, 7a646ee19e64da05e1e8601767e44263, 7c7671290ef3fb5d01e3ca6f3721edee, 846cc62a7b022f3d5545ff16d1b7b532, 8ea9a6926178f36d81560ff9aa942ed3
   - score: 5/10
-  - top files: internal/assessment/decision/task_origin.go, internal/assessment/evaluation/assess.go, internal/assessment/evaluation/dimensions.go, internal/assessment/evaluation/health_warnings.go, internal/assessment/evaluation/inventory.go, internal/assessment/evaluation/projector.go, internal/assessment/evaluation/ruleset.go, internal/assessment/evaluation/uncovered.go
+  - top files: internal/assessment/agenttask/agenttask.go, internal/assessment/decision/task_origin.go, internal/assessment/evaluation/assess.go, internal/assessment/evaluation/complexity.go, internal/assessment/evaluation/dimensions.go, internal/assessment/evaluation/health_warnings.go, internal/assessment/evaluation/inventory.go, internal/assessment/evaluation/projector.go
   - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=model, distance=cross_module_same_owner, volatility=medium
@@ -502,12 +491,12 @@ Report-only rollups from grouped advisories; these do not affect verdict or gate
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=symmetric, distance=cross_module_same_owner, volatility=medium
   - validate: `archfit check -c .archfit.yaml`
-- **bc/imbalanced_coupling** [`1c75d7df`] Review 13 same-shape Balanced-Coupling advisory edges from assessment-repair to relationship-analysis and reduce the coupling risk without changing gate policy.
-  - severity: critical; status: new; group_count: 13
-  - group members: 1c75d7dfef7a1ac9304d545fe3930bdf, 1efc51733064480ebd1524237566a40b, 27c5b67e5fb7a67865997ff2110a6b17, 28513b27f490f50de7fc955712d8423b, 3d8129ecba9ecee3a27d37e249e2c0db, 4f50da9ecdce6a99125244d19c5a6501, 56ffebc60d204753e8d10c0b385735e7, 6c3d4affffa9159cb403577e4da2d96e
+- **bc/imbalanced_coupling** [`1c75d7df`] Review 14 same-shape Balanced-Coupling advisory edges from assessment-repair to relationship-analysis and reduce the coupling risk without changing gate policy.
+  - severity: critical; status: new; group_count: 14
+  - group members: 1c75d7dfef7a1ac9304d545fe3930bdf, 1efc51733064480ebd1524237566a40b, 27c5b67e5fb7a67865997ff2110a6b17, 28513b27f490f50de7fc955712d8423b, 3d8129ecba9ecee3a27d37e249e2c0db, 4f50da9ecdce6a99125244d19c5a6501, 55d8777f8fffee3f32734e32c9cbc495, 56ffebc60d204753e8d10c0b385735e7
   - cheapest move: reduce_strength
   - score: 2/10
-  - top files: internal/assessment/evaluation/advisories.go, internal/assessment/evaluation/assess.go, internal/assessment/evaluation/dimensions.go, internal/assessment/evaluation/evaluation.go, internal/assessment/evaluation/judge.go, internal/assessment/evaluation/relationship_projection.go, internal/assessment/metrics/internal/modgraph/modgraph.go, internal/assessment/rules/rules.go
+  - top files: internal/assessment/evaluation/advisories.go, internal/assessment/evaluation/assess.go, internal/assessment/evaluation/dimensions.go, internal/assessment/evaluation/evaluation.go, internal/assessment/evaluation/judge.go, internal/assessment/evaluation/relationship_projection.go, internal/assessment/evaluation/uncovered.go, internal/assessment/metrics/internal/modgraph/modgraph.go
   - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=model, distance=cross_module_same_owner, volatility=high
@@ -522,15 +511,6 @@ Report-only rollups from grouped advisories; these do not affect verdict or gate
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=symmetric, distance=cross_module_same_owner, volatility=high
   - validate: `archfit check -c .archfit.yaml`
-- **bc/imbalanced_coupling** [`6b88563f`] Review 2 same-shape Balanced-Coupling advisory edges from cli-composition to analysis-application and reduce the coupling risk without changing gate policy.
-  - severity: high; status: new; group_count: 2
-  - group members: 6b88563fa58136a54d164ffde0b0676f, dd9b00ab182816ef88ec5dbaf7a3bff8
-  - score: 4/10
-  - top files: cmd/archfit/config_update_adapters.go, cmd/archfit/enrichment_judges.go
-  - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
-  - constraint: keep agent_tasks[] reserved for active gate findings
-  - constraint: preserve or improve coupling shape: strength=contract, distance=cross_module_same_owner, volatility=high
-  - validate: `archfit check -c .archfit.yaml`
 - **bc/imbalanced_coupling** [`18e7dfc0`] Review 10 same-shape Balanced-Coupling advisory edges from cli-composition to analysis-application and reduce the coupling risk without changing gate policy.
   - severity: medium; status: new; group_count: 10
   - group members: 18e7dfc05a495bff4ffa44a0cf712f5d, 1b2c300670d5634c581336201844d0d9, 29c1b0a7f479b468d7cd39d93f39b1ef, 6ac1d11778423abca8a0bce2def3243f, 8e165ca94f6eaea79c2913e475dad8a9, afddbea84ff014f35f0adcfe6077d348, b549bcb092615763dd52d93db2c1574a, c1bfcf1cca66a5ddb9400293a3ba2144
@@ -539,6 +519,17 @@ Report-only rollups from grouped advisories; these do not affect verdict or gate
   - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=functional, distance=cross_module_same_owner, volatility=high
+  - validate: `archfit check -c .archfit.yaml`
+- **bc/imbalanced_coupling** [`6b88563f`] Review 2 same-shape Balanced-Coupling advisory edges from cli-composition to analysis-application and reduce the coupling risk without changing gate policy.
+  - severity: critical; status: new; group_count: 2
+  - group members: 6b88563fa58136a54d164ffde0b0676f, dd9b00ab182816ef88ec5dbaf7a3bff8
+  - cheapest move: reduce_strength
+  - score: 2/10
+  - top files: cmd/archfit/config_update_adapters.go, cmd/archfit/enrichment_judges.go
+  - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
+  - constraint: keep agent_tasks[] reserved for active gate findings
+  - constraint: preserve or improve coupling shape: strength=model, distance=cross_module_same_owner, volatility=high
+  - constraint: prefer cheapest_move: reduce_strength
   - validate: `archfit check -c .archfit.yaml`
 - **bc/imbalanced_coupling** [`6e46b555`] Review 2 same-shape Balanced-Coupling advisory edges from cli-composition to architecture-policy and reduce the coupling risk without changing gate policy.
   - severity: medium; status: new; group_count: 2
@@ -596,10 +587,28 @@ Report-only rollups from grouped advisories; these do not affect verdict or gate
   - constraint: keep agent_tasks[] reserved for active gate findings
   - constraint: preserve or improve coupling shape: strength=contract, distance=cross_module_same_owner, volatility=medium
   - validate: `archfit check -c .archfit.yaml`
+- **bc/imbalanced_coupling** [`7a80f7a3`] Review 5 same-shape Balanced-Coupling advisory edges from cli-composition to provider-adapters and reduce the coupling risk without changing gate policy.
+  - severity: medium; status: new; group_count: 5
+  - group members: 7a80f7a3cb06def6fd4e8921baafd18c, 87730e067efe316da849db5512a9350f, 8a83e18dca7af9c5fb368854cfef31b7, 9e723b910eda14bf00f742e79e6e1033, af2e5b717e51a4cfdd2d805330373cf5
+  - score: 5/10
+  - top files: cmd/archfit/config_enrich_adapters.go, cmd/archfit/enrich.go, cmd/archfit/enrich_abstained.go, cmd/archfit/explain.go, cmd/archfit/init.go
+  - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
+  - constraint: keep agent_tasks[] reserved for active gate findings
+  - constraint: preserve or improve coupling shape: strength=functional, distance=cross_module_same_owner, volatility=medium
+  - validate: `archfit check -c .archfit.yaml`
+- **bc/imbalanced_coupling** [`3d274fb8`] Review 6 same-shape Balanced-Coupling advisory edges from cli-composition to report-adapters and reduce the coupling risk without changing gate policy.
+  - severity: medium; status: new; group_count: 6
+  - group members: 3d274fb8a8479e90ef68543938150453, 4117b9928678a5f01ea3ef4ec4db40ef, 83f06ac754fc79418d0f127b74b143cb, 978820d1593945c318aa9d9220a8b2ca, a836f879beae5a41c3b8780126cc3015, b317bcad5f5ca1ef233ec9324fd61299
+  - score: 5/10
+  - top files: cmd/archfit/analyze.go, cmd/archfit/hook.go
+  - constraint: report-only advisory; do not promote to a gate unless coupling.gate policy changes
+  - constraint: keep agent_tasks[] reserved for active gate findings
+  - constraint: preserve or improve coupling shape: strength=functional, distance=cross_module_same_owner, volatility=medium
+  - validate: `archfit check -c .archfit.yaml`
 
-_…and 30 more advisory tasks (see --json for the full list)._
+_…and 26 more advisory tasks (see --json for the full list)._
 
-## Balanced Coupling advisories (174 rollups, 452 edges)
+## Balanced Coupling advisories (171 rollups, 452 edges)
 
 Same-shape edges between a module pair are grouped into one rollup.
 Integration strength × distance × volatility lint messages.
@@ -702,6 +711,14 @@ ARCHFIT[BC-UNBALANCED CRITICAL] internal/calibrate/calibrate.go -> internal/rela
 ```
 
 ```
+ARCHFIT[BC-UNBALANCED CRITICAL] internal/config/projection.go -> internal/application  [35f79297]
+  integration strength: model         distance: cross_module_same_owner         volatility: high
+  score: 2/10 (critical) [book]
+  why: balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (co...
+  cheapest move: reduce_strength
+```
+
+```
 ARCHFIT[BC-UNBALANCED CRITICAL] internal/config/tools.go -> internal/policy  [881a242a]
   integration strength: model         distance: cross_module_same_owner         volatility: high
   score: 2/10 (critical) [book]
@@ -751,6 +768,14 @@ ARCHFIT[BC-UNBALANCED CRITICAL] internal/evidence/acquisition/options.go -> inte
 ```
 
 ```
+ARCHFIT[BC-UNBALANCED CRITICAL] internal/evidence/acquisition/service.go -> internal/application  [e83b01e8]
+  integration strength: model         distance: cross_module_same_owner         volatility: high
+  score: 2/10 (critical) [book]
+  why: balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (co...
+  cheapest move: reduce_strength
+```
+
+```
 ARCHFIT[BC-UNBALANCED CRITICAL] internal/evidence/acquisition/warnings.go -> internal/ownership  [ed4840b0]
   integration strength: model         distance: cross_module_same_owner         volatility: high
   score: 2/10 (critical) [book]
@@ -790,23 +815,7 @@ ARCHFIT[BC-UNBALANCED CRITICAL] internal/extract/py/py.go -> internal/relationsh
   cheapest move: reduce_strength
 ```
 
-```
-ARCHFIT[BC-UNBALANCED CRITICAL] internal/relationship/classify/volatility_provenance.go -> internal/policy  [76f0904b]
-  integration strength: model         distance: cross_module_same_owner         volatility: high
-  score: 2/10 (critical) [book]
-  why: balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (co...
-  cheapest move: reduce_strength
-```
-
-```
-ARCHFIT[BC-UNBALANCED CRITICAL] internal/testutil/report/convert.go -> internal/assessment/finding  [6ff80d12]
-  integration strength: model         distance: cross_module_same_owner         volatility: high
-  score: 2/10 (critical) [book]
-  why: balanced coupling: model integration strength × cross_module_same_owner distance × high volatility → critical severity (model coupling to a volatile target at low distance → local cascade (co...
-  cheapest move: reduce_strength
-```
-
-- ... +149 more rollups (use `--format json`)
+- ... +146 more rollups (use `--format json`)
 
 ## Advisories (9)
 
@@ -847,15 +856,15 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - D=5 compressed: package/library middle distance is not split without explicit stable package-boundary metadata
 - D=6 compressed: intermediate ownership/library distance has no deterministic signal beyond owner and tree structure
 - D=8 compressed: library-like seams remain compressed: undeclared libraries stay excluded, while declared external_systems score at D=10
-- undeclared external/library edges excluded: 967
+- undeclared external/library edges excluded: 968
 - clone-only duplicated knowledge: 5 scored, 0 advisory-only
-- tail risk: worst balance 2/10; lower-decile balance 2/10; high-or-worse edges 110/492 (22%); critical 83; distributed-monolith 0
+- tail risk: worst balance 2/10; lower-decile balance 2/10; high-or-worse edges 110/492 (22%); critical 99; distributed-monolith 0
 - clone-only tail: worst balance 6/10; high-or-worse 0/5 scored clone-only pairs
 
 ## Coverage
 
-- scip: partial
-- scip-symbols: partial
+- scip: ok (2409 files)
+- scip-symbols: ok (12403 files)
 - go/packages: ok (286 files)
 - dependency-cruiser: absent
 - grimp: absent
@@ -867,61 +876,59 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - ast-grep/syntax: ok (562 files)
 - cargo-modules: absent
 
-## Finding index (183)
+## Finding index (180)
 
 | Finding | Status | Rule |
 | --- | --- | --- |
 | `69d3b879c3ce3a737a2305ff389cb1e7` | baseline | bc/imbalanced_coupling |
 | `2ff049a792718c864d7222e5a4ceaf2c` | new | bc/imbalanced_coupling |
 | `8444168e3db5da6a0127fb1d1ddb19f6` | baseline | bc/imbalanced_coupling |
-| `2e1590e3580d6096c9ef526ef72d1595` | new | bc/imbalanced_coupling |
 | `088c6257fe3eba57ac2a2fb4abbd6dda` | baseline | bc/imbalanced_coupling |
-| `499d6f0c19e84b00db0bf9e6d9fc0a0d` | new | bc/imbalanced_coupling |
+| `2e1590e3580d6096c9ef526ef72d1595` | new | bc/imbalanced_coupling |
 | `1f841c4ef66c9d9a70430132618740e2` | baseline | bc/imbalanced_coupling |
 | `25583a9622c5bc1e0fee18f579fa6a12` | new | bc/imbalanced_coupling |
-| `3b3a0035c0f9a137bf5df57ffaf9161b` | baseline | bc/imbalanced_coupling |
+| `4615d49132092a7113ecc8067314fc1e` | baseline | bc/imbalanced_coupling |
 | `2cc4ff1fdf50fcbe4a39b2f9afcb7493` | new | bc/imbalanced_coupling |
-| `6b79ec12f5ed02cb8aa3cf8b25c46a0d` | new | bc/imbalanced_coupling |
+| `3b3a0035c0f9a137bf5df57ffaf9161b` | baseline | bc/imbalanced_coupling |
+| `52bfd50b6fa2f79a86c95672af211c64` | new | bc/imbalanced_coupling |
 | `86e21ab46f46cfc77479c37d61d6365a` | baseline | bc/imbalanced_coupling |
-| `af440bc871e12427303d9930385db551` | new | bc/imbalanced_coupling |
 | `bd9da20f2cdaa72e29841b99517bb28b` | baseline | bc/imbalanced_coupling |
 | `3ef835400a5770fb0e5874bf35280310` | new | bc/imbalanced_coupling |
 | `40ee017434202d1801b301f777e144ff` | baseline | bc/imbalanced_coupling |
 | `55d937f911ce6b7a354a73aef82c01cc` | new | bc/imbalanced_coupling |
 | `367ede3d7f17ccc5bc5251a927be6db7` | baseline | bc/imbalanced_coupling |
 | `ff0f7fb45b81ade146258afbdf355dd3` | baseline | bc/imbalanced_coupling |
+| `6793028290cda533ad5cb1fe502698a9` | baseline | bc/imbalanced_coupling |
 | `0d17f93d13ffef3ee5e3a6f2b69f48b8` | new | bc/imbalanced_coupling |
 | `688cebe5ec01b73b7c76c2e48d8fb028` | baseline | bc/imbalanced_coupling |
 | `8046d9e0621750119e12fbad2c787ee3` | baseline | bc/imbalanced_coupling |
 | `6ff80d129819b87f7e62f0edbd688f8c` | baseline | bc/imbalanced_coupling |
-| `c19d5d66ac01d90bfe0d78e5198685c6` | baseline | bc/imbalanced_coupling |
 | `4ae0dcde706ef7333cb7428bc0eb4c80` | baseline | bc/imbalanced_coupling |
+| `c19d5d66ac01d90bfe0d78e5198685c6` | baseline | bc/imbalanced_coupling |
 | `1739a440ff7c65f82d106bc58e3c93b1` | baseline | bc/imbalanced_coupling |
 | `72aae8ce0418334e888e19276f0a33bf` | baseline | bc/imbalanced_coupling |
-| `4928bbc7cc6af3ad3d3e884be4d1e3f6` | new | bc/imbalanced_coupling |
 | `07b0acbafd10996d237ed83afbea5013` | baseline | bc/imbalanced_coupling |
 | `43daa0c91bacd482d5ac9ba560dd211e` | new | bc/imbalanced_coupling |
 | `39280b30be11ccfb7099e2def1d47b8d` | baseline | bc/imbalanced_coupling |
-| `5655b0a3b20b149603ec28ba8e5a89df` | new | bc/imbalanced_coupling |
+| `4928bbc7cc6af3ad3d3e884be4d1e3f6` | new | bc/imbalanced_coupling |
 | `024a054601f108bb2f65bdaa51b20789` | baseline | bc/imbalanced_coupling |
 | `261cf14b927a372b977880be97fae663` | new | bc/imbalanced_coupling |
 | `14a18a6187471cea76c40f7707552f67` | baseline | bc/imbalanced_coupling |
 | `320ae359fba984604d56d4a447acfbfe` | new | bc/imbalanced_coupling |
 | `4f3d760538a570506a5d02bdab58bee0` | baseline | bc/imbalanced_coupling |
 | `506dbac7f4eb8369b27d1152ffbf1ff1` | new | bc/imbalanced_coupling |
-| `55d8777f8fffee3f32734e32c9cbc495` | new | bc/imbalanced_coupling |
 | `14ac826f0bb219f873ec6006917d978a` | baseline | bc/imbalanced_coupling |
 | `1c75d7dfef7a1ac9304d545fe3930bdf` | new | bc/imbalanced_coupling |
 | `08ad9f3c6f1298ff86bb271fc0443532` | baseline | bc/imbalanced_coupling |
 | `20ae16d0505f044a52761ddc937b04dc` | new | bc/imbalanced_coupling |
-| `6b88563fa58136a54d164ffde0b0676f` | new | bc/imbalanced_coupling |
 | `15d7aca5826ff9e51126d30d5d399056` | baseline | bc/imbalanced_coupling |
 | `18e7dfc05a495bff4ffa44a0cf712f5d` | new | bc/imbalanced_coupling |
 | `12585c746dab4b7aab1efe23619be40b` | baseline | bc/imbalanced_coupling |
+| `6b88563fa58136a54d164ffde0b0676f` | new | bc/imbalanced_coupling |
 | `6e46b555e604bee94146d5c59e9bf5f5` | new | bc/imbalanced_coupling |
 | `db7cf7eb90b3de70d97c35125f9ba784` | new | bc/imbalanced_coupling |
-| `5cfeae578d37e771c6910a5c61a18319` | new | bc/imbalanced_coupling |
 | `09ea5d95ec52268d4b39d9ffc93ab11c` | baseline | bc/imbalanced_coupling |
+| `5cfeae578d37e771c6910a5c61a18319` | new | bc/imbalanced_coupling |
 | `0be20e8b1f3def37d037daf6b331b75a` | baseline | bc/imbalanced_coupling |
 | `18ebbe3ec25eef143658721dfd510987` | new | bc/imbalanced_coupling |
 | `fcb2c3af2a2bccd71b2521c715d08d66` | baseline | bc/imbalanced_coupling |
@@ -930,9 +937,9 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 | `176de03c572cc06654a543910586709c` | baseline | bc/imbalanced_coupling |
 | `2966e0804c1e5f7f6831422c2f90ea41` | new | bc/imbalanced_coupling |
 | `e19785bd2a4e8ce6d810dc43b364814b` | baseline | bc/imbalanced_coupling |
-| `feb6b9e7d13d752f9c75182ce614754b` | baseline | bc/imbalanced_coupling |
 | `eddc084a761aefcf44f5e1c6b1021f32` | baseline | bc/imbalanced_coupling |
 | `019bca04cf4a5e47b4064236f86888a5` | new | bc/imbalanced_coupling |
+| `feb6b9e7d13d752f9c75182ce614754b` | baseline | bc/imbalanced_coupling |
 | `3913f26696ce7693d537a7188c765780` | baseline | bc/imbalanced_coupling |
 | `554d5ba62be4e0b8d65deabf45165cdb` | new | bc/imbalanced_coupling |
 | `074988238668fed37150966bd40f1e8f` | baseline | bc/imbalanced_coupling |
@@ -950,9 +957,9 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 | `3d274fb8a8479e90ef68543938150453` | new | bc/imbalanced_coupling |
 | `351fec2c113000956959ea63e15d2cf2` | new | bc/imbalanced_coupling |
 | `525840fc8330703c0692415a21cf4c8f` | baseline | bc/imbalanced_coupling |
-| `ffb36399c480fbc5582e3500161d98ce` | new | bc/imbalanced_coupling |
 | `966de504d3218b404ba33f1f51a1db81` | new | bc/imbalanced_coupling |
-| `d8c64b9b7736b12551e0501203f53592` | baseline | bc/imbalanced_coupling |
+| `86666b35572dd027448b28bffd56ca62` | baseline | bc/imbalanced_coupling |
+| `ffb36399c480fbc5582e3500161d98ce` | new | bc/imbalanced_coupling |
 | `7f461a14aae1bbdb961e731caea12447` | baseline | bc/imbalanced_coupling |
 | `038d51209ab206374d23b5ea752cafae` | new | bc/imbalanced_coupling |
 | `994263a03a96dbfaedda63e4b8197fc9` | baseline | bc/imbalanced_coupling |
@@ -967,8 +974,9 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 | `1163394a44b1ef00322bc385feb09a5b` | new | bc/imbalanced_coupling |
 | `0ad7fdb637603421a7b4aad0c527c584` | baseline | bc/imbalanced_coupling |
 | `a1d4f8ff196211ce44973ff39823f9c6` | new | bc/imbalanced_coupling |
-| `e83b01e8879297fd84f3c20f80f35df8` | baseline | bc/imbalanced_coupling |
 | `66133c943ebed3523a1e187c43d890f4` | new | bc/imbalanced_coupling |
+| `e83b01e8879297fd84f3c20f80f35df8` | baseline | bc/imbalanced_coupling |
+| `7dce75be9471d8f1a76efe0167e87cb7` | new | bc/imbalanced_coupling |
 | `86bdce74707ac8e7c163eb38d27591aa` | baseline | bc/imbalanced_coupling |
 | `4b6f8230c3a43a5397c2d03c9e48dce2` | new | bc/imbalanced_coupling |
 | `016e681e350a7b9f64711847a3c55036` | baseline | bc/imbalanced_coupling |
@@ -981,7 +989,6 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 | `10ebd4f5c079cb2baff9d5de735d356f` | baseline | bc/imbalanced_coupling |
 | `38266706c45e30154392afcf3f1f0bf0` | new | bc/imbalanced_coupling |
 | `acc940d72bd31d86f74c4420cb5c9d34` | baseline | bc/imbalanced_coupling |
-| `743250c828395bdcd2cbe60c02912201` | new | bc/imbalanced_coupling |
 | `3756a47bfcee33461b6cd6cdf2023fdb` | baseline | bc/imbalanced_coupling |
 | `4e5c0daa91c5e2df6d20229cc81cd02e` | new | bc/imbalanced_coupling |
 | `ae45f78ce8eba5d5a6892722cf3a0d54` | baseline | bc/imbalanced_coupling |
@@ -1023,24 +1030,23 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 | `881a242a665360836d10f66f5f005e3c` | baseline | bc/imbalanced_coupling |
 | `ae66ef0d5fd05668821c865237e4d80a` | baseline | bc/imbalanced_coupling |
 | `384a4c05d69a6a07c7af2be0bb485c71` | baseline | bc/imbalanced_coupling |
-| `83dbd6a4fbb9068f0723cef599e1a334` | new | bc/imbalanced_coupling |
 | `d7699f3bc50924cb5213951bb648fd14` | baseline | bc/imbalanced_coupling |
 | `08244a901e2803d2593cf96eddbefc72` | baseline | bc/imbalanced_coupling |
 | `31184fe9723516948fe8083f33b097d0` | new | bc/imbalanced_coupling |
 | `16356f10bac0fda2dfccf2b120865d2b` | baseline | bc/imbalanced_coupling |
 | `dbf1524996cd43a906d2b8b1b8aa5daa` | baseline | bc/imbalanced_coupling |
-| `17b1c08443525528864360ee6ac18886` | baseline | bc/imbalanced_coupling |
 | `01b59d297d70a52756ee213f7f006469` | baseline | bc/imbalanced_coupling |
 | `35758cbb8060d219264429a5279c06e0` | new | bc/imbalanced_coupling |
-| `76f0904b89e3183658a8b2b006d245ba` | baseline | bc/imbalanced_coupling |
+| `17b1c08443525528864360ee6ac18886` | baseline | bc/imbalanced_coupling |
 | `4dc39ac70b6e69c8af9c2db3a80093c4` | new | bc/imbalanced_coupling |
 | `093e032bba6ac6f06c5749a635af7e99` | baseline | bc/imbalanced_coupling |
+| `f35cc32ff2d80a08c76fc78636b8b7ed` | new | bc/imbalanced_coupling |
+| `108a8f5162c596eae12329198aaf67aa` | baseline | bc/imbalanced_coupling |
 | `3999ad010ae199a51f53bc3a350f7479` | new | bc/imbalanced_coupling |
-| `90b9abf157514550087b561b0d46ba32` | new | bc/imbalanced_coupling |
 | `120b88a914757627b6c3fc85f7f8e1e9` | baseline | bc/imbalanced_coupling |
 | `76aa4d1c8e5bc4e6d7e82f041b65443c` | new | bc/imbalanced_coupling |
 | `20a6a2d090e4ec3c01b14f32a541edef` | baseline | bc/imbalanced_coupling |
-| `8079ad06a63a66c5fce19e3f5819436a` | new | bc/imbalanced_coupling |
+| `9614d09732f3fed2a3597b0e93e3b094` | new | bc/imbalanced_coupling |
 | `18ed8f9145dd0599b278815b55a45bcc` | baseline | bc/imbalanced_coupling |
 | `5aae2dc9b648a11ee00d99ffedbf7f4c` | new | bc/imbalanced_coupling |
 | `2e7195a3fcefee3161e601e0b6292b49` | baseline | bc/imbalanced_coupling |

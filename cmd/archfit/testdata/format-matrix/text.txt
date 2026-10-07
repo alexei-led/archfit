@@ -122,10 +122,10 @@ NOT MEASURED (14)
     (out of claim — no action)
   drift — admissible persisted reference
     no comparable architecture-state reference is stored
-    → once the findings are reviewed, record a gate reference: archfit baseline
+    → fix the blockers, then record a gate reference: archfit baseline, with the same -c and --root as this run
   drift — complete two-sided seam identity
     two-sided seam identity cannot be compared without an admissible persisted reference
-    → once the findings are reviewed, record a gate reference: archfit baseline
+    → fix the blockers, then record a gate reference: archfit baseline, with the same -c and --root as this run
 
 COUPLING SEAMS (1)
 

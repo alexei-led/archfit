@@ -59,7 +59,7 @@ func writeState(s report.ArchitectureState, view brief.View, regressions []metri
 	writeNextSteps(&b, view.NextSteps)
 	writeMetricRatchet(&b, s.GateReference, regressions)
 	writeDimensions(&b, s.Dimensions)
-	writeUnknowns(&b, s.Dimensions)
+	writeUnknowns(&b, s.Dimensions, view)
 	writeSeams(&b, s.Seams)
 	writeDiagnostics(&b, view.Diagnostics)
 	writeComparison(&b, s.Comparison)
@@ -187,7 +187,7 @@ func coverageLabel(c report.DimensionCoverage) string {
 	return fmt.Sprintf("%s %d/%d", c.Basis, c.Observed, c.Total)
 }
 
-func writeUnknowns(b *strings.Builder, dims report.Dimensions) {
+func writeUnknowns(b *strings.Builder, dims report.Dimensions, view brief.View) {
 	type row struct {
 		dimension string
 		fact      report.UnknownFact
@@ -203,7 +203,7 @@ func writeUnknowns(b *strings.Builder, dims report.Dimensions) {
 	}
 	fmt.Fprintf(b, "\nNOT MEASURED (%d)\n\n", len(rows))
 	for _, r := range rows {
-		fmt.Fprintf(b, "  %s — %s\n    %s\n    %s\n", r.dimension, r.fact.Fact, condense(r.fact.Reason, 140), brief.Step(r.fact.Fact))
+		fmt.Fprintf(b, "  %s — %s\n    %s\n    %s\n", r.dimension, r.fact.Fact, condense(r.fact.Reason, 140), view.StepFor(r.fact.Fact))
 	}
 }
 

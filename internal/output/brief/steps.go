@@ -6,8 +6,8 @@ type category int
 const (
 	// categoryTools steps restore analyzer evidence.
 	categoryTools category = iota + 1
-	// categoryReference steps record or review the gate reference; nextSteps
-	// decides them from the gate reference itself.
+	// categoryReference facts are closed by the run's gate-reference step
+	// (View.StepFor); the table text is the step with no run context.
 	categoryReference
 	// categoryModules steps are module decisions in the config.
 	categoryModules

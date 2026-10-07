@@ -159,8 +159,8 @@
 - **operations — corroborated deploy unit** (owner: policy+evidence/acquisition): one or more declared modules have no independently corroborating deploy manifest → commit a deploy manifest for each deploy_unit
 - **operations — observed runtime topology** (owner: policy+evidence/acquisition): committed manifests corroborate declared deploy units; they do not observe what is actually running (out of claim — no action)
 - **operations — supply-chain inventory** (owner: policy+evidence/acquisition): SBOM and vulnerability facts are a separate report family and have no collector in v1 (out of claim — no action)
-- **drift — admissible persisted reference** (owner: assessment/decision): no comparable architecture-state reference is stored → once the findings are reviewed, record a gate reference: archfit baseline
-- **drift — complete two-sided seam identity** (owner: assessment/decision): two-sided seam identity cannot be compared without an admissible persisted reference → once the findings are reviewed, record a gate reference: archfit baseline
+- **drift — admissible persisted reference** (owner: assessment/decision): no comparable architecture-state reference is stored → fix the blockers, then record a gate reference: archfit baseline, with the same -c and --root as this run
+- **drift — complete two-sided seam identity** (owner: assessment/decision): two-sided seam identity cannot be compared without an admissible persisted reference → fix the blockers, then record a gate reference: archfit baseline, with the same -c and --root as this run
 
 ## Metrics
 

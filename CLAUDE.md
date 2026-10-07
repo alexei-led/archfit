@@ -764,9 +764,13 @@ init` emits v2 directly; owners update older configs manually before analysis.
   every NOT MEASURED fact. The fact→step table is keyed on the wire fact names
   and pinned to `state.RequiredFacts` (claim membership included) by
   `brief_test.go`; a new fact needs a step. `archfit baseline` is a next step
-  only with zero blockers and a non-comparable gate reference whose reasons
-  name no fingerprint (`config_hash`…`rubric_version`, `measurement_profile` —
-  the wire carries reasons, not hashes); a drifted reference asks for review. Its dead-selector split reuses agentout's
+  only with zero blockers and no stored reference: a non-comparable gate
+  reference whose reasons name no fingerprint (`config_hash`…`rubric_version`,
+  `measurement_profile`) and no `stored baseline` (the wire carries reasons,
+  not hashes); a stored one that does not compare asks for review. NOT
+  MEASURED reads the same step (`View.StepFor`). Code-repair blockers precede
+  owner decisions, and dead selectors precede missing evidence — the
+  `agentout.decide` order. Synthetic IDs keep their prefix in the short ID. Its dead-selector split reuses agentout's
   `selector matches nothing:` prefix. Markdown has ONE H1. Canonical finding
   order (JSON/SARIF/index) is untouched.
 - **`--format agent` is a digest, decided in the renderer**

@@ -63,7 +63,7 @@ func TestFormatMatrix_BriefActsOnTheState(t *testing.T) {
 func TestRun_Check_BriefBaselineStep(t *testing.T) {
 	t.Parallel()
 	const (
-		record = "Record a gate reference once the findings are reviewed: archfit baseline."
+		record = "Record a gate reference once the findings are reviewed: archfit baseline"
 		review = "Review why the gate reference does not compare"
 	)
 	dir := hookRepo(t, hookModules, hookCleanA, "")

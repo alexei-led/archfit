@@ -57,13 +57,14 @@ func TestStep(t *testing.T) {
 }
 
 const (
-	idBlocker   = "b228b5d0aaaaaaaaaaaaaaaaaaaaaaaa"
-	idRuleAdv   = "c0ffee00aaaaaaaaaaaaaaaaaaaaaaaa"
-	idBCAdv     = "bc000000aaaaaaaaaaaaaaaaaaaaaaaa"
-	idOld       = "01d00000aaaaaaaaaaaaaaaaaaaaaaaa"
-	checkCmd    = "archfit check -c .archfit.yaml"
-	modAPI      = "api"
-	refBaseline = "baseline"
+	idBlocker      = "b228b5d0aaaaaaaaaaaaaaaaaaaaaaaa"
+	idRuleAdv      = "c0ffee00aaaaaaaaaaaaaaaaaaaaaaaa"
+	idBCAdv        = "bc000000aaaaaaaaaaaaaaaaaaaaaaaa"
+	idOld          = "01d00000aaaaaaaaaaaaaaaaaaaaaaaa"
+	checkCmd       = "archfit check -c .archfit.yaml"
+	modAPI         = "api"
+	refBaseline    = "baseline"
+	stepFixBlocker = "Fix blocker b228b5d0 (layers-point-inward)."
 )
 
 func ref(f report.Finding) report.FindingRef {
@@ -166,7 +167,7 @@ func TestNextStepsOrderAndBound(t *testing.T) {
 	s.Dimensions.Operations.Unknown = []report.UnknownFact{{Fact: state.FactOwnerProvenance}}
 	got := Build(Input{State: s, MetricRatchet: true, CoverageGaps: []report.CoverageGap{{Tool: "dependency-cruiser"}}}).NextSteps
 	want := []string{
-		"Fix blocker b228b5d0 (layers-point-inward).",
+		stepFixBlocker,
 		"Restore the worsened metrics listed under METRIC RATCHET.",
 		"Ask the owner to fix rule dead: its selector matches nothing (archfit config lint).",
 		"Restore the evidence rule partial needs: archfit doctor --fix.",
@@ -181,7 +182,7 @@ func TestNextStepsOrderAndBound(t *testing.T) {
 	s.Dimensions.Operations.Unknown = []report.UnknownFact{{Fact: state.FactOwnerProvenance}}
 	got = Build(Input{State: s}).NextSteps
 	want = []string{
-		"Fix blocker b228b5d0 (layers-point-inward).",
+		stepFixBlocker,
 		"Declare owner for each module or add CODEOWNERS.",
 		"Supply a test coverage report for the current tree in the coverage: section.",
 	}
@@ -206,31 +207,92 @@ func TestNextStepsCollapseManyBlockers(t *testing.T) {
 	}
 }
 
-func TestBaselineStep(t *testing.T) {
+func TestReferenceStep(t *testing.T) {
 	missing := &report.StateComparison{Status: report.ComparisonNonComparable, BaseRef: refBaseline, Reasons: []string{"no baseline file was loaded"}}
-	drifted := &report.StateComparison{Status: report.ComparisonNonComparable, BaseRef: refBaseline,
-		Reasons: []string{"config_hash differs between the two runs (a vs b): a policy change is not a code change"}}
-	profile := &report.StateComparison{Status: report.ComparisonNonComparable, BaseRef: refBaseline,
-		Reasons: []string{"measurement_profile is missing from reference"}}
+	stored := func(reason string) *report.StateComparison {
+		return &report.StateComparison{Status: report.ComparisonNonComparable, BaseRef: refBaseline, Reasons: []string{reason}}
+	}
 	for _, tc := range []struct {
 		name     string
 		ref      *report.StateComparison
 		blockers int
 		want     string
 	}{
-		{name: "no reference requested", want: ""},
 		{name: "comparable", ref: &report.StateComparison{Status: report.ComparisonComparable}, want: ""},
-		{name: "missing, no blocker", ref: missing, want: "Record a gate reference once the findings are reviewed: archfit baseline."},
-		{name: "missing with a blocker never offers baseline", ref: missing, blockers: 1, want: ""},
-		{name: "drifted reference asks for review", ref: drifted, blockers: 1,
-			want: "Review why the gate reference does not compare (GATE REFERENCE) before you record a new one."},
-		{name: "profile drift asks for review", ref: profile,
-			want: "Review why the gate reference does not compare (GATE REFERENCE) before you record a new one."},
+		{name: "missing, no blocker", ref: missing, want: stepRecordReference},
+		{name: "missing with a blocker fixes the blockers first", ref: missing, blockers: 1, want: stepBlockersFirst},
+		{name: "config drift asks for review", ref: stored("config_hash differs between the two runs (a vs b): a policy change is not a code change"), blockers: 1, want: stepReviewReference},
+		{name: "profile drift asks for review", ref: stored("measurement_profile is missing from reference"), want: stepReviewReference},
+		{name: "incomplete seam snapshot asks for review", ref: stored("stored baseline qualifying_seam_ids snapshot is missing or null"), want: stepReviewReference},
+		{name: "missing state snapshot asks for review", ref: stored("stored baseline has no architecture-state snapshot"), want: stepReviewReference},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := baselineStep(report.ArchitectureState{GateReference: tc.ref}, tc.blockers); got != tc.want {
-				t.Errorf("baselineStep = %q, want %q", got, tc.want)
+			if got := referenceStep(tc.ref, tc.blockers); got != tc.want {
+				t.Errorf("referenceStep = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestReferenceStepAgreesAcrossSections pins NOT MEASURED to NEXT STEPS: with
+// an active blocker neither offers a blanket baseline, and with a drifted
+// reference both ask for a review.
+func TestReferenceStepAgreesAcrossSections(t *testing.T) {
+	s := briefState()
+	s.GateReference = &report.StateComparison{Status: report.ComparisonNonComparable, BaseRef: refBaseline, Reasons: []string{"no baseline file was loaded"}}
+	s.Dimensions.Drift.Unknown = []report.UnknownFact{{Fact: state.FactAdmissiblePersistedReference}}
+	v := Build(Input{State: s})
+	if got := v.StepFor(state.FactAdmissiblePersistedReference); got != "→ "+stepBlockersFirst {
+		t.Errorf("NOT MEASURED step with a blocker = %q", got)
+	}
+	for _, step := range v.NextSteps {
+		if strings.Contains(step, "archfit baseline") {
+			t.Errorf("NEXT STEPS offers a baseline with an active blocker: %q", v.NextSteps)
+		}
+	}
+	s.GateReference.Reasons = []string{"model_hash differs between the two runs (a vs b): a policy change is not a code change"}
+	v = Build(Input{State: s})
+	if got := v.StepFor(state.FactAdmissiblePersistedReference); got != "→ "+stepReviewReference {
+		t.Errorf("NOT MEASURED step with a drifted reference = %q", got)
+	}
+	if !slices.Contains(v.NextSteps, capitalize(stepReviewReference)+".") {
+		t.Errorf("NEXT STEPS = %q, want the review step", v.NextSteps)
+	}
+}
+
+// TestNextStepsFollowTheAgentDecisionOrder pins step 1 to agentout.decide: a
+// code repair before an owner decision, and a dead selector (ask_owner)
+// before missing evidence (restore_evidence), whatever the input order.
+func TestNextStepsFollowTheAgentDecisionOrder(t *testing.T) {
+	s := briefState()
+	owner := report.Finding{ID: "0wner000aaaaaaaaaaaaaaaaaaaaaaaa", Kind: report.FindingKindGate, RuleID: "map/uncovered_path", Status: report.FindingStatusNew}
+	s.Findings = append([]report.Finding{owner}, s.Findings...)
+	s.Dimensions.Intent.Findings = []report.FindingRef{ref(owner)}
+	s.AgentTasks = append(s.AgentTasks, report.AgentTask{FindingID: owner.ID, RepairKind: repairNeedsOwnerDecision})
+	got := Build(Input{State: s}).NextSteps
+	if len(got) < 2 || got[0] != stepFixBlocker || got[1] != "Ask the owner to decide blocker 0wner000 (map/uncovered_path)." {
+		t.Fatalf("next steps = %q, want the code repair before the owner decision", got)
+	}
+
+	s = briefState()
+	s.Findings, s.Dimensions.Structure.Findings, s.Verdict = nil, nil, report.StateNeedsAttention
+	s.Decision.UnevaluatedRequiredRules = []report.UnevaluatedRule{
+		{RuleID: "partial", Reason: "go/packages evidence is partial"},
+		{RuleID: "dead", Reason: "selector matches nothing: from ghost/**"},
+	}
+	if got := Build(Input{State: s}).NextSteps; len(got) == 0 || !strings.HasPrefix(got[0], "Ask the owner to fix rule dead") {
+		t.Fatalf("next steps = %q, want the dead selector (ask_owner) first", got)
+	}
+}
+
+func TestShortIDKeepsSyntheticPrefixes(t *testing.T) {
+	for id, want := range map[string]string{
+		"ba3803eca947bf3c1b7efa8f37854d5e":               "ba3803ec",
+		"coupling-gate/1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d": "coupling-gate/1a2b3c4d",
+		"short": "short",
+	} {
+		if got := shortID(id); got != want {
+			t.Errorf("shortID(%q) = %q, want %q", id, got, want)
+		}
 	}
 }

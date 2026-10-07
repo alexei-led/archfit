@@ -111,7 +111,9 @@ a blocker is an active gate finding, a diagnostic an active advisory finding.
 Blockers are never capped. NEXT STEPS lists at most five steps in this order:
 blockers, a metric ratchet, rules and analyzers that need evidence, the gate
 reference, module decisions, then coverage or deploy-unit evidence. It offers
-`archfit baseline` only when no blocker is active and no reference is stored.
+`archfit baseline` only when no blocker is active and no reference is stored;
+a stored reference that does not compare asks for a review first, and NOT
+MEASURED says the same.
 Every NOT MEASURED fact ends with the step that closes it, or with
 `(out of claim — no action)`.
 

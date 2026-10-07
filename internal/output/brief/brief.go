@@ -6,6 +6,7 @@
 package brief
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,10 @@ const ShortIDLen = 8
 // nothing: a policy defect for the owner, not missing evidence. agentout reads
 // the same prefix, so the human step and the agent's next_action agree.
 const deadSelectorPrefix = "selector matches nothing:"
+
+// repairNeedsOwnerDecision is the agent-task repair kind of a blocker an owner
+// decides; agentout reads the same value.
+const repairNeedsOwnerDecision = "needs_owner_decision"
 
 // syntheticRulePrefixes name the rule IDs assessment emits without a declared
 // rule: coupling advisories, map review, and pinned-label staleness.
@@ -56,6 +61,9 @@ type Blocker struct {
 	// the finding has none, never invented.
 	Goal   string
 	Checks []string
+	// OwnerDecision is true when the task's repair is an architecture-owner
+	// decision (repair_kind needs_owner_decision), not a code change.
+	OwnerDecision bool
 }
 
 // View is the brief of one run.
@@ -69,6 +77,19 @@ type View struct {
 	// the document's own order.
 	Diagnostics []report.Finding
 	NextSteps   []string
+	// referenceStep closes the gate-reference facts in this run's context:
+	// review a drifted reference, fix the blockers first, or record one.
+	referenceStep string
+}
+
+// StepFor is the NOT MEASURED suffix for one unknown fact of this run. The
+// gate-reference facts read the run's reference and blockers, so NOT MEASURED
+// and NEXT STEPS never disagree about `archfit baseline`.
+func (v View) StepFor(fact string) string {
+	if fs, ok := factSteps[fact]; ok && fs.category == categoryReference && v.referenceStep != "" {
+		return "→ " + v.referenceStep
+	}
+	return Step(fact)
 }
 
 // Build derives the brief from in.
@@ -86,7 +107,8 @@ func Build(in Input) View {
 	if s.Verdict == report.StateNeedsAttention && len(blockers) == 0 && len(diagnostics) == 0 {
 		v.VerdictReason = evidenceReason(s.Dimensions)
 	}
-	v.NextSteps = nextSteps(in, v.Blockers)
+	v.referenceStep = referenceStep(s.GateReference, len(blockers))
+	v.NextSteps = nextSteps(in, v.Blockers, v.referenceStep)
 	return v
 }
 
@@ -129,6 +151,7 @@ func blockerOf(f report.Finding, task report.AgentTask) Blocker {
 	b := Blocker{
 		ShortID: shortID(f.ID), RuleID: f.RuleID, Subject: subject(f),
 		Why: strings.TrimSpace(f.Why), Goal: task.Goal, Checks: task.Validation,
+		OwnerDecision: task.RepairKind == repairNeedsOwnerDecision,
 	}
 	if len(f.Locations) > 0 {
 		loc := f.Locations[0]
@@ -141,11 +164,18 @@ func blockerOf(f report.Finding, task report.AgentTask) Blocker {
 	return b
 }
 
+// shortID shortens a finding ID for a reader. A synthetic ID with a prefix
+// (coupling-gate/<seam ID>) keeps the prefix, so two seams never share one
+// short ID and the short ID is still a prefix of the full one.
 func shortID(id string) string {
-	if len(id) <= ShortIDLen {
-		return id
+	prefix, rest := "", id
+	if i := strings.LastIndex(id, "/"); i >= 0 {
+		prefix, rest = id[:i+1], id[i+1:]
 	}
-	return id[:ShortIDLen]
+	if len(rest) > ShortIDLen {
+		rest = rest[:ShortIDLen]
+	}
+	return prefix + rest
 }
 
 // subject names what a finding is about: the dependency it forbids, the one
@@ -189,36 +219,54 @@ func evidenceReason(dims report.Dimensions) string {
 // analyzers that need evidence, the gate reference, module decisions, then
 // the evidence that closes a measured gap. Steps repeat nothing and stop at
 // MaxNextSteps.
-func nextSteps(in Input, blockers []Blocker) []string {
+func nextSteps(in Input, blockers []Blocker, reference string) []string {
 	var steps []string
 	add := func(step string) {
-		if len(steps) < MaxNextSteps && !contains(steps, step) {
+		if len(steps) < MaxNextSteps && !slices.Contains(steps, step) {
 			steps = append(steps, step)
 		}
 	}
-	for i, b := range blockers {
-		if i == MaxNextSteps-1 && len(blockers) > MaxNextSteps {
-			add("Fix the other " + strconv.Itoa(len(blockers)-i) + " blockers listed under BLOCKERS.")
+	// Code repairs come before owner decisions, and owner decisions before
+	// missing evidence: the order agentout.decide picks next_action in.
+	ordered := make([]Blocker, 0, len(blockers))
+	for _, owner := range []bool{false, true} {
+		for _, b := range blockers {
+			if b.OwnerDecision == owner {
+				ordered = append(ordered, b)
+			}
+		}
+	}
+	for i, b := range ordered {
+		if i == MaxNextSteps-1 && len(ordered) > MaxNextSteps {
+			add("Fix the other " + strconv.Itoa(len(ordered)-i) + " blockers listed under BLOCKERS.")
 			break
+		}
+		if b.OwnerDecision {
+			add("Ask the owner to decide blocker " + b.ShortID + " (" + b.RuleID + ").")
+			continue
 		}
 		add("Fix blocker " + b.ShortID + " (" + b.RuleID + ").")
 	}
 	if in.MetricRatchet {
 		add("Restore the worsened metrics listed under METRIC RATCHET.")
 	}
-	for _, rule := range in.State.Decision.UnevaluatedRequiredRules {
+	rules := in.State.Decision.UnevaluatedRequiredRules
+	for _, rule := range rules {
 		if strings.HasPrefix(rule.Reason, deadSelectorPrefix) {
 			add("Ask the owner to fix rule " + rule.RuleID + ": its selector matches nothing (archfit config lint).")
-			continue
 		}
-		add("Restore the evidence rule " + rule.RuleID + " needs: archfit doctor --fix.")
+	}
+	for _, rule := range rules {
+		if !strings.HasPrefix(rule.Reason, deadSelectorPrefix) {
+			add("Restore the evidence rule " + rule.RuleID + " needs: archfit doctor --fix.")
+		}
 	}
 	if tools := gapTools(in.CoverageGaps); tools != "" {
 		add("Install or fix the missing analyzers (" + tools + "): archfit doctor --fix.")
 	}
 	addFactSteps(in.State.Dimensions, categoryTools, add)
-	if step := baselineStep(in.State, len(blockers)); step != "" {
-		add(step)
+	if in.State.GateReference != nil && reference != "" && reference != stepBlockersFirst {
+		add(capitalize(reference) + ".")
 	}
 	addFactSteps(in.State.Dimensions, categoryModules, add)
 	addFactSteps(in.State.Dimensions, categoryEvidence, add)
@@ -240,7 +288,7 @@ func addFactSteps(dims report.Dimensions, cat category, add func(string)) {
 func gapTools(gaps []report.CoverageGap) string {
 	tools := make([]string, 0, len(gaps))
 	for _, gap := range gaps {
-		if !contains(tools, gap.Tool) {
+		if !slices.Contains(tools, gap.Tool) {
 			tools = append(tools, gap.Tool)
 		}
 	}
@@ -248,38 +296,43 @@ func gapTools(gaps []report.CoverageGap) string {
 	return strings.Join(tools, ", ")
 }
 
-// driftReasonPrefixes start every reason a stored reference gives when it was
-// written under other inputs: the four comparison fingerprints and the
-// measurement profile, named by their wire keys. A missing or pre-state
-// baseline gives none of them.
-var driftReasonPrefixes = []string{"config_hash", "model_hash", "labels_hash", "rubric_version", "measurement_profile"}
+// storedReasonPrefixes start every reason a stored reference gives when it
+// cannot be compared: the four comparison fingerprints and the measurement
+// profile, named by their wire keys, and a stored baseline whose state or seam
+// snapshot is incomplete. Only a missing baseline file gives none of them.
+var storedReasonPrefixes = []string{"config_hash", "model_hash", "labels_hash", "rubric_version", "measurement_profile", "stored baseline"}
 
-// baselineStep offers `archfit baseline` only when no blocker is active and no
-// usable reference is stored: a blanket re-baseline would accept debt nobody
-// reviewed. A stored reference written under other inputs (config, model,
-// labels, rubric, or measurement profile drift) asks for a review first.
-func baselineStep(s report.ArchitectureState, blockers int) string {
-	ref := s.GateReference
-	if ref == nil || ref.Status == report.ComparisonComparable {
+// Gate-reference steps.
+const (
+	stepReviewReference = "review why the gate reference does not compare (GATE REFERENCE) before you record a new one"
+	stepRecordReference = "record a gate reference once the findings are reviewed: archfit baseline, with the same -c and --root as this run"
+	stepBlockersFirst   = "fix the blockers, then record a gate reference: archfit baseline, with the same -c and --root as this run"
+)
+
+// referenceStep closes the gate-reference gap of one run, or "" when the
+// reference compares. A stored reference that does not compare asks for a
+// review first: a blanket re-baseline would accept debt nobody reviewed.
+// `archfit baseline` is the step only when no reference is stored, and only
+// after the blockers are fixed.
+func referenceStep(ref *report.StateComparison, blockers int) string {
+	switch {
+	case ref != nil && ref.Status == report.ComparisonComparable:
 		return ""
+	case ref != nil && storedReference(ref.Reasons):
+		return stepReviewReference
+	case blockers > 0:
+		return stepBlockersFirst
+	default:
+		return stepRecordReference
 	}
-	for _, reason := range ref.Reasons {
-		for _, prefix := range driftReasonPrefixes {
-			if strings.HasPrefix(reason, prefix) {
-				return "Review why the gate reference does not compare (GATE REFERENCE) before you record a new one."
-			}
-		}
-	}
-	if blockers > 0 {
-		return ""
-	}
-	return "Record a gate reference once the findings are reviewed: archfit baseline."
 }
 
-func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
+func storedReference(reasons []string) bool {
+	for _, reason := range reasons {
+		for _, prefix := range storedReasonPrefixes {
+			if strings.HasPrefix(reason, prefix) {
+				return true
+			}
 		}
 	}
 	return false

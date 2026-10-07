@@ -122,7 +122,7 @@ func (r *Renderer) renderAudit(d report.Document, w io.Writer) error {
 
 	writeConfigWarnings(&b, d.ConfigWarnings)
 
-	_, advisories := splitFindings(d.Findings)
+	advisories := advisoryFindings(d.Findings)
 
 	writeAgentTasks(&b, d.AgentTasks)
 
@@ -157,19 +157,19 @@ func (r *Renderer) renderAudit(d report.Document, w io.Writer) error {
 	return err
 }
 
-func splitFindings(fs []report.Finding) (gate, advisories []report.Finding) {
+// advisoryFindings returns the advisory findings in a total deterministic
+// order, so output never depends on the incoming slice order (which originates
+// from map iteration upstream). Gate findings are listed once, as the state's
+// blockers.
+func advisoryFindings(fs []report.Finding) []report.Finding {
+	var advisories []report.Finding
 	for _, f := range fs {
-		if f.Kind == report.FindingKindGate {
-			gate = append(gate, f)
-		} else {
+		if f.Kind != report.FindingKindGate {
 			advisories = append(advisories, f)
 		}
 	}
-	// Both lists get a total deterministic order so output never depends on the
-	// incoming slice order (which originates from map iteration upstream).
-	sort.SliceStable(gate, func(i, j int) bool { return findingLess(gate[i], gate[j]) })
 	sort.SliceStable(advisories, func(i, j int) bool { return findingLess(advisories[i], advisories[j]) })
-	return gate, advisories
+	return advisories
 }
 
 // findingLess orders findings deterministically: severity descending, then a
