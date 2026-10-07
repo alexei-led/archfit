@@ -866,9 +866,10 @@ init` emits v2 directly; owners update older configs manually before analysis.
   `BundleDir` (baseline, labels, fact cache) stays the on-disk config dir
   (`scanRequest.bundleDir`). `--base` is resolved to a SHA in the repository
   first: inside the snapshot worktree `HEAD` names the snapshot and every
-  finding would grade pre_existing. The result's `validate` is rewritten
-  from the snapshot paths back to the repository (cleanup removes the
-  snapshot). Both hooks run `executeScan` in process
+  finding would grade pre_existing. The repair's validation command names
+  the repository config, root, and the ref as written, never the snapshot
+  that cleanup removes (`application.Request.ValidationConfig`/
+  `ValidationRoot`, `scanRequest.validationBase`). Both hooks run `executeScan` in process
   with the pipeline's stderr discarded. These exit codes are the host
   protocol, never the engine verdict.
 - **`AGENTS.md` carries a generated block** (`archfit agents-md`, markers

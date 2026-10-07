@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/assessment/evaluation"
 	historygit "github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/output/agentout"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -252,24 +251,16 @@ func stagedHookResult(ctx context.Context, deps *appDeps, configPath, base, inde
 	if _, err := os.Stat(stagedConfig); err != nil {
 		return agentout.Result{}, fmt.Errorf("config %s is not in the index: stage it first", configPath)
 	}
-	result, err := runAgentCheck(ctx, deps, scanRequest{configPath: stagedConfig, root: root, bundleDir: configDir, baseRef: baseSHA})
-	if err != nil {
-		return agentout.Result{}, err
-	}
-	// The run's validation command names the snapshot, which cleanup removes.
-	// Point it at the repository, with the ref as the caller wrote it. Each
-	// argument is matched and written in its shell-quoted form, so a path that
-	// needs quoting stays one argument.
-	q := evaluation.ShellQuoteArg
-	pairs := []string{
-		"-c " + q(stagedConfig), "-c " + q(filepath.Join(gitRoot, configRel)),
-		"--root " + q(root), "--root " + q(gitRoot),
+	req := scanRequest{
+		configPath: stagedConfig, root: root, bundleDir: configDir, baseRef: baseSHA,
+		// The repair's validation command must not name the snapshot, which
+		// cleanup removes: it names the repository and the ref as written.
+		validationConfig: filepath.Join(gitRoot, configRel), validationRoot: gitRoot,
 	}
 	if baseSHA != "" {
-		pairs = append(pairs, "--base "+q(baseSHA), "--base "+q(base))
+		req.validationBase = base
 	}
-	result.Validate = strings.NewReplacer(pairs...).Replace(result.Validate)
-	return result, nil
+	return runAgentCheck(ctx, deps, req)
 }
 
 // pathInRepo returns configAbs relative to gitRoot, through symlinks and a

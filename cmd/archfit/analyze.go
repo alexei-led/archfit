@@ -115,6 +115,13 @@ type scanRequest struct {
 	// config's directory. The staged-index hook reads its config from a
 	// temporary checkout but keeps these on disk.
 	bundleDir string
+	// validationConfig, validationRoot, and validationBase are what a repair's
+	// validation command names instead of configPath, the scan root, and
+	// baseRef; empty keeps the run's own. The staged-index hook names the
+	// repository and the caller's ref, not its temporary checkout and its SHA.
+	validationConfig string
+	validationRoot   string
+	validationBase   string
 
 	json     bool
 	markdown bool
@@ -210,7 +217,7 @@ func executeScan(ctx context.Context, deps *appDeps, req scanRequest, advance fu
 		Formats:        req.formats,
 		NoAdvisories:   req.noAdvisories,
 		RequireTools:   req.requireTools,
-		ValidationArgs: scanValidationArgs(req),
+		ValidationArgs: scanValidationArgs(req), ValidationConfig: req.validationConfig, ValidationRoot: req.validationRoot,
 	})
 	if err != nil {
 		return application.Response{}, config.Config{}, applicationExitError(err)
