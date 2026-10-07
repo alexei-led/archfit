@@ -388,7 +388,9 @@ init` emits v2 directly; owners update older configs manually before analysis.
   never enter IDs; the rationale rides `finding.Finding.Rationale`
   (`json:"-"`) into the task constraints as `rationale: …`; SARIF carries it
   in the message (the why) and `allowed_alternatives` as a result property
-  only when declared.
+  only when declared. `config.Load` collapses all three to one trimmed line
+  (`normalizeRuleText`): a block scalar's trailing newline printed
+  `(see docs/adr.md )` and broke the `agents-md` list item.
 - **`module_cycle` is production-only** (`rules.productionSource`). An edge counts when its importing file (a file node, or an import site with a source extension) is production:
   - a walked file: its in-scope FileClass decides;
   - a file declared out of scope: never;

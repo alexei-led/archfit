@@ -934,6 +934,54 @@ func loadConfigInline(t *testing.T, body string) (config.Config, error) {
 	return config.Load(context.Background(), p)
 }
 
+// TestLoad_RuleTextIsOneLine pins that rule rationale, docs, and alternatives
+// reach every consumer as one trimmed line. A YAML block scalar keeps its line
+// breaks and trailing newline: appended to a finding's why it printed
+// "(see docs/adr.md )", and in the AGENTS.md block it broke the list item.
+func TestLoad_RuleTextIsOneLine(t *testing.T) {
+	const rule = "version: 2\nrules:\n  - id: edge_rule\n    type: forbidden_dependency\n    from: a/**\n    to: b/**\n"
+	tests := []struct {
+		name string
+		yaml string
+		want policy.RuleDef
+	}{
+		{
+			name: "literal block scalars",
+			yaml: rule + "    rationale: |\n      Domain code stays\n      free of I/O.\n    docs: |\n      docs/adr/0001.md\n" +
+				"    alternatives:\n      - |\n        depend on a port\n        in the domain\n",
+			want: policy.RuleDef{Rationale: "Domain code stays free of I/O.", Docs: "docs/adr/0001.md", Alternatives: []string{"depend on a port in the domain"}},
+		},
+		{
+			name: "folded block scalar keeps its trailing newline out",
+			yaml: rule + "    docs: >\n      docs/adr/0002.md\n",
+			want: policy.RuleDef{Docs: "docs/adr/0002.md"},
+		},
+		{
+			name: "quoted text with tabs and inner newlines",
+			yaml: rule + "    rationale: \"  one\\t\\ttwo\\n\\nthree  \"\n",
+			want: policy.RuleDef{Rationale: "one two three"},
+		},
+		{
+			name: "plain one-line text is unchanged",
+			yaml: rule + "    rationale: Domain code stays free of I/O.\n    docs: docs/adr/0003.md\n",
+			want: policy.RuleDef{Rationale: "Domain code stays free of I/O.", Docs: "docs/adr/0003.md"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := loadConfigInline(t, tc.yaml)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			got := cfg.Rules[0]
+			if got.Rationale != tc.want.Rationale || got.Docs != tc.want.Docs || !slices.Equal(got.Alternatives, tc.want.Alternatives) {
+				t.Errorf("rationale/docs/alternatives = %q/%q/%q, want %q/%q/%q",
+					got.Rationale, got.Docs, got.Alternatives, tc.want.Rationale, tc.want.Docs, tc.want.Alternatives)
+			}
+		})
+	}
+}
+
 func TestLoad_ValidatesWaivers(t *testing.T) {
 	base := "version: 2\nrules:\n  - id: edge_rule\n    type: forbidden_dependency\n    from: a/**\n    to: b/**\nwaivers:\n"
 	tests := []struct {
