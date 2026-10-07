@@ -164,3 +164,34 @@ func TestSeamAllowedAgreesWithCanImport(t *testing.T) {
 		}
 	}
 }
+
+func TestSeamPolicyFollowRuleHypothesis(t *testing.T) {
+	t.Parallel()
+	gate, advisory := finding.KindGate, finding.KindAdvisory
+	const original = "introduce_contract"
+	for _, tc := range []struct {
+		name     string
+		findings []finding.Finding
+		rules    []policy.RuleDef
+		want     string
+	}{
+		{name: "violation", want: "follow_rule", findings: []finding.Finding{pairFinding(gate, finding.StatusNew, modBilling, modStripe)}},
+		{name: "accepted", want: original, findings: []finding.Finding{pairFinding(gate, finding.StatusBaseline, modBilling, modStripe)}},
+		{name: "advisory", want: original, findings: []finding.Finding{pairFinding(advisory, finding.StatusNew, modBilling, modStripe)}},
+		{name: "allowed", want: original, rules: []policy.RuleDef{layerRule}},
+		{name: "observed", want: original},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			from, to := modBilling, modStripe
+			if tc.name == "allowed" {
+				from, to = modAPI, modBilling
+			}
+			diag := &result.Result{Findings: tc.findings, Seams: []result.Seam{{FromModule: from, ToModule: to, Hypothesis: original}}}
+			attachSeamPolicy(diag, hexagonalPolicy(tc.rules...))
+			if got := diag.Seams[0].Hypothesis; got != tc.want {
+				t.Errorf("hypothesis = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

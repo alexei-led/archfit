@@ -359,11 +359,13 @@ func TestTransitionalContractSurfaceRatchet(t *testing.T) {
 		contractPrefix string
 		contractMax    int
 	}{
+		// bc_score.v7 replaced four hypothesis names with seven (a deliberate
+		// vocabulary change, +3): the Seam* contract is capped at 28.
 		// Task 3 adds the Seam* ledger contract (25 names) here as the
 		// replacement for the repository coupling scalar. The remaining
 		// scalar-era surface stays capped at 55 and comes down in Task 4 when
 		// the formats stop reading ClassifiedEdgeSummary.
-		{pkg: modulePrefix + "internal/relationship", max: 55, contractPrefix: "Seam", contractMax: 25},
+		{pkg: modulePrefix + "internal/relationship", max: 55, contractPrefix: "Seam", contractMax: 28},
 		{pkg: modulePrefix + "internal/assessment/result", max: 35},
 		{pkg: modulePrefix + "internal/evidence", max: 8},
 		// Task 2 deleted internal/view (29 exported) and internal/model/module

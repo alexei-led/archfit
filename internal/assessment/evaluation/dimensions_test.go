@@ -986,6 +986,78 @@ func TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope(t *testin
 	}
 }
 
+func TestCouplingDimension_UnratedVolatilityMakesItPartial(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		edges      int
+		modules    []string
+		wantStatus state.MeasurementStatus
+		wantReason string
+	}{
+		{name: "every end rated", wantStatus: state.Measured},
+		{name: "one module named", edges: 3, modules: []string{"a"}, wantStatus: state.Partial,
+			wantReason: "volatility is undeclared on 3 scored cross-boundary edge(s); declare `volatility:` or `subdomain:` on: a"},
+		{name: "five modules all named", edges: 9, modules: []string{"a", "b", "c", "d", "e"}, wantStatus: state.Partial,
+			wantReason: "volatility is undeclared on 9 scored cross-boundary edge(s); declare `volatility:` or `subdomain:` on: a, b, c, d, e"},
+		{name: "more than five are counted", edges: 9, modules: []string{"a", "b", "c", "d", "e", "f", "g"}, wantStatus: state.Partial,
+			wantReason: "volatility is undeclared on 9 scored cross-boundary edge(s); declare `volatility:` or `subdomain:` on: a, b, c, d, e and 2 more"},
+		{name: "no module list", edges: 1, wantStatus: state.Partial,
+			wantReason: "volatility is undeclared on 1 scored cross-boundary edge(s); declare `volatility:` or `subdomain:` on the modules involved"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			diag := &result.Result{
+				Findings: []finding.Finding{},
+				ClassifiedEdges: &result.ClassifiedEdgeSummary{
+					Total: 10, Scored: 10, ConnectedModules: 2,
+					UnratedVolatilityEdges: tc.edges, UnratedVolatilityModules: tc.modules,
+				},
+			}
+			dim := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).Coupling
+			if dim.Status != tc.wantStatus {
+				t.Fatalf("status = %q, want %q (unknown %+v)", dim.Status, tc.wantStatus, dim.Unknown)
+			}
+			var got string
+			for _, u := range dim.Unknown {
+				if u.Fact == state.FactCouplingVolatility {
+					got = u.Reason
+				}
+			}
+			if got != tc.wantReason {
+				t.Errorf("reason = %q, want %q", got, tc.wantReason)
+			}
+		})
+	}
+}
+
+func TestCouplingDimension_QualifyingEdgesMetric(t *testing.T) {
+	t.Parallel()
+	diag := &result.Result{
+		Findings: []finding.Finding{},
+		ClassifiedEdges: &result.ClassifiedEdgeSummary{
+			Total: 4, Scored: 4, ConnectedModules: 2,
+			TailRisk: &result.CouplingTailRiskSummary{DistributedMonolithEdges: 2},
+		},
+	}
+	dim := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).Coupling
+	found := false
+	for _, m := range dim.Metrics {
+		if m.Name == "critical_high_distance_edges" {
+			t.Errorf("old metric name still emitted")
+		}
+		if m.Name == "qualifying_edges" {
+			found = true
+			if m.Value != 2 {
+				t.Errorf("qualifying_edges = %v, want 2", m.Value)
+			}
+		}
+	}
+	if !found {
+		t.Error("qualifying_edges metric missing")
+	}
+}
+
 // TestSyntaxEvidenceRequiresPrimaryOKNotMerelyNonDisabled is a regression test
 // for the bug where syntaxEvidenceComplete checked == StatusDisabled instead of
 // != StatusOK. A primary row of StatusAbsent (gapless: the extractor ran but

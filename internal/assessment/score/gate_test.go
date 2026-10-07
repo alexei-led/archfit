@@ -152,3 +152,31 @@ func TestEvaluateSeamGateStaysSilentWithNothingToSay(t *testing.T) {
 		t.Errorf("blocked/rated = %v/%v, want false/false", got.Blocked, got.Rated)
 	}
 }
+
+// A blocked run explains each new seam by the boundary it crosses and the
+// container both sides share. Only a deploy-unit boundary is called a
+// distributed monolith.
+func TestSeamReasonNamesBoundaryAndContainer(t *testing.T) {
+	tests := []struct {
+		basis string
+		want  string
+	}{
+		{"deploy_unit@system", "orders -> pricing: functional coupling across the deploy-unit boundary (a distributed monolith) into high-volatility pricing (container system)"},
+		{"ownership@sales", "orders -> pricing: functional coupling across the owner boundary into high-volatility pricing (container sales)"},
+		{"module_boundary@system", "orders -> pricing: functional coupling across the module boundary into high-volatility pricing (container system)"},
+		{"", "orders -> pricing: functional coupling across the module boundary into high-volatility pricing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.basis, func(t *testing.T) {
+			s := result.Seam{FromModule: "orders", ToModule: "pricing", Strength: "functional", Volatility: "high", RawDistance: result.SeamDistance{Basis: tt.basis}}
+			if got := seamReason(s); got != tt.want {
+				t.Errorf("reason = %q, want %q", got, tt.want)
+			}
+		})
+	}
+	for _, tt := range tests[1:] {
+		if strings.Contains(tt.want, "distributed monolith") {
+			t.Errorf("only a deploy-unit boundary may say distributed monolith: %q", tt.want)
+		}
+	}
+}

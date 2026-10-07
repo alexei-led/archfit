@@ -46,7 +46,7 @@ type AdvisoryTask struct {
 	GroupCount   int              `json:"group_count"`
 	GroupMembers []string         `json:"group_members,omitempty"`
 	Goal         string           `json:"goal"`
-	CheapestMove string           `json:"cheapest_move,omitempty"`
+	Hypothesis   string           `json:"hypothesis,omitempty"`
 	ScoreValue   int              `json:"score_value,omitempty"`
 	TopFiles     []string         `json:"top_files"`
 	Constraints  []string         `json:"constraints"`

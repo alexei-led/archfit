@@ -105,13 +105,12 @@ type Provenance struct {
 
 // Score is the relationship-owned score value produced by classification.
 type Score struct {
-	Scored       bool
-	Balance      int
-	Value        int
-	Band         Severity
-	Reason       string
-	CheapestMove string
-	Breakdown    ScoreBreakdown
+	Scored    bool
+	Balance   int
+	Value     int
+	Band      Severity
+	Reason    string
+	Breakdown ScoreBreakdown
 }
 
 // ScoreBreakdown records the score inputs needed by report projections.
@@ -180,8 +179,11 @@ type Edge struct {
 	Classified          Classification
 }
 
-// CloneOnlyPair is relationship-owned duplicated-knowledge provenance.
-type CloneOnlyPair struct {
+// ClonePair is relationship-owned duplicated-knowledge provenance.
+type ClonePair struct {
+	// Connected is true when the modules share an import edge: the pair is a
+	// clone fact attached to that seam, not a clone-only pair.
+	Connected  bool
 	FromModule string
 	ToModule   string
 	FromPath   string

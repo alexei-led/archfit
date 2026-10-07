@@ -4,7 +4,7 @@
 
 Breaking changes. Read the notes for each item before you upgrade.
 
-### Balanced Coupling score `bc_score.v7` (part 1: strength and distance)
+### Balanced Coupling score `bc_score.v7`
 
 The formula `balance = max(|S − D|, 10 − V) + 1` does not change. The inputs
 change.
@@ -28,6 +28,34 @@ change.
   review the new seams.
 - Removed: `strength_inferred_edges` from the connascence report. The
   `distance_compression` fields `code_structure_*` are now `containment_*`.
+
+Volatility, clone facts, the seam gate and the guidance vocabulary also change:
+
+- **Volatility ties both sides for functional coupling.** Functional and
+  symmetric edges and clone facts use the worse volatility of the two modules.
+  Contract, model and intrusive edges use the target's.
+- **Undeclared volatility is unrated.** It still scores as V=10, but a seam that
+  is critical only because of it never qualifies, and its guidance is
+  `declare_volatility`. The coupling dimension has a new required fact,
+  `coupling volatility`. Coupling is `partial`, and `check` exits 2, until the
+  named modules declare `volatility:` or `subdomain:`.
+- **Clone facts replace the clone upgrade.** A clone pair no longer turns an
+  import edge into symmetric coupling. Each pair is its own symmetric fact on
+  the seam between its modules. It can set the seam's severity and guidance and
+  never makes a seam qualify.
+- **The seam gate qualifies fewer, clearer seams.** A seam qualifies when one
+  scored import edge is functional, intrusive or symmetric, crosses a module
+  boundary, has declared high volatility, and does not come from a composition
+  root, generated or test source (an intrusive edge still qualifies). The seam
+  shows its lowest-balance qualifying edge. Gate reasons name the boundary and
+  the container. Only a deploy-unit boundary is called a distributed monolith.
+- **New guidance vocabulary:** `balanced`, `accept_low_volatility`,
+  `introduce_contract`, `move_functionality`, `declare_volatility`,
+  `expected_by_role`, `follow_rule`. `leave_alone`, `reduce_strength` and
+  `reduce_distance` are gone. Advisory tasks carry `hypothesis` instead of
+  `cheapest_move`.
+- **Metric change:** the state metric `critical_high_distance_edges` is now
+  `qualifying_edges`. It counts edges that pass the qualification above.
 
 ### Fixed
 

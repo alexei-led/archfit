@@ -59,6 +59,9 @@ func attachSeamPolicy(diag *result.Result, p policy.PolicySnapshot) {
 		switch rank[pair{s.FromModule, s.ToModule}] {
 		case 3:
 			s.Policy = seamViolation
+			// An active gate finding already tells the owner what to do; relationship
+			// analysis cannot see it, so the hypothesis is set here.
+			s.Hypothesis = string(relationship.SeamHypothesisFollowRule)
 		case 2:
 			s.Policy = seamAccepted
 		case 1:

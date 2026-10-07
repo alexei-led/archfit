@@ -101,7 +101,7 @@
       "fingerprint": "10ebd4f5c079cb2baff9d5de735d356f",
       "rule_id": "bc/imbalanced_coupling",
       "kind": "advisory",
-      "severity": "medium"
+      "severity": "critical"
     },
     {
       "fingerprint": "ae66ef0d5fd05668821c865237e4d80a",
@@ -116,16 +116,70 @@
       "severity": "critical"
     },
     {
+      "fingerprint": "ddf7c0494b0538048eecd0262eb93f22",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "f81b552c68f13ff16f2a7c792b70f86f",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "aa24d763a69687f2484c6b92d6833a32",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
       "fingerprint": "d8aa67ce1be41a3fa6804d4939180b42",
       "rule_id": "bc/duplicated_knowledge",
       "kind": "advisory",
       "severity": "critical"
     },
     {
+      "fingerprint": "11e92f00dd5cabf901c6d43fc7bd9507",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "98acbfe47521c88396d50e50ae7a8ca7",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "71f34b94eab2cec072bd714482a54a24",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "medium"
+    },
+    {
       "fingerprint": "82c798195ae7edc20ad3b3066a0053e8",
       "rule_id": "bc/duplicated_knowledge",
       "kind": "advisory",
       "severity": "medium"
+    },
+    {
+      "fingerprint": "75e1e5c9493da94a17ad3ddc9094e45e",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "ce0d0a1df0c548028f8aa1c9daa79c60",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "critical"
+    },
+    {
+      "fingerprint": "684d137917d69bacf0c7dbba5abb1d1b",
+      "rule_id": "bc/duplicated_knowledge",
+      "kind": "advisory",
+      "severity": "critical"
     },
     {
       "fingerprint": "b088715ad4f2e2debcb026bd942f6c67",
@@ -258,13 +312,13 @@
           "tool": "scip",
           "semantics_version": "scip.v2",
           "tool_version": "scip-go 0.2.7",
-          "status": "partial"
+          "status": "ok"
         },
         {
           "tool": "scip-symbols",
           "semantics_version": "scip-symbols.v1",
           "tool_version": "scip-go 0.2.7",
-          "status": "partial"
+          "status": "ok"
         }
       ],
       "unknowns": []
@@ -273,10 +327,8 @@
     "qualifying_seam_ids": [
       "efcdc1e1a6a9568dc41af954595869e8b645020c47f7fa6a70da5660c8c402fd",
       "6c85bbb28a549e6a02ca6f32271abe53c3e91f3d6ec7650e10ad9d5231c1df2b",
-      "d7033dc4479f754975f499f95b93abf5b9e25b24e01e59151ff1cc549fdc2530",
-      "f98e2982172cc84196da5bbe4fcb82c32e33832b27e1da982e02556cee252f32",
-      "cbf2863815704bef19eb79c16054b239482c351df27201f3bc7f48f0f0f83374",
       "294684873f6180efccb5beb40670d2681f957646931483ba03a8f9b74737fc20",
+      "afcd1a408c32fe0c4f64d0034436343758a99463b02d92dbf765e315acfe54db",
       "44360a5209e18c9c17ca138d830becb012857b4ddfeede35b7738c2cb1d7b5d3"
     ],
     "dimensions": [
@@ -329,7 +381,7 @@
         "coverage": {
           "basis": "discovered dependencies resolved inside the declared module map",
           "observed": 668,
-          "total": 1648
+          "total": 1650
         },
         "metrics": [
           {
@@ -339,12 +391,12 @@
           },
           {
             "name": "external_edges",
-            "value": 980,
+            "value": 982,
             "unit": "count"
           },
           {
             "name": "same_module_edges",
-            "value": 177,
+            "value": 176,
             "unit": "count"
           },
           {
@@ -397,13 +449,13 @@
         "gate": "warn",
         "coverage": {
           "basis": "cross-boundary edges scored",
-          "observed": 496,
-          "total": 496
+          "observed": 506,
+          "total": 506
         },
         "metrics": [
           {
             "name": "scored_edges",
-            "value": 496,
+            "value": 506,
             "unit": "count"
           },
           {
@@ -423,17 +475,17 @@
           },
           {
             "name": "critical_band_edges",
-            "value": 19,
+            "value": 28,
             "unit": "count"
           },
           {
             "name": "high_or_worse_edges",
-            "value": 19,
+            "value": 28,
             "unit": "count"
           },
           {
-            "name": "critical_high_distance_edges",
-            "value": 19,
+            "name": "qualifying_edges",
+            "value": 15,
             "unit": "count"
           },
           {
@@ -443,12 +495,12 @@
           },
           {
             "name": "distributed_monolith_seams",
-            "value": 7,
+            "value": 5,
             "unit": "count"
           },
           {
             "name": "tight_seams",
-            "value": 8,
+            "value": 14,
             "unit": "count"
           },
           {
@@ -512,17 +564,17 @@
           },
           {
             "name": "production_files",
-            "value": 291,
+            "value": 294,
             "unit": "count"
           },
           {
             "name": "production_loc",
-            "value": 64684,
+            "value": 64923,
             "unit": "count"
           },
           {
             "name": "largest_production_file_loc",
-            "value": 1938,
+            "value": 1965,
             "unit": "count"
           },
           {
@@ -532,7 +584,7 @@
           },
           {
             "name": "function_loc_p90",
-            "value": 52,
+            "value": 51,
             "unit": "count"
           },
           {
@@ -542,7 +594,7 @@
           },
           {
             "name": "functions_over_threshold",
-            "value": 184,
+            "value": 181,
             "unit": "count"
           }
         ]
@@ -553,23 +605,23 @@
         "gate": "pass",
         "coverage": {
           "basis": "classified source files",
-          "observed": 619,
-          "total": 625
+          "observed": 623,
+          "total": 629
         },
         "metrics": [
           {
             "name": "test_files",
-            "value": 328,
+            "value": 329,
             "unit": "count"
           },
           {
             "name": "production_files",
-            "value": 291,
+            "value": 294,
             "unit": "count"
           },
           {
             "name": "test_to_production_files",
-            "value": 1.127147766323024,
+            "value": 1.119047619047619,
             "unit": "ratio"
           }
         ]

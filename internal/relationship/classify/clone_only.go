@@ -11,7 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/relationship/scoring"
 )
 
-// CloneOnlyPair is a cross-module clone pair (analyzers.clones) between two
+// ClonePair is a cross-module clone pair (analyzers.clones) between two
 // modules that share NO import-graph edge in either direction — the book's
 // "duplicated knowledge" (Ch7): functional coupling through shared logic that
 // is invisible to the import graph. The symmetric-strength upgrade in classify
@@ -24,7 +24,10 @@ import (
 // coupling.duplicated_knowledge, whether the pair is score-bearing or
 // advisory-only. No graph edge is invented — the scorer's inputs stay
 // tool-derived facts.
-type CloneOnlyPair struct {
+type ClonePair struct {
+	// Connected is true when the two modules share an import edge in either
+	// direction: the pair is then a clone fact on that seam, not a clone-only pair.
+	Connected  bool
 	FromModule string // canonical pair order: FromModule < ToModule
 	ToModule   string
 	FromPath   string // representative duplicated-code file in FromModule ("" when evidence resolves none)
@@ -34,13 +37,14 @@ type CloneOnlyPair struct {
 	Classification coupling.Classification
 }
 
-// CloneOnlyPairs returns the scored duplicated-knowledge pairs for g: every
-// cross-module clone pair in c.CrossModuleClonePairs whose modules have no
-// import edge between them and no human-approved label accepting the pair.
-// Advisory filtering (severity none, coupling.min_severity) lives downstream;
-// this detector stays pure and deterministic. Pairs are processed in sorted key
-// order.
-func CloneOnlyPairs(g *graph.Graph, c Config) []CloneOnlyPair {
+// ClonePairs returns the scored clone facts for g: every cross-module clone pair
+// in c.CrossModuleClonePairs with no human-approved label accepting the pair.
+// A pair whose modules share an import edge in either direction is marked
+// Connected: the relationship stage attaches it to that seam. A pair with no edge
+// stays a clone-only duplicated-knowledge fact. Advisory filtering (severity
+// none, coupling.min_severity) lives downstream; this detector stays pure and
+// deterministic. Pairs are processed in sorted key order.
+func ClonePairs(g *graph.Graph, c Config) []ClonePair {
 	if len(c.CrossModuleClonePairs) == 0 {
 		return nil
 	}
@@ -56,16 +60,9 @@ func CloneOnlyPairs(g *graph.Graph, c Config) []CloneOnlyPair {
 	}
 	sort.Strings(keys)
 
-	var out []CloneOnlyPair
+	var out []ClonePair
 	for _, key := range keys {
-		if _, hasEdge := connected[key]; hasEdge {
-			// An edge exists — the pair is owned by the per-edge path. Ceiling:
-			// the symmetric upgrade only raises functional/unknown strengths, so
-			// a pair whose edges are all contract/model/intrusive or pinned keeps
-			// that strength and the clone evidence surfaces nowhere — deliberate,
-			// config-authoritative and human-pinned labels are never overridden.
-			continue
-		}
+		_, hasEdge := connected[key]
 		fromMod, toMod, ok := strings.Cut(key, "\x00")
 		if !ok {
 			continue
@@ -90,7 +87,8 @@ func CloneOnlyPairs(g *graph.Graph, c Config) []CloneOnlyPair {
 		}
 		cl.Score = scorer.Score(cl)
 		cl.Severity = cl.Score.Band
-		out = append(out, CloneOnlyPair{
+		out = append(out, ClonePair{
+			Connected:      hasEdge,
 			FromModule:     fromMod,
 			ToModule:       toMod,
 			FromPath:       fromPath,
