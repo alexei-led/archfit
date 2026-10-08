@@ -75,8 +75,8 @@ capabilities:
 - **`cycle`** and **`encapsulation`** — reported per module; `encapsulation`
   becomes measurable once `public:`/`internal:` globs are declared.
 - **Clone detection** (`analyzers.clones`, `jscpd`) — enabled in the self-config.
-  When `jscpd` is installed, cross-module clone pairs are found and their edges are
-  upgraded to `symmetric` strength in the coupling-balance scorer. When `jscpd` is
+  When `jscpd` is installed, cross-module clone pairs are found. Each pair is its own `symmetric` fact
+  in the coupling-balance scorer. It never upgrades an import edge. When `jscpd` is
   absent, the metric reports `n/a` with an install hint. A disabled-by-config tool
   produces no coverage gap at all.
 

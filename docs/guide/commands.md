@@ -1041,9 +1041,10 @@ A `not_comparable` grade is about evidence, not about the configs: it can appear
 on a run that reports no measurement differences at all. Read the grade first,
 then the differences.
 
-An `owner:` or `deploy_unit:` edit typically moves edges between distance rungs
-without moving the score: with `balance = max(|S−D|, 10−V)` the `10−V` term
-dominates for every low-volatility target. That shift shows up as a
+An `owner:` or `deploy_unit:` edit changes the boundary token of an edge
+(`cross_deploy_unit`, `cross_module_different_owner`, `cross_module`). It does
+not change distance or severity: every module boundary is D=9. The score formula
+is `balance = max(|S−D|, 10−V) + 1`. A token change shows up as a
 classification-mix line; `--json` carries the full histograms on both sides under
 `current.classified_edges` and `candidate.classified_edges`.
 

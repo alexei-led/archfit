@@ -19,9 +19,13 @@ Breaking changes:
 - **A tripped metric ratchet is a finding**, `metric/<name>`. The
   `METRIC RATCHET` section and `worsened_metrics` are removed.
 - **Report wire changes.** `comparison.task_origin_*` is now
-  `comparison.origin_*`. `findings[].origin` is new. The metrics
-  `external_edges` and `critical_high_distance_edges` are renamed. The
+  `comparison.origin_*`. `findings[].origin` is new. The metric `external_edges` is split into
+  `library_edges` and `unmapped_first_party_edges`, and
+  `critical_high_distance_edges` is now `qualifying_edges`. The
   `delta.new_findings` and `delta.resolved_findings` keys are removed.
+  `measurement.source_ref` is always `worktree`.
+- **Reserved rule ID prefix.** A rule ID that starts with `metric/` is a config
+  error.
 - **SARIF** carries `baselineState`, `suppressions` and
   `partialFingerprints.primaryLocationLineHash`.
 - **`config init` writes no `public:` entry** for Go or TypeScript modules.
@@ -30,7 +34,8 @@ New:
 
 - `archfit baseline --reanchor` (see below).
 - `archfit hook git` judges the staged content.
-- `archfit policy can-import` agrees with `check` on TypeScript and Python.
+- Tests now hold `archfit policy can-import` equal to `check` on TypeScript and
+  Python.
 
 Changed (comparability v2):
 
@@ -100,7 +105,7 @@ Removed:
   filled them. Use `comparison.introduced_finding_ids` and
   `comparison.resolved_finding_ids` with `--base`.
 
-New:
+New (re-anchor):
 
 - `archfit baseline --reanchor` carries the accepted debt of the stored
   baseline into a new engine release. It accepts no new finding. It keeps a
@@ -153,7 +158,7 @@ Volatility, clone facts, the seam gate and the guidance vocabulary also change:
   never makes a seam qualify.
 - **The seam gate qualifies fewer, clearer seams.** A seam qualifies when one
   scored import edge is functional, intrusive or symmetric, crosses a module
-  boundary, has declared high volatility, and does not come from a composition
+  boundary, has effective high volatility (declared, inherited or cascade), and does not come from a composition
   root, generated or test source (an intrusive edge still qualifies). The seam
   shows its lowest-balance qualifying edge. Gate reasons name the boundary and
   the container. Only a deploy-unit boundary is called a distributed monolith.
@@ -190,8 +195,9 @@ Volatility, clone facts, the seam gate and the guidance vocabulary also change:
   The other edges of the group then showed as `new` on the next `check`, also
   when the tree did not change. On the archfit repository, 66 advisories showed
   as `new` directly after a capture. The baseline file gets one entry for each
-  edge, so it can be larger. Run `archfit baseline` again to accept the full
-  groups.
+  edge, so it can be larger. A baseline from v2.5.0 holds one edge per group, so
+  after `--reanchor` the other edges of a group show as `not accepted`. Review
+  them, then run a full `archfit baseline` to accept the groups.
 - A rule `rationale`, `docs`, or `alternatives` written as a YAML block scalar
   (`rationale: |` or `>`) is now one line everywhere. The config loader turns
   every run of whitespace into one space and trims the ends. Before this fix,

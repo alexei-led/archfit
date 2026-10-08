@@ -383,9 +383,7 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
   never become connascence guesses and never move into scoring without a
   deterministic source-module→runtime fact.
 - **Report-only summary by design:** the `connascence` block itself never gates.
-  Deterministic connascence facts may refine strength classification before
-  scoring when no direct strength hint resolved the edge, and the block reports
-  how many edges used that fallback.
+  Connascence facts are evidence only. They never set edge strength.
 
 ### `dynamic_connascence_signals`
 

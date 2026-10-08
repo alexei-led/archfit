@@ -142,13 +142,12 @@ directory.
 
 - **Relationship and Assessment are adjacent on purpose.** Both are core, both
   are high-volatility, and they co-change. `assessment-repair →
-relationship-analysis` is 17 edges at `cross_module_same_owner` distance —
-  strong coupling at short distance, which is balanced. Widening that distance
-  with an event bus or a service seam would make the number look better and the
-  system worse. Do not do it.
+relationship-analysis` is 17 edges across one module boundary (token `cross_module`, D=9).
+  The modules co-change by design. Adding an event bus or a service seam would
+  hide the coupling and make the system worse. Do not do it.
 - **Historical measurement (2026-08-26): the score was 41/`mixed`.** This
   snapshot had 363 scored cross-boundary edges, mean book balance 4.7/10, and
-  70 critical-band edges, all at `cross_module_same_owner`. It predates the
+  70 critical-band edges, all at the v6 `cross_module_same_owner` token. It predates the
   v2.3.0 guardrails and is retained as architecture history, not as a current
   release claim. archfit has one owner and one deploy unit, so the distance
   dimension is degenerate by construction: every internal seam sits on the same

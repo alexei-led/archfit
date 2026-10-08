@@ -215,8 +215,7 @@ These appear as a `## Config warnings` section in text/Markdown and on stderr.
 The architecture-state JSON exposes coverage, not this human advisory block.
 Most clear once modules declare `owner`, `subdomain`, and
 `volatility` — draft them with `archfit config enrich owner`/`config enrich volatility` or
-`archfit config init --ai-classify -o draft.yaml`, review, then apply. Filling them improves
-ownership/volatility distance inputs and can move `coupling_balance` out of `n/a`;
+`archfit config init --ai-classify -o draft.yaml`, review, then apply. Filling them rates volatility, names boundary tokens, and can move `coupling_balance` out of `n/a`;
 `encapsulation` also needs explicit `public:` / `internal:` globs so edge kinds are
 measurable.
 

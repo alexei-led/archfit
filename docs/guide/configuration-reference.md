@@ -499,9 +499,11 @@ analyzers:
   `uv` to build the symbol graph. Upgrades edge strength for TypeScript/Python/Rust.
   For Go, SCIP is supplementary — Go type-info from `go/packages` is the primary
   strength source.
-- `clones` — runs `jscpd` to find cross-module duplicated logic. When a clone pair
-  spans two modules, their shared edge strength is upgraded to `symmetric` in the
-  `coupling_balance` scorer, reflecting undeclared hidden coupling. When the two
+- `clones` — runs `jscpd` to find cross-module duplicated logic. Each clone pair
+  that spans two modules is its own `symmetric` fact. It never changes the
+  strength of an import edge. When the two modules share an import edge, the
+  fact joins the seam between them. It can set the seam severity and hypothesis.
+  It never makes the seam qualify as a distributed monolith. When the two
   modules share **no** import edge at all, the pair is clone-only duplicated
   knowledge (book Ch7): by default (`coupling.duplicated_knowledge: score`) it
   enters `coupling_balance` as a symmetric-strength coupling fact and also
@@ -644,10 +646,17 @@ The block requires `distributed_monolith`; an empty `gate:` is a config error
 same as switching the rule off — an absent block means `mode: warn`,
 `max_new_seams: 0`.
 
-A seam qualifies as a distributed monolith when it has at least one **active
-edge** — a current source-graph edge between two resolved modules — in the
-critical band at high distance (`cross_module_different_owner` or
-`cross_deploy_unit`). Advisory display filters, baseline acceptance, and waivers
+A seam qualifies as a distributed monolith when at least one scored **import
+edge** between two resolved modules meets all of these conditions:
+
+- The strength is functional, intrusive or symmetric.
+- The edge crosses a module boundary.
+- The effective volatility is `high`. It can be declared, inherited or come from
+  the cascade. Undeclared volatility is unrated and never qualifies.
+- The source is not a cohesive role (`composition_root`, `generated`, `test`),
+  unless the coupling is intrusive.
+
+Clone facts and medium volatility never qualify a seam. Advisory display filters, baseline acceptance, and waivers
 cannot hide a qualifying seam: the rule reads the full classified edge set.
 
 - `mode` — `warn` (default) reports qualifying seams and never fails the run.
@@ -657,8 +666,8 @@ cannot hide a qualifying seam: the rule reads the full classified edge set.
 - `max_new_seams` — tolerated count of newly introduced qualifying seams in
   `fail` mode. Unset means `0`.
 
-"Newly introduced" needs a reference whose config, module map, labels, and
-rubric all match this run. Without one the rule reports the seam total, states
+"Newly introduced" needs a reference whose `classification_hash`, `model_hash`,
+`labels_hash`, `rubric_version` and measurement profile all match this run. Without one the rule reports the seam total, states
 that no new-seam count is claimed, and does not block — an unrated gate never
 fails. The reference is the stored `.archfit-baseline.json` written by
 `archfit baseline`, exposed in architecture-state JSON as `gate_reference`.
@@ -924,11 +933,11 @@ declared modules only: an auto-registered module (a `go.work` member, a Rust
 - **`role`** — optional architectural _function_ within a layer. Lets archfit
   adjust coupling scoring for modules that are _supposed_ to fan out.
 
-`role` refines Balanced-Coupling distance classification for modules that are
-legitimately wide. In a one-binary CLI, the `cmd` package wires every adapter
-together — that is composition-root cohesion, not high-distance coupling. Without
-a role, archfit scores those outbound edges as unbalanced and emits
-false-positive advisories.
+`role` marks modules that are legitimately wide. In a one-binary CLI, the `cmd`
+package wires every adapter together. That is composition-root cohesion, not a
+distributed monolith. A role does not change distance or severity. It only
+stops a non-intrusive edge from that module from qualifying a distributed-monolith
+seam.
 
 ```yaml
 modules:
@@ -946,11 +955,11 @@ Accepted `role` values:
 - `adapter`, `core`, `shared_model` — descriptive; reserved for future
   refinement.
 
-For a `composition_root`, `generated`, or `test` source module, archfit
-downgrades its outbound cross-deploy / different-owner edges to
-cross-module-same-owner, so the advisory severity reads cohesion. A `core -> core`
-unbalanced edge is **still** flagged, and inbound edges to a wiring module are
-unaffected.
+For a `composition_root`, `generated`, or `test` source module, a non-intrusive
+outbound edge never qualifies a distributed-monolith seam. Its distance and
+severity do not change. An intrusive edge from such a module still qualifies.
+A `core -> core` edge is **still** flagged, and inbound edges to a wiring module
+are unaffected.
 
 ### Volatility and subdomain
 

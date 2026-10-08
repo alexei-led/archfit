@@ -109,8 +109,8 @@ Guidance:
 
 - `analyzers.scip.enabled: true` + language SCIP indexer / `rust-analyzer` →
   edge strength precision; raises `coupling_balance` confidence
-- `analyzers.clones.enabled: true` + jscpd → clone-detected `symmetric` edges
-  (S=9 upgrade); affects `coupling_balance` distribution
+- `analyzers.clones.enabled: true` + jscpd → clone-detected `symmetric` facts
+  (S=9, separate from import edges); affects `coupling_balance` distribution
 - `analyzers.cargo_modules.enabled: true` + `cargo-modules` → Rust intra-crate
   module depth for `encapsulation` and `cycle` signal
 

@@ -11,7 +11,7 @@ The [release notes](release-notes.md) list every change.
 | A stored `.archfit-baseline.json`       | Re-anchor it (step 3)                                         |
 | JSON, SARIF or agent output in a tool   | Read the new and removed keys (step 5, step 6)                |
 | `public:` in `.archfit.yaml`            | Check that each entry names a real published surface (step 2) |
-| Metric ratchets (`metrics.<name>.gate`) | Expect a finding, not a silent block (step 4)                 |
+| Metric ratchets (`metrics.<name>.gate`) | Expect a `metric/<name>` finding, and exit 2 on a stale baseline (step 4) |
 | The archfit GitHub App or Action        | Use versions that know the v3 wire (step 7)                   |
 
 ## 1. Install with the new module path
@@ -47,6 +47,10 @@ Other changes:
   "unrated". Coupling stays `partial` and `check` exits 2 until you declare it.
 - The distance token `cross_module_same_owner` is now `cross_module`. Owner and
   deploy unit no longer change severity.
+- `role:` changes meaning. A cohesive role (`composition_root`, `generated`,
+  `test`) no longer lowers distance or severity. It only stops a non-intrusive
+  edge from that module from qualifying a seam. If you used `role:` to quiet
+  advisories, they can come back.
 
 ## 3. Re-anchor the baseline
 
@@ -71,16 +75,22 @@ The command prints:
 | `dropped: <rule> <id>`             | Stored debt that the new run no longer reports                      |
 | `not accepted: <rule> <id> …`      | A current finding that the stored file did not accept. It stays new |
 | `seam no longer qualifies: <id>`   | A stored seam that stopped qualifying                               |
-| `seam qualifies only now: <id>`    | A new seam. It stays new                                            |
+| `seam qualifies only now (stays new): <id>` | A new seam. It stays new |
 | `metric worsened: <name> …`        | The new file records the worse value                                |
 
 Many `dropped` lines are normal. Under `bc_score.v7` the engine flags fewer
 edges. On the archfit repository, the same tree went from 26 to 13 critical
-edges, and on Prometheus from 51 to 3.
+seams, and on Prometheus from 51 to 3. The seams that qualify for the gate can
+rise: archfit went from 0 to 5.
+
+A baseline from v2.5.0 holds one edge for each Balanced Coupling advisory group.
+`--reanchor` keeps only stored IDs, so the other edges of such a group show as
+`not accepted`. This is expected. Review them, then run a full
+`archfit baseline` if you accept the group.
 Decide each `not accepted` line: fix it, or accept it with a full
 `archfit baseline`. Use `--from <path>` to read the stored file from another
-place. `--reanchor` with `--no-advisories` is an error. Without a stored file
-the command exits 3.
+place. `--from` without `--reanchor` is an error. So is `--reanchor` with
+`--no-advisories`. Without a stored file the command exits 3.
 
 Then run `archfit check`. `gate_reference.status` must be `comparable`.
 
@@ -96,10 +106,13 @@ that does not compare, the run lists one unevaluated entry, `metric_ratchets`.
 Then `hard_gates` is `unmeasured` and the exit code is 2, not 1.
 With no baseline file there is no ratchet.
 
+In `--format agent`, an unmeasured ratchet gives `next_action: ask_owner`.
+`archfit hook claude` shows it as a `systemMessage` and does not block.
+
 Removed: the `METRIC RATCHET` section of text and Markdown output, and the
 `worsened_metrics` field of `archfit.agent-result.v1`.
 
-## 5. Report (JSON) changes
+## 5. Report (JSON state) changes
 
 The state schema ID is still `archfit.architecture-state.v1`.
 
@@ -108,7 +121,7 @@ The state schema ID is still `archfit.architecture-state.v1`.
 | New      | `comparison.classification_hash`                                                                                           |
 | New      | `comparison.drift[]` and `gate_reference.drift[]` (input classes that broke comparison)                                    |
 | New      | `gate_reference.baseline_present`                                                                                          |
-| New      | `findings[].origin` and `agent_tasks[].origin` with `--base`: `introduced`, `pre_existing`, `unknown`                      |
+| New | `findings[].origin` with `--base`: `introduced`, `pre_existing`, `unknown`. `agent_tasks[].origin` copies it | 
 | New      | `comparison.introduced_finding_ids`, `comparison.resolved_finding_ids` (present only with `--base`)                        |
 | New      | Finding `rule_id` of the form `metric/<name>`; unevaluated entry `metric_ratchets`                                         |
 | New      | Metrics `library_edges`, `unmapped_first_party_edges`, `qualifying_edges`                                                  |
@@ -116,17 +129,22 @@ The state schema ID is still `archfit.architecture-state.v1`.
 | Renamed  | `comparison.task_origin_reasons` → `comparison.origin_reasons`                                                             |
 | Replaced | Metric `external_edges` → `library_edges` + `unmapped_first_party_edges` (their sum is the old value)                      |
 | Replaced | Metric `critical_high_distance_edges` → `qualifying_edges`                                                                 |
-| Replaced | Advisory task field `cheapest_move` → `hypothesis`; the `distance_compression` fields `code_structure_*` → `containment_*` |
+| Changed | `findings[].matched_by.cheapest_move` → `matched_by.hypothesis`; `distance_basis` `code_structure` → `module_boundary` |
 | Removed  | `dimensions.<name>.delta.new_findings` and `resolved_findings`                                                             |
 | Removed  | `worsened_metrics` in `archfit.agent-result.v1`                                                                            |
-| Removed  | `strength_inferred_edges` in the connascence report                                                                        |
+| Changed | `seams[].distance` can be `cross_module`; `seams[].raw_distance.basis` is `<boundary>@<container>`; `seams[].hypothesis` uses the new vocabulary |
+
+Other outputs also change. In Markdown and in `config compare --json`, the
+`distance_compression` fields `code_structure_*` are now `containment_*`, and
+`strength_inferred_edges` is removed from the connascence report.
 
 `config_hash` stays as the identity of the file. The engine does not compare it
 any more. `measurement.source_ref` is always `worktree`.
 Comparison uses `classification_hash`, `model_hash`, `labels_hash`,
 `rubric_version` and the measurement profile `archfit.measurement.v2`.
 A comment, waiver, rule, gate, `layers`, `min_severity`, `depends_on`,
-`visible_to` or `reviewed_at` edit does not break comparison.
+`visible_to` or `reviewed_at` edit does not break comparison. An edit to a
+rule's `patterns:` still does, because the pattern pass is a measurement input.
 
 The `required` coupling fact `coupling volatility` is new. See step 2.
 

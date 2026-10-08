@@ -218,14 +218,13 @@ metrics, scores, config, labels, or the gate.
 ## config enrich — owner, volatility, subdomain (draft -> review -> apply)
 
 Beyond coupling labels, `config enrich` drafts module metadata fields that the
-structural metrics depend on. Filling them is the through-line that makes distance
-classification work: ownership contributes to distance for modules in repos with
-genuine multi-team ownership, and `coupling_balance` stops being `n/a`.
+structural metrics depend on. Filling them rates volatility and names the boundary token of each edge, and
+`coupling_balance` stops being `n/a`. Owner does not change distance.
 
 > **Note on encapsulation:** `encapsulation` scores the ratio of contract/intrusive
 > edges to total cross-module edges. It becomes measurable when modules have
 > explicit `public:` / `internal:` globs that let archfit classify edge kinds —
-> not from owner pinning alone. Pinning `owner` improves distance classification
+> not from owner pinning alone. Pinning `owner` names the boundary token
 > but does not by itself make encapsulation measurable.
 
 ```sh
