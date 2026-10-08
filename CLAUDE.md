@@ -1242,6 +1242,11 @@ multi-arch image, pushes `ghcr.io/alexei-led/archfit:<tag>` + `:latest`, and its
 `release` job runs `gh release create` itself. A second `gh release create` (or a
 release tool) collides on the tag and fails the job.
 
+The Go module path is `github.com/alexei-led/archfit/v3`. A major version needs
+the suffix in `go.mod` and in every import, so `go install
+github.com/alexei-led/archfit/v3/cmd/archfit@<tag>` works only for `v3.x`
+tags. The `goimports -local` prefix has no suffix and matches both.
+
 ## Runtime image
 
 `Dockerfile` is `debian:bookworm-slim` (glibc; musl broke ast-grep) — one image with

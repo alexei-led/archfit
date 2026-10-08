@@ -18,22 +18,27 @@ Or download the binary for your platform from the
 against `SHA256SUMS`. Use a release tag in scripts and repeatable docs:
 
 ```sh
-curl -fsSLO https://github.com/alexei-led/archfit/releases/download/v2.5.0/archfit-v2.5.0-linux-amd64
-curl -fsSLO https://github.com/alexei-led/archfit/releases/download/v2.5.0/SHA256SUMS
+curl -fsSLO https://github.com/alexei-led/archfit/releases/download/v3.0.0/archfit-v3.0.0-linux-amd64
+curl -fsSLO https://github.com/alexei-led/archfit/releases/download/v3.0.0/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS
-install -m 0755 archfit-v2.5.0-linux-amd64 /usr/local/bin/archfit
+install -m 0755 archfit-v3.0.0-linux-amd64 /usr/local/bin/archfit
 ```
 
 To build from source, check out a release tag and build with Go:
 
 ```sh
-git clone --branch v2.5.0 --depth 1 https://github.com/alexei-led/archfit.git
+git clone --branch v3.0.0 --depth 1 https://github.com/alexei-led/archfit.git
 cd archfit && make build   # writes .bin/archfit
 ```
 
-Do not use `go install github.com/alexei-led/archfit/cmd/archfit@<version>`.
-The module path has no `/v2` suffix, so Go rejects a `v2.x` tag, and `@latest`
-installs the last `v1` release.
+With a Go toolchain, you can also install a release tag:
+
+```sh
+go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.0.0
+```
+
+The module path has the `/v3` suffix. Releases before v3.0.0 cannot be
+installed this way, because their module path had no major-version suffix.
 
 Check the binary and available analyzers:
 
@@ -251,7 +256,7 @@ Use Docker when you want the bundled toolchain instead of installing language
 analysis tools on the host:
 
 ```sh
-docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v2.5.0 \
+docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v3.0.0 \
   check --config /repo/.archfit.yaml
 ```
 
