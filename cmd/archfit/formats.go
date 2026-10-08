@@ -1,6 +1,6 @@
 package main
 
-import "github.com/alexei-led/archfit/internal/output/agentout"
+import "github.com/alexei-led/archfit/v3/internal/output/agentout"
 
 // Output format name constants shared across commands and tests.
 const (

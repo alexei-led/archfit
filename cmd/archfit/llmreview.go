@@ -13,10 +13,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/initcfg"
-	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/initcfg"
+	"github.com/alexei-led/archfit/v3/internal/llm"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 const (

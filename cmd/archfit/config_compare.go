@@ -32,9 +32,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/application"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 // configCompareSchemaVersion versions the `config compare --json` document.

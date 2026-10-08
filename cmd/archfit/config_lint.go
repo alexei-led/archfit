@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/alexei-led/archfit/internal/application"
+	"github.com/alexei-led/archfit/v3/internal/application"
 )
 
 // configLintSchemaVersion versions the `config lint --json` document.

@@ -4,7 +4,7 @@
 // under internal/ so only the metrics subtree can import it.
 package modgraph
 
-import "github.com/alexei-led/archfit/internal/relationship"
+import "github.com/alexei-led/archfit/v3/internal/relationship"
 
 // FirstPartyModules returns the resolved declared-module identities for nodes
 // archfit actually parsed, excluding external and explicitly outside-map nodes.

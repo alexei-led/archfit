@@ -3,11 +3,11 @@ package boundary_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/metrics/boundary"
-	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
-	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/testutil/metricstest"
+	"github.com/alexei-led/archfit/v3/internal/assessment/metrics/boundary"
+	assessmentresult "github.com/alexei-led/archfit/v3/internal/assessment/result"
+	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/testutil/metricstest"
 )
 
 const coverageToolGoPackages = "go/packages"

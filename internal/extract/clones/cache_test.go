@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/factcache"
-	reportmodel "github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/factcache"
+	reportmodel "github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // cacheScanRunner fakes jscpd with a --version probe; scans write reportJSON

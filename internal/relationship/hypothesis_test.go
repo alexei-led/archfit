@@ -3,9 +3,9 @@ package relationship_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
-	"github.com/alexei-led/archfit/internal/relationship/scoring"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v3/internal/relationship/scoring"
 )
 
 func band(s coupling.Strength, d coupling.Distance, v coupling.Volatility) relationship.Severity {

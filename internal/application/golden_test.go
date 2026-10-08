@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/internal/evidence"
-	"github.com/alexei-led/archfit/internal/evidence/acquisition"
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	goextract "github.com/alexei-led/archfit/internal/extract/golang"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/application"
+	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/v3/internal/evidence"
+	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	goextract "github.com/alexei-led/archfit/v3/internal/extract/golang"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/scope"
 )
 
 const (

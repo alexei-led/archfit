@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
-	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/assessment/metrics/internal/result"
+	assessmentresult "github.com/alexei-led/archfit/v3/internal/assessment/result"
 )
 
 func approxEqual(a, b float64) bool {

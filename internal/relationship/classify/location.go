@@ -1,8 +1,8 @@
 package classify
 
 import (
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
 )
 
 func couplingLocations(locs []graph.Location) []coupling.Location {

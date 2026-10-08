@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
 // EnrichmentEdge is the prompt-ready projection of one classified relationship.

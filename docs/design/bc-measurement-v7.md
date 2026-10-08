@@ -130,12 +130,10 @@ these names and fail when a rule changes.
   functional. TypeScript without SCIP reads every runtime import as functional
   unless the target matches a `public:` glob. Measure before you enable
   `mode: fail`.
-- `config init` for TypeScript still writes the whole module as `public:`, so
-  those imports read as contract until the owner narrows the surface.
 - SCIP does not see the receiver of a method, so concrete-method data evidence
   exists only for Go.
-- `config init` does not write `public:` for Go. A `public:` entry claims a
-  published contract; the owner declares it.
+- `config init` does not write `public:` for Go or TypeScript. A `public:`
+  entry claims a published contract; the owner declares it.
 - Runtime async stays report-only. It never enters distance.
 
 Chapter references only. No book text beyond the formula is copied.

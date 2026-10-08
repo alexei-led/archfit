@@ -1,6 +1,6 @@
 package main
 
-import "github.com/alexei-led/archfit/internal/extract/registry"
+import "github.com/alexei-led/archfit/v3/internal/extract/registry"
 
 // LLM provider name constants shared across init, enrich, doctor, and explain.
 const (

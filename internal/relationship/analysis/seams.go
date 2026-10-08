@@ -3,11 +3,11 @@ package analysis
 import (
 	"sort"
 
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/relationship/classify"
-	"github.com/alexei-led/archfit/internal/relationship/labels"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
+	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 )
 
 // seamInput is everything the seam ledger needs. Every field is a value this

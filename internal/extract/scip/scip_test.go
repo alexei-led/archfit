@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/extract/scip"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/extract/scip"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // absentRunner returns a RunnerMock where Detect always reports tools as missing.

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/decision"
-	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 )
 
 func TestCorrectedMeasurementRejectsPrePatchSemantics(t *testing.T) {

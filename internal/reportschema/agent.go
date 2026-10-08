@@ -6,8 +6,8 @@ import (
 
 	"github.com/invopop/jsonschema"
 
-	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/output/agentout"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/output/agentout"
 )
 
 const agentSchemaID = "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.agent-result.schema.json"
@@ -21,7 +21,7 @@ const agentSchemaID = "https://raw.githubusercontent.com/alexei-led/archfit/main
 // a field is required unless it carries `omitempty`.
 func GenerateAgentResult(srcDir string) ([]byte, error) {
 	r := &jsonschema.Reflector{ExpandedStruct: true}
-	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/output/agentout", srcDir); err != nil {
+	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/output/agentout", srcDir); err != nil {
 		return nil, fmt.Errorf("reportschema: AddGoComments: %w", err)
 	}
 

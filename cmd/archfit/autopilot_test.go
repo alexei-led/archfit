@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/llm"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // autopilotProvider answers both the classify and the owner-draft calls by

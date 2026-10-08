@@ -723,8 +723,8 @@ Notes:
   when `go list` or a `src/` subdirectory scan finds them. When Go and
   TypeScript discovery propose the same directory, the Go module keeps it.
   Rust crates from `cargo metadata` are always kept.
-- `public:` is written only for a directory that is itself a Go package with
-  production code; a bare grouping directory names no graph node.
+- No `public:` entry is written. A `public:` target is the integration
+  contract (`bc_score.v7`), so the owner declares each published surface.
 - Starter rules: `module_cycle` (`no-module-cycles`) always, and
   `forbidden_layer_direction` (`no-layer-back-edges`) when discovery inferred
   two or more layers. Each gets `gate: fail` when the init-time import graph
@@ -1041,9 +1041,10 @@ A `not_comparable` grade is about evidence, not about the configs: it can appear
 on a run that reports no measurement differences at all. Read the grade first,
 then the differences.
 
-An `owner:` or `deploy_unit:` edit typically moves edges between distance rungs
-without moving the score: with `balance = max(|S−D|, 10−V)` the `10−V` term
-dominates for every low-volatility target. That shift shows up as a
+An `owner:` or `deploy_unit:` edit changes the boundary token of an edge
+(`cross_deploy_unit`, `cross_module_different_owner`, `cross_module`). It does
+not change distance or severity: every module boundary is D=9. The score formula
+is `balance = max(|S−D|, 10−V) + 1`. A token change shows up as a
 classification-mix line; `--json` carries the full histograms on both sides under
 `current.classified_edges` and `candidate.classified_edges`.
 

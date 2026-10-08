@@ -13,9 +13,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/alexei-led/archfit/internal/model/report"
-	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
+	reporttest "github.com/alexei-led/archfit/v3/internal/testutil/report"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // depcruiseCrashRunner is a bunx launcher whose dependency-cruiser run exits 1

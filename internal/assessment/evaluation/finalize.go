@@ -1,11 +1,11 @@
 package evaluation
 
 import (
-	"github.com/alexei-led/archfit/internal/assessment/agenttask"
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/assessment/agenttask"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/assessment/score"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // FindingIDCouplingGate prefixes the coupling-gate findings. One finding is

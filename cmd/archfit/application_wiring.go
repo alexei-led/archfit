@@ -4,12 +4,12 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/baseline"
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/evidence/acquisition"
-	historygit "github.com/alexei-led/archfit/internal/history/git"
-	"github.com/alexei-led/archfit/internal/labels/labelsio"
+	"github.com/alexei-led/archfit/v3/internal/application"
+	"github.com/alexei-led/archfit/v3/internal/baseline"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
+	historygit "github.com/alexei-led/archfit/v3/internal/history/git"
+	"github.com/alexei-led/archfit/v3/internal/labels/labelsio"
 )
 
 func enrichmentLabelStore() application.EnrichmentLabelStore { return labelsio.ApplicationStore{} }

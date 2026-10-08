@@ -1,11 +1,11 @@
 package evaluation
 
 import (
-	"github.com/alexei-led/archfit/internal/assessment/metrics"
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/rules"
-	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/assessment/metrics"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
+	"github.com/alexei-led/archfit/v3/internal/assessment/score"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // ApplySeamGate exposes the seam-gate escalation over an explicit ledger and

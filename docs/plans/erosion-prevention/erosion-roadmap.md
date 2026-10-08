@@ -37,7 +37,7 @@ They give approved policy, pull-request feedback, owner decisions, and baseline 
 | Measurement profile       | The record of producer versions, producer status, and a settings hash. It is part of the comparison.                                             |
 | Seam                      | One ordered module pair with at least one import edge. See [concepts](../../guide/concepts.md).                                                  |
 | Baseline                  | The stored file of accepted findings and the state reference (`.archfit-baseline.json`).                                                         |
-| Comparable reference      | A baseline whose four fingerprints (`config_hash`, `model_hash`, `labels_hash`, `rubric_version`) and measurement profile match the current run. |
+| Comparable reference      | A baseline whose four fingerprints (`classification_hash`, `model_hash`, `labels_hash`, `rubric_version`) and measurement profile match the current run. |
 | Ratchet                   | A metric gate that blocks when a metric gets worse than in the baseline.                                                                         |
 | Re-anchor                 | Re-key the accepted debt of a baseline to a new engine epoch, without accepting new debt.                                                        |
 | Guard rule                | A rule with `guard: true`. It must match nothing, and it blocks a removed package from coming back.                                              |
@@ -53,8 +53,8 @@ flowchart TD
     W1["Wave 1: App and Action tandem"]:::done
     PRE["Pilot prerequisites"]:::open
     PIL["App pilots, advisory on v2.x"]:::open
-    W2["Wave 2: guardrails and agent loop (v2.5.0)"]:::open
-    W3["Wave 3: one break (v3.0.0)"]:::open
+    W2["Wave 2: guardrails and agent loop (v2.5.0)"]:::done
+    W3["Wave 3: one break (v3.0.0)"]:::done
     RA["One re-anchor"]:::open
     GATE["Required App gate"]:::open
     W4["Wave 4: on triggers"]:::open
@@ -72,6 +72,7 @@ flowchart TD
 ```
 
 Green boxes are built. Amber boxes are not built.
+The engine side of Wave 3 is built. The re-anchor of pilot baselines and the required gate are open.
 Pilots start on v2.x and stay advisory.
 The required gate goes live after v3.0.0 and one re-anchor, so pilots re-anchor only once.
 
@@ -81,8 +82,8 @@ The required gate goes live after v3.0.0 and one re-anchor, so pilots re-anchor 
 | ---- | ------------------------------------------------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 0    | Stop false passes, false blocks, and agent misdirection      | Released in engine v2.4.0          | See the v2.4.0 section of the [release notes](../../guide/release-notes.md).                                                                     |
 | 1    | App and Action work together                                 | Built, except the persistent store | App `main` (engine v2.4.0 current, v2.3.1 in the upgrade window); `archfit-action` v1.0.0                                                        |
-| 2    | Architecture-level guardrails and the agent loop             | Not built                          | This document, [guardrail language](guardrail-language.md), [agent guardrails](agent-guardrails.md), [architect workflow](architect-workflow.md) |
-| 3    | One breaking release that batches every comparability change | Not built                          | This document, [coupling score v7](coupling-score-v7.md), [erosion tracking](erosion-tracking.md)                                                |
+| 2    | Architecture-level guardrails and the agent loop             | Released in engine v2.5.0          | This document, [guardrail language](guardrail-language.md), [agent guardrails](agent-guardrails.md), [architect workflow](architect-workflow.md) |
+| 3    | One breaking release that batches every comparability change | Engine built (v3.0.0); App and Action open |  This document, [coupling score v7](coupling-score-v7.md), [erosion tracking](erosion-tracking.md)                                                |
 | 4    | Reach and depth, each item started by a trigger              | Not built                          | This document, [language extensibility](language-extensibility.md)                                                                               |
 
 ### What Wave 0 built
@@ -118,7 +119,7 @@ In short:
 ## Wave 2: architecture-level guardrails and the agent loop
 
 Engine v2.5.0. Additive config keys and additive output. No schema break.
-Until Wave 3.1 ships, every allowlist edit changes the raw `config_hash`, so the baseline becomes non-comparable.
+Before v3.0.0, every allowlist edit changed the raw `config_hash`, so the baseline became non-comparable. Wave 3.1 fixed this.
 
 | #   | Item                                                                                                                                                                                                                                                                | Done when                                                                                                                                                                                                                           |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -136,17 +137,17 @@ The agent surface is in [agent guardrails](agent-guardrails.md). The human brief
 
 ## Wave 3: one breaking release
 
-Engine v3.0.0 and one new App manifest row. Users re-anchor once.
+Engine v3.0.0 (built; see the [migration guide](../../guide/migration-v3.md)) and one new App manifest row. Users re-anchor once.
 The App ships its decoders and the re-anchor flow before the engine release.
 
 | #   | Item                                                                                                                                                                                                                                                                 | Today                                                             | Done when                                                                                            |
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 3.1 | Comparability v2: a classification hash over policy leaves decides comparability. Comments, waivers, and `reviewed_at` are governance and never make a run non-comparable. The raw `config_hash` stays as identity, because the App integrity check needs raw bytes. | `config_hash` is the SHA-256 of the raw file.                     | A comment-only edit keeps the reference comparable.                                                  |
-| 3.2 | Measurement profile v2: one slice per language, not-applicable languages omitted, normalized `tool_version`.                                                                                                                                                         | `settings_hash` covers the options of every registered extractor. | An engine release that adds a language keeps baselines comparable on repos without that language.    |
-| 3.3 | One origin classifier and one wire shape: `findings[].origin`, `comparison.introduced_finding_ids`, `comparison.resolved_finding_ids`. `--base` stays report-only and never replaces the accepted baseline.                                                          | Only agent tasks of a `--base` run carry `origin`.                | Findings and tasks get their origin from one classifier.                                             |
+| 3.1 | Comparability v2: a classification hash over policy leaves decides comparability. Comments, waivers, and `reviewed_at` are governance and never make a run non-comparable. The raw `config_hash` stays as identity, because the App integrity check needs raw bytes. | Built in v3.0.0 (`comparison.classification_hash`).               | A comment-only edit keeps the reference comparable.                                                  |
+| 3.2 | Measurement profile v2: one slice per language, not-applicable languages omitted, normalized `tool_version`.                                                                                                                                                         | Built in v3.0.0 (`archfit.measurement.v2`).                       | An engine release that adds a language keeps baselines comparable on repos without that language.    |
+| 3.3 | One origin classifier and one wire shape: `findings[].origin`, `comparison.introduced_finding_ids`, `comparison.resolved_finding_ids`. `--base` stays report-only and never replaces the accepted baseline.                                                          | Built in v3.0.0 (`findings[].origin`).                            | Findings and tasks get their origin from one classifier.                                             |
 | 3.4 | `archfit baseline --reanchor`: re-key accepted debt across a profile or scoring epoch without accepting new debt.                                                                                                                                                    | Built in v3.0.0 (`archfit baseline --reanchor`).                  | A re-anchored baseline is comparable and accepts no new finding.                                     |
-| 3.5 | Balanced Coupling fidelity 2.0 (`bc_score.v7`). A Go extractor semantics version enters the fact-cache key.                                                                                                                                                          | `ScoreVersion` is `bc_score.v6`.                                  | The worked examples in [coupling score v7](coupling-score-v7.md) score as documented.                |
-| 3.6 | Ratchets compare only against a comparable, version-matched reference. Against a non-comparable one they report `hard_gates: unmeasured`, never pass or block. Ships with 3.1, so a comment edit cannot switch ratchets off.                                         | The metric delta checks the metric version only.                  | Against a non-comparable reference, a worse metric gives `hard_gates: unmeasured` and exit 2, not 1. |
+| 3.5 | Balanced Coupling fidelity 2.0 (`bc_score.v7`). A Go extractor semantics version enters the fact-cache key.                                                                                                                                                          | Built in v3.0.0 (`ScoreVersion` is `bc_score.v7`).                | The worked examples in [coupling score v7](coupling-score-v7.md) score as documented.                |
+| 3.6 | Ratchets compare only against a comparable, version-matched reference. Against a non-comparable one they report `hard_gates: unmeasured`, never pass or block. Ships with 3.1, so a comment edit cannot switch ratchets off.                                         | Built in v3.0.0 (finding `metric/<name>`).                        | Against a non-comparable reference, a worse metric gives `hard_gates: unmeasured` and exit 2, not 1. |
 
 Comparability and re-anchor detail is in [erosion tracking](erosion-tracking.md).
 The App side of the release is in [App and Action flow](app-action-flow.md).
@@ -213,9 +214,7 @@ The App also lists the unbuilt Monaco editor bundle as a release blocker. The po
 
 1. Ship Wave 3 and re-anchor the pilot baselines once.
 2. Sign the release image and publish provenance. Today the image is pushed with `provenance: false` and no signature.
-3. Re-capture archfit's own `.archfit-baseline.json`.
-   Its `config_hash` does not match `.archfit.yaml`, and it has no measurement profile.
-   So the dogfood seam and drift comparison always abstains.
+3. Done in v3.0.0: archfit's own `.archfit-baseline.json` is re-anchored with `archfit baseline --reanchor`, and the dogfood comparison is `comparable`.
 
 ## Rejected options
 

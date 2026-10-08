@@ -4,11 +4,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/assessment/state"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/assessment/score"
+	"github.com/alexei-led/archfit/v3/internal/assessment/state"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // stateInput carries the already-resolved values the architecture-state

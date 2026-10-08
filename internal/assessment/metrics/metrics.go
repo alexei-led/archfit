@@ -1,11 +1,11 @@
 package metrics
 
 import (
-	"github.com/alexei-led/archfit/internal/assessment/metrics/boundary"
-	"github.com/alexei-led/archfit/internal/assessment/metrics/modularity"
-	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
-	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/assessment/metrics/boundary"
+	"github.com/alexei-led/archfit/v3/internal/assessment/metrics/modularity"
+	assessmentresult "github.com/alexei-led/archfit/v3/internal/assessment/result"
+	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // Metric is the uniform interface the engine dispatches on: compute a result

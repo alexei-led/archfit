@@ -5,7 +5,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // Rule selector sides, as a vacuity reason names them.

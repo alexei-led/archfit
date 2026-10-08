@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	reportmodel "github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/output/sarif"
-	"github.com/alexei-led/archfit/internal/relationship"
-	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	reportmodel "github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/output/sarif"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
+	reporttest "github.com/alexei-led/archfit/v3/internal/testutil/report"
 )
 
 const (

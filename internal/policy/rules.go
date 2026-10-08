@@ -3,7 +3,7 @@ package policy
 import (
 	"slices"
 
-	"github.com/alexei-led/archfit/internal/model/pattern"
+	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 )
 
 // GateMode controls how a missing tool or regressed metric affects the verdict.

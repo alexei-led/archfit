@@ -3,9 +3,9 @@ package acquisition
 import (
 	"sort"
 
-	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
-	"github.com/alexei-led/archfit/internal/extract/registry"
-	"github.com/alexei-led/archfit/internal/model/evidence"
+	suppliedcoverage "github.com/alexei-led/archfit/v3/internal/extract/coverage"
+	"github.com/alexei-led/archfit/v3/internal/extract/registry"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 )
 
 // gateWarn / gateFail are the coverage-gap gate strings stamped on each gap.

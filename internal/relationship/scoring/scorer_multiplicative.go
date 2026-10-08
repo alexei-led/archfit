@@ -3,7 +3,7 @@ package scoring
 import (
 	"math"
 
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
 )
 
 // MultiplicativeScorer implements archfit's numeric BC score: a deterministic

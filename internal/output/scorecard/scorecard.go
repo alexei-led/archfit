@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/report"
-	reportports "github.com/alexei-led/archfit/internal/report/ports"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
+	reportports "github.com/alexei-led/archfit/v3/internal/report/ports"
 )
 
 // Renderer formats a report document's architecture state as a scorecard.

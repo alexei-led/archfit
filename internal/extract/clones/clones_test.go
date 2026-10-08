@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/model/clone"
-	reportmodel "github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/model/clone"
+	reportmodel "github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 const (

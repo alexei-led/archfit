@@ -3,11 +3,11 @@ package modularity_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
-	"github.com/alexei-led/archfit/internal/assessment/metrics/modularity"
-	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
-	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/testutil/metricstest"
+	"github.com/alexei-led/archfit/v3/internal/assessment/metrics/internal/result"
+	"github.com/alexei-led/archfit/v3/internal/assessment/metrics/modularity"
+	assessmentresult "github.com/alexei-led/archfit/v3/internal/assessment/result"
+	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
+	"github.com/alexei-led/archfit/v3/internal/testutil/metricstest"
 )
 
 // Chain A -> B -> C (A imports B, B imports C). Reverse-deps: C has {A,B}=2,

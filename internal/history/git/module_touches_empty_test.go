@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	gitpkg "github.com/alexei-led/archfit/internal/history/git"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	gitpkg "github.com/alexei-led/archfit/v3/internal/history/git"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 func TestTouchCountsRealEmptyRepository(t *testing.T) {

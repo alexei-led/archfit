@@ -3,8 +3,8 @@ package evaluation
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
 // TestJudgeEdgeModuleCycleProduction pins that the not_decided prediction for

@@ -7,17 +7,17 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/output/agentout"
-	"github.com/alexei-led/archfit/internal/output/console"
-	"github.com/alexei-led/archfit/internal/output/jsonout"
-	"github.com/alexei-led/archfit/internal/output/markdown"
-	"github.com/alexei-led/archfit/internal/output/sarif"
-	"github.com/alexei-led/archfit/internal/output/scorecard"
-	reportports "github.com/alexei-led/archfit/internal/report/ports"
+	"github.com/alexei-led/archfit/v3/internal/application"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/llm"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/output/agentout"
+	"github.com/alexei-led/archfit/v3/internal/output/console"
+	"github.com/alexei-led/archfit/v3/internal/output/jsonout"
+	"github.com/alexei-led/archfit/v3/internal/output/markdown"
+	"github.com/alexei-led/archfit/v3/internal/output/sarif"
+	"github.com/alexei-led/archfit/v3/internal/output/scorecard"
+	reportports "github.com/alexei-led/archfit/v3/internal/report/ports"
 )
 
 // AnalyzeCmd is the local, report-only analysis command. It runs the same scan

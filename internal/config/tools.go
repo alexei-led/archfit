@@ -3,9 +3,9 @@ package config
 import (
 	"time"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // Language id constants. These are the YAML keys under `languages:` and the

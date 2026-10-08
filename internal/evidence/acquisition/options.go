@@ -1,13 +1,13 @@
 package acquisition
 
 import (
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/extract/acquire"
-	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
-	"github.com/alexei-led/archfit/internal/extract/registry"
-	"github.com/alexei-led/archfit/internal/model/pattern"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/scope"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/extract/acquire"
+	suppliedcoverage "github.com/alexei-led/archfit/v3/internal/extract/coverage"
+	"github.com/alexei-led/archfit/v3/internal/extract/registry"
+	"github.com/alexei-led/archfit/v3/internal/model/pattern"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/scope"
 )
 
 // Analyzer coverage names produced outside the language registry. The registry

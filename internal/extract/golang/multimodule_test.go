@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 
-	goextract "github.com/alexei-led/archfit/internal/extract/golang"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/scope"
+	goextract "github.com/alexei-led/archfit/v3/internal/extract/golang"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/scope"
 )
 
 // buildWorkspace creates a minimal go.work workspace in a temp dir with two

@@ -1,8 +1,8 @@
 package evaluation
 
 import (
-	"github.com/alexei-led/archfit/internal/model/fileclass"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // InventoryFile is one file of the rule-scope source inventory, projected the

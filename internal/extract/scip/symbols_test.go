@@ -7,9 +7,9 @@ import (
 	"slices"
 	"testing"
 
-	reportmodel "github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	reportmodel "github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // readerJSONSuccess is a minimal valid scip_reader.py output containing one

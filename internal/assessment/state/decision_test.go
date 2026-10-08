@@ -6,7 +6,7 @@ package state_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/state"
+	"github.com/alexei-led/archfit/v3/internal/assessment/state"
 )
 
 // measuredSignals is nine measured, passing dimensions: the only shape from

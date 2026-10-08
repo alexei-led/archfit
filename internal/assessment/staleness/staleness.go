@@ -17,10 +17,10 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	modelrule "github.com/alexei-led/archfit/internal/model/rule"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	modelrule "github.com/alexei-led/archfit/v3/internal/model/rule"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
 // defaultThreshold is the staleness threshold used when cfg.Threshold is zero.

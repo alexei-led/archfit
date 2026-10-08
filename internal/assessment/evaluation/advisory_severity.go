@@ -1,8 +1,8 @@
 package evaluation
 
 import (
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
 func severityFor(strength relationship.Strength, distance relationship.Distance) finding.Severity {

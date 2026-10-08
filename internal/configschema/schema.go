@@ -14,8 +14,8 @@ import (
 
 	"github.com/invopop/jsonschema"
 
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 	schemaDraft = "https://json-schema.org/draft/2020-12/schema"
 	typeString  = "string" // JSON Schema scalar type, reused across patches
 
-	patternPkgPath = "github.com/alexei-led/archfit/internal/model/pattern"
+	patternPkgPath = "github.com/alexei-led/archfit/v3/internal/model/pattern"
 )
 
 // toolModeSchema is the union that replaces the inlined {type: string} for any
@@ -86,7 +86,7 @@ func Generate(srcDir string) ([]byte, error) {
 	}
 
 	// Pull doc-comments from the source so each property gets a description.
-	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", srcDir); err != nil {
+	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/config", srcDir); err != nil {
 		return nil, fmt.Errorf("configschema: AddGoComments: %w", err)
 	}
 	// Policy declarations (ModuleDef, RuleDef, WaiverDef, MetricEntry,
@@ -97,15 +97,15 @@ func Generate(srcDir string) ([]byte, error) {
 	// internal/policy. Same join trick for the acquisition port types (ToolMode)
 	// and the neutral pattern definition.
 	policyDir := filepath.Join(srcDir, "..", "policy")
-	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", policyDir); err != nil {
+	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/config", policyDir); err != nil {
 		return nil, fmt.Errorf("configschema: AddGoComments(policy): %w", err)
 	}
 	portsDir := filepath.Join(srcDir, "..", "evidence", "ports")
-	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", portsDir); err != nil {
+	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/config", portsDir); err != nil {
 		return nil, fmt.Errorf("configschema: AddGoComments(ports): %w", err)
 	}
 	patternDir := filepath.Join(srcDir, "..", "model", "pattern")
-	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/model", patternDir); err != nil {
+	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/model", patternDir); err != nil {
 		return nil, fmt.Errorf("configschema: AddGoComments(pattern): %w", err)
 	}
 

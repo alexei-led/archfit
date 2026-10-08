@@ -10,7 +10,7 @@ import (
 
 // internalPrefix is assembled rather than spelled out so a repository-wide
 // search for a forbidden import path does not match this guard itself.
-const internalPrefix = "github.com/alexei-led/archfit/" + "internal/"
+const internalPrefix = "github.com/alexei-led/archfit/v3/" + "internal/"
 
 // TestEvaluationImportsOnlyDomainContracts pins the evaluation boundary: the
 // evaluator decides over the relationship contract and its own assessment

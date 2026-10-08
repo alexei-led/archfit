@@ -5,12 +5,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/assessment/agenttask"
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	rulespkg "github.com/alexei-led/archfit/internal/assessment/rules"
-	"github.com/alexei-led/archfit/internal/assessment/status"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/assessment/agenttask"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	rulespkg "github.com/alexei-led/archfit/v3/internal/assessment/rules"
+	"github.com/alexei-led/archfit/v3/internal/assessment/status"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
 // Edge answers of `archfit policy can-import`.

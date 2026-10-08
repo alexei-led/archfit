@@ -6,7 +6,7 @@ package main
 import (
 	"context"
 
-	"github.com/alexei-led/archfit/internal/application"
+	"github.com/alexei-led/archfit/v3/internal/application"
 )
 
 // valueBatchSize bounds how many modules go into one LLM draft request.

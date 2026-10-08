@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/config"
 )
 
 // TestLoad_ExampleTemplates verifies that every starter template shipped in

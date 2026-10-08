@@ -1,7 +1,7 @@
 package application
 
 import (
-	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
 // projectEnrichmentEvidence narrows the captured relationship set to the

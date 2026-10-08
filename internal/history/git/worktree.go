@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // git command + subcommand names used by the worktree helpers.

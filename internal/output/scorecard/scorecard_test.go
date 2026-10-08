@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	reportmodel "github.com/alexei-led/archfit/internal/model/report"
+	reportmodel "github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 // Test literal constants (deduplicated for goconst).

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/output/brief"
-	reportports "github.com/alexei-led/archfit/internal/report/ports"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/output/brief"
+	reportports "github.com/alexei-led/archfit/v3/internal/report/ports"
 )
 
 // Renderer writes a report document's architecture state as terminal text.

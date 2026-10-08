@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // Test-local constants to satisfy goconst across the test file.
@@ -743,5 +743,42 @@ func TestRender_RoundTripsThroughConfigLoad(t *testing.T) {
 	}
 	if len(cfg.Rules) == 0 {
 		t.Error("init-generated config carries no rules — starter rules lost in round-trip")
+	}
+}
+
+func TestDiscoverTS_DeclaresNoPublicSurface(t *testing.T) {
+	tests := []struct {
+		name     string
+		pkg      string
+		subdirs  []string
+		wantMods int
+	}{
+		{"src subdirs", `{}`, []string{"src/core", "src/api"}, 2},
+		{"workspaces", `{"workspaces": ["packages/*"]}`, []string{"packages/router", "packages/ui"}, 2},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(tc.pkg), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for _, d := range tc.subdirs {
+				if err := os.MkdirAll(filepath.Join(root, d), testDirPerm); err != nil {
+					t.Fatal(err)
+				}
+			}
+			mods, err := DiscoverTS(root)
+			if err != nil {
+				t.Fatalf("DiscoverTS: %v", err)
+			}
+			if len(mods) != tc.wantMods {
+				t.Fatalf("modules = %v, want %d", mods, tc.wantMods)
+			}
+			for _, m := range mods {
+				if len(m.Public) != 0 {
+					t.Errorf("module %s public = %v, want none: a public: target is the contract under bc_score.v7", m.Name, m.Public)
+				}
+			}
+		})
 	}
 }

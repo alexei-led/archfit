@@ -3,8 +3,8 @@ package rules_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/rules"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // The yazi shape: crates declared by package name, a crate::mod internal: glob

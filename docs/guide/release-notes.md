@@ -1,8 +1,41 @@
 # Release notes
 
-## v3.0.0 — (unreleased)
+## v3.0.0
 
-One breaking release. Users re-anchor the baseline once.
+This is a breaking release. Read the [migration guide](migration-v3.md) first.
+It lists each step in the order you do it.
+
+Breaking changes:
+
+- **Go module path.** The module is now `github.com/alexei-led/archfit/v3`.
+  Install with `go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.0.0`.
+- **Score `bc_score.v7`.** Distance is level-relative (any module boundary is
+  D=9). A `public:` target and any call to an interface are contract coupling.
+  Scores and seam counts change on every repository.
+- **Baseline schema `archfit.baseline.v3`.** The engine rejects v2 files.
+  Re-anchor once with `archfit baseline --reanchor`.
+- **Comparability v2 and measurement profile `archfit.measurement.v2`.** A
+  stored reference on an older engine epoch does not compare.
+- **A tripped metric ratchet is a finding**, `metric/<name>`. The
+  `METRIC RATCHET` section and `worsened_metrics` are removed.
+- **Report wire changes.** `comparison.task_origin_*` is now
+  `comparison.origin_*`. `findings[].origin` is new. The metric `external_edges` is split into
+  `library_edges` and `unmapped_first_party_edges`, and
+  `critical_high_distance_edges` is now `qualifying_edges`. The
+  `delta.new_findings` and `delta.resolved_findings` keys are removed.
+  `measurement.source_ref` is always `worktree`.
+- **Reserved rule ID prefix.** A rule ID that starts with `metric/` is a config
+  error.
+- **SARIF** carries `baselineState`, `suppressions` and
+  `partialFingerprints.primaryLocationLineHash`.
+- **`config init` writes no `public:` entry** for Go or TypeScript modules.
+
+New:
+
+- `archfit baseline --reanchor` (see below).
+- `archfit hook git` judges the staged content.
+- Tests now hold `archfit policy can-import` equal to `check` on TypeScript and
+  Python.
 
 Changed (comparability v2):
 
@@ -72,7 +105,7 @@ Removed:
   filled them. Use `comparison.introduced_finding_ids` and
   `comparison.resolved_finding_ids` with `--base`.
 
-New:
+New (re-anchor):
 
 - `archfit baseline --reanchor` carries the accepted debt of the stored
   baseline into a new engine release. It accepts no new finding. It keeps a
@@ -103,8 +136,9 @@ change.
   container comes from the containment tree that `paths:` globs declare.
 - Measurement contracts `go/packages.v2` and `scip.v2`. The fact-cache schema is
   `4`. Metric versions `unbalanced_edge.v3` and `encapsulation.v2`.
-- Stored baselines become non-comparable. Run `archfit baseline` after you
-  review the new seams.
+- Stored baselines become non-comparable. Run `archfit baseline --reanchor` to
+  carry the accepted debt to the new epoch without accepting new findings.
+  Review the seams that qualify only now, then decide.
 - Removed: `strength_inferred_edges` from the connascence report. The
   `distance_compression` fields `code_structure_*` are now `containment_*`.
 
@@ -124,7 +158,7 @@ Volatility, clone facts, the seam gate and the guidance vocabulary also change:
   never makes a seam qualify.
 - **The seam gate qualifies fewer, clearer seams.** A seam qualifies when one
   scored import edge is functional, intrusive or symmetric, crosses a module
-  boundary, has declared high volatility, and does not come from a composition
+  boundary, has effective high volatility (declared, inherited or cascade), and does not come from a composition
   root, generated or test source (an intrusive edge still qualifies). The seam
   shows its lowest-balance qualifying edge. Gate reasons name the boundary and
   the container. Only a deploy-unit boundary is called a distributed monolith.
@@ -135,20 +169,35 @@ Volatility, clone facts, the seam gate and the guidance vocabulary also change:
   `cheapest_move`.
 - **Metric change:** the state metric `critical_high_distance_edges` is now
   `qualifying_edges`. It counts edges that pass the qualification above.
-- **`config init` writes no `public:` entry for Go modules.** A `public:` target is
+- **`config init` writes no `public:` entry for Go or TypeScript modules.** A `public:` target is
   now the integration contract, so the owner declares each published surface.
   New design page: `docs/design/bc-measurement-v7.md`. The guides describe the
   v7 rules.
 
 ### Fixed
 
+- `archfit policy can-import` now gives one bounded line for every free-text
+  field. A rule `rationale`, `alternatives`, or `docs` written as a YAML block
+  scalar (`rationale: |` or `>`) put line breaks and long text into the `why`,
+  `goal`, and `constraints` of the answer. A strict consumer rejects such a
+  string. `check`, `analyze`, and the other report formats already bound this
+  text. The answer now uses the same rule: runs of whitespace and control
+  characters become one space, and text over 400 runes (3600 for `goal` and
+  `constraints`) is cut with an ellipsis. Text that is already one short line
+  does not change. Finding IDs and rule IDs do not change.
+- Release binaries and the container image print the real commit and build
+  date for `--version`. Before this fix they printed
+  `commit none, built unknown`. The date is the commit time in UTC, so two
+  builds of one commit print the same string. `make build` uses the same
+  values.
 - `archfit baseline` now accepts every edge of a Balanced Coupling advisory
   group. Before this fix, it accepted only the edge that represents the group.
   The other edges of the group then showed as `new` on the next `check`, also
   when the tree did not change. On the archfit repository, 66 advisories showed
   as `new` directly after a capture. The baseline file gets one entry for each
-  edge, so it can be larger. Run `archfit baseline` again to accept the full
-  groups.
+  edge, so it can be larger. A baseline from v2.5.0 holds one edge per group, so
+  after `--reanchor` the other edges of a group show as `not accepted`. Review
+  them, then run a full `archfit baseline` to accept the groups.
 - A rule `rationale`, `docs`, or `alternatives` written as a YAML block scalar
   (`rationale: |` or `>`) is now one line everywhere. The config loader turns
   every run of whitespace into one space and trims the ends. Before this fix,
@@ -192,27 +241,6 @@ Changed (SARIF):
   carries `baselineState`: `unchanged` for a baselined finding, `absent` for a
   baseline entry the run no longer sees, and `new` for every other finding. A
   baselined or waived result carries an `external`, `accepted` suppression.
-
-## v2.5.1 — (unreleased)
-
-Two fixes. The output contract and the baseline do not change.
-
-Fixed:
-
-- `archfit policy can-import` now gives one bounded line for every free-text
-  field. A rule `rationale`, `alternatives`, or `docs` written as a YAML block
-  scalar (`rationale: |` or `>`) put line breaks and long text into the `why`,
-  `goal`, and `constraints` of the answer. A strict consumer rejects such a
-  string. `check`, `analyze`, and the other report formats already bound this
-  text. The answer now uses the same rule: runs of whitespace and control
-  characters become one space, and text over 400 runes (3600 for `goal` and
-  `constraints`) is cut with an ellipsis. Text that is already one short line
-  does not change. Finding IDs and rule IDs do not change.
-- Release binaries and the container image print the real commit and build
-  date for `--version`. Before this fix they printed
-  `commit none, built unknown`. The date is the commit time in UTC, so two
-  builds of one commit print the same string. `make build` uses the same
-  values.
 
 ## v2.5.0 — agent guardrails
 
@@ -907,30 +935,3 @@ Release notes for all versions are maintained on GitHub Releases:
 <https://github.com/alexei-led/archfit/releases>
 
 The canonical changelog, migration notes, and per-version details are there.
-
-## Next release note draft
-
-Use this entry in the next annotated tag message:
-
-```text
-LLM semantic labels and module-role review are now available as an off-gate
-workflow.
-
-- `archfit config enrich labels` drafts `.archfit-labels.yaml` entries for
-  weak static strength classifications; `archfit config enrich abstained`
-  targets cross-module edges whose strength was unknown after all static
-  sources and includes source snippets plus model-reported confidence.
-- Approved labels are deterministic committed YAML. Drafts are inert, stale
-  evidence hashes are ignored with a `labels/stale` advisory, and
-  `provenance: llm` labels with medium/low confidence lower
-  `coupling_balance` confidence by one band.
-- Strength precedence is explicit:
-  config-authoritative > compiler-grade > SCIP/heuristic static facts >
-  approved LLM label > abstain. LLM labels fill unknown cells; they do not
-  override static classifications.
-- `archfit config update --ai-classify` proposes review-only module subdomains
-  (`core|supporting|generic`), derived volatility, layer suggestions, and
-  optional architectural roles, including synthetic module keys, so repos with
-  many generated module declarations can review differentiated domain
-  volatility without putting model calls on the gate.
-```

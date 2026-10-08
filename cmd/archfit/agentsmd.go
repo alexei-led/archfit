@@ -19,7 +19,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // Markers of the managed block.

@@ -178,7 +178,7 @@ repository publishes it for pre-commit:
 
 ```yaml
 - repo: https://github.com/alexei-led/archfit
-  rev: v2.5.0
+  rev: v3.0.0
   hooks:
     - id: archfit
 ```

@@ -4,11 +4,11 @@ import (
 	"context"
 	"strings"
 
-	historygit "github.com/alexei-led/archfit/internal/history/git"
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	historygit "github.com/alexei-led/archfit/v3/internal/history/git"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // Declared-volatility vocabulary used when labelling git-history corroboration.

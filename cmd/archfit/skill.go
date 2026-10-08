@@ -15,7 +15,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/alexei-led/archfit/skills"
+	"github.com/alexei-led/archfit/v3/skills"
 )
 
 // skillName is the embedded skill's directory and the installed one's.

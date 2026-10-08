@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/state"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/assessment/state"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 const (

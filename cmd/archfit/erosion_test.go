@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/baseline"
-	"github.com/alexei-led/archfit/internal/labels/labelsio"
-	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/relationship/labels"
+	"github.com/alexei-led/archfit/v3/internal/baseline"
+	"github.com/alexei-led/archfit/v3/internal/labels/labelsio"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 )
 
 // Erosion gates (CI), behavioural half. The structural half — no_scalar_decision

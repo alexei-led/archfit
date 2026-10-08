@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/relationship/labels"
+	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 )
 
 // TestEnrichServiceValidatesAndProjectsEvidence pins the request validation the

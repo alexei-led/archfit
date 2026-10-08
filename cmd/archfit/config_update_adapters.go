@@ -11,20 +11,20 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 
-	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/extract/deployunit"
-	"github.com/alexei-led/archfit/internal/extract/dynimports"
-	"github.com/alexei-led/archfit/internal/extract/registry"
-	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
-	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/initcfg"
-	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	relationshipanalysis "github.com/alexei-led/archfit/internal/relationship/analysis"
-	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/application"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/extract/deployunit"
+	"github.com/alexei-led/archfit/v3/internal/extract/dynimports"
+	"github.com/alexei-led/archfit/v3/internal/extract/registry"
+	runtimedetect "github.com/alexei-led/archfit/v3/internal/extract/runtime"
+	"github.com/alexei-led/archfit/v3/internal/factcache"
+	"github.com/alexei-led/archfit/v3/internal/initcfg"
+	"github.com/alexei-led/archfit/v3/internal/llm"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	relationshipanalysis "github.com/alexei-led/archfit/v3/internal/relationship/analysis"
+	"github.com/alexei-led/archfit/v3/internal/scope"
 )
 
 // ruleTypeForbiddenLayerDirection is the rule type whose presence makes a

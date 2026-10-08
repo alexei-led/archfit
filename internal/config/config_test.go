@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	suppliedcoverage "github.com/alexei-led/archfit/v3/internal/extract/coverage"
 
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/model/pattern"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/model/pattern"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 
 	"github.com/goccy/go-yaml"
 )

@@ -34,6 +34,8 @@ small references while configuring a repo.
   SARIF, `--base` delta mode.
 - [LLM enrichment](llm-enrich.md) — off-gate LLM enrichment: `enrich`, pinned
   labels, `explain --ai-summary`.
+- [Migrate to v3.0.0](migration-v3.md) — breaking changes and the steps to
+  follow, in order.
 - [Troubleshooting](troubleshooting.md) — common setup and config issues.
 
 ## Related docs

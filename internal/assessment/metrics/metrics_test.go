@@ -3,8 +3,8 @@ package metrics_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/metrics"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/assessment/metrics"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // ---------------------------------------------------------------------------

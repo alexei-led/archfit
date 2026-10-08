@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/evidence/acquisition"
+	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
 )
 
 func TestEffectiveConfigHash(t *testing.T) {

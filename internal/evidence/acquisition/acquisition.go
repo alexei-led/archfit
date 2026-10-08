@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/model/symbol"
-	"github.com/alexei-led/archfit/internal/scope"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/model/symbol"
+	"github.com/alexei-led/archfit/v3/internal/scope"
 )
 
 // Input is the narrow contract for acquiring relationship evidence before the

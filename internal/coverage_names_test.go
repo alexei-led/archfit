@@ -7,16 +7,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/decision"
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/extract/astgrep"
-	"github.com/alexei-led/archfit/internal/extract/clones"
-	goextract "github.com/alexei-led/archfit/internal/extract/golang"
-	"github.com/alexei-led/archfit/internal/extract/py"
-	"github.com/alexei-led/archfit/internal/extract/rust"
-	"github.com/alexei-led/archfit/internal/extract/scip"
-	"github.com/alexei-led/archfit/internal/extract/ts"
-	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/extract/astgrep"
+	"github.com/alexei-led/archfit/v3/internal/extract/clones"
+	goextract "github.com/alexei-led/archfit/v3/internal/extract/golang"
+	"github.com/alexei-led/archfit/v3/internal/extract/py"
+	"github.com/alexei-led/archfit/v3/internal/extract/rust"
+	"github.com/alexei-led/archfit/v3/internal/extract/scip"
+	"github.com/alexei-led/archfit/v3/internal/extract/ts"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 )
 
 // PartialFromUnresolvedSpecifiers keys on these two names alone to separate a
