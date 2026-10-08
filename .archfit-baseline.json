@@ -317,18 +317,18 @@
         "gate": "warn",
         "coverage": {
           "basis": "discovered dependencies resolved inside the declared module map",
-          "observed": 675,
-          "total": 1679
+          "observed": 678,
+          "total": 1676
         },
         "metrics": [
           {
             "name": "internal_edges",
-            "value": 675,
+            "value": 678,
             "unit": "count"
           },
           {
             "name": "library_edges",
-            "value": 1004,
+            "value": 998,
             "unit": "count"
           },
           {
@@ -338,7 +338,7 @@
           },
           {
             "name": "same_module_edges",
-            "value": 176,
+            "value": 178,
             "unit": "count"
           },
           {
@@ -391,13 +391,13 @@
         "gate": "warn",
         "coverage": {
           "basis": "cross-boundary edges scored",
-          "observed": 513,
-          "total": 513
+          "observed": 514,
+          "total": 514
         },
         "metrics": [
           {
             "name": "scored_edges",
-            "value": 513,
+            "value": 514,
             "unit": "count"
           },
           {
@@ -506,17 +506,17 @@
           },
           {
             "name": "production_files",
-            "value": 296,
+            "value": 295,
             "unit": "count"
           },
           {
             "name": "production_loc",
-            "value": 65520,
+            "value": 65484,
             "unit": "count"
           },
           {
             "name": "largest_production_file_loc",
-            "value": 1968,
+            "value": 1991,
             "unit": "count"
           },
           {
@@ -526,7 +526,7 @@
           },
           {
             "name": "function_loc_p90",
-            "value": 51,
+            "value": 52,
             "unit": "count"
           },
           {
@@ -536,7 +536,7 @@
           },
           {
             "name": "functions_over_threshold",
-            "value": 183,
+            "value": 185,
             "unit": "count"
           }
         ]
@@ -547,23 +547,23 @@
         "gate": "pass",
         "coverage": {
           "basis": "classified source files",
-          "observed": 631,
-          "total": 637
+          "observed": 632,
+          "total": 638
         },
         "metrics": [
           {
             "name": "test_files",
-            "value": 335,
+            "value": 337,
             "unit": "count"
           },
           {
             "name": "production_files",
-            "value": 296,
+            "value": 295,
             "unit": "count"
           },
           {
             "name": "test_to_production_files",
-            "value": 1.1317567567567568,
+            "value": 1.1423728813559322,
             "unit": "ratio"
           }
         ]
