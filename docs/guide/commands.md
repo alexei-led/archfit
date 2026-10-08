@@ -723,8 +723,8 @@ Notes:
   when `go list` or a `src/` subdirectory scan finds them. When Go and
   TypeScript discovery propose the same directory, the Go module keeps it.
   Rust crates from `cargo metadata` are always kept.
-- `public:` is written only for a directory that is itself a Go package with
-  production code; a bare grouping directory names no graph node.
+- No `public:` entry is written. A `public:` target is the integration
+  contract (`bc_score.v7`), so the owner declares each published surface.
 - Starter rules: `module_cycle` (`no-module-cycles`) always, and
   `forbidden_layer_direction` (`no-layer-back-edges`) when discovery inferred
   two or more layers. Each gets `gate: fail` when the init-time import graph

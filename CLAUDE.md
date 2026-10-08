@@ -10,7 +10,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - `make build` — static binary, `CGO_ENABLED=0` → `.bin/archfit`
 - `make test` — `go test -race -coverprofile=coverage.out ./...` + `python3 internal/extract/scip/scip_reader_test.py` + `bash scripts/tests/cli_exit_contract_test.sh` (CI runs both non-Go steps too)
 - `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned to minor v2.14 in the Makefile and CI; patch releases float)
-- `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
+- `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit/v3`
 - `make arch-lint` — v2 architecture-state gate: `.bin/archfit check --config .archfit.yaml`; accepts `healthy` (0) and `needs_attention` (2), and fails on `blocked` (1) or `error` (3)
 - `make archfit` — compatibility alias for `make arch-lint`
 - `make archfit-report` — write `docs/reports/archfit-report.md` via `archfit analyze --markdown`
@@ -554,7 +554,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   same helpers `RenderUpdateReport` uses. Gating on `HasReviewSuggestions` there
   hid module gaps, name drift, unmatched and pathless stanzas exactly when apply
   had an edit to make.
-- **Onboarding proposes only what check can see** (`internal/initcfg/inventory.go`, `cmd/archfit/init.go:languagePresence`). `config init` and `config update` read the rule-scope source inventory through the same reader as `config lint` (`acquisition.Inventory`, then `evaluation.SourceInventory`, passed in `initcfg.Presence.Sources`). Discovery keeps only Go/Python/TS modules that own a production file under `moduleRuleScope`'s ownership: most-specific `ModuleFor` on the path, then on the selector. It writes no `public:` entry for a Go or TypeScript module: under bc_score.v7 a `public:` target is the integration contract, so the owner declares surfaces. It drops mocks/, generated-only, test-only and default-excluded trees, `public:` entries that name no production node, and edges to dropped modules. Rust crates are kept unjudged, because their selectors need cargo metadata. A nil `Sources` is a discovery unit-test seam only; production always supplies it and fails loudly when the read fails. A starter rule gets `gate: fail` only when `DiscoveredConfig.ImportGraphComplete`. Otherwise it gets `gate: warn` with a `# Why:` line from `GraphGap`. The graph is incomplete when there are Python or TS modules, when Rust is present, or when a Go module owns non-Go source (prometheus `web/ui`). Init infers no layer from any directory or package name. Only a Rust workspace gets layers: topological tiers of the normal/build crate graph, with dev-dependencies excluded as in the extractor, so the starter direction rule starts with zero back-edges.
+- **Onboarding proposes only what check can see** (`internal/initcfg/inventory.go`, `cmd/archfit/init.go:languagePresence`). `config init` and `config update` read the rule-scope source inventory through the same reader as `config lint` (`acquisition.Inventory`, then `evaluation.SourceInventory`, passed in `initcfg.Presence.Sources`). Discovery keeps only Go/Python/TS modules that own a production file under `moduleRuleScope`'s ownership: most-specific `ModuleFor` on the path, then on the selector. It writes no `public:` entry for a Go or TypeScript module: under bc_score.v7 a `public:` target is the integration contract, so the owner declares surfaces. It drops mocks/, generated-only, test-only and default-excluded trees, and edges to dropped modules. Rust crates are kept unjudged, because their selectors need cargo metadata. A nil `Sources` is a discovery unit-test seam only; production always supplies it and fails loudly when the read fails. A starter rule gets `gate: fail` only when `DiscoveredConfig.ImportGraphComplete`. Otherwise it gets `gate: warn` with a `# Why:` line from `GraphGap`. The graph is incomplete when there are Python or TS modules, when Rust is present, or when a Go module owns non-Go source (prometheus `web/ui`). Init infers no layer from any directory or package name. Only a Rust workspace gets layers: topological tiers of the normal/build crate graph, with dev-dependencies excluded as in the extractor, so the starter direction rule starts with zero back-edges.
 - **`AnalysisRequest` + `AnalysisContext`** (`internal/application/analysis.go`)
   carry the per-run path and time inputs. `AnalysisRequest` is what the caller
   asks for; `AnalysisContext` is what acquisition resolved, and every later stage
@@ -1245,7 +1245,7 @@ release tool) collides on the tag and fails the job.
 The Go module path is `github.com/alexei-led/archfit/v3`. A major version needs
 the suffix in `go.mod` and in every import, so `go install
 github.com/alexei-led/archfit/v3/cmd/archfit@<tag>` works only for `v3.x`
-tags. The `goimports -local` prefix has no suffix and matches both.
+tags. `make fmt` passes the `/v3` module path to `goimports -local`; `.golangci.yaml` keeps the shorter prefix, which matches it too.
 
 ## Runtime image
 

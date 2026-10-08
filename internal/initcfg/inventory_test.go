@@ -25,13 +25,13 @@ func goSource(path string, production bool) SourceFile {
 
 func TestKeepModulesWithSource(t *testing.T) {
 	mods := []ModuleDef{
-		{Name: "chaos", Paths: []string{"pkg/chaos/**"}, Public: []string{"pkg/chaos"}},
-		{Name: "mocks", Paths: []string{"mocks/**"}, Public: []string{"mocks"}},
-		{Name: "gen", Paths: []string{"api/gen/**"}, Public: []string{"api/gen"}},
+		{Name: "chaos", Paths: []string{"pkg/chaos/**"}},
+		{Name: "mocks", Paths: []string{"mocks/**"}},
+		{Name: "gen", Paths: []string{"api/gen/**"}},
 		{Name: "e2e", Paths: []string{"test/e2e/**"}},
-		{Name: layerCmd, Paths: []string{"cmd/**"}, Public: []string{layerCmd}},
-		{Name: "cmd_tool", Paths: []string{"cmd/tool/**"}, Public: []string{"cmd/tool"}},
-		{Name: invModUtil, Paths: []string{"pkg/util/**"}, Public: []string{"pkg/util"}},
+		{Name: layerCmd, Paths: []string{"cmd/**"}},
+		{Name: "cmd_tool", Paths: []string{"cmd/tool/**"}},
+		{Name: invModUtil, Paths: []string{"pkg/util/**"}},
 		{Name: invCrateYazi, Paths: []string{invCrateYazi}},
 	}
 	origins := []string{langGo, langGo, langGo, langGo, langGo, langGo, langGo, langRust}
@@ -45,7 +45,7 @@ func TestKeepModulesWithSource(t *testing.T) {
 		goSource("cmd/cmd_test.go", false),
 		goSource("cmd/tool/main.go", true),
 		// util's root package is test-only; production code is one level down,
-		// so the module stays but its root public entry names no production node.
+		// so the module stays.
 		goSource("pkg/util/util_test.go", false),
 		goSource("pkg/util/strs/strs.go", true),
 		// Rust files carry no selector without cargo metadata.
@@ -55,8 +55,8 @@ func TestKeepModulesWithSource(t *testing.T) {
 	kept, keptOrigins := keepModulesWithSource(mods, origins, 7, sources)
 
 	want := []ModuleDef{
-		{Name: "chaos", Paths: []string{"pkg/chaos/**"}, Public: []string{"pkg/chaos"}},
-		{Name: "cmd_tool", Paths: []string{"cmd/tool/**"}, Public: []string{"cmd/tool"}},
+		{Name: "chaos", Paths: []string{"pkg/chaos/**"}},
+		{Name: "cmd_tool", Paths: []string{"cmd/tool/**"}},
 		{Name: invModUtil, Paths: []string{"pkg/util/**"}},
 		{Name: invCrateYazi, Paths: []string{invCrateYazi}},
 	}
@@ -72,9 +72,9 @@ func TestKeepModulesWithSource(t *testing.T) {
 // language's vocabulary — a TypeScript file path, a dotted Python module.
 func TestKeepModulesWithSource_PerLanguageSelectors(t *testing.T) {
 	mods := []ModuleDef{
-		{Name: invModAPI, Paths: []string{"src/api/**"}, Public: []string{"src/api/**"}},
-		{Name: "assets", Paths: []string{"src/assets/**"}, Public: []string{"src/assets/**"}},
-		{Name: "ts_mocks", Paths: []string{"src/__mocks__/**"}, Public: []string{"src/__mocks__/**"}},
+		{Name: invModAPI, Paths: []string{"src/api/**"}},
+		{Name: "assets", Paths: []string{"src/assets/**"}},
+		{Name: "ts_mocks", Paths: []string{"src/__mocks__/**"}},
 		{Name: invModHandlers, Paths: []string{"app.handlers", "app.handlers.*"}},
 		{Name: "tests", Paths: []string{"app.tests", "app.tests.*"}},
 	}

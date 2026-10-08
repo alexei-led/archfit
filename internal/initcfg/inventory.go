@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bmatcuk/doublestar/v4"
-
 	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
@@ -29,16 +27,14 @@ type SourceFile struct {
 }
 
 // keepModulesWithSource drops every module in mods[:judged] that owns no
-// production file of sources, and every public entry of a kept module that
-// names no production node. Modules at judged and beyond are kept unjudged:
+// production file of sources. Modules at judged and beyond are kept unjudged:
 // they are Rust crates, whose node identity needs cargo metadata the inventory
 // does not carry, so lint and check resolve them where this cannot.
 //
 // A module owning no production source is a mocks/, generated, test-only or
 // out-of-scope tree (loc skips mocks/ and target/; reports/, testdata/,
 // build/ and dist/ are excluded by default): check finds no file for it, so a
-// module-wide starter rule could never establish its scope, and its public
-// entry would fail lint as matching nothing.
+// module-wide starter rule could never establish its scope.
 //
 // One pass is exact: a dropped module owns no production file, so dropping it
 // hands none to another module. Its package nodes can still fall under a kept
@@ -53,7 +49,6 @@ func keepModulesWithSource(mods []ModuleDef, origins []string, judged int, sourc
 			if !slices.ContainsFunc(owned[i], func(f SourceFile) bool { return f.Production }) {
 				continue
 			}
-			m.Public = publicWithSource(m.Public, sources)
 		}
 		keptMods = append(keptMods, m)
 		keptOrigins = append(keptOrigins, origins[i])
@@ -108,25 +103,6 @@ func foldDroppedEdges(edges []ModuleEdge, discovered, kept []ModuleDef) []Module
 			}
 			seen[edge] = struct{}{}
 			out = append(out, edge)
-		}
-	}
-	return out
-}
-
-// publicWithSource keeps the public entries that match the selector of at
-// least one production file: what config lint's public_matches_nothing check
-// asks of an entry, narrowed to code that is not a test or generated stub.
-func publicWithSource(public []string, sources []SourceFile) []string {
-	var out []string
-	for _, p := range public {
-		if slices.ContainsFunc(sources, func(f SourceFile) bool {
-			if !f.Production || f.Selector == "" {
-				return false
-			}
-			matched, _ := doublestar.Match(p, f.Selector)
-			return matched
-		}) {
-			out = append(out, p)
 		}
 	}
 	return out

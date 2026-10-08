@@ -37,6 +37,9 @@ With a Go toolchain, you can also install a release tag:
 go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.0.0
 ```
 
+A `go install` build prints the module version for `--version`. Its commit and
+build date show `none` and `unknown`; release binaries print all three.
+
 The module path has the `/v3` suffix. Releases before v3.0.0 cannot be
 installed this way, because their module path had no major-version suffix.
 

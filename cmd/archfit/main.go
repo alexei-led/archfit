@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 
 	"github.com/alecthomas/kong"
 
@@ -16,10 +17,33 @@ import (
 
 // Build-time variables injected by -ldflags.
 var (
-	version = "dev"
+	version = devVersion
 	commit  = "none"
 	date    = "unknown"
 )
+
+// init lets a `go install` build report its module version. Release builds
+// set version through -ldflags and skip this; `go install` passes no ldflags
+// but records the module version in the build info. Commit and date stay unset.
+func init() {
+	if version != devVersion {
+		return
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		version = releaseVersion(info.Main.Version)
+	}
+}
+
+// releaseVersion maps build info's main module version to a display version.
+// A local build reports "(devel)" or nothing, which stays "dev".
+func releaseVersion(moduleVersion string) string {
+	if moduleVersion == "" || moduleVersion == "(devel)" {
+		return devVersion
+	}
+	return moduleVersion
+}
+
+const devVersion = "dev"
 
 const (
 	flagHelp              = "--help"
@@ -32,10 +56,10 @@ const (
 )
 
 const (
-	docsURL          = "https://github.com/alexei-led/archfit/v3/tree/main/docs/guide"
-	ciDocsURL        = "https://github.com/alexei-led/archfit/v3/blob/main/docs/guide/ci.md"
-	agentDocsURL     = "https://github.com/alexei-led/archfit/v3/blob/main/docs/guide/agent-feedback.md"
-	languagesDocsURL = "https://github.com/alexei-led/archfit/v3/blob/main/docs/guide/languages.md"
+	docsURL          = "https://github.com/alexei-led/archfit/tree/main/docs/guide"
+	ciDocsURL        = "https://github.com/alexei-led/archfit/blob/main/docs/guide/ci.md"
+	agentDocsURL     = "https://github.com/alexei-led/archfit/blob/main/docs/guide/agent-feedback.md"
+	languagesDocsURL = "https://github.com/alexei-led/archfit/blob/main/docs/guide/languages.md"
 )
 
 const (
