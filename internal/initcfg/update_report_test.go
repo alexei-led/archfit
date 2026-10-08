@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/config"
 )
 
 // Test-local constants to satisfy goconst across the update-report test file.

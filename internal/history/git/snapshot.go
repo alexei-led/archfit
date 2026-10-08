@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // snapshotDate is the fixed author and committer date of an index snapshot. A

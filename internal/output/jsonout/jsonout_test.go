@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/output/jsonout"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/output/jsonout"
 )
 
 func TestRendererFormat(t *testing.T) {

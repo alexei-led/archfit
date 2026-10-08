@@ -15,8 +15,8 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/relationship/labels"
+	"github.com/alexei-led/archfit/v3/internal/application"
+	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 )
 
 // Loader is the concrete filesystem adapter used by the technical pipeline.

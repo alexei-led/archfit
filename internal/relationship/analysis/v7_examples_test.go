@@ -6,12 +6,12 @@ package analysis_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/clone"
-	"github.com/alexei-led/archfit/internal/model/fileclass"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/relationship/analysis"
+	"github.com/alexei-led/archfit/v3/internal/model/clone"
+	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/relationship/analysis"
 )
 
 type exampleEdge struct {

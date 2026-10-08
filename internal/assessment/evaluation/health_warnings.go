@@ -3,9 +3,9 @@ package evaluation
 import (
 	"fmt"
 
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // toolGrimp is the Python primary analyzer's coverage name. Assessment is core

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 )
 
 // CompareMeasurementProfiles returns the named reasons a delta is inadmissible.

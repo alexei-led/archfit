@@ -17,7 +17,7 @@ import (
 
 	"github.com/invopop/jsonschema"
 
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 const (
@@ -45,7 +45,7 @@ func Generate(srcDir string) ([]byte, error) {
 		ExpandedStruct: true,
 	}
 
-	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/model/report", srcDir); err != nil {
+	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/model/report", srcDir); err != nil {
 		return nil, fmt.Errorf("reportschema: AddGoComments: %w", err)
 	}
 

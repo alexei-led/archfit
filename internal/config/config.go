@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/goccy/go-yaml"
 
-	modelrule "github.com/alexei-led/archfit/internal/model/rule"
-	"github.com/alexei-led/archfit/internal/policy"
+	modelrule "github.com/alexei-led/archfit/v3/internal/model/rule"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // Config is the parsed and validated content of an archfit.yaml file.

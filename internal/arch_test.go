@@ -19,11 +19,11 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/config"
 )
 
 const (
-	modulePrefix = "github.com/alexei-led/archfit/"
+	modulePrefix = "github.com/alexei-led/archfit/v3/"
 	goSourceExt  = ".go"
 
 	// Directories every repo walk in this package skips: not first-party source.

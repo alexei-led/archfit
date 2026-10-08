@@ -3,8 +3,8 @@ package evaluation
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 )
 
 // Coverage-gap gate postures and analyzer names used by the gate table. They

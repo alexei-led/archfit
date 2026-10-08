@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/pattern"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/model/pattern"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // globModuleA is the single-module path glob these projection fixtures share.

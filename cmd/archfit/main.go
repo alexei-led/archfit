@@ -11,7 +11,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // Build-time variables injected by -ldflags.
@@ -32,10 +32,10 @@ const (
 )
 
 const (
-	docsURL          = "https://github.com/alexei-led/archfit/tree/main/docs/guide"
-	ciDocsURL        = "https://github.com/alexei-led/archfit/blob/main/docs/guide/ci.md"
-	agentDocsURL     = "https://github.com/alexei-led/archfit/blob/main/docs/guide/agent-feedback.md"
-	languagesDocsURL = "https://github.com/alexei-led/archfit/blob/main/docs/guide/languages.md"
+	docsURL          = "https://github.com/alexei-led/archfit/v3/tree/main/docs/guide"
+	ciDocsURL        = "https://github.com/alexei-led/archfit/v3/blob/main/docs/guide/ci.md"
+	agentDocsURL     = "https://github.com/alexei-led/archfit/v3/blob/main/docs/guide/agent-feedback.md"
+	languagesDocsURL = "https://github.com/alexei-led/archfit/v3/blob/main/docs/guide/languages.md"
 )
 
 const (

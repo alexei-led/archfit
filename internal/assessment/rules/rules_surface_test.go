@@ -3,9 +3,9 @@ package rules_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/rules"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
 // surfaceModules declares the API surfaces the internal-access rules decide

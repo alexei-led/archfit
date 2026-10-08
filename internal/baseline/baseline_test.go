@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/status"
-	"github.com/alexei-led/archfit/internal/baseline"
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/assessment/status"
+	"github.com/alexei-led/archfit/v3/internal/baseline"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 // Shared test fingerprints (goconst).

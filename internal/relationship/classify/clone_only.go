@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
-	"github.com/alexei-led/archfit/internal/relationship/scoring"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v3/internal/relationship/scoring"
 )
 
 // ClonePair is a cross-module clone pair (analyzers.clones) — the book's

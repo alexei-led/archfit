@@ -3,7 +3,7 @@ package scoring
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
 )
 
 // TestScoreBand verifies the book balance 1..10 → coupling.Severity band mapping.

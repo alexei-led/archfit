@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/output/archmap"
+	"github.com/alexei-led/archfit/v3/internal/output/archmap"
 )
 
 // MapCmd renders the architecture map of one run: the declared modules in

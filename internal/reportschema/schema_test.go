@@ -10,8 +10,8 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/reportschema"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/reportschema"
 )
 
 const (

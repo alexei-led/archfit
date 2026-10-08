@@ -1,12 +1,12 @@
 package evaluation
 
 import (
-	"github.com/alexei-led/archfit/internal/assessment/metrics"
-	"github.com/alexei-led/archfit/internal/assessment/rules"
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/fileclass"
-	"github.com/alexei-led/archfit/internal/model/pattern"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/assessment/metrics"
+	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
+	"github.com/alexei-led/archfit/v3/internal/model/pattern"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // RuleEvidence is the acquired evidence rules match against. It is

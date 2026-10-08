@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 	"slices"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/extract/golang"
-	"github.com/alexei-led/archfit/internal/extract/py"
-	"github.com/alexei-led/archfit/internal/extract/rust"
-	"github.com/alexei-led/archfit/internal/extract/ts"
-	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/extract/golang"
+	"github.com/alexei-led/archfit/v3/internal/extract/py"
+	"github.com/alexei-led/archfit/v3/internal/extract/rust"
+	"github.com/alexei-led/archfit/v3/internal/extract/ts"
+	"github.com/alexei-led/archfit/v3/internal/factcache"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // Tool names one external binary archfit can probe, with a one-line

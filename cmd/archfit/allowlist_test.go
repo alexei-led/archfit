@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 // Module-allowlist fixtures: billing is visible only to shipping, shipping may

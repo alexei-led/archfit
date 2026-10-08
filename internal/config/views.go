@@ -5,13 +5,13 @@ import (
 	"strings"
 	"time"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 
-	"github.com/alexei-led/archfit/internal/model/pattern"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship/classify"
-	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/syntax"
+	"github.com/alexei-led/archfit/v3/internal/model/pattern"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
+	"github.com/alexei-led/archfit/v3/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/syntax"
 )
 
 // Config-quality lint field tokens, reported in ConfigWarning.Missing.

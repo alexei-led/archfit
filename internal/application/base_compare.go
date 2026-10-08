@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/assessment/decision"
-	"github.com/alexei-led/archfit/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
+	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
+	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 // BaseEvidence carries only stable finding identities, qualifying seam module

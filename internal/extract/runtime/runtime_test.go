@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/extract/runtime"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/extract/runtime"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // noopRunner returns a RunnerMock that reports no tools and never runs.

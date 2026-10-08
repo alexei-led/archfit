@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 
-	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/v3/internal/application"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/llm"
 )
 
 type labelJudgeAdapter struct {

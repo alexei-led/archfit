@@ -6,16 +6,16 @@ package evaluation
 import (
 	"time"
 
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/rules"
-	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/assessment/staleness"
-	"github.com/alexei-led/archfit/internal/assessment/status"
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/symbol"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/assessment/rules"
+	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
+	"github.com/alexei-led/archfit/v3/internal/assessment/staleness"
+	"github.com/alexei-led/archfit/v3/internal/assessment/status"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/symbol"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
 // Input is the assessment stage boundary. Every value is an assessment or

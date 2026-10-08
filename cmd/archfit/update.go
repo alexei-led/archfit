@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/v3/internal/application"
+	"github.com/alexei-led/archfit/v3/internal/llm"
 )
 
 // UpdateCmd syncs .archfit.yaml with the current project structure.

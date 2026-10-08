@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 // gateWarn is the default coverage-gap gate value reused across these tests.

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/factcache"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 const (

@@ -7,10 +7,10 @@ import (
 	"io"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/internal/evidence"
-	modevidence "github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/v3/internal/evidence"
+	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 const (

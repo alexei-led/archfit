@@ -7,10 +7,10 @@ package evaluation_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/assessment/state"
+	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/assessment/state"
 )
 
 // TestBuildStateClassifiesFindings is the population table: a finding is a

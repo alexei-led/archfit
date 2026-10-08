@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/result"
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 // Compatibility helper for focused prompt tests; production explain uses the

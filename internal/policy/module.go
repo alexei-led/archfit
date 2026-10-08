@@ -15,7 +15,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
 )
 
 // Role declares a module's architectural role. It refines Balanced-Coupling

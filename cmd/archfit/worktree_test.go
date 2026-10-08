@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // gitCommitAll stages all files and creates a commit in dir.

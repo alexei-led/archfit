@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/extract/registry"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/extract/registry"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // TestBuiltinConventionsCoverage keeps the registry honest: every language the

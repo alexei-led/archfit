@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 )
 
 // seam builds one ledger entry. Only the fields the gate is allowed to read are

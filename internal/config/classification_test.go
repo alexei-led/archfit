@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/evidence/acquisition"
+	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
 )
 
 // leafClass says which comparison input a config leaf belongs to. Comparability

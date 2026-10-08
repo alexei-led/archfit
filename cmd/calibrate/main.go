@@ -17,13 +17,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/alexei-led/archfit/internal/calibrate"
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/extract/golang"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/relationship/classify"
-	"github.com/alexei-led/archfit/internal/relationship/scoring"
-	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/calibrate"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/extract/golang"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
+	"github.com/alexei-led/archfit/v3/internal/relationship/scoring"
+	"github.com/alexei-led/archfit/v3/internal/scope"
 )
 
 const defaultConfigName = ".archfit.yaml"

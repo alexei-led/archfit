@@ -1,8 +1,8 @@
 package initcfg
 
 import (
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/extract/registry"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/extract/registry"
 )
 
 // Names the retired archfit-specific Go layer table and the retired Python

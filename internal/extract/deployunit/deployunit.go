@@ -17,11 +17,11 @@ import (
 	"strings"
 	"time"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/extract/golang"
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/extract/golang"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 const (

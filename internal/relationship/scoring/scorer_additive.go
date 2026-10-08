@@ -1,7 +1,7 @@
 package scoring
 
 import (
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
 )
 
 // AdditiveScorer implements Scorer using additive integer math:

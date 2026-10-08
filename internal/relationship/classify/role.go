@@ -1,6 +1,6 @@
 package classify
 
-import "github.com/alexei-led/archfit/internal/policy"
+import "github.com/alexei-led/archfit/v3/internal/policy"
 
 // CohesiveRole reports whether a module's declared role makes its outbound
 // fan-out cohesion rather than coupling. A composition root assembles the

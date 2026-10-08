@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/scope"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/factcache"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/scope"
 
 	"golang.org/x/tools/go/packages"
 )

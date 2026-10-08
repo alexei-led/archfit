@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/extract/ts"
-	"github.com/alexei-led/archfit/internal/factcache"
-	"github.com/alexei-led/archfit/internal/scope"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/extract/ts"
+	"github.com/alexei-led/archfit/v3/internal/factcache"
+	"github.com/alexei-led/archfit/v3/internal/scope"
 )
 
 func TestMeasurementConfigHash_CheckoutIndependentAndTracksInheritedConfig(t *testing.T) {

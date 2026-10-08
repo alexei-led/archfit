@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 // gateReferenceReasons runs analyze and returns the stored-reference reasons.

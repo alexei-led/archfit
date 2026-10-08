@@ -1,7 +1,7 @@
 package evaluation
 
 import (
-	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 )
 
 // gateOff / gateWarn / gateFail are the coverage-gap gate postures stamped on

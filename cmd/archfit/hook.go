@@ -16,9 +16,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	historygit "github.com/alexei-led/archfit/internal/history/git"
-	"github.com/alexei-led/archfit/internal/output/agentout"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	historygit "github.com/alexei-led/archfit/v3/internal/history/git"
+	"github.com/alexei-led/archfit/v3/internal/output/agentout"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // Claude Code hook events the Stop hook acts on.

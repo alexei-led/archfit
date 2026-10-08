@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/relationship/labels"
+	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 )
 
 // TestLabel_ConfidenceProvenance_Fields verifies round-trip of new fields via

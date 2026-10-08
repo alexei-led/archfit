@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/evidence"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 const (

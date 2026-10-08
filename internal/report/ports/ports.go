@@ -8,7 +8,7 @@ package ports
 import (
 	"io"
 
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 // Renderer is the port that output adapters satisfy.

@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship/analysis"
+	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship/analysis"
 )
 
 // QueriedEdge is one import an agent asks about, spelled as the language's

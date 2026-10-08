@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // Runner is a caching decorator around toolrun.Runner (fact-cache.md D5,

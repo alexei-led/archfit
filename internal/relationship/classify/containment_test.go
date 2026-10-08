@@ -3,7 +3,7 @@ package classify
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 const (

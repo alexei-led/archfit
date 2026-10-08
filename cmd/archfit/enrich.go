@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/application"
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/v3/internal/application"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/llm"
 )
 
 // enrichBatchSize bounds how many module pairs go into one LLM request.

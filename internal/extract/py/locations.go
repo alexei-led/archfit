@@ -8,7 +8,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
 )
 
 func pythonSourceLocations(root string, h helperOutput, exclusions []string) map[string]string {

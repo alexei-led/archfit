@@ -3,12 +3,12 @@ package boundary
 import (
 	"fmt"
 
-	assessmentresult "github.com/alexei-led/archfit/internal/assessment/result"
+	assessmentresult "github.com/alexei-led/archfit/v3/internal/assessment/result"
 
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/assessment/metrics/internal/result"
-	signal "github.com/alexei-led/archfit/internal/assessment/signals"
-	"github.com/alexei-led/archfit/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v3/internal/assessment/metrics/internal/result"
+	signal "github.com/alexei-led/archfit/v3/internal/assessment/signals"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
 )
 
 // isModuleBoundary reports whether a distance token names a module boundary.

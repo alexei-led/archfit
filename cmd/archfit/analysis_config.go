@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/config"
 )
 
 // loadConfig loads command configuration and validates rule definitions. The

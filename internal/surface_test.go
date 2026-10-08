@@ -17,8 +17,8 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/alexei-led/archfit/internal/assessment/score"
-	"github.com/alexei-led/archfit/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/assessment/score"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
 // surfaceOwners are the packages the capability migration reshaped. Every

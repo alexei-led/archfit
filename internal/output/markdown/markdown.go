@@ -11,9 +11,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/output/brief"
-	reportports "github.com/alexei-led/archfit/internal/report/ports"
+	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/output/brief"
+	reportports "github.com/alexei-led/archfit/v3/internal/report/ports"
 )
 
 // confidenceHigh is the confidence value that needs no qualification in output.

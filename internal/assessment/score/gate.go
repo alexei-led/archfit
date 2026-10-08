@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/assessment/result"
+	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 )
 
 // Distributed-monolith gate modes. They mirror the config vocabulary without

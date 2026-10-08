@@ -3,9 +3,9 @@ package calibrate_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/calibrate"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
-	"github.com/alexei-led/archfit/internal/relationship/scoring"
+	"github.com/alexei-led/archfit/v3/internal/calibrate"
+	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v3/internal/relationship/scoring"
 )
 
 // syntheticIndex builds a small coupling.Index covering key scoring quadrants.

@@ -11,10 +11,10 @@ import (
 	reflectjsonschema "github.com/invopop/jsonschema"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/configschema"
-	suppliedcoverage "github.com/alexei-led/archfit/internal/extract/coverage"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/configschema"
+	suppliedcoverage "github.com/alexei-led/archfit/v3/internal/extract/coverage"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // schemaFile is the committed schema path, relative to the repo root.

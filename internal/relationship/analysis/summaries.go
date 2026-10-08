@@ -4,13 +4,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/relationship/classify"
-	"github.com/alexei-led/archfit/internal/relationship/coupling"
-	"github.com/alexei-led/archfit/internal/relationship/scoring"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
+	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v3/internal/relationship/scoring"
 )
 
 func buildClassifiedSummary(set relationship.Set, clones []relationship.ClonePair, duplicated policy.DuplicatedKnowledgePolicy, tree classify.Containment, modules map[string]policy.ModuleDef) *relationship.ClassifiedEdgeSummary {

@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/extract/py"
-	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/extract/py"
+	"github.com/alexei-led/archfit/v3/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 func TestMeasurementVersionNamesActualPythonProducer(t *testing.T) {

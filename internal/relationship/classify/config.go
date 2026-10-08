@@ -1,8 +1,8 @@
 package classify
 
 import (
-	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // Config is the classifier input: the static relationship policy projected onto

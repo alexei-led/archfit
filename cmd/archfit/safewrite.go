@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/config"
 )
 
 // safeWriteConfig writes edited bytes to path using the strict write protocol:

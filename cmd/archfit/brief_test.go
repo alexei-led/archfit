@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/output/brief"
+	"github.com/alexei-led/archfit/v3/internal/output/brief"
 )
 
 const nextActionRepair = "repair"

@@ -6,15 +6,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/evidence/acquisition"
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/extract/acquire"
-	"github.com/alexei-led/archfit/internal/model/evidence"
-	"github.com/alexei-led/archfit/internal/ownership"
-	"github.com/alexei-led/archfit/internal/policy"
-	"github.com/alexei-led/archfit/internal/relationship/labels"
-	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/extract/acquire"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/ownership"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
+	"github.com/alexei-led/archfit/v3/internal/scope"
 )
 
 const (

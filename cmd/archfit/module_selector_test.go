@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	reporttest "github.com/alexei-led/archfit/internal/testutil/report"
+	reporttest "github.com/alexei-led/archfit/v3/internal/testutil/report"
 )
 
 const (

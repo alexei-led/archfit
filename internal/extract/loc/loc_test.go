@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/fileclass"
-	reportmodel "github.com/alexei-led/archfit/internal/model/report"
-	"github.com/alexei-led/archfit/internal/syntax"
+	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
+	reportmodel "github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/syntax"
 )
 
 // writeFile creates a file with the given content under dir.

@@ -5,8 +5,8 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 // AcceptedEntry is one accepted finding from a prior run: the fingerprint that

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/relationship/analysis"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/relationship/analysis"
 )
 
 // TestCouplingAdvisoryNeverCallsACriticalEdgeCheap pins the advisory wording

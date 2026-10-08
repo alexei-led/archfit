@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	evidenceports "github.com/alexei-led/archfit/internal/evidence/ports"
-	"github.com/alexei-led/archfit/internal/policy"
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/policy"
 
 	"github.com/goccy/go-yaml"
 )

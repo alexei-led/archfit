@@ -42,8 +42,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/assessment/finding"
-	"github.com/alexei-led/archfit/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 )
 
 // evidenceStatus is one coverage row normalised for comparability.

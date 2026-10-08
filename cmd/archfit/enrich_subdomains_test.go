@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/initcfg"
+	"github.com/alexei-led/archfit/v3/internal/initcfg"
 )
 
 // Module name constants used across subdomain enrich tests.

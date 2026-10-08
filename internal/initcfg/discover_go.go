@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // goListPkg mirrors the subset of `go list -json` output that we need.

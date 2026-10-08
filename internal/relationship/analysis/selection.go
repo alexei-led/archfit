@@ -4,8 +4,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/relationship"
-	"github.com/alexei-led/archfit/internal/relationship/labels"
+	"github.com/alexei-led/archfit/v3/internal/relationship"
+	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 )
 
 // maxSelectionSamples caps the sample paths carried per reviewed module pair.

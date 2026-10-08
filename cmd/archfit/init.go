@@ -10,14 +10,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/assessment/evaluation"
-	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/evidence/acquisition"
-	"github.com/alexei-led/archfit/internal/extract/registry"
-	"github.com/alexei-led/archfit/internal/initcfg"
-	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/model/fileclass"
-	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/v3/internal/config"
+	"github.com/alexei-led/archfit/v3/internal/evidence/acquisition"
+	"github.com/alexei-led/archfit/v3/internal/extract/registry"
+	"github.com/alexei-led/archfit/v3/internal/initcfg"
+	"github.com/alexei-led/archfit/v3/internal/llm"
+	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 // InitCmd discovers project structure and writes a starter archfit.yaml.

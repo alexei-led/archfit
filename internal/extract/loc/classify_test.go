@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/model/fileclass"
-	"github.com/alexei-led/archfit/internal/syntax"
+	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
+	"github.com/alexei-led/archfit/v3/internal/syntax"
 )
 
 // TestClassifyFileAgreesWithTheWalk pins that one-file classification gives

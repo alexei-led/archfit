@@ -1,6 +1,6 @@
 package relationship
 
-import "github.com/alexei-led/archfit/internal/model/evidence"
+import "github.com/alexei-led/archfit/v3/internal/model/evidence"
 
 // AdvisoryCandidate is relationship-owned evidence for an assessment advisory.
 // It deliberately contains no finding lifecycle or report types.
