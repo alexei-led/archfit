@@ -81,9 +81,8 @@ func discoverTSWorkspaces(root, pkgJSON string) []ModuleDef {
 			name := sanitiseTSModuleName(filepath.Base(rel))
 			path := rel + tsGlobSuffix
 			mods = append(mods, ModuleDef{
-				Name:   name,
-				Paths:  []string{path},
-				Public: []string{path},
+				Name:  name,
+				Paths: []string{path},
 			})
 		}
 	}
@@ -164,13 +163,12 @@ func discoverSubdirs(root string, dirNames []string) ([]ModuleDef, error) {
 			}
 			name := e.Name()
 			path := dir + "/" + name + tsGlobSuffix
+			// No public: entry. Under bc_score.v7 a public: target is the integration
+			// contract, so a whole-module glob read every import as contract coupling
+			// and hid it. The owner declares surfaces.
 			mods = append(mods, ModuleDef{
 				Name:  name,
 				Paths: []string{path},
-				// TS/JS cross-file imports go through module exports (you cannot import
-				// a non-exported binding), so they are contract coupling. Mark the
-				// module's files public; SCIP-typescript can refine this when enabled.
-				Public: []string{path},
 			})
 		}
 	}
