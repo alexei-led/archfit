@@ -97,24 +97,7 @@ func applicationBaseline(b baseline.Baseline) application.Baseline {
 			MeasurementProfile: b.State.MeasurementProfile,
 			HardGateFindingIDs: b.State.HardGateFindingIDs,
 			QualifyingSeamIDs:  b.State.QualifyingSeamIDs,
-			Dimensions:         loadedDimensions(b.State.Dimensions),
 		}
-	}
-	return out
-}
-
-func loadedDimensions(in []baseline.DimensionSnapshot) []application.BaselineDimension {
-	out := make([]application.BaselineDimension, 0, len(in))
-	for _, d := range in {
-		dim := application.BaselineDimension{
-			Name: d.Name, Status: d.Status, Gate: d.Gate,
-			CoverageBasis: d.Coverage.Basis, CoverageObserved: d.Coverage.Observed, CoverageTotal: d.Coverage.Total,
-			Metrics: make([]application.BaselineMetric, 0, len(d.Metrics)),
-		}
-		for _, m := range d.Metrics {
-			dim.Metrics = append(dim.Metrics, application.BaselineMetric{Name: m.Name, Value: m.Value, Unit: m.Unit})
-		}
-		out = append(out, dim)
 	}
 	return out
 }
@@ -133,26 +116,9 @@ func (baselineWriterAdapter) Save(ctx context.Context, path string, in applicati
 			MeasurementProfile: in.State.MeasurementProfile,
 			HardGateFindingIDs: in.State.HardGateFindingIDs,
 			QualifyingSeamIDs:  in.State.QualifyingSeamIDs,
-			Dimensions:         savedDimensions(in.State.Dimensions),
 		}
 	}
 	return baseline.Save(ctx, path, b)
-}
-
-func savedDimensions(in []application.BaselineDimension) []baseline.DimensionSnapshot {
-	out := make([]baseline.DimensionSnapshot, 0, len(in))
-	for _, d := range in {
-		dim := baseline.DimensionSnapshot{
-			Name: d.Name, Status: d.Status, Gate: d.Gate,
-			Coverage: baseline.CoverageSnapshot{Basis: d.CoverageBasis, Observed: d.CoverageObserved, Total: d.CoverageTotal},
-			Metrics:  make([]baseline.MetricSnapshotValue, 0, len(d.Metrics)),
-		}
-		for _, m := range d.Metrics {
-			dim.Metrics = append(dim.Metrics, baseline.MetricSnapshotValue{Name: m.Name, Value: m.Value, Unit: m.Unit})
-		}
-		out = append(out, dim)
-	}
-	return out
 }
 
 // bundleDirOf is the directory that holds a config bundle: the config file's.

@@ -226,11 +226,6 @@ func TestRoundTrip_StateSnapshot(t *testing.T) {
 		ConfigHash: "cfg", ModelHash: "mod", LabelsHash: "lbl", RubricVersion: report.ScoreVersion,
 		HardGateFindingIDs: []string{fpA},
 		QualifyingSeamIDs:  []string{"seam-1", "seam-2"},
-		Dimensions: []baseline.DimensionSnapshot{{
-			Name: "coupling", Status: "measured", Gate: "warn",
-			Coverage: baseline.CoverageSnapshot{Basis: "scored edges", Observed: 3, Total: 4},
-			Metrics:  []baseline.MetricSnapshotValue{{Name: "critical_edges", Value: 2, Unit: "count"}},
-		}},
 	}
 
 	if err := baseline.Save(ctx, path, baseline.Baseline{State: want}); err != nil {
@@ -253,14 +248,46 @@ func TestRoundTrip_StateSnapshot(t *testing.T) {
 	if !slices.Equal(got.State.HardGateFindingIDs, want.HardGateFindingIDs) {
 		t.Errorf("hard-gate IDs = %v, want %v", got.State.HardGateFindingIDs, want.HardGateFindingIDs)
 	}
-	if len(got.State.Dimensions) != 1 {
-		t.Fatalf("dimensions = %d, want 1", len(got.State.Dimensions))
+}
+
+// TestLoad_V3WithDimensionsStillLoads: a v3 file written before the baseline
+// dropped its dimension snapshots keeps loading with its stored state intact,
+// and the next save no longer writes the dead key.
+func TestLoad_V3WithDimensionsStillLoads(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	old := `{"schema_version":"` + baseline.SchemaVersion + `",
+"accepted":[{"fingerprint":"` + fpA + `","rule_id":"r"}],
+"metrics":{},
+"state":{"config_hash":"cfg","classification_hash":"cls","model_hash":"mod","labels_hash":"","rubric_version":"v",
+"hard_gate_finding_ids":[],"qualifying_seam_ids":["seam-1"],
+"dimensions":[{"name":"change_locality","status":"measured","gate":"pass",
+"coverage":{"basis":"declared modules","observed":1,"total":2},
+"metrics":[{"name":"commits_scanned","value":5,"unit":"count"}]}]}}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	gotDim, wantDim := got.State.Dimensions[0], want.Dimensions[0]
-	if gotDim.Name != wantDim.Name || gotDim.Status != wantDim.Status ||
-		gotDim.Gate != wantDim.Gate || gotDim.Coverage != wantDim.Coverage ||
-		!slices.Equal(gotDim.Metrics, wantDim.Metrics) {
-		t.Errorf("dimension = %+v, want %+v", gotDim, wantDim)
+
+	got, err := baseline.Load(ctx, path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.State == nil || got.State.ClassificationHash != "cls" || !slices.Equal(got.State.QualifyingSeamIDs, []string{"seam-1"}) {
+		t.Fatalf("stored state lost: %+v", got.State)
+	}
+	if !got.HasFingerprint(fpA) {
+		t.Errorf("accepted finding %s lost", fpA)
+	}
+
+	if err := baseline.Save(ctx, path, got); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	data, err := os.ReadFile(path) //nolint:gosec // path derives from t.TempDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"dimensions"`) {
+		t.Errorf("re-saved baseline still writes dimensions:\n%s", data)
 	}
 }
 

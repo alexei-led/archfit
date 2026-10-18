@@ -22,15 +22,15 @@ The [roadmap](erosion-roadmap.md) owns the wave order. [Language extensibility](
 
 ## How it works today
 
-### Baseline v2
+### Baseline v3
 
-`archfit baseline` writes schema `archfit.baseline.v2` (`internal/baseline/baseline.go`).
+`archfit baseline` writes schema `archfit.baseline.v3` (`internal/baseline/baseline.go`).
 
 | Part         | Content                                                                                                                 |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `accepted[]` | Fingerprint, rule ID, kind and severity of each accepted finding                                                        |
 | `metrics`    | The metric snapshot that ratchets compare against                                                                       |
-| `state`      | The four fingerprints, the measurement profile, hard-gate finding IDs, qualifying seam IDs and nine dimension snapshots |
+| `state`      | The four fingerprints, the measurement profile, hard-gate finding IDs and qualifying seam IDs                           |
 
 The baseline has no repository score. The engine rejects older schemas.
 

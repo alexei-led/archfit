@@ -165,6 +165,11 @@ sub-run can reach a dimension envelope.
    `application.BaselineDimension` loads them, but **no code reads them** — only
    `QualifyingSeamIDs` is consumed. Either feed the snapshots into `stateInput`
    or delete the unread fields and record the deferral.
+   **Resolved by deletion:** the baseline no longer stores dimension snapshots
+   (`DimensionSnapshot` and `BaselineDimension` are gone). They moved with git
+   history length (`commits_scanned`), so an unchanged architecture re-captured
+   to a new file. A per-dimension delta, if wanted later, needs a stored value
+   chosen for comparability, not the full dimension envelope.
 
 Fix shape: carry the base run's qualifying seam IDs and dimension snapshots on
 `BaseEvidence`, and either move the state build after the base comparison or pass

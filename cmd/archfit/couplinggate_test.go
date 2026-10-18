@@ -262,8 +262,9 @@ func TestRun_Analyze_UnmeasurableCouplingStaysSilent(t *testing.T) {
 }
 
 // TestRun_Baseline_WritesStateSnapshot verifies that `archfit baseline` writes
-// the schema-v2 architecture-state reference — the four comparison fingerprints
-// travelling with the facts they qualify — and no repository scalar.
+// the architecture-state reference — the four comparison fingerprints
+// travelling with the facts they qualify — and no repository scalar and no
+// dimension snapshot.
 func TestRun_Baseline_WritesStateSnapshot(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg)
@@ -290,8 +291,18 @@ func TestRun_Baseline_WritesStateSnapshot(t *testing.T) {
 	if b.State.RubricVersion != report.ScoreVersion {
 		t.Errorf("rubric_version = %q, want %q", b.State.RubricVersion, report.ScoreVersion)
 	}
-	if len(b.State.Dimensions) != report.DimensionCount {
-		t.Errorf("stored dimensions = %d, want %d", len(b.State.Dimensions), report.DimensionCount)
+	raw, err := os.ReadFile(path) //nolint:gosec // path derives from t.TempDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		State map[string]json.RawMessage `json:"state"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc.State["dimensions"]; ok {
+		t.Error("baseline stores state.dimensions, which no decision reads")
 	}
 }
 
@@ -325,6 +336,41 @@ func TestRun_Baseline_IsIdempotent(t *testing.T) {
 	second := capture()
 	if !bytes.Equal(first, second) {
 		t.Errorf("second capture over an unchanged tree differs from the first\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+// TestRun_Baseline_IgnoresHistoryLength pins that the baseline stores nothing
+// that moves with git history alone. A commit that touches no source leaves the architecture
+// unchanged, so the file must not move. It did: the capture stored every
+// dimension's metrics, and change_locality's commits_scanned grows with each
+// commit, so re-capturing an unchanged architecture produced a new file and a
+// baseline PR that accepted nothing.
+func TestRun_Baseline_IgnoresHistoryLength(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeCoupledRepo(t, distributedMonolithCfg)
+	dir := filepath.Dir(cfgPath)
+	path := filepath.Join(dir, defaultBaselinePath)
+	writeFileAt(t, dir, ".gitignore", defaultBaselinePath+"\n.archfit-cache/\n")
+
+	capture := func() []byte {
+		t.Helper()
+		var buf bytes.Buffer
+		if code := Run([]string{cmdBaseline, "-c", cfgPath}, &buf); code != 0 {
+			t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // path derives from t.TempDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+
+	gitCommitAll(t, dir, "fixture")
+	short := capture()
+	gitCommitAll(t, dir, "history only")
+	gitCommitAll(t, dir, "more history")
+	if long := capture(); !bytes.Equal(short, long) {
+		t.Errorf("capture after history-only commits differs\nshort history:\n%s\nlong history:\n%s", short, long)
 	}
 }
 

@@ -1,5 +1,17 @@
 # Release notes
 
+## Unreleased
+
+- **The baseline no longer stores dimension snapshots.** `archfit baseline` no longer
+  writes `state.dimensions`. No decision read it, and it held history-dependent
+  metrics such as `commits_scanned`, so re-capturing an unchanged architecture
+  after new commits wrote a different file and a baseline PR that accepted
+  nothing. The file now holds the accepted findings, the ratchet metric
+  snapshot, the comparison fingerprints and measurement profile, hard-gate
+  finding IDs, and qualifying seam IDs. The schema stays
+  `archfit.baseline.v3`: old files keep loading, and the field is simply no
+  longer written. The next capture drops it.
+
 ## v3.0.0
 
 This is a breaking release. Read the [migration guide](migration-v3.md) first.
