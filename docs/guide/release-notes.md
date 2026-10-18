@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## v3.0.1
 
 - **The baseline no longer stores dimension snapshots.** `archfit baseline` no longer
   writes `state.dimensions`. No decision read it, and it held history-dependent
@@ -11,6 +11,9 @@
   finding IDs, and qualifying seam IDs. The schema stays
   `archfit.baseline.v3`: old files keep loading, and the field is simply no
   longer written. The next capture drops it.
+
+- **golangci-lint v2.15.** The Makefile and CI pin the minor `v2.15`, the
+  version workstations run. No code changes.
 
 ## v3.0.0
 
