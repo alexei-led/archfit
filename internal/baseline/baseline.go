@@ -47,8 +47,10 @@ type AcceptedFinding struct {
 //
 // It stores no dimension snapshot. Dimension snapshots were stored and read by
 // nothing, and change_locality's commits_scanned grows with every commit, so
-// re-capturing an unchanged architecture wrote a new file. A v3 file that still
-// carries "dimensions" loads: the key is ignored.
+// re-capturing an unchanged architecture wrote a new file. It stores no
+// hard-gate IDs either: no decision read them, and they went stale after any
+// gate edit. A v3 file that still carries "dimensions" or
+// "hard_gate_finding_ids" loads: the keys are ignored.
 type StateSnapshot struct {
 	// ConfigHash is the raw-byte identity of the policy file, kept for the App's
 	// integrity binding. Comparability reads ClassificationHash instead.
@@ -58,10 +60,6 @@ type StateSnapshot struct {
 	LabelsHash         string                       `json:"labels_hash"`
 	RubricVersion      string                       `json:"rubric_version"`
 	MeasurementProfile *evidence.MeasurementProfile `json:"measurement_profile,omitempty"`
-	// HardGateFindingIDs are the reference's active blocker IDs, so a later run
-	// can name which blockers are new without re-deriving them from the
-	// accepted set (which mixes gates and advisories).
-	HardGateFindingIDs []string `json:"hard_gate_finding_ids"`
 	// QualifyingSeamIDs are the reference's distributed-monolith seams. Absent
 	// (not empty) in any baseline written before the seam ledger existed, which
 	// is why a pre-state file can never be read as "there were no seams then".
