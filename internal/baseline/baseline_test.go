@@ -224,8 +224,7 @@ func TestRoundTrip_StateSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "baseline.json")
 	want := &baseline.StateSnapshot{
 		ConfigHash: "cfg", ModelHash: "mod", LabelsHash: "lbl", RubricVersion: report.ScoreVersion,
-		HardGateFindingIDs: []string{fpA},
-		QualifyingSeamIDs:  []string{"seam-1", "seam-2"},
+		QualifyingSeamIDs: []string{"seam-1", "seam-2"},
 	}
 
 	if err := baseline.Save(ctx, path, baseline.Baseline{State: want}); err != nil {
@@ -245,22 +244,19 @@ func TestRoundTrip_StateSnapshot(t *testing.T) {
 	if !slices.Equal(got.State.QualifyingSeamIDs, want.QualifyingSeamIDs) {
 		t.Errorf("seam IDs = %v, want %v", got.State.QualifyingSeamIDs, want.QualifyingSeamIDs)
 	}
-	if !slices.Equal(got.State.HardGateFindingIDs, want.HardGateFindingIDs) {
-		t.Errorf("hard-gate IDs = %v, want %v", got.State.HardGateFindingIDs, want.HardGateFindingIDs)
-	}
 }
 
-// TestLoad_V3WithDimensionsStillLoads: a v3 file written before the baseline
-// dropped its dimension snapshots keeps loading with its stored state intact,
-// and the next save no longer writes the dead key.
-func TestLoad_V3WithDimensionsStillLoads(t *testing.T) {
+// TestLoad_V3WithRetiredStateKeysStillLoads: a v3 file written before the baseline
+// dropped its dimension snapshots and hard-gate IDs keeps loading with its stored
+// state intact, and the next save no longer writes either dead key.
+func TestLoad_V3WithRetiredStateKeysStillLoads(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "baseline.json")
 	old := `{"schema_version":"` + baseline.SchemaVersion + `",
 "accepted":[{"fingerprint":"` + fpA + `","rule_id":"r"}],
 "metrics":{},
 "state":{"config_hash":"cfg","classification_hash":"cls","model_hash":"mod","labels_hash":"","rubric_version":"v",
-"hard_gate_finding_ids":[],"qualifying_seam_ids":["seam-1"],
+"hard_gate_finding_ids":["` + fpA + `"],"qualifying_seam_ids":["seam-1"],
 "dimensions":[{"name":"change_locality","status":"measured","gate":"pass",
 "coverage":{"basis":"declared modules","observed":1,"total":2},
 "metrics":[{"name":"commits_scanned","value":5,"unit":"count"}]}]}}`
@@ -286,8 +282,10 @@ func TestLoad_V3WithDimensionsStillLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), `"dimensions"`) {
-		t.Errorf("re-saved baseline still writes dimensions:\n%s", data)
+	for _, key := range []string{`"dimensions"`, `"hard_gate_finding_ids"`} {
+		if strings.Contains(string(data), key) {
+			t.Errorf("re-saved baseline still writes %s:\n%s", key, data)
+		}
 	}
 }
 

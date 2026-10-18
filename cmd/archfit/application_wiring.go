@@ -95,7 +95,6 @@ func applicationBaseline(b baseline.Baseline) application.Baseline {
 			ConfigHash: b.State.ConfigHash, ClassificationHash: b.State.ClassificationHash, ModelHash: b.State.ModelHash,
 			LabelsHash: b.State.LabelsHash, RubricVersion: b.State.RubricVersion,
 			MeasurementProfile: b.State.MeasurementProfile,
-			HardGateFindingIDs: b.State.HardGateFindingIDs,
 			QualifyingSeamIDs:  b.State.QualifyingSeamIDs,
 		}
 	}
@@ -114,7 +113,6 @@ func (baselineWriterAdapter) Save(ctx context.Context, path string, in applicati
 			ConfigHash: in.State.ConfigHash, ClassificationHash: in.State.ClassificationHash, ModelHash: in.State.ModelHash,
 			LabelsHash: in.State.LabelsHash, RubricVersion: in.State.RubricVersion,
 			MeasurementProfile: in.State.MeasurementProfile,
-			HardGateFindingIDs: in.State.HardGateFindingIDs,
 			QualifyingSeamIDs:  in.State.QualifyingSeamIDs,
 		}
 	}

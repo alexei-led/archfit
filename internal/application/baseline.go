@@ -35,8 +35,6 @@ type BaselineStateSnapshot struct {
 	LabelsHash         string
 	RubricVersion      string
 	MeasurementProfile *modevidence.MeasurementProfile
-	// HardGateFindingIDs are the reference's active blockers.
-	HardGateFindingIDs []string
 	// QualifyingSeamIDs are the reference's distributed-monolith seams.
 	QualifyingSeamIDs []string
 }
@@ -190,11 +188,7 @@ func baselineState(r result.Result) *BaselineStateSnapshot {
 	out := &BaselineStateSnapshot{
 		ConfigHash: r.ConfigHash, ClassificationHash: r.ClassificationHash, ModelHash: r.ModelHash, LabelsHash: r.LabelsHash,
 		RubricVersion: report.ScoreVersion, MeasurementProfile: r.MeasurementProfile,
-		HardGateFindingIDs: []string{},
-		QualifyingSeamIDs:  []string{},
-	}
-	for _, b := range r.State.Blockers {
-		out.HardGateFindingIDs = append(out.HardGateFindingIDs, b.ID)
+		QualifyingSeamIDs: []string{},
 	}
 	for _, seam := range r.Seams {
 		if seam.DistributedMonolith {

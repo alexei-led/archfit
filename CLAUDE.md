@@ -1030,15 +1030,17 @@ init` emits v2 directly; owners update older configs manually before analysis.
 "archfit.baseline.v3"`; v3 added `classification_hash`, so v2 files are rejected). Stores accepted findings, the metric snapshot, and the
   architecture-state reference: the comparison fingerprints (`classification_hash`,
   `model_hash`, `labels_hash`, `rubric_version`, plus the `config_hash` identity) and the measurement profile
-  travelling with the facts they qualify — hard-gate finding IDs and
-  distributed-monolith seam IDs. No repository scalar and no dimension
-  snapshot. The stored seam IDs feed drift and the seam gate; the stored
-  hard-gate IDs are kept by owner decision but no decision reads them (re-anchor
-  filters the fresh capture's list). Dimension snapshots were written and read
-  by nothing, and `change_locality`'s `commits_scanned` grows with every
-  commit, so a re-capture of an unchanged architecture wrote a new file
-  (`TestRun_Baseline_IgnoresHistoryLength`). A v3 file that still carries
-  `state.dimensions` loads; the key is ignored. Older schemas are
+  travelling with the facts they qualify — distributed-monolith seam IDs. No
+  repository scalar, no dimension snapshot and no hard-gate IDs: the stored seam
+  IDs feed drift and the seam gate, and nothing else reads a stored blocker list.
+  A stored blocker list was a subset of `accepted` judged under the capture-time
+  policy, so it went stale after any `gate:` edit; whether a finding blocks is
+  decided by the accepted set plus the current policy. Dimension snapshots were
+  written and read by nothing, and `change_locality`'s `commits_scanned` grows
+  with every commit, so a re-capture of an unchanged architecture wrote a new
+  file (`TestRun_Baseline_IgnoresHistoryLength`). A v3 file that still carries
+  `state.dimensions` or `state.hard_gate_finding_ids` loads; the keys are ignored
+  and the next save drops them. Older schemas are
   rejected; changing only `schema_version` cannot synthesize the missing state
   reference. Preserve the old file for owner review and regenerate deliberately
   with `archfit baseline` after reviewing current findings.
@@ -1068,8 +1070,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   finding IDs hash rule + paths + edge kind and no epoch change in v3.0.0
   re-keys them, while a rule + module-pair key would accept a new edge on an
   already-indebted pair. `qualifying_seam_ids` is stored ∩ current, so a seam
-  that qualifies only in the new epoch stays new; `hard_gate_finding_ids` keeps
-  only accepted blockers. Stored debt a waiver also covers is KEPT (check ranks
+  that qualifies only in the new epoch stays new. Stored debt a waiver also covers is KEPT (check ranks
   a baselined status above a waiver, so dropping it would turn permanent debt
   temporary); `--no-advisories` is refused for the same reason. Dropped stored
   entries, unaccepted current edges (one per rollup member), seams that stopped

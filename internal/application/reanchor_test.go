@@ -104,7 +104,7 @@ func TestReanchorAcceptsOnlyStoredDebt(t *testing.T) {
 func TestReanchorIntersectsTheStateReference(t *testing.T) {
 	capture := BaselineSnapshot{
 		Accepted: accepted("a", "b"),
-		State:    &BaselineStateSnapshot{QualifyingSeamIDs: []string{"s1", "s3"}, HardGateFindingIDs: []string{"a", "b"}},
+		State:    &BaselineStateSnapshot{QualifyingSeamIDs: []string{"s1", "s3"}},
 	}
 	got, rep := reanchor(capture, nil, []findingKeys{current("a"), current("b")}, nil, StoredBaseline{
 		Accepted: accepted("a"), QualifyingSeamIDs: []string{"s1", "s2"},
@@ -117,9 +117,6 @@ func TestReanchorIntersectsTheStateReference(t *testing.T) {
 	}
 	if !slices.Equal(rep.NewSeams, []string{"s3"}) {
 		t.Errorf("new seams = %v, want [s3] reported, not hidden", rep.NewSeams)
-	}
-	if !slices.Equal(got.State.HardGateFindingIDs, []string{"a"}) {
-		t.Errorf("hard-gate IDs = %v, want only the accepted blocker", got.State.HardGateFindingIDs)
 	}
 	if !slices.Equal(capture.State.QualifyingSeamIDs, []string{"s1", "s3"}) {
 		t.Error("reanchor rewrote the capture it filters")

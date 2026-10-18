@@ -70,7 +70,7 @@ type ReanchorReport struct {
 // a plain capture skips them, but a re-anchor keeps the ones the stored file
 // accepted, since a baselined status outranks a waiver in check. Qualifying
 // seams are the intersection, so a seam that qualifies only in the new epoch
-// counts as new, and the hard-gate IDs keep only accepted blockers.
+// counts as new.
 func reanchor(capture BaselineSnapshot, waived []BaselineFinding, current []findingKeys, metrics []report.MetricResult, stored StoredBaseline, drift []string) (BaselineSnapshot, ReanchorReport) {
 	storedIDs := make(map[string]bool, len(stored.Accepted))
 	for _, a := range stored.Accepted {
@@ -123,12 +123,6 @@ func reanchor(capture BaselineSnapshot, waived []BaselineFinding, current []find
 		for _, id := range stored.QualifyingSeamIDs {
 			if !currentSeams[id] {
 				rep.DroppedSeams = append(rep.DroppedSeams, id)
-			}
-		}
-		state.HardGateFindingIDs = []string{}
-		for _, id := range capture.State.HardGateFindingIDs {
-			if matched[id] {
-				state.HardGateFindingIDs = append(state.HardGateFindingIDs, id)
 			}
 		}
 		out.State = &state
