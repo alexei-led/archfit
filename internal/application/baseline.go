@@ -7,7 +7,6 @@ import (
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
-	"github.com/alexei-led/archfit/v3/internal/assessment/state"
 	"github.com/alexei-led/archfit/v3/internal/assessment/status"
 	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/report"
@@ -21,30 +20,12 @@ type BaselineFinding struct {
 	Severity    string
 }
 
-// BaselineMetric is one stored dimension metric.
-type BaselineMetric struct {
-	Name  string
-	Value float64
-	Unit  string
-}
-
-// BaselineDimension is one architecture-state dimension as the reference
-// recorded it.
-type BaselineDimension struct {
-	Name             string
-	Status           string
-	Gate             string
-	CoverageBasis    string
-	CoverageObserved int
-	CoverageTotal    int
-	Metrics          []BaselineMetric
-}
-
 // BaselineStateSnapshot is the architecture-state reference a baseline stores.
 //
-// The four fingerprints travel with the facts they qualify. A dimension or seam
+// The four fingerprints travel with the facts they qualify. A seam or blocker
 // delta may be claimed only when all four still match this run, so a policy
-// change can never be reported as a code change.
+// change can never be reported as a code change. It holds decision inputs only:
+// a dimension snapshot was read by nothing and moved with history length.
 type BaselineStateSnapshot struct {
 	// ConfigHash is the raw-byte identity of the policy file. It is stored for
 	// the App's integrity binding and is never compared.
@@ -58,7 +39,6 @@ type BaselineStateSnapshot struct {
 	HardGateFindingIDs []string
 	// QualifyingSeamIDs are the reference's distributed-monolith seams.
 	QualifyingSeamIDs []string
-	Dimensions        []BaselineDimension
 }
 
 // BaselineSnapshot is the application contract passed to baseline persistence.
@@ -212,7 +192,6 @@ func baselineState(r result.Result) *BaselineStateSnapshot {
 		RubricVersion: report.ScoreVersion, MeasurementProfile: r.MeasurementProfile,
 		HardGateFindingIDs: []string{},
 		QualifyingSeamIDs:  []string{},
-		Dimensions:         make([]BaselineDimension, 0, state.DimensionCount),
 	}
 	for _, b := range r.State.Blockers {
 		out.HardGateFindingIDs = append(out.HardGateFindingIDs, b.ID)
@@ -221,17 +200,6 @@ func baselineState(r result.Result) *BaselineStateSnapshot {
 		if seam.DistributedMonolith {
 			out.QualifyingSeamIDs = append(out.QualifyingSeamIDs, seam.ID)
 		}
-	}
-	for _, dim := range r.State.Dimensions.All() {
-		snap := BaselineDimension{
-			Name: dim.Name, Status: string(dim.Status), Gate: string(dim.Gate),
-			CoverageBasis: dim.Coverage.Basis, CoverageObserved: dim.Coverage.Observed, CoverageTotal: dim.Coverage.Total,
-			Metrics: make([]BaselineMetric, 0, len(dim.Metrics)),
-		}
-		for _, m := range dim.Metrics {
-			snap.Metrics = append(snap.Metrics, BaselineMetric{Name: m.Name, Value: m.Value, Unit: m.Unit})
-		}
-		out.Dimensions = append(out.Dimensions, snap)
 	}
 	return out
 }

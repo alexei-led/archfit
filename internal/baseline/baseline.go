@@ -18,8 +18,8 @@ import (
 )
 
 // SchemaVersion is the schema_version this binary writes. Schema v3 stores the
-// architecture-state reference (fingerprints, hard-gate findings, seams, and
-// dimension snapshots) and no repository scalar. v3 adds classification_hash,
+// architecture-state reference (fingerprints, hard-gate findings, and seams)
+// and no repository scalar. v3 adds classification_hash,
 // the comparison input that replaced the raw config hash: a v2 file cannot say
 // which policy it was measured under, so it is rejected rather than guessed.
 const SchemaVersion = "archfit.baseline.v3"
@@ -39,37 +39,16 @@ type AcceptedFinding struct {
 	Severity string `json:"severity,omitempty"`
 }
 
-// CoverageSnapshot is a stored dimension's denominator.
-type CoverageSnapshot struct {
-	Basis    string `json:"basis"`
-	Observed int    `json:"observed"`
-	Total    int    `json:"total"`
-}
-
-// MetricSnapshotValue is one stored dimension metric. Only the three fields a
-// later delta needs are persisted: a stored provenance list would grow the file
-// without ever being compared.
-type MetricSnapshotValue struct {
-	Name  string  `json:"name"`
-	Value float64 `json:"value"`
-	Unit  string  `json:"unit"`
-}
-
-// DimensionSnapshot is one architecture-state dimension as the reference
-// recorded it.
-type DimensionSnapshot struct {
-	Name     string                `json:"name"`
-	Status   string                `json:"status"`
-	Gate     string                `json:"gate"`
-	Coverage CoverageSnapshot      `json:"coverage"`
-	Metrics  []MetricSnapshotValue `json:"metrics"`
-}
-
-// StateSnapshot is the architecture-state reference a v2 baseline stores.
+// StateSnapshot is the architecture-state reference a baseline stores.
 //
 // Policy fingerprints and measurement identity travel with the facts they qualify:
-// a dimension or seam delta may be claimed only when these inputs still match, so a
+// a seam or blocker delta may be claimed only when these inputs still match, so a
 // reader can tell a code change from a policy change without guessing.
+//
+// It holds only what a decision reads. Dimension snapshots were stored and read
+// by nothing, and change_locality's commits_scanned grows with every commit, so
+// re-capturing an unchanged architecture wrote a new file. A v3 file that still
+// carries "dimensions" loads: the key is ignored.
 type StateSnapshot struct {
 	// ConfigHash is the raw-byte identity of the policy file, kept for the App's
 	// integrity binding. Comparability reads ClassificationHash instead.
@@ -86,8 +65,7 @@ type StateSnapshot struct {
 	// QualifyingSeamIDs are the reference's distributed-monolith seams. Absent
 	// (not empty) in any baseline written before the seam ledger existed, which
 	// is why a pre-state file can never be read as "there were no seams then".
-	QualifyingSeamIDs []string            `json:"qualifying_seam_ids"`
-	Dimensions        []DimensionSnapshot `json:"dimensions"`
+	QualifyingSeamIDs []string `json:"qualifying_seam_ids"`
 }
 
 // Baseline is the on-disk baseline file structure.
