@@ -339,8 +339,8 @@ func TestRun_Baseline_IsIdempotent(t *testing.T) {
 	}
 }
 
-// TestRun_Baseline_IgnoresHistoryLength pins that the baseline holds only what a
-// decision reads. A commit that touches no source leaves the architecture
+// TestRun_Baseline_IgnoresHistoryLength pins that the baseline stores nothing
+// that moves with git history alone. A commit that touches no source leaves the architecture
 // unchanged, so the file must not move. It did: the capture stored every
 // dimension's metrics, and change_locality's commits_scanned grows with each
 // commit, so re-capturing an unchanged architecture produced a new file and a

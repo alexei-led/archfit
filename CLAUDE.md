@@ -1031,9 +1031,11 @@ init` emits v2 directly; owners update older configs manually before analysis.
   architecture-state reference: the comparison fingerprints (`classification_hash`,
   `model_hash`, `labels_hash`, `rubric_version`, plus the `config_hash` identity) and the measurement profile
   travelling with the facts they qualify — hard-gate finding IDs and
-  distributed-monolith seam IDs. It holds ONLY what a decision reads: no
-  repository scalar and no dimension snapshot. Dimension snapshots were written
-  and read by nothing, and `change_locality`'s `commits_scanned` grows with every
+  distributed-monolith seam IDs. No repository scalar and no dimension
+  snapshot. The stored seam IDs feed drift and the seam gate; the stored
+  hard-gate IDs are kept by owner decision but no decision reads them (re-anchor
+  filters the fresh capture's list). Dimension snapshots were written and read
+  by nothing, and `change_locality`'s `commits_scanned` grows with every
   commit, so a re-capture of an unchanged architecture wrote a new file
   (`TestRun_Baseline_IgnoresHistoryLength`). A v3 file that still carries
   `state.dimensions` loads; the key is ignored. Older schemas are

@@ -42,11 +42,11 @@ type AcceptedFinding struct {
 // StateSnapshot is the architecture-state reference a baseline stores.
 //
 // Policy fingerprints and measurement identity travel with the facts they qualify:
-// a seam or blocker delta may be claimed only when these inputs still match, so a
-// reader can tell a code change from a policy change without guessing.
+// a seam delta may be claimed only when these inputs still match, so a reader
+// can tell a code change from a policy change without guessing.
 //
-// It holds only what a decision reads. Dimension snapshots were stored and read
-// by nothing, and change_locality's commits_scanned grows with every commit, so
+// It stores no dimension snapshot. Dimension snapshots were stored and read by
+// nothing, and change_locality's commits_scanned grows with every commit, so
 // re-capturing an unchanged architecture wrote a new file. A v3 file that still
 // carries "dimensions" loads: the key is ignored.
 type StateSnapshot struct {

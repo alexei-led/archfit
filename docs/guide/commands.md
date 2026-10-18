@@ -273,12 +273,12 @@ What it writes (`schema_version: archfit.baseline.v3`):
   and the `measurement_profile` (producer semantics, tool versions, statuses,
   and settings hash)
   together with the facts they qualify — `hard_gate_finding_ids` and
-  `qualifying_seam_ids`. A seam or blocker delta is claimed only when all four
+  `qualifying_seam_ids`. A seam delta is claimed only when all four
   fingerprints and the measurement profile still match; any fingerprint or
   profile mismatch is reported as non-comparable
   and names the input that moved.
-- Stores **no repository score** and **no dimension snapshot**. The file holds
-  only what a later decision reads. A dimension metric such as
+- Stores **no repository score** and **no dimension snapshot**. A dimension
+  metric such as
   `commits_scanned` changes with git history alone, so storing it made a
   re-capture of an unchanged architecture write a new file. A v3 file that
   still has `state.dimensions` loads; the field is ignored.

@@ -22,10 +22,10 @@ type BaselineFinding struct {
 
 // BaselineStateSnapshot is the architecture-state reference a baseline stores.
 //
-// The four fingerprints travel with the facts they qualify. A seam or blocker
-// delta may be claimed only when all four still match this run, so a policy
-// change can never be reported as a code change. It holds decision inputs only:
-// a dimension snapshot was read by nothing and moved with history length.
+// The four fingerprints travel with the facts they qualify. A seam delta may be
+// claimed only when all four still match this run, so a policy change can never
+// be reported as a code change. It stores no dimension snapshot: one was read by
+// nothing and moved with history length.
 type BaselineStateSnapshot struct {
 	// ConfigHash is the raw-byte identity of the policy file. It is stored for
 	// the App's integrity binding and is never compared.

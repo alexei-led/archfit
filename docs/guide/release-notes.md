@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **The baseline stores only decision inputs.** `archfit baseline` no longer
+- **The baseline no longer stores dimension snapshots.** `archfit baseline` no longer
   writes `state.dimensions`. No decision read it, and it held history-dependent
   metrics such as `commits_scanned`, so re-capturing an unchanged architecture
   after new commits wrote a different file and a baseline PR that accepted

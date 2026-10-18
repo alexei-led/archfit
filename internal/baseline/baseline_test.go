@@ -251,7 +251,7 @@ func TestRoundTrip_StateSnapshot(t *testing.T) {
 }
 
 // TestLoad_V3WithDimensionsStillLoads: a v3 file written before the baseline
-// dropped its dimension snapshots keeps loading with its decision inputs intact,
+// dropped its dimension snapshots keeps loading with its stored state intact,
 // and the next save no longer writes the dead key.
 func TestLoad_V3WithDimensionsStillLoads(t *testing.T) {
 	ctx := context.Background()
@@ -273,7 +273,7 @@ func TestLoad_V3WithDimensionsStillLoads(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if got.State == nil || got.State.ClassificationHash != "cls" || !slices.Equal(got.State.QualifyingSeamIDs, []string{"seam-1"}) {
-		t.Fatalf("decision inputs lost: %+v", got.State)
+		t.Fatalf("stored state lost: %+v", got.State)
 	}
 	if !got.HasFingerprint(fpA) {
 		t.Errorf("accepted finding %s lost", fpA)
