@@ -19,8 +19,14 @@ ifeq ($(firstword $(MAKECMDGOALS)),test)
 TEST_PKGS := $(if $(RAW_TEST_PKGS),$(foreach p,$(RAW_TEST_PKGS),$(if $(filter ./% /%,$(p)),$(p),./$(p))),./...)
 endif
 
-GOLANGCI_LINT_VERSION := v2.15
-MOQ_VERSION           := v0.4.0
+GOLANGCI_LINT_VERSION := v2.15.0
+MOQ_VERSION           := v0.8.1
+JSONSCHEMA_VERSION    := 4.26.0
+ACTIONLINT_VERSION    := v1.7.12
+ZIZMOR_VERSION        := 1.31.1
+# goimports ships with golang.org/x/tools; install the version in go.mod so the
+# formatter cannot drift from the toolchain the code builds with.
+GOIMPORTS_VERSION     := $(shell go list -m -f '{{.Version}}' golang.org/x/tools 2>/dev/null)
 
 .DEFAULT_GOAL := help
 
@@ -45,13 +51,13 @@ build: ## compile the archfit binary
 test: ## run tests with race detector and coverage
 	go test -race -coverprofile=coverage.out $(if $(TEST_PKGS),$(TEST_PKGS),./...)
 	python3 internal/extract/scip/scip_reader_test.py
-	uv run --with jsonschema python -m unittest discover -s scripts/eval -p '*_test.py'
+	uv run --with jsonschema==$(JSONSCHEMA_VERSION) python -m unittest discover -s scripts/eval -p '*_test.py'
 	bash scripts/tests/cli_exit_contract_test.sh
 
 ## language-contracts: run the bounded real-tool acceptance gate
 .PHONY: language-contracts
 language-contracts: build ## validate Go, TypeScript, JavaScript, Python, and Rust with real producers
-	uv run --with jsonschema python scripts/eval/language_contracts.py --archfit $(BIN_DIR)/$(BINARY)
+	uv run --with jsonschema==$(JSONSCHEMA_VERSION) python scripts/eval/language_contracts.py --archfit $(BIN_DIR)/$(BINARY)
 
 ifeq ($(firstword $(MAKECMDGOALS)),test)
 .PHONY: $(RAW_TEST_PKGS)
@@ -94,6 +100,12 @@ archfit-report: build ## write .archfit-cache/reports/archfit-report.md for huma
 lint: ## run golangci-lint
 	golangci-lint run -c .golangci.yaml ./...
 
+## workflows: lint GitHub Actions workflow files
+.PHONY: workflows
+workflows: ## lint .github/workflows with actionlint and zizmor
+	go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION) .github/workflows/*.yaml
+	uvx zizmor==$(ZIZMOR_VERSION) --format plain .github/workflows
+
 ## docs: validate documentation and render Mermaid diagrams
 .PHONY: docs
 docs: ## validate links, Markdown, examples, and diagrams (install docs tools first)
@@ -123,7 +135,7 @@ mock: ## regenerate moq mocks via go generate
 .PHONY: setup-tools
 setup-tools: ## install pinned development tools
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
-	go install golang.org/x/tools/cmd/goimports@latest
+	go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION)
 	go install github.com/matryer/moq@$(MOQ_VERSION)
 
 ## release: cross-compile for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 into dist/

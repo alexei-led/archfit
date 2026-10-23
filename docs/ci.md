@@ -76,7 +76,7 @@ analyzer is missing. A tool with `gate: off` remains optional. See
 Fetch the base branch before you use `--base`:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
   with:
     fetch-depth: 0
 
@@ -106,7 +106,7 @@ permissions:
 
 - name: Upload Archfit SARIF
   if: always()
-  uses: github/codeql-action/upload-sarif@v3
+  uses: github/codeql-action/upload-sarif@v4
   with:
     sarif_file: archfit.sarif
 ```

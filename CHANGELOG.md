@@ -1,5 +1,35 @@
 # Release notes
 
+## v3.1.2
+
+### Summary
+
+Refresh the dev toolchain, CI actions, and dependency automation.
+Analysis, report, and verdict behavior is unchanged.
+
+### Changes
+
+- Build with Go 1.27 and refresh direct dependencies: Kong, the Anthropic SDK,
+  doublestar, and the `x/` modules. Move the container image to Go 1.27.3 and
+  uv 0.13.5.
+- Pin developer tools: `golangci-lint` 2.15.0, `moq` 0.8.1, `goimports` from the
+  module's `x/tools`, and `jsonschema` 4.26.0.
+- Update CI actions and install the current Go 1.27 patch.
+  Add a workflow lint job with `actionlint` and `zizmor`, job timeouts, and
+  Ubuntu 24.04 release runners.
+- Replace the unmaintained pre-commit Go hook repository with local `gofmt` and
+  `go mod tidy` hooks. Add Dependabot for Go modules, actions, npm tools, and
+  pre-commit hooks.
+
+### Upgrade
+
+1. Build from source with Go 1.27 or later.
+2. Keep the measurement environment stable for comparisons.
+
+Configuration schema version, reports, and exit codes are unchanged.
+
+[Compare v3.1.1...v3.1.2](https://github.com/alexei-led/archfit/compare/v3.1.1...v3.1.2)
+
 ## v3.1.1
 
 ### Summary

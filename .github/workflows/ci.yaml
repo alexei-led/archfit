@@ -15,6 +15,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       # persist-credentials:false: govulncheck-action runs a nested checkout;
       # a persisted auth extraheader here collides with it (duplicate
@@ -22,36 +23,63 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+          check-latest: true
           cache: true
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: v2.15
+          version: v2.15.0
       - name: govulncheck
-        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
         with:
           go-version-file: go.mod
-  test:
-    name: Test
+  # Pins and workflow syntax rot silently: a bad SHA or a renamed input
+  # fails only when the job that uses it runs. This job lints the workflow
+  # files themselves, including the SHA pins Dependabot updates.
+  workflows:
+    name: Workflows
     runs-on: ubuntu-24.04
-    needs: lint
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+          check-latest: true
           cache: true
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.15"
+          enable-cache: false
+      - name: Lint workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: make workflows
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    needs: lint
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "24"
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          python-version: "3.13"
+          python-version: "3.15"
           enable-cache: false
       - name: Install architecture analyzers
         # Versions are pinned and the commands exercise Archfit's real adapters.
@@ -75,7 +103,7 @@ jobs:
       - name: SCIP reader tests (python)
         run: python3 internal/extract/scip/scip_reader_test.py
       - name: Corpus sweep harness tests (python)
-        run: uv run --with jsonschema python -m unittest discover -s scripts/eval -p '*_test.py'
+        run: uv run --with jsonschema==4.26.0 python -m unittest discover -s scripts/eval -p '*_test.py'
       - name: CLI exit-contract tests (shell)
         run: bash scripts/tests/cli_exit_contract_test.sh
       - name: CI gate — arch imports
@@ -109,7 +137,7 @@ jobs:
       - name: CI gate — architecture drift
         run: make arch-lint
       - name: Upload coverage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage
           path: coverage.out
@@ -163,6 +191,7 @@ jobs:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-24.04
     needs: test
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
@@ -178,9 +207,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+          check-latest: true
           cache: true
       - name: Build binary
         env:
@@ -193,7 +223,7 @@ jobs:
             -o "dist/archfit-${GOOS}-${GOARCH}" \
             ./cmd/archfit
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: archfit-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/archfit-${{ matrix.goos }}-${{ matrix.goarch }}

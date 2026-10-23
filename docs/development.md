@@ -57,7 +57,7 @@ Passing a fixture without its required producer is not evidence of language supp
 Run the evaluation harness unit tests separately:
 
 ```sh
-uv run --with jsonschema python -m unittest discover -s scripts/eval -p '*_test.py'
+uv run --with jsonschema==4.26.0 python -m unittest discover -s scripts/eval -p '*_test.py'
 ```
 
 ## Corpus sweeps
@@ -71,13 +71,13 @@ The supported corpus labels and defaults live in `scripts/eval/corpus_sweep.py`.
 Use its help for the current options:
 
 ```sh
-uv run --with jsonschema python scripts/eval/corpus_sweep.py --help
+uv run --with jsonschema==4.26.0 python scripts/eval/corpus_sweep.py --help
 ```
 
 Example with one representative per primary language:
 
 ```sh
-uv run --with jsonschema python scripts/eval/corpus_sweep.py \
+uv run --with jsonschema==4.26.0 python scripts/eval/corpus_sweep.py \
   --workspace-root /tmp/archfit-corpus-workspace \
   --repos spotinfo,storybook,ccgram,herdr \
   --repeat-repos spotinfo,storybook,ccgram,herdr \
