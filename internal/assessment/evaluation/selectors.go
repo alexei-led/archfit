@@ -84,8 +84,8 @@ type selectorInventory struct {
 	files     []string
 	selectors map[string]string
 	// unanalysed are the files no dependency producer analyses
-	// (Observations.UnanalysedFiles). Only forbidden_pattern, which reads the
-	// ast-grep pattern pass, matches its selectors against them.
+	// (Observations.UnanalysedFiles). Patterns read these files directly;
+	// dependency scopes use them to disclose omissions by a completed Python producer.
 	unanalysed map[string]struct{}
 	// Only a completed Python producer can identify omitted source bodies.
 	// A gapless-absent language retains the existing applicability rules.

@@ -2,6 +2,8 @@ package py
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
@@ -40,6 +42,17 @@ func QueryEdge(root string, cfg evidenceports.ExtractConfig, from, target string
 	if !builtBy(pkgs, imported) {
 		return graph.Facts{}, fmt.Errorf("python: %s is outside the packages grimp builds (%s); external import literals do not establish module or symbol resolution: %w",
 			imported, strings.Join(pkgs, ", "), evidenceports.ErrNotDecidable)
+	}
+	packageName, _, _ := strings.Cut(importer, ".")
+	prefix := packageName + "/"
+	if info, err := os.Stat(filepath.Join(root, "src", packageName)); err == nil && info.IsDir() {
+		prefix = "src/" + prefix
+	}
+	if !strings.HasPrefix(from, prefix) {
+		return graph.Facts{}, fmt.Errorf("python: %s is outside selected package source: %w", from, evidenceports.ErrNotDecidable)
+	}
+	if _, ambiguous := pythonModuleSourceFile(root, importer, cfg.Exclusions); ambiguous {
+		return graph.Facts{}, fmt.Errorf("python: %s has ambiguous source bodies: %w", importer, evidenceports.ErrNotDecidable)
 	}
 	return graph.Facts{
 		Language: langPython,

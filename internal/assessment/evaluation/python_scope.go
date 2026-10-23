@@ -44,6 +44,11 @@ func (inv selectorInventory) unscannedPythonSelector(rule policy.RuleDef) string
 	if !inv.pythonComplete {
 		return ""
 	}
+	if !slices.ContainsFunc(inv.files, func(file string) bool {
+		return strings.HasSuffix(file, ".py") && inv.pythonFileMatches(rule, selectorFrom, file)
+	}) {
+		return ""
+	}
 	for _, file := range inv.files {
 		if _, missing := inv.unanalysed[file]; !missing || !strings.HasSuffix(file, ".py") {
 			continue

@@ -20,35 +20,37 @@ func pythonSourceLocations(root string, h helperOutput, exclusions []string) map
 		wanted[edge.Importer] = struct{}{}
 	}
 	resolved := make(map[string]string)
-	convention := graph.BuiltinConventions.Lookup(graph.LangPython)
 	for module := range wanted {
-		file := ""
-		ambiguous := false
-		for _, candidate := range convention.ModuleFileCandidates(module) {
-			if !filepath.IsLocal(filepath.FromSlash(candidate)) || path.Ext(candidate) != ".py" || pythonLocationExcluded(candidate, exclusions) {
-				continue
-			}
-			info, err := os.Stat(filepath.Join(root, filepath.FromSlash(candidate)))
-			if err != nil {
-				if !errors.Is(err, os.ErrNotExist) {
-					ambiguous = true
-				}
-				continue
-			}
-			if !info.Mode().IsRegular() {
-				continue
-			}
-			if file != "" {
-				ambiguous = true
-				break
-			}
-			file = candidate
-		}
+		file, ambiguous := pythonModuleSourceFile(root, module, exclusions)
 		if file != "" && !ambiguous {
 			resolved[module] = file
 		}
 	}
 	return resolved
+}
+
+func pythonModuleSourceFile(root, module string, exclusions []string) (file string, ambiguous bool) {
+	for _, candidate := range graph.BuiltinConventions.Lookup(graph.LangPython).ModuleFileCandidates(module) {
+		if !filepath.IsLocal(filepath.FromSlash(candidate)) || path.Ext(candidate) != ".py" || pythonLocationExcluded(candidate, exclusions) {
+			continue
+		}
+		info, err := os.Stat(filepath.Join(root, filepath.FromSlash(candidate)))
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				ambiguous = true
+			}
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		if file != "" {
+			ambiguous = true
+			break
+		}
+		file = candidate
+	}
+	return file, ambiguous
 }
 
 func pythonLocationExcluded(file string, exclusions []string) bool {

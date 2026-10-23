@@ -34,6 +34,19 @@ func TestQueryEdgeAbsoluteImporterReturns(t *testing.T) {
 	}
 }
 
+func TestQueryEdgeAmbiguousImporterIsNotDecidable(t *testing.T) {
+	root := srcLayout(t)
+	shadow := "src/myapp.py"
+	if err := os.WriteFile(filepath.Join(root, shadow), []byte("import myapp.domain\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, from := range []string{shadow, "src/myapp/__init__.py"} {
+		if _, err := QueryEdge(root, evidenceports.ExtractConfig{}, from, domainModule); !errors.Is(err, evidenceports.ErrNotDecidable) {
+			t.Fatalf("%s: want ambiguous-source abstention, got %v", from, err)
+		}
+	}
+}
+
 const (
 	handlersFile   = "src/myapp/handlers.py"
 	handlersModule = "module:myapp.handlers"

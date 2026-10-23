@@ -36,6 +36,8 @@ func TestPythonOmittedSourceCannotHideInMixedRuleScope(t *testing.T) {
 		{"Python module target", policy.RuleDef{Type: ruleForbidden, From: "**", ToModule: "backend"}, true, false},
 		{"Go module target", policy.RuleDef{Type: ruleForbidden, From: "**", ToModule: storeModule}, false, false},
 		{"module source to Go target", policy.RuleDef{Type: ruleForbidden, FromModule: mixedModule, ToModule: storeModule}, false, false},
+		{"Go module source with any target", policy.RuleDef{Type: ruleForbidden, FromModule: storeModule, To: "**"}, false, false},
+		{"slash source with any target", policy.RuleDef{Type: ruleForbidden, From: selBilling, To: "**"}, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			diag, in := vacuityFixture()

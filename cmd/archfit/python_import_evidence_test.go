@@ -67,6 +67,12 @@ rules:
 			if queryCode != 2 || len(query.Answers) != 1 || query.Answers[0].Answer != answerNotDecided {
 				t.Fatalf("omitted importer query: exit=%d answer=%+v", queryCode, query)
 			}
+			if tc.shadow {
+				queryCode, query = canImport(t, filepath.Join(root, defaultConfigPath), "app.py", "app.backend")
+				if queryCode != 2 || len(query.Answers) != 1 || query.Answers[0].Answer != answerNotDecided {
+					t.Fatalf("ambiguous importer query: exit=%d answer=%+v", queryCode, query)
+				}
+			}
 		})
 	}
 }
