@@ -18,7 +18,6 @@ func TestCompletedPartialMeasurementRemainsComparable(t *testing.T) {
 		row           evidence.Coverage
 	}{
 		{"dependency-cruiser", "18.3.1", evidence.PartialUnresolvedSpecifiers, evidence.Coverage{Unresolved: 3}},
-		{"grimp", "grimp 3.17; python 3.14.3", evidence.PartialUnresolvedSpecifiers, evidence.Coverage{Unresolved: 3}},
 		{primaryTool, partialGoVersion, evidence.PartialDegradedPrecision, evidence.Coverage{Unresolved: 3, UnresolvedPrecisionOnly: 3}},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
@@ -76,4 +75,15 @@ func TestMeasurementIncompleteOrOpaqueEvidenceStillAbstains(t *testing.T) {
 func primarySemantics() string {
 	v, _ := evidence.MeasurementContract(primaryTool)
 	return v
+}
+
+func TestPythonPartialMeasurementNeverClaimsCompleteInputs(t *testing.T) {
+	for _, basis := range []evidence.MeasurementPartialBasis{"", evidence.PartialUnresolvedSpecifiers, evidence.PartialDegradedPrecision} {
+		p := measurementFixture()
+		semantics, _ := evidence.MeasurementContract("grimp")
+		p.Producers = []evidence.MeasurementProducer{{Tool: "grimp", SemanticsVersion: semantics, ToolVersion: "grimp 3.17; python 3.14.3", Status: evidence.StatusPartial, PartialBasis: basis}}
+		if reasons := decision.CompareMeasurementProfiles(p, p); len(reasons) == 0 {
+			t.Fatalf("Python source gaps compared as complete under basis %q", basis)
+		}
+	}
 }

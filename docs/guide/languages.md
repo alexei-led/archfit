@@ -250,7 +250,7 @@ For TypeScript, module paths and rule filters are repo-relative file path globs.
 Requirements:
 
 - `pyproject.toml`, `setup.py`, or configured `languages.python.package`;
-- `uv` (preferred), or Python `3.12+` with `grimp` installed.
+- `uv` (preferred), or Python `3.14+` with `grimp==3.17` installed.
 
 Recommended install on macOS and Linux:
 
@@ -265,9 +265,41 @@ installation is also supported; keep one `uv` on `PATH`.
 How extraction works:
 
 - detects `uv` first;
-- with `uv`, injects `grimp` for the helper run;
-- without `uv`, runs Python 3.12+ and expects a pinned `grimp` to be installed;
+- with `uv`, selects Python 3.14 and `grimp==3.17` without project setup;
+- without `uv`, requires Python 3.14+ with `grimp==3.17` installed;
 - emits dotted module-to-module import edges, such as `myapp.service`.
+
+Project dependencies do not need to be installed for the static import inventory.
+Python starts with isolated import paths. Project uv settings and interpreter
+requests cannot override the pinned analyzer runtime.
+The producer binds each selected package to its repository source, so an installed
+same-named package cannot replace it. Namespace roots, separate service roots,
+source symlinks, and package names that collide with loaded Python modules
+cannot be verified and leave extraction incomplete.
+
+Third-party imports are recorded as external import literals with low confidence.
+An explicit first-party target absent from the tree is retained as a low-confidence
+dotted dependency. These literals record an import statement; they do not verify
+target files, imported symbols, runtime availability, or execution. They still
+match dependency bans, including inside `try/except`. A missing generated version
+module therefore needs no special exception. `from package import name` can name
+an attribute, so an absent `name` is not invented as a submodule.
+
+Unreadable, unparseable, or unscanned source leaves evidence incomplete and required
+rules unevaluated. A known first-party package omitted by a configured package
+selection is unscanned input even when no selected file imports it. Package selection
+that omits required source stays incomplete; automatic discovery can select all
+roots. Synthesized literal targets do not count as scanned files. Producer failures also leave evidence incomplete.
+
+Standard-library imports and existing `TYPE_CHECKING` guard handling remain outside
+this import inventory. Interpreter grammar failures remain source gaps; local
+interpreters must understand the target syntax. The image supplies Python 3.14.
+CI builds that image without publishing it and checks `testdata/python314`.
+
+The `grimp.v3` measurement change invalidates older grimp.v2 baseline profiles,
+including profiles where grimp was absent. An architecture owner must review a
+`archfit baseline --reanchor` change before stored comparisons resume. Missing
+producer evidence is never cleared by reanchoring.
 
 Set `languages.python.package` when the top-level package is not the repository
 directory name, or when the repo uses `src/` layout.

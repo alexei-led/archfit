@@ -57,7 +57,7 @@ ai:
 
 API keys come from the standard env vars only — `ANTHROPIC_API_KEY` /
 `OPENAI_API_KEY` — never from config. archfit also best-effort loads a local
-`.env` (cwd) at startup, setting a key only when it is currently unset — real env
+`.env` (cwd) at startup, loading only `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` credentials that are currently unset — real env
 vars and CI secrets always win. Keep `.env` out of git (gitignored by default).
 `archfit doctor` shows provider, key presence, and cache status.
 

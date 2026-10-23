@@ -36,7 +36,7 @@ func QueryEdge(root string, cfg evidenceports.ExtractConfig, from, target string
 			importer, strings.Join(pkgs, ", "), evidenceports.ErrNotExtracted)
 	}
 	if !builtBy(pkgs, imported) {
-		return graph.Facts{}, fmt.Errorf("python: %s is outside the packages grimp builds (%s); grimp drops an installed or stdlib import and spells an uninstalled one external: %w",
+		return graph.Facts{}, fmt.Errorf("python: %s is outside the packages grimp builds (%s); external import literals do not establish module or symbol resolution: %w",
 			imported, strings.Join(pkgs, ", "), evidenceports.ErrNotDecidable)
 	}
 	// The extractor locates an import at the importing file unless an

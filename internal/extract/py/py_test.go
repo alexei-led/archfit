@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	fixtureJSON           = `{"edges":[{"importer":"myapp.a","imported":"myapp.b","line":5},{"importer":"myapp.a","imported":"myapp.b._internal.impl","line":6}],"unresolved":0}`
-	unresolvedFixtureJSON = `{"edges":[],"unresolved":2,"unresolved_imports":[{"importer":"myapp.a","imported":"httpx","line":3,"line_contents":"import httpx"},{"importer":"myapp.a","imported":"boto3.session","line":4,"line_contents":"from boto3.session import Session"}]}`
-	testPkgName           = "myapp"
-	testRoot              = "../../../testdata/py"
+	fixtureJSON         = `{"edges":[{"importer":"myapp.a","imported":"myapp.b","line":5},{"importer":"myapp.a","imported":"myapp.b._internal.impl","line":6}],"unresolved":0}`
+	externalFixtureJSON = `{"edges":[],"unresolved":0,"external_imports":[{"importer":"myapp.a","imported":"httpx","line":3,"line_contents":"import httpx"},{"importer":"myapp.a","imported":"boto3.session","line":4,"line_contents":"from boto3.session import Session"}]}`
+	testPkgName         = "myapp"
+	testSourceA         = "myapp/a.py"
+	testRoot            = "../../../testdata/py"
 
 	modMyappA        = "module:myapp.a"
 	modMyappB        = "module:myapp.b"
@@ -112,7 +113,7 @@ func hasPyConnascence(e graph.Edge, kind string) bool {
 	return false
 }
 
-func TestExtract_WithUnresolved(t *testing.T) {
+func TestExtract_WithExternalImports(t *testing.T) {
 	mock := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == "uv" {
@@ -121,7 +122,7 @@ func TestExtract_WithUnresolved(t *testing.T) {
 			return toolrun.ToolInfo{}, false
 		},
 		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
-			return toolrun.Output{Stdout: []byte(unresolvedFixtureJSON), ExitCode: 0}, nil
+			return toolrun.Output{Stdout: []byte(externalFixtureJSON), ExitCode: 0}, nil
 		},
 	}
 
@@ -135,12 +136,8 @@ func TestExtract_WithUnresolved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
-	if cov.Unresolved != 2 {
-		t.Errorf("cov.Unresolved = %d, want 2", cov.Unresolved)
-	}
-	wantReason := "2 imports unresolved (top: boto3 1, httpx 1) — check languages.python.package and src layout"
-	if cov.Reason != wantReason {
-		t.Errorf("cov.Reason = %q, want %q", cov.Reason, wantReason)
+	if cov.Unresolved != 0 || cov.Status != "ok" || cov.Reason != "" {
+		t.Fatalf("external import literals invalidated source evidence: %+v", cov)
 	}
 
 	type edgeKey struct{ from, to string }
@@ -165,23 +162,18 @@ func TestExtract_WithUnresolved(t *testing.T) {
 		if edge.Confidence != confidenceLow {
 			t.Fatalf("edge %v: confidence = %q, want %q", want.key, edge.Confidence, confidenceLow)
 		}
-		if len(edge.Locations) != 1 || edge.Locations[0].File != "myapp/a.py" || edge.Locations[0].Line != want.line {
+		if len(edge.Locations) != 1 || edge.Locations[0].File != testSourceA || edge.Locations[0].Line != want.line {
 			t.Fatalf("edge %v: locations = %+v, want myapp/a.py:%d", want.key, edge.Locations, want.line)
 		}
 	}
 }
 
-func TestExtract_UnresolvedReasonSummarizesTopRoots(t *testing.T) {
-	fixture := `{"edges":[],"unresolved":8,"unresolved_imports":[` +
-		`{"importer":"myapp.a","imported":"zeta.one","line":1},` +
-		`{"importer":"myapp.a","imported":"alpha.one","line":2},` +
-		`{"importer":"myapp.a","imported":"zeta.two","line":3},` +
-		`{"importer":"myapp.a","imported":"beta.one","line":4},` +
-		`{"importer":"myapp.a","imported":"gamma.one","line":5},` +
-		`{"importer":"myapp.a","imported":"delta.one","line":6},` +
-		`{"importer":"myapp.a","imported":"epsilon.one","line":7},` +
-		`{"importer":"myapp.a","imported":"alpha.two","line":8}` +
-		`]}`
+func TestExtract_UnresolvedReasonNamesSourceGaps(t *testing.T) {
+	fixture := `{"edges":[],"unresolved":4,"unresolved_imports":[
+    {"file":"myapp/d.py","reason":"source not scanned","importer":"myapp.d","line":0},
+    {"file":"myapp/a.py","reason":"SyntaxError under Python 3.13","importer":"myapp.a","line":0},
+    {"file":"myapp/b.py","reason":"unreadable","importer":"myapp.b","line":0},
+    {"file":"myapp/c.py","reason":"source not scanned","importer":"myapp.c","line":0}]}`
 	mock := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == "uv" {
@@ -200,12 +192,13 @@ func TestExtract_UnresolvedReasonSummarizesTopRoots(t *testing.T) {
 		t.Fatalf("Extract: %v", err)
 	}
 
-	want := "8 imports unresolved (top: alpha 2, zeta 2, beta 1, delta 1, epsilon 1) — check languages.python.package and src layout"
-	if cov.Reason != want {
-		t.Errorf("cov.Reason = %q, want %q", cov.Reason, want)
+	for _, want := range []string{"4 import/source gaps", "myapp/a.py: SyntaxError under Python 3.13", "myapp/b.py: unreadable", "myapp/c.py: source not scanned", "…"} {
+		if !strings.Contains(cov.Reason, want) {
+			t.Errorf("reason %q does not explain %q", cov.Reason, want)
+		}
 	}
-	if strings.Contains(cov.Reason, "gamma") {
-		t.Errorf("cov.Reason includes root after top-5 cap: %q", cov.Reason)
+	if strings.Contains(cov.Reason, "myapp/d.py") {
+		t.Fatalf("diagnostic limit was ignored: %q", cov.Reason)
 	}
 }
 

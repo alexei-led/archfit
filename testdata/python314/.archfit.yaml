@@ -1,0 +1,22 @@
+version: 2
+languages:
+  python:
+    enabled: true
+    package: modern314
+  go:
+    enabled: false
+  typescript:
+    enabled: false
+  rust:
+    enabled: false
+modules:
+  core:
+    paths: [modern314.core]
+  adapter:
+    paths: [modern314.adapter]
+rules:
+  - id: no-core-to-adapter
+    type: forbidden_dependency
+    from: modern314.core
+    to: modern314.adapter
+    gate: fail

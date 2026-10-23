@@ -600,7 +600,7 @@ ai:
 
 API keys come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` env vars — never from
 config. archfit also best-effort loads a local `.env` (cwd) at startup, but only
-sets a key that is currently **unset** — real environment variables and CI secrets
+loads `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` credentials that are currently **unset** — real environment variables and CI secrets
 always win. Keep `.env` out of version control (it is gitignored by default). The
 LLM response cache lives at `.archfit-cache/llm/`.
 

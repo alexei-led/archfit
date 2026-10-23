@@ -101,7 +101,7 @@ func profileUnknowns(side string, p *evidence.MeasurementProfile) []string {
 func comparablePartialProducer(p evidence.MeasurementProducer) bool {
 	switch p.PartialBasis {
 	case evidence.PartialUnresolvedSpecifiers:
-		return p.Tool == toolDepCruiser || p.Tool == toolGrimp
+		return p.Tool == toolDepCruiser
 	case evidence.PartialDegradedPrecision:
 		return p.Tool == "go/packages"
 	default:

@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG GO_VERSION=1.26
+ARG PYTHON_VERSION=3.14
 ARG UV_VERSION=0.5.0
 ARG DEPCRUISER_VERSION=17
 # 0.44.0 is the version --inline-rules (used by the syntax-facts adapter) was
@@ -24,8 +25,9 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOWORK=off \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
     -o /out/archfit ./cmd/archfit
 
-# ── Stage 2: Final runtime image (Debian bookworm-slim, glibc) ───────────────
-FROM debian:bookworm-slim
+# Python must parse the target's grammar as well as run grimp. Bookworm's
+# system Python 3.11 cannot parse Python 3.14 projects such as ccgram.
+FROM python:${PYTHON_VERSION}-slim-bookworm
 ARG DEPCRUISER_VERSION
 ARG ASTGREP_VERSION
 
@@ -37,7 +39,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     gnupg \
-    python3 \
     && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get purge -y --auto-remove curl gnupg \
@@ -54,8 +55,7 @@ RUN npm install -g \
     @ast-grep/cli@${ASTGREP_VERSION} \
     && npm cache clean --force
 
-# uv (static binary): archfit runs `uv run --with grimp` for Python import
-# analysis, resolving grimp at runtime (cached after first use).
+# uv resolves the pinned analyzer in an isolated environment, never target deps.
 COPY --from=uv-bin /uv /uvx /usr/local/bin/
 ENV UV_PYTHON_DOWNLOADS=never \
     UV_SYSTEM_PYTHON=1

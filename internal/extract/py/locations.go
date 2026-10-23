@@ -16,7 +16,7 @@ func pythonSourceLocations(root string, h helperOutput, exclusions []string) map
 	for _, edge := range h.Edges {
 		wanted[edge.Importer] = struct{}{}
 	}
-	for _, edge := range h.UnresolvedImports {
+	for _, edge := range h.ExternalImports {
 		wanted[edge.Importer] = struct{}{}
 	}
 	resolved := make(map[string]string)

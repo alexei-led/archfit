@@ -266,6 +266,10 @@ At startup, archfit also best-effort loads `.env` files from:
 - paths referenced by `--root`;
 - the directory that contains `--config`.
 
+Only `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` credentials are loaded from these
+files. Analyzer, executable, package-index, and toolchain variables must come
+from the real process or job environment. Target-tree `.env` files cannot set them.
+
 Existing environment variables always win over `.env` values. In hosted CI,
 prefer real job environment variables or secret stores over checked-in `.env`
 files.

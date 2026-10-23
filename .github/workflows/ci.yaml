@@ -114,6 +114,51 @@ jobs:
           name: coverage
           path: coverage.out
           retention-days: 7
+  python-image:
+    name: Python 3.14 image contract
+    runs-on: ubuntu-24.04
+    needs: lint
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Build local image without publishing
+        run: |
+          docker build --tag archfit-python-ci \
+            --build-arg VERSION=ci-python-smoke \
+            --build-arg "COMMIT=${GITHUB_SHA}" \
+            --build-arg "DATE=$(sh scripts/build-meta.sh date)" .
+      - name: Verify src-layout Python 3.14 evidence inside the image
+        run: |
+          output="${RUNNER_TEMP}/archfit-python-image"
+          mkdir -p "$output"
+          docker image inspect archfit-python-ci > "$output/image.json"
+          status=0
+          docker run --rm --read-only --tmpfs /tmp:rw,exec,nosuid,size=512m,mode=1777 \
+            --env HOME=/tmp \
+            --mount "type=bind,source=${GITHUB_WORKSPACE}/testdata/python314,target=/src,readonly" \
+            archfit-python-ci check --root /src --config /src/.archfit.yaml --json \
+            > "$output/report.json" 2> "$output/stderr.log" || status=$?
+          cat "$output/stderr.log"
+          test "$status" -eq 1
+          jq -e '
+            .decision.hard_gates == "fail" and
+            ((.decision.unevaluated_required_rules // []) | length == 0) and
+            (.coverage.tools | any(.tool == "grimp" and .status == "ok")) and
+            (.comparison.measurement_profile.producers | any(
+              .tool == "grimp" and .semantics_version == "grimp.v3" and
+              (.tool_version | contains("; python 3.14.")))) and
+            (.findings | any(.rule_id == "no-core-to-adapter" and .kind == "gate"))
+          ' "$output/report.json"
+      - name: Preserve image and report evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: python-image-contract
+          path: ${{ runner.temp }}/archfit-python-image
+          retention-days: 7
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-24.04

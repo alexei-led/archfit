@@ -287,26 +287,17 @@ init` emits v2 directly; owners update older configs manually before analysis.
   toolchain or tsconfig moved. The baseline-relative delta buckets
   (`status.DeltaBuckets`, `ModeDelta`) were dead (`Full` was always true) and
   are deleted, so this is the only answer to "what did this change add".
-- **`partial` means two different things and the TOOL NAME separates them, not
-  `Coverage.Unresolved`** (`decision.PartialFromUnresolvedSpecifiers`, the single
-  predicate both pairing paths call). dependency-cruiser and grimp mark a
-  COMPLETED run partial as soon as one import specifier anywhere fails to resolve
-  — the normal steady state on any TS/Python repo, which
-  `score.tsUnresolvedRatioCeiling` already tolerates to 10%. `go/packages` ALSO
-  sets `Unresolved`, but there it counts whole packages it SKIPPED because they
-  failed to load (`collectNodesEdges`, synthetic-error packages), which is the
-  "did not finish" meaning and must never grade comparable — so `Unresolved > 0`
-  is not a completion marker and never was. Every remaining partial producer (a
-  failed extractor in `acquisition.Collect`, a rejected ast-grep rule file, an empty
-  SCIP index, a failed jscpd run) leaves `Unresolved` at zero. A SYMMETRIC
-  unresolved-specifier partial pairs (`comparable_with_gaps` in
-  `decision.gradeTool`, `familyPairedDegradedUnresolved` in `pairFamily`) and
-  always discloses a reason CARRYING BOTH MAGNITUDES — the rule is
-  magnitude-blind, so `3 unresolved` and `5000/6000 unresolved` must be
-  distinguishable in the output. Treating all partial as unusable made both
-  features permanently inert on TypeScript and Python. When adding a
-  specifier-granular extractor, add its coverage name to
-  `PartialFromUnresolvedSpecifiers`.
+- **Partial evidence pairs only when inputs are complete.**
+  `decision.PartialFromUnresolvedSpecifiers` admits dependency-cruiser's completed
+  import scan with unresolved specifiers. `go/packages` precision-only loss can
+  pair, but packages it could not load cannot. Grimp v3 partial rows mean actual
+  source/input gaps and never pair, including symmetric equal counts.
+  Grimp records external and absent first-party import literals without installing
+  target dependencies. Literals do not establish runtime resolution or source
+  bodies. Python startup is isolated; repository roots are checked before use.
+  The `grimp.v3` semantics bump makes every older grimp.v2 baseline profile
+  non-comparable, including absent producer rows. Restore comparisons only with
+  an owner-reviewed `archfit baseline --reanchor`; never silently refresh a baseline.
 - **Extractor-failure coverage rows use `CoverageTool()`, not `Name()`**
   (`ports.Extractor`, `acquisition.Collect`). A failed `Extract` returns a zero
   Coverage, so acquisition stamps the row itself; filing it under the language
@@ -1256,8 +1247,8 @@ tags. `make fmt` passes the `/v3` module path to `goimports -local`; `.golangci.
 
 ## Runtime image
 
-`Dockerfile` is `debian:bookworm-slim` (glibc; musl broke ast-grep) — one image with
-Go SDK, git, Node 24, dependency-cruiser, ast-grep (`sg`), uv, python3; non-root.
+`Dockerfile` uses `python:3.14-slim-bookworm` (glibc; musl broke ast-grep) — one image with
+Go SDK, git, Node 24, dependency-cruiser, ast-grep (`sg`), uv, Python 3.14; non-root. The CI image contract checks a src-layout Python 3.14 fixture without publishing the image.
 The Rust toolchain (`cargo`, `rust-analyzer`) is **not** bundled — Rust analysis
 reports `n/a` (never fails) in the image; run on a host with cargo or extend it.
 `archfit doctor` checks tools; `sg` must resolve to ast-grep, not util-linux. Build

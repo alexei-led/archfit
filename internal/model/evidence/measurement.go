@@ -28,9 +28,9 @@ const (
 	PartialDegradedPrecision MeasurementPartialBasis = "degraded_precision"
 )
 
-// PartialFromUnresolvedSpecifiers identifies a completed TS/Python import scan.
+// PartialFromUnresolvedSpecifiers identifies a completed TypeScript import scan.
 func PartialFromUnresolvedSpecifiers(row Coverage) bool {
-	return row.Status == StatusPartial && row.Unresolved > 0 && (row.Tool == "dependency-cruiser" || row.Tool == "grimp")
+	return row.Status == StatusPartial && row.Unresolved > 0 && row.UnresolvedInputsMissing == 0 && row.Tool == "dependency-cruiser"
 }
 
 // PartialFromDegradedPrecision identifies complete inputs with reduced precision.
@@ -50,7 +50,7 @@ func MeasurementContract(tool string) (semantics string, external bool) {
 	case "dependency-cruiser", "cargo", "cargo-modules", "scip-symbols", "ast-grep", "ast-grep/syntax", "jscpd":
 		return tool + ".v1", true
 	case "grimp":
-		return "grimp.v2", true
+		return "grimp.v3", true
 	case "git-history":
 		return "git-history.recent500-full-fallback.v2", true
 	case "deploy-unit":

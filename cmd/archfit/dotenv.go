@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+const (
+	openAIKeyEnv    = "OPENAI_API_KEY"
+	anthropicKeyEnv = "ANTHROPIC_API_KEY"
+)
+
 // envSearchDirs extracts directories from CLI args whose .env should be autoloaded
 // in addition to CWD: the analyzed repo (--root/-r) and the config's directory
 // (--config/-c). Both "--flag=val" and "--flag val" forms are handled. This lets a
@@ -45,7 +50,7 @@ func envSearchDirs(args []string) []string {
 	return dirs
 }
 
-// loadDotEnv reads simple KEY=VALUE lines from path and sets each in the process
+// loadDotEnv reads provider-specific KEY=VALUE lines from path and sets each in the process
 // environment ONLY when the key is currently unset — real environment variables
 // and CI secrets always win. Best-effort: a missing file or malformed line is
 // silently ignored. Supports `export KEY=VALUE`, `#` comments, blank lines, and
@@ -69,7 +74,9 @@ func loadDotEnv(path string) {
 			continue
 		}
 		key = strings.TrimSpace(key)
-		if key == "" {
+		// Target-tree configuration must not steer analyzers, executables, or
+		// package indexes. This loader exists only for off-gate LLM credentials.
+		if key != openAIKeyEnv && key != anthropicKeyEnv {
 			continue
 		}
 		if _, set := os.LookupEnv(key); set {

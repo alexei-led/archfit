@@ -357,7 +357,7 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 		}
 	}
 
-	// dependency-cruiser and grimp report "partial" whenever ONE import
+	// dependency-cruiser report "partial" whenever ONE import
 	// specifier anywhere in the tree is unresolvable — the normal steady state,
 	// not a completion failure. Grading it not_comparable pinned every
 	// TypeScript and Python comparison to not_comparable forever.
@@ -380,13 +380,16 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 		return c
 	}
 	specifierTool, grimpTool, goTool := toolDepCruiserName, toolGrimpName, toolGoPackagesName
+	pythonMissing := unresolved(grimpTool, 1)
+	pythonMissing.UnresolvedInputsMissing = 1
 	partialPairs := []struct {
 		name               string
 		current, candidate evidence.Coverage
 		want               decision.CoverageComparability
 	}{
 		{"unresolved_both", unresolved(specifierTool, 3), unresolved(specifierTool, 7), decision.CoverageComparableWithGaps},
-		{"unresolved_both_grimp", unresolved(grimpTool, 3), unresolved(grimpTool, 7), decision.CoverageComparableWithGaps},
+		{"python_gaps_never_pair", unresolved(grimpTool, 3), unresolved(grimpTool, 7), decision.CoverageNotComparable},
+		{"python_source_gaps_both", pythonMissing, pythonMissing, decision.CoverageNotComparable},
 		{"unresolved_current_only", unresolved(specifierTool, 3), cov(specifierTool, evidence.StatusPartial), decision.CoverageNotComparable},
 		{"unresolved_candidate_only", cov(specifierTool, evidence.StatusPartial), unresolved(specifierTool, 3), decision.CoverageNotComparable},
 		{"unresolved_vs_ok", unresolved(specifierTool, 3), cov(specifierTool, evidence.StatusOK), decision.CoverageNotComparable},

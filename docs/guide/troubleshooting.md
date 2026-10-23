@@ -42,7 +42,7 @@ Common checks:
   and `.archfit-cache/` status.
 - Set keys through `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`; do not put keys in
   `.archfit.yaml`. A local `.env` is best-effort loaded only when the real env var
-  is unset.
+  is unset. Only `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` credentials are loaded.
 - Use `--refresh` only for a fresh-provider control run. It bypasses cache reads
   and writes fresh extractor facts and AI responses, so repeated runs can spend
   tokens again.
@@ -65,7 +65,7 @@ lives elsewhere.
 | `all N cross-module edges have unknown strength`                                                                                  | No edges were scored, some cross-module edges abstained, and none were classified as external. The graph is real, but archfit cannot classify edge strength yet.                           | `archfit config enrich abstained -c .archfit.yaml`                         |
 | `no internal edges found — module paths may not match source layout`                                                              | Python only. `grimp` ran successfully, but every cross-module edge resolved as external, usually because module `paths:` globs do not match dotted Python module IDs.                      | `archfit config update -c .archfit.yaml`                                   |
 | `no source files matched declared module paths — check --root and module globs`                                                   | Your config declares module `paths:`, but none of the files under the active scan root matched any declared module. Wrong `--root` or stale globs are the usual causes.                    | `archfit check --root "." -c .archfit.yaml`                                |
-| `warning: grimp: N imports unresolved — check languages.python.package and src layout`                                            | Python `grimp` ran with partial coverage. Common causes are the wrong `languages.python.package`, a `src/` layout not importable in the active environment, or deps missing from the venv. | Set `languages.python.package`, fix package import paths, or install deps. |
+| `warning: grimp: N import/source gaps` | Python source could not be read or parsed, a known first-party package was not scanned, or graph extraction failed. An absent import target is retained as a literal and does not itself make the source inventory incomplete. | Check `languages.python.package`, selected source roots, source permissions and syntax. |
 | `warning: dependency-cruiser: N of M import specifiers unresolved (P%) — check tsconfig paths/baseUrl and installed dependencies` | TypeScript dependency-cruiser could not resolve import specifiers. Internal edges can fall into the external bucket when aliases or dependencies are missing.                              | Fix `tsconfig` `paths`/`baseUrl` and install `node_modules`.               |
 | `SCIP analysis timed out — increase analyzers.scip.timeout or reduce the scope`                                                   | SCIP indexing exceeded the analyzer watchdog. Large Python repos can need more than the default 20m watchdog.                                                                              | Set `analyzers.scip.timeout`, for example `30m`.                           |
 
@@ -128,7 +128,7 @@ ran on only one side grades the evidence `not_comparable` even when both runs
 produced identical findings and an identical score.
 
 An analyzer that ran fully on both sides but left import specifiers unresolved
-(the normal dependency-cruiser and grimp state) grades `comparable_with_gaps`
+(for example, dependency-cruiser import-resolution gaps) grades `comparable_with_gaps`
 instead: the incompleteness is shared, so the comparison rests on it, and the
 detail line names the analyzer so the loss is visible.
 

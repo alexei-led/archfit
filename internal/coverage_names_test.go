@@ -80,7 +80,7 @@ func TestPartialFromUnresolvedSpecifiers_AdapterCoverageNames(t *testing.T) {
 		want bool
 	}{
 		{"dependency-cruiser completes with unresolved specifiers", toolDepCruiserName, true},
-		{"grimp completes with unresolved specifiers", toolGrimpName, true},
+		{"grimp partial means missing source evidence", toolGrimpName, false},
 		{"go/packages counts packages it could not load", toolGoPackagesName, false},
 	}
 	for _, tc := range tests {

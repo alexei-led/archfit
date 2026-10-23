@@ -324,7 +324,7 @@ func gradeTool(
 		// with the loss reported, magnitudes included.
 		//
 		// One analyzer produces only one of the two shapes (the specifier form is
-		// dependency-cruiser's and grimp's, the precision form is go/packages'), so
+		// dependency-cruiser's, the precision form is go/packages'), so
 		// the two sides of a tool cannot disagree about which reason applies.
 		if PartialFromDegradedPrecision(c) && PartialFromDegradedPrecision(d) {
 			return CoverageComparableWithGaps, degradedBothReason(c, d), false

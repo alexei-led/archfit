@@ -66,7 +66,7 @@ archfit check --config .archfit.yaml
   the import graph. Node `24.x` is preferred; Node `22+` keeps the optional npm
   tools compatible.
 - Python analysis: `uv` is preferred. With `uv`, archfit injects `grimp` for the
-  run; without `uv`, use Python `3.12+` with `grimp` installed.
+  run; without `uv`, use Python `3.14+` with `grimp` installed.
 - Rust analysis: `cargo` (normally from rustup) extracts the crate graph with
   `cargo metadata`.
 - Structural patterns: `sg` must be the ast-grep binary, not the util-linux `sg`.
@@ -157,12 +157,10 @@ A current package-manager installation is also supported. Keep one `uv` on
 With `uv`, `archfit` injects `grimp` for the extractor run, so the project does
 not need to add `grimp` as a dependency.
 
-Without `uv`, use Python `3.12+` and install a pinned `grimp` in the environment
-used by the repo:
-
-```sh
-python3.12 -m pip install 'grimp==3.14'
-```
+Without `uv`, put a Python `3.14+` virtual environment containing `grimp==3.17`
+on `PATH`. Isolated Python startup ignores `PYTHONPATH` and user-site packages;
+the analyzer must be installed in that interpreter's environment. Keep this tool
+environment separate from the target repository.
 
 ## Go tools
 
@@ -266,7 +264,7 @@ docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v3.0.0 \
 The image bundles the `archfit` binary plus the full non-Rust analysis toolchain:
 the Go SDK (Go targets need it at runtime), Node.js 24 with dependency-cruiser and
 ast-grep (`sg`), and `uv` with Python 3 (`grimp` is resolved at runtime via
-`uv run --with grimp`).
+`uv run --no-project --python 3.14 --with grimp==3.17`).
 
 The image does not bundle the Rust toolchain. Run Rust targets on a host with
 `cargo`/`rust-analyzer`, or extend the image with rustup; Rust analysis reports
