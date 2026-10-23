@@ -32,10 +32,10 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.15.0
+      # The action forwards its own go-version (default: stable) to setup-go and
+      # ignores go-version-file, so the file input is left out on purpose.
       - name: govulncheck
         uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
-        with:
-          go-version-file: go.mod
   # Pins and workflow syntax rot silently: a bad SHA or a renamed input
   # fails only when the job that uses it runs. This job lints the workflow
   # files themselves, including the SHA pins Dependabot updates.
