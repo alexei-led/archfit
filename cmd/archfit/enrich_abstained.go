@@ -55,7 +55,7 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 	}
 	llmCfg, configured := cfg.LLM()
 	if !configured {
-		return &exitError{code: 3, msg: "error: config enrich abstained needs ai configured (provider + model); see docs/guide/llm-enrich.md"}
+		return &exitError{code: 3, msg: "error: config enrich abstained needs ai configured (provider + model); see docs/ai.md"}
 	}
 
 	configDir := filepath.Dir(c.Config)

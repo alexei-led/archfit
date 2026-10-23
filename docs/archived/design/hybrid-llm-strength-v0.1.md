@@ -1,5 +1,7 @@
 # archfit hybrid design: deterministic meta-linter + selective LLM (v0.1)
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Status: Tranche 1 implemented (deterministic). Validation spike **RAN 2026-06-09** —
 **split verdict**: LLM coupling refinement validated (build); LLM subdomain/volatility
 drafting descoped. Tranche 2 revised accordingly in §7. Full record:

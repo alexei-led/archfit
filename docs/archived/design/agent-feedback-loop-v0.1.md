@@ -1,5 +1,7 @@
 # archfit as an AI-agent feedback loop — design v0.1
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Date: 2026-06-11. Status: APPROVED — implementation plan
 `docs/plans/completed/20260611-archfit-completion-deterministic.md`.
 

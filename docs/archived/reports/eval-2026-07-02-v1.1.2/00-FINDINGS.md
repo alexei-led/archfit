@@ -1,5 +1,7 @@
 # archfit v1.1.2 — Book Conformance × Metric Quality × Corpus Experiments
 
+> Historical record. Current documentation: [archfit](../../../development.md).
+
 **Date:** 2026-07-02 · **Binary:** v1.1.2 (commit 6140aba) · **Method:** 3 multi-agent workflows (19 + 29 + 16 agents) + independent adversarial verification of the 6 highest-impact claims (all 6 CONFIRMED at root cause, with repros).
 
 **Sub-reports:** [book-conformance.md](book-conformance.md) · [metric-quality.md](metric-quality.md) · [corpus-experiments.md](corpus-experiments.md)

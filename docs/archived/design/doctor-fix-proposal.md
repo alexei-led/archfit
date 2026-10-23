@@ -1,8 +1,10 @@
 # Doctor --fix design
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Design for a cross-platform `archfit doctor --fix` that detects platform, package
 managers, and PATH issues, then applies safe, reversible fixes. Builds on the
-[Tooling reference](../guide/tooling.md).
+[Tooling reference](../../languages.md).
 
 ## Status
 

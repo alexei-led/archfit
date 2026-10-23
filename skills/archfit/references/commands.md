@@ -19,34 +19,35 @@ from stale docs or memory.
 
 ## Commands
 
-- `archfit doctor` — check local analyzer/tool availability (Go, TS/JS, Python,
-  Rust, optional analyzers, AI key/cache). `--fix` installs what archfit can;
-  `--fix --dry-run` previews install commands; `--lang <x>` scopes installs.
+- `archfit doctor` — check local tool availability for Go, TS/JS, Python, Rust,
+  optional analyzers, and AI keys/cache. `--fix` installs supported tools.
+  `--fix --dry-run` previews install commands. `--lang <x>` limits installs.
 - `archfit config init` — generate a starter `.archfit.yaml` from discovered
   structure. `--ai-classify` suggests `subdomain`/`volatility`/`layer`/`role` as
   commented-inert YAML by default. `--ai-classify --apply` writes AI judgments
-  live into the generated file; review before using as a gate. Use `-o` to
-  redirect output to a draft file. See `llm-modes.md`.
+  into the generated file. Review them before using that file as a gate. Use
+  `-o` to redirect output to a draft file. See `llm-modes.md`.
 - `archfit config update` — sync `.archfit.yaml` with current structure.
-  `--ai-classify` adds review-only semantic proposals for unclassified modules;
-  even `--ai-classify --apply` applies structural drift only.
+  `--ai-classify` adds review-only semantic proposals for unclassified modules.
+  Even `--ai-classify --apply` applies structural drift only.
 - `archfit config compare <candidate>` — measure one source tree under two
-  configurations and report the difference. Report-only: exit `0` on success,
-  `3` on an input or runtime error; findings never move the exit code.
-- `archfit analyze` — local/report command. Always report-only on success; use it
-  for text/JSON/Markdown/SARIF/scorecard output and `--ai-summary` narratives.
+  configurations and report the difference. It is report-only. It exits `0` on
+  success and `3` on an input or runtime error. Findings do not change the exit
+  code.
+- `archfit analyze` — local report command. It is report-only on success. Use it
+  for text, JSON, Markdown, SARIF, scorecard, and `--ai-summary` output.
 - `archfit check` — CI/agent-loop gate. Its exit code is the architecture-state
   verdict (see Exit codes below): gate on `1`, not on any non-zero.
 - `archfit baseline` — record accepted current findings as the baseline.
 - `archfit explain <id>` — explain one finding by fingerprint prefix
-  (`--ai-summary` appends an off-gate narrative; see `llm-modes.md`).
+  (`--ai-summary` appends an off-gate narrative). See `llm-modes.md`.
 - `archfit config enrich labels` — draft off-gate human-reviewed edge labels for
   cross-module coupling strength.
 - `archfit config enrich abstained` — draft labels for abstained
   unknown-strength cross-module edges, judged from snippets.
-- `archfit config enrich subdomain / owner / volatility` — draft module metadata;
+- `archfit config enrich subdomain / owner / volatility` — draft module metadata.
   `--apply --reviewed-by <name>` writes only approved entries into
-  `modules.<name>` and never overwrites live fields. See `llm-modes.md`.
+  `modules.<name>`. It does not overwrite live fields. See `llm-modes.md`.
 
 ## Common invocations
 
@@ -89,26 +90,26 @@ Shared analysis/check flags:
 - `--config` / `-c` — config path (default `.archfit.yaml`).
 - `--root` / `-r` where supported — repository root to analyze (default: config
   directory). Decouples the scanned repo from where the config lives.
-- `--base <ref>` — score a git ref in addition to HEAD; text/markdown show each
-  blocker's origin and the origin counts in the COMPARISON section. JSON/SARIF
-  keep the normal HEAD architecture-state contract; JSON also adds `origin` to
-  current `findings[]` and `agent_tasks[]`, and `introduced_finding_ids` /
+- `--base <ref>` — compare a Git ref with HEAD. Text and Markdown show each
+  blocker's origin and origin counts in COMPARISON. JSON and SARIF keep the HEAD
+  architecture-state contract. JSON adds `origin` to current `findings[]` and
+  `agent_tasks[]`. It adds `introduced_finding_ids` and
   `resolved_finding_ids` to `comparison`. `comparison` describes this
-  report-only base comparison;
-  `gate_reference` describes the persisted baseline used by gates.
+  report-only comparison. `gate_reference` describes the persisted baseline.
 - `--format` — `text` (default), `json`, `markdown` (`md` is an alias),
   `sarif`, or `scorecard`. Repeatable / comma-separated.
 - `--json` / `--markdown` / `--sarif` — shorthands for
   `--format json/markdown/sarif`.
-- `--no-advisories` — drop advisory findings: Balanced Coupling advisories and
-  violations of `gate: warn` rules. Dropped findings do not count as
-  diagnostics, so dimension gates and the attention count change too; on
-  `baseline` they are left out of the accepted set.
+- `--no-advisories` — omit Balanced Coupling advisories and violations of
+  `gate: warn` rules. Omitted findings do not count as diagnostics. Dimension
+  gates and the attention count can change. `baseline` also omits them from the
+  accepted set.
 - `--min-severity <level>` — minimum advisory severity to show (`low`, `medium`,
   `high`, `critical`).
 - `--lang <language>` — force a language on: `go`, `typescript` (`ts`),
   `python` (`py`), `rust` (`rs`). Repeatable. Analyzer names are rejected.
-- `--refresh` — re-run extractors/AI calls and refresh cache entries.
+- `--refresh` — re-run extractors/AI calls and refresh cache entries. Supported
+  by `check` when a gate run must refresh cached evidence.
 - `--require-tools` — opt-in hard gate: mark missing required analyzer tools as
   failures (use with `check` for CI exit codes).
 - `--progress auto|plain|none` — progress output mode.
@@ -132,14 +133,13 @@ AI/config flags:
 
 ## Coverage gaps and the hard gate
 
-A missing analyzer is **not** scored as healthy: dependent metrics drop to `n/a`
-(no evidence — never `strong`) and a coverage gap lists the tool, the metrics its
-absence leaves unmeasured, and an install hint. Gaps surface everywhere:
+A missing analyzer is never scored as healthy. Dependent metrics drop to `n/a`.
+The gap lists the tool, unmeasured metrics, and an install hint. Gaps appear in:
 `## Coverage gaps` (Markdown), `## Required tools missing` (scorecard),
 `coverage.tools[]` in primary JSON, and stderr.
 
-By default a missing analyzer is reported without setting `hard_gates` to
-`fail`; incomplete evidence can still produce `check` exit `2`.
+By default, a missing analyzer does not set `hard_gates` to `fail`. Incomplete
+evidence can still produce `check` exit `2`.
 `archfit check --require-tools` or
 `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail` makes missing required
 tools block (exit 1, a policy decision distinct from exit 3). Tell users to
@@ -149,14 +149,15 @@ install the tool to close the gap, not to disable the gate.
 
 - `text` — human architecture-state report (verdict: HEALTHY / NEEDS ATTENTION /
   BLOCKED), the nine dimension envelopes, the coverage split, and the seam ledger.
-- `json` — `archfit.architecture-state.v1` at the document root: `verdict`,
+- `json` — `archfit.architecture-state.v1` at the document root. It contains
+  `verdict`,
   `decision`, `comparison`, optional `gate_reference`, `measurement`,
   `dimensions`, `coverage`, `findings`, `agent_tasks`, and `seams`. **No
   repository score.** `decision.unevaluated_required_rules` names applicable
-  fail-gated rules that lacked enough producer evidence; an empty list is
+  fail-gated rules that lacked enough producer evidence. An empty list is
   omitted.
 - `markdown` — the same state, plus the detailed findings audit.
-- `sarif` — SARIF 2.1.0 for code-scanning annotations; the state rides in
+- `sarif` — SARIF 2.1.0 for code-scanning annotations. The state appears in
   `runs[0].properties`.
 - `scorecard` — the nine-dimensional state summary. It is not an architecture
   score.
@@ -164,7 +165,7 @@ install the tool to close the gap, not to disable the gate.
 ## Finding status lifecycle
 
 - `new` — active finding, not in the baseline.
-- `baseline` — accepted finding already recorded; not an error.
+- `baseline` — accepted finding already recorded. It is not an error.
 - `fixed` — previously baselined finding no longer detected.
 - `waived` — active finding covered by an unexpired waiver.
 - `expired_waiver` — active finding whose waiver lapsed (gates again).
@@ -176,15 +177,16 @@ usage/config/runtime errors.
 
 `archfit check` uses CI/agent-loop exit codes:
 
-The exit code IS the architecture-state verdict; nothing else participates.
+The exit code is the architecture-state verdict. Nothing else affects it.
 
 - `0` — `healthy`.
 - `1` — `blocked`: active gate finding, missing required tool under
   `--require-tools` / `analyzers.<x>.gate: fail`, or a tripped metric ratchet
   (`metrics.<name>.gate`). **Gate on this one.**
-- `2` — `needs_attention`: no blocker, but an active diagnostic, incomplete
-  dimension evidence, or unevaluated required rule remains. Read the named
-  missing fact; do not treat it as a failure or fabricate evidence to force exit 0. Exit 0 is reachable when every required fact is genuinely supplied.
+- `2` — `needs_attention`: no blocker exists, but an active diagnostic,
+  incomplete dimension evidence, or unevaluated required rule remains. Read the
+  named missing fact. Do not treat it as a failure or fabricate evidence to
+  force exit 0. Exit 0 requires every required fact.
 - `3` — usage, config, or runtime error (includes a v1 config under schema v2,
   malformed labels, or missing required AI config for off-gate AI commands).
 
@@ -196,6 +198,5 @@ prioritize review, not as automatic pass/fail.
 
 ## Full documentation
 
-This file is a distilled, portable subset. The complete guide (configuration
-reference, language support, CI) lives at
-<https://github.com/alexei-led/archfit/blob/main/docs/guide/README.md>.
+This file is a distilled, portable subset. The complete guide is at
+<https://github.com/alexei-led/archfit/tree/main/docs>.

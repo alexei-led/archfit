@@ -1,5 +1,7 @@
 # archfit — Book-Alignment Review Prompt
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Paste the block below into a **fresh session of a capable model, run from the archfit repo root**
 (`/Users/alexei/Workspace/archfit`), on branch **`fix/wave1-gate-integrity`** (ScoreVersion
 `bc_score.v4`). It reviews how well archfit implements the **Balanced Coupling** book and returns

@@ -1,185 +1,114 @@
 # Contributing
 
-Thanks for improving `archfit`.
+Use Go 1.26 or later, Git, Python 3.12 or later, `uv`, and `pre-commit`.
+Language analysis needs the tools listed in [Languages](docs/languages.md).
 
-Keep changes small, deterministic, and documented. `archfit check` is the gate:
-it must stay reproducible and must not require network access or an LLM. Use
-`archfit analyze` for reports. Optional LLM features belong behind explicit
-commands or config and stay off the gate.
-
-## Prerequisites
-
-- Go 1.26+
-- Git
-- `pre-commit`
-- Python 3.12+ — `make test` (and CI) runs `python3
-internal/extract/scip/scip_reader_test.py` unconditionally, regardless of
-  language focus
-- Optional: Node.js 24 LTS or Bun for TypeScript analysis
-- Optional: `uv` for Python analysis (Python 3.14 recommended)
-
-`archfit doctor` reports which optional tools are available.
-
-## Local setup
+## Build and run
 
 ```sh
 git clone https://github.com/alexei-led/archfit.git
 cd archfit
 make setup-tools
 pre-commit install --install-hooks
-make test
+make build
+.bin/archfit doctor
 ```
 
-Use the development binary directly while iterating:
+`make build` writes a static binary to `.bin/archfit`.
+Use `go run ./cmd/archfit --help` while developing a command.
 
-```sh
-go run ./cmd/archfit --help
-go run ./cmd/archfit doctor
-```
-
-## Version pinning policy
-
-Use explicit stable versions in repository docs, workflows, and scripts.
-
-- Do not use floating labels or tags such as `latest`, `ubuntu-latest`, or
-  unversioned package installs in repeatable docs, workflows, or scripts.
-- Exception: README may use `ghcr.io/alexei-led/archfit:latest` for the simple
-  Docker copy-paste path.
-- Pin GitHub-hosted runners to explicit labels, for example `ubuntu-24.04` or
-  `ubuntu-24.04-arm`.
-- Pin GitHub Actions to released versions, or preferably full SHAs with a version
-  comment when touching workflow files.
-- Pin package-manager examples with an exact release, such as
-  `dependency-cruiser@17.4.3` or the grimp package `grimp==3.13`.
-- Use release tags for repeatable user commands, such as `@v0.1.0` or
-  `:v0.1.0`.
-
-## Development loop
-
-Common checks:
+## Check a change
 
 ```sh
 make fmt
-make test
 make lint
-make build
+make test
+make arch-lint
 ```
 
-Useful targeted checks:
+`make test` runs Go tests with the race detector and coverage.
+It also runs the SCIP reader tests, evaluation harness tests, and shell exit-contract tests.
+`make test-fast` skips slow integration tests for the inner development loop.
 
-```sh
-go test ./internal/ -run TestArchImports        # import ring
-go test ./internal/ -run TestSelfModel          # .archfit.yaml describes real source
-go test ./internal/ -run TestModelSurfaceNoDrift # published model contract
-go test ./internal/application/ -run TestGolden # output fixtures
-go test ./internal/ ./cmd/archfit/ -run TestErosion_ # architecture-state erosion gates
-make arch-lint                                 # run the configured v2 gate
-pre-commit run --all-files
-```
+Use focused checks during development:
 
-`make arch-lint` runs `archfit check` and accepts exit `0` (healthy) or `2`
-(needs attention); exit `1` (blocked) and exit `3` (error) fail it. Exit `0` is reachable with
-complete evidence. This repo may report `2` while supplied coverage,
-operational corroboration, or a comparable persisted baseline is missing; no
-evidence gap is reported as healthy.
+| Change | Check |
+| --- | --- |
+| One Go package | `go test ./internal/<package>/` |
+| Import boundaries | `go test ./internal/ -run TestArchImports` |
+| Module ownership | `go test ./internal/ -run TestSelfModel` |
+| Model API | `go test ./internal/ -run TestModelSurfaceNoDrift` |
+| Report output | `go test ./internal/application/ -run TestGolden` |
+| State invariants | `go test ./internal/ ./cmd/archfit/ -run TestErosion_` |
+| Published schemas | `go test ./internal/configschema/ ./internal/reportschema/` |
+| Portable skill | `go test ./skills/ ./cmd/archfit/ -run 'Skill\|Help'` |
 
-Regenerate mocks after changing interfaces under `internal/evidence/ports`:
+`make arch-lint` accepts exit `0` or `2` from the architecture check.
+It fails on exit `1` or `3`.
+Exit `2` still discloses incomplete evidence or diagnostics.
 
-```sh
-make mock
-```
+Add behavior tests for changed logic and regressions.
+Mock system boundaries rather than internal decisions.
+Review changed golden files before accepting them.
 
-## Optional analyzer tools
+## Keep contracts current
 
-The CLI can print or install known language tools:
+Read [Architecture](docs/architecture.md) before changing package boundaries.
+Ask `archfit policy can-import <file> <target>` before adding a cross-module import.
+Update the declared module paths when a package moves.
 
-```sh
-go run ./cmd/archfit doctor --fix --lang go --lang ts --lang py --dry-run
-```
+Do not weaken policy, add waivers, change labels, or replace a baseline to make a check pass.
+Keep deterministic analysis independent of AI providers.
+The [evidence contract](docs/evidence.md) defines completeness and comparison limits.
 
-For deterministic CI, prefer explicit setup in the workflow over implicit local
-installation. See [docs/guide/install.md](docs/guide/install.md) and
-[docs/guide/languages.md](docs/guide/languages.md).
+Run `make mock` after changing interfaces that use generated fakes.
+Run `make schema` after changing configuration, report, or agent-result contracts.
+This command rewrites the three published schemas and checks for drift.
+Review those changes with their source types.
 
-## Architecture boundaries
+## Documentation style
 
-archfit gates its own architecture. Before moving a package or adding a
-capability, read
-[docs/design/architecture-baseline.md](docs/design/architecture-baseline.md) —
-it records the layer ranks, the measured module dependency map, which check
-enforces which invariant, and the change recipes for adding a metric, language,
-output format, or CLI command.
+Update the topic owner when a command, configuration field, metric, or output changes.
+Keep active human documentation directly under `docs/`.
+Keep one owner for each fact and link from other pages.
+Do not add folder indexes.
 
-Two rules to internalise:
+- Write one instruction per sentence, with at most 20 words.
+- Use at most 25 words in descriptive sentences.
+- Use active voice, short paragraphs, and established programming terms.
+- Keep identifiers, commands, paths, and quoted output exact.
+- Avoid filler, contractions, semicolons, and claims without evidence.
+- Use tables for fields, defaults, and comparisons.
+- Keep the README focused on the problem and first useful run.
+- Keep release history in [CHANGELOG.md](CHANGELOG.md).
 
-- The layer direction is `model → support → core → application → adapter → cmd`.
-  Inner never imports outer; `forbidden_layer_direction` gates it at `fail`.
-- Moving a package means updating the owning module's `paths:` in
-  `.archfit.yaml` in the same commit. `go test ./internal/ -run TestSelfModel`
-  fails on an unowned package and on the glob you left behind.
+Use small Mermaid diagrams when they explain a flow or boundary faster than text.
+Use `flowchart LR` for short flows and `flowchart TD` for decisions.
+Use these fill, border, and text colors consistently:
 
-Do not weaken a gate, add a waiver, relabel volatility, or re-baseline to make a
-check pass. Fix the boundary or record the accepted risk with a written
-rationale.
+| Meaning | Fill | Border | Text |
+| --- | --- | --- | --- |
+| Neutral or unknown | `#f1f5f9` | `#64748b` | `#0f172a` |
+| Process | `#e0f2fe` | `#0284c7` | `#082f49` |
+| Healthy | `#dcfce7` | `#16a34a` | `#14532d` |
+| Needs attention | `#fef3c7` | `#d97706` | `#451a03` |
+| Blocked | `#fee2e2` | `#dc2626` | `#7f1d1d` |
 
-### Architecture-state erosion gates
+Name the outcome in the node text so color is not the only signal.
+Render each changed diagram and inspect its layout.
+Check relative links and anchors after moving files.
+Check examples against CLI help, source, tests, and the published schemas.
 
-Seven named checks keep the state report from decaying back into the averaged
-score it replaced. CI runs them as an explicit step; run them locally with
-`go test ./internal/ ./cmd/archfit/ -run TestErosion_`.
+Archive replaced designs, completed plans, and dated reports under `docs/archived/`.
+Preserve unresolved tasks in [Current follow-ups](docs/plans/current.md) before archiving their source.
+Keep generated reports and evaluation output outside tracked documentation.
 
-| Check                       | What it prevents                                                     |
-| --------------------------- | -------------------------------------------------------------------- |
-| `no_scalar_decision`        | an averaged score re-entering the path from evidence to exit code    |
-| `no_dead_archfit_rule`      | a rule reporting "0 violations" for a boundary nobody checks         |
-| `dimension_status_required` | an envelope with no status reading as an empty, healthy result       |
-| `config_hash_required`      | a delta taken across a config edit blaming the code                  |
-| `label_evidence_required`   | an unevidenced approval silencing a seam permanently                 |
-| `baseline_idempotent`       | a self-referential capture reporting drift that is not there         |
-| `policy_query_agreement`    | a `can-import` answer that disagrees with the `check` gate           |
+## Evaluation and release
 
-Each check has a paired fixture proving it fires on a violating input, so none
-can pass because it happens to look at nothing. When you extend one, extend its
-fixture in the same commit.
+Use [Development evaluation](docs/development.md) for language contracts, corpus sweeps, and coupling reviews.
+Run `pre-commit run --all-files` before submitting a change when hooks are installed.
+Pin tool versions in repeatable CI examples.
 
-Three more rules that follow from the state contract:
-
-- A dimension that measured nothing reports `unmeasured` with a named
-  `UnknownFact`. Never report a missing collector as a measured zero — an empty
-  list reads as healthy, and "we found no problems" must stay distinguishable
-  from "nothing looked".
-- The four comparability fingerprints live only in the root `comparison` block.
-  A second copy is a second answer to whether two runs may be compared.
-- `.archfit-labels.yaml` stays empty unless a pair was reviewed by hand. An
-  approved label needs `evidence_hash`, `rationale`, `provenance`, and
-  `confidence`; without the hash it can never go stale and silences its pair
-  permanently.
-
-See
-[docs/design/architecture-state-reporting.md](docs/design/architecture-state-reporting.md)
-for the full contract, the nine dimensions, and what v1 does and does not
-measure.
-
-## Tests and docs
-
-- Add behavior tests for non-trivial logic and regressions.
-- Update golden tests when output intentionally changes.
-- Keep deterministic gate behavior LLM-free.
-- Update `docs/guide/` when CLI behavior, config, metrics, or output changes.
-- Keep `README.md` compact; link to guide pages instead of duplicating them.
-
-## Pull request checklist
-
-Before opening a pull request:
-
-1. Run `make fmt`.
-2. Run `make test`.
-3. Run `make lint` when `golangci-lint` is installed.
-4. Run `pre-commit run --all-files` when hooks are installed.
-5. Update docs and examples affected by the change.
-
-## Releases
-
-Maintainers publish releases by pushing a tag matching `vX.Y.Z` or `v*-rc.*`.
-The release workflow builds static binaries for Linux and macOS and publishes a
-multi-arch container image to GHCR.
+Maintainers release by pushing a version tag.
+The release workflow builds Linux and macOS binaries and publishes the multi-platform container image.
+The workflow creates the GitHub release. Do not create a second release for the same tag.

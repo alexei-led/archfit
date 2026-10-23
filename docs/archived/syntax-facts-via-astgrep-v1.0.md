@@ -1,5 +1,7 @@
 # Syntax facts via ast-grep — design v1.0 (complete)
 
+> Historical record. Current documentation: [archfit](../architecture.md).
+
 Date: 2026-06-24. Status: SHIPPED. This is the complete implementation — all
 four languages and gate control, no phases (it replaces an earlier phased draft
 that scoped only Go+TS and deferred Python/Rust + gate rules).

@@ -1,6 +1,6 @@
 // Package factcache is the extractor-fact cache adapter: content-addressed
 // JSON blobs under .archfit-cache/facts/<analyzer>/<key>.json that let a warm
-// run skip expensive out-of-process extractor work (docs/design/fact-cache.md).
+// run skip expensive out-of-process extractor work (docs/evidence.md#fact-cache).
 // It stores FACTS — the subprocess output extractors derive facts from —
 // never scores: classification and scoring re-run every time, so config and
 // ScoreVersion changes take effect instantly with no invalidation logic.

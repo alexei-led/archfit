@@ -1,3 +1,5 @@
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 <!-- markdownlint-configure-file { "MD013": { "line_length": 200, "code_blocks": false, "tables": false } } -->
 
 # Archfit — Internal Architecture Design
@@ -5,7 +7,7 @@
 **Version:** 0.1 draft
 **Date:** 2026-06-07
 **Status:** design (not an implementation plan)
-**Source spec:** [`docs/spec/arch-fitness-spec-v0.4.md`](../spec/arch-fitness-spec-v0.4.md)
+**Source spec:** [`docs/spec/arch-fitness-spec-v0.4.md`](arch-fitness-spec-v0.4.md)
 **Methodology:** Vlad Khononov, Balanced Coupling (integration strength × distance × volatility)
 
 ---

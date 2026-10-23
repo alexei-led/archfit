@@ -1,3 +1,5 @@
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 <!-- markdownlint-disable MD024 MD031 -->
 
 # Deferred BC-v2 fixes — implementation design

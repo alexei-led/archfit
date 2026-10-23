@@ -1,8 +1,8 @@
 # archfit language guidance
 
 Use this when the task changes language-specific analyzer setup, config globs,
-or coverage-gap handling. `archfit doctor` tells you what was detected; this file
-tells you what "good" looks like.
+or coverage-gap handling. `archfit doctor` reports detected tools. This file
+describes the expected setup.
 
 ## Cross-language defaults
 
@@ -10,6 +10,7 @@ tells you what "good" looks like.
   `setup.py`, `Cargo.toml`.
 - Prefer repo-local, pinned analyzers over mutable global installs.
 - Use `archfit doctor --fix --dry-run --lang <x>` to see the helper's expected setup.
+- Optional analyzers run only when `enabled: true`. `auto` does not run them.
 - Missing tools are coverage gaps, not healthy signal. Name the affected metrics,
   lower confidence, and avoid calling the run clean on exit 0 alone.
 - For mixed repos, keep each language's modules distinct where possible.
@@ -28,7 +29,7 @@ archfit doctor --fix --lang go --dry-run
 
 Guidance:
 
-- Go analysis needs `go` on `PATH`; no extra Go analyzer is installed.
+- Go analysis needs `go` on `PATH`. It does not need another Go analyzer.
 - Config paths and `public` entries usually name package import paths, not
   individual `.go` files.
 - Start with package-level module boundaries (`internal/domain`, `internal/http`,
@@ -72,7 +73,8 @@ archfit doctor --fix --lang py --dry-run
 
 Guidance:
 
-- Prefer `uv`; without it, use Python 3.12+ with pinned `grimp`.
+- Use `uv` with Python 3.11 or later. Without `uv`, use Python 3.12 or later
+  with `grimp` installed.
 - Set `languages.python.package` when the import root is not the repo name or
   the repo uses `src/` layout.
 - Config paths and rule filters use dotted module globs (`myapp.domain**`).
@@ -95,23 +97,24 @@ archfit doctor --fix --lang rust --dry-run
 
 Guidance:
 
-- Base Rust analysis uses `cargo metadata`; the default graph is crate-level.
+- Base Rust analysis uses `cargo metadata`. The default graph is crate-level.
 - Config paths and rule filters are crate-name globs from `Cargo.toml`, not file
   paths.
-- Single-crate repos are structurally shallow at crate level. For real module
-  depth, enable `analyzers.cargo_modules.enabled: true`; for symbol-level
-  strength, enable `analyzers.scip.enabled: true` with `rust-analyzer` available.
-- If `cargo` is missing, Rust metrics stay `n/a`; do not treat that as a pass.
+- A single crate has little structure at crate level. For module detail, enable
+  `analyzers.cargo_modules.enabled: true`. For symbol-level strength, enable
+  `analyzers.scip.enabled: true` and install `rust-analyzer`.
+- If `cargo` is missing, Rust metrics stay `n/a`. Do not treat that as a pass.
 - If `cargo-modules` or `rust-analyzer` is absent, call out the exact dimensions
   that remain coarse or unmeasured.
 
 ## Optional analyzers that often explain `n/a`
 
-- `analyzers.scip.enabled: true` + language SCIP indexer / `rust-analyzer` →
-  edge strength precision; raises `coupling_balance` confidence
-- `analyzers.clones.enabled: true` + jscpd → clone-detected `symmetric` facts
-  (S=9, separate from import edges); affects `coupling_balance` distribution
-- `analyzers.cargo_modules.enabled: true` + `cargo-modules` → Rust intra-crate
-  module depth for `encapsulation` and `cycle` signal
+- `analyzers.scip.enabled: true` with a language SCIP indexer or `rust-analyzer`
+  adds edge-strength detail and raises `coupling_balance` confidence.
+- `analyzers.clones.enabled: true` with jscpd adds clone-detected `symmetric`
+  facts (S=9). These facts do not represent import edges. They affect the
+  `coupling_balance` distribution.
+- `analyzers.cargo_modules.enabled: true` with `cargo-modules` adds Rust module
+  depth for `encapsulation` and `cycle` signals.
 
 When one is missing, say so explicitly. `n/a` means unmeasured, not strong.

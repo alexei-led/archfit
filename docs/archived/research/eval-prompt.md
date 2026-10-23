@@ -1,5 +1,7 @@
 # archfit evaluation prompt
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Paste the block below into a **fresh Claude Code session, run from the archfit repo root**, to
 run a complete, high-quality evaluation of archfit across the test corpus — **full + delta +
 LLM**. The eval judges archfit's **usability, stability, usefulness, and correctness**, the
