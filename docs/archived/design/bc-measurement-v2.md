@@ -1,5 +1,7 @@
 # Balanced Coupling measurement engine — design v2.0
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Date: 2026-06-18. Status: DRAFT — awaiting review. Supersedes the coupling-scoring
 parts of `arch-fitness-architecture-v0.2.md` and `hybrid-llm-strength-v0.1.md`;
 extends `agent-feedback-loop-v0.1.md`. Implementation plan to follow in

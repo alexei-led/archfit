@@ -1,5 +1,7 @@
 # Marvin's review: archfit in the AI coding era
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 > A weary but honest review of `archfit` as an open source project, and how it
 > connects to the argument that cheap AI-generated code raises the value of
 > engineering discipline.

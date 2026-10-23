@@ -1,5 +1,7 @@
 # Test + Lint Speed Baseline
 
+> Historical record. Current documentation: [archfit](../../../development.md).
+
 Measured 2026-06-25 on darwin arm64 (Apple Silicon). All timings wall-clock from `time`.
 Warm = test binary cache hot; cold = first run after a clean build or gcflags change.
 

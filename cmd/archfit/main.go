@@ -56,10 +56,10 @@ const (
 )
 
 const (
-	docsURL          = "https://github.com/alexei-led/archfit/tree/main/docs/guide"
-	ciDocsURL        = "https://github.com/alexei-led/archfit/blob/main/docs/guide/ci.md"
-	agentDocsURL     = "https://github.com/alexei-led/archfit/blob/main/docs/guide/agent-feedback.md"
-	languagesDocsURL = "https://github.com/alexei-led/archfit/blob/main/docs/guide/languages.md"
+	docsURL          = "https://github.com/alexei-led/archfit/blob/main/docs/getting-started.md"
+	ciDocsURL        = "https://github.com/alexei-led/archfit/blob/main/docs/ci.md"
+	agentDocsURL     = "https://github.com/alexei-led/archfit/blob/main/docs/agents.md"
+	languagesDocsURL = "https://github.com/alexei-led/archfit/blob/main/docs/languages.md"
 )
 
 const (

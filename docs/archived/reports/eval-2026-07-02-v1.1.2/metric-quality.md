@@ -1,5 +1,7 @@
 # archfit metric-quality audit — synthesis
 
+> Historical record. Current documentation: [archfit](../../../development.md).
+
 Scope: every scored metric, gate rule, advisory, and agent-facing output surface in archfit,
 audited independently (24 per-item audits) plus 3 cross-cutting audits (verdict/gating,
 agent-consumption surfaces, config ergonomics). All findings below are code-verified or

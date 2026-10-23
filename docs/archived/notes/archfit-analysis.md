@@ -1,5 +1,7 @@
 # Archfit — Architecture Fitness Analysis
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 - **Target:** archfit (this repo)
 - **Tool:** `archfit scan` (= `check --full --advisory --report`) — `v0.2.0-6-g4682765`
 - **Date:** 2026-06-18

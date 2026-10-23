@@ -1,5 +1,7 @@
 # archfit external-tooling analysis: capability, performance, overlap, reduction
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Date: 2026-06-26. Scope: every external tool archfit shells out to, per supported
 language (Go, TypeScript, Python, Rust) plus the cross-language tools. Goal: map
 what each tool actually extracts vs. what it _can_ extract, measure operational

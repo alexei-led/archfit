@@ -1,11 +1,9 @@
 # archfit starter: microservices (deploy_unit boundaries)
 #
-# deploy_unit is the strongest distance signal: two modules in different deploy
-# units are at cross-deploy-unit distance (a deploy boundary is absolute). High
-# distance + a stable contract = loose coupling (good). High distance + intrusive
-# coupling (sharing internals/DB across services) = distributed-monolith risk —
-# exactly what archfit flags first. Declaring deploy_unit + owner per service is
-# what makes that distinction reliable.
+# deploy_unit names a deployment boundary. Every module boundary uses distance 9.
+# A stable public contract keeps coupling weak across that boundary.
+# Intrusive access at high volatility can qualify a distributed-monolith seam.
+# Declare owners and deploy units to describe each service's responsibility.
 #   archfit analyze --config .archfit.yaml
 #   archfit analyze --format scorecard --config .archfit.yaml
 version: 2

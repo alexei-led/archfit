@@ -1,5 +1,7 @@
 # Parsing ast-grep's large JSON in Go: efficient, fast, no OOM
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Date: 2026-06-26. Problem: `sg scan --json=compact` emits one JSON array that
 reaches **~100 MB** on rule-dense repos (herdr: 13,957 matches, 100 MB). archfit
 today reads the whole thing into `[]byte` and `json.Unmarshal`s it into

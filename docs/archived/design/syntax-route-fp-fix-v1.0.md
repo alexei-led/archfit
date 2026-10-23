@@ -1,5 +1,7 @@
 # Syntax-facts route false-positive fix — design v1.0
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Branch: `tree-sitter-research`  
 Date: 2026-06-25  
 Status: APPROVED FOR IMPLEMENTATION

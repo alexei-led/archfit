@@ -1,4 +1,4 @@
-// Worked examples of bc_score.v7 (docs/design/bc-measurement-v7.md). Each test
+// Worked examples of bc_score.v7 (docs/coupling.md). Each test
 // builds the scenario with the names the example uses and checks the score the
 // design promises, so a change to distance or strength rules fails here first.
 package analysis_test
