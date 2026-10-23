@@ -105,7 +105,7 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	}
 	llmCfg, configured := cfg.LLM()
 	if !configured {
-		return &exitError{code: 3, msg: "error: enrich needs ai configured (provider + model); see docs/guide/llm-enrich.md"}
+		return &exitError{code: 3, msg: "error: enrich needs ai configured (provider + model); see docs/ai.md"}
 	}
 	// SCIP is no longer required. Without it, functional/model edges are selected
 	// as before; additionally, unknown-strength cross-module edges are always

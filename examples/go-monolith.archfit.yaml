@@ -1,8 +1,8 @@
 # archfit starter: Go monolith (single deployable, layered packages)
 #
-# A flat config produces noise: distance falls back to code structure and BC
-# advisories flood. This template is fully specified — every module declares an
-# owner and a subdomain/volatility — so distance and volatility classify cleanly.
+# Each module declares an owner and a subdomain or volatility.
+# Module boundaries use distance 9. Owners describe responsibility.
+# Subdomains provide default volatility when no explicit value exists.
 # Replace the module paths and owners with your own, then run:
 #   archfit analyze --config .archfit.yaml
 version: 2

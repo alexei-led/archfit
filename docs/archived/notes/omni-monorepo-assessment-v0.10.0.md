@@ -1,5 +1,7 @@
 # archfit v0.10.0 — assessment from the omni monorepo exercise
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Evidence base: ran archfit against omni (DoiT Cloud Intelligence) — a polyglot
 monorepo: 184 `go.mod` under `go.work` (10,088 Go files), client TS app (6,826
 TS/TSX), ~42 Python services, ~60 yarn workspaces. Findings come from (a) reading

@@ -1,5 +1,7 @@
 # Design: coupling-measurement correctness + modularity
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Status: approved (scope confirmed by user 2026-06-27) · review-driven remediation
 Source: `docs/archived/reports/architecture-review-2026-06-27.md` (Findings F1–F5)
 Implements on branch `fix/coupling-measurement-modularity`.

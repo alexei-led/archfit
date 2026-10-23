@@ -1,3 +1,5 @@
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 <!-- markdownlint-configure-file { "MD013": false, "MD036": false, "MD024": { "siblings_only": true } } -->
 
 # Coverage gate, fail-loud scoring, and autopilot — design v0.1
@@ -92,7 +94,7 @@ These are pure changes in the core ring (decide over facts already in the
   note is added rather than fabricating a value.
 
 The `n/a` vs `critical` distinction is load-bearing and documented in
-[metrics.md](../guide/metrics.md): `n/a` is _no evidence_, never _measured and
+[metrics.md](../../metrics.md): `n/a` is _no evidence_, never _measured and
 bad_.
 
 ## 4. GateMode — opt-in hard gate

@@ -1,5 +1,7 @@
 # archfit corpus experiment — synthesis (v1.1.2, commit 6140aba)
 
+> Historical record. Current documentation: [archfit](../../../development.md).
+
 Run date: 2026-07-02. 12 repos (11 in the RUNS payload + ruff, cross-checked from raw
 JSON since it was run concurrently but omitted from the RUNS array), 2 probes
 (dogfood drift-injection, delta-mode/gate-determinism), 1 timing probe (cold vs warm

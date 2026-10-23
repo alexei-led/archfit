@@ -3,7 +3,7 @@
 // document root.
 //
 // It exists because the output contract had no machine-readable form: consumers
-// had prose in docs/design and nothing to validate or generate types from,
+// had only prose and nothing to validate or generate types from,
 // while archfit.schema.json describes the CONFIG and cannot stand in for it.
 // The schema is derived from the Go structs in internal/model/report, so the
 // published contract and the emitting types cannot drift apart silently; the

@@ -1,5 +1,7 @@
 # Closing the archfit ⟷ architect gap
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 **Status:** P1/P2/P3 IMPLEMENTED — all detectors shipped; Cat 10 config gap documented; irreducible residue named
 **Date:** 2026-06-25
 **Basis:** 6-repo study (archfit/Go, pumba/Go, codegraph/TS, ccgram/Python, yazi/Rust, herdr/Rust).
@@ -82,7 +84,7 @@ That irreducible residue is the standing case for the deterministic+LLM hybrid, 
   metric; works over TS file→file edges; Go/Python file→package granularity documented as ceiling.
 - **Cat 10 — Config gap, not capability gap:** `forbidden_layer_direction` exists; the missing step
   is _authoring the rule_ for repos (e.g. yazi) that declared no layers. `archfit enrich` can propose
-  a layer structure; see [docs/guide/configuration-reference.md](../guide/configuration-reference.md#layers).
+  a layer structure; see [docs/guide/configuration-reference.md](../../configuration.md#layers-and-modules).
 - **Accept as LLM/human (route via `review`/`enrich`):** _soundness/acceptability judgment_ on
   unsafe/panic findings (Cat 6/8 residue), layer _intent_ inference (Cat 10 residue), semantic/intent
   (Cat 12 core), live-dep EOL (Cat 4 residue), true coverage adequacy (Cat 13 residue). Use

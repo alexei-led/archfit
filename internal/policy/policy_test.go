@@ -79,12 +79,10 @@ func TestWithResolvedTopologyFillsGapsOnceAndLeavesDeclarationsAlone(t *testing.
 // implementation detail: the comparability model hash is taken over the
 // RESOLVED module map, so a resolver-filled owner or deploy unit moves it.
 //
-// Distance — and therefore whether a seam qualifies for the distributed-monolith
-// gate — is computed from owner and deploy unit. If the hash covered only the
-// declared map, a CODEOWNERS edit, a commit by a new author, or an ownership
-// git timeout could re-qualify an existing seam and block a no-op commit under
-// `mode: fail`. Covering the resolved map turns the same event into an
-// abstention with a named cause. See docs/design/architecture-state-reporting.md.
+// Resolved ownership and deployment metadata are part of the model identity.
+// Hashing only declared modules would hide changes supplied by CODEOWNERS or
+// deploy-unit detection. A resolved-topology change must report model drift
+// even when source dependencies stay the same. See docs/results.md.
 func TestModelHashCoversResolvedTopology(t *testing.T) {
 	declared := map[string]ModuleDef{policyTestBare: {Paths: []string{"b/**"}}}
 	base := New(TopologyView{Modules: declared}, RelationshipPolicy{}, AssessmentPolicy{}, GatePolicy{}, nil, nil)

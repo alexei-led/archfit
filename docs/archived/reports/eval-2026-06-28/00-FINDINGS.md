@@ -1,5 +1,7 @@
 # archfit Evaluation Findings — 2026-06-28
 
+> Historical record. Current documentation: [archfit](../../../development.md).
+
 Seven repos, four languages (Go ×4, Rust ×2, Python ×1, TypeScript ×1), full + delta + LLM modes.
 Independent Balanced-Coupling reviews provided for all seven.
 

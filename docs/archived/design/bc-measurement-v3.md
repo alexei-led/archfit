@@ -1,5 +1,7 @@
 # Balanced Coupling measurement engine — design v3.0
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Date: 2026-06-23. Status: SHIPPED. Supersedes `bc-measurement-v2.md` (the v2
 design described the measurement gaps and two prototype scorers; v3 records what
 was actually built and why).
