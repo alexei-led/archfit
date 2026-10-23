@@ -90,16 +90,11 @@ func TestQueryEdgeFollowsWhatGrimpBuilds(t *testing.T) {
 	}
 }
 
-// TestQueryEdgeLocationFollowsExclusions pins that an importer an exclusion
-// glob matches carries no location, as pythonSourceLocations leaves it: the
-// rule pass then counts the edge as production, as check does.
+// Excluded importers produce no dependency edge, just as check drops them.
 func TestQueryEdgeLocationFollowsExclusions(t *testing.T) {
 	t.Parallel()
 	facts, err := QueryEdge(srcLayout(t), evidenceports.ExtractConfig{Exclusions: []string{"src/myapp/legacy/**"}}, "src/myapp/legacy/old.py", domainModule)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if locations := facts.Edges[0].Locations; len(locations) != 0 {
-		t.Errorf("locations = %+v, want none for an excluded importer", locations)
+	if !errors.Is(err, evidenceports.ErrNotExtracted) || len(facts.Edges) != 0 {
+		t.Fatalf("excluded importer: facts=%+v err=%v", facts, err)
 	}
 }

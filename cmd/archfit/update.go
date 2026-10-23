@@ -19,8 +19,8 @@ type UpdateCmd struct {
 	Apply      bool   `name:"apply" help:"Write structural changes live into .archfit.yaml (backup created; AI semantic proposals remain review-only)."`
 	JSON       bool   `name:"json" help:"Emit the review as a JSON document (report-only; not combinable with --apply, --ai-classify, or --refresh)."`
 	Refresh    bool   `name:"refresh" help:"Re-run the AI calls and refresh the cache."`
-	AIProvider string `name:"ai-provider" help:"AI provider override." default:"anthropic"`
-	AIModel    string `name:"ai-model" help:"AI model override." default:"claude-opus-4-8"`
+	AIProvider string `name:"ai-provider" help:"AI provider override (anthropic|openai|deepseek|ollama|openai-compatible). Defaults to configured provider, then anthropic."`
+	AIModel    string `name:"ai-model" help:"AI model override. Defaults to configured model, then provider default."`
 
 	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
 	providerOverride llm.Provider

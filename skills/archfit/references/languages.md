@@ -76,8 +76,8 @@ Guidance:
 - `uv` selects Python 3.14 and `grimp==3.17` without target project setup.
   Without `uv`, use a separate Python 3.14+ environment with `grimp==3.17`.
   Missing project dependencies do not invalidate static import literals.
-- Set `languages.python.package` when the import root is not the repo name or
-  the repo uses `src/` layout.
+- Leave `languages.python.package` unset for automatic flat/src discovery.
+  Pin it only when that single package is the complete intended source.
 - Config paths and rule filters use dotted module globs (`myapp.domain**`).
 - Keep slash-style `internal` globs too when you want `_internal` package access
   to show up as intrusive/internal-access edges.

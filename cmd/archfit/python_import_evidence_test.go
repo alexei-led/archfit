@@ -8,10 +8,56 @@ import (
 	"testing"
 )
 
+const pythonProjectFile = "pyproject.toml"
+
+func TestCheckPythonUnscannedSourceNeverCountsAsConformance(t *testing.T) {
+	skipShortWithoutRequiredTools(t)
+	requireTool(t, "uv")
+	for _, tc := range []struct {
+		from    string
+		unknown bool
+	}{
+		{"scripts.**", true}, {"**", true}, {"app.handler", false},
+	} {
+		t.Run(tc.from, func(t *testing.T) {
+			root := t.TempDir()
+			config := `version: 2
+languages:
+  python:
+    package: app
+modules:
+  app:
+    paths: [app.**]
+rules:
+  - id: no-backend
+    type: forbidden_dependency
+    from: "` + tc.from + `"
+    to: app.backend
+    gate: fail
+`
+			for name, content := range map[string]string{
+				pythonProjectFile: "[project]\nname='fixture'\nversion='0.0.0'\n",
+				"app/__init__.py": "", "app/backend.py": "", "app/handler.py": "import absent_fixture_external\n",
+				"scripts/run.py": "import app.backend\n", defaultConfigPath: config,
+			} {
+				writeFileAt(t, root, name, content)
+			}
+			gitInitFixtureRepo(t, root)
+			code, stdout, stderr := runArchfit(t, cmdCheck, "-c", filepath.Join(root, defaultConfigPath), "--json")
+			var got ruleScopeDecision
+			if err := json.Unmarshal([]byte(stdout), &got); err != nil || code == 3 {
+				t.Fatalf("check exit=%d err=%v\n%s\n%s", code, err, stdout, stderr)
+			}
+			if (len(got.Decision.Unevaluated) != 0) != tc.unknown || (got.Decision.HardGates == "pass") == tc.unknown {
+				t.Fatalf("decision=%+v want unknown=%v", got.Decision, tc.unknown)
+			}
+		})
+	}
+}
+
 func TestCheckPythonRulesWithMissingExternalPackages(t *testing.T) {
 	skipShortWithoutRequiredTools(t)
 	requireTool(t, "uv")
-	const pythonProjectFile = "pyproject.toml"
 	const hardGatePassState = "pass"
 	type observedFinding struct {
 		RuleID string `json:"rule_id"`

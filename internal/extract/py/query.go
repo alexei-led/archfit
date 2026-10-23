@@ -11,7 +11,7 @@ import (
 // QueryEdge builds the facts `archfit policy can-import` judges: one import
 // of target by the Python file from, spelled exactly as the extractor spells a
 // grimp edge — dotted module node to dotted module node, the same edge kind,
-// located at the importing file unless an exclusion glob matches it — so the
+// located at the importing file; excluded importers wrap ErrNotExtracted — so the
 // rule pass keys its findings as it does on the extracted edge. target is a
 // dotted module or a .py file. The dotted form strips a src/ prefix, as the
 // module-key convention does; a package under another custom root is spelled
@@ -19,6 +19,9 @@ import (
 // ErrNotExtracted; a target outside them (installed, stdlib, or uninstalled)
 // wraps ErrNotDecidable. It runs no tool.
 func QueryEdge(root string, cfg evidenceports.ExtractConfig, from, target string) (graph.Facts, error) {
+	if pythonLocationExcluded(from, cfg.Exclusions) {
+		return graph.Facts{}, fmt.Errorf("python: %s is excluded: %w", from, evidenceports.ErrNotExtracted)
+	}
 	importer := moduleKey(from)
 	if importer == "" {
 		return graph.Facts{}, fmt.Errorf("python: %q is not a .py file", from)
@@ -39,12 +42,6 @@ func QueryEdge(root string, cfg evidenceports.ExtractConfig, from, target string
 		return graph.Facts{}, fmt.Errorf("python: %s is outside the packages grimp builds (%s); external import literals do not establish module or symbol resolution: %w",
 			imported, strings.Join(pkgs, ", "), evidenceports.ErrNotDecidable)
 	}
-	// The extractor locates an import at the importing file unless an
-	// exclusion glob matches it (pythonSourceLocations).
-	var locations []graph.Location
-	if !pythonLocationExcluded(from, cfg.Exclusions) {
-		locations = []graph.Location{{File: from}}
-	}
 	return graph.Facts{
 		Language: langPython,
 		Nodes: []graph.Node{
@@ -57,7 +54,7 @@ func QueryEdge(root string, cfg evidenceports.ExtractConfig, from, target string
 			Kind:       ImportEdgeKind(cfg.Internal, imported),
 			Language:   langPython,
 			Confidence: "high",
-			Locations:  locations,
+			Locations:  []graph.Location{{File: from}},
 		}},
 	}, nil
 }

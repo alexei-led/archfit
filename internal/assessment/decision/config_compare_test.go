@@ -360,7 +360,7 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 	// dependency-cruiser report "partial" whenever ONE import
 	// specifier anywhere in the tree is unresolvable — the normal steady state,
 	// not a completion failure. Grading it not_comparable pinned every
-	// TypeScript and Python comparison to not_comparable forever.
+	// TypeScript comparison to not_comparable forever.
 	//
 	// The TOOL NAME is the discriminator, not Unresolved > 0: go/packages sets
 	// Unresolved on a partial too, counting whole packages it SKIPPED because

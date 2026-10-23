@@ -159,8 +159,8 @@ Creates a starter config. `--ai-classify` drafts AI classifications.
 | `--force` | Replace an existing config and keep a timestamped backup. |
 | `--ai-classify` | Run an off-gate AI classification pass. |
 | `--apply` | Write AI classifications directly. Requires `--ai-classify`. Review them before gating. |
-| `--ai-provider <name>` | Provider override: `anthropic`, `openai`, or `ollama`. |
-| `--ai-model <name>` | Model override. |
+| `--ai-provider <name>` | Provider override. See [AI providers](ai.md#configure-a-provider). |
+| `--ai-model <name>` | Model override. Configured values precede provider defaults. See [override precedence](ai.md#initupdate-overrides). |
 | `--refresh` | Re-run AI calls and refresh the AI cache. |
 
 ### `config update`
@@ -174,8 +174,8 @@ Reviews config structure against the source tree. `--apply` writes safe structur
 | `--apply` | Write structural changes. AI proposals remain review-only. |
 | `--json` | Emit `archfit.config-review.v1`. Report-only; cannot combine with `--apply`, `--ai-classify`, or `--refresh`. |
 | `--ai-classify` | Draft AI classifications for unclassified modules. |
-| `--ai-provider <name>` | Provider override. |
-| `--ai-model <name>` | Model override. |
+| `--ai-provider <name>` | Provider override. See [AI providers](ai.md#configure-a-provider). |
+| `--ai-model <name>` | Model override. Configured values precede provider defaults. See [override precedence](ai.md#initupdate-overrides). |
 | `--refresh` | Re-run AI calls and refresh the AI cache. |
 
 ### `config lint`

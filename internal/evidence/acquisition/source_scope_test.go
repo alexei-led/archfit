@@ -9,10 +9,45 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	evidencecontract "github.com/alexei-led/archfit/v3/internal/evidence"
 	"github.com/alexei-led/archfit/v3/internal/extract/registry"
+	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/syntax"
 )
+
+func TestPythonSourceScopeRequiresScannedModuleMembership(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		status   string
+		graph    bool
+		excluded bool
+		want     bool
+	}{
+		{"complete producer", modevidence.StatusOK, true, false, true},
+		{"excluded source", modevidence.StatusOK, true, true, false},
+		{"no graph", modevidence.StatusOK, false, false, false},
+		{"partial producer", modevidence.StatusPartial, true, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := evidencecontract.Facts{
+				FileLOC:  map[string]int{"src/app/a.py": 1, "scripts/run.py": 1},
+				Coverage: []modevidence.Coverage{{Tool: registry.ToolGrimp, Status: tc.status}},
+			}
+			if tc.graph {
+				f.Graph = graph.Build([]graph.Facts{{Nodes: []graph.Node{{Kind: graph.NodeKindModule, Path: "app.a", Language: graph.LangPython}}}})
+			}
+			outOfScope := map[string]struct{}{}
+			if tc.excluded {
+				outOfScope["scripts/run.py"] = struct{}{}
+			}
+			got := unanalysedFiles("/repo", f, outOfScope, CoverageOptions{}, goMemberSplit{})
+			_, missing := got["scripts/run.py"]
+			if missing != tc.want || len(got) > 1 {
+				t.Fatalf("unanalysed=%v want script missing=%v", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestDeclaredOutOfScopeHonorsExclusionsAndSwitchedOffLanguages(t *testing.T) {
 	const (

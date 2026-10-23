@@ -1,5 +1,46 @@
 # Release notes
 
+## v3.1.0
+
+### Summary
+
+Add DeepSeek and configurable OpenAI-compatible providers while keeping AI optional and outside deterministic checks.
+
+### Changes
+
+- Update the official Anthropic and OpenAI SDKs.
+  Init/update defaults now select Claude Opus 5.5 or GPT-6.1 Sol.
+  OpenAI uses Responses with response storage disabled.
+  Ollama remains on Chat Completions.
+- Add the `deepseek` preset using `deepseek-flash` and `DEEPSEEK_API_KEY`.
+  Add `openai-compatible` with an explicit endpoint and optional credential-variable name.
+  Keyless compatible servers never inherit OpenAI credentials.
+- Add reasoning effort, total-output budgets, and whole-call timeouts.
+  Default output caps are 32,768 tokens.
+  Init/update respect configured providers and models unless explicit flags override them.
+- Reject null, refused, empty, and unfinished provider replies instead of crashing or accepting partial drafts.
+  Separate cached responses by endpoint, API, effort, and output budget.
+- Add GitHub App advisory feedback and consolidate current documentation under `docs/`.
+  Keep release history in this changelog.
+
+### Upgrade
+
+1. Review AI settings after upgrading.
+   Model defaults and reasoning budgets changed.
+   Thinking counts toward output limits and can increase cost.
+   Set `ai.max_tokens`, `ai.effort`, and `ai.timeout` for your workload.
+2. Expect fresh calls when running AI commands.
+   The versioned cache does not replay older transport entries.
+3. Configure additional endpoints through `ai.base_url`.
+   SDK base-URL environment overrides are not used.
+   Store credentials in environment variables, never configuration values.
+
+Configuration schema version remains `2`.
+Reports and deterministic verdict contracts are unchanged.
+Archfit does not rewrite stored baselines automatically.
+
+[Compare v3.0.1...v3.1.0](https://github.com/alexei-led/archfit/compare/v3.0.1...v3.1.0)
+
 ## v3.0.1
 
 - **The baseline no longer stores dimension snapshots or hard-gate IDs.**

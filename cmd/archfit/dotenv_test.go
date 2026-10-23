@@ -69,6 +69,7 @@ func testEnvSearchDirs(t *testing.T) {
 func testLoadDotEnv(t *testing.T) {
 	cases := []struct{ name, key, content, want string }{
 		{"anthropic export", anthropicKeyEnv, "# comment\n\nexport ANTHROPIC_API_KEY=plain\n", "plain"},
+		{"deepseek export", deepSeekKeyEnv, "export DEEPSEEK_API_KEY=plain\n", "plain"},
 		{"double quotes", openAIKeyEnv, "OPENAI_API_KEY=\"quoted value\"\n", "quoted value"},
 		{"single quotes", openAIKeyEnv, "OPENAI_API_KEY='single'\n", "single"},
 		{"embedded equals", openAIKeyEnv, "OPENAI_API_KEY=val=with=equals\n", "val=with=equals"},

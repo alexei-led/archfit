@@ -17,6 +17,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/extract/loc"
 	"github.com/alexei-led/archfit/v3/internal/extract/registry"
 	"github.com/alexei-led/archfit/v3/internal/factcache"
+	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/policy"
@@ -96,8 +97,20 @@ func ruleScopeObservations(ctx context.Context, runner toolrun.Runner, store *fa
 // rule's scope, not merely the dependency rules'.
 func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[string]struct{}, cov CoverageOptions, goMembers goMemberSplit) map[string]struct{} {
 	var roots []graph.CrateRoot
+	var pythonModules map[string]struct{}
 	if f.Graph != nil {
 		roots = f.Graph.CrateRoots()
+		for _, row := range f.Coverage {
+			if row.Tool == registry.ToolGrimp && row.Status == modevidence.StatusOK {
+				pythonModules = make(map[string]struct{})
+				for _, node := range f.Graph.Nodes() {
+					if node.Kind == graph.NodeKindModule && node.Language == graph.LangPython {
+						pythonModules[node.Path] = struct{}{}
+					}
+				}
+				break
+			}
+		}
 	}
 	absent := make(map[string]bool)
 	for _, lang := range registry.All() {
@@ -114,7 +127,9 @@ func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[strin
 		}
 		nonMember := language == graph.LangRust && len(roots) > 0 && selector == ""
 		filteredGo := language == graph.LangGo && goMembers.removes(file)
-		if !absent[language] && !nonMember && !filteredGo {
+		_, pythonScanned := pythonModules[selector]
+		unscannedPython := language == graph.LangPython && filepath.Ext(file) == ".py" && pythonModules != nil && !pythonScanned
+		if !absent[language] && !nonMember && !filteredGo && !unscannedPython {
 			return
 		}
 		if out == nil {

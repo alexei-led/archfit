@@ -10,6 +10,7 @@ import (
 const (
 	openAIKeyEnv    = "OPENAI_API_KEY"
 	anthropicKeyEnv = "ANTHROPIC_API_KEY"
+	deepSeekKeyEnv  = "DEEPSEEK_API_KEY"
 )
 
 // envSearchDirs extracts directories from CLI args whose .env should be autoloaded
@@ -76,7 +77,7 @@ func loadDotEnv(path string) {
 		key = strings.TrimSpace(key)
 		// Target-tree configuration must not steer analyzers, executables, or
 		// package indexes. This loader exists only for off-gate LLM credentials.
-		if key != openAIKeyEnv && key != anthropicKeyEnv {
+		if key != openAIKeyEnv && key != anthropicKeyEnv && key != deepSeekKeyEnv {
 			continue
 		}
 		if _, set := os.LookupEnv(key); set {

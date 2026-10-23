@@ -316,7 +316,9 @@ def main() -> None:
         finder = _StaticPackageFinder(specs)
         sys.meta_path.insert(0, finder)
         try:
-            g = grimp.build_graph(*args.packages, exclude_type_checking_imports=True)
+            g = grimp.build_graph(
+                *args.packages, exclude_type_checking_imports=True, cache_dir=None
+            )
         finally:
             sys.meta_path.remove(finder)
     except Exception as exc:  # noqa: BLE001 - producer failures become incomplete evidence

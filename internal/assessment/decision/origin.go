@@ -543,8 +543,8 @@ const (
 // safety argument (neither side ran what the other could hide behind) and all
 // disclosed in origin_reasons, never silently:
 //
-//   - Symmetric partial-with-unresolved-specifiers. For dependency-cruiser and
-//     grimp that status is the normal steady state; treating it as unusable made
+//   - Symmetric partial-with-unresolved-specifiers. For dependency-cruiser
+//     that status is the normal steady state; treating it as unusable made
 //     the whole origin delta inert on every TypeScript repo. The
 //     residual risk — a base counterpart hidden behind an unresolved specifier —
 //     is bounded only by the magnitudes the reason carries.

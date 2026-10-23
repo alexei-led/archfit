@@ -27,8 +27,8 @@ type InitCmd struct {
 	Force      bool   `name:"force" help:"Overwrite an existing config (a timestamped backup is kept). Without it, init leaves an existing config untouched."`
 	AIClassify bool   `name:"ai-classify" help:"Run AI classification pass (off-gate; requires ai or --ai-provider)."`
 	Apply      bool   `name:"apply" help:"Write AI classifications live into .archfit.yaml (requires --ai-classify; AI judgment written directly — review before using as a gate)."`
-	AIProvider string `name:"ai-provider" help:"AI provider override (anthropic|openai|ollama)." default:"anthropic"`
-	AIModel    string `name:"ai-model" help:"AI model override." default:"claude-opus-4-8"`
+	AIProvider string `name:"ai-provider" help:"AI provider override (anthropic|openai|deepseek|ollama|openai-compatible). Defaults to configured provider, then anthropic."`
+	AIModel    string `name:"ai-model" help:"AI model override. Defaults to configured model, then provider default."`
 	Refresh    bool   `name:"refresh" help:"Re-run the AI calls and refresh the cache."`
 
 	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
@@ -78,9 +78,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 				}
 			}
 		}
-		// Flag values always override config values.
-		llmCfg.Provider = c.AIProvider
-		llmCfg.Model = c.AIModel
+		llmCfg = resolveLLMConfig(llmCfg, c.AIProvider, c.AIModel)
 
 		cacheDir := llmCacheDir(root)
 		p, buildErr := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.Refresh)

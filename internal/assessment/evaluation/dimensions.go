@@ -294,6 +294,9 @@ func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observati
 		if rule.FromModule != "" || rule.ToModule != "" {
 			return moduleSelectorScope(rule, p.Topology, inv, files, f)
 		}
+		if reason := inv.unscannedPythonSelector(rule); reason != "" {
+			return ruleScope{status: ruleScopeUnknown, reason: reason}
+		}
 		// Dependency producers are selected by the source endpoint language, but
 		// an explicitly unsupported target scope is still unevaluated: no
 		// producer can emit a relationship to that source-file vocabulary.
@@ -316,6 +319,9 @@ func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observati
 	case ruleTypeModuleDependencies:
 		return allowlistRuleScope(p.Topology, inv)
 	case "cycle":
+		if reason := inv.unscannedPythonSelector(policy.RuleDef{Type: rule.Type}); reason != "" {
+			return ruleScope{status: ruleScopeUnknown, reason: reason}
+		}
 		return allSourceScope(p.Topology.ModuleMap, files)
 	case ruleTypeForbiddenPattern:
 		if scope, decided := vacuityScope(rule, inv); decided {
@@ -411,6 +417,9 @@ func moduleRuleScope(topology policy.TopologyView, inv selectorInventory) ruleSc
 		}
 		modulesWithFiles[module] = struct{}{}
 		if _, unanalysed := inv.unanalysed[file]; unanalysed {
+			if strings.HasSuffix(file, ".py") {
+				return ruleScope{status: ruleScopeUnknown, reason: unscannedPythonReason(file)}
+			}
 			continue
 		}
 		language, _, supported := topology.ModuleMap.RuleSelectorForFile(file)

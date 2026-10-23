@@ -386,8 +386,8 @@ const (
 
 // PartialFromUnresolvedSpecifiers reports whether a "partial" coverage row came
 // from a run that COMPLETED over the whole tree and merely left import
-// specifiers unresolved — the normal steady state for dependency-cruiser and
-// grimp, which one unresolvable specifier anywhere is enough to trigger.
+// specifiers unresolved — the normal steady state for dependency-cruiser.
+// A grimp.v3 partial means missing inputs and never pairs.
 //
 // The tool name is the discriminator, not Unresolved > 0: go/packages sets
 // Unresolved too, but there it counts PACKAGES whose load did not complete —

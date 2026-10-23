@@ -62,7 +62,11 @@ func (c *Cache) Complete(ctx context.Context, req Request) (Response, error) {
 // key derives the content address: provider/model + full request content.
 func (c *Cache) key(req Request) string {
 	h := sha256.New()
-	for _, part := range []string{c.inner.Name(), req.System, req.User, strconv.FormatInt(maxTokensOrDefault(req), 10)} {
+	identity := c.inner.Name()
+	if p, ok := c.inner.(interface{ cacheIdentity() string }); ok {
+		identity = p.cacheIdentity()
+	}
+	for _, part := range []string{"llm.v2", identity, req.System, req.User, strconv.FormatInt(maxTokensOrDefault(req), 10)} {
 		h.Write([]byte(part))
 		h.Write([]byte{0})
 	}

@@ -127,8 +127,9 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		// The helper exposes only checked source roots after loading the analyzer.
 		cmd = toolrun.ToolCmd{
 			Name:    "uv",
-			Args:    append([]string{"run", "--no-config", "--no-project", "--python", pythonVersion, "--with", grimpRequirement, "--directory", s.Root, "python", "-I", tmpName}, helperArgs...),
-			WorkDir: s.Root,
+			Args:    append([]string{"run", "--no-config", "--no-project", "--isolated", "--python", pythonVersion, "--with", grimpRequirement, "--directory", filepath.Dir(tmpName), "python", "-I", tmpName, "--root", s.Root}, helperArgs...),
+			WorkDir: filepath.Dir(tmpName),
+			Env:     []string{"VIRTUAL_ENV="},
 			Timeout: runTimeout,
 		}
 	} else {
@@ -207,8 +208,8 @@ func Applicable(root, pkg string) bool {
 // lives at src/prefect/) has NO package dir directly under root — a top-level
 // __init__.py dir there is typically a stray (tests/, scripts/, benches/), not the
 // source. Analysing the stray package instead of the real one silently yields a
-// near-empty import graph. The grimp helper adds root/src to sys.path
-// (see grimp_helper._ensure_importable), so these names resolve at import time.
+// near-empty import graph. The helper binds source through static package specs
+// (see grimp_helper._ensure_importable), without adding it to sys.path.
 //
 // All discovered package source roots must be visible to one grimp invocation.
 // The helper supports root/package and root/src/package layouts, not separate

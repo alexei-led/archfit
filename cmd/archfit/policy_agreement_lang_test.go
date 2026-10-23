@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -253,5 +255,11 @@ func TestErosion_PolicyQueryAgreesWithCheckTypeScript(t *testing.T) {
 func TestErosion_PolicyQueryAgreesWithCheckPython(t *testing.T) {
 	skipShortWithoutRequiredTools(t)
 	requireTool(t, "uv")
-	assertAgreement(t, writePyAgreementRepo(t), pyAgreementImports, langEdgeClasses)
+	configPath := writePyAgreementRepo(t)
+	root := filepath.Dir(configPath)
+	writeFileAt(t, root, "myapp/reports/__init__.py", "")
+	writeFileAt(t, root, "myapp/reports/legacy.py", "import myapp.infra\n")
+	writeFileAt(t, root, defaultConfigPath, pyAgreementCfg+"\nexclude:\n  - myapp/reports/**\n")
+	imports := append(slices.Clone(pyAgreementImports), agreementImport{file: "myapp/reports/legacy.py", target: pyAgreementImports[0].target, want: answerUnconstrain})
+	assertAgreement(t, configPath, imports, langEdgeClasses)
 }

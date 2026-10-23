@@ -144,14 +144,15 @@ func pyModulePaths(mod string) []string {
 	return []string{mod, mod + ".*"}
 }
 
-// detectPyPackage scans root then root/src for the first directory that
-// contains __init__.py (not starting with '.' or '_'). Returns its name.
+// detectPyPackage pins only a single source package. Multiple packages use
+// automatic discovery, which prefers src/ just like the dependency extractor.
 func detectPyPackage(root string) string {
-	for _, dir := range []string{root, filepath.Join(root, pySrcDir)} {
+	for _, dir := range []string{filepath.Join(root, pySrcDir), root} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
+		found := ""
 		for _, e := range entries {
 			if !e.IsDir() {
 				continue
@@ -160,8 +161,14 @@ func detectPyPackage(root string) string {
 				continue
 			}
 			if fileExists(filepath.Join(dir, e.Name(), pyInitFile)) {
-				return e.Name()
+				if found != "" {
+					return ""
+				}
+				found = e.Name()
 			}
+		}
+		if found != "" {
+			return found
 		}
 	}
 	return ""

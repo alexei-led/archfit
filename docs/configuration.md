@@ -155,9 +155,27 @@ The `ai` block configures explicit off-gate AI commands. It does not affect dete
 
 | Key | Type | Default or allowed values |
 | --- | --- | --- |
-| `ai.provider` | string | `anthropic`, `openai`, or `ollama`. No default. |
-| `ai.model` | string | No default. Required with a provider to make the provider usable. |
-| `ai.base_url` | URL | Optional. Ollama defaults to `http://localhost:11434/v1`. |
+| `ai.provider` | string | `anthropic`, `openai`, `deepseek`, `ollama`, or `openai-compatible`. No default in config. |
+| `ai.model` | string | Provider API model ID. Required with a provider. |
+| `ai.base_url` | URL | Optional except for `openai-compatible`. Defaults are listed below. |
+| `ai.api_key_env` | string | Environment-variable name, not a key value. Only for `openai-compatible`. Omission means keyless access. |
+| `ai.effort` | string | Provider/model-specific reasoning level. See restrictions below. |
+| `ai.max_tokens` | positive integer | Total output cap, including reasoning. Overrides command caps when set. Default command caps: 32,768. |
+| `ai.timeout` | duration | Whole provider call, including retries. Default: `5m`. Explicit durations must be positive. |
+
+Default base URLs are `https://api.anthropic.com`, `https://api.openai.com/v1`, `https://api.deepseek.com`, and `http://localhost:11434/v1`.
+Custom URLs must use HTTP or HTTPS without credentials, queries, or fragments.
+Generic servers receive Chat Completions requests with `max_tokens`, not `max_completion_tokens`.
+
+Effort defaults to `medium` for the exact `claude-opus-5-5` and `gpt-6.1-sol` model IDs.
+The DeepSeek preset defaults to `high` and accepts only `low|high|max`.
+Other models and generic endpoints receive effort only when configured.
+Anthropic and Sol 6.1 reject `none` and `minimal` in these adapters.
+Equal effort names do not imply equal reasoning budgets across providers.
+
+Use the provider's API model ID, not a model-card catalog ID.
+Availability and settings remain provider/account-specific.
+See [AI workflows](ai.md) for examples, credentials, cache behavior, extension steps, and model updates.
 
 ## Coupling
 
