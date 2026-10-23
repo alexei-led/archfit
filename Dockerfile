@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.27.3
 ARG PYTHON_VERSION=3.14
-ARG UV_VERSION=0.5.0
+ARG UV_VERSION=0.13.5
 ARG DEPCRUISER_VERSION=17
 # 0.44.0 is the version --inline-rules (used by the syntax-facts adapter) was
 # validated against; matches the local toolchain. Bump only after re-validating.

@@ -1,0 +1,50 @@
+---
+# Dependency updates for the development toolchain. Analyzer versions that
+# archfit measures with (ast-grep, jscpd, dependency-cruiser, rust, scip-go)
+# are pinned in ci.yaml and the Dockerfile on purpose: they change measured
+# facts and need a baseline reanchor, so they are not automated here.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch
+  - package-ecosystem: npm
+    directory: /scripts/eval/docs
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      docs-minor-patch:
+        update-types:
+          - minor
+          - patch
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope

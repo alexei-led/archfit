@@ -1,10 +1,10 @@
 # Contributing
 
-Use Go 1.26.x, Git, Python 3.12 or later, `uv`, and `pre-commit`.
+Use Go 1.27.x, Git, Python 3.12 or later, `uv`, and `pre-commit`.
 Language analysis needs the tools listed in [Languages](docs/languages.md).
 
 Analyzer tests need the Go version declared in `go.mod`.
-If your default compiler is newer, use `GOTOOLCHAIN=go1.26.0` for these checks.
+If your default compiler is newer, use `GOTOOLCHAIN=go1.27.0` for these checks.
 New compiler export formats can exceed the analyzer's supported format.
 
 ## Build and run
@@ -17,6 +17,8 @@ pre-commit install --install-hooks
 make build
 .bin/archfit doctor
 ```
+
+`go.work` is not committed. If you keep one, run `go work edit -go=1.27.0` to match `go.mod`.
 
 `make build` writes a static binary to `.bin/archfit`.
 Use `go run ./cmd/archfit --help` while developing a command.
@@ -46,6 +48,7 @@ Use focused checks during development:
 | State invariants | `go test ./internal/ ./cmd/archfit/ -run TestErosion_` |
 | Published schemas | `go test ./internal/configschema/ ./internal/reportschema/` |
 | Portable skill | `go test ./skills/ ./cmd/archfit/ -run 'Skill\|Help'` |
+| Workflow files | `make workflows` |
 
 `make arch-lint` accepts exit `0` or `2` from the architecture check.
 It fails on exit `1` or `3`.
