@@ -70,7 +70,7 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
     steps:
@@ -293,7 +293,7 @@ jobs:
             dist/*
   update-homebrew:
     name: Update Homebrew formula
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Isolated from the release job: the GitHub release, binaries, and image are
     # already published by the time this runs. Skipped for pre-releases.
     needs: release
