@@ -119,25 +119,34 @@ type AnalyzersConfig struct {
 // AIConfig configures the off-gate LLM provider (`ai:`). Consumed only by
 // explicit LLM flows — never by analyze's deterministic gate path.
 type AIConfig struct {
-	Provider string `yaml:"provider,omitempty"`
-	Model    string `yaml:"model,omitempty"`
-	BaseURL  string `yaml:"base_url,omitempty"`
+	Provider  string `yaml:"provider,omitempty" jsonschema:"enum=anthropic,enum=openai,enum=ollama,enum=deepseek,enum=openai-compatible"`
+	Model     string `yaml:"model,omitempty"`
+	BaseURL   string `yaml:"base_url,omitempty"`
+	APIKeyEnv string `yaml:"api_key_env,omitempty"`
+	Effort    string `yaml:"effort,omitempty" jsonschema:"enum=none,enum=minimal,enum=low,enum=medium,enum=high,enum=xhigh,enum=max"`
+	MaxTokens int    `yaml:"max_tokens,omitempty"`
+	Timeout   string `yaml:"timeout,omitempty"`
 }
 
 // LLMProviders are the accepted ai.provider values.
-var LLMProviders = map[string]struct{}{"anthropic": {}, "openai": {}, "ollama": {}}
+var LLMProviders = map[string]struct{}{"anthropic": {}, "openai": {}, "ollama": {}, "deepseek": {}, providerCompatible: {}}
 
 // LLMConfig is the resolved off-gate LLM settings.
 type LLMConfig struct {
-	Provider string
-	Model    string
-	BaseURL  string
+	Provider  string
+	Model     string
+	BaseURL   string
+	APIKeyEnv string
+	Effort    string
+	MaxTokens int
+	Timeout   time.Duration
 }
 
 // LLM returns the ai: settings and whether they are usable (provider and model
 // both set).
 func (c Config) LLM() (LLMConfig, bool) {
-	cfg := LLMConfig{Provider: c.AI.Provider, Model: c.AI.Model, BaseURL: c.AI.BaseURL}
+	timeout, _ := time.ParseDuration(c.AI.Timeout) // validated during config loading
+	cfg := LLMConfig{Provider: c.AI.Provider, Model: c.AI.Model, BaseURL: c.AI.BaseURL, APIKeyEnv: c.AI.APIKeyEnv, Effort: c.AI.Effort, MaxTokens: c.AI.MaxTokens, Timeout: timeout}
 	return cfg, c.AI.Provider != "" && c.AI.Model != ""
 }
 

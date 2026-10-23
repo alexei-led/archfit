@@ -757,8 +757,8 @@ Flags:
 | `--force`       | bool        | `false`           | Overwrite an existing config and keep a timestamped backup.                               | `archfit config init --force -r .`                                    |
 | `--ai-classify` | bool        | `false`           | Run an off-gate AI classification pass. Requires `ai:` config or provider override flags. | `archfit config init --ai-classify -r .`                              |
 | `--apply`       | bool        | `false`           | With `--ai-classify`, write AI classifications directly into the config.                  | `archfit config init --ai-classify --apply -r .`                      |
-| `--ai-provider` | enum        | `anthropic`       | Override AI provider: `anthropic`, `openai`, or `ollama`.                                 | `archfit config init --ai-classify --ai-provider openai -r .`         |
-| `--ai-model`    | string      | `claude-opus-4-8` | Override the AI model.                                                                    | `archfit config init --ai-classify --ai-model claude-sonnet-4-5 -r .` |
+| `--ai-provider` | string | configured, then `anthropic` | Explicit provider override: `anthropic`, `openai`, `deepseek`, `ollama`, or `openai-compatible`. Switching provider clears its old settings. | `archfit config init --ai-classify --ai-provider deepseek` |
+| `--ai-model` | string | configured, then provider default | Explicit model override. Defaults: Opus 5.5, Sol 6.1, or DeepSeek Flash; Ollama/compatible require a model. | `archfit config init --ai-classify --ai-provider openai --ai-model gpt-6.1-sol` |
 | `--refresh`     | bool        | `false`           | Re-run AI calls and refresh the AI cache.                                                 | `archfit config init --ai-classify --refresh -r .`                    |
 
 Examples:
@@ -873,8 +873,8 @@ Flags:
 | `--apply`       | bool   | `false`                 | Write structural changes live into `.archfit.yaml`. Backups are created. | `archfit config update --apply -c .archfit.yaml`                            |
 | `--json`        | bool   | `false`                 | Emit the review as JSON. Report-only.                                    | `archfit config update --json -c .archfit.yaml`                             |
 | `--refresh`     | bool   | `false`                 | Re-run AI calls and refresh the AI cache.                                | `archfit config update --ai-classify --refresh -c .archfit.yaml`            |
-| `--ai-provider` | string | `anthropic`             | Override the AI provider.                                                | `archfit config update --ai-classify --ai-provider ollama -c .archfit.yaml` |
-| `--ai-model`    | string | `claude-opus-4-8`       | Override the AI model.                                                   | `archfit config update --ai-classify --ai-model llama3.1 -c .archfit.yaml`  |
+| `--ai-provider` | string | configured, then `anthropic` | Explicit provider override: `anthropic`, `openai`, `deepseek`, `ollama`, or `openai-compatible`. Switching provider clears its old settings. | `archfit config update --ai-classify --ai-provider deepseek` |
+| `--ai-model` | string | configured, then provider default | Explicit model override. Defaults: Opus 5.5, Sol 6.1, or DeepSeek Flash; Ollama/compatible require a model. | `archfit config update --ai-classify --ai-provider openai --ai-model gpt-6.1-sol` |
 
 Examples:
 

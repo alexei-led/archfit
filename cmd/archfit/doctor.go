@@ -71,8 +71,19 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 			_, _ = fmt.Fprintf(deps.Stdout, "  ANTHROPIC_API_KEY: %s\n", keyStatus(os.Getenv("ANTHROPIC_API_KEY")))
 		case "openai":
 			_, _ = fmt.Fprintf(deps.Stdout, "  OPENAI_API_KEY: %s\n", keyStatus(os.Getenv("OPENAI_API_KEY")))
-		case "ollama":
-			_, _ = fmt.Fprintf(deps.Stdout, "  base_url: %s (no key needed)\n", llmCfg.BaseURL)
+		case providerDeepSeek:
+			_, _ = fmt.Fprintf(deps.Stdout, "  DEEPSEEK_API_KEY: %s\n", keyStatus(os.Getenv("DEEPSEEK_API_KEY")))
+		case providerCompatible:
+			if llmCfg.APIKeyEnv != "" {
+				_, _ = fmt.Fprintf(deps.Stdout, "  %s: %s\n", llmCfg.APIKeyEnv, keyStatus(os.Getenv(llmCfg.APIKeyEnv)))
+			} else {
+				_, _ = fmt.Fprintln(deps.Stdout, "  authentication: none")
+			}
+		case providerOllama:
+			_, _ = fmt.Fprintln(deps.Stdout, "  authentication: none")
+		}
+		if llmCfg.BaseURL != "" {
+			_, _ = fmt.Fprintf(deps.Stdout, "  base_url: %s\n", llmCfg.BaseURL)
 		}
 		if entries, err := filepath.Glob(filepath.Join(llmCacheDir(""), "*.json")); err == nil {
 			_, _ = fmt.Fprintf(deps.Stdout, "  cache: %d entries in .archfit-cache/llm\n", len(entries))

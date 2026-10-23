@@ -44,22 +44,166 @@ file.
 
 ## Configuration
 
-```yaml
-analyzers:
-  scip:
-    enabled: auto # recommended: adds symbol-level static strength hints
+Archfit uses the official Anthropic and OpenAI Go SDKs, not an agent framework.
+Providers and their request contracts:
 
+| `ai.provider` | API | Model example / init-update default | Credential |
+| --- | --- | --- | --- |
+| `anthropic` | Messages | `claude-opus-5-5` | `ANTHROPIC_API_KEY` |
+| `openai` | Responses | `gpt-6.1-sol` | `OPENAI_API_KEY` |
+| `deepseek` | Chat Completions | `deepseek-flash` | `DEEPSEEK_API_KEY` |
+| `ollama` | Chat Completions | Caller must supply an installed model | None |
+| `openai-compatible` | Chat Completions | Caller must supply a served model | Environment variable named by `api_key_env`, or none |
+
+`ai.model` is required in a config file. Model IDs pass through to the provider:
+this table names integration targets, not a guarantee that every model or account
+accepts every setting. Offline request tests cover these contracts; they do not
+prove live model availability.
+
+```yaml
 ai:
-  provider: anthropic # anthropic | openai | ollama
-  model: claude-opus-4-8
-  # base_url: http://localhost:11434/v1   # ollama only
+  provider: anthropic
+  model: claude-opus-5-5
+  effort: medium
+  max_tokens: 32768
+  timeout: 5m
 ```
 
-API keys come from the standard env vars only — `ANTHROPIC_API_KEY` /
-`OPENAI_API_KEY` — never from config. archfit also best-effort loads a local
-`.env` (cwd) at startup, setting a key only when it is currently unset — real env
-vars and CI secrets always win. Keep `.env` out of git (gitignored by default).
-`archfit doctor` shows provider, key presence, and cache status.
+The common settings are:
+
+| Key | Meaning |
+| --- | --- |
+| `provider` | One of the provider names above. |
+| `model` | The provider's API model ID, not a display name or model-card catalog ID. |
+| `base_url` | Optional API base URL. Defaults: Anthropic `https://api.anthropic.com`, OpenAI `https://api.openai.com/v1`, DeepSeek `https://api.deepseek.com`, Ollama `http://localhost:11434/v1`. Required for `openai-compatible`. |
+| `api_key_env` | Credential environment-variable name, **not its value**. Only for `openai-compatible`; omitted means keyless. |
+| `effort` | Optional reasoning effort. Defaults to `medium` for the Opus 5.5 and Sol 6.1 model IDs above, `high` for the DeepSeek preset, and omitted otherwise. |
+| `max_tokens` | Positive output-token cap, including reasoning. When set, overrides the command's cap. Default command caps are 32,768 tokens; this is a starting budget, not a quality guarantee. |
+| `timeout` | Positive Go duration for the whole provider call, including retries. Default `5m`. |
+
+The effort vocabulary is `none|minimal|low|medium|high|xhigh|max`, but support is
+model-specific. Anthropic rejects `none`/`minimal` in this adapter; Sol 6.1
+rejects them too. The DeepSeek preset accepts only its native levels
+`low|high|max`, without translating them. Generic endpoints receive effort only
+when configured. No adapter sends temperature, top-p, or top-k.
+
+Opus 5.5 always thinks adaptively; Archfit omits the thinking field rather than
+trying to disable thinking or set a manual budget. OpenAI requests use Responses
+with `store: false`; this disables response storage, not every provider retention
+policy. Ollama and compatible servers remain on Chat Completions, using
+`max_tokens`, not OpenAI's `max_completion_tokens`.
+
+Provider failures, refusals, empty replies, and incomplete/truncated replies are
+errors. Partial text is not returned as a successful draft or cached. Raise the
+cap or lower effort after a token-limit error; Archfit does not silently change
+the model or retry with weaker settings.
+
+### DeepSeek Flash
+
+Official docs checked on 2026-10-23 identify `deepseek-flash` as the API ID,
+currently served by **DeepSeek-V4.1-Flash-1017**. Do not substitute the local
+model-card ID `deepseek-deepseek-v4.1-flash`.
+
+```yaml
+ai:
+  provider: deepseek
+  model: deepseek-flash
+  effort: high
+  max_tokens: 65536
+  timeout: 5m
+```
+
+Set `DEEPSEEK_API_KEY` in your environment or an untracked `.env`, then run
+`archfit config enrich labels`. The preset sends `thinking: {type: enabled}`
+and `reasoning_effort` to `/chat/completions`. Only final answer content is used;
+`reasoning_content` is not treated as the answer.
+
+Sources: [first API call](https://api-docs.deepseek.com/),
+[thinking controls](https://api-docs.deepseek.com/guides/thinking_mode),
+[request reference](https://api-docs.deepseek.com/api/create-chat-completion),
+[release log](https://api-docs.deepseek.com/updates/).
+The Flash alias can change server-side; it is not an immutable snapshot.
+
+### Another OpenAI-compatible endpoint
+
+No code change is needed for a server that implements the same Chat Completions
+contract:
+
+```yaml
+ai:
+  provider: openai-compatible
+  model: vendor-model-id
+  base_url: https://llm.example.com/v1
+  api_key_env: EXAMPLE_LLM_API_KEY
+  max_tokens: 32768
+```
+
+Use the vendor's documented base path; Archfit appends `chat/completions`.
+For a keyless local endpoint, omit `api_key_env`. This provider never inherits
+`OPENAI_API_KEY`; a configured credential variable must exist and be non-empty.
+
+**Security:** only use trusted endpoints. LLM commands send bounded repository
+evidence to that endpoint. HTTP sends prompts and any credentials without TLS;
+use HTTPS except for trusted local connections. URLs containing credentials,
+queries, or fragments are rejected. Do not put a key in `base_url` or config.
+Anthropic and OpenAI SDK base-URL environment overrides are not used; configure
+`ai.base_url` explicitly.
+
+At startup, Archfit best-effort loads `.env` from cwd and explicit root/config
+directories, without replacing existing environment variables. Real environment
+and CI secrets win. Keep `.env` out of git. `archfit doctor` reports credential
+presence, never credential values.
+
+### Init/update overrides
+
+Precedence is explicit flags, then `ai:` config, then provider-specific defaults.
+Without config or flags, init/update use Anthropic Opus 5.5. Selecting only
+`--ai-provider openai` selects Sol 6.1; selecting `deepseek` selects Flash.
+
+Switching providers discards the previous model, endpoint, credential-variable
+name, effort, and budget/timeout settings. Selecting the same provider preserves
+them; `--ai-model` changes only the model. Ollama and generic endpoints have no
+default model.
+
+### Adding a model or provider
+
+- **New model on an existing API:** configure its API ID. Check the provider's
+  current effort, output-budget, and endpoint requirements. SDK enums do not
+  restrict the model string, but passing a name through is not compatibility
+  verification.
+- **New compatible vendor:** configure `openai-compatible` as above. It must
+  accept system/user messages, `max_tokens`, optional `reasoning_effort`, and a
+  text response with `finish_reason: stop`. Different wire contracts need an
+  adapter, not a guessed parameter fallback.
+- **New native API or named preset:** implement `llm.Provider` in
+  `internal/llm/`, keep vendor SDK types there, register construction in
+  `cmd/archfit/enrich.go`, and update config validation/schema, CLI help,
+  `doctor`, tests, and this table. Include endpoint and generation settings in
+  the provider's private `cacheIdentity` method. Keep it off the deterministic
+  gate; no core package may import `internal/llm`.
+
+### Keeping model support current
+
+1. Follow official release, migration, and deprecation notices. Model cards are
+   reviewed guidance, not a runtime dependency or a live capability registry.
+2. Update SDKs through reviewed dependency PRs. Check their migration notes and
+   transitive dependencies; pin versions in `go.mod`/`go.sum`.
+3. Add fake-server request tests for the exact model/settings, including refusal,
+   truncation, auth, and timeout paths. Compare enrichment quality on fixed
+   representative inputs before promoting defaults.
+4. Run opt-in live smoke tests for the relevant configured accounts:
+
+   ```sh
+   ARCHFIT_LLM_LIVE=1 go test ./internal/llm -run TestLiveProviders -v
+   ```
+
+   This sends a small prompt and **spends tokens**. Missing provider keys skip
+   their tests visibly. It is not part of ordinary tests or the CI gate.
+
+Model changes are explicit; Archfit never auto-selects a newly listed model or
+silently falls back to another provider. For current API constraints, see
+[Opus 5.5 migration](https://platform.claude.com/docs/en/models/opus-5-5/migration-guide)
+and [Sol 6.1 specifications](https://developers.openai.com/api/docs/models/gpt-6.1-sol).
 
 ## The labels file (.archfit-labels.yaml)
 
@@ -177,8 +321,11 @@ First-run enrich cost scales with candidate count and evidence size:
   and bounded README/docs/comment/API/config/diagnostic evidence. They may also
   propose review-only `external_systems` entries when evidence names a vendor seam.
 
-Responses are cached by provider, model, system prompt, and user prompt under
-`.archfit-cache/llm/`. Re-running the same command with the same evidence should
+Responses are cached by provider/API, model, endpoint, effort, output budget,
+credential-variable name, system prompt, and user prompt under
+`.archfit-cache/llm/`. Credential values are not part of the key. The cache-key
+format is versioned, so responses from the earlier transport implementation are
+not replayed. Re-running the same command with the same evidence should
 reuse the cache; `--refresh` bypasses cache reads, makes fresh calls, and writes
 fresh responses back to cache, so it may spend tokens again. The cache stores
 provider responses, not prompts, but a response can still quote repository text.

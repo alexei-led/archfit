@@ -1,17 +1,21 @@
 package main
 
-import "github.com/alexei-led/archfit/v3/internal/extract/registry"
+import (
+	"github.com/alexei-led/archfit/v3/internal/extract/registry"
+	"github.com/alexei-led/archfit/v3/internal/llm"
+)
 
 // LLM provider name constants shared across init, enrich, doctor, and explain.
 const (
-	providerAnthropic = "anthropic"
-	providerOpenAI    = "openai"
-	providerOllama    = "ollama"
+	providerAnthropic  = "anthropic"
+	providerOpenAI     = "openai"
+	providerOllama     = "ollama"
+	providerDeepSeek   = "deepseek"
+	providerCompatible = "openai-compatible"
 )
 
-// defaultLLMModel is the CLI flag default model (provider defaults are kong
-// string tags on each command).
-const defaultLLMModel = "claude-opus-4-8"
+// defaultLLMModel is used only when init/update has no configured model or override.
+const defaultLLMModel = llm.DefaultAnthropicModel
 
 // Subdomain enum values used in classify validation and tests.
 const (

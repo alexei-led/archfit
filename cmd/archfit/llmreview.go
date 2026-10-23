@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	reviewMaxTokens       = 8192
+	reviewMaxTokens       = 32768
 	reviewMaxFindings     = 80
 	reviewMaxFindingTypes = 12
 	reviewMaxModuleFacts  = 80

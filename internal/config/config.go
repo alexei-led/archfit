@@ -192,13 +192,8 @@ func validate(cfg Config) error {
 	if err := validateSchemaVersion(cfg.Version); err != nil {
 		return err
 	}
-	if cfg.AI.Provider != "" {
-		if _, valid := LLMProviders[cfg.AI.Provider]; !valid {
-			return fmt.Errorf("ai.provider %q is not one of: anthropic, openai, ollama", cfg.AI.Provider)
-		}
-		if cfg.AI.Model == "" {
-			return errors.New("ai.model is required when ai.provider is set")
-		}
+	if err := validateAI(cfg.AI); err != nil {
+		return err
 	}
 	if s := cfg.Coupling.MinSeverity; s != "" {
 		if _, ok := bcSeverities[s]; !ok {

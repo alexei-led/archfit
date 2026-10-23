@@ -149,13 +149,18 @@ func (c *enrichFlags) runSubdomainPin(ctx context.Context, deps *appDeps, review
 
 // buildProvider constructs the configured LLM provider.
 func buildProvider(c config.LLMConfig) (llm.Provider, error) {
+	opts := llm.Options{Model: c.Model, BaseURL: c.BaseURL, APIKeyEnv: c.APIKeyEnv, Effort: c.Effort, MaxTokens: c.MaxTokens, Timeout: c.Timeout}
 	switch c.Provider {
 	case providerAnthropic:
-		return llm.NewAnthropic(c.Model)
+		return llm.NewAnthropic(opts)
 	case providerOpenAI:
-		return llm.NewOpenAI(c.Model)
+		return llm.NewOpenAI(opts)
 	case providerOllama:
-		return llm.NewOllama(c.BaseURL, c.Model), nil
+		return llm.NewOllama(opts)
+	case providerDeepSeek:
+		return llm.NewDeepSeek(opts)
+	case providerCompatible:
+		return llm.NewCompatible(opts)
 	default: // unreachable: config validation rejects unknown providers
 		return nil, fmt.Errorf("unknown llm provider %q", c.Provider)
 	}

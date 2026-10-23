@@ -593,16 +593,26 @@ by the deterministic gate.
 
 ```yaml
 ai:
-  provider: anthropic # anthropic | openai | ollama
-  model: claude-opus-4-8
-  base_url: "" # ollama only; default http://localhost:11434/v1
+  provider: anthropic # anthropic | openai | deepseek | ollama | openai-compatible
+  model: claude-opus-5-5
+  effort: medium
+  max_tokens: 32768 # total output, including reasoning; overrides command cap
+  timeout: 5m # whole call, including retries
+  # base_url: https://llm.example.com/v1
+  # api_key_env: EXAMPLE_LLM_API_KEY # openai-compatible only; name, not value
 ```
 
-API keys come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` env vars — never from
-config. archfit also best-effort loads a local `.env` (cwd) at startup, but only
-sets a key that is currently **unset** — real environment variables and CI secrets
-always win. Keep `.env` out of version control (it is gitignored by default). The
-LLM response cache lives at `.archfit-cache/llm/`.
+Credentials come from `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`DEEPSEEK_API_KEY`, or the environment variable named by `api_key_env` — never
+from config values. An omitted `api_key_env` means keyless access for generic
+compatible endpoints; Ollama is keyless. `base_url` overrides are supported for
+all providers and must not contain credentials, queries, or fragments.
+
+Provider defaults, effort restrictions, DeepSeek and generic endpoint examples,
+init/update flag precedence, security limits, cache identity, and extension
+instructions are in [LLM configuration](llm-enrich.md#configuration). The response
+cache lives at `.archfit-cache/llm/`; keep it and credential-bearing `.env` files
+untracked.
 
 ## `coupling`
 
