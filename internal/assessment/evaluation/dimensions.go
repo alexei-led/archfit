@@ -275,11 +275,15 @@ type ruleScope struct {
 // conformant: its scope is unknown with a reason naming the selector. A guard
 // rule (`guard: true`) matches nothing on purpose, so its empty selector is
 // not a defect.
-func ruleProducerScope(rule policy.RuleDef, p policy.PolicySnapshot, f Observations) ruleScope {
+func ruleProducerScope(diag *result.Result, rule policy.RuleDef, p policy.PolicySnapshot, f Observations) ruleScope {
 	// The observed crate owners place a Rust file whose crate a module declares
 	// by another spelling, exactly as map completeness places it (fileOwner).
 	p.Topology.ModuleMap = p.Topology.ModuleMap.WithCrateOwners(f.CrateOwners)
 	inv := newSelectorInventory(p.Topology.ModuleMap, sourceInventoryFiles(f), f)
+	if diag != nil {
+		rows := coverageRows(diag.ToolCoverage, toolGrimp)
+		inv.pythonComplete = len(rows) == 1 && rows[0].Status == modevidence.StatusOK
+	}
 	files := inv.analysedFiles()
 	switch rule.Type {
 	case ruleTypePublicAPIMax, ruleTypePublicAPIChange:
@@ -417,7 +421,7 @@ func moduleRuleScope(topology policy.TopologyView, inv selectorInventory) ruleSc
 		}
 		modulesWithFiles[module] = struct{}{}
 		if _, unanalysed := inv.unanalysed[file]; unanalysed {
-			if strings.HasSuffix(file, ".py") {
+			if inv.pythonComplete && strings.HasSuffix(file, ".py") {
 				return ruleScope{status: ruleScopeUnknown, reason: unscannedPythonReason(file)}
 			}
 			continue

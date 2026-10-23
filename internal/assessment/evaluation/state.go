@@ -132,7 +132,7 @@ func unevaluatedRequiredRules(diag *result.Result, p policy.PolicySnapshot, f Ob
 }
 
 func ruleUnevaluatedReason(diag *result.Result, rule policy.RuleDef, p policy.PolicySnapshot, f Observations) string {
-	scope := ruleProducerScope(rule, p, f)
+	scope := ruleProducerScope(diag, rule, p, f)
 	if scope.status == ruleScopeNotApplicable {
 		return ""
 	}

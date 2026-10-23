@@ -13,6 +13,9 @@ func unscannedPythonReason(file string) string {
 // A live match cannot hide omitted source in a mixed selector. Other languages
 // retain their producer applicability rules; Python nodes identify scanned bodies.
 func (inv selectorInventory) unscannedPythonSelector(rule policy.RuleDef) string {
+	if !inv.pythonComplete {
+		return ""
+	}
 	for _, file := range inv.files {
 		if _, missing := inv.unanalysed[file]; !missing || !strings.HasSuffix(file, ".py") {
 			continue

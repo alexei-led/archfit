@@ -51,6 +51,10 @@ rules:
 			if (len(got.Decision.Unevaluated) != 0) != tc.unknown || (got.Decision.HardGates == "pass") == tc.unknown {
 				t.Fatalf("decision=%+v want unknown=%v", got.Decision, tc.unknown)
 			}
+			queryCode, query := canImport(t, filepath.Join(root, defaultConfigPath), "scripts/run.py", "app.backend")
+			if queryCode != 2 || len(query.Answers) != 1 || query.Answers[0].Answer != answerNotDecided {
+				t.Fatalf("omitted importer query: exit=%d answer=%+v", queryCode, query)
+			}
 		})
 	}
 }

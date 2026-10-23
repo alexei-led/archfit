@@ -157,7 +157,7 @@ func detectPyPackage(root string) string {
 			if !e.IsDir() {
 				continue
 			}
-			if strings.HasPrefix(e.Name(), ".") || strings.HasPrefix(e.Name(), "_") {
+			if strings.HasPrefix(e.Name(), ".") {
 				continue
 			}
 			if fileExists(filepath.Join(dir, e.Name(), pyInitFile)) {

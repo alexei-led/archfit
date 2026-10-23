@@ -87,6 +87,9 @@ type selectorInventory struct {
 	// (Observations.UnanalysedFiles). Only forbidden_pattern, which reads the
 	// ast-grep pattern pass, matches its selectors against them.
 	unanalysed map[string]struct{}
+	// Only a completed Python producer can identify omitted source bodies.
+	// A gapless-absent language retains the existing applicability rules.
+	pythonComplete bool
 	// outOfScope are the walked files declared out of scope. They are not in
 	// files; module rule scope reads them only to know which modules own them.
 	outOfScope map[string]struct{}

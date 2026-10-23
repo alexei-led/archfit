@@ -15,9 +15,8 @@ import (
 // rule pass keys its findings as it does on the extracted edge. target is a
 // dotted module or a .py file. The dotted form strips a src/ prefix, as the
 // module-key convention does; a package under another custom root is spelled
-// differently by grimp. An importer outside the packages grimp builds wraps
-// ErrNotExtracted; a target outside them (installed, stdlib, or uninstalled)
-// wraps ErrNotDecidable. It runs no tool.
+// differently by grimp. A non-excluded importer or target outside the packages
+// grimp builds wraps ErrNotDecidable. It runs no tool.
 func QueryEdge(root string, cfg evidenceports.ExtractConfig, from, target string) (graph.Facts, error) {
 	if pythonLocationExcluded(from, cfg.Exclusions) {
 		return graph.Facts{}, fmt.Errorf("python: %s is excluded: %w", from, evidenceports.ErrNotExtracted)
@@ -36,7 +35,7 @@ func QueryEdge(root string, cfg evidenceports.ExtractConfig, from, target string
 	pkgs := grimpPackages(root, cfg.PyPackage)
 	if !builtBy(pkgs, importer) {
 		return graph.Facts{}, fmt.Errorf("python: %s is outside the packages grimp builds (%s): %w",
-			importer, strings.Join(pkgs, ", "), evidenceports.ErrNotExtracted)
+			importer, strings.Join(pkgs, ", "), evidenceports.ErrNotDecidable)
 	}
 	if !builtBy(pkgs, imported) {
 		return graph.Facts{}, fmt.Errorf("python: %s is outside the packages grimp builds (%s); external import literals do not establish module or symbol resolution: %w",

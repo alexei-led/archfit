@@ -896,7 +896,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   excluded file or target, unloaded member; a switched-off
   language) and abstains where only the tool knows (`ErrNotDecidable` →
   `not_decided`: Rust, a Python target outside the packages grimp builds;
-  an importer outside them is `ErrNotExtracted`, from `py.grimpPackages`, the
+  a non-excluded importer outside them is also `not_decided`, from `py.grimpPackages`, the
   extractor's own package list). Edge modules for the
   answer: `rules.DeclaredEndpoints` for allowlists, the edge's own declared
   modules and `rules.ProductionEdge` for `module_cycle`, the augmented ones (go.work members via

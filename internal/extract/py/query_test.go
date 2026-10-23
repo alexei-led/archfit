@@ -76,8 +76,8 @@ func TestQueryEdgeFollowsWhatGrimpBuilds(t *testing.T) {
 	}{
 		{name: "stdlib target", from: handlersFile, target: "os.path", want: evidenceports.ErrNotDecidable},
 		{name: "third-party target", from: handlersFile, target: "requests", want: evidenceports.ErrNotDecidable},
-		{name: "importer in a stray package", from: "tests/test_a.py", target: "tests.helpers", want: evidenceports.ErrNotExtracted},
-		{name: "importer outside the configured package", from: "src/lib/x.py", target: domainModule, cfg: evidenceports.ExtractConfig{PyPackage: "myapp"}, want: evidenceports.ErrNotExtracted},
+		{name: "importer in a stray package", from: "tests/test_a.py", target: "tests.helpers", want: evidenceports.ErrNotDecidable},
+		{name: "importer outside the configured package", from: "src/lib/x.py", target: domainModule, cfg: evidenceports.ExtractConfig{PyPackage: "myapp"}, want: evidenceports.ErrNotDecidable},
 		{name: "configured package", from: handlersFile, target: domainModule, cfg: evidenceports.ExtractConfig{PyPackage: "myapp"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

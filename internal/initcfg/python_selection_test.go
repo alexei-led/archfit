@@ -17,6 +17,8 @@ func TestPythonPackageSelectionKeepsAllDiscoveredRoots(t *testing.T) {
 		{"multiple flat", "", []string{primaryPackage, "other"}},
 		{"single src", primaryPackage, []string{"src/" + primaryPackage, "stray_pkg"}},
 		{"multiple src", "", []string{"src/" + primaryPackage, "src/other", "stray_pkg"}},
+		{"private sibling", "", []string{"src/_private", "src/" + primaryPackage}},
+		{"single private package", "_private", []string{"src/_private"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
