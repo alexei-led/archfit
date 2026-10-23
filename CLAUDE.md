@@ -13,7 +13,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit/v3`
 - `make arch-lint` — v2 architecture-state gate: `.bin/archfit check --config .archfit.yaml`; accepts `healthy` (0) and `needs_attention` (2), and fails on `blocked` (1) or `error` (3)
 - `make archfit` — compatibility alias for `make arch-lint`
-- `make archfit-report` — write `docs/reports/archfit-report.md` via `archfit analyze --markdown`
+- `make archfit-report` — write `.archfit-cache/reports/archfit-report.md` via `archfit analyze --markdown`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
 - `make test-fast` — `go test -race -short ./...` (skips slow subprocess/ast-grep integration tests; for inner-loop speed)
 - `make bench-gate` — cold vs warm fact-cache gate timing on this repo (reported number, not a CI assert; `scripts/bench-gate.sh`)
@@ -72,7 +72,7 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   the Go main deploy unit fell outside the canonical scan root, and `model_hash`
   depended on the invocation path.
 - **Fact cache** (`internal/factcache`, adapter — core ring must not import it;
-  see `docs/design/fact-cache.md`). Content-addressed extractor-fact store under
+  see `docs/evidence.md`). Content-addressed extractor-fact store under
   `.archfit-cache/facts/`; stores facts, never scores. Runner-shaped analyzers
   (depcruise, cargo, SCIP, ast-grep) wrap `toolrun.Runner` in
   `factcache.Runner`; Go (`packages.Load`) and jscpd (temp-file output) use the
@@ -98,7 +98,7 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   per-module fact from it.
 - **Dimension promotion is required-fact completeness, never metric quality.**
   `state.RequiredFacts` is a fixed set per dimension and `state.Promote` applies
-  the shared rule in `docs/design/evidence-contract.md`: measured only when every
+  the shared rule in `docs/evidence.md`: measured only when every
   in-claim fact is observed or producer-proved not applicable; partial when some
   in-claim fact is observed and another is missing; unmeasured when none is
   observed or the dimension does not apply. A measured dimension may carry only
@@ -118,7 +118,7 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   bytes. Empty/missing `sources` is unverified; omitting a covered fact path is
   stale. Archfit still cannot authenticate the producer or prove the artifact
   itself did not omit source facts; upgrade via authenticated trusted producers
-  as documented in `docs/design/evidence-contract.md`.
+  as documented in `docs/evidence.md`.
 - **`operations` claims declared topology, not runtime topology.** Every declared
   module needs an independently corroborated deploy unit plus a declared or
   CODEOWNERS-backed owner; git-author fallback is visible but does not qualify.
@@ -208,7 +208,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   Accepted cost: an ownership or deploy-unit split makes the stored baseline
   non-comparable, so `mode: fail` blocks only on code-edge changes until
   `archfit baseline` is re-run. Rationale in
-  `docs/design/architecture-state-reporting.md`.
+  `docs/results.md`.
   The measurement profile (`archfit.measurement.v2`) adds the settings hash and
   producer semantics/status/tool versions. The hash covers the global settings
   plus ONE slice per language that contributes a producer; a language row that
@@ -514,13 +514,13 @@ init` emits v2 directly; owners update older configs manually before analysis.
 - **`archfit config update --json`** emits `archfit.config-review.v1`. The
   non-obvious part: `--json` with `--apply`, `--ai-classify`, or `--refresh` is
   a usage error (exit 3) rejected BEFORE discovery, tool calls, cache access, or
-  any write. Schema in `docs/guide/commands.md`.
+  any write. Schema in `docs/commands.md`.
 - **`config update` never destroys a configured module stanza.** `DiffModules`
   matches config keys to discovery keys by NAME, and the conventions need not
   agree — discovery emits one key per directory, while `.archfit.yaml` declares
   capability modules that span several (`assessment-repair` over
   `internal/assessment/**`); see accepted risk 4 in
-  `docs/design/architecture-baseline.md`. `DiffModules` runs the name-drift
+  `docs/architecture.md`. `DiffModules` runs the name-drift
   pass ITSELF (`resolveNameDrift`, unexported — there is no two-step call a
   consumer can get wrong), reclassifying each 1:1 add/remove pair with an equal
   normalized path set as `NameDrift`. It then runs the ownership pass
@@ -662,7 +662,7 @@ init` emits v2 directly; owners update older configs manually before analysis.
   internal-glob match is authoritative intrusive. Connascence never sets
   strength: it is report-only evidence. Python/TS extraction can't see object
   kinds, so TypeScript without SCIP keeps public value imports at contract and
-  reads every other runtime import as functional (`docs/design/bc-measurement-v7.md`).
+  reads every other runtime import as functional (`docs/coupling.md`).
 - **Python module globs are DOTTED, not file paths.** grimp emits dotted node IDs
   (`prefect.states`); `paths:`/`public:`/`internal:` and rule `from:`/`to:` all match the
   dotted node ID via `doublestar.Match`. Write `prefect.**`, NOT `src/prefect/**` — a slash
@@ -1310,16 +1310,15 @@ or label hashes.
 
 ## Layout
 
-`cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/design`
-(current decisions) · `docs/guide` (user docs) · `docs/spec` (spec) ·
-`docs/plans` (open plans only; shipped plans move to `docs/plans/completed/`).
+`cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/`
+(current user and contributor docs) · `docs/plans/current.md` (unresolved follow-ups) ·
+`docs/archived/` (historical designs, reports, and plans).
 
-**Architecture reference:** `docs/design/architecture-baseline.md` — the shipped
-capability map, layer ranks, measured module dependencies, which check enforces
-which invariant, accepted coupling, and change recipes. Read it before moving a
-package, adding a metric/language/output format, or touching `.archfit.yaml`.
-`docs/design/20260823-archfit-capability-map.md` is the design rationale behind
-it.
+**Architecture reference:** `docs/architecture.md` owns layers, capabilities,
+boundaries, and change ownership. `docs/evidence.md` owns evidence completeness,
+comparison, and fact-cache contracts. Read them before changing package boundaries
+or adding a metric, language, or output format. Build and evaluation instructions
+live in `CONTRIBUTING.md` and `docs/development.md`.
 
 **Skip `docs/archived/`** — superseded design docs, completed plans, plan notes,
 research artifacts, and analysis notes. Only read when explicitly debugging

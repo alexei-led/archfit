@@ -213,8 +213,7 @@ func (c *UpdateCmd) buildAIProvider(cfg config.Config) (llm.Provider, error) {
 	if lc, ok := cfg.LLM(); ok {
 		llmCfg = lc
 	}
-	llmCfg.Provider = c.AIProvider
-	llmCfg.Model = c.AIModel
+	llmCfg = resolveLLMConfig(llmCfg, c.AIProvider, c.AIModel)
 
 	cacheDir := llmCacheDir(filepath.Dir(c.Config))
 	p, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.Refresh)

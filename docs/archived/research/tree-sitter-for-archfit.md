@@ -1,5 +1,7 @@
 # Research: Tree-sitter as archfit's syntax-facts layer
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Status: research complete · 2026-06-23 · branch `tree-sitter-research`
 Input: the "Tree-sitter as ArchFit's universal syntax-facts layer" brief.
 

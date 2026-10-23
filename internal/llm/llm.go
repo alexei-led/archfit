@@ -20,7 +20,7 @@ type Request struct {
 	System string
 	// User is the user-turn content.
 	User string
-	// MaxTokens caps the response; 0 uses the provider default (4096).
+	// MaxTokens caps total output, including reasoning; provider Options override it.
 	MaxTokens int
 }
 
@@ -32,7 +32,7 @@ type Response struct {
 // Provider executes one completion. Implementations: Anthropic, OpenAI,
 // Ollama (OpenAI-compatible), and the content-hash Cache decorator.
 type Provider interface {
-	// Name identifies provider+model (e.g. "anthropic/claude-opus-4-8");
+	// Name identifies provider+model (e.g. "anthropic/claude-opus-5-5");
 	// part of the cache key, so it must be stable.
 	Name() string
 
@@ -41,7 +41,7 @@ type Provider interface {
 }
 
 // defaultMaxTokens is used when Request.MaxTokens is zero.
-const defaultMaxTokens = 4096
+const defaultMaxTokens = 32768
 
 // NotConfiguredError reports a provider that cannot run in this environment
 // (missing API key, unknown provider name). Commands turn it into exit 3

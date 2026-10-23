@@ -1,5 +1,7 @@
 # Revalidation Acceptance — 2026-06-28
 
+> Historical record. Current documentation: [archfit](../../../development.md).
+
 **Binary:** `.bin/archfit` rebuilt from all 18 fixes (commit `fdb211d`, v0.13.0-22-gfdb211d)
 **Suite gate:** `go test ./...` — all packages pass, no FAIL (full race run, no `-short`)
 **Ground-truth source:** `reports/eval-2026-06-28/revalidation-controlled/DELTAS.md` (Task 20 controlled experiment)

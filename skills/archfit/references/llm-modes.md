@@ -24,12 +24,14 @@ ai:
   # base_url: http://localhost:11434/v1   # ollama only
 ```
 
-API keys come from env only — `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` — never
-from config. archfit also best-effort loads a local `.env` from the current
-working directory at startup, setting a key only when it is currently unset
-(real env / CI secrets win). Keep `.env` out of git. Responses are cached at
-`.archfit-cache/llm/`; `--refresh` forces fresh extractor/AI work and updates the
-cache.
+API keys come only from environment variables: `ANTHROPIC_API_KEY` and
+`OPENAI_API_KEY`. They do not come from config. At startup, archfit also loads
+`.env` from the current directory when possible. It sets a key only when the
+environment does not already set it. Environment and CI secrets take
+precedence. Keep `.env` out of git.
+
+Responses are cached at `.archfit-cache/llm/`. `--refresh` forces fresh
+extractor and AI work, then updates the cache.
 
 ## analyze --ai-summary
 
@@ -44,8 +46,8 @@ new gate facts and it does not change the gate verdict.
 - Requires `ai:` configured or provider/model overrides where supported, plus the
   matching API key.
 - Use it after a normal deterministic `analyze` / `check` run, not instead of it.
-- If AI config or key setup is missing, it exits `3`; that is setup failure, not
-  a gate failure.
+- If AI config or key setup is missing, the command exits `3`. This is a setup
+  failure, not a gate failure.
 
 ## config init / config update classification
 
@@ -59,43 +61,45 @@ intentional cohesion rather than unbalanced fan-out.
 Mode behavior:
 
 - `config init` — structural scaffold only.
-- `config init --ai-classify` — suggestions emitted as commented-inert YAML
-  (`# subdomain: core  # ai-suggested — review and uncomment`); safe to inspect.
+- `config init --ai-classify` — suggestions appear as commented YAML
+  (`# subdomain: core  # ai-suggested — review and uncomment`). They are safe to
+  inspect.
 - `config init --ai-classify --apply` — writes AI classifications live into the
   generated config. Review before using that config as a gate.
 - `config update` — structural drift report, writes nothing.
-- `config update --apply` — writes structural drift live (added/path-drifted /
-  removed modules) with backup.
+- `config update --apply` — writes added modules and path changes with a backup.
+  Removed modules and name drift remain review-only.
 - `config update --ai-classify` — structural drift report plus cited semantic
   proposals for unclassified modules.
-- `config update --ai-classify --apply` — applies structural drift only; semantic
-  AI proposals remain review-only.
+- `config update --ai-classify --apply` — applies structural drift only.
+  Semantic AI proposals remain review-only.
 
 ## Apply guardrails
 
 - Plan mode (no `--apply`) never writes the live config, except `config init`
   defaulting to `.archfit.yaml` for the generated scaffold.
-- `config init --ai-classify --apply` is the direct-write path for AI
-  classifications; use a draft output (`-o .archfit-draft.yaml`) when reviewing.
+- `config init --ai-classify --apply` writes AI classifications directly.
+  Use a draft output (`-o .archfit-draft.yaml`) for review.
 - `config update --apply` backs up the existing file and writes atomically.
 - Existing `subdomain`/`volatility`/`layer` values are not overwritten by update
   proposals.
-- A live `layer` should only be written when the value already appears in
-  `layers:`; otherwise keep it as a comment/proposal.
+- A live `layer` must use a value from `layers:`. Keep other values as comments
+  or proposals.
 - Module keys are never auto-renamed.
 - `update --apply` aborts if the config changed since it was read, rather than
   clobbering concurrent edits.
 
-Workflow: run plan/draft mode, review the drift report or commented suggestions,
-then copy approved fields deliberately or re-run the appropriate apply command.
-Treat applied classifications as a reviewed starting point, not as ground truth.
+Workflow: run plan/draft mode. Review the drift report or commented suggestions.
+Then copy approved fields or run the appropriate apply command. Treat applied
+classifications as a reviewed starting point, not ground truth.
 
 ## What "structural drift" means (update)
 
 - Added modules — discovered but absent from config → added as new stanzas.
 - Path drift — discovered paths differ from config → module `paths:` replaced.
-- Removed modules — config modules with no discovered paths → commented out with
-  a marker; verify before deleting.
+- Removed modules — config modules with no discovered paths appear in the review
+  report. Archfit does not remove or comment out their stanzas. Review the
+  findings and remove a stanza manually when the owner approves.
 
 ## enrich — labels and module metadata (draft → review → pin)
 
@@ -105,9 +109,9 @@ stable interface), or `intrusive` (reaches into internals). The deterministic
 heuristic blanket-labels many edges as `functional` when deeper evidence is not
 available.
 
-`config enrich abstained` targets cross-module edges whose strength is unknown
-and drafts labels from snippets. Use it when `coupling_balance` abstains because
-strength could not be determined.
+`config enrich abstained` targets cross-module edges with unknown strength. It
+drafts labels from snippets. Use it when `coupling_balance` abstains because
+archfit cannot determine strength.
 
 1. `archfit config enrich labels` drafts `.archfit-labels.yaml` entries
    (`status: draft` — inert).
@@ -122,11 +126,10 @@ Labels file notes:
 - Only `status: approved` entries affect classification.
 - Precedence: config `public`/`internal` globs > approved labels > SCIP hint.
 - A label pins all edges of the ordered module pair (`from` → `to`).
-- `evidence_hash` fingerprints the pair's edges at enrich time; on full runs the
-  gate recomputes it. A mismatch raises a `labels/stale` advisory and the label
-  is ignored until re-reviewed. Hand-authored labels may omit the hash.
-- A malformed labels file fails loudly (exit 3); it never silently alters the
-  gate.
+- `evidence_hash` fingerprints the pair's edges at enrich time. On full runs,
+  the gate recomputes the hash. A mismatch raises a `labels/stale` advisory.
+  Archfit ignores the label until review. Hand-authored labels can omit the hash.
+- A malformed labels file returns exit 3. It does not silently change the gate.
 
 ## config enrich subdomain / owner / volatility
 
@@ -141,9 +144,9 @@ These modes draft module metadata the structural metrics depend on.
 - `--apply --reviewed-by <name>` writes only `status: approved` entries into
   `modules.<name>` and never overwrites a live field.
 
-Filling these makes distance, encapsulation, and coupling metrics more honest;
-without them, `encapsulation` and `coupling_balance` may stay partly `n/a`. Never
-auto-pin without review.
+These fields give distance, encapsulation, and coupling metrics more evidence.
+Without them, `encapsulation` and `coupling_balance` can remain partly `n/a`.
+Review metadata before pinning it.
 
 ## config init --ai-classify — full config draft workflow
 
@@ -177,5 +180,5 @@ AI modes can write repo-local drafts or cache:
 - `.archfit-volatility.yaml`
 - `.archfit-cache/llm/`
 
-Treat them as generated state. Review them before committing; prefer stdout or a
-temp copy when the task is analysis-only.
+Treat them as generated state. Review them before committing. Use stdout or a
+temporary copy for analysis-only tasks.

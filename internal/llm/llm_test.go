@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
-	openaioption "github.com/openai/openai-go/option"
+	anthropicoption "github.com/anthropics/anthropic-sdk-go/v2/option"
+	openaioption "github.com/openai/openai-go/v3/option"
 )
 
 const testModel = "test-model"
@@ -50,17 +50,17 @@ func serve(t *testing.T, status int, body string, got *map[string]any) *httptest
 func TestAnthropic_Complete(t *testing.T) {
 	var got map[string]any
 	srv := serve(t, http.StatusOK, anthropicOK, &got)
-	p := newAnthropic(testModel,
+	p := newAnthropic(Options{Model: testModel},
 		anthropicoption.WithBaseURL(srv.URL),
 		anthropicoption.WithAPIKey("test-key"),
 		anthropicoption.WithMaxRetries(0),
 	)
 
-	resp, err := p.Complete(context.Background(), Request{System: "be terse", User: "hi", MaxTokens: 100})
+	resp, err := p.Complete(context.Background(), Request{System: testSystem, User: "hi", MaxTokens: 100})
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	if resp.Text != "hello world" {
+	if resp.Text != testAnswer {
 		t.Errorf("text = %q, want concatenated blocks", resp.Text)
 	}
 
@@ -93,12 +93,12 @@ func TestAnthropic_ErrorPaths(t *testing.T) {
 		{"unauthorized", http.StatusUnauthorized, `{"type":"error","error":{"type":"authentication_error","message":"bad key"}}`, "401"},
 		{"rate limited", http.StatusTooManyRequests, `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`, "429"},
 		{"malformed body", http.StatusOK, "not json", ""},
-		{"empty content", http.StatusOK, `{"id":"m","type":"message","role":"assistant","model":"m","content":[],"stop_reason":"refusal","usage":{"input_tokens":0,"output_tokens":0}}`, "empty response"},
+		{"empty content", http.StatusOK, `{"id":"m","type":"message","role":"assistant","model":"m","content":[],"stop_reason":"end_turn","usage":{"input_tokens":0,"output_tokens":0}}`, "empty response"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := serve(t, tc.status, tc.body, nil)
-			p := newAnthropic(testModel,
+			p := newAnthropic(Options{Model: testModel},
 				anthropicoption.WithBaseURL(srv.URL),
 				anthropicoption.WithAPIKey("test-key"),
 				anthropicoption.WithMaxRetries(0),
@@ -129,7 +129,7 @@ func TestAnthropic_Timeout(t *testing.T) {
 		_, _ = w.Write([]byte(anthropicOK))
 	}))
 	t.Cleanup(srv.Close)
-	p := newAnthropic(testModel,
+	p := newAnthropic(Options{Model: testModel},
 		anthropicoption.WithBaseURL(srv.URL),
 		anthropicoption.WithAPIKey("test-key"),
 		anthropicoption.WithMaxRetries(0),
@@ -144,35 +144,37 @@ func TestAnthropic_Timeout(t *testing.T) {
 
 func TestOpenAI_Complete(t *testing.T) {
 	var got map[string]any
-	srv := serve(t, http.StatusOK, openaiOK, &got)
-	p := newOpenAI("openai", testModel,
+	srv := serve(t, http.StatusOK, responsesOK, &got)
+	p := newOpenAI("openai", Options{Model: testModel},
 		openaioption.WithBaseURL(srv.URL),
 		openaioption.WithAPIKey("test-key"),
 		openaioption.WithMaxRetries(0),
 	)
 
-	resp, err := p.Complete(context.Background(), Request{System: "be terse", User: "hi"})
+	resp, err := p.Complete(context.Background(), Request{System: testSystem, User: "hi"})
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	if resp.Text != "hello world" {
+	if resp.Text != testAnswer {
 		t.Errorf("text = %q", resp.Text)
 	}
-	msgs, ok := got["messages"].([]any)
-	if !ok || len(msgs) != 2 {
-		t.Fatalf("messages = %v, want system + user", got["messages"])
+	if got["input"] != "hi" || got["instructions"] != testSystem {
+		t.Fatalf("input/instructions = %v", got)
 	}
-	if got["temperature"] != float64(0) {
-		t.Errorf("temperature = %v, want 0", got["temperature"])
+	if _, present := got["temperature"]; present {
+		t.Error("temperature must be omitted")
 	}
-	if got["max_completion_tokens"] != float64(4096) {
-		t.Errorf("max_completion_tokens = %v, want default 4096", got["max_completion_tokens"])
+	if got["max_output_tokens"] != float64(defaultMaxTokens) {
+		t.Errorf("max_output_tokens = %v", got["max_output_tokens"])
+	}
+	if got["store"] != false {
+		t.Error("Responses must not opt into storage")
 	}
 }
 
 func TestOpenAI_ErrorAndEmpty(t *testing.T) {
-	srv := serve(t, http.StatusOK, `{"id":"c1","object":"chat.completion","choices":[]}`, nil)
-	p := newOpenAI("openai", testModel,
+	srv := serve(t, http.StatusOK, `{"id":"r1","object":"response","status":"completed","output":[]}`, nil)
+	p := newOpenAI("openai", Options{Model: testModel},
 		openaioption.WithBaseURL(srv.URL),
 		openaioption.WithAPIKey("test-key"),
 		openaioption.WithMaxRetries(0),
@@ -184,15 +186,15 @@ func TestOpenAI_ErrorAndEmpty(t *testing.T) {
 
 func TestNotConfigured(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
-	if _, err := NewAnthropic(testModel); err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
+	if _, err := NewAnthropic(Options{Model: testModel}); err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY") {
 		t.Errorf("NewAnthropic without key: err = %v", err)
 	}
 	t.Setenv("OPENAI_API_KEY", "")
-	if _, err := NewOpenAI(testModel); err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
+	if _, err := NewOpenAI(Options{Model: testModel}); err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
 		t.Errorf("NewOpenAI without key: err = %v", err)
 	}
 	// Ollama needs no key.
-	if p := NewOllama("", testModel); p.Name() != "ollama/"+testModel {
+	if p, _ := NewOllama(Options{Model: testModel}); p.Name() != "ollama/"+testModel {
 		t.Errorf("NewOllama Name = %q", p.Name())
 	}
 }

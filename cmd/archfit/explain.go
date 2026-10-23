@@ -75,7 +75,7 @@ Plain prose, no headings, no lists, no code fences.`
 func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, refresh bool, f report.Finding, diag report.Document) error {
 	llmCfg, configured := cfg.LLM()
 	if !configured {
-		return &exitError{code: 3, msg: "error: --ai-summary needs ai configured (provider + model); see docs/guide/llm-enrich.md"}
+		return &exitError{code: 3, msg: "error: --ai-summary needs ai configured (provider + model); see docs/ai.md"}
 	}
 	provider, err := buildProvider(llmCfg)
 	if err != nil {

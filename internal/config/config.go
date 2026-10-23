@@ -23,17 +23,17 @@ import (
 
 // Config is the parsed and validated content of an archfit.yaml file.
 //
-// Top-level layout (see docs/guide/configuration-reference.md):
+// Top-level layout (see docs/configuration.md):
 //   - exclude        — path globs to skip during scanning
 //   - languages      — per-language extractor settings (go/typescript/python/rust)
-//   - analyzers      — opt-in deeper analysis backends (syntax/scip/complexity/…)
+//   - analyzers      — opt-in deeper analysis backends (syntax/scip/clones/cargo_modules)
 //   - coverage       — opt-in ingestion of caller-supplied coverage artifacts
 //   - ai             — off-gate LLM provider for init/update/enrich/analyze/explain LLM flows
 //   - coupling       — Balanced-Coupling advisory tuning
 //   - layers/modules — the architecture map
 //   - rules/waivers  — gates and their approved deviations
 //   - module_review  — review of the module declarations; can block on unowned source
-//   - file_class / outputs — classification overrides and output formats
+//   - file_class / outputs — classification overrides and accepted output fields
 type Config struct {
 	Version   int                         `yaml:"version" jsonschema:"required"`
 	Exclude   []string                    `yaml:"exclude"`
@@ -192,13 +192,8 @@ func validate(cfg Config) error {
 	if err := validateSchemaVersion(cfg.Version); err != nil {
 		return err
 	}
-	if cfg.AI.Provider != "" {
-		if _, valid := LLMProviders[cfg.AI.Provider]; !valid {
-			return fmt.Errorf("ai.provider %q is not one of: anthropic, openai, ollama", cfg.AI.Provider)
-		}
-		if cfg.AI.Model == "" {
-			return errors.New("ai.model is required when ai.provider is set")
-		}
+	if err := validateAI(cfg.AI); err != nil {
+		return err
 	}
 	if s := cfg.Coupling.MinSeverity; s != "" {
 		if _, ok := bcSeverities[s]; !ok {

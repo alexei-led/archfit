@@ -1,5 +1,7 @@
 # archfit book-conformance report — Khononov, _Balancing Coupling in Software Design_
 
+> Historical record. Current documentation: [archfit](../../../development.md).
+
 Source: 13 chapter-level claim audits (foundations, ch04–ch14, appendices), 98 raw claim rows, cross-checked against `/Users/alexei/Workspace/archfit` @ `6140aba` (2026-07-01). Deduplicated to 76 distinct claims. Compared against the prior code-only audit `reports/eval-2026-06-30-v1.1.0/book-conformance-source-audit.md` (2026-06-30, no book text access).
 
 ## Verdict

@@ -1,5 +1,7 @@
 # Gate integrity — verdict-path decisions (wave 1)
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Date: 2026-07-02. Status: SHIPPED (PR #25, branch `fix/wave1-gate-integrity`).
 Fixes defects V1/V2/V3 from `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`.
 Related plan: `docs/plans/completed/20260702-wave1-gate-integrity.md`.

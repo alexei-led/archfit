@@ -303,9 +303,9 @@ func (s ConfigEnrichService) apply(ctx context.Context, req ConfigEnrichRequest)
 
 func configEnrichAIError(kind ConfigEnrichKind) error {
 	if kind == ConfigEnrichSubdomain {
-		return errors.New("config enrich subdomain needs ai configured (provider + model); see docs/guide/llm-enrich.md")
+		return errors.New("config enrich subdomain needs ai configured (provider + model); see docs/ai.md")
 	}
-	return fmt.Errorf("enrich --%s needs ai configured (provider + model); see docs/guide/llm-enrich.md", kind)
+	return fmt.Errorf("enrich --%s needs ai configured (provider + model); see docs/ai.md", kind)
 }
 
 func configEnrichTargets(cfg ConfigEnrichConfig, kind ConfigEnrichKind) []ConfigEnrichModule {

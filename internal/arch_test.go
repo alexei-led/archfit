@@ -703,7 +703,7 @@ func assertAdaptersNoAssessmentApplicationImport(t *testing.T, loaded map[string
 var cmdDomainAdapterFiles = map[string]string{
 	// Runs `config update`'s own authoring pipeline (extract → graph → classify)
 	// to propose config edits. Pre-exists the capability migration; recorded as
-	// accepted risk in docs/design/architecture-baseline.md.
+	// accepted risk in docs/architecture.md.
 	"config_update_adapters.go": "config-update authoring pipeline",
 	"config_enrich_adapters.go": "config-enrich draft/review adapter",
 	"application_wiring.go":     "composition root: selects concrete stage implementations",

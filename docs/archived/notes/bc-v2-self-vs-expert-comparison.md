@@ -1,5 +1,7 @@
 # archfit v2 — automated self-analysis vs independent expert review
 
+> Historical record. Current documentation: [archfit](../../architecture.md).
+
 Date: 2026-06-18. Branch: `docs/bc-measurement-v2`. Compares two independent
 assessments of the same codebase (archfit after the Balanced Coupling v2 work):
 
