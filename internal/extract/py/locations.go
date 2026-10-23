@@ -52,7 +52,7 @@ func pythonSourceLocations(root string, h helperOutput, exclusions []string) map
 }
 
 func pythonLocationExcluded(file string, exclusions []string) bool {
-	for candidate := file; candidate != "."; candidate = path.Dir(candidate) {
+	for candidate := file; candidate != "." && candidate != "/"; candidate = path.Dir(candidate) {
 		for _, pattern := range exclusions {
 			if matched, _ := doublestar.Match(pattern, candidate); matched {
 				return true

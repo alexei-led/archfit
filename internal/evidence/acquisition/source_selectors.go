@@ -97,20 +97,9 @@ func ruleScopeObservations(ctx context.Context, runner toolrun.Runner, store *fa
 // rule's scope, not merely the dependency rules'.
 func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[string]struct{}, cov CoverageOptions, goMembers goMemberSplit) map[string]struct{} {
 	var roots []graph.CrateRoot
-	var pythonModules map[string]struct{}
+	pythonModules := pythonScannedModules(f, outOfScope)
 	if f.Graph != nil {
 		roots = f.Graph.CrateRoots()
-		for _, row := range f.Coverage {
-			if row.Tool == registry.ToolGrimp && row.Status == modevidence.StatusOK {
-				pythonModules = make(map[string]struct{})
-				for _, node := range f.Graph.Nodes() {
-					if node.Kind == graph.NodeKindModule && node.Language == graph.LangPython {
-						pythonModules[node.Path] = struct{}{}
-					}
-				}
-				break
-			}
-		}
 	}
 	absent := make(map[string]bool)
 	for _, lang := range registry.All() {
@@ -144,6 +133,41 @@ func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[strin
 		consider(file)
 	}
 	return out
+}
+
+// A module identity proves a source body only when its file spelling is unique.
+// Two files such as app.py and app/__init__.py cannot share that proof.
+func pythonScannedModules(f evidencecontract.Facts, outOfScope map[string]struct{}) map[string]struct{} {
+	if f.Graph == nil || !slices.ContainsFunc(f.Coverage, func(row modevidence.Coverage) bool {
+		return row.Tool == registry.ToolGrimp && row.Status == modevidence.StatusOK
+	}) {
+		return nil
+	}
+	modules := make(map[string]struct{})
+	for _, node := range f.Graph.Nodes() {
+		if node.Kind == graph.NodeKindModule && node.Language == graph.LangPython {
+			modules[node.Path] = struct{}{}
+		}
+	}
+	byModule := make(map[string]string)
+	remember := func(file string) {
+		if _, excluded := outOfScope[file]; excluded || filepath.Ext(file) != ".py" {
+			return
+		}
+		_, selector, _ := (policy.ModuleMap{}).RuleSelectorForFile(file)
+		if previous, seen := byModule[selector]; seen && previous != file {
+			delete(modules, selector)
+		} else {
+			byModule[selector] = file
+		}
+	}
+	for file := range f.FileLOC {
+		remember(file)
+	}
+	for file := range f.FileClassIndex {
+		remember(file)
+	}
+	return modules
 }
 
 // goMemberSplit is the languages.go.modules filter over the discovered Go

@@ -295,11 +295,15 @@ func ruleProducerScope(diag *result.Result, rule policy.RuleDef, p policy.Policy
 		if scope, decided := vacuityScope(rule, inv); decided {
 			return scope
 		}
+		if inv.pythonTargetAddressable(rule, p.Topology) {
+			if reason := inv.unscannedPythonSelector(rule); reason != "" {
+				return ruleScope{status: ruleScopeUnknown, reason: reason}
+			}
+		} else {
+			inv.pythonComplete = false
+		}
 		if rule.FromModule != "" || rule.ToModule != "" {
 			return moduleSelectorScope(rule, p.Topology, inv, files, f)
-		}
-		if reason := inv.unscannedPythonSelector(rule); reason != "" {
-			return ruleScope{status: ruleScopeUnknown, reason: reason}
 		}
 		// Dependency producers are selected by the source endpoint language, but
 		// an explicitly unsupported target scope is still unevaluated: no

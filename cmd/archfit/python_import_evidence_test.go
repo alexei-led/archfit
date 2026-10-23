@@ -14,13 +14,20 @@ func TestCheckPythonUnscannedSourceNeverCountsAsConformance(t *testing.T) {
 	skipShortWithoutRequiredTools(t)
 	requireTool(t, "uv")
 	for _, tc := range []struct {
-		from    string
-		unknown bool
+		from         string
+		unknown      bool
+		shadow       bool
+		moduleTarget bool
 	}{
-		{"scripts.**", true}, {"**", true}, {"app.handler", false},
+		{from: "scripts.**", unknown: true}, {from: "**", unknown: true}, {from: "app.handler"},
+		{from: agreeApp, unknown: true, shadow: true}, {from: "**", unknown: true, moduleTarget: true},
 	} {
 		t.Run(tc.from, func(t *testing.T) {
 			root := t.TempDir()
+			target := "to: app.backend"
+			if tc.moduleTarget {
+				target = "to_module: backend"
+			}
 			config := `version: 2
 languages:
   python:
@@ -28,11 +35,13 @@ languages:
 modules:
   app:
     paths: [app.**]
+  backend:
+    paths: [app.backend]
 rules:
   - id: no-backend
     type: forbidden_dependency
     from: "` + tc.from + `"
-    to: app.backend
+    ` + target + `
     gate: fail
 `
 			for name, content := range map[string]string{
@@ -41,6 +50,9 @@ rules:
 				"scripts/run.py": "import app.backend\n", defaultConfigPath: config,
 			} {
 				writeFileAt(t, root, name, content)
+			}
+			if tc.shadow {
+				writeFileAt(t, root, "app.py", "import app.backend\n")
 			}
 			gitInitFixtureRepo(t, root)
 			code, stdout, stderr := runArchfit(t, cmdCheck, "-c", filepath.Join(root, defaultConfigPath), "--json")

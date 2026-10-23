@@ -45,6 +45,8 @@ Unreadable, unparseable, or unscanned source leaves evidence incomplete and requ
 
 Loose Python files outside the scanned packages do not become verified source. Rules whose selectors include them remain unevaluated, including broad selectors that also match scanned files. Rules limited to scanned packages can still evaluate. A whole-project cycle rule therefore needs every in-scope Python file covered by the package scan.
 
+If multiple files map to the same dotted module, such as `app.py` and `app/__init__.py`, their bodies are ambiguous and do not count as verified source. Excluded files do not contribute to that ambiguity. A rule whose target vocabulary cannot contain Python nodes does not wait for omitted Python source.
+
 The source Dockerfile supplies Python 3.14. CI builds that image without publishing it and checks the src-layout `testdata/python314` fixture. Released v3.0.1 images still contain Python 3.11; caller-side Python setup cannot change the container interpreter. See [migration](migration.md#python-producer-semantics) for baseline compatibility.
 
 Use `uv` to resolve the analyzer without a global install:

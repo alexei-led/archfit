@@ -49,6 +49,21 @@ func TestPythonSourceScopeRequiresScannedModuleMembership(t *testing.T) {
 	}
 }
 
+func TestPythonSourceScopeRejectsAmbiguousModuleBodies(t *testing.T) {
+	f := evidencecontract.Facts{
+		FileLOC:  map[string]int{"app.py": 1, "app/__init__.py": 1, "app/a.py": 1},
+		Coverage: []modevidence.Coverage{{Tool: registry.ToolGrimp, Status: modevidence.StatusOK}},
+		Graph: graph.Build([]graph.Facts{{Nodes: []graph.Node{
+			{Kind: graph.NodeKindModule, Path: "app", Language: graph.LangPython},
+			{Kind: graph.NodeKindModule, Path: "app.a", Language: graph.LangPython},
+		}}}),
+	}
+	want := map[string]struct{}{"app.py": {}, "app/__init__.py": {}}
+	if got := unanalysedFiles("/repo", f, nil, CoverageOptions{}, goMemberSplit{}); !maps.Equal(got, want) {
+		t.Fatalf("unanalysed=%v want=%v", got, want)
+	}
+}
+
 func TestDeclaredOutOfScopeHonorsExclusionsAndSwitchedOffLanguages(t *testing.T) {
 	const (
 		langTypeScript = "typescript"

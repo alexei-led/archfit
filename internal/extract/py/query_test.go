@@ -5,10 +5,34 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
+
+func TestQueryEdgeAbsoluteImporterReturns(t *testing.T) {
+	const childEnv = "ARCHFIT_ABSOLUTE_QUERY_TEST_CHILD"
+	if os.Getenv(childEnv) == "1" {
+		_, err := QueryEdge(srcLayout(t), evidenceports.ExtractConfig{}, filepath.Join(t.TempDir(), "outside.py"), domainModule)
+		if !errors.Is(err, evidenceports.ErrNotDecidable) {
+			t.Fatalf("absolute importer: %v", err)
+		}
+		return
+	}
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := toolrun.New().Run(t.Context(), toolrun.ToolCmd{
+		Name: binary, Args: []string{"-test.run=^TestQueryEdgeAbsoluteImporterReturns$"},
+		Env: []string{childEnv + "=1"}, Timeout: 10 * time.Second,
+	})
+	if err != nil || out.ExitCode != 0 {
+		t.Fatalf("absolute query did not complete: %v %s %s", err, out.Stdout, out.Stderr)
+	}
+}
 
 const (
 	handlersFile   = "src/myapp/handlers.py"
