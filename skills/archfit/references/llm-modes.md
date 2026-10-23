@@ -19,35 +19,42 @@ analyzers:
     enabled: true # enrich benefits from symbol-level strength hints
 
 ai:
-  provider: anthropic # anthropic | openai | ollama
-  model: claude-opus-4-8
-  # base_url: http://localhost:11434/v1   # ollama only
+  provider: anthropic
+  model: claude-opus-5-5
 ```
 
-API keys come only from environment variables: `ANTHROPIC_API_KEY` and
-`OPENAI_API_KEY`. They do not come from config. At startup, archfit also loads
-`.env` from the current directory when possible. It sets a key only when the
-environment does not already set it. Environment and CI secrets take
-precedence. Keep `.env` out of git.
+Providers are `anthropic`, `openai`, `deepseek`, `ollama`, and `openai-compatible`.
+Use the provider's API model ID.
+`base_url` can override an endpoint. Generic `openai-compatible` requires it.
+For generic endpoints, `api_key_env` names the credential variable. Omit it for keyless access.
+Never put a credential value in the configuration.
+Optional `effort`, `max_tokens`, and `timeout` control generation.
+The default timeout is `5m`. Init/update flags override configured provider and model values.
 
-Responses are cached at `.archfit-cache/llm/`. `--refresh` forces fresh
-extractor and AI work, then updates the cache.
+Native providers use `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `DEEPSEEK_API_KEY`.
+Ollama does not need a key. Generic endpoints use the configured `api_key_env`, or no key when omitted.
+Archfit loads `.env` from the current directory and explicit root/config directories.
+Existing environment values take precedence. Keep `.env` out of git.
+
+Responses are cached at `.archfit-cache/llm/`.
+`--refresh` bypasses cached AI responses.
+Analysis and enrichment commands also refresh extractor facts when they accept that flag.
 
 ## analyze --ai-summary
 
-If the AI config, provider, or key is missing, stop and report that setup is
-incomplete. Do not guess or fall back to a different model.
+If required configuration or a configured credential is missing, stop and report the incomplete setup.
+Keyless providers do not require a credential.
+Do not guess or fall back to a different model.
 
 `archfit analyze --ai-summary` is an off-gate narrative over deterministic
 evidence. It appends a cited, holistic AI interpretation section after the normal
 render. It can prioritize and explain existing findings, but it does not create
 new gate facts and it does not change the gate verdict.
 
-- Requires `ai:` configured or provider/model overrides where supported, plus the
-  matching API key.
+- Requires `ai:` configured or provider/model overrides where supported, plus any required credential.
 - Use it after a normal deterministic `analyze` / `check` run, not instead of it.
-- If AI config or key setup is missing, the command exits `3`. This is a setup
-  failure, not a gate failure.
+- If required configuration or a configured credential is missing, the command exits `3`.
+  This is a setup failure, not a gate failure.
 
 ## config init / config update classification
 

@@ -77,3 +77,23 @@ The exception register is `cmdDomainAdapterFiles` in `internal/arch_test.go`.
 These adapters can run an authoring pipeline. Command stages still enter through application use cases.
 
 The evidence adapter and persistence adapter modules have a declared module cycle through shared adapter responsibilities. The self-check reports this cycle as a warning. Keep core and application dependencies pointed inward.
+
+## Contracts to preserve
+
+The Go tests enforce additional contracts that are not visible in the layer table.
+Update the matching tests when a contract changes.
+
+| Contract | Owner and check |
+|---|---|
+| Policy purity | `internal/policy` owns policy contracts. It may use the model kernel and the approved pure matcher. The `policy_owns_domain_contracts` subtest in `TestArchImports` checks its imports. |
+| Projected configuration | Stages receive their own option contracts. They do not receive `internal/config`. `internal/config` projects options for each consumer. `TestPolicyDoesNotImportConfig` and module rules enforce the boundary. |
+| Relationship and assessment | `internal/relationship` owns classification and coupling. Assessment consumes its public contract. `TestAssessmentConsumesOnlyThePublicRelationshipContract` checks this rule. |
+| Report projection | `internal/application` maps results to report DTOs. The projector does not import relationship or evidence internals. `TestReportProjectionHasOneOwner` checks this rule. |
+| Model surface | `internal/model` is a published contract. `TestModelSurfaceNoDrift` checks `internal/testdata/model_surface.golden`. See [development](development.md) before changing it. |
+| Tool boundaries | Go and Rust tools run through adapters and `toolrun.Runner`. Core code does not start subprocesses. `TestArchImports` checks the import boundary. |
+
+Rust extraction first reports crate-level facts. Optional module and SCIP analyzers add intra-crate evidence. See [evidence](evidence.md) for evidence limits. See [languages](languages.md) for analyzer setup.
+
+## Coupling boundary
+
+In bc_score.v7, each cross-module boundary has distance D=9. Owner and deploy-unit data describe the boundary and contribute to resolved model identity. They do not change distance, severity, or distributed-monolith qualification. The [coupling reference](coupling.md) owns the scoring rules.

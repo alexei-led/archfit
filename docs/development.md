@@ -3,6 +3,44 @@
 Use this workflow to evaluate archfit itself across supported languages.
 Use [Getting started](getting-started.md) to analyze an ordinary target repository.
 
+## Generated contracts
+
+The committed configuration, state, and agent-result schemas must match the Go types.
+After a config, report, or agent-result contract changes, run:
+
+```sh
+make schema
+```
+
+The target regenerates all three schemas and checks for drift. Review the schema diff and constraints before you finish.
+
+The exported `internal/model` surface is pinned by `internal/testdata/model_surface.golden`.
+After an intentional public contract change, run:
+
+```sh
+ARCHFIT_UPDATE_SURFACE=1 go test ./internal/ -run TestModelSurfaceNoDrift -count=1
+go test ./internal/ -run TestModelSurfaceNoDrift -count=1
+```
+
+Review the golden diff and describe the contract change in the change review.
+Do not update the golden to hide an accidental API change.
+
+## Release
+
+The release workflow starts when a version tag is pushed. It builds the binaries and image.
+Then it creates the GitHub release.
+Prepare and review the release notes before creating the tag.
+The workflow uses the tag annotation as the release notes.
+Create an annotated `vX.Y.Z` tag from that file, then push the tag:
+
+```sh
+git tag -a vX.Y.Z -F /tmp/archfit-release-notes.md
+git push origin vX.Y.Z
+```
+
+Do not create the GitHub release by hand. The workflow owns that step.
+The Go module path uses `/v3`. Keep the major suffix in `go.mod` and imports for v3 releases.
+
 ## Language contracts
 
 Build the candidate and run the bounded real-tool fixtures:

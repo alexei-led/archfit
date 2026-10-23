@@ -94,6 +94,12 @@ archfit-report: build ## write .archfit-cache/reports/archfit-report.md for huma
 lint: ## run golangci-lint
 	golangci-lint run -c .golangci.yaml ./...
 
+## docs: validate documentation and render Mermaid diagrams
+.PHONY: docs
+docs: ## validate links, Markdown, examples, and diagrams (install docs tools first)
+	npm --prefix scripts/eval/docs test
+	npm --prefix scripts/eval/docs run check
+
 ## fmt: format Go source with gofmt and goimports
 .PHONY: fmt
 fmt: ## format Go source with gofmt and goimports
