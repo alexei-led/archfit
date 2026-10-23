@@ -47,7 +47,7 @@ Loose Python files outside the scanned packages do not become verified source. R
 
 If multiple files map to the same dotted module, such as `app.py` and `app/__init__.py`, their bodies are ambiguous and do not count as verified source. Excluded files do not contribute to that ambiguity. A rule whose target vocabulary cannot contain Python nodes does not wait for omitted Python source.
 
-The source Dockerfile supplies Python 3.14. CI builds that image without publishing it and checks the src-layout `testdata/python314` fixture. Released v3.0.1 images still contain Python 3.11; caller-side Python setup cannot change the container interpreter. See [migration](migration.md#python-producer-semantics) for baseline compatibility.
+The v3.1.1 image supplies Python 3.14. CI checks the src-layout `testdata/python314` fixture; releases also check each immutable platform image before publishing image version tags. Images through v3.1.0 contain Python 3.11; caller-side Python setup cannot change the container interpreter. See [migration](migration.md#python-producer-semantics) for baseline compatibility.
 
 Use `uv` to resolve the analyzer without a global install:
 
@@ -84,6 +84,8 @@ The Docker image includes `ast-grep` and `dependency-cruiser`. It does not inclu
 
 Use `archfit doctor` to inspect tool discovery. A missing optional tool leaves its dependent evidence unavailable. A missing required language tool makes that language's evidence incomplete or causes the required-tool check to fail.
 
+Tool discovery does not execute the pinned Python analyzer environment. When uv's Python downloads are disabled, provide Python 3.14 separately and read the analysis coverage to confirm that the producer ran.
+
 ## Supplied test coverage
 
 Archfit reads coverage artifacts from the test job. It does not run test commands. Enable supplied coverage with the top-level `coverage` configuration. See [configuration](configuration.md) for accepted formats and the freshness sidecar. See [metrics](metrics.md) for how coverage affects metric results.
@@ -107,13 +109,28 @@ Archfit normalizes paths under the analysis root and reports unresolved paths. E
 
 Archfit classifies source files as `Production`, `Test`, `Generated`, or `Vendor`. This affects source counts and structural metrics. Project-specific patterns can extend built-in classification through `file_class` settings. See [configuration](configuration.md).
 
-| Language | Test patterns | Generated patterns |
-| --- | --- | --- |
-| Go | `*_test.go` | `*.pb.go`, `*_gen.go`, `mock_*.go`, `*_mock.go`, `mocks/`, or a `Code generated ... DO NOT EDIT` header |
-| TypeScript and JavaScript | `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx` | `*.gen.ts` or a recognized mock header |
-| Python | `test_*.py`, `*_test.py` | `_pb2.py` or a `Code generated` header |
-| Rust | `tests.rs`, `*_test.rs`, `*_tests.rs`, `tests/`, `benches/`, `*_tests/`, `*-tests/` | `*.gen.rs` or a recognized mock header |
+| Language | Test patterns |
+| --- | --- |
+| Go | `*_test.go` |
+| TypeScript and JavaScript | Any filename containing `.test.` or `.spec.`, or a `__tests__/` path segment |
+| Python | `test_*.py`, `*_test.py`, or a `tests/` path segment |
+| Rust | `tests.rs`, `*_test.rs`, `*_tests.rs`, or a `tests/`, `benches/`, `*_tests/`, `*-tests/` path segment |
 
-`vendor/`, `node_modules/`, and `pkg/mod/` are vendor paths. Other project conventions can use `test_globs` and `generated_globs`.
+Generated filename checks apply across languages, before test-file patterns.
+The classifier marks a filename as generated when it meets any of these conditions:
+
+- It ends in `.pb.go`, `.d.ts`, `.d.mts`, or `.d.cts`.
+- It starts with `gen_` or `mock_`.
+- Its name before the final extension ends in `_gen`, `_mock`, `_moq`, `.gen`, or `_pb2`.
+
+For example, `mock_client.py`, `client_gen.rs`, and `client.gen.go` are generated files under this policy.
+A header containing both `Code generated` and `DO NOT EDIT` marks a file as generated.
+The `mocks/` and `__mocks__/` path segments also identify generated files.
+Configured generated globs and mock filename patterns take precedence over test patterns.
+
+The classifier marks files under a `vendor/` path segment as `Vendor`.
+The source-count walk skips dependency directories such as `vendor/`, `node_modules/`, and the root `pkg/mod/` cache.
+Skipping a directory does not assign the `Vendor` class to every file there.
+Use `test_globs` and `generated_globs` for other project conventions.
 
 Classification is file-level. An inline Rust `#[cfg(test)]` module remains part of its production file. Move tests to a separate file or narrow the rule that matches them.

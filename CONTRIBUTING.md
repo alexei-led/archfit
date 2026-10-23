@@ -1,7 +1,11 @@
 # Contributing
 
-Use Go 1.26 or later, Git, Python 3.12 or later, `uv`, and `pre-commit`.
+Use Go 1.26.x, Git, Python 3.12 or later, `uv`, and `pre-commit`.
 Language analysis needs the tools listed in [Languages](docs/languages.md).
+
+Analyzer tests need the Go version declared in `go.mod`.
+If your default compiler is newer, use `GOTOOLCHAIN=go1.26.0` for these checks.
+New compiler export formats can exceed the analyzer's supported format.
 
 ## Build and run
 
@@ -98,6 +102,22 @@ Name the outcome in the node text so color is not the only signal.
 Render each changed diagram and inspect its layout.
 Check relative links and anchors after moving files.
 Check examples against CLI help, source, tests, and the published schemas.
+
+Install the documentation tools with Node.js 24 and npm:
+
+```sh
+npm ci --prefix scripts/eval/docs
+make docs
+```
+
+`make docs` runs checker tests, Markdown lint, local link and anchor checks, and YAML/JSON example checks.
+It also renders the active Mermaid diagrams under `.archfit-cache/docs/`.
+Inspect those diagrams after a layout change. A successful render does not prove that a diagram is clear.
+The first tool install downloads Puppeteer's browser. Later checks use the installed browser with its normal sandbox.
+
+The documentation CI workflow runs the same command.
+Archives, release history, and fixture documents do not enter this gate.
+Check behavior claims against source and tests. This gate checks document structure and examples, not product behavior.
 
 Archive replaced designs, completed plans, and dated reports under `docs/archived/`.
 Preserve unresolved tasks in [Current follow-ups](docs/plans/current.md) before archiving their source.

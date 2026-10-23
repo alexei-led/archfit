@@ -1,0 +1,113 @@
+name: Architecture check
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: archfit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    env:
+      ARCHFIT_COVERAGE_MODULE: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          python-version: "3.13"
+          enable-cache: false
+      - name: Install Archfit
+        run: |
+          go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.1.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Test and write coverage
+        run: go test -coverpkg=./... -coverprofile=coverage.out ./...
+      - name: Write coverage freshness sidecar
+        env:
+          ARCHFIT_SOURCE_REF: ${{ github.sha }}
+        run: |
+          uv run --no-project --python 3.13 python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          root = Path.cwd().resolve()
+          module_name = os.environ["ARCHFIT_COVERAGE_MODULE"]
+          source_ref = os.environ["ARCHFIT_SOURCE_REF"]
+
+          def run(*args):
+              return subprocess.run(args, cwd=root, check=True, text=True, capture_output=True).stdout
+
+          module_path = run("go", "list", "-m").strip()
+          if not module_path:
+              raise SystemExit("go list -m returned an empty module path")
+
+          packages = []
+          output = run("go", "list", "-json", "./...")
+          decoder = json.JSONDecoder()
+          while output.strip():
+              output = output.lstrip()
+              package, end = decoder.raw_decode(output)
+              output = output[end:]
+              packages.append((package["ImportPath"], Path(package["Dir"]).resolve()))
+          if not packages or any(
+              name != module_path and not name.startswith(module_path + "/")
+              for name, _ in packages
+          ):
+              raise SystemExit("go list packages do not belong to the root Go module")
+          packages.sort(key=lambda item: len(item[0]), reverse=True)
+
+          files = set()
+          profile = root / "coverage.out"
+          for line in profile.read_text(encoding="utf-8").splitlines():
+              if not line or line.startswith("mode:"):
+                  continue
+              source = line.rsplit(":", 2)[0]
+              match = next(((name, directory) for name, directory in packages
+                            if source.startswith(name + "/")), None)
+              if match is None:
+                  raise SystemExit(f"cannot map coverage source to a Go package: {source}")
+              name, directory = match
+              path = (directory / source[len(name) + 1:]).resolve()
+              try:
+                  relative = path.relative_to(root).as_posix()
+              except ValueError:
+                  raise SystemExit(f"coverage source escapes the checkout: {source}")
+              if not path.is_file():
+                  raise SystemExit(f"coverage source does not exist: {source}")
+              files.add(relative)
+
+          if not files:
+              raise SystemExit("coverage profile contains no source files")
+          sources = {
+              name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+              for name in sorted(files)
+          }
+          sidecar = {
+              "schema_version": 1,
+              "source_ref": source_ref,
+              "modules": [module_name],
+              "sources": sources,
+          }
+          (root / "coverage.out.sidecar.json").write_text(
+              json.dumps(sidecar, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+      - name: Run Archfit gate
+        run: |
+          status=0
+          archfit check -c .archfit.yaml || status=$?
+          if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
+            exit "$status"
+          fi

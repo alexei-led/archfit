@@ -1,0 +1,16 @@
+{
+  "name": "archfit-docs-check",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node check.mjs",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "12.0.0",
+    "github-slugger": "2.0.0",
+    "markdown-it": "15.0.3",
+    "markdownlint": "0.42.0",
+    "yaml": "2.9.1"
+  }
+}

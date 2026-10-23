@@ -57,7 +57,7 @@ brew install alexei-led/tap/archfit
 Or install a tagged release with Go:
 
 ```sh
-go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.0.1
+go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.1.1
 ```
 
 Run these commands from your repository root:

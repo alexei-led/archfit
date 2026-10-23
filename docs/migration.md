@@ -7,7 +7,7 @@ Version 3 changes the Go module path, baseline format, and report behavior. Keep
 Install the v3 module path:
 
 ```sh
-go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.0.1
+go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.1.1
 ```
 
 Update imports if your Go code imports archfit packages. The `internal/` packages are not a public API.

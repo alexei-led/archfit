@@ -4,6 +4,49 @@ Use `archfit check` as the CI gate. It returns `0` for `healthy`, `1` for
 `blocked`, `2` for `needs_attention`, and `3` for a command, config, or runtime
 error. Treat exit `3` as a failure.
 
+## Go coverage workflow
+
+[The complete GitHub Actions example](../examples/ci-go.yaml) covers one Go
+module. It installs Archfit v3.1.1, runs the repository's Go tests with
+coverage, writes a freshness sidecar, then runs the gate. It does not run
+repository tests through Archfit.
+
+The example assumes one declared Archfit module, named `app`, spanning that Go module.
+Keep existing architecture boundaries when adapting it. Do not flatten the module map to fit this example.
+
+Before using it, configure the matching module name and coverage artifact in
+`.archfit.yaml`:
+
+```yaml
+modules:
+  app:
+    paths: ["**"]
+coverage:
+  enabled: true
+  gate: warn
+  sources:
+    - path: coverage.out
+      format: go-coverprofile
+```
+
+Change `ARCHFIT_COVERAGE_MODULE` in the workflow if the declared module has a
+different name. Keep the test scope and module paths aligned. This example
+attests one module only. It does not represent other modules in a monorepo.
+For multiple Go modules, make one coverage artifact and module entry per module
+or use a workflow that explicitly combines their source evidence.
+
+The sidecar lists covered files and hashes their current bytes. The example
+fails if a profile path cannot map to a file inside the checkout. `source_ref`
+records the commit. Archfit checks file hashes for freshness. The sidecar is
+unsigned and does not prove who produced the report.
+
+The example installs only Archfit and the Go SDK. Add each optional analyzer
+tool required by your `.archfit.yaml`, or disable that analyzer. Keep the tool
+versions and build settings stable when you create or reanchor a baseline.
+The example allows exit `2` while adopting the gate. Remove that allowance
+when the project requires complete evidence. Review and commit baselines in a
+separate change. Do not generate one in this workflow.
+
 ## Adopt the gate
 
 During adoption, allow exit `2` and fail on exits `1` and `3`:

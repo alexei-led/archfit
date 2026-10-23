@@ -250,6 +250,30 @@ func TestPythonImportInventoryRejectsAnalyzerNameCollision(t *testing.T) {
 	}
 }
 
+func TestPythonImportInventoryReportsPerFileParseGaps(t *testing.T) {
+	requirePythonProducer(t)
+	const unscannedFile = "app/sub/bad.py"
+	for _, tc := range []struct{ name, source, reason string }{
+		{"invalid syntax", inventoryInvalidSyntax, "SyntaxError under Python 3.14"},
+		{"invalid encoding", "# coding: ascii\nvalue = '\xff'\n", "UnicodeDecodeError under Python 3.14"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeImportFixture(t, root, map[string]string{
+				inventoryProjectFile: inventoryProject, inventoryInit: "", unscannedFile: tc.source,
+			})
+			_, coverage, err := py.New(toolrun.New(), evidenceports.ExtractConfig{Mode: evidenceports.ModeOn, PyPackage: inventoryPackage}).Extract(t.Context(), scope.Scope{Root: root})
+			if err != nil || coverage.Status != evidence.StatusPartial || coverage.UnresolvedInputsMissing != 1 ||
+				!strings.Contains(coverage.Reason, unscannedFile) || !strings.Contains(coverage.Reason, tc.reason) {
+				t.Fatalf("per-file parse gap: coverage=%+v err=%v", coverage, err)
+			}
+			if coverage.FilesSeen != 1 || coverage.FilesApplicable != 2 {
+				t.Fatalf("unparsed file counted as scanned: %+v", coverage)
+			}
+		})
+	}
+}
+
 func writeImportFixture(t *testing.T, root string, files map[string]string) {
 	t.Helper()
 	for name, content := range files {
