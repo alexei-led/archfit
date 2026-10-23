@@ -73,10 +73,11 @@ archfit doctor --fix --lang py --dry-run
 
 Guidance:
 
-- Use `uv` with Python 3.11 or later. Without `uv`, use Python 3.12 or later
-  with `grimp` installed.
-- Set `languages.python.package` when the import root is not the repo name or
-  the repo uses `src/` layout.
+- `uv` selects Python 3.14 and `grimp==3.17` without target project setup.
+  Without `uv`, use a separate Python 3.14+ environment with `grimp==3.17`.
+  Missing project dependencies do not invalidate static import literals.
+- Leave `languages.python.package` unset for automatic flat/src discovery.
+  Pin it only when that single package is the complete intended source.
 - Config paths and rule filters use dotted module globs (`myapp.domain**`).
 - Keep slash-style `internal` globs too when you want `_internal` package access
   to show up as intrusive/internal-access edges.

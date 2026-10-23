@@ -1,7 +1,6 @@
 package acquisition
 
 import (
-	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -160,15 +159,14 @@ func goBuildConstraintWarning(cov []evidence.Coverage) string {
 }
 
 // pyUnresolvedWarning returns a disclosure message when grimp reported
-// unresolved Python imports. Those imports are emitted as low-confidence
-// external edges, so partial coverage should not be stderr-silent.
+// missing Python source/import evidence. Partial coverage must not be silent.
 func pyUnresolvedWarning(cov []evidence.Coverage) string {
 	for _, c := range cov {
-		if c.Tool == registry.ToolGrimp && c.Unresolved > 0 {
-			if strings.Contains(c.Reason, "imports unresolved") {
+		if c.Tool == registry.ToolGrimp && c.Status == evidence.StatusPartial {
+			if c.Reason != "" {
 				return registry.ToolGrimp + ": " + c.Reason
 			}
-			return fmt.Sprintf("%s: %d imports unresolved — check languages.python.package and src layout", registry.ToolGrimp, c.Unresolved)
+			return registry.ToolGrimp + ": incomplete Python import evidence"
 		}
 	}
 	return ""

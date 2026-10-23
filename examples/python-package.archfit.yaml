@@ -2,9 +2,8 @@
 #
 # Python dependency nodes are dotted module names (myapp.domain.service), so
 # module paths, public/internal globs, and rule from/to use DOTTED globs; a
-# slash-style glob never matches a Python node. Set languages.python.package when
-# the top-level package name does not match the repo directory or uses a src/
-# layout.
+# slash-style glob never matches a Python node. Automatic discovery handles flat
+# and src/ packages. Pin languages.python.package only for a complete single-package source.
 #   archfit analyze --config .archfit.yaml
 version: 2
 coupling:
@@ -16,7 +15,6 @@ languages:
     enabled: false
   python:
     enabled: true
-    package: myapp
 layers:
   - domain
   - application

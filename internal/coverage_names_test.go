@@ -22,7 +22,7 @@ import (
 // PartialFromUnresolvedSpecifiers keys on these two names alone to separate a
 // COMPLETED run with unresolved import specifiers from a run that did not
 // finish, so a rename in ts.go or py.go would make both --base origin
-// classification and `config compare` inert on TypeScript and Python — silently,
+// classification and `config compare` inert on TypeScript — silently,
 // because every other status keeps working. Sourcing them from the adapters
 // turns that rename into a test failure. The decision package itself must not
 // import an adapter; a test file may (the ring rule and TestArchImports both
@@ -80,7 +80,7 @@ func TestPartialFromUnresolvedSpecifiers_AdapterCoverageNames(t *testing.T) {
 		want bool
 	}{
 		{"dependency-cruiser completes with unresolved specifiers", toolDepCruiserName, true},
-		{"grimp completes with unresolved specifiers", toolGrimpName, true},
+		{"grimp partial means missing source evidence", toolGrimpName, false},
 		{"go/packages counts packages it could not load", toolGoPackagesName, false},
 	}
 	for _, tc := range tests {

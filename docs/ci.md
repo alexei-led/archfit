@@ -7,7 +7,7 @@ error. Treat exit `3` as a failure.
 ## Go coverage workflow
 
 [The complete GitHub Actions example](../examples/ci-go.yaml) covers one Go
-module. It installs Archfit v3.1.0, runs the repository's Go tests with
+module. It installs Archfit v3.1.1, runs the repository's Go tests with
 coverage, writes a freshness sidecar, then runs the gate. It does not run
 repository tests through Archfit.
 

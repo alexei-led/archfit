@@ -27,7 +27,7 @@ jobs:
           enable-cache: false
       - name: Install Archfit
         run: |
-          go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.1.0
+          go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.1.1
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Test and write coverage
         run: go test -coverpkg=./... -coverprofile=coverage.out ./...

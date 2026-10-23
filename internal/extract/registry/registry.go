@@ -139,7 +139,7 @@ var languages = []Descriptor{
 		},
 		QueryEdge:   py.QueryEdge,
 		PrimaryTool: ToolGrimp,
-		InstallHint: "uv tool install grimp / pip install grimp",
+		InstallHint: "install uv (selects Python 3.14 + grimp==3.17), or put a separate Python 3.14+ environment with grimp==3.17 on PATH",
 		DoctorTools: []Tool{
 			{"python3", "python3", "https://www.python.org/downloads"},
 			{SCIPPython, SCIPPython, "npm install -g @sourcegraph/scip-python"},

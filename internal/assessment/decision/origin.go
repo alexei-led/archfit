@@ -21,7 +21,7 @@
 //     evidence yields "unknown", never a false "introduced" or "resolved".
 //   - SYMMETRIC degradations still pair, because neither side could have
 //     produced a finding the other hid: a "partial" from unresolved import
-//     specifiers (the normal dependency-cruiser/grimp state), a "partial" whose
+//     specifiers (the normal dependency-cruiser state), a "partial" whose
 //     inputs are all present with only edge precision degraded (go/packages when
 //     a package does not type-check), and an analyzer unavailable on both sides.
 //     All stay comparable and all always name themselves in origin_reasons —
@@ -75,7 +75,7 @@ const (
 	evidenceDisabled
 	// evidencePartialUnresolved — the analyzer ran over the whole tree and left
 	// N import specifiers unresolved. That is the STEADY state for
-	// dependency-cruiser and grimp (one unresolvable specifier anywhere sets it),
+	// dependency-cruiser (one unresolvable specifier anywhere sets it),
 	// not a completion failure, so it must not read as "the analyzer did not
 	// run". It pairs only with itself: both sides ran, both are equally
 	// incomplete, and the degradation is disclosed in origin_reasons with
@@ -543,9 +543,9 @@ const (
 // safety argument (neither side ran what the other could hide behind) and all
 // disclosed in origin_reasons, never silently:
 //
-//   - Symmetric partial-with-unresolved-specifiers. For dependency-cruiser and
-//     grimp that status is the normal steady state; treating it as unusable made
-//     the whole origin delta inert on every TypeScript and Python repo. The
+//   - Symmetric partial-with-unresolved-specifiers. For dependency-cruiser
+//     that status is the normal steady state; treating it as unusable made
+//     the whole origin delta inert on every TypeScript repo. The
 //     residual risk — a base counterpart hidden behind an unresolved specifier —
 //     is bounded only by the magnitudes the reason carries.
 //   - Symmetric partial-with-complete-inputs. go/packages reports partial when

@@ -17,6 +17,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/extract/loc"
 	"github.com/alexei-led/archfit/v3/internal/extract/registry"
 	"github.com/alexei-led/archfit/v3/internal/factcache"
+	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/policy"
@@ -96,6 +97,7 @@ func ruleScopeObservations(ctx context.Context, runner toolrun.Runner, store *fa
 // rule's scope, not merely the dependency rules'.
 func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[string]struct{}, cov CoverageOptions, goMembers goMemberSplit) map[string]struct{} {
 	var roots []graph.CrateRoot
+	pythonModules := pythonScannedModules(f, outOfScope)
 	if f.Graph != nil {
 		roots = f.Graph.CrateRoots()
 	}
@@ -114,7 +116,9 @@ func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[strin
 		}
 		nonMember := language == graph.LangRust && len(roots) > 0 && selector == ""
 		filteredGo := language == graph.LangGo && goMembers.removes(file)
-		if !absent[language] && !nonMember && !filteredGo {
+		_, pythonScanned := pythonModules[selector]
+		unscannedPython := language == graph.LangPython && filepath.Ext(file) == ".py" && pythonModules != nil && !pythonScanned
+		if !absent[language] && !nonMember && !filteredGo && !unscannedPython {
 			return
 		}
 		if out == nil {
@@ -129,6 +133,41 @@ func unanalysedFiles(root string, f evidencecontract.Facts, outOfScope map[strin
 		consider(file)
 	}
 	return out
+}
+
+// A module identity proves a source body only when its file spelling is unique.
+// Two files such as app.py and app/__init__.py cannot share that proof.
+func pythonScannedModules(f evidencecontract.Facts, outOfScope map[string]struct{}) map[string]struct{} {
+	if f.Graph == nil || !slices.ContainsFunc(f.Coverage, func(row modevidence.Coverage) bool {
+		return row.Tool == registry.ToolGrimp && row.Status == modevidence.StatusOK
+	}) {
+		return nil
+	}
+	modules := make(map[string]struct{})
+	for _, node := range f.Graph.Nodes() {
+		if node.Kind == graph.NodeKindModule && node.Language == graph.LangPython {
+			modules[node.Path] = struct{}{}
+		}
+	}
+	byModule := make(map[string]string)
+	remember := func(file string) {
+		if _, excluded := outOfScope[file]; excluded || filepath.Ext(file) != ".py" {
+			return
+		}
+		_, selector, _ := (policy.ModuleMap{}).RuleSelectorForFile(file)
+		if previous, seen := byModule[selector]; seen && previous != file {
+			delete(modules, selector)
+		} else {
+			byModule[selector] = file
+		}
+	}
+	for file := range f.FileLOC {
+		remember(file)
+	}
+	for file := range f.FileClassIndex {
+		remember(file)
+	}
+	return modules
 }
 
 // goMemberSplit is the languages.go.modules filter over the discovered Go

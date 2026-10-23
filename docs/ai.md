@@ -137,6 +137,9 @@ Never put a key in `base_url` or config values.
 Configure endpoint overrides through `ai.base_url`, not SDK base-URL environment variables.
 
 Archfit loads `.env` from cwd and explicit root/config directories without replacing existing environment values.
+Only `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `DEEPSEEK_API_KEY` are loaded.
+Export custom `api_key_env` credentials in the process environment.
+Target `.env` files cannot configure analyzers, executables, package indexes, toolchains, or provider endpoints.
 Keep `.env` and `.archfit-cache/` untracked.
 Cached responses can include repository text.
 `archfit doctor` reports credential presence, never credential values.

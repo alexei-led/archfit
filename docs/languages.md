@@ -10,7 +10,7 @@ Language adapters run when project markers and required tools are present. Set `
 | --- | --- | --- | --- | --- |
 | Go | `go.mod` or a supported `go.work` workspace | `go` | File-to-package imports | Load errors produce partial evidence. Synthetic error packages are skipped. |
 | TypeScript and JavaScript | Root `package.json` | `npx` or `bunx`, plus `dependency-cruiser` | File-to-file imports | Without the root marker, the adapter is absent. Tool errors produce partial evidence. |
-| Python | `pyproject.toml`, `setup.py`, or `languages.python.package` | `uv`, or Python 3.12+ with `grimp` installed | Dotted module imports | Without a package marker, the adapter is absent. Import scan errors produce partial evidence. |
+| Python | `pyproject.toml`, `setup.py`, or `languages.python.package` | `uv`, or Python 3.14+ with `grimp==3.17` installed | Dotted module imports | Without a package marker, the adapter is absent. Source or graph extraction gaps produce partial evidence. |
 | Rust | Root `Cargo.toml`, or configured `languages.rust.manifest` | `cargo` | Crate dependencies | Cargo errors produce partial evidence. A one-crate graph has no internal crate edges. |
 
 Optional tools add syntax evidence, clone evidence, or more precise coupling evidence. Their absence does not stop the analysis. See [metrics](metrics.md) for metric meaning and limits.
@@ -33,11 +33,23 @@ The adapter skips Node.js core modules and `node_modules` directories at any dep
 
 ### Python
 
-Archfit detects `uv` first and runs `grimp` in a temporary environment. Use Python 3.11 or later with `uv`. Without `uv`, archfit uses Python 3.12 or later and expects `grimp` to be installed.
+Archfit detects `uv` first and selects Python 3.14 with `grimp==3.17` in an isolated environment. Project uv configuration and interpreter requests do not override this selection. Without `uv`, put a Python 3.14+ virtual environment containing `grimp==3.17` on `PATH`. Keep that tool environment separate from the target repository.
 
-Set `languages.python.package` when the package name differs from the repository directory name or when the project uses a `src/` layout. Module names and selectors use dotted names, such as `myapp.service`, rather than file paths.
+Leave `languages.python.package` unset for automatic discovery of flat or `src/` packages. Pin it only when that single package is the complete intended source. Selecting one of several discovered roots leaves the others unscanned. Module names and selectors use dotted names, such as `myapp.service`, rather than file paths.
 
-Use `uv` for Python analysis. It resolves `grimp` in the temporary environment without a separate global install.
+Project dependencies do not need to be installed. The analyzer runs outside the target directory with an isolated environment; target virtual environments, `PYTHONPATH`, and user-site packages are ignored. Repository Grimp caches are neither read nor written. The producer binds selected packages to repository source without executing package initializers. Namespace roots, separate service roots, source symlinks, and package names that collide with loaded Python modules leave evidence incomplete.
+
+Third-party imports become low-confidence external literals. Explicit first-party targets absent from the tree remain low-confidence dotted dependencies. These record source statements, without verifying target files, symbols, or runtime availability. Dependency bans still match them, including imports inside `try/except`. Missing generated version modules need no special exception. `from package import name` can name an attribute, so an absent `name` is not invented as a submodule.
+
+Unreadable, unparseable, or unscanned source leaves evidence incomplete and required rules unevaluated. A known first-party package omitted by package selection is unscanned input even when selected files do not import it. Automatic discovery can select all roots. Literal targets do not count as scanned files. Standard-library imports and existing `TYPE_CHECKING` guard handling remain outside the inventory.
+
+Loose Python files outside the scanned packages do not become verified source. Rules whose selectors include them remain unevaluated, including broad selectors that also match scanned files. Rules limited to scanned packages can still evaluate. A whole-project cycle rule therefore needs every in-scope Python file covered by the package scan.
+
+If multiple files map to the same dotted module, such as `app.py` and `app/__init__.py`, their bodies are ambiguous and do not count as verified source. Excluded files do not contribute to that ambiguity. A rule whose target vocabulary cannot contain Python nodes does not wait for omitted Python source.
+
+The v3.1.1 image supplies Python 3.14. CI checks the src-layout `testdata/python314` fixture; releases also check each immutable platform image before publishing image version tags. Images through v3.1.0 contain Python 3.11; caller-side Python setup cannot change the container interpreter. See [migration](migration.md#python-producer-semantics) for baseline compatibility.
+
+Use `uv` to resolve the analyzer without a global install:
 
 ```sh
 uv --version
@@ -71,6 +83,8 @@ SCIP indexers are language-specific. Install the matching indexer for the langua
 The Docker image includes `ast-grep` and `dependency-cruiser`. It does not include Rust tools, SCIP indexers, or `jscpd`. See the repository [Dockerfile](../Dockerfile) for the current image contents.
 
 Use `archfit doctor` to inspect tool discovery. A missing optional tool leaves its dependent evidence unavailable. A missing required language tool makes that language's evidence incomplete or causes the required-tool check to fail.
+
+Tool discovery does not execute the pinned Python analyzer environment. When uv's Python downloads are disabled, provide Python 3.14 separately and read the analysis coverage to confirm that the producer ran.
 
 ## Supplied test coverage
 

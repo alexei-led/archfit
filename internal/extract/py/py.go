@@ -23,17 +23,20 @@ import (
 )
 
 const (
-	toolGrimp                = "grimp"
-	langPython               = "python"
-	sourceGrimp              = "grimp"
-	statusOK                 = "ok"
-	statusPartial            = "partial"
-	statusAbsent             = "absent"
-	runTimeout               = 5 * time.Minute
-	unresolvedRootSummaryMax = 5
+	toolGrimp           = "grimp"
+	grimpRequirement    = "grimp==3.17"
+	pythonVersion       = "3.14"
+	langPython          = "python"
+	sourceGrimp         = "grimp"
+	statusOK            = "ok"
+	statusPartial       = "partial"
+	statusAbsent        = "absent"
+	runTimeout          = 5 * time.Minute
+	sourceGapSummaryMax = 3
+	sourceGapDetailMax  = 100
 )
 
-// Extractor is the Python import extractor using grimp via uv or python3.12.
+// Extractor is the Python import extractor using grimp via uv or python3.14.
 // It satisfies the engine.Extractor interface structurally.
 type Extractor struct {
 	runner toolrun.Runner
@@ -55,7 +58,7 @@ func (e *Extractor) CoverageTool() string {
 	return toolGrimp
 }
 
-// Extract detects uv or python3.12+grimp, writes the embedded helper to a temp
+// Extract detects uv or python3.14+grimp, writes the embedded helper to a temp
 // file, runs it against the project root, parses the JSON output, and returns
 // graph.Facts + evidence.Coverage.
 //
@@ -76,11 +79,11 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		return graph.Facts{}, absentCoverage(), nil
 	}
 
-	// Detect uv (preferred) or python3.12.
+	// Detect uv (preferred) or python3.14.
 	tool, version, found := e.detectTool(ctx)
 	if !found {
 		if e.cfg.Mode == evidenceports.ModeOn {
-			return graph.Facts{}, evidence.Coverage{}, errors.New("extract/py: uv or Python 3.12+ not found; install uv (https://docs.astral.sh/uv/) or Python 3.12+")
+			return graph.Facts{}, evidence.Coverage{}, errors.New("extract/py: uv or Python 3.14+ not found; install uv (https://docs.astral.sh/uv/) or Python 3.14+")
 		}
 		return graph.Facts{}, absentCoverage(), nil
 	}
@@ -108,9 +111,8 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 
 	// Build the command.
 	// grimp_helper --packages pkg1 pkg2 … accepts multiple top-level package names
-	// and calls grimp.build_graph(*packages). All packages must be importable from
-	// a single Python environment (see discoverPackages doc for the shared-venv
-	// constraint). --first-party-packages may be broader than --packages when config
+	// and calls grimp.build_graph(*packages). Source roots must be visible to one
+	// invocation (see grimpPackages). --first-party-packages may be broader when config
 	// pins analysis to one package (for example tests) while other discovered/configured
 	// package roots remain first-party and must not become external-system hints.
 	firstPartyPkgs := e.firstPartyPackages(s.Root, pkgs)
@@ -121,19 +123,19 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	}
 	var cmd toolrun.ToolCmd
 	if tool == "uv" {
-		// --with grimp injects grimp into the project's venv for this run without
-		// modifying pyproject.toml. --directory uses the project's environment so
-		// the project's own packages (src-layout etc.) are importable.
+		// No project setup or inherited Python import path may execute target code.
+		// The helper exposes only checked source roots after loading the analyzer.
 		cmd = toolrun.ToolCmd{
 			Name:    "uv",
-			Args:    append([]string{"run", "--with", "grimp", "--directory", s.Root, tmpName}, helperArgs...),
-			WorkDir: s.Root,
+			Args:    append([]string{"run", "--no-config", "--no-project", "--isolated", "--python", pythonVersion, "--with", grimpRequirement, "--directory", filepath.Dir(tmpName), "python", "-I", tmpName, "--root", s.Root}, helperArgs...),
+			WorkDir: filepath.Dir(tmpName),
+			Env:     []string{"VIRTUAL_ENV="},
 			Timeout: runTimeout,
 		}
 	} else {
 		cmd = toolrun.ToolCmd{
 			Name:    tool,
-			Args:    append([]string{tmpName, "--root", s.Root}, helperArgs...),
+			Args:    append([]string{"-I", tmpName, "--root", s.Root}, helperArgs...),
 			WorkDir: s.Root,
 			Timeout: runTimeout,
 		}
@@ -206,15 +208,12 @@ func Applicable(root, pkg string) bool {
 // lives at src/prefect/) has NO package dir directly under root — a top-level
 // __init__.py dir there is typically a stray (tests/, scripts/, benches/), not the
 // source. Analysing the stray package instead of the real one silently yields a
-// near-empty import graph. The grimp helper adds root/src to sys.path
-// (see grimp_helper._ensure_importable), so these names resolve at import time.
+// near-empty import graph. The helper binds source through static package specs
+// (see grimp_helper._ensure_importable), without adding it to sys.path.
 //
-// SHARED-VENV CONSTRAINT: all discovered packages are passed to a single
-// grimp.build_graph call and must therefore be co-importable from one Python
-// environment. In a monorepo where each service has its own virtualenv
-// (e.g. ~42 isolated services), cross-service coupling cannot be measured
-// in one run. This is a grimp limitation; archfit does not promise
-// cross-service Python analysis in that setup.
+// All discovered package source roots must be visible to one grimp invocation.
+// The helper supports root/package and root/src/package layouts, not separate
+// service roots. Runtime dependency installation is not needed.
 // grimpPackages is the package list grimp builds: the configured package, else
 // the discovered top-level packages, else the root directory's name. Only
 // modules of these packages become importers.
@@ -315,16 +314,16 @@ func packagesUnder(dir string) []string {
 	return pkgs
 }
 
-// detectTool tries uv then Python 3.12+. Returns (name, version, true) on success.
+// detectTool tries uv then Python 3.14+. Returns (name, version, true) on success.
 func (e *Extractor) detectTool(ctx context.Context) (string, string, bool) {
 	if info, ok := e.runner.Detect(ctx, "uv"); ok {
 		ver := e.toolVersion(ctx, info.Name, []string{"--version"})
 		return "uv", ver, true
 	}
-	for _, name := range []string{"python3.14", "python3.13", "python3.12", "python3", "python"} {
+	for _, name := range []string{"python3.14", "python3.15", "python3", "python"} {
 		if info, ok := e.runner.Detect(ctx, name); ok {
 			ver := e.toolVersion(ctx, info.Name, []string{"--version"})
-			if python3Plus(ver, 12) {
+			if python3Plus(ver, 14) {
 				return info.Name, ver, true
 			}
 		}
@@ -360,11 +359,20 @@ func (e *Extractor) toolVersion(ctx context.Context, tool string, args []string)
 // ---------------------------------------------------------------------------
 
 type helperOutput struct {
-	ProducerVersion   string       `json:"producer_version"`
-	Edges             []helperEdge `json:"edges"`
-	Unresolved        int          `json:"unresolved"`
-	UnresolvedImports []helperEdge `json:"unresolved_imports,omitempty"`
-	Error             string       `json:"error,omitempty"`
+	ProducerVersion   string         `json:"producer_version"`
+	Modules           []string       `json:"modules"`
+	Sources           []helperSource `json:"sources"`
+	Edges             []helperEdge   `json:"edges"`
+	Unresolved        int            `json:"unresolved"`
+	UnresolvedImports []helperEdge   `json:"unresolved_imports,omitempty"`
+	ExternalImports   []helperEdge   `json:"external_imports,omitempty"`
+	Error             string         `json:"error,omitempty"`
+}
+
+type helperSource struct {
+	File   string `json:"file"`
+	Module string `json:"module"`
+	Parsed bool   `json:"parsed"`
 }
 
 type helperEdge struct {
@@ -372,6 +380,9 @@ type helperEdge struct {
 	Imported     string `json:"imported"`
 	Line         int    `json:"line"`
 	LineContents string `json:"line_contents"`
+	Literal      bool   `json:"literal,omitempty"`
+	File         string `json:"file,omitempty"`
+	Reason       string `json:"reason,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -387,6 +398,33 @@ func (e *Extractor) parseAndNormalize(data []byte, root string) (graph.Facts, ev
 	if h.Error != "" {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("grimp: %s", h.Error)
 	}
+	// Only a located, explicitly excluded file proves a gap out of scope.
+	// Unlocated walk/detail failures remain missing evidence.
+	kept := h.UnresolvedImports[:0]
+	for _, gap := range h.UnresolvedImports {
+		if h.Unresolved > 0 && e.excludedSource(gap.File) {
+			h.Unresolved--
+			continue
+		}
+		kept = append(kept, gap)
+	}
+	h.UnresolvedImports = kept
+	filesSeen, filesApplicable := 0, 0
+	excludedModules, includedModules := map[string]bool{}, map[string]bool{}
+	for _, source := range h.Sources {
+		if e.excludedSource(source.File) {
+			excludedModules[source.Module] = true
+			continue
+		}
+		includedModules[source.Module] = true
+		filesApplicable++
+		if source.Parsed {
+			filesSeen++
+		}
+	}
+	for module := range includedModules {
+		delete(excludedModules, module)
+	}
 
 	var nodes []graph.Node
 	var edges []graph.Edge
@@ -401,9 +439,19 @@ func (e *Extractor) parseAndNormalize(data []byte, root string) (graph.Facts, ev
 		}
 	}
 
+	for _, module := range h.Modules {
+		if !excludedModules[module] {
+			emitNode(module)
+		}
+	}
 	for _, he := range h.Edges {
+		if excludedModules[he.Importer] {
+			continue
+		}
 		emitNode(he.Importer)
-		emitNode(he.Imported)
+		if !he.Literal && !excludedModules[he.Imported] {
+			emitNode(he.Imported)
+		}
 
 		edgeKind := ImportEdgeKind(e.cfg.Internal, he.Imported)
 
@@ -416,7 +464,11 @@ func (e *Extractor) parseAndNormalize(data []byte, root string) (graph.Facts, ev
 		// Config public/internal globs still take precedence in classify.
 		// We never emit a "contract" hint — grimp resolves imports to the defining
 		// submodule, so a public-API signal cannot be established here.
-		privateImport := isPrivatePythonModule(he.Imported) || hasPrivateSymbolImport(he.LineContents)
+		privateImport := !he.Literal && (isPrivatePythonModule(he.Imported) || hasPrivateSymbolImport(he.LineContents))
+		confidence := "high"
+		if he.Literal {
+			confidence = "low"
+		}
 		strengthHint := ""
 		if privateImport {
 			strengthHint = string(coupling.StrengthIntrusive)
@@ -432,13 +484,16 @@ func (e *Extractor) parseAndNormalize(data []byte, root string) (graph.Facts, ev
 			To:               "module:" + he.Imported,
 			Kind:             edgeKind,
 			Language:         langPython,
-			Confidence:       "high",
+			Confidence:       confidence,
 			StrengthHint:     strengthHint,
 			ConnascenceHints: connascenceHints,
 			Locations:        pythonEdgeLocations(locationFiles, he),
 		})
 	}
-	for _, he := range h.UnresolvedImports {
+	for _, he := range h.ExternalImports {
+		if excludedModules[he.Importer] {
+			continue
+		}
 		emitNode(he.Importer)
 		edges = append(edges, graph.Edge{
 			From:       "module:" + he.Importer,
@@ -450,7 +505,6 @@ func (e *Extractor) parseAndNormalize(data []byte, root string) (graph.Facts, ev
 		})
 	}
 
-	filesSeen := len(seenNodes)
 	covStatus := statusOK
 	covReason := ""
 	if h.Unresolved > 0 {
@@ -458,13 +512,14 @@ func (e *Extractor) parseAndNormalize(data []byte, root string) (graph.Facts, ev
 		covReason = grimpUnresolvedReason(h.Unresolved, h.UnresolvedImports)
 	}
 	cov := evidence.Coverage{
-		Tool:            toolGrimp,
-		Version:         h.ProducerVersion,
-		FilesSeen:       filesSeen,
-		FilesApplicable: filesSeen,
-		Unresolved:      h.Unresolved,
-		Status:          covStatus,
-		Reason:          covReason,
+		Tool:                    toolGrimp,
+		Version:                 h.ProducerVersion,
+		FilesSeen:               filesSeen,
+		FilesApplicable:         filesApplicable,
+		Unresolved:              h.Unresolved,
+		UnresolvedInputsMissing: h.Unresolved,
+		Status:                  covStatus,
+		Reason:                  covReason,
 	}
 	facts := graph.Facts{
 		Nodes:      nodes,
@@ -475,49 +530,41 @@ func (e *Extractor) parseAndNormalize(data []byte, root string) (graph.Facts, ev
 	return facts, cov, nil
 }
 
-func grimpUnresolvedReason(unresolved int, imports []helperEdge) string {
-	summary := unresolvedRootSummary(imports)
-	if summary == "" {
-		return fmt.Sprintf("%d imports unresolved — check languages.python.package and src layout", unresolved)
-	}
-	return fmt.Sprintf("%d imports unresolved (top: %s) — check languages.python.package and src layout", unresolved, summary)
+func (e *Extractor) excludedSource(file string) bool {
+	return file != "" && filepath.IsLocal(filepath.FromSlash(file)) && filepath.Ext(file) == ".py" && pythonLocationExcluded(file, e.cfg.Exclusions)
 }
 
-func unresolvedRootSummary(imports []helperEdge) string {
-	counts := make(map[string]int)
-	for _, imp := range imports {
-		root := unresolvedImportRoot(imp.Imported)
-		if root == "" {
-			continue
+func grimpUnresolvedReason(unresolved int, gaps []helperEdge) string {
+	details := make(map[string]struct{})
+	for _, gap := range gaps {
+		detail := gap.File
+		if detail == "" {
+			detail = gap.Imported
 		}
-		counts[root]++
-	}
-	if len(counts) == 0 {
-		return ""
-	}
-	roots := make([]string, 0, len(counts))
-	for root := range counts {
-		roots = append(roots, root)
-	}
-	sort.Slice(roots, func(i, j int) bool {
-		if counts[roots[i]] != counts[roots[j]] {
-			return counts[roots[i]] > counts[roots[j]]
+		if gap.Reason != "" {
+			detail += ": " + gap.Reason
 		}
-		return roots[i] < roots[j]
-	})
-	if len(roots) > unresolvedRootSummaryMax {
-		roots = roots[:unresolvedRootSummaryMax]
+		if detail != "" {
+			runes := []rune(detail)
+			if len(runes) > sourceGapDetailMax {
+				detail = string(runes[:sourceGapDetailMax]) + "…"
+			}
+			details[detail] = struct{}{}
+		}
 	}
-	parts := make([]string, 0, len(roots))
-	for _, root := range roots {
-		parts = append(parts, fmt.Sprintf("%s %d", root, counts[root]))
+	parts := make([]string, 0, len(details))
+	for detail := range details {
+		parts = append(parts, detail)
 	}
-	return strings.Join(parts, ", ")
-}
-
-func unresolvedImportRoot(imported string) string {
-	root, _, _ := strings.Cut(imported, ".")
-	return root
+	sort.Strings(parts)
+	if len(parts) > sourceGapSummaryMax {
+		parts = append(parts[:sourceGapSummaryMax], "…")
+	}
+	reason := fmt.Sprintf("%d import/source gaps", unresolved)
+	if len(parts) > 0 {
+		reason += ": " + strings.Join(parts, "; ")
+	}
+	return reason + " — check selected source roots, readability and interpreter syntax support"
 }
 
 // isPrivatePythonModule reports whether a dotted module name targets a PEP 8

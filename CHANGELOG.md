@@ -1,5 +1,36 @@
 # Release notes
 
+## v3.1.1
+
+### Summary
+
+Restore Python architecture-rule evidence without installing target dependencies.
+
+### Changes
+
+- Parse Python 3.14 with pinned Grimp 3.17. Record external and missing internal
+  import literals; forbidden imports still block inside optional-import guards.
+- Isolate the analyzer from target virtualenvs, build hooks, import paths, and
+  caches. Keep unreadable, omitted, or ambiguous source unevaluated. Align policy
+  queries and mixed-language rule scope with those limits.
+- Preserve multiple Python package roots during configuration discovery.
+- Load only built-in provider credentials from `.env`. Update documentation,
+  file classification guidance, and documentation CI checks.
+
+### Upgrade
+
+1. Provide Python 3.14 when uv downloads are disabled. The image includes it.
+2. After upgrading, have an architecture owner review `baseline --reanchor` for
+   older `grimp.v2` profiles, including absent-Python profiles. Comparisons remain
+   unavailable until reanchored; missing evidence is never cleared by reanchoring.
+3. Export custom `api_key_env` credentials in the process environment. `.env`
+   loads only `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `DEEPSEEK_API_KEY`.
+
+Unsupported source layouts remain incomplete. App/Action image pins require
+separate adoption; publishing this release does not update consumer checks.
+
+[Compare v3.1.0...v3.1.1](https://github.com/alexei-led/archfit/compare/v3.1.0...v3.1.1)
+
 ## v3.1.0
 
 ### Summary

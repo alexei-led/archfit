@@ -1172,57 +1172,20 @@ func TestTSUnresolvedWarning(t *testing.T) {
 
 func TestPyUnresolvedWarning(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
+	for _, tc := range []struct {
 		name string
-		cov  []evidence.Coverage
-		want bool
+		row  evidence.Coverage
+		want string
 	}{
-		{
-			name: "grimp unresolved warns",
-			cov: []evidence.Coverage{
-				{Tool: toolGrimp, Status: evidence.StatusPartial, Unresolved: 228},
-			},
-			want: true,
-		},
-		{
-			name: "grimp unresolved includes top roots from reason",
-			cov: []evidence.Coverage{
-				{Tool: toolGrimp, Status: evidence.StatusPartial, Unresolved: 228, Reason: "228 imports unresolved (top: prefect_aws 100, httpx 4) — check languages.python.package and src layout"},
-			},
-			want: true,
-		},
-		{
-			name: "zero unresolved stays silent",
-			cov: []evidence.Coverage{
-				{Tool: toolGrimp, Status: evidence.StatusOK},
-			},
-			want: false,
-		},
-		{
-			name: "other tool unresolved is not this warning's concern",
-			cov: []evidence.Coverage{
-				{Tool: toolGoPackages, Status: evidence.StatusPartial, Unresolved: 2},
-			},
-			want: false,
-		},
-	}
-	for _, tc := range cases {
+		{"located source gap", evidence.Coverage{Tool: toolGrimp, Status: evidence.StatusPartial, Unresolved: 1, Reason: "1 import/source gaps: src/app/a.py: SyntaxError under Python 3.13"}, "grimp: 1 import/source gaps: src/app/a.py: SyntaxError under Python 3.13"},
+		{"helper failure with no count", evidence.Coverage{Tool: toolGrimp, Status: evidence.StatusPartial, Reason: "cannot bind repository source"}, "grimp: cannot bind repository source"},
+		{"unexplained partial", evidence.Coverage{Tool: toolGrimp, Status: evidence.StatusPartial}, "grimp: incomplete Python import evidence"},
+		{"completed producer", evidence.Coverage{Tool: toolGrimp, Status: evidence.StatusOK}, ""},
+		{"other producer", evidence.Coverage{Tool: toolGoPackages, Status: evidence.StatusPartial, Unresolved: 2}, ""},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := acquisition.PyUnresolvedWarning(tc.cov)
-			if (got != "") != tc.want {
-				t.Errorf("acquisition.PyUnresolvedWarning(%+v) = %q, want non-empty=%v", tc.cov, got, tc.want)
-			}
-			if tc.want {
-				if !strings.Contains(got, "228 imports unresolved") {
-					t.Errorf("acquisition.PyUnresolvedWarning(%+v) = %q, want unresolved count", tc.cov, got)
-				}
-				if strings.Contains(tc.name, "top roots") && !strings.Contains(got, "top: prefect_aws 100, httpx 4") {
-					t.Errorf("acquisition.PyUnresolvedWarning(%+v) = %q, want top roots", tc.cov, got)
-				}
-				if !strings.Contains(got, "check languages.python.package and src layout") {
-					t.Errorf("acquisition.PyUnresolvedWarning(%+v) = %q, want Python hint", tc.cov, got)
-				}
+			if got := acquisition.PyUnresolvedWarning([]evidence.Coverage{tc.row}); got != tc.want {
+				t.Fatalf("warning=%q want=%q", got, tc.want)
 			}
 		})
 	}

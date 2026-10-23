@@ -2,6 +2,8 @@ package py
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
@@ -11,14 +13,16 @@ import (
 // QueryEdge builds the facts `archfit policy can-import` judges: one import
 // of target by the Python file from, spelled exactly as the extractor spells a
 // grimp edge — dotted module node to dotted module node, the same edge kind,
-// located at the importing file unless an exclusion glob matches it — so the
+// located at the importing file; excluded importers wrap ErrNotExtracted — so the
 // rule pass keys its findings as it does on the extracted edge. target is a
 // dotted module or a .py file. The dotted form strips a src/ prefix, as the
 // module-key convention does; a package under another custom root is spelled
-// differently by grimp. An importer outside the packages grimp builds wraps
-// ErrNotExtracted; a target outside them (installed, stdlib, or uninstalled)
-// wraps ErrNotDecidable. It runs no tool.
+// differently by grimp. A non-excluded importer or target outside the packages
+// grimp builds wraps ErrNotDecidable. It runs no tool.
 func QueryEdge(root string, cfg evidenceports.ExtractConfig, from, target string) (graph.Facts, error) {
+	if pythonLocationExcluded(from, cfg.Exclusions) {
+		return graph.Facts{}, fmt.Errorf("python: %s is excluded: %w", from, evidenceports.ErrNotExtracted)
+	}
 	importer := moduleKey(from)
 	if importer == "" {
 		return graph.Facts{}, fmt.Errorf("python: %q is not a .py file", from)
@@ -33,17 +37,22 @@ func QueryEdge(root string, cfg evidenceports.ExtractConfig, from, target string
 	pkgs := grimpPackages(root, cfg.PyPackage)
 	if !builtBy(pkgs, importer) {
 		return graph.Facts{}, fmt.Errorf("python: %s is outside the packages grimp builds (%s): %w",
-			importer, strings.Join(pkgs, ", "), evidenceports.ErrNotExtracted)
+			importer, strings.Join(pkgs, ", "), evidenceports.ErrNotDecidable)
 	}
 	if !builtBy(pkgs, imported) {
-		return graph.Facts{}, fmt.Errorf("python: %s is outside the packages grimp builds (%s); grimp drops an installed or stdlib import and spells an uninstalled one external: %w",
+		return graph.Facts{}, fmt.Errorf("python: %s is outside the packages grimp builds (%s); external import literals do not establish module or symbol resolution: %w",
 			imported, strings.Join(pkgs, ", "), evidenceports.ErrNotDecidable)
 	}
-	// The extractor locates an import at the importing file unless an
-	// exclusion glob matches it (pythonSourceLocations).
-	var locations []graph.Location
-	if !pythonLocationExcluded(from, cfg.Exclusions) {
-		locations = []graph.Location{{File: from}}
+	packageName, _, _ := strings.Cut(importer, ".")
+	prefix := packageName + "/"
+	if info, err := os.Stat(filepath.Join(root, "src", packageName)); err == nil && info.IsDir() {
+		prefix = "src/" + prefix
+	}
+	if !strings.HasPrefix(from, prefix) {
+		return graph.Facts{}, fmt.Errorf("python: %s is outside selected package source: %w", from, evidenceports.ErrNotDecidable)
+	}
+	if _, ambiguous := pythonModuleSourceFile(root, importer, cfg.Exclusions); ambiguous {
+		return graph.Facts{}, fmt.Errorf("python: %s has ambiguous source bodies: %w", importer, evidenceports.ErrNotDecidable)
 	}
 	return graph.Facts{
 		Language: langPython,
@@ -57,7 +66,7 @@ func QueryEdge(root string, cfg evidenceports.ExtractConfig, from, target string
 			Kind:       ImportEdgeKind(cfg.Internal, imported),
 			Language:   langPython,
 			Confidence: "high",
-			Locations:  locations,
+			Locations:  []graph.Location{{File: from}},
 		}},
 	}, nil
 }

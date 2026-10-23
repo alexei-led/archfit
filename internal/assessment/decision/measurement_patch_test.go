@@ -14,7 +14,7 @@ func TestCorrectedMeasurementRejectsPrePatchSemantics(t *testing.T) {
 	}{
 		{"deploy-unit", "deploy-unit.v1", ""},
 		{"git-history", "git-history.recent500-full-fallback.v1", "git version 2.55.0"},
-		{"grimp", "grimp.v1", "grimp 3.14; python 3.13.0"},
+		{"grimp", "grimp.v2", "grimp 3.14; python 3.13.0"},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			semantics, _ := evidence.MeasurementContract(tc.tool)

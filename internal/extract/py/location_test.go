@@ -40,7 +40,7 @@ func TestExtractResolvesPhysicalLocations(t *testing.T) {
 			runner := &toolrun.RunnerMock{
 				DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{Name: "uv"}, true },
 				RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
-					return toolrun.Output{Stdout: []byte(`{"edges":[{"importer":"app.logic","imported":"app.domain","line":7}],"unresolved":1,"unresolved_imports":[{"importer":"app.logic","imported":"external","line":9}]}`)}, nil
+					return toolrun.Output{Stdout: []byte(`{"edges":[{"importer":"app.logic","imported":"app.domain","line":7}],"unresolved":0,"external_imports":[{"importer":"app.logic","imported":"external","line":9}]}`)}, nil
 				},
 			}
 			facts, _, err := py.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeOn, PyPackage: "app"}).Extract(context.Background(), scope.Scope{Root: root})

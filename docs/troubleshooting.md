@@ -9,7 +9,7 @@ Use `archfit doctor` when analysis misses tools or evidence. It reports tools th
 | A dimension shows `n/a` or partial coverage. | An analyzer is missing, timed out, or could not resolve source files. | Read the coverage details. Install the named tool or fix the source paths. |
 | No source files match module paths. | The root or configured globs do not match the repository. | Check `--root` and each module's `paths`. |
 | TypeScript imports remain unresolved. | Aliases or project dependencies are unavailable. | Check `tsconfig` paths and install project dependencies. |
-| Python imports remain unresolved. | The package path or active environment is incorrect. | Check `languages.python.package` and install the project dependencies. |
+| `grimp` reports import/source gaps. | Source could not be read or parsed, a first-party package was not scanned, or graph extraction failed. | Check package selection, source permissions, and syntax. Use Python 3.14; project dependency installation is unnecessary. |
 | `sg` exists but pattern analysis fails. | Another program named `sg` appears first on `PATH`. | Run `sg --version`. Install ast-grep if the command is not ast-grep. |
 
 See [Language support](languages.md#analyzer-tools) for tool requirements.

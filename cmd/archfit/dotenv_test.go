@@ -18,6 +18,22 @@ func TestDotEnv(t *testing.T) {
 	t.Run("load", testLoadDotEnv)
 	t.Run("empty_env_var_wins", testLoadDotEnvEmptyEnvVarWins)
 	t.Run("missing_file_is_noop", testLoadDotEnvMissingFileIsNoop)
+	t.Run("target_cannot_configure_analyzers", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), ".env")
+		for _, key := range []string{"UV_INDEX_URL", "UV_EXTRA_INDEX_URL", "PYTHONPATH", "LD_PRELOAD", "OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"} {
+			t.Setenv(key, "sentinel")
+			if err := os.Unsetenv(key); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(key+"=target-controlled\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			loadDotEnv(path)
+			if _, set := os.LookupEnv(key); set {
+				t.Errorf("target .env configured analyzer variable %s", key)
+			}
+		}
+	})
 }
 
 func testEnvSearchDirs(t *testing.T) {
@@ -51,63 +67,56 @@ func testEnvSearchDirs(t *testing.T) {
 }
 
 func testLoadDotEnv(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".env")
-	content := "# a comment\n\nexport ARCHFIT_TEST_A=plain\nARCHFIT_TEST_B=\"quoted value\"\nARCHFIT_TEST_C='single'\nARCHFIT_TEST_EQ=val=with=equals\nmalformed-no-equals\nARCHFIT_TEST_PRESET=from_file\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
+	cases := []struct{ name, key, content, want string }{
+		{"anthropic export", anthropicKeyEnv, "# comment\n\nexport ANTHROPIC_API_KEY=plain\n", "plain"},
+		{"deepseek export", deepSeekKeyEnv, "export DEEPSEEK_API_KEY=plain\n", "plain"},
+		{"double quotes", openAIKeyEnv, "OPENAI_API_KEY=\"quoted value\"\n", "quoted value"},
+		{"single quotes", openAIKeyEnv, "OPENAI_API_KEY='single'\n", "single"},
+		{"embedded equals", openAIKeyEnv, "OPENAI_API_KEY=val=with=equals\n", "val=with=equals"},
+		{"malformed lines", openAIKeyEnv, "malformed-no-equals\n=empty-key\nOPENAI_API_KEY=valid\n", "valid"},
 	}
-
-	// A real env var must win over the file value.
-	t.Setenv("ARCHFIT_TEST_PRESET", "from_env")
-	// The rest must be genuinely absent: t.Setenv registers restore-on-cleanup,
-	// then Unsetenv makes them truly unset so the test exercises the real
-	// "fill when missing" path (not the "" coincidence).
-	for _, k := range []string{"ARCHFIT_TEST_A", "ARCHFIT_TEST_B", "ARCHFIT_TEST_C", "ARCHFIT_TEST_EQ"} {
-		t.Setenv(k, "sentinel")
-		if err := os.Unsetenv(k); err != nil {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(tc.key, "sentinel")
+			if err := os.Unsetenv(tc.key); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), ".env")
+			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			loadDotEnv(path)
+			if got := os.Getenv(tc.key); got != tc.want {
+				t.Fatalf("value=%q want=%q", got, tc.want)
+			}
+		})
+	}
+	t.Run("real environment wins", func(t *testing.T) {
+		t.Setenv(openAIKeyEnv, "from_env")
+		path := filepath.Join(t.TempDir(), ".env")
+		if err := os.WriteFile(path, []byte("OPENAI_API_KEY=from_file\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-	}
-
-	loadDotEnv(path)
-
-	cases := map[string]string{
-		"ARCHFIT_TEST_A":      "plain",
-		"ARCHFIT_TEST_B":      "quoted value",
-		"ARCHFIT_TEST_C":      "single",
-		"ARCHFIT_TEST_EQ":     "val=with=equals", // value keeps every '=' after the first
-		"ARCHFIT_TEST_PRESET": "from_env",        // real env preserved
-	}
-	for k, want := range cases {
-		if got := os.Getenv(k); got != want {
-			t.Errorf("%s = %q, want %q", k, got, want)
+		loadDotEnv(path)
+		if got := os.Getenv(openAIKeyEnv); got != "from_env" {
+			t.Fatalf("real environment was overwritten: %q", got)
 		}
-	}
-
-	// A line with no '=' must be skipped entirely, not set as a bare key.
-	if got, ok := os.LookupEnv("malformed-no-equals"); ok {
-		t.Errorf("malformed line set env to %q, want unset", got)
-	}
+	})
 }
 
-// testLoadDotEnvEmptyEnvVarWins verifies the LookupEnv fix: a key explicitly
-// set to "" in the environment must be treated as "present" and never overwritten
-// by the file value. The old os.Getenv(key) != "" check incorrectly treated ""
-// as unset and would have clobbered it.
 func testLoadDotEnvEmptyEnvVarWins(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
-	if err := os.WriteFile(path, []byte("ARCHFIT_TEST_EMPTY=from_file\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("OPENAI_API_KEY=from_file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// Explicitly set to empty string — must win over the file value.
-	t.Setenv("ARCHFIT_TEST_EMPTY", "")
+	t.Setenv(openAIKeyEnv, "")
 
 	loadDotEnv(path)
 
-	if got, ok := os.LookupEnv("ARCHFIT_TEST_EMPTY"); !ok || got != "" {
-		t.Errorf("ARCHFIT_TEST_EMPTY = (%q, %v), want (\"\", true) — empty env var must not be overwritten", got, ok)
+	if got, ok := os.LookupEnv(openAIKeyEnv); !ok || got != "" {
+		t.Errorf("OPENAI_API_KEY = (%q, %v), want (\"\", true) — empty env var must not be overwritten", got, ok)
 	}
 }
 

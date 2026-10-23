@@ -73,8 +73,8 @@ func (q Query) Edge(_ context.Context, from, target string) (application.Queried
 
 // OutOfScope reports whether a root-relative file is outside the declared
 // analysis scope: an effective exclude: glob matches it, or its language is
-// switched off. Rule scope and metrics leave it out; dependency-cruiser and
-// grimp still extract its imports.
+// switched off. Rule scope and metrics leave it out; dependency-cruiser can
+// still extract its imports, while grimp drops excluded importers.
 func (q Query) OutOfScope(file string) bool {
 	return outOfDeclaredScope(file, q.Options.Exclusions, disabledLanguages(q.Options.Coverage))
 }

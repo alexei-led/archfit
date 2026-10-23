@@ -7,7 +7,7 @@ Version 3 changes the Go module path, baseline format, and report behavior. Keep
 Install the v3 module path:
 
 ```sh
-go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.1.0
+go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.1.1
 ```
 
 Update imports if your Go code imports archfit packages. The `internal/` packages are not a public API.
@@ -47,3 +47,13 @@ The baseline must be comparable before metric ratchets can evaluate against it. 
 If a tool consumes JSON, SARIF, or agent output, update it for the v3 contract. The state schema keeps the identifier `archfit.architecture-state.v1`, but some fields changed. See [Results](results.md#json-contracts).
 
 Update the archfit GitHub App or Action to a v3-compatible release. Use the release history for version-specific changes in [CHANGELOG.md](../CHANGELOG.md).
+
+## Python producer semantics
+
+The `grimp.v3` producer records static import literals independently of installed
+project dependencies. Every partial grimp result is non-comparable. Older
+`grimp.v2` baseline profiles, including profiles where grimp was absent, cannot
+be compared with this producer. An architecture owner must review a
+`archfit baseline --reanchor` change before stored comparisons resume.
+Reanchoring never clears missing producer evidence. See [Python](languages.md#python)
+for runtime requirements and extraction limits.

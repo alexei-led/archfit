@@ -454,10 +454,10 @@ func testOriginBuckets(t *testing.T) {
 		})
 	}
 
-	// The whole point of the partial split: on a TypeScript or Python repo the
+	// The whole point of the partial split: on a TypeScript repo the
 	// primary analyzer reports partial on both sides as its steady state. Before
 	// the split that pinned every unmatched finding to unknown, which made the
-	// origin delta inert on those languages.
+	// origin delta inert on TypeScript.
 	t.Run("symmetric unresolved partial still places an unmatched finding", func(t *testing.T) {
 		t.Parallel()
 		unresolvedSide := func(n int) AnalyzerEvidence {
@@ -531,7 +531,7 @@ func testOriginAnalyzerEvidence(t *testing.T) {
 	goGap := []evidence.CoverageGap{{Tool: toolGoPackages}}
 	scipGap := []evidence.CoverageGap{{Tool: toolScip}}
 
-	// unresolvedRow is the dependency-cruiser/grimp steady state: the analyzer
+	// unresolvedRow is the dependency-cruiser steady state: the analyzer
 	// walked the whole tree and could not resolve n import specifiers.
 	unresolvedRow := func(n int) evidence.Coverage {
 		c := covRow(toolDepCruiser, evidence.StatusPartial)
@@ -563,7 +563,7 @@ func testOriginAnalyzerEvidence(t *testing.T) {
 		{name: "not_applicable both sides is ignored", fam: goFam, head: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusAbsent)}, base: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusAbsent)}, want: true},
 		{name: "primary absent with a coverage gap is unavailable", fam: goFam, head: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusOK)}, base: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusAbsent)}, bsGap: goGap, want: false},
 		{name: "partial with no unresolved count is unavailable", fam: goFam, head: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusOK)}, base: []evidence.Coverage{covRow(toolGoPackages, evidence.StatusPartial)}, want: false},
-		// dependency-cruiser and grimp mark a COMPLETED run partial as soon as one
+		// dependency-cruiser mark a COMPLETED run partial as soon as one
 		// import specifier anywhere fails to resolve. Symmetric, it is shared
 		// incompleteness over one tree: comparable, but always disclosed.
 		{name: "symmetric unresolved partial is comparable and disclosed", fam: dcFam, head: []evidence.Coverage{unresolvedRow(4)}, base: []evidence.Coverage{unresolvedRow(9)}, want: true, degraded: true},

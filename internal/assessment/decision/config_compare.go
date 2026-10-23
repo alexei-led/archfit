@@ -324,7 +324,7 @@ func gradeTool(
 		// with the loss reported, magnitudes included.
 		//
 		// One analyzer produces only one of the two shapes (the specifier form is
-		// dependency-cruiser's and grimp's, the precision form is go/packages'), so
+		// dependency-cruiser's, the precision form is go/packages'), so
 		// the two sides of a tool cannot disagree about which reason applies.
 		if PartialFromDegradedPrecision(c) && PartialFromDegradedPrecision(d) {
 			return CoverageComparableWithGaps, degradedBothReason(c, d), false
@@ -386,8 +386,8 @@ const (
 
 // PartialFromUnresolvedSpecifiers reports whether a "partial" coverage row came
 // from a run that COMPLETED over the whole tree and merely left import
-// specifiers unresolved — the normal steady state for dependency-cruiser and
-// grimp, which one unresolvable specifier anywhere is enough to trigger.
+// specifiers unresolved — the normal steady state for dependency-cruiser.
+// A grimp.v3 partial means missing inputs and never pairs.
 //
 // The tool name is the discriminator, not Unresolved > 0: go/packages sets
 // Unresolved too, but there it counts PACKAGES whose load did not complete —

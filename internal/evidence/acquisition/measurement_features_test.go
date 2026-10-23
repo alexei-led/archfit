@@ -32,7 +32,7 @@ func TestMeasurementPartialBasisRequiresCompleteInputs(t *testing.T) {
 		row  evidence.Coverage
 		want evidence.MeasurementPartialBasis
 	}{
-		{evidence.Coverage{Tool: registry.ToolGrimp, Status: evidence.StatusPartial, Unresolved: 1}, evidence.PartialUnresolvedSpecifiers},
+		{evidence.Coverage{Tool: registry.ToolGrimp, Status: evidence.StatusPartial, Unresolved: 1}, ""},
 		{evidence.Coverage{Tool: registry.ToolDepCruiser, Status: evidence.StatusPartial, Unresolved: 1}, evidence.PartialUnresolvedSpecifiers},
 		{evidence.Coverage{Tool: registry.ToolGoPackages, Status: evidence.StatusPartial, UnresolvedPrecisionOnly: 2}, evidence.PartialDegradedPrecision},
 		{evidence.Coverage{Tool: registry.ToolGoPackages, Status: evidence.StatusPartial, UnresolvedPrecisionOnly: 2, UnresolvedInputsMissing: 1}, ""},

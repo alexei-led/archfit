@@ -5,10 +5,47 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
+
+func TestQueryEdgeAbsoluteImporterReturns(t *testing.T) {
+	const childEnv = "ARCHFIT_ABSOLUTE_QUERY_TEST_CHILD"
+	if os.Getenv(childEnv) == "1" {
+		_, err := QueryEdge(srcLayout(t), evidenceports.ExtractConfig{}, filepath.Join(t.TempDir(), "outside.py"), domainModule)
+		if !errors.Is(err, evidenceports.ErrNotDecidable) {
+			t.Fatalf("absolute importer: %v", err)
+		}
+		return
+	}
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := toolrun.New().Run(t.Context(), toolrun.ToolCmd{
+		Name: binary, Args: []string{"-test.run=^TestQueryEdgeAbsoluteImporterReturns$"},
+		Env: []string{childEnv + "=1"}, Timeout: 10 * time.Second,
+	})
+	if err != nil || out.ExitCode != 0 {
+		t.Fatalf("absolute query did not complete: %v %s %s", err, out.Stdout, out.Stderr)
+	}
+}
+
+func TestQueryEdgeAmbiguousImporterIsNotDecidable(t *testing.T) {
+	root := srcLayout(t)
+	shadow := "src/myapp.py"
+	if err := os.WriteFile(filepath.Join(root, shadow), []byte("import myapp.domain\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, from := range []string{shadow, "src/myapp/__init__.py"} {
+		if _, err := QueryEdge(root, evidenceports.ExtractConfig{}, from, domainModule); !errors.Is(err, evidenceports.ErrNotDecidable) {
+			t.Fatalf("%s: want ambiguous-source abstention, got %v", from, err)
+		}
+	}
+}
 
 const (
 	handlersFile   = "src/myapp/handlers.py"
@@ -76,8 +113,8 @@ func TestQueryEdgeFollowsWhatGrimpBuilds(t *testing.T) {
 	}{
 		{name: "stdlib target", from: handlersFile, target: "os.path", want: evidenceports.ErrNotDecidable},
 		{name: "third-party target", from: handlersFile, target: "requests", want: evidenceports.ErrNotDecidable},
-		{name: "importer in a stray package", from: "tests/test_a.py", target: "tests.helpers", want: evidenceports.ErrNotExtracted},
-		{name: "importer outside the configured package", from: "src/lib/x.py", target: domainModule, cfg: evidenceports.ExtractConfig{PyPackage: "myapp"}, want: evidenceports.ErrNotExtracted},
+		{name: "importer in a stray package", from: "tests/test_a.py", target: "tests.helpers", want: evidenceports.ErrNotDecidable},
+		{name: "importer outside the configured package", from: "src/lib/x.py", target: domainModule, cfg: evidenceports.ExtractConfig{PyPackage: "myapp"}, want: evidenceports.ErrNotDecidable},
 		{name: "configured package", from: handlersFile, target: domainModule, cfg: evidenceports.ExtractConfig{PyPackage: "myapp"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -90,16 +127,11 @@ func TestQueryEdgeFollowsWhatGrimpBuilds(t *testing.T) {
 	}
 }
 
-// TestQueryEdgeLocationFollowsExclusions pins that an importer an exclusion
-// glob matches carries no location, as pythonSourceLocations leaves it: the
-// rule pass then counts the edge as production, as check does.
+// Excluded importers produce no dependency edge, just as check drops them.
 func TestQueryEdgeLocationFollowsExclusions(t *testing.T) {
 	t.Parallel()
 	facts, err := QueryEdge(srcLayout(t), evidenceports.ExtractConfig{Exclusions: []string{"src/myapp/legacy/**"}}, "src/myapp/legacy/old.py", domainModule)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if locations := facts.Edges[0].Locations; len(locations) != 0 {
-		t.Errorf("locations = %+v, want none for an excluded importer", locations)
+	if !errors.Is(err, evidenceports.ErrNotExtracted) || len(facts.Edges) != 0 {
+		t.Fatalf("excluded importer: facts=%+v err=%v", facts, err)
 	}
 }
