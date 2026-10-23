@@ -103,7 +103,7 @@ Archfit has two comparison paths. They answer different questions.
 
 The comparison fingerprints are separate so reports can name each mismatch. The measurement profile contains producer identity, tool version, evidence status, and measurement settings. A missing or unsupported profile blocks comparison. A profile change is not treated as a code-only change.
 
-Changing a module name can change seam identity. Changing labels can change strength and seam qualification. Changing classification settings can change observed relationships. Changing the rubric can change assessed meaning. Each change makes a numeric comparison non-comparable.
+Changing a module name can change seam identity. Changing labels can change strength and seam qualification. Changing classification settings can change observed relationships. Changing the rubric can change assessed meaning. Owner and deploy-unit resolution affect model identity, but do not change distance, severity, or seam qualification. Each fingerprinted change makes a numeric comparison non-comparable.
 
 `--base` does not provide the persisted reference for `drift`. Without a comparable persisted baseline, drift is `unmeasured`, even when `--base` runs. `comparison.status: not_requested` means only that the user did not request a separate base-tree report.
 

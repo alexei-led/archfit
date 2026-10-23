@@ -122,7 +122,7 @@ AI/config flags:
   supported).
 - `--ai-classify` — run the off-gate module classification pass for
   `config init` / `config update`.
-- `--ai-provider anthropic|openai|ollama` — AI provider override.
+- `--ai-provider anthropic|openai|deepseek|ollama|openai-compatible` — AI provider override.
 - `--ai-model <name>` — AI model override.
 - `--apply` — command-specific write mode. For `config init --ai-classify`, writes
   model judgments live into the generated file. For `config update`, applies

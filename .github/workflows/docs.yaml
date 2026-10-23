@@ -1,0 +1,53 @@
+name: Documentation
+on:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - CONTRIBUTING.md
+      - CLAUDE.md
+      - docs/**
+      - '!docs/archived/**'
+      - skills/**
+      - examples/**
+      - scripts/eval/docs/**
+      - .markdownlint.json
+      - .github/workflows/docs.yaml
+      - Makefile
+  pull_request:
+    paths:
+      - README.md
+      - CONTRIBUTING.md
+      - CLAUDE.md
+      - docs/**
+      - '!docs/archived/**'
+      - skills/**
+      - examples/**
+      - scripts/eval/docs/**
+      - .markdownlint.json
+      - .github/workflows/docs.yaml
+      - Makefile
+permissions:
+  contents: read
+concurrency:
+  group: docs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  docs:
+    name: Documentation checks
+    # Chromium can use its normal user-namespace sandbox on this runner.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: scripts/eval/docs/package-lock.json
+      - name: Install documentation tools
+        run: npm ci --prefix scripts/eval/docs
+      - name: Check documentation
+        run: make docs

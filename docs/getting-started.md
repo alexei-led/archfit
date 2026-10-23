@@ -13,7 +13,7 @@ brew install alexei-led/tap/archfit
 With Go, install a tagged release:
 
 ```sh
-go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.0.1
+go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.1.0
 ```
 
 You can also download a release binary from the [release page](https://github.com/alexei-led/archfit/releases). Check the file against `SHA256SUMS` before you install it.
@@ -79,7 +79,7 @@ This shell expression accepts exit `2`. It still fails on exit `1` or `3`. See [
 The release image runs archfit with a bundled toolchain:
 
 ```sh
-docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v3.0.1 \
+docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v3.1.0 \
   check --config /repo/.archfit.yaml
 ```
 

@@ -71,7 +71,7 @@ For a pre-commit hook, add archfit to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/alexei-led/archfit
-    rev: v3.0.1
+    rev: v3.1.0
     hooks:
       - id: archfit
 ```

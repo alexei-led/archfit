@@ -22,6 +22,7 @@ scratchpad/
 coverage.out
 go.work*
 __pycache__/
+node_modules/
 
 # Generated reports and archived docs
 calibration-report.json
