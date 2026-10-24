@@ -3,10 +3,12 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scip_reader as r
 
 ROOT = "/analysis/workspace"
@@ -232,13 +234,8 @@ with open(sys.argv[3], 'wb') as f:
             proto = os.path.join(here, "scip.proto")
             gen = subprocess.run(
                 [
-                    "uv",
-                    "run",
-                    "--with",
-                    "grpcio-tools>=1.60",
-                    "--with",
-                    "protobuf>=4",
-                    "python",
+                    sys.executable,
+                    "-I",
                     "-c",
                     helper,
                     here,
@@ -251,8 +248,8 @@ with open(sys.argv[3], 'wb') as f:
             )
             self.assertEqual(gen.returncode, 0, gen.stderr)
             args = [
-                "uv",
-                "run",
+                sys.executable,
+                "-I",
                 os.path.join(here, "scip_reader.py"),
                 "--proto",
                 proto,
@@ -296,6 +293,10 @@ with open(sys.argv[3], 'wb') as f:
                 "status": "partial", "unresolved_symbols": 2,
                 "diagnostics": [{"reason": "ambiguous_target", "count": 2}],
             })
+            empty_path = subprocess.run(args[:-1] + [""], capture_output=True, text=True, check=False)
+            self.assertNotEqual(empty_path.returncode, 0)
+            self.assertTrue(json.loads(empty_path.stdout)["error"].startswith("rust metadata:"))
+            self.assertEqual(json.loads(empty_path.stdout)["edges"], [])
             os.unlink(meta)
             bad = subprocess.run(args, capture_output=True, text=True, check=False)
             self.assertNotEqual(bad.returncode, 0)

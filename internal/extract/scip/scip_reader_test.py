@@ -3,11 +3,11 @@
 
 Covers the per-language reconciliation that silently rots: container/path extraction
 and private/interface detection for scip-python, scip-go, scip-typescript symbols.
-Does not need protobuf (only the pure helpers are exercised).
+CLI regressions use this interpreter's provisioned protobuf/grpcio-tools; no
+runtime dependency installation or network access is performed.
 """
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -328,7 +328,7 @@ def run_cli_integration() -> None:
             """
         )
         gen = subprocess.run(
-            ["uv", "run", "--with", "grpcio-tools>=1.60", "--with", "protobuf>=4", "python", "-c", helper, proto, index],
+            [sys.executable, "-I", "-c", helper, proto, index],
             text=True,
             capture_output=True,
             check=False,
@@ -339,7 +339,7 @@ def run_cli_integration() -> None:
             return
 
         run = subprocess.run(
-            ["uv", "run", reader, "--proto", proto, "--index", index, "--package", "spotinfo", "--lang", "go"],
+            [sys.executable, "-I", reader, "--proto", proto, "--index", index, "--package", "spotinfo", "--lang", "go"],
             text=True,
             capture_output=True,
             check=False,
@@ -365,7 +365,7 @@ def run_cli_integration() -> None:
         with open(bad_index, "wb") as f:
             f.write(b"not a protobuf")
         bad = subprocess.run(
-            ["uv", "run", reader, "--proto", proto, "--index", bad_index, "--package", "spotinfo", "--lang", "go"],
+            [sys.executable, "-I", reader, "--proto", proto, "--index", bad_index, "--package", "spotinfo", "--lang", "go"],
             text=True,
             capture_output=True,
             check=False,
@@ -373,15 +373,12 @@ def run_cli_integration() -> None:
         check("cli invalid index exits nonzero", bad.returncode != 0, True)
 
 
-if shutil.which("uv"):
-    run_cli_integration()
-    if failures:
-        print("FAIL (cli integration):")
-        for f in failures:
-            print("  -", f)
-        sys.exit(1)
-    print("ok: scip_reader CLI integration passed")
-    subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+run_cli_integration()
+if failures:
+    print("FAIL (cli integration):")
+    for f in failures:
+        print("  -", f)
+    sys.exit(1)
+print("ok: scip_reader CLI integration passed")
+subprocess.run([sys.executable, "-I", os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                                "scip_reader_rust_test.py")], check=True)
-else:
-    print("ok: scip_reader CLI integration skipped (uv not found)")

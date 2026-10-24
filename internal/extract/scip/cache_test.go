@@ -132,14 +132,14 @@ func TestCacheKey_LockfileInvalidates(t *testing.T) {
 			a := New(scipCacheRunner("{}", &indexRuns, &readerRuns), 0)
 			a.Cache = factcache.NewStore(t.TempDir())
 
-			before := a.cacheKey(root, "indexer", "pkg", tc.lang, "1.0.0")
+			before := a.cacheKey(root, "indexer", "pkg", tc.lang, "1.0.0", nil)
 			if before == "" {
 				t.Fatal("cacheKey returned empty key")
 			}
 			if err := os.WriteFile(filepath.Join(root, tc.lockfile), []byte("dep@2\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			after := a.cacheKey(root, "indexer", "pkg", tc.lang, "1.0.0")
+			after := a.cacheKey(root, "indexer", "pkg", tc.lang, "1.0.0", nil)
 			if after == before {
 				t.Errorf("key unchanged after %s appeared — lockfile is outside the input hash", tc.lockfile)
 			}

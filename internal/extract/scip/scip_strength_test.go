@@ -201,8 +201,11 @@ func TestDetectIndexer_Rust(t *testing.T) {
 			}
 			return toolrun.ToolInfo{}, false
 		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{Stdout: []byte(`{"workspace_members":["demo-id"],"packages":[{"id":"demo-id","name":"demo-crate","version":"0.1.0","targets":[{"name":"demo_crate","src_path":"/tmp/src/lib.rs"}]}]}`)}, nil
+		},
 	}
-	indexer, pkg, lang, ok, err := New(runner, 0).detectIndexer(context.Background(), dir)
+	indexer, pkg, lang, _, ok, err := New(runner, 0).detectIndexer(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("detectIndexer: unexpected error: %v", err)
 	}
@@ -230,7 +233,7 @@ func TestDetectIndexer_VirtualWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Canned cargo metadata JSON with two workspace members.
-	metaJSON := `{"packages":[{"name":"crate-a"},{"name":"crate-b"}],"workspace_members":["crate-a 0.1.0 (path+file:///tmp/a)","crate-b 0.1.0 (path+file:///tmp/b)"]}`
+	metaJSON := `{"packages":[{"id":"a","name":"crate-a","version":"0.1.0","targets":[]},{"id":"b","name":"crate-b","version":"0.1.0","targets":[]}],"workspace_members":["a","b"]}`
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == indexerRust || tool == toolCargo {
@@ -245,7 +248,7 @@ func TestDetectIndexer_VirtualWorkspace(t *testing.T) {
 			return toolrun.Output{}, nil
 		},
 	}
-	indexer, pkg, lang, ok, err := New(runner, 0).detectIndexer(context.Background(), dir)
+	indexer, pkg, lang, _, ok, err := New(runner, 0).detectIndexer(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("detectIndexer: unexpected error: %v", err)
 	}

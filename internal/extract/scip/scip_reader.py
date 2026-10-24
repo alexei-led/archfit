@@ -544,7 +544,7 @@ def main() -> None:
         idx.ParseFromString(f.read())
 
     rust_targets = None
-    if args.rust_metadata:
+    if args.rust_metadata is not None:
         try:
             if lang != "rust":
                 raise ValueError("--rust-metadata requires --lang rust")
