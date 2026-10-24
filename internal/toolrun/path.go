@@ -22,7 +22,12 @@ func ContainsPath(root, path string) (bool, error) {
 		return false, err
 	}
 	paths := []string{absolute}
-	if resolved, err := filepath.EvalSymlinks(absolute); err == nil {
+	// Resolve the raw path before Clean/Abs can erase a symlink followed by .. .
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		resolved, err = filepath.Abs(resolved)
+		if err != nil {
+			return false, err
+		}
 		paths = append(paths, resolved)
 	} else if !os.IsNotExist(err) {
 		return false, err

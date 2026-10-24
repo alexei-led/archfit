@@ -53,3 +53,27 @@ func TestContainsPathUsesLexicalAndFilesystemAncestry(t *testing.T) {
 		}
 	}
 }
+
+func TestContainsPathResolvesSymlinksBeforeParentSegments(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "target")
+	owned := filepath.Join(base, "owned")
+	for _, dir := range []string{filepath.Join(root, "child"), filepath.Join(root, "bin"), filepath.Join(owned, "bin")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, dir := range []string{root, owned} {
+		if err := os.WriteFile(filepath.Join(dir, "bin", "python"), []byte("program"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(root, "child"), filepath.Join(owned, "link")); err != nil {
+		t.Fatal(err)
+	}
+	raw := owned + string(filepath.Separator) + "link" + string(filepath.Separator) + ".." + string(filepath.Separator) + "bin" + string(filepath.Separator) + "python"
+	inside, err := toolrun.ContainsPath(root, raw)
+	if err != nil || !inside {
+		t.Fatalf("raw symlink/parent path escaped target: inside=%v error=%v", inside, err)
+	}
+}
