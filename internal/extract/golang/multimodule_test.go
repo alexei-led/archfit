@@ -60,6 +60,9 @@ func AsGreeter(g api.Greeter) api.Greeter {
 
 	writeTestFile(t, filepath.Join(dir, "go.work"),
 		"go 1.21\n\nuse (\n\t./a\n\t./b\n)\n")
+	// Cross-module type resolution requires this workspace, even if the host
+	// disables workspace mode. Setenv restores the caller's environment.
+	t.Setenv("GOWORK", filepath.Join(dir, "go.work"))
 
 	return dir
 }

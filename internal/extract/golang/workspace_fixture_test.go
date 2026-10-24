@@ -85,6 +85,9 @@ func materializeWorkspaceFixture(t *testing.T) string {
 	); err != nil {
 		t.Fatalf("rename gowork.txt → go.work: %v", err)
 	}
+	// The fixture tests workspace loading, not the host's GOWORK setting.
+	// Setenv restores the inherited value when the test finishes.
+	t.Setenv("GOWORK", filepath.Join(dir, "go.work"))
 
 	return dir
 }
@@ -105,6 +108,35 @@ func TestWorkspaceFixture_CoverageOK(t *testing.T) {
 	if cov.FilesSeen == 0 {
 		t.Error("FilesSeen = 0; expected Go source files")
 	}
+}
+
+// TestWorkspaceFixture_GoWorkOff pins the Go toolchain's explicit opt-out:
+// discovery still finds both modules, but the sibling import cannot resolve
+// through go.work and therefore has no type-derived strength hint.
+func TestWorkspaceFixture_GoWorkOff(t *testing.T) {
+	dir := materializeWorkspaceFixture(t)
+	t.Setenv("GOWORK", "off")
+
+	ext := goextract.New(evidenceports.ExtractConfig{})
+	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if cov.Status != statusPartial || cov.FilesSeen == 0 || cov.UnresolvedInputsMissing == 0 {
+		t.Errorf("GOWORK=off must disclose the unresolved sibling import over visible source: %+v", cov)
+	}
+	if len(facts.GoModules) != 2 {
+		t.Errorf("GOWORK=off discovery: got %d modules, want 2", len(facts.GoModules))
+	}
+	for _, e := range facts.Edges {
+		if e.From == "file:a/consumer/consumer.go" && e.To == "package:b/api" {
+			if e.StrengthHint != "" {
+				t.Errorf("GOWORK=off unresolved sibling StrengthHint = %q, want empty", e.StrengthHint)
+			}
+			return
+		}
+	}
+	t.Fatal("GOWORK=off lost the syntactic cross-module import edge")
 }
 
 // TestWorkspaceFixture_TwoGoModules asserts that Extract populates

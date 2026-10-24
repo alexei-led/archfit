@@ -36,6 +36,9 @@ func writeWorkspaceFixture(t *testing.T) (root, dirA, dirB string) {
 	write("a/a.go", "package a\n")
 	write("b/go.mod", "module example.com/b\n\ngo 1.24\n")
 	write("b/b.go", "package b\n")
+	// Pin the workspace used by both loading and cache-key derivation. Tests
+	// using this helper must stay serial because Setenv changes process state.
+	t.Setenv("GOWORK", filepath.Join(root, "go.work"))
 	return root, filepath.Join(root, "a"), filepath.Join(root, "b")
 }
 
@@ -62,7 +65,6 @@ func (f *fakeLoader) load(cfg *packages.Config, _ ...string) ([]*packages.Packag
 // a warm run loads zero members, and editing one member's file re-loads ONLY
 // that member (the other still hits its cache entry).
 func TestFactCache_PerMemberInvalidation(t *testing.T) {
-	t.Parallel()
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	loader := &fakeLoader{calls: map[string]int{}}
 	ex := New(evidenceports.ExtractConfig{})
@@ -105,7 +107,6 @@ func TestFactCache_PerMemberInvalidation(t *testing.T) {
 // cgo inputs: a .h edit (compiled into the member via import "C") must
 // invalidate that member even though no .go file changed.
 func TestFactCache_CgoCompanionFileInvalidates(t *testing.T) {
-	t.Parallel()
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	header := filepath.Join(dirA, "native.h")
 	if err := os.WriteFile(header, []byte("#define V 1\n"), 0o600); err != nil {
@@ -142,7 +143,6 @@ func TestFactCache_CgoCompanionFileInvalidates(t *testing.T) {
 // local replace in go.work itself disables caching for the WHOLE run — no
 // key covers the replaced source, and membership itself is rewritten.
 func TestFactCache_WorkLevelReplaceDisablesCache(t *testing.T) {
-	t.Parallel()
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	work := "go 1.24\n\nuse (\n\t./a\n\t./b\n)\n\nreplace example.com/dep => ./vendor-dep\n"
 	if err := os.WriteFile(filepath.Join(root, "go.work"), []byte(work), 0o600); err != nil {
@@ -168,7 +168,6 @@ func TestFactCache_WorkLevelReplaceDisablesCache(t *testing.T) {
 // TestFactCache_GoModChangeInvalidates covers the manifest component of the
 // key: a go.mod edit invalidates that member.
 func TestFactCache_GoModChangeInvalidates(t *testing.T) {
-	t.Parallel()
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	loader := &fakeLoader{calls: map[string]int{}}
 	ex := New(evidenceports.ExtractConfig{})
@@ -201,7 +200,6 @@ func TestFactCache_GoModChangeInvalidates(t *testing.T) {
 // source the input-tree hash cannot see, so it is never cached; unaffected
 // siblings still cache.
 func TestFactCache_LocalReplaceVetoesMember(t *testing.T) {
-	t.Parallel()
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	if err := os.WriteFile(filepath.Join(dirB, "go.mod"),
 		[]byte("module example.com/b\n\ngo 1.24\n\nrequire example.com/x v0.0.0\n\nreplace example.com/x => ../x\n"), 0o600); err != nil {
@@ -232,7 +230,6 @@ func TestFactCache_LocalReplaceVetoesMember(t *testing.T) {
 // member b still requires it, workspace mode compiles b against a's source —
 // which no key covers — so b is never cached.
 func TestFactCache_FilteredSiblingDependencyVetoesMember(t *testing.T) {
-	t.Parallel()
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	if err := os.WriteFile(filepath.Join(dirB, "go.mod"),
 		[]byte("module example.com/b\n\ngo 1.24\n\nrequire example.com/a v0.0.0\n"), 0o600); err != nil {
@@ -258,11 +255,51 @@ func TestFactCache_FilteredSiblingDependencyVetoesMember(t *testing.T) {
 	}
 }
 
+// TestFactCache_GoWorkOffIgnoresWorkspaceVetoes pins the explicit opt-out:
+// go.work replaces and filtered siblings cannot veto otherwise clean cache
+// entries when the loader is not using that workspace.
+func TestFactCache_GoWorkOffIgnoresWorkspaceVetoes(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		exclude    []string
+		wantLoadsA int
+	}{
+		{name: "work-level replace", wantLoadsA: 1},
+		{name: "filtered sibling", exclude: []string{"a"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, dirA, dirB := writeWorkspaceFixture(t)
+			t.Setenv("GOWORK", "off")
+			if len(tc.exclude) == 0 {
+				work := "go 1.24\n\nuse (\n\t./a\n\t./b\n)\n\nreplace example.com/dep => ./vendor-dep\n"
+				if err := os.WriteFile(filepath.Join(root, "go.work"), []byte(work), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(filepath.Join(dirB, "go.mod"),
+				[]byte("module example.com/b\n\ngo 1.24\n\nrequire example.com/a v0.0.0\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			loader := &fakeLoader{calls: map[string]int{}}
+			ex := New(evidenceports.ExtractConfig{GoModuleExclude: tc.exclude})
+			ex.Cache = factcache.NewStore(t.TempDir())
+			ex.load = loader.load
+
+			for range 2 {
+				if _, _, err := ex.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
+					t.Fatalf("Extract: %v", err)
+				}
+			}
+			if loader.calls[dirA] != tc.wantLoadsA || loader.calls[dirB] != 1 {
+				t.Errorf("GOWORK=off: want a:%d b:1 loads (clean members cache), got %v", tc.wantLoadsA, loader.calls)
+			}
+		})
+	}
+}
+
 // TestFactCache_DirtyMemberNotCached pins the D3 partial-result veto at the Go
 // seam: a member whose load reports errors is never written to the cache (a
 // cached degradation would be sticky), so it re-loads every run.
 func TestFactCache_DirtyMemberNotCached(t *testing.T) {
-	t.Parallel()
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	calls := map[string]int{}
 	var mu sync.Mutex
@@ -302,7 +339,6 @@ func TestFactCache_DirtyMemberNotCached(t *testing.T) {
 // when member b requires member a, editing a's source invalidates BOTH (b
 // compiles against a's source in workspace mode).
 func TestFactCache_DependentMemberInvalidates(t *testing.T) {
-	t.Parallel()
 	root, dirA, dirB := writeWorkspaceFixture(t)
 	if err := os.WriteFile(filepath.Join(dirB, "go.mod"),
 		[]byte("module example.com/b\n\ngo 1.24\n\nrequire example.com/a v0.0.0\n"), 0o600); err != nil {
