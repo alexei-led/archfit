@@ -37,11 +37,14 @@ func loadFixture(t *testing.T, name string) []byte {
 }
 
 // mockRunner builds a RunnerMock that:
-//   - DetectFunc: detects only the owned depcruise executable.
+//   - DetectFunc: detects the owned depcruise entry and a mock Node interpreter.
 //   - RunFunc: returns producer metadata for --info, otherwise fixtureData.
 func mockRunner(fixtureData []byte) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
 			if tool == depcruiseExecutable {
 				return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 			}
@@ -428,6 +431,9 @@ func TestExtract_IncludeOnly(t *testing.T) {
 			var gotArgs []string
 			runner := &toolrun.RunnerMock{
 				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+					if tool == nodeExecutable {
+						return mockNodeInfo()
+					}
 					if tool == depcruiseExecutable {
 						return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 					}
@@ -553,6 +559,9 @@ func TestExtract_SubtreePathStrip(t *testing.T) {
 			}
 			runner := &toolrun.RunnerMock{
 				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+					if tool == nodeExecutable {
+						return mockNodeInfo()
+					}
 					if tool == depcruiseExecutable {
 						return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 					}
@@ -643,6 +652,9 @@ func TestExtract_TSConfigSubdir(t *testing.T) {
 	var gotArgs []string
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
 			if tool == depcruiseExecutable {
 				return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 			}
@@ -706,6 +718,9 @@ func TestExtract_TSConfigSubdir_RootFallback(t *testing.T) {
 	var gotArgs []string
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
 			if tool == depcruiseExecutable {
 				return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 			}
@@ -771,6 +786,9 @@ func TestExtract_TSConfigAutoDetect(t *testing.T) {
 			var gotArgs []string
 			runner := &toolrun.RunnerMock{
 				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+					if tool == nodeExecutable {
+						return mockNodeInfo()
+					}
 					if tool == depcruiseExecutable {
 						return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 					}
@@ -818,6 +836,9 @@ func TestExtract_TSConfigAutoDetect(t *testing.T) {
 func TestExtract_SourceDirMissing(t *testing.T) {
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
 			if tool == depcruiseExecutable {
 				return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 			}
@@ -865,6 +886,9 @@ func TestExtract_SrcDotIsLiteral(t *testing.T) {
 	var gotArgs []string
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
 			if tool == depcruiseExecutable {
 				return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 			}
@@ -901,6 +925,9 @@ func TestExtract_DirectOwnedProducer(t *testing.T) {
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, name string) (toolrun.ToolInfo, bool) {
 			detected = append(detected, name)
+			if name == nodeExecutable {
+				return mockNodeInfo()
+			}
 			return toolrun.ToolInfo{Name: name, Path: ownedDepcruisePath}, name == depcruiseExecutable
 		},
 		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
@@ -912,11 +939,12 @@ func TestExtract_DirectOwnedProducer(t *testing.T) {
 		},
 	}
 	_, cov, err := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeOn, Src: "."}).Extract(t.Context(), scope.Scope{Root: root})
-	if err != nil || cov.Status != "ok" || cov.Version != "18.7.0" || len(commands) != 2 || !slices.Equal(detected, []string{depcruiseExecutable}) {
+	if err != nil || cov.Status != "ok" || cov.Version != "18.7.0" || len(commands) != 2 || !slices.Equal(detected, []string{depcruiseExecutable, nodeExecutable}) {
 		t.Fatalf("direct producer: detected=%v commands=%+v coverage=%+v error=%v", detected, commands, cov, err)
 	}
+	node, _ := mockNodeInfo()
 	for _, cmd := range commands {
-		if cmd.Name != ownedDepcruisePath || !slices.Contains(cmd.Args, "--no-config") || !slices.Contains(cmd.Env, "NODE_OPTIONS=") || !slices.Contains(cmd.Env, "NODE_PATH=") {
+		if cmd.Name != node.Path || len(cmd.Args) == 0 || cmd.Args[0] != ownedDepcruisePath || !slices.Contains(cmd.Args, "--no-config") || !slices.Contains(cmd.Env, "NODE_OPTIONS=") || !slices.Contains(cmd.Env, "NODE_PATH=") {
 			t.Fatalf("non-hermetic command: %+v", cmd)
 		}
 	}

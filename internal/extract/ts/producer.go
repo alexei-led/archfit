@@ -15,7 +15,8 @@ import (
 )
 
 // Target package managers, runtime preload hooks and depcruise configuration
-// are not part of the producer. PATH belongs to the caller (the image owns it).
+// are not part of the producer. PATH is used only to detect the two owned
+// executables; the validated Node path runs the producer without its shebang.
 var producerEnv = []string{"NODE_OPTIONS=", "NODE_PATH=", "NO_COLOR=1", "FORCE_COLOR=0"}
 
 var producerArgs = []string{"--no-config", "--no-cache", "--output-type", "json", "--exclude", thirdPartyExclude}
@@ -66,12 +67,48 @@ func (e *Extractor) producerPath(ctx context.Context, roots ...string) (string, 
 	return info.Path, nil
 }
 
+// nodeInterpreterPath rejects project-owned interpreters before any execution,
+// including both lexical paths and symlink destinations. Never fall back to an
+// interpreter selected by the producer's /usr/bin/env shebang.
+func (e *Extractor) nodeInterpreterPath(ctx context.Context, roots ...string) (string, error) {
+	info, ok := e.runner.Detect(ctx, "node")
+	if !ok || !filepath.IsAbs(info.Path) {
+		return "", errors.New("owned Node interpreter not found on PATH")
+	}
+	interpreter, err := filepath.EvalSymlinks(info.Path)
+	if err != nil {
+		return "", fmt.Errorf("resolve owned Node interpreter: %w", err)
+	}
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		absolute, err := filepath.Abs(root)
+		if err != nil {
+			return "", err
+		}
+		canonical, err := filepath.EvalSymlinks(absolute)
+		if err != nil {
+			return "", err
+		}
+		for _, boundary := range []string{absolute, canonical} {
+			for _, path := range []string{info.Path, interpreter} {
+				rel, err := filepath.Rel(boundary, path)
+				if err != nil || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
+					return "", fmt.Errorf("refusing target-project Node interpreter: %s", info.Path)
+				}
+			}
+		}
+	}
+	return interpreter, nil
+}
+
 // Both supported depcruise generations expose compiler availability via --info;
 // v17 does not include environment metadata in the JSON graph. Probe the exact
 // executable, without a target working directory or runtime module injection.
-func (e *Extractor) inspectProducer(ctx context.Context, binary string) (producerInfo, error) {
+func (e *Extractor) inspectProducer(ctx context.Context, binary, interpreter string) (producerInfo, error) {
 	out, err := e.runner.Run(ctx, toolrun.ToolCmd{
-		Name: binary, Args: []string{"--no-config", "--info"}, Env: producerEnv, Timeout: 30 * time.Second,
+		Name: interpreter, Args: []string{binary, "--no-config", "--info"}, Env: producerEnv, Timeout: 30 * time.Second,
 	})
 	if err != nil {
 		return producerInfo{}, err

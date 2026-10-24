@@ -157,7 +157,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		}
 		return graph.Facts{}, incompleteCoverage("", "dependency-cruiser source inputs: "+inputErr.Error(), len(files)), nil
 	}
-	binary, err := e.producerPath(ctx, s.Root, workDir)
+	binary, err := e.producerPath(ctx, s.Root, s.GitRoot, workDir)
 	if err != nil {
 		if e.cfg.Mode == evidenceports.ModeOn {
 			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: %w", err)
@@ -167,7 +167,14 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		}
 		return graph.Facts{}, incompleteCoverage("", err.Error(), len(files)), nil
 	}
-	producer, probeErr := e.inspectProducer(ctx, binary)
+	interpreter, err := e.nodeInterpreterPath(ctx, s.Root, s.GitRoot, workDir)
+	if err != nil {
+		if e.cfg.Mode == evidenceports.ModeOn {
+			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: %w", err)
+		}
+		return graph.Facts{}, incompleteCoverage("", err.Error(), len(files)), nil
+	}
+	producer, probeErr := e.inspectProducer(ctx, binary, interpreter)
 	version := producer.Version
 	if probeErr != nil {
 		return graph.Facts{}, incompleteCoverage(version, probeErr.Error(), len(files)), nil
@@ -185,7 +192,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		cov.MeasurementSettingsHash = measurementHash
 		return graph.Facts{}, cov, nil
 	}
-	args := append([]string{srcArg}, scanArgs(files)...)
+	args := append([]string{binary, srcArg}, scanArgs(files)...)
 	// Scope depcruise to the analysis subtree when running from the git root.
 	// --include-only uses a JS regex against the git-root-relative module paths.
 	// Omitted when SubtreePrefix is empty to preserve byte-identical output on
@@ -207,7 +214,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		args = append(args, "--ts-config", tsConfig)
 	}
 	cmd := toolrun.ToolCmd{
-		Name:    binary,
+		Name:    interpreter,
 		Args:    args,
 		Env:     producerEnv,
 		WorkDir: workDir,

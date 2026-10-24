@@ -21,6 +21,9 @@ import (
 func cacheFixtureRunner(depcruiseJSON string, depcruiseCalls *int) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
 			return toolrun.ToolInfo{Name: tool, Path: ownedDepcruisePath}, tool == depcruiseExecutable
 		},
 		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
@@ -38,7 +41,7 @@ func cacheFixtureRunner(depcruiseJSON string, depcruiseCalls *int) *toolrun.Runn
 func writeTSFixture(t *testing.T, mainTS string, extra map[string]string) string {
 	t.Helper()
 	root := t.TempDir()
-	files := map[string]string{"package.json": `{"name":"fixture"}`, "a.ts": mainTS}
+	files := map[string]string{"package.json": `{"name":"fixture"}`, fixtureTSName: mainTS}
 	maps.Copy(files, extra)
 	for name, content := range files {
 		full := filepath.Join(root, name)

@@ -21,9 +21,13 @@ import (
 
 const (
 	depcruiseExecutable = "depcruise"
+	nodeExecutable      = "node"
 	ownedDepcruisePath  = "/owned/bin/depcruise"
 	emptyCompilerConfig = `{"compilerOptions":{}}`
 	forbiddenTSFile     = "forbidden.ts"
+	fixtureTSName       = "a.ts"
+	fixtureTSNodeID     = "file:" + fixtureTSName
+	forbiddenTSNodeID   = "file:" + forbiddenTSFile
 	typeScriptLanguage  = "typescript"
 )
 
@@ -42,14 +46,28 @@ func ownedDepcruise(t *testing.T) string {
 	return info.Path
 }
 
+// Mock-only runners use the test executable as an existing absolute runtime
+// path. Their RunFunc supplies output; these runners never launch that path.
+func mockNodeInfo() (toolrun.ToolInfo, bool) {
+	path, err := os.Executable()
+	if err != nil {
+		return toolrun.ToolInfo{}, false
+	}
+	canonical, err := filepath.EvalSymlinks(path)
+	return toolrun.ToolInfo{Name: nodeExecutable, Path: canonical}, err == nil
+}
+
 func ownedRunner(binary string, calls *int) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
-		DetectFunc: func(_ context.Context, name string) (toolrun.ToolInfo, bool) {
+		DetectFunc: func(ctx context.Context, name string) (toolrun.ToolInfo, bool) {
+			if name == nodeExecutable {
+				return toolrun.New().Detect(ctx, name)
+			}
 			return toolrun.ToolInfo{Name: name, Path: binary}, name == depcruiseExecutable
 		},
 		RunFunc: func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-			if cmd.Name != binary {
-				return toolrun.Output{}, fmt.Errorf("unexpected producer: %s", cmd.Name)
+			if !filepath.IsAbs(cmd.Name) || len(cmd.Args) == 0 || cmd.Args[0] != binary {
+				return toolrun.Output{}, fmt.Errorf("producer must run through an absolute Node interpreter: %+v", cmd)
 			}
 			if !slices.Contains(cmd.Args, "--version") && !slices.Contains(cmd.Args, "--info") {
 				*calls++
@@ -96,7 +114,7 @@ func TestExtract_HermeticConfigCannotHideForbiddenImport(t *testing.T) {
 					t.Fatalf("%s: error=%v coverage=%+v", mode, err, cov)
 				}
 				if !slices.ContainsFunc(facts.Edges, func(e graph.Edge) bool {
-					return e.From == "file:a.ts" && e.To == "file:forbidden.ts" && e.Kind == graph.EdgeKindUsesInternal
+					return e.From == fixtureTSNodeID && e.To == forbiddenTSNodeID && e.Kind == graph.EdgeKindUsesInternal
 				}) {
 					t.Fatalf("%s: forbidden edge hidden: %+v", mode, facts)
 				}
@@ -163,7 +181,7 @@ func TestExtract_MissingCompilerAndJSOnlyControl(t *testing.T) {
 	}
 	binary = filepath.Join(isolated, "dependency-cruiser", "bin", filepath.Base(binary))
 	for _, tc := range []struct{ name, source string }{
-		{typeScriptLanguage, "a.ts"}, {"javascript", "a.js"}, {"empty", ""},
+		{typeScriptLanguage, fixtureTSName}, {"javascript", "a.js"}, {"empty", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := emptyTSFixture(t)
@@ -244,7 +262,7 @@ func TestExtract_TypeOnlyForbiddenImportsPreserved(t *testing.T) {
 	calls := 0
 	facts, cov, err := ts.New(ownedRunner(binary, &calls), evidenceports.ExtractConfig{Mode: evidenceports.ModeOn, Src: ".", Internal: []string{forbiddenTSFile}}).Extract(t.Context(), scope.Scope{Root: root})
 	if err != nil || cov.Status != evidence.StatusOK || !slices.ContainsFunc(facts.Edges, func(e graph.Edge) bool {
-		return e.From == "file:a.ts" && e.To == "file:forbidden.ts" && e.Kind == graph.EdgeKindUsesInternal && e.StrengthHint == "contract"
+		return e.From == fixtureTSNodeID && e.To == forbiddenTSNodeID && e.Kind == graph.EdgeKindUsesInternal && e.StrengthHint == "contract"
 	}) {
 		t.Fatalf("type-only policy edge missing: facts=%+v coverage=%+v error=%v", facts, cov, err)
 	}
