@@ -81,6 +81,8 @@ type Descriptor struct {
 // order, and the engine golden test pins it. Append new languages; never reorder.
 // Primary analyzer and optional Rust tool names.
 const (
+	analyzerSetupURL = "https://github.com/alexei-led/archfit/blob/main/docs/languages.md#install-analyzers"
+
 	ToolGoPackages   = "go/packages"
 	ToolDepCruiser   = "dependency-cruiser"
 	ToolGrimp        = "grimp"
@@ -105,10 +107,10 @@ var languages = []Descriptor{
 		},
 		QueryEdge:   golang.QueryEdge,
 		PrimaryTool: ToolGoPackages,
-		InstallHint: "https://go.dev/dl (bundled with the Go toolchain)",
+		InstallHint: "https://go.dev/dl (runtime SDK; go/packages is linked into archfit)",
 		DoctorTools: []Tool{
 			{"go", "go", "https://go.dev/dl"},
-			{SCIPGo, SCIPGo, "go install github.com/scip-code/scip-go/cmd/scip-go@latest"},
+			{SCIPGo, SCIPGo, analyzerSetupURL},
 		},
 	},
 	{
@@ -122,12 +124,11 @@ var languages = []Descriptor{
 		},
 		QueryEdge:   ts.QueryEdge,
 		PrimaryTool: ToolDepCruiser,
-		InstallHint: "npm install -g dependency-cruiser",
+		InstallHint: analyzerSetupURL,
 		DoctorTools: []Tool{
 			{"node", "node", "https://nodejs.org"},
-			{"bunx", "bunx", "https://bun.sh"},
-			{"npx", "npx", "ships with node"},
-			{SCIPTypeScript, SCIPTypeScript, "npm install -g @sourcegraph/scip-typescript"},
+			{ToolDepCruiser, "depcruise", analyzerSetupURL},
+			{SCIPTypeScript, SCIPTypeScript, analyzerSetupURL},
 		},
 	},
 	{
@@ -142,7 +143,7 @@ var languages = []Descriptor{
 		InstallHint: "install uv (selects Python 3.14 + grimp==3.17), or put a separate Python 3.14+ environment with grimp==3.17 on PATH",
 		DoctorTools: []Tool{
 			{"python3", "python3", "https://www.python.org/downloads"},
-			{SCIPPython, SCIPPython, "npm install -g @sourcegraph/scip-python"},
+			{SCIPPython, SCIPPython, analyzerSetupURL},
 		},
 	},
 	{
@@ -159,7 +160,7 @@ var languages = []Descriptor{
 		DoctorTools: []Tool{
 			{ToolCargo, ToolCargo, "https://rustup.rs"},
 			{SCIPRust, SCIPRust, "rustup component add rust-analyzer"},
-			{ToolCargoModules, ToolCargoModules, "cargo install cargo-modules (opt-in: analyzers.cargo_modules.enabled: true)"},
+			{ToolCargoModules, ToolCargoModules, analyzerSetupURL},
 		},
 	},
 }

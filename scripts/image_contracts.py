@@ -157,20 +157,6 @@ def prepare_fixture(spec: lc.FixtureSpec, path: Path) -> None:
         target = path / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
-    # Positive clone controls are compiled/indexed as actual target source.
-    for target in list(
-        path.rglob(
-            {
-                "go": "*.go",
-                "typescript": "*.ts",
-                "javascript": "*.js",
-                "python": "*.py",
-                "rust": "*.rs",
-            }[spec.name]
-        )
-    ):
-        if target.name != "__init__.py":
-            target.write_text(target.read_text() + clone_source(spec.name))
     config = lc.config_text(spec)
     clone_modules = ""
     for side in ("left", "right"):
@@ -199,10 +185,19 @@ def prepare_fixture(spec: lc.FixtureSpec, path: Path) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
         selectors = (
-            f"'{selector}', '{selector}/**'" if spec.name == "rust" else f"'{selector}'"
+            f"'{selector}', '{selector}/**', '{selector.replace('-', '_')}', '{selector.replace('-', '_')}::*'"
+            if spec.name == "rust"
+            else f"'{selector}'"
         )
         clone_modules += f"  clone_{side}:\n    paths: [{selectors}]\n    layer: core\n    owner: team-{side}\n"
     if spec.name == "rust":
+        # Crate-dependency keys use package names; module evidence uses target names.
+        for package in ("smoke-core", "smoke-adapter"):
+            target_name = package.replace("-", "_")
+            config = config.replace(
+                f"paths: ['{package}']",
+                f"paths: ['{package}', '{target_name}', '{target_name}::*']",
+            )
         cargo = path / "Cargo.toml"
         cargo.write_text(
             cargo.read_text().replace(
@@ -313,7 +308,10 @@ def language_cases(contract: ImageContract) -> None:
             contract.expect(
                 f"{output.name}: semantic functional seam",
                 any(
-                    s.get("strength") == "functional" and s.get("scored_edges", 0) > 0
+                    s.get("from_module") == "core"
+                    and s.get("to_module") == "adapter"
+                    and s.get("strength") == "functional"
+                    and s.get("scored_edges", 0) > 0
                     for s in deep.get("seams", [])
                 ),
                 deep.get("seams"),
@@ -457,6 +455,18 @@ def negative_cases(contract: ImageContract) -> None:
         module.get("status") == "partial" and bool(module.get("reason")),
         module,
     )
+    compiler_fixture = contract.output / "fixture-compiler"
+    prepare_fixture(spec, compiler_fixture)
+    healthy = contract.run(
+        "compiler-present",
+        "27182:27182",
+        saved_command("check", f"archfit {common}"),
+        compiler_fixture,
+    )
+    contract.expect(
+        "compiler-present: real forbidden edge",
+        forbidden(contract.read_state(healthy, "check"), "new"),
+    )
     # Overlay only the compiler directory (empty), leaving the producer intact.
     # Mounting an empty directory is reversible and never mutates the image.
     empty = contract.output / "missing-compiler"
@@ -482,7 +492,7 @@ def negative_cases(contract: ImageContract) -> None:
         "--env",
         "HOME=/tmp",
         "--mount",
-        f"type=bind,source={fixture},target=/trusted,readonly",
+        f"type=bind,source={compiler_fixture},target=/trusted,readonly",
         "--mount",
         f"type=bind,source={output},target=/out",
         "--mount",
@@ -506,8 +516,11 @@ def negative_cases(contract: ImageContract) -> None:
     coverage = rows(state).get("dependency-cruiser", {})
     contract.expect(
         "missing compiler: fails closed, never valid empty graph",
-        state.get("verdict") == "blocked"
-        and coverage.get("status") != "ok"
+        (output / "check.rc").read_text().strip() == "2"
+        and state.get("verdict") == "needs_attention"
+        and state.get("decision", {}).get("hard_gates") == "unmeasured"
+        and coverage.get("status") == "partial"
+        and "compiler" in coverage.get("reason", "").lower()
         and any(
             r.get("rule_id") == lc.RULE_ID
             for r in state.get("decision", {}).get("unevaluated_required_rules", [])

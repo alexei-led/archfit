@@ -35,6 +35,9 @@ class ImageContractsTest(unittest.TestCase):
                     self.assertGreater(
                         len(image.clone_source(spec.name).splitlines()), 40
                     )
+                    for name, original in spec.files.items():
+                        if Path(name).suffix in {".go", ".ts", ".js", ".py", ".rs"}:
+                            self.assertEqual((path / name).read_text(), original)
                     self.assertTrue(image.tree_hash(path))
 
     def test_container_failure_cannot_be_reported_as_pass(self):
