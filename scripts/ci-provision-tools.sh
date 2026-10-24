@@ -10,11 +10,13 @@ aarch64) arch=arm64 ;;
     exit 1
     ;;
 esac
-python=$(command -v python3)
+python_version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["versions"]["python"])' "$root/tools/manifest.json")
+uv python install "$python_version"
+python=$(uv python find "$python_version")
 sudo "$python" "$root/scripts/provision_tools.py" sdks --arch "$arch"
 sudo bash "$root/scripts/provision-analyzers.sh" /opt/archfit "$python"
 printf '%s\n' /opt/archfit/analyzers/node/node_modules/.bin /opt/archfit/bin \
-    /opt/archfit/go/bin /opt/archfit/node/bin /opt/archfit/rust/bin >>"${GITHUB_PATH:?}"
+    /opt/archfit/go/bin /opt/archfit/node/bin /opt/archfit/rust/bin "$(dirname -- "$python")" >>"${GITHUB_PATH:?}"
 printf '%s\n' ARCHFIT_TOOL_PYTHON=/opt/archfit/python/bin/python GOTOOLCHAIN=local \
     GOCACHE=/tmp/archfit-go-build GOPATH=/tmp/archfit-go CARGO_HOME=/tmp/archfit-cargo \
     RUST_SRC_PATH=/opt/archfit/rust/lib/rustlib/src/rust/library \
