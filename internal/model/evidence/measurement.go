@@ -47,9 +47,9 @@ func MeasurementContract(tool string) (semantics string, external bool) {
 	switch tool {
 	case "scip":
 		return "scip.v3", true
-	case "go/packages", "dependency-cruiser", "scip-symbols", "ast-grep/syntax":
+	case "go/packages", "dependency-cruiser", "scip-symbols", "ast-grep/syntax", "cargo-modules":
 		return tool + ".v2", true
-	case "cargo", "cargo-modules", "ast-grep", "jscpd":
+	case "cargo", "ast-grep", "jscpd":
 		return tool + ".v1", true
 	case "grimp":
 		return "grimp.v3", true
