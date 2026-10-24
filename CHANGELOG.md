@@ -4,34 +4,23 @@
 
 ### Summary
 
-Bundle the complete Go, TypeScript/JavaScript, Python and Rust analysis environment and correct
-incomplete-evidence and semantic-attribution handling.
+Bundle a pinned analyzer toolchain for Go, TypeScript/JavaScript, Python, and Rust. Reject incomplete import and semantic evidence instead of treating it as an empty graph.
 
 ### Changes
 
-- Pin SDKs/analyzers from one manifest with npm/Python dependency locks and verified native
-  downloads. Supply the TypeScript compiler, isolated Python/SCIP reader environment, Rust tools,
-  language SCIP indexers, jscpd and cargo-modules in both native Linux image platforms.
-- Invoke owned dependency-cruiser through an explicitly validated Node interpreter. Ignore
-  target dependency-cruiser configs and package-manager/preload hooks. Include type-only imports
-  and leave missing/unsupported compiler or source evidence incomplete rather than returning a
-  valid empty graph.
-- Use canonical ast-grep and add bounded JavaScript ESM/CommonJS declaration/route evidence.
-- Join Rust SCIP symbols through Cargo target metadata. Preserve unknown/partial attribution for
-  ambiguous targets, including cache hits, instead of fabricating complete semantic joins.
-- Validate final-image tool capability and real forbidden imports under default/arbitrary UIDs.
+- Lock and checksum SDKs, analyzers, and reader dependencies for native amd64 and arm64 images.
+- Run dependency-cruiser through an owned Node interpreter. Ignore project executable configuration, include TypeScript type-only imports, and leave unsupported compiler/source inventories unevaluated.
+- Use canonical ast-grep with bounded JavaScript syntax extraction.
+- Map Rust SCIP references through Cargo target metadata. Ambiguous targets remain partial rather than gaining inferred strength.
+- Test real forbidden imports, optional analyzer facts, and arbitrary-UID final images.
 
 ### Upgrade
 
-1. Install the new CLI or complete image and keep its tool/platform settings stable.
-2. Replace project-local dependency-cruiser setup with an owned external installation. Express
-   architecture scope in reviewed Archfit policy, not executable dependency-cruiser config.
-3. Review baseline reanchor for changed producer semantics and tool versions. No new debt or
-   missing evidence is accepted automatically.
-4. Adopt the new Action/image tuple separately in App-managed workflows after consumer approval.
+1. Use the pinned complete image or install the documented toolchain outside the target repository. Do not use project-local analyzer executables as the gate producer.
+2. Review stored baselines when producer versions or semantics change. Reanchor only after reviewing retained and dropped findings; reanchoring accepts no new debt and cannot repair missing evidence.
+3. Update the App workflow's Action commit, engine version, and matching platform digest as one reviewed change. Publishing the engine does not update existing workflows.
 
-Configuration, state, envelope, baseline and measurement-profile format identifiers are unchanged.
-Producer normalization identities change; read [migration](docs/migration.md#v32-analyzer-environment).
+The state, envelope, baseline, and measurement-profile format identifiers are unchanged. Producer semantics changed for dependency-cruiser, JavaScript syntax, SCIP, and cargo-modules, so old measurements are not assumed comparable. See [migration](docs/migration.md#v32-analyzer-environment).
 
 ## v3.1.2
 
