@@ -12,8 +12,27 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  tools:
+    name: Locked tool manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.pins.outputs.go }}
+      python: ${{ steps.pins.outputs.python }}
+      uv: ${{ steps.pins.outputs.uv }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Verify locks and read runtime pins
+        id: pins
+        run: |
+          python3 scripts/provision_tools.py check
+          python3 -m unittest discover -s scripts/tests -p '*_test.py'
+          jq -r '.versions | to_entries[] | "\(.key)=\(.value)"' tools/manifest.json >> "$GITHUB_OUTPUT"
   lint:
     name: Lint
+    needs: tools
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -25,22 +44,23 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ needs.tools.outputs.go }}
+          check-latest: false
           cache: true
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.15.0
-      # The action forwards its own go-version (default: stable) to setup-go and
-      # ignores go-version-file, so the file input is left out on purpose.
       - name: govulncheck
         uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          go-version: ${{ needs.tools.outputs.go }}
   # Pins and workflow syntax rot silently: a bad SHA or a renamed input
   # fails only when the job that uses it runs. This job lints the workflow
   # files themselves, including the SHA pins Dependabot updates.
   workflows:
     name: Workflows
+    needs: tools
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -49,12 +69,13 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ needs.tools.outputs.go }}
+          check-latest: false
           cache: true
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          python-version: "3.15"
+          python-version: ${{ needs.tools.outputs.python }}
+          version: ${{ needs.tools.outputs.uv }}
           enable-cache: false
       - name: Lint workflows
         env:
@@ -63,7 +84,9 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-24.04
-    needs: lint
+    needs:
+      - lint
+      - tools
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -71,37 +94,22 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ needs.tools.outputs.go }}
+          check-latest: false
           cache: true
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: "24"
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          python-version: "3.15"
+          python-version: ${{ needs.tools.outputs.python }}
+          version: ${{ needs.tools.outputs.uv }}
           enable-cache: false
-      - name: Install architecture analyzers
-        # Versions are pinned and the commands exercise Archfit's real adapters.
-        # zizmor: ignore[adhoc-packages]
-        run: |
-          # Precautionary, not a fix for a known break: util-linux ships
-          # /usr/bin/sg (a setgid helper) and the @ast-grep/cli postinstall
-          # cannot overwrite that path (EEXIST). On this runner npm's global bin
-          # precedes /usr/bin so `sg` already resolved to ast-grep — the gate
-          # step below proves it — but the ordering is the runner image's
-          # choice, not ours. The Dockerfile frees the slot for the same reason.
-          sudo rm -f /usr/bin/sg
-          npm install -g jscpd@5.0.11 @ast-grep/cli@0.44.0 dependency-cruiser@17.4.3
-          rustup toolchain install 1.98.0 --profile minimal
-          go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Install locked native architecture analyzers
+        run: bash scripts/ci-provision-tools.sh
       - name: Run tests
         env:
           ARCHFIT_REQUIRE_TOOLS: "1"
         run: go test -race -coverprofile=coverage.out ./...
       - name: SCIP reader tests (python)
-        run: python3 internal/extract/scip/scip_reader_test.py
+        run: '"$ARCHFIT_TOOL_PYTHON" -I internal/extract/scip/scip_reader_test.py'
       - name: Corpus sweep harness tests (python)
         run: uv run --with jsonschema==4.26.0 python -m unittest discover -s scripts/eval -p '*_test.py'
       - name: CLI exit-contract tests (shell)
@@ -131,8 +139,6 @@ jobs:
           sg --version
           sg --version 2>&1 | grep -q ast-grep
       - name: CI gate — real supported-language contracts
-        env:
-          RUSTUP_TOOLCHAIN: 1.98.0
         run: make language-contracts
       - name: CI gate — architecture drift
         run: make arch-lint
@@ -142,55 +148,50 @@ jobs:
           name: coverage
           path: coverage.out
           retention-days: 7
-  python-image:
-    name: Python 3.14 image contract
-    runs-on: ubuntu-24.04
-    needs: lint
-    permissions:
-      contents: read
+  image:
+    name: Complete image (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    needs:
+      - lint
+      - tools
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Build local image without publishing
+      - name: Build native local image without publishing
+        env:
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          docker build --tag archfit-python-ci \
-            --build-arg VERSION=ci-python-smoke \
+          docker build --platform "$PLATFORM" --tag archfit-upgrade-image:ci \
+            --build-arg VERSION=ci-image-contract \
             --build-arg "COMMIT=${GITHUB_SHA}" \
             --build-arg "DATE=$(sh scripts/build-meta.sh date)" .
-      - name: Verify src-layout Python 3.14 evidence inside the image
+      - name: Full real-language final-image contracts
         run: |
-          output="${RUNNER_TEMP}/archfit-python-image"
-          mkdir -p "$output"
-          docker image inspect archfit-python-ci > "$output/image.json"
-          status=0
-          docker run --rm --read-only --tmpfs /tmp:rw,exec,nosuid,size=512m,mode=1777 \
-            --env HOME=/tmp \
-            --mount "type=bind,source=${GITHUB_WORKSPACE}/testdata/python314,target=/src,readonly" \
-            archfit-python-ci check --root /src --config /src/.archfit.yaml --json \
-            > "$output/report.json" 2> "$output/stderr.log" || status=$?
-          cat "$output/stderr.log"
-          test "$status" -eq 1
-          jq -e '
-            .decision.hard_gates == "fail" and
-            ((.decision.unevaluated_required_rules // []) | length == 0) and
-            (.coverage.tools | any(.tool == "grimp" and .status == "ok")) and
-            (.comparison.measurement_profile.producers | any(
-              .tool == "grimp" and .semantics_version == "grimp.v3" and
-              (.tool_version | contains("; python 3.14.")))) and
-            (.findings | any(.rule_id == "no-core-to-adapter" and .kind == "gate"))
-          ' "$output/report.json"
+          python3 scripts/image_contracts.py --docker-context default \
+            --image archfit-upgrade-image:ci --output-dir "$RUNNER_TEMP/archfit-image-contract"
       - name: Preserve image and report evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: python-image-contract
-          path: ${{ runner.temp }}/archfit-python-image
+          name: image-contract-${{ matrix.runner }}
+          path: ${{ runner.temp }}/archfit-image-contract
           retention-days: 7
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-24.04
-    needs: test
+    needs:
+      - test
+      - tools
     timeout-minutes: 20
     strategy:
       matrix:
@@ -209,8 +210,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ needs.tools.outputs.go }}
+          check-latest: false
           cache: true
       - name: Build binary
         env:

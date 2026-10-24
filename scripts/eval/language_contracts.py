@@ -28,8 +28,10 @@ REPO_ROOT = SCRIPT_DIR.parents[1]
 DEFAULT_ARCHFIT = REPO_ROOT / ".bin" / "archfit"
 DEFAULT_OUTPUT = Path("/tmp/archfit-language-contracts")
 OUTPUT_MARKER = ".archfit-language-contracts"
-RUST_TOOLCHAIN = "1.98.0"
-DEPCRUISE_VERSION = "17.4.3"
+TOOL_MANIFEST = json.loads((REPO_ROOT / "tools/manifest.json").read_text())
+RUST_TOOLCHAIN = TOOL_MANIFEST["versions"]["rust"]
+DEPCRUISE_VERSION = TOOL_MANIFEST["node"]["dependency-cruiser"]
+TYPESCRIPT_VERSION = TOOL_MANIFEST["node"]["typescript"]
 RULE_ID = "core_no_adapter"
 WARN_RULE_ID = "core_warn_adapter"
 OPTIONAL_DISABLED = {
@@ -99,7 +101,7 @@ FIXTURES = (
                     "private": True,
                     "devDependencies": {
                         "dependency-cruiser": DEPCRUISE_VERSION,
-                        "typescript": "5.9.3",
+                        "typescript": TYPESCRIPT_VERSION,
                     },
                 },
                 indent=2,
@@ -138,6 +140,7 @@ FIXTURES = (
                 indent=2,
             )
             + "\n",
+            "tsconfig.json": '{"compilerOptions":{"allowJs":true,"checkJs":true,"module":"NodeNext","moduleResolution":"NodeNext"},"include":["src/**/*.js"]}\n',
             "src/core/index.js": 'import { value } from "../adapter/index.js";\n\nexport const run = () => value();\n',
             "src/adapter/index.js": "export const value = () => 1;\n",
         },
@@ -237,37 +240,44 @@ def preflight(archfit: Path, root: Path) -> list[str]:
         )
     if not archfit.is_file() or not os.access(archfit, os.X_OK):
         failures.append(f"archfit binary is missing or not executable: {archfit}")
-    for tool in ("git", "go", "node", "npm", "npx", "uv", "cargo", "sg"):
+    for tool in ("git", "go", "node", "cargo", "ast-grep", "depcruise"):
         if shutil.which(tool) is None:
             failures.append(f"required tool {tool!r} is not on PATH")
 
     if shutil.which("node"):
         node = run_command("node-version", ["node", "--version"], root)
-        if not node.stdout.strip().startswith("v24."):
-            failures.append(f"Node 24 is required, got {node.stdout.strip()!r}")
-    if shutil.which("sg"):
-        sg = run_command("sg-version", ["sg", "--version"], root)
-        if "ast-grep" not in (sg.stdout + sg.stderr).lower():
+        if _version_number(node.stdout) != TOOL_MANIFEST["versions"]["node"]:
             failures.append(
-                "required sg is not ast-grep (util-linux sg would be silent substitution)"
+                f"Node {TOOL_MANIFEST['versions']['node']} is required, got {node.stdout.strip()!r}"
             )
+    if shutil.which("ast-grep"):
+        sg = run_command("ast-grep-version", ["ast-grep", "--version"], root)
+        if "ast-grep" not in (sg.stdout + sg.stderr).lower():
+            failures.append("required ast-grep is not the canonical syntax producer")
     if shutil.which("cargo"):
         cargo = run_command("cargo-version", ["cargo", "--version"], root)
         if _version_number(cargo.stdout) != RUST_TOOLCHAIN:
             failures.append(
                 f"Cargo/Rust toolchain {RUST_TOOLCHAIN} is required, got {cargo.stdout.strip()!r}"
             )
-    if shutil.which("uv"):
-        grimp = run_command(
-            "grimp-preflight",
-            ["uv", "run", "--with", "grimp", "python", "-c", "import grimp"],
-            root,
-            timeout=180,
+    python = os.environ.get("ARCHFIT_TOOL_PYTHON", sys.executable)
+    grimp = run_command(
+        "grimp-preflight",
+        [
+            python,
+            "-I",
+            "-c",
+            "import grimp, importlib.metadata, platform; print(importlib.metadata.version('grimp')); print(platform.python_version())",
+        ],
+        root,
+    )
+    if grimp.returncode != 0 or grimp.stdout.splitlines() != [
+        TOOL_MANIFEST["python"]["grimp"],
+        TOOL_MANIFEST["versions"]["python"],
+    ]:
+        failures.append(
+            f"isolated pinned Python/grimp is unavailable: {grimp.stdout} {grimp.stderr}"
         )
-        if grimp.returncode != 0:
-            failures.append(
-                f"uv could not provide grimp: {grimp.stderr.strip() or grimp.stdout.strip()}"
-            )
 
     return failures
 
@@ -429,20 +439,8 @@ def git_fixture(root: Path, commands: list[CommandResult]) -> None:
 
 
 def install_node_fixture(root: Path, commands: list[CommandResult]) -> None:
-    command = run_command(
-        "npm-install-dependency-cruiser",
-        ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"],
-        root,
-        timeout=300,
-    )
-    commands.append(command)
-    if command.returncode != 0:
-        raise RuntimeError(
-            f"dependency-cruiser {DEPCRUISE_VERSION} install failed: {command.stderr.strip()}"
-        )
-    version = run_command(
-        "depcruise-version", ["npx", "--no-install", "depcruise", "--version"], root
-    )
+    # Never install analyzers in the target or select a target-local npm tool.
+    version = run_command("depcruise-version", ["depcruise", "--version"], root)
     commands.append(version)
     if DEPCRUISE_VERSION not in version.stdout:
         raise RuntimeError(
@@ -578,6 +576,22 @@ def run_fixture(
         {"unevaluated": sorted(unevaluated), "producer": primary.get(primary_tool)},
     )
     optional_tools_disclosed(result, state)
+    producer_pin = {
+        "go": TOOL_MANIFEST["versions"]["go"],
+        "typescript": DEPCRUISE_VERSION,
+        "python": f"grimp {TOOL_MANIFEST['python']['grimp']}; python {TOOL_MANIFEST['versions']['python']}",
+        "rust": RUST_TOOLCHAIN,
+    }[spec.language]
+    producers = (
+        state.get("comparison", {}).get("measurement_profile", {}).get("producers", [])
+    )
+    producer = next((row for row in producers if row.get("tool") == primary_tool), {})
+    assert_result(
+        result,
+        "consumed primary producer matches manifest",
+        producer_pin in producer.get("tool_version", ""),
+        producer,
+    )
     if spec.name == "python":
         locations = (target or {}).get("locations") or []
         physical = bool(locations) and all(

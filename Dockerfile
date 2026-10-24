@@ -1,85 +1,51 @@
-# syntax=docker/dockerfile:1
-ARG GO_VERSION=1.27.3
-ARG PYTHON_VERSION=3.14
-ARG UV_VERSION=0.13.5
-ARG DEPCRUISER_VERSION=17
-# 0.44.0 is the version --inline-rules (used by the syntax-facts adapter) was
-# validated against; matches the local toolchain. Bump only after re-validating.
-ARG ASTGREP_VERSION=0.44.0
-
-# ── uv binary stage: FROM expands the global ARG; COPY --from=<image:${VAR}>
-# does not (buildkit rejects variable expansion in --from), so alias it here. ──
-FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv-bin
-
-# ── Stage 1: Go build (CGO_ENABLED=0, fully static binary) ───────────────────
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS go-builder
-ARG TARGETOS TARGETARCH VERSION COMMIT DATE
+# Both stages run on TARGETPLATFORM. Never copy a BUILDPLATFORM SDK into runtime.
+FROM python:3.14.9-slim-bookworm@sha256:945c2676dc2b18e0c1f16879244122c57c0ffede60006bf3df159c507a31bcae AS tools-builder
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates build-essential pkg-config libssl-dev git \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
+COPY Dockerfile ./
+COPY tools/ tools/
+COPY scripts/provision_tools.py scripts/provision-analyzers.sh scripts/
+RUN python scripts/provision_tools.py sdks --arch "${TARGETARCH}" \
+    && bash scripts/provision-analyzers.sh /opt/archfit /usr/local/bin/python
+ENV PATH="/opt/archfit/go/bin:/opt/archfit/node/bin:/opt/archfit/rust/bin:/opt/archfit/bin:${PATH}" \
+    GOTOOLCHAIN=local GOWORK=off
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# GOWORK=off: go.work references testdata modules that .dockerignore excludes;
-# the binary builds from the main module only.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOWORK=off \
-    go build -trimpath \
+ARG VERSION COMMIT DATE
+RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
     -o /out/archfit ./cmd/archfit
 
-# Python must parse the target's grammar as well as run grimp. Bookworm's
-# system Python 3.11 cannot parse Python 3.14 projects such as ccgram.
-FROM python:${PYTHON_VERSION}-slim-bookworm
-ARG DEPCRUISER_VERSION
-ARG ASTGREP_VERSION
-
-# Install runtime tools + Node 24 (NodeSource) in one layer.
-# curl and gnupg are only needed to add the NodeSource repo; purge them after.
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+FROM python:3.14.9-slim-bookworm@sha256:945c2676dc2b18e0c1f16879244122c57c0ffede60006bf3df159c507a31bcae
+# cc/linker is needed by Cargo/Go target analysis, not just by this image build.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    git \
-    curl \
-    gnupg \
-    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && apt-get purge -y --auto-remove curl gnupg \
+    ca-certificates git build-essential pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
-
-# util-linux ships /usr/bin/sg (setgid helper); @ast-grep/cli postinstall writes
-# the same path and fails EEXIST. Remove it first so ast-grep owns the slot.
-RUN rm -f /usr/bin/sg
-
-# dependency-cruiser (TS import analysis) + ast-grep (structural patterns).
-# @ast-grep/cli resolves a glibc native binary — works on bookworm-slim.
-RUN npm install -g \
-    dependency-cruiser@${DEPCRUISER_VERSION} \
-    @ast-grep/cli@${ASTGREP_VERSION} \
-    && npm cache clean --force
-
-# uv resolves the pinned analyzer in an isolated environment, never target deps.
-COPY --from=uv-bin /uv /uvx /usr/local/bin/
-ENV UV_PYTHON_DOWNLOADS=never \
-    UV_SYSTEM_PYTHON=1
-
-# archfit binary (static, CGO_ENABLED=0).
-COPY --from=go-builder /out/archfit /usr/local/bin/archfit
-
-# Go toolchain: the Go extractor uses go/packages, which shells out to `go list`,
-# so analyzing a Go target requires the SDK at runtime. golang:*-bookworm uses
-# glibc, matching this debian-slim base. GOTOOLCHAIN=local pins to it; GOCACHE/
-# GOPATH point at world-writable /tmp so the non-root user can run `go list`.
-COPY --from=go-builder /usr/local/go /usr/local/go
-ENV PATH="/usr/local/go/bin:${PATH}" \
+COPY --from=tools-builder /opt/archfit /opt/archfit
+COPY --from=tools-builder /out/archfit /usr/local/bin/archfit
+ENV PATH="/opt/archfit/analyzers/node/node_modules/.bin:/opt/archfit/bin:/opt/archfit/go/bin:/opt/archfit/node/bin:/opt/archfit/rust/bin:${PATH}" \
+    ARCHFIT_TOOL_PYTHON=/opt/archfit/python/bin/python \
+    HOME=/tmp \
     GOTOOLCHAIN=local \
-    GOCACHE=/tmp/.gocache \
-    GOPATH=/tmp/.gopath
-
-# Non-root user.
-RUN groupadd --system archfit && useradd --system --gid archfit archfit
-USER archfit
-
+    GOCACHE=/tmp/archfit-go-build \
+    GOPATH=/tmp/archfit-go \
+    CARGO_HOME=/tmp/archfit-cargo \
+    RUSTUP_HOME=/tmp/archfit-rustup \
+    RUST_SRC_PATH=/opt/archfit/rust/lib/rustlib/src/rust/library \
+    XDG_CACHE_HOME=/tmp/archfit-cache \
+    UV_CACHE_DIR=/tmp/archfit-uv \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_OFFLINE=1 \
+    npm_config_cache=/tmp/archfit-npm \
+    npm_config_offline=true \
+    PYTHONNOUSERSITE=1
+USER 65532:65532
 LABEL org.opencontainers.image.title="archfit" \
-      org.opencontainers.image.description="Architecture fitness checker for Go, TypeScript, and Python repositories" \
+      org.opencontainers.image.description="Architecture fitness checker for Go, TypeScript, JavaScript, Python and Rust" \
       org.opencontainers.image.source="https://github.com/alexei-led/archfit" \
       org.opencontainers.image.licenses="MIT"
-
 ENTRYPOINT ["/usr/local/bin/archfit"]

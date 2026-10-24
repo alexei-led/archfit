@@ -9,3 +9,12 @@ dist/
 # Not needed for image build
 docs/
 testdata/
+
+# Local indexes, package installs, caches and credentials are not build inputs.
+.gitnexus/
+**/node_modules/
+**/__pycache__/
+.archfit-cache/
+.venv/
+.env
+.env.*

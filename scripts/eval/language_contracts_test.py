@@ -79,5 +79,25 @@ class TestFixtureContracts(unittest.TestCase):
                 lc.os.environ["RUSTUP_TOOLCHAIN"] = original
 
 
+class TestToolManifest(unittest.TestCase):
+    def test_fixture_compiler_is_exact_and_compatible(self):
+        import json
+
+        fixture = next(spec for spec in lc.FIXTURES if spec.name == "typescript")
+        deps = json.loads(fixture.files["package.json"])["devDependencies"]
+        self.assertEqual(deps["typescript"], "6.0.3")
+        self.assertEqual(deps["typescript"], lc.TOOL_MANIFEST["node"]["typescript"])
+        self.assertEqual(deps["dependency-cruiser"], "18.7.0")
+        self.assertEqual(lc.RUST_TOOLCHAIN, "1.99.1")
+
+    def test_javascript_is_indexable_for_deep_contracts(self):
+        import json
+
+        fixture = next(spec for spec in lc.FIXTURES if spec.name == "javascript")
+        self.assertTrue(
+            json.loads(fixture.files["tsconfig.json"])["compilerOptions"]["allowJs"]
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
