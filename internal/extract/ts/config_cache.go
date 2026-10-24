@@ -25,44 +25,19 @@ func MeasurementConfigHash(s scope.Scope, cfg evidenceports.ExtractConfig) (stri
 	if err != nil {
 		return "", fmt.Errorf("typescript compiler configuration: %w", err)
 	}
-	for _, name := range tsManifestNames {
-		if !strings.HasPrefix(name, ".dependency-cruiser.") || filepath.Ext(name) == ".json" {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(workDir, name)); !os.IsNotExist(err) {
-			return "", fmt.Errorf("dependency-cruiser dynamic configuration inputs unresolved: %s", name)
-		}
+	src := cfg.Src
+	if src == "" {
+		src = "src"
 	}
-	inputs := map[string]string{"tsconfig": compiler}
-	const configName = ".dependency-cruiser.json"
-	data, err := os.ReadFile(filepath.Join(workDir, configName)) //nolint:gosec // extractor's configuration file
-	if err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("dependency-cruiser configuration: %w", err)
+	files, err := eligibleSources(filepath.Join(s.Root, src))
+	if err != nil {
+		return "", err
 	}
-	if err == nil {
-		var config struct {
-			Extends json.RawMessage `json:"extends"`
-			Options struct {
-				TSConfig               json.RawMessage `json:"tsConfig"`
-				WebpackConfig          json.RawMessage `json:"webpackConfig"`
-				BabelConfig            json.RawMessage `json:"babelConfig"`
-				EnhancedResolveOptions struct {
-					Plugins json.RawMessage `json:"plugins"`
-				} `json:"enhancedResolveOptions"`
-				ExternalModuleResolutionStrategy string `json:"externalModuleResolutionStrategy"`
-			} `json:"options"`
-		}
-		if err := json.Unmarshal(data, &config); err != nil {
-			return "", fmt.Errorf("dependency-cruiser configuration: %w", err)
-		}
-		if len(config.Extends) != 0 || len(config.Options.TSConfig) != 0 ||
-			len(config.Options.WebpackConfig) != 0 || len(config.Options.BabelConfig) != 0 ||
-			len(config.Options.EnhancedResolveOptions.Plugins) != 0 || config.Options.ExternalModuleResolutionStrategy == "yarn-pnp" {
-			return "", fmt.Errorf("dependency-cruiser configuration inputs unresolved: %s", configName)
-		}
-		inputs[configName] = string(data)
-	}
-	return factcache.HashJSON(inputs)
+	return factcache.HashJSON(struct {
+		Compiler string
+		Args     []string
+		Env      []string
+	}{compiler, scanArgs(files), producerEnv})
 }
 
 // tsConfigInputsHash includes the complete explicit local extends chain, even

@@ -61,12 +61,10 @@ var tsSourceExts = graph.TypeScriptSourceExtensions()
 
 // tsManifestNames are the resolution-affecting manifests hashed into the
 // fact-cache key alongside the source tree: compiler/aliasing config,
-// package manifests, lockfiles, and depcruise's own config.
+// package manifests and lockfiles. Project depcruise configuration is ignored.
 var tsManifestNames = []string{
 	"package.json", "tsconfig.json", "tsconfig.base.json",
 	"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb",
-	".dependency-cruiser.cjs", ".dependency-cruiser.js",
-	".dependency-cruiser.mjs", ".dependency-cruiser.json",
 }
 
 // New returns an Extractor configured with the given runner and config.
@@ -106,8 +104,8 @@ func Applicable(root string) bool {
 // parses the JSON output, and returns a graph.Facts + evidence.Coverage.
 //
 // If mode is off, Extract returns empty Facts and an "absent" Coverage immediately.
-// If mode is auto and the tool is absent or the project has no package.json,
-// Extract returns empty Facts and an "absent" Coverage record — never an error.
+// Missing producer/compiler inputs yield incomplete coverage, never a valid
+// empty graph. A project without package.json is absent in auto mode.
 // If mode is on and the tool is absent, Extract returns an error.
 func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error) {
 	if e.cfg.Mode == evidenceports.ModeOff {
@@ -121,18 +119,6 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		}
 		return graph.Facts{}, absentCoverage(""), nil
 	}
-
-	// Detect bunx or npx.
-	launcher, _, found := e.detectLauncher(ctx)
-	if !found {
-		if e.cfg.Mode == evidenceports.ModeOn {
-			return graph.Facts{}, evidence.Coverage{}, errors.New("extract/ts: dependency-cruiser not found (bunx/npx unavailable); install Node and run: npm i -D dependency-cruiser")
-		}
-		return graph.Facts{}, absentCoverage(""), nil
-	}
-
-	// Get dependency-cruiser version.
-	version := e.detectVersion(ctx, launcher)
 
 	// Build the depcruise command arguments. "." means "scan the analysis root
 	// itself" (Config.ForExtract's default since the Src-derivation fix) and is
@@ -164,7 +150,42 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		srcArg = filepath.ToSlash(filepath.Join(s.SubtreePrefix, src))
 	}
 
-	args := append(packagePinArgs(launcher), toolName, srcArg, "--output-type", "json", "--exclude", thirdPartyExclude)
+	files, inputErr := eligibleSources(filepath.Join(s.Root, src))
+	if inputErr != nil {
+		if e.cfg.Mode == evidenceports.ModeOn {
+			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: source inputs: %w", inputErr)
+		}
+		return graph.Facts{}, incompleteCoverage("", "dependency-cruiser source inputs: "+inputErr.Error(), len(files)), nil
+	}
+	binary, err := e.producerPath(ctx, s.Root, workDir)
+	if err != nil {
+		if e.cfg.Mode == evidenceports.ModeOn {
+			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: %w", err)
+		}
+		if len(files) == 0 {
+			return graph.Facts{}, absentCoverage(""), nil
+		}
+		return graph.Facts{}, incompleteCoverage("", err.Error(), len(files)), nil
+	}
+	producer, probeErr := e.inspectProducer(ctx, binary)
+	version := producer.Version
+	if probeErr != nil {
+		return graph.Facts{}, incompleteCoverage(version, probeErr.Error(), len(files)), nil
+	}
+	measurementHash := ""
+	configHash, configErr := MeasurementConfigHash(s, e.cfg)
+	if configErr == nil {
+		measurementHash, _ = factcache.HashJSON(struct {
+			Config   string
+			Producer producerInfo
+		}{configHash, producer})
+	}
+	if needsTypeScript(files) && !producer.SupportsTS {
+		cov := incompleteCoverage(version, "dependency-cruiser has no compatible TypeScript compiler in its producer environment", len(files))
+		cov.MeasurementSettingsHash = measurementHash
+		return graph.Facts{}, cov, nil
+	}
+	args := append([]string{srcArg}, scanArgs(files)...)
 	// Scope depcruise to the analysis subtree when running from the git root.
 	// --include-only uses a JS regex against the git-root-relative module paths.
 	// Omitted when SubtreePrefix is empty to preserve byte-identical output on
@@ -185,25 +206,26 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	if tsConfig := e.resolveTSConfig(s.Root, workDir); tsConfig != "" {
 		args = append(args, "--ts-config", tsConfig)
 	}
-	// dependency-cruiser errors out when it cannot find its own config file. archfit
-	// only needs the dependency graph (not depcruise's rules), so fall back to
-	// --no-config (built-in defaults) for projects that ship no depcruise config.
-	if !hasDepcruiseConfig(workDir) {
-		args = append(args, "--no-config")
-	}
-
 	cmd := toolrun.ToolCmd{
-		Name:    launcher,
+		Name:    binary,
 		Args:    args,
+		Env:     producerEnv,
 		WorkDir: workDir,
 		Timeout: runTimeout,
 	}
-	out, measurementHash, measuredVersion, err := e.runWithConfigSnapshot(ctx, s, version, e.resolveTSConfig(s.Root, workDir), workDir, cmd)
-	version = measuredVersion
+	cacheVersion, _ := factcache.HashJSON(producer)
+	out, err := e.cachedRunner(s, cacheVersion, e.resolveTSConfig(s.Root, workDir), workDir, files, srcArg).Run(ctx, cmd)
 	if err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: run dependency-cruiser: %w", err)
 	}
 	if out.ExitCode != 0 {
+		// TypeScript reports TS18003 for a valid config in a genuinely empty
+		// tree. There are no eligible inputs to lose in that case.
+		if len(files) == 0 && strings.Contains(string(out.Stderr), "TS18003") {
+			return graph.Facts{Language: langTS}, evidence.Coverage{
+				Tool: coverageTool, Version: version, Status: statusOK, MeasurementSettingsHash: measurementHash,
+			}, nil
+		}
 		// dependency-cruiser exited non-zero — e.g. the source directory does not
 		// exist ("Can't open 'src' for reading"), as on an npm-workspaces monorepo
 		// with no top-level src/. In auto mode this is a coverage gap, not a
@@ -213,49 +235,30 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		if e.cfg.Mode == evidenceports.ModeOn {
 			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: %s", reason)
 		}
-		return graph.Facts{}, evidence.Coverage{Tool: coverageTool, Version: version, Status: statusPartial, Reason: reason}, nil
+		return graph.Facts{}, incompleteCoverage(version, reason, len(files)), nil
 	}
 
 	facts, cov, err := e.parseAndNormalize(out.Stdout, version, s.SubtreePrefix)
 	if err != nil {
-		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: parse output: %w", err)
+		if e.cfg.Mode == evidenceports.ModeOn {
+			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/ts: parse output: %w", err)
+		}
+		return graph.Facts{}, incompleteCoverage(version, "dependency-cruiser unusable output: "+err.Error(), len(files)), nil
+	}
+	var dc dcOutput
+	_ = json.Unmarshal(out.Stdout, &dc) // parseAndNormalize already validated the JSON.
+	missing := missingSourceCount(dc, files, srcArg)
+	cov.FilesApplicable = max(cov.FilesSeen, len(files))
+	if issue := environmentIssue(dc); issue != "" {
+		cov.Status, cov.Reason = statusPartial, issue
+		cov.UnresolvedInputsMissing = max(1, missing)
+	} else if missing > 0 {
+		cov.Status = statusPartial
+		cov.Reason = fmt.Sprintf("dependency-cruiser omitted %d of %d eligible source files", missing, len(files))
+		cov.UnresolvedInputsMissing = missing
 	}
 	cov.MeasurementSettingsHash = measurementHash
 	return facts, cov, nil
-}
-
-// detectLauncher tries bunx then npx. Returns ("", "", false) if neither is available.
-func (e *Extractor) detectLauncher(ctx context.Context) (string, string, bool) {
-	for _, tool := range []string{"bunx", "npx"} {
-		if info, ok := e.runner.Detect(ctx, tool); ok {
-			return tool, info.Path, true
-		}
-	}
-	return "", "", false
-}
-
-// packagePinArgs returns launcher flags that pin depcruise's npm package name
-// explicitly. Without this, a launcher that finds no local "depcruise" binary
-// (dependency-cruiser not yet installed as a project dependency, the common
-// case for an archfit target repo) falls back to resolving "depcruise" as if
-// it were itself an installable package name. On the npm registry that name
-// belongs to an unrelated dependency-confusion placeholder package, not
-// dependency-cruiser -- confirmed via `npx depcruise` on a repo with no local
-// install: it silently installs the decoy, exits 0, and prints a warning
-// banner instead of JSON, which would otherwise surface as a silent coverage
-// gap indistinguishable from any other TS extraction miss. bunx (tried first
-// by detectLauncher) does not hit this because its package cache resolves
-// "depcruise" correctly, but pinning both launchers removes the ambiguity
-// instead of relying on that being permanently true.
-func packagePinArgs(launcher string) []string {
-	switch launcher {
-	case "bunx":
-		return []string{"-p", coverageTool}
-	case "npx":
-		return []string{"--package=" + coverageTool, "--"}
-	default:
-		return nil
-	}
 }
 
 // tsConfigNames are the conventional tsconfig file names archfit auto-detects at
@@ -311,33 +314,6 @@ func (e *Extractor) resolveTSConfig(scanRoot, workDir string) string {
 	return ""
 }
 
-// hasDepcruiseConfig reports whether a dependency-cruiser config file exists at root.
-func hasDepcruiseConfig(root string) bool {
-	for _, name := range []string{
-		".dependency-cruiser.cjs", ".dependency-cruiser.js",
-		".dependency-cruiser.mjs", ".dependency-cruiser.json",
-	} {
-		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
-			return true
-		}
-	}
-	return false
-}
-
-// detectVersion runs `<launcher> depcruise --version` and returns the version string.
-// Returns empty string on any failure (non-fatal).
-func (e *Extractor) detectVersion(ctx context.Context, launcher string) string {
-	out, err := e.runner.Run(ctx, toolrun.ToolCmd{
-		Name:    launcher,
-		Args:    append(packagePinArgs(launcher), toolName, "--version"),
-		Timeout: 30 * time.Second,
-	})
-	if err != nil || out.ExitCode != 0 {
-		return ""
-	}
-	return strings.TrimSpace(string(out.Stdout))
-}
-
 // cachedRunner wraps the runner in a fact-cache decorator for the depcruise
 // invocation (fact-cache.md D5 seam 1). Returns the plain runner when the
 // cache is off or key material cannot be derived — never fails the run.
@@ -348,7 +324,7 @@ func (e *Extractor) detectVersion(ctx context.Context, launcher string) string {
 // outside s.Root), root-level resolution manifests when depcruise runs from a
 // git root, package metadata under node_modules when present, and the content
 // hash of every TS/JS source + manifest file under s.Root.
-func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir string) toolrun.Runner {
+func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir string, files []string, srcArg string) toolrun.Runner {
 	if e.Cache == nil {
 		return e.runner
 	}
@@ -399,17 +375,20 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir s
 	if s.Root == workDir {
 		excludes = []string{"node_modules/**"}
 	}
-	files := factcache.ListInputs(s.Root, factcache.MatchExts(tsSourceExts, tsManifestNames), excludes)
-	treeHash, err := factcache.HashTree(s.Root, files)
+	inputs := factcache.ListInputs(s.Root, factcache.MatchExts(tsSourceExts, tsManifestNames), excludes)
+	treeHash, err := factcache.HashTree(s.Root, inputs)
 	if err != nil {
 		return e.runner
 	}
 	return &factcache.Runner{
-		Inner:     e.runner,
-		Store:     e.Cache,
-		Analyzer:  langTS,
-		Key:       factcache.Key(langTS, version, cfgHash, treeHash),
-		Cacheable: cacheableDepcruise,
+		Inner:    e.runner,
+		Store:    e.Cache,
+		Analyzer: langTS,
+		Key:      factcache.Key(langTS, version, cfgHash, treeHash),
+		Cacheable: func(out toolrun.Output) bool {
+			var dc dcOutput
+			return cacheableDepcruise(out) && json.Unmarshal(out.Stdout, &dc) == nil && missingSourceCount(dc, files, srcArg) == 0
+		},
 	}
 }
 
@@ -483,7 +462,7 @@ func cacheableDepcruise(out toolrun.Output) bool {
 		return false
 	}
 	var dc dcOutput
-	if json.Unmarshal(out.Stdout, &dc) != nil {
+	if json.Unmarshal(out.Stdout, &dc) != nil || len(dc.Modules) == 0 || environmentIssue(dc) != "" {
 		return false
 	}
 	for _, mod := range dc.Modules {
@@ -508,6 +487,14 @@ func cacheableDepcruise(out toolrun.Output) bool {
 
 type dcOutput struct {
 	Modules []dcModule `json:"modules"`
+	Summary struct {
+		Environment struct {
+			Issues []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+			} `json:"issues"`
+		} `json:"environment"`
+	} `json:"summary"`
 }
 
 type dcModule struct {
@@ -594,6 +581,9 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 	var dc dcOutput
 	if err := json.Unmarshal(data, &dc); err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("unmarshal: %w", err)
+	}
+	if dc.Modules == nil {
+		return graph.Facts{}, evidence.Coverage{}, errors.New("missing modules array")
 	}
 	// normPath strips the git-root-relative prefix from paths emitted by
 	// depcruise when running from the git root (subtree mode). This converts

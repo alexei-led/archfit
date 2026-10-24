@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
@@ -22,7 +21,7 @@ func TestMeasurementConfigHash_CheckoutIndependentAndTracksInheritedConfig(t *te
 	otherRoot := writeTSFixture(t, "export const a = 2", config)
 	hash := func(root string) string {
 		t.Helper()
-		value, err := ts.MeasurementConfigHash(scope.Scope{Root: root}, evidenceports.ExtractConfig{})
+		value, err := ts.MeasurementConfigHash(scope.Scope{Root: root}, evidenceports.ExtractConfig{Src: "."})
 		if err != nil || value == "" {
 			t.Fatalf("configuration identity=%q error=%v", value, err)
 		}
@@ -41,8 +40,8 @@ func TestMeasurementConfigHash_CheckoutIndependentAndTracksInheritedConfig(t *te
 	if err := os.WriteFile(filepath.Join(otherRoot, ".dependency-cruiser.json"), []byte(`{"options":{"doNotFollow":{"path":"node_modules"}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if before == hash(otherRoot) {
-		t.Fatal("dependency-cruiser configuration change did not change identity")
+	if before != hash(otherRoot) {
+		t.Fatal("ignored dependency-cruiser configuration changed identity")
 	}
 }
 
@@ -60,8 +59,8 @@ func TestMeasurementConfigHash_JSONResolverOptions(t *testing.T) {
 			})
 			s := scope.Scope{Root: root}
 			cfg := evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: "."}
-			if hash, err := ts.MeasurementConfigHash(s, cfg); hash != "" || err == nil || !strings.Contains(err.Error(), "configuration inputs unresolved") {
-				t.Fatalf("opaque resolver must return unknown identity: hash=%q error=%v", hash, err)
+			if hash, err := ts.MeasurementConfigHash(s, cfg); hash == "" || err != nil {
+				t.Fatalf("ignored resolver must retain identity: hash=%q error=%v", hash, err)
 			}
 			calls := 0
 			ex := ts.New(cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[]}]}`, &calls), cfg)
@@ -71,8 +70,8 @@ func TestMeasurementConfigHash_JSONResolverOptions(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if calls != 2 {
-				t.Fatalf("opaque resolver inputs must bypass cache: calls=%d", calls)
+			if calls != 1 {
+				t.Fatalf("ignored resolver inputs must not disable cache: calls=%d", calls)
 			}
 		})
 	}
@@ -80,7 +79,7 @@ func TestMeasurementConfigHash_JSONResolverOptions(t *testing.T) {
 		root := writeTSFixture(t, "export const a = 1", map[string]string{
 			configName: `{"options":{"enhancedResolveOptions":{"extensions":[".js",".ts"],"mainFields":["module","main"]}}}`,
 		})
-		if hash, err := ts.MeasurementConfigHash(scope.Scope{Root: root}, evidenceports.ExtractConfig{}); hash == "" || err != nil {
+		if hash, err := ts.MeasurementConfigHash(scope.Scope{Root: root}, evidenceports.ExtractConfig{Src: "."}); hash == "" || err != nil {
 			t.Fatalf("ordinary resolver options must retain known identity: hash=%q error=%v", hash, err)
 		}
 	})
@@ -88,13 +87,11 @@ func TestMeasurementConfigHash_JSONResolverOptions(t *testing.T) {
 
 func TestMeasurementConfigHash_UnresolvedConfigurationIsUnknown(t *testing.T) {
 	for name, extra := range map[string]map[string]string{
-		"dynamic":    {".dependency-cruiser.cjs": `module.exports = require("./shared.cjs")`},
-		"inherited":  {tsconfigName: `{"extends":"@example/compiler-config"}`},
-		"indirected": {".dependency-cruiser.json": `{"extends":"./shared.json"}`},
+		"inherited": {tsconfigName: `{"extends":"@example/compiler-config"}`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := writeTSFixture(t, "export const a = 1", extra)
-			if hash, err := ts.MeasurementConfigHash(scope.Scope{Root: root}, evidenceports.ExtractConfig{}); err == nil || hash != "" {
+			if hash, err := ts.MeasurementConfigHash(scope.Scope{Root: root}, evidenceports.ExtractConfig{Src: "."}); err == nil || hash != "" {
 				t.Fatalf("unresolved configuration must return unknown: hash=%q error=%v", hash, err)
 			}
 		})
