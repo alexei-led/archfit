@@ -53,15 +53,17 @@ const (
 	reasonTimedOut        = "SCIP analysis timed out — increase analyzers.scip.timeout or reduce the scope"
 )
 
+type readerEdge struct {
+	From         string   `json:"from"`
+	To           string   `json:"to"`
+	Strength     string   `json:"strength"`
+	DataStrength string   `json:"data_strength"`
+	Connascence  []string `json:"connascence"`
+}
+
 // readerOutput mirrors the JSON emitted by scip_reader.py.
 type readerOutput struct {
-	Edges []struct {
-		From         string   `json:"from"`
-		To           string   `json:"to"`
-		Strength     string   `json:"strength"`
-		DataStrength string   `json:"data_strength"`
-		Connascence  []string `json:"connascence"`
-	} `json:"edges"`
+	Edges   []readerEdge `json:"edges"`
 	Symbols []struct {
 		Symbol string `json:"symbol"`
 		Path   string `json:"path"`
@@ -94,8 +96,12 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 	if perr != nil {
 		return nil, partial, nil
 	}
+	observedEdges := len(m)
+	for _, edge := range ro.packageEdges {
+		m[edge.From+"\x00"+edge.To] = edge.Strength
+	}
 	if partial.Status == evidence.StatusPartial && partial.Reason != "" {
-		partial.FilesSeen, partial.FilesApplicable = len(m), len(m)
+		partial.FilesSeen, partial.FilesApplicable = observedEdges, observedEdges
 		return m, partial, nil
 	}
 	if len(m) == 0 {
@@ -123,16 +129,17 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 	return m, evidence.Coverage{
 		Tool:            toolName,
 		Version:         scipIdentity(ro.indexer, ro.version),
-		FilesSeen:       len(m),
-		FilesApplicable: len(m),
+		FilesSeen:       observedEdges,
+		FilesApplicable: observedEdges,
 		Status:          evidence.StatusOK,
 	}, nil
 }
 
 // pipelineResult holds the raw reader output and metadata from runSCIPPipeline.
 type pipelineResult struct {
-	raw     []byte
-	indexer string
+	raw          []byte
+	indexer      string
+	packageEdges []readerEdge // derived aliases only; never symbol ownership or observed counts
 	// version is the indexer's own version, probed once per pipeline run. The
 	// indexer NAME alone is not an identity an upgrade can move, and
 	// Coverage.Version is published — so the name is a fallback, not the answer.
@@ -248,7 +255,7 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 
 	key := a.cacheKey(root, indexer, pkg, lang, version, rustMetadata)
 	if cached, coverage, hit := a.cachedSCIP(key, indexer, version); hit {
-		return cached, coverage, true
+		return rustPackageResult(cached, coverage, rustMetadata)
 	}
 
 	timedOut := evidence.Coverage{Version: scipIdentity(indexer, version), Status: evidence.StatusTimedOut, Reason: reasonTimedOut}
@@ -348,7 +355,7 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		}
 	}
 
-	return pipelineResult{raw: rdOut.Stdout, indexer: indexer, version: version}, partial, true
+	return rustPackageResult(pipelineResult{raw: rdOut.Stdout, indexer: indexer, version: version}, partial, rustMetadata)
 }
 
 func readerRuntimeFailure(ctx context.Context, err error) evidence.Coverage {
@@ -543,6 +550,11 @@ func (a *Adapter) DataStrengths(ctx context.Context, s scope.Scope) (map[string]
 	if perr != nil {
 		return nil, partial, nil
 	}
+	for _, edge := range ro.packageEdges {
+		if edge.DataStrength != "" {
+			m[edge.From+"\x00"+edge.To] = edge.DataStrength
+		}
+	}
 	if partial.Status == evidence.StatusPartial && partial.Reason != "" {
 		return m, partial, nil
 	}
@@ -577,6 +589,12 @@ func (a *Adapter) Connascence(ctx context.Context, s scope.Scope) (map[string][]
 	m, perr := parseReaderConnascence(ro.raw)
 	if perr != nil {
 		return nil, partial, nil
+	}
+	for _, edge := range ro.packageEdges {
+		for _, kind := range edge.Connascence {
+			key := edge.From + "\x00" + edge.To
+			m[key] = append(m[key], graph.ConnascenceHint{Kind: kind, Source: toolName, Detail: "symbol reference"})
+		}
 	}
 	if partial.Status == evidence.StatusPartial && partial.Reason != "" {
 		return m, partial, nil
