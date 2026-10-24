@@ -27,13 +27,25 @@ Use `languages.go.modules` to select workspace members. Use `exclude` for files 
 
 ### TypeScript and JavaScript
 
-Archfit runs `bunx depcruise` when `bunx` is available. Otherwise, it runs `npx depcruise`. The `dependency-cruiser` package must be available to the selected runner. A project-local development dependency gives repeatable results.
+Archfit invokes an installed dependency-cruiser entry through an explicitly resolved Node interpreter.
+Both must be outside the target project and Git root. Project-local executables, package-manager
+launchers, Node preload hooks, and `.dependency-cruiser.*` configuration do not select or configure
+the judge. Supported data-only `tsconfig` resolution still applies. Type-only TypeScript imports
+count as dependencies.
+
+The supported image pair is dependency-cruiser 18.7.0 with TypeScript 6.0.3. TypeScript 7 is not
+supported by that producer. Missing compilers, unreadable source inventories, omitted eligible
+files, and unusable graphs leave required rules unevaluated; an empty graph is not proof of no
+violations. A genuinely empty input tree remains distinct.
 
 The adapter skips Node.js core modules and `node_modules` directories at any depth. Without a root `package.json`, TypeScript files outside that project do not enter dependency rule scope. Point `--root` at the TypeScript project to analyze it.
 
 ### Python
 
-Archfit detects `uv` first and selects Python 3.14 with `grimp==3.17` in an isolated environment. Project uv configuration and interpreter requests do not override this selection. Without `uv`, put a Python 3.14+ virtual environment containing `grimp==3.17` on `PATH`. Keep that tool environment separate from the target repository.
+The image sets `ARCHFIT_TOOL_PYTHON` to its installed isolated Python environment.
+An explicit setting must name a valid absolute interpreter outside the target; invalid settings
+fail visibly rather than falling back. Without that setting, local CLI execution detects `uv`
+and selects Python 3.14 with `grimp==3.17` in an isolated environment. Project uv configuration and interpreter requests do not override this selection. Without `uv`, put a Python 3.14+ virtual environment containing `grimp==3.17` on `PATH`. Keep that tool environment separate from the target repository.
 
 Leave `languages.python.package` unset for automatic discovery of flat or `src/` packages. Pin it only when that single package is the complete intended source. Selecting one of several discovered roots leaves the others unscanned. Module names and selectors use dotted names, such as `myapp.service`, rather than file paths.
 
@@ -65,7 +77,12 @@ The default graph is crate-level. One crate alone has no internal dependency edg
 
 `cargo-modules` adds intra-crate module nodes and `uses` edges. `rust-analyzer` produces SCIP symbols for more precise edge strength. Install `cargo-modules` to use the first pass. Install the Rust Analyzer component to use the second. `uv` is also required to read SCIP indexes. Missing tools create coverage gaps and do not fail the run.
 
-Rust selectors use crate names from `Cargo.toml`, such as `grep-cli`. With `cargo-modules`, module names use Rust crate identifiers, such as `grep_cli::args`.
+Rust selectors use package names from `Cargo.toml`, such as `grep-cli`. With cargo-modules,
+module names use target crate identifiers, such as `grep_cli::args`; custom lib/bin target names
+can differ from the package name. Cover both vocabularies when the policy uses both graph levels.
+SCIP joins use Cargo target metadata. When rust-analyzer cannot distinguish multi-target symbols,
+Archfit abstains and reports partial attribution instead of inventing a module identity.
+Bench/example-only targets can lack a supported module graph; read the named coverage gap.
 
 ## Analyzer tools
 
@@ -73,18 +90,63 @@ Enable optional tools under `analyzers`. These tools report absent or partial ev
 
 | Tool | Evidence | Required program |
 | --- | --- | --- |
-| `ast-grep` (`sg`) | Structural patterns and embedded syntax rules | `sg` executable from ast-grep |
+| `ast-grep` | Structural patterns and embedded syntax rules | `ast-grep` executable |
 | `scip` | Language-specific symbol and edge-strength evidence | `scip-go`, `scip-typescript`, `scip-python`, or `rust-analyzer`, plus `uv` |
 | `clones` | Duplicate-code evidence | `jscpd` |
 | `cargo_modules` | Rust intra-crate module graph | `cargo-modules` |
 
-SCIP indexers are language-specific. Install the matching indexer for the language under analysis. TypeScript SCIP needs installed project dependencies to resolve imports. Archfit invokes tools found on `PATH`.
+SCIP indexers are language-specific. Install the matching indexer for the language under analysis. TypeScript SCIP needs a data-only TypeScript project and installed target dependencies to resolve imports. For JavaScript, provide a `tsconfig.json` with `allowJs: true`. Archfit invokes tools found on `PATH`.
 
-The Docker image includes `ast-grep` and `dependency-cruiser`. It does not include Rust tools, SCIP indexers, or `jscpd`. See the repository [Dockerfile](../Dockerfile) for the current image contents.
+The v3.2 image includes all listed tools. Optional execution is still controlled by `analyzers`;
+installation alone does not enable it. Generated Rust configurations already enable cargo-modules
+and SCIP. The [tool manifest](../tools/manifest.json) and dependency locks own the image/CI versions.
+See the [Dockerfile](../Dockerfile) for native SDK and runtime provisioning.
 
 Use `archfit doctor` to inspect tool discovery. A missing optional tool leaves its dependent evidence unavailable. A missing required language tool makes that language's evidence incomplete or causes the required-tool check to fail.
 
 Tool discovery does not execute the pinned Python analyzer environment. When uv's Python downloads are disabled, provide Python 3.14 separately and read the analysis coverage to confirm that the producer ran.
+
+## Install analyzers
+
+The complete release image is the simplest fixed tool environment. The tool versions are:
+
+| Tool | Image version |
+| --- | --- |
+| Go / Node / Python / uv | 1.27.3 / 24.22.1 / 3.14.9 / 0.13.5 |
+| dependency-cruiser / TypeScript compiler | 18.7.0 / 6.0.3 |
+| ast-grep / jscpd | 0.51.0 / 5.4.2 |
+| scip-go / scip-typescript / scip-python | 0.2.9 / 0.5.2 / 0.6.8 |
+| Rust, Cargo, rust-src, bundled rust-analyzer | 1.99.1 |
+| cargo-modules / Grimp | 0.28.0 / 3.17 |
+
+Use the Rust component listed here, not the newer standalone rust-analyzer with a different SCIP
+namespace. SCIP Python has an older semantic core: a nonempty index does not guarantee complete
+Python 3.14 type/grammar support. Import-rule evidence comes from Grimp, not SCIP.
+
+For a host CLI, use a separate owned tool directory outside every target checkout. From this
+release's source checkout, install the Node and Python locks without target project hooks:
+
+```sh
+prefix="$HOME/.local/share/archfit-tools"
+mkdir -p "$prefix/node"
+cp tools/node/package.json tools/node/package-lock.json "$prefix/node/"
+npm ci --prefix "$prefix/node" --no-audit --no-fund
+uv venv --python 3.14.9 "$prefix/python"
+uv pip sync --python "$prefix/python/bin/python" --require-hashes --only-binary :all: tools/python/requirements.lock
+export PATH="$prefix/node/node_modules/.bin:$PATH"
+export ARCHFIT_TOOL_PYTHON="$prefix/python/bin/python"
+```
+
+Provide a compatible owned Node interpreter on `PATH`; do not launch analysis through a target
+package-manager script. For host Rust/Go semantic tools, install the manifest versions using the
+official platform toolchains (`rust-src` is required). `scripts/ci-provision-tools.sh` is Linux
+build/CI provisioning, not a portable runtime installer. Never install target dependencies as part
+of the Python import producer. Runtime tool discovery does not certify the complete environment.
+
+The image installs analyzers before use and disables npm/uv tool bootstrap. Go/Cargo target
+dependency resolution may still use network access. Optional indexers/build scripts may execute
+target code and send mounted source outward; no secret-free or image-digest claim removes that risk.
+App reports are customer-attested measurements, not remote proof of execution.
 
 ## Supplied test coverage
 

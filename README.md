@@ -57,7 +57,7 @@ brew install alexei-led/tap/archfit
 Or install a tagged release with Go:
 
 ```sh
-go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.1.1
+go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.2.0
 ```
 
 Run these commands from your repository root:
@@ -70,7 +70,7 @@ archfit analyze -c .archfit.yaml
 
 Review the generated module paths and rules before you use the configuration as policy. Create a baseline only after you review the findings. Run `archfit check` in CI.
 
-The Docker image includes Go, Node.js, Python, dependency-cruiser, and ast-grep tools. It does not include Rust tools. See [Getting started](docs/getting-started.md#use-docker) for details.
+The Docker image includes the locked Go, TypeScript/JavaScript, Python, and Rust toolchains, plus ast-grep, SCIP indexers, jscpd, and cargo-modules. Deeper analyzers remain configuration-controlled. See [Getting started](docs/getting-started.md#use-docker) for details.
 
 ## Documentation
 

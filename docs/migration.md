@@ -7,7 +7,7 @@ Version 3 changes the Go module path, baseline format, and report behavior. Keep
 Install the v3 module path:
 
 ```sh
-go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.1.1
+go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.2.0
 ```
 
 Update imports if your Go code imports archfit packages. The `internal/` packages are not a public API.
@@ -57,3 +57,23 @@ be compared with this producer. An architecture owner must review a
 `archfit baseline --reanchor` change before stored comparisons resume.
 Reanchoring never clears missing producer evidence. See [Python](languages.md#python)
 for runtime requirements and extraction limits.
+
+## v3.2 analyzer environment
+
+The complete image adds the Rust and optional analyzer tools. Executing those tools remains
+configuration-controlled; generated Rust deep-analysis defaults can now run instead of reporting
+missing binaries. Use the same platform, tool environment and settings for capture and checking.
+
+Project-local dependency-cruiser executables and `.dependency-cruiser.*` configurations no longer
+control extraction. Move intended architecture scope into reviewed Archfit policy. Keep supported
+resolution aliases in data-only `tsconfig` files. Type-only TypeScript imports are now measured.
+
+Corrected producers use `dependency-cruiser.v2`, `ast-grep/syntax.v2`, `scip.v3` and
+`scip-symbols.v2` and `cargo-modules.v2`. The profile format stays `archfit.measurement.v2`; equal format versions do not
+make producer versions/settings comparable. Preserve the stored baseline and review a reanchor
+with the new image. Inspect retained/dropped findings and metric-reference changes. Reanchoring
+must not accept new debt or conceal missing evidence.
+
+App/Action adoption is separate from publishing the engine. Update the reviewed workflow's Action
+commit, engine version and matching platform digest together after the App approves that tuple.
+Stale tuples must remain actionable, not silently neutral or skipped.

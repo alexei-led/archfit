@@ -1,5 +1,38 @@
 # Release notes
 
+## v3.2.0
+
+### Summary
+
+Bundle the complete Go, TypeScript/JavaScript, Python and Rust analysis environment and correct
+incomplete-evidence and semantic-attribution handling.
+
+### Changes
+
+- Pin SDKs/analyzers from one manifest with npm/Python dependency locks and verified native
+  downloads. Supply the TypeScript compiler, isolated Python/SCIP reader environment, Rust tools,
+  language SCIP indexers, jscpd and cargo-modules in both native Linux image platforms.
+- Invoke owned dependency-cruiser through an explicitly validated Node interpreter. Ignore
+  target dependency-cruiser configs and package-manager/preload hooks. Include type-only imports
+  and leave missing/unsupported compiler or source evidence incomplete rather than returning a
+  valid empty graph.
+- Use canonical ast-grep and add bounded JavaScript ESM/CommonJS declaration/route evidence.
+- Join Rust SCIP symbols through Cargo target metadata. Preserve unknown/partial attribution for
+  ambiguous targets, including cache hits, instead of fabricating complete semantic joins.
+- Validate final-image tool capability and real forbidden imports under default/arbitrary UIDs.
+
+### Upgrade
+
+1. Install the new CLI or complete image and keep its tool/platform settings stable.
+2. Replace project-local dependency-cruiser setup with an owned external installation. Express
+   architecture scope in reviewed Archfit policy, not executable dependency-cruiser config.
+3. Review baseline reanchor for changed producer semantics and tool versions. No new debt or
+   missing evidence is accepted automatically.
+4. Adopt the new Action/image tuple separately in App-managed workflows after consumer approval.
+
+Configuration, state, envelope, baseline and measurement-profile format identifiers are unchanged.
+Producer normalization identities change; read [migration](docs/migration.md#v32-analyzer-environment).
+
 ## v3.1.2
 
 ### Summary
