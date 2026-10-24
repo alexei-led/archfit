@@ -13,6 +13,7 @@ import (
 )
 
 func TestExtractResolvesPhysicalLocations(t *testing.T) {
+	withoutToolPythonOverride(t)
 	const flatFile, srcFile = "app/logic.py", "src/app/logic.py"
 	for _, tc := range []struct {
 		name  string

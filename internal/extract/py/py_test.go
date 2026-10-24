@@ -36,6 +36,7 @@ const (
 )
 
 func TestExtract_Parse(t *testing.T) {
+	withoutToolPythonOverride(t)
 	mock := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == "uv" {
@@ -114,6 +115,7 @@ func hasPyConnascence(e graph.Edge, kind string) bool {
 }
 
 func TestExtract_WithExternalImports(t *testing.T) {
+	withoutToolPythonOverride(t)
 	mock := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == "uv" {
@@ -169,6 +171,7 @@ func TestExtract_WithExternalImports(t *testing.T) {
 }
 
 func TestExtract_UnresolvedReasonNamesSourceGaps(t *testing.T) {
+	withoutToolPythonOverride(t)
 	fixture := `{"edges":[],"unresolved":4,"unresolved_imports":[
     {"file":"myapp/d.py","reason":"source not scanned","importer":"myapp.d","line":0},
     {"file":"myapp/a.py","reason":"SyntaxError under Python 3.13","importer":"myapp.a","line":0},
@@ -203,6 +206,7 @@ func TestExtract_UnresolvedReasonNamesSourceGaps(t *testing.T) {
 }
 
 func TestExtract_SymbolLevelStrength(t *testing.T) {
+	withoutToolPythonOverride(t)
 	// Fixture: three edges, all module names are public (no module-level private check
 	// applies). Only the line_contents drives the strength hint.
 	const fixture = `{"edges":[` +
@@ -278,6 +282,7 @@ func TestExtract_SymbolLevelStrength(t *testing.T) {
 // the symbol-level extension. It feeds edges WITHOUT line_contents so the symbol parser
 // sees empty strings and must not interfere.
 func TestExtract_ModuleLevelIntrusiveStillDetected(t *testing.T) {
+	withoutToolPythonOverride(t)
 	// Edges have no line_contents — the module name itself carries the private segment.
 	const fixture = `{"edges":[` +
 		`{"importer":"myapp.a","imported":"myapp.b._internal.impl","line":1},` +
@@ -323,6 +328,7 @@ func TestExtract_ModuleLevelIntrusiveStillDetected(t *testing.T) {
 }
 
 func TestExtract_ToolAbsentAuto(t *testing.T) {
+	withoutToolPythonOverride(t)
 	mock := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
 			return toolrun.ToolInfo{}, false
@@ -356,6 +362,7 @@ func TestExtract_ToolAbsentAuto(t *testing.T) {
 // instead of failing the whole run; ModeOn still hard-errors so a required
 // analyzer surfaces the problem.
 func TestExtract_NonZeroExit(t *testing.T) {
+	withoutToolPythonOverride(t)
 	mock := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == "uv" {
@@ -399,7 +406,7 @@ func TestExtract_NonZeroExit(t *testing.T) {
 // are discovered under ScanRoot, all names are passed to the grimp helper via
 // --packages pkg1 pkg2 … (grimp.build_graph is variadic).
 func TestFirstPartyPackages_IncludesDiscoveredAndConfiguredRoots(t *testing.T) {
-	t.Parallel()
+	withoutToolPythonOverride(t)
 
 	root := t.TempDir()
 	for _, dir := range []string{filepath.Join(root, "src", "prefect"), filepath.Join(root, "tests")} {
@@ -449,6 +456,7 @@ func TestFirstPartyPackages_IncludesDiscoveredAndConfiguredRoots(t *testing.T) {
 }
 
 func TestExtract_MultiPackageArgs(t *testing.T) {
+	withoutToolPythonOverride(t)
 	root := t.TempDir()
 
 	// Python project marker.

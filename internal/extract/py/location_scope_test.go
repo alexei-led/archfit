@@ -13,6 +13,7 @@ import (
 )
 
 func TestExtractLocationsRespectSourceScope(t *testing.T) {
+	withoutToolPythonOverride(t)
 	const source = "app/logic.py"
 	for _, tc := range []struct {
 		name       string
@@ -82,6 +83,7 @@ func TestExtractLocationsRespectSourceScope(t *testing.T) {
 }
 
 func TestExtractLocationsPreserveEffectiveReinclusions(t *testing.T) {
+	withoutToolPythonOverride(t)
 	const source = "reports/api.py"
 	for _, tc := range []struct {
 		name         string

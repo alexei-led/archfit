@@ -14,6 +14,7 @@ import (
 )
 
 func TestReviewPythonCacheProducerDrift(t *testing.T) {
+	withoutToolPythonOverride(t)
 	root := writeProfileCacheFixture(t)
 	helperJSON := `{"edges":[{"importer":"pkg","imported":"pkg.a","line":1}],"unresolved":0,"producer_version":"grimp 3.16; python 3.14.2"}`
 	calls := 0

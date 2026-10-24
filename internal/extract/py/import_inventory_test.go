@@ -347,6 +347,7 @@ func TestPythonImportProducerRejectsDirectoryLinksBeforeGrimp(t *testing.T) {
 }
 
 func TestPythonDirectFallbackKeepsTargetImportPathsIsolated(t *testing.T) {
+	withoutToolPythonOverride(t)
 	requirePythonProducer(t)
 	realRunner := toolrun.New()
 	analyzerEnv := filepath.Join(t.TempDir(), "analyzer")

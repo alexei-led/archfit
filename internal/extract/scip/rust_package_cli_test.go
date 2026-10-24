@@ -17,6 +17,9 @@ import (
 // TestRustWorkspacePackageEdgesPublicCLI reproduces the native image contract's
 // two-package seam using real bundled Rust tools and an explicitly owned reader.
 func TestRustWorkspacePackageEdgesPublicCLI(t *testing.T) {
+	if _, configured := os.LookupEnv("ARCHFIT_TOOL_PYTHON"); !configured {
+		t.Setenv("ARCHFIT_TOOL_PYTHON", provisionReaderPython(t))
+	}
 	requireRustPackageTools(t)
 	repo, err := filepath.Abs("../../..")
 	if err != nil {

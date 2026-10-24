@@ -160,6 +160,7 @@ func TestProvisionedPythonInvalidOverrideDoesNotFallback(t *testing.T) {
 }
 
 func TestPythonUVFallbackIgnoresExplicitTargetConfigAndEnvFile(t *testing.T) {
+	withoutToolPythonOverride(t)
 	requirePythonProducer(t)
 	root := t.TempDir()
 	marker := filepath.Join(root, "executed")

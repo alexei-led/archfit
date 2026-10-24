@@ -14,6 +14,7 @@ import (
 )
 
 func TestPythonSourceGapsRespectExactFileExclusions(t *testing.T) {
+	withoutToolPythonOverride(t)
 	for _, tc := range []struct {
 		name               string
 		exclusions         []string
@@ -59,6 +60,7 @@ func TestPythonSourceGapsRespectExactFileExclusions(t *testing.T) {
 }
 
 func TestPythonPackageFailureCannotBeClearedByExcludingInitializer(t *testing.T) {
+	withoutToolPythonOverride(t)
 	body := `{"modules":["myapp"],"sources":[{"file":"myapp/__init__.py","module":"myapp","parsed":false}],"unresolved":1,"unresolved_imports":[{"importer":"myapp","imported":"myapp","reason":"directory walk failed"}]}`
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(context.Context, string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{Name: "uv"}, true },

@@ -21,6 +21,16 @@ const (
 	readerPythonFlag  = "--python"
 )
 
+// withoutToolPythonOverride selects a fixture's fallback toolchain. An empty
+// override is invalid configuration, so the variable must actually be absent.
+func withoutToolPythonOverride(t *testing.T) {
+	t.Helper()
+	t.Setenv("ARCHFIT_TOOL_PYTHON", "")
+	if err := os.Unsetenv("ARCHFIT_TOOL_PYTHON"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func provisionReaderPython(t *testing.T) string {
 	t.Helper()
 	if testing.Short() && os.Getenv("ARCHFIT_REQUIRE_TOOLS") != "1" {
@@ -201,6 +211,7 @@ func TestSCIPInvalidProvisionedPythonDoesNotFallback(t *testing.T) {
 }
 
 func TestSCIPUVReaderUsesOwnedIsolatedInvocation(t *testing.T) {
+	withoutToolPythonOverride(t)
 	root := makeGoRoot(t)
 	indexRuns, readerRuns := 0, 0
 	runner := scipCacheRunner(readerJSONSuccess, &indexRuns, &readerRuns)

@@ -25,6 +25,7 @@ const (
 // carries an actionable reason + enable step, not a silent absent — in
 // particular that a TS project missing node_modules names the deps fix.
 func TestStrengths_AbsentReason(t *testing.T) {
+	withoutToolPythonOverride(t)
 	writePkgJSON := func(t *testing.T, dir string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(dir, manifestPkgJSON), []byte(`{"name":"demo"}`), 0o600); err != nil {
@@ -319,6 +320,7 @@ func TestIndexArgs_Rust(t *testing.T) {
 // TestStrengths_Timeout asserts that the per-analyzer watchdog fires and returns
 // StatusTimedOut coverage with nil error and no deadlock.
 func TestStrengths_Timeout(t *testing.T) {
+	withoutToolPythonOverride(t)
 	// Minimal Go project: go.mod lets detectIndexer pick scip-go.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/timeout-test\n\ngo 1.21\n"), 0o600); err != nil {
@@ -439,6 +441,7 @@ func TestParsePythonStrengthFixture(t *testing.T) {
 // returns a canned JSON (what scip_reader.py would emit). Verifies that
 // Strengths() returns OK coverage and the expected module→strength map.
 func TestStrengths_PythonCannedFixture(t *testing.T) {
+	withoutToolPythonOverride(t)
 	dir := t.TempDir()
 	// Minimal Python project: pyproject.toml + flat-layout package.
 	if err := os.WriteFile(filepath.Join(dir, manifestPyproject), []byte("[project]\nname = \"myapp\"\n"), 0o600); err != nil {
@@ -547,6 +550,7 @@ func TestStrengths_PythonAbsent(t *testing.T) {
 // an actionable reason. This prevents a silent ok when the index was built but
 // contained no cross-module occurrences (path-case mismatch, wrong indexer, etc.).
 func TestStrengths_EmptyIndex(t *testing.T) {
+	withoutToolPythonOverride(t)
 	dir := t.TempDir()
 	// Minimal Python project so detectIndexer picks scip-python.
 	if err := os.WriteFile(filepath.Join(dir, manifestPyproject), []byte("[project]\nname = \"myapp\"\n"), 0o600); err != nil {

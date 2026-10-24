@@ -49,7 +49,7 @@ func scipCacheRunner(readerJSON string, indexRuns, readerRuns *int) *toolrun.Run
 // edit invalidates. The per-run pipeCache memoization is bypassed by using a
 // fresh Adapter per run, exactly like separate archfit invocations.
 func TestFactCache_PipelineHitAndSourceInvalidation(t *testing.T) {
-	t.Parallel()
+	withoutToolPythonOverride(t)
 	root := t.TempDir()
 	for name, content := range map[string]string{
 		"go.mod": "module example.com/demo\n\ngo 1.24\n",

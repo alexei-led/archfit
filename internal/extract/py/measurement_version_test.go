@@ -11,6 +11,7 @@ import (
 )
 
 func TestMeasurementVersionNamesActualPythonProducer(t *testing.T) {
+	withoutToolPythonOverride(t)
 	for _, producer := range []string{"grimp 3.12; python 3.13.7", ""} {
 		runner := &toolrun.RunnerMock{
 			DetectFunc: func(context.Context, string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{Name: "uv"}, true },
