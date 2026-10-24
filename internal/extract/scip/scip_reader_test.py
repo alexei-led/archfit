@@ -381,5 +381,7 @@ if shutil.which("uv"):
             print("  -", f)
         sys.exit(1)
     print("ok: scip_reader CLI integration passed")
+    subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                               "scip_reader_rust_test.py")], check=True)
 else:
     print("ok: scip_reader CLI integration skipped (uv not found)")

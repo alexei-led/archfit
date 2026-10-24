@@ -20,8 +20,12 @@ rust-analyzer SCIP symbol format:
   NOT in the symbol. Module node keys are "<crate>::<mod>" (double-colon, matching
   cargo-modules' own DOT node IDs from Task 1).
 
---package for Rust is a comma-separated list of workspace crate names. _is_internal
-accepts any crate in that set.
+--package for Rust is a comma-separated list of workspace package names. _is_internal
+accepts any package in that set. With --rust-metadata, data-only cargo metadata
+maps package/version identity to target crate names (including custom lib/bin
+names). Ambiguous multi-target attribution abstains and emits rust_attribution
+status/counts; callers must propagate partial coverage. Without metadata the
+legacy package-spelled direct-reader behavior is retained, not a mapped join.
 
 Strength (BC, strongest->weakest): intrusive > functional > model > contract.
   private (underscore) -> intrusive; Protocol/ABC/interface -> contract;
@@ -43,6 +47,7 @@ import os
 import re
 import sys
 import tempfile
+from urllib.parse import unquote, urlsplit
 
 RANK = {"contract": 1, "model": 2, "functional": 3, "intrusive": 4}
 ABSTRACT_BASES = ("/Protocol#", "/ABC#")  # python protocol/abc markers
@@ -150,9 +155,101 @@ def _rust_module_key(symbol: str) -> str | None:
     return crate  # crate-root node
 
 
-def _to_path(symbol: str, lang: str) -> str | None:
+class _RustTargetMap:
+    """Join RA1.99.1 package/version symbols to Cargo target crate identifiers.
+
+    No source is read. Multi-target packages share SCIP symbols in this producer;
+    only a definition in one exact metadata target root can disambiguate them.
+    Non-root and duplicate definitions abstain rather than inventing ownership.
+    """
+
+    def __init__(self, idx: object, metadata: dict, root: str | set[str]):
+        project_uri = urlsplit(idx.metadata.project_root)
+        if project_uri.scheme != "file" or project_uri.netloc not in ("", "localhost"):
+            raise ValueError("SCIP project_root must be a local file URI")
+        project_root = unquote(project_uri.path)
+        if not os.path.isabs(project_root):
+            raise ValueError("SCIP project_root must be absolute")
+        # Cargo canonicalizes target paths; SCIP may retain a symlinked scan root.
+        # Resolve path aliases only, never source contents.
+        project_root = os.path.realpath(project_root)
+        members = set(metadata["workspace_members"])
+        packages: dict[tuple[str, str], list[tuple[str, str | None]]] = {}
+        doc_targets: dict[str, list[str]] = {}
+        for package in metadata["packages"]:
+            if package["id"] not in members:
+                continue
+            targets = packages.setdefault((package["name"], package["version"]), [])
+            for target in package["targets"]:
+                # Cargo's rustc crate spelling, NOT the package spelling.
+                crate = target["name"].replace("-", "_")
+                source = target["src_path"]
+                if not os.path.isabs(source):
+                    raise ValueError("Cargo target src_path must be absolute")
+                path = os.path.relpath(os.path.realpath(source), project_root).replace(os.sep, "/")
+                if path == ".." or path.startswith("../"):
+                    targets.append((crate, None))
+                    continue
+                targets.append((crate, path))
+                doc_targets.setdefault(path, []).append(crate)
+        self.document_roots = {
+            path: crates[0] for path, crates in doc_targets.items() if len(crates) == 1
+        }
+
+        definitions: dict[str, set[str]] = {}
+        internal: set[str] = set()
+        for doc in idx.documents:
+            for occ in doc.occurrences:
+                if not _is_internal(occ.symbol, root):
+                    continue
+                internal.add(occ.symbol)
+                if occ.symbol_roles & _DEFINITION_ROLE:
+                    definitions.setdefault(occ.symbol, set()).add(doc.relative_path)
+
+        self.module_keys: dict[str, str] = {}
+        self.unresolved: dict[str, str] = {}
+        for symbol in sorted(internal):
+            fields = _fields(symbol)
+            assert fields is not None
+            targets = packages.get((fields[2], fields[3]), [])
+            crate = None
+            reason = "missing_target"
+            if len(targets) == 1 and targets[0][1] is not None:
+                crate = targets[0][0]
+            elif len(targets) > 1:
+                reason = "ambiguous_target"
+                paths = definitions.get(symbol, set())
+                if len(paths) == 1:
+                    matches = [name for name, path in targets if path in paths]
+                    if len(matches) == 1:
+                        crate = matches[0]
+            if crate is None:
+                self.unresolved[symbol] = reason
+                continue
+            legacy_key = _rust_module_key(symbol)
+            assert legacy_key is not None
+            # Retain the descriptor namespaces, including a real module named lib.
+            self.module_keys[symbol] = crate + legacy_key[len(fields[2]) :]
+
+    def diagnostics(self) -> dict:
+        counts: dict[str, int] = {}
+        for reason in self.unresolved.values():
+            counts[reason] = counts.get(reason, 0) + 1
+        return {
+            "status": "partial" if self.unresolved else "ok",
+            "unresolved_symbols": len(self.unresolved),
+            "diagnostics": [
+                {"reason": reason, "count": count}
+                for reason, count in sorted(counts.items())
+            ],
+        }
+
+
+def _to_path(symbol: str, lang: str, rust_targets: _RustTargetMap | None = None) -> str | None:
     """The target module/package/file path for an edge, matching archfit node paths."""
     if lang == "rust":
+        if rust_targets is not None:
+            return rust_targets.module_keys.get(symbol)
         return _rust_module_key(symbol)
     f = _fields(symbol)
     if f is None:
@@ -269,7 +366,8 @@ def _connascence_kind(symbol: str, lang: str, contract: set[str], kind: int = KI
     return "name"
 
 
-def _doc_from(relative_path: str, lang: str, doc_defs: "set[str] | None" = None) -> str | None:
+def _doc_from(relative_path: str, lang: str, doc_defs: "set[str] | None" = None,
+              rust_targets: _RustTargetMap | None = None) -> str | None:
     """Return the source node key for a document.
 
     For Rust, relative_path is a .rs file path (not a module path), so we derive
@@ -283,13 +381,15 @@ def _doc_from(relative_path: str, lang: str, doc_defs: "set[str] | None" = None)
     if lang == "rust":
         if not doc_defs:
             return None
+        if rust_targets is not None and relative_path in rust_targets.document_roots:
+            return rust_targets.document_roots[relative_path]
         # Derive module keys for all definitions in this document and pick the
         # common one. A well-formed .rs file lives in exactly one module, so all
         # defs share the same module key. If they differ (shouldn't happen in
         # rust-analyzer output), take the majority or first alphabetically.
         keys: list[str] = []
         for sym in doc_defs:
-            k = _rust_module_key(sym)
+            k = _to_path(sym, lang, rust_targets)
             if k is not None:
                 keys.append(k)
         if not keys:
@@ -314,6 +414,7 @@ def _compute_symbols(
     idx: object,
     root: "str | set[str]",
     lang: str,
+    rust_targets: _RustTargetMap | None = None,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Return (symbols, symbol_refs, intra_refs) for the given index.
 
@@ -373,7 +474,7 @@ def _compute_symbols(
                 continue  # skip definitions in this pass
             if not _is_internal(occ.symbol, root):
                 continue
-            to_mod = _to_path(occ.symbol, lang)
+            to_mod = _to_path(occ.symbol, lang, rust_targets)
             if to_mod is None:
                 continue
 
@@ -383,7 +484,7 @@ def _compute_symbols(
             # the referenced symbol. Split by module: differing modules → cross
             # (sym_refs), same module → intra (intra_refs, self-edge excluded).
             for from_sym in frm_defs:
-                from_mod = _to_path(from_sym, lang)
+                from_mod = _to_path(from_sym, lang, rust_targets)
                 if from_mod is None:
                     continue
                 if from_mod != to_mod:
@@ -396,11 +497,11 @@ def _compute_symbols(
         {
             "symbol": sym,
             "path": doc_path,
-            "module": _to_path(sym, lang),
+            "module": _to_path(sym, lang, rust_targets),
             "fan_in": len(fan_in_docs.get(sym, set())),
         }
         for sym, doc_path in sorted(def_docs.items())
-        if _to_path(sym, lang) is not None
+        if _to_path(sym, lang, rust_targets) is not None
     ]
 
     symbol_refs_out = [
@@ -422,6 +523,7 @@ def main() -> None:
     ap.add_argument("--index", required=True)
     ap.add_argument("--package", required=True)
     ap.add_argument("--lang", required=True, choices=["python", "go", "typescript", "rust"])
+    ap.add_argument("--rust-metadata", help="cargo metadata --no-deps --format-version 1 JSON for mapped Rust target identity")
     args = ap.parse_args()
     lang = args.lang
     # For Rust virtual workspaces, --package is comma-separated crate names.
@@ -440,6 +542,17 @@ def main() -> None:
     idx = scip_pb2.Index()
     with open(args.index, "rb") as f:
         idx.ParseFromString(f.read())
+
+    rust_targets = None
+    if args.rust_metadata:
+        try:
+            if lang != "rust":
+                raise ValueError("--rust-metadata requires --lang rust")
+            with open(args.rust_metadata, encoding="utf-8") as f:
+                rust_targets = _RustTargetMap(idx, json.load(f), root)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(json.dumps({"error": f"rust metadata: {exc}", "edges": []}))
+            sys.exit(1)
 
     symbol_kinds: dict[str, int] = {}
     for doc in idx.documents:
@@ -467,7 +580,7 @@ def main() -> None:
     edge_data: dict[tuple[str, str], str] = {}
     refs = {k: 0 for k in RANK}
 
-    symbols_out, symbol_refs_out, intra_refs_out = _compute_symbols(idx, root, lang)
+    symbols_out, symbol_refs_out, intra_refs_out = _compute_symbols(idx, root, lang, rust_targets)
 
     # For Rust, build a doc→internal-defs map so _doc_from can derive module keys.
     # For other languages _doc_from only needs relative_path.
@@ -483,13 +596,13 @@ def main() -> None:
 
     for doc in idx.documents:
         doc_defs_for_from = rust_doc_defs.get(doc.relative_path) if lang == "rust" else None
-        a = _doc_from(doc.relative_path, lang, doc_defs_for_from)
+        a = _doc_from(doc.relative_path, lang, doc_defs_for_from, rust_targets)
         if a is None:
             continue
         for occ in doc.occurrences:
             if not _is_internal(occ.symbol, root):
                 continue
-            b = _to_path(occ.symbol, lang)
+            b = _to_path(occ.symbol, lang, rust_targets)
             if b is None or b == a:
                 continue
             kind = symbol_kinds.get(occ.symbol, KIND_UNSPECIFIED)
@@ -517,6 +630,7 @@ def main() -> None:
         "symbols": symbols_out,
         "symbol_refs": symbol_refs_out,
         "intra_refs": intra_refs_out,
+        **({"rust_attribution": rust_targets.diagnostics()} if rust_targets is not None else {}),
     }))
 
 
