@@ -157,6 +157,23 @@ def prepare_fixture(spec: lc.FixtureSpec, path: Path) -> None:
         target = path / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
+    if spec.name == "javascript":
+        # SCIP's TypeScript compiler needs a data-only project for JavaScript input.
+        (path / "tsconfig.json").write_text(
+            json.dumps(
+                {
+                    "compilerOptions": {
+                        "allowJs": True,
+                        "checkJs": True,
+                        "module": "ESNext",
+                        "moduleResolution": "bundler",
+                        "target": "ES2022",
+                    },
+                    "include": ["src/**/*.js"],
+                },
+                indent=2,
+            )
+        )
     config = lc.config_text(spec)
     clone_modules = ""
     for side in ("left", "right"):
@@ -516,7 +533,8 @@ def negative_cases(contract: ImageContract) -> None:
     coverage = rows(state).get("dependency-cruiser", {})
     contract.expect(
         "missing compiler: fails closed, never valid empty graph",
-        (output / "check.rc").read_text().strip() == "2"
+        (output / "check.rc").is_file()
+        and (output / "check.rc").read_text().strip() == "2"
         and state.get("verdict") == "needs_attention"
         and state.get("decision", {}).get("hard_gates") == "unmeasured"
         and coverage.get("status") == "partial"

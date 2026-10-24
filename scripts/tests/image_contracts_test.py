@@ -38,6 +38,9 @@ class ImageContractsTest(unittest.TestCase):
                     for name, original in spec.files.items():
                         if Path(name).suffix in {".go", ".ts", ".js", ".py", ".rs"}:
                             self.assertEqual((path / name).read_text(), original)
+                    if spec.name == "javascript":
+                        config = json.loads((path / "tsconfig.json").read_text())
+                        self.assertTrue(config["compilerOptions"]["allowJs"])
                     self.assertTrue(image.tree_hash(path))
 
     def test_container_failure_cannot_be_reported_as_pass(self):
