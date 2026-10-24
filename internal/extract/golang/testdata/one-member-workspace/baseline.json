@@ -28,7 +28,7 @@
           "tool": "ast-grep"
         },
         {
-          "semantics_version": "ast-grep/syntax.v1",
+          "semantics_version": "ast-grep/syntax.v2",
           "status": "disabled",
           "tool": "ast-grep/syntax"
         },
@@ -60,7 +60,7 @@
           "tool": "loc"
         },
         {
-          "semantics_version": "scip.v2",
+          "semantics_version": "scip.v3",
           "status": "disabled",
           "tool": "scip"
         }
