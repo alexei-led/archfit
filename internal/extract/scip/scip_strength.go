@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,8 +209,13 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		absent.Reason = scipAbsentReason(root)
 		return ro, absent, false
 	}
-	// The reader runs via uv (PEP 723 inline deps: protobuf + grpcio-tools).
-	if _, found := a.runner.Detect(ctx, "uv"); !found {
+	// Prefer the owned installed environment. An explicit invalid override is a
+	// visible gap, never permission to discover an unrelated Python or use uv.
+	reader, readerErr := a.readerPython(ctx, root)
+	if readerErr != nil {
+		return ro, readerRuntimeFailure(ctx, readerErr), false
+	}
+	if reader == "" {
 		absent.Reason = reasonScipNoUv
 		return ro, absent, false
 	}
@@ -290,11 +296,18 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		return ro, partial, false
 	}
 
-	// Read: uv run scip_reader.py --proto <p> --index <i> --package <pkg> --lang <lang>
+	// Invoke Python explicitly, not the reader's broad PEP 723 dependency ranges.
+	// -I retains installed tool dependencies while excluding target import paths.
+	readerArgs := []string{"-I", readerPath, "--proto", protoPath, "--index", indexPath, "--package", pkg, "--lang", lang}
+	if reader == "uv" {
+		// --no-config only disables discovery; override UV_CONFIG_FILE explicitly.
+		readerArgs = append([]string{"run", "--no-config", "--config-file", os.DevNull, "--no-env-file", "--no-project", "--isolated", "--python", "3.14", "--with", "protobuf==7.36.2", "--with", "grpcio-tools==1.84.1", "--directory", tmp, "python"}, readerArgs...)
+	}
 	rdOut, err := a.runner.Run(ctx, toolrun.ToolCmd{
-		Name:    "uv",
-		Args:    []string{"run", readerPath, "--proto", protoPath, "--index", indexPath, "--package", pkg, "--lang", lang},
+		Name:    reader,
+		Args:    readerArgs,
 		WorkDir: tmp,
+		Env:     readerPythonEnv(),
 		Timeout: innerTimeout(readerTimeout),
 	})
 	if err != nil || rdOut.ExitCode != 0 {
@@ -303,6 +316,10 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		// they may fire in either order.
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return ro, timedOut, false
+		}
+		partial.Reason = "SCIP reader failed: " + strings.TrimSpace(string(rdOut.Stderr))
+		if err != nil {
+			partial.Reason = "SCIP reader failed: " + err.Error()
 		}
 		return ro, partial, false
 	}
@@ -318,6 +335,77 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 	}
 
 	return pipelineResult{raw: rdOut.Stdout, indexer: indexer, version: version}, partial, true
+}
+
+func readerRuntimeFailure(ctx context.Context, err error) evidence.Coverage {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return evidence.Coverage{Status: evidence.StatusTimedOut, Reason: reasonTimedOut}
+	}
+	return evidence.Coverage{Status: evidence.StatusPartial, Reason: err.Error()}
+}
+
+// readerPythonEnv clears interpreter selectors for both Python and the uv parent.
+func readerPythonEnv() []string {
+	return []string{"PYTHONPATH=", "PYTHONHOME=", "VIRTUAL_ENV=", "PYTHONUSERBASE=", "PYTHONNOUSERSITE=1", "__PYVENV_LAUNCHER__="}
+}
+
+func (a *Adapter) readerPython(ctx context.Context, root string) (string, error) {
+	python, configured := os.LookupEnv("ARCHFIT_TOOL_PYTHON")
+	if !configured {
+		if _, found := a.runner.Detect(ctx, "uv"); found {
+			return "uv", nil
+		}
+		return "", nil
+	}
+	if err := validateReaderPython(root, python); err != nil {
+		return "", err
+	}
+	out, err := a.runner.Run(ctx, toolrun.ToolCmd{
+		Name:    python,
+		Args:    []string{"-I", "-c", "import sys, google.protobuf, grpc_tools.protoc; from importlib.metadata import version; assert sys.version_info >= (3, 14), 'Python 3.14+ required'; assert version('protobuf') == '7.36.2', 'protobuf==7.36.2 required'; assert version('grpcio-tools') == '1.84.1', 'grpcio-tools==1.84.1 required'"},
+		WorkDir: os.TempDir(), Env: readerPythonEnv(), Timeout: 30 * time.Second,
+	})
+	if err != nil {
+		return "", fmt.Errorf("ARCHFIT_TOOL_PYTHON: validate reader dependencies: %w", err)
+	}
+	if out.ExitCode != 0 {
+		return "", fmt.Errorf("ARCHFIT_TOOL_PYTHON: validate reader dependencies: %s", strings.TrimSpace(string(out.Stderr)))
+	}
+	return python, nil
+}
+
+func validateReaderPython(root, python string) error {
+	if !filepath.IsAbs(python) {
+		return errors.New("ARCHFIT_TOOL_PYTHON must name an absolute interpreter outside the target")
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("ARCHFIT_TOOL_PYTHON: resolve target: %w", err)
+	}
+	resolvedRoot, err = filepath.Abs(resolvedRoot)
+	if err != nil {
+		return fmt.Errorf("ARCHFIT_TOOL_PYTHON: absolute target: %w", err)
+	}
+	resolved, err := filepath.EvalSymlinks(python)
+	if err != nil {
+		return fmt.Errorf("ARCHFIT_TOOL_PYTHON: resolve interpreter: %w", err)
+	}
+	// Resolve the parent separately: a target venv's python may itself be a
+	// symlink to a trusted base executable while loading target site-packages.
+	parent, err := filepath.EvalSymlinks(filepath.Dir(python))
+	if err != nil {
+		return fmt.Errorf("ARCHFIT_TOOL_PYTHON: resolve interpreter directory: %w", err)
+	}
+	for _, path := range []string{filepath.Join(parent, filepath.Base(python)), resolved} {
+		if rel, err := filepath.Rel(resolvedRoot, path); err != nil || rel == "." || filepath.IsLocal(rel) {
+			return errors.New("ARCHFIT_TOOL_PYTHON must not select a target interpreter")
+		}
+	}
+	info, err := os.Stat(python)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return errors.New("ARCHFIT_TOOL_PYTHON must name an executable Python interpreter")
+	}
+	return nil
 }
 
 // scipCacheEntry is the stored fact-cache envelope: the reader JSON plus the
