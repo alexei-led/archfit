@@ -23,28 +23,12 @@ func validateToolPython(root, python string) error {
 	if !filepath.IsAbs(python) {
 		return fmt.Errorf("%s must name an absolute interpreter outside the target", toolPythonEnv)
 	}
-	resolvedRoot, err := filepath.EvalSymlinks(root)
+	inside, err := toolrun.ContainsPath(root, python)
 	if err != nil {
-		return fmt.Errorf("%s: resolve target: %w", toolPythonEnv, err)
+		return fmt.Errorf("%s: validate interpreter location: %w", toolPythonEnv, err)
 	}
-	resolvedRoot, err = filepath.Abs(resolvedRoot)
-	if err != nil {
-		return fmt.Errorf("%s: absolute target: %w", toolPythonEnv, err)
-	}
-	resolved, err := filepath.EvalSymlinks(python)
-	if err != nil {
-		return fmt.Errorf("%s: resolve interpreter: %w", toolPythonEnv, err)
-	}
-	// Resolve the parent separately: a target venv's python may itself be a
-	// symlink to a trusted base executable while loading target site-packages.
-	parent, err := filepath.EvalSymlinks(filepath.Dir(python))
-	if err != nil {
-		return fmt.Errorf("ARCHFIT_TOOL_PYTHON: resolve interpreter directory: %w", err)
-	}
-	for _, path := range []string{filepath.Join(parent, filepath.Base(python)), resolved} {
-		if rel, err := filepath.Rel(resolvedRoot, path); err != nil || rel == "." || filepath.IsLocal(rel) {
-			return fmt.Errorf("%s must not select a target interpreter", toolPythonEnv)
-		}
+	if inside {
+		return fmt.Errorf("%s must not select a target interpreter", toolPythonEnv)
 	}
 	info, err := os.Stat(python)
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {

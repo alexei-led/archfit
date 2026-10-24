@@ -42,26 +42,16 @@ func (e *Extractor) producerPath(ctx context.Context, roots ...string) (string, 
 	if !ok || !filepath.IsAbs(info.Path) {
 		return "", errors.New("owned depcruise executable not found on PATH; install dependency-cruiser with a compatible TypeScript compiler outside the target project")
 	}
-	paths := []string{info.Path}
-	if canonical, err := filepath.EvalSymlinks(info.Path); err == nil {
-		paths = append(paths, canonical)
-	}
 	for _, root := range roots {
 		if root == "" {
 			continue
 		}
-		root, err := filepath.Abs(root)
+		inside, err := toolrun.ContainsPath(root, info.Path)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("validate dependency-cruiser location: %w", err)
 		}
-		if canonical, err := filepath.EvalSymlinks(root); err == nil {
-			root = canonical
-		}
-		for _, path := range paths {
-			rel, err := filepath.Rel(root, path)
-			if err != nil || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-				return "", fmt.Errorf("refusing target-project dependency-cruiser executable: %s", info.Path)
-			}
+		if inside {
+			return "", fmt.Errorf("refusing target-project dependency-cruiser executable: %s", info.Path)
 		}
 	}
 	return info.Path, nil
@@ -83,21 +73,12 @@ func (e *Extractor) nodeInterpreterPath(ctx context.Context, roots ...string) (s
 		if root == "" {
 			continue
 		}
-		absolute, err := filepath.Abs(root)
+		inside, err := toolrun.ContainsPath(root, info.Path)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("validate Node location: %w", err)
 		}
-		canonical, err := filepath.EvalSymlinks(absolute)
-		if err != nil {
-			return "", err
-		}
-		for _, boundary := range []string{absolute, canonical} {
-			for _, path := range []string{info.Path, interpreter} {
-				rel, err := filepath.Rel(boundary, path)
-				if err != nil || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-					return "", fmt.Errorf("refusing target-project Node interpreter: %s", info.Path)
-				}
-			}
+		if inside {
+			return "", fmt.Errorf("refusing target-project Node interpreter: %s", info.Path)
 		}
 	}
 	return interpreter, nil
