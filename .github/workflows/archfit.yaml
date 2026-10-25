@@ -41,10 +41,10 @@ jobs:
   archfit:
     runs-on: ubuntu-latest
     steps:
-      - uses: alexei-led/archfit-action@cadf35c0d4885a49a3a1482b876f2a456d20de06
+      - uses: alexei-led/archfit-action@e0a1ef9473d68b426e9c56b2da5986bcee2fc769
         with:
           endpoint: "https://app.coupling.dev"
           audience: "https://app.coupling.dev"
-          engine-version: "v3.2.0"
-          image-digest: "sha256:5f2d4a5fff1ace10d7b08937429179631ae0c1d0e1f9e6f37c72b30954cf00db"
+          engine-version: "v3.2.2"
+          image-digest: "sha256:bd351ac70610555237974fac5ff914967a1100fb8ef754853151300d5d19ca35"
           mode: ${{ inputs.mode }}
