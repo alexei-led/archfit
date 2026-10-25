@@ -65,6 +65,15 @@ volatility of both modules. Clone facts use the higher volatility of both
 modules. The optional cascade propagates volatility through the module graph to
 a fixed point.
 
+Finding explanations use **effective volatility**, not a claim about target churn.
+For internal functional and symmetric coupling, a high-volatility source can produce a
+high-volatility edge even when its target is declared low. Declared external systems
+use their own target volatility. Cascade can also raise
+a declared value. The seam ledger's `volatility_provenance` distinguishes declared,
+inherited, cascade, and undeclared evidence. A seam aggregates edges, so its
+strongest classification need not describe every advisory subgroup. These static
+signals indicate change-propagation risk, not proof of an observed runtime cascade.
+
 ## Balance formula
 
 For scored edges, archfit uses the Chapter 10 formula:

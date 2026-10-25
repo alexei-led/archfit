@@ -168,6 +168,8 @@ type OriginDelta struct {
 	Reasons []string
 	// Origins holds the origin of every current finding that is not fixed.
 	Origins map[string]finding.Origin
+	// MemberBasis explains full rollup membership independently of the capped display.
+	MemberBasis map[string]MemberOriginBasis
 	// Introduced and Resolved are sorted, never nil.
 	Introduced []string
 	Resolved   []string
@@ -203,7 +205,7 @@ func ClassifyOrigins(in OriginEvidence) OriginDelta {
 	}
 
 	out := OriginDelta{Status: OriginUnknown, Reasons: reasons, Origins: map[string]finding.Origin{},
-		Introduced: []string{}, Resolved: []string{}}
+		Introduced: []string{}, Resolved: []string{}, MemberBasis: map[string]MemberOriginBasis{}}
 	if paired {
 		out.Status = OriginComparable
 	}
@@ -238,6 +240,9 @@ func ClassifyOrigins(in OriginEvidence) OriginDelta {
 		default:
 			out.Origins[f.ID] = finding.OriginUnknown
 		}
+		if len(f.Members) > 0 {
+			out.MemberBasis[f.ID] = memberOriginBasis(keys, baseIDs, out.Origins[f.ID])
+		}
 	}
 	if paired {
 		for _, b := range in.BaseFindings {
@@ -249,6 +254,37 @@ func ClassifyOrigins(in OriginEvidence) OriginDelta {
 	sort.Strings(out.Introduced)
 	sort.Strings(out.Resolved)
 	return out
+}
+
+// MemberOriginBasis separates a compact human summary from bounded ID detail.
+type MemberOriginBasis struct {
+	Summary string
+	Detail  string
+}
+
+// memberOriginBasis describes observed finding IDs, not source additions: an
+// existing edge can become a finding, and one unmatched member introduces an
+// otherwise pre-existing group. Keep this display cap out of classification.
+func memberOriginBasis(keys []string, baseIDs map[string]struct{}, origin finding.Origin) MemberOriginBasis {
+	missing := []string{}
+	for _, id := range keys {
+		if _, ok := baseIDs[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	sort.Strings(missing)
+	summary := fmt.Sprintf("%d of %d current member finding IDs observed in base", len(keys)-len(missing), len(keys))
+	if len(missing) == 0 {
+		return MemberOriginBasis{Summary: summary, Detail: summary}
+	}
+	if origin == finding.OriginIntroduced {
+		summary += "; group origin does not imply every member or displayed site is new"
+	} else {
+		summary += "; incomplete analyzer evidence cannot establish introduction"
+	}
+	const displayCap = 8
+	detail := fmt.Sprintf("%s; %d not observed in base (showing %d IDs: %s)", summary, len(missing), min(len(missing), displayCap), strings.Join(missing[:min(len(missing), displayCap)], ","))
+	return MemberOriginBasis{Summary: summary, Detail: detail}
 }
 
 // findingKeys is what identifies a finding across the two runs: a rollup's

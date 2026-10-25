@@ -1,6 +1,8 @@
 package evaluation
 
 import (
+	"maps"
+
 	"github.com/alexei-led/archfit/v3/internal/assessment/decision"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
@@ -47,6 +49,15 @@ func AttachOrigins(diag *result.Result, in OriginInput) {
 
 	for i := range diag.Findings {
 		diag.Findings[i].Origin = delta.Origins[diag.Findings[i].ID]
+		if basis, ok := delta.MemberBasis[diag.Findings[i].ID]; ok {
+			f := &diag.Findings[i]
+			f.MatchedBy = maps.Clone(f.MatchedBy)
+			if f.MatchedBy == nil {
+				f.MatchedBy = map[string]string{}
+			}
+			f.MatchedBy["origin_basis"] = basis.Detail
+			f.Why = "base comparison: " + basis.Summary + "; " + f.Why
+		}
 	}
 	for i := range diag.AgentTasks {
 		diag.AgentTasks[i].Origin = delta.Origins[diag.AgentTasks[i].FindingID]

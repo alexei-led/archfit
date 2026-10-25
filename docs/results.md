@@ -51,6 +51,38 @@ A dimension can carry an optional `delta` when its comparison has compatible evi
 A non-comparable reference carries reasons instead of numeric changes.
 Read the status before reading a delta.
 
+### Finding origin is not debt status
+
+With `--base`, `findings[].origin` compares observed findings with the base-tree
+run. `status: new` means unaccepted debt. It does not mean the PR added it.
+A finding can be both `new` and `pre_existing`. Origin is report-only and never
+changes gate acceptance or the exit code.
+
+- `pre_existing`: the finding ID, or every current member ID of a grouped
+  advisory, was observed in base. A seam-gate finding instead matches a
+  qualifying ordered module pair.
+- `introduced`: at least one current member finding was not observed in base,
+  and the active analyzer evidence permits origin comparison. This is a finding
+  difference, not proof that every dependency or displayed source line was added.
+- `unknown`: the evidence cannot establish introduction. Known matches can still
+  be `pre_existing`. Unmatched findings have unknown origin and no finding is
+  claimed resolved.
+  Accepted-baseline metric ratchets always have unknown base-tree origin.
+
+Read `comparison.origin_status` and `origin_reasons` for analyzer pairing.
+Numeric `comparison.status` is separate: fingerprint differences can suppress
+numeric deltas while origin still compares observed IDs. Neither status proves
+that installed dependencies, generated files, or indexer resolution were identical.
+A zero tracked Git diff alone does not establish equivalent measurement inputs.
+
+Grouped coupling advisories match **all** in-memory member IDs, not the
+first eight exported in `matched_by.group_members`. Their `why` gives a compact full-membership match summary.
+`matched_by.origin_basis` adds up to eight unmatched IDs. Adding a member can mark an old group `introduced` without changing its ID.
+The displayed path pair belongs to one member. Locations merge all member sites,
+including test sites when those are in scope. Neither the representative nor the
+first site necessarily identifies the unmatched member. A missing base observation
+is not proof that the source dependency was absent.
+
 ## Config comparison
 
 `config compare` measures the same source tree with two configs. It uses no accepted baseline and does not write config or baseline files. Both measurements share the current config's cache and labels.
