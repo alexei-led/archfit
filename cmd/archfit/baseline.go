@@ -110,6 +110,9 @@ func writeReanchorReport(w io.Writer, r application.ReanchorReport) {
 	for _, m := range r.WorsenedMetrics {
 		_, _ = fmt.Fprintf(w, "  metric worsened: %s %g -> %g (the new baseline records %g)\n", m.Name, m.Before, m.After, m.After)
 	}
+	for _, name := range r.UnmeasuredMetrics {
+		_, _ = fmt.Fprintf(w, "  metric reference not carried: %s (current metric is unmeasured)\n", name)
+	}
 }
 
 // orDash names an endpoint no declared module owns.

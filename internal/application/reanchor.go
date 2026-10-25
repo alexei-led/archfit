@@ -58,6 +58,9 @@ type ReanchorReport struct {
 	// WorsenedMetrics are metrics whose current value is worse than the stored
 	// one. The new file records the current value, so a ratchet resets here.
 	WorsenedMetrics []MetricChange
+	// UnmeasuredMetrics are stored numeric references omitted because the current
+	// metric is unmeasured. Its placeholder value must not become a new anchor.
+	UnmeasuredMetrics []string
 	// DriftReasons name each input that made the stored reference
 	// non-comparable; empty when it still compares.
 	DriftReasons []string
@@ -77,7 +80,7 @@ func reanchor(capture BaselineSnapshot, waived []BaselineFinding, current []find
 		storedIDs[a.Fingerprint] = true
 	}
 	rep := ReanchorReport{Dropped: []BaselineFinding{}, NotAccepted: []ReanchorFinding{}, DroppedSeams: []string{},
-		NewSeams: []string{}, WorsenedMetrics: []MetricChange{}, DriftReasons: append([]string{}, drift...)}
+		NewSeams: []string{}, WorsenedMetrics: []MetricChange{}, UnmeasuredMetrics: []string{}, DriftReasons: append([]string{}, drift...)}
 
 	out := capture
 	out.Accepted = nil
@@ -132,7 +135,14 @@ func reanchor(capture BaselineSnapshot, waived []BaselineFinding, current []find
 	// metric version, with a direction, compares with the stored one.
 	for _, m := range metrics {
 		before, ok := stored.Metrics[m.Name]
-		if !ok || before.Version != m.Version || m.Band == string(report.ScoreBandNA) || m.Direction == "" {
+		if !ok {
+			continue
+		}
+		if m.Band == string(report.ScoreBandNA) {
+			rep.UnmeasuredMetrics = append(rep.UnmeasuredMetrics, m.Name)
+			continue
+		}
+		if before.Version != m.Version || m.Direction == "" {
 			continue
 		}
 		if worse(m.Direction, before.Value, m.Value) {

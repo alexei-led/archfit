@@ -42,6 +42,12 @@ archfit check -c .archfit.yaml
 
 The baseline must be comparable before metric ratchets can evaluate against it. See [Results](results.md#baseline-comparison).
 
+Captures store measured metric references only. An `n/a` placeholder is not a
+measured zero and is omitted. Re-anchoring names each stored numeric reference
+that it cannot carry because the current metric is unmeasured. Review these
+omissions alongside changed metric values. Re-anchoring does not create missing
+measurement evidence.
+
 ## Update integrations
 
 If a tool consumes JSON, SARIF, or agent output, update it for the v3 contract. The state schema keeps the identifier `archfit.architecture-state.v1`, but some fields changed. See [Results](results.md#json-contracts).
