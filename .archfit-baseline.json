@@ -26,12 +26,6 @@
       "severity": "critical"
     },
     {
-      "fingerprint": "46d1b53cf0d5c82479706ca7e3f74e52",
-      "rule_id": "bc/imbalanced_coupling",
-      "kind": "advisory",
-      "severity": "critical"
-    },
-    {
       "fingerprint": "50a698c4a94070e7e276fa6164316d8e",
       "rule_id": "bc/imbalanced_coupling",
       "kind": "advisory",
@@ -187,14 +181,14 @@
     }
   },
   "state": {
-    "config_hash": "98827963bb190a8cdc5ca25e5eededc30c737e0ccfdb458057ae738eba4da319",
+    "config_hash": "67ddf7abbec519cf73a7a6fe924e39d660d31e5af22cd8c552d829e20fff06a3",
     "classification_hash": "b960cc2884924420cb8e8e09969a77c4d93f686acb4564e4c268bb8d072f3882",
     "model_hash": "74bef56623fe4e1240964f521caa00b09c0f8f14b4a2fb95e7e53d06afc5493c",
     "labels_hash": "",
     "rubric_version": "bc_score.v7",
     "measurement_profile": {
       "version": "archfit.measurement.v2",
-      "settings_hash": "089b5d4d8f0281505ca9664d832957ec24a3dce0902cc9593087ee679fe17ae8",
+      "settings_hash": "65d017ec94129de96385052b8f355779dceedd3af41d9e6e18fc1798e7084ef6",
       "producers": [
         {
           "tool": "ast-grep",
@@ -203,13 +197,13 @@
         },
         {
           "tool": "ast-grep/syntax",
-          "semantics_version": "ast-grep/syntax.v1",
-          "tool_version": "ast-grep 0.45.3",
+          "semantics_version": "ast-grep/syntax.v2",
+          "tool_version": "ast-grep 0.51.0",
           "status": "ok"
         },
         {
           "tool": "dependency-cruiser",
-          "semantics_version": "dependency-cruiser.v1",
+          "semantics_version": "dependency-cruiser.v2",
           "status": "absent"
         },
         {
@@ -220,24 +214,24 @@
         {
           "tool": "git-history",
           "semantics_version": "git-history.recent500-full-fallback.v2",
-          "tool_version": "git version 2.56.0",
+          "tool_version": "git version 2.39.5",
           "status": "ok"
         },
         {
           "tool": "go/packages",
           "semantics_version": "go/packages.v2",
-          "tool_version": "go1.27.1",
+          "tool_version": "go1.27.3",
           "status": "ok"
         },
         {
           "tool": "grimp",
-          "semantics_version": "grimp.v2",
+          "semantics_version": "grimp.v3",
           "status": "absent"
         },
         {
           "tool": "jscpd",
           "semantics_version": "jscpd.v1",
-          "tool_version": "jscpd 5.4.0",
+          "tool_version": "jscpd 5.4.2",
           "status": "ok"
         },
         {
@@ -247,14 +241,14 @@
         },
         {
           "tool": "scip",
-          "semantics_version": "scip.v2",
-          "tool_version": "scip-go 0.2.7",
+          "semantics_version": "scip.v3",
+          "tool_version": "scip-go 0.2.9",
           "status": "ok"
         },
         {
           "tool": "scip-symbols",
-          "semantics_version": "scip-symbols.v1",
-          "tool_version": "scip-go 0.2.7",
+          "semantics_version": "scip-symbols.v2",
+          "tool_version": "scip-go 0.2.9",
           "status": "ok"
         }
       ],
