@@ -10,8 +10,27 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  tools:
+    name: Locked tool manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.pins.outputs.go }}
+      python: ${{ steps.pins.outputs.python }}
+      uv: ${{ steps.pins.outputs.uv }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Verify locks and read runtime pins
+        id: pins
+        run: |
+          python3 scripts/provision_tools.py check
+          python3 -m unittest discover -s scripts/tests -p '*_test.py'
+          jq -r '.versions | to_entries[] | "\(.key)=\(.value)"' tools/manifest.json >> "$GITHUB_OUTPUT"
   build-binaries:
     name: Build binary (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: tools
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -33,8 +52,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version-file: go.mod
-          check-latest: true
+          go-version: ${{ needs.tools.outputs.go }}
+          check-latest: false
           cache: false
       - name: Build binary
         env:
@@ -61,8 +80,9 @@ jobs:
           retention-days: 1
   build-docker:
     name: Build Docker (${{ matrix.platform }})
+    needs: tools
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write # publish per-platform image digests to GHCR
@@ -115,24 +135,8 @@ jobs:
           docker image inspect "$image" > "$output/image.json"
           docker run --rm "$image" --version > "$output/version.txt"
           grep -F "archfit version ${TAG} (commit ${COMMIT}," "$output/version.txt"
-          status=0
-          docker run --rm --cap-drop ALL --security-opt no-new-privileges \
-            --read-only --tmpfs /tmp:rw,exec,nosuid,size=512m,mode=1777 \
-            --env HOME=/tmp \
-            --mount "type=bind,source=${GITHUB_WORKSPACE}/testdata/python314,target=/src,readonly" \
-            "$image" check --root /src --config /src/.archfit.yaml --json \
-            > "$output/report.json" 2> "$output/stderr.log" || status=$?
-          cat "$output/stderr.log"
-          test "$status" -eq 1
-          jq -e '
-            .decision.hard_gates == "fail" and
-            ((.decision.unevaluated_required_rules // []) | length == 0) and
-            (.coverage.tools | any(.tool == "grimp" and .status == "ok")) and
-            (.comparison.measurement_profile.producers | any(
-              .tool == "grimp" and .semantics_version == "grimp.v3" and
-              (.tool_version | startswith("grimp 3.17; python 3.14.")))) and
-            (.findings | any(.rule_id == "no-core-to-adapter" and .kind == "gate"))
-          ' "$output/report.json"
+          python3 scripts/image_contracts.py --docker-context default --image "$image" \
+            --output-dir "$output/contracts"
       - name: Preserve platform smoke evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

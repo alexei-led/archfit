@@ -19,10 +19,8 @@ import (
 )
 
 const (
-	launcherBunx     = "bunx"
-	launcherBunxPath = "/usr/bin/bunx"
-	tsconfigName     = "tsconfig.json"
-	sourceDepCruise  = "dependency-cruiser"
+	tsconfigName    = "tsconfig.json"
+	sourceDepCruise = "dependency-cruiser"
 )
 
 // fixtureDir is the testdata/ts directory with package.json and JSON fixtures.
@@ -39,17 +37,23 @@ func loadFixture(t *testing.T, name string) []byte {
 }
 
 // mockRunner builds a RunnerMock that:
-//   - DetectFunc: returns (ToolInfo{Name: tool}, true) for bunx; false for anything else.
-//   - RunFunc: when args contain "--version" returns "14.0.0"; otherwise returns fixtureData.
+//   - DetectFunc: detects the owned depcruise entry and a mock Node interpreter.
+//   - RunFunc: returns producer metadata for --info, otherwise fixtureData.
 func mockRunner(fixtureData []byte) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-			if tool == launcherBunx {
-				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
+			if tool == depcruiseExecutable {
+				return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
 		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--info") {
+				return toolrun.Output{Stdout: []byte(producerInfoFixture("14.0.0"))}, nil
+			}
 			if slices.Contains(cmd.Args, "--version") {
 				return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
 			}
@@ -68,7 +72,7 @@ func TestExtract_Parse(t *testing.T) {
 	}
 	extractor := ts.New(runner, cfg)
 
-	s := scope.Scope{Root: fixtureDir}
+	s := scope.Scope{Root: emptyTSFixture(t)}
 	facts, cov, err := extractor.Extract(context.Background(), s)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -126,7 +130,7 @@ func TestExtract_CouldNotResolve(t *testing.T) {
 	cfg := evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}
 	extractor := ts.New(runner, cfg)
 
-	s := scope.Scope{Root: fixtureDir}
+	s := scope.Scope{Root: emptyTSFixture(t)}
 	facts, cov, err := extractor.Extract(context.Background(), s)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -174,7 +178,7 @@ func TestExtract_ExternalNodes(t *testing.T) {
 	cfg := evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}
 	extractor := ts.New(runner, cfg)
 
-	facts, cov, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir})
+	facts, cov, err := extractor.Extract(context.Background(), scope.Scope{Root: emptyTSFixture(t)})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -261,7 +265,7 @@ func TestExtract_DropsThirdPartyCodeAtAnyDepth(t *testing.T) {
 	    {"resolved":"code/core/src/b.ts","module":"../b","dependencyTypes":["local"],"couldNotResolve":false,"coreModule":false}]}
 	]}`)
 	facts, cov, err := ts.New(mockRunner(data), evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}).
-		Extract(context.Background(), scope.Scope{Root: fixtureDir})
+		Extract(context.Background(), scope.Scope{Root: emptyTSFixture(t)})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -292,7 +296,7 @@ func TestExtract_EdgeTypes(t *testing.T) {
 
 	extractor := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
 
-	facts, _, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir})
+	facts, _, err := extractor.Extract(context.Background(), scope.Scope{Root: emptyTSFixture(t)})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
@@ -367,7 +371,7 @@ func TestExtract_ToolAbsentAuto(t *testing.T) {
 	cfg := evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}
 	extractor := ts.New(runner, cfg)
 
-	s := scope.Scope{Root: fixtureDir}
+	s := scope.Scope{Root: emptyTSFixture(t)}
 	facts, cov, err := extractor.Extract(context.Background(), s)
 	if err != nil {
 		t.Fatalf("Extract: expected nil error for absent tool in auto mode, got %v", err)
@@ -419,7 +423,7 @@ func TestExtract_IncludeOnly(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			root := t.TempDir()
+			root := emptyTSFixture(t)
 			if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"t"}`), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -427,12 +431,18 @@ func TestExtract_IncludeOnly(t *testing.T) {
 			var gotArgs []string
 			runner := &toolrun.RunnerMock{
 				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-					if tool == launcherBunx {
-						return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+					if tool == nodeExecutable {
+						return mockNodeInfo()
+					}
+					if tool == depcruiseExecutable {
+						return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 					}
 					return toolrun.ToolInfo{}, false
 				},
 				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					if slices.Contains(cmd.Args, "--info") {
+						return toolrun.Output{Stdout: []byte(producerInfoFixture("14.0.0"))}, nil
+					}
 					if slices.Contains(cmd.Args, "--version") {
 						return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
 					}
@@ -549,12 +559,18 @@ func TestExtract_SubtreePathStrip(t *testing.T) {
 			}
 			runner := &toolrun.RunnerMock{
 				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-					if tool == launcherBunx {
-						return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+					if tool == nodeExecutable {
+						return mockNodeInfo()
+					}
+					if tool == depcruiseExecutable {
+						return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 					}
 					return toolrun.ToolInfo{}, false
 				},
 				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					if slices.Contains(cmd.Args, "--info") {
+						return toolrun.Output{Stdout: []byte(producerInfoFixture("14.0.0"))}, nil
+					}
 					if slices.Contains(cmd.Args, "--version") {
 						return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
 					}
@@ -562,7 +578,7 @@ func TestExtract_SubtreePathStrip(t *testing.T) {
 				},
 			}
 
-			root := t.TempDir()
+			root := emptyTSFixture(t)
 			if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"t"}`), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -623,7 +639,7 @@ func TestExtract_SubtreePathStrip(t *testing.T) {
 func TestExtract_TSConfigSubdir(t *testing.T) {
 	gitRoot := t.TempDir()
 	pkg := filepath.Join(gitRoot, "packages", "pkg-a")
-	if err := os.MkdirAll(pkg, 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Join(pkg, "src"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(pkg, "package.json"), []byte(`{"name":"pkg-a"}`), 0o600); err != nil {
@@ -636,12 +652,18 @@ func TestExtract_TSConfigSubdir(t *testing.T) {
 	var gotArgs []string
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-			if tool == "bunx" {
-				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
+			if tool == depcruiseExecutable {
+				return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
 		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--info") {
+				return toolrun.Output{Stdout: []byte(producerInfoFixture("14.0.0"))}, nil
+			}
 			if slices.Contains(cmd.Args, "--version") {
 				return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
 			}
@@ -683,7 +705,7 @@ func TestExtract_TSConfigSubdir(t *testing.T) {
 func TestExtract_TSConfigSubdir_RootFallback(t *testing.T) {
 	gitRoot := t.TempDir()
 	pkg := filepath.Join(gitRoot, "packages", "pkg-a")
-	if err := os.MkdirAll(pkg, 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Join(pkg, "src"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(pkg, "package.json"), []byte(`{"name":"pkg-a"}`), 0o600); err != nil {
@@ -696,12 +718,18 @@ func TestExtract_TSConfigSubdir_RootFallback(t *testing.T) {
 	var gotArgs []string
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-			if tool == "bunx" {
-				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
+			if tool == depcruiseExecutable {
+				return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
 		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--info") {
+				return toolrun.Output{Stdout: []byte(producerInfoFixture("14.0.0"))}, nil
+			}
 			if slices.Contains(cmd.Args, "--version") {
 				return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
 			}
@@ -745,7 +773,7 @@ func TestExtract_TSConfigAutoDetect(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			root := t.TempDir()
+			root := emptyTSFixture(t)
 			if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"t"}`), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -758,12 +786,18 @@ func TestExtract_TSConfigAutoDetect(t *testing.T) {
 			var gotArgs []string
 			runner := &toolrun.RunnerMock{
 				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-					if tool == launcherBunx {
-						return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+					if tool == nodeExecutable {
+						return mockNodeInfo()
+					}
+					if tool == depcruiseExecutable {
+						return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 					}
 					return toolrun.ToolInfo{}, false
 				},
 				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					if slices.Contains(cmd.Args, "--info") {
+						return toolrun.Output{Stdout: []byte(producerInfoFixture("14.0.0"))}, nil
+					}
 					if slices.Contains(cmd.Args, "--version") {
 						return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
 					}
@@ -802,19 +836,25 @@ func TestExtract_TSConfigAutoDetect(t *testing.T) {
 func TestExtract_SourceDirMissing(t *testing.T) {
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-			if tool == launcherBunx {
-				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
+			if tool == depcruiseExecutable {
+				return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
 		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--info") {
+				return toolrun.Output{Stdout: []byte(producerInfoFixture("14.0.0"))}, nil
+			}
 			if slices.Contains(cmd.Args, "--version") {
 				return toolrun.Output{Stdout: []byte("16.0.0\n")}, nil
 			}
 			return toolrun.Output{ExitCode: 1, Stderr: []byte("ERROR: Can't open 'src' for reading. Does it exist?")}, nil
 		},
 	}
-	s := scope.Scope{Root: fixtureDir}
+	s := scope.Scope{Root: emptyTSFixture(t)}
 
 	t.Run("auto degrades to partial coverage", func(t *testing.T) {
 		facts, cov, err := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto}).Extract(context.Background(), s)
@@ -846,12 +886,18 @@ func TestExtract_SrcDotIsLiteral(t *testing.T) {
 	var gotArgs []string
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-			if tool == launcherBunx {
-				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
+			if tool == depcruiseExecutable {
+				return toolrun.ToolInfo{Name: depcruiseExecutable, Path: ownedDepcruisePath}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
 		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--info") {
+				return toolrun.Output{Stdout: []byte(producerInfoFixture("14.0.0"))}, nil
+			}
 			if slices.Contains(cmd.Args, "--version") {
 				return toolrun.Output{Stdout: []byte("16.0.0\n")}, nil
 			}
@@ -859,7 +905,7 @@ func TestExtract_SrcDotIsLiteral(t *testing.T) {
 			return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
 		},
 	}
-	s := scope.Scope{Root: fixtureDir}
+	s := scope.Scope{Root: emptyTSFixture(t)}
 	_, _, err := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: "."}).Extract(context.Background(), s)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -872,54 +918,34 @@ func TestExtract_SrcDotIsLiteral(t *testing.T) {
 	}
 }
 
-// TestExtract_PackagePinned locks that both launchers are told the explicit
-// npm package name for depcruise, not just the bare CLI subcommand. Without
-// this, a launcher that finds no local "depcruise" binary resolves "depcruise"
-// as if it were itself an installable package name -- which on the npm
-// registry belongs to an unrelated dependency-confusion placeholder, not
-// dependency-cruiser (reproduced via plain `npx depcruise` on a repo with no
-// local install: silent exit 0, garbage non-JSON output).
-func TestExtract_PackagePinned(t *testing.T) {
-	tests := []struct {
-		launcher string
-		wantArgs []string // must appear, in order, before the "depcruise" subcommand
-	}{
-		{launcher: launcherBunx, wantArgs: []string{"-p", "dependency-cruiser"}},
-		{launcher: "npx", wantArgs: []string{"--package=dependency-cruiser", "--"}},
+func TestExtract_DirectOwnedProducer(t *testing.T) {
+	root := writeTSFixture(t, "export const a = 1", nil)
+	var detected []string
+	var commands []toolrun.ToolCmd
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, name string) (toolrun.ToolInfo, bool) {
+			detected = append(detected, name)
+			if name == nodeExecutable {
+				return mockNodeInfo()
+			}
+			return toolrun.ToolInfo{Name: name, Path: ownedDepcruisePath}, name == depcruiseExecutable
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			commands = append(commands, cmd)
+			if slices.Contains(cmd.Args, "--info") {
+				return toolrun.Output{Stdout: []byte(producerInfoFixture("18.7.0"))}, nil
+			}
+			return toolrun.Output{Stdout: []byte(`{"modules":[{"source":"a.ts"}]}`)}, nil
+		},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.launcher, func(t *testing.T) {
-			var gotArgs []string
-			runner := &toolrun.RunnerMock{
-				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-					if tool == tt.launcher {
-						return toolrun.ToolInfo{Name: tt.launcher, Path: "/usr/bin/" + tt.launcher}, true
-					}
-					return toolrun.ToolInfo{}, false
-				},
-				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-					if slices.Contains(cmd.Args, "--version") {
-						return toolrun.Output{Stdout: []byte("16.0.0\n")}, nil
-					}
-					gotArgs = cmd.Args
-					return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
-				},
-			}
-
-			extractor := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto})
-			if _, _, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir}); err != nil {
-				t.Fatalf("Extract: %v", err)
-			}
-
-			depIdx := slices.Index(gotArgs, "depcruise")
-			if depIdx == -1 {
-				t.Fatalf("expected \"depcruise\" subcommand in args %v", gotArgs)
-			}
-			gotPin := gotArgs[:depIdx]
-			if !slices.Equal(gotPin, tt.wantArgs) {
-				t.Errorf("package-pin args before \"depcruise\" = %v, want %v (full args %v)", gotPin, tt.wantArgs, gotArgs)
-			}
-		})
+	_, cov, err := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeOn, Src: "."}).Extract(t.Context(), scope.Scope{Root: root})
+	if err != nil || cov.Status != "ok" || cov.Version != "18.7.0" || len(commands) != 2 || !slices.Equal(detected, []string{depcruiseExecutable, nodeExecutable}) {
+		t.Fatalf("direct producer: detected=%v commands=%+v coverage=%+v error=%v", detected, commands, cov, err)
+	}
+	node, _ := mockNodeInfo()
+	for _, cmd := range commands {
+		if cmd.Name != node.Path || len(cmd.Args) == 0 || cmd.Args[0] != ownedDepcruisePath || !slices.Contains(cmd.Args, "--no-config") || !slices.Contains(cmd.Env, "NODE_OPTIONS=") || !slices.Contains(cmd.Env, "NODE_PATH=") {
+			t.Fatalf("non-hermetic command: %+v", cmd)
+		}
 	}
 }

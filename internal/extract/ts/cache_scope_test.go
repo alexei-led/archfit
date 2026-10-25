@@ -70,14 +70,14 @@ func TestFactCache_DynamicDepcruiseConfigRunsFresh(t *testing.T) {
 		"custom-settings.json":    `{"options":{}}`,
 	})
 	calls := 0
-	ex := ts.New(cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[]}]}`, &calls), evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: "."})
+	ex := ts.New(cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[]},{"source":".dependency-cruiser.cjs","dependencies":[]}]}`, &calls), evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: "."})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	for range 2 {
 		if _, _, err := ex.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if calls != 2 {
-		t.Fatalf("unknown dynamic configuration inputs must bypass cache: calls=%d", calls)
+	if calls != 1 {
+		t.Fatalf("ignored dynamic configuration must not disable cache: calls=%d", calls)
 	}
 }

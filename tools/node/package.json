@@ -1,0 +1,13 @@
+{
+  "name": "archfit-owned-analyzers",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "dependency-cruiser": "18.7.0",
+    "typescript": "6.0.3",
+    "@ast-grep/cli": "0.51.0",
+    "jscpd": "5.4.2",
+    "@sourcegraph/scip-typescript": "0.5.2",
+    "@sourcegraph/scip-python": "0.6.8"
+  }
+}

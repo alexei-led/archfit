@@ -1,5 +1,5 @@
 // Package astgrep implements evidenceports.PatternProvider and evidenceports.SyntaxProvider
-// using the "sg" (ast-grep) binary. Syntax() runs embedded per-language rules
+// using the "ast-grep" binary. Syntax() runs embedded per-language rules
 // and maps ruleId→Kind+Framework into SyntaxFacts sorted by (File, StartLine, Kind, Name).
 package astgrep
 
@@ -20,7 +20,7 @@ import (
 )
 
 // syntaxToolName is the coverage name for the SYNTAX pass. It is deliberately
-// distinct from the pattern pass's toolName: both passes drive the same "sg"
+// distinct from the pattern pass's toolName: both passes drive the same "ast-grep"
 // binary, but a shared name puts two rows under one tool in tool_coverage, and
 // every consumer that pairs rows by tool (config compare, origin classification)
 // then sees an unpairable duplicate instead of two independent analyzers.
@@ -31,6 +31,9 @@ var goRules string
 
 //go:embed rules/typescript.yml
 var tsRules string
+
+//go:embed rules/javascript.yml
+var jsRules string
 
 //go:embed rules/python.yml
 var pyRules string
@@ -129,7 +132,8 @@ var goRuleKinds = map[string]kindInfo{
 	ruleGoFuncTypeLeak: {Kind: kindTypeLeak},
 }
 
-// tsRuleKinds maps each typescript.yml ruleId to its Kind and Framework.
+// tsRuleKinds maps typescript.yml and javascript.yml ruleIds to Kind and Framework.
+// JavaScript files belong to the existing TypeScript language family.
 // Route rules carry a non-empty Framework; declaration and decorator rules do not.
 // express/koa/fastify share the same call shape and are labelled "express" (see typescript.yml).
 // Signal rules have IsSignal=true and are never emitted as SyntaxFacts.
@@ -147,6 +151,13 @@ var tsRuleKinds = map[string]kindInfo{
 	// Import-signal rules (IsSignal=true): confirm framework import per file.
 	"ts-import-express": {Framework: fwGroupExpress, IsSignal: true},
 	"ts-import-nest":    {Framework: fwGroupNest, IsSignal: true},
+	// JavaScript grammar rules share the TypeScript family's public facts.
+	"js-func":           {Kind: kindFunction},
+	"js-class":          {Kind: kindClass},
+	"js-method":         {Kind: kindMethod},
+	"js-cjs-func":       {Kind: kindFunction},
+	"js-route-express":  {Kind: kindRoute, Framework: fwGroupExpress},
+	"js-import-express": {Framework: fwGroupExpress, IsSignal: true},
 }
 
 // pyRuleKinds maps each python.yml ruleId to its Kind and Framework.
@@ -202,7 +213,7 @@ var langRuleKinds = map[string]map[string]kindInfo{
 // embeddedRules maps language identifiers (as passed in langs) to their embedded YAML.
 var embeddedRules = map[string]string{
 	langGo:         goRules,
-	langTypeScript: tsRules,
+	langTypeScript: tsRules + "\n---\n" + jsRules,
 	langPython:     pyRules,
 	langRust:       rustRules,
 }
@@ -234,10 +245,10 @@ var goTypeAliasNameRe = regexp.MustCompile(`^type\s+(\w+)`)
 
 // Syntax runs embedded ast-grep rules for each requested language that has rules
 // defined, collects SyntaxFacts, and returns them sorted by (File, StartLine,
-// Kind, Name). A missing "sg" binary returns empty facts with status "absent" —
+// Kind, Name). A missing "ast-grep" binary returns empty facts with status "absent" —
 // never an error. Languages with no embedded rules are silently skipped.
 func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]evidence.SyntaxFact, evidence.Coverage, error) {
-	_, ok := a.runner.Detect(ctx, "sg")
+	_, ok := a.runner.Detect(ctx, toolName)
 	if !ok {
 		return nil, evidence.Coverage{Tool: syntaxToolName, Status: evidence.StatusAbsent}, nil
 	}
@@ -259,7 +270,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		// populated in-order and the passes are unchanged.
 		var raw []sgSyntaxMatch
 		out, err := runner.Stream(ctx, toolrun.ToolCmd{
-			Name:    "sg",
+			Name:    toolName,
 			Args:    []string{"scan", "--inline-rules", rules, "--json=compact", "."},
 			WorkDir: s.Root,
 		}, func(r io.Reader) error {
@@ -274,7 +285,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		// (e.g. YAML parse error). Silently continuing would produce zero facts and
 		// report status=ok — a false green. Surface it as a partial/degraded result.
 		if out.ExitCode != 0 && len(raw) == 0 {
-			reason := fmt.Sprintf("sg rejected rule file for %q (exit %d): %s", lang, out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+			reason := fmt.Sprintf("ast-grep rejected rule file for %q (exit %d): %s", lang, out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 			return nil, evidence.Coverage{Tool: syntaxToolName, Version: a.sgVersion(ctx), Status: evidence.StatusPartial, Reason: reason}, nil
 		}
 		if len(raw) == 0 {
@@ -412,7 +423,12 @@ func nameFromMatch(m sgSyntaxMatch) string {
 	}
 	// Route rules: use $PATH as the name (the URL pattern string).
 	if pv, ok := m.MetaVariables.Single["PATH"]; ok && pv.Text != "" {
-		return strings.Trim(pv.Text, `"`+"`")
+		path := pv.Text
+		// Remove one matching literal delimiter pair, preserving quotes in the path.
+		if len(path) >= 2 && path[0] == path[len(path)-1] && strings.ContainsRune("\"'`", rune(path[0])) {
+			return path[1 : len(path)-1]
+		}
+		return path
 	}
 	// Fallback for go-type-alias: extract from declaration text.
 	if sub := goTypeAliasNameRe.FindStringSubmatch(m.Text); len(sub) == 2 {
@@ -428,9 +444,10 @@ func isNonExportedGoRule(ruleID string) bool {
 		ruleID == ruleGoTypeLeak || ruleID == ruleGoFuncTypeLeak
 }
 
-// isNonExportedTSRule returns true for TypeScript ruleIds that are never exported.
+// isNonExportedTSRule returns true for TypeScript-family rules that are never exported.
 func isNonExportedTSRule(ruleID string) bool {
 	return strings.HasPrefix(ruleID, "ts-route-") || strings.HasPrefix(ruleID, "ts-import-") ||
+		strings.HasPrefix(ruleID, "js-route-") || strings.HasPrefix(ruleID, "js-import-") ||
 		ruleID == "ts-decorator"
 }
 
@@ -449,8 +466,8 @@ func isNonExportedRustRule(ruleID string) bool {
 // isExported returns true if the fact represents an exported identifier.
 //
 // Go: exported means the name starts with an uppercase letter; route and signal rules are never exported.
-// TypeScript: all declaration rules require inside:export_statement so they are always
-// exported; route, annotation, and signal rules are never exported.
+// TypeScript family: declaration rules require an export_statement or a direct
+// named CommonJS export; route, annotation, and signal rules are never exported.
 // Python: public means the name does not start with underscore; route, decorator, and signal rules
 // are never exported.
 // Rust: pub = has visibility_modifier (the YAML rule already filters for it); route, attribute,
@@ -461,7 +478,7 @@ func isExported(lang, ruleID, name string) bool {
 		if isNonExportedTSRule(ruleID) {
 			return false
 		}
-		return true // inside: export_statement guarantees export
+		return true // declaration rules guarantee an export
 	case langPython:
 		if isNonExportedPyRule(ruleID) {
 			return false

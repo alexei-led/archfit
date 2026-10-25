@@ -16,16 +16,19 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
-// cacheFixtureRunner fakes bunx: --version calls return a pinned version,
+// cacheFixtureRunner fakes an owned producer: --info returns a pinned environment,
 // depcruise scans return the given JSON. depcruiseCalls counts only the scans.
 func cacheFixtureRunner(depcruiseJSON string, depcruiseCalls *int) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-			return toolrun.ToolInfo{Name: tool}, tool == launcherBunx
+			if tool == nodeExecutable {
+				return mockNodeInfo()
+			}
+			return toolrun.ToolInfo{Name: tool, Path: ownedDepcruisePath}, tool == depcruiseExecutable
 		},
 		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-			if slices.Contains(cmd.Args, "--version") {
-				return toolrun.Output{Stdout: []byte("16.0.0\n")}, nil
+			if slices.Contains(cmd.Args, "--info") {
+				return toolrun.Output{Stdout: []byte(producerInfoFixture("16.0.0"))}, nil
 			}
 			*depcruiseCalls++
 			return toolrun.Output{Stdout: []byte(depcruiseJSON)}, nil
@@ -38,7 +41,7 @@ func cacheFixtureRunner(depcruiseJSON string, depcruiseCalls *int) *toolrun.Runn
 func writeTSFixture(t *testing.T, mainTS string, extra map[string]string) string {
 	t.Helper()
 	root := t.TempDir()
-	files := map[string]string{"package.json": `{"name":"fixture"}`, "a.ts": mainTS}
+	files := map[string]string{"package.json": `{"name":"fixture"}`, fixtureTSName: mainTS}
 	maps.Copy(files, extra)
 	for name, content := range files {
 		full := filepath.Join(root, name)
@@ -58,7 +61,7 @@ func writeTSFixture(t *testing.T, mainTS string, extra map[string]string) string
 func TestFactCache_HitAndTSConfigInvalidation(t *testing.T) {
 	t.Parallel()
 	root := writeTSFixture(t, `export const a = 1;`, map[string]string{
-		"tsconfig.json": `{"compilerOptions":{}}`,
+		"tsconfig.json": emptyCompilerConfig,
 	})
 	calls := 0
 	runner := cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[]}]}`, &calls)
@@ -135,7 +138,7 @@ func TestFactCache_ExcludedFileEditInvalidates(t *testing.T) {
 		"legacy/old.ts": `export const old = 1;`,
 	})
 	calls := 0
-	runner := cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[]}]}`, &calls)
+	runner := cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[]},{"source":"legacy/old.ts","dependencies":[]}]}`, &calls)
 	ex := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: ".", Exclusions: []string{"legacy/**"}})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
@@ -193,7 +196,7 @@ func TestFactCache_SubtreeRootManifestInvalidates(t *testing.T) {
 		".dependency-cruiser.json":     `{}`,
 		"packages/pkg/package.json":    `{"name":"pkg"}`,
 		"packages/pkg/a.ts":            `export const a = 1;`,
-		"packages/pkg/tsconfig.json":   `{"compilerOptions":{}}`,
+		"packages/pkg/tsconfig.json":   emptyCompilerConfig,
 		"packages/other/package.json":  `{"name":"other"}`,
 		"packages/other/irrelevant.ts": `export const x = 1;`,
 	}
@@ -222,13 +225,13 @@ func TestFactCache_SubtreeRootManifestInvalidates(t *testing.T) {
 		t.Fatalf("warm subtree run: want cache hit (1 call), got %d", calls)
 	}
 
-	if err := os.WriteFile(filepath.Join(repo, ".dependency-cruiser.json"), []byte(`{"options":{"doNotFollow":{}}}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "package.json"), []byte(`{"name":"workspace","imports":{"#chosen":"./other.js"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := ex.Extract(ctx, s); err != nil {
-		t.Fatalf("Extract after root depcruise config edit: %v", err)
+		t.Fatalf("Extract after root package manifest edit: %v", err)
 	}
 	if calls != 2 {
-		t.Errorf("root depcruise config edit must invalidate subtree cache: want 2 calls, got %d", calls)
+		t.Errorf("root package manifest edit must invalidate subtree cache: want 2 calls, got %d", calls)
 	}
 }

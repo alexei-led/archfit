@@ -13,28 +13,27 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
-// sgSkipGuard skips t if sg is absent from PATH or is not ast-grep
-// (util-linux ships an unrelated /usr/bin/sg).
+// sgSkipGuard skips t if the canonical ast-grep executable is absent from PATH.
+// Never probe sg: util-linux ships an unrelated binary with that name.
 func sgSkipGuard(t *testing.T) {
 	t.Helper()
-	sgPath, err := exec.LookPath("sg")
+	sgPath, err := exec.LookPath("ast-grep")
 	if err != nil {
-		t.Skip("sg not found on PATH — skipping integration test")
+		t.Skip("ast-grep not found on PATH — skipping integration test")
 	}
 	out, err := exec.Command(sgPath, "--version").Output() //nolint:gosec // path from LookPath
-	if err != nil || !strings.Contains(string(out), "ast-grep") {
-		t.Skipf("sg at %s is not ast-grep (version output: %q) — skipping", sgPath, string(out))
+	if err != nil || !strings.HasPrefix(strings.TrimSpace(string(out)), "ast-grep ") {
+		t.Fatalf("ast-grep at %s failed version check: err=%v output=%q", sgPath, err, string(out))
 	}
 }
 
-// TestSyntaxIntegration_JSONShape runs the real sg binary against a small Go
+// TestSyntaxIntegration_JSONShape runs the real ast-grep binary against a small Go
 // fixture and asserts that the JSON shape archfit depends on is present:
 //   - ruleId   — rule identifier string
 //   - range    — object with start.line and end.line (0-based integers)
 //   - metaVariables — object with a "single" sub-object holding captured names
 //
-// The test skips cleanly when sg is absent from PATH or when the resolved
-// binary is not ast-grep (util-linux ships an unrelated /usr/bin/sg).
+// The test skips cleanly only when ast-grep is absent from PATH.
 // Gate behind -short: this launches a real subprocess. Use make test-fast to
 // skip all integration tests for a subprocess-free inner loop.
 func TestSyntaxIntegration_JSONShape(t *testing.T) {
@@ -60,8 +59,8 @@ func TestSyntaxIntegration_JSONShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Syntax() returned unexpected error: %v", err)
 	}
-	if cov.Status == statusAbsentStr {
-		t.Skip("sg reported absent from within Syntax() — environment inconsistency")
+	if cov.Status != "ok" {
+		t.Fatalf("Syntax() coverage=%+v after ast-grep passed the guard", cov)
 	}
 
 	// --- assert JSON shape produced at least one fact ---
@@ -190,9 +189,6 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 			facts, cov, err := a.Syntax(context.Background(), s, []string{tc.lang})
 			if err != nil {
 				t.Fatalf("Syntax(%q) returned unexpected error: %v", tc.lang, err)
-			}
-			if cov.Status == statusAbsentStr {
-				t.Skip("sg reported absent from within Syntax() — environment inconsistency")
 			}
 			// Non-ok status means the rule file was rejected by sg (YAML error,
 			// exit non-zero with empty stdout). This is the key regression check.

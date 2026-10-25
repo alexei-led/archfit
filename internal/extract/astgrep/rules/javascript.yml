@@ -1,0 +1,79 @@
+# JavaScript grammar rules for the existing TypeScript language family.
+# Do not reuse TypeScript-only kinds (interface/enum/type alias/decorator).
+# ESM declarations must be exported. Methods must belong directly to an
+# exported class and have an identifier name (no private/computed/string names).
+# CommonJS supports only direct named module.exports function
+# expressions; indirect/aliased/anonymous/arrow exports need binding analysis.
+# Validated against ast-grep 0.51.0 with the JavaScript tree-sitter grammar.
+
+id: js-func
+language: JavaScript
+rule:
+  kind: function_declaration
+  has:
+    field: name
+    pattern: $NAME
+  inside:
+    kind: export_statement
+---
+id: js-class
+language: JavaScript
+rule:
+  kind: class_declaration
+  has:
+    field: name
+    pattern: $NAME
+  inside:
+    kind: export_statement
+---
+id: js-method
+language: JavaScript
+rule:
+  kind: method_definition
+  has:
+    field: name
+    kind: property_identifier
+    pattern: $NAME
+  inside:
+    kind: class_body
+    inside:
+      kind: class_declaration
+      inside:
+        kind: export_statement
+---
+id: js-cjs-func
+language: JavaScript
+rule:
+  kind: function_expression
+  has:
+    field: name
+    pattern: $NAME
+  inside:
+    pattern: module.exports = $VALUE
+---
+# Same express/koa/fastify shape and per-file import gating as TypeScript.
+id: js-route-express
+language: JavaScript
+rule:
+  any:
+    - pattern: $RECV.get($PATH, $$$)
+    - pattern: $RECV.post($PATH, $$$)
+    - pattern: $RECV.put($PATH, $$$)
+    - pattern: $RECV.delete($PATH, $$$)
+    - pattern: $RECV.patch($PATH, $$$)
+---
+id: js-import-express
+language: JavaScript
+rule:
+  any:
+    - kind: import_statement
+      has:
+        field: source
+        kind: string
+        regex: ^['"](express|koa|fastify|@fastify/autoload)['"]$
+    - pattern: require($SOURCE)
+      has:
+        field: arguments
+        has:
+          kind: string
+          regex: ^['"](express|koa|fastify|@fastify/autoload)['"]$

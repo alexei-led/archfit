@@ -49,7 +49,7 @@ func scipCacheRunner(readerJSON string, indexRuns, readerRuns *int) *toolrun.Run
 // edit invalidates. The per-run pipeCache memoization is bypassed by using a
 // fresh Adapter per run, exactly like separate archfit invocations.
 func TestFactCache_PipelineHitAndSourceInvalidation(t *testing.T) {
-	t.Parallel()
+	withoutToolPythonOverride(t)
 	root := t.TempDir()
 	for name, content := range map[string]string{
 		"go.mod": "module example.com/demo\n\ngo 1.24\n",
@@ -132,14 +132,14 @@ func TestCacheKey_LockfileInvalidates(t *testing.T) {
 			a := New(scipCacheRunner("{}", &indexRuns, &readerRuns), 0)
 			a.Cache = factcache.NewStore(t.TempDir())
 
-			before := a.cacheKey(root, "indexer", "pkg", tc.lang, "1.0.0")
+			before := a.cacheKey(root, "indexer", "pkg", tc.lang, "1.0.0", nil)
 			if before == "" {
 				t.Fatal("cacheKey returned empty key")
 			}
 			if err := os.WriteFile(filepath.Join(root, tc.lockfile), []byte("dep@2\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			after := a.cacheKey(root, "indexer", "pkg", tc.lang, "1.0.0")
+			after := a.cacheKey(root, "indexer", "pkg", tc.lang, "1.0.0", nil)
 			if after == before {
 				t.Errorf("key unchanged after %s appeared — lockfile is outside the input hash", tc.lockfile)
 			}

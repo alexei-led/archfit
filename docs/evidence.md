@@ -127,14 +127,25 @@ The fact cache is best effort. A missing, unreadable, or corrupt entry is a cach
 
 The key has limits that vary by analyzer:
 
-- Python extraction does not use the fact cache. Its effective `uv`, Python, and `grimp` environment is outside the repository and cannot be identified reliably before lookup.
-- TypeScript disables caching when it cannot resolve supported `tsconfig` inputs, dynamic dependency-cruiser configuration, or Node dependency metadata. It hashes source and manifest files plus resolver state that it can enumerate.
+- Python extraction does not use the fact cache. It validates an explicit installed tool environment when configured; otherwise the isolated local uv environment is resolved outside the repository. No target cache or virtualenv establishes freshness.
+- TypeScript keys supported data-only `tsconfig` inputs, Node dependency metadata, owned runtime/compiler identity and fixed judge options. Project dependency-cruiser configuration is ignored. Incomplete source inventories and unusable graphs are not cached.
 - Go keys each workspace member with Go toolchain version, Go environment, build settings, module files, and the member's transitive workspace dependency inputs. The Go environment includes `GOOS`, `GOARCH`, `CGO_ENABLED`, build flags, and toolchain options. The Go toolchain version identifies standard-library facts.
 - Go bypasses cache for a member whose dependency closure uses a local `replace` or an unkeyed workspace module. A local replacement in `go.work` disables Go caching for the full run.
 
 The cache-key schema changes when serialized facts or their derivation semantics change. A cache entry never raises the evidence trust ceiling. It changes extraction cost, not evidence completeness or provenance.
 
 Delete `.archfit-cache` to remove cached facts and LLM responses. Cache contents are disposable. A cache miss causes extraction to run again.
+
+## Analyzer trust boundary
+
+A required import rule cannot pass from missing compiler/source evidence. CLI `needs_attention`
+with unmeasured hard gates is not a successful measurement; the App must keep such required-rule
+evidence actionable. A tool version or a nonempty index alone does not establish completeness.
+Rust target attribution uses Cargo metadata and preserves ambiguity on live and cached results.
+
+Image digests bind installed files, not remote execution. Reports remain self-reported/customer-
+attested. Target code can run in optional indexers/build tools; container network access and
+mounted source remain part of the operator's trust boundary. See [Languages and tools](languages.md).
 
 ## Upgrade limits
 

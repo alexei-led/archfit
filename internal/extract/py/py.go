@@ -36,7 +36,7 @@ const (
 	sourceGapDetailMax  = 100
 )
 
-// Extractor is the Python import extractor using grimp via uv or python3.14.
+// Extractor is the Python import extractor using grimp in an isolated tool environment.
 // It satisfies the engine.Extractor interface structurally.
 type Extractor struct {
 	runner toolrun.Runner
@@ -58,8 +58,9 @@ func (e *Extractor) CoverageTool() string {
 	return toolGrimp
 }
 
-// Extract detects uv or python3.14+grimp, writes the embedded helper to a temp
-// file, runs it against the project root, parses the JSON output, and returns
+// Extract selects the provisioned interpreter or detects uv/python3.14+grimp,
+// writes the embedded helper outside the target, runs it against the project
+// root, parses the JSON output, and returns
 // graph.Facts + evidence.Coverage.
 //
 // If mode is off, Extract returns empty Facts and an "absent" Coverage immediately.
@@ -79,8 +80,20 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		return graph.Facts{}, absentCoverage(), nil
 	}
 
-	// Detect uv (preferred) or python3.14.
-	tool, version, found := e.detectTool(ctx)
+	// An explicit owned runtime is authoritative: invalid configuration must not
+	// silently fall back to uv or a Python discovered from the target environment.
+	var tool, version string
+	var found bool
+	if python, configured := os.LookupEnv(toolPythonEnv); configured {
+		var err error
+		version, err = e.provisionedPython(ctx, s.Root, python)
+		if err != nil {
+			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/py: %w", err)
+		}
+		tool, found = python, true
+	} else {
+		tool, version, found = e.detectTool(ctx)
+	}
 	if !found {
 		if e.cfg.Mode == evidenceports.ModeOn {
 			return graph.Facts{}, evidence.Coverage{}, errors.New("extract/py: uv or Python 3.14+ not found; install uv (https://docs.astral.sh/uv/) or Python 3.14+")
@@ -125,18 +138,20 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	if tool == "uv" {
 		// No project setup or inherited Python import path may execute target code.
 		// The helper exposes only checked source roots after loading the analyzer.
+		// --no-config only disables discovery; override UV_CONFIG_FILE explicitly.
 		cmd = toolrun.ToolCmd{
 			Name:    "uv",
-			Args:    append([]string{"run", "--no-config", "--no-project", "--isolated", "--python", pythonVersion, "--with", grimpRequirement, "--directory", filepath.Dir(tmpName), "python", "-I", tmpName, "--root", s.Root}, helperArgs...),
+			Args:    append([]string{"run", "--no-config", "--config-file", os.DevNull, "--no-env-file", "--no-project", "--isolated", "--python", pythonVersion, "--with", grimpRequirement, "--directory", filepath.Dir(tmpName), "python", "-I", tmpName, "--root", s.Root}, helperArgs...),
 			WorkDir: filepath.Dir(tmpName),
-			Env:     []string{"VIRTUAL_ENV="},
+			Env:     isolatedPythonEnv(),
 			Timeout: runTimeout,
 		}
 	} else {
 		cmd = toolrun.ToolCmd{
 			Name:    tool,
 			Args:    append([]string{"-I", tmpName, "--root", s.Root}, helperArgs...),
-			WorkDir: s.Root,
+			WorkDir: filepath.Dir(tmpName),
+			Env:     isolatedPythonEnv(),
 			Timeout: runTimeout,
 		}
 	}

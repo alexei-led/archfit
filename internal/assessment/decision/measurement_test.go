@@ -15,7 +15,8 @@ const profileV1 = "archfit.measurement.v1"
 func TestMeasurementProfileCompatibility(t *testing.T) {
 	profile := func() *evidence.MeasurementProfile {
 		p := measurementFixture()
-		p.Producers = append(p.Producers, evidence.MeasurementProducer{Tool: "scip", SemanticsVersion: "scip.v2", ToolVersion: "scip-go 0.2.7", Status: evidence.StatusOK})
+		semantics, _ := evidence.MeasurementContract("scip")
+		p.Producers = append(p.Producers, evidence.MeasurementProducer{Tool: "scip", SemanticsVersion: semantics, ToolVersion: "scip-go 0.2.7", Status: evidence.StatusOK})
 		return p
 	}
 	for _, tc := range []struct {
@@ -47,6 +48,10 @@ func TestMeasurementProfileCompatibility(t *testing.T) {
 			p.Producers[1].ToolVersion = "scip-go 0.2.8"
 			return p
 		}, "tool_version differs"},
+		{"retired SCIP normalization", func(p *evidence.MeasurementProfile) *evidence.MeasurementProfile {
+			p.Producers[1].SemanticsVersion = "scip.v2"
+			return p
+		}, "semantics_version"},
 		{"unknown tool version", func(p *evidence.MeasurementProfile) *evidence.MeasurementProfile {
 			p.Producers[1].ToolVersion = "scip-go"
 			return p

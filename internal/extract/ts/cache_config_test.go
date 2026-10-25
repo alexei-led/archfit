@@ -15,7 +15,6 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/factcache"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/scope"
-	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
 func TestFactCache_ExtendedTSConfigMatchesFresh(t *testing.T) {
@@ -23,10 +22,7 @@ func TestFactCache_ExtendedTSConfigMatchesFresh(t *testing.T) {
 		t.Skip("runs dependency-cruiser")
 	}
 	ctx := context.Background()
-	realRunner := toolrun.New()
-	if _, ok := realRunner.Detect(ctx, "depcruise"); !ok {
-		t.Skip("dependency-cruiser is not on PATH")
-	}
+	binary := ownedDepcruise(t)
 	for _, outsideRoot := range []bool{false, true} {
 		t.Run(map[bool]string{false: "local", true: "outside_root"}[outsideRoot], func(t *testing.T) {
 			repo := t.TempDir()
@@ -58,13 +54,17 @@ func TestFactCache_ExtendedTSConfigMatchesFresh(t *testing.T) {
 				write(filepath.Join(root, tsconfigName), `{"extends":["./config/layer.json"]}`)
 			}
 			write(filepath.Join(root, "config", "layer.json"), `{"extends":`+string(encodedParent)+`}`)
-			write(filepath.Join(root, "main.js"), `import { value } from "@chosen"; export const result = value;`)
+			write(filepath.Join(root, "main.js"), `import { value } from "@fixture/chosen"; export const result = value;`)
 			write(filepath.Join(root, "allowed.js"), `export const value = 1;`)
 			write(filepath.Join(root, "forbidden.js"), `export const value = 2;`)
+			baseURL, err := filepath.Rel(filepath.Dir(base), root)
+			if err != nil {
+				t.Fatal(err)
+			}
 			alias := func(target string) {
 				t.Helper()
 				body, marshalErr := json.Marshal(map[string]any{"compilerOptions": map[string]any{
-					"baseUrl": root, "paths": map[string][]string{"@chosen": {"./" + target}},
+					"allowJs": true, "baseUrl": filepath.ToSlash(baseURL), "paths": map[string][]string{"@fixture/chosen": {"./" + target}},
 				}})
 				if marshalErr != nil {
 					t.Fatal(marshalErr)
@@ -73,22 +73,7 @@ func TestFactCache_ExtendedTSConfigMatchesFresh(t *testing.T) {
 			}
 			alias("allowed.js")
 			calls := 0
-			runner := &toolrun.RunnerMock{
-				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-					return toolrun.ToolInfo{Name: tool}, tool == launcherBunx
-				},
-				RunFunc: func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-					idx := slices.Index(cmd.Args, "depcruise")
-					if idx < 0 {
-						t.Fatalf("unexpected command: %+v", cmd)
-					}
-					cmd.Name, cmd.Args = "depcruise", cmd.Args[idx+1:]
-					if !slices.Contains(cmd.Args, "--version") {
-						calls++
-					}
-					return realRunner.Run(ctx, cmd)
-				},
-			}
+			runner := ownedRunner(binary, &calls)
 			ex := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeOn, Src: "."})
 			ex.Cache = factcache.NewStore(t.TempDir())
 			extract := func() graph.Facts {
@@ -157,7 +142,7 @@ func TestFactCache_ExplicitConfigIsRelativeToWorkDir(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Remove(configPath) })
 	calls := 0
-	runner := cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[]}]}`, &calls)
+	runner := cacheFixtureRunner(`{"modules":[{"source":"`+filepath.Base(root)+`/a.ts","dependencies":[]}]}`, &calls)
 	ex := ts.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeAuto, Src: ".", TSConfig: filepath.Base(configPath)})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	s := scope.Scope{Root: root, GitRoot: repo, SubtreePrefix: filepath.Base(root)}

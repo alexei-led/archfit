@@ -24,6 +24,10 @@ func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, evi
 	if perr != nil {
 		return empty, partial, nil
 	}
+	if partial.Status == evidence.StatusPartial && partial.Reason != "" {
+		partial.FilesSeen, partial.FilesApplicable = len(g.Module), len(g.Module)
+		return g, partial, nil
+	}
 	if len(g.Module) == 0 {
 		// The indexer ran but produced no symbols — common when scip-python is
 		// used against a Python version it does not yet support (e.g. 3.14).

@@ -13,7 +13,7 @@ brew install alexei-led/tap/archfit
 With Go, install a tagged release:
 
 ```sh
-go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.1.1
+go install github.com/alexei-led/archfit/v3/cmd/archfit@v3.2.0
 ```
 
 You can also download a release binary from the [release page](https://github.com/alexei-led/archfit/releases). Check the file against `SHA256SUMS` before you install it.
@@ -79,13 +79,18 @@ This shell expression accepts exit `2`. It still fails on exit `1` or `3`. See [
 The release image runs archfit with a bundled toolchain:
 
 ```sh
-docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v3.1.1 \
+docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v3.2.0 \
   check --config /repo/.archfit.yaml
 ```
 
-The image includes Go, Node.js 24, dependency-cruiser, ast-grep (`sg`), Python 3, and `uv`. Python analysis resolves `grimp` at run time.
+The complete image includes the locked Go, TypeScript/JavaScript, Python, and Rust toolchains,
+syntax and clone tools, and language-specific SCIP indexers. Python import analysis and the SCIP
+reader use an installed isolated environment; no analyzer package installation is needed at run time.
+See [Languages and tools](languages.md) for exact versions, optional execution, and limits.
 
-The image does not include Rust tools. Rust analysis reports unavailable evidence when `cargo` is absent. Use a host with Rust tools or build a derived image when Rust analysis is required.
+The image runs as a non-root user and supports an arbitrary numeric UID with `HOME=/tmp`.
+Target dependencies can still need network access. The image is not a network-isolated sandbox:
+optional indexers and Rust build tools can execute target code. Do not forward credentials into it.
 
 ## More help
 

@@ -27,11 +27,11 @@ func TestFactCache_FindHitAndTimeoutNotCached(t *testing.T) {
 	fail := false
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-			return toolrun.ToolInfo{Name: tool}, tool == "sg"
+			return toolrun.ToolInfo{Name: tool}, tool == toolAstGrep
 		},
 		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
 			if slices.Contains(cmd.Args, "--version") {
-				return toolrun.Output{Stdout: []byte("sg 0.30.0\n")}, nil
+				return toolrun.Output{Stdout: []byte("ast-grep 0.51.0\n")}, nil
 			}
 			if fail {
 				return toolrun.Output{}, context.DeadlineExceeded

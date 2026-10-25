@@ -7,7 +7,7 @@ error. Treat exit `3` as a failure.
 ## Go coverage workflow
 
 [The complete GitHub Actions example](../examples/ci-go.yaml) covers one Go
-module. It installs Archfit v3.1.1, runs the repository's Go tests with
+module. It installs Archfit v3.2.0, runs the repository's Go tests with
 coverage, writes a freshness sidecar, then runs the gate. It does not run
 repository tests through Archfit.
 
@@ -124,3 +124,18 @@ Capture or reanchor a baseline in a separate reviewed change. Use the same
 platform, analyzer versions, toolchain, and build settings as the gate. A
 different measurement environment can make the baseline non-comparable. See
 [migration](migration.md) for baseline version changes.
+
+## Complete engine image and App adoption
+
+The v3.2 image bundles all supported language producers and optional tools. It does not enable
+all optional analysis for every project. Use the [locked tool environment](languages.md#install-analyzers)
+and preserve target-specific limitations rather than treating missing evidence as zero.
+
+The App runs the engine through the pinned composite Action, not inside the App service image.
+Publishing an engine does not update installed workflows. Adopt the new Action commit, exact engine
+version and per-platform digest in a reviewed workflow change after App consumer approval. Required
+rules without usable evidence must remain `action_required` in App feedback.
+
+The analyzer container gets no runner secrets and creates its upload token only after analysis.
+It is not network-isolated by default. Target dependencies and optional build/indexing code can
+use network access; do not forward private package credentials to repair incomplete evidence.

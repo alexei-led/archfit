@@ -50,7 +50,7 @@ build: ## compile the archfit binary
 .PHONY: test
 test: ## run tests with race detector and coverage
 	go test -race -coverprofile=coverage.out $(if $(TEST_PKGS),$(TEST_PKGS),./...)
-	python3 internal/extract/scip/scip_reader_test.py
+	"$${ARCHFIT_TOOL_PYTHON:-python3}" -I internal/extract/scip/scip_reader_test.py
 	uv run --with jsonschema==$(JSONSCHEMA_VERSION) python -m unittest discover -s scripts/eval -p '*_test.py'
 	bash scripts/tests/cli_exit_contract_test.sh
 
@@ -58,6 +58,14 @@ test: ## run tests with race detector and coverage
 .PHONY: language-contracts
 language-contracts: build ## validate Go, TypeScript, JavaScript, Python, and Rust with real producers
 	uv run --with jsonschema==$(JSONSCHEMA_VERSION) python scripts/eval/language_contracts.py --archfit $(BIN_DIR)/$(BINARY)
+
+.PHONY: tool-locks image-contracts
+tool-locks: ## validate the canonical analyzer pins and dependency locks
+	python3 scripts/provision_tools.py check
+	python3 -m unittest discover -s scripts/tests -p '*_test.py'
+
+image-contracts: ## validate a built final image (set IMAGE, DOCKER_CONTEXT, IMAGE_CONTRACT_OUTPUT)
+	python3 scripts/image_contracts.py --image "$(IMAGE)" --docker-context "$(DOCKER_CONTEXT)" --output-dir "$(IMAGE_CONTRACT_OUTPUT)"
 
 ifeq ($(firstword $(MAKECMDGOALS)),test)
 .PHONY: $(RAW_TEST_PKGS)

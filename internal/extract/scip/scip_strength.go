@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -51,15 +53,17 @@ const (
 	reasonTimedOut        = "SCIP analysis timed out — increase analyzers.scip.timeout or reduce the scope"
 )
 
+type readerEdge struct {
+	From         string   `json:"from"`
+	To           string   `json:"to"`
+	Strength     string   `json:"strength"`
+	DataStrength string   `json:"data_strength"`
+	Connascence  []string `json:"connascence"`
+}
+
 // readerOutput mirrors the JSON emitted by scip_reader.py.
 type readerOutput struct {
-	Edges []struct {
-		From         string   `json:"from"`
-		To           string   `json:"to"`
-		Strength     string   `json:"strength"`
-		DataStrength string   `json:"data_strength"`
-		Connascence  []string `json:"connascence"`
-	} `json:"edges"`
+	Edges   []readerEdge `json:"edges"`
 	Symbols []struct {
 		Symbol string `json:"symbol"`
 		Path   string `json:"path"`
@@ -74,7 +78,8 @@ type readerOutput struct {
 		FromSymbol string `json:"from_symbol"`
 		ToSymbol   string `json:"to_symbol"`
 	} `json:"intra_refs"`
-	Error string `json:"error,omitempty"`
+	RustAttribution *rustAttribution `json:"rust_attribution,omitempty"`
+	Error           string           `json:"error,omitempty"`
 }
 
 // Strengths runs a SCIP indexer over the project, reads the index, and returns
@@ -90,6 +95,14 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 	m, perr := parseReaderEdges(ro.raw)
 	if perr != nil {
 		return nil, partial, nil
+	}
+	observedEdges := len(m)
+	for _, edge := range ro.packageEdges {
+		m[edge.From+"\x00"+edge.To] = edge.Strength
+	}
+	if partial.Status == evidence.StatusPartial && partial.Reason != "" {
+		partial.FilesSeen, partial.FilesApplicable = observedEdges, observedEdges
+		return m, partial, nil
 	}
 	if len(m) == 0 {
 		// Distinguish a valid index with no cross-module edges (e.g. a single
@@ -116,16 +129,17 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 	return m, evidence.Coverage{
 		Tool:            toolName,
 		Version:         scipIdentity(ro.indexer, ro.version),
-		FilesSeen:       len(m),
-		FilesApplicable: len(m),
+		FilesSeen:       observedEdges,
+		FilesApplicable: observedEdges,
 		Status:          evidence.StatusOK,
 	}, nil
 }
 
 // pipelineResult holds the raw reader output and metadata from runSCIPPipeline.
 type pipelineResult struct {
-	raw     []byte
-	indexer string
+	raw          []byte
+	indexer      string
+	packageEdges []readerEdge // derived aliases only; never symbol ownership or observed counts
 	// version is the indexer's own version, probed once per pipeline run. The
 	// indexer NAME alone is not an identity an upgrade can move, and
 	// Coverage.Version is published — so the name is a fallback, not the answer.
@@ -191,25 +205,34 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 	absent := evidence.Coverage{Status: evidence.StatusAbsent}
 
 	// Apply per-analyzer watchdog before any subprocess call. detectIndexer may
-	// run `cargo metadata` for Rust virtual workspaces; that call must be
+	// run `cargo metadata` for every Rust root; that call must be
 	// covered by the outer deadline. Per-subprocess timeouts (indexTimeout,
 	// readerTimeout) still apply inside runner.Run; this guard catches
 	// pathological hangs where a subprocess ignores its own limit.
 	ctx, cancel := toolrun.WithWatchdog(ctx, a.timeout, defaultTimeout)
 	defer cancel()
 
-	indexer, pkg, lang, found, detectErr := a.detectIndexer(ctx, root)
+	indexer, pkg, lang, rustMetadata, found, detectErr := a.detectIndexer(ctx, root)
+	if detectErr != nil {
+		if errors.Is(detectErr, context.DeadlineExceeded) {
+			return ro, evidence.Coverage{Status: evidence.StatusTimedOut, Reason: detectErr.Error() + " — " + reasonTimedOut}, false
+		}
+		return ro, evidence.Coverage{Status: evidence.StatusPartial, Reason: detectErr.Error()}, false
+	}
 	if !found {
-		// report StatusTimedOut rather than StatusAbsent so the caller knows the
-		// tool was present but the detection phase hit a time limit.
-		if errors.Is(detectErr, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return ro, evidence.Coverage{Status: evidence.StatusTimedOut, Reason: reasonTimedOut}, false
 		}
 		absent.Reason = scipAbsentReason(root)
 		return ro, absent, false
 	}
-	// The reader runs via uv (PEP 723 inline deps: protobuf + grpcio-tools).
-	if _, found := a.runner.Detect(ctx, "uv"); !found {
+	// Prefer the owned installed environment. An explicit invalid override is a
+	// visible gap, never permission to discover an unrelated Python or use uv.
+	reader, readerErr := a.readerPython(ctx, root)
+	if readerErr != nil {
+		return ro, readerRuntimeFailure(ctx, readerErr), false
+	}
+	if reader == "" {
 		absent.Reason = reasonScipNoUv
 		return ro, absent, false
 	}
@@ -230,15 +253,9 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 	// row below, so probing inside cacheKey would skip it on a cache-off run.
 	version := a.indexerVersion(ctx, indexer)
 
-	key := a.cacheKey(root, indexer, pkg, lang, version)
-	if key != "" {
-		if blob, hit := a.Cache.Get(toolName, key); hit {
-			var ce scipCacheEntry
-			if json.Unmarshal(blob, &ce) == nil && ce.Indexer == indexer {
-				return pipelineResult{raw: ce.Raw, indexer: indexer, version: version},
-					evidence.Coverage{Version: scipIdentity(indexer, version), Status: evidence.StatusPartial}, true
-			}
-		}
+	key := a.cacheKey(root, indexer, pkg, lang, version, rustMetadata)
+	if cached, coverage, hit := a.cachedSCIP(key, indexer, version); hit {
+		return rustPackageResult(cached, coverage, rustMetadata)
 	}
 
 	timedOut := evidence.Coverage{Version: scipIdentity(indexer, version), Status: evidence.StatusTimedOut, Reason: reasonTimedOut}
@@ -258,6 +275,13 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 	}
 
 	partial := evidence.Coverage{Version: scipIdentity(indexer, version), Status: evidence.StatusPartial}
+	rustMetadataPath := filepath.Join(tmp, "rust-metadata.json")
+	if lang == langRust {
+		if err := os.WriteFile(rustMetadataPath, rustMetadata, 0o600); err != nil {
+			partial.Reason = "rust metadata: write private reader input: " + err.Error()
+			return ro, partial, false
+		}
+	}
 
 	// innerTimeout returns the configured per-analyzer timeout when set, else
 	// the built-in constant. This lets analyzers.scip.timeout extend the per-phase
@@ -290,21 +314,35 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		return ro, partial, false
 	}
 
-	// Read: uv run scip_reader.py --proto <p> --index <i> --package <pkg> --lang <lang>
+	// Invoke Python explicitly, not the reader's broad PEP 723 dependency ranges.
+	// -I retains installed tool dependencies while excluding target import paths.
+	readerArgs := []string{"-I", readerPath, "--proto", protoPath, "--index", indexPath, "--package", pkg, "--lang", lang}
+	if lang == langRust {
+		readerArgs = append(readerArgs, "--rust-metadata", rustMetadataPath)
+	}
+	if reader == "uv" {
+		// --no-config only disables discovery; override UV_CONFIG_FILE explicitly.
+		readerArgs = append([]string{"run", "--no-config", "--config-file", os.DevNull, "--no-env-file", "--no-project", "--isolated", "--python", "3.14", "--with", "protobuf==7.36.2", "--with", "grpcio-tools==1.84.1", "--directory", tmp, "python"}, readerArgs...)
+	}
 	rdOut, err := a.runner.Run(ctx, toolrun.ToolCmd{
-		Name:    "uv",
-		Args:    []string{"run", readerPath, "--proto", protoPath, "--index", indexPath, "--package", pkg, "--lang", lang},
+		Name:    reader,
+		Args:    readerArgs,
 		WorkDir: tmp,
+		Env:     readerPythonEnv(),
 		Timeout: innerTimeout(readerTimeout),
 	})
 	if err != nil || rdOut.ExitCode != 0 {
-		// Check both the inner per-subprocess deadline (err) and the outer
-		// watchdog (ctx.Err()). When the configured timeout equals the inner cap
-		// they may fire in either order.
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return ro, timedOut, false
+		return ro, scipReaderFailure(ctx, indexer, version, rdOut, err), false
+	}
+
+	if lang == langRust {
+		mappedCoverage, err := rustReaderCoverage(rdOut.Stdout)
+		if err != nil {
+			partial.Reason = err.Error()
+			return ro, partial, false
 		}
-		return ro, partial, false
+		mappedCoverage.Version = partial.Version
+		partial = mappedCoverage
 	}
 
 	// Cache the reader output — only a usable index (symbols or edges present,
@@ -317,7 +355,62 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		}
 	}
 
-	return pipelineResult{raw: rdOut.Stdout, indexer: indexer, version: version}, partial, true
+	return rustPackageResult(pipelineResult{raw: rdOut.Stdout, indexer: indexer, version: version}, partial, rustMetadata)
+}
+
+func readerRuntimeFailure(ctx context.Context, err error) evidence.Coverage {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return evidence.Coverage{Status: evidence.StatusTimedOut, Reason: reasonTimedOut}
+	}
+	return evidence.Coverage{Status: evidence.StatusPartial, Reason: err.Error()}
+}
+
+// readerPythonEnv clears interpreter selectors for both Python and the uv parent.
+func readerPythonEnv() []string {
+	return []string{"PYTHONPATH=", "PYTHONHOME=", "VIRTUAL_ENV=", "PYTHONUSERBASE=", "PYTHONNOUSERSITE=1", "__PYVENV_LAUNCHER__="}
+}
+
+func (a *Adapter) readerPython(ctx context.Context, root string) (string, error) {
+	python, configured := os.LookupEnv("ARCHFIT_TOOL_PYTHON")
+	if !configured {
+		if _, found := a.runner.Detect(ctx, "uv"); found {
+			return "uv", nil
+		}
+		return "", nil
+	}
+	if err := validateReaderPython(root, python); err != nil {
+		return "", err
+	}
+	out, err := a.runner.Run(ctx, toolrun.ToolCmd{
+		Name:    python,
+		Args:    []string{"-I", "-c", "import sys, google.protobuf, grpc_tools.protoc; from importlib.metadata import version; assert sys.version_info >= (3, 14), 'Python 3.14+ required'; assert version('protobuf') == '7.36.2', 'protobuf==7.36.2 required'; assert version('grpcio-tools') == '1.84.1', 'grpcio-tools==1.84.1 required'"},
+		WorkDir: os.TempDir(), Env: readerPythonEnv(), Timeout: 30 * time.Second,
+	})
+	if err != nil {
+		return "", fmt.Errorf("ARCHFIT_TOOL_PYTHON: validate reader dependencies: %w", err)
+	}
+	if out.ExitCode != 0 {
+		return "", fmt.Errorf("ARCHFIT_TOOL_PYTHON: validate reader dependencies: %s", strings.TrimSpace(string(out.Stderr)))
+	}
+	return python, nil
+}
+
+func validateReaderPython(root, python string) error {
+	if !filepath.IsAbs(python) {
+		return errors.New("ARCHFIT_TOOL_PYTHON must name an absolute interpreter outside the target")
+	}
+	inside, err := toolrun.ContainsPath(root, python)
+	if err != nil {
+		return fmt.Errorf("ARCHFIT_TOOL_PYTHON: validate interpreter location: %w", err)
+	}
+	if inside {
+		return errors.New("ARCHFIT_TOOL_PYTHON must not select a target interpreter")
+	}
+	info, err := os.Stat(python)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return errors.New("ARCHFIT_TOOL_PYTHON must name an executable Python interpreter")
+	}
+	return nil
 }
 
 // scipCacheEntry is the stored fact-cache envelope: the reader JSON plus the
@@ -360,9 +453,9 @@ var scipLangInputs = map[string]struct {
 // inputs: indexer name+version probe, the reader/proto sources (editing
 // scip_reader.py must invalidate), the package/lang the reader filtered on,
 // the scan root, the GOWORK decision (it changes what the indexer can see and
-// is derived from a go.work OUTSIDE the hashed tree), and the content hash of
-// the detected language's source tree.
-func (a *Adapter) cacheKey(root, indexer, pkg, lang, version string) string {
+// is derived from a go.work OUTSIDE the hashed tree), required Rust metadata +
+// mapped invocation identity, and the detected language's source tree hash.
+func (a *Adapter) cacheKey(root, indexer, pkg, lang, version string, rustMetadata []byte) string {
 	if a.Cache == nil {
 		return ""
 	}
@@ -372,10 +465,18 @@ func (a *Adapter) cacheKey(root, indexer, pkg, lang, version string) string {
 	}
 	readerSum := sha256.Sum256(scipReaderSrc)
 	protoSum := sha256.Sum256(scipProtoSrc)
+	metadataIdentity := ""
+	if lang == langRust {
+		if len(rustMetadata) == 0 {
+			return "" // mapped Rust never shares an identity with a legacy invocation
+		}
+		sum := sha256.Sum256(rustMetadata)
+		metadataIdentity = "--rust-metadata:" + hex.EncodeToString(sum[:])
+	}
 	cfgHash, err := factcache.HashJSON(struct {
-		Root, Pkg, Lang, Reader, Proto string
-		GoWorkOff                      bool
-	}{root, pkg, lang, hex.EncodeToString(readerSum[:]), hex.EncodeToString(protoSum[:]), a.GoWorkOff})
+		Root, Pkg, Lang, Reader, Proto, RustMetadata string
+		GoWorkOff                                    bool
+	}{root, pkg, lang, hex.EncodeToString(readerSum[:]), hex.EncodeToString(protoSum[:]), metadataIdentity, a.GoWorkOff})
 	if err != nil {
 		return ""
 	}
@@ -433,6 +534,14 @@ func (a *Adapter) DataStrengths(ctx context.Context, s scope.Scope) (map[string]
 	if perr != nil {
 		return nil, partial, nil
 	}
+	for _, edge := range ro.packageEdges {
+		if edge.DataStrength != "" {
+			m[edge.From+"\x00"+edge.To] = edge.DataStrength
+		}
+	}
+	if partial.Status == evidence.StatusPartial && partial.Reason != "" {
+		return m, partial, nil
+	}
 	return m, evidence.Coverage{Tool: toolName, Version: scipIdentity(ro.indexer, ro.version), Status: evidence.StatusOK}, nil
 }
 
@@ -464,6 +573,15 @@ func (a *Adapter) Connascence(ctx context.Context, s scope.Scope) (map[string][]
 	m, perr := parseReaderConnascence(ro.raw)
 	if perr != nil {
 		return nil, partial, nil
+	}
+	for _, edge := range ro.packageEdges {
+		for _, kind := range edge.Connascence {
+			key := edge.From + "\x00" + edge.To
+			m[key] = append(m[key], graph.ConnascenceHint{Kind: kind, Source: toolName, Detail: "symbol reference"})
+		}
+	}
+	if partial.Status == evidence.StatusPartial && partial.Reason != "" {
+		return m, partial, nil
 	}
 	return m, evidence.Coverage{Tool: toolName, Version: scipIdentity(ro.indexer, ro.version), Status: evidence.StatusOK}, nil
 }
@@ -507,60 +625,48 @@ func (e errReader) Error() string { return "scip reader: " + string(e) }
 // package/module name used for internal-symbol filtering and the reader --lang.
 // One reader handles all three (the .scip format is language-agnostic); only the
 // indexer binary and the root identifier differ.
-// Returns a non-nil err only when a cargo metadata timeout fires (inner cap or
-// outer ctx), so the caller can surface StatusTimedOut rather than StatusAbsent.
-func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg, lang string, ok bool, err error) {
+// Rust returns the complete metadata alongside canonical workspace package
+// names. Metadata failures remain explicit, including inner/outer timeouts.
+func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg, lang string, rustMetadata []byte, ok bool, err error) {
 	if fileExists(filepath.Join(root, manifestPyproject)) || fileExists(filepath.Join(root, "setup.py")) {
 		if _, found := a.runner.Detect(ctx, indexerPython); found {
 			if p := detectPyPackage(root); p != "" {
-				return indexerPython, p, langPy, true, nil
+				return indexerPython, p, langPy, nil, true, nil
 			}
 		}
 	}
 	if fileExists(filepath.Join(root, "go.mod")) {
 		if _, found := a.runner.Detect(ctx, indexerGo); found {
 			if m := goModulePath(root); m != "" {
-				return indexerGo, m, "go", true, nil
+				return indexerGo, m, "go", nil, true, nil
 			}
 		}
 	}
 	if fileExists(filepath.Join(root, manifestPkgJSON)) {
 		if _, found := a.runner.Detect(ctx, indexerTS); found {
 			if n := npmPackageName(root); n != "" {
-				return indexerTS, n, langTS, true, nil
+				return indexerTS, n, langTS, nil, true, nil
 			}
 		}
 	}
 	if fileExists(filepath.Join(root, "Cargo.toml")) {
 		if _, found := a.runner.Detect(ctx, indexerRust); found {
-			if n := cargoPackageName(root); n != "" {
-				// Single-package crate: pass the name directly.
-				return indexerRust, n, langRust, true, nil
+			// Even a root [package] may have workspace members. Always acquire the
+			// complete metadata before any durable fact-cache lookup.
+			members, metadata, err := a.cargoWorkspaceMembers(ctx, root)
+			if err != nil {
+				return "", "", "", nil, false, err
 			}
-			// Virtual workspace ([workspace] with no [package]): enumerate members
-			// via cargo metadata and pass them comma-joined so the reader can build
-			// the _is_internal membership set.
-			members, membersErr := a.cargoWorkspaceMembers(ctx, root)
-			if errors.Is(membersErr, context.DeadlineExceeded) {
-				return "", "", "", false, context.DeadlineExceeded
-			}
-			if len(members) > 0 {
-				return indexerRust, strings.Join(members, ","), langRust, true, nil
-			}
+			return indexerRust, strings.Join(members, ","), langRust, metadata, true, nil
 		}
 	}
-	return "", "", "", false, nil
+	return "", "", "", nil, false, nil
 }
 
-// cargoWorkspaceMembers runs `cargo metadata --no-deps --format-version 1` in root
-// and returns the names of all workspace member packages. Returns nil on any failure.
-// Returns context.DeadlineExceeded when the inner cap fires (so detectIndexer can
-// propagate StatusTimedOut rather than silently degrading to StatusAbsent).
-// The inner cap honours analyzers.scip.timeout when set; floor is 60 s.
-// Used for virtual workspaces (no [package] in root Cargo.toml) so detectIndexer
-// can build a comma-separated package list for the SCIP reader.
-func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) ([]string, error) {
-	// Floor: 60 s. Honour configured timeout so a larger value can extend detection.
+// cargoWorkspaceMembers returns canonical member package names AND raw Cargo
+// target metadata for the mapped reader invocation. All targets are retained:
+// dropping examples/tests here would hide multi-target attribution ambiguity.
+func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) ([]string, []byte, error) {
 	inner := 60 * time.Second
 	if a.timeout > 0 {
 		inner = a.timeout
@@ -571,30 +677,68 @@ func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) ([]str
 		WorkDir: root,
 		Timeout: inner,
 	})
-	if err != nil || out.ExitCode != 0 {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, context.DeadlineExceeded
-		}
-		return nil, nil
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, nil, fmt.Errorf("rust metadata: %w", context.DeadlineExceeded)
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("rust metadata: %w", err)
+	}
+	if out.ExitCode != 0 {
+		return nil, nil, fmt.Errorf("rust metadata: cargo exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 	}
 	var meta struct {
-		Packages []struct {
-			Name string `json:"name"`
+		WorkspaceMembers []string `json:"workspace_members"`
+		Packages         []struct {
+			ID      string `json:"id"`
+			Name    string `json:"name"`
+			Version string `json:"version"`
+			Targets []struct {
+				Name   string `json:"name"`
+				Source string `json:"src_path"`
+			} `json:"targets"`
 		} `json:"packages"`
 	}
 	if err := json.Unmarshal(out.Stdout, &meta); err != nil {
-		return nil, nil
+		return nil, nil, fmt.Errorf("rust metadata: invalid JSON: %w", err)
 	}
-	// With --no-deps, `packages` already contains ONLY workspace members (external
-	// dependencies are excluded), so every package name is a member. This avoids
-	// parsing the workspace_members package-IDs, whose format changed in cargo 1.96
-	// to "path+file:///…/<name>#<version>" (no spaces) — the old space-split parser
-	// produced an empty set there, which silently disabled SCIP on every workspace.
-	names := make([]string, 0, len(meta.Packages))
+	if len(meta.WorkspaceMembers) == 0 {
+		return nil, nil, errors.New("rust metadata: missing workspace members")
+	}
+	members := make(map[string]bool, len(meta.WorkspaceMembers))
+	for _, id := range meta.WorkspaceMembers {
+		if id == "" {
+			return nil, nil, errors.New("rust metadata: empty workspace member ID")
+		}
+		members[id] = false
+	}
+	names := make(map[string]bool, len(members))
 	for _, p := range meta.Packages {
-		names = append(names, p.Name)
+		seen, member := members[p.ID]
+		if !member {
+			continue
+		}
+		if seen || p.Name == "" || p.Version == "" || p.Targets == nil {
+			return nil, nil, errors.New("rust metadata: invalid member package identity/targets")
+		}
+		for _, target := range p.Targets {
+			if target.Name == "" || !filepath.IsAbs(target.Source) {
+				return nil, nil, errors.New("rust metadata: invalid target name/src_path")
+			}
+		}
+		members[p.ID] = true
+		names[p.Name] = true
 	}
-	return names, nil
+	for _, seen := range members {
+		if !seen {
+			return nil, nil, errors.New("rust metadata: workspace member package missing")
+		}
+	}
+	canonical := make([]string, 0, len(names))
+	for name := range names {
+		canonical = append(canonical, name)
+	}
+	sort.Strings(canonical)
+	return canonical, out.Stdout, nil
 }
 
 // goWorkOffEnv makes a Go-toolchain process ignore the go.work it would find by
@@ -728,4 +872,51 @@ func scipAbsentReason(root string) string {
 		return reasonTSNoNodeModules
 	}
 	return reasonScipNoIndexer
+}
+
+// cachedSCIP accepts only facts from the current mapped invocation. Rust cache
+// hits undergo the same mandatory attribution validation as fresh reader output.
+func (a *Adapter) cachedSCIP(key, indexer, version string) (pipelineResult, evidence.Coverage, bool) {
+	if key == "" {
+		return pipelineResult{}, evidence.Coverage{}, false
+	}
+	blob, hit := a.Cache.Get(toolName, key)
+	if !hit {
+		return pipelineResult{}, evidence.Coverage{}, false
+	}
+	var cached scipCacheEntry
+	if json.Unmarshal(blob, &cached) != nil || cached.Indexer != indexer {
+		return pipelineResult{}, evidence.Coverage{}, false
+	}
+	coverage := evidence.Coverage{Status: evidence.StatusPartial}
+	if indexer == indexerRust {
+		var err error
+		coverage, err = rustReaderCoverage(cached.Raw)
+		if err != nil {
+			return pipelineResult{}, evidence.Coverage{}, false
+		}
+	}
+	coverage.Version = scipIdentity(indexer, version)
+	return pipelineResult{raw: cached.Raw, indexer: indexer, version: version}, coverage, true
+}
+
+func scipReaderFailure(ctx context.Context, indexer, version string, out toolrun.Output, err error) evidence.Coverage {
+	coverage := evidence.Coverage{Version: scipIdentity(indexer, version), Status: evidence.StatusPartial}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		coverage.Status, coverage.Reason = evidence.StatusTimedOut, reasonTimedOut
+		return coverage
+	}
+	coverage.Reason = "SCIP reader failed: " + strings.TrimSpace(string(out.Stderr))
+	if err != nil {
+		coverage.Reason = "SCIP reader failed: " + err.Error()
+	}
+	if indexer == indexerRust {
+		var failed readerOutput
+		if json.Unmarshal(out.Stdout, &failed) == nil && failed.Error != "" {
+			coverage.Reason = "Rust SCIP reader failed: " + failed.Error
+		} else {
+			coverage.Reason = "Rust " + coverage.Reason
+		}
+	}
+	return coverage
 }

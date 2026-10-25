@@ -120,3 +120,31 @@ The evaluation skill owns the detailed review procedure:
 [`skills/archfit-eval`](../skills/archfit-eval/SKILL.md).
 Keep dated corpus measurements and review reports in the archive.
 Write fresh output under `/tmp` or `.archfit-cache/`.
+
+## Locked tool and final-image contracts
+
+`tools/manifest.json` owns exact analyzer/SDK versions. Node and Python transitive dependencies
+are locked and native downloads are checksum-verified. Do not float one CI or image pin separately.
+
+```sh
+make tool-locks
+make language-contracts
+python3 scripts/image_contracts.py --image <immutable-local-image> --docker-context <context> --output-dir <new-output-directory>
+```
+
+CI provisioning is Linux-only, installs into `/opt/archfit`, and requires GitHub Actions environment files.
+The CI job calls `scripts/ci-provision-tools.sh`; it is not a general host installer.
+The image contract runs all supported languages and positive optional-tool cases under the default
+and arbitrary numeric UID with readonly trusted inputs. Known-bad compiler/config cases must not
+produce valid empty evidence. Native amd64 and arm64 release jobs validate their own immutable
+platform images before the manifest/version tags are assembled. Emulation is not native proof.
+
+Run the SCIP reader tests with the provisioned interpreter; they do not bootstrap dependencies:
+
+```sh
+"$ARCHFIT_TOOL_PYTHON" -I internal/extract/scip/scip_reader_test.py
+```
+
+The release identity distinguishes the multiarch index from platform manifests. App/Action pins
+must use the matching platform digest, and their strict consumer/capture tests need separate
+adoption. Keep baseline migration owner-reviewed rather than editing a reference to pass CI.

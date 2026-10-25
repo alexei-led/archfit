@@ -25,6 +25,7 @@ const (
 // carries an actionable reason + enable step, not a silent absent — in
 // particular that a TS project missing node_modules names the deps fix.
 func TestStrengths_AbsentReason(t *testing.T) {
+	withoutToolPythonOverride(t)
 	writePkgJSON := func(t *testing.T, dir string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(dir, manifestPkgJSON), []byte(`{"name":"demo"}`), 0o600); err != nil {
@@ -201,8 +202,11 @@ func TestDetectIndexer_Rust(t *testing.T) {
 			}
 			return toolrun.ToolInfo{}, false
 		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{Stdout: []byte(`{"workspace_members":["demo-id"],"packages":[{"id":"demo-id","name":"demo-crate","version":"0.1.0","targets":[{"name":"demo_crate","src_path":"/tmp/src/lib.rs"}]}]}`)}, nil
+		},
 	}
-	indexer, pkg, lang, ok, err := New(runner, 0).detectIndexer(context.Background(), dir)
+	indexer, pkg, lang, _, ok, err := New(runner, 0).detectIndexer(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("detectIndexer: unexpected error: %v", err)
 	}
@@ -230,7 +234,7 @@ func TestDetectIndexer_VirtualWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Canned cargo metadata JSON with two workspace members.
-	metaJSON := `{"packages":[{"name":"crate-a"},{"name":"crate-b"}],"workspace_members":["crate-a 0.1.0 (path+file:///tmp/a)","crate-b 0.1.0 (path+file:///tmp/b)"]}`
+	metaJSON := `{"packages":[{"id":"a","name":"crate-a","version":"0.1.0","targets":[]},{"id":"b","name":"crate-b","version":"0.1.0","targets":[]}],"workspace_members":["a","b"]}`
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == indexerRust || tool == toolCargo {
@@ -245,7 +249,7 @@ func TestDetectIndexer_VirtualWorkspace(t *testing.T) {
 			return toolrun.Output{}, nil
 		},
 	}
-	indexer, pkg, lang, ok, err := New(runner, 0).detectIndexer(context.Background(), dir)
+	indexer, pkg, lang, _, ok, err := New(runner, 0).detectIndexer(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("detectIndexer: unexpected error: %v", err)
 	}
@@ -316,6 +320,7 @@ func TestIndexArgs_Rust(t *testing.T) {
 // TestStrengths_Timeout asserts that the per-analyzer watchdog fires and returns
 // StatusTimedOut coverage with nil error and no deadlock.
 func TestStrengths_Timeout(t *testing.T) {
+	withoutToolPythonOverride(t)
 	// Minimal Go project: go.mod lets detectIndexer pick scip-go.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/timeout-test\n\ngo 1.21\n"), 0o600); err != nil {
@@ -436,6 +441,7 @@ func TestParsePythonStrengthFixture(t *testing.T) {
 // returns a canned JSON (what scip_reader.py would emit). Verifies that
 // Strengths() returns OK coverage and the expected module→strength map.
 func TestStrengths_PythonCannedFixture(t *testing.T) {
+	withoutToolPythonOverride(t)
 	dir := t.TempDir()
 	// Minimal Python project: pyproject.toml + flat-layout package.
 	if err := os.WriteFile(filepath.Join(dir, manifestPyproject), []byte("[project]\nname = \"myapp\"\n"), 0o600); err != nil {
@@ -544,6 +550,7 @@ func TestStrengths_PythonAbsent(t *testing.T) {
 // an actionable reason. This prevents a silent ok when the index was built but
 // contained no cross-module occurrences (path-case mismatch, wrong indexer, etc.).
 func TestStrengths_EmptyIndex(t *testing.T) {
+	withoutToolPythonOverride(t)
 	dir := t.TempDir()
 	// Minimal Python project so detectIndexer picks scip-python.
 	if err := os.WriteFile(filepath.Join(dir, manifestPyproject), []byte("[project]\nname = \"myapp\"\n"), 0o600); err != nil {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -18,27 +19,33 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
-// depcruiseCrashRunner is a bunx launcher whose dependency-cruiser run exits 1
+// depcruiseCrashRunner owns a Node/producer boundary whose scan exits 1
 // with two kilobytes of multi-line stderr — storybook's Svelte 5 parse failure.
 // Every other tool is absent, so the run is hermetic.
 type depcruiseCrashRunner struct {
-	real   toolrun.Runner
-	stderr string
+	real     toolrun.Runner
+	stderr   string
+	node     string
+	producer string
 }
 
 func (r depcruiseCrashRunner) Detect(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-	if tool == "bunx" {
-		return toolrun.ToolInfo{Name: tool, Path: "/usr/local/bin/bunx"}, true
+	switch tool {
+	case "depcruise":
+		return toolrun.ToolInfo{Name: tool, Path: r.producer}, true
+	case "node":
+		return toolrun.ToolInfo{Name: tool, Path: r.node}, true
+	default:
+		return toolrun.ToolInfo{}, false
 	}
-	return toolrun.ToolInfo{}, false
 }
 
 func (r depcruiseCrashRunner) Run(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-	if cmd.Name != "bunx" {
+	if cmd.Name != r.node {
 		return r.real.Run(ctx, cmd)
 	}
-	if slices.Contains(cmd.Args, flagVersion) {
-		return toolrun.Output{Stdout: []byte("16.10.4\n")}, nil
+	if slices.Contains(cmd.Args, "--info") {
+		return toolrun.Output{Stdout: []byte("dependency-cruiser@18.7.0\nnode version found: v24.22.1\n✔ javascript * acorn@8.19.0\n✔ typescript >=2 typescript@6.0.3\n")}, nil
 	}
 	return toolrun.Output{ExitCode: 1, Stderr: []byte(r.stderr)}, nil
 }
@@ -89,9 +96,21 @@ func TestCheck_AnalyzerStderrNeverBreaksTheStateContract(t *testing.T) {
 				"src/core/price.ts": "export const price = 1;\n",
 				defaultConfigPath:   fmt.Sprintf(depcruiseCrashConfig, tc.mode),
 			})
+			tools := t.TempDir()
+			node, producer := filepath.Join(tools, "node"), filepath.Join(tools, "depcruise.mjs")
+			for _, path := range []string{node, producer} {
+				if err := os.WriteFile(path, []byte("owned process boundary"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			canonicalNode, err := filepath.EvalSymlinks(node)
+			if err != nil {
+				t.Fatal(err)
+			}
+			node = canonicalNode
 			var stdout, stderr bytes.Buffer
-			deps := &appDeps{Runner: depcruiseCrashRunner{real: toolrun.New(), stderr: raw.String()}, Stdout: &stdout, Stderr: &stderr}
-			err := (&CheckCmd{Config: cfgPath, Root: filepath.Dir(cfgPath), JSON: true, Progress: "none"}).Run(deps)
+			deps := &appDeps{Runner: depcruiseCrashRunner{real: toolrun.New(), stderr: raw.String(), node: node, producer: producer}, Stdout: &stdout, Stderr: &stderr}
+			err = (&CheckCmd{Config: cfgPath, Root: filepath.Dir(cfgPath), JSON: true, Progress: "none"}).Run(deps)
 			var exit *exitError
 			if err != nil && (!errors.As(err, &exit) || exit.code == 3) {
 				t.Fatalf("check: %v\nstderr:\n%s", err, stderr.String())

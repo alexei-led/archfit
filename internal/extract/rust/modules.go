@@ -83,10 +83,7 @@ func (e *Extractor) runModuleGraph(ctx context.Context, runner toolrun.Runner, m
 	}
 
 	status := statusOK
-	switch {
-	case len(failed) > 0 && len(allNodes) == 0:
-		status = statusAbsent
-	case len(failed) > 0:
+	if len(failed) > 0 {
 		status = statusPartial
 	}
 

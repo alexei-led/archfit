@@ -13,6 +13,16 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
+// withoutToolPythonOverride selects a fixture's fallback toolchain. An empty
+// override is invalid configuration, so the variable must actually be absent.
+func withoutToolPythonOverride(t *testing.T) {
+	t.Helper()
+	t.Setenv("ARCHFIT_TOOL_PYTHON", "")
+	if err := os.Unsetenv("ARCHFIT_TOOL_PYTHON"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPythonRuntimeIgnoresTargetEnvironmentAndCache(t *testing.T) {
 	requirePythonProducer(t)
 	for _, name := range []string{"read-only source", "forged cache", "target virtualenv"} {

@@ -37,9 +37,9 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	tools := []registry.Tool{
 		{Name: "git", Command: "git", InstallHint: "https://git-scm.com/downloads"},
 		{Name: "uv", Command: "uv", InstallHint: "https://docs.astral.sh/uv/getting-started/installation"},
-		{Name: "sg (ast-grep)", Command: "sg", InstallHint: "cargo install ast-grep / brew install ast-grep"},
+		{Name: "ast-grep", Command: "ast-grep", InstallHint: languagesDocsURL + "#install-analyzers"},
 		// Optional semantic depth tools — their absence degrades coupling_balance precision.
-		{Name: toolJscpd, Command: toolJscpd, InstallHint: "npm install -g jscpd"},
+		{Name: toolJscpd, Command: toolJscpd, InstallHint: languagesDocsURL + "#install-analyzers"},
 	}
 	for _, lang := range registry.All() {
 		tools = append(tools, lang.DoctorTools...)

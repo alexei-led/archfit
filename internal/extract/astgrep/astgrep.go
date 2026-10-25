@@ -1,6 +1,6 @@
 // Package astgrep implements the evidenceports.PatternProvider port for ast-grep.
-// It shells out to the "sg" binary and parses its JSON output.
-// If "sg" is absent and mode is ModeAuto, Find returns empty matches with
+// It shells out to the canonical "ast-grep" binary and parses its JSON output.
+// If "ast-grep" is absent and mode is ModeAuto, Find returns empty matches with
 // coverage status "absent" — it never returns an error for a missing tool.
 package astgrep
 
@@ -28,12 +28,12 @@ import (
 // toolName is the coverage/name identifier for this adapter.
 const toolName = "ast-grep"
 
-// Adapter satisfies evidenceports.PatternProvider using the "sg" (ast-grep) binary.
+// Adapter satisfies evidenceports.PatternProvider using the "ast-grep" binary.
 type Adapter struct {
 	runner toolrun.Runner
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
 	Cache *factcache.Store
-	// versionOnce/versionValue memoize the `sg --version` probe; see sgVersion.
+	// versionOnce/versionValue memoize the `ast-grep --version` probe; see sgVersion.
 	versionOnce  sync.Once
 	versionValue string
 }
@@ -101,7 +101,7 @@ func (a *Adapter) cachedRunner(ctx context.Context, root string, langs []string)
 	}
 }
 
-// sgVersion probes `sg --version`. Best-effort: "" on any failure.
+// sgVersion probes `ast-grep --version`. Best-effort: "" on any failure.
 //
 // Memoized: the same value keys the fact cache AND stamps both Coverage rows
 // (patterns and syntax), so an un-memoized probe would shell out up to three
@@ -110,7 +110,7 @@ func (a *Adapter) cachedRunner(ctx context.Context, root string, langs []string)
 func (a *Adapter) sgVersion(ctx context.Context) string {
 	a.versionOnce.Do(func() {
 		out, err := a.runner.Run(ctx, toolrun.ToolCmd{
-			Name:    "sg",
+			Name:    toolName,
 			Args:    []string{"--version"},
 			Timeout: 30 * time.Second,
 		})
@@ -171,7 +171,7 @@ type dedupeKey struct {
 const sgRunNoMatch = 1
 
 // Find runs all patterns against the given scope and returns deduplicated,
-// sorted matches plus a Coverage record. A missing "sg" binary returns empty
+// sorted matches plus a Coverage record. A missing "ast-grep" binary returns empty
 // matches with status "absent" — never an error. A pattern run sg rejects (exit
 // code above 1, e.g. an unknown --lang) marks the coverage partial with a reason
 // naming the pattern: an empty result from a failed run must never read as
@@ -180,7 +180,7 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]
 	if len(c) == 0 {
 		return nil, evidence.Coverage{Tool: toolName, Status: evidence.StatusDisabled}, nil
 	}
-	_, ok := a.runner.Detect(ctx, "sg")
+	_, ok := a.runner.Detect(ctx, toolName)
 	if !ok {
 		return nil, evidence.Coverage{Tool: toolName, Status: "absent"}, nil
 	}
@@ -197,15 +197,15 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]
 	var failures []string
 	for _, def := range c {
 		out, err := runner.Run(ctx, toolrun.ToolCmd{
-			Name:    "sg",
+			Name:    toolName,
 			Args:    []string{"run", "--lang", def.Lang, "--json", "--pattern", def.Rule, "."},
 			WorkDir: s.Root,
 		})
 		if err != nil {
-			return nil, evidence.Coverage{}, fmt.Errorf("astgrep: run sg for pattern %q: %w", def.ID, err)
+			return nil, evidence.Coverage{}, fmt.Errorf("astgrep: run ast-grep for pattern %q: %w", def.ID, err)
 		}
 		if out.ExitCode > sgRunNoMatch {
-			failures = append(failures, fmt.Sprintf("sg rejected pattern %q (exit %d): %s",
+			failures = append(failures, fmt.Sprintf("ast-grep rejected pattern %q (exit %d): %s",
 				def.ID, out.ExitCode, strings.TrimSpace(string(out.Stderr))))
 			continue
 		}
@@ -215,7 +215,7 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c pattern.Config) ([]
 
 		var raw []sgMatch
 		if err := json.Unmarshal(out.Stdout, &raw); err != nil {
-			return nil, evidence.Coverage{}, fmt.Errorf("astgrep: parse sg output for pattern %q: %w", def.ID, err)
+			return nil, evidence.Coverage{}, fmt.Errorf("astgrep: parse ast-grep output for pattern %q: %w", def.ID, err)
 		}
 
 		for _, m := range raw {

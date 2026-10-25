@@ -51,7 +51,9 @@ func makeGoRoot(t *testing.T) string {
 //   - detects scip-go and uv as present
 //   - for the indexer run: creates the --output file so os.Stat passes
 //   - for the uv run: returns the provided reader JSON
-func indexCreatingRunner(readerJSON string) *toolrun.RunnerMock {
+func indexCreatingRunner(t *testing.T, readerJSON string) *toolrun.RunnerMock {
+	t.Helper()
+	withoutToolPythonOverride(t)
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == indexerGo || tool == "uv" {
@@ -169,7 +171,7 @@ func TestAdapter_Symbols_AbsentTool(t *testing.T) {
 
 func TestAdapter_Symbols_Success(t *testing.T) {
 	root := makeGoRoot(t)
-	a := New(indexCreatingRunner(readerJSONSuccess), 0)
+	a := New(indexCreatingRunner(t, readerJSONSuccess), 0)
 
 	graph, cov, err := a.Symbols(context.Background(), scope.Scope{Root: root})
 	if err != nil {
@@ -201,7 +203,7 @@ func TestAdapter_Symbols_Success(t *testing.T) {
 // with no definitions.
 func TestAdapter_Symbols_EmptyIndex(t *testing.T) {
 	root := makeGoRoot(t)
-	a := New(indexCreatingRunner(readerJSONEmpty), 0)
+	a := New(indexCreatingRunner(t, readerJSONEmpty), 0)
 
 	graph, cov, err := a.Symbols(context.Background(), scope.Scope{Root: root})
 	if err != nil {
@@ -220,7 +222,7 @@ func TestAdapter_Symbols_EmptyIndex(t *testing.T) {
 
 func TestAdapter_Symbols_MalformedOutput(t *testing.T) {
 	root := makeGoRoot(t)
-	a := New(indexCreatingRunner("not json at all"), 0)
+	a := New(indexCreatingRunner(t, "not json at all"), 0)
 
 	graph, cov, err := a.Symbols(context.Background(), scope.Scope{Root: root})
 	if err != nil {
@@ -239,7 +241,7 @@ func TestAdapter_Symbols_MalformedOutput(t *testing.T) {
 // when both methods execute (the engine calls both every run).
 func TestAdapter_SinglePass(t *testing.T) {
 	root := makeGoRoot(t)
-	runner := indexCreatingRunner(readerJSONSuccess)
+	runner := indexCreatingRunner(t, readerJSONSuccess)
 	a := New(runner, 0)
 
 	if _, _, err := a.Strengths(context.Background(), scope.Scope{Root: root}); err != nil {
