@@ -201,6 +201,9 @@ func baselineState(r result.Result) *BaselineStateSnapshot {
 func documentMetrics(doc report.Document) report.MetricSnapshot {
 	out := make(report.MetricSnapshot, len(doc.Metrics))
 	for _, m := range doc.Metrics {
+		if m.Band == string(report.ScoreBandNA) {
+			continue
+		}
 		out[m.Name] = struct {
 			Value   float64 `json:"value"`
 			Version string  `json:"version"`

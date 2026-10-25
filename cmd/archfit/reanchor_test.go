@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/v3/internal/baseline"
 	"github.com/alexei-led/archfit/v3/internal/model/report"
 )
 
@@ -17,6 +18,7 @@ const flagReanchor = "--reanchor"
 // difference, and refuses to run without a stored file.
 func TestBaselineReanchor(t *testing.T) {
 	t.Parallel()
+	t.Run("unmeasured_metric_reference", testReanchorUnmeasuredMetric)
 	const cfg = coupledModulesCfg + `rules:
   - id: no-x-to-b
     type: forbidden_dependency
@@ -154,5 +156,64 @@ func assertReanchorNamesDrift(t *testing.T, cfgPath, baselinePath string) {
 	}
 	if _, after := checkState(t, cfgPath); after.GateReference == nil || after.GateReference.Status != report.ComparisonComparable {
 		t.Fatalf("after a re-anchor the reference must compare: %+v", after.GateReference)
+	}
+}
+
+func testReanchorUnmeasuredMetric(t *testing.T) {
+	const metric = "encapsulation"
+	cfgPath := taskOriginFixtureRepo(t, coupledModulesCfg)
+	root, err := os.OpenRoot(filepath.Dir(cfgPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	if code, _, stderr := runArchfit(t, cmdBaseline, "-c", cfgPath); code != 0 {
+		t.Fatalf("capture: exit %d: %s", code, stderr)
+	}
+	data, err := root.ReadFile(defaultBaselinePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored baseline.Baseline
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if value, ok := stored.Metrics[metric]; ok {
+		t.Errorf("unmeasured metric persisted: %s=%g", metric, value.Value)
+	}
+	stored.Metrics[metric] = struct {
+		Value   float64 `json:"value"`
+		Version string  `json:"version"`
+	}{Version: "encapsulation.v2"}
+	legacy, err := json.Marshal(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := root.WriteFile(defaultBaselinePath, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runArchfit(t, cmdBaseline, flagReanchor, "-c", cfgPath)
+	if code != 0 {
+		t.Fatalf("reanchor: exit %d: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "metric reference not carried: encapsulation (current metric is unmeasured)") {
+		t.Errorf("reanchor does not disclose the omitted reference: %s", stdout)
+	}
+	if strings.Contains(stdout, "metric reference not carried: cycle") {
+		t.Errorf("measured zero is incorrectly disclosed as unmeasured: %s", stdout)
+	}
+	data, err = root.ReadFile(defaultBaselinePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got baseline.Baseline
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if value, ok := got.Metrics[metric]; ok {
+		t.Errorf("unmeasured metric retained as a numeric reference: %g", value.Value)
+	}
+	if value, ok := got.Metrics["cycle"]; !ok || value.Value != 0 || value.Version != "cycle.v1" {
+		t.Errorf("measured zero cycle reference lost: %+v, present=%v", value, ok)
 	}
 }
