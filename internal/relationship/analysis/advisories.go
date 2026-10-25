@@ -122,14 +122,18 @@ func bcAdvisoryWhy(edge relationship.Edge) string {
 func bcRiskClause(edge relationship.Edge) string {
 	strength := strengthClause(edge.Strength)
 	volatility := volatilityClause(edge.Volatility)
+	if edge.Distance != relationship.DistanceExternal && edge.Distance != relationship.DistanceUnknown &&
+		(edge.Strength == relationship.StrengthFunctional || edge.Strength == relationship.StrengthSymmetric) {
+		volatility += " (higher of source and target)"
+	}
 	switch edge.Severity {
 	case relationship.SeverityCritical:
 		if edge.Distance == relationship.DistanceCrossDeployUnit {
-			return strength + " across a deploy-unit boundary to " + volatility + " → distributed-monolith risk"
+			return strength + " across a deploy-unit boundary with " + volatility + " → distributed-monolith risk"
 		}
-		return strength + " across a module boundary to " + volatility + " → a change on one side forces a change on the other"
+		return strength + " across a module boundary with " + volatility + " → change propagation risk"
 	case relationship.SeverityHigh:
-		return strength + " across a boundary to " + volatility + " → likely cascading changes"
+		return strength + " across a boundary with " + volatility + " → likely cascading changes"
 	default:
 		return "unbalanced coupling → elevated maintenance effort"
 	}
@@ -153,16 +157,16 @@ func strengthClause(s relationship.Strength) string {
 func volatilityClause(v relationship.Volatility) string {
 	switch v {
 	case relationship.VolatilityHigh:
-		return "a volatile target"
+		return "high effective volatility"
 	case relationship.VolatilityMedium:
-		return "a moderately volatile target"
+		return "medium effective volatility"
 	case relationship.VolatilityLow:
-		return "a low-volatility target"
+		return "low effective volatility"
 	case relationship.VolatilityFrozen:
-		return "a frozen target"
+		return "frozen effective volatility"
 	case relationship.VolatilityUndeclared:
-		return "a target of undeclared volatility"
+		return "undeclared volatility"
 	default:
-		return "a target of unknown volatility"
+		return "unknown volatility"
 	}
 }
