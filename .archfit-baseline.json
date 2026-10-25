@@ -171,10 +171,6 @@
       "value": 0,
       "version": "cycle.v1"
     },
-    "encapsulation": {
-      "value": 0,
-      "version": "encapsulation.v2"
-    },
     "unbalanced_edge": {
       "value": 0,
       "version": "unbalanced_edge.v3"
