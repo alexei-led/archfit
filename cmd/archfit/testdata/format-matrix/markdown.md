@@ -118,9 +118,9 @@
 | cargo | absent | — |
 | loc | ok | — |
 | deploy-unit | ok | — |
-| jscpd | disabled | clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable |
-| scip | disabled | opt-in: analyzers.scip.enabled |
-| ast-grep/syntax | disabled | opt-in: analyzers.syntax.enabled |
+| jscpd | disabled | off by default because the pass is slow: set `analyzers.clones.enabled: true` in .archfit.yaml to enable the jscpd pass (slowest on large trees) |
+| scip | disabled | off by default because the pass is slow: set analyzers.scip.enabled: true for symbol-level coupling strength |
+| ast-grep/syntax | disabled | off by default because the pass is slow: set analyzers.syntax.enabled: true for roles, routes and exported surface |
 | ast-grep | disabled | — |
 | cargo-modules | absent | — |
 
@@ -248,9 +248,9 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - cargo: absent
 - loc: ok (2 files)
 - deploy-unit: ok
-- jscpd: disabled — clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable
-- scip: disabled — opt-in: analyzers.scip.enabled
-- ast-grep/syntax: disabled — opt-in: analyzers.syntax.enabled
+- jscpd: disabled — off by default because the pass is slow: set `analyzers.clones.enabled: true` in .archfit.yaml to enable the jscpd pass (slowest on large trees)
+- scip: disabled — off by default because the pass is slow: set analyzers.scip.enabled: true for symbol-level coupling strength
+- ast-grep/syntax: disabled — off by default because the pass is slow: set analyzers.syntax.enabled: true for roles, routes and exported surface
 - ast-grep: disabled
 - cargo-modules: absent
 

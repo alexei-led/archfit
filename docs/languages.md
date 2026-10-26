@@ -15,6 +15,37 @@ Language adapters run when project markers and required tools are present. Set `
 
 Optional tools add syntax evidence, clone evidence, or more precise coupling evidence. Their absence does not stop the analysis. See [metrics](metrics.md) for metric meaning and limits.
 
+## Before you run
+
+Each adapter drives the project's own tooling. Archfit reuses what is installed and reports what it could not read; it never installs dependencies into your repository.
+
+| Language | Do this first | Configure when auto-detection is wrong |
+| --- | --- | --- |
+| Go | a `go.mod` (or a supported `go.work`) and a working `go` | `languages.go.modules` to select workspace members, `exclude` for generated trees |
+| TypeScript / JavaScript | `npm ci` (or `pnpm install` / `yarn`) in the project root, the workspace root for a monorepo, so `node_modules` and the `tsconfig` `paths`/`baseUrl` resolve | `analyzers.scip` for symbol-level strength, `exclude` for generated code |
+| Python | a package marker (`pyproject.toml` or `setup.py`) and Python 3.14+ with `grimp==3.17` | `languages.python.package` when the importable package name is not obvious |
+| Rust | a root `Cargo.toml` and `cargo` | `languages.rust.manifest`, `languages.rust.features`, `languages.rust.include_dev_deps` |
+
+The shipped image already contains every tool, at the versions pinned in `tools/manifest.json`: Go, Node with dependency-cruiser and TypeScript, Python with grimp, Rust with rust-analyzer, ast-grep, jscpd, scip indexers, and cargo-modules. Running archfit from the image removes the "install the analyzer" failure mode entirely; what remains is the target repository's own prerequisites (the second and third columns).
+
+## When evidence is absent, disabled, or partial
+
+Every analyzer reports one status per tool in `coverage.tools[]`. The status tells you what is left for you to do:
+
+| Status | Meaning | What to do |
+| --- | --- | --- |
+| `ok` | the tool ran and its evidence was complete | nothing |
+| `absent` | the tool does not apply to this repository's languages, or its project marker is missing | check the marker for that language |
+| `disabled` | the analyzer is opt-in and your config did not enable it | set `analyzers.<name>.enabled: true` when you want that evidence |
+| `partial` | the tool ran, but its evidence is incomplete | read `reason`: it names the missing input and the command or key that fixes it |
+| `timeout` | the pass exceeded its budget | raise `analyzers.<name>.timeout`, or narrow the scope |
+
+The two partial results people hit first:
+
+- **TypeScript / JavaScript.** `N of M import specifiers unresolved` means the target's dependencies are not installed: install them in the project root (`npm ci`, `pnpm install`, or `yarn`; the workspace root for a monorepo), then check `tsconfig` `paths`/`baseUrl`. `scip` stays `absent` until `node_modules` exists, because scip-typescript resolves packages through it.
+  `dependency-cruiser environment incomplete` means the analyzer environment has no compatible TypeScript compiler: run archfit from the shipped image, or install TypeScript 5-6 next to dependency-cruiser.
+- **Rust.** `Rust target attribution partial` means rust-analyzer saw symbols it cannot pin to exactly one Cargo target (macros, generated code, several targets). Crate-level structure is still measured. Narrow `languages.rust.manifest` to the workspace you care about, or set `analyzers.scip.enabled: false` to rely on crate-level coupling only.
+
 ### Go
 
 Archfit loads packages with `go/packages` and emits file-to-package imports. It reads `go.work` when present. It otherwise uses a root `go.mod`, then searches below the analysis root for modules.

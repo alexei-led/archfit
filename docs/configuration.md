@@ -100,6 +100,35 @@ All analyzer `gate` fields accept `off`, `warn`, or `fail`, defaulting to `warn`
 
 `scip` and `clones` accept Go duration strings in `timeout`. Omitted or zero values use built-in timeouts: 20 minutes for SCIP and 5 minutes for clones. A timeout drops that analyzer's result and the run continues. Dependent measurements can report `n/a`.
 
+### Why the optional analyzers are off
+
+They run extra subprocesses over the whole tree, and their cost is not proportional to the value of the default gate. Measured on real repositories: `scip` costs tens of seconds on a Go repository and several minutes on a Rust workspace (it compiles target metadata), `clones` compares every file pair, `syntax` parses every file with ast-grep, and `cargo_modules` can compile the crate. The default gate answers "is this architecture drifting" from the language adapters alone, so the deeper passes are opt-in and their absence is reported as `disabled`, never as a silent pass.
+
+### Enabling an optional analyzer
+
+```yaml
+analyzers:
+  scip:    { enabled: true, timeout: "10m" }   # symbol-level coupling strength
+  syntax:  { enabled: true }                   # roles, routes, exported surface
+  clones:  { enabled: true, timeout: "5m" }    # cross-module duplication
+  cargo_modules: { enabled: true }             # Rust intra-crate modules
+```
+
+Prerequisites, per analyzer and language. A missing prerequisite shows up as `absent` with the reason that names it.
+
+| Analyzer | Go | TypeScript / JavaScript | Python | Rust |
+| --- | --- | --- | --- | --- |
+| `scip` | `scip-go` | `node_modules` installed (`npm ci`) and `scip-typescript` | `scip-python` and `uv` | Cargo metadata (`cargo`) and `rust-analyzer` |
+| `syntax` | `sg` (ast-grep) | `sg` | `sg` | `sg` |
+| `clones` | `jscpd` | `jscpd` | `jscpd` | `jscpd` |
+| `cargo_modules` | — | — | — | `cargo-modules` (compiles the crate) |
+
+The shipped image contains all of them. When you run archfit from somewhere else, `--require-tools` turns any missing required analyzer into a failure instead of a gap.
+
+### Turning one off without a gap
+
+`enabled: false` skips the analyzer and does not report a coverage gap. Use it when you know the pass does not apply to your repository — for example `scip` on a Rust workspace where symbol attribution stays partial, or `clones` on a repository with generated code.
+
 ## Supplied coverage
 
 Archfit reads coverage artifacts from another test step. It never runs the target repository's tests. Coverage is disabled unless `coverage.enabled: true`.

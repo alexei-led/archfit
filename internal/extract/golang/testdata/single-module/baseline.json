@@ -103,17 +103,17 @@
         "tool": "deploy-unit"
       },
       {
-        "reason": "clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable",
+        "reason": "off by default because the pass is slow: set `analyzers.clones.enabled: true` in .archfit.yaml to enable the jscpd pass (slowest on large trees)",
         "status": "disabled",
         "tool": "jscpd"
       },
       {
-        "reason": "opt-in: analyzers.scip.enabled",
+        "reason": "off by default because the pass is slow: set analyzers.scip.enabled: true for symbol-level coupling strength",
         "status": "disabled",
         "tool": "scip"
       },
       {
-        "reason": "opt-in: analyzers.syntax.enabled",
+        "reason": "off by default because the pass is slow: set analyzers.syntax.enabled: true for roles, routes and exported surface",
         "status": "disabled",
         "tool": "ast-grep/syntax"
       },
