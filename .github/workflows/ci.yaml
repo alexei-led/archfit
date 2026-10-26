@@ -84,11 +84,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: make workflows
-  test:
-    name: Test
+  # The suite is 396s of measured package time on a 4-vCPU runner and three
+  # packages are two thirds of it, so one shard per long pole beats one big job.
+  # scripts/ci_test_shards.py assigns packages; the `test` job below keeps the
+  # required check name stable across the matrix.
+  test-shard:
+    name: Test (shard ${{ matrix.shard }}/3)
     needs: tools
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -127,19 +135,48 @@ jobs:
       - name: Run tests
         env:
           ARCHFIT_REQUIRE_TOOLS: "1"
-        run: go test -race -coverprofile=coverage.out ./...
+          SHARD: ${{ matrix.shard }}
+          SHARDS: "3"
+        run: |
+          go list ./... | python3 scripts/ci_test_shards.py --shard "$SHARD" --total "$SHARDS" >"$RUNNER_TEMP/packages.txt"
+          mapfile -t packages <"$RUNNER_TEMP/packages.txt"
+          test "${#packages[@]}" -gt 0
+          go test -race -coverprofile="coverage-$SHARD.out" "${packages[@]}"
+      # One shard runs the non-Go contract tests: they are separate programs, not
+      # package tests, and would otherwise run three times over.
       - name: SCIP reader tests (python)
+        if: matrix.shard == 1
         run: '"$ARCHFIT_TOOL_PYTHON" -I internal/extract/scip/scip_reader_test.py'
       - name: Corpus sweep harness tests (python)
+        if: matrix.shard == 1
         run: uv run --with jsonschema==4.26.0 python -m unittest discover -s scripts/eval -p '*_test.py'
       - name: CLI exit-contract tests (shell)
+        if: matrix.shard == 1
         run: bash scripts/tests/cli_exit_contract_test.sh
       - name: Upload coverage
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: coverage
-          path: coverage.out
+          name: coverage-${{ matrix.shard }}
+          path: coverage-${{ matrix.shard }}.out
           retention-days: 7
+  # Required check name. Branch protection only names `Test`, so the shard
+  # matrix reports through this single job.
+  test:
+    name: Test
+    needs: [test-shard]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every shard passed
+        env:
+          RESULT: ${{ needs.test-shard.result }}
+        run: |
+          if [ "$RESULT" != success ]; then
+            echo "test shards: $RESULT" >&2
+            exit 1
+          fi
+
   # The architecture-state gates used to run after the whole suite inside Test,
   # which put two minutes of real-tool contracts on the merge critical path for
   # no reason: they share nothing with the Go tests but the toolchain.
