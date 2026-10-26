@@ -128,7 +128,10 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-${{ steps.epoch.outputs.day }}
+          # The split itself is part of the key: when a rebalance moves packages
+          # between shards, a cache that still hits would never be rewritten and
+          # every run would recompile the difference. The day rotates it otherwise.
+          key: go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-${{ steps.epoch.outputs.day }}-${{ hashFiles('scripts/ci_test_shards.py') }}
           restore-keys: |
             go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
