@@ -117,6 +117,9 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           provenance: false
+          # Restore the toolchain layer CI already built for this tree. Never
+          # write: a release must not displace the cache main keeps warm.
+          cache-from: type=gha,scope=ci-image-${{ matrix.platform }}
           outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             VERSION=${{ github.ref_name }}
