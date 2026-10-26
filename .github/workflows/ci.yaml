@@ -48,7 +48,7 @@ jobs:
         with:
           go-version: ${{ needs.tools.outputs.go }}
           check-latest: false
-          cache: true
+          cache: false
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
@@ -74,7 +74,7 @@ jobs:
         with:
           go-version: ${{ needs.tools.outputs.go }}
           check-latest: false
-          cache: true
+          cache: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: ${{ needs.tools.outputs.python }}
@@ -105,6 +105,9 @@ jobs:
         with:
           go-version: ${{ needs.tools.outputs.go }}
           check-latest: false
+          # Only the shards save the shared Go cache: they are the only jobs that
+          # build with -race and coverage, and a first save from a non-race job
+          # leaves every shard recompiling its test binaries on each run.
           cache: true
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
@@ -193,7 +196,7 @@ jobs:
         with:
           go-version: ${{ needs.tools.outputs.go }}
           check-latest: false
-          cache: true
+          cache: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: ${{ needs.tools.outputs.python }}
@@ -318,7 +321,7 @@ jobs:
         with:
           go-version: ${{ needs.tools.outputs.go }}
           check-latest: false
-          cache: true
+          cache: false
       - name: Build binary
         env:
           CGO_ENABLED: "0"
