@@ -50,36 +50,51 @@ export_toolchain() {
         UV_PYTHON_DOWNLOADS=never >>"$GITHUB_ENV"
 }
 
-install_toolchain() {
-    local arch python_version python
+ci_arch() {
     case $(uname -m) in
-    x86_64) arch=amd64 ;;
-    aarch64) arch=arm64 ;;
+    x86_64) printf amd64 ;;
+    aarch64) printf arm64 ;;
     *)
         echo "unsupported CI architecture" >&2
         exit 1
         ;;
     esac
-    python_version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["versions"]["python"])' "$root/tools/manifest.json")
-    uv python install "$python_version"
-    python=$(uv python find "$python_version")
-    "$python" "$root/scripts/provision_tools.py" sdks --arch "$arch" --prefix "$prefix"
+}
+
+# The venv interpreter is a symlink into uv's own tree, which the toolchain cache
+# does not cover, so the pinned interpreter is ensured on every run. Skipping that
+# made every cache hit look unusable and rebuild the whole tree.
+ensure_python() {
+    local version python
+    version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["versions"]["python"])' "$root/tools/manifest.json")
+    uv python install "$version" || return 1
+    python=$(uv python find "$version") || return 1
+    printf '%s\n' "$python"
+}
+
+install_toolchain() {
+    local python
+    # Assigning from a command substitution does not propagate its status in every
+    # shell, so failures are checked explicitly.
+    python=$(ensure_python) || return 1
+    "$python" "$root/scripts/provision_tools.py" sdks --arch "$(ci_arch)" --prefix "$prefix" || return 1
     bash "$root/scripts/provision-analyzers.sh" "$prefix" "$python"
 }
 
 case $mode in
 auto)
-    # The venv interpreter is a symlink into uv's own tree, so a restored toolchain
-    # is verified before it is trusted and rebuilt when it does not verify.
+    # A restored toolchain is verified before it is trusted and rebuilt when it
+    # does not verify.
+    ensure_python >/dev/null || exit 1
     if [ "${ARCHFIT_TOOLCHAIN_CACHE_HIT:-}" = true ] && toolchain_ready; then
         export_toolchain
     else
-        install_toolchain
+        install_toolchain || exit 1
         export_toolchain
     fi
     ;;
 install)
-    install_toolchain
+    install_toolchain || exit 1
     export_toolchain
     ;;
 export)

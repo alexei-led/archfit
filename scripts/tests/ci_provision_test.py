@@ -99,7 +99,16 @@ class CIProvisionTest(unittest.TestCase):
                 base, "auto", prefix, cache_hit="true"
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(calls, [])
+            # The venv interpreter is a symlink into uv's tree, so the pinned
+            # interpreter is ensured on every run; nothing else is rebuilt.
+            version = self.manifest_python()
+            self.assertEqual(
+                [call[0] for call in calls], ["uv", "uv"], calls
+            )
+            self.assertEqual(
+                [call[1:] for call in calls],
+                [["python", "install", version], ["python", "find", version]],
+            )
             self.assertIn(
                 "ARCHFIT_TOOL_PYTHON=" + str(prefix / "python/bin/python"),
                 env.read_text().splitlines(),
