@@ -19,13 +19,13 @@ DEFAULT_COST = 1.2
 # Measured warm per-package seconds, slowest first. Refresh with the "Run tests"
 # durations in a CI log; only the relative order matters for the split.
 COSTS = {
-    "github.com/alexei-led/archfit/v3/internal/extract/scip": 92.0,
-    "github.com/alexei-led/archfit/v3/cmd/archfit": 48.0,
-    "github.com/alexei-led/archfit/v3/internal/toolrun": 21.0,
-    "github.com/alexei-led/archfit/v3/internal/extract/ts": 20.0,
+    "github.com/alexei-led/archfit/v3/cmd/archfit": 47.0,
+    "github.com/alexei-led/archfit/v3/internal/toolrun": 26.0,
+    "github.com/alexei-led/archfit/v3/internal/extract/ts": 25.0,
+    "github.com/alexei-led/archfit/v3/internal/extract/scip": 21.0,
+    "github.com/alexei-led/archfit/v3/internal/extract/py": 13.0,
     "github.com/alexei-led/archfit/v3/internal": 11.0,
-    "github.com/alexei-led/archfit/v3/internal/extract/py": 10.0,
-    "github.com/alexei-led/archfit/v3/internal/extract/golang": 10.0,
+    "github.com/alexei-led/archfit/v3/internal/extract/golang": 4.5,
 }
 
 
