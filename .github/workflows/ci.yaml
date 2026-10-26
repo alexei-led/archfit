@@ -12,6 +12,8 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  # The only serial barrier: every job below fans out from here so the pins are
+  # read once, and no job waits for a check it does not consume.
   tools:
     name: Locked tool manifest
     runs-on: ubuntu-24.04
@@ -84,11 +86,9 @@ jobs:
         run: make workflows
   test:
     name: Test
+    needs: tools
     runs-on: ubuntu-24.04
-    needs:
-      - lint
-      - tools
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -103,8 +103,27 @@ jobs:
           python-version: ${{ needs.tools.outputs.python }}
           version: ${{ needs.tools.outputs.uv }}
           enable-cache: false
-      - name: Install locked native architecture analyzers
+      # The analyzer toolchain costs minutes to build (cargo-modules compiles from
+      # source) and is identical for every job that needs it. The key covers every
+      # lock the provisioners read, so a pin change re-provisions and a code change
+      # reuses the restored tree.
+      - name: Restore locked analyzer toolchain
+        id: toolchain
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/archfit
+          key: archfit-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/**', 'scripts/provision_tools.py', 'scripts/provision-analyzers.sh', 'scripts/ci-provision-tools.sh') }}
+      - name: Provision locked analyzer toolchain
+        env:
+          ARCHFIT_PREFIX: ${{ runner.temp }}/archfit
+          ARCHFIT_TOOLCHAIN_CACHE_HIT: ${{ steps.toolchain.outputs.cache-hit }}
         run: bash scripts/ci-provision-tools.sh
+      - name: Save locked analyzer toolchain
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/archfit
+          key: ${{ steps.toolchain.outputs.cache-primary-key }}
       - name: Run tests
         env:
           ARCHFIT_REQUIRE_TOOLS: "1"
@@ -115,6 +134,60 @@ jobs:
         run: uv run --with jsonschema==4.26.0 python -m unittest discover -s scripts/eval -p '*_test.py'
       - name: CLI exit-contract tests (shell)
         run: bash scripts/tests/cli_exit_contract_test.sh
+      - name: Upload coverage
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+  # The architecture-state gates used to run after the whole suite inside Test,
+  # which put two minutes of real-tool contracts on the merge critical path for
+  # no reason: they share nothing with the Go tests but the toolchain.
+  gates:
+    name: Architecture gates
+    needs: tools
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: ${{ needs.tools.outputs.go }}
+          check-latest: false
+          cache: true
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ needs.tools.outputs.python }}
+          version: ${{ needs.tools.outputs.uv }}
+          enable-cache: false
+      - name: Restore locked analyzer toolchain
+        id: toolchain
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/archfit
+          key: archfit-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/**', 'scripts/provision_tools.py', 'scripts/provision-analyzers.sh', 'scripts/ci-provision-tools.sh') }}
+      - name: Provision locked analyzer toolchain
+        env:
+          ARCHFIT_PREFIX: ${{ runner.temp }}/archfit
+          ARCHFIT_TOOLCHAIN_CACHE_HIT: ${{ steps.toolchain.outputs.cache-hit }}
+        run: bash scripts/ci-provision-tools.sh
+      - name: Save locked analyzer toolchain
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/archfit
+          key: ${{ steps.toolchain.outputs.cache-primary-key }}
+      - name: CI gate — `sg` resolves to ast-grep, not util-linux
+        # A silent analyzer is worse than a missing one: the coverage row still
+        # names a tool, so nothing looks wrong. This is the check that answers
+        # "which sg ran" instead of leaving it to be inferred from a missing
+        # version string.
+        run: |
+          echo "sg -> $(command -v sg)"
+          sg --version
+          sg --version 2>&1 | grep -q ast-grep
       - name: CI gate — arch imports
         run: go test ./internal/ -run TestArchImports
       - name: CI gate — model kernel surface (compat contract)
@@ -130,32 +203,15 @@ jobs:
         env:
           ARCHFIT_REQUIRE_TOOLS: "1"
         run: go test ./internal/ ./cmd/archfit/ -run TestErosion_ -count=1
-      - name: CI gate — `sg` resolves to ast-grep, not util-linux
-        # A silent analyzer is worse than a missing one: the coverage row still
-        # names a tool, so nothing looks wrong. This is the check that answers
-        # "which sg ran" instead of leaving it to be inferred from a missing
-        # version string.
-        run: |
-          echo "sg -> $(command -v sg)"
-          sg --version
-          sg --version 2>&1 | grep -q ast-grep
       - name: CI gate — real supported-language contracts
         run: make language-contracts
       - name: CI gate — architecture drift
         run: make arch-lint
-      - name: Upload coverage
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: coverage
-          path: coverage.out
-          retention-days: 7
   image:
     name: Complete image (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
-    needs:
-      - lint
-      - tools
-    timeout-minutes: 60
+    needs: tools
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -168,14 +224,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build metadata
+        id: meta
+        run: echo "date=$(sh scripts/build-meta.sh date)" >> "$GITHUB_OUTPUT"
+      # The tools-builder stage is the same toolchain the Test job provisions and
+      # caches; mode=max keeps that layer, so an unchanged tools/ tree reuses it.
       - name: Build native local image without publishing
-        env:
-          PLATFORM: ${{ matrix.platform }}
-        run: |
-          docker build --platform "$PLATFORM" --tag archfit-upgrade-image:ci \
-            --build-arg VERSION=ci-image-contract \
-            --build-arg "COMMIT=${GITHUB_SHA}" \
-            --build-arg "DATE=$(sh scripts/build-meta.sh date)" .
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: archfit-upgrade-image:ci
+          provenance: false
+          cache-from: type=gha,scope=ci-image-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=ci-image-${{ matrix.platform }}
+          build-args: |
+            VERSION=ci-image-contract
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.meta.outputs.date }}
       - name: Full real-language final-image contracts
         run: |
           python3 scripts/image_contracts.py --docker-context default \
@@ -187,12 +256,11 @@ jobs:
           name: image-contract-${{ matrix.runner }}
           path: ${{ runner.temp }}/archfit-image-contract
           retention-days: 7
+  # Cross-compilation reads no test output, so it does not wait for Test.
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-24.04
-    needs:
-      - test
-      - tools
+    needs: tools
     timeout-minutes: 20
     strategy:
       matrix:

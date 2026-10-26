@@ -132,8 +132,11 @@ make language-contracts
 python3 scripts/image_contracts.py --image <immutable-local-image> --docker-context <context> --output-dir <new-output-directory>
 ```
 
-CI provisioning is Linux-only, installs into `/opt/archfit`, and requires GitHub Actions environment files.
-The CI job calls `scripts/ci-provision-tools.sh`; it is not a general host installer.
+CI provisioning is Linux-only, requires GitHub Actions environment files, and installs into the
+runner-owned prefix named by `ARCHFIT_PREFIX`. The CI job restores that prefix from the Actions
+cache keyed on the lock files below and rebuilds it only on a miss, so a pin change re-provisions and a
+code change reuses the verified tree. The CI job calls `scripts/ci-provision-tools.sh`; it is not
+a general host installer.
 The image contract runs all supported languages and positive optional-tool cases under the default
 and arbitrary numeric UID with readonly trusted inputs. Known-bad compiler/config cases must not
 produce valid empty evidence. Native amd64 and arm64 release jobs validate their own immutable
