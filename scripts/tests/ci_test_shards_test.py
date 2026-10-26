@@ -42,15 +42,18 @@ class CITestShardsTest(unittest.TestCase):
         split = [shards.shard_of(packages, 3, n) for n in range(1, 4)]
         self.assertEqual(sorted(name for part in split for name in part), packages)
 
-    def test_shards_stay_within_twelve_percent_of_each_other(self):
+    def test_shards_stay_balanced_apart_from_one_indivisible_package(self):
+        packages = self.packages()
         for total in (3, 4):
             with self.subTest(total=total):
                 loads = [
-                    sum(shards.cost(name) for name in shards.shard_of(self.packages(), total, n))
+                    sum(shards.cost(name) for name in shards.shard_of(packages, total, n))
                     for n in range(1, total + 1)
                 ]
                 mean = sum(loads) / total
-                self.assertLessEqual(max(loads), mean * 1.12, loads)
+                # A single slow package cannot be split, so it sets the floor.
+                floor = max(shards.cost(name) for name in packages)
+                self.assertLessEqual(max(loads), max(floor, mean * 1.12), loads)
 
     def test_rejects_a_shard_outside_the_total(self):
         for args in (("--shard", "0", "--total", "3"), ("--shard", "4", "--total", "3")):
