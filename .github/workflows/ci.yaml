@@ -114,16 +114,23 @@ jobs:
         run: jq -r '.versions | to_entries[] | "\(.key)=\(.value)"' tools/manifest.json >> "$GITHUB_OUTPUT"
       # No setup-go: the restored toolchain carries the pinned Go, which is what
       # the image ships as well.
-      # One Go cache entry per shard. A shared key is not usable here: the cache
-      # saves only on a miss, so the first shard to finish freezes the entry and
-      # the others recompile every test binary they own on every run.
+      # One Go cache entry per shard, rotated daily. A single stable key is not
+      # usable: the cache saves only on a miss, so once an entry hits it never
+      # refreshes and every later run recompiles whatever changed since it was
+      # seeded (measured: one shard stuck at 164s while the others ran in 41-45s).
+      # The restore fallback keeps yesterday's entry warm across the rotation.
+      - name: Cache epoch
+        id: epoch
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
       - name: Restore Go build cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.work.sum') }}-shard-${{ matrix.shard }}
+          key: go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-${{ steps.epoch.outputs.day }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: ${{ steps.pins.outputs.python }}
