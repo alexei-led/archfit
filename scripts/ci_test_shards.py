@@ -16,16 +16,19 @@ import sys
 
 DEFAULT_COST = 1.2
 
+# cmd/archfit is 56s of the suite on its own, cannot be sharded by package, and is
+# split by test name across its own runners instead (see the CI job).
+SPLIT = ("github.com/alexei-led/archfit/v3/cmd/archfit",)
+
 # Measured warm per-package seconds, slowest first. Refresh with the "Run tests"
 # durations in a CI log; only the relative order matters for the split.
 COSTS = {
-    "github.com/alexei-led/archfit/v3/internal/extract/scip": 92.0,
-    "github.com/alexei-led/archfit/v3/cmd/archfit": 48.0,
-    "github.com/alexei-led/archfit/v3/internal/toolrun": 21.0,
-    "github.com/alexei-led/archfit/v3/internal/extract/ts": 20.0,
+    "github.com/alexei-led/archfit/v3/internal/toolrun": 26.0,
+    "github.com/alexei-led/archfit/v3/internal/extract/ts": 25.0,
+    "github.com/alexei-led/archfit/v3/internal/extract/scip": 21.0,
+    "github.com/alexei-led/archfit/v3/internal/extract/py": 13.0,
     "github.com/alexei-led/archfit/v3/internal": 11.0,
-    "github.com/alexei-led/archfit/v3/internal/extract/py": 10.0,
-    "github.com/alexei-led/archfit/v3/internal/extract/golang": 10.0,
+    "github.com/alexei-led/archfit/v3/internal/extract/golang": 4.5,
 }
 
 
@@ -35,6 +38,7 @@ def cost(package):
 
 def shard_of(packages, total, shard):
     """Return the packages assigned to a one-based shard number."""
+    packages = [name for name in packages if name not in SPLIT]
     loads = [0.0] * total
     members = [[] for _ in range(total)]
     for package in sorted(packages, key=lambda name: (-cost(name), name)):
