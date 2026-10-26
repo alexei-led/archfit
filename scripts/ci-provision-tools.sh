@@ -40,8 +40,8 @@ export_toolchain() {
         "$prefix/node/bin" \
         "$prefix/rust/bin" \
         "$base_bin" >>"$GITHUB_PATH"
-    # No GOCACHE/GOPATH here: the workflow caches the Go defaults, and pointing
-    # them at /tmp rebuilt every package per run.
+    # No GOCACHE/GOPATH here: the workflow caches the Go defaults that setup-go
+    # already restores, and pointing them at /tmp rebuilt every package per run.
     printf '%s\n' \
         "ARCHFIT_TOOL_PYTHON=$python" \
         GOTOOLCHAIN=local \
