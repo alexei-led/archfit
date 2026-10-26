@@ -49,6 +49,15 @@ jobs:
           go-version: ${{ needs.tools.outputs.go }}
           check-latest: false
           cache: false
+      # Scoped Go cache: setup-go saves only on a miss, so a shared key
+      # freezes whatever the first finisher built and makes the rest rebuild.
+      - name: Restore Go build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.work.sum') }}-lint
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
@@ -75,6 +84,15 @@ jobs:
           go-version: ${{ needs.tools.outputs.go }}
           check-latest: false
           cache: false
+      # Scoped Go cache: setup-go saves only on a miss, so a shared key
+      # freezes whatever the first finisher built and makes the rest rebuild.
+      - name: Restore Go build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.work.sum') }}-workflows
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: ${{ needs.tools.outputs.python }}
@@ -204,6 +222,15 @@ jobs:
           go-version: ${{ needs.tools.outputs.go }}
           check-latest: false
           cache: false
+      # Scoped Go cache: setup-go saves only on a miss, so a shared key
+      # freezes whatever the first finisher built and makes the rest rebuild.
+      - name: Restore Go build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.work.sum') }}-gates
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: ${{ needs.tools.outputs.python }}
