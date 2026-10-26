@@ -42,7 +42,6 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-            ~/.archfit-cargo
           key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.work.sum') }}-lint
       # The manifest lock check used to gate every job behind a barrier job. It
       # only has to fail the merge, and Lint is a required check.
@@ -84,7 +83,6 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-            ~/.archfit-cargo
           key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.work.sum') }}-workflows
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
@@ -130,7 +128,6 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-            ~/.archfit-cargo
           key: go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-${{ steps.epoch.outputs.day }}
           restore-keys: |
             go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-
@@ -215,7 +212,6 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-            ~/.archfit-cargo
           key: go-${{ runner.os }}-${{ steps.pins.outputs.go }}-cli-${{ matrix.half }}-${{ steps.epoch.outputs.day }}
           restore-keys: |
             go-${{ runner.os }}-${{ steps.pins.outputs.go }}-cli-${{ matrix.half }}-
@@ -322,7 +318,6 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-            ~/.archfit-cargo
           key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.work.sum') }}-gates
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
@@ -406,7 +401,11 @@ jobs:
           tags: archfit-upgrade-image:ci
           provenance: false
           cache-from: type=gha,scope=ci-image-${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=ci-image-${{ matrix.platform }}
+          # Pull requests restore the image cache but never write it. Its layers
+          # churn on every run, and that churn has already evicted the analyzer
+          # toolchain (five minutes to rebuild) and the Go caches. Main's own runs
+          # keep the cache current.
+          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope=ci-image-{0}', matrix.platform) || '' }}
           build-args: |
             VERSION=ci-image-contract
             COMMIT=${{ github.sha }}

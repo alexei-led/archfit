@@ -41,13 +41,11 @@ export_toolchain() {
         "$prefix/rust/bin" \
         "$base_bin" >>"$GITHUB_PATH"
     # No GOCACHE/GOPATH here: the workflow caches the Go defaults, and pointing
-    # them at /tmp rebuilt every package per run. CARGO_HOME is runner-owned and
-    # cached for the same reason: the Rust producer tests compile a workspace and
-    # re-downloaded the registry on every run when it lived in /tmp.
+    # them at /tmp rebuilt every package per run.
     printf '%s\n' \
         "ARCHFIT_TOOL_PYTHON=$python" \
         GOTOOLCHAIN=local \
-        "CARGO_HOME=$HOME/.archfit-cargo" \
+        CARGO_HOME=/tmp/archfit-cargo \
         "RUST_SRC_PATH=$prefix/rust/lib/rustlib/src/rust/library" \
         UV_PYTHON_DOWNLOADS=never >>"$GITHUB_ENV"
 }
