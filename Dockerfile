@@ -15,6 +15,12 @@ ENV PATH="/opt/archfit/go/bin:/opt/archfit/node/bin:/opt/archfit/rust/bin:/opt/a
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+# Compile once without stamps, then link again with them. The version, commit and
+# date change on every run, so a single build carrying those ldflags can never be
+# reused and would recompile the whole module each time. The first build fills
+# GOCACHE inside this stage, and ldflags do not enter the compile keys, so the
+# stamped build only relinks.
+RUN CGO_ENABLED=0 go build -trimpath -o /dev/null ./cmd/archfit
 ARG VERSION COMMIT DATE
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
