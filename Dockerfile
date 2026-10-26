@@ -5,7 +5,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates build-essential pkg-config libssl-dev git \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-COPY Dockerfile ./
 COPY tools/ tools/
 COPY scripts/provision_tools.py scripts/provision-analyzers.sh scripts/
 RUN python scripts/provision_tools.py sdks --arch "${TARGETARCH}" \
