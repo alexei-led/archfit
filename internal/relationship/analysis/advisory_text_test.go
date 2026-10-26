@@ -4,11 +4,54 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/v3/internal/model/clone"
+	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/policy"
 	"github.com/alexei-led/archfit/v3/internal/relationship"
 	"github.com/alexei-led/archfit/v3/internal/relationship/analysis"
 )
+
+func TestCloneAdvisoryAsksWhetherKnowledgeEvolvesTogether(t *testing.T) {
+	got := analysis.Analyze(analysis.Input{
+		Graph: graph.Build([]graph.Facts{{Nodes: []graph.Node{
+			{Kind: graph.NodeKindFile, Path: fileA, Language: graph.LangGo},
+			{Kind: graph.NodeKindFile, Path: fileB, Language: graph.LangGo},
+		}}}),
+		Policy: relationshipPolicy(twoModules()),
+		CloneClusters: []clone.Cluster{{
+			Files: []string{fileA, fileB}, Lines: 40,
+			Locations: []clone.LineRange{{StartLine: 1}, {StartLine: 2}},
+		}},
+		FileClassIndex: map[string]fileclass.FileClass{fileA: fileclass.Production, fileB: fileclass.Production},
+	})
+	if len(got.Assessment.AdvisoryCandidates) != 1 || len(got.Evidence.CloneOnly) != 1 {
+		t.Fatalf("want one clone advisory and pair, got %+v", got)
+	}
+	candidate, pair := got.Assessment.AdvisoryCandidates[0], got.Evidence.CloneOnly[0]
+	if candidate.ID == "" || candidate.RuleID != ruleClone || candidate.Kind != "advisory" || candidate.EdgeKind != "clone" ||
+		candidate.FromModule != moduleA || candidate.ToModule != moduleB || candidate.Severity != pair.Severity ||
+		candidate.MatchedBy["strength"] != string(relationship.StrengthSymmetric) ||
+		candidate.MatchedBy["score_policy"] != string(policy.DuplicatedKnowledgePolicyScore) ||
+		candidate.MatchedBy["hypothesis"] != string(relationship.SeamHypothesisMoveFunctionality) {
+		t.Errorf("non-copy clone facts changed: %+v", candidate)
+	}
+	for _, want := range []string{
+		"code clones between a and b with no import edge",
+		"Inspect whether the similar code represents shared knowledge that must evolve together",
+		"If it does, review how to keep changes consistent across the modules",
+		"extraction is not automatically the right fix",
+	} {
+		if !strings.Contains(candidate.Why, want) {
+			t.Errorf("why = %q, want %q", candidate.Why, want)
+		}
+	}
+	for _, unsupported := range []string{"must be repeated in both modules", "Extract the shared knowledge", "approved label"} {
+		if strings.Contains(candidate.Why, unsupported) {
+			t.Errorf("why prescribes a fix without inspecting shared knowledge: %q", candidate.Why)
+		}
+	}
+}
 
 // TestCouplingAdvisoryNeverCallsACriticalEdgeCheap pins the advisory wording
 // at every severity and distance: a critical edge is the worst band the book

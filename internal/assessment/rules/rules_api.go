@@ -108,7 +108,7 @@ func (r *publicAPIMax) Check(_ relationship.Set, ev Evidence) []finding.Finding 
 			},
 			Locations:  locs,
 			Why:        fmt.Sprintf("Module %q has %d exported declarations, exceeding the limit of %d", mod, count, r.max),
-			Constraint: "Reduce the public API surface or raise the max threshold",
+			Constraint: "Review the module's exported declarations and remove unneeded public API. Only the architecture owner may change the max threshold; do not raise it to make this check pass.",
 		}
 		out = append(out, f)
 	}
