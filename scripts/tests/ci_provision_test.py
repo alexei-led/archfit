@@ -84,7 +84,7 @@ class CIProvisionTest(unittest.TestCase):
                 [
                     "ARCHFIT_TOOL_PYTHON=" + str(prefix / "python/bin/python"),
                     "GOTOOLCHAIN=local",
-                    "CARGO_HOME=/tmp/archfit-cargo",
+                    "CARGO_HOME=" + str(Path.home() / ".archfit-cargo"),
                     "RUST_SRC_PATH="
                     + str(prefix / "rust/lib/rustlib/src/rust/library"),
                     "UV_PYTHON_DOWNLOADS=never",
