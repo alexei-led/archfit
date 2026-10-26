@@ -166,10 +166,7 @@ jobs:
           go list ./... | python3 scripts/ci_test_shards.py --shard "$SHARD" --total "$SHARDS" >"$RUNNER_TEMP/packages.txt"
           mapfile -t packages <"$RUNNER_TEMP/packages.txt"
           test "${#packages[@]}" -gt 0
-          # The heavy packages spend their time waiting on real analyzers
-          # (scip-go, dependency-cruiser, cargo), so run more test bodies than
-          # cores: measured against the default of GOMAXPROCS.
-          go test -race -parallel=8 -coverprofile="coverage-$SHARD.out" "${packages[@]}"
+          go test -race -coverprofile="coverage-$SHARD.out" "${packages[@]}"
       # One shard runs the non-Go contract tests: they are separate programs, not
       # package tests, and would otherwise run three times over.
       - name: SCIP reader tests (python)
