@@ -18,11 +18,12 @@ _SPEC.loader.exec_module(shards)
 class CITestShardsTest(unittest.TestCase):
     def test_every_package_lands_in_exactly_one_shard(self):
         packages = self.packages()
+        scheduled_in = [name for name in packages if name not in shards.SPLIT]
         for total in (1, 2, 3, 4):
             with self.subTest(total=total):
                 split = [shards.shard_of(packages, total, n) for n in range(1, total + 1)]
                 scheduled = [name for part in split for name in part]
-                self.assertEqual(sorted(scheduled), sorted(packages))
+                self.assertEqual(sorted(scheduled), sorted(scheduled_in))
                 self.assertEqual(len(scheduled), len(set(scheduled)))
                 self.assertTrue(all(part for part in split))
 
@@ -36,6 +37,14 @@ class CITestShardsTest(unittest.TestCase):
         }
         slowest = sorted(shards.COSTS, key=lambda name: -shards.COSTS[name])[:3]
         self.assertEqual(len({placed[name] for name in slowest}), 3)
+
+    def test_packages_split_by_test_name_are_not_scheduled_here(self):
+        packages = self.packages()
+        self.assertTrue(shards.SPLIT)
+        for name in shards.SPLIT:
+            self.assertIn(name, packages)
+            scheduled = [p for n in range(1, 4) for p in shards.shard_of(packages, 3, n)]
+            self.assertNotIn(name, scheduled)
 
     def test_unlisted_package_is_still_scheduled(self):
         packages = ["example.com/newpkg", "example.com/other"]
