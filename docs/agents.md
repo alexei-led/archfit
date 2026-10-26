@@ -32,13 +32,13 @@ archfit check -c .archfit.yaml --format agent
 Use `--base HEAD` to scope repairs to uncommitted changes. Read the command
 status with `next_action`:
 
-| `next_action` | Action |
-| --- | --- |
-| `repair` | Change the source within the listed goal and constraints. Run `validate`. |
-| `ask_owner` | Stop and ask the architecture owner to decide. |
-| `restore_evidence` | Install or fix the named analyzer, then run `validate`. |
-| `report_blocked` | Report blockers outside the change. |
-| `none` | Finish. Exit `2` with `none` is a valid result. |
+| `next_action`      | Action                                                                    |
+| ------------------ | ------------------------------------------------------------------------- |
+| `repair`           | Change the source within the listed goal and constraints. Run `validate`. |
+| `ask_owner`        | Stop and ask the architecture owner to decide.                            |
+| `restore_evidence` | Install or fix the named analyzer, then run `validate`.                   |
+| `report_blocked`   | Report blockers outside the change.                                       |
+| `none`             | Finish. Exit `2` with `none` is a valid result.                           |
 
 Use `edit` to find source files. Do not edit the target of a forbidden edge.
 An empty `edit` means the source file is unknown. Use `edge.from` to identify
@@ -49,6 +49,16 @@ Do not change `baseline` or `waived` findings without an explicit request.
 See [results](results.md) for the output contracts and [rules](rules.md) for
 policy behavior.
 
+Read repair advice within its evidence and role limits:
+
+- API ceiling findings request source review. Only the architecture owner may
+  change the threshold.
+- Metric ratchets compare against the accepted baseline. That difference alone
+  does not establish which PR introduced it.
+- Clone advisories request inspection of whether similar code represents shared
+  knowledge that must evolve together. Extraction and label acceptance are not
+  default repairs.
+
 ## Install hooks
 
 Add the Claude Code stop hooks to `.claude/settings.json`:
@@ -56,8 +66,12 @@ Add the Claude Code stop hooks to `.claude/settings.json`:
 ```json
 {
   "hooks": {
-    "Stop": [{ "hooks": [{ "type": "command", "command": "archfit hook claude" }] }],
-    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "archfit hook claude" }] }]
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "archfit hook claude" }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "archfit hook claude" }] }
+    ]
   }
 }
 ```

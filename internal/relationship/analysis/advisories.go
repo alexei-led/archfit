@@ -54,7 +54,7 @@ func advisoryCandidates(set relationship.Set, clones []relationship.ClonePair, c
 			Kind: "advisory", Severity: pair.Severity, From: pair.FromPath, To: pair.ToPath,
 			FromModule: pair.FromModule, ToModule: pair.ToModule, EdgeKind: "clone",
 			Locations: append([]relationship.Location(nil), pair.Locations...),
-			Why:       "duplicated knowledge: cross-module code clones between " + pair.FromModule + " and " + pair.ToModule + " with no import edge — symmetric functional coupling; a change to the shared logic must be repeated in both modules. Extract the shared knowledge, or accept the pair with an approved label",
+			Why:       "Cross-module code clones between " + pair.FromModule + " and " + pair.ToModule + " with no import edge. Inspect whether the similar code represents shared knowledge that must evolve together. If it does, review how to keep changes consistent across the modules; extraction is not automatically the right fix.",
 			MatchedBy: matched,
 		})
 	}

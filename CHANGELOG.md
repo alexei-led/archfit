@@ -1,5 +1,21 @@
 # Release notes
 
+## v3.2.3
+
+### Summary
+
+Archfit gives safer repair advice without changing architecture scores, gate decisions, or the wire format.
+
+### Changes
+
+- Public API ceiling findings separate source review from threshold changes that require the architecture owner.
+- Metric-ratchet tasks no longer claim that the current PR caused a difference from the accepted reference.
+- Clone advisories ask whether similar code represents knowledge that must evolve together. They no longer prescribe extraction or label acceptance as a default repair.
+
+### Upgrade
+
+For App-managed runs, update the qualified Action commit, engine version, and matching platform digest together after the App approves that tuple. These wording changes do not require a policy or baseline reset; existing evidence and comparison requirements still apply.
+
 ## v3.2.0
 
 ### Summary
