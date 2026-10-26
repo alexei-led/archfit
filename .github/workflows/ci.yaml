@@ -128,7 +128,10 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-${{ steps.epoch.outputs.day }}
+          # The split itself is part of the key: when a rebalance moves packages
+          # between shards, a cache that still hits would never be rewritten and
+          # every run would recompile the difference. The day rotates it otherwise.
+          key: go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-${{ steps.epoch.outputs.day }}-${{ hashFiles('scripts/ci_test_shards.py') }}
           restore-keys: |
             go-${{ runner.os }}-${{ steps.pins.outputs.go }}-shard-${{ matrix.shard }}-
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
@@ -184,18 +187,31 @@ jobs:
           name: coverage-${{ matrix.shard }}
           path: coverage-${{ matrix.shard }}.out
           retention-days: 7
-  # cmd/archfit is 56s of the suite and cannot be sharded by package, so its tests
-  # are split by name across two runners. Go has no test-level sharding, so the
-  # listing is taken from the sources: it costs nothing and a test added later
-  # still lands in exactly one half.
-  archfit-tests:
-    name: CLI tests (half ${{ matrix.half }}/2)
+  # Two packages are too slow to shard by package: cmd/archfit (56s) and
+  # internal/extract/scip (20-78s, its Rust tests compile a workspace). Go has no
+  # test-level sharding, so each is split by name across two runners. The names
+  # come from the sources: no listing step, no build, and a test added later still
+  # lands in exactly one half.
+  split-tests:
+    name: Split tests (${{ matrix.label }} ${{ matrix.half }}/2)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        half: [1, 2]
+        include:
+          - package: ./cmd/archfit
+            label: CLI
+            half: 1
+          - package: ./cmd/archfit
+            label: CLI
+            half: 2
+          - package: ./internal/extract/scip
+            label: SCIP
+            half: 1
+          - package: ./internal/extract/scip
+            label: SCIP
+            half: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -212,9 +228,9 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ steps.pins.outputs.go }}-cli-${{ matrix.half }}-${{ steps.epoch.outputs.day }}
+          key: go-${{ runner.os }}-${{ steps.pins.outputs.go }}-split-${{ matrix.label }}-${{ matrix.half }}-${{ steps.epoch.outputs.day }}
           restore-keys: |
-            go-${{ runner.os }}-${{ steps.pins.outputs.go }}-cli-${{ matrix.half }}-
+            go-${{ runner.os }}-${{ steps.pins.outputs.go }}-split-${{ matrix.label }}-${{ matrix.half }}-
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: ${{ steps.pins.outputs.python }}
@@ -237,12 +253,13 @@ jobs:
         with:
           path: ${{ runner.temp }}/archfit
           key: ${{ steps.toolchain.outputs.cache-primary-key }}
-      - name: Select this half of the CLI tests
+      - name: Select this half of the tests
         id: half
         env:
+          PKG: ${{ matrix.package }}
           HALF: ${{ matrix.half }}
         run: |
-          mapfile -t names < <(grep -hE '^func Test[A-Za-z0-9_]+' cmd/archfit/*_test.go |
+          mapfile -t names < <(grep -hE '^func Test[A-Za-z0-9_]+' "$PKG"/*_test.go |
             sed -E 's/^func (Test[A-Za-z0-9_]+).*/\1/' | grep -vx TestMain | sort)
           test "${#names[@]}" -gt 1
           selected=()
@@ -259,35 +276,37 @@ jobs:
       - name: Run tests
         env:
           ARCHFIT_REQUIRE_TOOLS: "1"
+          PKG: ${{ matrix.package }}
+          LABEL: ${{ matrix.label }}
+          HALF: ${{ matrix.half }}
           COUNT: ${{ steps.half.outputs.count }}
           PATTERN: ${{ steps.half.outputs.pattern }}
-          HALF: ${{ matrix.half }}
         run: |
-          echo "running $COUNT CLI tests"
-          go test -race -coverprofile="coverage-cli-$HALF.out" -run "$PATTERN" ./cmd/archfit
+          echo "running $COUNT tests from $PKG"
+          go test -race -coverprofile="coverage-$LABEL-$HALF.out" -run "$PATTERN" "$PKG"
       - name: Upload coverage
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: coverage-cli-${{ matrix.half }}
-          path: coverage-cli-${{ matrix.half }}.out
+          name: coverage-${{ matrix.label }}-${{ matrix.half }}
+          path: coverage-${{ matrix.label }}-${{ matrix.half }}.out
           retention-days: 7
 
   # Required check name. Branch protection only names `Test`, so the shard
   # matrix reports through this single job.
   test:
     name: Test
-    needs: [test-shard, archfit-tests]
+    needs: [test-shard, split-tests]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Every shard and CLI half passed
+      - name: Every shard and split half passed
         env:
           SHARDS: ${{ needs.test-shard.result }}
-          CLI: ${{ needs.archfit-tests.result }}
+          SPLIT: ${{ needs.split-tests.result }}
         run: |
-          if [ "$SHARDS" != success ] || [ "$CLI" != success ]; then
-            echo "shards: $SHARDS, CLI halves: $CLI" >&2
+          if [ "$SHARDS" != success ] || [ "$SPLIT" != success ]; then
+            echo "shards: $SHARDS, split halves: $SPLIT" >&2
             exit 1
           fi
 

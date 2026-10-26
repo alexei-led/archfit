@@ -16,16 +16,19 @@ import sys
 
 DEFAULT_COST = 1.2
 
-# cmd/archfit is 56s of the suite on its own, cannot be sharded by package, and is
-# split by test name across its own runners instead (see the CI job).
-SPLIT = ("github.com/alexei-led/archfit/v3/cmd/archfit",)
+# Too slow to shard by package, and split by test name across their own runners
+# instead (see the CI job): the CLI package is 56s on its own, and the SCIP
+# package swings between 20s and 78s because its Rust tests compile a workspace.
+SPLIT = (
+    "github.com/alexei-led/archfit/v3/cmd/archfit",
+    "github.com/alexei-led/archfit/v3/internal/extract/scip",
+)
 
 # Measured warm per-package seconds, slowest first. Refresh with the "Run tests"
 # durations in a CI log; only the relative order matters for the split.
 COSTS = {
     "github.com/alexei-led/archfit/v3/internal/toolrun": 26.0,
     "github.com/alexei-led/archfit/v3/internal/extract/ts": 25.0,
-    "github.com/alexei-led/archfit/v3/internal/extract/scip": 21.0,
     "github.com/alexei-led/archfit/v3/internal/extract/py": 13.0,
     "github.com/alexei-led/archfit/v3/internal": 11.0,
     "github.com/alexei-led/archfit/v3/internal/extract/golang": 4.5,
