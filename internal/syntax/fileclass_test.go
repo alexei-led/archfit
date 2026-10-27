@@ -66,6 +66,8 @@ func TestClassifyFile_BuiltIn(t *testing.T) {
 		{name: "dotnet .designer.cs any case", lang: langDotNet, path: "src/Core/Form.designer.cs", header: noHeader, want: fileclass.Generated},
 		{name: "dotnet obj/ output", lang: langDotNet, path: "src/Core/obj/Debug/net10.0/Core.AssemblyInfo.cs", header: noHeader, want: fileclass.Generated},
 		{name: "dotnet bin/ output", lang: langDotNet, path: "src/Core/bin/Debug/Copied.cs", header: noHeader, want: fileclass.Generated},
+		{name: "dotnet artifacts/obj/ output (UseArtifactsOutput)", lang: langDotNet, path: "artifacts/obj/Web/debug/Web.AssemblyInfo.cs", header: noHeader, want: fileclass.Generated},
+		{name: "dotnet artifacts/bin/ output (UseArtifactsOutput)", lang: langDotNet, path: "artifacts/bin/Web/debug/Copied.cs", header: noHeader, want: fileclass.Generated},
 		{name: "dotnet auto-generated header", lang: langDotNet, path: "src/Core/Reference.cs", header: autoHeader, want: fileclass.Generated},
 		{name: "dotnet objects/ is not obj/", lang: langDotNet, path: "src/Core/objects/Item.cs", header: noHeader, want: fileclass.Production},
 		// The obj/ and bin/ rule is .NET vocabulary; the header sniff is shared.

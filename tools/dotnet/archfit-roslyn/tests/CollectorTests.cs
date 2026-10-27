@@ -165,6 +165,7 @@ public class CollectorTests
     [InlineData("A/Form.Designer.cs", true)]
     [InlineData("A/obj/Debug/net10.0/A.AssemblyInfo.cs", true)]
     [InlineData("A/bin/X.cs", true)]
+    [InlineData("artifacts/obj/A/debug/A.AssemblyInfo.cs", true)]
     [InlineData("objects/B.cs", false)]
     public void GeneratedPaths(string path, bool generated)
     {

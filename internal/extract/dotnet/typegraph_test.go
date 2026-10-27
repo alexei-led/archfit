@@ -898,6 +898,8 @@ func TestTypeGraph_SnapshotIsRemovedAndOriginalNeverWritten(t *testing.T) {
 			writeFile(t, root, "web/node_modules/x/index.js", "")
 			writeFile(t, root, "Domain/obj/project.assets.json", "{}")
 			writeFile(t, root, "Domain/bin/Lib.dll", "")
+			// UseArtifactsOutput moves restore and build output to artifacts/.
+			writeFile(t, root, "artifacts/obj/Domain/project.assets.json", "{}")
 			if err := os.Symlink(filepath.Join(root, "Domain"), filepath.Join(root, "DomainLink")); err != nil {
 				t.Fatal(err)
 			}
@@ -910,6 +912,7 @@ func TestTypeGraph_SnapshotIsRemovedAndOriginalNeverWritten(t *testing.T) {
 				for rel, want := range map[string]bool{
 					".git": false, "web/node_modules": false, "web": true,
 					"Domain/obj/project.assets.json": true, "Domain/bin/Lib.dll": true, solutionFix: true,
+					"artifacts/obj/Domain/project.assets.json": true,
 				} {
 					if _, err := os.Stat(filepath.Join(snap, rel)); (err == nil) != want {
 						t.Errorf("snapshot has %s = %v, want %v", rel, err == nil, want)
