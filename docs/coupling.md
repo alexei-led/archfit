@@ -146,6 +146,11 @@ SCIP refines symbol-level hints for TypeScript, Python, and Rust. Go uses
 `go/types` data. .NET uses Roslyn compiler symbols from the `archfit-roslyn` helper. SCIP cannot identify a method receiver, so concrete-method data
 evidence is available only for Go.
 
+Published-language coupling between services has no type edge and is not
+measured in any language: message records duplicated in each service, a
+`.proto` that another project compiles directly, and HTTP or YARP runtime calls.
+Clone evidence can catch duplicated records; the rest stays outside the graph.
+
 TypeScript without SCIP treats runtime imports as functional unless a target
 matches a `public:` glob. Runtime async evidence is report-only. It does not
 change distance or gate results. Unknown facts can lower confidence or leave a
