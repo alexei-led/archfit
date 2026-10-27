@@ -54,6 +54,15 @@ The language contract harness exercises Go, TypeScript, JavaScript, Python, and 
 Read its output for missing tools and unverified cases.
 Passing a fixture without its required producer is not evidence of language support.
 
+The harness also exercises .NET with the real SDK and the Roslyn helper. Build the helper first:
+
+```sh
+make dotnet-roslyn
+make dotnet-roslyn-test
+```
+
+`make dotnet-roslyn` publishes `tools/dotnet/archfit-roslyn` to `.bin/dotnet-roslyn`, restoring in locked mode. Set `ARCHFIT_DOTNET_ROSLYN` to that directory. `make dotnet-roslyn-test` runs the helper's xUnit tests against `internal/testdata/dotnet`. Update `tools/dotnet/archfit-roslyn/packages.lock.json` when the helper's dependencies change.
+
 Run the evaluation harness unit tests separately:
 
 ```sh
@@ -123,7 +132,7 @@ Write fresh output under `/tmp` or `.archfit-cache/`.
 
 ## Locked tool and final-image contracts
 
-`tools/manifest.json` owns exact analyzer/SDK versions. Node and Python transitive dependencies
+`tools/manifest.json` owns exact analyzer/SDK versions, including the .NET SDK pin. `make tool-locks` validates it. CI provisions the SDK from the same pin; there is no separate CI version. Node and Python transitive dependencies
 are locked and native downloads are checksum-verified. Do not float one CI or image pin separately.
 
 ```sh
