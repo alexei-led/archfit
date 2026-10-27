@@ -125,6 +125,7 @@ func Collect(ctx context.Context, root string, opts Options, runner toolrun.Runn
 	if opts.Syntax.Enabled {
 		adapter := astgrep.New(runner)
 		adapter.Cache = facts
+		adapter.Exclusions = opts.Exclusions
 		out.Syntax = adapter
 	} else {
 		out.ExtraCoverage = append(out.ExtraCoverage, evidence.Coverage{

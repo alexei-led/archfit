@@ -11,12 +11,16 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/scope"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
@@ -67,7 +71,9 @@ const (
 	langTypeScript = "typescript"
 	langPython     = "python"
 	langRust       = "rust"
-	langCSharp     = "csharp"
+	// langDotNet keys the C# rules by archfit's language id, as every other
+	// language is keyed; csharp.yml names the ast-grep language itself.
+	langDotNet = graph.LangDotNet
 )
 
 // Rule ID constants for rules referenced more than once in this file.
@@ -225,7 +231,7 @@ var langRuleKinds = map[string]map[string]kindInfo{
 	langTypeScript: tsRuleKinds,
 	langPython:     pyRuleKinds,
 	langRust:       rustRuleKinds,
-	langCSharp:     csharpRuleKinds,
+	langDotNet:     csharpRuleKinds,
 }
 
 // embeddedRules maps language identifiers (as passed in langs) to their embedded YAML.
@@ -234,7 +240,7 @@ var embeddedRules = map[string]string{
 	langTypeScript: tsRules + "\n---\n" + jsRules,
 	langPython:     pyRules,
 	langRust:       rustRules,
-	langCSharp:     csharpRules,
+	langDotNet:     csharpRules,
 }
 
 // sgSyntaxMatch is the JSON shape ast-grep emits for --json=compact scan output.
@@ -315,7 +321,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		ruleKinds := langRuleKinds[lang]
 
 		for _, m := range raw {
-			if !ruleKinds[m.RuleID].IsParseError {
+			if !ruleKinds[m.RuleID].IsParseError || a.excluded(m.File) {
 				continue
 			}
 			line := m.Range.Start.Line + 1
@@ -391,6 +397,15 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		cov.Reason = parseErrorReason(parseErrors)
 	}
 	return facts, cov, nil
+}
+
+func (a *Adapter) excluded(file string) bool {
+	for _, pattern := range a.Exclusions {
+		if ok, _ := doublestar.Match(pattern, filepath.ToSlash(file)); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // maxParseErrorFilesListed caps the per-file list in the coverage reason.
@@ -567,7 +582,7 @@ func isExported(lang, ruleID, name string) bool {
 		}
 		// The YAML rule already requires visibility_modifier, so any match is pub.
 		return true
-	case langCSharp:
+	case langDotNet:
 		return false // every C# rule is a route
 	default: // go and future languages: uppercase-first convention
 		if isNonExportedGoRule(ruleID) {

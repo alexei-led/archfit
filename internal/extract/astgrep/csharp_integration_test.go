@@ -12,7 +12,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
-const langCSharpStr = "csharp"
+const langCSharpStr = "dotnet"
 
 type routeWant struct {
 	name string
@@ -37,6 +37,7 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 	tests := []struct {
 		name       string
 		dir        string
+		exclusions []string
 		wantRoutes []routeWant
 		wantStatus string
 		wantReason string
@@ -68,6 +69,15 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 			wantReason: "Extensions.cs:",
 		},
 		{
+			// An excluded fixture's parse error hides no analysed route; its
+			// facts are unchanged, as for every other language.
+			name:       "a parse error in an excluded file leaves the row complete",
+			dir:        "extension",
+			exclusions: []string{"**/Extensions.cs"},
+			wantRoutes: []routeWant{{"kept", 11}},
+			wantStatus: "ok",
+		},
+		{
 			name:       "plain class has no route",
 			dir:        "plain",
 			wantStatus: "ok",
@@ -76,6 +86,7 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			a := astgrep.New(toolrun.New())
+			a.Exclusions = tt.exclusions
 			facts, cov, err := a.Syntax(context.Background(), csharpFixture(t, tt.dir), []string{langCSharpStr})
 			if err != nil {
 				t.Fatalf("Syntax: %v", err)

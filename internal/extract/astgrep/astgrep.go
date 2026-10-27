@@ -33,6 +33,10 @@ type Adapter struct {
 	runner toolrun.Runner
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
 	Cache *factcache.Store
+	// Exclusions are the run's merged exclusion globs. A parse error in an
+	// excluded file (a deliberately broken fixture) hides no route the run
+	// analyses, so it leaves the syntax row complete.
+	Exclusions []string
 	// versionOnce/versionValue memoize the `ast-grep --version` probe; see sgVersion.
 	versionOnce  sync.Once
 	versionValue string
