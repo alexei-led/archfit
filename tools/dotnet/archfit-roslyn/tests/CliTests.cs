@@ -52,13 +52,41 @@ public class CliTests
         }
     }
 
-    private static async Task<(int Code, string Stdout, string Stderr)> Run(params string[] args)
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UnsatisfiableGlobalJsonIsOneStderrLine(bool version)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "archfit-roslyn-globaljson-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "global.json"), """{"sdk":{"version":"9.0.100","rollForward":"disable"}}""");
+        try
+        {
+            var (code, stdout, stderr) = version
+                ? await RunIn(dir, "--version")
+                : await RunIn(AppContext.BaseDirectory, dir, "A.csproj");
+
+            Assert.Equal(1, code);
+            Assert.Equal("", stdout);
+            var line = Assert.Single(stderr.ReplaceLineEndings("\n").TrimEnd('\n').Split('\n'));
+            Assert.Equal("archfit-roslyn: global.json requests SDK 9.0.100, which is not installed; install a matching SDK or relax the pin", line);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    private static Task<(int Code, string Stdout, string Stderr)> Run(params string[] args) =>
+        RunIn(AppContext.BaseDirectory, args);
+
+    private static async Task<(int Code, string Stdout, string Stderr)> RunIn(string workDir, params string[] args)
     {
         var start = new ProcessStartInfo("dotnet")
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            WorkingDirectory = AppContext.BaseDirectory,
+            WorkingDirectory = workDir,
         };
         start.ArgumentList.Add(Helper);
         foreach (var arg in args)

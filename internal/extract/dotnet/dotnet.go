@@ -214,7 +214,11 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	}
 	e.last = Evaluation{Solution: sel.solution, Projects: projects, SkippedProjects: sel.skipped, MissingProjects: sel.missing}
 
-	tg, err := e.runTypeGraph(ctx, s.Root, helperTargets(sel, e.targets))
+	frameworks := make(map[string][]string, len(projects))
+	for _, p := range projects {
+		frameworks[p.Path] = p.TargetFrameworks
+	}
+	tg, err := e.runTypeGraph(ctx, s.Root, helperTargets(sel, e.targets), frameworks)
 	if err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/dotnet: %w", err)
 	}

@@ -246,7 +246,7 @@ func helperDir(root string) (string, bool, error) {
 // invalid helper setting, an unusable report, an exec failure, or cancellation
 // is an error; a failed or timed-out helper run is a coverage gap with the
 // project-only fallback.
-func (e *Extractor) runTypeGraph(ctx context.Context, root string, targets []string) (res typeGraphResult, err error) {
+func (e *Extractor) runTypeGraph(ctx context.Context, root string, targets []string, frameworks map[string][]string) (res typeGraphResult, err error) {
 	if e.TypeGraph.Disabled {
 		return notRun(evidence.StatusDisabled, reasonHelperDisabled), nil
 	}
@@ -321,7 +321,7 @@ func (e *Extractor) runTypeGraph(ctx context.Context, root string, targets []str
 	if err != nil {
 		return typeGraphResult{}, err
 	}
-	res = foldReport(report)
+	res = foldReport(report, frameworks)
 	res.cov = typeGraphCoverage(version, res)
 	return res, nil
 }
@@ -338,20 +338,11 @@ func helperIdentity(stdout []byte) string {
 	return ""
 }
 
-// helperFailure names why the helper exited non-zero, root-relative. An
-// unsatisfiable global.json surfaces as a multi-line SDK resolver exception, so
-// it is matched first, as for an MSBuild evaluation. Otherwise the first error
-// line the helper wrote is the cause; workspace diagnostics before it are not.
+// helperFailure names why the helper exited non-zero, root-relative: the first
+// error line it wrote (an unresolvable SDK or global.json pin is one such line).
+// Workspace diagnostics before it are not the cause.
 func helperFailure(out toolrun.Output, mapper snapshotMapper) string {
-	text := string(out.Stderr)
-	if f := globalJSONFile.FindStringSubmatch(text); f != nil {
-		file := mapper.text(f[1])
-		if v := globalJSONSDK.FindStringSubmatch(text); v != nil {
-			return fmt.Sprintf("%s requests SDK %s, which is not installed; install a matching SDK or relax the pin", file, v[1])
-		}
-		return file + " cannot be satisfied by the installed SDKs; install a matching SDK or relax the pin"
-	}
-	for line := range strings.SplitSeq(text, "\n") {
+	for line := range strings.SplitSeq(string(out.Stderr), "\n") {
 		if msg, ok := strings.CutPrefix(strings.TrimSpace(line), helperStderrPrefix); ok && !strings.HasPrefix(msg, "workspace failure:") {
 			return mapper.text(msg)
 		}
@@ -403,9 +394,11 @@ func parseReport(data []byte, mapper snapshotMapper) (helperReport, error) {
 }
 
 // foldReport folds the per-(project, framework) entries into one result per
-// project (D7): the worst status, summed unresolved symbols, and the union of
-// files, IVT declarations and linked files.
-func foldReport(r helperReport) typeGraphResult {
+// project (D7 with D1): summed unresolved symbols and the union of files, IVT
+// declarations and linked files. frameworks are the evaluated target
+// frameworks per project; they name a framework the helper failed to load,
+// since its failed entry carries no framework.
+func foldReport(r helperReport, frameworks map[string][]string) typeGraphResult {
 	byPath := map[string][]helperProject{}
 	for _, p := range r.Projects {
 		byPath[p.Path] = append(byPath[p.Path], p)
@@ -413,8 +406,7 @@ func foldReport(r helperReport) typeGraphResult {
 	res := typeGraphResult{files: map[string][]helperFile{}}
 	res.graph.SkippedProjects = r.SkippedProjects
 	for _, path := range sortedKeys(byPath) {
-		entries := byPath[path]
-		tp, files := foldProject(path, entries)
+		tp, files := foldProject(path, byPath[path], frameworks[path])
 		res.graph.Projects = append(res.graph.Projects, tp)
 		if tp.Status != TypeGraphFailed {
 			res.files[path] = files
@@ -423,34 +415,32 @@ func foldReport(r helperReport) typeGraphResult {
 	return res
 }
 
-func foldProject(path string, entries []helperProject) (TypeGraphProject, []helperFile) {
-	tp := TypeGraphProject{Path: path, Status: TypeGraphComplete}
+// foldProject decides one project's status. A project with any loaded
+// framework (complete or partial: it had source documents) counts as loaded:
+// complete when every entry is complete, else partial, and its file edges
+// replace its ProjectReference edges. It is failed only when every entry
+// failed, so the fallback applies only to a project the helper did not load.
+func foldProject(path string, entries []helperProject, evaluated []string) (TypeGraphProject, []helperFile) {
+	tp := TypeGraphProject{Path: path, Status: TypeGraphFailed}
 	ivts := map[helperIVT]struct{}{}
 	linked := map[string]struct{}{}
 	var reasons []string
 	var files []helperFile
-	allComplete := true
+	allComplete, loaded := true, false
 	for _, p := range entries {
-		if p.TFM != "" {
-			tp.TargetFrameworks = append(tp.TargetFrameworks, p.TFM)
-		}
-		if statusRank[p.Status] > statusRank[tp.Status] {
-			tp.Status = p.Status
-		}
-		if p.Reason != "" {
-			if p.TFM != "" && len(entries) > 1 {
-				reasons = append(reasons, p.TFM+": "+p.Reason)
-			} else {
-				reasons = append(reasons, p.Reason)
+		if p.Status != TypeGraphFailed {
+			loaded = true
+			if p.TFM != "" {
+				tp.TargetFrameworks = append(tp.TargetFrameworks, p.TFM)
 			}
 		}
-		tp.UnresolvedSymbols += p.UnresolvedSymbols
 		if p.Status != TypeGraphComplete || p.UnusedReferences == nil {
 			allComplete = false
 		} else if tp.UnusedReferences == nil || *p.UnusedReferences < *tp.UnusedReferences {
 			n := *p.UnusedReferences
 			tp.UnusedReferences = &n
 		}
+		tp.UnresolvedSymbols += p.UnresolvedSymbols
 		for _, d := range p.IVTDeclarations {
 			ivts[d] = struct{}{}
 		}
@@ -459,14 +449,52 @@ func foldProject(path string, entries []helperProject) (TypeGraphProject, []help
 		}
 		files = append(files, p.Files...)
 	}
+	slices.Sort(tp.TargetFrameworks)
+	switch {
+	case !loaded: // every entry failed: the status stays failed
+	case allComplete:
+		tp.Status = TypeGraphComplete
+	default:
+		tp.Status = TypeGraphPartial
+	}
+	for _, p := range entries {
+		if p.Reason == "" && p.Status != TypeGraphFailed {
+			continue
+		}
+		switch {
+		case len(entries) == 1:
+			reasons = append(reasons, p.Reason)
+		case p.Status == TypeGraphFailed:
+			reasons = append(reasons, failedFrameworks(p.TFM, evaluated, tp.TargetFrameworks)+" failed: "+p.Reason)
+		default:
+			reasons = append(reasons, p.TFM+": "+p.Reason)
+		}
+	}
 	if !allComplete {
 		tp.UnusedReferences = nil
 	}
-	slices.Sort(tp.TargetFrameworks)
-	tp.Reason = strings.Join(reasons, "; ")
+	tp.Reason = strings.Join(slices.Compact(reasons), "; ")
 	tp.IVTDeclarations = len(ivts)
 	tp.LinkedFiles = sortedKeys(linked)
 	return tp, files
+}
+
+// failedFrameworks names the framework of a failed entry: its own, else the
+// evaluated frameworks the helper loaded no entry for.
+func failedFrameworks(tfm string, evaluated, loaded []string) string {
+	if tfm != "" {
+		return tfm
+	}
+	var missing []string
+	for _, f := range evaluated {
+		if !slices.Contains(loaded, f) {
+			missing = append(missing, f)
+		}
+	}
+	if len(missing) == 0 {
+		return "a target framework"
+	}
+	return strings.Join(missing, ", ")
 }
 
 // typeGraphCoverage builds the roslyn row: partial when any project is partial

@@ -60,15 +60,28 @@ internal static class Program
 
     // RegisterMSBuild picks the SDK that `dotnet` resolves from dir, so a
     // global.json in the target applies, and loads MSBuild from it. It must run
-    // before any MSBuild type is touched.
+    // before any MSBuild type is touched. An unresolvable SDK is one stderr
+    // line (Sdk.Unresolvable), never a resolver stack trace.
     internal static VisualStudioInstance RegisterMSBuild(string dir)
     {
-        var instance = MSBuildLocator.QueryVisualStudioInstances(new VisualStudioInstanceQueryOptions
+        Sdk.EnsureResolvable(dir);
+        VisualStudioInstance? instance;
+        try
         {
-            DiscoveryTypes = DiscoveryType.DotNetSdk,
-            WorkingDirectory = dir,
-        }).FirstOrDefault() ?? throw new UserError(
-            $"no .NET SDK resolvable from {dir}; install the .NET SDK, or the SDK that {dir}/global.json pins");
+            instance = MSBuildLocator.QueryVisualStudioInstances(new VisualStudioInstanceQueryOptions
+            {
+                DiscoveryTypes = DiscoveryType.DotNetSdk,
+                WorkingDirectory = dir,
+            }).FirstOrDefault();
+        }
+        catch (InvalidOperationException e)
+        {
+            throw new UserError(Sdk.Unresolvable(e.Message, dir));
+        }
+        if (instance is null)
+        {
+            throw new UserError($"no .NET SDK resolvable from {dir}; install the .NET SDK, or the SDK that {dir}/global.json pins");
+        }
         MSBuildLocator.RegisterInstance(instance);
         return instance;
     }

@@ -151,9 +151,13 @@ func editReport(t *testing.T, edit func([]map[string]any) []map[string]any) stri
 	return string(out)
 }
 
-func failedEntry(path, reason string) map[string]any {
+// legacyLoadFailure is the workspace failure of a Legacy framework that did not load.
+const legacyLoadFailure = "Msbuild failed when processing the file 'Legacy/Legacy.csproj'"
+
+// failedLegacy is a helper entry for a Legacy framework that did not load.
+func failedLegacy() map[string]any {
 	return map[string]any{
-		"path": path, "tfm": "", "status": "failed", "reason": reason, "unresolved_symbols": 0,
+		"path": legacyProj, "tfm": "", "status": "failed", "reason": legacyLoadFailure, "unresolved_symbols": 0,
 		"unused_references": nil, "ivt_declarations": []any{}, "linked_files": []any{}, "files": []any{},
 	}
 }
@@ -391,7 +395,7 @@ func TestTypeGraph_RejectsUnusableReports(t *testing.T) {
 func TestTypeGraph_FallbackWhenHelperFailsButEvaluationSucceeds(t *testing.T) {
 	report := editReport(t, func(ps []map[string]any) []map[string]any {
 		out := slices.DeleteFunc(ps, func(p map[string]any) bool { return p["path"] == legacyProj })
-		return append(out, failedEntry(legacyProj, "Msbuild failed when processing the file 'Legacy/Legacy.csproj'"))
+		return append(out, failedLegacy())
 	})
 	e, _, facts, _ := fixtureRun(t, autoCfg(), replying(report))
 
@@ -410,6 +414,76 @@ func TestTypeGraph_FallbackWhenHelperFailsButEvaluationSucceeds(t *testing.T) {
 	}
 	if got := e.LastTypeGraph().Fallback; !slices.Equal(got, []string{brokenProj, legacyProj}) {
 		t.Errorf("fallback = %v", got)
+	}
+}
+
+func TestTypeGraph_ProjectLoadedIfAnyFrameworkLoaded(t *testing.T) {
+	tests := []struct {
+		name       string
+		entries    func(net10, net8 map[string]any) []map[string]any
+		wantStatus string
+		wantReason string
+		wantFiles  bool
+	}{
+		{
+			name: "complete and failed",
+			entries: func(net10, _ map[string]any) []map[string]any {
+				return []map[string]any{net10, failedLegacy()}
+			},
+			wantStatus: dotnet.TypeGraphPartial,
+			wantReason: "net8.0 failed: " + legacyLoadFailure,
+			wantFiles:  true,
+		},
+		{
+			name: "failed and failed",
+			entries: func(map[string]any, map[string]any) []map[string]any {
+				return []map[string]any{failedLegacy(), failedLegacy()}
+			},
+			wantStatus: dotnet.TypeGraphFailed,
+			wantReason: "net10.0, net8.0 failed: " + legacyLoadFailure,
+		},
+		{
+			name:       "partial and complete",
+			entries:    func(net10, net8 map[string]any) []map[string]any { return []map[string]any{net8, net10} },
+			wantStatus: dotnet.TypeGraphPartial,
+			wantReason: "net8.0: 31 unresolved symbols",
+			wantFiles:  true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report := editReport(t, func(ps []map[string]any) []map[string]any {
+				var net10, net8 map[string]any
+				for _, p := range ps {
+					if p["path"] == legacyProj {
+						if p["tfm"] == targetNet10 {
+							net10 = p
+						} else {
+							net8 = p
+						}
+					}
+				}
+				out := slices.DeleteFunc(ps, func(p map[string]any) bool { return p["path"] == legacyProj })
+				return append(out, tt.entries(net10, net8)...)
+			})
+			e, _, facts, _ := fixtureRun(t, autoCfg(), replying(report))
+
+			legacy := typeProject(t, e.LastTypeGraph(), legacyProj)
+			if legacy.Status != tt.wantStatus || !strings.HasPrefix(legacy.Reason, tt.wantReason) || strings.Count(legacy.Reason, legacyLoadFailure) > 1 {
+				t.Errorf("legacy = %+v, want %s with reason %q", legacy, tt.wantStatus, tt.wantReason)
+			}
+			_, hasFileEdge := fileEdges(facts)[legacyCS+" -> file:"+domainCS]
+			hasProjectEdge := slices.Contains(projectEdges(facts), "Legacy/Legacy.csproj -> Domain/Domain.csproj")
+			if hasFileEdge != tt.wantFiles || hasProjectEdge == tt.wantFiles {
+				t.Errorf("file edge = %v, project edge = %v; want exactly one, the file edge only when a framework loaded", hasFileEdge, hasProjectEdge)
+			}
+			if fellBack := slices.Contains(e.LastTypeGraph().Fallback, legacyProj); fellBack == tt.wantFiles {
+				t.Errorf("fallback includes Legacy = %v", fellBack)
+			}
+			if cov := e.LastTypeGraphCoverage(); cov.Status != evidence.StatusPartial || cov.UnresolvedInputsMissing == 0 {
+				t.Errorf("roslyn coverage = %+v, want partial and non-comparable", cov)
+			}
+		})
 	}
 }
 

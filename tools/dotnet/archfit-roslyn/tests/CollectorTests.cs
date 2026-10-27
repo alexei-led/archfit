@@ -32,7 +32,7 @@ public class CollectorTests
     [InlineData("record property read", "class U { string M(L.CustomerDto d) => d.Name; }", "dto", "dto")]
     [InlineData("record struct property read", "class U { int M(L.Key k) => k.Value; }", "dto", "dto")]
     [InlineData("indexer call", "class U { int M(L.Bag b) => b[0]; }", "functional", "model")]
-    [InlineData("concrete method call","class U { void M(L.Customer c) => c.Touch(); }", "functional", "model")]
+    [InlineData("concrete method call", "class U { void M(L.Customer c) => c.Touch(); }", "functional", "model")]
     [InlineData("extension call only", "using L; class U { string M() => \"x\".Shout(); }", "functional", "")]
     [InlineData("constructor call", "class U { object M() => new L.Customer(); }", "functional", "model")]
     [InlineData("concrete inheritance", "class U : L.Customer { }", "functional", "")]
