@@ -122,7 +122,7 @@ func (s *Service) measurementProfile(ctx context.Context, sc scope.Scope, rows [
 var toolLanguage = buildToolLanguage()
 
 func buildToolLanguage() map[string]string {
-	out := map[string]string{registry.ToolCargoModules: graph.LangRust, toolRoslyn: graph.LangDotNet}
+	out := map[string]string{registry.ToolCargoModules: graph.LangRust, registry.ToolRoslyn: graph.LangDotNet}
 	for _, lang := range registry.All() {
 		out[lang.PrimaryTool] = lang.ID
 	}

@@ -2,6 +2,9 @@ package acquisition
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -151,7 +154,7 @@ func TestProfileV2SettingsIgnoreNotApplicableLanguageConfig(t *testing.T) {
 func TestProfileV2RoslynRowFollowsCSharpSource(t *testing.T) {
 	s := goOnlyService()
 	goRow := evidence.Coverage{Tool: registry.ToolGoPackages, Version: goToolVersion, Status: evidence.StatusOK}
-	roslyn := evidence.Coverage{Tool: toolRoslyn, Status: evidence.StatusAbsent}
+	roslyn := evidence.Coverage{Tool: registry.ToolRoslyn, Status: evidence.StatusAbsent}
 	profile := func(rows []evidence.Coverage, files map[string]fileclass.FileClass) *evidence.MeasurementProfile {
 		return s.measurementProfile(context.Background(), scope.Scope{Root: "/r"}, rows, nil, files, nil)
 	}
@@ -165,7 +168,61 @@ func TestProfileV2RoslynRowFollowsCSharpSource(t *testing.T) {
 		t.Errorf("producers = %s, want %s", got, want)
 	}
 	csFiles := map[string]fileclass.FileClass{mainGoFile: fileclass.Production, "src/Core/User.cs": fileclass.Production}
-	if kept := profile([]evidence.Coverage{goRow, roslyn}, csFiles); !strings.Contains(strings.Join(producerTools(kept), ","), toolRoslyn) {
+	if kept := profile([]evidence.Coverage{goRow, roslyn}, csFiles); !strings.Contains(strings.Join(producerTools(kept), ","), registry.ToolRoslyn) {
 		t.Errorf("absent roslyn over C# source left the profile: %v", producerTools(kept))
+	}
+}
+
+// Registering .NET must not move the measurement profile of a tree with no C#:
+// the extractor's own probe finds no project, so neither .NET row raises a gap,
+// and both absent rows leave the producers and the settings hash unchanged.
+func TestProfileV2UnchangedByTheDotNetRowsOnATreeWithoutCSharp(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, mainGoFile), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	probe := func(root string) bool { return registry.ProjectPresent(graph.LangDotNet, root, ports.ExtractConfig{}) }
+	opts := CoverageOptions{ProjectPresent: map[string]func(string) bool{registry.ToolDotNetMSBuild: probe, registry.ToolRoslyn: probe}}
+	goRow := evidence.Coverage{Tool: registry.ToolGoPackages, Version: goToolVersion, Status: evidence.StatusOK}
+	dotnetRows := []evidence.Coverage{goRow,
+		{Tool: registry.ToolDotNetMSBuild, Status: evidence.StatusAbsent},
+		{Tool: registry.ToolRoslyn, Status: evidence.StatusAbsent}}
+	gaps := buildCoverageGaps(dotnetRows, opts, root)
+	if len(gaps) != 0 {
+		t.Fatalf("gaps = %+v, want none on a tree with no .NET project", gaps)
+	}
+	s := goOnlyService()
+	files := map[string]fileclass.FileClass{mainGoFile: fileclass.Production}
+	before := s.measurementProfile(context.Background(), scope.Scope{Root: root}, []evidence.Coverage{goRow}, nil, files, nil)
+	after := s.measurementProfile(context.Background(), scope.Scope{Root: root}, dotnetRows, gaps, files, nil)
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("profile moved when the .NET rows landed:\nbefore %+v\nafter  %+v", before, after)
+	}
+}
+
+// Over a .NET project the absent roslyn row is a gap that names the helper
+// build, and an explicit gate demands it even where the probe finds nothing.
+func TestCoverageGapForAbsentRoslynFollowsTheDotNetProbe(t *testing.T) {
+	withProject := t.TempDir()
+	if err := os.WriteFile(filepath.Join(withProject, "App.csproj"), []byte("<Project Sdk=\"Microsoft.NET.Sdk\" />\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	probe := func(root string) bool { return registry.ProjectPresent(graph.LangDotNet, root, ports.ExtractConfig{}) }
+	rows := []evidence.Coverage{{Tool: registry.ToolRoslyn, Status: evidence.StatusAbsent}}
+	for _, tc := range []struct {
+		name, root, gate string
+		wantGap          bool
+	}{
+		{"a .NET project without the helper", withProject, "", true},
+		{"no .NET project", t.TempDir(), "", false},
+		{"no .NET project, gate demands it", t.TempDir(), gateWarn, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := CoverageOptions{Gates: map[string]string{"roslyn": tc.gate}, ProjectPresent: map[string]func(string) bool{registry.ToolRoslyn: probe}}
+			gaps := buildCoverageGaps(rows, opts, tc.root)
+			if got := len(gaps) == 1 && strings.Contains(gaps[0].InstallCmd, "make dotnet-roslyn"); got != tc.wantGap {
+				t.Errorf("roslyn gap = %+v, want gap %v", gaps, tc.wantGap)
+			}
+		})
 	}
 }

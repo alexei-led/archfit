@@ -54,13 +54,13 @@ func installEnumTag(t *testing.T) []string {
 	return strings.Split(tag, ",")
 }
 
-// TestBuildExtractorsOrder pins the go → ts → python build order (the
+// TestBuildExtractorsOrder pins the go → ts → python → rust → dotnet build order (the
 // graph-merge order the engine golden test depends on) and that each extractor
 // reports the canonical language name.
 func TestBuildExtractorsOrder(t *testing.T) {
 	t.Parallel()
 	exs := registry.Build(&toolrun.RunnerMock{}, config.Default().ExtractConfigs(), nil)
-	want := []string{config.LangGo, config.LangTypeScript, config.LangPython, config.LangRust}
+	want := []string{config.LangGo, config.LangTypeScript, config.LangPython, config.LangRust, config.LangDotNet}
 	if len(exs) != len(want) {
 		t.Fatalf("registry.Build returned %d extractors, want %d", len(exs), len(want))
 	}
@@ -107,6 +107,8 @@ func TestLanguageByAlias(t *testing.T) {
 		"py":         config.LangPython,
 		"rust":       config.LangRust,
 		"rs":         config.LangRust,
+		"dotnet":     config.LangDotNet,
+		"csharp":     config.LangDotNet,
 		"":           "",
 		"ruby":       "",
 	}
@@ -122,7 +124,7 @@ func TestLanguageByAlias(t *testing.T) {
 func TestPrimaryExtractorTools(t *testing.T) {
 	t.Parallel()
 	got := registry.PrimaryTools()
-	want := []string{toolGoPackages, toolDepCruiser, toolGrimp, toolCargo}
+	want := []string{toolGoPackages, toolDepCruiser, toolGrimp, toolCargo, toolDotNetMSBuild}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("registry.PrimaryTools() = %v, want %v", got, want)
 	}

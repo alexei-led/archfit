@@ -54,11 +54,12 @@ const (
 // ToolCoverage). Their absence drops the structural metrics to n/a; shared by the
 // coverage-gap table and its config-key map.
 const (
-	toolGoPackages   = registry.ToolGoPackages
-	toolDepCruiser   = registry.ToolDepCruiser
-	toolGrimp        = registry.ToolGrimp
-	toolCargo        = registry.ToolCargo
-	toolCargoModules = registry.ToolCargoModules // opt-in intra-crate module graph; mirrors config.ToolCargoModules
+	toolGoPackages    = registry.ToolGoPackages
+	toolDepCruiser    = registry.ToolDepCruiser
+	toolGrimp         = registry.ToolGrimp
+	toolCargo         = registry.ToolCargo
+	toolCargoModules  = registry.ToolCargoModules // opt-in intra-crate module graph; mirrors config.ToolCargoModules
+	toolDotNetMSBuild = registry.ToolDotNetMSBuild
 )
 
 // Project-marker filenames used by the language registry and test fixtures.

@@ -105,7 +105,7 @@
 - `declared_external_systems`: 0 count
 - `analyzers_reporting_coverage`: 3 count (3/3)
 - `coverage_gaps`: 0 count
-- `analyzers_not_applicable`: 8 count
+- `analyzers_not_applicable`: 10 count
 - `coverage`: 1 ratio
 
 ## Evidence coverage
@@ -116,6 +116,7 @@
 | dependency-cruiser | absent | — |
 | grimp | absent | — |
 | cargo | absent | — |
+| dotnet-msbuild | absent | — |
 | loc | ok | — |
 | deploy-unit | ok | — |
 | jscpd | disabled | off by default because the pass is slow: set `analyzers.clones.enabled: true` in .archfit.yaml to enable the jscpd pass (slowest on large trees) |
@@ -123,6 +124,7 @@
 | ast-grep/syntax | disabled | off by default because the pass is slow: set analyzers.syntax.enabled: true for roles, routes and exported surface |
 | ast-grep | disabled | — |
 | cargo-modules | absent | — |
+| roslyn | absent | — |
 
 ## Coupling seams (1)
 
@@ -246,6 +248,7 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - dependency-cruiser: absent
 - grimp: absent
 - cargo: absent
+- dotnet-msbuild: absent
 - loc: ok (2 files)
 - deploy-unit: ok
 - jscpd: disabled — off by default because the pass is slow: set `analyzers.clones.enabled: true` in .archfit.yaml to enable the jscpd pass (slowest on large trees)
@@ -253,6 +256,7 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - ast-grep/syntax: disabled — off by default because the pass is slow: set analyzers.syntax.enabled: true for roles, routes and exported surface
 - ast-grep: disabled
 - cargo-modules: absent
+- roslyn: absent
 
 ## Finding index (2)
 

@@ -30,6 +30,7 @@ func buildCoverageToolConfigKey() map[string]string {
 	m := map[string]string{
 		toolJscpd:                 "clones",
 		registry.ToolCargoModules: "cargo-modules",
+		registry.ToolRoslyn:       "roslyn",
 		suppliedcoverage.ToolName: suppliedcoverage.ToolName,
 	}
 	for _, lang := range registry.All() {
@@ -41,7 +42,7 @@ func buildCoverageToolConfigKey() map[string]string {
 // primaryGraphMetrics are the metrics the dependency-graph extractors
 // (go/packages, dependency-cruiser, grimp) unlock; absent any of them, all of
 // these drop to n/a. Shared (read-only) across those per-language table entries.
-var primaryGraphMetrics = []string{"coverage", "coupling_balance", metricEncapsulation, metricCycle, metricBlastRadius}
+var primaryGraphMetrics = []string{"coverage", metricCouplingBalance, metricEncapsulation, metricCycle, metricBlastRadius}
 
 // affectedMetrics carries an absent analyzer's one-line install hint and the
 // metrics its absence leaves unmeasured.
@@ -59,8 +60,9 @@ var toolAffectedMetrics = buildToolAffectedMetrics()
 
 func buildToolAffectedMetrics() map[string]affectedMetrics {
 	m := map[string]affectedMetrics{
-		toolJscpd:                 {"npm install -g jscpd", []string{"coupling_balance"}},
+		toolJscpd:                 {"npm install -g jscpd", []string{metricCouplingBalance}},
 		registry.ToolCargoModules: {"cargo install cargo-modules (analyzers.cargo_modules.enabled: true)", []string{metricCycle, metricBlastRadius, metricEncapsulation}},
+		registry.ToolRoslyn:       {"build the helper with `make dotnet-roslyn` and set ARCHFIT_DOTNET_ROSLYN to its directory (the image sets it)", []string{metricCouplingBalance, metricEncapsulation}},
 		suppliedcoverage.ToolName: {"provide the configured coverage artifact", []string{"testability"}},
 	}
 	for _, lang := range registry.All() {
@@ -177,8 +179,10 @@ func buildCoverageGaps(cov []evidence.Coverage, cfg CoverageOptions, root string
 		// the Rust extractor and behind the SAME applicability marker, so it
 		// reads the marker through rustProjectPresent — a configured
 		// languages.rust.manifest points both at the sub-crate manifest.
-		if c.Tool == registry.ToolCargoModules && root != "" && !toolGateDemands(cfg, c.Tool) {
-			if probe := cfg.ProjectPresent[registry.ToolCargoModules]; probe != nil && !probe(root) {
+		// roslyn is the same shape for .NET: the type graph runs inside the .NET
+		// extractor behind its applicability probe.
+		if (c.Tool == registry.ToolCargoModules || c.Tool == registry.ToolRoslyn) && root != "" && !toolGateDemands(cfg, c.Tool) {
+			if probe := cfg.ProjectPresent[c.Tool]; probe != nil && !probe(root) {
 				continue
 			}
 		}

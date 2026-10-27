@@ -182,6 +182,12 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		rustModuleGraphCrates = ex.LastModuleGraphCrates()
 		rustTargetCrates = ex.LastTargetCrates()
 	}
+	// The roslyn row is cargo-modules' shape for .NET: an optional second graph
+	// level under a primary row that already counts the projects, so it is
+	// report evidence only and never enters the coverage metric's file totals.
+	if ex := registry.DotNetExtractor(extractors); ex != nil {
+		reportOnlyCoverage = append(reportOnlyCoverage, ex.LastTypeGraphCoverage())
+	}
 	// Unresolved-specifier disclosure. Both analyzers complete but drop edges
 	// into the external bucket, so the gap must not be stderr-silent.
 	if warning := tsUnresolvedWarning(coverage); warning != "" {

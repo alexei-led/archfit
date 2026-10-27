@@ -152,6 +152,13 @@ func (c Config) ForExtract(lang string) evidenceports.ExtractConfig {
 		ec.ModuleGraph = c.CargoModulesEnabled()
 	}
 
+	// .NET-specific fields.
+	if lang == LangDotNet {
+		ec.DotNetProjects = c.Languages.DotNet.Projects
+		ec.TypeGraphDisabled = !c.RoslynEnabled()
+		ec.TypeGraphTimeout = c.ToolTimeout(ToolRoslyn)
+	}
+
 	// Derive Mode from the language's enabled state. An unset (empty) mode
 	// defaults to auto — the same default the old absent-tool-key path produced.
 	ec.Mode = c.ToolMode(lang)
