@@ -2,7 +2,9 @@ package evaluation
 
 import (
 	"fmt"
+	"maps"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,8 +57,8 @@ const gateOffPosture = gateOff
 func buildDimensions(diag *result.Result, in stateInput, routed map[string][]state.FindingRef) state.Dimensions {
 	dims := state.Dimensions{
 		Intent:         intentDimension(diag, in.Policy, in.Facts),
-		Structure:      structureDimension(diag),
-		Modularity:     modularityDimension(diag, in.Policy),
+		Structure:      structureDimension(diag, in.Facts),
+		Modularity:     modularityDimension(diag, in.Policy, in.Facts),
 		Coupling:       couplingDimension(diag),
 		ChangeLocality: changeLocalityDimension(diag, in.Policy),
 		Complexity:     complexityDimension(diag, in.Policy, in.Facts),
@@ -86,20 +88,16 @@ func gateFor(d state.Dimension) state.GateState {
 	if d.Gate == state.GateFail {
 		return state.GateFail
 	}
-	// A tripped ratchet fails the dimension that owns its metric even when that
-	// dimension is unmeasured: the metric was compared, so the blocker is real.
+	// A hard-gate finding fails its dimension even when the dimension is
+	// unmeasured: a tripped ratchet was compared, and a rule violation was
+	// found in the edges that were observed, so the blocker is real either way.
 	for _, ref := range d.Findings {
-		if ref.Kind == finding.KindGate && finding.IsMetricRatchet(ref.RuleID) {
+		if ref.Kind == finding.KindGate {
 			return state.GateFail
 		}
 	}
 	if d.Status == state.Unmeasured {
 		return state.GateNotApplicable
-	}
-	for _, ref := range d.Findings {
-		if ref.Kind == finding.KindGate {
-			return state.GateFail
-		}
 	}
 	if len(d.Findings) > 0 {
 		return state.GateWarn
@@ -160,10 +158,28 @@ type primaryInventory struct {
 	known      bool
 	applicable int
 	completed  int
+	// gaps name the incomplete files of a language with scoped evidence
+	// (Observations.ScopedDependencyEvidence), as "<tool>: <gap list>".
+	gaps []string
 }
 
-func primaryDependencyInventory(diag *result.Result) primaryInventory {
+// primaryDependencyInventory counts the applicable primary extractors and those
+// that completed. A primary whose row is ok still has not completed when its
+// language's scoped evidence names incomplete files: the row counts the
+// projects it evaluated, not the file edges the graph needs.
+func primaryDependencyInventory(diag *result.Result, f Observations) primaryInventory {
 	out := primaryInventory{known: len(diag.PrimaryExtractorTools) > 0}
+	incompleteTools := map[string]struct{}{}
+	for _, language := range slices.Sorted(maps.Keys(f.ScopedDependencyEvidence)) {
+		gaps := scopedIncomplete(f, language)
+		tool, ok := primaryToolForLanguage(diag, language)
+		if len(gaps) == 0 || !ok {
+			continue
+		}
+		incompleteTools[tool] = struct{}{}
+		ev := f.ScopedDependencyEvidence[language]
+		out.gaps = append(out.gaps, ev.Tool+": "+gapSummary(ev, gaps))
+	}
 	gapped := make(map[string]struct{}, len(diag.CoverageGaps))
 	for _, gap := range diag.CoverageGaps {
 		gapped[gap.Tool] = struct{}{}
@@ -183,7 +199,7 @@ func primaryDependencyInventory(diag *result.Result) primaryInventory {
 			}
 		}
 		out.applicable++
-		if len(rows) == 1 && rows[0].Status == modevidence.StatusOK {
+		if _, incomplete := incompleteTools[tool]; !incomplete && len(rows) == 1 && rows[0].Status == modevidence.StatusOK {
 			out.completed++
 			continue
 		}
@@ -831,9 +847,9 @@ func intentDimension(diag *result.Result, p policy.PolicySnapshot, f Observation
 // denominator is how much of the discovered edge set resolved to a declared
 // module: an edge whose target is outside the module map was discovered but
 // says nothing about this repository's internal structure.
-func structureDimension(diag *result.Result) state.Dimension {
+func structureDimension(diag *result.Result, f Observations) state.Dimension {
 	dim := state.NewDimension(state.DimensionStructure, state.OwnerStructure)
-	primaries := primaryDependencyInventory(diag)
+	primaries := primaryDependencyInventory(diag, f)
 	reasons := map[string]string{
 		state.FactPrimaryDependencyInventory: "no applicable primary dependency inventory completed over this tree",
 		state.FactInternalEdgeClassification: "module, direction, layer, or cycle classification is incomplete for the discovered internal dependencies",
@@ -850,6 +866,9 @@ func structureDimension(diag *result.Result) state.Dimension {
 	observed := make([]string, 0, 2)
 	if primaries.complete() {
 		observed = append(observed, state.FactPrimaryDependencyInventory)
+	}
+	if len(primaries.gaps) > 0 {
+		reasons[state.FactPrimaryDependencyInventory] = "dependency evidence is incomplete for source files: " + strings.Join(primaries.gaps, "; ")
 	}
 	if primaries.completed > 0 && ce != nil &&
 		ce.ClassifiedInternalDependencies == ce.InternalDependencies && metricsProduced(diag.Metrics, "cycle") {
@@ -886,7 +905,7 @@ func structureDimension(diag *result.Result) state.Dimension {
 // modularityDimension reports cohesion, hubs, and public surface over the
 // declared module set. Its denominator is the declared modules: modularity is a
 // statement about boundaries somebody drew, so an undeclared tree has none.
-func modularityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dimension {
+func modularityDimension(diag *result.Result, p policy.PolicySnapshot, f Observations) state.Dimension {
 	dim := state.NewDimension(state.DimensionModularity, state.OwnerModularity)
 	modules := len(p.Topology.Modules)
 	reasons := map[string]string{
@@ -908,7 +927,7 @@ func modularityDimension(diag *result.Result, p policy.PolicySnapshot) state.Dim
 
 	observed := []string{state.FactDeclaredModuleInventory}
 	var notApplicable []string
-	primaries := primaryDependencyInventory(diag)
+	primaries := primaryDependencyInventory(diag, f)
 	ce := diag.ClassifiedEdges
 	switch {
 	case primaries.known && primaries.applicable == 0:
@@ -1154,7 +1173,7 @@ func complexityDimension(diag *result.Result, p policy.PolicySnapshot, f Observa
 		// letting out-of-claim syntax facts promote an absent graph.
 		observed = append(observed, state.FactDeclaredModuleGraph)
 	}
-	primaries := primaryDependencyInventory(diag)
+	primaries := primaryDependencyInventory(diag, f)
 	edges := diag.ClassifiedEdges
 	graphComplete := graph != nil && primaries.complete() && edges != nil &&
 		edges.ClassifiedInternalDependencies == edges.InternalDependencies &&

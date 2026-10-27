@@ -205,3 +205,57 @@ func TestDotNetScopedGapsIgnoreOutOfScopeFiles(t *testing.T) {
 		t.Errorf("structure = %q, want measured", dims.Structure.Status)
 	}
 }
+
+// TestDotNetIncompleteRoslynEvidenceKeepsDimensionsPartial pins D9: intent and
+// the graph dimensions report the same incompleteness the rules do, naming
+// roslyn, while the project-level dotnet-msbuild row is ok. With .NET the only
+// applicable language, structure has no completed primary and is unmeasured,
+// as it is for a partial dotnet-msbuild row or a TypeScript-only partial run.
+func TestDotNetIncompleteRoslynEvidenceKeepsDimensionsPartial(t *testing.T) {
+	diag, in := dotnetScopeFixture(modevidence.StatusOK, map[string]string{csApplication: gapApplication})
+	withRule(&in, policy.RuleDef{Type: typeLayerDir})
+	dims := evaluation.BuildDimensions(diag, in, nil)
+	for _, dim := range []state.Dimension{dims.Intent, dims.Modularity} {
+		if dim.Status != state.Partial {
+			t.Errorf("%s status = %q, want partial", dim.Name, dim.Status)
+		}
+	}
+	if dims.Structure.Status != state.Unmeasured {
+		t.Errorf("structure status = %q, want unmeasured", dims.Structure.Status)
+	}
+	var reason string
+	for _, unknown := range dims.Structure.Unknown {
+		if unknown.Fact == state.FactPrimaryDependencyInventory {
+			reason = unknown.Reason
+		}
+	}
+	if !strings.Contains(reason, toolRoslyn+": "+gapApplication+"; fix: "+fixRestore) {
+		t.Errorf("structure primary inventory reason = %q, want the roslyn gap named", reason)
+	}
+
+	diag, in = dotnetScopeFixture(modevidence.StatusOK, nil)
+	withRule(&in, policy.RuleDef{Type: typeLayerDir})
+	dims = evaluation.BuildDimensions(diag, in, nil)
+	for _, dim := range []state.Dimension{dims.Intent, dims.Structure, dims.Modularity} {
+		if dim.Status != state.Measured {
+			t.Errorf("complete roslyn: %s status = %q, want measured", dim.Name, dim.Status)
+		}
+	}
+}
+
+// TestUnmeasuredDimensionStillFailsOnARoutedBlocker pins that a violation found
+// in the observed edges fails its dimension while the dimension is unmeasured:
+// incomplete .NET evidence must not turn a real blocker into not_applicable.
+func TestUnmeasuredDimensionStillFailsOnARoutedBlocker(t *testing.T) {
+	diag, in := dotnetScopeFixture(modevidence.StatusOK, map[string]string{csApplication: gapApplication})
+	routed := map[string][]state.FindingRef{
+		state.DimensionStructure: {{ID: "f1", RuleID: ruleIDScoped, Kind: "gate", Severity: "high", Status: "new"}},
+	}
+	dim := evaluation.BuildDimensions(diag, in, routed).Structure
+	if dim.Status != state.Unmeasured || dim.Gate != state.GateFail {
+		t.Errorf("structure = status %q gate %q, want unmeasured and fail", dim.Status, dim.Gate)
+	}
+	if dim = evaluation.BuildDimensions(diag, in, nil).Structure; dim.Gate != state.GateNotApplicable {
+		t.Errorf("structure gate without a blocker = %q, want not_applicable", dim.Gate)
+	}
+}

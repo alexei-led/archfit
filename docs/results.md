@@ -50,7 +50,7 @@ The architecture-state verdict has three values:
 
 The verdict is not an average score. Missing evidence stays explicit. archfit does not convert unknown values to zero.
 
-Each of the nine dimensions has its own `status`, `confidence`, `gate`, `coverage`, `metrics`, `findings`, and `unknown` fields. Status is `measured`, `partial`, or `unmeasured`. A dimension gate is `pass`, `warn`, `fail`, or `not_applicable`. See [metrics](metrics.md) for the dimensions and their measures.
+Each of the nine dimensions has its own `status`, `confidence`, `gate`, `coverage`, `metrics`, `findings`, and `unknown` fields. Status is `measured`, `partial`, or `unmeasured`. A dimension gate is `pass`, `warn`, `fail`, or `not_applicable`. An `unmeasured` dimension is `not_applicable` unless a hard-gate finding routes to it: a violation found in the observed edges fails the dimension while its evidence is incomplete. See [metrics](metrics.md) for the dimensions and their measures.
 
 Findings appear once in the top-level `findings` array. Dimension `findings` arrays refer to those records by ID. A finding's status and severity describe its gate role and urgency. See [rules](rules.md) for rule behavior.
 
