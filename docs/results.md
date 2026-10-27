@@ -118,6 +118,8 @@ An `agent_task` gives a constrained repair or an owner decision. It includes the
 
 Each seam record describes a cross-module relationship and its policy. The `policy` value distinguishes `violation`, `accepted`, `advisory`, `allowed`, and `observed`. A seam is not itself a finding. Use the associated finding IDs and gate result to identify blockers. See [coupling](coupling.md).
 
+A seam's `raw_distance` names the owners and deploy units on both sides. `same_owner` and `same_deploy_unit` are `null` unless both sides are known: an undeclared value is not a different one.
+
 ## JSON contracts
 
 The `schema_version` field identifies a wire contract. It does not identify the project release or configuration version.

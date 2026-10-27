@@ -896,7 +896,7 @@
               "boundary_crossings": 2,
               "from_owner": "team-a",
               "level": "cross_module_different_owner",
-              "same_deploy_unit": false,
+              "same_deploy_unit": null,
               "same_owner": false,
               "shared_ancestor": 0,
               "to_owner": "team-b"
