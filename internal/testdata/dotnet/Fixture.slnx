@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="Domain/Domain.csproj" />
+  <Project Path="Application/Application.csproj" />
+  <Project Path="Infrastructure/Infrastructure.csproj" />
+  <Project Path="Legacy/Legacy.csproj" />
+  <Project Path="Broken/Broken.csproj" />
+  <Project Path="Tests/Tests.csproj" />
+  <Project Path="Unresolved/Unresolved.csproj" />
+</Solution>
