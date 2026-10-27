@@ -17,6 +17,8 @@ public class CollectorTests
         public abstract class Rule { public abstract bool Allows(); }
         public class Customer { public string Name = ""; public int Age { get; set; } public void Touch() { } }
         public record CustomerDto(string Name, int Age);
+        public readonly record struct Key(int Value);
+        public class Bag { public int this[int i] => i; }
         public static class Extensions { public static string Shout(this string s) => s; }
         internal static class Secret { internal static int Seed = 1; }
         public class Base { protected void Hidden() { } private protected void Narrow() { } }
@@ -28,7 +30,9 @@ public class CollectorTests
     [InlineData("concrete field read", "class U { string M(L.Customer c) => c.Name; }", "model", "model")]
     [InlineData("auto-property read", "class U { int M(L.Customer c) => c.Age; }", "model", "model")]
     [InlineData("record property read", "class U { string M(L.CustomerDto d) => d.Name; }", "dto", "dto")]
-    [InlineData("concrete method call", "class U { void M(L.Customer c) => c.Touch(); }", "functional", "model")]
+    [InlineData("record struct property read", "class U { int M(L.Key k) => k.Value; }", "dto", "dto")]
+    [InlineData("indexer call", "class U { int M(L.Bag b) => b[0]; }", "functional", "model")]
+    [InlineData("concrete method call","class U { void M(L.Customer c) => c.Touch(); }", "functional", "model")]
     [InlineData("extension call only", "using L; class U { string M() => \"x\".Shout(); }", "functional", "")]
     [InlineData("constructor call", "class U { object M() => new L.Customer(); }", "functional", "model")]
     [InlineData("concrete inheritance", "class U : L.Customer { }", "functional", "")]
@@ -104,6 +108,18 @@ public class CollectorTests
         Assert.Equal((Status.Partial, 3, (int?)null), (project.Status, project.UnresolvedSymbols, project.UnusedReferences));
         Assert.Contains("3 unresolved symbols (CS0246 x3)", project.Reason);
         Assert.Empty(Edges(report, "App/U.cs"));
+    }
+
+    [Theory]
+    [InlineData("CS1061", "class U { string M(string s) => s.FromMissingPackage(); }")]
+    [InlineData("CS0117", "class U { int M() => string.NoSuchMember; }")]
+    public async Task MissingMemberDiagnosticsMakeTheProjectPartial(string id, string source)
+    {
+        var report = await Analyze(("App", [("App/U.cs", source)], []));
+
+        var project = Assert.Single(report.Projects);
+        Assert.Equal((Status.Partial, 1), (project.Status, project.UnresolvedSymbols));
+        Assert.Contains($"{id} x1", project.Reason);
     }
 
     [Fact]

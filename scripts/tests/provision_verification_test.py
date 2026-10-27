@@ -74,6 +74,34 @@ class ProvisionVerificationTest(unittest.TestCase):
             self.assertEqual((prefix / "dotnet/dotnet").read_text(), "host")
             self.assertEqual((prefix / "dotnet/sdk/10.0.402/marker").read_text(), "sdk")
 
+    def test_dotnet_reinstall_replaces_the_existing_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            archive = base / "dotnet-sdk.tar.gz"
+            content = base / "content"
+            content.mkdir()
+            (content / "dotnet").write_text("new")
+            with tarfile.open(archive, "w:gz") as tar:
+                tar.add(content / "dotnet", arcname="dotnet")
+            artifact = {
+                "url": "https://official.invalid/dotnet-sdk.tar.gz",
+                "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+            }
+            prefix = base / "prefix"
+            (prefix / "dotnet/sdk/9.0.0").mkdir(parents=True)
+            (prefix / "dotnet/dotnet").write_text("old")
+            work = base / "work"
+            work.mkdir()
+            with patch.object(
+                provision.urllib.request,
+                "urlopen",
+                side_effect=lambda *_, **__: io.BytesIO(archive.read_bytes()),
+            ):
+                provision.install_dotnet(artifact, work, prefix)
+            self.assertEqual((prefix / "dotnet/dotnet").read_text(), "new")
+            self.assertFalse((prefix / "dotnet/dotnet").is_dir())
+            self.assertFalse((prefix / "dotnet/sdk").exists())
+
     def test_dotnet_checksum_mismatch_installs_nothing(self):
         with (
             tempfile.TemporaryDirectory() as temporary,

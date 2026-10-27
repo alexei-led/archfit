@@ -494,12 +494,15 @@ func nameFromMatch(m sgSyntaxMatch) string {
 }
 
 // csharpRouteRe reads a route template from an attribute or Map* call text: the
-// first plain string literal after the opening parenthesis. Verbatim and
+// plain string literal that is the first argument of the verb itself, positional
+// or "template:". Anchoring on the verb skips a MapGroup prefix in a chained call,
+// and a "Name = ..." argument is the link name, not a template. Verbatim and
 // interpolated strings are not matched and fall back to the verb name.
-var csharpRouteRe = regexp.MustCompile(`^[^("]*\(\s*(?:[A-Za-z]+\s*[:=]\s*)?"((?:[^"\\]|\\.)*)"`)
+var csharpRouteRe = regexp.MustCompile(`\b(?:Http[A-Za-z]+|Route|Map(?:Get|Post|Put|Delete))\s*\(\s*(?:template\s*:\s*)?"((?:[^"\\]|\\.)*)"`)
 
 // csharpVerbRe finds the attribute name or Map* method name that selects the verb.
-var csharpVerbRe = regexp.MustCompile(`(Http[A-Za-z]+|Route|Map[A-Za-z]+)\b`)
+// Only the verbs the rules match, so a MapGroup prefix is never the verb.
+var csharpVerbRe = regexp.MustCompile(`\b(Http[A-Za-z]+|Route|Map(?:Get|Post|Put|Delete))\b`)
 
 // csharpRouteName returns the route template, or the verb name when the route has
 // no literal template (for example [HttpGet] with the template on the class).

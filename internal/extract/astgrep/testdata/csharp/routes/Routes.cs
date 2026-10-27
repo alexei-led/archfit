@@ -25,5 +25,12 @@ public static class Endpoints
         app.MapPost("/jobs", (Job j) => Results.Ok());
         app.MapPut("/jobs/{id}", (int id) => Results.Ok());
         app.MapDelete("/jobs/{id}", (int id) => Results.Ok());
+        app.MapGroup("/api").MapGet("/items", () => "ok");
     }
+}
+
+public class WeatherController : ControllerBase
+{
+    [HttpGet(Name = "GetWeatherForecast")]
+    public IActionResult Forecast() => Ok();
 }

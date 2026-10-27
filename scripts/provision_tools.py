@@ -74,6 +74,14 @@ def fetch_verified(artifact: dict[str, str], destination: Path) -> None:
         raise ValueError(f"checksum mismatch for {artifact['url']}: {digest}")
 
 
+def replace_directory(source: Path, destination: Path) -> None:
+    # shutil.move onto an existing directory nests the source inside it (or fails),
+    # and a restored CI cache can leave a previous install behind.
+    if destination.exists():
+        shutil.rmtree(destination)
+    shutil.move(source, destination)
+
+
 def install_dotnet(artifact: dict[str, str], temp: Path, prefix: Path) -> None:
     archive = temp / artifact["url"].rsplit("/", 1)[1]
     print(f"verify/install dotnet: {artifact['url']}", flush=True)
@@ -83,7 +91,7 @@ def install_dotnet(artifact: dict[str, str], temp: Path, prefix: Path) -> None:
     with tarfile.open(archive) as tar:
         tar.extractall(unpacked, filter="data")
     # The SDK archive has no top-level directory: the unpack dir is the SDK root.
-    shutil.move(unpacked, prefix / "dotnet")
+    replace_directory(unpacked, prefix / "dotnet")
 
 
 def install_sdks(root: Path, prefix: Path, arch: str) -> None:
@@ -115,7 +123,7 @@ def install_sdks(root: Path, prefix: Path, arch: str) -> None:
                 tar.extractall(unpacked, filter="data")
             source = next(unpacked.iterdir())
             if name in ("go", "node"):
-                shutil.move(source, prefix / name)
+                replace_directory(source, prefix / name)
             elif name == "uv":
                 for binary in ("uv", "uvx"):
                     shutil.copy2(source / binary, prefix / "bin" / binary)

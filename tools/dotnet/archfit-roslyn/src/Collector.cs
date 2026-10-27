@@ -31,6 +31,8 @@ internal sealed class Collector(Solution solution, string root)
         "CS0246", // type or namespace not found
         "CS0400", // type not found in the global namespace
         "CS0518", // predefined type not defined (no reference pack)
+        "CS0117", // type has no such member: the defining package is not loaded
+        "CS1061", // receiver has no such member: an extension from a package not loaded
     };
 
     private const string IvtAttribute = "System.Runtime.CompilerServices.InternalsVisibleToAttribute";
@@ -140,7 +142,8 @@ internal sealed class Collector(Solution solution, string root)
     private static bool IsReferenceNode(SyntaxNode node) => node is SimpleNameSyntax
         or BaseObjectCreationExpressionSyntax
         or ConstructorInitializerSyntax
-        or PrimaryConstructorBaseTypeSyntax;
+        or PrimaryConstructorBaseTypeSyntax
+        or ElementAccessExpressionSyntax;
 
     // Resolve returns the bound symbol, or an inaccessible candidate when it is
     // internal (or private protected) and declared in source of another
@@ -255,7 +258,8 @@ internal sealed class Collector(Solution solution, string root)
         {
             return false;
         }
-        if (type.IsRecord && type.BaseType is { SpecialType: not SpecialType.System_Object } baseType && !IsDto(baseType))
+        // A record struct derives from System.ValueType and a record class from System.Object; neither is a user base.
+        if (type.IsRecord && type.BaseType is { SpecialType: not (SpecialType.System_Object or SpecialType.System_ValueType) } baseType && !IsDto(baseType))
         {
             return false;
         }
