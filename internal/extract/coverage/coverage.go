@@ -246,7 +246,9 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		invalidReason = reasonInvalidCoverageFact
 	}
 	if out.UnresolvedPaths > 0 {
-		unresolvedReason = reasonUnresolvedCoveragePaths
+		// One example path names the root the report was produced under.
+		unresolvedReason = fmt.Sprintf("%s: %d path(s) name no file under the scan root, e.g. %s",
+			reasonUnresolvedCoveragePaths, out.UnresolvedPaths, normalized.firstUnresolved)
 	}
 	if len(out.Facts) == 0 {
 		emptyReason = reasonCoverageFactsEmpty
@@ -291,6 +293,7 @@ func (i *Ingestor) lookupCached(key string, maxFacts int, artifactRel string, at
 type normalizedFacts struct {
 	facts           []evidence.CoverageFact
 	unresolvedPaths int
+	firstUnresolved string // lexically first unresolved path, for the reason
 	invalidFact     bool
 	limitExceeded   bool
 }
@@ -301,6 +304,9 @@ func normalizeParsedFacts(normalizer *Normalizer, facts []evidence.CoverageFact,
 		rel, err := normalizer.Normalize(fact.File)
 		if err != nil {
 			out.unresolvedPaths++
+			if out.firstUnresolved == "" || fact.File < out.firstUnresolved {
+				out.firstUnresolved = fact.File
+			}
 			continue
 		}
 		if fact.TotalUnits < 0 || fact.CoveredUnits < 0 || fact.CoveredUnits > fact.TotalUnits || fact.Unit == "" {
@@ -401,10 +407,14 @@ func coverageHealth(ingests []evidence.CoverageIngest, configured int) evidence.
 	}
 	missing := 0
 	versions := make(map[string]struct{})
+	// Two sources may cover one file (a test project also exercises the
+	// projects it references), so files are counted once across sources.
+	files := make(map[string]struct{})
 	var reasons []string
 	for idx, ingest := range ingests {
-		row.FilesSeen += len(ingest.Facts)
-		row.FilesApplicable += len(ingest.Facts)
+		for _, fact := range ingest.Facts {
+			files[fact.File] = struct{}{}
+		}
 		row.Unresolved += ingest.UnresolvedPaths
 		if ingest.ToolVersion != "" {
 			versions[ingest.ToolVersion] = struct{}{}
@@ -421,6 +431,7 @@ func coverageHealth(ingests []evidence.CoverageIngest, configured int) evidence.
 		versionList = append(versionList, version)
 	}
 	sort.Strings(versionList)
+	row.FilesSeen, row.FilesApplicable = len(files), len(files)
 	row.Version = strings.Join(versionList, ",")
 	row.Reason = strings.Join(reasons, "; ")
 	switch {

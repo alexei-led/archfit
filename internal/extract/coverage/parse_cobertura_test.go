@@ -127,6 +127,14 @@ func TestCoberturaIngestNormalizesPaths(t *testing.T) {
 			want: []evidence.CoverageFact{{File: coberturaSource, CoveredUnits: 1, TotalUnits: 1}},
 		},
 		{
+			name:  "report produced under another root counts every file unresolved",
+			files: []string{coberturaSource},
+			doc: func(string) string {
+				return coberturaDoc([]string{"/other/checkout/"}, coberturaClass(coberturaSource, "1"), coberturaClass("src/Data/Gone.cs", "1"))
+			},
+			unresolved: 2,
+		},
+		{
 			name:  "missing file inside the root is counted unresolved",
 			files: []string{coberturaSource},
 			doc: func(root string) string {
@@ -283,4 +291,25 @@ func FuzzCoberturaParser(f *testing.F) {
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		_, _ = (coberturaParser{}).Parse(data)
 	})
+}
+
+func TestCoberturaIngestFromAnotherRootNamesIt(t *testing.T) {
+	root := coberturaRoot(t, coberturaSource)
+	got := ingestCobertura(t, root, coberturaDoc([]string{"/other/checkout/"}, coberturaClass(coberturaSource, "1")))
+	want := "unresolved_coverage_paths: 1 path(s) name no file under the scan root, e.g. /other/checkout/" + coberturaSource
+	if !strings.Contains(got.Reason, want) {
+		t.Errorf("reason = %q, want it to contain %q", got.Reason, want)
+	}
+}
+
+func TestCoverageRowCountsAFileCoveredByTwoSourcesOnce(t *testing.T) {
+	root := coberturaRoot(t, coberturaSource, "src/Data/Other.cs")
+	writeCoverageFile(t, root, "a.cobertura.xml", coberturaDoc([]string{root}, coberturaClass(coberturaSource, "1")))
+	writeCoverageFile(t, root, "b.cobertura.xml", coberturaDoc([]string{root}, coberturaClass(coberturaSource, "1"), coberturaClass("src/Data/Other.cs", "1")))
+	_, row := New(nil).IngestAll(root, Options{Enabled: true, Sources: []Source{
+		{Path: "a.cobertura.xml", Format: FormatCobertura}, {Path: "b.cobertura.xml", Format: FormatCobertura},
+	}})
+	if row.FilesSeen != 2 || row.FilesApplicable != 2 {
+		t.Errorf("row = %+v, want 2 distinct files seen and applicable", row)
+	}
 }

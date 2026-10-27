@@ -123,6 +123,9 @@ func parseCobertura(data []byte, root *Normalizer) ([]evidence.CoverageFact, err
 }
 
 func coberturaFacts(files map[string]map[int]int, sources []string, root *Normalizer) ([]evidence.CoverageFact, error) {
+	if len(files) == 0 {
+		return nil, fmt.Errorf("%w: report contains no classes", ErrMalformedCobertura)
+	}
 	merged := make(map[string]map[int]int, len(files))
 	for name, lines := range files {
 		resolved, keep := resolveCoberturaPath(name, sources, root)
@@ -132,10 +135,12 @@ func coberturaFacts(files map[string]map[int]int, sources []string, root *Normal
 		mergeLCOVLines(merged, resolved, lines)
 	}
 	if len(merged) == 0 {
-		if len(files) > 0 {
-			return nil, nil // every file lies outside the scan root
+		// Every file lies outside the scan root: the report was produced in
+		// another checkout. Keep the paths so the ingestor counts them
+		// unresolved and names one, as it does for every other format.
+		for name, lines := range files {
+			mergeLCOVLines(merged, coberturaCandidates(name, sources)[0], lines)
 		}
-		return nil, fmt.Errorf("%w: report contains no classes", ErrMalformedCobertura)
 	}
 	paths := make([]string, 0, len(merged))
 	for p := range merged {
@@ -153,7 +158,8 @@ func coberturaFacts(files map[string]map[int]int, sources []string, root *Normal
 // resolveCoberturaPath joins filename with each <source>; the first join the
 // root resolves wins. When none resolves, a join inside the root is kept so the
 // ingestor counts it unresolved, and joins outside the root are dropped: a
-// report from a solution-wide run also lists NuGet-cache sources.
+// report from a solution-wide run also lists NuGet-cache sources. The caller
+// keeps them after all when no file lies inside the root.
 func resolveCoberturaPath(filename string, sources []string, root *Normalizer) (string, bool) {
 	candidates := coberturaCandidates(filename, sources)
 	if root == nil {
