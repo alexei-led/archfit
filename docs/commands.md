@@ -163,7 +163,7 @@ A rule that needs the whole graph, such as `module_cycle`, leaves a target not d
 
 ### `doctor`
 
-`archfit doctor [flags]` checks analyzer availability. `--fix` installs tools that archfit can install.
+`archfit doctor [flags]` checks analyzer availability. `--fix` installs tools that archfit can install. For .NET it also prints the SDK and helper versions that the current directory's `global.json` selects, and fails when that pin cannot be satisfied.
 
 | Flag | Meaning |
 | --- | --- |

@@ -46,22 +46,41 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		tools = append(tools, lang.DoctorTools...)
 	}
 
-	_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", "TOOL", "STATUS", "PATH / INSTALL")
+	nameWidth := len("TOOL")
+	for _, t := range tools {
+		nameWidth = max(nameWidth, len(t.Name))
+	}
+	row := func(name, status string, detail any) {
+		_, _ = fmt.Fprintf(deps.Stdout, "%-*s %-8s %v\n", nameWidth, name, status, detail)
+	}
+	row("TOOL", "STATUS", "PATH / INSTALL")
 	_, _ = fmt.Fprintf(deps.Stdout, "%s\n", strings.Repeat("-", 60))
 
+	// Versions are probed where analysis runs: here, where a global.json
+	// selects the .NET SDK.
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
 	// A tool configured to an unusable value fails doctor after the full
 	// report, as it fails analysis: a missing tool is not an error, a wrong one is.
 	var invalid []error
 	for _, t := range tools {
 		path, found, err := locateTool(ctx, deps.Runner, t)
+		if err == nil && found && t.Version != nil {
+			var version string
+			if version, err = t.Version(ctx, deps.Runner, path, dir); err == nil {
+				path += " (" + version + ")"
+			}
+		}
 		switch {
 		case err != nil:
 			invalid = append(invalid, fmt.Errorf("%s: %w", t.Name, err))
-			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %v\n", t.Name, "invalid", err)
+			row(t.Name, "invalid", err)
 		case found:
-			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.Name, "ok", path)
+			row(t.Name, "ok", path)
 		default:
-			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.Name, "missing", t.InstallHint)
+			row(t.Name, "missing", t.InstallHint)
 		}
 	}
 

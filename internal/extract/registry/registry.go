@@ -2,6 +2,7 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -29,6 +30,10 @@ type Tool struct {
 	// environment variable naming a helper): its path, whether it is set, and
 	// why a set value is unusable. Nil probes Command on PATH.
 	Locate func() (path string, found bool, err error)
+	// Version reports the version of a found tool at path, run in dir (the
+	// directory doctor checks), or why the tool cannot run there. Nil shows no
+	// version.
+	Version func(ctx context.Context, r toolrun.Runner, path, dir string) (string, error)
 }
 
 // Configs maps canonical language IDs to projected extractor configuration.
@@ -118,8 +123,8 @@ var languages = []Descriptor{
 		PrimaryTool: ToolGoPackages,
 		InstallHint: "https://go.dev/dl (runtime SDK; go/packages is linked into archfit)",
 		DoctorTools: []Tool{
-			{"go", "go", "https://go.dev/dl", nil},
-			{SCIPGo, SCIPGo, analyzerSetupURL, nil},
+			{"go", "go", "https://go.dev/dl", nil, nil},
+			{SCIPGo, SCIPGo, analyzerSetupURL, nil, nil},
 		},
 	},
 	{
@@ -135,9 +140,9 @@ var languages = []Descriptor{
 		PrimaryTool: ToolDepCruiser,
 		InstallHint: analyzerSetupURL,
 		DoctorTools: []Tool{
-			{"node", "node", "https://nodejs.org", nil},
-			{ToolDepCruiser, "depcruise", analyzerSetupURL, nil},
-			{SCIPTypeScript, SCIPTypeScript, analyzerSetupURL, nil},
+			{"node", "node", "https://nodejs.org", nil, nil},
+			{ToolDepCruiser, "depcruise", analyzerSetupURL, nil, nil},
+			{SCIPTypeScript, SCIPTypeScript, analyzerSetupURL, nil, nil},
 		},
 	},
 	{
@@ -151,8 +156,8 @@ var languages = []Descriptor{
 		PrimaryTool: ToolGrimp,
 		InstallHint: "install uv (selects Python 3.14 + grimp==3.17), or put a separate Python 3.14+ environment with grimp==3.17 on PATH",
 		DoctorTools: []Tool{
-			{"python3", "python3", "https://www.python.org/downloads", nil},
-			{SCIPPython, SCIPPython, analyzerSetupURL, nil},
+			{"python3", "python3", "https://www.python.org/downloads", nil, nil},
+			{SCIPPython, SCIPPython, analyzerSetupURL, nil, nil},
 		},
 	},
 	{
@@ -167,9 +172,9 @@ var languages = []Descriptor{
 		PrimaryTool: ToolCargo,
 		InstallHint: "https://rustup.rs (rustup installs cargo)",
 		DoctorTools: []Tool{
-			{ToolCargo, ToolCargo, "https://rustup.rs", nil},
-			{SCIPRust, SCIPRust, "rustup component add rust-analyzer", nil},
-			{ToolCargoModules, ToolCargoModules, analyzerSetupURL, nil},
+			{ToolCargo, ToolCargo, "https://rustup.rs", nil, nil},
+			{SCIPRust, SCIPRust, "rustup component add rust-analyzer", nil, nil},
+			{ToolCargoModules, ToolCargoModules, analyzerSetupURL, nil, nil},
 		},
 	},
 	{
@@ -185,8 +190,8 @@ var languages = []Descriptor{
 		PrimaryTool: ToolDotNetMSBuild,
 		InstallHint: dotnetSDKURL + " (the .NET SDK provides dotnet msbuild)",
 		DoctorTools: []Tool{
-			{cmdDotNet, cmdDotNet, dotnetSDKURL, nil},
-			{Name: "archfit-roslyn", InstallHint: "build it with `make dotnet-roslyn` and set ARCHFIT_DOTNET_ROSLYN to its directory (the image sets it)", Locate: locateRoslynHelper},
+			{Name: cmdDotNet, Command: cmdDotNet, InstallHint: dotnetSDKURL, Version: dotnetSDKVersion},
+			{Name: "archfit-roslyn", InstallHint: "build it with `make dotnet-roslyn` and set ARCHFIT_DOTNET_ROSLYN to its directory (the image sets it)", Locate: locateRoslynHelper, Version: roslynHelperVersion},
 		},
 	},
 }
