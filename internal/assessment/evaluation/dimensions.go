@@ -224,15 +224,20 @@ func ruleNeedsPatterns(ruleType string) bool {
 	return ruleType == ruleTypeForbiddenPattern
 }
 
-func syntaxEvidenceComplete(diag *result.Result, languages map[string]struct{}) bool {
+func syntaxEvidenceComplete(diag *result.Result, languages map[string]struct{}, f Observations) bool {
 	rows := coverageRows(diag.ToolCoverage, syntaxCoverageTool)
 	if len(rows) != 1 || rows[0].Status != modevidence.StatusOK {
 		return false
 	}
 	// The syntax row is aggregate, while language opt-outs are reported on the
 	// per-language primary rows. An aggregate success cannot cover a scoped
-	// language that configuration removed from the syntax invocation.
+	// language that configuration removed from the syntax invocation. A
+	// language with scoped dependency evidence ran its producers, so its
+	// partial rows name dependency gaps, not an opt-out.
 	for language := range languages {
+		if _, scoped := f.ScopedDependencyEvidence[language]; scoped {
+			continue
+		}
 		tool, ok := primaryToolForLanguage(diag, language)
 		if !ok {
 			return false

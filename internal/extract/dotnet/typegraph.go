@@ -187,6 +187,22 @@ type typeGraphResult struct {
 	unreported []string
 	// details are extra coverage detail clauses.
 	details []string
+	// reported is true when the helper produced a report.
+	reported bool
+}
+
+// members maps each file the helper reported to the loaded projects that
+// compile it, sorted.
+func (r typeGraphResult) members() map[string][]string {
+	out := map[string][]string{}
+	for _, project := range sortedKeys(r.files) {
+		for _, f := range r.files[project] {
+			if !slices.Contains(out[f.Path], project) {
+				out[f.Path] = append(out[f.Path], project)
+			}
+		}
+	}
+	return out
 }
 
 // loaded reports whether the helper loaded the project (complete or partial),
@@ -455,7 +471,7 @@ func foldReport(r helperReport, projects []ProjectEvaluation) typeGraphResult {
 	for _, p := range projects {
 		evaluated[p.Path] = p
 	}
-	res := typeGraphResult{files: map[string][]helperFile{}}
+	res := typeGraphResult{files: map[string][]helperFile{}, reported: true}
 	res.graph.SkippedProjects = r.SkippedProjects
 	droppedTestEdges := 0
 	for _, path := range sortedKeys(byPath) {

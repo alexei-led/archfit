@@ -143,8 +143,22 @@ func ruleUnevaluatedReason(diag *result.Result, rule policy.RuleDef, p policy.Po
 		return "rule scope cannot be established from the supported source inventory"
 	}
 	var reasons []string
-	if ruleNeedsDependencies(rule.Type) && !primaryEvidenceComplete(diag, scope.languages) {
+	rowLanguages := scope.languages
+	if ruleNeedsDependencies(rule.Type) && len(f.ScopedDependencyEvidence) > 0 {
+		rowLanguages = make(map[string]struct{}, len(scope.languages))
 		for language := range scope.languages {
+			ev, scoped := f.ScopedDependencyEvidence[language]
+			if !scoped {
+				rowLanguages[language] = struct{}{}
+				continue
+			}
+			if reason := scopedEvidenceReason(rule, p, f, ev); reason != "" {
+				reasons = append(reasons, reason)
+			}
+		}
+	}
+	if ruleNeedsDependencies(rule.Type) && len(rowLanguages) > 0 && !primaryEvidenceComplete(diag, rowLanguages) {
+		for language := range rowLanguages {
 			tool, ok := primaryToolForLanguage(diag, language)
 			if !ok {
 				reasons = append(reasons, language+" dependency producer is not registered")
@@ -155,7 +169,7 @@ func ruleUnevaluatedReason(diag *result.Result, rule policy.RuleDef, p policy.Po
 			}
 		}
 	}
-	if ruleNeedsSyntax(rule.Type) && !syntaxEvidenceComplete(diag, scope.languages) {
+	if ruleNeedsSyntax(rule.Type) && !syntaxEvidenceComplete(diag, scope.languages, f) {
 		reasons = append(reasons, "syntax evidence is incomplete for the rule scope")
 	}
 	if ruleNeedsPatterns(rule.Type) {

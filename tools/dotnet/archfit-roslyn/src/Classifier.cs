@@ -141,7 +141,7 @@ internal static partial class Classifier
             parts.Add($"{collected.UnresolvedSymbols} unresolved {noun} ({ids})");
             fixes.Add(collected.UnresolvedById.ContainsKey("CS0518") && ReferencePack(collected.Tfm) is { } pack
                 ? $"reference pack {pack.Name} {pack.Version} is not installed: install the .NET {pack.Version} targeting pack or restore with NuGet access"
-                : "restore the project (supply obj/project.assets.json) or install the missing references");
+                : "restore the project with NuGet access (`dotnet restore`) or install the missing references");
         }
         return string.Join("; ", parts.Concat(fixes.Distinct()));
     }

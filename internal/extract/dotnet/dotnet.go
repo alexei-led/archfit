@@ -126,6 +126,13 @@ type Extractor struct {
 
 	lastTypeGraph    TypeGraph
 	lastTypeGraphCov evidence.Coverage
+	// lastReported is true when the helper produced a report; lastMembers maps
+	// each file it reported to the projects that compile it; lastAttributable
+	// is true when the last Extract finished with every incompleteness pinned
+	// to evaluated projects. LastDependencyGaps reads them.
+	lastReported     bool
+	lastMembers      map[string][]string
+	lastAttributable bool
 }
 
 // New returns an Extractor. targets are the configured solutions or projects,
@@ -197,6 +204,7 @@ func Projects(root string, exclusions, targets []string) []string {
 func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error) {
 	e.last = Evaluation{}
 	e.lastTypeGraph, e.lastTypeGraphCov = TypeGraph{}, typeGraphAbsent()
+	e.lastReported, e.lastMembers, e.lastAttributable = false, nil, false
 	if e.cfg.Mode == evidenceports.ModeOff {
 		return graph.Facts{}, absentCoverage(""), nil
 	}
@@ -246,6 +254,8 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	facts.Unresolved = tg.graph.UnresolvedSymbols()
 	tg.graph.Fallback = fallback
 	e.lastTypeGraph, e.lastTypeGraphCov = tg.graph, tg.cov
+	e.lastReported, e.lastMembers = tg.reported, tg.members()
+	e.lastAttributable = len(projects) > 0 && len(sel.missing) == 0
 	return facts, coverageFor(e.last, version, timedOut), nil
 }
 

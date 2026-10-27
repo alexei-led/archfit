@@ -164,6 +164,7 @@ Fallback limits:
 - Project edges have unknown strength. The scorer abstains unless a policy glob or an approved label supplies strength.
 - Selectors match a project edge by the `.csproj` path: a directory glob such as `src/Core/**` matches it, a glob for files below it (`src/Core/Api/**`) does not.
 - Edge counts become project pairs for fallback projects.
+- A required rule that reads a file of a fallback or `partial` project is unevaluated, and the reason names the projects and the fix. Rules scoped to `complete` projects stay evaluated. See [evidence](evidence.md#net-trust-limits).
 - The `roslyn` row reads `partial` when the helper failed for a project or the whole run, `timed out` on a timeout, `absent` with a coverage gap when `ARCHFIT_DOTNET_ROSLYN` is unset, and `disabled` without a gap when switched off. A `partial` or `timed out` row counts as missing inputs, not reduced precision.
 - Edges from `IsTestProject=true` projects are dropped, both fallback and file edges, as Rust drops dev-dependencies. Their files stay as nodes. A test project without that property keeps its edges.
 
@@ -206,10 +207,10 @@ The build restores the helper's own locked dependencies. Archfit never restores 
 
 | Setting | `archfit doctor` | Analysis |
 | --- | --- | --- |
-| Unset | `missing`, with this hint | `roslyn` row `absent`, with a coverage gap for `coupling_balance` and `encapsulation`; project graph only |
+| Unset | `missing`, with this hint | `roslyn` row `absent`, with a coverage gap for `coupling_balance` and `encapsulation`; project graph only, so required rules over .NET source are unevaluated |
 | Relative, or without `archfit-roslyn.dll` | `invalid`; doctor exits non-zero | No .NET graph; the `dotnet-msbuild` row is `partial` and names the variable |
 | Inside the analysis root | not checked: doctor has no target | No .NET graph; the `dotnet-msbuild` row is `partial` and names the variable |
-| Any value, with `analyzers.roslyn.enabled: false` | as above | `roslyn` row `disabled`, no gap; project graph only |
+| Any value, with `analyzers.roslyn.enabled: false` | as above | `roslyn` row `disabled`, no gap; project graph only, so required rules over .NET source are unevaluated |
 
 #### Route rules and C# 14
 

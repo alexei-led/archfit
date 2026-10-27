@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/alexei-led/archfit/v3/internal/application"
@@ -222,6 +224,16 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
 		crateOwnersOf(snapshot, runPolicy.Gates.Rules.ModuleMap),
 	)
+	if ex := registry.DotNetExtractor(extractors); ex != nil {
+		// The .NET file edges come from Roslyn per project, so its gaps are
+		// pinned to the files of incomplete projects; unattributed gaps leave
+		// the coverage rows to decide for the whole language.
+		if gaps, attributed := ex.LastDependencyGaps(walkedFiles(snapshot)); attributed {
+			observations.ScopedDependencyEvidence = map[string]evaluation.ScopedDependencyEvidence{
+				graph.LangDotNet: {Tool: registry.ToolRoslyn, Incomplete: gaps.Files, Fixes: gaps.Fixes},
+			}
+		}
+	}
 	// Config values schema v2 still loads but classification cannot read, and
 	// warn-gated rules whose selector matches nothing, are disclosed with the
 	// run's other config warnings. config lint reports the same defects.
@@ -250,6 +262,18 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 			DeployUnitDetectedModules: len(collected.DeployUnitsByModule),
 		},
 	}, nil
+}
+
+// walkedFiles are the files the LOC walk visited, sorted.
+func walkedFiles(f evidencecontract.Facts) []string {
+	set := make(map[string]struct{}, len(f.FileLOC)+len(f.FileClassIndex))
+	for file := range f.FileLOC {
+		set[file] = struct{}{}
+	}
+	for file := range f.FileClassIndex {
+		set[file] = struct{}{}
+	}
+	return slices.Sorted(maps.Keys(set))
 }
 
 // crateRootDirsOf maps each Rust crate spelling to the crate's repo-relative
