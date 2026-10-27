@@ -111,7 +111,8 @@ type Analyzer struct {
 // `analyzers.clones`, `analyzers.roslyn`). Timeout is a Go duration string (e.g. "5m").
 // On a SCIP or clones timeout the result is dropped and dependent metrics report
 // n/a. On a Roslyn timeout the projects fall back to their ProjectReference
-// edges and coupling stays measured but partial. The run continues either way.
+// edges and the coupling dimension cannot reach measured: it stays partial.
+// The run continues either way.
 type TimedAnalyzer struct {
 	Enabled evidenceports.ToolMode `yaml:"enabled"`
 	Gate    GateMode               `yaml:"gate,omitempty"`
