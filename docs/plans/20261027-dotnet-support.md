@@ -181,7 +181,7 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 
 - **Unit tests**: per task, table-driven for the parsers (`.slnx`, `.sln`, MSBuild JSON, Cobertura) and the strength mapping.
 - **Helper tests**: xUnit project under `tools/dotnet/archfit-roslyn/tests`, run by `make dotnet-roslyn-test`. Fixture solutions cover cross-project edges, IVT, interface contracts, a global using, a generated file, and a project with an unresolvable NuGet package.
-- **Fixtures**: `internal/testdata/dotnet/` (Task 3): six projects covering success, partial (`net8.0`), failure (unresolvable SDK), and a test project. Recorded helper output is the golden for the Go side.
+- **Fixtures**: `internal/testdata/dotnet/` (Task 3): seven projects covering success, partial (`net8.0`, and `Unresolved` with a nonexistent package), failure (unresolvable SDK), and a test project. Recorded helper output is the golden for the Go side.
 - **Language contracts**: `scripts/eval/language_contracts.py` gets a .NET case that runs the real SDK and helper.
 - **Image contract**: `scripts/image_contracts.py` runs the .NET case under the default and an arbitrary numeric UID with read-only inputs.
 - **Acceptance**: `bitwarden/server` in a disposable worktree (Task 13). Not a test in CI; the numbers are recorded in the plan.
@@ -213,33 +213,41 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 
 ### Task 2: Pin and provision the SDK
 
-- [ ] add a `dotnet` version and per-architecture archive artifacts (URL, `sha256`) to `tools/manifest.json`
-- [ ] extend `scripts/provision_tools.py` `sdks` to install the .NET SDK; reject a checksum mismatch
-- [ ] extend `scripts/ci-provision-tools.sh` and the CI cache key so CI uses the same pin
-- [ ] write tests in `scripts/tests` for checksum mismatch and unknown architecture
-- [ ] run `make tool-locks`; it must pass before the next task
+- [x] add a `dotnet` version and per-architecture archive artifacts (URL, `sha256`) to `tools/manifest.json`
+- [x] extend `scripts/provision_tools.py` `sdks` to install the .NET SDK; reject a checksum mismatch
+- [x] extend `scripts/ci-provision-tools.sh` and the CI cache key so CI uses the same pin
+- [x] write tests in `scripts/tests` for checksum mismatch and unknown architecture
+- [x] run `make tool-locks`; it must pass before the next task
 
 ### Task 3: Shared .NET fixture
 
-- [ ] create `internal/testdata/dotnet/` with a `.slnx` solution: `Domain`; `Application` (`ProjectReference` to Domain, an interface, a DTO record); `Infrastructure` (implements the Application interface, inherits a concrete Domain class, uses a Domain `internal` member through `InternalsVisibleTo`); a `Legacy` project with `<TargetFrameworks>net10.0;net8.0</TargetFrameworks>` and a `ProjectReference` to `Domain` only under the `net8.0` condition; a `Broken` project with an unresolvable MSBuild SDK; a `Tests` project with `IsTestProject=true` referencing `Broken`
-- [ ] add a global using, a linked `Compile Include` file, and a generated `*.g.cs`
-- [ ] write a short README in the fixture listing the expected status and edges per project; review by hand
-- [ ] no code yet; check the fixture with `dotnet msbuild -getItem` and record the expected evaluation result per project
+- [x] create `internal/testdata/dotnet/` with a `.slnx` solution: `Domain`; `Application` (`ProjectReference` to Domain, an interface, a DTO record); `Infrastructure` (implements the Application interface, inherits a concrete Domain class, uses a Domain `internal` member through `InternalsVisibleTo`); a `Legacy` project with `<TargetFrameworks>net10.0;net8.0</TargetFrameworks>` and a `ProjectReference` to `Domain` only under the `net10.0` condition (a `net8.0` reference to the `net10.0`-only `Domain` is rejected by the design-time build, measured in Task 4); a `Broken` project with an unresolvable MSBuild SDK; a `Tests` project with `IsTestProject=true` referencing `Broken`
+- [x] add a global using, a linked `Compile Include` file, and a generated `*.g.cs`
+- [x] write a short README in the fixture listing the expected status and edges per project; review by hand
+- [x] no code yet; check the fixture with `dotnet msbuild -getItem` and record the expected evaluation result per project
 
 ### Task 4: Roslyn helper
 
-- [ ] create `tools/dotnet/archfit-roslyn/` with a `net10.0` console project and `packages.lock.json`
-- [ ] implement project loading through `MSBuildWorkspace`; classify each project `complete`, `partial`, or `failed` from workspace and compilation diagnostics (D5)
-- [ ] implement the output contract: `schema_version`, projects with status and reason, per-file edges with hint, data hint, and reference kind; errors on stderr
-- [ ] implement the D3 hint mapping as one pure function, separate from workspace code
-- [ ] implement edge collection: symbol → declaring file, dedup per file pair, strongest hint wins; emit `data_strength_hint` separately
-- [ ] resolve inaccessible candidate symbols (`CandidateReason.Inaccessible`) so cross-assembly `internal` use yields the intrusive hint without the generated IVT attribute
-- [ ] count unresolved symbols per project; do not invent nodes for them
-- [ ] report per project: unused `ProjectReference` count (only when `complete`), IVT declarations, linked files outside the project directory
-- [ ] add `make dotnet-roslyn` and `make dotnet-roslyn-test`
-- [ ] implement `--version` printing the producer identity string (D5)
-- [ ] write xUnit tests: hint table (every D3 row in `StrengthHint`; concrete inheritance is `functional`, not `contract`; data-only concrete use is `model`); data hints in the separate channel for a public concrete model and a DTO record; `internal` use without the generated IVT attribute is intrusive; unresolved symbols counted and not emitted; generated file marked generated; status per fixture project matches the fixture README
-- [ ] run the helper tests; they must pass before the next task
+- [x] create `tools/dotnet/archfit-roslyn/` with a `net10.0` console project and `packages.lock.json`
+- [x] implement project loading through `MSBuildWorkspace`; classify each project `complete`, `partial`, or `failed` from workspace and compilation diagnostics (D5)
+- [x] implement the output contract: `schema_version`, projects with status and reason, per-file edges with hint, data hint, and reference kind; errors on stderr
+- [x] implement the D3 hint mapping as one pure function, separate from workspace code
+- [x] implement edge collection: symbol → declaring file, dedup per file pair, strongest hint wins; emit `data_strength_hint` separately
+- [x] resolve inaccessible candidate symbols (`CandidateReason.Inaccessible`) so cross-assembly `internal` use yields the intrusive hint without the generated IVT attribute
+- [x] count unresolved symbols per project; do not invent nodes for them
+- [x] report per project: unused `ProjectReference` count (only when `complete`), IVT declarations, linked files outside the project directory
+- [x] add `make dotnet-roslyn` and `make dotnet-roslyn-test`
+- [x] implement `--version` printing the producer identity string (D5)
+- [x] write xUnit tests: hint table (every D3 row in `StrengthHint`; concrete inheritance is `functional`, not `contract`; data-only concrete use is `model`); data hints in the separate channel for a public concrete model and a DTO record; `internal` use without the generated IVT attribute is intrusive; unresolved symbols counted and not emitted; generated file marked generated; status per fixture project matches the fixture README
+- [x] run the helper tests; they must pass before the next task
+
+**Lane results (Tasks 2, 3, 4, 8, 9; 2026-10-27).** Facts later tasks depend on:
+- Task 2: `install_dotnet` moves the flat archive to `<prefix>/dotnet`; `install_sdks` rejects an unknown architecture. CI exports `DOTNET_ROOT` and adds `<prefix>/dotnet` to `PATH`; the cache key already hashes the manifest and both scripts. The `Dockerfile` (ENV, `libicu72`) is Task 10.
+- Task 3/4 fixture, measured offline on the host: `Domain`, `Application`, `Infrastructure`, `Legacy@net10.0` `complete`; `Legacy@net8.0` `partial` (31 unresolved, reason names `Microsoft.NETCore.App.Ref` 8.0); `Unresolved` `partial` (3 unresolved, no edges); `Broken` `failed` (`MSB4236`, SDK named); `Tests` `partial`, not `failed` (its document loads; the workspace failure names `Broken`). Offline helper run: 13-14 s. The `InternalsVisibleTo` item must name the assembly.
+- Task 4 helper contract (`schema_version` 1) extends Technical Details: top-level `skipped_projects` (non-C# projects); per project `linked_files`, `ivt_declarations: [{assembly, declared_in}]`, `unused_references` null unless `complete`; one entry per (project, TFM), a failed project has `tfm` `""`; edges carry `external` (then `to` is an assembly name) and `reference` in `implement|inherit|call|data_use|type_use`. Folding TFMs (worst status, union of edges) is the Go side's job (Task 6). An unsatisfiable `global.json` makes the helper exit 1 with a stderr line naming `global.json` and no JSON. Invocation: `dotnet <ARCHFIT_DOTNET_ROSLYN>/archfit-roslyn.dll <root> <solution | project...>`.
+- Task 4 behavior: workspace failures attach to a project by the first quoted project path (failure kind only), so a failure marks every TFM of that project. Documents under `obj/` or `bin/` and symbols declared outside the root produce no edges. A property with a body counts as a call; an auto-property is data. Known gap: invoking a delegate stored in a field counts as data use.
+- Task 8: the ast-grep language id is `csharp`; the rules are embedded in the astgrep package, so Task 7 only passes `csharp`. A file with `ERROR` nodes makes the syntax coverage row `partial`, its reason naming up to five files with the first error line.
+- Task 9: format `cobertura` (`.xml`, root element `<coverage>`), parser version `coverage-parser.cobertura.v1`. A file whose every join lies outside the root is dropped without counting as unresolved. ➕ The config format vocabulary lives outside the coverage package: `internal/config/config.go` allowed formats and error text, the `internal/config/types.go` jsonschema enum, `internal/configschema/schema_test.go`, and the schema; Task 7 adds `cobertura` there and Task 12 regenerates the schema.
 
 ### Task 5: Project graph extractor
 
@@ -249,7 +257,7 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 - [ ] map a failing evaluation to `failed` with the reason: `MSB4236` names the SDK, a `global.json` mismatch names the file, other errors keep the first MSBuild error line
 - [ ] emit project nodes and per-TFM-deduplicated `ProjectReference` facts; drop references from test projects
 - [ ] write table-driven tests with recorded MSBuild JSON: one TFM, two TFMs, missing reference, `MSB4236`, unsatisfied SDK pin, test project
-- [ ] write an integration test (skipped without `dotnet` on `PATH`) that evaluates the fixture's `Legacy` project with the real SDK and finds the `net8.0`-only reference through the per-TFM loop
+- [ ] write an integration test (skipped without `dotnet` on `PATH`) that evaluates the fixture's `Legacy` project with the real SDK and finds the `net10.0`-only reference through the per-TFM loop
 - [ ] write a test that a root with no `.csproj` or solution yields `absent`, not `partial`
 - [ ] run the package tests; they must pass before the next task
 
@@ -292,17 +300,17 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 
 ### Task 8: ast-grep C# rules
 
-- [ ] add `internal/extract/astgrep/rules/csharp.yml` with route declarations: `[HttpGet]`, `[HttpPost]`, `[Route]` attributes and `MapGet`, `MapPost`, `MapPut`, `MapDelete` invocations
-- [ ] mark a file `partial` when its tree has `ERROR` nodes; record the reason per file (rules use `kind: attribute` with a name regex and `kind: invocation_expression` on `Map*`; `[...]` patterns do not parse, Task 1)
-- [ ] write tests on a fixture file: each route form, a C# 14 `extension` block produces `partial`, a plain class produces no route
-- [ ] run the astgrep package tests; they must pass before the next task
+- [x] add `internal/extract/astgrep/rules/csharp.yml` with route declarations: `[HttpGet]`, `[HttpPost]`, `[Route]` attributes and `MapGet`, `MapPost`, `MapPut`, `MapDelete` invocations
+- [x] mark a file `partial` when its tree has `ERROR` nodes; record the reason per file (rules use `kind: attribute` with a name regex and `kind: invocation_expression` on `Map*`; `[...]` patterns do not parse, Task 1)
+- [x] write tests on a fixture file: each route form, a C# 14 `extension` block produces `partial`, a plain class produces no route
+- [x] run the astgrep package tests; they must pass before the next task
 
 ### Task 9: Cobertura coverage
 
-- [ ] add a `cobertura` parser in `internal/extract/coverage/`, with the path normalization from Task 1
-- [ ] register the format in `detect.go` and `normalize.go`; units are lines
-- [ ] write table-driven tests: a valid report, a missing `<sources>` entry, a unit conflict with a Go profile, malformed XML, and a file outside the root
-- [ ] run the coverage package tests; they must pass before the next task
+- [x] add a `cobertura` parser in `internal/extract/coverage/`, with the path normalization from Task 1
+- [x] register the format in `detect.go` and `normalize.go`; units are lines
+- [x] write table-driven tests: a valid report, a missing `<sources>` entry, a unit conflict with a Go profile, malformed XML, and a file outside the root
+- [x] run the coverage package tests; they must pass before the next task
 
 ### Task 10: Image integration
 
