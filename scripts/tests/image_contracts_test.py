@@ -43,6 +43,39 @@ class ImageContractsTest(unittest.TestCase):
                         self.assertTrue(config["compilerOptions"]["allowJs"])
                     self.assertTrue(image.tree_hash(path))
 
+    def test_helper_statuses_fail_closed(self):
+        legacy = {
+            "path": "Legacy/Legacy.csproj",
+            "tfm": "net8.0",
+            "status": "partial",
+            "reason": "reference pack Microsoft.NETCore.App.Ref 8.0 is not installed",
+        }
+        broken = {
+            "path": "Broken/Broken.csproj",
+            "tfm": "",
+            "status": "failed",
+            "reason": "MSB4236: SDK 'Archfit.Fixture.Missing.Sdk' not resolvable",
+        }
+        cases = {
+            "expected": ([legacy, broken], 0),
+            "empty": ([], 2),
+            "legacy complete": ([{**legacy, "status": "complete"}, broken], 1),
+            "legacy pack unnamed": ([{**legacy, "reason": "CS0518"}, broken], 1),
+            "broken partial": ([legacy, {**broken, "status": "partial"}], 1),
+            "broken sdk unnamed": ([legacy, {**broken, "reason": "MSB4236"}], 1),
+        }
+        for name, (projects, count) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(
+                    len(image.helper_status_failures({"projects": projects})), count
+                )
+
+    def test_helper_identity_pins_the_image_sdk(self):
+        sdk = image.lc.TOOL_MANIFEST["versions"]["dotnet"]
+        good = f"archfit-roslyn 1.0.0; Microsoft.CodeAnalysis 5.6.0; SDK {sdk}"
+        self.assertTrue(image.DOTNET_IDENTITY.fullmatch(good))
+        self.assertFalse(image.DOTNET_IDENTITY.fullmatch(good.replace(sdk, "9.0.100")))
+
     def test_container_failure_cannot_be_reported_as_pass(self):
         with tempfile.TemporaryDirectory() as temporary:
             contract = image.ImageContract("local:contract", "colima", Path(temporary))

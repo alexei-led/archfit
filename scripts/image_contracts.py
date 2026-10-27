@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -397,6 +398,67 @@ def python314_case(contract: ImageContract) -> None:
         )
 
 
+DOTNET_FIXTURE = ROOT / "internal/testdata/dotnet"
+DOTNET_HELPER = "dotnet /opt/archfit/dotnet-roslyn/archfit-roslyn.dll"
+DOTNET_IDENTITY = re.compile(
+    rf"archfit-roslyn \S+; Microsoft\.CodeAnalysis \S+; SDK {re.escape(lc.TOOL_MANIFEST['versions']['dotnet'])}"
+)
+
+
+def helper_status_failures(document: dict[str, Any]) -> list[str]:
+    """Image statuses are fixed: one SDK, empty NuGet cache, no network (plan D7)."""
+    projects = document.get("projects", [])
+
+    def entry(project: str, tfm: str | None = None) -> dict[str, Any]:
+        return next(
+            (
+                p
+                for p in projects
+                if p.get("path") == f"{project}/{project}.csproj"
+                and (tfm is None or p.get("tfm") == tfm)
+            ),
+            {},
+        )
+
+    failures = []
+    legacy = entry("Legacy", "net8.0")
+    if legacy.get("status") != "partial" or "Microsoft.NETCore.App.Ref 8.0" not in legacy.get("reason", ""):
+        failures.append(f"Legacy net8.0 must be partial naming the 8.0 reference pack: {legacy}")
+    broken = entry("Broken")
+    if broken.get("status") != "failed" or "Archfit.Fixture.Missing.Sdk" not in broken.get("reason", ""):
+        failures.append(f"Broken must be failed naming its SDK: {broken}")
+    return failures
+
+
+def dotnet_cases(contract: ImageContract) -> None:
+    before = tree_hash(DOTNET_FIXTURE)
+    contract.run(
+        "dotnet-sdk",
+        "65532:65532",
+        f"dotnet --list-sdks | grep -F {lc.TOOL_MANIFEST['versions']['dotnet']}; "
+        + saved_command("version", f"{DOTNET_HELPER} --version"),
+    )
+    for uid in ("65532:65532", "12345:12345"):
+        output = contract.run(
+            f"dotnet-helper-{uid.split(':')[0]}",
+            uid,
+            saved_command("version", f"{DOTNET_HELPER} --version")
+            + saved_command("fixture", f"{DOTNET_HELPER} /tmp/repo Fixture.slnx"),
+            DOTNET_FIXTURE,
+            timeout=900,
+        )
+        try:
+            identity = (output / "version.json").read_text().strip()
+            document = json.loads((output / "fixture.json").read_text())
+        except (OSError, ValueError) as exc:
+            contract.expect(f"{output.name}: helper output", False, str(exc))
+            continue
+        contract.expect(f"{output.name}: helper identity", bool(DOTNET_IDENTITY.fullmatch(identity)), identity)
+        failures = helper_status_failures(document)
+        contract.expect(f"{output.name}: deterministic statuses", not failures, failures)
+    contract.expect("dotnet: trusted fixture unchanged", tree_hash(DOTNET_FIXTURE) == before)
+
+
 def negative_cases(contract: ImageContract) -> None:
     spec = next(s for s in lc.FIXTURES if s.name == "typescript")
     fixture = contract.output / "fixture-negative"
@@ -581,6 +643,7 @@ def main() -> int:
         inventory(contract)
         language_cases(contract)
         python314_case(contract)
+        dotnet_cases(contract)
         negative_cases(contract)
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         contract.expect("contract completed", False, str(exc))
