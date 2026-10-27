@@ -333,6 +333,38 @@ func failureCases() []evalCase {
 			},
 		},
 		{
+			name:  "a missing workload names the workloads and the install command",
+			files: []string{"Maui/Maui.csproj"},
+			replies: func(_ *testing.T, root string) map[string]reply {
+				return map[string]reply{"Maui/Maui.csproj": {
+					stdout: "/usr/local/share/dotnet/sdk/10.0.403/Sdks/Microsoft.NET.Sdk/targets/Microsoft.NET.Sdk.ImportWorkloads.targets(38,5): error NETSDK1147: To build this project, the following workloads must be installed: maui-android maui-ios [" + root + "/Maui/Maui.csproj]\n" +
+						"/usr/local/share/dotnet/sdk/10.0.403/Sdks/Microsoft.NET.Sdk/targets/Microsoft.NET.Sdk.ImportWorkloads.targets(38,5): error NETSDK1147: To install these workloads, run the following command: dotnet workload restore [" + root + "/Maui/Maui.csproj]\n",
+					exit: 1,
+				}}
+			},
+			check: func(t *testing.T, _ graph.Facts, ev dotnet.Evaluation, _ evidence.Coverage) {
+				const want = "NETSDK1147: workload maui-android maui-ios not installed; run `dotnet workload install maui-android maui-ios` or exclude the project"
+				if got := projectByPath(t, ev, "Maui/Maui.csproj"); got.Status != dotnet.ProjectFailed || got.Reason != want {
+					t.Errorf("project = %+v, want reason %q", got, want)
+				}
+			},
+		},
+		{
+			name:  "workload packs missing on this host name the packs",
+			files: []string{"Maui/Maui.csproj"},
+			replies: func(*testing.T, string) map[string]reply {
+				return map[string]reply{"Maui/Maui.csproj": {
+					stdout: "Microsoft.NET.Sdk.ImportWorkloads.targets(38,5): error NETSDK1178: The project depends on the following workload packs that do not exist in any of the workloads available in this installation: Microsoft.iOS.Sdk.net10.0_26.0 [Maui.csproj]\n",
+					exit:   1,
+				}}
+			},
+			check: func(t *testing.T, _ graph.Facts, ev dotnet.Evaluation, _ evidence.Coverage) {
+				if got := projectByPath(t, ev, "Maui/Maui.csproj").Reason; !strings.HasPrefix(got, "NETSDK1178: workload packs Microsoft.iOS.Sdk.net10.0_26.0 are not available") {
+					t.Errorf("reason = %q", got)
+				}
+			},
+		},
+		{
 			name:  "other errors keep the first error line, root-relative",
 			files: []string{domainProj},
 			replies: func(_ *testing.T, root string) map[string]reply {

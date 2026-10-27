@@ -41,6 +41,8 @@ var msbuildEnv = []string{
 
 var (
 	sdkNotFound      = regexp.MustCompile(`The SDK '([^']+)' specified could not be found`)
+	workloadsMissing = regexp.MustCompile(`NETSDK1147: To build this project, the following workloads must be installed: ([^\r\n\[]+)`)
+	workloadPacks    = regexp.MustCompile(`NETSDK1178: The project depends on the following workload packs that do not exist in any of the workloads available in this installation: ([^\r\n\[]+)`)
 	globalJSONFile   = regexp.MustCompile(`(?m)^global\.json file:\s*(.+?)\s*$`)
 	globalJSONSDK    = regexp.MustCompile(`(?m)^Requested SDK version:\s*(\S+)`)
 	errTimedOut      = errors.New("evaluation timed out")
@@ -133,13 +135,21 @@ func parseEvaluation(data []byte) (evalResult, error) {
 }
 
 // failureReason maps a failed evaluation to a reason that names the cause and
-// the fix. MSB4236 names the SDK, a global.json mismatch names the file, and
+// the fix. MSB4236 names the SDK, a missing workload (MAUI, Android, iOS
+// projects) names the workloads, a global.json mismatch names the file, and
 // anything else keeps the first line that reports an error.
 func failureReason(out toolrun.Output, root string) string {
 	text := string(out.Stderr) + "\n" + string(out.Stdout)
 	if m := sdkNotFound.FindStringSubmatch(text); m != nil {
 		name, _, _ := strings.Cut(m[1], "/")
 		return fmt.Sprintf("MSB4236: SDK '%s' not resolvable offline; run with NuGet access and a warm cache", name)
+	}
+	if m := workloadsMissing.FindStringSubmatch(text); m != nil {
+		ids := strings.Join(strings.Fields(m[1]), " ")
+		return fmt.Sprintf("NETSDK1147: workload %s not installed; run `dotnet workload install %s` or exclude the project", ids, ids)
+	}
+	if m := workloadPacks.FindStringSubmatch(text); m != nil {
+		return fmt.Sprintf("NETSDK1178: workload packs %s are not available for this host's OS or SDK; analyze on a host that supports them or exclude the project", strings.TrimSpace(m[1]))
 	}
 	if f := globalJSONFile.FindStringSubmatch(text); f != nil {
 		file := relativeTo(root, f[1])
