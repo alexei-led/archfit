@@ -181,3 +181,14 @@ rules:
 		t.Fatalf("unevaluated required rules = %q, want %q", unevaluated, wantRules)
 	}
 }
+
+// TestSelfConfigBlockingRulesHaveRationales: archfit's own policy says why
+// each blocking rule exists, so an agent that hits one fixes the cause.
+func TestSelfConfigBlockingRulesHaveRationales(t *testing.T) {
+	t.Parallel()
+	cfg := filepath.Join("..", "..", defaultConfigPath)
+	code, stdout, stderr := runArchfit(t, "config", "lint", "-c", cfg, "--strict")
+	if code != 0 || strings.Contains(stdout, "missing_rationale") {
+		t.Fatalf("config lint --strict on the self config: exit %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+}
