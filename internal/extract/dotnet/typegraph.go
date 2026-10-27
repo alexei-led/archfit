@@ -37,6 +37,7 @@ const (
 	reasonHelperDisabled = "analyzers.roslyn.enabled is false; project-level graph only"
 	reasonHelperTimedOut = "archfit-roslyn timed out; raise analyzers.roslyn.timeout or run with a warm NuGet cache"
 	reasonFallbackAll    = "every project falls back to its ProjectReference edges"
+	reasonFallbackNone   = "no project falls back to ProjectReference edges: MSBuild evaluation failed for every project"
 )
 
 // Type graph statuses per project (D5), as the helper reports them.
@@ -199,25 +200,54 @@ func notRun(status, reason string) typeGraphResult {
 	return typeGraphResult{cov: evidence.Coverage{Tool: toolRoslyn, Status: status, Reason: reason}}
 }
 
-// failedRun is a helper run that produced no report: every project falls back.
-func failedRun(version, reason string) typeGraphResult {
+// failedRun is a helper run that produced no report: every project falls back
+// to the edges its evaluation supplied, which fallback states.
+func failedRun(version, reason, fallback string) typeGraphResult {
 	return typeGraphResult{cov: evidence.Coverage{
 		Tool:                    toolRoslyn,
 		Version:                 version,
 		Status:                  evidence.StatusPartial,
-		Reason:                  "archfit-roslyn failed: " + reason + "; " + reasonFallbackAll,
+		Reason:                  "archfit-roslyn failed: " + reason + "; " + fallback,
 		UnresolvedInputsMissing: 1,
 	}}
 }
 
-func timedOutRun(version string) typeGraphResult {
+func timedOutRun(version, fallback string) typeGraphResult {
 	return typeGraphResult{cov: evidence.Coverage{
 		Tool:                    toolRoslyn,
 		Version:                 version,
 		Status:                  evidence.StatusTimedOut,
-		Reason:                  reasonHelperTimedOut + "; " + reasonFallbackAll,
+		Reason:                  reasonHelperTimedOut + "; " + fallback,
 		UnresolvedInputsMissing: 1,
 	}}
+}
+
+// fallbackClause states which projects a run without a report falls back for:
+// a project whose MSBuild evaluation failed supplies no ProjectReference edges
+// (D1), and a test project's are dropped either way, so neither is counted.
+func fallbackClause(projects []ProjectEvaluation) string {
+	fallback, failed := 0, 0
+	for _, p := range projects {
+		switch {
+		case p.isTest():
+		case p.Status == ProjectFailed:
+			failed++
+		default:
+			fallback++
+		}
+	}
+	switch {
+	case failed == 0:
+		return reasonFallbackAll
+	case fallback == 0:
+		return reasonFallbackNone
+	}
+	verb := "have"
+	if failed == 1 {
+		verb = "has"
+	}
+	return fmt.Sprintf("%d of %d projects fall back to their ProjectReference edges; %d failed MSBuild evaluation and %s none",
+		fallback, fallback+failed, failed, verb)
 }
 
 func isTimeout(ctx context.Context, err error) bool {
@@ -273,18 +303,19 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 	if timeout <= 0 {
 		timeout = defaultTypeGraphTimeout
 	}
+	fallback := fallbackClause(projects)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	snap, err := makeSnapshot(ctx, root, s.GitRoot)
 	if err != nil {
 		if isTimeout(ctx, err) {
-			return timedOutRun(""), nil
+			return timedOutRun("", fallback), nil
 		}
 		if ctx.Err() != nil {
 			return typeGraphResult{}, err
 		}
-		return failedRun("", err.Error()), nil
+		return failedRun("", err.Error(), fallback), nil
 	}
 	defer func() {
 		if rerr := os.RemoveAll(snap.dir); rerr != nil && err == nil {
@@ -312,22 +343,22 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 	out, err := run([]string{"--version"}, min(helperVersionTimeout, timeout))
 	switch {
 	case err != nil && isTimeout(ctx, err):
-		return timedOutRun(""), nil
+		return timedOutRun("", fallback), nil
 	case err != nil:
 		return typeGraphResult{}, fmt.Errorf("run archfit-roslyn --version: %w", err)
 	case out.ExitCode != 0:
-		return failedRun("", helperFailure(out, mapper)), nil
+		return failedRun("", helperFailure(out, mapper), fallback), nil
 	}
 	version := helperIdentity(out.Stdout)
 
 	out, err = run(append([]string{helperRoot}, targets...), timeout)
 	switch {
 	case err != nil && isTimeout(ctx, err):
-		return timedOutRun(version), nil
+		return timedOutRun(version, fallback), nil
 	case err != nil:
 		return typeGraphResult{}, fmt.Errorf("run archfit-roslyn: %w", err)
 	case out.ExitCode != 0:
-		return failedRun(version, helperFailure(out, mapper)), nil
+		return failedRun(version, helperFailure(out, mapper), fallback), nil
 	}
 	report, err := parseReport(out.Stdout, mapper)
 	if err != nil {

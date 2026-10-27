@@ -588,7 +588,7 @@ func TestTypeGraph_RunWithoutReportFallsBackForEveryProject(t *testing.T) {
 				}
 			},
 			wantStatus: evidence.StatusPartial,
-			wantReason: "archfit-roslyn failed: global.json requests SDK 9.0.100, which is not installed; install a matching SDK or relax the pin; every project falls back",
+			wantReason: "archfit-roslyn failed: global.json requests SDK 9.0.100, which is not installed; install a matching SDK or relax the pin; 5 of 6 projects fall back",
 		},
 		{
 			name: "helper run exits non-zero",
@@ -598,7 +598,7 @@ func TestTypeGraph_RunWithoutReportFallsBackForEveryProject(t *testing.T) {
 				})
 			},
 			wantStatus: evidence.StatusPartial,
-			wantReason: "archfit-roslyn failed: Fixture.slnx does not exist; every project falls back",
+			wantReason: "archfit-roslyn failed: Fixture.slnx does not exist; 5 of 6 projects fall back",
 		},
 		{
 			name: "helper hits an unexpected error",
@@ -608,7 +608,7 @@ func TestTypeGraph_RunWithoutReportFallsBackForEveryProject(t *testing.T) {
 				})
 			},
 			wantStatus: evidence.StatusPartial,
-			wantReason: "archfit-roslyn failed: System.Xml.XmlException: Unexpected end of file has occurred. Line 1, position 37.; every project falls back",
+			wantReason: "archfit-roslyn failed: System.Xml.XmlException: Unexpected end of file has occurred. Line 1, position 37.; 5 of 6 projects fall back",
 		},
 		{
 			name: "helper timed out",
@@ -645,6 +645,66 @@ func TestTypeGraph_RunWithoutReportFallsBackForEveryProject(t *testing.T) {
 			}
 			if got := e.LastTypeGraph().Fallback; len(got) != 7 {
 				t.Errorf("fallback = %v, want all 7 projects", got)
+			}
+		})
+	}
+}
+
+// TestTypeGraph_FailedRunNamesOnlyRealFallback pins D17: a helper run that
+// produced no report states the fallback the evaluation actually supplied. A
+// project whose MSBuild evaluation failed has no ProjectReference edges to fall
+// back to, so a run where every evaluation failed promises none.
+func TestTypeGraph_FailedRunNamesOnlyRealFallback(t *testing.T) {
+	globalJSONFailure := func(t *testing.T, root string) reply {
+		return reply{stdout: fixture(t, root, "globaljson.stdout"), stderr: fixture(t, root, "globaljson.stderr"), exit: 155}
+	}
+	tests := []struct {
+		name     string
+		replies  func(t *testing.T, root string) map[string]reply
+		want     string
+		wantNone []string
+	}{
+		{
+			name: "every evaluation failed",
+			replies: func(t *testing.T, root string) map[string]reply {
+				replies := map[string]reply{}
+				for key := range fixtureReplies(t, root) {
+					if !strings.Contains(key, "@") {
+						replies[key] = globalJSONFailure(t, root)
+					}
+				}
+				return replies
+			},
+			want:     "no project falls back to ProjectReference edges: MSBuild evaluation failed for every project",
+			wantNone: []string{"every project falls back", "projects fall back"},
+		},
+		{
+			name:     "one evaluation failed",
+			replies:  fixtureReplies,
+			want:     "5 of 6 projects fall back to their ProjectReference edges; 1 failed MSBuild evaluation and has none",
+			wantNone: []string{"every project falls back"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := copyFixture(t)
+			installHelper(t)
+			fake := newFake(t, root, tt.replies(t, root))
+			fake.helper = func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+				return toolrun.Output{Stderr: []byte(fixture(t, cmd.WorkDir, "roslyn_globaljson.stderr")), ExitCode: 1}, nil
+			}
+			e := dotnet.New(fake, autoCfg(), nil)
+			if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
+				t.Fatal(err)
+			}
+			cov := e.LastTypeGraphCoverage()
+			if !strings.Contains(cov.Reason, tt.want) {
+				t.Errorf("roslyn reason %q lacks %q", cov.Reason, tt.want)
+			}
+			for _, bad := range tt.wantNone {
+				if strings.Contains(cov.Reason, bad) {
+					t.Errorf("roslyn reason %q claims %q", cov.Reason, bad)
+				}
 			}
 		})
 	}

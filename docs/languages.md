@@ -153,7 +153,7 @@ The helper classifies each project and target framework from workspace and compi
 
 `failed` is measured, not assumed: MSBuildWorkspace keeps a project whose evaluation failed as an empty project. A workspace failure on a project that did load its documents is `partial`. A `Tests` project that references a broken project can therefore be `partial`, not `failed`. The `dotnet-msbuild` row names the evaluation cause and fix, for example `MSB4236: SDK 'Bitwarden.Server.Sdk' not resolvable offline; run with NuGet access and a warm cache` or `global.json requests SDK X, which is not installed; install a matching SDK or relax the pin`. The `roslyn` row reads `N of M projects partial, K failed, U unresolved symbols` and names up to five projects with their causes.
 
-When the helper itself fails, for example on an unsatisfiable `global.json`, it writes one `archfit-roslyn: …` line to stderr and exits 1, or 2 for an unexpected error (`ARCHFIT_ROSLYN_DEBUG=1` adds the trace). The `roslyn` row is then `partial` with `archfit-roslyn failed: <that line>`, and every project falls back to its project graph.
+When the helper itself fails, for example on an unsatisfiable `global.json`, it writes one `archfit-roslyn: …` line to stderr and exits 1, or 2 for an unexpected error (`ARCHFIT_ROSLYN_DEBUG=1` adds the trace). The `roslyn` row is then `partial` with `archfit-roslyn failed: <that line>`, and every project falls back to its project graph. A project whose MSBuild evaluation also failed has no project edges to fall back to; the row says how many projects fall back, or that none does.
 
 #### Fallback to the project graph
 
