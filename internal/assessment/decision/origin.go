@@ -39,6 +39,7 @@ package decision
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -653,6 +654,16 @@ const (
 	toolRoslyn        = "roslyn"
 )
 
+// pairsAsPrimary reports whether a gapless absent row of tool reads as "no
+// project here" and drops out of a comparison, as a language primary's does.
+// Both comparison paths ask it — analyze --base through AnalyzerFamilies,
+// config compare through gradeTool — so they cannot grade one row differently.
+// Roslyn is the one non-primary analyzer that qualifies: it is on by default,
+// so it runs on trees with no .NET project.
+func pairsAsPrimary(tool string, primaries []string) bool {
+	return tool == toolRoslyn || slices.Contains(primaries, tool)
+}
+
 // FamilyOptions names the analyzers a run activated. PrimaryTools are the
 // per-language dependency-graph analyzers the extractor registry supplies; the
 // remaining flags are the opt-in analyzers.
@@ -665,7 +676,7 @@ type FamilyOptions struct {
 func AnalyzerFamilies(o FamilyOptions) []AnalyzerFamily {
 	fams := make([]AnalyzerFamily, 0, len(o.PrimaryTools)+5)
 	for _, tool := range o.PrimaryTools {
-		fams = append(fams, AnalyzerFamily{name: tool, primary: true})
+		fams = append(fams, AnalyzerFamily{name: tool, primary: pairsAsPrimary(tool, o.PrimaryTools)})
 	}
 	// The pattern pass and the syntax pass are two analyzers with two coverage
 	// names and two independent activation switches, so they compare separately.
@@ -684,11 +695,10 @@ func AnalyzerFamilies(o FamilyOptions) []AnalyzerFamily {
 	if o.CargoModules {
 		fams = append(fams, AnalyzerFamily{name: toolCargoModules})
 	}
-	// Roslyn is on by default, so it runs on trees with no .NET project. Its
-	// gapless absent row means exactly what a primary's does — no project to
-	// load — and must pair silently, or every non-.NET --base gains a reason.
+	// Roslyn's gapless absent row means what a primary's does (pairsAsPrimary)
+	// and must pair silently, or every non-.NET --base gains a reason.
 	if o.Roslyn {
-		fams = append(fams, AnalyzerFamily{name: toolRoslyn, primary: true})
+		fams = append(fams, AnalyzerFamily{name: toolRoslyn, primary: pairsAsPrimary(toolRoslyn, o.PrimaryTools)})
 	}
 	return fams
 }

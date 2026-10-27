@@ -18,6 +18,7 @@ package decision
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -265,13 +266,13 @@ func degradedBothReason(cur, cand evidence.Coverage) string {
 func compareCoverage(current, candidate result.Result) ConfigCompareCoverage {
 	curRows := rowsByTool(current.ToolCoverage)
 	candRows := rowsByTool(candidate.ToolCoverage)
-	primary := primaryTools(current, candidate)
+	primaries := primaryTools(current, candidate)
 
 	status := CoverageComparable
 	details := []CoverageDetail{}
 	for _, tool := range unionTools(curRows, candRows) {
 		cur, cand := curRows[tool], candRows[tool]
-		grade, reason, ignored := gradeTool(tool, cur, cand, primary,
+		grade, reason, ignored := gradeTool(tool, cur, cand, primaries,
 			current.CoverageGaps, candidate.CoverageGaps)
 		if ignored {
 			continue
@@ -298,7 +299,7 @@ func compareCoverage(current, candidate result.Result) ConfigCompareCoverage {
 func gradeTool(
 	tool string,
 	cur, cand []evidence.Coverage,
-	primary map[string]struct{},
+	primaries []string,
 	curGaps, candGaps []evidence.CoverageGap,
 ) (grade CoverageComparability, reason string, ignored bool) {
 	// A side without exactly one row cannot be paired: nothing to compare
@@ -356,7 +357,7 @@ func gradeTool(
 		// Their absence is shared blindness, reported as such. Reading gap
 		// presence as "the config expected this analyzer" made comparison
 		// paths grade the same row differently and paired it in silence.
-		if _, ok := primary[tool]; ok {
+		if pairsAsPrimary(tool, primaries) {
 			curGapped, candGapped := HasCoverageGap(curGaps, tool), HasCoverageGap(candGaps, tool)
 			if curGapped != candGapped {
 				return CoverageNotComparable, reasonAbsentAsymmetric, false
@@ -485,17 +486,11 @@ func unionTools(a, b map[string][]evidence.Coverage) []string {
 }
 
 // primaryTools is the union of both sides' declared per-language graph
-// analyzers. Empty when neither diagnostic declares any, which conservatively
-// makes every absent row a reported gap instead of an ignored one.
-func primaryTools(a, b result.Result) map[string]struct{} {
-	out := make(map[string]struct{}, len(a.PrimaryExtractorTools)+len(b.PrimaryExtractorTools))
-	for _, t := range a.PrimaryExtractorTools {
-		out[t] = struct{}{}
-	}
-	for _, t := range b.PrimaryExtractorTools {
-		out[t] = struct{}{}
-	}
-	return out
+// analyzers, read through pairsAsPrimary. Empty when neither diagnostic
+// declares any, which conservatively makes every absent row other than roslyn's
+// a reported gap instead of an ignored one.
+func primaryTools(a, b result.Result) []string {
+	return append(slices.Clone(a.PrimaryExtractorTools), b.PrimaryExtractorTools...)
 }
 
 // HasCoverageGap reports whether the gap list carries an entry for tool.
