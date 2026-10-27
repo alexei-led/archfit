@@ -74,6 +74,7 @@ Each language accepts `enabled` and `gate`. `enabled` accepts YAML booleans or t
 | `languages.typescript` | `enabled`, `gate` | Uses the TypeScript extractor when its project markers and tools exist. |
 | `languages.python` | `enabled`, `gate`, `package` | `package` is the top-level importable package name. Empty means auto-detect from the project layout. |
 | `languages.rust` | `enabled`, `gate`, `manifest`, `features`, `include_dev_deps` | Empty `manifest` uses the root Cargo manifest. `features` defaults empty. `include_dev_deps` defaults false. |
+| `languages.dotnet` | `enabled`, `gate`, and a list of solution or project paths | An empty list uses the first `.slnx` or `.sln` at the root, else every `*.csproj` outside `obj/`, `bin/`, and `exclude`. Paths resolve under the analysis root. |
 
 Example Go workspace filter:
 
@@ -88,7 +89,7 @@ languages:
 
 ## Optional analyzers
 
-Analyzers are opt-in. Every analyzer requires `enabled: true` to run. `auto`, `false`, and omission disable it. A schema-valid `enabled: auto` value does not enable an analyzer.
+Analyzers are opt-in, except `roslyn`. Every other analyzer requires `enabled: true` to run. `auto`, `false`, and omission disable it. A schema-valid `enabled: auto` value does not enable an analyzer.
 
 | Key | Fields | Purpose and limits |
 | --- | --- | --- |
@@ -96,10 +97,11 @@ Analyzers are opt-in. Every analyzer requires `enabled: true` to run. `auto`, `f
 | `analyzers.scip` | `enabled`, `gate`, `timeout` | Uses language SCIP indexers for symbol-level edge strength. Go type information remains primary. |
 | `analyzers.clones` | `enabled`, `gate`, `timeout` | Uses `jscpd` for cross-module clone facts. Clone facts do not alter import-edge strength. |
 | `analyzers.cargo_modules` | `enabled`, `gate` | Uses `cargo-modules` to extract Rust intra-crate modules. It can compile the crate. |
+| `analyzers.roslyn` | `enabled`, `gate`, `timeout` | Uses the `archfit-roslyn` helper for the .NET type-level graph and coupling strength. Unlike the others, it defaults to on when `ARCHFIT_DOTNET_ROSLYN` names an installed helper. `enabled: false` forces the project-only graph. See [.NET](languages.md#net). |
 
 All analyzer `gate` fields accept `off`, `warn`, or `fail`, defaulting to `warn`. A missing tool creates a coverage gap. `enabled: false` skips the analyzer without a gap. `--require-tools` raises gaps unless the gate is explicitly `off`.
 
-`scip` and `clones` accept Go duration strings in `timeout`. Omitted or zero values use built-in timeouts: 20 minutes for SCIP and 5 minutes for clones. A timeout drops that analyzer's result and the run continues. Dependent measurements can report `n/a`.
+`scip`, `clones`, and `roslyn` accept Go duration strings in `timeout`. Omitted or zero values use built-in timeouts: 20 minutes for SCIP and 5 minutes for clones. A timeout drops that analyzer's result and the run continues. Dependent measurements can report `n/a`.
 
 ### Why the optional analyzers are off
 
@@ -149,12 +151,12 @@ coverage:
 | `coverage.gate` | enum | `warn`. Accepts `off`, `warn`, `fail`. Applies when none of the sources can be read. It is not a minimum coverage ratio. |
 | `coverage.sources` | list | Required when enabled. Paths resolve under the analysis root and cannot escape it. |
 | `sources[].path` | path | Required artifact path. |
-| `sources[].format` | enum | `auto`, `go-coverprofile`, `lcov`, `coverage-py-json`, or `llvm-cov-json`. `auto` is the default and requires an unambiguous content and extension match. |
+| `sources[].format` | enum | `auto`, `go-coverprofile`, `lcov`, `coverage-py-json`, `llvm-cov-json`, or `cobertura`. `auto` is the default and requires an unambiguous content and extension match. |
 | `sources[].sidecar_path` | path | Defaults to `<path>.sidecar.json`. |
 | `sources[].max_bytes` | positive integer | Defaults to `67108864` bytes per source. The limit covers the artifact, sidecar, and enumerated source files. |
 | `sources[].max_facts` | positive integer | Defaults to `1000000` normalized facts per artifact. Exceeding the limit rejects the whole artifact. |
 
-Supported formats read statements for Go cover profiles and coverage.py JSON. LCOV and LLVM coverage JSON report lines. Archfit normalizes file names to slash-separated paths relative to the analysis root. Missing files, paths outside the root, and escaping symlinks remain unresolved and keep testability partial.
+Supported formats read statements for Go cover profiles and coverage.py JSON. LCOV, LLVM coverage JSON, and Cobertura report lines. Archfit normalizes file names to slash-separated paths relative to the analysis root. Missing files, paths outside the root, and escaping symlinks remain unresolved and keep testability partial.
 
 ### Freshness sidecar
 

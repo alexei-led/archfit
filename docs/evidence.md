@@ -147,6 +147,18 @@ Image digests bind installed files, not remote execution. Reports remain self-re
 attested. Target code can run in optional indexers/build tools; container network access and
 mounted source remain part of the operator's trust boundary. See [Languages and tools](languages.md).
 
+## .NET trust limits
+
+- **Target code runs.** MSBuild evaluation executes `Directory.Build.props`, imported targets, and SDK props. The Roslyn design-time build also writes generated files under `obj/`. Evaluation runs on the original tree. The helper runs on a disposable snapshot of the analysis root, deleted after the run. This is the same trust class as `go/packages` and cgo. Evaluation leaving `bitwarden/server` clean is a measurement, not a guarantee.
+- **NuGet-resolved SDKs.** The SDK resolver fetches `msbuild-sdks` from `global.json` when the network is reachable. Archfit does not restore packages. Offline, the affected projects are `failed` with the SDK named.
+- **`global.json` pin.** A pin that the installed SDK cannot satisfy makes the projects `failed`. The reason names `global.json`.
+- **Missing reference packs.** A target framework without its reference pack on the host (for example `net8.0` against a 10.0 SDK) leaves the project `partial`, with the pack named. Results depend on the host's installed packs.
+- **Unresolved symbols are missing candidates.** An unresolved reference can hide a cross-boundary edge, so it is not reduced precision. Any `partial` or `failed` project keeps the `coupling` dimension from `measured` by blocking `extractor resolution within ceiling`, as TypeScript unresolved specifiers do above the ceiling.
+- **Partial runs are not comparable.** A Roslyn `partial` producer makes a `--base` comparison non-comparable. `roslyn` is its own analyzer family, so `--base` pairs it.
+- **Producer identity.** The coverage row version is the helper's `archfit-roslyn <version>; Microsoft.CodeAnalysis <version>; SDK <version>` string.
+
+See [languages](languages.md#net) for statuses and fallback.
+
 ## Upgrade limits
 
 - Coverage sidecars are unsigned. Add authenticated producer evidence only when the product needs to prove producer identity or resist coordinated artifact and sidecar edits.
