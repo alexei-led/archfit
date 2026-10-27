@@ -137,6 +137,9 @@ type scanRequest struct {
 	refresh      bool
 	aiSummary    bool
 	reportOnly   bool
+	// lint selects the linter-shaped text renderer and keeps the coupling
+	// gate's reasons off stderr: check reports them as repository attention.
+	lint bool
 
 	providerOverride llm.Provider
 }
@@ -163,7 +166,7 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 		return err
 	}
 
-	if err := analyzeRender(deps, resp); err != nil {
+	if err := analyzeRender(deps, resp, req.lint); err != nil {
 		return err
 	}
 
@@ -218,7 +221,8 @@ func executeScan(ctx context.Context, deps *appDeps, req scanRequest, advance fu
 		NoAdvisories:   req.noAdvisories,
 		RequireTools:   req.requireTools,
 		ValidationArgs: scanValidationArgs(req), ValidationConfig: req.validationConfig, ValidationRoot: req.validationRoot,
-		Identity: identityInputs(ctx, deps.Runner, req.configPath, req.root, bundleDir, req.baseRef),
+		GateReasonsInState: req.lint,
+		Identity:           identityInputs(ctx, deps.Runner, req.configPath, req.root, bundleDir, req.baseRef),
 	})
 	if err != nil {
 		return application.Response{}, config.Config{}, applicationExitError(err)
@@ -252,10 +256,14 @@ func outcomeExitCode(outcome application.Outcome) int {
 // analyzeRender writes the document to deps.Stdout in each requested format.
 // Every adapter implements the report rendering port (Document + io.Writer);
 // cmd only selects the adapter for the resolved format name.
-func analyzeRender(deps *appDeps, resp application.Response) error {
+func analyzeRender(deps *appDeps, resp application.Response, lint bool) error {
+	text := reportports.Renderer(console.New())
+	if lint {
+		text = agentout.NewText()
+	}
 	renderers := map[string]reportports.Renderer{
 		formatJSON:      jsonout.New(),
-		formatText:      console.New(),
+		formatText:      text,
 		formatMarkdown:  markdown.New(),
 		formatMD:        markdown.New(),
 		formatSarif:     sarif.New(),

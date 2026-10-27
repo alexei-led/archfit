@@ -1,0 +1,6 @@
+internal/a/a.go:5: no_x: Remove the forbidden dependency from internal/a/a.go on internal/b.
+  why: constraint of no_x
+  status: introduced, code_change
+
+FAIL  1 new, 0 unknown, 0 accepted
+engine v0.0.0-test · policy aaaaaaaaaaaa · baseline bbbbbbbbbbbb · labels cccccccccccc · tree eeeeeeeeeeee · profile ffffffffffff · base dddddddddddd

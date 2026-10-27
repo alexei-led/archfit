@@ -49,6 +49,11 @@ Common runs:
 
 func (c *CheckCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
+	// A linter prints findings and nothing else: progress only on request.
+	progress := c.Progress
+	if progress == "" {
+		progress = progressNone
+	}
 	return runScan(ctx, deps, scanRequest{
 		configPath:   c.Config,
 		root:         c.Root,
@@ -61,7 +66,8 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		minSeverity:  c.MinSeverity,
 		lang:         c.Lang,
 		requireTools: c.RequireTools,
-		progress:     c.Progress,
+		progress:     progress,
+		lint:         true,
 		quiet:        c.Quiet,
 		refresh:      c.Refresh,
 		reportOnly:   false,

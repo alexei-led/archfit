@@ -162,7 +162,13 @@ func TestFormatMatrix_RatchetBlockIsNamed(t *testing.T) {
 		if code != 1 {
 			t.Fatalf("check --format=%s: exit = %d, want 1 (ratchet block)\nstderr:\n%s", format, code, stderr)
 		}
-		for _, want := range []string{ratchetCoverageRule, "metric coverage worsened from"} {
+		// check text is a linter record: the blocker's goal carries the accepted
+		// and current values. Markdown keeps the full sentence.
+		wants := []string{ratchetCoverageRule, "Restore the coverage metric to its accepted value"}
+		if format == formatMarkdown {
+			wants = []string{ratchetCoverageRule, "metric coverage worsened from"}
+		}
+		for _, want := range wants {
 			if !strings.Contains(stdout, want) {
 				t.Errorf("--format=%s is missing %q:\n%s", format, want, stdout)
 			}

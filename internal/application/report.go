@@ -47,10 +47,12 @@ type IdentityInputs struct {
 	EngineVersion  string
 }
 
-// withIdentity stamps the document's state with what the run was judged under.
-// The measurement profile hash comes from the document itself, so it always
-// describes the evidence the verdict rests on.
-func withIdentity(doc report.Document, in IdentityInputs) report.Document {
+// withRunFacts stamps the document's state with what the run was judged under
+// and why the coupling gate said what it said. The measurement profile hash
+// comes from the document itself, so it always describes the evidence the
+// verdict rests on.
+func withRunFacts(doc report.Document, in IdentityInputs, gateReasons []string) report.Document {
+	doc.State.GateReasons = slices.Clone(gateReasons)
 	doc.State.Identity = report.ResultIdentity{
 		SchemaVersion: report.IdentitySchemaVersion,
 		PolicyDigest:  in.PolicyDigest, BaselineDigest: in.BaselineDigest, LabelsDigest: in.LabelsDigest,
