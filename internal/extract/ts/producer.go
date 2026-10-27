@@ -191,5 +191,21 @@ func environmentIssue(dc dcOutput) string {
 		return ""
 	}
 	issue := dc.Summary.Environment.Issues[0]
-	return fmt.Sprintf("dependency-cruiser environment incomplete (%s): %s", issue.Name, issue.Description)
+	return fmt.Sprintf(
+		"dependency-cruiser environment incomplete (%s): %s. Fix: run `npm ci` in the project root (the workspace root for a monorepo); if it persists the analyzer environment has no compatible TypeScript compiler, so run archfit from the shipped image or install typescript 5-6 next to dependency-cruiser",
+		issue.Name, firstSentence(issue.Description))
+}
+
+// firstSentence trims dependency-cruiser's multi-line advice to its first line
+// and sentence: a coverage reason is one line, and the full text is unreadable
+// there.
+func firstSentence(text string) string {
+	for line := range strings.Lines(strings.TrimSpace(text)) {
+		text = strings.TrimSpace(line)
+		break
+	}
+	if index := strings.Index(text, ". "); index > 0 {
+		text = text[:index]
+	}
+	return strings.TrimRight(text, ". ")
 }

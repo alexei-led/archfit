@@ -31,11 +31,11 @@ const (
 // ReasonSCIPDisabled is the published Reason on the StatusDisabled coverage row
 // this package emits when the opt-in SCIP pass is off. Exported so tests assert
 // the shipped text rather than a copy of it.
-const ReasonSCIPDisabled = "opt-in: analyzers.scip.enabled"
+const ReasonSCIPDisabled = "off by default because the pass is slow: set analyzers.scip.enabled: true for symbol-level coupling strength"
 
 // ReasonSyntaxDisabled is the published Reason on the StatusDisabled coverage
 // row this package emits when the opt-in syntax pass is off.
-const ReasonSyntaxDisabled = "opt-in: analyzers.syntax.enabled"
+const ReasonSyntaxDisabled = "off by default because the pass is slow: set analyzers.syntax.enabled: true for roles, routes and exported surface"
 
 var cloneTestGenGlobs = []string{
 	"**/*_test.go", "**/*_test.ts", "**/*_test.py", "**/mock_*.go", "**/*_mock.go",

@@ -492,6 +492,11 @@ func cacheableDepcruise(out toolrun.Output) bool {
 // JSON parsing types for dependency-cruiser output.
 // ---------------------------------------------------------------------------
 
+// reasonUnresolvedSpecifiers is the published reason when dependency-cruiser
+// could not resolve imports. It names the command that fixes it: a reader who
+// sees "57% unresolved" needs the next step, not the percentage again.
+const reasonUnresolvedSpecifiers = "%d of %d import specifiers unresolved (%.0f%%): run `npm ci` in the project root (the workspace root for a monorepo) so imports resolve, then check tsconfig paths/baseUrl"
+
 type dcOutput struct {
 	Modules []dcModule `json:"modules"`
 	Summary struct {
@@ -722,9 +727,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 	if unresolved > 0 {
 		status = statusPartial
 		pct := 100 * float64(unresolved) / float64(totalSpecifiers)
-		reason = fmt.Sprintf(
-			"%d of %d import specifiers unresolved (%.0f%%) — check tsconfig paths/baseUrl and installed dependencies",
-			unresolved, totalSpecifiers, pct)
+		reason = fmt.Sprintf(reasonUnresolvedSpecifiers, unresolved, totalSpecifiers, pct)
 	}
 
 	facts := graph.Facts{
