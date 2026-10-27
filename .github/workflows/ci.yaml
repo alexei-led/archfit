@@ -145,7 +145,7 @@ jobs:
       # reuses the restored tree.
       - name: Restore locked analyzer toolchain
         id: toolchain
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/archfit
           key: archfit-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/**', 'scripts/provision_tools.py', 'scripts/provision-analyzers.sh', 'scripts/ci-provision-tools.sh') }}
@@ -238,7 +238,7 @@ jobs:
           enable-cache: false
       - name: Restore locked analyzer toolchain
         id: toolchain
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/archfit
           key: archfit-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/**', 'scripts/provision_tools.py', 'scripts/provision-analyzers.sh', 'scripts/ci-provision-tools.sh') }}
@@ -345,7 +345,7 @@ jobs:
           enable-cache: false
       - name: Restore locked analyzer toolchain
         id: toolchain
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/archfit
           key: archfit-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/**', 'scripts/provision_tools.py', 'scripts/provision-analyzers.sh', 'scripts/ci-provision-tools.sh') }}
