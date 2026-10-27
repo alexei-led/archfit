@@ -53,10 +53,18 @@ internal static class Program
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine($"archfit-roslyn: {e}");
-            return 1;
+            // One line for the caller's reason; the trace only on request.
+            Console.Error.WriteLine(Unexpected(e));
+            if (Environment.GetEnvironmentVariable("ARCHFIT_ROSLYN_DEBUG") == "1")
+            {
+                Console.Error.WriteLine(e);
+            }
+            return 2;
         }
     }
+
+    internal static string Unexpected(Exception e) =>
+        $"archfit-roslyn: {e.GetType().FullName}: {e.Message.Split('\n')[0].Trim()}";
 
     // RegisterMSBuild picks the SDK that `dotnet` resolves from dir, so a
     // global.json in the target applies, and loads MSBuild from it. It must run
@@ -152,7 +160,8 @@ internal static class Loader
         {
             snapshot = [.. diagnostics];
         }
-        return await Classifier.ClassifyAsync(workspace.CurrentSolution, root, snapshot, ct);
+        IReadOnlyCollection<string> requested = solutions == 1 ? [] : targets;
+        return await Classifier.ClassifyAsync(workspace.CurrentSolution, root, snapshot, ct, requested);
     }
 
     private static bool IsSolution(string path) =>

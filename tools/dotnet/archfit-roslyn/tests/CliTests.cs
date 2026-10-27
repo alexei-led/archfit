@@ -77,10 +77,44 @@ public class CliTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnexpectedErrorIsOneStderrLineUnlessDebugging(bool debug)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "archfit-roslyn-corrupt-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "x.slnx"), """<Solution><Project Path="A/A.csproj" """);
+        try
+        {
+            var (code, stdout, stderr) = await RunWith(AppContext.BaseDirectory, debug ? "1" : null, dir, "x.slnx");
+
+            Assert.Equal(2, code);
+            Assert.Equal("", stdout);
+            var lines = stderr.ReplaceLineEndings("\n").TrimEnd('\n').Split('\n');
+            Assert.StartsWith("archfit-roslyn: System.Xml.XmlException: Unexpected end of file", lines[0]);
+            if (debug)
+            {
+                Assert.Contains(lines, l => l.TrimStart().StartsWith("at ", StringComparison.Ordinal));
+            }
+            else
+            {
+                Assert.Single(lines);
+            }
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     private static Task<(int Code, string Stdout, string Stderr)> Run(params string[] args) =>
         RunIn(AppContext.BaseDirectory, args);
 
-    private static async Task<(int Code, string Stdout, string Stderr)> RunIn(string workDir, params string[] args)
+    private static Task<(int Code, string Stdout, string Stderr)> RunIn(string workDir, params string[] args) =>
+        RunWith(workDir, null, args);
+
+    private static async Task<(int Code, string Stdout, string Stderr)> RunWith(string workDir, string? debug, params string[] args)
     {
         var start = new ProcessStartInfo("dotnet")
         {
@@ -88,6 +122,7 @@ public class CliTests
             RedirectStandardError = true,
             WorkingDirectory = workDir,
         };
+        start.Environment["ARCHFIT_ROSLYN_DEBUG"] = debug;
         start.ArgumentList.Add(Helper);
         foreach (var arg in args)
         {

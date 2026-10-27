@@ -55,6 +55,41 @@ public class ClassifierTests
             (gone.Path, gone.Status, gone.Reason));
     }
 
+    [Fact]
+    public async Task RequestedProjectsAreNeverOmitted()
+    {
+        using var workspace = new AdhocWorkspace();
+        var solution = workspace.CurrentSolution.AddProject(ProjectInfo.Create(
+            ProjectId.CreateNewId(), VersionStamp.Default, "Empty", "Empty", LanguageNames.CSharp, filePath: "/snap/Empty/Empty.csproj"));
+        WorkspaceDiagnostic[] diagnostics =
+        [
+            new(WorkspaceDiagnosticKind.Failure, "Msbuild failed with a message that names no project file"),
+        ];
+
+        var report = await Classifier.ClassifyAsync(
+            solution, Root, diagnostics, CancellationToken.None, ["/snap/Empty/Empty.csproj", "/snap/Dropped/Dropped.csproj"]);
+
+        Assert.Equal(
+            [
+                ("Dropped/Dropped.csproj", "failed", "Msbuild failed with a message that names no project file; fix the project so `dotnet build` loads it"),
+                ("Empty/Empty.csproj", "failed", "Msbuild failed with a message that names no project file; fix the project so `dotnet build` loads it"),
+            ],
+            report.Projects.Select(p => (p.Path, p.Status, p.Reason)));
+    }
+
+    [Fact]
+    public async Task RequestedProjectWithoutAFailureIsFailedNotLoaded()
+    {
+        using var workspace = new AdhocWorkspace();
+
+        var report = await Classifier.ClassifyAsync(workspace.CurrentSolution, Root, [], CancellationToken.None, ["/snap/Gone/Gone.csproj"]);
+
+        var gone = Assert.Single(report.Projects);
+        Assert.Equal(
+            ("Gone/Gone.csproj", "failed", "the workspace did not load the project; fix the project so `dotnet build` loads it"),
+            (gone.Path, gone.Status, gone.Reason));
+    }
+
     [Theory]
     [InlineData("net8.0", "Microsoft.NETCore.App.Ref", "8.0")]
     [InlineData("net10.0", "Microsoft.NETCore.App.Ref", "10.0")]

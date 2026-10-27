@@ -5,15 +5,22 @@ namespace ArchfitRoslyn;
 
 // Classifier turns a loaded solution plus workspace diagnostics into the
 // report, deciding each project's status (D5):
-//   failed   0 documents and a workspace failure for that project
+//   failed   0 documents, or requested and never loaded
 //   partial  documents loaded, and a workspace failure or unresolved names
 //   complete documents loaded, no failure, no unresolved names
+// Every requested project gets an entry: one the workspace dropped, or whose
+// failure names no parsable project path, is failed, never omitted.
 internal static partial class Classifier
 {
     public static async Task<Report> ClassifyAsync(
-        Solution solution, string root, IReadOnlyList<WorkspaceDiagnostic> diagnostics, CancellationToken ct)
+        Solution solution, string root, IReadOnlyList<WorkspaceDiagnostic> diagnostics, CancellationToken ct,
+        IReadOnlyCollection<string>? requested = null)
     {
         var fullRoot = Paths.Full(root);
+        var unattributed = diagnostics
+            .Where(d => d.Kind == WorkspaceDiagnosticKind.Failure && FailingProject(d.Message) is null)
+            .Select(d => d.Message)
+            .FirstOrDefault();
         var failures = diagnostics
             .Where(d => d.Kind == WorkspaceDiagnosticKind.Failure)
             .Select(d => (Project: FailingProject(d.Message), d.Message))
@@ -39,9 +46,11 @@ internal static partial class Classifier
                 continue;
             }
             var projectFailures = failures.GetValueOrDefault(Paths.Full(project.FilePath)) ?? [];
-            if (project.DocumentIds.Count == 0 && projectFailures.Count > 0)
+            if (project.DocumentIds.Count == 0)
             {
-                reports.Add(Failed(path, projectFailures[0], fullRoot));
+                // A project whose evaluation failed stays in the workspace with
+                // no documents; the failure may not name it parsably.
+                reports.Add(Failed(path, projectFailures.FirstOrDefault() ?? unattributed ?? NoDocuments, fullRoot));
                 continue;
             }
             var collected = await collector.CollectAsync(project, ct);
@@ -76,6 +85,15 @@ internal static partial class Classifier
             }
         }
 
+        var reported = reports.Select(r => r.Path).Concat(skipped).ToHashSet(StringComparer.Ordinal);
+        foreach (var target in requested ?? [])
+        {
+            if (Relative(fullRoot, target) is { } path && !reported.Contains(path))
+            {
+                reports.Add(Failed(path, unattributed ?? NotLoaded, fullRoot));
+            }
+        }
+
         reports.Sort((a, b) =>
         {
             var c = string.CompareOrdinal(a.Path, b.Path);
@@ -83,6 +101,9 @@ internal static partial class Classifier
         });
         return new Report(Report.CurrentSchemaVersion, skipped.ToList(), reports);
     }
+
+    private const string NoDocuments = "the workspace loaded no source documents";
+    private const string NotLoaded = "the workspace did not load the project";
 
     private static ProjectReport Failed(string path, string message, string root) =>
         new(path, "", Status.Failed, FailedReason(message, root), 0, null, [], [], []);
