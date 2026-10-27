@@ -33,6 +33,7 @@ func TestParseSolution(t *testing.T) {
 		wantErr     bool
 		wantPaths   []string
 		wantSkipped int
+		wantBase    string
 	}{
 		{
 			name:        "slnx with folder, backslash path, duplicate and sqlproj",
@@ -48,6 +49,17 @@ func TestParseSolution(t *testing.T) {
 			wantPaths:   []string{"src/Core/Core.csproj"},
 			wantSkipped: 1,
 		},
+		{
+			name: "slnf projects are relative to the base solution, kept relative to the filter",
+			file: "web/Web.slnf",
+			data: "\xef\xbb\xbf" + `{"solution":{"path":"..\\all\\All.slnx","projects":[
+			  "src\\Core\\Core.csproj","src/Core/Core.csproj","db\\Db.sqlproj"]}}`,
+			wantPaths:   []string{"../all/src/Core/Core.csproj"},
+			wantSkipped: 1,
+			wantBase:    "../all/All.slnx",
+		},
+		{name: "slnf without a base solution", file: "A.slnf", data: `{"solution":{"projects":["a.csproj"]}}`, wantErr: true},
+		{name: "malformed slnf", file: "A.slnf", data: `{"solution":`, wantErr: true},
 		{name: "empty slnx", file: slnxName, data: `<Solution/>`},
 		{name: "malformed slnx", file: slnxName, data: `<Solution><Project Path="a.csproj"`, wantErr: true},
 		{name: "unknown extension", file: "A.txt", data: ``, wantErr: true},
@@ -63,6 +75,9 @@ func TestParseSolution(t *testing.T) {
 			}
 			if got.Skipped != tt.wantSkipped {
 				t.Errorf("skipped = %d, want %d", got.Skipped, tt.wantSkipped)
+			}
+			if got.Base != tt.wantBase {
+				t.Errorf("base = %q, want %q", got.Base, tt.wantBase)
 			}
 		})
 	}

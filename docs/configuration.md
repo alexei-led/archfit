@@ -74,7 +74,7 @@ Each language accepts `enabled` and `gate`. `enabled` accepts YAML booleans or t
 | `languages.typescript` | `enabled`, `gate` | Uses the TypeScript extractor when its project markers and tools exist. |
 | `languages.python` | `enabled`, `gate`, `package` | `package` is the top-level importable package name. Empty means auto-detect from the project layout. |
 | `languages.rust` | `enabled`, `gate`, `manifest`, `features`, `include_dev_deps` | Empty `manifest` uses the root Cargo manifest. `features` defaults empty. `include_dev_deps` defaults false. |
-| `languages.dotnet` | `enabled`, `gate`, `projects` | `projects` lists `.slnx`, `.sln`, or `.csproj` paths under the analysis root. Empty uses the first `.slnx` or `.sln` at the root (by file name), else every `*.csproj` outside `obj/`, `bin/`, `.git/`, `node_modules/`, and `exclude`. A listed path that does not exist makes `dotnet-msbuild` partial; when none exists the language reads absent, or reports an extractor error under `enabled: true`. Generated configs write `enabled: auto`, so a missing `dotnet` is a coverage gap. |
+| `languages.dotnet` | `enabled`, `gate`, `projects` | `projects` lists `.slnx`, `.sln`, `.slnf` (solution filter), or `.csproj` paths under the analysis root. Empty uses the first `.slnx` or `.sln` at the root (by file name), else every `*.csproj` outside `obj/`, `bin/`, `.git/`, `node_modules/`, and `exclude`. A listed path that does not exist makes `dotnet-msbuild` partial; when none exists the language reads absent, or reports an extractor error under `enabled: true`. Generated configs write `enabled: auto`, so a missing `dotnet` is a coverage gap. |
 
 Example Go workspace filter:
 

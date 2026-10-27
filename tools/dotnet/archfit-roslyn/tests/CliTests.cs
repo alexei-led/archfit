@@ -52,6 +52,30 @@ public class CliTests
         }
     }
 
+    [Fact]
+    public async Task SolutionFilterLoadsOnlyItsProjects()
+    {
+        var copy = Path.Combine(Path.GetTempPath(), "archfit-roslyn-slnf-" + Guid.NewGuid().ToString("N"));
+        LoadedFixture.CopyTree(LoadedFixture.Source, copy);
+        try
+        {
+            File.WriteAllText(Path.Combine(copy, "Core.slnf"),
+                """{"solution":{"path":"Fixture.slnx","projects":["Domain\\Domain.csproj","Application\\Application.csproj"]}}""");
+
+            var (code, stdout, _) = await Run(copy, "Core.slnf");
+
+            Assert.Equal(0, code);
+            using var json = JsonDocument.Parse(stdout);
+            var projects = json.RootElement.GetProperty("projects").EnumerateArray()
+                .Select(p => (p.GetProperty("path").GetString(), p.GetProperty("status").GetString()));
+            Assert.Equal([("Application/Application.csproj", "complete"), ("Domain/Domain.csproj", "complete")], projects);
+        }
+        finally
+        {
+            Directory.Delete(copy, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

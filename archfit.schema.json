@@ -246,7 +246,7 @@
             "type": "string"
           },
           "type": "array",
-          "description": "Projects are the solution (.slnx, .sln) or project (.csproj) files to\nanalyze, relative to the scan root. Empty = auto: the first solution at\nthe root, else every .csproj outside obj/, bin/ and exclusions."
+          "description": "Projects are the solution (.slnx, .sln), solution filter (.slnf), or\nproject (.csproj) files to analyze, relative to the scan root. Empty =\nauto: the first .slnx or .sln at the root, else every .csproj outside\nobj/, bin/ and exclusions."
         }
       },
       "additionalProperties": false,

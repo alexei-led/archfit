@@ -557,19 +557,20 @@ func (s *selection) addTargets(root string, targets []string) error {
 		switch strings.ToLower(path.Ext(rel)) {
 		case csprojExt:
 			s.projects = append(s.projects, rel)
-		case slnxExt, slnExt:
+		case slnxExt, slnExt, slnfExt:
 			if err := s.addSolution(root, rel); err != nil {
 				return err
 			}
 		default:
-			return fmt.Errorf("target %s is not a solution or .csproj", rel)
+			return fmt.Errorf("target %s is not a solution, solution filter, or .csproj", rel)
 		}
 	}
 	return nil
 }
 
-// addSolution adds the projects a solution lists; entries that escape the root or
-// have no file are recorded as missing.
+// addSolution adds the projects a solution or solution filter lists; entries
+// that escape the root or have no file are recorded as missing. A filter whose
+// base solution is missing is an error: the helper cannot open it.
 func (s *selection) addSolution(root, rel string) error {
 	if s.solution == "" {
 		s.solution = rel
@@ -582,8 +583,14 @@ func (s *selection) addSolution(root, rel string) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", rel, err)
 	}
-	s.skipped += parsed.Skipped
 	dir := path.Dir(rel)
+	if parsed.Base != "" {
+		base := path.Join(dir, parsed.Base)
+		if base == ".." || strings.HasPrefix(base, "../") || !fileExists(filepath.Join(root, filepath.FromSlash(base))) {
+			return fmt.Errorf("%s: solution %s not found under the root", rel, base)
+		}
+	}
+	s.skipped += parsed.Skipped
 	for _, p := range parsed.Projects {
 		full := path.Join(dir, p)
 		if full == ".." || strings.HasPrefix(full, "../") || !fileExists(filepath.Join(root, filepath.FromSlash(full))) {

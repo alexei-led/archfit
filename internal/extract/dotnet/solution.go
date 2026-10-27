@@ -3,6 +3,7 @@ package dotnet
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ const (
 	csprojExt          = ".csproj"
 	slnxExt            = ".slnx"
 	slnExt             = ".sln"
+	slnfExt            = ".slnf"
 	solutionFolderGUID = "2150E333-8FDC-42A3-9474-1A3956D46DE8"
 )
 
@@ -29,18 +31,53 @@ type solutionProjects struct {
 	Projects []string
 	// Skipped counts project entries that are not .csproj (.sqlproj, .fsproj, ...).
 	Skipped int
+	// Base is the solution a solution filter (.slnf) narrows, relative to the
+	// filter's directory; empty for a .slnx or .sln.
+	Base string
 }
 
-// parseSolution parses a .slnx or .sln by file name.
+// parseSolution parses a .slnx, .sln, or .slnf by file name.
 func parseSolution(name string, data []byte) (solutionProjects, error) {
 	switch strings.ToLower(path.Ext(name)) {
 	case slnxExt:
 		return parseSlnx(data)
 	case slnExt:
 		return parseSln(data), nil
+	case slnfExt:
+		return parseSlnf(data)
 	default:
-		return solutionProjects{}, fmt.Errorf("%s is not a .slnx or .sln file", name)
+		return solutionProjects{}, fmt.Errorf("%s is not a .slnx, .sln, or .slnf file", name)
 	}
+}
+
+// parseSlnf reads a solution filter: the base solution's path, relative to the
+// filter, and the projects it keeps, relative to the base solution. The
+// projects are returned relative to the filter's directory, as for the other
+// formats.
+func parseSlnf(data []byte) (solutionProjects, error) {
+	var doc struct {
+		Solution struct {
+			Path     string   `json:"path"`
+			Projects []string `json:"projects"`
+		} `json:"solution"`
+	}
+	if err := json.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &doc); err != nil {
+		return solutionProjects{}, fmt.Errorf("parse slnf: %w", err)
+	}
+	if doc.Solution.Path == "" {
+		return solutionProjects{}, errors.New("parse slnf: solution.path is empty")
+	}
+	out := solutionProjects{Base: slashClean(doc.Solution.Path)}
+	dir := path.Dir(out.Base)
+	seen := map[string]struct{}{}
+	for _, p := range doc.Solution.Projects {
+		out.add(path.Join(dir, slashClean(p)), seen)
+	}
+	return out, nil
+}
+
+func slashClean(raw string) string {
+	return path.Clean(strings.ReplaceAll(strings.TrimSpace(raw), `\`, "/"))
 }
 
 // parseSlnx reads every <Project Path="..."> element at any depth, so projects
@@ -87,7 +124,7 @@ func parseSln(data []byte) solutionProjects {
 }
 
 func (s *solutionProjects) add(raw string, seen map[string]struct{}) {
-	p := path.Clean(strings.ReplaceAll(strings.TrimSpace(raw), `\`, "/"))
+	p := slashClean(raw)
 	if !strings.EqualFold(path.Ext(p), csprojExt) {
 		s.Skipped++
 		return

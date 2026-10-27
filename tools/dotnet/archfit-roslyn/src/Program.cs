@@ -11,11 +11,11 @@ namespace ArchfitRoslyn;
 // builds write under each project's obj/, so run it on a disposable copy of
 // the tree (D6).
 //
-//   archfit-roslyn <root> <solution.slnx|solution.sln|project.csproj>...
+//   archfit-roslyn <root> <solution.slnx|solution.sln|filter.slnf|project.csproj>...
 //   archfit-roslyn --version
 internal static class Program
 {
-    private const string Usage = "usage: archfit-roslyn <root> <solution.slnx|solution.sln|project.csproj>... | --version";
+    private const string Usage = "usage: archfit-roslyn <root> <solution.slnx|solution.sln|filter.slnf|project.csproj>... | --version";
 
     public static async Task<int> Main(string[] args)
     {
@@ -164,6 +164,10 @@ internal static class Loader
         return await Classifier.ClassifyAsync(workspace.CurrentSolution, root, snapshot, ct, requested);
     }
 
+    // A solution filter (.slnf) opens like a solution: MSBuildWorkspace loads
+    // its base solution and keeps the projects the filter lists.
     private static bool IsSolution(string path) =>
-        path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase);
+        path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".slnf", StringComparison.OrdinalIgnoreCase);
 }

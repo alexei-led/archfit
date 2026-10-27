@@ -79,9 +79,10 @@ type RustLanguage struct {
 type DotNetLanguage struct {
 	Enabled evidenceports.ToolMode `yaml:"enabled"`
 	Gate    GateMode               `yaml:"gate,omitempty"`
-	// Projects are the solution (.slnx, .sln) or project (.csproj) files to
-	// analyze, relative to the scan root. Empty = auto: the first solution at
-	// the root, else every .csproj outside obj/, bin/ and exclusions.
+	// Projects are the solution (.slnx, .sln), solution filter (.slnf), or
+	// project (.csproj) files to analyze, relative to the scan root. Empty =
+	// auto: the first .slnx or .sln at the root, else every .csproj outside
+	// obj/, bin/ and exclusions.
 	Projects []string `yaml:"projects,omitempty"`
 }
 
