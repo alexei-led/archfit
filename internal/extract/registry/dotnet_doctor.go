@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -49,7 +50,7 @@ func roslynHelperVersion(ctx context.Context, r toolrun.Runner, helperDir, dir s
 			return line, nil
 		}
 	}
-	return "", fmt.Errorf("archfit-roslyn --version printed no identity line; rebuild it with `make dotnet-roslyn`")
+	return "", errors.New("archfit-roslyn --version printed no identity line; rebuild it with `make dotnet-roslyn`")
 }
 
 // runDotnet runs dotnet with args in dir; label names the command in errors.

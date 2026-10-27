@@ -676,7 +676,7 @@ func TestResolve_GitAuthorFallback_AppliesMailmap(t *testing.T) {
 	root := t.TempDir()
 	git := func(env []string, args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
+		cmd := exec.Command("git", args...) //nolint:gosec // fixed git subcommands from this test
 		cmd.Dir = root
 		cmd.Env = append(os.Environ(), append(env, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
 			"GIT_COMMITTER_NAME=c", "GIT_COMMITTER_EMAIL=c@c")...)

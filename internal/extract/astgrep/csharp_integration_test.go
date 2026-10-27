@@ -17,6 +17,7 @@ const (
 	langCSharpStr = "dotnet"
 	statusPartial = "partial"
 	routeHTTPGet  = "HttpGet"
+	pathJobID     = "/jobs/{id}"
 )
 
 type routeWant struct {
@@ -67,11 +68,11 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 				{"{ref}", 16},
 				{"/status", 24},
 				{"/jobs", 25},
-				{"/jobs/{id}", 26},
-				{"/jobs/{id}", 27},
+				{pathJobID, 26},
+				{pathJobID, 27},
 				{pathItems, 28},
 				{routeHTTPGet, 34},
-				{"/jobs/{id}", 42},
+				{pathJobID, 42},
 				{"/jobs", 43},
 				{"MapIdentityApi", 44},
 			},

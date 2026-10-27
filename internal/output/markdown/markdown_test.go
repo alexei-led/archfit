@@ -28,6 +28,7 @@ const (
 	connascenceTimingMd       = "timing"
 	dynamicReportOnlyReasonMd = "runtime trace evidence is absent"
 	langPythonMarkdownTest    = "python"
+	kindRouteMarkdownTest     = "route"
 
 	// Kept tool names.
 	toolJscpd  = "jscpd"
@@ -1762,16 +1763,16 @@ func TestRenderer_Render_ReportOnlyListsNameTheirCap(t *testing.T) {
 	r := markdown.New()
 	d := reportmodel.NewDocument()
 	d.Verdict = reportmodel.VerdictPass
-	d.FileFacts = []reportmodel.FileFact{{Module: "api", InboundModuleFanIn: 1, OutboundDestinations: 1, LOC: 10}}
+	d.FileFacts = []reportmodel.FileFact{{Module: modAPI, InboundModuleFanIn: 1, OutboundDestinations: 1, LOC: 10}}
 	for i := range 25 {
 		d.SyntaxFacts = append(d.SyntaxFacts,
-			reportmodel.SyntaxFact{Language: "dotnet", File: "src/Web/Endpoints.cs", Kind: "route", Name: fmt.Sprintf("/r%02d", i), StartLine: i + 1},
+			reportmodel.SyntaxFact{Language: "dotnet", File: "src/Web/Endpoints.cs", Kind: kindRouteMarkdownTest, Name: fmt.Sprintf("/r%02d", i), StartLine: i + 1},
 			reportmodel.SyntaxFact{Language: "go", File: "pkg/api/api.go", Kind: kindFunction, Name: fmt.Sprintf("F%02d", i), Exported: true, StartLine: i + 1},
 		)
 	}
 	for i := range 12 {
 		d.DynamicImports = append(d.DynamicImports, reportmodel.DynamicImport{Module: fmt.Sprintf("m%02d", i), Count: 1,
-			Sites: []reportmodel.DynamicImportSite{{File: "a.py", Line: 1, Kind: "lazy_import", Language: "python"}}})
+			Sites: []reportmodel.DynamicImportSite{{File: "a.py", Line: 1, Kind: "lazy_import", Language: langPythonMarkdownTest}}})
 	}
 
 	var buf bytes.Buffer
