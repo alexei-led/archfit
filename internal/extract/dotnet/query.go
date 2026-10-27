@@ -20,8 +20,9 @@ const csExt = ".cs"
 // QueryEdge builds the facts `archfit policy can-import` judges: one use by
 // the C# file from of target, spelled exactly as appendFileGraph spells a
 // Roslyn edge — file node to file node with the same edge kind, or file node
-// to an external:<assembly> node, and no location — so the rule pass keys its
-// findings as it does on the extracted edge. target is a root-relative .cs
+// to an external:<assembly> node — so the rule pass keys its findings as it
+// does on the extracted edge. A queried use has no location; finding IDs do
+// not depend on one. target is a root-relative .cs
 // file or an assembly name (MediatR.Contracts). It reads the project selection
 // Extract uses; it runs no dotnet process.
 //
