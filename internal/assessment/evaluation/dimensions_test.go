@@ -526,6 +526,29 @@ func TestEvidenceDependentDimensionsRequireCompletedProducers(t *testing.T) {
 	}
 }
 
+// TestPartialDotNetEvaluationKeepsModularityPartial pins the offline .NET shape
+// to the TypeScript precedent above: projects that fail evaluation make the
+// dotnet-msbuild primary partial, so modularity is partial and names the
+// module graph shape it could not observe. blast_radius is still computed and
+// reported, as it is over a partial TypeScript graph; the dimension status,
+// not the metric, carries the incompleteness.
+func TestPartialDotNetEvaluationKeepsModularityPartial(t *testing.T) {
+	t.Parallel()
+	diag, in := dimensionsFixture()
+	diag.PrimaryExtractorTools = append(diag.PrimaryExtractorTools, "dotnet-msbuild")
+	diag.ToolCoverage = append(diag.ToolCoverage,
+		modevidence.Coverage{Tool: "dotnet-msbuild", Status: modevidence.StatusPartial},
+		modevidence.Coverage{Tool: "roslyn", Status: modevidence.StatusPartial, Unresolved: 3, UnresolvedInputsMissing: 4},
+	)
+	dim := evaluation.BuildDimensions(diag, in, nil).Modularity
+	if dim.Status != state.Partial || !hasUnknownFact(dim.Unknown, state.FactModuleGraphShape) {
+		t.Errorf("modularity = status %q unknown %+v, want partial naming the module graph shape", dim.Status, dim.Unknown)
+	}
+	if !hasMetric(dim.Metrics, "blast_radius") {
+		t.Errorf("modularity metrics = %+v, want blast_radius still reported", dim.Metrics)
+	}
+}
+
 // TestIntentRequiresSyntaxEvidenceForSyntaxRules prevents a rule invocation over
 // an empty syntax fact set from being mistaken for a successful conformance
 // result.
