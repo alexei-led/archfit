@@ -38,6 +38,26 @@ func TestLangAliasesInInstallEnum(t *testing.T) {
 	}
 }
 
+// TestLangHelpNamesEveryLanguage keeps the --lang help of analyze and check in
+// step with the registry: every language and alias it accepts is listed.
+func TestLangHelpNamesEveryLanguage(t *testing.T) {
+	t.Parallel()
+	for _, cmd := range []any{AnalyzeCmd{}, CheckCmd{}} {
+		f, ok := reflect.TypeOf(cmd).FieldByName("Lang")
+		if !ok {
+			t.Fatalf("%T has no Lang field", cmd)
+		}
+		help := f.Tag.Get("help")
+		for _, lang := range registry.All() {
+			for _, name := range append([]string{lang.ID}, lang.Aliases...) {
+				if !strings.Contains(help, name) {
+					t.Errorf("%T --lang help %q does not name %q", cmd, help, name)
+				}
+			}
+		}
+	}
+}
+
 // installEnumTag reads the comma-separated kong `enum` struct tag off
 // DoctorCmd.Lang via reflection so the test tracks the tag without duplicating
 // its literal.

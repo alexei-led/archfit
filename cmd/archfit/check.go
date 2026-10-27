@@ -15,7 +15,7 @@ type CheckCmd struct {
 	MinSeverity  string   `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
 	Refresh      bool     `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
 	RequireTools bool     `name:"require-tools" help:"Exit non-zero when any required analyzer tool is missing."`
-	Lang         []string `name:"lang" help:"Language to force on: go, typescript (ts), python (py), rust (rs). Repeatable."`
+	Lang         []string `name:"lang" help:"Language to force on: go, typescript (ts), python (py), rust (rs), dotnet (csharp). Repeatable."`
 
 	JSON     bool     `name:"json" help:"Output format: JSON (shorthand for --format json)."`
 	Markdown bool     `name:"markdown" help:"Output format: Markdown (shorthand for --format markdown)."`

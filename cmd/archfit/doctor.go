@@ -21,7 +21,7 @@ const installSubcmd = "install"
 // (the former `install` command, folded in so `doctor` both diagnoses and fixes).
 type DoctorCmd struct {
 	Fix    bool     `name:"fix" aliases:"install" help:"Install missing analyzer toolchains (archfit installs what it can)."`
-	Lang   []string `name:"lang" help:"Toolchains to install with --fix (default: all). Repeatable." enum:"go,ts,py,rust"`
+	Lang   []string `name:"lang" help:"Toolchains to install with --fix (default: all). Repeatable. .NET has no automatic install: install the .NET SDK and build the helper with make dotnet-roslyn." enum:"go,ts,py,rust"`
 	DryRun bool     `name:"dry-run" short:"n" help:"With --fix: print install commands without running them."`
 }
 
