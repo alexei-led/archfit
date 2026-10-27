@@ -3,6 +3,7 @@ package ownership_test
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -617,5 +618,91 @@ func nilRunner() toolrun.Runner {
 		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
 			panic("git runner must not be called when CODEOWNERS exists")
 		},
+	}
+}
+
+func TestResolve_GitAuthorFallback_MergesAliases(t *testing.T) {
+	tests := []struct {
+		name   string
+		gitLog string
+		want   string
+	}{
+		{
+			name: "same name with two emails is one author",
+			gitLog: "jane@work.com\tJane Doe\ncmd/main.go\n\njane@home.com\tJane Doe\ncmd/main.go\ncmd/main.go\n\n" +
+				"bob@x.com\tBob\ncmd/main.go\ncmd/main.go\n",
+			want: "jane@home.com",
+		},
+		{
+			name: "a shared email chains two names into one author",
+			gitLog: "a@x.com\tJason Taylor\ncmd/main.go\n\nb@y.com\tJason Taylor\ncmd/main.go\n\nb@y.com\tjasontaylordev\ncmd/main.go\n\n" +
+				"c@z.com\tJasonTaylorDev\ncmd/main.go\n\nbob@x.com\tBob\ncmd/main.go\ncmd/main.go\ncmd/main.go\n",
+			want: "b@y.com",
+		},
+		{
+			name:   "email case does not split an author",
+			gitLog: "Jane@Home.com\tJ\ncmd/main.go\n\njane@home.com\tJane\ncmd/main.go\n\nbob@x.com\tBob\ncmd/main.go\n",
+			want:   "Jane@Home.com",
+		},
+		{
+			name:   "different names and emails stay different authors",
+			gitLog: "alice@x.com\tAlice\ncmd/main.go\n\nbob@x.com\tBob\ncmd/main.go\ncmd/main.go\n",
+			want:   "bob@x.com",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeFile(t, root, modCmd+"/main.go", "")
+			mm := buildModuleMap(t, map[string][]string{modCmd: {modCmd + "/**"}})
+			runner := &toolrun.RunnerMock{
+				RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+					return toolrun.Output{Stdout: []byte(tt.gitLog), ExitCode: 0}, nil
+				},
+			}
+			got, _ := ownership.Resolve(context.Background(), root, root, "", mm, runner)
+			if got[modCmd] != tt.want {
+				t.Errorf("owner = %q, want %q", got[modCmd], tt.want)
+			}
+		})
+	}
+}
+
+// A .mailmap entry merges identities that share neither name nor email.
+func TestResolve_GitAuthorFallback_AppliesMailmap(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	root := t.TempDir()
+	git := func(env []string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), append(env, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
+			"GIT_COMMITTER_NAME=c", "GIT_COMMITTER_EMAIL=c@c")...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	commit := func(name, email, file string) {
+		t.Helper()
+		writeFile(t, root, file, name+email)
+		git(nil, "add", "-A")
+		git([]string{"GIT_AUTHOR_NAME=" + name, "GIT_AUTHOR_EMAIL=" + email}, "commit", "-q", "--no-gpg-sign", "-m", file)
+	}
+	git(nil, "init", "-q")
+	writeFile(t, root, ".mailmap", "Jane Doe <jane@home.com> <old@legacy.org>\n")
+	commit("Jane Doe", "jane@home.com", "cmd/a.go")
+	commit("Jane Doe", "jane@home.com", "cmd/b.go")
+	commit("jd", "old@legacy.org", "cmd/c.go")
+	commit("Bob", "bob@x.com", "cmd/d.go")
+	commit("Bob", "bob@x.com", "cmd/e.go")
+
+	mm := buildModuleMap(t, map[string][]string{modCmd: {modCmd + "/**"}})
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, toolrun.New())
+	// Without the mailmap Jane and Bob tie at two touches and bob@x.com wins
+	// alphabetically; mapped, old@legacy.org is Jane's third touch.
+	if want := "jane@home.com"; got[modCmd] != want {
+		t.Errorf("owner = %q, want %q", got[modCmd], want)
 	}
 }

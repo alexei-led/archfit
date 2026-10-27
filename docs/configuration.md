@@ -241,7 +241,7 @@ Each `modules.<name>` entry accepts these fields:
 | `layer` | string | Must name an entry in `layers`. |
 | `subdomain` | enum | `core`, `supporting`, or `generic`, matched case-insensitively. `core` implies high volatility; the others imply low. |
 | `volatility` | enum | `high`, `medium`, `low`, `frozen`, or legacy alias `legacy`, case-insensitive. Overrides the subdomain-derived value. |
-| `owner` | string | Team or person responsible for the module. |
+| `owner` | string | Team or person responsible for the module. Without a declared owner or a CODEOWNERS file, archfit takes the module's most frequent git author. It applies `.mailmap`, and it counts author identities that share a name or an email as one person. |
 | `deploy_unit` | string | Runtime or deployment boundary used by coupling classification. |
 | `role` | enum | Empty or `composition_root`, `adapter`, `core`, `shared_model`, `generated`, `test`. |
 | `reviewed_at` | date/time | Last architecture map review date. |
