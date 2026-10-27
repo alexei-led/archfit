@@ -6,6 +6,7 @@ import io
 import json
 import shutil
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,6 +45,74 @@ class ProvisionVerificationTest(unittest.TestCase):
                     destination,
                 )
             self.assertEqual(destination.read_bytes(), content)
+
+    def test_dotnet_flat_archive_lands_at_prefix_dotnet(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            archive = base / "dotnet-sdk.tar.gz"
+            content = base / "content"
+            (content / "sdk/10.0.402").mkdir(parents=True)
+            (content / "dotnet").write_text("host")
+            (content / "sdk/10.0.402/marker").write_text("sdk")
+            with tarfile.open(archive, "w:gz") as tar:
+                for entry in sorted(content.iterdir()):
+                    tar.add(entry, arcname=entry.name)
+            artifact = {
+                "url": "https://official.invalid/dotnet-sdk.tar.gz",
+                "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+            }
+            prefix = base / "prefix"
+            prefix.mkdir()
+            work = base / "work"
+            work.mkdir()
+            with patch.object(
+                provision.urllib.request,
+                "urlopen",
+                side_effect=lambda *_, **__: io.BytesIO(archive.read_bytes()),
+            ):
+                provision.install_dotnet(artifact, work, prefix)
+            self.assertEqual((prefix / "dotnet/dotnet").read_text(), "host")
+            self.assertEqual((prefix / "dotnet/sdk/10.0.402/marker").read_text(), "sdk")
+
+    def test_dotnet_checksum_mismatch_installs_nothing(self):
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.object(
+                provision.urllib.request, "urlopen", return_value=io.BytesIO(b"wrong")
+            ),
+            self.assertRaisesRegex(ValueError, "checksum mismatch"),
+        ):
+            base = Path(temporary)
+            try:
+                provision.install_dotnet(
+                    {"url": "https://official.invalid/d.tar.gz", "sha256": "0" * 64},
+                    base,
+                    base / "prefix",
+                )
+            finally:
+                self.assertFalse((base / "prefix/dotnet").exists())
+
+    def test_unknown_architecture_is_rejected(self):
+        for arch in ("riscv64", "x86_64", ""):
+            with (
+                self.subTest(arch=arch),
+                tempfile.TemporaryDirectory() as temporary,
+                self.assertRaisesRegex(ValueError, "unsupported architecture"),
+            ):
+                provision.install_sdks(provision.ROOT, Path(temporary), arch)
+
+    def test_manifest_pins_dotnet_for_both_architectures(self):
+        manifest = json.loads((provision.ROOT / "tools/manifest.json").read_text())
+        version = manifest["versions"]["dotnet"]
+        for arch, rid in (("amd64", "x64"), ("arm64", "arm64")):
+            artifact = manifest["artifacts"][arch]["dotnet"]
+            self.assertEqual(
+                artifact["url"],
+                f"https://builds.dotnet.microsoft.com/dotnet/Sdk/{version}/"
+                f"dotnet-sdk-{version}-linux-{rid}.tar.gz",
+            )
+            self.assertRegex(artifact["sha256"], r"^[0-9a-f]{64}$")
+        self.assertIn("dotnet", manifest["checksum_sources"])
 
     def test_manifest_drift_rejects_target_compiler_substitution(self):
         with tempfile.TemporaryDirectory() as temporary:

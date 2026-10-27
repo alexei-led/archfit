@@ -74,8 +74,22 @@ def fetch_verified(artifact: dict[str, str], destination: Path) -> None:
         raise ValueError(f"checksum mismatch for {artifact['url']}: {digest}")
 
 
+def install_dotnet(artifact: dict[str, str], temp: Path, prefix: Path) -> None:
+    archive = temp / artifact["url"].rsplit("/", 1)[1]
+    print(f"verify/install dotnet: {artifact['url']}", flush=True)
+    fetch_verified(artifact, archive)
+    unpacked = temp / "dotnet"
+    unpacked.mkdir()
+    with tarfile.open(archive) as tar:
+        tar.extractall(unpacked, filter="data")
+    # The SDK archive has no top-level directory: the unpack dir is the SDK root.
+    shutil.move(unpacked, prefix / "dotnet")
+
+
 def install_sdks(root: Path, prefix: Path, arch: str) -> None:
     manifest = json.loads((root / "tools/manifest.json").read_text())
+    if arch not in manifest["artifacts"]:
+        raise ValueError(f"unsupported architecture: {arch}")
     artifacts = manifest["artifacts"][arch]
     prefix.mkdir(parents=True, exist_ok=True)
     (prefix / "bin").mkdir(exist_ok=True)
@@ -115,6 +129,7 @@ def install_sdks(root: Path, prefix: Path, arch: str) -> None:
                     ],
                     check=True,
                 )
+        install_dotnet(artifacts["dotnet"], temp, prefix)
 
 
 def main() -> None:
