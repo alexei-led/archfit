@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/alecthomas/kong v1.16.1
-	github.com/anthropics/anthropic-sdk-go/v2 v2.2.0
+	github.com/anthropics/anthropic-sdk-go/v2 v2.3.0
 	github.com/bmatcuk/doublestar/v4 v4.10.3
 	github.com/goccy/go-yaml v1.19.2
 	github.com/invopop/jsonschema v0.14.0
