@@ -655,6 +655,7 @@ func TestCouplingContractDoesNotImportGraph(t *testing.T) {
 const (
 	dotnetExtractorPkg = modulePrefix + "internal/extract/dotnet"
 	toolrunPkg         = modulePrefix + "internal/toolrun"
+	osExecPkg          = "os/exec"
 )
 
 // extractorBoundaryViolations lists the imports an out-of-process extractor
@@ -664,7 +665,7 @@ func extractorBoundaryViolations(pkgPath string, imports []string) []string {
 	var violations []string
 	for _, imp := range imports {
 		switch {
-		case imp == "os/exec":
+		case imp == osExecPkg:
 			violations = append(violations, imp+": run tools through toolrun.Runner")
 		case imp == toolrunPkg || imp == pkgPath:
 		case isAdapterPackage(imp) || strings.HasPrefix(imp, modulePrefix+"internal/factcache") ||
@@ -684,7 +685,7 @@ func TestExtractorBoundaryViolations(t *testing.T) {
 		want    int
 	}{
 		{"runner and ports are allowed", []string{toolrunPkg, modulePrefix + "internal/evidence/ports", modulePrefix + "internal/relationship/coupling", "os", "path/filepath"}, 0},
-		{"os/exec is rejected", []string{"os/exec", toolrunPkg}, 1},
+		{"os/exec is rejected", []string{osExecPkg, toolrunPkg}, 1},
 		{"sibling extractor is rejected", []string{modulePrefix + "internal/extract/rust"}, 1},
 		{"history adapter is rejected", []string{modulePrefix + "internal/history/git"}, 1},
 		{"fact cache adapter is rejected", []string{modulePrefix + "internal/factcache"}, 1},
