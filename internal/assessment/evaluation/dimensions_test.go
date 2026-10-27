@@ -1029,6 +1029,29 @@ func TestCouplingDimension_UnresolvedRoslynSymbolsKeepItPartial(t *testing.T) {
 	}
 }
 
+func TestCouplingDimension_TypeScriptAndRoslynBothNamed(t *testing.T) {
+	t.Parallel()
+	diag := &result.Result{
+		Findings:        []finding.Finding{},
+		ClassifiedEdges: &result.ClassifiedEdgeSummary{Total: 10, Scored: 10, ConnectedModules: 2},
+		ToolCoverage: []modevidence.Coverage{
+			{Tool: toolDepCruiser, Status: modevidence.StatusPartial, Unresolved: 5, SpecifiersSeen: 10},
+			{Tool: "roslyn", Status: modevidence.StatusPartial, Unresolved: 1, UnresolvedInputsMissing: 1},
+		},
+	}
+	dim := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).Coupling
+	var reason string
+	for _, u := range dim.Unknown {
+		if u.Fact == state.FactExtractorResolutionWithinCeiling {
+			reason = u.Reason
+		}
+	}
+	tsAt, roslynAt := strings.Index(reason, "dependency-cruiser"), strings.Index(reason, "roslyn")
+	if dim.Status != state.Partial || tsAt < 0 || roslynAt < tsAt || !strings.Contains(reason, "; roslyn") {
+		t.Errorf("status = %q, reason = %q, want partial naming dependency-cruiser then roslyn", dim.Status, reason)
+	}
+}
+
 func TestCouplingDimension_UnratedVolatilityMakesItPartial(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

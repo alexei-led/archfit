@@ -26,7 +26,7 @@ import (
 // Top-level layout (see docs/configuration.md):
 //   - exclude        — path globs to skip during scanning
 //   - languages      — per-language extractor settings (go/typescript/python/rust/dotnet)
-//   - analyzers      — opt-in deeper analysis backends (syntax/scip/clones/cargo_modules)
+//   - analyzers      — opt-in deeper analysis backends (syntax/scip/clones/cargo_modules/roslyn)
 //   - coverage       — opt-in ingestion of caller-supplied coverage artifacts
 //   - ai             — off-gate LLM provider for init/update/enrich/analyze/explain LLM flows
 //   - coupling       — Balanced-Coupling advisory tuning

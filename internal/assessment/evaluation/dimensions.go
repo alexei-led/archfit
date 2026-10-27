@@ -957,9 +957,15 @@ func couplingDimension(diag *result.Result) state.Dimension {
 		state.FactCouplingVolatility:               "volatility is undeclared on one or more scored cross-boundary edges, so no rung is invented",
 		state.FactExtractorResolutionWithinCeiling: "dependency-cruiser left more than a tenth of import specifiers unresolved; omitted edges may understate the candidate denominator",
 	}
-	roslyn := roslynIncomplete(diag)
+	tsPartial, roslyn := score.TSUnresolvedPartial(*diag), roslynIncomplete(diag)
 	if roslyn {
-		reasons[state.FactExtractorResolutionWithinCeiling] = "roslyn left symbols unresolved or projects unloaded; an unresolved reference may hide a cross-boundary edge"
+		// Both producers may block the fact in a mixed repository: name each.
+		const roslynReason = "roslyn left symbols unresolved or projects unloaded; an unresolved reference may hide a cross-boundary edge"
+		if tsPartial {
+			reasons[state.FactExtractorResolutionWithinCeiling] += "; " + roslynReason
+		} else {
+			reasons[state.FactExtractorResolutionWithinCeiling] = roslynReason
+		}
 	}
 	if ce == nil || ce.Scored+ce.Abstained == 0 {
 		applyPromotion(&dim, nil, nil, reasons)
@@ -975,7 +981,7 @@ func couplingDimension(diag *result.Result) state.Dimension {
 	} else {
 		reasons[state.FactCouplingVolatility] = unratedVolatilityReason(ce.UnratedVolatilityEdges, ce.UnratedVolatilityModules)
 	}
-	if !score.TSUnresolvedPartial(*diag) && !roslyn {
+	if !tsPartial && !roslyn {
 		observed = append(observed, state.FactExtractorResolutionWithinCeiling)
 	}
 	applyPromotion(&dim, observed, nil, reasons)

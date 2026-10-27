@@ -108,8 +108,10 @@ type Analyzer struct {
 }
 
 // TimedAnalyzer adds a per-run subprocess timeout (`analyzers.scip`,
-// `analyzers.clones`, `analyzers.roslyn`). On timeout the result is dropped and dependent metrics
-// report n/a; the run continues. Timeout is a Go duration string (e.g. "5m").
+// `analyzers.clones`, `analyzers.roslyn`). Timeout is a Go duration string (e.g. "5m").
+// On a SCIP or clones timeout the result is dropped and dependent metrics report
+// n/a. On a Roslyn timeout the projects fall back to their ProjectReference
+// edges and coupling stays measured but partial. The run continues either way.
 type TimedAnalyzer struct {
 	Enabled evidenceports.ToolMode `yaml:"enabled"`
 	Gate    GateMode               `yaml:"gate,omitempty"`
