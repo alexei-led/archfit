@@ -107,7 +107,7 @@ package internal/model/graph
   type internal/model/graph.Location struct{File string "json:\"file\""; Line int "json:\"line\""}
   type internal/model/graph.Node struct{Kind internal/model/graph.NodeKind "json:\"kind\""; Path string "json:\"path\""; Language string "json:\"language\""}
   func (internal/model/graph.Node).ID() string
-  type internal/model/graph.NodeConvention struct{Language string; ModuleSegmentSep string; FileExtensions []string; Priority int; moduleFileCandidatesFn func(modulePath string) []string; fileToModuleKeyFn func(file string) string}
+  type internal/model/graph.NodeConvention struct{Language string; ModuleSegmentSep string; ExternalSegmentSep string; FileExtensions []string; Priority int; moduleFileCandidatesFn func(modulePath string) []string; fileToModuleKeyFn func(file string) string}
   func (internal/model/graph.NodeConvention).ModuleSegments(module string) []string
   func (internal/model/graph.NodeConvention).ModuleFileCandidates(modulePath string) []string
   func (internal/model/graph.NodeConvention).FileToModuleKey(file string) string
