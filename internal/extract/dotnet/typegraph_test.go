@@ -114,7 +114,7 @@ type runFunc func(ctx context.Context, snapshot string) (toolrun.Output, error)
 // fakeHelper answers `--version` with helperVersion and the analysis run with run.
 func fakeHelper(run runFunc) func(context.Context, toolrun.ToolCmd) (toolrun.Output, error) {
 	return func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-		if slices.Equal(cmd.Args[1:], []string{"--version"}) {
+		if slices.Equal(cmd.Args[1:], []string{argVersion}) {
 			return toolrun.Output{Stdout: []byte(helperVersion + "\n")}, nil
 		}
 		return run(ctx, cmd.Args[1])
@@ -336,7 +336,7 @@ func TestTypeGraph_EveryDotnetCallIsQuietAndStateless(t *testing.T) {
 		if strings.HasSuffix(kind, helperDLL) {
 			kind = "helper " + call.Args[1]
 		}
-		if kind != "--version" && kind != "msbuild" && kind != "helper --version" {
+		if kind != argVersion && kind != argMSBuild && kind != "helper "+argVersion {
 			kind = "helper run"
 		}
 		kinds[kind] = true
@@ -346,7 +346,7 @@ func TestTypeGraph_EveryDotnetCallIsQuietAndStateless(t *testing.T) {
 			}
 		}
 	}
-	for _, kind := range []string{"--version", "msbuild", "helper --version", "helper run"} {
+	for _, kind := range []string{argVersion, argMSBuild, "helper " + argVersion, "helper run"} {
 		if !kinds[kind] {
 			t.Errorf("no %s call seen in %v", kind, kinds)
 		}

@@ -119,7 +119,7 @@ type recordingRunner struct {
 }
 
 func (r *recordingRunner) Run(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-	if len(cmd.Args) > 1 && strings.HasSuffix(cmd.Args[0], helperDLL) && cmd.Args[1] != "--version" {
+	if len(cmd.Args) > 1 && strings.HasSuffix(cmd.Args[0], helperDLL) && cmd.Args[1] != argVersion {
 		r.mu.Lock()
 		r.snapshots = append(r.snapshots, cmd.Args[1])
 		r.mu.Unlock()

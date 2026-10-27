@@ -12,7 +12,11 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
-const langCSharpStr = "dotnet"
+const (
+	langCSharpStr = "dotnet"
+	statusPartial = "partial"
+	routeHTTPGet  = "HttpGet"
+)
 
 type routeWant struct {
 	name string
@@ -47,7 +51,7 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 			dir:  "routes",
 			wantRoutes: []routeWant{
 				{"api/orders", 3},
-				{"HttpGet", 6},
+				{routeHTTPGet, 6},
 				{"{id}", 9},
 				{"create", 12},
 				{"{id}", 15},
@@ -57,7 +61,7 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 				{"/jobs/{id}", 26},
 				{"/jobs/{id}", 27},
 				{pathItems, 28},
-				{"HttpGet", 34},
+				{routeHTTPGet, 34},
 			},
 			wantStatus: "ok",
 		},
@@ -65,7 +69,7 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 			name:       "C# 14 extension block is partial and keeps routes elsewhere in the file",
 			dir:        "extension",
 			wantRoutes: []routeWant{{"kept", 11}},
-			wantStatus: "partial",
+			wantStatus: statusPartial,
 			wantReason: "Extensions.cs:",
 		},
 		{
@@ -83,8 +87,8 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 			// would need the build's symbols, so the file is named instead.
 			name:       "#if splitting a statement is partial and keeps routes in other files",
 			dir:        "preprocessor",
-			wantRoutes: []routeWant{{"api/kept", 1}, {"HttpGet", 4}, {"/before", 9}, {"/after", 15}},
-			wantStatus: "partial",
+			wantRoutes: []routeWant{{"api/kept", 1}, {routeHTTPGet, 4}, {"/before", 9}, {"/after", 15}},
+			wantStatus: statusPartial,
 			wantReason: "syntax errors in 1 file(s), routes there may be missing: Program.cs:",
 		},
 		{
