@@ -181,6 +181,7 @@ var languages = []Descriptor{
 			ex.TypeGraph = dotnet.TypeGraphOptions{Disabled: cfg.TypeGraphDisabled, Timeout: cfg.TypeGraphTimeout}
 			return ex
 		},
+		QueryEdge:   dotnet.QueryEdge,
 		PrimaryTool: ToolDotNetMSBuild,
 		InstallHint: dotnetSDKURL + " (the .NET SDK provides dotnet msbuild)",
 		DoctorTools: []Tool{

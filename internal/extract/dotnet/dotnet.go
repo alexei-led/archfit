@@ -24,6 +24,10 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
+// confidenceHigh is the confidence of every .NET edge: MSBuild and the
+// compiler resolve them.
+const confidenceHigh = "high"
+
 // toolMSBuild is the coverage name of the project graph row, as the
 // measurement contract spells it.
 const toolMSBuild = "dotnet-msbuild"
@@ -460,7 +464,7 @@ func buildFacts(projects []ProjectEvaluation, tg typeGraphResult) (graph.Facts, 
 				To:         node(ref),
 				Kind:       graph.EdgeKindDependsOn,
 				Language:   graph.LangDotNet,
-				Confidence: "high",
+				Confidence: confidenceHigh,
 			}
 			if file := p.definedIn[ref]; file != "" {
 				edge.Locations = []graph.Location{{File: file}}

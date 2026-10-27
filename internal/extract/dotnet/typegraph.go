@@ -755,7 +755,7 @@ func appendFileGraph(facts *graph.Facts, res typeGraphResult, exclusions, intern
 			To:               node(to),
 			Kind:             kind,
 			Language:         graph.LangDotNet,
-			Confidence:       "high",
+			Confidence:       confidenceHigh,
 			StrengthHint:     agg[k].hint,
 			DataStrengthHint: agg[k].data,
 		})

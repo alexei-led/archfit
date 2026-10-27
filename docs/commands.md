@@ -129,6 +129,20 @@ Reports the module, layer, owner, public surface, allowlists, and selected rules
 
 Reports whether a source file can import each target. A denied target exits `1`. A target without a decision exits `2`.
 
+The answer runs no analyzer. It spells the edge the language's extractor would emit and runs the rule pass on that edge. Write the target in the language's graph vocabulary:
+
+| Language | Target |
+| --- | --- |
+| Go | A package directory or an import path. |
+| TypeScript | A source file. |
+| Python | A dotted module or a `.py` file inside the packages grimp builds. |
+| .NET | A `.cs` file or an external assembly name, such as `Microsoft.EntityFrameworkCore`. |
+| Rust | Not decided: crate roots need `cargo metadata`. |
+
+A rule that needs the whole graph, such as `module_cycle`, leaves a target not decided unless another rule denies it.
+
+.NET answers are not decided when `analyzers.roslyn.enabled` is `false` (check then reads project edges), when the file is in no selected project's directory, and when the target names a first-party assembly or a project computes its `AssemblyName`. A file that check never reads is `unconstrained` with the reason: an excluded file, a file under `obj/` or `bin/`, or a file of a project with a `test` or `tests` path segment. A test project marked only by `IsTestProject` needs MSBuild evaluation, so its files are judged like production files.
+
 | Flag | Meaning |
 | --- | --- |
 | `-c, --config <file>` | Config path. |
