@@ -282,6 +282,8 @@ func cloneLanguage(path string) string {
 		return graph.LangPython
 	case ".rs":
 		return graph.LangRust
+	case ".cs":
+		return graph.LangDotNet
 	}
 	for _, tsExt := range cloneTypeScriptSourceExts {
 		if ext == tsExt {

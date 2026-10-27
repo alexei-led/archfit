@@ -99,6 +99,7 @@ package internal/model/graph
   func (*internal/model/graph.Graph).EdgesFrom(id string) []internal/model/graph.Edge
   func (*internal/model/graph.Graph).EdgesTo(id string) []internal/model/graph.Edge
   func (*internal/model/graph.Graph).Cycles() [][]string
+  const internal/model/graph.LangDotNet untyped string
   const internal/model/graph.LangGo untyped string
   const internal/model/graph.LangPython untyped string
   const internal/model/graph.LangRust untyped string
@@ -115,6 +116,7 @@ package internal/model/graph
   const internal/model/graph.NodeKindFile internal/model/graph.NodeKind
   const internal/model/graph.NodeKindModule internal/model/graph.NodeKind
   const internal/model/graph.NodeKindPackage internal/model/graph.NodeKind
+  const internal/model/graph.NodeKindProject internal/model/graph.NodeKind
   const internal/model/graph.NodeKindRepo internal/model/graph.NodeKind
   func internal/model/graph.NodePath(id string) string
   const internal/model/graph.StrengthHintDTO untyped string

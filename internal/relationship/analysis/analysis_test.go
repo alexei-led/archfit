@@ -388,6 +388,33 @@ func TestAnalyzeClonePairs(t *testing.T) {
 	}
 }
 
+// TestAnalyzeClonePairsClassifiesCSharpByPath pins the path-only fallback for
+// C# clone files the LOC walk never indexed: MSBuild output and test files are
+// not production, so they form no clone seam.
+func TestAnalyzeClonePairsClassifiesCSharpByPath(t *testing.T) {
+	const cloneA = "a/Dup.cs"
+	g := graph.Build([]graph.Facts{{Nodes: []graph.Node{{Kind: graph.NodeKindFile, Path: cloneA, Language: graph.LangDotNet}}}})
+	for _, tc := range []struct {
+		other     string
+		wantPairs int
+	}{
+		{"b/Dup.cs", 1},
+		{"b/obj/Debug/net10.0/Dup.cs", 0},
+		{"b/DupTests.cs", 0},
+		{"b/Dup.g.cs", 0},
+	} {
+		t.Run(tc.other, func(t *testing.T) {
+			got := analysis.Analyze(analysis.Input{
+				Graph: g, Policy: relationshipPolicy(twoModules()),
+				CloneClusters: []clone.Cluster{{Files: []string{cloneA, tc.other}, Lines: 40}},
+			})
+			if len(got.Evidence.CloneOnly) != tc.wantPairs {
+				t.Fatalf("clone-only pairs = %+v, want %d", got.Evidence.CloneOnly, tc.wantPairs)
+			}
+		})
+	}
+}
+
 func TestAnalyzeRuntimeSignalRollup(t *testing.T) {
 	const confidence = "medium"
 	sites := []evidence.RuntimeAsyncSite{

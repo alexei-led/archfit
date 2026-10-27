@@ -14,6 +14,7 @@ import (
 // Python:     test_*.py, *_test.py, or any path containing a /tests/ segment
 // TypeScript/JavaScript: any filename containing .test. or .spec., or a path containing __tests__/
 // Rust:       tests.rs, *_test.rs, *_tests.rs, or a tests/, benches/, *_tests/, or *-tests/ dir
+// .NET:       *Tests.cs, *Test.cs, or any path containing a test/ or tests/ segment
 //
 // Ceiling: Rust classification is file-level. A `#[cfg(test)] mod tests { … }`
 // block inside a production file stays Production; only a test module in its own
@@ -38,6 +39,10 @@ func IsTestFile(lang, path string) bool {
 		return base == "tests.rs" ||
 			strings.HasSuffix(stem, "_test") || strings.HasSuffix(stem, "_tests") ||
 			containsRustTestDir(path)
+	case graph.LangDotNet:
+		stem := strings.TrimSuffix(base, ".cs")
+		return strings.HasSuffix(stem, "Tests") || strings.HasSuffix(stem, "Test") ||
+			containsPathSegment(path, "test") || containsPathSegment(path, "tests")
 	default:
 		return false
 	}
