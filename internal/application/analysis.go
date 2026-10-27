@@ -59,6 +59,9 @@ type Request struct {
 	// command, so it names the repository instead.
 	ValidationConfig string
 	ValidationRoot   string
+	// GateReasonsInState keeps the coupling gate's reasons off stderr: the
+	// state carries them as gate_reasons and check reports them as attention.
+	GateReasonsInState bool
 	// Identity carries the run facts only the caller can read: the policy
 	// files' bytes, the git tree, the engine build.
 	Identity IdentityInputs
@@ -74,6 +77,8 @@ type AnalysisRequest struct {
 	// ValidationConfig and ValidationRoot: see Request.
 	ValidationConfig string
 	ValidationRoot   string
+	// GateReasonsInState: see Request.
+	GateReasonsInState bool
 	// ApplyToolGate lets a missing required analyzer stamp the verdict fail and
 	// hard-gate the run. Only analyze/check set it: baseline, explain, enrich,
 	// config compare, and the --base sub-run render a verdict but consume no
@@ -106,6 +111,8 @@ type AnalysisResult struct {
 	Score              score.Scorecard
 	EnrichmentEvidence *EnrichmentEvidence
 	relationships      relationship.Set
+	// gateReasons are the coupling gate's explanations, carried into the state.
+	gateReasons []string
 }
 
 // PolicyPreparer validates decoded policy and emits config-quality diagnostics
@@ -345,10 +352,10 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		ConfigWarnings: runCtx.ConfigWarnings, MarkedCoverage: runCtx.MarkedCoverage,
 		CoverageGaps: runCtx.CoverageGaps, ApplyToolGate: req.ApplyToolGate,
 	})
-	if !req.SuppressGateReasons {
+	if !req.SuppressGateReasons && !req.GateReasonsInState {
 		s.discloseGate(scored)
 	}
-	out := AnalysisResult{Score: scored.Score}
+	out := AnalysisResult{Score: scored.Score, gateReasons: scored.GateReasons}
 	if req.BaseRef != "" {
 		if err := s.attachBaseComparison(ctx, req, runCtx, &diag); err != nil {
 			return AnalysisResult{}, err
@@ -544,6 +551,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 		BaseRef: req.BaseRef, NoAdvisories: req.NoAdvisories,
 		RequireTools: req.RequireTools, ApplyToolGate: true, DiscloseHealthWarnings: true,
 		ValidationArgs: req.ValidationArgs, ValidationConfig: req.ValidationConfig, ValidationRoot: req.ValidationRoot,
+		GateReasonsInState: req.GateReasonsInState,
 	})
 	if err != nil {
 		// A controlled stage failure already carries the user-facing wording; the
@@ -557,7 +565,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 	}
 
 	return Response{
-		Document: withIdentity(ProjectReport(out.Diagnostic, out.Score), req.Identity),
+		Document: withRunFacts(ProjectReport(out.Diagnostic, out.Score), req.Identity, out.gateReasons),
 		Formats:  formats,
 		Outcome:  outcomeFor(out),
 	}, nil

@@ -78,7 +78,7 @@ archfit analyze --format scorecard -c .archfit.yaml
 
 ### `check`
 
-`archfit check [flags]` runs the gate and uses the verdict exit codes above. It accepts the same analysis flags as `analyze`, except `--ai-summary`.
+`archfit check [flags]` runs the gate and uses the verdict exit codes above. It accepts the same analysis flags as `analyze`, except `--ai-summary`. Its default text output is one linter-style record per blocker and a `PASS`, `FAIL`, or `UNKNOWN` footer (see [results](results.md)). Progress goes to stderr only with `--progress`. For the architecture report, with dimensions, seams, and coupling bands, run `analyze`.
 
 ```sh
 archfit check -c .archfit.yaml

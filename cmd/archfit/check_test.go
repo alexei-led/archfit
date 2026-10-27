@@ -250,3 +250,71 @@ func TestRun_Check_JSONOutputIsValid(t *testing.T) {
 		t.Fatalf("check --json produced invalid JSON: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
 	}
 }
+
+// lintCleanModules declares owner, subdomain and volatility so config-quality
+// has nothing to say on stderr.
+// hookRuleSection is hookRuleCfg without its module block.
+const hookRuleSection = `rules:
+  - id: no_b_impl
+    type: forbidden_dependency
+    gate: fail
+    from: pkg/a/**
+    to: pkg/b/impl
+`
+
+const lintCleanModules = `version: 2
+modules:
+  a:
+    paths: ["pkg/a/**"]
+    owner: team-a
+    subdomain: core
+    volatility: low
+  b:
+    paths: ["pkg/b/**"]
+    owner: team-b
+    subdomain: core
+    volatility: low
+`
+
+// TestCheckTextIsLinterShaped pins what check prints by default: one record per
+// blocker, a footer word, no scorecard, and an empty stderr without --progress.
+func TestCheckTextIsLinterShaped(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		repo       func(*testing.T) string
+		wantCode   int
+		wantStdout []string
+	}{
+		{name: "a new violation", wantCode: 1,
+			repo: func(t *testing.T) string {
+				return hookRepo(t, lintCleanModules+hookRuleSection, hookCleanA, hookViolatingA)
+			},
+			wantStdout: []string{filePkgAA + ":3: no_b_impl: ", "  status: introduced, code_change", "FAIL  1 new, 0 unknown, 0 accepted"}},
+		{name: "a clean tree", wantCode: 2,
+			repo:       func(t *testing.T) string { return hookRepo(t, lintCleanModules, hookCleanA, "") },
+			wantStdout: []string{"PASS  0 new, 0 unknown, 0 accepted"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := tc.repo(t)
+			code, stdout, stderr := runArchfit(t, cmdCheck, "-c", filepath.Join(dir, defaultConfigPath), "--base", "HEAD")
+			if code != tc.wantCode && (tc.wantCode != 2 || code != 0) {
+				t.Fatalf("exit = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, tc.wantCode, stdout, stderr)
+			}
+			if stderr != "" {
+				t.Errorf("stderr = %q, want empty without --progress", stderr)
+			}
+			for _, want := range tc.wantStdout {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("stdout is missing %q:\n%s", want, stdout)
+				}
+			}
+			for _, banned := range []string{"ARCHITECTURE STATE", "DIMENSIONS", "SEAMS"} {
+				if strings.Contains(stdout, banned) {
+					t.Errorf("check text carries analyze content %q:\n%s", banned, stdout)
+				}
+			}
+		})
+	}
+}

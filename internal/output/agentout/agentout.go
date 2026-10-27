@@ -79,6 +79,9 @@ const (
 	// AttentionExistingViolation: blockers that exist at the base and are not
 	// this change's.
 	AttentionExistingViolation = "existing_violation"
+	// AttentionCouplingGate: the coupling gate's own explanation, for example
+	// that seams are present and no comparable reference exists.
+	AttentionCouplingGate = "coupling_gate"
 	// AttentionBlockedWithoutFinding: the verdict is blocked and nothing in
 	// the result names why.
 	AttentionBlockedWithoutFinding = "blocked_without_finding"
@@ -276,6 +279,9 @@ func Build(d report.Document) Result {
 		default:
 			change.UnevaluatedRules = append(change.UnevaluatedRules, rule)
 		}
+	}
+	for _, reason := range s.GateReasons {
+		attention = append(attention, Attention{Kind: AttentionCouplingGate, Reason: reason})
 	}
 	var next NextAction
 	change.Status, next = judge(change)
