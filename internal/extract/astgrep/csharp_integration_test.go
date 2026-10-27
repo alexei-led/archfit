@@ -78,6 +78,16 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 			wantStatus: "ok",
 		},
 		{
+			// #if inside a fluent chain splits one statement: tree-sitter sees
+			// the directive mid-expression and reports ERROR. Preprocessing
+			// would need the build's symbols, so the file is named instead.
+			name:       "#if splitting a statement is partial and keeps routes in other files",
+			dir:        "preprocessor",
+			wantRoutes: []routeWant{{"api/kept", 1}, {"HttpGet", 4}, {"/before", 9}, {"/after", 15}},
+			wantStatus: "partial",
+			wantReason: "syntax errors in 1 file(s), routes there may be missing: Program.cs:",
+		},
+		{
 			name:       "plain class has no route",
 			dir:        "plain",
 			wantStatus: "ok",
