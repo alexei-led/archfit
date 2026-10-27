@@ -957,7 +957,7 @@ func couplingDimension(diag *result.Result) state.Dimension {
 		state.FactCouplingVolatility:               "volatility is undeclared on one or more scored cross-boundary edges, so no rung is invented",
 		state.FactExtractorResolutionWithinCeiling: "dependency-cruiser left more than a tenth of import specifiers unresolved; omitted edges may understate the candidate denominator",
 	}
-	tsPartial, roslyn := score.TSUnresolvedPartial(*diag), roslynIncomplete(diag)
+	tsPartial, roslyn := score.TSUnresolvedPartial(*diag), score.RoslynIncomplete(*diag)
 	if roslyn {
 		// Both producers may block the fact in a mixed repository: name each.
 		const roslynReason = "roslyn left symbols unresolved or projects unloaded; an unresolved reference may hide a cross-boundary edge"
@@ -1008,22 +1008,6 @@ func couplingDimension(diag *result.Result) state.Dimension {
 	dim.Metrics = append(dim.Metrics, metricValues(diag.Metrics, "unbalanced_edge")...)
 	dim.Confidence = weakest(state.ConfidenceFor(dim.Status), metricConfidence(diag.Metrics, "unbalanced_edge"))
 	return dim
-}
-
-// toolRoslyn is the coverage name of the .NET type-graph producer.
-const toolRoslyn = "roslyn"
-
-// roslynIncomplete reports a Roslyn row that is partial (unresolved symbols or
-// unloaded projects) or timed out (the run failed). Unlike a TypeScript
-// unresolved specifier, an unresolved symbol has no ratio ceiling: it is a
-// missing candidate, not lower precision, so any count blocks promotion.
-func roslynIncomplete(diag *result.Result) bool {
-	for _, c := range diag.ToolCoverage {
-		if c.Tool == toolRoslyn && (c.Status == modevidence.StatusPartial || c.Status == modevidence.StatusTimedOut) {
-			return true
-		}
-	}
-	return false
 }
 
 // maxUnratedModulesNamed bounds the module list in the unrated-volatility
