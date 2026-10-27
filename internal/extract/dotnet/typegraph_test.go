@@ -1067,7 +1067,8 @@ func TestTypeGraph_TestClassifiedPathDropsEdgesWithoutIsTestProject(t *testing.T
 
 func TestCoverage_NamesEveryProjectWithAProblem(t *testing.T) {
 	const projects = 7
-	var paths, entries []string
+	paths := make([]string, 0, projects)
+	entries := make([]string, 0, projects)
 	for i := range projects {
 		p := fmt.Sprintf("P%d/P%d.csproj", i, i)
 		paths = append(paths, p)
@@ -1164,4 +1165,30 @@ func deref(p *int) any {
 		return nil
 	}
 	return *p
+}
+
+// A snapshot that cannot be removed is named in the roslyn reason, which the
+// JSON and Markdown coverage tables print even on an ok row: the copy left in
+// the temp directory is never silent.
+func TestTypeGraph_SnapshotCleanupFailureIsReported(t *testing.T) {
+	var locked string
+	t.Cleanup(func() {
+		if locked != "" {
+			_ = os.Chmod(locked, 0o700)                                        //nolint:gosec // test cleanup of its own directory
+			_ = os.RemoveAll(filepath.Dir(filepath.Dir(filepath.Dir(locked)))) // the snapshot
+		}
+	})
+	e, _, _, _ := fixtureRun(t, autoCfg(), func(_ context.Context, snap string) (toolrun.Output, error) {
+		// A build step that leaves a read-only directory behind.
+		writeFile(t, snap, "Domain/obj/locked/file.txt", "x")
+		locked = filepath.Join(snap, "Domain", "obj", "locked")
+		if err := os.Chmod(locked, 0o500); err != nil { //nolint:gosec // read-only on purpose
+			t.Fatal(err)
+		}
+		return toolrun.Output{Stdout: []byte(recordedReport(t))}, nil
+	})
+
+	if cov := e.LastTypeGraphCoverage(); !strings.Contains(cov.Reason, "snapshot cleanup failed") || !strings.Contains(cov.Reason, "locked") {
+		t.Errorf("roslyn reason %q does not report the snapshot left behind", cov.Reason)
+	}
 }

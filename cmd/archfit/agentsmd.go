@@ -10,7 +10,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -63,7 +62,7 @@ func (c *AgentsMDCmd) Run(deps *appDeps) error {
 	if c.Write && c.Check {
 		return &exitError{code: 3, msg: "error: --write and --check are mutually exclusive"}
 	}
-	cfg, err := loadAnalysisConfig(context.Background(), c.Config)
+	cfg, err := loadAnalysisConfig(deps.runContext(), c.Config)
 	if err != nil {
 		return configLoadError(err)
 	}

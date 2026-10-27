@@ -1,7 +1,5 @@
 package main
 
-import "context"
-
 // CheckCmd is the CI gate command. It runs the same scan pipeline as analyze
 // but maps the architecture verdict onto the process exit code: healthy 0,
 // needs_attention 2, blocked 1.
@@ -49,7 +47,7 @@ Common runs:
 }
 
 func (c *CheckCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
+	ctx := deps.runContext()
 	// A linter prints findings and nothing else: progress only on request.
 	progress := c.Progress
 	if progress == "" {

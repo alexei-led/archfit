@@ -55,7 +55,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 	if out != "-" && !filepath.IsAbs(out) {
 		out = filepath.Join(root, out)
 	}
-	ctx := context.Background()
+	ctx := deps.runContext()
 	presence, err := languagePresence(ctx, root, config.Default(), deps.Runner)
 	if err != nil {
 		return fmt.Errorf("discovering project structure: %w", err)

@@ -535,6 +535,7 @@ func TestExtract_ConfiguredTargets(t *testing.T) {
 }
 
 func TestExtract_SolutionFilterTarget(t *testing.T) {
+	const webFilter = "Web.slnf"
 	const filter = `{"solution":{"path":"All.slnx","projects":["Domain\\Domain.csproj","Gone\\Gone.csproj"]}}`
 	tests := []struct {
 		name    string
@@ -547,11 +548,11 @@ func TestExtract_SolutionFilterTarget(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := tree(t, append([]string{domainProj, appProj}, tt.files...)...)
-			writeFile(t, root, "Web.slnf", filter)
+			writeFile(t, root, webFilter, filter)
 			fake := newFake(t, root, map[string]reply{domainProj: ok(t, root, "domain.json")})
 			installHelper(t)
 			fake.helper = fakeHelper(replying(`{"schema_version":2,"projects":[]}`))
-			e := dotnet.New(fake, autoCfg(), []string{"Web.slnf"})
+			e := dotnet.New(fake, autoCfg(), []string{webFilter})
 			facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: root})
 			if err != nil {
 				t.Fatal(err)
@@ -563,13 +564,13 @@ func TestExtract_SolutionFilterTarget(t *testing.T) {
 				return
 			}
 			ev := e.LastEvaluation()
-			if ev.Solution != "Web.slnf" || !slices.Equal(ev.MissingProjects, []string{"Gone/Gone.csproj"}) {
+			if ev.Solution != webFilter || !slices.Equal(ev.MissingProjects, []string{"Gone/Gone.csproj"}) {
 				t.Errorf("evaluation = %+v", ev)
 			}
 			if got := nodeIDs(facts); !slices.Equal(got, []string{nodeDomain}) {
 				t.Errorf("nodes = %v, want only the filter's project", got)
 			}
-			if got := fake.helperCalls[1].Args[2:]; !slices.Equal(got, []string{"Web.slnf"}) {
+			if got := fake.helperCalls[1].Args[2:]; !slices.Equal(got, []string{webFilter}) {
 				t.Errorf("helper targets = %v, want the solution filter", got)
 			}
 		})

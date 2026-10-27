@@ -30,7 +30,7 @@ func (*DoctorCmd) Help() string {
 }
 
 func (c *DoctorCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
+	ctx := deps.runContext()
 
 	// Cross-language tools stay literal here; per-language tools (compilers,
 	// scip indexers) come from the language registry so adding a language adds

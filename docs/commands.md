@@ -32,7 +32,7 @@ Successful `analyze` runs exit `0` for every verdict. Use `check` when the verdi
 | `0` | `healthy` | Success for report-only and setup commands. `analyze` also exits `0` for `needs_attention` and `blocked`. |
 | `1` | `blocked` | `config lint` found an error; `policy can-import` denied a target; `hook git` found an in-scope repair or owner decision; `agents-md --check` found a missing or stale block. |
 | `2` | `needs_attention` | `policy can-import` found a target with no decision. The Claude hook uses `2` to block a stop under its protocol. |
-| `3` | Config, usage, or runtime error | General command error. `hook git` uses `3` when archfit cannot run. |
+| `3` | Config, usage, or runtime error | General command error. `hook git` uses `3` when archfit cannot run. A run stopped by `SIGINT` or `SIGTERM` also exits `3`: archfit stops its tools, removes its temporary copies, and reports the results as incomplete. A second signal exits at once. |
 
 `check` exits `2` when there is no blocker, but evidence or diagnostics need attention. `--require-tools` makes missing required tools affect the verdict. `analyze` stays report-only.
 

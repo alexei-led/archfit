@@ -87,7 +87,7 @@ Docs:
 }
 
 func (c *AnalyzeCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
+	ctx := deps.runContext()
 	return runScan(ctx, deps, scanRequest{
 		configPath:       c.Config,
 		root:             c.Root,
