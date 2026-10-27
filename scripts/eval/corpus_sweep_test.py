@@ -698,7 +698,7 @@ class TestCorpusInventory(unittest.TestCase):
         self.assertEqual(default.workspace_root, str(cs.WORKSPACE_ROOT))
         self.assertEqual(custom.workspace_root, "/tmp/disposable-corpus")
 
-    def test_the_full_corpus_is_the_eleven_labels_the_plan_names(self):
+    def test_the_full_corpus_is_the_twelve_labels_the_plan_names(self):
         self.assertEqual(
             sorted(cs.CORPUS),
             sorted(
@@ -714,20 +714,29 @@ class TestCorpusInventory(unittest.TestCase):
                     "herdr",
                     "ruff",
                     "tokio",
+                    "bitwarden",
                 ]
             ),
         )
 
     def test_every_mandatory_language_has_a_representative(self):
         languages = {spec.language for spec in cs.CORPUS.values()}
-        self.assertEqual(languages, {"go", "python", "ts", "rust"})
+        self.assertEqual(languages, {"go", "python", "ts", "rust", "dotnet"})
         for label, language in (
             ("spotinfo", "go"),
             ("storybook", "ts"),
             ("ccgram", "python"),
             ("herdr", "rust"),
+            ("bitwarden", "dotnet"),
         ):
             self.assertEqual(cs.CORPUS[label].language, language)
+
+    def test_bitwarden_is_the_dotnet_acceptance_checkout(self):
+        spec = cs.CORPUS["bitwarden"]
+        self.assertEqual(spec.language, "dotnet")
+        self.assertEqual(spec.root, cs.WORKSPACE_ROOT / "bitwarden-server")
+        moved = cs.corpus_for_workspace(Path("/tmp/disposable-corpus"))["bitwarden"]
+        self.assertEqual(moved.root, Path("/tmp/disposable-corpus/bitwarden-server"))
 
 
 class TestHarnessGuards(unittest.TestCase):
