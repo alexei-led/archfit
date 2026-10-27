@@ -76,6 +76,98 @@ class ImageContractsTest(unittest.TestCase):
         self.assertTrue(image.DOTNET_IDENTITY.fullmatch(good))
         self.assertFalse(image.DOTNET_IDENTITY.fullmatch(good.replace(sdk, "9.0.100")))
 
+    def test_dotnet_extraction_fails_closed(self):
+        stderr = (
+            "3 of 7 projects partial, 1 failed, 35 unresolved symbols; "
+            "Broken/Broken.csproj failed: MSB4236: SDK 'Archfit.Fixture.Missing.Sdk' not resolvable; "
+            "Legacy/Legacy.csproj partial: net8.0: 31 unresolved symbols; "
+            "reference pack Microsoft.NETCore.App.Ref 8.0 is not installed; "
+            "Tests/Tests.csproj partial: MSB4236: SDK 'Archfit.Fixture.Missing.Sdk' not resolvable; "
+            "Unresolved/Unresolved.csproj partial: 3 unresolved symbols"
+        )
+        state = {
+            "coverage": {
+                "tools": [
+                    {
+                        "tool": "dotnet-msbuild",
+                        "status": "partial",
+                        "reason": "Broken/Broken.csproj: MSB4236: SDK 'Archfit.Fixture.Missing.Sdk'",
+                    },
+                    {"tool": "roslyn", "status": "partial"},
+                ]
+            },
+            "seams": [
+                {
+                    "from_module": "repository",
+                    "to_module": "contracts",
+                    "strength": "model",
+                },
+                {
+                    "from_module": "repository",
+                    "to_module": "domain",
+                    "strength": "intrusive",
+                },
+            ],
+        }
+        self.assertEqual(image.dotnet_extraction_failures(state, stderr), [])
+
+        def seam(strength, source="repository", target="domain"):
+            return {"from_module": source, "to_module": target, "strength": strength}
+
+        tools = state["coverage"]["tools"]
+        cases = {
+            "no state": ({}, stderr),
+            "roslyn ok": (
+                {
+                    **state,
+                    "coverage": {
+                        "tools": [tools[0], {"tool": "roslyn", "status": "ok"}]
+                    },
+                },
+                stderr,
+            ),
+            "msbuild ok": (
+                {
+                    **state,
+                    "coverage": {
+                        "tools": [{"tool": "dotnet-msbuild", "status": "ok"}, tools[1]]
+                    },
+                },
+                stderr,
+            ),
+            "weak intrusive": (
+                {**state, "seams": [state["seams"][0], seam("functional")]},
+                stderr,
+            ),
+            "test edge": (
+                {**state, "seams": [*state["seams"], seam("model", "tests")]},
+                stderr,
+            ),
+            "legacy complete": (
+                state,
+                stderr.replace(
+                    "Legacy/Legacy.csproj partial", "Legacy/Legacy.csproj ok"
+                ),
+            ),
+            "complete project named": (
+                state,
+                stderr + "; Domain/Domain.csproj partial: x",
+            ),
+        }
+        for name, (case_state, case_stderr) in cases.items():
+            with self.subTest(name):
+                self.assertTrue(
+                    image.dotnet_extraction_failures(case_state, case_stderr)
+                )
+
+    def test_dotnet_fixture_copy_is_config_ready_and_skips_build_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "fixture"
+            image.prepare_dotnet_fixture(path)
+            self.assertIn("Fixture.slnx", (path / ".archfit.yaml").read_text())
+            self.assertTrue((path / "Fixture.slnx").is_file())
+            self.assertFalse(any(path.rglob("obj")) or any(path.rglob("bin")))
+
     def test_container_failure_cannot_be_reported_as_pass(self):
         with tempfile.TemporaryDirectory() as temporary:
             contract = image.ImageContract("local:contract", "colima", Path(temporary))
