@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -438,7 +439,7 @@ func TestIdentityGitFactsFollowTheAnalysisRoot(t *testing.T) {
 		t.Fatalf("decode: %v\nstderr: %s", err, stderr)
 	}
 	tree := func(dir string) string {
-		raw, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD^{tree}").Output()
+		raw, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD^{tree}").Output() //nolint:gosec // fixture directory from t.TempDir
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -447,7 +448,7 @@ func TestIdentityGitFactsFollowTheAnalysisRoot(t *testing.T) {
 	if want := tree(root); state.Identity.HeadTreeDigest != want {
 		t.Errorf("head_tree_digest = %q, want the analysis root's tree %q (config repo tree is %q)", state.Identity.HeadTreeDigest, want, tree(policyDir))
 	}
-	if sum := sha256.Sum256([]byte(hookModules)); state.Identity.PolicyDigest != fmt.Sprintf("%x", sum) {
+	if sum := sha256.Sum256([]byte(hookModules)); state.Identity.PolicyDigest != hex.EncodeToString(sum[:]) {
 		t.Errorf("policy_digest = %q, want the digest of the external config", state.Identity.PolicyDigest)
 	}
 }
