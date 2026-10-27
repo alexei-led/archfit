@@ -1,0 +1,35 @@
+# Embedded ast-grep rules for C# (ASP.NET Core) route extraction, ast-grep 0.51.0.
+# Attribute syntax like `[HttpGet]` does not parse as a pattern, so these rules use
+# node kinds with a name regex; the route path is read from the match text in syntax.go.
+#
+# ruleId → Kind mapping (see syntax.go):
+#   cs-route-attribute   → route  ([HttpGet|Post|Put|Delete|Patch] and [Route] attributes)
+#   cs-route-minimal-api → route  (app.MapGet|MapPost|MapPut|MapDelete(...) invocations)
+#   cs-parse-error       → none; marks the file partial (tree-sitter ERROR node, for
+#                          example the C# 14 `extension` block)
+
+id: cs-route-attribute
+language: CSharp
+rule:
+  kind: attribute
+  has:
+    field: name
+    kind: identifier
+    regex: '^(Http(Get|Post|Put|Delete|Patch)|Route)$'
+---
+id: cs-route-minimal-api
+language: CSharp
+rule:
+  kind: invocation_expression
+  has:
+    field: function
+    kind: member_access_expression
+    has:
+      field: name
+      kind: identifier
+      regex: '^Map(Get|Post|Put|Delete)$'
+---
+id: cs-parse-error
+language: CSharp
+rule:
+  kind: ERROR
