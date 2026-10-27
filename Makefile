@@ -59,6 +59,18 @@ test: ## run tests with race detector and coverage
 language-contracts: build ## validate Go, TypeScript, JavaScript, Python, and Rust with real producers
 	uv run --with jsonschema==$(JSONSCHEMA_VERSION) python scripts/eval/language_contracts.py --archfit $(BIN_DIR)/$(BINARY)
 
+## dotnet-roslyn: build the .NET type-graph helper; point ARCHFIT_DOTNET_ROSLYN at its directory
+DOTNET_ROSLYN_SRC := tools/dotnet/archfit-roslyn
+DOTNET_ROSLYN_DIR := $(BIN_DIR)/dotnet-roslyn
+DOTNET            := DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 dotnet
+
+.PHONY: dotnet-roslyn dotnet-roslyn-test
+dotnet-roslyn: ## build the Roslyn helper into .bin/dotnet-roslyn (restores in locked mode)
+	$(DOTNET) publish $(DOTNET_ROSLYN_SRC)/src -c Release -o $(DOTNET_ROSLYN_DIR)
+
+dotnet-roslyn-test: ## run the Roslyn helper xUnit tests (loads internal/testdata/dotnet from a temp copy)
+	$(DOTNET) test $(DOTNET_ROSLYN_SRC)/tests
+
 .PHONY: tool-locks image-contracts
 tool-locks: ## validate the canonical analyzer pins and dependency locks
 	python3 scripts/provision_tools.py check
