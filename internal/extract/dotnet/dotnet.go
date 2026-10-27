@@ -147,7 +147,8 @@ func (e *Extractor) LastEvaluation() Evaluation {
 }
 
 // LastTypeGraph returns the Roslyn result of the most recent Extract call: the
-// zero value before Extract and when the helper did not report.
+// zero value before Extract. When the helper did not run or did not report,
+// Projects is empty and Fallback lists every evaluated project.
 func (e *Extractor) LastTypeGraph() TypeGraph {
 	return e.lastTypeGraph
 }
@@ -214,11 +215,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 	}
 	e.last = Evaluation{Solution: sel.solution, Projects: projects, SkippedProjects: sel.skipped, MissingProjects: sel.missing}
 
-	frameworks := make(map[string][]string, len(projects))
-	for _, p := range projects {
-		frameworks[p.Path] = p.TargetFrameworks
-	}
-	tg, err := e.runTypeGraph(ctx, s.Root, helperTargets(sel, e.targets), frameworks)
+	tg, err := e.runTypeGraph(ctx, s, helperTargets(sel, e.targets), projects)
 	if err != nil {
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/dotnet: %w", err)
 	}

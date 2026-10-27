@@ -17,6 +17,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v3/internal/scope"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -84,7 +85,9 @@ type TypeGraphOptions struct {
 }
 
 // TypeGraphProject is the helper result for one project, folded across its
-// target frameworks (D7): the worst status and the union of edges.
+// target frameworks (D7): loaded when any framework loaded (complete only when
+// every entry is complete, else partial), failed only when every entry failed;
+// the edges are the union of the loaded frameworks'.
 type TypeGraphProject struct {
 	// Path is the repo-relative, slash-separated .csproj path.
 	Path string
@@ -178,6 +181,11 @@ type typeGraphResult struct {
 	graph TypeGraph
 	files map[string][]helperFile // loaded project path -> files across frameworks
 	cov   evidence.Coverage
+	// unreported are evaluated non-test projects the helper left out of its
+	// report: missing inventory, never silently complete.
+	unreported []string
+	// details are extra coverage detail clauses.
+	details []string
 }
 
 // loaded reports whether the helper loaded the project (complete or partial),
@@ -246,7 +254,8 @@ func helperDir(root string) (string, bool, error) {
 // invalid helper setting, an unusable report, an exec failure, or cancellation
 // is an error; a failed or timed-out helper run is a coverage gap with the
 // project-only fallback.
-func (e *Extractor) runTypeGraph(ctx context.Context, root string, targets []string, frameworks map[string][]string) (res typeGraphResult, err error) {
+func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []string, projects []ProjectEvaluation) (res typeGraphResult, err error) {
+	root := s.Root
 	if e.TypeGraph.Disabled {
 		return notRun(evidence.StatusDisabled, reasonHelperDisabled), nil
 	}
@@ -264,7 +273,7 @@ func (e *Extractor) runTypeGraph(ctx context.Context, root string, targets []str
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	snap, err := makeSnapshot(ctx, root)
+	snap, err := makeSnapshot(ctx, root, s.GitRoot)
 	if err != nil {
 		if isTimeout(ctx, err) {
 			return timedOutRun(""), nil
@@ -275,17 +284,17 @@ func (e *Extractor) runTypeGraph(ctx context.Context, root string, targets []str
 		return failedRun("", err.Error()), nil
 	}
 	defer func() {
-		if rerr := os.RemoveAll(snap); rerr != nil && err == nil {
+		if rerr := os.RemoveAll(snap.dir); rerr != nil && err == nil {
 			res.cov.Reason = joinReason(res.cov.Reason, "snapshot cleanup failed: "+rerr.Error())
 		}
 	}()
 	// The helper reports paths relative to the root it is given; MSBuild spells
 	// files by their real path (macOS /var is /private/var), so pass that.
-	helperRoot := snap
-	if resolved, rerr := filepath.EvalSymlinks(snap); rerr == nil {
+	helperRoot := snap.root
+	if resolved, rerr := filepath.EvalSymlinks(snap.root); rerr == nil {
 		helperRoot = resolved
 	}
-	mapper := newSnapshotMapper(snap, helperRoot)
+	mapper := newSnapshotMapper(snap, s.GitRoot)
 	dll := filepath.Join(dir, helperDLL)
 	run := func(args []string, limit time.Duration) (toolrun.Output, error) {
 		return e.runner.Run(ctx, toolrun.ToolCmd{
@@ -321,7 +330,10 @@ func (e *Extractor) runTypeGraph(ctx context.Context, root string, targets []str
 	if err != nil {
 		return typeGraphResult{}, err
 	}
-	res = foldReport(report, frameworks)
+	res = foldReport(report, projects)
+	if len(snap.aboveRepo) > 0 {
+		res.details = append(res.details, "build inputs above the copied tree are not in the snapshot: "+strings.Join(snap.aboveRepo, ", "))
+	}
 	res.cov = typeGraphCoverage(version, res)
 	return res, nil
 }
@@ -395,24 +407,61 @@ func parseReport(data []byte, mapper snapshotMapper) (helperReport, error) {
 
 // foldReport folds the per-(project, framework) entries into one result per
 // project (D7 with D1): summed unresolved symbols and the union of files, IVT
-// declarations and linked files. frameworks are the evaluated target
-// frameworks per project; they name a framework the helper failed to load,
-// since its failed entry carries no framework.
-func foldReport(r helperReport, frameworks map[string][]string) typeGraphResult {
+// declarations and linked files. projects are the MSBuild evaluations: their
+// frameworks name a framework the helper failed to load (its failed entry
+// carries none), a test project's file edges are dropped as its fallback edges
+// are (its files stay as nodes), and an evaluated non-test project missing
+// from the report is recorded as unreported.
+func foldReport(r helperReport, projects []ProjectEvaluation) typeGraphResult {
 	byPath := map[string][]helperProject{}
 	for _, p := range r.Projects {
 		byPath[p.Path] = append(byPath[p.Path], p)
 	}
+	evaluated := make(map[string]ProjectEvaluation, len(projects))
+	for _, p := range projects {
+		evaluated[p.Path] = p
+	}
 	res := typeGraphResult{files: map[string][]helperFile{}}
 	res.graph.SkippedProjects = r.SkippedProjects
+	droppedTestEdges := 0
 	for _, path := range sortedKeys(byPath) {
-		tp, files := foldProject(path, byPath[path], frameworks[path])
+		eval := evaluated[path]
+		tp, files := foldProject(path, byPath[path], eval.TargetFrameworks)
 		res.graph.Projects = append(res.graph.Projects, tp)
-		if tp.Status != TypeGraphFailed {
-			res.files[path] = files
+		if tp.Status == TypeGraphFailed {
+			continue
+		}
+		if eval.IsTestProject {
+			var n int
+			files, n = withoutEdges(files)
+			droppedTestEdges += n
+		}
+		res.files[path] = files
+	}
+	for _, p := range projects {
+		if _, reported := byPath[p.Path]; !reported && !p.IsTestProject {
+			res.unreported = append(res.unreported, p.Path)
 		}
 	}
+	if droppedTestEdges > 0 {
+		res.details = append(res.details, plural(droppedTestEdges, "test-project edge dropped", "test-project edges dropped"))
+	}
 	return res
+}
+
+// withoutEdges returns files with their edges removed and the number of
+// distinct file pairs removed.
+func withoutEdges(files []helperFile) ([]helperFile, int) {
+	out := make([]helperFile, len(files))
+	pairs := map[[2]string]struct{}{}
+	for i, f := range files {
+		for _, e := range f.Edges {
+			pairs[[2]string{f.Path, e.To}] = struct{}{}
+		}
+		f.Edges = nil
+		out[i] = f
+	}
+	return out, len(pairs)
 }
 
 // foldProject decides one project's status. A project with any loaded
@@ -537,14 +586,21 @@ func typeGraphCoverage(version string, res typeGraphResult) evidence.Coverage {
 		ivts += p.IVTDeclarations
 		linked += len(p.LinkedFiles)
 	}
+	for _, path := range res.unreported {
+		problems = append(problems, path+" not reported by archfit-roslyn")
+	}
 	var parts []string
 	if len(problems) > 0 {
 		cov.Status = evidence.StatusPartial
-		// Unresolved symbols and unloaded projects are missing inputs, never a
-		// precision-only gap: the run must not read as comparable.
-		cov.UnresolvedInputsMissing = max(1, cov.Unresolved+failed)
-		parts = append(parts, fmt.Sprintf("%d of %d projects partial, %d failed, %s",
-			partial, len(res.graph.Projects), failed, plural(cov.Unresolved, "unresolved symbol", "unresolved symbols")))
+		// Unresolved symbols and unloaded or unreported projects are missing
+		// inputs, never a precision-only gap: the run must not read as comparable.
+		cov.UnresolvedInputsMissing = max(1, cov.Unresolved+failed+len(res.unreported))
+		summary := fmt.Sprintf("%d of %d projects partial, %d failed, %s",
+			partial, len(res.graph.Projects), failed, plural(cov.Unresolved, "unresolved symbol", "unresolved symbols"))
+		if len(res.unreported) > 0 {
+			summary += fmt.Sprintf(", %d not reported", len(res.unreported))
+		}
+		parts = append(parts, summary)
 		if len(problems) > reasonListLimit {
 			problems = append(problems[:reasonListLimit], fmt.Sprintf("and %d more", len(problems)-reasonListLimit))
 		}
@@ -564,6 +620,7 @@ func typeGraphCoverage(version string, res typeGraphResult) evidence.Coverage {
 			detail = append(detail, plural(d.n, d.singular, d.plural))
 		}
 	}
+	detail = append(detail, res.details...)
 	if len(detail) > 0 {
 		parts = append(parts, "detail: "+strings.Join(detail, ", "))
 	}

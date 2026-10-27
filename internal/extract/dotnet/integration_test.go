@@ -179,3 +179,45 @@ func TestIntegration_TypeGraphOnFixture(t *testing.T) {
 		t.Errorf("the original root changed:\nbefore %v\nafter  %v", before, after)
 	}
 }
+
+// TestIntegration_SubtreeInheritsAncestorBuildProps scans src/ of a repository
+// whose root Directory.Build.props defines the constant that compiles App's
+// only use of Lib. Without the ancestor file in the snapshot the use is not
+// compiled and the edge is missing.
+func TestIntegration_SubtreeInheritsAncestorBuildProps(t *testing.T) {
+	if testing.Short() {
+		t.Skip("loads two projects in the helper")
+	}
+	runner := &recordingRunner{Runner: realRunner(t)}
+	t.Setenv(helperEnv, helperForIntegration(t))
+	repo := t.TempDir()
+	const sdkProject = `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>%s</Project>`
+	writeFile(t, repo, "Directory.Build.props", `<Project><PropertyGroup><DefineConstants>$(DefineConstants);ARCHFIT_ANCESTOR</DefineConstants></PropertyGroup></Project>`)
+	writeFile(t, repo, "src/Lib/Lib.csproj", strings.Replace(sdkProject, "%s", "", 1))
+	writeFile(t, repo, "src/Lib/Thing.cs", "namespace Lib;\npublic class Thing { public void Run() { } }\n")
+	writeFile(t, repo, "src/App/App.csproj", strings.Replace(sdkProject, "%s", `<ItemGroup><ProjectReference Include="../Lib/Lib.csproj" /></ItemGroup>`, 1))
+	writeFile(t, repo, "src/App/Use.cs", "namespace App;\n#if ARCHFIT_ANCESTOR\npublic class U { public void M(Lib.Thing t) => t.Run(); }\n#endif\n")
+	root := filepath.Join(repo, "src")
+	before := treeState(t, repo)
+
+	e := dotnet.New(runner, evidenceports.ExtractConfig{Mode: evidenceports.ModeOn}, nil)
+	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: root, GitRoot: repo, SubtreePrefix: "src"})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if got := fileEdges(facts)["App/Use.cs -> file:Lib/Thing.cs"]; got.hint != hFunctional {
+		t.Errorf("file edges = %v, want App/Use.cs -> Lib/Thing.cs (functional) compiled under the ancestor's constant", fileEdges(facts))
+	}
+	if cov := e.LastTypeGraphCoverage(); cov.Status != evidence.StatusOK {
+		t.Errorf("roslyn coverage = %+v", cov)
+	}
+	if len(runner.snapshots) != 1 {
+		t.Fatalf("helper runs = %v, want one", runner.snapshots)
+	}
+	if top := filepath.Dir(runner.snapshots[0]); exists(top) {
+		t.Errorf("snapshot %s still exists", top)
+	}
+	if after := treeState(t, repo); !mapsEqual(after, before) {
+		t.Errorf("the original tree changed:\nbefore %v\nafter  %v", before, after)
+	}
+}

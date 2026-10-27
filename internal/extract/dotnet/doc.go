@@ -15,11 +15,14 @@
 //
 // The type graph comes from the Roslyn helper, located by ARCHFIT_DOTNET_ROSLYN.
 // Its design-time build writes under each project's obj/, so it runs on a
-// per-run copy of the root (everything but .git and node_modules), which is
+// per-run copy of the root (everything but .git and node_modules, plus the
+// build-input files of its ancestors up to the repository root), which is
 // removed on every path. Its per-(project, framework) entries fold to one result
-// per project: the worst status and the union of file edges, strongest hint per
-// file pair in each of the two hint channels. exclude applies to the emitted
-// evidence, after analysis.
+// per project: loaded when any framework loaded (complete only when every entry
+// is complete, else partial), failed only when every entry failed, with the
+// union of the loaded frameworks' file edges, strongest hint per file pair in
+// each of the two hint channels. exclude applies to the emitted evidence, after
+// analysis.
 //
 // One scored edge set per source project: a project the helper loaded
 // (complete or partial) emits file -> file edges with strength hints and no

@@ -19,24 +19,119 @@ import (
 // the program the helper compiles (D6).
 var snapshotSkip = map[string]struct{}{".git": {}, "node_modules": {}}
 
-// makeSnapshot copies root into a new private temp directory and returns it.
-// The Roslyn design-time build writes under each project's obj/, so the helper
-// runs on the copy and the original is never written. Directories and files are
-// made owner-writable so the build can write and the copy can be removed. On
-// error nothing is left behind. ctx cancellation stops the copy.
-func makeSnapshot(ctx context.Context, root string) (string, error) {
-	dir, err := os.MkdirTemp("", "archfit-dotnet-snapshot-*")
-	if err != nil {
-		return "", fmt.Errorf("create snapshot: %w", err)
-	}
-	if err := copyTree(ctx, root, dir); err != nil {
-		_ = os.RemoveAll(dir)
-		return "", fmt.Errorf("snapshot %s: %w", root, err)
-	}
-	return dir, nil
+// buildInputNames are the files MSBuild, the SDK resolver, and NuGet read from
+// a project's ancestor directories, lowercased: NuGet accepts any case.
+var buildInputNames = map[string]struct{}{
+	"directory.build.props": {}, "directory.build.targets": {}, "directory.build.rsp": {},
+	"directory.packages.props": {}, "global.json": {}, "nuget.config": {},
 }
 
-func copyTree(ctx context.Context, root, dst string) error {
+// snapshot is a per-run copy of the scan root.
+type snapshot struct {
+	// dir is the temp directory; removing it removes the snapshot.
+	dir string
+	// root is the scan root's counterpart: dir plus the root's path below the
+	// repository root, so ancestor build inputs keep their relative places.
+	root string
+	// aboveRepo are build inputs above the repository root. MSBuild would read
+	// them in the original tree; the snapshot does not have them.
+	aboveRepo []string
+}
+
+// makeSnapshot copies root into a new private temp directory, laid out as
+// <dir>/<root's path below repoRoot>/, plus the build-input files of every
+// ancestor between root and repoRoot (inclusive) at their relative places:
+// a subtree scan still sees the Directory.Build.props, global.json, or
+// NuGet.config the original tree inherits. The Roslyn design-time build writes
+// under each project's obj/, so the helper runs on the copy and the original is
+// never written. Directories and files are made owner-writable so the build can
+// write and the copy can be removed. On error nothing is left behind. ctx
+// cancellation stops the copy.
+func makeSnapshot(ctx context.Context, root, repoRoot string) (snapshot, error) {
+	dir, err := os.MkdirTemp("", "archfit-dotnet-snapshot-*")
+	if err != nil {
+		return snapshot{}, fmt.Errorf("create snapshot: %w", err)
+	}
+	snap, err := fillSnapshot(ctx, dir, root, repoRoot)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return snapshot{}, fmt.Errorf("snapshot %s: %w", root, err)
+	}
+	return snap, nil
+}
+
+func fillSnapshot(ctx context.Context, dir, root, repoRoot string) (snapshot, error) {
+	snap := snapshot{dir: dir, root: dir}
+	prefix, top := "", root
+	if repoRoot != "" {
+		if rel, inside := relToRoot(repoRoot, root); inside {
+			prefix, top = rel, repoRoot
+		}
+	}
+	if prefix != "" {
+		snap.root = filepath.Join(dir, filepath.FromSlash(prefix))
+		if err := os.MkdirAll(snap.root, 0o700); err != nil {
+			return snapshot{}, err
+		}
+	}
+	if err := copyTree(ctx, root, snap.root, dir); err != nil {
+		return snapshot{}, err
+	}
+	levels := 0
+	if prefix != "" {
+		levels = strings.Count(prefix, "/") + 1
+	}
+	src, dst := root, snap.root
+	for range levels {
+		src, dst = filepath.Dir(src), filepath.Dir(dst)
+		if err := copyBuildInputs(src, dst); err != nil {
+			return snapshot{}, err
+		}
+	}
+	snap.aboveRepo = buildInputsAbove(top)
+	return snap, nil
+}
+
+// copyBuildInputs copies the build-input files directly in src to dst.
+func copyBuildInputs(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if _, ok := buildInputNames[strings.ToLower(e.Name())]; ok && !e.IsDir() {
+			if err := copyFile(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// buildInputsAbove lists build-input files in the ancestors of top, up to the
+// filesystem root. MSBuild searches that far; the snapshot stops at top.
+func buildInputsAbove(top string) []string {
+	var found []string
+	for cur := filepath.Dir(top); ; cur = filepath.Dir(cur) {
+		entries, _ := os.ReadDir(cur)
+		for _, e := range entries {
+			if _, ok := buildInputNames[strings.ToLower(e.Name())]; ok && !e.IsDir() {
+				found = append(found, filepath.Join(cur, e.Name()))
+			}
+		}
+		if filepath.Dir(cur) == cur {
+			return found
+		}
+	}
+}
+
+// copyTree copies root into dst. skip is the snapshot directory: when the temp
+// directory lies inside root, the copy must not copy itself.
+func copyTree(ctx context.Context, root, dst, skip string) error {
+	skipInfo, err := os.Stat(skip)
+	if err != nil {
+		return err
+	}
 	return filepath.WalkDir(root, func(src string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -48,7 +143,7 @@ func copyTree(ctx context.Context, root, dst string) error {
 		if err != nil || rel == "." {
 			return err
 		}
-		if _, skip := snapshotSkip[d.Name()]; skip {
+		if _, skipName := snapshotSkip[d.Name()]; skipName {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -57,6 +152,9 @@ func copyTree(ctx context.Context, root, dst string) error {
 		target := filepath.Join(dst, rel)
 		switch {
 		case d.IsDir():
+			if info, err := d.Info(); err == nil && os.SameFile(info, skipInfo) {
+				return filepath.SkipDir
+			}
 			return os.Mkdir(target, 0o700)
 		case d.Type()&fs.ModeSymlink != 0:
 			return copySymlink(root, dst, src, target)
@@ -70,7 +168,9 @@ func copyTree(ctx context.Context, root, dst string) error {
 
 // copySymlink recreates a link so it names the same file it names in the
 // original, with one change: a target inside the root is redirected into the
-// snapshot, so a write through the link cannot reach the original tree.
+// snapshot, so a write through the link cannot reach the original tree. Inside
+// is decided on the lexical target and on its resolved form, so an alias of an
+// ancestor (macOS /var for /private/var) cannot hide the original.
 func copySymlink(root, dst, src, target string) error {
 	link, err := os.Readlink(src)
 	if err != nil {
@@ -80,12 +180,42 @@ func copySymlink(root, dst, src, target string) error {
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(filepath.Dir(src), link)
 	}
-	if rel, inside := relToRoot(root, filepath.Clean(abs)); inside {
+	abs = filepath.Clean(abs)
+	if rel, inside := insideRoot(root, abs); inside {
 		link = filepath.Join(dst, filepath.FromSlash(rel))
 	} else {
 		link = abs
 	}
 	return os.Symlink(link, target)
+}
+
+// insideRoot reports p as root-relative when it lies in root, lexically or
+// once resolved.
+func insideRoot(root, p string) (string, bool) {
+	if rel, ok := relToRoot(root, p); ok {
+		return rel, true
+	}
+	if resolved, ok := resolveExisting(p); ok {
+		return relToRoot(root, resolved)
+	}
+	return "", false
+}
+
+// resolveExisting resolves symlinks in the longest existing prefix of p and
+// appends the rest: a link target need not exist yet (obj/ before a build).
+func resolveExisting(p string) (string, bool) {
+	rest := ""
+	for cur := p; ; {
+		if r, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(r, rest), true
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return "", false
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
 }
 
 func copyFile(src, target string) error {
@@ -109,39 +239,59 @@ func copyFile(src, target string) error {
 	return out.Close()
 }
 
-// snapshotMapper rewrites snapshot paths in helper text (reasons, stderr) back
-// to root-relative paths, for every spelling of the snapshot directory.
-type snapshotMapper []string
+// snapshotMapper rewrites snapshot paths in helper text (reasons, stderr) and
+// paths back to the original tree, for every spelling of the snapshot.
+type snapshotMapper []snapshotPrefix
 
-// newSnapshotMapper orders spellings longest first: on macOS the resolved
-// /private/var/... spelling contains the /var/... one.
-func newSnapshotMapper(spellings ...string) snapshotMapper {
+// snapshotPrefix maps one snapshot spelling: to "" means root-relative (the
+// scan root's counterpart); otherwise to is the original directory (an
+// ancestor's counterpart maps to the repository root).
+type snapshotPrefix struct{ from, to string }
+
+// newSnapshotMapper maps the snapshot's root counterpart to root-relative
+// paths and the snapshot directory to repoRoot, for each spelling, longest
+// first: on macOS the resolved /private/var/... spelling contains /var/....
+func newSnapshotMapper(snap snapshot, repoRoot string) snapshotMapper {
 	var m snapshotMapper
-	for _, s := range spellings {
-		if s != "" {
-			m = append(m, filepath.ToSlash(s))
+	add := func(from, to string) {
+		m = append(m, snapshotPrefix{from: filepath.ToSlash(from), to: filepath.ToSlash(to)})
+		if resolved, err := filepath.EvalSymlinks(from); err == nil && resolved != from {
+			m = append(m, snapshotPrefix{from: filepath.ToSlash(resolved), to: filepath.ToSlash(to)})
 		}
 	}
-	slices.SortFunc(m, func(a, b string) int { return len(b) - len(a) })
+	add(snap.root, "")
+	if snap.dir != snap.root && repoRoot != "" {
+		add(snap.dir, repoRoot)
+	}
+	slices.SortFunc(m, func(a, b snapshotPrefix) int { return len(b.from) - len(a.from) })
 	return m
 }
 
-// text replaces "<snapshot>/x" with "x" and a bare "<snapshot>" with ".".
+// text replaces "<root counterpart>/x" with "x" and a bare one with ".", and
+// "<snapshot dir>/x" with "<repo root>/x".
 func (m snapshotMapper) text(s string) string {
-	for _, prefix := range m {
-		s = strings.ReplaceAll(s, prefix+"/", "")
-		s = strings.ReplaceAll(s, prefix, ".")
+	for _, p := range m {
+		if p.to == "" {
+			s = strings.ReplaceAll(s, p.from+"/", "")
+			s = strings.ReplaceAll(s, p.from, ".")
+		} else {
+			s = strings.ReplaceAll(s, p.from, p.to)
+		}
 	}
 	return s
 }
 
-// path maps one helper path: an absolute path under the snapshot becomes
-// root-relative; a relative path is already root-relative.
+// path maps one helper path: an absolute path under the root counterpart
+// becomes root-relative, one elsewhere in the snapshot names the original; a
+// relative path is already root-relative.
 func (m snapshotMapper) path(p string) string {
 	p = filepath.ToSlash(p)
 	for _, prefix := range m {
-		if rel, ok := strings.CutPrefix(p, prefix+"/"); ok {
-			return rel
+		if rel, ok := strings.CutPrefix(p, prefix.from+"/"); ok {
+			if prefix.to == "" {
+				return rel
+			}
+			return prefix.to + "/" + rel
 		}
 	}
 	return p

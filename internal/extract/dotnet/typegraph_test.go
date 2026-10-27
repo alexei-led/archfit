@@ -131,6 +131,9 @@ func recordedReport(t *testing.T) string {
 	return fixture(t, "", "roslyn_fixture.json")
 }
 
+// keyPath is the helper JSON key of a project or file path.
+const keyPath = "path"
+
 // editReport rewrites the recorded report's project entries.
 func editReport(t *testing.T, edit func([]map[string]any) []map[string]any) string {
 	t.Helper()
@@ -157,7 +160,7 @@ const legacyLoadFailure = "Msbuild failed when processing the file 'Legacy/Legac
 // failedLegacy is a helper entry for a Legacy framework that did not load.
 func failedLegacy() map[string]any {
 	return map[string]any{
-		"path": legacyProj, "tfm": "", "status": "failed", "reason": legacyLoadFailure, "unresolved_symbols": 0,
+		keyPath: legacyProj, "tfm": "", "status": "failed", "reason": legacyLoadFailure, "unresolved_symbols": 0,
 		"unused_references": nil, "ivt_declarations": []any{}, "linked_files": []any{}, "files": []any{},
 	}
 }
@@ -272,7 +275,7 @@ func TestTypeGraph_RecordedFixtureProjects(t *testing.T) {
 	tg := e.LastTypeGraph()
 	legacy := typeProject(t, tg, legacyProj)
 	if legacy.Status != dotnet.TypeGraphPartial || !slices.Equal(legacy.TargetFrameworks, []string{targetNet10, targetNet8}) || legacy.UnresolvedSymbols != 31 || legacy.UnusedReferences != nil {
-		t.Errorf("legacy = %+v, want the worst status across frameworks", legacy)
+		t.Errorf("legacy = %+v, want partial: one framework is partial", legacy)
 	}
 	if d := typeProject(t, tg, domainProj); d.Status != dotnet.TypeGraphComplete || d.UnusedReferences == nil || *d.UnusedReferences != 0 || d.IVTDeclarations != 1 {
 		t.Errorf("domain = %+v", d)
@@ -301,12 +304,55 @@ func TestTypeGraph_HelperInvocation(t *testing.T) {
 	}
 }
 
-func TestTypeGraph_NoFallbackEdgeFromTests(t *testing.T) {
-	_, _, facts, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
+func TestTypeGraph_TestProjectEmitsNoEdges(t *testing.T) {
+	useDomain := []any{map[string]any{"to": domainCS, "hint": hFunctional, "data_hint": hModel}}
+	report := editReport(t, func(ps []map[string]any) []map[string]any {
+		for _, p := range ps {
+			switch p[keyPath] {
+			case testsProj:
+				p["files"] = []any{map[string]any{keyPath: "Tests/ThingTests.cs", "edges": useDomain}}
+			case unresolvedProj:
+				p["files"] = []any{map[string]any{keyPath: "Unresolved/Use.cs", "edges": useDomain}}
+			}
+		}
+		return ps
+	})
+	e, _, facts, _ := fixtureRun(t, autoCfg(), replying(report))
+
 	for _, edge := range facts.Edges {
 		if strings.HasPrefix(graph.NodePath(edge.From), "Tests/") {
 			t.Errorf("edge from the test project: %+v", edge)
 		}
+	}
+	if _, ok := fileEdges(facts)["Unresolved/Use.cs -> file:"+domainCS]; !ok {
+		t.Error("the same use from a production project is missing")
+	}
+	if !slices.Contains(nodeIDs(facts), "file:Tests/ThingTests.cs") {
+		t.Error("the test file is no longer a node")
+	}
+	if cov := e.LastTypeGraphCoverage(); !strings.Contains(cov.Reason, "1 test-project edge dropped") {
+		t.Errorf("roslyn reason %q does not count the dropped edge", cov.Reason)
+	}
+}
+
+func TestTypeGraph_UnreportedProjectIsMissingInventory(t *testing.T) {
+	report := editReport(t, func(ps []map[string]any) []map[string]any {
+		return slices.DeleteFunc(ps, func(p map[string]any) bool { return p[keyPath] == domainProj || p[keyPath] == testsProj })
+	})
+	e, _, _, _ := fixtureRun(t, autoCfg(), replying(report))
+
+	cov := e.LastTypeGraphCoverage()
+	if cov.Status != evidence.StatusPartial || cov.UnresolvedInputsMissing != 34+1+1 { // symbols (Tests dropped), Broken failed, Domain unreported
+		t.Errorf("roslyn coverage = %+v, want partial with the unreported project counted as missing input", cov)
+	}
+	if !strings.Contains(cov.Reason, domainProj+" not reported by archfit-roslyn") || !strings.Contains(cov.Reason, ", 1 not reported") {
+		t.Errorf("roslyn reason %q does not name the unreported project", cov.Reason)
+	}
+	if strings.Contains(cov.Reason, testsProj+" not reported") {
+		t.Errorf("roslyn reason %q names the unreported test project", cov.Reason)
+	}
+	if !slices.Contains(e.LastTypeGraph().Fallback, domainProj) {
+		t.Errorf("fallback = %v, want the unreported project", e.LastTypeGraph().Fallback)
 	}
 }
 
@@ -394,7 +440,7 @@ func TestTypeGraph_RejectsUnusableReports(t *testing.T) {
 
 func TestTypeGraph_FallbackWhenHelperFailsButEvaluationSucceeds(t *testing.T) {
 	report := editReport(t, func(ps []map[string]any) []map[string]any {
-		out := slices.DeleteFunc(ps, func(p map[string]any) bool { return p["path"] == legacyProj })
+		out := slices.DeleteFunc(ps, func(p map[string]any) bool { return p[keyPath] == legacyProj })
 		return append(out, failedLegacy())
 	})
 	e, _, facts, _ := fixtureRun(t, autoCfg(), replying(report))
@@ -455,7 +501,7 @@ func TestTypeGraph_ProjectLoadedIfAnyFrameworkLoaded(t *testing.T) {
 			report := editReport(t, func(ps []map[string]any) []map[string]any {
 				var net10, net8 map[string]any
 				for _, p := range ps {
-					if p["path"] == legacyProj {
+					if p[keyPath] == legacyProj {
 						if p["tfm"] == targetNet10 {
 							net10 = p
 						} else {
@@ -463,7 +509,7 @@ func TestTypeGraph_ProjectLoadedIfAnyFrameworkLoaded(t *testing.T) {
 						}
 					}
 				}
-				out := slices.DeleteFunc(ps, func(p map[string]any) bool { return p["path"] == legacyProj })
+				out := slices.DeleteFunc(ps, func(p map[string]any) bool { return p[keyPath] == legacyProj })
 				return append(out, tt.entries(net10, net8)...)
 			})
 			e, _, facts, _ := fixtureRun(t, autoCfg(), replying(report))
@@ -552,6 +598,16 @@ func TestTypeGraph_RunWithoutReportFallsBackForEveryProject(t *testing.T) {
 			},
 			wantStatus: evidence.StatusPartial,
 			wantReason: "archfit-roslyn failed: Fixture.slnx does not exist; every project falls back",
+		},
+		{
+			name: "helper hits an unexpected error",
+			setup: func(_ *testing.T, fake *fakeDotnet, _ *dotnet.Extractor) {
+				fake.helper = fakeHelper(func(context.Context, string) (toolrun.Output, error) {
+					return toolrun.Output{Stderr: []byte("archfit-roslyn: System.Xml.XmlException: Unexpected end of file has occurred. Line 1, position 37.\n"), ExitCode: 2}, nil
+				})
+			},
+			wantStatus: evidence.StatusPartial,
+			wantReason: "archfit-roslyn failed: System.Xml.XmlException: Unexpected end of file has occurred. Line 1, position 37.; every project falls back",
 		},
 		{
 			name: "helper timed out",
