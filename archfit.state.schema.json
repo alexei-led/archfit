@@ -1041,6 +1041,12 @@
     "identity": {
       "$ref": "#/$defs/ResultIdentity"
     },
+    "gate_reasons": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "decision": {
       "$ref": "#/$defs/StateDecision"
     },

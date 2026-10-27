@@ -79,7 +79,7 @@ func patchAgentDefinitions(schema *jsonschema.Schema) {
 		if kind, ok := attention.Properties.Get("kind"); ok {
 			kind.Enum = []any{
 				agentout.AttentionUnmeasuredRatchet, agentout.AttentionDeadSelector,
-				agentout.AttentionExistingViolation, agentout.AttentionBlockedWithoutFinding,
+				agentout.AttentionExistingViolation, agentout.AttentionCouplingGate, agentout.AttentionBlockedWithoutFinding,
 			}
 		}
 	}

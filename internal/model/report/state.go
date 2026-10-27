@@ -373,7 +373,11 @@ type ArchitectureState struct {
 	SchemaVersion string       `json:"schema_version"`
 	Verdict       StateVerdict `json:"verdict"`
 	// Identity names what the run was judged under.
-	Identity      ResultIdentity   `json:"identity"`
+	Identity ResultIdentity `json:"identity"`
+	// GateReasons explain why the coupling gate tripped or could not compare.
+	// The run used to print them on stderr; check reports them as repository
+	// attention.
+	GateReasons   []string         `json:"gate_reasons,omitempty"`
 	Decision      StateDecision    `json:"decision"`
 	Comparison    StateComparison  `json:"comparison"`
 	GateReference *StateComparison `json:"gate_reference,omitempty"`

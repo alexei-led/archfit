@@ -190,36 +190,50 @@ func TestCleanMainIsPassWithOneAttention(t *testing.T) {
 	}
 }
 
-// TestCasesFixtures pins the agent JSON of the change-status cases. The App
-// ingest test reads the same files. ARCHFIT_UPDATE_AGENT_CASES=1 rewrites them;
-// review the diff before committing.
-func TestCasesFixtures(t *testing.T) {
-	identity := report.ResultIdentity{
+// caseIdentity is the fixed identity the fixtures carry.
+func caseIdentity() report.ResultIdentity {
+	return report.ResultIdentity{
 		SchemaVersion: report.IdentitySchemaVersion, PolicyDigest: strings.Repeat("a", 64), BaselineDigest: strings.Repeat("b", 64),
 		LabelsDigest: strings.Repeat("c", 64), BaseSHA: strings.Repeat("d", 40), HeadTreeDigest: strings.Repeat("e", 40),
 		EngineVersion: "v0.0.0-test", MeasurementProfileHash: strings.Repeat("f", 64),
 	}
+}
+
+// pinFixture compares got with the file at path. ARCHFIT_UPDATE_AGENT_CASES=1
+// rewrites it; review the diff before committing.
+func pinFixture(t *testing.T, path string, got []byte) {
+	t.Helper()
+	if os.Getenv("ARCHFIT_UPDATE_AGENT_CASES") == "1" {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, got, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(path) //nolint:gosec // path is built from a constant case name
+	if err != nil {
+		t.Fatalf("read %s: %v (ARCHFIT_UPDATE_AGENT_CASES=1 writes it)", path, err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("%s drifted; review and rerun with ARCHFIT_UPDATE_AGENT_CASES=1\n got: %s\nwant: %s", path, got, want)
+	}
+}
+
+// TestCasesFixtures pins the agent JSON and the check text of the five
+// change-status cases. The App ingest test reads the JSON files.
+func TestCasesFixtures(t *testing.T) {
 	for _, tc := range changeCases()[:5] {
 		t.Run(tc.name, func(t *testing.T) {
 			d := tc.doc
-			d.State.Identity = identity
-			path := filepath.Join("testdata", "cases", strings.ReplaceAll(tc.name, " ", "_")+".json")
-			got := render(t, d)
-			if os.Getenv("ARCHFIT_UPDATE_AGENT_CASES") == "1" {
-				if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, got, 0o600); err != nil {
-					t.Fatal(err)
-				}
+			d.State.Identity = caseIdentity()
+			base := filepath.Join("testdata", "cases", strings.ReplaceAll(tc.name, " ", "_"))
+			pinFixture(t, base+".json", render(t, d))
+			var text bytes.Buffer
+			if err := NewText().Render(d, &text); err != nil {
+				t.Fatal(err)
 			}
-			want, err := os.ReadFile(path) //nolint:gosec // path is built from a constant case name
-			if err != nil {
-				t.Fatalf("read %s: %v (ARCHFIT_UPDATE_AGENT_CASES=1 writes it)", path, err)
-			}
-			if !bytes.Equal(got, want) {
-				t.Errorf("%s drifted; review and rerun with ARCHFIT_UPDATE_AGENT_CASES=1\n got: %s\nwant: %s", path, got, want)
-			}
+			pinFixture(t, base+".txt", text.Bytes())
 		})
 	}
 }

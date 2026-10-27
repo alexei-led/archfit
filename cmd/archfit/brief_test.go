@@ -70,7 +70,8 @@ func TestRun_Check_BriefBaselineStep(t *testing.T) {
 	cfg := filepath.Join(dir, defaultConfigPath)
 	check := func() string {
 		var buf bytes.Buffer
-		if code := Run([]string{cmdCheck, "-c", cfg, flagRefresh}, &buf); code == 1 || code == 3 {
+		// The next-step brief is the architect's report: it lives in analyze.
+		if code := Run([]string{cmdAnalyze, "-c", cfg, flagRefresh}, &buf); code != 0 {
 			t.Fatalf("check exit = %d\n%s", code, buf.String())
 		}
 		return buf.String()

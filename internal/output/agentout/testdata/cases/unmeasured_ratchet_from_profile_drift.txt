@@ -1,0 +1,5 @@
+PASS  0 new, 0 unknown, 0 accepted
+engine v0.0.0-test · policy aaaaaaaaaaaa · baseline bbbbbbbbbbbb · labels cccccccccccc · tree eeeeeeeeeeee · profile ffffffffffff · base dddddddddddd
+
+repository attention (not this change):
+  unmeasured_ratchet: reference not comparable (drift: measurement_profile): 3 metric ratchets cannot be evaluated

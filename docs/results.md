@@ -8,7 +8,7 @@ This page explains how to read archfit output and how to consume its JSON contra
 
 | Format | Use | Contract |
 | --- | --- | --- |
-| `text` | Terminal and CI logs | Human report. Lists all blockers and a bounded number of other details. |
+| `text` | Terminal and CI logs | `analyze`: the human report, all blockers and a bounded number of other details. `check`: linter records, see below. |
 | `markdown` or `md` | Saved reports | Same report sections in Markdown. |
 | `json` | Automation and dashboards | `archfit.architecture-state.v1`. |
 | `sarif` | Code scanning tools | SARIF 2.1.0. State metadata is in `run.properties`. |
@@ -18,6 +18,23 @@ This page explains how to read archfit output and how to consume its JSON contra
 `--json`, `--markdown`, and `--sarif` are shorthands. Do not combine a shorthand with `--format`. Use repeated `--format` flags to write multiple formats.
 
 Multiple formats concatenate on stdout. Select only JSON when a consumer parses stdout as one JSON document.
+
+`check` text reads like a linter. Each blocker is one record, with its explanation indented under it:
+
+```text
+pkg/a/a.go:3: no_b_impl: Remove the forbidden dependency from pkg/a/a.go on pkg/b/impl.
+  why: callers must not see storage
+  instead: use pkg/b/api
+  status: introduced, code_change
+
+FAIL  1 new, 0 unknown, 3 accepted
+engine v3.3.0 · policy 0f7b1dd7cce2 · baseline … · tree … · profile …
+
+repository attention (not this change):
+  unmeasured_ratchet: reference not comparable (drift: measurement_profile): …
+```
+
+The footer word is `PASS`, `FAIL`, or `UNKNOWN`, the same as `change.status` in the agent result. `why` is the rule's rationale, or its constraint when it has none; `instead` lists the alternatives the rule's owner declared. The coupling gate's reasons, which older versions printed on stderr, are repository attention. `check` prints nothing on stderr unless you pass `--progress`. The scorecard, dimensions, and seam ledger are not in `check` text: read them with `analyze`.
 
 `check` sets its exit code from the verdict. `analyze` exits `0` after every successful run. See [commands](commands.md#exit-codes).
 

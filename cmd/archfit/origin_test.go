@@ -282,9 +282,15 @@ func testOriginGoOnlyFindings(t *testing.T) {
 		}
 	}
 
-	code, text, _ := runArchfit(t, cmdCheck, flagBase, diffBaseRef, "-c", cfgPath)
-	if code != 1 || !strings.Contains(text, "origin: introduced") || !strings.Contains(text, "introduced: 1  ·  resolved: 1") {
+	// The architect's brief with origin counts is analyze; check prints the
+	// linter record with the blocker's origin.
+	code, text, _ := runArchfit(t, cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath)
+	if code != 0 || !strings.Contains(text, "origin: introduced") || !strings.Contains(text, "introduced: 1  ·  resolved: 1") {
 		t.Errorf("text brief must show blocker origins and the origin counts (exit %d):\n%s", code, text)
+	}
+	code, lint, _ := runArchfit(t, cmdCheck, flagBase, diffBaseRef, "-c", cfgPath)
+	if code != 1 || !strings.Contains(lint, "status: introduced, code_change") || !strings.Contains(lint, "FAIL  1 new") {
+		t.Errorf("check text must show the blocker's origin and a FAIL footer (exit %d):\n%s", code, lint)
 	}
 
 	_, plain, _ := runArchfit(t, cmdCheck, fmtJSON, "-c", cfgPath)

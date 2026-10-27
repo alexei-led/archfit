@@ -10,6 +10,7 @@
             "unmeasured_ratchet",
             "dead_selector",
             "existing_violation",
+            "coupling_gate",
             "blocked_without_finding"
           ]
         },

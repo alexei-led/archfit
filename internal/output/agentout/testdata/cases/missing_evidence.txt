@@ -1,0 +1,4 @@
+rule_0: unknown: go/packages evidence is partial
+
+UNKNOWN  0 new, 1 unknown, 0 accepted
+engine v0.0.0-test · policy aaaaaaaaaaaa · baseline bbbbbbbbbbbb · labels cccccccccccc · tree eeeeeeeeeeee · profile ffffffffffff · base dddddddddddd
