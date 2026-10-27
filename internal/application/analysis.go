@@ -215,7 +215,7 @@ type WorktreeProvider interface {
 // AnalyzerFamilies records which optional finding-producing analyzers the
 // config activates. Task-origin comparison uses it to compare like with like.
 type AnalyzerFamilies struct {
-	Patterns, Syntax, SCIP, Clones, CargoModules bool
+	Patterns, Syntax, SCIP, Clones, CargoModules, Roslyn bool
 }
 
 // StageExecutor sequences one analysis run. It owns the stage order, the single

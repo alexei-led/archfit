@@ -77,6 +77,7 @@ func (s StageExecutor) attachBaseComparison(ctx context.Context, req AnalysisReq
 		BaseCoverage: evidence.Coverage, BaseGaps: evidence.CoverageGaps, BaseProfile: evidence.MeasurementProfile,
 		PrimaryTools: runCtx.PrimaryExtractorTools, Patterns: s.Analyzers.Patterns, Syntax: s.Analyzers.Syntax,
 		SCIP: s.Analyzers.SCIP, Clones: s.Analyzers.Clones, CargoModules: s.Analyzers.CargoModules,
+		Roslyn: s.Analyzers.Roslyn,
 	})
 	return nil
 }

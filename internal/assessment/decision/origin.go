@@ -650,14 +650,15 @@ const (
 	toolScipSymbols   = "scip-symbols"
 	toolJscpd         = "jscpd"
 	toolCargoModules  = "cargo-modules"
+	toolRoslyn        = "roslyn"
 )
 
 // FamilyOptions names the analyzers a run activated. PrimaryTools are the
 // per-language dependency-graph analyzers the extractor registry supplies; the
 // remaining flags are the opt-in analyzers.
 type FamilyOptions struct {
-	PrimaryTools                                 []string
-	Patterns, Syntax, SCIP, Clones, CargoModules bool
+	PrimaryTools                                         []string
+	Patterns, Syntax, SCIP, Clones, CargoModules, Roslyn bool
 }
 
 // AnalyzerFamilies returns the finding-producing analyzer families to compare.
@@ -682,6 +683,12 @@ func AnalyzerFamilies(o FamilyOptions) []AnalyzerFamily {
 	}
 	if o.CargoModules {
 		fams = append(fams, AnalyzerFamily{name: toolCargoModules})
+	}
+	// Roslyn is on by default, so it runs on trees with no .NET project. Its
+	// gapless absent row means exactly what a primary's does — no project to
+	// load — and must pair silently, or every non-.NET --base gains a reason.
+	if o.Roslyn {
+		fams = append(fams, AnalyzerFamily{name: toolRoslyn, primary: true})
 	}
 	return fams
 }

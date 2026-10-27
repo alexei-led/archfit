@@ -700,7 +700,7 @@ func restrictToTargetVocabulary(s ruleScope, addressable map[string]struct{}) ru
 
 func primaryToolForLanguage(diag *result.Result, language string) (string, bool) {
 	// PrimaryExtractorTools is injected in the registry's append-only language
-	// order (Go, TypeScript, Python, Rust). Keep adapter tool names out of core;
+	// order (Go, TypeScript, Python, Rust, .NET). Keep adapter tool names out of core;
 	// an unknown language or shortened inventory abstains instead of guessing.
 	index := -1
 	switch language {
@@ -712,6 +712,8 @@ func primaryToolForLanguage(diag *result.Result, language string) (string, bool)
 		index = 2
 	case "rust":
 		index = 3
+	case "dotnet":
+		index = 4
 	}
 	if index < 0 || index >= len(diag.PrimaryExtractorTools) {
 		return "", false
@@ -955,6 +957,10 @@ func couplingDimension(diag *result.Result) state.Dimension {
 		state.FactCouplingVolatility:               "volatility is undeclared on one or more scored cross-boundary edges, so no rung is invented",
 		state.FactExtractorResolutionWithinCeiling: "dependency-cruiser left more than a tenth of import specifiers unresolved; omitted edges may understate the candidate denominator",
 	}
+	roslyn := roslynIncomplete(diag)
+	if roslyn {
+		reasons[state.FactExtractorResolutionWithinCeiling] = "roslyn left symbols unresolved or projects unloaded; an unresolved reference may hide a cross-boundary edge"
+	}
 	if ce == nil || ce.Scored+ce.Abstained == 0 {
 		applyPromotion(&dim, nil, nil, reasons)
 		return dim
@@ -969,7 +975,7 @@ func couplingDimension(diag *result.Result) state.Dimension {
 	} else {
 		reasons[state.FactCouplingVolatility] = unratedVolatilityReason(ce.UnratedVolatilityEdges, ce.UnratedVolatilityModules)
 	}
-	if !score.TSUnresolvedPartial(*diag) {
+	if !score.TSUnresolvedPartial(*diag) && !roslyn {
 		observed = append(observed, state.FactExtractorResolutionWithinCeiling)
 	}
 	applyPromotion(&dim, observed, nil, reasons)
@@ -996,6 +1002,22 @@ func couplingDimension(diag *result.Result) state.Dimension {
 	dim.Metrics = append(dim.Metrics, metricValues(diag.Metrics, "unbalanced_edge")...)
 	dim.Confidence = weakest(state.ConfidenceFor(dim.Status), metricConfidence(diag.Metrics, "unbalanced_edge"))
 	return dim
+}
+
+// toolRoslyn is the coverage name of the .NET type-graph producer.
+const toolRoslyn = "roslyn"
+
+// roslynIncomplete reports a Roslyn row that is partial (unresolved symbols or
+// unloaded projects) or timed out (the run failed). Unlike a TypeScript
+// unresolved specifier, an unresolved symbol has no ratio ceiling: it is a
+// missing candidate, not lower precision, so any count blocks promotion.
+func roslynIncomplete(diag *result.Result) bool {
+	for _, c := range diag.ToolCoverage {
+		if c.Tool == toolRoslyn && (c.Status == modevidence.StatusPartial || c.Status == modevidence.StatusTimedOut) {
+			return true
+		}
+	}
+	return false
 }
 
 // maxUnratedModulesNamed bounds the module list in the unrated-volatility

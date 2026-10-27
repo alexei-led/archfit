@@ -988,6 +988,47 @@ func TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope(t *testin
 	}
 }
 
+// TestCouplingDimension_UnresolvedRoslynSymbolsKeepItPartial pins the .NET
+// promotion rule: every resolved edge is scored and rated, yet one unresolved
+// Roslyn reference may hide a cross-boundary edge, so the envelope stays
+// partial and names why. There is no ratio ceiling as for TypeScript.
+func TestCouplingDimension_UnresolvedRoslynSymbolsKeepItPartial(t *testing.T) {
+	t.Parallel()
+	const roslyn = "roslyn"
+	edges := &result.ClassifiedEdgeSummary{Total: 10, Scored: 10, ConnectedModules: 2}
+	for _, tc := range []struct {
+		name       string
+		coverage   modevidence.Coverage
+		wantStatus state.MeasurementStatus
+	}{
+		{"a complete Roslyn run stays measured", modevidence.Coverage{Tool: roslyn, Status: modevidence.StatusOK}, state.Measured},
+		{"one unresolved reference makes it partial", modevidence.Coverage{Tool: roslyn, Status: modevidence.StatusPartial, Unresolved: 1, UnresolvedInputsMissing: 1}, state.Partial},
+		{"a timed-out Roslyn run makes it partial", modevidence.Coverage{Tool: roslyn, Status: modevidence.StatusTimedOut}, state.Partial},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			diag := &result.Result{
+				Findings:        []finding.Finding{},
+				ClassifiedEdges: edges,
+				ToolCoverage:    []modevidence.Coverage{{Tool: "dotnet-msbuild", Status: modevidence.StatusOK}, tc.coverage},
+			}
+			dim := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).Coupling
+			if dim.Status != tc.wantStatus {
+				t.Fatalf("status = %q, want %q (unknown: %+v)", dim.Status, tc.wantStatus, dim.Unknown)
+			}
+			var reason string
+			for _, u := range dim.Unknown {
+				if u.Fact == state.FactExtractorResolutionWithinCeiling {
+					reason = u.Reason
+				}
+			}
+			if blocked := tc.wantStatus == state.Partial; blocked != strings.Contains(reason, roslyn) {
+				t.Errorf("resolution unknown reason = %q, want one naming roslyn: %v", reason, blocked)
+			}
+		})
+	}
+}
+
 func TestCouplingDimension_UnratedVolatilityMakesItPartial(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
