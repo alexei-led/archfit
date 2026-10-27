@@ -21,9 +21,9 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
-// Placeholder for the type graph producer's MeasurementContract coverage name;
-// the language wiring task replaces it.
-const coverageRoslyn = "roslyn"
+// toolRoslyn is the coverage name of the type graph row, as the measurement
+// contract spells it.
+const toolRoslyn = "roslyn"
 
 const (
 	helperEnv               = "ARCHFIT_DOTNET_ROSLYN"
@@ -196,13 +196,13 @@ func (r typeGraphResult) loaded(project string) bool {
 }
 
 func notRun(status, reason string) typeGraphResult {
-	return typeGraphResult{cov: evidence.Coverage{Tool: coverageRoslyn, Status: status, Reason: reason}}
+	return typeGraphResult{cov: evidence.Coverage{Tool: toolRoslyn, Status: status, Reason: reason}}
 }
 
 // failedRun is a helper run that produced no report: every project falls back.
 func failedRun(version, reason string) typeGraphResult {
 	return typeGraphResult{cov: evidence.Coverage{
-		Tool:                    coverageRoslyn,
+		Tool:                    toolRoslyn,
 		Version:                 version,
 		Status:                  evidence.StatusPartial,
 		Reason:                  "archfit-roslyn failed: " + reason + "; " + reasonFallbackAll,
@@ -212,7 +212,7 @@ func failedRun(version, reason string) typeGraphResult {
 
 func timedOutRun(version string) typeGraphResult {
 	return typeGraphResult{cov: evidence.Coverage{
-		Tool:                    coverageRoslyn,
+		Tool:                    toolRoslyn,
 		Version:                 version,
 		Status:                  evidence.StatusTimedOut,
 		Reason:                  reasonHelperTimedOut + "; " + reasonFallbackAll,
@@ -224,24 +224,27 @@ func isTimeout(ctx context.Context, err error) bool {
 	return errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded)
 }
 
-// helperDir returns the helper directory from ARCHFIT_DOTNET_ROSLYN. An unset
+// HelperDir returns the helper directory from ARCHFIT_DOTNET_ROSLYN. An unset
 // variable is not an error (the type graph is absent). A set one is
 // authoritative: an invalid value fails the run instead of silently dropping to
-// the project-only graph, as ARCHFIT_TOOL_PYTHON does.
-func helperDir(root string) (string, bool, error) {
-	dir, configured := os.LookupEnv(helperEnv)
+// the project-only graph, as ARCHFIT_TOOL_PYTHON does. root is the analysis
+// root the helper must lie outside; doctor, which has no target, passes "".
+func HelperDir(root string) (dir string, configured bool, err error) {
+	dir, configured = os.LookupEnv(helperEnv)
 	if !configured {
 		return "", false, nil
 	}
 	if !filepath.IsAbs(dir) {
 		return "", true, fmt.Errorf("%s must name the absolute helper directory outside the target", helperEnv)
 	}
-	inside, err := toolrun.ContainsPath(root, dir)
-	if err != nil {
-		return "", true, fmt.Errorf("%s: validate helper location: %w", helperEnv, err)
-	}
-	if inside {
-		return "", true, fmt.Errorf("%s must not select a helper inside the target", helperEnv)
+	if root != "" {
+		inside, err := toolrun.ContainsPath(root, dir)
+		if err != nil {
+			return "", true, fmt.Errorf("%s: validate helper location: %w", helperEnv, err)
+		}
+		if inside {
+			return "", true, fmt.Errorf("%s must not select a helper inside the target", helperEnv)
+		}
 	}
 	if info, err := os.Stat(filepath.Join(dir, helperDLL)); err != nil || !info.Mode().IsRegular() {
 		return "", true, fmt.Errorf("%s must name a directory holding %s; build it with `make dotnet-roslyn`", helperEnv, helperDLL)
@@ -259,7 +262,7 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 	if e.TypeGraph.Disabled {
 		return notRun(evidence.StatusDisabled, reasonHelperDisabled), nil
 	}
-	dir, configured, err := helperDir(root)
+	dir, configured, err := HelperDir(root)
 	if err != nil {
 		return typeGraphResult{}, err
 	}
@@ -557,7 +560,7 @@ func typeGraphCoverage(version string, res typeGraphResult) evidence.Coverage {
 		}
 	}
 	cov := evidence.Coverage{
-		Tool:            coverageRoslyn,
+		Tool:            toolRoslyn,
 		Version:         version,
 		FilesSeen:       len(files),
 		FilesApplicable: len(files),
@@ -675,7 +678,7 @@ func appendFileGraph(facts *graph.Facts, res typeGraphResult, exclusions, intern
 			if dropped(f.Path) {
 				continue
 			}
-			node(graph.Node{Kind: graph.NodeKindFile, Path: f.Path, Language: langDotNet})
+			node(graph.Node{Kind: graph.NodeKindFile, Path: f.Path, Language: graph.LangDotNet})
 			for _, edge := range f.Edges {
 				if !edge.External && dropped(edge.To) {
 					continue
@@ -694,7 +697,7 @@ func appendFileGraph(facts *graph.Facts, res typeGraphResult, exclusions, intern
 		return strings.Compare(a.from+"\x00"+a.to, b.from+"\x00"+b.to)
 	})
 	for _, k := range keys {
-		to, kind := graph.Node{Kind: graph.NodeKindFile, Path: k.to, Language: langDotNet}, graph.EdgeKindImports
+		to, kind := graph.Node{Kind: graph.NodeKindFile, Path: k.to, Language: graph.LangDotNet}, graph.EdgeKindImports
 		if k.external {
 			to.Kind = graph.NodeKindExternal
 		} else {
@@ -704,7 +707,7 @@ func appendFileGraph(facts *graph.Facts, res typeGraphResult, exclusions, intern
 			From:             graph.Node{Kind: graph.NodeKindFile, Path: k.from}.ID(),
 			To:               node(to),
 			Kind:             kind,
-			Language:         langDotNet,
+			Language:         graph.LangDotNet,
 			Confidence:       "high",
 			StrengthHint:     agg[k].hint,
 			DataStrengthHint: agg[k].data,

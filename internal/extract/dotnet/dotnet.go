@@ -23,14 +23,9 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
-// Placeholders for names that do not exist outside this package yet. The
-// language wiring task replaces them with graph.LangDotNet, a graph node kind,
-// and the MeasurementContract coverage name.
-const (
-	langDotNet      = "dotnet"
-	nodeKindProject = graph.NodeKind("project")
-	coverageTool    = "dotnet-msbuild"
-)
+// toolMSBuild is the coverage name of the project graph row, as the
+// measurement contract spells it.
+const toolMSBuild = "dotnet-msbuild"
 
 // Per-project evaluation statuses.
 const (
@@ -131,12 +126,12 @@ func New(runner toolrun.Runner, cfg evidenceports.ExtractConfig, targets []strin
 
 // Name returns the language identifier for this extractor.
 func (e *Extractor) Name() string {
-	return langDotNet
+	return graph.LangDotNet
 }
 
 // CoverageTool returns the name this extractor stamps on its Coverage row.
 func (e *Extractor) CoverageTool() string {
-	return coverageTool
+	return toolMSBuild
 }
 
 // LastEvaluation returns the per-project evaluation from the most recent Extract
@@ -166,6 +161,17 @@ func (e *Extractor) LastTypeGraphCoverage() evidence.Coverage {
 func Applicable(root string, exclusions, targets []string) bool {
 	sel, _ := discover(root, exclusions, targets)
 	return sel.solution != "" || len(sel.projects) > 0
+}
+
+// Projects returns the repo-relative .csproj paths Extract evaluates under
+// root, sorted: the same selection Applicable answers from. Nil when none or
+// when the selection cannot be read.
+func Projects(root string, exclusions, targets []string) []string {
+	sel, err := discover(root, exclusions, targets)
+	if err != nil {
+		return nil
+	}
+	return sel.projects
 }
 
 // Extract detects dotnet, selects projects (solution, configured targets, or a
@@ -206,7 +212,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		if e.cfg.Mode == evidenceports.ModeOn {
 			return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/dotnet: %s", reason)
 		}
-		return graph.Facts{}, evidence.Coverage{Tool: coverageTool, Version: version, Status: evidence.StatusPartial, Reason: reason}, nil
+		return graph.Facts{}, evidence.Coverage{Tool: toolMSBuild, Version: version, Status: evidence.StatusPartial, Reason: reason}, nil
 	}
 
 	projects, timedOut, err := e.evaluateAll(ctx, s.Root, sel.projects)
@@ -402,10 +408,10 @@ func fileExists(p string) bool {
 // load. A loaded project's dependencies are its file edges instead, never both
 // (D1). It returns the projects that fell back.
 func buildFacts(projects []ProjectEvaluation, tg typeGraphResult) (graph.Facts, []string) {
-	facts := graph.Facts{Language: langDotNet}
+	facts := graph.Facts{Language: graph.LangDotNet}
 	seen := map[string]struct{}{}
 	node := func(p string) string {
-		n := graph.Node{Kind: nodeKindProject, Path: p, Language: langDotNet}
+		n := graph.Node{Kind: graph.NodeKindProject, Path: p, Language: graph.LangDotNet}
 		if _, ok := seen[n.ID()]; !ok {
 			seen[n.ID()] = struct{}{}
 			facts.Nodes = append(facts.Nodes, n)
@@ -427,7 +433,7 @@ func buildFacts(projects []ProjectEvaluation, tg typeGraphResult) (graph.Facts, 
 				From:       from,
 				To:         node(ref),
 				Kind:       graph.EdgeKindDependsOn,
-				Language:   langDotNet,
+				Language:   graph.LangDotNet,
 				Confidence: "high",
 			}
 			if file := p.definedIn[ref]; file != "" {
@@ -443,7 +449,7 @@ func buildFacts(projects []ProjectEvaluation, tg typeGraphResult) (graph.Facts, 
 // evaluate or a listed project is missing, "timed out" when a deadline hit.
 func coverageFor(ev Evaluation, version string, timedOut bool) evidence.Coverage {
 	cov := evidence.Coverage{
-		Tool:            coverageTool,
+		Tool:            toolMSBuild,
 		Version:         version,
 		FilesSeen:       len(ev.Projects),
 		FilesApplicable: len(ev.Projects),
@@ -475,12 +481,12 @@ func coverageFor(ev Evaluation, version string, timedOut bool) evidence.Coverage
 
 // absentCoverage returns a Coverage record indicating no .NET project or no dotnet.
 func absentCoverage(version string) evidence.Coverage {
-	return evidence.Coverage{Tool: coverageTool, Version: version, Status: evidence.StatusAbsent}
+	return evidence.Coverage{Tool: toolMSBuild, Version: version, Status: evidence.StatusAbsent}
 }
 
 // typeGraphAbsent is the roslyn row when the helper never ran.
 func typeGraphAbsent() evidence.Coverage {
-	return evidence.Coverage{Tool: coverageRoslyn, Status: evidence.StatusAbsent}
+	return evidence.Coverage{Tool: toolRoslyn, Status: evidence.StatusAbsent}
 }
 
 // selection is the project set chosen for evaluation.
