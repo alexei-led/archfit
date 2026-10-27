@@ -29,6 +29,7 @@ const (
 	FormatLCOV           = "lcov"
 	FormatCoveragePyJSON = "coverage-py-json"
 	FormatLLVMCovJSON    = "llvm-cov-json"
+	FormatCobertura      = "cobertura"
 )
 
 const (
@@ -108,6 +109,7 @@ func New(store *factcache.Store, supplied ...Parser) *Ingestor {
 		FormatLCOV:           lcovParser{},
 		FormatCoveragePyJSON: coveragePyJSONParser{},
 		FormatLLVMCovJSON:    llvmCovJSONParser{},
+		FormatCobertura:      coberturaParser{},
 	}
 	for _, parser := range supplied {
 		if parser != nil {
@@ -119,7 +121,7 @@ func New(store *factcache.Store, supplied ...Parser) *Ingestor {
 
 // SupportedFormats returns the closed config vocabulary in stable order.
 func SupportedFormats() []string {
-	return []string{FormatAuto, FormatGoCoverProfile, FormatLCOV, FormatCoveragePyJSON, FormatLLVMCovJSON}
+	return []string{FormatAuto, FormatGoCoverProfile, FormatLCOV, FormatCoveragePyJSON, FormatLLVMCovJSON, FormatCobertura}
 }
 
 // IngestAll processes every configured source and returns one normalized ingest
@@ -223,7 +225,12 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		}
 	}
 
-	facts, err := parser.Parse(data)
+	var facts []evidence.CoverageFact
+	if rooted, ok := parser.(rootAwareParser); ok {
+		facts, err = rooted.parseWithRoot(data, normalizer)
+	} else {
+		facts, err = parser.Parse(data)
+	}
 	parseWarning := ""
 	if err != nil {
 		if errors.Is(err, ErrLCOVSummaryDiscrepancy) {
