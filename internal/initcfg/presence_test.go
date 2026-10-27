@@ -28,6 +28,7 @@ func ProbePresence(root string) Presence {
 		TypeScript: registry.ProjectPresent(langTypeScript, root, cfg),
 		Python:     registry.ProjectPresent(langPython, root, cfg),
 		Rust:       registry.ProjectPresent(langRust, root, cfg),
+		DotNet:     registry.ProjectPresent(langDotNet, root, cfg),
 	}
 	if p.Go {
 		p.GoMembers, p.GoWorkOff = registry.GoMembers(root, cfg)

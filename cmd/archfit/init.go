@@ -165,6 +165,7 @@ func languagePresence(ctx context.Context, root string, cfg config.Config, runne
 		TypeScript: registry.ProjectPresent(config.LangTypeScript, root, extract[config.LangTypeScript]),
 		Python:     registry.ProjectPresent(config.LangPython, root, extract[config.LangPython]),
 		Rust:       registry.ProjectPresent(config.LangRust, root, extract[config.LangRust]),
+		DotNet:     registry.ProjectPresent(config.LangDotNet, root, extract[config.LangDotNet]),
 	}
 	if p.Go {
 		p.GoMembers, p.GoWorkOff = registry.GoMembers(root, extract[config.LangGo])

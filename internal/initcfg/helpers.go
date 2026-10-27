@@ -13,6 +13,7 @@ const (
 	langPython     = "python"
 	langTypeScript = "typescript"
 	langRust       = "rust"
+	langDotNet     = "dotnet"
 )
 
 // disambiguateNames ensures every ModuleDef in mods has a unique Name.
