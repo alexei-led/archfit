@@ -16,8 +16,8 @@ import (
 )
 
 // domainOnlyReport reports Domain complete with one file and no edges.
-const domainOnlyReport = `{"schema_version":1,"skipped_projects":[],"projects":[
- {"path":"Domain/Domain.csproj","tfm":"net10.0","status":"complete","unused_references":0,
+const domainOnlyReport = `{"schema_version":2,"skipped_projects":[],"projects":[
+ {"path":"Domain/Domain.csproj","tfm":"net10.0","status":"complete","used_projects":[],
   "files":[{"path":"Domain/Domain.cs","edges":[]}]}]}`
 
 func exists(p string) bool {

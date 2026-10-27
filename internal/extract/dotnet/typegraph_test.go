@@ -162,7 +162,7 @@ const legacyLoadFailure = "Msbuild failed when processing the file 'Legacy/Legac
 func failedLegacy() map[string]any {
 	return map[string]any{
 		keyPath: legacyProj, "tfm": "", "status": "failed", "reason": legacyLoadFailure, "unresolved_symbols": 0,
-		"unused_references": nil, "ivt_declarations": []any{}, "linked_files": []any{}, "files": []any{},
+		"used_projects": []any{}, "ivt_declarations": []any{}, "linked_files": []any{}, "files": []any{},
 	}
 }
 
@@ -246,6 +246,28 @@ func TestTypeGraph_RecordedFixtureEdges(t *testing.T) {
 	}
 	if facts.Unresolved != 35 {
 		t.Errorf("facts unresolved = %d, want 35", facts.Unresolved)
+	}
+}
+
+func TestTypeGraph_FileEdgeLocatesTheFirstUse(t *testing.T) {
+	_, _, facts, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
+
+	want := map[string]graph.Location{
+		repositoryCS + " -> file:" + contractsCS: {File: repositoryCS, Line: 6},
+		contractsCS + " -> file:" + domainCS:     {File: contractsCS, Line: 5},
+		legacyCS + " -> file:" + domainCS:        {File: legacyCS, Line: 6},
+	}
+	for _, e := range facts.Edges {
+		key := graph.NodePath(e.From) + " -> " + e.To
+		if loc, ok := want[key]; ok {
+			if !slices.Equal(e.Locations, []graph.Location{loc}) {
+				t.Errorf("%s locations = %+v, want %+v", key, e.Locations, loc)
+			}
+			delete(want, key)
+		}
+	}
+	if len(want) > 0 {
+		t.Errorf("edges not found: %v", want)
 	}
 }
 
@@ -358,14 +380,14 @@ func TestTypeGraph_UnreportedProjectIsMissingInventory(t *testing.T) {
 }
 
 func TestTypeGraph_FoldsFrameworksAndProjects(t *testing.T) {
-	const report = `{"schema_version":1,"skipped_projects":["Db/Db.sqlproj"],"projects":[
-	 {"path":"A/A.csproj","tfm":"net10.0","status":"complete","unused_references":1,"files":[
+	const report = `{"schema_version":2,"skipped_projects":["Db/Db.sqlproj"],"projects":[
+	 {"path":"A/A.csproj","tfm":"net10.0","status":"complete","used_projects":[],"files":[
 	  {"path":"A/X.cs","edges":[
-	   {"to":"B/Y.cs","hint":"model","data_hint":"model"},
+	   {"to":"B/Y.cs","hint":"model","data_hint":"model","line":9},
 	   {"to":"System.Runtime","external":true,"hint":"model","data_hint":"model"}]}]},
 	 {"path":"A/A.csproj","tfm":"net8.0","status":"partial","reason":"2 unresolved symbols","unresolved_symbols":2,"files":[
-	  {"path":"A/X.cs","edges":[{"to":"B/Y.cs","hint":"functional","data_hint":"dto"}]}]},
-	 {"path":"C/C.csproj","tfm":"net10.0","status":"complete","unused_references":0,"files":[
+	  {"path":"A/X.cs","edges":[{"to":"B/Y.cs","hint":"functional","data_hint":"dto","line":4}]}]},
+	 {"path":"C/C.csproj","tfm":"net10.0","status":"complete","used_projects":[],"files":[
 	  {"path":"A/X.cs","edges":[{"to":"B/Y.cs","hint":"contract","data_hint":""},{"to":"B/Hidden.cs","hint":"intrusive","data_hint":""}]}]}]}`
 	root := tree(t, projA)
 	installHelper(t)
@@ -390,6 +412,9 @@ func TestTypeGraph_FoldsFrameworksAndProjects(t *testing.T) {
 	kinds := map[string]graph.EdgeKind{}
 	for _, edge := range facts.Edges {
 		kinds[edge.To] = edge.Kind
+		if edge.To == "file:B/Y.cs" && !slices.Equal(edge.Locations, []graph.Location{{File: "A/X.cs", Line: 4}}) {
+			t.Errorf("A/X.cs -> B/Y.cs locations = %+v, want the earliest first use across frameworks", edge.Locations)
+		}
 	}
 	if kinds["file:B/Hidden.cs"] != graph.EdgeKindUsesInternal || kinds["file:B/Y.cs"] != graph.EdgeKindImports {
 		t.Errorf("edge kinds = %v", kinds)
@@ -418,12 +443,12 @@ func TestTypeGraph_RejectsUnusableReports(t *testing.T) {
 	tests := []struct {
 		name, report, want string
 	}{
-		{"unsupported schema version", `{"schema_version":2,"projects":[]}`, "schema_version 2 is not supported"},
+		{"unsupported schema version", `{"schema_version":1,"projects":[]}`, "schema_version 1 is not supported"},
 		{"missing schema version", `{"projects":[]}`, "schema_version 0 is not supported"},
 		{"not JSON", `boom`, "parse archfit-roslyn output"},
-		{"unknown status", `{"schema_version":1,"projects":[{"path":"A/A.csproj","status":"loaded"}]}`, `unknown status "loaded"`},
-		{"unknown hint", `{"schema_version":1,"projects":[{"path":"A/A.csproj","status":"complete","files":[{"path":"A/X.cs","edges":[{"to":"B/Y.cs","hint":"strong"}]}]}]}`, "unknown hints"},
-		{"callable data hint", `{"schema_version":1,"projects":[{"path":"A/A.csproj","status":"complete","files":[{"path":"A/X.cs","edges":[{"to":"B/Y.cs","hint":"functional","data_hint":"functional"}]}]}]}`, "unknown hints"},
+		{"unknown status", `{"schema_version":2,"projects":[{"path":"A/A.csproj","status":"loaded"}]}`, `unknown status "loaded"`},
+		{"unknown hint", `{"schema_version":2,"projects":[{"path":"A/A.csproj","status":"complete","files":[{"path":"A/X.cs","edges":[{"to":"B/Y.cs","hint":"strong"}]}]}]}`, "unknown hints"},
+		{"callable data hint", `{"schema_version":2,"projects":[{"path":"A/A.csproj","status":"complete","files":[{"path":"A/X.cs","edges":[{"to":"B/Y.cs","hint":"functional","data_hint":"functional"}]}]}]}`, "unknown hints"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -455,8 +480,15 @@ func TestTypeGraph_FallbackWhenHelperFailsButEvaluationSucceeds(t *testing.T) {
 		}
 	}
 	for _, edge := range facts.Edges {
-		if edge.Kind == graph.EdgeKindDependsOn && (edge.StrengthHint != "" || edge.DataStrengthHint != "") {
+		if edge.Kind != graph.EdgeKindDependsOn {
+			continue
+		}
+		if edge.StrengthHint != "" || edge.DataStrengthHint != "" {
 			t.Errorf("fallback edge carries a hint: %+v", edge)
+		}
+		// Legacy.csproj line 7 holds the conditional ProjectReference.
+		if want := []graph.Location{{File: legacyProj, Line: 7}}; !slices.Equal(edge.Locations, want) {
+			t.Errorf("fallback edge locations = %+v, want %+v", edge.Locations, want)
 		}
 	}
 	if got := e.LastTypeGraph().Fallback; !slices.Equal(got, []string{brokenProj, legacyProj}) {
@@ -768,10 +800,10 @@ func TestTypeGraph_ExcludedFileStillBindsButEmitsNothing(t *testing.T) {
 
 // dataOnlyReport is a helper report where Application/Contracts.cs reads a
 // field of a concrete Domain class and calls nothing.
-const dataOnlyReport = `{"schema_version":1,"skipped_projects":[],"projects":[
- {"path":"Application/Application.csproj","tfm":"net10.0","status":"complete","unused_references":0,
+const dataOnlyReport = `{"schema_version":2,"skipped_projects":[],"projects":[
+ {"path":"Application/Application.csproj","tfm":"net10.0","status":"complete","used_projects":[],
   "files":[{"path":"Application/Contracts.cs","edges":[{"to":"Domain/Domain.cs","hint":"model","data_hint":"model","reference":"data_use"}]}]},
- {"path":"Domain/Domain.csproj","tfm":"net10.0","status":"complete","unused_references":0,
+ {"path":"Domain/Domain.csproj","tfm":"net10.0","status":"complete","used_projects":[],
   "files":[{"path":"Domain/Domain.cs","edges":[]}]}]}`
 
 func dataOnlyFacts(t *testing.T) graph.Facts {
@@ -992,9 +1024,9 @@ func TestTypeGraph_TestClassifiedPathDropsEdgesWithoutIsTestProject(t *testing.T
 		if p != core {
 			edges = `{"to":"src/Core/Core.cs","hint":"functional","data_hint":""}`
 		}
-		entries = append(entries, fmt.Sprintf(`{"path":%q,"tfm":"net10.0","status":"complete","unused_references":0,"files":[{"path":%q,"edges":[%s]}]}`, p, fileOf(p), edges))
+		entries = append(entries, fmt.Sprintf(`{"path":%q,"tfm":"net10.0","status":"complete","used_projects":[],"files":[{"path":%q,"edges":[%s]}]}`, p, fileOf(p), edges))
 	}
-	report := `{"schema_version":1,"skipped_projects":[],"projects":[` + strings.Join(entries, ",") + `]}`
+	report := `{"schema_version":2,"skipped_projects":[],"projects":[` + strings.Join(entries, ",") + `]}`
 
 	for _, helper := range []bool{false, true} {
 		t.Run(fmt.Sprintf("helper loaded %v", helper), func(t *testing.T) {
@@ -1048,7 +1080,7 @@ func TestCoverage_NamesEveryProjectWithAProblem(t *testing.T) {
 	}
 	installHelper(t)
 	fake := newFake(t, root, replies)
-	fake.helper = fakeHelper(replying(`{"schema_version":1,"projects":[` + strings.Join(entries, ",") + `]}`))
+	fake.helper = fakeHelper(replying(`{"schema_version":2,"projects":[` + strings.Join(entries, ",") + `]}`))
 	e := dotnet.New(fake, autoCfg(), nil)
 	_, msbuild, err := e.Extract(context.Background(), scope.Scope{Root: root})
 	if err != nil {
@@ -1065,4 +1097,71 @@ func TestCoverage_NamesEveryProjectWithAProblem(t *testing.T) {
 			t.Errorf("%s reason %q is truncated", row.Tool, row.Reason)
 		}
 	}
+}
+
+// The helper's workspace adds transitive references to a project, so it
+// reports the projects used; the unused count comes from the direct
+// references MSBuild evaluated, without assembly-less ones.
+func TestTypeGraph_UnusedReferencesAreDirectAssemblyReferencesOnly(t *testing.T) {
+	const (
+		app   = "App/App.csproj"
+		lib   = "Lib/Lib.csproj"
+		other = "Other/Other.csproj"
+		core  = "Core/Core.csproj"
+		res   = "Res/Res.csproj"
+		web   = "Web/Web.csproj"
+	)
+	root := tree(t, app, lib, other, core, res, web)
+	item := func(ref, meta string) string {
+		return fmt.Sprintf(`{"Identity":"x","FullPath":"%s/%s","DefiningProjectFullPath":"%s/%s"%s}`, filepath.ToSlash(root), ref, filepath.ToSlash(root), app, meta)
+	}
+	appEval := `{"Properties":{"TargetFramework":"net10.0"},"Items":{"ProjectReference":[` + strings.Join([]string{
+		item(lib, ""),
+		item(other, ""),
+		item(res, `,"ReferenceOutputAssembly":"false"`),
+		item(web, `,"IsAspireProjectResource":"true"`),
+	}, ",") + `],"PackageReference":[]}}`
+	leaf := reply{stdout: `{"Properties":{"TargetFramework":"net10.0"},"Items":{}}`}
+	replies := map[string]reply{app: {stdout: appEval}, lib: leaf, other: leaf, core: leaf, res: leaf, web: leaf}
+
+	entry := func(path, tfm, status, used string) string {
+		return fmt.Sprintf(`{"path":%q,"tfm":%q,"status":%q,"used_projects":[%s],"files":[]}`, path, tfm, status, used)
+	}
+	// Core is transitive (Lib references it) and used; Other is direct and unused.
+	const usedByApp = `"Lib/Lib.csproj","Core/Core.csproj"`
+	one := 1
+	tests := []struct {
+		name       string
+		appEntries []string
+		want       *int
+	}{
+		{name: "complete", appEntries: []string{entry(app, "net10.0", "complete", usedByApp)}, want: &one},
+		{name: "a partial framework may hide uses", appEntries: []string{entry(app, "net10.0", "complete", usedByApp), entry(app, "net8.0", "partial", "")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			installHelper(t)
+			fake := newFake(t, root, replies)
+			entries := append([]string{
+				entry(lib, "net10.0", "complete", `"Core/Core.csproj"`), entry(other, "net10.0", "complete", ""),
+				entry(core, "net10.0", "complete", ""), entry(res, "net10.0", "complete", ""), entry(web, "net10.0", "complete", ""),
+			}, tt.appEntries...)
+			fake.helper = fakeHelper(replying(`{"schema_version":2,"projects":[` + strings.Join(entries, ",") + `]}`))
+			e := dotnet.New(fake, autoCfg(), nil)
+			if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
+				t.Fatal(err)
+			}
+			got := typeProject(t, e.LastTypeGraph(), app).UnusedReferences
+			if (got == nil) != (tt.want == nil) || (got != nil && *got != *tt.want) {
+				t.Errorf("unused = %v, want %v", deref(got), deref(tt.want))
+			}
+		})
+	}
+}
+
+func deref(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
 }

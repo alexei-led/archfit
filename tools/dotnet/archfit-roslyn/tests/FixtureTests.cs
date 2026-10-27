@@ -119,7 +119,7 @@ public class FixtureTests(LoadedFixture fixture) : IClassFixture<LoadedFixture>
     public void UnresolvedPackageIsCountedWithoutNodes()
     {
         var project = Project("Unresolved/Unresolved.csproj", "net10.0");
-        Assert.Equal((3, (int?)null), (project.UnresolvedSymbols, project.UnusedReferences));
+        Assert.Equal(3, project.UnresolvedSymbols);
         Assert.Empty(Assert.Single(project.Files).Edges);
     }
 
@@ -128,8 +128,8 @@ public class FixtureTests(LoadedFixture fixture) : IClassFixture<LoadedFixture>
     {
         Assert.Equal(
             [
-                new EdgeReport("Application/Contracts.cs", false, "dto", "dto", "type_use"),
-                new EdgeReport("Domain/Domain.cs", false, "intrusive", "model", "type_use"),
+                new EdgeReport("Application/Contracts.cs", false, "dto", "dto", "type_use", 6),
+                new EdgeReport("Domain/Domain.cs", false, "intrusive", "model", "type_use", 6),
             ],
             FileIn("Infrastructure/Infrastructure.csproj", "Infrastructure/Repository.cs").Edges);
     }
@@ -138,17 +138,17 @@ public class FixtureTests(LoadedFixture fixture) : IClassFixture<LoadedFixture>
     public void ApplicationUsesDomainThroughTheGlobalUsing()
     {
         Assert.Equal(
-            [new EdgeReport("Domain/Domain.cs", false, "model", "model", "type_use")],
+            [new EdgeReport("Domain/Domain.cs", false, "model", "model", "type_use", 5)],
             FileIn("Application/Application.csproj", "Application/Contracts.cs").Edges);
-        Assert.Equal(0, Project("Application/Application.csproj", "net10.0").UnusedReferences);
-        Assert.Equal(0, Project("Infrastructure/Infrastructure.csproj", "net10.0").UnusedReferences);
+        Assert.Equal(["Domain/Domain.csproj"], Project("Application/Application.csproj", "net10.0").UsedProjects);
+        Assert.Equal(["Application/Application.csproj", "Domain/Domain.csproj"], Project("Infrastructure/Infrastructure.csproj", "net10.0").UsedProjects);
     }
 
     [Fact]
     public void TfmOnlyEdgeAppearsInItsTargetFramework()
     {
         Assert.Equal(
-            [new EdgeReport("Domain/Domain.cs", false, "functional", "model", "call")],
+            [new EdgeReport("Domain/Domain.cs", false, "functional", "model", "call", 6)],
             Project("Legacy/Legacy.csproj", "net10.0").Files.Single(f => f.Path == "Legacy/Legacy.cs").Edges);
         Assert.Empty(Project("Legacy/Legacy.csproj", "net8.0").Files.Single(f => f.Path == "Legacy/Legacy.cs").Edges);
     }

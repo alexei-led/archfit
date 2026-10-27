@@ -61,7 +61,7 @@ internal static partial class Classifier
                 status,
                 status == Status.Partial ? PartialReason(collected, projectFailures, fullRoot) : "",
                 collected.UnresolvedSymbols,
-                status == Status.Complete ? collected.UnusedReferences : null,
+                collected.UsedProjects,
                 collected.IvtDeclarations,
                 collected.LinkedFiles,
                 collected.Files));
@@ -106,7 +106,7 @@ internal static partial class Classifier
     private const string NotLoaded = "the workspace did not load the project";
 
     private static ProjectReport Failed(string path, string message, string root) =>
-        new(path, "", Status.Failed, FailedReason(message, root), 0, null, [], [], []);
+        new(path, "", Status.Failed, FailedReason(message, root), 0, [], [], [], []);
 
     // FailingProject returns the project a workspace failure is about: the
     // first quoted project path in the message ("Msbuild failed when

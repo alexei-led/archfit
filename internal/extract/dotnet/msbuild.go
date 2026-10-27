@@ -59,6 +59,17 @@ type evalItem struct {
 	// DefiningProjectFullPath is the file that declared the item: the project or
 	// an imported props file.
 	DefiningProjectFullPath string `json:"DefiningProjectFullPath"`
+	// ReferenceOutputAssembly "false" and IsAspireProjectResource "true" mark a
+	// ProjectReference that does not reference the project's assembly: a
+	// build-order reference, or an Aspire AppHost resource.
+	ReferenceOutputAssembly string `json:"ReferenceOutputAssembly"`
+	IsAspireProjectResource string `json:"IsAspireProjectResource"`
+}
+
+// referencesAssembly reports whether a ProjectReference item compiles against
+// the referenced project's assembly.
+func (it evalItem) referencesAssembly() bool {
+	return !strings.EqualFold(it.ReferenceOutputAssembly, "false") && !strings.EqualFold(it.IsAspireProjectResource, "true")
 }
 
 type msbuildJSON struct {

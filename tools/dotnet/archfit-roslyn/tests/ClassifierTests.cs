@@ -111,7 +111,7 @@ public class ClassifierTests
     [Fact]
     public void PartialReasonNamesTheMissingReferencePack()
     {
-        var collected = new Collected("net8.0", 12, new Dictionary<string, int> { ["CS0518"] = 10, ["CS0246"] = 2 }, 0, [], [], []);
+        var collected = new Collected("net8.0", 12, new Dictionary<string, int> { ["CS0518"] = 10, ["CS0246"] = 2 }, [], [], [], []);
         Assert.Equal(
             "12 unresolved symbols (CS0246 x2, CS0518 x10); reference pack Microsoft.NETCore.App.Ref 8.0 is not installed: install the .NET 8.0 targeting pack or restore with NuGet access",
             Classifier.PartialReason(collected, [], Root));

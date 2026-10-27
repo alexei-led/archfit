@@ -105,7 +105,7 @@ public class CollectorTests
         var report = await Analyze(("App", [("App/U.cs", "using Missing; class U { Widget W() => new Widget(); }")], []));
 
         var project = Assert.Single(report.Projects);
-        Assert.Equal((Status.Partial, 3, (int?)null), (project.Status, project.UnresolvedSymbols, project.UnusedReferences));
+        Assert.Equal((Status.Partial, 3), (project.Status, project.UnresolvedSymbols));
         Assert.Contains("3 unresolved symbols (CS0246 x3)", project.Reason);
         Assert.Empty(Edges(report, "App/U.cs"));
     }
@@ -122,16 +122,32 @@ public class CollectorTests
         Assert.Contains($"{id} x1", project.Reason);
     }
 
+    // The workspace's references include transitive ones (Core here); the
+    // report names only the projects used, and the caller compares them with
+    // the direct references it evaluated.
     [Fact]
-    public async Task UnusedProjectReferencesAreCounted()
+    public async Task UsedProjectsNameOnlyTheProjectsWhoseSymbolsAreUsed()
+    {
+        var report = await Analyze(
+            ("Core", [("Core/C.cs", "namespace C; public class Id { }")], []),
+            ("Lib", [("Lib/Lib.cs", Lib)], ["Core"]),
+            ("Other", [("Other/O.cs", "namespace O; public class X { }")], []),
+            ("App", [("App/U.cs", "class U { L.Customer? c; }")], ["Lib", "Other", "Core"]));
+
+        var app = report.Projects.Single(p => p.Path == "App/App.csproj");
+        Assert.Equal(Status.Complete, app.Status);
+        Assert.Equal(["Lib/Lib.csproj"], app.UsedProjects);
+    }
+
+    [Fact]
+    public async Task EdgeLineIsTheFirstUseInTheFile()
     {
         var report = await Analyze(
             ("Lib", [("Lib/Lib.cs", Lib)], []),
-            ("Other", [("Other/O.cs", "namespace O; public class X { }")], []),
-            ("App", [("App/U.cs", "class U { L.Customer? c; }")], ["Lib", "Other"]));
+            ("App", [("App/U.cs", "class U\n{\n    int M(L.Customer c) => c.Age;\n    void N(L.Customer c) => c.Touch();\n}")], ["Lib"]));
 
-        var app = report.Projects.Single(p => p.Path == "App/App.csproj");
-        Assert.Equal((Status.Complete, 1), (app.Status, app.UnusedReferences));
+        var edge = Assert.Single(Edges(report, "App/U.cs"));
+        Assert.Equal(("functional", 3), (edge.Hint, edge.Line));
     }
 
     [Fact]

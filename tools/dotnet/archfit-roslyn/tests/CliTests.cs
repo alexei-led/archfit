@@ -14,7 +14,7 @@ public class CliTests
         var (code, stdout, _) = await Run("--version");
 
         Assert.Equal(0, code);
-        Assert.Matches(@"^archfit-roslyn 1\.0\.0; Microsoft\.CodeAnalysis 5\.6\.0; SDK \d+\.\d+\.\d+\S*\n$", stdout.ReplaceLineEndings("\n"));
+        Assert.Matches(@"^archfit-roslyn 1\.1\.0; Microsoft\.CodeAnalysis 5\.6\.0; SDK \d+\.\d+\.\d+\S*\n$", stdout.ReplaceLineEndings("\n"));
     }
 
     [Theory]
@@ -42,7 +42,7 @@ public class CliTests
 
             Assert.Equal(0, code);
             using var json = JsonDocument.Parse(stdout);
-            Assert.Equal(1, json.RootElement.GetProperty("schema_version").GetInt32());
+            Assert.Equal(2, json.RootElement.GetProperty("schema_version").GetInt32());
             var project = Assert.Single(json.RootElement.GetProperty("projects").EnumerateArray());
             Assert.Equal(("Domain/Domain.csproj", "complete"), (project.GetProperty("path").GetString(), project.GetProperty("status").GetString()));
         }

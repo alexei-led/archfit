@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -79,7 +80,15 @@ type ProjectEvaluation struct {
 	// are dropped, not missing.
 	OutsideRoot int
 
-	definedIn map[string]string // reference -> file that declares it
+	definedIn  map[string]graph.Location // reference -> where it is declared
+	assemblies map[string]struct{}       // references that compile against the project's assembly
+}
+
+// assemblyReferences are the References that compile against the referenced
+// project's assembly, sorted: an Aspire resource or a
+// ReferenceOutputAssembly=false reference is not one, so it cannot be unused.
+func (p ProjectEvaluation) assemblyReferences() []string {
+	return sortedKeys(p.assemblies)
 }
 
 // FallbackReferences returns the ProjectReference edges to emit when file edges
@@ -356,21 +365,23 @@ func evaluateProject(ctx context.Context, runner toolrun.Runner, root, rel strin
 // accumulator merges evaluations of one project: the union of references and
 // packages, classified against the root.
 type accumulator struct {
-	root     string
-	isTest   bool
-	refs     map[string]string // reference -> file that declares it
-	missing  map[string]struct{}
-	outside  map[string]struct{}
-	packages map[string]struct{}
+	root       string
+	isTest     bool
+	refs       map[string]graph.Location // reference -> where it is declared
+	assemblies map[string]struct{}
+	missing    map[string]struct{}
+	outside    map[string]struct{}
+	packages   map[string]struct{}
 }
 
 func newAccumulator(root string) *accumulator {
 	return &accumulator{
-		root:     root,
-		refs:     map[string]string{},
-		missing:  map[string]struct{}{},
-		outside:  map[string]struct{}{},
-		packages: map[string]struct{}{},
+		root:       root,
+		refs:       map[string]graph.Location{},
+		assemblies: map[string]struct{}{},
+		missing:    map[string]struct{}{},
+		outside:    map[string]struct{}{},
+		packages:   map[string]struct{}{},
 	}
 }
 
@@ -388,7 +399,10 @@ func (a *accumulator) add(r evalResult) {
 			a.missing[rel] = struct{}{}
 		default:
 			if _, seen := a.refs[rel]; !seen {
-				a.refs[rel] = a.definingFile(it.DefiningProjectFullPath)
+				a.refs[rel] = a.declaration(it.DefiningProjectFullPath, full)
+			}
+			if it.referencesAssembly() {
+				a.assemblies[rel] = struct{}{}
 			}
 		}
 	}
@@ -397,11 +411,38 @@ func (a *accumulator) add(r evalResult) {
 	}
 }
 
-// definingFile spells the file that declared a reference (the project or an
-// imported props file) relative to the root; empty when it lies outside.
-func (a *accumulator) definingFile(abs string) string {
-	rel, _ := relToRoot(a.root, filepath.Clean(abs))
-	return rel
+// declaration locates a reference: the file that declared it (the project or
+// an imported props file) relative to the root, empty when it lies outside,
+// and the line of its Include, 0 when no line names the target.
+func (a *accumulator) declaration(definingAbs, target string) graph.Location {
+	definingAbs = filepath.Clean(definingAbs)
+	rel, _ := relToRoot(a.root, definingAbs)
+	if rel == "" {
+		return graph.Location{}
+	}
+	return graph.Location{File: rel, Line: includeLine(definingAbs, target)}
+}
+
+// includeAttr matches an Include attribute value.
+var includeAttr = regexp.MustCompile(`Include\s*=\s*"([^"]*)"`)
+
+// includeLine returns the 1-based line of the first Include whose path names
+// target's file, as Rust locates a dependency in its manifest; 0 when none
+// does (a glob or a property-built path).
+func includeLine(file, target string) int {
+	data, err := os.ReadFile(file) //nolint:gosec // a build file under the scan root
+	if err != nil {
+		return 0
+	}
+	name := filepath.Base(target)
+	for i, line := range strings.Split(string(data), "\n") {
+		for _, m := range includeAttr.FindAllStringSubmatch(line, -1) {
+			if strings.EqualFold(path.Base(strings.ReplaceAll(m[1], `\`, "/")), name) {
+				return i + 1
+			}
+		}
+	}
+	return 0
 }
 
 func (a *accumulator) finish(pe *ProjectEvaluation) {
@@ -411,6 +452,7 @@ func (a *accumulator) finish(pe *ProjectEvaluation) {
 	pe.Missing = sortedKeys(a.missing)
 	pe.OutsideRoot = len(a.outside)
 	pe.definedIn = a.refs
+	pe.assemblies = a.assemblies
 	if len(pe.Missing) > 0 && pe.Status == ProjectOK {
 		pe.Status = ProjectPartial
 		pe.Reason = "ProjectReference target not found: " + strings.Join(pe.Missing, ", ")
@@ -465,8 +507,8 @@ func buildFacts(projects []ProjectEvaluation, tg typeGraphResult) (graph.Facts, 
 				Language:   graph.LangDotNet,
 				Confidence: confidenceHigh,
 			}
-			if file := p.definedIn[ref]; file != "" {
-				edge.Locations = []graph.Location{{File: file}}
+			if loc := p.definedIn[ref]; loc.File != "" {
+				edge.Locations = []graph.Location{loc}
 			}
 			facts.Edges = append(facts.Edges, edge)
 		}

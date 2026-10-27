@@ -11,7 +11,9 @@ internal sealed record Report(
     IReadOnlyList<string> SkippedProjects,
     IReadOnlyList<ProjectReport> Projects)
 {
-    public const int CurrentSchemaVersion = 1;
+    // 2: per-edge first-use line; per-project used_projects replaces
+    // unused_references (the caller knows the direct references).
+    public const int CurrentSchemaVersion = 2;
 
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -38,8 +40,10 @@ internal sealed record ProjectReport(
     string Status,
     string Reason,
     int UnresolvedSymbols,
-    // Null unless Status is complete: an unresolved name may hide the use.
-    int? UnusedReferences,
+    // Root-relative paths of the other workspace projects whose symbols this
+    // project uses, sorted. The workspace's references include transitive
+    // ones, so the caller compares this with the project's direct references.
+    IReadOnlyList<string> UsedProjects,
     IReadOnlyList<IvtDeclaration> IvtDeclarations,
     IReadOnlyList<string> LinkedFiles,
     IReadOnlyList<FileReport> Files);
@@ -52,4 +56,5 @@ internal sealed record IvtDeclaration(string Assembly, string DeclaredIn);
 internal sealed record FileReport(string Path, bool Generated, IReadOnlyList<EdgeReport> Edges);
 
 // To is a root-relative file path, or an assembly name when External is true.
-internal sealed record EdgeReport(string To, bool External, string Hint, string DataHint, string Reference);
+// Line is the 1-based line of the first use in the file.
+internal sealed record EdgeReport(string To, bool External, string Hint, string DataHint, string Reference, int Line);

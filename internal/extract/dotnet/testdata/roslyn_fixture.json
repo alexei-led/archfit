@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "skipped_projects": [],
   "projects": [
     {
@@ -8,7 +8,9 @@
       "status": "complete",
       "reason": "",
       "unresolved_symbols": 0,
-      "unused_references": 0,
+      "used_projects": [
+        "Domain/Domain.csproj"
+      ],
       "ivt_declarations": [],
       "linked_files": [
         "Shared/Marker.cs"
@@ -23,7 +25,8 @@
               "external": false,
               "hint": "model",
               "data_hint": "model",
-              "reference": "type_use"
+              "reference": "type_use",
+              "line": 5
             }
           ]
         },
@@ -36,7 +39,8 @@
               "external": false,
               "hint": "functional",
               "data_hint": "dto",
-              "reference": "call"
+              "reference": "call",
+              "line": 8
             }
           ]
         },
@@ -58,7 +62,7 @@
       "status": "failed",
       "reason": "MSB4236: SDK 'Archfit.Fixture.Missing.Sdk' not resolvable; run with NuGet access and a warm cache, or install the SDK",
       "unresolved_symbols": 0,
-      "unused_references": null,
+      "used_projects": [],
       "ivt_declarations": [],
       "linked_files": [],
       "files": []
@@ -69,7 +73,7 @@
       "status": "complete",
       "reason": "",
       "unresolved_symbols": 0,
-      "unused_references": 0,
+      "used_projects": [],
       "ivt_declarations": [
         {
           "assembly": "Infrastructure",
@@ -91,7 +95,10 @@
       "status": "complete",
       "reason": "",
       "unresolved_symbols": 0,
-      "unused_references": 0,
+      "used_projects": [
+        "Application/Application.csproj",
+        "Domain/Domain.csproj"
+      ],
       "ivt_declarations": [],
       "linked_files": [],
       "files": [
@@ -104,14 +111,16 @@
               "external": false,
               "hint": "dto",
               "data_hint": "dto",
-              "reference": "type_use"
+              "reference": "type_use",
+              "line": 6
             },
             {
               "to": "Domain/Domain.cs",
               "external": false,
               "hint": "intrusive",
               "data_hint": "model",
-              "reference": "type_use"
+              "reference": "type_use",
+              "line": 6
             }
           ]
         }
@@ -123,7 +132,9 @@
       "status": "complete",
       "reason": "",
       "unresolved_symbols": 0,
-      "unused_references": 0,
+      "used_projects": [
+        "Domain/Domain.csproj"
+      ],
       "ivt_declarations": [],
       "linked_files": [],
       "files": [
@@ -136,7 +147,8 @@
               "external": false,
               "hint": "functional",
               "data_hint": "model",
-              "reference": "call"
+              "reference": "call",
+              "line": 6
             }
           ]
         }
@@ -148,7 +160,7 @@
       "status": "partial",
       "reason": "31 unresolved symbols (CS0246 x18, CS0400 x1, CS0518 x12); reference pack Microsoft.NETCore.App.Ref 8.0 is not installed: install the .NET 8.0 targeting pack or restore with NuGet access",
       "unresolved_symbols": 31,
-      "unused_references": null,
+      "used_projects": [],
       "ivt_declarations": [],
       "linked_files": [],
       "files": [
@@ -165,7 +177,7 @@
       "status": "partial",
       "reason": "MSB4236: SDK 'Archfit.Fixture.Missing.Sdk' not resolvable; 1 unresolved symbol (CS0234 x1); run with NuGet access and a warm cache, or install the SDK; restore the project with NuGet access (`dotnet restore`) or install the missing references",
       "unresolved_symbols": 1,
-      "unused_references": null,
+      "used_projects": [],
       "ivt_declarations": [],
       "linked_files": [],
       "files": [
@@ -182,7 +194,7 @@
       "status": "partial",
       "reason": "3 unresolved symbols (CS0246 x3); restore the project with NuGet access (`dotnet restore`) or install the missing references",
       "unresolved_symbols": 3,
-      "unused_references": null,
+      "used_projects": [],
       "ivt_declarations": [],
       "linked_files": [],
       "files": [

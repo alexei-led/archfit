@@ -10,7 +10,7 @@ internal sealed record Collected(
     string Tfm,
     int UnresolvedSymbols,
     IReadOnlyDictionary<string, int> UnresolvedById,
-    int UnusedReferences,
+    IReadOnlyList<string> UsedProjects,
     IReadOnlyList<IvtDeclaration> IvtDeclarations,
     IReadOnlyList<string> LinkedFiles,
     IReadOnlyList<FileReport> Files);
@@ -79,7 +79,7 @@ internal sealed class Collector(Solution solution, string root)
             Tfm(project),
             unresolvedById.Values.Sum(),
             unresolvedById,
-            UnusedReferences(project, usedAssemblies),
+            UsedProjects(project, usedAssemblies),
             IvtDeclarations(compilation, project),
             linked,
             files);
@@ -93,9 +93,9 @@ internal sealed class Collector(Solution solution, string root)
         HashSet<string> usedAssemblies,
         CancellationToken ct)
     {
-        // Per target: strongest hint, its reference kind, strongest data hint.
-        // Each channel aggregates independently.
-        var byTarget = new Dictionary<(string To, bool External), (string Hint, string Reference, string DataHint)>();
+        // Per target: strongest hint, its reference kind, strongest data hint,
+        // and the line of the first use. Each channel aggregates independently.
+        var byTarget = new Dictionary<(string To, bool External), (string Hint, string Reference, string DataHint, int Line)>();
 
         foreach (var node in syntaxRoot.DescendantNodes())
         {
@@ -128,14 +128,16 @@ internal sealed class Collector(Solution solution, string root)
             }
             else
             {
-                byTarget[target] = (hint, reference, dataHint);
+                // DescendantNodes walks in document order: the first use seen
+                // is the first in the file.
+                byTarget[target] = (hint, reference, dataHint, node.GetLocation().GetLineSpan().StartLinePosition.Line + 1);
             }
         }
 
         return byTarget
             .OrderBy(kv => kv.Key.External)
             .ThenBy(kv => kv.Key.To, StringComparer.Ordinal)
-            .Select(kv => new EdgeReport(kv.Key.To, kv.Key.External, kv.Value.Hint, kv.Value.DataHint, kv.Value.Reference))
+            .Select(kv => new EdgeReport(kv.Key.To, kv.Key.External, kv.Value.Hint, kv.Value.DataHint, kv.Value.Reference, kv.Value.Line))
             .ToList();
     }
 
@@ -344,11 +346,17 @@ internal sealed class Collector(Solution solution, string root)
         return (symbol.ContainingAssembly.Name, true);
     }
 
-    private int UnusedReferences(Project project, HashSet<string> usedAssemblies) => project.ProjectReferences
-        .Select(r => solution.GetProject(r.ProjectId)?.AssemblyName)
+    // UsedProjects names the other workspace projects whose assembly this
+    // project used. ProjectReferences would not do: the design-time build
+    // adds transitive references to them, and drops ReferenceOutputAssembly=
+    // false ones; the caller has the direct references from evaluation.
+    private List<string> UsedProjects(Project project, HashSet<string> usedAssemblies) => solution.Projects
+        .Where(p => p.FilePath != project.FilePath && usedAssemblies.Contains(p.AssemblyName))
+        .Select(p => Relative(p.FilePath))
         .OfType<string>()
         .Distinct(StringComparer.Ordinal)
-        .Count(name => !usedAssemblies.Contains(name));
+        .Order(StringComparer.Ordinal)
+        .ToList();
 
     private List<IvtDeclaration> IvtDeclarations(Compilation compilation, Project project)
     {

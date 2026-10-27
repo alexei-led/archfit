@@ -122,7 +122,7 @@ Bench/example-only targets can lack a supported module graph; read the named cov
 
 Archfit selects projects from `languages.dotnet.projects`, else the first `.slnx` or `.sln` at the root (by file name), else every `.csproj` outside `obj/`, `bin/`, `.git/`, `node_modules/`, and `exclude`. A configured solution filter (`.slnf`, such as the `eShop.Web.slnf` a CI job builds) selects the projects it lists from its base solution; archfit never picks a filter on its own, and a filter whose base solution is missing makes the `dotnet-msbuild` row partial. It evaluates each project on the original tree with `dotnet msbuild -getItem -getProperty`: once, then once per entry of `TargetFrameworks`, because a conditional reference appears only in the per-framework run. The Roslyn helper (`archfit-roslyn`) then loads the projects on a snapshot without compiling and emits file-to-file type references. Archfit never runs `dotnet restore` and never asks the helper to. Non-C# projects in a solution, such as `.sqlproj`, are skipped and counted in coverage detail.
 
-Node IDs are root-relative slash paths, as for Go and TypeScript. Project nodes use the `.csproj` path. Namespaces are not graph nodes. Symbols from referenced assemblies (BCL, restored packages) become `external:<assembly>` nodes. Unresolved symbols are counted, never turned into nodes. Files under `obj/` or `bin/` and symbols declared outside the root produce no edges. A file compiled into several projects through a linked `Compile Include` is one node with the union of its edges; it has no module unless a module glob covers it.
+Node IDs are root-relative slash paths, as for Go and TypeScript. A file edge is located at the first use of the target in the source file (the earliest across projects and frameworks), as a Go or Python edge is located at its import; a fallback project edge is located at the `ProjectReference` `Include` line of the file that declares it, 0 when no `Include` names the target literally. Project nodes use the `.csproj` path. Namespaces are not graph nodes. Symbols from referenced assemblies (BCL, restored packages) become `external:<assembly>` nodes. Unresolved symbols are counted, never turned into nodes. Files under `obj/` or `bin/` and symbols declared outside the root produce no edges. A file compiled into several projects through a linked `Compile Include` is one node with the union of its edges; it has no module unless a module glob covers it.
 
 A dependency rule's `to:` matches an external node by its assembly name: `Microsoft.EntityFrameworkCore*`, `MediatR.Contracts`, or a brace glob such as `{Microsoft.EntityFrameworkCore*,Microsoft.AspNetCore*}`. The assembly name is usually the NuGet package ID, but not the namespace a `using` names: `using MediatR;` resolves to the `MediatR.Contracts` assembly when only that package is referenced. A dotted target is an external dependency ban; its last segment is never read as a file extension.
 
@@ -170,7 +170,7 @@ Fallback limits:
 - The `roslyn` row reads `partial` when the helper failed for a project or the whole run, `timed out` on a timeout, `absent` with a coverage gap when `ARCHFIT_DOTNET_ROSLYN` is unset, and `disabled` without a gap when switched off. A `partial` or `timed out` row counts as missing inputs, not reduced precision.
 - Edges from test projects are dropped, both fallback and file edges, as Rust drops dev-dependencies. Their files stay as nodes. A test project is one that evaluates `IsTestProject=true`, or whose project path has a `test/` or `tests/` segment (the .NET test-file rule in [file classification](#file-classification)): offline, the test SDK props under `obj/` may not be imported and `IsTestProject` evaluates empty. A project outside such a segment and without the property, such as `src/Foo.Tests/Foo.Tests.csproj`, keeps its edges.
 
-A `ProjectReference` with no type use is not an edge when the project has file edges. It is counted as unused in coverage detail, and only when the project is `complete`.
+A `ProjectReference` with no type use is not an edge when the project has file edges. It is counted as unused in coverage detail, and only when the project is `complete`. Only direct references count: the `ProjectReference` items MSBuild evaluated for the project, not the transitive references the SDK adds during the design-time build. A reference with `ReferenceOutputAssembly=false` or `IsAspireProjectResource=true` (an Aspire AppHost resource) compiles against nothing, so it is never unused.
 
 #### Snapshot and trust
 
@@ -261,7 +261,7 @@ The complete release image is the simplest fixed tool environment. The tool vers
 | Go / Node / Python / uv | 1.27.3 / 24.22.1 / 3.14.9 / 0.13.5 |
 | dependency-cruiser / TypeScript compiler | 18.7.0 / 6.0.3 |
 | .NET SDK | 10.0.402 |
-| archfit-roslyn / Microsoft.CodeAnalysis | 1.0.0 / 5.6.0 |
+| archfit-roslyn / Microsoft.CodeAnalysis | 1.1.0 / 5.6.0 |
 | ast-grep / jscpd | 0.51.0 / 5.4.2 |
 | scip-go / scip-typescript / scip-python | 0.2.9 / 0.5.2 / 0.6.8 |
 | Rust, Cargo, rust-src, bundled rust-analyzer | 1.99.1 |

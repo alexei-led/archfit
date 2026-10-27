@@ -28,7 +28,7 @@ const toolRoslyn = "roslyn"
 const (
 	helperEnv               = "ARCHFIT_DOTNET_ROSLYN"
 	helperDLL               = "archfit-roslyn.dll"
-	helperSchema            = 1
+	helperSchema            = 2
 	helperStderrPrefix      = "archfit-roslyn: "
 	defaultTypeGraphTimeout = 20 * time.Minute
 	helperVersionTimeout    = time.Minute
@@ -104,8 +104,9 @@ type TypeGraphProject struct {
 	// across frameworks. Each may hide a dependency edge: missing candidates,
 	// not lower precision.
 	UnresolvedSymbols int
-	// UnusedReferences is the smallest per-framework count of ProjectReferences
-	// with no type use; nil unless every framework is complete.
+	// UnusedReferences counts the direct ProjectReferences that reference an
+	// assembly (not ReferenceOutputAssembly=false, not an Aspire resource) and
+	// whose project no framework uses; nil unless every framework is complete.
 	UnusedReferences *int
 	// IVTDeclarations counts distinct InternalsVisibleTo declarations. A
 	// declaration is not a usage edge.
@@ -149,7 +150,7 @@ type helperProject struct {
 	Status            string       `json:"status"`
 	Reason            string       `json:"reason"`
 	UnresolvedSymbols int          `json:"unresolved_symbols"`
-	UnusedReferences  *int         `json:"unused_references"`
+	UsedProjects      []string     `json:"used_projects"`
 	IVTDeclarations   []helperIVT  `json:"ivt_declarations"`
 	LinkedFiles       []string     `json:"linked_files"`
 	Files             []helperFile `json:"files"`
@@ -169,11 +170,13 @@ type helperFile struct {
 }
 
 // helperEdge To is a root-relative file, or an assembly name when External.
+// Line is the 1-based line of the first use in the file.
 type helperEdge struct {
 	To       string `json:"to"`
 	External bool   `json:"external"`
 	Hint     string `json:"hint"`
 	DataHint string `json:"data_hint"`
+	Line     int    `json:"line"`
 }
 
 // typeGraphResult is one type graph step: the folded projects, the files of
@@ -435,6 +438,9 @@ func parseReport(data []byte, mapper snapshotMapper) (helperReport, error) {
 			return helperReport{}, fmt.Errorf("archfit-roslyn: project %s has unknown status %q", p.Path, p.Status)
 		}
 		p.Path, p.Reason = mapper.path(p.Path), mapper.text(p.Reason)
+		for j := range p.UsedProjects {
+			p.UsedProjects[j] = mapper.path(p.UsedProjects[j])
+		}
 		for j := range p.LinkedFiles {
 			p.LinkedFiles[j] = mapper.path(p.LinkedFiles[j])
 		}
@@ -476,7 +482,7 @@ func foldReport(r helperReport, projects []ProjectEvaluation) typeGraphResult {
 	droppedTestEdges := 0
 	for _, path := range sortedKeys(byPath) {
 		eval := evaluated[path]
-		tp, files := foldProject(path, byPath[path], eval.TargetFrameworks)
+		tp, files := foldProject(path, byPath[path], eval)
 		res.graph.Projects = append(res.graph.Projects, tp)
 		if tp.Status == TypeGraphFailed {
 			continue
@@ -519,10 +525,14 @@ func withoutEdges(files []helperFile) ([]helperFile, int) {
 // complete when every entry is complete, else partial, and its file edges
 // replace its ProjectReference edges. It is failed only when every entry
 // failed, so the fallback applies only to a project the helper did not load.
-func foldProject(path string, entries []helperProject, evaluated []string) (TypeGraphProject, []helperFile) {
+// eval is the project's MSBuild evaluation: its frameworks name a framework
+// the helper failed to load, and its direct references decide which are
+// unused (the helper's workspace adds transitive ones).
+func foldProject(path string, entries []helperProject, eval ProjectEvaluation) (TypeGraphProject, []helperFile) {
 	tp := TypeGraphProject{Path: path, Status: TypeGraphFailed}
 	ivts := map[helperIVT]struct{}{}
 	linked := map[string]struct{}{}
+	used := map[string]struct{}{}
 	var reasons []string
 	var files []helperFile
 	allComplete, loaded := true, false
@@ -533,11 +543,11 @@ func foldProject(path string, entries []helperProject, evaluated []string) (Type
 				tp.TargetFrameworks = append(tp.TargetFrameworks, p.TFM)
 			}
 		}
-		if p.Status != TypeGraphComplete || p.UnusedReferences == nil {
+		if p.Status != TypeGraphComplete {
 			allComplete = false
-		} else if tp.UnusedReferences == nil || *p.UnusedReferences < *tp.UnusedReferences {
-			n := *p.UnusedReferences
-			tp.UnusedReferences = &n
+		}
+		for _, u := range p.UsedProjects {
+			used[u] = struct{}{}
 		}
 		tp.UnresolvedSymbols += p.UnresolvedSymbols
 		for _, d := range p.IVTDeclarations {
@@ -564,13 +574,21 @@ func foldProject(path string, entries []helperProject, evaluated []string) (Type
 		case len(entries) == 1:
 			reasons = append(reasons, p.Reason)
 		case p.Status == TypeGraphFailed:
-			reasons = append(reasons, failedFrameworks(p.TFM, evaluated, tp.TargetFrameworks)+" failed: "+p.Reason)
+			reasons = append(reasons, failedFrameworks(p.TFM, eval.TargetFrameworks, tp.TargetFrameworks)+" failed: "+p.Reason)
 		default:
 			reasons = append(reasons, p.TFM+": "+p.Reason)
 		}
 	}
-	if !allComplete {
-		tp.UnusedReferences = nil
+	if allComplete {
+		// An unresolved name may hide a use: count only when every framework
+		// is complete.
+		n := 0
+		for _, ref := range eval.assemblyReferences() {
+			if _, ok := used[ref]; !ok {
+				n++
+			}
+		}
+		tp.UnusedReferences = &n
 	}
 	tp.Reason = strings.Join(slices.Compact(reasons), "; ")
 	tp.IVTDeclarations = len(ivts)
@@ -697,8 +715,12 @@ type fileEdgeKey struct {
 }
 
 // fileHints are the two hint channels of one file pair, aggregated
-// independently: the strongest use wins in each (D3).
-type fileHints struct{ hint, data string }
+// independently: the strongest use wins in each (D3). line is the earliest
+// first-use line across projects and frameworks; 0 when none was reported.
+type fileHints struct {
+	hint, data string
+	line       int
+}
 
 // appendFileGraph adds the loaded projects' file nodes and file -> file (or
 // file -> assembly) edges to facts. A file compiled into several projects or
@@ -730,7 +752,11 @@ func appendFileGraph(facts *graph.Facts, res typeGraphResult, exclusions, intern
 				}
 				k := fileEdgeKey{from: f.Path, to: edge.To, external: edge.External}
 				h := agg[k]
-				agg[k] = fileHints{hint: strongerHint(h.hint, edge.Hint), data: strongerHint(h.data, edge.DataHint)}
+				line := h.line
+				if edge.Line > 0 && (line == 0 || edge.Line < line) {
+					line = edge.Line
+				}
+				agg[k] = fileHints{hint: strongerHint(h.hint, edge.Hint), data: strongerHint(h.data, edge.DataHint), line: line}
 			}
 		}
 	}
@@ -756,6 +782,8 @@ func appendFileGraph(facts *graph.Facts, res typeGraphResult, exclusions, intern
 			Confidence:       confidenceHigh,
 			StrengthHint:     agg[k].hint,
 			DataStrengthHint: agg[k].data,
+			// The first use, as Go and Python locate an edge at its import.
+			Locations: []graph.Location{{File: k.from, Line: agg[k].line}},
 		})
 	}
 }

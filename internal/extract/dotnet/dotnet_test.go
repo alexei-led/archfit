@@ -550,7 +550,7 @@ func TestExtract_SolutionFilterTarget(t *testing.T) {
 			writeFile(t, root, "Web.slnf", filter)
 			fake := newFake(t, root, map[string]reply{domainProj: ok(t, root, "domain.json")})
 			installHelper(t)
-			fake.helper = fakeHelper(replying(`{"schema_version":1,"projects":[]}`))
+			fake.helper = fakeHelper(replying(`{"schema_version":2,"projects":[]}`))
 			e := dotnet.New(fake, autoCfg(), []string{"Web.slnf"})
 			facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: root})
 			if err != nil {
