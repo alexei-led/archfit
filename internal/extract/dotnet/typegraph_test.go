@@ -1029,3 +1029,37 @@ func TestTypeGraph_TestClassifiedPathDropsEdgesWithoutIsTestProject(t *testing.T
 		})
 	}
 }
+
+func TestCoverage_NamesEveryProjectWithAProblem(t *testing.T) {
+	const projects = 7
+	var paths, entries []string
+	for i := range projects {
+		p := fmt.Sprintf("P%d/P%d.csproj", i, i)
+		paths = append(paths, p)
+		entries = append(entries, fmt.Sprintf(`{"path":%q,"tfm":"net10.0","status":"partial","reason":"1 unresolved symbol","unresolved_symbols":1,"files":[]}`, p))
+	}
+	root := tree(t, paths...)
+	replies := map[string]reply{}
+	for _, p := range paths {
+		replies[p] = reply{stderr: p + " : error MSB4025: broken " + p, exit: 1}
+	}
+	installHelper(t)
+	fake := newFake(t, root, replies)
+	fake.helper = fakeHelper(replying(`{"schema_version":1,"projects":[` + strings.Join(entries, ",") + `]}`))
+	e := dotnet.New(fake, autoCfg(), nil)
+	_, msbuild, err := e.Extract(context.Background(), scope.Scope{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, row := range []evidence.Coverage{msbuild, e.LastTypeGraphCoverage()} {
+		for _, p := range paths {
+			if !strings.Contains(row.Reason, p) {
+				t.Errorf("%s reason %q does not name %s", row.Tool, row.Reason, p)
+			}
+		}
+		if strings.Contains(row.Reason, "more") {
+			t.Errorf("%s reason %q is truncated", row.Tool, row.Reason)
+		}
+	}
+}

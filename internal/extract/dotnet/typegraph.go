@@ -597,7 +597,8 @@ func failedFrameworks(tfm string, evaluated, loaded []string) string {
 }
 
 // typeGraphCoverage builds the roslyn row: partial when any project is partial
-// or failed, with counts and the first causes. Unused references, IVT
+// or failed, with counts and every such project's cause (the report shortens
+// the reason; the stderr warning prints it whole). Unused references, IVT
 // declarations, linked files and skipped projects are detail text only.
 func typeGraphCoverage(version string, res typeGraphResult) evidence.Coverage {
 	files := map[string]struct{}{}
@@ -651,9 +652,6 @@ func typeGraphCoverage(version string, res typeGraphResult) evidence.Coverage {
 			summary += fmt.Sprintf(", %d not reported", len(res.unreported))
 		}
 		parts = append(parts, summary)
-		if len(problems) > reasonListLimit {
-			problems = append(problems[:reasonListLimit], fmt.Sprintf("and %d more", len(problems)-reasonListLimit))
-		}
 		parts = append(parts, problems...)
 	}
 	var detail []string

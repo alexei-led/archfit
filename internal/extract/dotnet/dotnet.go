@@ -45,7 +45,6 @@ const (
 
 const (
 	evalParallelism = 4
-	reasonListLimit = 5
 	reasonTimedOut  = "evaluation timed out; raise the analyzer timeout or run with a warm NuGet cache"
 )
 
@@ -476,7 +475,9 @@ func buildFacts(projects []ProjectEvaluation, tg typeGraphResult) (graph.Facts, 
 }
 
 // coverageFor builds the coverage row: partial when any project did not fully
-// evaluate or a listed project is missing, "timed out" when a deadline hit.
+// evaluate or a listed project is missing, "timed out" when a deadline hit. The
+// reason names every such project, as cargo-modules names every failed target:
+// the report shortens it and the stderr warning prints it whole.
 func coverageFor(ev Evaluation, version string, timedOut bool) evidence.Coverage {
 	cov := evidence.Coverage{
 		Tool:            toolMSBuild,
@@ -501,9 +502,6 @@ func coverageFor(ev Evaluation, version string, timedOut bool) evidence.Coverage
 	cov.Status = evidence.StatusPartial
 	if timedOut {
 		cov.Status = evidence.StatusTimedOut
-	}
-	if len(problems) > reasonListLimit {
-		problems = append(problems[:reasonListLimit], fmt.Sprintf("and %d more", len(problems)-reasonListLimit))
 	}
 	cov.Reason = strings.Join(problems, "; ")
 	return cov
