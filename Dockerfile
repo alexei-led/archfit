@@ -5,7 +5,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates build-essential pkg-config libssl-dev git \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-COPY Dockerfile ./
 COPY tools/ tools/
 COPY scripts/provision_tools.py scripts/provision-analyzers.sh scripts/
 RUN python scripts/provision_tools.py sdks --arch "${TARGETARCH}" \
@@ -16,7 +15,13 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION COMMIT DATE
-RUN CGO_ENABLED=0 go build -trimpath \
+# The version, commit and date change on every build, so this layer is never
+# reusable and the compiler cache it would otherwise leave behind (measured 673 MB)
+# churned 1-3 GB per pull request through the registry cache and evicted the
+# toolchain and module layers. A cache mount keeps it out of the image and out of
+# the exported cache; the module cache stays a layer above because it is stable.
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
     -o /out/archfit ./cmd/archfit
 

@@ -51,8 +51,13 @@ def check_locks(root: Path) -> None:
     go = (root / "tools/scip-go/go.mod").read_text()
     if f"github.com/scip-code/scip-go v{manifest['versions']['scip-go']}" not in go:
         raise ValueError("SCIP Go lock differs from manifest")
-    dockerfile = (root / "Dockerfile").read_text()
-    for line in dockerfile.splitlines():
+    # The Dockerfile pin is checked wherever the file is part of the tree (host,
+    # CI). It is deliberately not copied into the image build context: an edit to
+    # it must not invalidate the toolchain layer.
+    path = root / "Dockerfile"
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
         if line.startswith("FROM ") and manifest["base_image"] not in line:
             raise ValueError(f"base image differs from manifest: {line}")
 
