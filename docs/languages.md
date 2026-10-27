@@ -139,7 +139,7 @@ Coupling strength comes from compiler symbols. The extractor emits hints and doe
 | Inherits a concrete class | `functional` |
 | Uses a symbol that is, or is nested in, `internal` or `private protected`, declared in another assembly | `intrusive` |
 
-The strongest use wins per file pair. Data uses (`model`, `dto`) also travel in a separate data channel, which lifts a `public:` target from `contract` to `model` for a concrete type. A `dto` stays `contract` across a `public:` glob and reads `model` elsewhere. Known gap: invoking a delegate stored in a field counts as a data use.
+The strongest use wins per file pair. Data uses (`model`, `dto`) also travel in a separate data channel, which lifts a `public:` target from `contract` to `model` for a concrete type. An `intrusive` hint lifts a `public:` target to `intrusive`: an `internal` constructor in a file under a `public:` glob is still not part of the published surface. A `dto` stays `contract` across a `public:` glob and reads `model` elsewhere. Known gap: invoking a delegate stored in a field counts as a data use.
 
 The `intrusive` hint feeds the `encapsulation` metric. `InternalsVisibleTo` declarations are reported as coverage detail only; a declaration is not a usage edge.
 

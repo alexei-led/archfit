@@ -32,8 +32,13 @@ Connascence does not set strength.
 
 A callable hint does not raise a `public:` target above `contract`. Data evidence
 can raise it to `model` for a concrete non-DTO type, field, variable, constant,
-or method on a concrete receiver. A DTO remains `contract`. An `internal:` match
-stays `intrusive` regardless of hints. Without sufficient evidence, strength is
+or method on a concrete receiver. A DTO remains `contract`. An `intrusive` hint
+raises it to `intrusive`: a C# `internal` member used through
+`InternalsVisibleTo`, a Python private name, or a private symbol that SCIP
+resolves. Intrusive coupling integrates through details not meant for
+integration. A `public:` glob declares a file's intended surface, so it cannot
+make such a use a contract. An approved label still pins strength. An
+`internal:` match stays `intrusive` regardless of hints. Without sufficient evidence, strength is
 unknown and the scorer abstains.
 
 ### Distance

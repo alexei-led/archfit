@@ -324,7 +324,7 @@ An applied LLM label needs explicit `confidence: high` to avoid lowering couplin
 
 `evidence_hash` records the import-edge evidence for the ordered module pair when the label was drafted. Archfit ignores an approved label when current evidence exists and the hash differs. The stale label adds a `labels/stale` diagnostic. It does not gate the run. An empty hash skips freshness checks and can leave an override active permanently. A pair with no current edges is moot, and a run with no measured graph cannot check freshness.
 
-Strength precedence depends on provenance. A config internal glob sets intrusive strength and cannot be overridden. A public glob sets contract strength. An approved human, tool, or unset-provenance label can refine that contract strength and takes precedence over extractor hints. An approved LLM-provenance label only fills an unknown edge after config globs and extractor hints leave it unknown. Draft labels never affect classification.
+Strength precedence depends on provenance. A config internal glob sets intrusive strength and cannot be overridden. A public glob sets contract strength; model data evidence raises it to model, and an intrusive hint raises it to intrusive. An approved human, tool, or unset-provenance label can refine that contract strength and takes precedence over extractor hints. An approved LLM-provenance label only fills an unknown edge after config globs and extractor hints leave it unknown. Draft labels never affect classification.
 
 `archfit config enrich labels` writes label proposals for review. Approve a proposal by setting `status: approved`. Review its evidence and hash before analysis. See [AI workflows](ai.md) for command behavior.
 

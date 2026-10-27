@@ -573,8 +573,20 @@ func resolveStrength(e graph.Edge, mi moduleIndex, c Config) strengthResolution 
 	// field, var or const, or a method on a concrete receiver — because that
 	// couples the caller to the target's model. A pure-data DTO across a
 	// declared public boundary IS the book's explicit integration contract.
-	if !fromPin && str == coupling.StrengthContract && e.DataStrengthHint == string(coupling.StrengthModel) {
-		str = coupling.StrengthModel
+	//
+	// An intrusive hint raises the floor to intrusive: the caller uses a member
+	// its declaring code keeps out of the surface (a C# internal member through
+	// InternalsVisibleTo, a Python private name, a private symbol SCIP
+	// resolves). Intrusive coupling is integration through implementation
+	// details not meant for integration, and a file-granular public: glob
+	// declares the intended surface; it cannot make such a use a contract.
+	if !fromPin && str == coupling.StrengthContract {
+		switch {
+		case e.StrengthHint == string(coupling.StrengthIntrusive):
+			str = coupling.StrengthIntrusive
+		case e.DataStrengthHint == string(coupling.StrengthModel):
+			str = coupling.StrengthModel
+		}
 	}
 	// Unknown (no glob, no label) falls back to the extractor or SCIP hint.
 	// Connascence is report-only evidence and never sets strength.
@@ -616,7 +628,8 @@ func resolveStrength(e graph.Edge, mi moduleIndex, c Config) strengthResolution 
 // function/method → functional, private → intrusive) or the Python underscore
 // heuristic (intrusive only). Both are evidence, not guesses, so all four valid
 // strengths are accepted; an unrecognized hint stays unknown. Config public/internal
-// globs still take precedence (see classify): the hint is a fallback only.
+// globs still take precedence (see resolveStrength): the hint is a fallback, except
+// that an intrusive hint raises a public glob's contract floor.
 func strengthFromHint(hint string) coupling.Strength {
 	// A DTO hint without a declared public boundary is just a shared concrete
 	// type — model. The boundary declaration is what makes a DTO a contract:

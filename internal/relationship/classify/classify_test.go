@@ -591,9 +591,15 @@ func TestRun_StrengthHintFallbackAndPrecedence(t *testing.T) {
 			wantStrength: coupling.StrengthIntrusive,
 		},
 		{
-			name:         "config public glob beats hint",
+			name:         "intrusive hint raises a public glob above contract",
 			to:           "file:services/b/api/client.go",
 			hint:         string(coupling.StrengthIntrusive),
+			wantStrength: coupling.StrengthIntrusive,
+		},
+		{
+			name:         "config public glob beats a callable hint",
+			to:           "file:services/b/api/client.go",
+			hint:         string(coupling.StrengthFunctional),
 			wantStrength: coupling.StrengthContract,
 		},
 		{
@@ -736,6 +742,20 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		idx := classify.Run(g, classify.Config{Modules: withGlobs})
 		if got := idx[key].Strength; got != coupling.StrengthContract {
 			t.Errorf("strength = %q, want contract (a callable hint never raises the public floor)", got)
+		}
+	})
+
+	t.Run("approved label pins over an intrusive hint under a public glob", func(t *testing.T) {
+		withGlobs := map[string]policy.ModuleDef{
+			"a": {Paths: []string{globPkgA}},
+			"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
+		}
+		intrusive := edge
+		intrusive.StrengthHint = string(coupling.StrengthIntrusive)
+		g := makeGraph([]graph.Edge{intrusive})
+		idx := classify.Run(g, classify.Config{Modules: withGlobs, ApprovedLabels: map[string]string{labelKeyAB: pinnedModel}})
+		if got := idx[edgeKey(intrusive)].Strength; got != coupling.StrengthModel {
+			t.Errorf("strength = %q, want model (an approved label still pins)", got)
 		}
 	})
 
@@ -918,7 +938,10 @@ func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 		{"public + functional hint + model data → model", publicB, hintFunctional, model, coupling.StrengthModel},
 		{"public + model hint + model data → model", publicB, model, model, coupling.StrengthModel},
 		{"public + contract data → contract", publicB, hintFunctional, contract, coupling.StrengthContract},
-		{"public + intrusive hint → contract (floor not lowered)", publicB, hintIntrusive, "", coupling.StrengthContract},
+		// A non-public member used through a public file is intrusive: the glob
+		// declares the intended surface, the member is not part of it.
+		{"public + intrusive hint → intrusive (a non-public member is not the contract)", publicB, hintIntrusive, "", coupling.StrengthIntrusive},
+		{"public + intrusive hint + model data → intrusive (the stronger evidence wins)", publicB, hintIntrusive, model, coupling.StrengthIntrusive},
 		{"internal glob → intrusive (authoritative)", internalB, hintFunctional, model, coupling.StrengthIntrusive},
 		// A pure-data DTO across a declared public boundary IS the book's explicit
 		// integration contract — the floor stands.
@@ -938,6 +961,29 @@ func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 				t.Errorf("strength = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestRun_DotNetInternalMemberThroughPublicFile is the CleanArchitecture V5
+// regression: Infrastructure calls Application's internal Result constructor
+// through InternalsVisibleTo, in a file a public: glob covers. Roslyn proves
+// the use intrusive (data hint model); the seam must read intrusive, not model.
+func TestRun_DotNetInternalMemberThroughPublicFile(t *testing.T) {
+	modules := map[string]policy.ModuleDef{
+		"Infrastructure": {Paths: []string{"src/Infrastructure/**"}},
+		"Application":    {Paths: []string{"src/Application/**"}, Public: []string{"src/Application/Common/Models/**"}},
+	}
+	e := graph.Edge{
+		From:             "file:src/Infrastructure/Leaks/InfrastructureUsesInternalCtor.cs",
+		To:               "file:src/Application/Common/Models/Result.cs",
+		Kind:             graph.EdgeKindImports,
+		Language:         graph.LangDotNet,
+		StrengthHint:     string(coupling.StrengthIntrusive),
+		DataStrengthHint: string(coupling.StrengthModel),
+	}
+	cl := classify.Run(makeGraph([]graph.Edge{e}), classify.Config{Modules: modules})[edgeKey(e)]
+	if cl.Strength != coupling.StrengthIntrusive {
+		t.Fatalf("strength = %q, want intrusive", cl.Strength)
 	}
 }
 
