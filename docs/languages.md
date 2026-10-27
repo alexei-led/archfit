@@ -168,7 +168,7 @@ Fallback limits:
 - Edge counts become project pairs for fallback projects.
 - A required rule that reads a file of a fallback or `partial` project is unevaluated, and the reason names the projects and the fix. Rules scoped to `complete` projects stay evaluated. See [evidence](evidence.md#net-trust-limits).
 - The `roslyn` row reads `partial` when the helper failed for a project or the whole run, `timed out` on a timeout, `absent` with a coverage gap when `ARCHFIT_DOTNET_ROSLYN` is unset, and `disabled` without a gap when switched off. A `partial` or `timed out` row counts as missing inputs, not reduced precision.
-- Edges from `IsTestProject=true` projects are dropped, both fallback and file edges, as Rust drops dev-dependencies. Their files stay as nodes. A test project without that property keeps its edges.
+- Edges from test projects are dropped, both fallback and file edges, as Rust drops dev-dependencies. Their files stay as nodes. A test project is one that evaluates `IsTestProject=true`, or whose project path has a `test/` or `tests/` segment (the .NET test-file rule in [file classification](#file-classification)): offline, the test SDK props under `obj/` may not be imported and `IsTestProject` evaluates empty. A project outside such a segment and without the property, such as `src/Foo.Tests/Foo.Tests.csproj`, keeps its edges.
 
 A `ProjectReference` with no type use is not an edge when the project has file edges. It is counted as unused in coverage detail, and only when the project is `complete`.
 
