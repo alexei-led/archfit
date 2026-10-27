@@ -200,6 +200,7 @@ modules:
       - internal/extract/ts
       - internal/extract/py
       - internal/extract/rust
+      - internal/extract/dotnet
       - internal/extract/scip
       - internal/extract/astgrep
       - internal/extract/deployunit
