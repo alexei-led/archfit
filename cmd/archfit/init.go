@@ -148,7 +148,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 // languagePresence asks every registered extractor whether its language is
 // present under root, through the extractor's own applicability function and
 // the same projected extractor config analysis uses (merged exclusions,
-// languages.go.modules, python.package, rust.manifest). config init and config
+// languages.go.modules, python.package, rust.manifest, dotnet.projects). config init and config
 // update must never decide presence from their own marker files: a go.work
 // monorepo with no root go.mod was written as `go: enabled: false`.
 //
@@ -169,6 +169,9 @@ func languagePresence(ctx context.Context, root string, cfg config.Config, runne
 	}
 	if p.Go {
 		p.GoMembers, p.GoWorkOff = registry.GoMembers(root, extract[config.LangGo])
+	}
+	if p.DotNet {
+		p.DotNetProjects = registry.DotNetProjects(root, extract[config.LangDotNet])
 	}
 	inventory, err := acquisition.Inventory{
 		ConfigPath: filepath.Join(root, defaultConfigPath), Options: opts, Runner: runner,

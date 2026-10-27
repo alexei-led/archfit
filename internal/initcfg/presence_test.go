@@ -33,5 +33,8 @@ func ProbePresence(root string) Presence {
 	if p.Go {
 		p.GoMembers, p.GoWorkOff = registry.GoMembers(root, cfg)
 	}
+	if p.DotNet {
+		p.DotNetProjects = registry.DotNetProjects(root, cfg)
+	}
 	return p
 }
