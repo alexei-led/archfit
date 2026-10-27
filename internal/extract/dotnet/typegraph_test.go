@@ -1,0 +1,775 @@
+package dotnet_test
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
+	"github.com/alexei-led/archfit/v3/internal/extract/dotnet"
+	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/policy"
+	"github.com/alexei-led/archfit/v3/internal/relationship/classify"
+	"github.com/alexei-led/archfit/v3/internal/relationship/coupling"
+	"github.com/alexei-led/archfit/v3/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/toolrun"
+)
+
+const (
+	helperEnv     = "ARCHFIT_DOTNET_ROSLYN"
+	helperDLL     = "archfit-roslyn.dll"
+	helperVersion = "archfit-roslyn 1.0.0; Microsoft.CodeAnalysis 5.6.0; SDK 10.0.402"
+
+	infraProj      = "Infrastructure/Infrastructure.csproj"
+	testsProj      = "Tests/Tests.csproj"
+	unresolvedProj = "Unresolved/Unresolved.csproj"
+
+	repositoryCS = "Infrastructure/Repository.cs"
+	contractsCS  = "Application/Contracts.cs"
+	domainCS     = "Domain/Domain.cs"
+	legacyCS     = "Legacy/Legacy.cs"
+	mapperCS     = "Application/Generated/Mapper.g.cs"
+
+	hContract   = "contract"
+	hDTO        = "dto"
+	hModel      = "model"
+	hFunctional = "functional"
+	hIntrusive  = "intrusive"
+)
+
+// realHelper is the helper directory from ARCHFIT_DOTNET_ROSLYN, read before
+// the variable is cleared: every other test sets it, or leaves it unset, itself.
+var realHelper string
+
+func TestMain(m *testing.M) {
+	realHelper = os.Getenv(helperEnv)
+	_ = os.Unsetenv(helperEnv)
+	os.Exit(m.Run())
+}
+
+// copyFixture copies the shared .NET fixture into a temp root.
+func copyFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	err := filepath.WalkDir(fixtureRoot, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(fixtureRoot, p)
+		target := filepath.Join(root, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o750)
+		}
+		data, err := os.ReadFile(p) //nolint:gosec // test fixture path
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o600) //nolint:gosec // target is under the test's temp root
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// fixtureReplies are the recorded MSBuild evaluations of every fixture project.
+func fixtureReplies(t *testing.T, root string) map[string]reply {
+	return map[string]reply{
+		appProj:        ok(t, root, "application.json"),
+		domainProj:     ok(t, root, "domain.json"),
+		infraProj:      ok(t, root, "infrastructure.json"),
+		legacyProj:     ok(t, root, "legacy_base.json"),
+		legacyNet10:    ok(t, root, "legacy_net10.json"),
+		legacyNet8:     ok(t, root, "legacy_net8.json"),
+		brokenProj:     {stderr: fixture(t, root, "msb4236.stderr"), exit: 1},
+		testsProj:      ok(t, root, "tests.json"),
+		unresolvedProj: ok(t, root, "unresolved.json"),
+	}
+}
+
+// installHelper points ARCHFIT_DOTNET_ROSLYN at a directory holding a stand-in
+// helper assembly; the fake runner answers its calls.
+func installHelper(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	writeFile(t, dir, helperDLL, "")
+	t.Setenv(helperEnv, dir)
+}
+
+// runFunc answers the helper's analysis run; snapshot is the root it was given.
+type runFunc func(ctx context.Context, snapshot string) (toolrun.Output, error)
+
+// fakeHelper answers `--version` with helperVersion and the analysis run with run.
+func fakeHelper(run runFunc) func(context.Context, toolrun.ToolCmd) (toolrun.Output, error) {
+	return func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+		if slices.Equal(cmd.Args[1:], []string{"--version"}) {
+			return toolrun.Output{Stdout: []byte(helperVersion + "\n")}, nil
+		}
+		return run(ctx, cmd.Args[1])
+	}
+}
+
+func replying(stdout string) runFunc {
+	return func(context.Context, string) (toolrun.Output, error) {
+		return toolrun.Output{Stdout: []byte(stdout)}, nil
+	}
+}
+
+func recordedReport(t *testing.T) string {
+	t.Helper()
+	return fixture(t, "", "roslyn_fixture.json")
+}
+
+// editReport rewrites the recorded report's project entries.
+func editReport(t *testing.T, edit func([]map[string]any) []map[string]any) string {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(recordedReport(t)), &doc); err != nil {
+		t.Fatal(err)
+	}
+	raw := doc["projects"].([]any)
+	projects := make([]map[string]any, 0, len(raw))
+	for _, p := range raw {
+		projects = append(projects, p.(map[string]any))
+	}
+	doc["projects"] = edit(projects)
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+func failedEntry(path, reason string) map[string]any {
+	return map[string]any{
+		"path": path, "tfm": "", "status": "failed", "reason": reason, "unresolved_symbols": 0,
+		"unused_references": nil, "ivt_declarations": []any{}, "linked_files": []any{}, "files": []any{},
+	}
+}
+
+// fixtureRun extracts a fixture copy with the fake helper answering run.
+func fixtureRun(t *testing.T, cfg evidenceports.ExtractConfig, run runFunc) (*dotnet.Extractor, *fakeDotnet, graph.Facts, evidence.Coverage) {
+	t.Helper()
+	root := copyFixture(t)
+	installHelper(t)
+	fake := newFake(t, root, fixtureReplies(t, root))
+	fake.helper = fakeHelper(run)
+	e := dotnet.New(fake, cfg, nil)
+	facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: root})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	return e, fake, facts, cov
+}
+
+type hints struct{ hint, data string }
+
+// fileEdges are the file-level edges keyed "from -> to".
+func fileEdges(facts graph.Facts) map[string]hints {
+	out := map[string]hints{}
+	for _, e := range facts.Edges {
+		if strings.HasPrefix(e.From, "file:") {
+			out[graph.NodePath(e.From)+" -> "+e.To] = hints{e.StrengthHint, e.DataStrengthHint}
+		}
+	}
+	return out
+}
+
+func projectEdges(facts graph.Facts) []string {
+	var out []string
+	for _, e := range facts.Edges {
+		if e.Kind == graph.EdgeKindDependsOn {
+			out = append(out, graph.NodePath(e.From)+" -> "+graph.NodePath(e.To))
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+func typeProject(t *testing.T, tg dotnet.TypeGraph, path string) dotnet.TypeGraphProject {
+	t.Helper()
+	for _, p := range tg.Projects {
+		if p.Path == path {
+			return p
+		}
+	}
+	t.Fatalf("no project %s in %+v", path, tg.Projects)
+	return dotnet.TypeGraphProject{}
+}
+
+var fixtureFallbackEdges = []string{
+	"Application/Application.csproj -> Domain/Domain.csproj",
+	"Infrastructure/Infrastructure.csproj -> Application/Application.csproj",
+	"Infrastructure/Infrastructure.csproj -> Domain/Domain.csproj",
+	"Legacy/Legacy.csproj -> Domain/Domain.csproj",
+}
+
+func TestTypeGraph_RecordedFixtureEdges(t *testing.T) {
+	_, _, facts, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
+
+	want := map[string]hints{
+		repositoryCS + " -> file:" + contractsCS: {hDTO, hDTO},
+		repositoryCS + " -> file:" + domainCS:    {hIntrusive, hModel},
+		contractsCS + " -> file:" + domainCS:     {hModel, hModel},
+		legacyCS + " -> file:" + domainCS:        {hFunctional, hModel},
+		mapperCS + " -> file:" + contractsCS:     {hFunctional, hDTO},
+	}
+	if got := fileEdges(facts); !mapsEqual(got, want) {
+		t.Errorf("file edges = %v, want %v", got, want)
+	}
+	if got := projectEdges(facts); len(got) != 0 {
+		t.Errorf("project edges = %v, want none: every evaluated project the helper loaded scores through its files", got)
+	}
+	for _, n := range []string{"file:Shared/Marker.cs", "file:Tests/ThingTests.cs", "project:" + testsProj, "project:" + brokenProj} {
+		if !slices.Contains(nodeIDs(facts), n) {
+			t.Errorf("missing node %s", n)
+		}
+	}
+	if facts.Unresolved != 35 {
+		t.Errorf("facts unresolved = %d, want 35", facts.Unresolved)
+	}
+}
+
+func TestTypeGraph_RecordedFixtureCoverage(t *testing.T) {
+	e, _, _, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
+	cov := e.LastTypeGraphCoverage()
+	if cov.Tool != "roslyn" || cov.Version != helperVersion || cov.Status != evidence.StatusPartial {
+		t.Errorf("roslyn coverage = %+v", cov)
+	}
+	if cov.Unresolved != 35 || cov.UnresolvedInputsMissing != 36 || cov.FilesSeen != 9 {
+		t.Errorf("roslyn counts = %+v, want 35 unresolved, 36 missing inputs (35 symbols + 1 failed project), 9 files", cov)
+	}
+	for _, part := range []string{
+		"3 of 7 projects partial, 1 failed, 35 unresolved symbols",
+		"Broken/Broken.csproj failed: MSB4236: SDK 'Archfit.Fixture.Missing.Sdk'",
+		"Legacy/Legacy.csproj partial: net8.0: 31 unresolved symbols",
+		"Unresolved/Unresolved.csproj partial: 3 unresolved symbols",
+		"detail: 1 InternalsVisibleTo declaration, 1 linked file outside its project",
+	} {
+		if !strings.Contains(cov.Reason, part) {
+			t.Errorf("roslyn reason %q lacks %q", cov.Reason, part)
+		}
+	}
+}
+
+func TestTypeGraph_RecordedFixtureProjects(t *testing.T) {
+	e, _, _, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
+	tg := e.LastTypeGraph()
+	legacy := typeProject(t, tg, legacyProj)
+	if legacy.Status != dotnet.TypeGraphPartial || !slices.Equal(legacy.TargetFrameworks, []string{targetNet10, targetNet8}) || legacy.UnresolvedSymbols != 31 || legacy.UnusedReferences != nil {
+		t.Errorf("legacy = %+v, want the worst status across frameworks", legacy)
+	}
+	if d := typeProject(t, tg, domainProj); d.Status != dotnet.TypeGraphComplete || d.UnusedReferences == nil || *d.UnusedReferences != 0 || d.IVTDeclarations != 1 {
+		t.Errorf("domain = %+v", d)
+	}
+	if a := typeProject(t, tg, appProj); !slices.Equal(a.LinkedFiles, []string{"Shared/Marker.cs"}) {
+		t.Errorf("application = %+v", a)
+	}
+	if !slices.Equal(tg.Fallback, []string{brokenProj}) {
+		t.Errorf("fallback = %v, want only Broken", tg.Fallback)
+	}
+}
+
+func TestTypeGraph_HelperInvocation(t *testing.T) {
+	_, fake, _, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
+	if len(fake.helperCalls) != 2 {
+		t.Fatalf("helper calls = %d, want --version and one run", len(fake.helperCalls))
+	}
+	run := fake.helperCalls[1]
+	if run.Name != toolDotnet || run.WorkDir != run.Args[1] || !slices.Equal(run.Args[2:], []string{solutionFix}) || run.Timeout <= 0 {
+		t.Errorf("helper run = %+v, want dotnet <dll> <snapshot> Fixture.slnx in the snapshot", run)
+	}
+	for _, env := range []string{"DOTNET_CLI_TELEMETRY_OPTOUT=1", "DOTNET_NOLOGO=1", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1", "MSBUILDDISABLENODEREUSE=1"} {
+		if !slices.Contains(run.Env, env) {
+			t.Errorf("helper env %v lacks %s", run.Env, env)
+		}
+	}
+}
+
+func TestTypeGraph_NoFallbackEdgeFromTests(t *testing.T) {
+	_, _, facts, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
+	for _, edge := range facts.Edges {
+		if strings.HasPrefix(graph.NodePath(edge.From), "Tests/") {
+			t.Errorf("edge from the test project: %+v", edge)
+		}
+	}
+}
+
+func TestTypeGraph_FoldsFrameworksAndProjects(t *testing.T) {
+	const report = `{"schema_version":1,"skipped_projects":["Db/Db.sqlproj"],"projects":[
+	 {"path":"A/A.csproj","tfm":"net10.0","status":"complete","unused_references":1,"files":[
+	  {"path":"A/X.cs","edges":[
+	   {"to":"B/Y.cs","hint":"model","data_hint":"model"},
+	   {"to":"System.Runtime","external":true,"hint":"model","data_hint":"model"}]}]},
+	 {"path":"A/A.csproj","tfm":"net8.0","status":"partial","reason":"2 unresolved symbols","unresolved_symbols":2,"files":[
+	  {"path":"A/X.cs","edges":[{"to":"B/Y.cs","hint":"functional","data_hint":"dto"}]}]},
+	 {"path":"C/C.csproj","tfm":"net10.0","status":"complete","unused_references":0,"files":[
+	  {"path":"A/X.cs","edges":[{"to":"B/Y.cs","hint":"contract","data_hint":""},{"to":"B/Hidden.cs","hint":"intrusive","data_hint":""}]}]}]}`
+	root := tree(t, projA)
+	installHelper(t)
+	fake := newFake(t, root, map[string]reply{projA: ok(t, root, "domain.json")})
+	fake.helper = fakeHelper(replying(report))
+	cfg := autoCfg()
+	cfg.Internal = []string{"B/Hidden.cs"}
+	e := dotnet.New(fake, cfg, nil)
+	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]hints{
+		"A/X.cs -> file:B/Y.cs":             {hFunctional, hModel},
+		"A/X.cs -> file:B/Hidden.cs":        {hIntrusive, ""},
+		"A/X.cs -> external:System.Runtime": {hModel, hModel},
+	}
+	if got := fileEdges(facts); !mapsEqual(got, want) {
+		t.Errorf("file edges = %v, want %v (strongest per channel, independently)", got, want)
+	}
+	kinds := map[string]graph.EdgeKind{}
+	for _, edge := range facts.Edges {
+		kinds[edge.To] = edge.Kind
+	}
+	if kinds["file:B/Hidden.cs"] != graph.EdgeKindUsesInternal || kinds["file:B/Y.cs"] != graph.EdgeKindImports {
+		t.Errorf("edge kinds = %v", kinds)
+	}
+	if !slices.Contains(nodeIDs(facts), "external:System.Runtime") {
+		t.Errorf("nodes = %v, want the assembly as an external node", nodeIDs(facts))
+	}
+
+	tg := e.LastTypeGraph()
+	a := typeProject(t, tg, projA)
+	if a.Status != dotnet.TypeGraphPartial || a.Reason != "net8.0: 2 unresolved symbols" || a.UnusedReferences != nil {
+		t.Errorf("A = %+v", a)
+	}
+	if !slices.Equal(tg.SkippedProjects, []string{"Db/Db.sqlproj"}) {
+		t.Errorf("skipped = %v", tg.SkippedProjects)
+	}
+	if cov := e.LastTypeGraphCoverage(); !strings.Contains(cov.Reason, "1 non-C# project skipped") || cov.UnresolvedInputsMissing != 2 {
+		t.Errorf("coverage = %+v", cov)
+	}
+	if got := fake.helperCalls[1].Args[2:]; !slices.Equal(got, []string{projA}) {
+		t.Errorf("helper targets = %v, want the walked projects", got)
+	}
+}
+
+func TestTypeGraph_RejectsUnusableReports(t *testing.T) {
+	tests := []struct {
+		name, report, want string
+	}{
+		{"unsupported schema version", `{"schema_version":2,"projects":[]}`, "schema_version 2 is not supported"},
+		{"missing schema version", `{"projects":[]}`, "schema_version 0 is not supported"},
+		{"not JSON", `boom`, "parse archfit-roslyn output"},
+		{"unknown status", `{"schema_version":1,"projects":[{"path":"A/A.csproj","status":"loaded"}]}`, `unknown status "loaded"`},
+		{"unknown hint", `{"schema_version":1,"projects":[{"path":"A/A.csproj","status":"complete","files":[{"path":"A/X.cs","edges":[{"to":"B/Y.cs","hint":"strong"}]}]}]}`, "unknown hints"},
+		{"callable data hint", `{"schema_version":1,"projects":[{"path":"A/A.csproj","status":"complete","files":[{"path":"A/X.cs","edges":[{"to":"B/Y.cs","hint":"functional","data_hint":"functional"}]}]}]}`, "unknown hints"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := tree(t, projA)
+			installHelper(t)
+			fake := newFake(t, root, map[string]reply{projA: ok(t, root, "domain.json")})
+			fake.helper = fakeHelper(replying(tt.report))
+			_, _, err := dotnet.New(fake, autoCfg(), nil).Extract(context.Background(), scope.Scope{Root: root})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestTypeGraph_FallbackWhenHelperFailsButEvaluationSucceeds(t *testing.T) {
+	report := editReport(t, func(ps []map[string]any) []map[string]any {
+		out := slices.DeleteFunc(ps, func(p map[string]any) bool { return p["path"] == legacyProj })
+		return append(out, failedEntry(legacyProj, "Msbuild failed when processing the file 'Legacy/Legacy.csproj'"))
+	})
+	e, _, facts, _ := fixtureRun(t, autoCfg(), replying(report))
+
+	if got := projectEdges(facts); !slices.Equal(got, []string{"Legacy/Legacy.csproj -> Domain/Domain.csproj"}) {
+		t.Errorf("project edges = %v, want Legacy's ProjectReference from the net10.0 evaluation", got)
+	}
+	for edge := range fileEdges(facts) {
+		if strings.HasPrefix(edge, legacyCS) {
+			t.Errorf("file edge %s beside the fallback edge", edge)
+		}
+	}
+	for _, edge := range facts.Edges {
+		if edge.Kind == graph.EdgeKindDependsOn && (edge.StrengthHint != "" || edge.DataStrengthHint != "") {
+			t.Errorf("fallback edge carries a hint: %+v", edge)
+		}
+	}
+	if got := e.LastTypeGraph().Fallback; !slices.Equal(got, []string{brokenProj, legacyProj}) {
+		t.Errorf("fallback = %v", got)
+	}
+}
+
+func TestTypeGraph_HelperAndEvaluationBothFailed(t *testing.T) {
+	e, _, facts, msbuildCov := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
+
+	for _, edge := range facts.Edges {
+		if strings.HasPrefix(graph.NodePath(edge.From), "Broken/") {
+			t.Errorf("edge from Broken: %+v", edge)
+		}
+	}
+	if !slices.Contains(nodeIDs(facts), "project:"+brokenProj) {
+		t.Error("Broken's project node is gone; it must stay for topology")
+	}
+	const sdk = "Archfit.Fixture.Missing.Sdk"
+	if !strings.Contains(msbuildCov.Reason, brokenProj) || !strings.Contains(msbuildCov.Reason, sdk) || msbuildCov.Status != evidence.StatusPartial {
+		t.Errorf("dotnet-msbuild coverage = %+v, want Broken reported missing", msbuildCov)
+	}
+	cov := e.LastTypeGraphCoverage()
+	if cov.Status != evidence.StatusPartial || !strings.Contains(cov.Reason, brokenProj+" failed") || !strings.Contains(cov.Reason, sdk) {
+		t.Errorf("roslyn coverage = %+v, want Broken reported failed", cov)
+	}
+	if b := projectByPath(t, e.LastEvaluation(), brokenProj); b.Status != dotnet.ProjectFailed || b.FallbackReferences() != nil {
+		t.Errorf("broken evaluation = %+v", b)
+	}
+}
+
+func TestTypeGraph_RunWithoutReportFallsBackForEveryProject(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(t *testing.T, fake *fakeDotnet, e *dotnet.Extractor)
+		wantStatus string
+		wantReason string
+	}{
+		{
+			name: "helper not installed",
+			setup: func(t *testing.T, _ *fakeDotnet, _ *dotnet.Extractor) {
+				t.Setenv(helperEnv, "")
+				_ = os.Unsetenv(helperEnv)
+			},
+			wantStatus: evidence.StatusAbsent,
+			wantReason: "ARCHFIT_DOTNET_ROSLYN is not set; build the helper with `make dotnet-roslyn`",
+		},
+		{
+			name:       "type graph disabled",
+			setup:      func(_ *testing.T, _ *fakeDotnet, e *dotnet.Extractor) { e.TypeGraph.Disabled = true },
+			wantStatus: evidence.StatusDisabled,
+			wantReason: "analyzers.roslyn.enabled is false",
+		},
+		{
+			name: "unsatisfiable global.json",
+			setup: func(t *testing.T, fake *fakeDotnet, _ *dotnet.Extractor) {
+				fake.helper = func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					return toolrun.Output{Stderr: []byte(fixture(t, cmd.WorkDir, "roslyn_globaljson.stderr")), ExitCode: 1}, nil
+				}
+			},
+			wantStatus: evidence.StatusPartial,
+			wantReason: "archfit-roslyn failed: global.json requests SDK 9.0.100, which is not installed; install a matching SDK or relax the pin; every project falls back",
+		},
+		{
+			name: "helper run exits non-zero",
+			setup: func(_ *testing.T, fake *fakeDotnet, _ *dotnet.Extractor) {
+				fake.helper = fakeHelper(func(_ context.Context, snap string) (toolrun.Output, error) {
+					return toolrun.Output{Stderr: []byte("archfit-roslyn: workspace failure: x\narchfit-roslyn: " + snap + "/Fixture.slnx does not exist\n"), ExitCode: 1}, nil
+				})
+			},
+			wantStatus: evidence.StatusPartial,
+			wantReason: "archfit-roslyn failed: Fixture.slnx does not exist; every project falls back",
+		},
+		{
+			name: "helper timed out",
+			setup: func(_ *testing.T, fake *fakeDotnet, _ *dotnet.Extractor) {
+				fake.helper = fakeHelper(func(context.Context, string) (toolrun.Output, error) {
+					return toolrun.Output{}, context.DeadlineExceeded
+				})
+			},
+			wantStatus: evidence.StatusTimedOut,
+			wantReason: "archfit-roslyn timed out; raise analyzers.roslyn.timeout",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := copyFixture(t)
+			installHelper(t)
+			fake := newFake(t, root, fixtureReplies(t, root))
+			fake.helper = fakeHelper(replying(recordedReport(t)))
+			e := dotnet.New(fake, autoCfg(), nil)
+			tt.setup(t, fake, e)
+			facts, _, err := e.Extract(context.Background(), scope.Scope{Root: root})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := projectEdges(facts); !slices.Equal(got, fixtureFallbackEdges) {
+				t.Errorf("project edges = %v, want every evaluated reference except the test project's", got)
+			}
+			if got := fileEdges(facts); len(got) != 0 {
+				t.Errorf("file edges = %v, want none", got)
+			}
+			cov := e.LastTypeGraphCoverage()
+			if cov.Tool != "roslyn" || cov.Status != tt.wantStatus || !strings.Contains(cov.Reason, tt.wantReason) {
+				t.Errorf("roslyn coverage = %+v, want %s with %q", cov, tt.wantStatus, tt.wantReason)
+			}
+			if got := e.LastTypeGraph().Fallback; len(got) != 7 {
+				t.Errorf("fallback = %v, want all 7 projects", got)
+			}
+		})
+	}
+}
+
+func TestTypeGraph_InvalidHelperSettingFailsVisibly(t *testing.T) {
+	root := tree(t, projA)
+	writeFile(t, root, "tools/"+helperDLL, "")
+	empty := t.TempDir()
+	tests := []struct {
+		name, value, want string
+	}{
+		{"empty", "", "must name the absolute helper directory"},
+		{"relative", "dotnet-roslyn", "must name the absolute helper directory"},
+		{"no helper assembly", empty, "must name a directory holding archfit-roslyn.dll"},
+		{"missing directory", filepath.Join(empty, "gone"), "must name a directory holding archfit-roslyn.dll"},
+		{"inside the target", filepath.Join(root, "tools"), "must not select a helper inside the target"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(helperEnv, tt.value)
+			fake := newFake(t, root, map[string]reply{projA: ok(t, root, "domain.json")})
+			_, _, err := dotnet.New(fake, autoCfg(), nil).Extract(context.Background(), scope.Scope{Root: root})
+			if err == nil || !strings.Contains(err.Error(), "ARCHFIT_DOTNET_ROSLYN") || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("err = %v, want %q", err, tt.want)
+			}
+			if len(fake.helperCalls) != 0 {
+				t.Errorf("helper ran %d times", len(fake.helperCalls))
+			}
+		})
+	}
+}
+
+func TestTypeGraph_ExcludedFileStillBindsButEmitsNothing(t *testing.T) {
+	cfg := autoCfg()
+	cfg.Exclusions = []string{contractsCS}
+	var present bool
+	e, _, facts, _ := fixtureRun(t, cfg, func(_ context.Context, snap string) (toolrun.Output, error) {
+		_, err := os.Stat(filepath.Join(snap, contractsCS))
+		present = err == nil
+		return toolrun.Output{Stdout: []byte(recordedReport(t))}, nil
+	})
+
+	if !present {
+		t.Fatal("the excluded file was not in the snapshot; code that binds to it would not resolve")
+	}
+	if p := typeProject(t, e.LastTypeGraph(), infraProj); p.Status != dotnet.TypeGraphComplete || p.UnresolvedSymbols != 0 {
+		t.Errorf("infrastructure = %+v, want its use of the excluded file resolved", p)
+	}
+	want := map[string]hints{
+		repositoryCS + " -> file:" + domainCS: {hIntrusive, hModel},
+		legacyCS + " -> file:" + domainCS:     {hFunctional, hModel},
+	}
+	if got := fileEdges(facts); !mapsEqual(got, want) {
+		t.Errorf("file edges = %v, want none from or to %s", got, contractsCS)
+	}
+	if slices.Contains(nodeIDs(facts), "file:"+contractsCS) {
+		t.Error("the excluded file is a node")
+	}
+}
+
+// dataOnlyReport is a helper report where Application/Contracts.cs reads a
+// field of a concrete Domain class and calls nothing.
+const dataOnlyReport = `{"schema_version":1,"skipped_projects":[],"projects":[
+ {"path":"Application/Application.csproj","tfm":"net10.0","status":"complete","unused_references":0,
+  "files":[{"path":"Application/Contracts.cs","edges":[{"to":"Domain/Domain.cs","hint":"model","data_hint":"model","reference":"data_use"}]}]},
+ {"path":"Domain/Domain.csproj","tfm":"net10.0","status":"complete","unused_references":0,
+  "files":[{"path":"Domain/Domain.cs","edges":[]}]}]}`
+
+func dataOnlyFacts(t *testing.T) graph.Facts {
+	t.Helper()
+	root := tree(t, appProj, domainProj)
+	installHelper(t)
+	fake := newFake(t, root, map[string]reply{appProj: ok(t, root, "application.json"), domainProj: ok(t, root, "domain.json")})
+	fake.helper = fakeHelper(replying(dataOnlyReport))
+	facts, _, err := dotnet.New(fake, autoCfg(), nil).Extract(context.Background(), scope.Scope{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return facts
+}
+
+var fixtureModules = map[string]policy.ModuleDef{
+	"application":    {Paths: []string{"Application/**"}},
+	"domain":         {Paths: []string{"Domain/**"}},
+	"infrastructure": {Paths: []string{"Infrastructure/**"}},
+	"legacy":         {Paths: []string{"Legacy/**"}},
+}
+
+func TestTypeGraph_DataOnlyConcreteUseClassifiesAsModel(t *testing.T) {
+	g := graph.Build([]graph.Facts{dataOnlyFacts(t)})
+	idx := classify.Run(g, classify.Config{Modules: fixtureModules})
+	key := "file:" + contractsCS + "\x00file:" + domainCS + "\x00" + string(graph.EdgeKindImports)
+	if got := idx[key].Strength; got != coupling.StrengthModel {
+		t.Errorf("strength = %q, want model: no public selector, so the hint decides", got)
+	}
+}
+
+func TestTypeGraph_OneDependencyScoredOnce(t *testing.T) {
+	facts := dataOnlyFacts(t)
+	if got := projectEdges(facts); len(got) != 0 {
+		t.Errorf("project edges = %v, want none: Application's file edges replace its ProjectReference to Domain", got)
+	}
+	idx := classify.Run(graph.Build([]graph.Facts{facts}), classify.Config{Modules: fixtureModules})
+	scored := 0
+	for key, cl := range idx {
+		from, rest, _ := strings.Cut(key, "\x00")
+		to, _, _ := strings.Cut(rest, "\x00")
+		if strings.HasPrefix(graph.NodePath(from), "Application/") && strings.HasPrefix(graph.NodePath(to), "Domain/") && cl.Distance != coupling.DistanceUnknown {
+			scored++
+		}
+	}
+	if scored != 1 {
+		t.Errorf("Application -> Domain classified %d times, want once", scored)
+	}
+}
+
+func TestTypeGraph_PublicSelectorMakesFileEdgeContract(t *testing.T) {
+	_, _, facts, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
+	modules := map[string]policy.ModuleDef{
+		"application":    {Paths: []string{"Application/**"}, Public: []string{contractsCS}},
+		"domain":         {Paths: []string{"Domain/**"}},
+		"infrastructure": {Paths: []string{"Infrastructure/**"}},
+	}
+	idx := classify.Run(graph.Build([]graph.Facts{facts}), classify.Config{Modules: modules})
+
+	key := "file:" + repositoryCS + "\x00file:" + contractsCS + "\x00" + string(graph.EdgeKindImports)
+	if got := idx[key].Strength; got != coupling.StrengthContract {
+		t.Errorf("strength = %q, want contract: a DTO across a declared public boundary is the contract", got)
+	}
+	for key, cl := range idx {
+		if strings.HasPrefix(key, "project:") {
+			t.Errorf("project edge classified beside the file edge: %q -> %s", key, cl.Strength)
+		}
+	}
+}
+
+// treeState lists every file under root with its mode, size, mtime and hash.
+func treeState(t *testing.T, root string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(root, func(p string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := os.Lstat(p)
+		if err != nil {
+			return err
+		}
+		sum := ""
+		if info.Mode().IsRegular() {
+			data, err := os.ReadFile(p) //nolint:gosec // test tree
+			if err != nil {
+				return err
+			}
+			h := sha256.Sum256(data)
+			sum = hex.EncodeToString(h[:])
+		}
+		rel, _ := filepath.Rel(root, p)
+		out[rel] = fmt.Sprintf("%v %d %d %s", info.Mode(), info.Size(), info.ModTime().UnixNano(), sum)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestTypeGraph_SnapshotIsRemovedAndOriginalNeverWritten(t *testing.T) {
+	tests := []struct {
+		name    string
+		timeout time.Duration
+		answer  func(ctx context.Context) (toolrun.Output, error)
+		panics  bool
+	}{
+		{name: "success", answer: func(context.Context) (toolrun.Output, error) { return toolrun.Output{}, nil }},
+		{name: "helper error", answer: func(context.Context) (toolrun.Output, error) {
+			return toolrun.Output{Stderr: []byte("archfit-roslyn: boom\n"), ExitCode: 1}, nil
+		}},
+		{name: "timeout", timeout: 300 * time.Millisecond, answer: func(ctx context.Context) (toolrun.Output, error) {
+			<-ctx.Done()
+			return toolrun.Output{}, ctx.Err()
+		}},
+		{name: "exec failure", answer: func(context.Context) (toolrun.Output, error) { return toolrun.Output{}, errors.New("fork failed") }},
+		{name: "panic", panics: true, answer: func(context.Context) (toolrun.Output, error) { panic("helper crashed") }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := copyFixture(t)
+			writeFile(t, root, ".git/HEAD", "ref: refs/heads/main\n")
+			writeFile(t, root, "web/node_modules/x/index.js", "")
+			writeFile(t, root, "Domain/obj/project.assets.json", "{}")
+			writeFile(t, root, "Domain/bin/Lib.dll", "")
+			if err := os.Symlink(filepath.Join(root, "Domain"), filepath.Join(root, "DomainLink")); err != nil {
+				t.Fatal(err)
+			}
+			before := treeState(t, root)
+			installHelper(t)
+			fake := newFake(t, root, fixtureReplies(t, root))
+			var snapshot string
+			fake.helper = fakeHelper(func(ctx context.Context, snap string) (toolrun.Output, error) {
+				snapshot = snap
+				for rel, want := range map[string]bool{
+					".git": false, "web/node_modules": false, "web": true,
+					"Domain/obj/project.assets.json": true, "Domain/bin/Lib.dll": true, solutionFix: true,
+				} {
+					if _, err := os.Stat(filepath.Join(snap, rel)); (err == nil) != want {
+						t.Errorf("snapshot has %s = %v, want %v", rel, err == nil, want)
+					}
+				}
+				if link, err := os.Readlink(filepath.Join(snap, "DomainLink")); err != nil || !strings.Contains(link, filepath.Base(snap)) {
+					t.Errorf("snapshot link = %q (%v), want it inside the snapshot", link, err)
+				}
+				// The design-time build writes generated files under obj/.
+				writeFile(t, snap, "Domain/obj/Debug/net10.0/Domain.GlobalUsings.g.cs", "// generated")
+				writeFile(t, filepath.Join(snap, "DomainLink"), "obj/through-link.cs", "// via link")
+				return tt.answer(ctx)
+			})
+			e := dotnet.New(fake, autoCfg(), nil)
+			e.TypeGraph.Timeout = tt.timeout
+
+			func() {
+				defer func() {
+					if r := recover(); (r != nil) != tt.panics {
+						t.Errorf("recovered %v, want panic %v", r, tt.panics)
+					}
+				}()
+				_, _, _ = e.Extract(context.Background(), scope.Scope{Root: root})
+			}()
+
+			if snapshot == "" {
+				t.Fatal("helper never ran")
+			}
+			if _, err := os.Stat(snapshot); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("snapshot %s still exists (err %v)", snapshot, err)
+			}
+			if after := treeState(t, root); !mapsEqual(after, before) {
+				t.Errorf("original root changed:\nbefore %v\nafter  %v", before, after)
+			}
+			if tt.name == "timeout" {
+				if cov := e.LastTypeGraphCoverage(); cov.Status != evidence.StatusTimedOut {
+					t.Errorf("coverage = %+v, want timed out", cov)
+				}
+			}
+		})
+	}
+}
+
+func mapsEqual[V comparable](a, b map[string]V) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if w, ok := b[k]; !ok || w != v {
+			return false
+		}
+	}
+	return true
+}

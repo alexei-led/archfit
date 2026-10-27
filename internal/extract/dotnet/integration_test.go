@@ -2,9 +2,13 @@ package dotnet_test
 
 import (
 	"context"
+	"errors"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
@@ -20,7 +24,7 @@ import (
 func realRunner(t *testing.T) toolrun.Runner {
 	t.Helper()
 	runner := toolrun.New()
-	if _, ok := runner.Detect(context.Background(), "dotnet"); !ok {
+	if _, ok := runner.Detect(context.Background(), toolDotnet); !ok {
 		t.Skip("dotnet is not on PATH")
 	}
 	t.Setenv("DOTNET_CLI_HOME", t.TempDir())
@@ -30,7 +34,7 @@ func realRunner(t *testing.T) toolrun.Runner {
 	return runner
 }
 
-var fixtureRoot = filepath.Join("..", "..", "testdata", "dotnet")
+var fixtureRoot = filepath.Join("..", "..", "testdata", toolDotnet)
 
 func TestIntegration_LegacyFindsNet10OnlyReference(t *testing.T) {
 	root, err := filepath.Abs(fixtureRoot)
@@ -43,7 +47,7 @@ func TestIntegration_LegacyFindsNet10OnlyReference(t *testing.T) {
 		t.Fatalf("Extract: %v", err)
 	}
 	legacy := projectByPath(t, e.LastEvaluation(), legacyProj)
-	if !slices.Equal(legacy.TargetFrameworks, []string{targetNet10, "net8.0"}) {
+	if !slices.Equal(legacy.TargetFrameworks, []string{targetNet10, targetNet8}) {
 		t.Errorf("TFMs = %v", legacy.TargetFrameworks)
 	}
 	if !slices.Equal(legacy.References, []string{domainProj}) {
@@ -68,7 +72,7 @@ func TestIntegration_FixtureSolution(t *testing.T) {
 		t.Fatalf("Extract: %v", err)
 	}
 	ev := e.LastEvaluation()
-	if ev.Solution != "Fixture.slnx" || len(ev.Projects) != 7 {
+	if ev.Solution != solutionFix || len(ev.Projects) != 7 {
 		t.Fatalf("evaluation = %+v", ev)
 	}
 	broken := projectByPath(t, ev, "Broken/Broken.csproj")
@@ -86,5 +90,92 @@ func TestIntegration_FixtureSolution(t *testing.T) {
 	}
 	if cov.Status != evidence.StatusPartial || !strings.Contains(cov.Reason, "Archfit.Fixture.Missing.Sdk") {
 		t.Errorf("coverage = %+v", cov)
+	}
+}
+
+// helperForIntegration returns the built helper directory: ARCHFIT_DOTNET_ROSLYN
+// when set, else the `make dotnet-roslyn` output. It skips when neither exists.
+func helperForIntegration(t *testing.T) string {
+	t.Helper()
+	dir := realHelper
+	if dir == "" {
+		abs, err := filepath.Abs(filepath.Join("..", "..", "..", ".bin", "dotnet-roslyn"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir = abs
+	}
+	if _, err := os.Stat(filepath.Join(dir, helperDLL)); err != nil {
+		t.Skipf("no built helper at %s; run make dotnet-roslyn", dir)
+	}
+	return dir
+}
+
+// recordingRunner records the snapshot root of each helper analysis run.
+type recordingRunner struct {
+	toolrun.Runner
+	mu        sync.Mutex
+	snapshots []string
+}
+
+func (r *recordingRunner) Run(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+	if len(cmd.Args) > 1 && strings.HasSuffix(cmd.Args[0], helperDLL) && cmd.Args[1] != "--version" {
+		r.mu.Lock()
+		r.snapshots = append(r.snapshots, cmd.Args[1])
+		r.mu.Unlock()
+	}
+	return r.Runner.Run(ctx, cmd)
+}
+
+func TestIntegration_TypeGraphOnFixture(t *testing.T) {
+	if testing.Short() {
+		t.Skip("loading the fixture in the helper takes seconds offline")
+	}
+	runner := &recordingRunner{Runner: realRunner(t)}
+	t.Setenv(helperEnv, helperForIntegration(t))
+	root := copyFixture(t)
+	before := treeState(t, root)
+	cfg := evidenceports.ExtractConfig{Mode: evidenceports.ModeOn, Exclusions: []string{contractsCS}}
+	e := dotnet.New(runner, cfg, nil)
+	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: root})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	want := map[string]hints{
+		repositoryCS + " -> file:" + domainCS: {hIntrusive, hModel},
+		legacyCS + " -> file:" + domainCS:     {hFunctional, hModel},
+	}
+	if got := fileEdges(facts); !mapsEqual(got, want) {
+		t.Errorf("file edges = %v, want %v", got, want)
+	}
+	tg := e.LastTypeGraph()
+	if p := typeProject(t, tg, infraProj); p.Status != dotnet.TypeGraphComplete || p.UnresolvedSymbols != 0 {
+		t.Errorf("infrastructure = %+v, want its use of the excluded %s resolved", p, contractsCS)
+	}
+	legacy := typeProject(t, tg, legacyProj)
+	missingPack := legacy.Status == dotnet.TypeGraphPartial && strings.Contains(legacy.Reason, "Microsoft.NETCore.App.Ref 8.")
+	if legacy.Status != dotnet.TypeGraphComplete && !missingPack {
+		t.Errorf("legacy = %+v, want complete, or partial naming the 8.0 reference pack", legacy)
+	}
+	if b := typeProject(t, tg, brokenProj); b.Status != dotnet.TypeGraphFailed || !strings.Contains(b.Reason, "Archfit.Fixture.Missing.Sdk") {
+		t.Errorf("broken = %+v", b)
+	}
+	if !slices.Equal(tg.Fallback, []string{brokenProj}) || len(projectEdges(facts)) != 0 {
+		t.Errorf("fallback = %v, project edges = %v, want only Broken and no edge", tg.Fallback, projectEdges(facts))
+	}
+	cov := e.LastTypeGraphCoverage()
+	if !strings.HasPrefix(cov.Version, "archfit-roslyn ") || cov.Status != evidence.StatusPartial || cov.UnresolvedInputsMissing == 0 {
+		t.Errorf("roslyn coverage = %+v", cov)
+	}
+
+	if len(runner.snapshots) != 1 {
+		t.Fatalf("helper runs = %v, want one", runner.snapshots)
+	}
+	if _, err := os.Stat(runner.snapshots[0]); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("snapshot %s still exists (err %v)", runner.snapshots[0], err)
+	}
+	if after := treeState(t, root); !mapsEqual(after, before) {
+		t.Errorf("the original root changed:\nbefore %v\nafter  %v", before, after)
 	}
 }

@@ -1,0 +1,21 @@
+archfit-roslyn: System.InvalidOperationException: Error while calling hostfxr function hostfxr_resolve_sdk2. Error code: -2147450725 Detailed error: A compatible .NET SDK was not found.
+
+Requested SDK version: 9.0.100
+global.json file: {{ROOT}}/global.json
+
+Installed SDKs:
+No .NET SDKs were found.
+
+Install the [9.0.100] .NET SDK or update [{{ROOT}}/global.json] to match an installed SDK.
+
+Download a .NET SDK:
+https://aka.ms/dotnet/download
+
+Learn about SDK resolution:
+https://aka.ms/dotnet/sdk-not-found
+
+   at Microsoft.Build.Locator.DotNetSdkLocationHelper.<GetInstances>g__GetSdkFromGlobalSettings|5_2(String workingDirectory)
+   at Microsoft.Build.Locator.DotNetSdkLocationHelper.GetInstances(String workingDirectory, Boolean allowQueryAllRuntimes, Boolean allowAllDotnetLocations)+MoveNext()
+   at Microsoft.Build.Locator.MSBuildLocator.GetInstances(VisualStudioInstanceQueryOptions options)+MoveNext()
+   at System.Linq.Enumerable.IEnumerableWhereIterator`1.TryGetFirst(Boolean& found)
+   at System.Linq.Enumerable.FirstOrDefault[TSource](IEnumerable`1 source)

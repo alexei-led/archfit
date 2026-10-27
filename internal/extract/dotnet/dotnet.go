@@ -106,19 +106,27 @@ type Evaluation struct {
 	MissingProjects []string
 }
 
-// Extractor is the .NET project graph extractor using `dotnet msbuild`.
+// Extractor is the .NET extractor: the project graph from `dotnet msbuild`
+// evaluation and the type-level file graph from the Roslyn helper.
 // It satisfies the evidenceports.Extractor interface structurally.
 type Extractor struct {
 	runner  toolrun.Runner
 	cfg     evidenceports.ExtractConfig
 	targets []string
 	last    Evaluation
+
+	// TypeGraph configures the Roslyn step; the zero value runs it when
+	// ARCHFIT_DOTNET_ROSLYN is set.
+	TypeGraph TypeGraphOptions
+
+	lastTypeGraph    TypeGraph
+	lastTypeGraphCov evidence.Coverage
 }
 
 // New returns an Extractor. targets are the configured solutions or projects,
 // relative to the scan root; none selects the default (see Applicable).
 func New(runner toolrun.Runner, cfg evidenceports.ExtractConfig, targets []string) *Extractor {
-	return &Extractor{runner: runner, cfg: cfg, targets: targets}
+	return &Extractor{runner: runner, cfg: cfg, targets: targets, lastTypeGraphCov: typeGraphAbsent()}
 }
 
 // Name returns the language identifier for this extractor.
@@ -138,6 +146,18 @@ func (e *Extractor) LastEvaluation() Evaluation {
 	return e.last
 }
 
+// LastTypeGraph returns the Roslyn result of the most recent Extract call: the
+// zero value before Extract and when the helper did not report.
+func (e *Extractor) LastTypeGraph() TypeGraph {
+	return e.lastTypeGraph
+}
+
+// LastTypeGraphCoverage returns the roslyn coverage row of the most recent
+// Extract call; absent before Extract and when no project was evaluated.
+func (e *Extractor) LastTypeGraphCoverage() evidence.Coverage {
+	return e.lastTypeGraphCov
+}
+
 // Applicable reports whether root holds a .NET project to analyse: a configured
 // target that exists, else a solution at the root, else any .csproj outside
 // obj/, bin/ and exclusions. Extract and the registry probe both call it so the
@@ -149,13 +169,17 @@ func Applicable(root string, exclusions, targets []string) bool {
 
 // Extract detects dotnet, selects projects (solution, configured targets, or a
 // directory walk), evaluates each with `dotnet msbuild -getItem/-getProperty`,
-// and returns project nodes plus ProjectReference edges.
+// runs the Roslyn helper on a snapshot of the root, and returns project nodes,
+// file nodes, and one scored edge set per source project (D1): file edges when
+// the helper loaded the project, else its ProjectReference edges.
 //
 // Mode off, no project to evaluate, or dotnet missing in auto mode yield empty
 // Facts and an absent Coverage, never an error. A project that does not evaluate
-// makes the row partial with the reason; a timeout makes it "timed out".
+// makes the row partial with the reason; a timeout makes it "timed out". The
+// roslyn row is reported by LastTypeGraphCoverage.
 func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, evidence.Coverage, error) {
 	e.last = Evaluation{}
+	e.lastTypeGraph, e.lastTypeGraphCov = TypeGraph{}, typeGraphAbsent()
 	if e.cfg.Mode == evidenceports.ModeOff {
 		return graph.Facts{}, absentCoverage(""), nil
 	}
@@ -189,7 +213,26 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/dotnet: %w", err)
 	}
 	e.last = Evaluation{Solution: sel.solution, Projects: projects, SkippedProjects: sel.skipped, MissingProjects: sel.missing}
-	return buildFacts(projects), coverageFor(e.last, version, timedOut), nil
+
+	tg, err := e.runTypeGraph(ctx, s.Root, helperTargets(sel, e.targets))
+	if err != nil {
+		return graph.Facts{}, evidence.Coverage{}, fmt.Errorf("extract/dotnet: %w", err)
+	}
+	facts, fallback := buildFacts(projects, tg)
+	appendFileGraph(&facts, tg, e.cfg.Exclusions, e.cfg.Internal)
+	facts.Unresolved = tg.graph.UnresolvedSymbols()
+	tg.graph.Fallback = fallback
+	e.lastTypeGraph, e.lastTypeGraphCov = tg.graph, tg.cov
+	return facts, coverageFor(e.last, version, timedOut), nil
+}
+
+// helperTargets is what the helper opens: the solution when the selection came
+// from exactly one (the root solution or one configured), else the projects.
+func helperTargets(sel selection, configured []string) []string {
+	if sel.solution != "" && len(configured) <= 1 {
+		return []string{sel.solution}
+	}
+	return sel.projects
 }
 
 func (e *Extractor) toolVersion(ctx context.Context, root string) string {
@@ -354,8 +397,10 @@ func fileExists(p string) bool {
 
 // buildFacts emits one project node per evaluated project, one per existing
 // referenced project outside the evaluated set (so no edge dangles), and a
-// depends_on edge per kept ProjectReference.
-func buildFacts(projects []ProjectEvaluation) graph.Facts {
+// depends_on edge per kept ProjectReference of every project the helper did not
+// load. A loaded project's dependencies are its file edges instead, never both
+// (D1). It returns the projects that fell back.
+func buildFacts(projects []ProjectEvaluation, tg typeGraphResult) (graph.Facts, []string) {
 	facts := graph.Facts{Language: langDotNet}
 	seen := map[string]struct{}{}
 	node := func(p string) string {
@@ -369,8 +414,13 @@ func buildFacts(projects []ProjectEvaluation) graph.Facts {
 	for _, p := range projects {
 		node(p.Path)
 	}
+	var fallback []string
 	for _, p := range projects {
 		from := node(p.Path)
+		if tg.loaded(p.Path) {
+			continue
+		}
+		fallback = append(fallback, p.Path)
 		for _, ref := range p.FallbackReferences() {
 			edge := graph.Edge{
 				From:       from,
@@ -385,7 +435,7 @@ func buildFacts(projects []ProjectEvaluation) graph.Facts {
 			facts.Edges = append(facts.Edges, edge)
 		}
 	}
-	return facts
+	return facts, fallback
 }
 
 // coverageFor builds the coverage row: partial when any project did not fully
@@ -425,6 +475,11 @@ func coverageFor(ev Evaluation, version string, timedOut bool) evidence.Coverage
 // absentCoverage returns a Coverage record indicating no .NET project or no dotnet.
 func absentCoverage(version string) evidence.Coverage {
 	return evidence.Coverage{Tool: coverageTool, Version: version, Status: evidence.StatusAbsent}
+}
+
+// typeGraphAbsent is the roslyn row when the helper never ran.
+func typeGraphAbsent() evidence.Coverage {
+	return evidence.Coverage{Tool: coverageRoslyn, Status: evidence.StatusAbsent}
 }
 
 // selection is the project set chosen for evaluation.

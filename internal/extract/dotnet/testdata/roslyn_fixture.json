@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "skipped_projects": [],
+  "projects": [
+    {
+      "path": "Application/Application.csproj",
+      "tfm": "net10.0",
+      "status": "complete",
+      "reason": "",
+      "unresolved_symbols": 0,
+      "unused_references": 0,
+      "ivt_declarations": [],
+      "linked_files": [
+        "Shared/Marker.cs"
+      ],
+      "files": [
+        {
+          "path": "Application/Contracts.cs",
+          "generated": false,
+          "edges": [
+            {
+              "to": "Domain/Domain.cs",
+              "external": false,
+              "hint": "model",
+              "data_hint": "model",
+              "reference": "type_use"
+            }
+          ]
+        },
+        {
+          "path": "Application/Generated/Mapper.g.cs",
+          "generated": true,
+          "edges": [
+            {
+              "to": "Application/Contracts.cs",
+              "external": false,
+              "hint": "functional",
+              "data_hint": "dto",
+              "reference": "call"
+            }
+          ]
+        },
+        {
+          "path": "Application/GlobalUsings.cs",
+          "generated": false,
+          "edges": []
+        },
+        {
+          "path": "Shared/Marker.cs",
+          "generated": false,
+          "edges": []
+        }
+      ]
+    },
+    {
+      "path": "Broken/Broken.csproj",
+      "tfm": "",
+      "status": "failed",
+      "reason": "MSB4236: SDK 'Archfit.Fixture.Missing.Sdk' not resolvable; run with NuGet access and a warm cache, or install the SDK",
+      "unresolved_symbols": 0,
+      "unused_references": null,
+      "ivt_declarations": [],
+      "linked_files": [],
+      "files": []
+    },
+    {
+      "path": "Domain/Domain.csproj",
+      "tfm": "net10.0",
+      "status": "complete",
+      "reason": "",
+      "unresolved_symbols": 0,
+      "unused_references": 0,
+      "ivt_declarations": [
+        {
+          "assembly": "Infrastructure",
+          "declared_in": "Domain/Domain.csproj"
+        }
+      ],
+      "linked_files": [],
+      "files": [
+        {
+          "path": "Domain/Domain.cs",
+          "generated": false,
+          "edges": []
+        }
+      ]
+    },
+    {
+      "path": "Infrastructure/Infrastructure.csproj",
+      "tfm": "net10.0",
+      "status": "complete",
+      "reason": "",
+      "unresolved_symbols": 0,
+      "unused_references": 0,
+      "ivt_declarations": [],
+      "linked_files": [],
+      "files": [
+        {
+          "path": "Infrastructure/Repository.cs",
+          "generated": false,
+          "edges": [
+            {
+              "to": "Application/Contracts.cs",
+              "external": false,
+              "hint": "dto",
+              "data_hint": "dto",
+              "reference": "type_use"
+            },
+            {
+              "to": "Domain/Domain.cs",
+              "external": false,
+              "hint": "intrusive",
+              "data_hint": "model",
+              "reference": "type_use"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "Legacy/Legacy.csproj",
+      "tfm": "net10.0",
+      "status": "complete",
+      "reason": "",
+      "unresolved_symbols": 0,
+      "unused_references": 0,
+      "ivt_declarations": [],
+      "linked_files": [],
+      "files": [
+        {
+          "path": "Legacy/Legacy.cs",
+          "generated": false,
+          "edges": [
+            {
+              "to": "Domain/Domain.cs",
+              "external": false,
+              "hint": "functional",
+              "data_hint": "model",
+              "reference": "call"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "Legacy/Legacy.csproj",
+      "tfm": "net8.0",
+      "status": "partial",
+      "reason": "31 unresolved symbols (CS0246 x18, CS0400 x1, CS0518 x12); reference pack Microsoft.NETCore.App.Ref 8.0 is not installed: install the .NET 8.0 targeting pack or restore with NuGet access",
+      "unresolved_symbols": 31,
+      "unused_references": null,
+      "ivt_declarations": [],
+      "linked_files": [],
+      "files": [
+        {
+          "path": "Legacy/Legacy.cs",
+          "generated": false,
+          "edges": []
+        }
+      ]
+    },
+    {
+      "path": "Tests/Tests.csproj",
+      "tfm": "net10.0",
+      "status": "partial",
+      "reason": "MSB4236: SDK 'Archfit.Fixture.Missing.Sdk' not resolvable; 1 unresolved symbol (CS0234 x1); run with NuGet access and a warm cache, or install the SDK; restore the project (supply obj/project.assets.json) or install the missing references",
+      "unresolved_symbols": 1,
+      "unused_references": null,
+      "ivt_declarations": [],
+      "linked_files": [],
+      "files": [
+        {
+          "path": "Tests/ThingTests.cs",
+          "generated": false,
+          "edges": []
+        }
+      ]
+    },
+    {
+      "path": "Unresolved/Unresolved.csproj",
+      "tfm": "net10.0",
+      "status": "partial",
+      "reason": "3 unresolved symbols (CS0246 x3); restore the project (supply obj/project.assets.json) or install the missing references",
+      "unresolved_symbols": 3,
+      "unused_references": null,
+      "ivt_declarations": [],
+      "linked_files": [],
+      "files": [
+        {
+          "path": "Unresolved/Use.cs",
+          "generated": false,
+          "edges": []
+        }
+      ]
+    }
+  ]
+}

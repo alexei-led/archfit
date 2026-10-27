@@ -32,6 +32,10 @@ const (
 	legacyNet8  = "Legacy/Legacy.csproj@net8.0"
 	brokenProj  = "Broken/Broken.csproj"
 	targetNet10 = "net10.0"
+	targetNet8  = "net8.0"
+	solutionFix = "Fixture.slnx"
+	projA       = "A/A.csproj"
+	toolDotnet  = "dotnet"
 	targetB     = "x/B.csproj"
 )
 
@@ -58,20 +62,34 @@ func ok(t *testing.T, root, name string) reply {
 
 // fakeDotnet answers `dotnet --version` and `dotnet msbuild`. Replies are keyed
 // by the project path relative to root, plus "@<tfm>" for a per-framework run.
+// Calls to the Roslyn helper go to helper; with none set they fail the test.
 type fakeDotnet struct {
 	*toolrun.RunnerMock
-	mu      sync.Mutex
-	calls   []toolrun.ToolCmd
-	replies map[string]reply
+	mu          sync.Mutex
+	calls       []toolrun.ToolCmd
+	replies     map[string]reply
+	helper      func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error)
+	helperCalls []toolrun.ToolCmd
 }
 
 func newFake(t *testing.T, root string, replies map[string]reply) *fakeDotnet {
 	f := &fakeDotnet{replies: replies}
 	f.RunnerMock = &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-			return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, tool == "dotnet"
+			return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, tool == toolDotnet
 		},
-		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+		RunFunc: func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if len(cmd.Args) > 0 && strings.HasSuffix(cmd.Args[0], helperDLL) {
+				f.mu.Lock()
+				f.helperCalls = append(f.helperCalls, cmd)
+				h := f.helper
+				f.mu.Unlock()
+				if h == nil {
+					t.Errorf("unexpected helper call %v", cmd.Args)
+					return toolrun.Output{ExitCode: 1}, nil
+				}
+				return h(ctx, cmd)
+			}
 			if slices.Contains(cmd.Args, "--version") {
 				return toolrun.Output{Stdout: []byte(dotnetVersion + "\n")}, nil
 			}
@@ -219,7 +237,7 @@ func successCases() []evalCase {
 					t.Errorf("missing Legacy -> Domain edge: %+v", facts.Edges)
 				}
 				legacy := projectByPath(t, ev, legacyProj)
-				if !slices.Equal(legacy.TargetFrameworks, []string{targetNet10, "net8.0"}) {
+				if !slices.Equal(legacy.TargetFrameworks, []string{targetNet10, targetNet8}) {
 					t.Errorf("TFMs = %v", legacy.TargetFrameworks)
 				}
 				if !slices.Equal(legacy.References, []string{domainProj}) || legacy.Status != dotnet.ProjectOK {
@@ -539,7 +557,7 @@ func TestExtract_NoProjectIsAbsentNotPartial(t *testing.T) {
 		{"empty root", nil, evidenceports.ModeAuto},
 		{"empty root, mode on", nil, evidenceports.ModeOn},
 		{"only build output", []string{"obj/A.csproj", "bin/B.csproj", "src/main.cs"}, evidenceports.ModeAuto},
-		{"mode off with a project", []string{"A/A.csproj"}, evidenceports.ModeOff},
+		{"mode off with a project", []string{projA}, evidenceports.ModeOff},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -557,7 +575,7 @@ func TestExtract_NoProjectIsAbsentNotPartial(t *testing.T) {
 }
 
 func TestExtract_DotnetMissing(t *testing.T) {
-	root := tree(t, "A/A.csproj")
+	root := tree(t, projA)
 	missing := &toolrun.RunnerMock{DetectFunc: func(context.Context, string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{}, false }}
 
 	_, cov, err := dotnet.New(missing, autoCfg(), nil).Extract(context.Background(), scope.Scope{Root: root})
@@ -571,7 +589,7 @@ func TestExtract_DotnetMissing(t *testing.T) {
 }
 
 func TestExtract_MalformedSolutionIsPartial(t *testing.T) {
-	root := tree(t, "A/A.csproj")
+	root := tree(t, projA)
 	writeFile(t, root, "A.slnx", "<Solution><Project")
 	cov := func(mode evidenceports.ToolMode) (evidence.Coverage, error) {
 		_, c, err := dotnet.New(newFake(t, root, nil), evidenceports.ExtractConfig{Mode: mode}, nil).Extract(context.Background(), scope.Scope{Root: root})
@@ -614,7 +632,7 @@ func TestApplicable(t *testing.T) {
 
 func TestNameAndCoverageTool(t *testing.T) {
 	e := dotnet.New(nil, autoCfg(), nil)
-	if e.Name() != "dotnet" || e.CoverageTool() != "dotnet-msbuild" {
+	if e.Name() != toolDotnet || e.CoverageTool() != "dotnet-msbuild" {
 		t.Errorf("Name = %q, CoverageTool = %q", e.Name(), e.CoverageTool())
 	}
 	if ev := e.LastEvaluation(); len(ev.Projects) != 0 {
