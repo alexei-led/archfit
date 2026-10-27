@@ -47,7 +47,7 @@ The partial results people hit first:
 - **TypeScript / JavaScript.** `N of M import specifiers unresolved` means the target's dependencies are not installed: install them in the project root (`npm ci`, `pnpm install`, or `yarn`; the workspace root for a monorepo), then check `tsconfig` `paths`/`baseUrl`. `scip` stays `absent` until `node_modules` exists, because scip-typescript resolves packages through it.
   `dependency-cruiser environment incomplete` means the analyzer environment has no compatible TypeScript compiler: run archfit from the shipped image, or install TypeScript 5-6 next to dependency-cruiser.
 - **Rust.** `Rust target attribution partial` means rust-analyzer saw symbols it cannot pin to exactly one Cargo target (macros, generated code, several targets). Crate-level structure is still measured. Narrow `languages.rust.manifest` to the workspace you care about, or set `analyzers.scip.enabled: false` to rely on crate-level coupling only.
-- **.NET.** `N of M projects partial, K failed, U unresolved symbols` on the `roslyn` row means packages or reference packs are missing: restore the projects in the environment that runs archfit, or install the targeting pack the reason names. `MSB4236` on the `dotnet-msbuild` row means an MSBuild SDK from `global.json` `msbuild-sdks` could not be fetched: run with NuGet access.
+- **.NET.** `N of M projects partial, K failed, U unresolved symbols` on the `roslyn` row means packages or reference packs are missing: restore the projects in the environment that runs archfit, or install the targeting pack the reason names. `MSB4236` on the `dotnet-msbuild` row means an MSBuild SDK resolved through NuGet could not be fetched, whether `global.json` `msbuild-sdks` lists it or the project pins it inline (`<Project Sdk="Aspire.AppHost.Sdk/13.6.0">`): run with NuGet access. `NETSDK1147: workload X not installed` means a MAUI, Android, or iOS project needs an SDK workload: run `dotnet workload install X` on the host, or exclude the project. `NETSDK1178` means the workload packs do not exist for this host's OS: analyze on a host that has them, or exclude the project.
 
 ### Go
 
@@ -189,7 +189,7 @@ The image ships one SDK band, 10.0.x. Which SDK a host uses is the host's choice
 
 - A target `global.json` that pins an SDK this host cannot satisfy makes its projects `failed`, with a reason that names `global.json`.
 - The SDK carries only its own reference pack. A `net8.0` project resolves its framework references only if the 8.0 targeting pack is installed (`Microsoft.NETCore.App.Ref` 8.x). In the image contract (offline, one SDK, empty NuGet cache), a `net8.0` target is `partial` and the reason names the missing pack. On a developer machine with that pack, it can be `complete`.
-- MSBuild SDKs listed in `global.json` `msbuild-sdks` (for example `Bitwarden.Server.Sdk`, `Aspire.AppHost.Sdk`) are fetched by the SDK resolver when the network is reachable. That is SDK behavior, not an archfit restore. Offline, each unresolvable SDK costs about 11 s per evaluation, and the project is `failed` with `MSB4236`.
+- MSBuild SDKs listed in `global.json` `msbuild-sdks` (for example `Bitwarden.Server.Sdk`), or pinned with a version in the project's `Sdk` attribute (for example `Sdk="Aspire.AppHost.Sdk/13.6.0"`), are fetched by the SDK resolver when the network is reachable. That is SDK behavior, not an archfit restore. Offline, each unresolvable SDK costs about 11 s per evaluation, and the project is `failed` with `MSB4236`.
 
 #### Timeouts
 
