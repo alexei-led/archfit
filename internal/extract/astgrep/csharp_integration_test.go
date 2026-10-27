@@ -56,7 +56,7 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 				{"/jobs", 25},
 				{"/jobs/{id}", 26},
 				{"/jobs/{id}", 27},
-				{"/items", 28},
+				{pathItems, 28},
 				{"HttpGet", 34},
 			},
 			wantStatus: "ok",

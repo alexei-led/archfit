@@ -197,7 +197,7 @@ func TestCoberturaIngestRealSample(t *testing.T) {
 func TestCoberturaParserRejectsMalformed(t *testing.T) {
 	cases := []struct{ name, doc string }{
 		{"empty", ""},
-		{"not XML", "mode: set\nfile.go:1.1,1.2 1 1\n"},
+		{"not XML", goCoverSample},
 		{"truncated XML", `<coverage><packages><package><classes><class filename="a.cs"><lines><line number="1" hits="1"/>`},
 		{"wrong root", `<report><class filename="a.cs"/></report>`},
 		{"no classes", `<coverage><packages/></coverage>`},
@@ -250,7 +250,7 @@ func TestCoberturaAutoDetection(t *testing.T) {
 	}{
 		{name: "xml extension", path: "coverage.cobertura.xml", input: doc, want: FormatCobertura},
 		{name: "BOM and no extension", path: "report", input: "\xEF\xBB\xBF" + doc, want: FormatCobertura},
-		{name: "xml extension, Go profile content", path: "report.xml", input: "mode: set\nfile.go:1.1,1.2 1 1\n", wantErr: true},
+		{name: "xml extension, Go profile content", path: "report.xml", input: goCoverSample, wantErr: true},
 		{name: "cobertura content under lcov extension", path: "report.info", input: doc, wantErr: true},
 	}
 	for _, tc := range cases {

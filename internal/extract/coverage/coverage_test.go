@@ -677,11 +677,16 @@ func fixtureOptions() Options {
 
 func writeCoverageFile(t *testing.T, root, rel, contents string) {
 	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	scanRoot, err := os.OpenRoot(root)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+	defer func() { _ = scanRoot.Close() }()
+	local := filepath.FromSlash(rel)
+	if err := scanRoot.MkdirAll(filepath.Dir(local), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := scanRoot.WriteFile(local, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

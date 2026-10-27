@@ -205,24 +205,8 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 	out.Freshness = attestation.freshness
 
 	key := coverageCacheKey(normalizer.root, artifactRel, format, parser.Version(), attestation.sourceRef, data)
-	if i.store != nil {
-		if blob, hit := i.store.Get(cacheAnalyzer, key); hit {
-			var cached cachedFacts
-			if json.Unmarshal(blob, &cached) == nil {
-				attestation = bindAttestationToFacts(attestation, cached.Facts)
-				out.Freshness = attestation.freshness
-				if len(cached.Facts) > source.MaxFacts {
-					out.Reason = joinReasons(reasonCoverageFactLimitExceeded, attestation.reason)
-					return out
-				}
-				out.Facts = cached.Facts
-				out.Format = cached.Format
-				out.ToolVersion = cached.ToolVersion
-				stampFactMetadata(out.Facts, artifactRel, out.Format, out.ToolVersion, attestation.sourceRef)
-				out.Reason = attestation.reason
-				return out
-			}
-		}
+	if cachedOut, hit := i.lookupCached(key, source.MaxFacts, artifactRel, attestation, out); hit {
+		return cachedOut
 	}
 
 	var facts []evidence.CoverageFact
@@ -275,6 +259,33 @@ func (i *Ingestor) ingest(normalizer *Normalizer, source Source) evidence.Covera
 		}
 	}
 	return out
+}
+
+// lookupCached returns the stored ingest for key when the cache holds a decodable entry.
+func (i *Ingestor) lookupCached(key string, maxFacts int, artifactRel string, attestation attestationResult, out evidence.CoverageIngest) (evidence.CoverageIngest, bool) {
+	if i.store == nil {
+		return out, false
+	}
+	blob, hit := i.store.Get(cacheAnalyzer, key)
+	if !hit {
+		return out, false
+	}
+	var cached cachedFacts
+	if json.Unmarshal(blob, &cached) != nil {
+		return out, false
+	}
+	attestation = bindAttestationToFacts(attestation, cached.Facts)
+	out.Freshness = attestation.freshness
+	if len(cached.Facts) > maxFacts {
+		out.Reason = joinReasons(reasonCoverageFactLimitExceeded, attestation.reason)
+		return out, true
+	}
+	out.Facts = cached.Facts
+	out.Format = cached.Format
+	out.ToolVersion = cached.ToolVersion
+	stampFactMetadata(out.Facts, artifactRel, out.Format, out.ToolVersion, attestation.sourceRef)
+	out.Reason = attestation.reason
+	return out, true
 }
 
 type normalizedFacts struct {
