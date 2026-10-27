@@ -60,6 +60,7 @@ const (
 	toolCargo         = registry.ToolCargo
 	toolCargoModules  = registry.ToolCargoModules // opt-in intra-crate module graph; mirrors config.ToolCargoModules
 	toolDotNetMSBuild = registry.ToolDotNetMSBuild
+	toolRoslyn        = registry.ToolRoslyn
 )
 
 // Project-marker filenames used by the language registry and test fixtures.

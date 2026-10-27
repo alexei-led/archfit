@@ -604,6 +604,55 @@ func TestExtract_MalformedSolutionIsPartial(t *testing.T) {
 	}
 }
 
+// analyzers.roslyn.enabled: false is a deliberate opt-out: the roslyn row reads
+// disabled on every return once a project is selected, not only when the
+// helper would have run. With no project it stays absent: nothing to analyze.
+func TestExtract_TypeGraphOptOutIsDisabledOnEveryPath(t *testing.T) {
+	missing := &toolrun.RunnerMock{DetectFunc: func(context.Context, string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{}, false }}
+	tests := []struct {
+		name   string
+		files  []string
+		extra  map[string]string
+		runner func(t *testing.T, root string) toolrun.Runner
+		want   string
+	}{
+		{
+			name:   "SDK missing",
+			files:  []string{projA},
+			runner: func(*testing.T, string) toolrun.Runner { return missing },
+			want:   evidence.StatusDisabled,
+		},
+		{
+			name:   "project selection error",
+			files:  []string{projA},
+			extra:  map[string]string{"A.slnx": "<Solution><Project"},
+			runner: func(t *testing.T, root string) toolrun.Runner { return newFake(t, root, nil) },
+			want:   evidence.StatusDisabled,
+		},
+		{
+			name:   "no .NET project",
+			runner: func(t *testing.T, root string) toolrun.Runner { return newFake(t, root, nil) },
+			want:   evidence.StatusAbsent,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := tree(t, tt.files...)
+			for rel, content := range tt.extra {
+				writeFile(t, root, rel, content)
+			}
+			e := dotnet.New(tt.runner(t, root), autoCfg(), nil)
+			e.TypeGraph.Disabled = true
+			if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
+				t.Fatal(err)
+			}
+			if got := e.LastTypeGraphCoverage(); got.Tool != toolRoslyn || got.Status != tt.want {
+				t.Errorf("roslyn coverage = %+v, want status %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestApplicable(t *testing.T) {
 	tests := []struct {
 		name       string

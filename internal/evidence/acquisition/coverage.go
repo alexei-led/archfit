@@ -18,6 +18,9 @@ const (
 	gateFail = "fail"
 )
 
+// modeOff is the enable state of an analyzer or language the config switched off.
+const modeOff = "off"
+
 // coverageToolConfigKey maps a coverage tool name (as it appears in ToolCoverage,
 // e.g. "go/packages") to the config Tools map key whose gate: governs it (e.g.
 // "go"). Lets a user write tools.go.gate: fail to gate on the go/packages analyzer
@@ -160,7 +163,7 @@ func buildCoverageGaps(cov []evidence.Coverage, cfg CoverageOptions, root string
 		// before this loop sees them (so the status check above already skipped
 		// them); the check stays because this function must derive the right gaps
 		// from ANY coverage slice, marked or not.
-		if primaryDisabledByConfig(cfg, c.Tool) {
+		if primaryDisabledByConfig(cfg, c.Tool) || typeGraphDisabledByConfig(cfg, c.Tool) {
 			continue
 		}
 		// Suppress the gap when the language's project is absent from the scan root
@@ -245,7 +248,18 @@ func toolGateDemands(cfg CoverageOptions, tool string) bool {
 // predicate would let the row and the gap disagree.
 func primaryDisabledByConfig(cfg CoverageOptions, tool string) bool {
 	lang, isPrimary := primaryToolLanguage[tool]
-	return isPrimary && cfg.Modes[lang] == "off" && cfg.Gates[lang] == ""
+	return isPrimary && cfg.Modes[lang] == modeOff && cfg.Gates[lang] == ""
+}
+
+// typeGraphDisabledByConfig reports whether tool is the .NET type graph and the
+// config switched it off: with its language (primaryDisabledByConfig on
+// dotnet-msbuild, carve-out included) or alone (analyzers.roslyn.enabled:
+// false). Either is a deliberate opt-out, never an install prompt. Single source
+// for the roslyn row markDisabledPrimaries rewrites and the gap
+// buildCoverageGaps suppresses, as primaryDisabledByConfig is for primaries.
+func typeGraphDisabledByConfig(cfg CoverageOptions, tool string) bool {
+	return tool == registry.ToolRoslyn &&
+		(primaryDisabledByConfig(cfg, registry.ToolDotNetMSBuild) || cfg.Modes[coverageToolConfigKey[tool]] == modeOff)
 }
 
 // markDisabledPrimaries rewrites the coverage row of every language primary
@@ -274,18 +288,24 @@ func primaryDisabledByConfig(cfg CoverageOptions, tool string) bool {
 // disagree.
 //
 // Deliberately narrow: rows with an explicit gate keep StatusAbsent so they
-// still raise a gap and still fail --require-tools. Non-primary analyzers are
+// still raise a gap and still fail --require-tools. The one non-primary row it
+// marks is roslyn, the type graph inside the .NET extractor: an extractor
+// switched off never reaches the helper, so its absent row is marked here over
+// a tree with .NET, on the same probe. Other non-primary analyzers are
 // untouched; their absence is never read as a statement about the tree.
 func markDisabledPrimaries(cov []evidence.Coverage, cfg CoverageOptions, root string) []evidence.Coverage {
 	for i, c := range cov {
-		if c.Status != evidence.StatusAbsent || !primaryDisabledByConfig(cfg, c.Tool) {
+		if c.Status != evidence.StatusAbsent {
 			continue
 		}
-		if !primaryLanguagePresent(cfg, c.Tool, root) {
-			continue
+		switch {
+		case primaryDisabledByConfig(cfg, c.Tool) && primaryLanguagePresent(cfg, c.Tool, root):
+			cov[i].Status = evidence.StatusDisabled
+			cov[i].Reason = languageDisabledReason(primaryToolLanguage[c.Tool])
+		case typeGraphDisabledByConfig(cfg, c.Tool) && primaryLanguagePresent(cfg, registry.ToolDotNetMSBuild, root):
+			cov[i].Status = evidence.StatusDisabled
+			cov[i].Reason = typeGraphDisabledReason(cfg)
 		}
-		cov[i].Status = evidence.StatusDisabled
-		cov[i].Reason = languageDisabledReason(primaryToolLanguage[c.Tool])
 	}
 	return cov
 }
@@ -307,6 +327,14 @@ func primaryLanguagePresent(cfg CoverageOptions, tool, root string) bool {
 // naming the exact config key that switched it off.
 func languageDisabledReason(lang string) string {
 	return "language analysis disabled by config — set `languages." + lang + ".enabled: true` in .archfit.yaml to enable"
+}
+
+// typeGraphDisabledReason names the config key that switched the type graph off.
+func typeGraphDisabledReason(cfg CoverageOptions) string {
+	if primaryDisabledByConfig(cfg, registry.ToolDotNetMSBuild) {
+		return languageDisabledReason(primaryToolLanguage[registry.ToolDotNetMSBuild])
+	}
+	return "analyzer disabled by config — set `analyzers.roslyn.enabled: true` in .archfit.yaml to enable"
 }
 
 // configToolGate resolves the configured gate for the analyzer behind a coverage

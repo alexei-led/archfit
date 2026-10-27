@@ -29,6 +29,7 @@ import (
 const (
 	helperEnv     = "ARCHFIT_DOTNET_ROSLYN"
 	helperDLL     = "archfit-roslyn.dll"
+	toolRoslyn    = "roslyn"
 	helperVersion = "archfit-roslyn 1.0.0; Microsoft.CodeAnalysis 5.6.0; SDK 10.0.402"
 
 	infraProj      = "Infrastructure/Infrastructure.csproj"
@@ -251,7 +252,7 @@ func TestTypeGraph_RecordedFixtureEdges(t *testing.T) {
 func TestTypeGraph_RecordedFixtureCoverage(t *testing.T) {
 	e, _, _, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
 	cov := e.LastTypeGraphCoverage()
-	if cov.Tool != "roslyn" || cov.Version != helperVersion || cov.Status != evidence.StatusPartial {
+	if cov.Tool != toolRoslyn || cov.Version != helperVersion || cov.Status != evidence.StatusPartial {
 		t.Errorf("roslyn coverage = %+v", cov)
 	}
 	if cov.Unresolved != 35 || cov.UnresolvedInputsMissing != 36 || cov.FilesSeen != 9 {
@@ -639,7 +640,7 @@ func TestTypeGraph_RunWithoutReportFallsBackForEveryProject(t *testing.T) {
 				t.Errorf("file edges = %v, want none", got)
 			}
 			cov := e.LastTypeGraphCoverage()
-			if cov.Tool != "roslyn" || cov.Status != tt.wantStatus || !strings.Contains(cov.Reason, tt.wantReason) {
+			if cov.Tool != toolRoslyn || cov.Status != tt.wantStatus || !strings.Contains(cov.Reason, tt.wantReason) {
 				t.Errorf("roslyn coverage = %+v, want %s with %q", cov, tt.wantStatus, tt.wantReason)
 			}
 			if got := e.LastTypeGraph().Fallback; len(got) != 7 {

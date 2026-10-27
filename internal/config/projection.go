@@ -65,6 +65,7 @@ func (c Config) CoverageOptions() acquisition.CoverageOptions {
 	gates[ToolClones] = string(c.ToolGate(ToolClones))
 	gates[ToolCargoModules] = string(c.ToolGate(ToolCargoModules))
 	gates[ToolRoslyn] = string(c.ToolGate(ToolRoslyn))
+	modes[ToolRoslyn] = string(c.ToolMode(ToolRoslyn))
 	gates[suppliedcoverage.ToolName] = string(c.Coverage.Gate)
 	probes := make(map[string]func(string) bool)
 	for _, lang := range registry.All() {

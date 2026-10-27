@@ -198,6 +198,12 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, ev
 		}
 		return graph.Facts{}, absentCoverage(""), nil
 	}
+	// A project is selected, or its selection failed: an analyzers.roslyn opt-out
+	// reads as disabled on every return from here, not only once the helper
+	// would have run.
+	if e.TypeGraph.Disabled {
+		e.lastTypeGraphCov = notRun(evidence.StatusDisabled, reasonHelperDisabled).cov
+	}
 
 	if _, ok := e.runner.Detect(ctx, toolDotnet); !ok {
 		if e.cfg.Mode == evidenceports.ModeOn {
