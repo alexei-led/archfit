@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	evidenceports "github.com/alexei-led/archfit/v3/internal/evidence/ports"
 	suppliedcoverage "github.com/alexei-led/archfit/v3/internal/extract/coverage"
@@ -563,6 +564,74 @@ func TestLoadRustFields(t *testing.T) {
 	}
 }
 
+func TestLoadDotNetFields(t *testing.T) {
+	cfg, err := loadConfigInline(t, "version: 2\n"+
+		"languages:\n  dotnet:\n    enabled: true\n    gate: fail\n    projects: [Server.slnx, tools/Tool/Tool.csproj]\n"+
+		"analyzers:\n  roslyn:\n    enabled: false\n    gate: warn\n    timeout: 20m\n")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.ToolMode(config.LangDotNet); got != evidenceports.ModeOn {
+		t.Errorf("languages.dotnet.enabled = %q, want on", got)
+	}
+	if got := cfg.ToolGate(config.LangDotNet); got != config.GateFail {
+		t.Errorf("languages.dotnet.gate = %q, want fail", got)
+	}
+	if got := cfg.Languages.DotNet.Projects; !slices.Equal(got, []string{"Server.slnx", "tools/Tool/Tool.csproj"}) {
+		t.Errorf("languages.dotnet.projects = %v", got)
+	}
+	if got := cfg.ToolMode(config.ToolRoslyn); got != evidenceports.ModeOff {
+		t.Errorf("analyzers.roslyn.enabled = %q, want off", got)
+	}
+	if got := cfg.ToolGate(config.ToolRoslyn); got != config.GateWarn {
+		t.Errorf("analyzers.roslyn.gate = %q, want warn", got)
+	}
+	if got := cfg.ToolTimeout(config.ToolRoslyn); got != 20*time.Minute {
+		t.Errorf("analyzers.roslyn.timeout = %v, want 20m", got)
+	}
+	if cfg.RoslynEnabled() {
+		t.Error("RoslynEnabled with enabled: false = true, want the project-only graph")
+	}
+	if err := loadInline(t, "version: 2\nanalyzers:\n  roslyn:\n    timeout: soon\n"); err == nil || !strings.Contains(err.Error(), "analyzers.roslyn") {
+		t.Errorf("invalid roslyn timeout error = %v, want one naming analyzers.roslyn", err)
+	}
+}
+
+// Roslyn defaults on: the helper runs wherever it is installed, and only an
+// explicit false forces the project-only graph.
+func TestRoslynEnabledDefaultsOn(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		want bool
+	}{
+		{yamlV1, true},
+		{yamlV1 + "analyzers:\n  roslyn:\n    enabled: auto\n", true},
+		{yamlV1 + "analyzers:\n  roslyn:\n    enabled: true\n", true},
+		{yamlV1 + "analyzers:\n  roslyn:\n    enabled: false\n", false},
+	} {
+		cfg, err := loadConfigInline(t, tc.body)
+		if err != nil {
+			t.Fatalf("Load %q: %v", tc.body, err)
+		}
+		if got := cfg.RoslynEnabled(); got != tc.want {
+			t.Errorf("RoslynEnabled for %q = %v, want %v", tc.body, got, tc.want)
+		}
+	}
+}
+
+func TestSetToolModeReachesDotNetAndRoslyn(t *testing.T) {
+	cfg := config.Default()
+	if got := cfg.ToolMode(config.LangDotNet); got != evidenceports.ModeAuto {
+		t.Fatalf("Default dotnet mode = %q, want auto", got)
+	}
+	for _, id := range []string{config.LangDotNet, config.ToolRoslyn} {
+		cfg.SetToolMode(id, evidenceports.ModeOff)
+		if got := cfg.ToolMode(id); got != evidenceports.ModeOff {
+			t.Errorf("ToolMode(%q) after SetToolMode(off) = %q", id, got)
+		}
+	}
+}
+
 func TestForClassify(t *testing.T) {
 	cfg, err := config.Load(context.Background(), "testdata/valid.yaml")
 	if err != nil {
@@ -1078,6 +1147,16 @@ func TestLoad_SuppliedCoverage(t *testing.T) {
 		}
 	})
 
+	t.Run("cobertura format loads", func(t *testing.T) {
+		cfg, err := loadConfigInline(t, "version: 2\ncoverage:\n  enabled: true\n  sources:\n    - path: coverage.cobertura.xml\n      format: cobertura\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cfg.SuppliedCoverageOptions().Sources[0].Format; got != "cobertura" {
+			t.Fatalf("format = %q, want cobertura", got)
+		}
+	})
+
 	t.Run("omitted format projects auto", func(t *testing.T) {
 		cfg, err := loadConfigInline(t, "version: 2\ncoverage:\n  enabled: true\n  sources:\n    - path: coverage.out\n")
 		if err != nil {
@@ -1096,7 +1175,7 @@ func TestLoad_SuppliedCoverage(t *testing.T) {
 		{name: "enabled without sources", body: "version: 2\ncoverage:\n  enabled: true\n", want: "coverage.sources requires at least one source"},
 		{name: "invalid gate", body: "version: 2\ncoverage:\n  gate: block\n", want: "coverage.gate"},
 		{name: "missing path", body: "version: 2\ncoverage:\n  sources:\n    - format: lcov\n", want: "coverage.sources[0].path is required"},
-		{name: "invalid format", body: "version: 2\ncoverage:\n  sources:\n    - path: coverage.out\n      format: cobertura\n", want: "is not one of"},
+		{name: "invalid format", body: "version: 2\ncoverage:\n  sources:\n    - path: coverage.out\n      format: jacoco\n", want: "is not one of"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := loadInline(t, tc.body); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -2147,9 +2226,9 @@ func TestForSyntax_Mode(t *testing.T) {
 }
 
 func TestForSyntax_Languages(t *testing.T) {
-	allFour := []string{"go", "typescript", "python", "rust"}
+	allFour := []string{"go", "typescript", "python", "rust", "dotnet"}
 
-	t.Run("all four when no tools configured", func(t *testing.T) {
+	t.Run("all five when no tools configured", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, ".archfit.yaml")
 		if err := writeFile(path, "version: 2\n"); err != nil {
@@ -2171,7 +2250,7 @@ func TestForSyntax_Languages(t *testing.T) {
 		}
 		cfg, _ := config.Load(context.Background(), path)
 		sc := cfg.ForSyntax()
-		want := []string{"go", "typescript", "python"}
+		want := []string{"go", "typescript", "python", "dotnet"}
 		if !slices.Equal(sc.Languages, want) {
 			t.Errorf("Languages = %v, want %v", sc.Languages, want)
 		}
@@ -2192,7 +2271,7 @@ func TestForSyntax_Languages(t *testing.T) {
 	})
 
 	t.Run("all off yields empty languages", func(t *testing.T) {
-		yaml := "version: 2\nlanguages:\n  go:\n    enabled: false\n  typescript:\n    enabled: false\n  python:\n    enabled: false\n  rust:\n    enabled: false\n"
+		yaml := "version: 2\nlanguages:\n  go:\n    enabled: false\n  typescript:\n    enabled: false\n  python:\n    enabled: false\n  rust:\n    enabled: false\n  dotnet:\n    enabled: false\n"
 		dir := t.TempDir()
 		path := filepath.Join(dir, ".archfit.yaml")
 		if err := writeFile(path, yaml); err != nil {

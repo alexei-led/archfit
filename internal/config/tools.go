@@ -16,6 +16,7 @@ const (
 	LangTypeScript = "typescript"
 	LangPython     = "python"
 	LangRust       = "rust"
+	LangDotNet     = "dotnet"
 )
 
 // Analyzer id constants. These are internal string ids used by cmd coverage /
@@ -27,6 +28,7 @@ const (
 	ToolScip         = "scip"
 	ToolClones       = "clones"
 	ToolCargoModules = "cargo-modules"
+	ToolRoslyn       = "roslyn"
 	// ToolLLM is the id for the off-gate AI provider used by enrich and explain.
 	// NEVER consumed by analyze's gate path — the arch ring test forbids internal
 	// packages from importing the LLM layer, so the LLM commands live in cmd.
@@ -73,12 +75,23 @@ type RustLanguage struct {
 	IncludeDevDeps bool `yaml:"include_dev_deps,omitempty"`
 }
 
+// DotNetLanguage configures the .NET extractor (`languages.dotnet`).
+type DotNetLanguage struct {
+	Enabled evidenceports.ToolMode `yaml:"enabled"`
+	Gate    GateMode               `yaml:"gate,omitempty"`
+	// Projects are the solution (.slnx, .sln) or project (.csproj) files to
+	// analyze, relative to the scan root. Empty = auto: the first solution at
+	// the root, else every .csproj outside obj/, bin/ and exclusions.
+	Projects []string `yaml:"projects,omitempty"`
+}
+
 // LanguagesConfig groups the per-language extractor settings (`languages:`).
 type LanguagesConfig struct {
 	Go         GoLanguage         `yaml:"go,omitempty"`
 	TypeScript TypeScriptLanguage `yaml:"typescript,omitempty"`
 	Python     PythonLanguage     `yaml:"python,omitempty"`
 	Rust       RustLanguage       `yaml:"rust,omitempty"`
+	DotNet     DotNetLanguage     `yaml:"dotnet,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +108,7 @@ type Analyzer struct {
 }
 
 // TimedAnalyzer adds a per-run subprocess timeout (`analyzers.scip`,
-// `analyzers.clones`). On timeout the result is dropped and dependent metrics
+// `analyzers.clones`, `analyzers.roslyn`). On timeout the result is dropped and dependent metrics
 // report n/a; the run continues. Timeout is a Go duration string (e.g. "5m").
 type TimedAnalyzer struct {
 	Enabled evidenceports.ToolMode `yaml:"enabled"`
@@ -109,6 +122,7 @@ type AnalyzersConfig struct {
 	Scip         TimedAnalyzer `yaml:"scip,omitempty"`
 	Clones       TimedAnalyzer `yaml:"clones,omitempty"`
 	CargoModules Analyzer      `yaml:"cargo_modules,omitempty"`
+	Roslyn       TimedAnalyzer `yaml:"roslyn,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -176,8 +190,16 @@ func (c Config) CargoModulesEnabled() bool {
 	return c.Analyzers.CargoModules.Enabled == evidenceports.ModeOn
 }
 
+// RoslynEnabled reports whether the Roslyn type graph may run: on unless
+// analyzers.roslyn.enabled is false. Unlike the opt-in analyzers it defaults on,
+// and runs where ARCHFIT_DOTNET_ROSLYN names an installed helper; false forces
+// the project-only .NET graph.
+func (c Config) RoslynEnabled() bool {
+	return c.Analyzers.Roslyn.Enabled != evidenceports.ModeOff
+}
+
 // ToolTimeout returns the configured per-analyzer subprocess timeout for the
-// given analyzer id (ToolScip, ToolClones). Returns 0 when not set or unparseable
+// given analyzer id (ToolScip, ToolClones, ToolRoslyn). Returns 0 when not set or unparseable
 // (callers use their built-in default).
 func (c Config) ToolTimeout(id string) time.Duration {
 	var s string
@@ -186,6 +208,8 @@ func (c Config) ToolTimeout(id string) time.Duration {
 		s = c.Analyzers.Scip.Timeout
 	case ToolClones:
 		s = c.Analyzers.Clones.Timeout
+	case ToolRoslyn:
+		s = c.Analyzers.Roslyn.Timeout
 	}
 	if s == "" {
 		return 0
@@ -198,7 +222,7 @@ func (c Config) ToolTimeout(id string) time.Duration {
 }
 
 // ToolMode returns the enable mode for a language or analyzer addressed by its
-// internal id (LangGo…LangRust, ToolSyntax…ToolCargoModules). Unknown ids return
+// internal id (LangGo…LangDotNet, ToolSyntax…ToolRoslyn). Unknown ids return
 // ModeAuto. Lets cmd coverage code resolve a tool's posture without knowing which
 // config section holds it.
 func (c Config) ToolMode(id string) evidenceports.ToolMode {
@@ -211,6 +235,8 @@ func (c Config) ToolMode(id string) evidenceports.ToolMode {
 		return c.Languages.Python.Enabled
 	case LangRust:
 		return c.Languages.Rust.Enabled
+	case LangDotNet:
+		return c.Languages.DotNet.Enabled
 	case ToolSyntax:
 		return c.Analyzers.Syntax.Enabled
 	case ToolScip:
@@ -219,6 +245,8 @@ func (c Config) ToolMode(id string) evidenceports.ToolMode {
 		return c.Analyzers.Clones.Enabled
 	case ToolCargoModules:
 		return c.Analyzers.CargoModules.Enabled
+	case ToolRoslyn:
+		return c.Analyzers.Roslyn.Enabled
 	default:
 		return evidenceports.ModeAuto
 	}
@@ -236,6 +264,8 @@ func (c Config) ToolGate(id string) GateMode {
 		return c.Languages.Python.Gate
 	case LangRust:
 		return c.Languages.Rust.Gate
+	case LangDotNet:
+		return c.Languages.DotNet.Gate
 	case ToolSyntax:
 		return c.Analyzers.Syntax.Gate
 	case ToolScip:
@@ -244,6 +274,8 @@ func (c Config) ToolGate(id string) GateMode {
 		return c.Analyzers.Clones.Gate
 	case ToolCargoModules:
 		return c.Analyzers.CargoModules.Gate
+	case ToolRoslyn:
+		return c.Analyzers.Roslyn.Gate
 	default:
 		return ""
 	}
@@ -261,6 +293,8 @@ func (c *Config) SetToolMode(id string, mode evidenceports.ToolMode) {
 		c.Languages.Python.Enabled = mode
 	case LangRust:
 		c.Languages.Rust.Enabled = mode
+	case LangDotNet:
+		c.Languages.DotNet.Enabled = mode
 	case ToolSyntax:
 		c.Analyzers.Syntax.Enabled = mode
 	case ToolScip:
@@ -269,6 +303,8 @@ func (c *Config) SetToolMode(id string, mode evidenceports.ToolMode) {
 		c.Analyzers.Clones.Enabled = mode
 	case ToolCargoModules:
 		c.Analyzers.CargoModules.Enabled = mode
+	case ToolRoslyn:
+		c.Analyzers.Roslyn.Enabled = mode
 	}
 }
 

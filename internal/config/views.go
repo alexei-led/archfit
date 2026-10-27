@@ -214,12 +214,12 @@ func (c Config) ForPatterns() pattern.Config {
 	return out
 }
 
-// ForSyntax returns the syntax-stage view. Languages are derived from the four
+// ForSyntax returns the syntax-stage view. Languages are derived from the five
 // known language keys; an unset mode is enabled.
 func (c Config) ForSyntax() evidenceports.SyntaxConfig {
 	enabled := c.SyntaxEnabled()
 	var langs []string
-	for _, lang := range []string{LangGo, LangTypeScript, LangPython, LangRust} {
+	for _, lang := range []string{LangGo, LangTypeScript, LangPython, LangRust, LangDotNet} {
 		if c.ToolMode(lang) == evidenceports.ModeOff {
 			continue
 		}

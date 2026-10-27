@@ -145,3 +145,27 @@ func TestProfileV2SettingsIgnoreNotApplicableLanguageConfig(t *testing.T) {
 		t.Error("python extractor config did not move the hash once python is in the tree")
 	}
 }
+
+// The Roslyn row joins the .NET slice: absent on a tree with no C# file it
+// moves neither the producers nor the settings hash; a C# file keeps it.
+func TestProfileV2RoslynRowFollowsCSharpSource(t *testing.T) {
+	s := goOnlyService()
+	goRow := evidence.Coverage{Tool: registry.ToolGoPackages, Version: goToolVersion, Status: evidence.StatusOK}
+	roslyn := evidence.Coverage{Tool: toolRoslyn, Status: evidence.StatusAbsent}
+	profile := func(rows []evidence.Coverage, files map[string]fileclass.FileClass) *evidence.MeasurementProfile {
+		return s.measurementProfile(context.Background(), scope.Scope{Root: "/r"}, rows, nil, files, nil)
+	}
+	goFiles := map[string]fileclass.FileClass{mainGoFile: fileclass.Production}
+	without := profile([]evidence.Coverage{goRow}, goFiles)
+	with := profile([]evidence.Coverage{goRow, roslyn}, goFiles)
+	if with.SettingsHash != without.SettingsHash {
+		t.Error("settings hash moved when an absent roslyn row was added to a tree with no C# file")
+	}
+	if got, want := strings.Join(producerTools(with), ","), strings.Join(producerTools(without), ","); got != want {
+		t.Errorf("producers = %s, want %s", got, want)
+	}
+	csFiles := map[string]fileclass.FileClass{mainGoFile: fileclass.Production, "src/Core/User.cs": fileclass.Production}
+	if kept := profile([]evidence.Coverage{goRow, roslyn}, csFiles); !strings.Contains(strings.Join(producerTools(kept), ","), toolRoslyn) {
+		t.Errorf("absent roslyn over C# source left the profile: %v", producerTools(kept))
+	}
+}

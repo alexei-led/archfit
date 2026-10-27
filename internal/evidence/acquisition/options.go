@@ -21,6 +21,7 @@ const (
 	toolScip          = "scip"
 	toolScipSymbols   = "scip-symbols"
 	toolJscpd         = "jscpd"
+	toolRoslyn        = "roslyn"
 
 	metricCycle         = "cycle"
 	metricBlastRadius   = "blast_radius"
