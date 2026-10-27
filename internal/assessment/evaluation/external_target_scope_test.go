@@ -15,7 +15,6 @@ import (
 const (
 	csDomainFile  = "src/Domain/Entities/TodoItem.cs"
 	csDomainGlob  = "src/Domain/**"
-	toolMSBuild   = "dotnet-msbuild"
 	efCoreTarget  = "Microsoft.EntityFrameworkCore*"
 	frameworksBan = "{Microsoft.EntityFrameworkCore*,Microsoft.AspNetCore*}"
 )
