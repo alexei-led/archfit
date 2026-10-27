@@ -652,6 +652,79 @@ func TestCouplingContractDoesNotImportGraph(t *testing.T) {
 	}
 }
 
+const (
+	dotnetExtractorPkg = modulePrefix + "internal/extract/dotnet"
+	toolrunPkg         = modulePrefix + "internal/toolrun"
+)
+
+// extractorBoundaryViolations lists the imports an out-of-process extractor
+// must not have: os/exec (tools run only through toolrun.Runner) and any other
+// concrete adapter. internal/toolrun is the Runner boundary and stays allowed.
+func extractorBoundaryViolations(pkgPath string, imports []string) []string {
+	var violations []string
+	for _, imp := range imports {
+		switch {
+		case imp == "os/exec":
+			violations = append(violations, imp+": run tools through toolrun.Runner")
+		case imp == toolrunPkg || imp == pkgPath:
+		case isAdapterPackage(imp) || strings.HasPrefix(imp, modulePrefix+"internal/factcache") ||
+			strings.HasPrefix(imp, modulePrefix+"internal/baseline") ||
+			strings.HasPrefix(imp, modulePrefix+"internal/evidence/acquisition"):
+			violations = append(violations, imp+": concrete adapter outside "+pkgPath)
+		}
+	}
+	return violations
+}
+
+func TestExtractorBoundaryViolations(t *testing.T) {
+	const pkg = dotnetExtractorPkg
+	tests := []struct {
+		name    string
+		imports []string
+		want    int
+	}{
+		{"runner and ports are allowed", []string{toolrunPkg, modulePrefix + "internal/evidence/ports", modulePrefix + "internal/relationship/coupling", "os", "path/filepath"}, 0},
+		{"os/exec is rejected", []string{"os/exec", toolrunPkg}, 1},
+		{"sibling extractor is rejected", []string{modulePrefix + "internal/extract/rust"}, 1},
+		{"history adapter is rejected", []string{modulePrefix + "internal/history/git"}, 1},
+		{"fact cache adapter is rejected", []string{modulePrefix + "internal/factcache"}, 1},
+		{"acquisition is rejected", []string{modulePrefix + "internal/evidence/acquisition"}, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractorBoundaryViolations(pkg, tt.imports); len(got) != tt.want {
+				t.Fatalf("violations = %v, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDotnetExtractorRunsToolsOnlyThroughToolrun keeps the .NET extractor an
+// adapter that cannot start a process itself and cannot reach a sibling adapter.
+func TestDotnetExtractorRunsToolsOnlyThroughToolrun(t *testing.T) {
+	cfg := &packages.Config{Mode: packages.NeedName | packages.NeedImports, Dir: "."}
+	pkgs, err := packages.Load(cfg, dotnetExtractorPkg)
+	if err != nil {
+		t.Fatalf("packages.Load: %v", err)
+	}
+	if len(pkgs) != 1 {
+		t.Fatalf("load %s: got %d packages, want 1", dotnetExtractorPkg, len(pkgs))
+	}
+	if len(pkgs[0].Errors) > 0 {
+		t.Fatalf("load %s: %v", dotnetExtractorPkg, pkgs[0].Errors)
+	}
+	imports := make([]string, 0, len(pkgs[0].Imports))
+	for imp := range pkgs[0].Imports {
+		imports = append(imports, imp)
+	}
+	if _, ok := pkgs[0].Imports[toolrunPkg]; !ok {
+		t.Fatalf("%s must import %s: the rule would pass vacuously", dotnetExtractorPkg, toolrunPkg)
+	}
+	for _, violation := range extractorBoundaryViolations(dotnetExtractorPkg, imports) {
+		t.Errorf("%s imports %s", dotnetExtractorPkg, violation)
+	}
+}
+
 // adapterPackagePrefixes are the adapter rings whose import closure the
 // hexagonal-boundary checks constrain.
 var adapterPackagePrefixes = []string{

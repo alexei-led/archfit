@@ -56,7 +56,7 @@ test: ## run tests with race detector and coverage
 
 ## language-contracts: run the bounded real-tool acceptance gate
 .PHONY: language-contracts
-language-contracts: build ## validate Go, TypeScript, JavaScript, Python, and Rust with real producers
+language-contracts: build dotnet-roslyn ## validate Go, TypeScript, JavaScript, Python, Rust, and .NET with real producers
 	uv run --with jsonschema==$(JSONSCHEMA_VERSION) python scripts/eval/language_contracts.py --archfit $(BIN_DIR)/$(BINARY)
 
 ## dotnet-roslyn: build the .NET type-graph helper; point ARCHFIT_DOTNET_ROSLYN at its directory
