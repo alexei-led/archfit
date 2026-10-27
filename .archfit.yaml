@@ -353,6 +353,7 @@ rules:
   - id: module_boundaries
     type: module_dependencies
     gate: fail
+    rationale: "A module that reaches past its depends_on or visible_to list turns the module map into fiction: the next change to the target breaks an owner who never declared the dependency."
   # Cycles between declared modules. warn: the evidence-adapters <->
   # persistence-adapters cycle in docs/design/architecture-baseline.md is
   # accepted coupling today; this rule keeps it visible and catches a new one.
@@ -365,6 +366,9 @@ rules:
     from: internal/relationship/**
     to: internal/toolrun
     gate: fail
+    rationale: "Core that runs processes cannot be tested without the tool and cannot say which evidence is missing, so the verdict starts to depend on the host."
+    alternatives:
+      - "Consume evidence through internal/evidence/ports; run the tool in an adapter under internal/extract"
   # Subtree form, not a per-package enumeration: a new assessment package is
   # covered the day it is created, never the day someone remembers to list it.
   - id: assessment_no_toolrun
@@ -372,47 +376,70 @@ rules:
     from: internal/assessment/**
     to: internal/toolrun
     gate: fail
+    rationale: "Assessment that spawns tools makes the verdict depend on the tools installed on the host instead of on the evidence it was given."
+    alternatives:
+      - "Consume evidence through internal/evidence/ports; run the tool in an adapter under internal/extract"
   - id: core_no_extract
     type: forbidden_dependency
     from: internal/relationship/**
     to: internal/extract/**
     gate: fail
+    rationale: "Core importing an extractor ties relationship analysis to one language producer; a second producer or a test fixture can no longer replace it."
+    alternatives:
+      - "Consume evidence through internal/evidence/ports"
   - id: assessment_no_extract
     type: forbidden_dependency
     from: internal/assessment/**
     to: internal/extract/**
     gate: fail
+    rationale: "Assessment reading extractor output decides on tool-specific facts, so the same rule gives different verdicts per producer."
+    alternatives:
+      - "Consume evidence through internal/evidence/ports"
   - id: internal_no_labelsio
     type: forbidden_dependency
     from: internal/**
     to: internal/labels/labelsio/**
     gate: fail
+    rationale: "Label files load in cmd only. Library code that reads them makes the verdict depend on a file nobody passed in, and unapproved labels can reach the gate."
   # Domain consumers use relationship contracts, never extractor graph internals.
   - id: assessment_no_coupling_internals
     type: forbidden_dependency
     from: internal/assessment/**
     to: internal/relationship/coupling/**
     gate: fail
+    rationale: "Assessment that reads coupling internals re-derives relationship meaning. Two owners of classification disagree, and the verdict contradicts the report."
+    alternatives:
+      - "Use the public relationship contract in internal/relationship"
   - id: assessment_no_raw_graph
     type: forbidden_dependency
     from: internal/assessment/**
     to: internal/model/graph/**
     gate: fail
+    rationale: "A rule that reads the raw dependency graph bypasses relationship classification. A changed extractor shape then breaks rules, and one edge is judged two ways."
+    alternatives:
+      - "Use the public relationship contract in internal/relationship"
   - id: relationship_no_assessment
     type: forbidden_dependency
     from: internal/relationship/**
     to: internal/assessment/**
     gate: fail
+    rationale: "Relationship analysis importing assessment reverses the data flow into a cycle: classification would start to depend on rules and verdicts."
   - id: assessment_no_report_dtos
     type: forbidden_dependency
     from: internal/assessment/**
     to: internal/model/report/**
     gate: fail
+    rationale: "Report DTOs are the output contract. Assessment importing them couples verdict logic to the wire format, so a schema change rewrites decisions."
+    alternatives:
+      - "Return a domain value and let internal/application/report.go project it into the report"
   - id: relationship_no_report_dtos
     type: forbidden_dependency
     from: internal/relationship/**
     to: internal/model/report/**
     gate: fail
+    rationale: "Report DTOs are the output contract. Relationship analysis importing them couples classification to the wire format, so a schema change rewrites relationship facts."
+    alternatives:
+      - "Return a domain value and let internal/application/report.go project it into the report"
   # Assessment consumes the public relationship contract, never a relationship
   # implementation package.
   - id: assessment_no_relationship_internals
@@ -420,6 +447,9 @@ rules:
     from: internal/assessment/**
     to: internal/relationship/{classify,scoring,coupling,facts,labels,analysis}/**
     gate: fail
+    rationale: "Assessment must read the public relationship contract. Depending on a classifier or scorer package freezes its internals, and a refactor there changes verdicts."
+    alternatives:
+      - "Use the public relationship contract in internal/relationship"
   # Evidence acquisition observes; it never judges. Rule, metric, status,
   # staleness, finding, decision, and repair-task ownership stays behind the
   # evaluation port, so acquisition cannot become a second assessment owner.
@@ -428,6 +458,9 @@ rules:
     from: internal/evidence/**
     to: internal/assessment/{status,staleness,finding,rules,metrics,decision,agenttask}/**
     gate: fail
+    rationale: "Acquisition observes and never judges. A judgment here creates a second owner of rules and findings, and the verdict then depends on how evidence was collected."
+    alternatives:
+      - "Return the observation and let internal/assessment decide through the evaluation port"
   # Application is the explicit projection boundary: it may consume domain
   # values and construct report DTOs, while report adapters consume only DTOs.
   - id: report_adapters_no_application
@@ -435,21 +468,33 @@ rules:
     from: internal/output/**
     to: internal/application/**
     gate: fail
+    rationale: "Renderers read report DTOs only. Importing application lets a renderer re-run or reinterpret a result, so two formats can disagree about one run."
+    alternatives:
+      - "Read the value from the report DTOs in internal/model/report"
   - id: renderer_no_assessment
     type: forbidden_dependency
     from: internal/output/**
     to: internal/assessment/**
     gate: fail
+    rationale: "A renderer that reads assessment types can decide for itself. Text, JSON and SARIF would then report different answers for one run."
+    alternatives:
+      - "Read the value from the report DTOs in internal/model/report; add it to the projection in internal/application/report.go"
   - id: renderer_no_relationship
     type: forbidden_dependency
     from: internal/output/**
     to: internal/relationship/**
     gate: fail
+    rationale: "A renderer must not reclassify relationships. A second classification path makes the report contradict the verdict."
+    alternatives:
+      - "Read the value from the report DTOs in internal/model/report; add it to the projection in internal/application/report.go"
   - id: renderer_no_evidence
     type: forbidden_dependency
     from: internal/output/**
     to: internal/evidence/**
     gate: fail
+    rationale: "A renderer shows what was measured. Reading raw evidence lets a format claim facts the verdict never used."
+    alternatives:
+      - "Read the value from the report DTOs in internal/model/report; add it to the projection in internal/application/report.go"
   # The application projector reads domain values; it never reaches into a
   # relationship or evidence implementation package to rebuild them.
   - id: projector_no_domain_internals
@@ -457,12 +502,14 @@ rules:
     from: internal/application/report.go
     to: internal/{relationship,evidence}/**
     gate: fail
+    rationale: "The projector copies decided values into report DTOs. Reaching into relationship or evidence internals rebuilds a decision inside the projection, where no rule test guards it."
   # Ring gate 3: model packages are pure value types
   - id: model_no_baseline
     type: forbidden_dependency
     from: internal/model/**
     to: internal/baseline
     gate: fail
+    rationale: "Model packages are pure value types. Importing baseline persistence pulls a file format into every consumer of the model."
   # Evidence reports observations. A policy decision inside an acquisition
   # contract means the tool boundary has started deciding architecture.
   # The neutral evidence CONTRACT carries facts, never decisions: it must not
@@ -474,6 +521,7 @@ rules:
     from: internal/evidence/*.go
     to: internal/policy/**
     gate: fail
+    rationale: "The evidence contract carries facts. A policy import means the tool boundary has started to decide architecture, and evidence stops being comparable across configs."
   # internal/view is dissolved: every stage contract has a capability owner. The
   # rule stays as a re-introduction guard — a new shared stage-view package is a
   # boundary regression, not a refactor.
@@ -483,6 +531,9 @@ rules:
     to: internal/view/**
     gate: fail
     guard: true
+    rationale: "A shared stage-view package re-creates the hub every stage depends on, and the capability owners lose their contracts."
+    alternatives:
+      - "Put the contract in the capability that decides it"
   # Stable-contract boundaries: persistence and rendering bind to the stable
   # snapshot and report contracts, never to a volatile evaluation implementation.
   # These rules pass on current source; they exist to keep it that way.
@@ -491,11 +542,15 @@ rules:
     from: internal/baseline/**
     to: internal/assessment/score/**
     gate: fail
+    rationale: "Persistence bound to the scorer ties stored baselines to a volatile implementation: a scoring change would invalidate accepted state."
   - id: output_no_score
     type: forbidden_dependency
     from: internal/output/**
     to: internal/assessment/score/**
     gate: fail
+    rationale: "Renderers bound to the scorer re-derive scores per format, and a scalar leaks into a decision that is made from hard gates."
+    alternatives:
+      - "Read the value from the report DTOs in internal/model/report"
   # The architecture decision is made from explicit hard-gate results and
   # finding classifications, never from an averaged repository scalar. The state
   # package cannot reach the scorer at all, so "the aggregator is metric-blind"
@@ -505,11 +560,15 @@ rules:
     from: internal/assessment/state/**
     to: internal/assessment/score/**
     gate: fail
+    rationale: "The architecture decision comes from hard gates and finding classes, never from an averaged score. If the state package can reach the scorer, a metric can silently decide the verdict."
   - id: output_no_decision
     type: forbidden_dependency
     from: internal/output/**
     to: internal/assessment/decision/**
     gate: fail
+    rationale: "Renderers display the decision and never make it. A decision inside a renderer gives one run different verdicts by format."
+    alternatives:
+      - "Read the verdict from the report DTOs in internal/model/report"
   # Application consumes narrow stage contracts. Concrete execution adapters
   # are composed outside the capability and must not leak into its package.
   - id: application_no_concrete_adapters
@@ -517,41 +576,63 @@ rules:
     from: internal/application/**
     to: internal/{extract,toolrun,output}/**
     gate: fail
+    rationale: "The application states its needs as ports. A concrete extractor, tool runner or renderer inside it cannot be swapped or faked, and its tests need the real tools."
+    alternatives:
+      - "Declare the need as a port in internal/application and wire the adapter in cmd/archfit"
   - id: application_no_evidence_acquisition
     type: forbidden_dependency
     from: internal/application/**
     to: internal/evidence/acquisition/**
     gate: fail
+    rationale: "The application sequences stages through the evidence port. Importing the acquisition service ties the use case to one concrete collector."
+    alternatives:
+      - "Declare the need as a port in internal/application and wire the adapter in cmd/archfit"
   - id: application_no_factcache
     type: forbidden_dependency
     from: internal/application/**
     to: internal/factcache/**
     gate: fail
+    rationale: "The fact cache is an adapter. Application code that imports it hides cache effects inside use-case logic, and a stale cache can change a verdict unseen."
+    alternatives:
+      - "Declare the need as a port in internal/application and wire the adapter in cmd/archfit"
   - id: application_no_persistence_adapters
     type: forbidden_dependency
     from: internal/application/**
     to: internal/history/**
     gate: fail
+    rationale: "History readers are adapters. Application code that imports git history ties the use case to git and breaks fixtures."
+    alternatives:
+      - "Declare the need as a port in internal/application and wire the adapter in cmd/archfit"
   - id: application_no_ownership
     type: forbidden_dependency
     from: internal/application/**
     to: internal/ownership/**
     gate: fail
+    rationale: "Ownership readers are adapters. Application code that imports them ties the use case to CODEOWNERS and git."
+    alternatives:
+      - "Declare the need as a port in internal/application and wire the adapter in cmd/archfit"
   - id: application_no_baseline
     type: forbidden_dependency
     from: internal/application/**
     to: internal/baseline/**
     gate: fail
+    rationale: "Baseline file I/O is an adapter. Use-case code that reads it directly hides persistence behind verdict logic."
+    alternatives:
+      - "Declare the need as a port in internal/application and wire the adapter in cmd/archfit"
   - id: application_no_labelsio
     type: forbidden_dependency
     from: internal/application/**
     to: internal/labels/labelsio/**
     gate: fail
+    rationale: "Label files load in cmd only. An application import of the loader lets unreviewed labels reach the gate."
+    alternatives:
+      - "Declare the need as a port in internal/application and wire the adapter in cmd/archfit"
   - id: application_no_cmd
     type: forbidden_dependency
     from: internal/application/**
     to: cmd/archfit/**
     gate: fail
+    rationale: "Application importing cmd inverts the composition root: the library would depend on the CLI that wires it."
   # The orchestration hub is gone. Nothing may reintroduce it: every stage is
   # owned by the capability that decides it, and the application sequences them.
   - id: no_analysispipeline
@@ -560,6 +641,9 @@ rules:
     to: internal/analysispipeline/**
     gate: fail
     guard: true
+    rationale: "The orchestration hub was removed. Reintroducing it puts stage ownership back in one place that decides everything."
+    alternatives:
+      - "Give the stage to the capability that decides it; the application sequences the stages"
   # Composition-root direction. The library never reaches back into the CLI, so
   # every command stays replaceable and no domain decision can hide in cmd.
   - id: core_no_cmd
@@ -567,11 +651,13 @@ rules:
     from: internal/{policy,relationship,assessment,evidence,model,scope,syntax}/**
     to: cmd/**
     gate: fail
+    rationale: "Core must not know the CLI. A core import of cmd makes a command impossible to replace and hides domain decisions in the composition root."
   - id: adapter_no_cli
     type: forbidden_dependency
     from: internal/{extract,toolrun,history,output,baseline,labels,factcache,ownership,config}/**
     to: cmd/**
     gate: fail
+    rationale: "Adapters importing cmd invert the dependency: an adapter would depend on the command that selects it."
   # The CLI selects concrete implementations and translates exit codes. A rule,
   # metric, scorer, status, decision, finding, or classifier import there would
   # be a second place where the verdict is decided.
@@ -580,11 +666,15 @@ rules:
     from: cmd/archfit/**
     to: internal/{assessment/rules,assessment/metrics,assessment/score,assessment/status,assessment/decision,assessment/finding,relationship/classify,relationship/scoring,relationship/coupling}/**
     gate: fail
+    rationale: "A rule, metric, scorer, status, decision, finding or classifier in cmd is a second place where the verdict is decided, and it drifts from the assessment."
+    alternatives:
+      - "Call the application use case in internal/application"
   # Layer direction guard. The historical engine→scope inversion was
   # resolved by decoupling scope from git and reclassifying it as support.
   - id: layer_inversion
     type: forbidden_layer_direction
     gate: fail
+    rationale: "An inner layer importing an outer one reverses the dependency direction. A change in the outer layer then breaks the core, and cycles follow."
   # --- Syntax-facts lint rule (gate: warn = advisory, non-blocking) ---
   # public_api_max is global (no per-module scoping) and counts EVERY exported
   # declaration ast-grep sees in the module, test files included — for

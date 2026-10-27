@@ -1,7 +1,10 @@
 package application
 
 import (
+	"cmp"
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/v3/internal/policy"
@@ -38,5 +41,11 @@ func (s ConfigLintService) Execute(ctx context.Context, req ConfigLintRequest) (
 	if err != nil {
 		return nil, err
 	}
-	return evaluation.LintPolicy(req.Policy, inventory), nil
+	out := evaluation.LintPolicy(req.Policy, inventory)
+	out = append(out, evaluation.LintRationales(req.Policy.Gates.Rules.Rules)...)
+	// Same order LintPolicy promises: path, then code, then message.
+	slices.SortStableFunc(out, func(a, b evaluation.PolicyDiagnostic) int {
+		return cmp.Or(strings.Compare(a.Path, b.Path), strings.Compare(a.Code, b.Code), strings.Compare(a.Message, b.Message))
+	})
+	return out, nil
 }

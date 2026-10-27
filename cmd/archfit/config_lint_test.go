@@ -16,6 +16,14 @@ func TestConfigLint_ExitCodesAndOutput(t *testing.T) {
     from: "pkg/b/**"
     to: "pkg/a/**"
     gate: fail
+    rationale: "b is the leaf; a reaching it back would close a cycle"
+`
+	const unexplained = `rules:
+  - id: b-not-to-a
+    type: forbidden_dependency
+    from: "pkg/b/**"
+    to: "pkg/a/**"
+    gate: fail
 `
 	const dead = `rules:
   - id: a-not-to-catalog
@@ -23,14 +31,25 @@ func TestConfigLint_ExitCodesAndOutput(t *testing.T) {
     from: "pkg/a/**"
     to: "pkg/catalog/**"
     gate: fail
+    rationale: "the catalog is private to its team"
 `
 	for _, tc := range []struct {
 		name     string
 		cfg      string
+		args     []string
 		wantCode int
 		wantText string
 	}{
 		{name: "clean config", cfg: ruleScopeModulesCfg + live, wantCode: 0},
+		{
+			name: "blocking rule without a rationale warns", cfg: ruleScopeModulesCfg + unexplained, wantCode: 0,
+			wantText: "warning missing_rationale rules[b-not-to-a].rationale: blocking rule has no rationale: say which consequence it prevents, so the agent fixes the cause\n",
+		},
+		{
+			name: "strict makes it an error", cfg: ruleScopeModulesCfg + unexplained, args: []string{"--strict"}, wantCode: 1,
+			wantText: "error missing_rationale rules[b-not-to-a].rationale: blocking rule has no rationale: say which consequence it prevents, so the agent fixes the cause\n",
+		},
+		{name: "strict passes a rationale", cfg: ruleScopeModulesCfg + live, args: []string{"--strict"}, wantCode: 0},
 		{
 			name: "dead selector", cfg: ruleScopeModulesCfg + dead, wantCode: 1,
 			wantText: "error dead_selector rules[a-not-to-catalog].to: to: pkg/catalog/** matches no scanned source; fix the selector or set guard: true\n",
@@ -47,7 +66,7 @@ func TestConfigLint_ExitCodesAndOutput(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			cfgPath := writeRuleScopeRepo(t, tc.cfg)
-			code, stdout, stderr := runArchfit(t, "config", "lint", "-c", cfgPath)
+			code, stdout, stderr := runArchfit(t, append([]string{"config", "lint", "-c", cfgPath}, tc.args...)...)
 			if code != tc.wantCode {
 				t.Fatalf("config lint: exit = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, tc.wantCode, stdout, stderr)
 			}
@@ -66,6 +85,7 @@ func TestConfigLint_JSONDocument(t *testing.T) {
     from: "pkg/a/**"
     to: "pkg/catalog/**"
     gate: fail
+    rationale: "the catalog is private to its team"
 `)
 	code, stdout, stderr := runArchfit(t, "config", "lint", "-c", cfgPath, "--json")
 	if code != 1 {
@@ -138,11 +158,13 @@ rules:
     from: "app/**"
     to: "database/sql"
     gate: fail
+    rationale: "SQL belongs in the database module"
   - id: schema_typo
     type: forbidden_dependency
     from: "app/**"
     to: "database/shcema/**"
     gate: fail
+    rationale: "the schema is private to the database module"
 `,
 	})
 	code, stdout, stderr := runArchfit(t, "config", "lint", "-c", cfgPath)
