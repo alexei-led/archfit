@@ -320,9 +320,35 @@ func TestTypeGraph_HelperInvocation(t *testing.T) {
 	if run.Name != toolDotnet || run.WorkDir != run.Args[1] || !slices.Equal(run.Args[2:], []string{solutionFix}) || run.Timeout <= 0 {
 		t.Errorf("helper run = %+v, want dotnet <dll> <snapshot> Fixture.slnx in the snapshot", run)
 	}
-	for _, env := range []string{"DOTNET_CLI_TELEMETRY_OPTOUT=1", "DOTNET_NOLOGO=1", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1", "MSBUILDDISABLENODEREUSE=1"} {
-		if !slices.Contains(run.Env, env) {
-			t.Errorf("helper env %v lacks %s", run.Env, env)
+}
+
+// Every dotnet call, not only the helper run, must keep the SDK's first run
+// from writing telemetry, logo, dev-certificate, or tool-path state.
+func TestTypeGraph_EveryDotnetCallIsQuietAndStateless(t *testing.T) {
+	_, fake, _, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
+	want := []string{
+		"DOTNET_CLI_TELEMETRY_OPTOUT=1", "DOTNET_NOLOGO=1", "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
+		"MSBUILDDISABLENODEREUSE=1", "DOTNET_GENERATE_ASPNET_CERTIFICATE=false", "DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false",
+	}
+	kinds := map[string]bool{}
+	for _, call := range fake.all {
+		kind := call.Args[0]
+		if strings.HasSuffix(kind, helperDLL) {
+			kind = "helper " + call.Args[1]
+		}
+		if kind != "--version" && kind != "msbuild" && kind != "helper --version" {
+			kind = "helper run"
+		}
+		kinds[kind] = true
+		for _, env := range want {
+			if !slices.Contains(call.Env, env) {
+				t.Errorf("%s call env %v lacks %s", kind, call.Env, env)
+			}
+		}
+	}
+	for _, kind := range []string{"--version", "msbuild", "helper --version", "helper run"} {
+		if !kinds[kind] {
+			t.Errorf("no %s call seen in %v", kind, kinds)
 		}
 	}
 }

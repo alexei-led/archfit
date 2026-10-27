@@ -25,12 +25,18 @@ const (
 	tfmOverrideFlag = "-p:TargetFramework="
 )
 
-// msbuildEnv keeps the SDK quiet and its worker nodes from outliving the call.
+// msbuildEnv keeps the SDK quiet, its worker nodes from outliving the call,
+// and its first run from touching the user's state: without the last two, a
+// first `dotnet msbuild` writes an ASP.NET dev-certificate sentinel and a
+// global-tools PATH sentinel under DOTNET_CLI_HOME (measured on SDK 10.0.403).
+// Every dotnet call archfit makes (evaluation, --version, the helper) uses it.
 var msbuildEnv = []string{
 	"DOTNET_CLI_TELEMETRY_OPTOUT=1",
 	"DOTNET_NOLOGO=1",
 	"DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
 	"MSBUILDDISABLENODEREUSE=1",
+	"DOTNET_GENERATE_ASPNET_CERTIFICATE=false",
+	"DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false",
 }
 
 var (

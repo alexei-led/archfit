@@ -66,6 +66,7 @@ func ok(t *testing.T, root, name string) reply {
 type fakeDotnet struct {
 	*toolrun.RunnerMock
 	mu          sync.Mutex
+	all         []toolrun.ToolCmd // every dotnet call, helper and --version included
 	calls       []toolrun.ToolCmd
 	replies     map[string]reply
 	helper      func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error)
@@ -79,6 +80,9 @@ func newFake(t *testing.T, root string, replies map[string]reply) *fakeDotnet {
 			return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, tool == toolDotnet
 		},
 		RunFunc: func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			f.mu.Lock()
+			f.all = append(f.all, cmd)
+			f.mu.Unlock()
 			if len(cmd.Args) > 0 && strings.HasSuffix(cmd.Args[0], helperDLL) {
 				f.mu.Lock()
 				f.helperCalls = append(f.helperCalls, cmd)
