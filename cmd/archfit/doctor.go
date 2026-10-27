@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,10 +49,18 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", "TOOL", "STATUS", "PATH / INSTALL")
 	_, _ = fmt.Fprintf(deps.Stdout, "%s\n", strings.Repeat("-", 60))
 
+	// A tool configured to an unusable value fails doctor after the full
+	// report, as it fails analysis: a missing tool is not an error, a wrong one is.
+	var invalid []error
 	for _, t := range tools {
-		if info, ok := deps.Runner.Detect(ctx, t.Command); ok {
-			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.Name, "ok", info.Path)
-		} else {
+		path, found, err := locateTool(ctx, deps.Runner, t)
+		switch {
+		case err != nil:
+			invalid = append(invalid, fmt.Errorf("%s: %w", t.Name, err))
+			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %v\n", t.Name, "invalid", err)
+		case found:
+			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.Name, "ok", path)
+		default:
 			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.Name, "missing", t.InstallHint)
 		}
 	}
@@ -93,9 +102,21 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	}
 
 	if c.Fix {
-		return c.runFix(ctx, deps)
+		if err := c.runFix(ctx, deps); err != nil {
+			return err
+		}
 	}
-	return nil
+	return errors.Join(invalid...)
+}
+
+// locateTool finds one doctor tool: through its own probe when it has one,
+// else on PATH.
+func locateTool(ctx context.Context, runner toolrun.Runner, t registry.Tool) (string, bool, error) {
+	if t.Locate != nil {
+		return t.Locate()
+	}
+	info, ok := runner.Detect(ctx, t.Command)
+	return info.Path, ok, nil
 }
 
 // keyStatus renders the presence of an API key without leaking it.

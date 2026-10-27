@@ -100,3 +100,47 @@ func TestDoctorCmd_BrokenConfigSurfacesError(t *testing.T) {
 		t.Errorf("broken config must not read as merely unconfigured, got:\n%s", out)
 	}
 }
+
+// TestDoctorCmd_RoslynHelperRow pins the env-probed helper row: unset is
+// missing with the build hint, a valid directory is ok, and an unusable value
+// fails doctor after the full report, as it fails analysis.
+func TestDoctorCmd_RoslynHelperRow(t *testing.T) {
+	const env = "ARCHFIT_DOTNET_ROSLYN"
+	helper := t.TempDir()
+	if err := os.WriteFile(filepath.Join(helper, "archfit-roslyn.dll"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, value string
+		unset       bool
+		wantRow     string
+		wantErr     bool
+	}{
+		{name: "unset", unset: true, wantRow: "archfit-roslyn   missing  build it with `make dotnet-roslyn`"},
+		{name: "valid", value: helper, wantRow: "archfit-roslyn   ok       " + helper},
+		{name: "relative", value: "dotnet-roslyn", wantRow: "archfit-roslyn   invalid  ARCHFIT_DOTNET_ROSLYN must name the absolute helper directory", wantErr: true},
+		{name: "no helper there", value: t.TempDir(), wantRow: "archfit-roslyn   invalid  ARCHFIT_DOTNET_ROSLYN must name a directory holding archfit-roslyn.dll", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(env, tc.value)
+			if tc.unset {
+				if err := os.Unsetenv(env); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Chdir(t.TempDir())
+			var buf bytes.Buffer
+			runner := &toolrun.RunnerMock{DetectFunc: func(context.Context, string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{}, false }}
+			err := (&DoctorCmd{}).Run(&appDeps{Runner: runner, Stdout: &buf})
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("DoctorCmd.Run error = %v, want error %v", err, tc.wantErr)
+			}
+			if !strings.Contains(buf.String(), tc.wantRow) {
+				t.Errorf("doctor output lacks %q:\n%s", tc.wantRow, buf.String())
+			}
+			if !strings.Contains(buf.String(), "dotnet           missing  https://dotnet.microsoft.com/download") {
+				t.Errorf("doctor output lacks the dotnet SDK row:\n%s", buf.String())
+			}
+		})
+	}
+}
