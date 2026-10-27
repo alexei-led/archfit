@@ -38,6 +38,25 @@ Measured on `bitwarden/server` at `0850efddd`, cloned to `~/Workspace/bitwarden-
 | Evaluation side effects | `git status --ignored` clean after evaluating all 86 projects | Evaluation writes nothing into the target. Roslyn design-time build is still unverified |
 | CODEOWNERS | 93 rules | Ownership input is real for the testbed |
 
+### Spike results (Task 1, 2026-10-27)
+
+Measured on the host (macOS arm64, Homebrew SDK 10.0.402, Roslyn `Microsoft.CodeAnalysis.Workspaces.MSBuild` 5.6.0, `Microsoft.Build.Locator` 1.11.2, ast-grep 0.51.0).
+
+| Spike | Result |
+| --- | --- |
+| Roslyn load, offline (empty `NUGET_PACKAGES`, network blocked) | `OpenSolutionAsync` opens the `.slnx` directly. 86 C# projects: 10 `complete`, 60 `partial`, 16 `failed` (the 16 `MSB4236` projects). Symbols: 1,019,701 resolved, 1,457,568 unresolved, 7 `Inaccessible` candidates. 676 s wall-clock, of which 627 s is loading; max RSS 2.1 GB |
+| Roslyn load, networked | The SDK resolver fetched only `Bitwarden.Server.Sdk` 1.8.0 and `Aspire.AppHost.Sdk` 13.3.4 (6.6 MB). 10 `complete`, 76 `partial`, 0 `failed`. 72 s wall-clock, max RSS 2.2 GB |
+| Offline cost | Each failed SDK resolution costs about 11 s (NuGet retries per evaluation, also when a failed project is re-evaluated as a reference). The extractor and the helper need a timeout that covers this; the image contract runs offline |
+| Snapshot writes | Only under `<project>/obj/<Configuration>/<tfm>/`: `*.GlobalUsings.g.cs`, `*.AssemblyInfo.cs`, `*.AssemblyInfoInputs.cache`, `.NETCoreApp,Version=v10.0.AssemblyAttributes.cs`, `*.GeneratedMSBuildEditorConfig.editorconfig`, plus `*.RazorAssemblyInfo.cs` for Razor projects. 350 files offline, 436 networked. Nothing in `bin/`, no restore files. Outside the snapshot: NuGet creates `$DOTNET_CLI_HOME/.nuget/NuGet/NuGet.Config` |
+| Original clone | `git status --porcelain --ignored` identical (empty) before, after the offline run, and after the networked run |
+| Cross-assembly `internal` use | Networked: 2,575 uses, all resolve directly through the generated IVT attribute (the design-time build writes `InternalsVisibleTo` from csproj items into `AssemblyInfo.cs`). 0 real internal uses went through `CandidateReason.Inaccessible`; the 20 `Inaccessible` candidates were `protected` members and internals of compiled assemblies |
+| Evaluation, networked | All 16 `MSB4236` projects evaluate: 9 s cold, 11 s warm. Offline the same 16 fail in 193 s. `Microsoft.Build.Traversal` and `Microsoft.Build.Sql` in `global.json` are never fetched (no project uses them) |
+| MSBuild JSON | Two or more `-getProperty`/`-getItem` flags print `{"Properties":{...},"Items":{...}}`; a single `-getProperty` prints the bare value. Unset properties are `""`. A multi-TFM project has `TargetFramework` `""` and `TargetFrameworks` `"net8.0;net10.0"`. Item `Identity` is as written (relative); use `FullPath` |
+| Cobertura (coverlet.collector 6.0.0) | One `<source>`, the common ancestor of all instrumented files: `/` or a directory above the repo, not the repo root. `filename` is relative to it, forward slashes. One file appears in many `<class>` entries (nested and generated classes). Reports include files outside the repo (NuGet cache `Program.cs`). The file starts with a UTF-8 BOM. Output lands in `TestResults/<guid>/coverage.cobertura.xml` |
+| ast-grep `csharp` | 6,134 files in 4.6 s; 6 files have `ERROR` nodes (23 nodes): the C# 14 `extension` block (2 files, 18 nodes), `#if` splitting a statement (2), an interpolated string with escaped braces (1), `partial` as a variable name (1). Attribute patterns like `[HttpGet]` do not parse; `kind: attribute` with a name regex does. 830 route attributes in 120 files, 78 `Map*` calls in 26 files |
+| SDK archive | Pin `10.0.402` (same as the host; satisfies `10.0.103` + `latestFeature`). linux-x64: 240.3 MB compressed, 651 MB extracted, sha256 `a131496fe7dac21dceea13354e50a3636126fac05d6e5ccf5fb250829c6e9b6a`. linux-arm64: 232.7 MB, 683 MB, sha256 `5c33483bf8af611524301afe0200fef2b44bfd93d2cf792da5404ca73e7bb8cb`. Upstream publishes sha512 only (both matched); sha256 was computed from the download. The archive unpacks flat (no top-level directory). `libicu72` is in bookworm main |
+| Helper build | Referencing `Microsoft.Build`/`Microsoft.Build.Framework` needs `ExcludeAssets="runtime" PrivateAssets="all"` (`MSBL001`). An apphost run against a non-default SDK location needs `DOTNET_ROOT` |
+
 Related code:
 - Language touchpoints: [`docs/archived/plans/erosion-prevention/language-extensibility.md`](../archived/plans/erosion-prevention/language-extensibility.md) lists 14 steps. This plan follows them, in Task 7.
 - Rust adapter as the template: `internal/extract/rust/` (crate-level first, optional module graph second).
@@ -82,7 +101,7 @@ Two channels, aggregated independently per file pair (strongest use wins in each
 - `StrengthHint` carries every row above. `resolveStrength` reads it when no policy glob or label decides (`internal/relationship/classify/classify.go`), so a data-only use of a concrete class without any `public:` selector classifies as `model`.
 - `DataStrengthHint` carries only the non-callable rows (`model`, `dto`), as the Go extractor does (`internal/extract/golang/golang.go`). It is what lifts a `public:` floor from `contract` to `model` (`internal/relationship/classify/classify_test.go`, the public-floor cases).
 
-The `intrusive` hint comes from the referenced symbol's accessibility, not from IVT discovery. A design-time compilation can lack the generated IVT attribute; the helper then accepts Roslyn's inaccessible candidate symbol (`CandidateReason.Inaccessible`) as the resolution. IVT declarations (csproj `InternalsVisibleTo` items and `[assembly: InternalsVisibleTo]` attributes) are reported as coverage detail only. A declaration is not a usage edge.
+The `intrusive` hint comes from the referenced symbol's accessibility, not from IVT discovery. A design-time compilation can lack the generated IVT attribute; the helper then accepts Roslyn's inaccessible candidate symbol (`CandidateReason.Inaccessible`) as the resolution, but only when the candidate is `internal` or `private protected` and declared in source of another project in the workspace. Task 1 measured that the fallback never fired on bitwarden (the design-time build generated every IVT attribute) and that unfiltered `Inaccessible` candidates are `protected` members or metadata internals, which would be false intrusive hints. IVT declarations (csproj `InternalsVisibleTo` items and `[assembly: InternalsVisibleTo]` attributes) are reported as coverage detail only. A declaration is not a usage edge.
 
 The `intrusive` hint is the C# analogue of Python's private-import hint (`internal/extract/py/py.go`): a structural, config-independent signal that the compiler enforces. It feeds the existing `encapsulation` metric; no new metric.
 
@@ -107,6 +126,10 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 | `partial` | project loaded, some symbols unresolved (missing NuGet packages or reference packs) | file edges for resolved symbols; coverage `partial` with counts |
 | `failed` | project did not load in the helper | none from the helper; the extractor falls back to `ProjectReference` edges only if MSBuild evaluation supplied them (D1) |
 
+- "Did not load" is measured, not assumed (Task 1): MSBuildWorkspace keeps a project whose evaluation failed in the solution as an empty project (0 documents). So `failed` means 0 source documents, with the workspace failure for that project path as the reason. A workspace failure with documents loaded is `partial`. Workspace diagnostics are attributed to a project by the project file path in the diagnostic only when that path is the failing project, never by any path in the message (the "project reference without a matching metadata reference" warning names the referenced project). Non-C# projects in a solution (`.sqlproj`) are skipped and counted in coverage detail.
+- Offline, each unresolvable NuGet-resolved SDK costs about 11 s per evaluation. The helper and the evaluation loop run under the configured analyzer timeout; a timeout is `failed` for the run, not silent truncation.
+- A `var` declaration resolves to the inferred type. It adds no separate edge beyond the per-file-pair dedup.
+
 - Unresolved symbols are counted, never turned into invented external nodes. Resolved metadata symbols (BCL, restored packages) become external nodes named by assembly.
 - A `ProjectReference` is reported unused only when the project is `complete`.
 - Unresolved symbols mean missing candidates, not lower precision: an unresolved reference may hide a cross-boundary edge. So:
@@ -117,7 +140,7 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 
 **D6. Target code runs; the original stays read-only.**
 - MSBuild evaluation runs `Directory.Build.props`, imported targets, and NuGet-resolved SDK props. Evaluation of all 86 bitwarden projects left `git status --ignored` clean, so `dotnet msbuild -getItem` runs on the original tree.
-- The Roslyn design-time build writes. It runs `Compile`/`CoreCompile` with `SkipCompilerExecution=true`, which skips the compiler but not prerequisite targets: `GenerateGlobalUsings` and assembly-info generation write into `IntermediateOutputPath` (bitwarden enables implicit usings in `Directory.Build.props`).
+- The Roslyn design-time build writes. It runs `Compile`/`CoreCompile` with `SkipCompilerExecution=true`, which skips the compiler but not prerequisite targets: `GenerateGlobalUsings` and assembly-info generation write into `IntermediateOutputPath` (bitwarden enables implicit usings in `Directory.Build.props`). Task 1 measured five files per project under `obj/<Configuration>/<tfm>/` (global usings, assembly info and its cache, the TFM attribute file, the generated editorconfig) plus Razor assembly info, and nothing else.
 - So the helper runs on a disposable writable snapshot: copy the analysis root to a per-run temp directory, skipping only `.git` and `node_modules/`, analyze it, map paths back by prefix, and delete it. This is the same move the image contract makes (`scripts/image_contracts.py` copies `/trusted` to `/tmp/repo`).
 - The snapshot keeps every build input: `obj/` (supplied `project.assets.json`, NuGet imports), `bin/` (`HintPath` references), and files matched by `exclude`. Removing an excluded file could change the compiled program (an excluded generated file or project that included code binds to). `exclude` applies to emitted evidence, after analysis, as for other languages.
 - "Evaluation left bitwarden clean" is a measured fact for that repo, not a guarantee. Evaluation runs on the original because it is read-only in intent and was measured clean; the read-only image case (Task 10) is the guard.
@@ -125,20 +148,20 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 - The trust statement goes into [evidence](../evidence.md) and [languages](../languages.md): this is the same trust class as `go/packages` and cgo.
 
 **D7. SDK in the image, one version.**
-- Official Linux SDK archive, pinned in `tools/manifest.json` for `amd64` and `arm64`, with `sha256`, provisioned in the builder stage like Go and Node.
+- Official Linux SDK archive `10.0.402`, pinned in `tools/manifest.json` for `amd64` and `arm64`, with `sha256`, provisioned in the builder stage like Go and Node. Upstream publishes sha512 only; the manifest sha256 was computed from the verified download (Task 1). The archive unpacks flat, so provisioning moves the unpack directory itself.
 - One SDK band (10.0.x). A target `global.json` that pins a band this SDK cannot satisfy yields `failed` for its projects, with the reason naming `global.json`. Shipping two SDKs is rejected: size, and no evidence that repos need it.
 - The SDK carries only its own reference pack. A `net8.0` target offline resolves no framework references and becomes `partial` with the missing pack named. This depends on the host: a developer machine with the 8.0 targeting pack installed resolves it. So the `partial` expectation is asserted only in the image contract, where the environment is fixed (one SDK, empty `NUGET_PACKAGES`, no network). Host tests assert `complete`, or `partial` naming `Microsoft.NETCore.App.Ref` 8.x, nothing else.
 - Multi-targeting: project status is the worst status across its TFMs; edges are the union across TFMs.
 - Runtime needs ICU for culture-sensitive behavior. Install `libicu72` (bookworm) rather than `InvariantGlobalization`, so comparisons match what the SDK does on a developer machine.
 - Environment: `DOTNET_ROOT`, `DOTNET_CLI_HOME=/tmp/archfit-dotnet`, `DOTNET_CLI_TELEMETRY_OPTOUT=1`, `DOTNET_NOLOGO=1`, `DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1`, `MSBUILDDISABLENODEREUSE=1`, `NUGET_PACKAGES=/tmp/archfit-nuget`.
-- Measure the image size delta during provisioning. The SDK's on-disk size on macOS was about 670 MB; the Linux size is unverified.
+- Measure the image size delta during provisioning. The Linux SDK is 651 MB (amd64) and 683 MB (arm64) extracted, about 235 MB compressed (Task 1).
 
 **D8. Test and generated classification.**
 - Test files: `*Tests.cs`, `*Test.cs`, or a `test`/`tests` path segment. Matches the existing rule shape.
 - Generated files: `*.g.cs`, `*.g.i.cs`, `*.Designer.cs`, files under `obj/` or `bin/`, and a `<auto-generated` header. The header sniff is shared with all languages and affects only files that carry it.
 - `obj/` and `bin/` are skipped in the walk, like `target/` for Cargo.
 
-**D9. Coverage.** Coverlet Cobertura (`dotnet test --collect "XPlat Code Coverage"`) is the one format both coverlet and `dotnet-coverage` emit. Unit: lines, same as LCOV and LLVM. Paths are normalized from `<sources>` plus `filename`. The sidecar contract is unchanged.
+**D9. Coverage.** Coverlet Cobertura (`dotnet test --collect "XPlat Code Coverage"`) is the one format both coverlet and `dotnet-coverage` emit. Unit: lines, same as LCOV and LLVM. Paths are normalized from `<sources>` plus `filename`: join each `<source>` with `filename` (an absolute `filename` is used as is), take the first join that lies under the analysis root, make it root-relative with `/`, and drop files outside the root. A `<source>` can be `/` or a directory above the repo. Lines are merged per file across `<class>` entries and reports (max hits per line). Strip a UTF-8 BOM. The sidecar contract is unchanged.
 
 **D10. Config.** `languages.dotnet` selects solutions or projects (default: the first `.slnx`/`.sln` at root, else all `*.csproj` outside `obj/`, `bin/`, `exclude`). `analyzers.roslyn` defaults to on when `ARCHFIT_DOTNET_ROSLYN` names an installed helper (the image sets it), matching D1; `enabled: false` forces the project-only graph. `config init` and `config update` write the explicit setting when a solution or csproj exists, like `cargo_modules` for Rust.
 
@@ -179,14 +202,14 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 
 ### Task 1: Verify spikes that gate the design
 
-- [ ] run a minimal Roslyn `MSBuildWorkspace` loader on a snapshot copy of `bitwarden/server` with no restore; record per-project status counts (`complete`, `partial`, `failed`) and resolved vs unresolved symbol counts
-- [ ] diff the snapshot after the run; record which targets wrote which files (expected: global usings, assembly info under `obj/`)
-- [ ] confirm the original clone is untouched (`git status --porcelain --ignored`)
-- [ ] run the 16 NuGet-SDK projects' evaluation with network reachable; record which SDKs the resolver fetched and the wall-clock time
-- [ ] verify coverlet Cobertura `filename` and `<sources>` paths on one bitwarden test project; record the normalization rule
-- [ ] verify `ast-grep` `csharp` on the bitwarden tree: count `ERROR` nodes per file
-- [ ] verify the Linux SDK archive URL, checksum, and size for amd64 and arm64
-- [ ] write results into the Context and Design decisions of this plan; ⚠️ any decision that changes
+- [x] run a minimal Roslyn `MSBuildWorkspace` loader on a snapshot copy of `bitwarden/server` with no restore; record per-project status counts (`complete`, `partial`, `failed`) and resolved vs unresolved symbol counts
+- [x] diff the snapshot after the run; record which targets wrote which files (expected: global usings, assembly info under `obj/`)
+- [x] confirm the original clone is untouched (`git status --porcelain --ignored`)
+- [x] run the 16 NuGet-SDK projects' evaluation with network reachable; record which SDKs the resolver fetched and the wall-clock time
+- [x] verify coverlet Cobertura `filename` and `<sources>` paths on one bitwarden test project; record the normalization rule
+- [x] verify `ast-grep` `csharp` on the bitwarden tree: count `ERROR` nodes per file
+- [x] verify the Linux SDK archive URL, checksum, and size for amd64 and arm64
+- [x] write results into the Context and Design decisions of this plan; ⚠️ any decision that changes
 
 ### Task 2: Pin and provision the SDK
 
@@ -270,7 +293,7 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 ### Task 8: ast-grep C# rules
 
 - [ ] add `internal/extract/astgrep/rules/csharp.yml` with route declarations: `[HttpGet]`, `[HttpPost]`, `[Route]` attributes and `MapGet`, `MapPost`, `MapPut`, `MapDelete` invocations
-- [ ] mark a file `partial` when its tree has `ERROR` nodes; record the reason per file
+- [ ] mark a file `partial` when its tree has `ERROR` nodes; record the reason per file (rules use `kind: attribute` with a name regex and `kind: invocation_expression` on `Map*`; `[...]` patterns do not parse, Task 1)
 - [ ] write tests on a fixture file: each route form, a C# 14 `extension` block produces `partial`, a plain class produces no route
 - [ ] run the astgrep package tests; they must pass before the next task
 
