@@ -17,6 +17,12 @@ type NodeConvention struct {
 	// ModuleSegmentSep separates a hierarchical module name into path segments:
 	// "/" for path modules (Go/TS), "::" for Rust, "." for dotted modules (Python).
 	ModuleSegmentSep string
+	// ExternalSegmentSep separates the segments of an external dependency node
+	// name when it differs from ModuleSegmentSep: .NET file nodes are slash
+	// paths, but its external nodes are dotted assembly names
+	// (Microsoft.EntityFrameworkCore). Empty means externals use
+	// ModuleSegmentSep or have a single segment.
+	ExternalSegmentSep string
 	// FileExtensions lists this language's source-file extensions.
 	FileExtensions []string
 	// Priority orders multi-source edge dedup; lower wins (Go 0 … .NET 4).
@@ -128,10 +134,11 @@ var BuiltinConventions = ConventionRegistry{
 		fileToModuleKeyFn: rustFileToModuleKey,
 	},
 	LangDotNet: {
-		Language:         LangDotNet,
-		ModuleSegmentSep: "/",
-		FileExtensions:   []string{".cs"},
-		Priority:         4,
+		Language:           LangDotNet,
+		ModuleSegmentSep:   "/",
+		ExternalSegmentSep: ".",
+		FileExtensions:     []string{".cs"},
+		Priority:           4,
 		// fileToModuleKeyFn nil → passthrough: project membership needs the
 		// project files, which this filesystem-free mapping cannot read.
 	},

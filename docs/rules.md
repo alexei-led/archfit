@@ -81,9 +81,9 @@ Module selectors do not select auto-registered modules. Edges within one declare
 
 A dead selector cannot prove that a rule passes. A fail-gated rule remains unevaluated and can make `check` return exit code 2. A warn-gated rule produces a configuration warning. `archfit config lint` reports dead selectors as errors.
 
-This check applies to `from` and `to` in `forbidden_dependency`, `public_api_only`, and `internal_api_access`, and to `from` in `forbidden_pattern`. A target selector that names an external package is still evaluated as an external dependency ban. A selector that names first-party source but matches nothing is dead.
+This check applies to `from` and `to` in `forbidden_dependency`, `public_api_only`, and `internal_api_access`, and to `from` in `forbidden_pattern`. A target selector that names an external package is still evaluated as an external dependency ban. A brace glob of external names is one too. A selector that names first-party source but matches nothing is dead. A `to` path that ends in a file type no dependency producer analyzes, such as `src/**/*.vb`, leaves the rule unevaluated; the owner must change the rule.
 
-Dependency selectors must use the endpoint spelling of the language graph. Go `from` matches the importing package. Go `to` matches a target package. Python uses dotted module names. Rust crate module selectors need Cargo module evidence. A rule can remain unevaluated when its selector matches source that no active dependency producer analyzes.
+Dependency selectors must use the endpoint spelling of the language graph. Go `from` matches the importing package. Go `to` matches a target package. Python uses dotted module names. A .NET `to` matches a file path or an external assembly name, such as `Microsoft.EntityFrameworkCore*`. Rust crate module selectors need Cargo module evidence. A rule can remain unevaluated when its selector matches source that no active dependency producer analyzes.
 
 Set `guard: true` when an empty selector is intentional, such as a ban on a deleted path returning. A guard counts as evaluated while a selector is empty. If the guarded path appears again, the rule becomes a normal rule and needs complete evidence.
 

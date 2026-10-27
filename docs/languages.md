@@ -124,6 +124,8 @@ Archfit selects projects from `languages.dotnet.projects`, else the first `.slnx
 
 Node IDs are root-relative slash paths, as for Go and TypeScript. Project nodes use the `.csproj` path. Namespaces are not graph nodes. Symbols from referenced assemblies (BCL, restored packages) become `external:<assembly>` nodes. Unresolved symbols are counted, never turned into nodes. Files under `obj/` or `bin/` and symbols declared outside the root produce no edges. A file compiled into several projects through a linked `Compile Include` is one node with the union of its edges; it has no module unless a module glob covers it.
 
+A dependency rule's `to:` matches an external node by its assembly name: `Microsoft.EntityFrameworkCore*`, `MediatR.Contracts`, or a brace glob such as `{Microsoft.EntityFrameworkCore*,Microsoft.AspNetCore*}`. The assembly name is usually the NuGet package ID, but not the namespace a `using` names: `using MediatR;` resolves to the `MediatR.Contracts` assembly when only that package is referenced. A dotted target is an external dependency ban; its last segment is never read as a file extension.
+
 Declare modules with globs. `archfit config init` writes one module per project directory, named after the project file, and drops a module whose directory holds no production source (for example a project under `test/`). It writes `languages.dotnet.enabled: auto` and `analyzers.roslyn.enabled: true`. `archfit config update --apply` adds `analyzers.roslyn.enabled: true` when the setting is implicit.
 
 Coupling strength comes from compiler symbols. The extractor emits hints and does not classify; `internal/relationship` decides strength with the precedence in [coupling](coupling.md).

@@ -1,6 +1,7 @@
 package evaluation
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -463,7 +464,7 @@ func (inv selectorInventory) fileMatches(ruleType, side, pattern, file string) b
 // crate::mod selector is judged against them when they cover its crate, and
 // is undecidable under a wildcard crate or a loaded crate they do not cover.
 func (inv selectorInventory) undecidable(pattern string) bool {
-	if strings.Contains(pattern, "/") && unsupportedOrAmbiguousSourcePattern(inv.moduleMap, pattern) {
+	if unsupportedOrAmbiguousSourcePattern(inv.moduleMap, pattern) {
 		return true
 	}
 	if strings.Contains(pattern, sepCrate) {
@@ -492,8 +493,14 @@ func (inv selectorInventory) undecidable(pattern string) bool {
 // in the selector's own vocabulary (selectorSeparator). In the slash
 // vocabulary a dot does not separate segments, and a leading segment holding
 // one is a Go import-path domain (go.uber.org, k8s.io, github.com), never a
-// first-party root: Go module paths are not node IDs.
+// first-party root: Go module paths are not node IDs. A brace group that ends
+// the literal prefix is judged per alternative, so a brace glob of external
+// names ({Microsoft.EntityFrameworkCore*,Microsoft.AspNetCore*}) is an
+// external ban like each of its names.
 func (inv selectorInventory) firstPartyShaped(pattern string) bool {
+	if alternatives, ok := leadingBraceAlternatives(pattern); ok {
+		return slices.ContainsFunc(alternatives, inv.firstPartyShaped)
+	}
 	prefix := literalPrefix(pattern)
 	if prefix == "" {
 		return true
@@ -507,10 +514,10 @@ func (inv selectorInventory) firstPartyShaped(pattern string) bool {
 		}
 		return false
 	}
-	segment, _, _ := strings.Cut(prefix, sep)
-	if sep == sepPath && strings.Contains(segment, ".") {
+	if sep == sepPath && importPathDomain(prefix) {
 		return false
 	}
+	segment, _, _ := strings.Cut(prefix, sep)
 	_, ok := inv.roots[sep][segment]
 	return ok
 }
@@ -552,6 +559,40 @@ func (inv selectorInventory) goModulePathOf(pattern string) (string, bool) {
 func unmatchableSelector(pattern string) bool {
 	return strings.HasPrefix(pattern, "!") || strings.Contains(pattern, "!(") ||
 		strings.HasPrefix(pattern, "./") || strings.HasPrefix(pattern, "../") || strings.HasPrefix(pattern, "/")
+}
+
+// leadingBraceAlternatives expands the brace group at the first glob
+// metacharacter of pattern into one pattern per top-level alternative. ok is
+// false when that metacharacter is not "{" or the group is unbalanced.
+func leadingBraceAlternatives(pattern string) (alternatives []string, ok bool) {
+	open := strings.IndexAny(pattern, "*?[{")
+	if open < 0 || pattern[open] != '{' {
+		return nil, false
+	}
+	depth, start := 0, open+1
+	var parts []string
+	for i := open; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '\\':
+			i++
+		case '{':
+			depth++
+		case ',':
+			if depth == 1 {
+				parts = append(parts, pattern[start:i])
+				start = i + 1
+			}
+		case '}':
+			if depth--; depth == 0 {
+				parts = append(parts, pattern[start:i])
+				for _, part := range parts {
+					alternatives = append(alternatives, pattern[:open]+part+pattern[i+1:])
+				}
+				return alternatives, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // literalPrefix is pattern up to its first glob metacharacter.

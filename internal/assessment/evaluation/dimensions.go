@@ -331,7 +331,7 @@ func ruleProducerScope(diag *result.Result, rule policy.RuleDef, p policy.Policy
 		// producer can emit a relationship to that source-file vocabulary.
 		if unsupportedOrAmbiguousSourcePattern(p.Topology.ModuleMap, rule.To) &&
 			!knownSourceVocabulary(p.Topology.ModuleMap, rule.To, files, f.SourceSelectors) {
-			return ruleScope{status: ruleScopeUnknown}
+			return unsupportedTargetScope(rule.To)
 		}
 		return restrictToTargetVocabulary(
 			patternRuleScope(p.Topology.ModuleMap, rule.From, files, f.SourceSelectors, inv.rustModules),
@@ -510,7 +510,7 @@ func moduleSelectorScope(rule policy.RuleDef, topology policy.TopologyView, inv 
 	if rule.ToModule == "" {
 		if unsupportedOrAmbiguousSourcePattern(topology.ModuleMap, rule.To) &&
 			!knownSourceVocabulary(topology.ModuleMap, rule.To, files, f.SourceSelectors) {
-			return ruleScope{status: ruleScopeUnknown}
+			return unsupportedTargetScope(rule.To)
 		}
 		return restrictToTargetVocabulary(scope, topology.ModuleMap.SelectorLanguages(rule.To))
 	}
@@ -634,21 +634,23 @@ func ruleFileSelector(moduleMap policy.ModuleMap, file string, selectors map[str
 	return language, selector, supported
 }
 
+// unsupportedTargetPrefix starts the unevaluated reason of a rule whose to:
+// path names a file type no dependency producer analyses. Like a dead selector
+// it is the owner's to fix: no analyzer install can make the rule evaluable.
+// The brief and agent digest read the same prefix.
+const unsupportedTargetPrefix = "selector names a file type no dependency producer analyses: "
+
+// unsupportedTargetScope is the unknown scope of a rule whose to: path names a
+// file type no dependency producer analyses.
+func unsupportedTargetScope(glob string) ruleScope {
+	return ruleScope{status: ruleScopeUnknown, reason: unsupportedTargetPrefix + selectorTo + " " + glob}
+}
+
 func knownSourceVocabulary(moduleMap policy.ModuleMap, pattern string, files []string, selectors map[string]string) bool {
 	for _, file := range files {
-		language, selector, supported := ruleFileSelector(moduleMap, file, selectors)
-		if !supported || selector == "" {
-			continue
-		}
-		if rulePatternMatches(pattern, file, selector) {
+		_, selector, supported := ruleFileSelector(moduleMap, file, selectors)
+		if supported && selector != "" && rulePatternMatches(pattern, file, selector) {
 			return true
-		}
-		if language == "python" && !strings.ContainsAny(pattern, "/:") {
-			root, _, _ := strings.Cut(selector, ".")
-			patternRoot, _, dotted := strings.Cut(pattern, ".")
-			if dotted && root == patternRoot {
-				return true
-			}
 		}
 	}
 	return false
@@ -674,9 +676,26 @@ func explicitlySupportedSourcePattern(moduleMap policy.ModuleMap, pattern string
 	return supported
 }
 
+// unsupportedOrAmbiguousSourcePattern reports a selector spelled as a source
+// file path whose extension names no supported language, or names one only
+// through a wildcard. Only a file path has an extension: a selector without a
+// slash names a dotted module or package (a Python module, a .NET assembly such
+// as Microsoft.EntityFrameworkCore*), and one led by a dotted segment names a
+// Go import path (gopkg.in/yaml.v3). Their last dot separates a name segment.
 func unsupportedOrAmbiguousSourcePattern(moduleMap policy.ModuleMap, pattern string) bool {
+	if !strings.Contains(pattern, sepPath) || importPathDomain(pattern) {
+		return false
+	}
 	ext := path.Ext(pattern)
 	return ext != "" && !explicitlySupportedSourcePattern(moduleMap, pattern)
+}
+
+// importPathDomain reports a slash selector whose leading segment holds a dot:
+// a Go import-path domain (go.uber.org, k8s.io, github.com), never a
+// first-party directory.
+func importPathDomain(pattern string) bool {
+	segment, _, _ := strings.Cut(literalPrefix(pattern), sepPath)
+	return strings.Contains(segment, sepDotted)
 }
 
 // restrictToTargetVocabulary drops languages whose node vocabulary the rule's

@@ -26,6 +26,11 @@ const ShortIDLen = 8
 // the same prefix, so the human step and the agent's next_action agree.
 const deadSelectorPrefix = "selector matches nothing:"
 
+// unsupportedTargetPrefix marks an unevaluated required rule whose to: path
+// names a file type no dependency producer analyses: the owner fixes the rule,
+// since no analyzer install makes it evaluable. agentout reads the same prefix.
+const unsupportedTargetPrefix = "selector names a file type no dependency producer analyses:"
+
 // unmeasuredRatchetPrefix starts the reason of an unevaluated ratchet entry: the stored
 // reference does not compare, which the reference step below already answers.
 const unmeasuredRatchetPrefix = "reference not comparable"
@@ -252,12 +257,16 @@ func nextSteps(in Input, blockers []Blocker, reference string) []string {
 	}
 	rules := in.State.Decision.UnevaluatedRequiredRules
 	for _, rule := range rules {
-		if strings.HasPrefix(rule.Reason, deadSelectorPrefix) {
+		switch {
+		case strings.HasPrefix(rule.Reason, deadSelectorPrefix):
 			add("Ask the owner to fix rule " + rule.RuleID + ": its selector matches nothing (archfit config lint).")
+		case strings.HasPrefix(rule.Reason, unsupportedTargetPrefix):
+			add("Ask the owner to fix rule " + rule.RuleID + ": its target names a file type no analyzer reads.")
 		}
 	}
 	for _, rule := range rules {
-		if !strings.HasPrefix(rule.Reason, deadSelectorPrefix) && !strings.HasPrefix(rule.Reason, unmeasuredRatchetPrefix) {
+		if !strings.HasPrefix(rule.Reason, deadSelectorPrefix) && !strings.HasPrefix(rule.Reason, unsupportedTargetPrefix) &&
+			!strings.HasPrefix(rule.Reason, unmeasuredRatchetPrefix) {
 			add("Restore the evidence rule " + rule.RuleID + " needs: archfit doctor --fix.")
 		}
 	}

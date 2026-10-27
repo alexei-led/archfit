@@ -162,6 +162,7 @@ func TestNextStepsOrderAndBound(t *testing.T) {
 	s.Decision.UnevaluatedRequiredRules = []report.UnevaluatedRule{
 		{RuleID: "dead", Reason: "selector matches nothing: from ghost/**"},
 		{RuleID: "partial", Reason: "go/packages evidence is partial"},
+		{RuleID: "vb", Reason: "selector names a file type no dependency producer analyses: to src/**/*.vb"},
 	}
 	s.Dimensions.Testability.Unknown = []report.UnknownFact{{Fact: state.FactSuppliedCoverageUnits}, {Fact: state.FactAssertionQuality}}
 	s.Dimensions.Operations.Unknown = []report.UnknownFact{{Fact: state.FactOwnerProvenance}}
@@ -169,9 +170,9 @@ func TestNextStepsOrderAndBound(t *testing.T) {
 	want := []string{
 		stepFixBlocker,
 		"Ask the owner to fix rule dead: its selector matches nothing (archfit config lint).",
+		"Ask the owner to fix rule vb: its target names a file type no analyzer reads.",
 		"Restore the evidence rule partial needs: archfit doctor --fix.",
 		"Install or fix the missing analyzers (dependency-cruiser): archfit doctor --fix.",
-		"Declare owner for each module or add CODEOWNERS.",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("next steps =\n%q\nwant\n%q", got, want)

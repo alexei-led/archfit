@@ -27,7 +27,8 @@ func TestSelectorLanguages(t *testing.T) {
 	}{
 		{"slash path excludes dotted and :: vocabularies", "internal/llm/**", []string{graph.LangDotNet, graph.LangGo, graph.LangTypeScript}},
 		{"slash path without a wildcard", "internal/config", []string{graph.LangDotNet, graph.LangGo, graph.LangTypeScript}},
-		{"dotted python module id", "prefect.**", []string{graph.LangPython}},
+		{"dotted name addresses python modules and .NET assemblies", "prefect.**", []string{graph.LangDotNet, graph.LangPython}},
+		{".NET assembly glob", "Microsoft.EntityFrameworkCore*", []string{graph.LangDotNet, graph.LangPython}},
 		{"rust crate path", "mycrate::mod::**", []string{graph.LangRust}},
 		{"no separator at all addresses every language", "**", []string{graph.LangDotNet, graph.LangGo, graph.LangPython, graph.LangRust, graph.LangTypeScript}},
 		{"bare module name is ambiguous, so every language", "billing", []string{graph.LangDotNet, graph.LangGo, graph.LangPython, graph.LangRust, graph.LangTypeScript}},
