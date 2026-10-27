@@ -220,6 +220,8 @@ var rustRuleKinds = map[string]kindInfo{
 // csharpRuleKinds maps each csharp.yml ruleId to its Kind. Route facts carry no
 // Framework: attribute and Map* shapes are not import-gated.
 var csharpRuleKinds = map[string]kindInfo{
+	"cs-method":            {Kind: kindMethod},
+	"cs-local-function":    {Kind: kindFunction},
 	"cs-route-attribute":   {Kind: kindRoute},
 	"cs-route-minimal-api": {Kind: kindRoute},
 	"cs-parse-error":       {IsParseError: true},
@@ -513,11 +515,11 @@ func nameFromMatch(m sgSyntaxMatch) string {
 // or "template:". Anchoring on the verb skips a MapGroup prefix in a chained call,
 // and a "Name = ..." argument is the link name, not a template. Verbatim and
 // interpolated strings are not matched and fall back to the verb name.
-var csharpRouteRe = regexp.MustCompile(`\b(?:Http[A-Za-z]+|Route|Map(?:Get|Post|Put|Delete))\s*\(\s*(?:template\s*:\s*)?"((?:[^"\\]|\\.)*)"`)
+var csharpRouteRe = regexp.MustCompile(`\b(?:Http[A-Za-z]+|Route|Map(?:Get|Post|Put|Delete|Patch|Methods|Fallback))\s*\(\s*(?:template\s*:\s*)?"((?:[^"\\]|\\.)*)"`)
 
 // csharpVerbRe finds the attribute name or Map* method name that selects the verb.
 // Only the verbs the rules match, so a MapGroup prefix is never the verb.
-var csharpVerbRe = regexp.MustCompile(`\b(Http[A-Za-z]+|Route|Map(?:Get|Post|Put|Delete))\b`)
+var csharpVerbRe = regexp.MustCompile(`\b(Http[A-Za-z]+|Route|Map(?:Get|Post|Put|Delete|Patch|Methods|Fallback|IdentityApi))\b`)
 
 // csharpRouteName returns the route template, or the verb name when the route has
 // no literal template (for example [HttpGet] with the template on the class).
@@ -583,7 +585,10 @@ func isExported(lang, ruleID, name string) bool {
 		// The YAML rule already requires visibility_modifier, so any match is pub.
 		return true
 	case langDotNet:
-		return false // every C# rule is a route
+		// Routes are not API declarations, and a method's effective visibility
+		// depends on its enclosing types and InternalsVisibleTo, which a syntax
+		// match cannot see. C# function facts carry extent only.
+		return false
 	default: // go and future languages: uppercase-first convention
 		if isNonExportedGoRule(ruleID) {
 			return false

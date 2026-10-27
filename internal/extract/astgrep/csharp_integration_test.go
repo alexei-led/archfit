@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -23,6 +24,13 @@ type routeWant struct {
 	line int
 }
 
+type functionWant struct {
+	kind  string
+	name  string
+	start int
+	end   int
+}
+
 func csharpFixture(t *testing.T, dir string) scope.Scope {
 	t.Helper()
 	_, thisFile, _, ok := runtime.Caller(0)
@@ -39,12 +47,13 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 	sgSkipGuard(t)
 
 	tests := []struct {
-		name       string
-		dir        string
-		exclusions []string
-		wantRoutes []routeWant
-		wantStatus string
-		wantReason string
+		name          string
+		dir           string
+		exclusions    []string
+		wantRoutes    []routeWant
+		wantFunctions []functionWant
+		wantStatus    string
+		wantReason    string
 	}{
 		{
 			name: "every route form",
@@ -62,6 +71,20 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 				{"/jobs/{id}", 27},
 				{pathItems, 28},
 				{routeHTTPGet, 34},
+				{"/jobs/{id}", 42},
+				{"/jobs", 43},
+				{"MapIdentityApi", 44},
+			},
+			wantStatus: "ok",
+		},
+		{
+			name: "methods, constructors, and local functions with a body",
+			dir:  "functions",
+			wantFunctions: []functionWant{
+				{kindMethodStr, "Base", 10, 13},
+				{kindMethodStr, "Sum", 17, 25},
+				{kindFunctionStr, "Twice", 19, 22},
+				{kindMethodStr, "Arrow", 27, 27},
 			},
 			wantStatus: "ok",
 		},
@@ -92,8 +115,12 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 			wantReason: "syntax errors in 1 file(s), routes there may be missing: Program.cs:",
 		},
 		{
-			name:       "plain class has no route",
-			dir:        "plain",
+			name: "plain class has no route",
+			dir:  "plain",
+			wantFunctions: []functionWant{
+				{kindMethodStr, "Add", 3, 3},
+				{kindMethodStr, "Old", 5, 6},
+			},
 			wantStatus: "ok",
 		},
 	}
@@ -112,19 +139,22 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 				t.Errorf("cov.Reason = %q, want it to contain %q", cov.Reason, tt.wantReason)
 			}
 			var got []routeWant
+			var gotFunctions []functionWant
 			for _, f := range facts {
-				if f.Kind != kindRouteStr || f.Language != langCSharpStr || f.Exported {
-					t.Errorf("fact %+v: want a non-exported csharp route", f)
+				if f.Language != langCSharpStr || f.Exported {
+					t.Errorf("fact %+v: want a non-exported csharp fact", f)
 				}
-				got = append(got, routeWant{f.Name, f.StartLine})
-			}
-			if len(got) != len(tt.wantRoutes) {
-				t.Fatalf("routes = %v, want %v", got, tt.wantRoutes)
-			}
-			for i := range got {
-				if got[i] != tt.wantRoutes[i] {
-					t.Errorf("routes[%d] = %v, want %v", i, got[i], tt.wantRoutes[i])
+				if f.Kind == kindRouteStr {
+					got = append(got, routeWant{f.Name, f.StartLine})
+				} else {
+					gotFunctions = append(gotFunctions, functionWant{f.Kind, f.Name, f.StartLine, f.EndLine})
 				}
+			}
+			if !slices.Equal(got, tt.wantRoutes) {
+				t.Errorf("routes = %v, want %v", got, tt.wantRoutes)
+			}
+			if tt.wantFunctions != nil && !slices.Equal(gotFunctions, tt.wantFunctions) {
+				t.Errorf("functions = %v, want %v", gotFunctions, tt.wantFunctions)
 			}
 		})
 	}

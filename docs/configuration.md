@@ -93,7 +93,7 @@ Analyzers are opt-in, except `roslyn`. Every other analyzer requires `enabled: t
 
 | Key | Fields | Purpose and limits |
 | --- | --- | --- |
-| `analyzers.syntax` | `enabled`, `gate` | Uses ast-grep (`sg`) for declaration facts in Go, TypeScript, Python, and Rust, and route facts in C#. |
+| `analyzers.syntax` | `enabled`, `gate` | Uses ast-grep (`sg`) for declaration facts in Go, TypeScript, Python, and Rust, and route and function-extent facts in C#. |
 | `analyzers.scip` | `enabled`, `gate`, `timeout` | Uses language SCIP indexers for symbol-level edge strength. Go type information remains primary. |
 | `analyzers.clones` | `enabled`, `gate`, `timeout` | Uses `jscpd` for cross-module clone facts. Clone facts do not alter import-edge strength. |
 | `analyzers.cargo_modules` | `enabled`, `gate` | Uses `cargo-modules` to extract Rust intra-crate modules. It can compile the crate. |

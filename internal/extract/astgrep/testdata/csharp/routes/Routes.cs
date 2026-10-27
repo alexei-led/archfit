@@ -34,3 +34,22 @@ public class WeatherController : ControllerBase
     [HttpGet(Name = "GetWeatherForecast")]
     public IActionResult Forecast() => Ok();
 }
+
+public static class MinimalApiForms
+{
+    public static void Register(IEndpointRouteBuilder app)
+    {
+        app.MapPatch("/jobs/{id}", (int id) => Results.Ok());
+        app.MapMethods("/jobs", new[] { "HEAD" }, () => Results.Ok());
+        app.MapIdentityApi<User>();
+        app.MapHealthChecks("/health");
+    }
+}
+
+public static class EndpointWrappers
+{
+    public static RouteHandlerBuilder MapGet(this IEndpointRouteBuilder builder, Delegate handler, string pattern = "")
+    {
+        return builder.MapGet(pattern, handler);
+    }
+}
