@@ -64,7 +64,7 @@ These flags apply only to commands that list them below.
 | `--json`, `--markdown`, `--sarif` | Shorthand for one matching `--format`. Do not combine shorthands with `--format`. |
 | `--no-advisories` | Omit advisory findings. Omitted findings do not count as diagnostics. |
 | `--min-severity <level>` | Filter advisories: `low`, `medium`, `high`, or `critical`. |
-| `--lang <name>` | Force language detection. Repeatable: `go`, `typescript` (`ts`), `python` (`py`), `rust` (`rs`). |
+| `--lang <name>` | Force language detection. Repeatable: `go`, `typescript` (`ts`), `python` (`py`), `rust` (`rs`), `dotnet` (`csharp`). |
 | `--require-tools` | Treat missing required analyzers as failures in the rendered verdict. It does not change `analyze` exit status. |
 | `--ai-summary` | Add an off-gate AI summary. Requires AI settings in the config. |
 

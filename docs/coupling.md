@@ -138,7 +138,7 @@ contributes to `coupling_balance`. With `advisory`, clone facts stay outside the
 score and appear as advisory evidence. Clone facts never qualify a seam.
 
 SCIP refines symbol-level hints for TypeScript, Python, and Rust. Go uses
-`go/types` data. SCIP cannot identify a method receiver, so concrete-method data
+`go/types` data. .NET uses Roslyn compiler symbols from the `archfit-roslyn` helper. SCIP cannot identify a method receiver, so concrete-method data
 evidence is available only for Go.
 
 TypeScript without SCIP treats runtime imports as functional unless a target

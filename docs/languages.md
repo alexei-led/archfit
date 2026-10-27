@@ -12,7 +12,7 @@ Language adapters run when project markers and required tools are present. Set `
 | TypeScript and JavaScript | Root `package.json` | `npx` or `bunx`, plus `dependency-cruiser` | File-to-file imports | Without the root marker, the adapter is absent. Tool errors produce partial evidence. |
 | Python | `pyproject.toml`, `setup.py`, or `languages.python.package` | `uv`, or Python 3.14+ with `grimp==3.17` installed | Dotted module imports | Without a package marker, the adapter is absent. Source or graph extraction gaps produce partial evidence. |
 | Rust | Root `Cargo.toml`, or configured `languages.rust.manifest` | `cargo` | Crate dependencies | Cargo errors produce partial evidence. A one-crate graph has no internal crate edges. |
-| .NET (C#, SDK-style projects, net8.0 and later) | A `.slnx` or `.sln` at the root, or any `.csproj` | `dotnet` SDK; Roslyn helper for the type graph | Project graph per target framework; file-to-file type references with compiler-resolved coupling strength; `internal` use across assemblies as intrusive hints; LOC, test and generated classification, route rules, Cobertura coverage | Projects that do not evaluate or load are reported `failed` or `partial` with the cause. Unresolved symbols keep coupling from `measured`. See [.NET](#net). |
+| .NET (C#, SDK-style projects, net8.0 and later) | `languages.dotnet.projects`, else a `.slnx` or `.sln` at the root, else any `.csproj` outside `obj/`, `bin/`, and `exclude` | `dotnet` SDK; the Roslyn helper for the type graph | Project graph from MSBuild evaluation; file-to-file type references with compiler-resolved strength hints; `internal` use across assemblies as intrusive hints | Projects that do not evaluate or load are reported `failed` or `partial` with the cause. Unresolved symbols keep coupling from `measured`. See [.NET](#net). |
 
 Optional tools add syntax evidence, clone evidence, or more precise coupling evidence. Their absence does not stop the analysis. See [metrics](metrics.md) for metric meaning and limits.
 
@@ -26,7 +26,7 @@ Each adapter drives the project's own tooling. Archfit reuses what is installed 
 | TypeScript / JavaScript | `npm ci` (or `pnpm install` / `yarn`) in the project root, the workspace root for a monorepo, so `node_modules` and the `tsconfig` `paths`/`baseUrl` resolve | `analyzers.scip` for symbol-level strength, `exclude` for generated code |
 | Python | a package marker (`pyproject.toml` or `setup.py`) and Python 3.14+ with `grimp==3.17` | `languages.python.package` when the importable package name is not obvious |
 | Rust | a root `Cargo.toml` and `cargo` | `languages.rust.manifest`, `languages.rust.features`, `languages.rust.include_dev_deps` |
-| .NET | the `dotnet` SDK on `PATH`, and `ARCHFIT_DOTNET_ROSLYN` naming the built Roslyn helper (`make dotnet-roslyn`). Network is optional, but without it MSBuild SDKs resolved through NuGet cannot load | `languages.dotnet` to select solutions or projects, `analyzers.roslyn.enabled: false` for the project-only graph |
+| .NET | the `dotnet` SDK on `PATH`, and `ARCHFIT_DOTNET_ROSLYN` set to the absolute path of the built Roslyn helper, outside the target (`make dotnet-roslyn`). Restore NuGet packages (`dotnet restore`) in the environment that runs archfit; archfit never restores, and unrestored package symbols leave projects `partial`. Network is optional, but without it MSBuild SDKs resolved through NuGet cannot load | `languages.dotnet.projects` to select solutions or projects, `analyzers.roslyn.enabled: false` for the project-only graph |
 
 The shipped image already contains every tool, at the versions pinned in `tools/manifest.json`: Go, Node with dependency-cruiser and TypeScript, Python with grimp, Rust with rust-analyzer, the .NET SDK with the Roslyn helper, ast-grep, jscpd, scip indexers, and cargo-modules. Running archfit from the image removes the "install the analyzer" failure mode entirely; what remains is the target repository's own prerequisites (the second and third columns).
 
@@ -40,13 +40,14 @@ Every analyzer reports one status per tool in `coverage.tools[]`. The status tel
 | `absent` | the tool does not apply to this repository's languages, or its project marker is missing | check the marker for that language |
 | `disabled` | the analyzer is opt-in and your config did not enable it | set `analyzers.<name>.enabled: true` when you want that evidence |
 | `partial` | the tool ran, but its evidence is incomplete | read `reason`: it names the missing input and the command or key that fixes it |
-| `timeout` | the pass exceeded its budget | raise `analyzers.<name>.timeout`, or narrow the scope |
+| `timed out` | the pass exceeded its budget | raise `analyzers.<name>.timeout`, or narrow the scope |
 
-The two partial results people hit first:
+The partial results people hit first:
 
 - **TypeScript / JavaScript.** `N of M import specifiers unresolved` means the target's dependencies are not installed: install them in the project root (`npm ci`, `pnpm install`, or `yarn`; the workspace root for a monorepo), then check `tsconfig` `paths`/`baseUrl`. `scip` stays `absent` until `node_modules` exists, because scip-typescript resolves packages through it.
   `dependency-cruiser environment incomplete` means the analyzer environment has no compatible TypeScript compiler: run archfit from the shipped image, or install TypeScript 5-6 next to dependency-cruiser.
 - **Rust.** `Rust target attribution partial` means rust-analyzer saw symbols it cannot pin to exactly one Cargo target (macros, generated code, several targets). Crate-level structure is still measured. Narrow `languages.rust.manifest` to the workspace you care about, or set `analyzers.scip.enabled: false` to rely on crate-level coupling only.
+- **.NET.** `N of M projects partial, K failed, U unresolved symbols` on the `roslyn` row means packages or reference packs are missing: restore the projects in the environment that runs archfit, or install the targeting pack the reason names. `MSB4236` on the `dotnet-msbuild` row means an MSBuild SDK from `global.json` `msbuild-sdks` could not be fetched: run with NuGet access.
 
 ### Go
 
@@ -119,48 +120,52 @@ Bench/example-only targets can lack a supported module graph; read the named cov
 
 ### .NET
 
-Archfit evaluates each C# project with `dotnet msbuild -getItem -getProperty`, once per project and once per target framework, and reads `.slnx` and `.sln` membership. The Roslyn helper (`archfit-roslyn`) then loads the projects without compiling and emits file-to-file type references. Archfit never runs `dotnet restore` and never asks the helper to. Non-C# projects in a solution, such as `.sqlproj`, are skipped and counted in coverage detail.
+Archfit selects projects from `languages.dotnet.projects`, else the first `.slnx` or `.sln` at the root (by file name), else every `.csproj` outside `obj/`, `bin/`, `.git/`, `node_modules/`, and `exclude`. It evaluates each project on the original tree with `dotnet msbuild -getItem -getProperty`: once, then once per entry of `TargetFrameworks`, because a conditional reference appears only in the per-framework run. The Roslyn helper (`archfit-roslyn`) then loads the projects on a snapshot without compiling and emits file-to-file type references. Archfit never runs `dotnet restore` and never asks the helper to. Non-C# projects in a solution, such as `.sqlproj`, are skipped and counted in coverage detail.
 
-Node IDs are repo-relative slash paths, as for Go and TypeScript. Project nodes use the `.csproj` path. Namespaces are not graph nodes. Declare modules with globs; `archfit config init` writes one module per evaluated project directory. A file compiled into several projects through a linked `Compile Include` is one node with the union of its edges.
+Node IDs are root-relative slash paths, as for Go and TypeScript. Project nodes use the `.csproj` path. Namespaces are not graph nodes. Symbols from referenced assemblies (BCL, restored packages) become `external:<assembly>` nodes. Unresolved symbols are counted, never turned into nodes. Files under `obj/` or `bin/` and symbols declared outside the root produce no edges. A file compiled into several projects through a linked `Compile Include` is one node with the union of its edges; it has no module unless a module glob covers it.
+
+Declare modules with globs. `archfit config init` writes one module per project directory, named after the project file, and drops a module whose directory holds no production source (for example a project under `test/`). It writes `languages.dotnet.enabled: auto` and `analyzers.roslyn.enabled: true`. `archfit config update --apply` adds `analyzers.roslyn.enabled: true` when the setting is implicit.
 
 Coupling strength comes from compiler symbols. The extractor emits hints and does not classify; `internal/relationship` decides strength with the precedence in [coupling](coupling.md).
 
 | Reference from file A to a symbol in file B | Hint |
 | --- | --- |
-| Implements or uses an interface or abstract type | `contract` |
-| Uses a concrete type, field, property value, or constant as data only | `model` |
-| Uses a record or struct with no behavior as data only | `dto` |
-| Calls a method, property, event, or constructor of a concrete type | `functional` |
+| Implements or uses an interface, an abstract class, or an abstract member | `contract` |
+| Names a concrete type, or reads or writes its field, constant, or auto-property | `model` |
+| Names a source record or struct that has data members and no behavior, or reads its members | `dto` |
+| Calls a method, event, constructor, indexer, or a property with a body on a concrete type | `functional` |
 | Inherits a concrete class | `functional` |
-| Uses a symbol that is `internal` or `private protected`, declared in another assembly | `intrusive` |
+| Uses a symbol that is, or is nested in, `internal` or `private protected`, declared in another assembly | `intrusive` |
+
+The strongest use wins per file pair. Data uses (`model`, `dto`) also travel in a separate data channel, which lifts a `public:` target from `contract` to `model` for a concrete type. A `dto` stays `contract` across a `public:` glob and reads `model` elsewhere. Known gap: invoking a delegate stored in a field counts as a data use.
 
 The `intrusive` hint feeds the `encapsulation` metric. `InternalsVisibleTo` declarations are reported as coverage detail only; a declaration is not a usage edge.
 
 #### Project status
 
-The helper classifies each project from workspace and compilation diagnostics. A multi-targeting project takes the worst status across its target frameworks, and its edges are the union.
+The helper classifies each project and target framework from workspace and compilation diagnostics. Archfit folds the frameworks: a project is `complete` only when every framework is, `failed` only when every framework failed, and `partial` otherwise. Its file edges are the union of the frameworks that loaded.
 
 | Status | Condition | Edges |
 | --- | --- | --- |
 | `complete` | The project loaded and no symbol is unresolved. | File edges. |
-| `partial` | The project loaded, but some symbols are unresolved (missing NuGet packages or reference packs). | File edges for resolved symbols. Coverage names the counts. |
-| `failed` | The project loaded with 0 source documents, and the workspace reports a failure for its path. | None from the helper. |
+| `partial` | The project loaded, but some symbols are unresolved (missing NuGet packages or reference packs), or the workspace reported a failure for it. | File edges for resolved symbols. Coverage names the counts. |
+| `failed` | The workspace kept the project with 0 source documents, or could not add it. | None from the helper. See the fallback below. |
 
-`failed` is measured, not assumed: MSBuildWorkspace keeps a project whose evaluation failed as an empty project. A workspace failure on a project that did load its documents is `partial`. A `Tests` project that references a broken project can therefore be `partial`, not `failed`. The reason names the cause and the fix, for example `MSB4236: SDK 'Bitwarden.Server.Sdk' not resolvable offline; run with NuGet access and a warm cache` or `global.json requests SDK X, which is not installed; install a matching SDK or relax the pin`.
+`failed` is measured, not assumed: MSBuildWorkspace keeps a project whose evaluation failed as an empty project. A workspace failure on a project that did load its documents is `partial`. A `Tests` project that references a broken project can therefore be `partial`, not `failed`. The `dotnet-msbuild` row names the evaluation cause and fix, for example `MSB4236: SDK 'Bitwarden.Server.Sdk' not resolvable offline; run with NuGet access and a warm cache` or `global.json requests SDK X, which is not installed; install a matching SDK or relax the pin`. The `roslyn` row reads `N of M projects partial, K failed, U unresolved symbols` and names up to five projects with their causes.
 
-An unsatisfiable `global.json` makes the helper exit with an error that names `global.json`, and the run reports no helper evidence.
+When the helper itself fails, for example on an unsatisfiable `global.json`, it writes one `archfit-roslyn: …` line to stderr and exits 1, or 2 for an unexpected error (`ARCHFIT_ROSLYN_DEBUG=1` adds the trace). The `roslyn` row is then `partial` with `archfit-roslyn failed: <that line>`, and every project falls back to its project graph.
 
 #### Fallback to the project graph
 
-One source project contributes one scored edge set. When the helper loaded a project, only its file edges are emitted. When the helper is absent, disabled, or failed for a project, and MSBuild evaluation supplied its `ProjectReference` items, only those project edges are emitted. A project that fails both has no edges and is reported as missing inventory.
+One source project contributes one scored edge set. When the helper loaded a project, only its file edges are emitted. When the helper is absent, disabled, failed, or timed out for a project, and MSBuild evaluation supplied its `ProjectReference` items, only those project edges are emitted. A project that fails both has no edges and is reported as missing inventory.
 
 Fallback limits:
 
 - Project edges have unknown strength. The scorer abstains unless a policy glob or an approved label supplies strength.
-- File selectors (`public:`, `internal:` file globs) do not match project edges.
+- Selectors match a project edge by the `.csproj` path: a directory glob such as `src/Core/**` matches it, a glob for files below it (`src/Core/Api/**`) does not.
 - Edge counts become project pairs for fallback projects.
-- The coverage row stays `partial`. Missing inputs, not reduced precision, is the reason.
-- References from test projects (`IsTestProject=true` or a test-classified path) are dropped from the fallback.
+- The `roslyn` row reads `partial` when the helper failed for a project or the whole run, `timed out` on a timeout, `absent` with a coverage gap when `ARCHFIT_DOTNET_ROSLYN` is unset, and `disabled` without a gap when switched off. A `partial` or `timed out` row counts as missing inputs, not reduced precision.
+- Edges from `IsTestProject=true` projects are dropped, both fallback and file edges, as Rust drops dev-dependencies. Their files stay as nodes. A test project without that property keeps its edges.
 
 A `ProjectReference` with no type use is not an edge when the project has file edges. It is counted as unused in coverage detail, and only when the project is `complete`.
 
@@ -169,19 +174,22 @@ A `ProjectReference` with no type use is not an edge when the project has file e
 Evaluation runs the project's `Directory.Build.props`, imported targets, and the props of NuGet-resolved SDKs. The Roslyn design-time build also runs prerequisite targets that write generated files (global usings, assembly info) under `obj/<Configuration>/<tfm>/`. Both execute code from the target repository. This is the same trust class as `go/packages` and cgo. See [evidence](evidence.md#net-trust-limits).
 
 - Evaluation runs on the original tree. On `bitwarden/server` all 86 projects evaluated with `git status --ignored` clean. That is a measurement for one repository, not a guarantee.
-- The helper runs on a disposable copy of the analysis root, without `.git` and `node_modules/`. The copy keeps `obj/`, `bin/`, and files matched by `exclude`, because they can be build inputs. Archfit maps paths back to the original and deletes the copy, also on error and timeout. `exclude` applies to the emitted evidence, after analysis.
+- The helper runs on a disposable copy of the analysis root in the system temp directory. The copy skips `.git` and `node_modules` at any depth and keeps `obj/`, `bin/`, and files matched by `exclude`, because they can be build inputs. `exclude` applies to the emitted evidence, after analysis.
+- The copy also takes the build inputs (`Directory.Build.props`, `Directory.Build.targets`, `Directory.Build.rsp`, `Directory.Packages.props`, `global.json`, `NuGet.config`) of every directory between the analysis root and the repository root. Build inputs above the repository root are not copied; the `roslyn` detail names them when any exist. A file that a build input imports from outside the copied tree, such as `../build/common.props` in a subtree scan, is not copied.
+- A symlink that points inside the analysis root is redirected into the copy. One that points elsewhere keeps its target.
+- Archfit maps paths back to the original and deletes the copy on success, error, timeout, and cancellation.
 
 #### SDK and reference packs
 
 The image ships one SDK band, 10.0.x. Which SDK a host uses is the host's choice:
 
 - A target `global.json` that pins an SDK this host cannot satisfy makes its projects `failed`, with a reason that names `global.json`.
-- The SDK carries only its own reference pack. A `net8.0` project resolves its framework references only if the 8.0 targeting pack is installed (`Microsoft.NETCore.App.Ref` 8.x). In the image, which is offline with an empty NuGet cache, a `net8.0` target is `partial` and the reason names the missing pack. On a developer machine with that pack, it can be `complete`.
+- The SDK carries only its own reference pack. A `net8.0` project resolves its framework references only if the 8.0 targeting pack is installed (`Microsoft.NETCore.App.Ref` 8.x). In the image contract (offline, one SDK, empty NuGet cache), a `net8.0` target is `partial` and the reason names the missing pack. On a developer machine with that pack, it can be `complete`.
 - MSBuild SDKs listed in `global.json` `msbuild-sdks` (for example `Bitwarden.Server.Sdk`, `Aspire.AppHost.Sdk`) are fetched by the SDK resolver when the network is reachable. That is SDK behavior, not an archfit restore. Offline, each unresolvable SDK costs about 11 s per evaluation, and the project is `failed` with `MSB4236`.
 
 #### Timeouts
 
-Evaluation runs in parallel, with a 5 minute limit per project. The helper runs under `analyzers.roslyn.timeout`. A timeout is `failed` for the run, not a silent truncation. On a repository with many NuGet-resolved SDK projects, expect a long offline run: on `bitwarden/server`, 16 unresolvable projects took 193 s to evaluate, and a full offline helper load took 676 s against 72 s with network. Raise `analyzers.roslyn.timeout` for such repositories, or run with network access and a warm NuGet cache.
+Evaluation runs four projects at a time, with a 5 minute limit per `dotnet msbuild` call. A project whose evaluation times out is `failed`, and the `dotnet-msbuild` row reads `timed out`. The snapshot copy and the helper share `analyzers.roslyn.timeout`, 20 minutes by default. A helper timeout reads `timed out` on the `roslyn` row and every project falls back to its project graph; it is never a silent truncation. On a repository with many NuGet-resolved SDK projects, expect a long offline run: on `bitwarden/server`, 16 unresolvable projects took 193 s to evaluate, and a full offline `archfit analyze` took 749 s against 89 s with network. Raise `analyzers.roslyn.timeout` for larger repositories, or run with network access and a warm NuGet cache.
 
 #### Install the helper
 
@@ -192,11 +200,20 @@ make dotnet-roslyn
 export ARCHFIT_DOTNET_ROSLYN="$PWD/.bin/dotnet-roslyn"
 ```
 
-The build restores the helper's own locked dependencies. Archfit never restores a target. The helper needs the `dotnet` SDK at run time. An unset variable leaves the type graph `absent`, and `archfit doctor` reports the helper missing with this hint. An invalid path fails visibly.
+The build restores the helper's own locked dependencies. Archfit never restores a target. The helper runs as `dotnet <dir>/archfit-roslyn.dll` and needs an SDK that satisfies the target's `global.json`. Its `--version` line, `archfit-roslyn <version>; Microsoft.CodeAnalysis <version>; SDK <version>`, is the `roslyn` row version.
+
+`ARCHFIT_DOTNET_ROSLYN` must be an absolute directory outside the analysis root that holds `archfit-roslyn.dll`. To analyze the archfit checkout itself, copy `.bin/dotnet-roslyn` outside it first.
+
+| Setting | `archfit doctor` | Analysis |
+| --- | --- | --- |
+| Unset | `missing`, with this hint | `roslyn` row `absent`, with a coverage gap for `coupling_balance` and `encapsulation`; project graph only |
+| Relative, or without `archfit-roslyn.dll` | `invalid`; doctor exits non-zero | No .NET graph; the `dotnet-msbuild` row is `partial` and names the variable |
+| Inside the analysis root | not checked: doctor has no target | No .NET graph; the `dotnet-msbuild` row is `partial` and names the variable |
+| Any value, with `analyzers.roslyn.enabled: false` | as above | `roslyn` row `disabled`, no gap; project graph only |
 
 #### Route rules and C# 14
 
-The `ast-grep` C# rules find ASP.NET route attributes (`[HttpGet]`, `[HttpPost]`, `[Route]`) and `MapGet`, `MapPost`, `MapPut`, `MapDelete` calls. A file that the grammar cannot fully parse is `partial`, and the reason names up to five files with the first error line. The C# 14 `extension` block parses as an error, so any file that has one is `partial`.
+With `analyzers.syntax` enabled, the ast-grep C# rules find ASP.NET route attributes (`[HttpGet]`, `[HttpPost]`, `[HttpPut]`, `[HttpDelete]`, `[HttpPatch]`, `[Route]`) and `MapGet`, `MapPost`, `MapPut`, `MapDelete` calls. A file whose syntax tree has `ERROR` nodes makes the `ast-grep/syntax` row `partial`; the reason names up to five files with the first error line. Files matched by `exclude` do not count. The C# 14 `extension` block parses as an error, so any non-excluded file that has one makes the row `partial`.
 
 #### Cobertura coverage
 
@@ -206,11 +223,11 @@ Use coverlet and select format `cobertura`:
 dotnet test --collect "XPlat Code Coverage"
 ```
 
-The report lands in `TestResults/<guid>/coverage.cobertura.xml`. Archfit reads lines. It resolves each `filename` against every `<source>` (an absolute `filename` is used as is), takes the first join under the analysis root, and makes it root-relative with `/`. A `<source>` is often `/` or a directory above the repository. Files whose every join lies outside the root, such as NuGet cache sources, are dropped and not counted as unresolved. A file that appears in several `<class>` entries or reports is merged per line, taking the highest hit count. A UTF-8 BOM is accepted.
+The report lands in `TestResults/<guid>/coverage.cobertura.xml`. `coverage.sources[].path` is a fixed path, so copy the report to a stable location in the same CI step. `format: auto` detects it from the `.xml` extension and the `<coverage>` root element. Archfit reads lines. It joins each `filename` with every `<source>` (an absolute `filename` is used as is) and takes the first join that resolves under the analysis root, root-relative with `/`. A `<source>` is often `/` or a directory above the repository. A join inside the root that does not resolve counts as unresolved. Files whose every join lies outside the root, such as NuGet cache sources, are dropped and not counted as unresolved. A file that appears in several `<class>` entries of one report is merged per line, taking the highest hit count. A UTF-8 BOM is accepted.
 
 ## Analyzer tools
 
-Enable optional tools under `analyzers`. `roslyn` is the exception: it is on by default when the helper is installed. These tools report absent or partial evidence when unavailable or when a run fails.
+Enable optional tools under `analyzers`. `roslyn` is the exception: it is on unless `enabled: false`, and runs when `ARCHFIT_DOTNET_ROSLYN` names the helper. These tools report absent or partial evidence when unavailable or when a run fails.
 
 | Tool | Evidence | Required program |
 | --- | --- | --- |
@@ -218,12 +235,12 @@ Enable optional tools under `analyzers`. `roslyn` is the exception: it is on by 
 | `scip` | Language-specific symbol and edge-strength evidence | `scip-go`, `scip-typescript`, `scip-python`, or `rust-analyzer`, plus `uv` |
 | `clones` | Duplicate-code evidence | `jscpd` |
 | `cargo_modules` | Rust intra-crate module graph | `cargo-modules` |
-| `dotnet-msbuild` | .NET project graph from MSBuild evaluation. Reported in `coverage.tools[]`; not configured under `analyzers` | `dotnet` SDK |
+| `dotnet-msbuild` | .NET project graph from MSBuild evaluation. Reported in `coverage.tools[]`; configured by `languages.dotnet`, not under `analyzers` | `dotnet` SDK |
 | `roslyn` | .NET type-level file graph and coupling strength | `dotnet` SDK and the `archfit-roslyn` helper (`ARCHFIT_DOTNET_ROSLYN`) |
 
-SCIP indexers are language-specific. Install the matching indexer for the language under analysis. TypeScript SCIP needs a data-only TypeScript project and installed target dependencies to resolve imports. For JavaScript, provide a `tsconfig.json` with `allowJs: true`. Archfit invokes tools found on `PATH`.
+SCIP indexers are language-specific. Install the matching indexer for the language under analysis. TypeScript SCIP needs a data-only TypeScript project and installed target dependencies to resolve imports. For JavaScript, provide a `tsconfig.json` with `allowJs: true`. .NET has no SCIP indexer; the Roslyn helper supplies its strength hints. Archfit invokes tools found on `PATH`.
 
-The v3.2 image includes all listed tools. Optional execution is still controlled by `analyzers`;
+The v3.2 image includes all listed tools except the .NET SDK and the Roslyn helper, which images after v3.2.3 add. Optional execution is still controlled by `analyzers`;
 installation alone does not enable it. Generated Rust configurations already enable cargo-modules
 and SCIP. The [tool manifest](../tools/manifest.json) and dependency locks own the image/CI versions.
 See the [Dockerfile](../Dockerfile) for native SDK and runtime provisioning.
@@ -241,6 +258,7 @@ The complete release image is the simplest fixed tool environment. The tool vers
 | Go / Node / Python / uv | 1.27.3 / 24.22.1 / 3.14.9 / 0.13.5 |
 | dependency-cruiser / TypeScript compiler | 18.7.0 / 6.0.3 |
 | .NET SDK | 10.0.402 |
+| archfit-roslyn / Microsoft.CodeAnalysis | 1.0.0 / 5.6.0 |
 | ast-grep / jscpd | 0.51.0 / 5.4.2 |
 | scip-go / scip-typescript / scip-python | 0.2.9 / 0.5.2 / 0.6.8 |
 | Rust, Cargo, rust-src, bundled rust-analyzer | 1.99.1 |
@@ -305,7 +323,7 @@ Archfit classifies source files as `Production`, `Test`, `Generated`, or `Vendor
 | TypeScript and JavaScript | Any filename containing `.test.` or `.spec.`, or a `__tests__/` path segment |
 | Python | `test_*.py`, `*_test.py`, or a `tests/` path segment |
 | Rust | `tests.rs`, `*_test.rs`, `*_tests.rs`, or a `tests/`, `benches/`, `*_tests/`, `*-tests/` path segment |
-| .NET | `*Tests.cs`, `*Test.cs`, or a `test/` or `tests/` path segment |
+| .NET | `*Tests.cs`, `*Test.cs`, or a `test/` or `tests/` path segment. A project directory such as `Foo.Tests/` is not a test segment; add a `file_class.test_globs` entry such as `**/*.Tests/**`. |
 
 Generated filename checks apply across languages, before test-file patterns.
 The classifier marks a filename as generated when it meets any of these conditions:
@@ -313,15 +331,16 @@ The classifier marks a filename as generated when it meets any of these conditio
 - It ends in `.pb.go`, `.d.ts`, `.d.mts`, or `.d.cts`.
 - It starts with `gen_` or `mock_`.
 - Its name before the final extension ends in `_gen`, `_mock`, `_moq`, `.gen`, or `_pb2`.
-- It ends in `.g.cs`, `.g.i.cs`, or `.Designer.cs`, or sits under `obj/` or `bin/`.
+- It ends in `.g.cs`, `.g.i.cs`, or `.Designer.cs`, in any case.
 
 For example, `mock_client.py`, `client_gen.rs`, and `client.gen.go` are generated files under this policy.
-A header containing both `Code generated` and `DO NOT EDIT` marks a file as generated. A `<auto-generated` header does the same.
+A header containing both `Code generated` and `DO NOT EDIT` marks a file as generated. A `<auto-generated` header does the same, in any language. Archfit reads the first 512 bytes.
+A C# file under an `obj/` or `bin/` directory is generated. Other languages keep source under `bin/`.
 The `mocks/` and `__mocks__/` path segments also identify generated files.
 Configured generated globs and mock filename patterns take precedence over test patterns.
 
 The classifier marks files under a `vendor/` path segment as `Vendor`.
-The source-count walk skips dependency directories such as `vendor/`, `node_modules/`, `obj/`, `bin/`, and the root `pkg/mod/` cache.
+The source-count walk skips dependency directories such as `vendor/`, `node_modules/`, and the root `pkg/mod/` cache, and C# files under `obj/` or `bin/`.
 Skipping a directory does not assign the `Vendor` class to every file there.
 Use `test_globs` and `generated_globs` for other project conventions.
 

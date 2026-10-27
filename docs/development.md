@@ -50,18 +50,20 @@ make build
 make language-contracts
 ```
 
-The language contract harness exercises Go, TypeScript, JavaScript, Python, and Rust producers.
+The language contract harness exercises Go, TypeScript, JavaScript, Python, Rust, and .NET producers.
 Read its output for missing tools and unverified cases.
 Passing a fixture without its required producer is not evidence of language support.
 
-The harness also exercises .NET with the real SDK and the Roslyn helper. Build the helper first:
+`make language-contracts` builds the Roslyn helper first. The .NET case runs the real SDK and helper on a copy of `internal/testdata/dotnet`, using `ARCHFIT_DOTNET_ROSLYN` when set, else `.bin/dotnet-roslyn`. `--only dotnet` runs that case alone. Build and test the helper on its own with:
 
 ```sh
 make dotnet-roslyn
 make dotnet-roslyn-test
 ```
 
-`make dotnet-roslyn` publishes `tools/dotnet/archfit-roslyn` to `.bin/dotnet-roslyn`, restoring in locked mode. Set `ARCHFIT_DOTNET_ROSLYN` to that directory. `make dotnet-roslyn-test` runs the helper's xUnit tests against `internal/testdata/dotnet`. Update `tools/dotnet/archfit-roslyn/packages.lock.json` when the helper's dependencies change.
+`make dotnet-roslyn` publishes `tools/dotnet/archfit-roslyn` to `.bin/dotnet-roslyn`, restoring in locked mode. Set `ARCHFIT_DOTNET_ROSLYN` to that directory. `make dotnet-roslyn-test` runs the helper's xUnit tests against `internal/testdata/dotnet`. Update `tools/dotnet/archfit-roslyn/src/packages.lock.json` when the helper's dependencies change.
+
+The helper's own project makes archfit's self-scan detect .NET. Without `ARCHFIT_DOTNET_ROSLYN`, `make archfit` reports a `roslyn` coverage gap, raised to fail by `--require-tools`. `.bin/dotnet-roslyn` lies inside the repository, which the extractor rejects, so copy it outside the checkout before you point the variable at it.
 
 Run the evaluation harness unit tests separately:
 
@@ -147,7 +149,7 @@ cache keyed on the lock files below and rebuilds it only on a miss, so a pin cha
 code change reuses the verified tree. The CI job calls `scripts/ci-provision-tools.sh`; it is not
 a general host installer.
 The image contract runs all supported languages and positive optional-tool cases under the default
-and arbitrary numeric UID with readonly trusted inputs. Known-bad compiler/config cases must not
+and arbitrary numeric UID with readonly trusted inputs. The .NET case also analyzes the fixture directly from the readonly mount and checks its tree hash is unchanged. Known-bad compiler/config cases must not
 produce valid empty evidence. Native amd64 and arm64 release jobs validate their own immutable
 platform images before the manifest/version tags are assembled. Emulation is not native proof.
 

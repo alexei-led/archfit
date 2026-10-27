@@ -74,7 +74,7 @@ Each language accepts `enabled` and `gate`. `enabled` accepts YAML booleans or t
 | `languages.typescript` | `enabled`, `gate` | Uses the TypeScript extractor when its project markers and tools exist. |
 | `languages.python` | `enabled`, `gate`, `package` | `package` is the top-level importable package name. Empty means auto-detect from the project layout. |
 | `languages.rust` | `enabled`, `gate`, `manifest`, `features`, `include_dev_deps` | Empty `manifest` uses the root Cargo manifest. `features` defaults empty. `include_dev_deps` defaults false. |
-| `languages.dotnet` | `enabled`, `gate`, and a list of solution or project paths | An empty list uses the first `.slnx` or `.sln` at the root, else every `*.csproj` outside `obj/`, `bin/`, and `exclude`. Paths resolve under the analysis root. |
+| `languages.dotnet` | `enabled`, `gate`, `projects` | `projects` lists `.slnx`, `.sln`, or `.csproj` paths under the analysis root. Empty uses the first `.slnx` or `.sln` at the root (by file name), else every `*.csproj` outside `obj/`, `bin/`, `.git/`, `node_modules/`, and `exclude`. A listed path that does not exist makes `dotnet-msbuild` partial; when none exists the language reads absent, or reports an extractor error under `enabled: true`. Generated configs write `enabled: auto`, so a missing `dotnet` is a coverage gap. |
 
 Example Go workspace filter:
 
@@ -93,15 +93,15 @@ Analyzers are opt-in, except `roslyn`. Every other analyzer requires `enabled: t
 
 | Key | Fields | Purpose and limits |
 | --- | --- | --- |
-| `analyzers.syntax` | `enabled`, `gate` | Uses ast-grep (`sg`) for declaration facts in Go, TypeScript, Python, and Rust. |
+| `analyzers.syntax` | `enabled`, `gate` | Uses ast-grep (`sg`) for declaration facts in Go, TypeScript, Python, and Rust, and route facts in C#. |
 | `analyzers.scip` | `enabled`, `gate`, `timeout` | Uses language SCIP indexers for symbol-level edge strength. Go type information remains primary. |
 | `analyzers.clones` | `enabled`, `gate`, `timeout` | Uses `jscpd` for cross-module clone facts. Clone facts do not alter import-edge strength. |
 | `analyzers.cargo_modules` | `enabled`, `gate` | Uses `cargo-modules` to extract Rust intra-crate modules. It can compile the crate. |
-| `analyzers.roslyn` | `enabled`, `gate`, `timeout` | Uses the `archfit-roslyn` helper for the .NET type-level graph and coupling strength. Unlike the others, it defaults to on when `ARCHFIT_DOTNET_ROSLYN` names an installed helper. `enabled: false` forces the project-only graph. See [.NET](languages.md#net). |
+| `analyzers.roslyn` | `enabled`, `gate`, `timeout` | Uses the `archfit-roslyn` helper for the .NET type-level graph and coupling strength. Unlike the others, it is on unless `enabled: false` (`auto` and omission enable it). It runs when `ARCHFIT_DOTNET_ROSLYN` names an installed helper; unset, its row is `absent` with a coverage gap. `enabled: false` forces the project-only graph and reports `disabled` without a gap. See [.NET](languages.md#net). |
 
 All analyzer `gate` fields accept `off`, `warn`, or `fail`, defaulting to `warn`. A missing tool creates a coverage gap. `enabled: false` skips the analyzer without a gap. `--require-tools` raises gaps unless the gate is explicitly `off`.
 
-`scip`, `clones`, and `roslyn` accept Go duration strings in `timeout`. Omitted or zero values use built-in timeouts: 20 minutes for SCIP and 5 minutes for clones. A timeout drops that analyzer's result and the run continues. Dependent measurements can report `n/a`.
+`scip`, `clones`, and `roslyn` accept Go duration strings in `timeout`. Omitted or zero values use built-in timeouts: 20 minutes for SCIP and Roslyn, 5 minutes for clones. A SCIP or clones timeout drops that analyzer's result and the run continues; dependent measurements can report `n/a`. A Roslyn timeout covers the snapshot copy and the helper run; the row reads `timed out`, every .NET project falls back to its `ProjectReference` edges, and the coupling dimension does not reach `measured`.
 
 ### Why the optional analyzers are off
 
@@ -119,12 +119,13 @@ analyzers:
 
 Prerequisites, per analyzer and language. A missing prerequisite shows up as `absent` with the reason that names it.
 
-| Analyzer | Go | TypeScript / JavaScript | Python | Rust |
-| --- | --- | --- | --- | --- |
-| `scip` | `scip-go` | `node_modules` installed (`npm ci`) and `scip-typescript` | `scip-python` and `uv` | Cargo metadata (`cargo`) and `rust-analyzer` |
-| `syntax` | `sg` (ast-grep) | `sg` | `sg` | `sg` |
-| `clones` | `jscpd` | `jscpd` | `jscpd` | `jscpd` |
-| `cargo_modules` | — | — | — | `cargo-modules` (compiles the crate) |
+| Analyzer | Go | TypeScript / JavaScript | Python | Rust | .NET |
+| --- | --- | --- | --- | --- | --- |
+| `scip` | `scip-go` | `node_modules` installed (`npm ci`) and `scip-typescript` | `scip-python` and `uv` | Cargo metadata (`cargo`) and `rust-analyzer` | — |
+| `syntax` | `sg` (ast-grep) | `sg` | `sg` | `sg` | `sg` |
+| `clones` | `jscpd` | `jscpd` | `jscpd` | `jscpd` | `jscpd` |
+| `cargo_modules` | — | — | — | `cargo-modules` (compiles the crate) | — |
+| `roslyn` | — | — | — | — | `dotnet` and the `archfit-roslyn` helper (`ARCHFIT_DOTNET_ROSLYN`) |
 
 The shipped image contains all of them. When you run archfit from somewhere else, `--require-tools` turns any missing required analyzer into a failure instead of a gap.
 
