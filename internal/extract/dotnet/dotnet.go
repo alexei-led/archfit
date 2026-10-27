@@ -20,6 +20,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/syntax"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -82,10 +83,19 @@ type ProjectEvaluation struct {
 // are unavailable for this project: nil for a test project (its edges are
 // dropped, as the Rust extractor drops dev-dependencies) and for a failed one.
 func (p ProjectEvaluation) FallbackReferences() []string {
-	if p.IsTestProject || p.Status == ProjectFailed {
+	if p.isTest() || p.Status == ProjectFailed {
 		return nil
 	}
 	return p.References
+}
+
+// isTest reports a test project: IsTestProject=true, or a project path the
+// .NET test-file rule classifies (a test/ or tests/ segment). The second guard
+// matters offline, where the test SDK props under obj/ may not be imported and
+// IsTestProject evaluates empty. A Foo.Tests/ directory is not a test segment.
+// Fallback edges and file edges both use it, so the two paths agree.
+func (p ProjectEvaluation) isTest() bool {
+	return p.IsTestProject || syntax.IsTestFile(graph.LangDotNet, p.Path)
 }
 
 // Evaluation is the result of one Extract call.

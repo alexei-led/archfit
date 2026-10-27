@@ -434,7 +434,7 @@ func foldReport(r helperReport, projects []ProjectEvaluation) typeGraphResult {
 		if tp.Status == TypeGraphFailed {
 			continue
 		}
-		if eval.IsTestProject {
+		if eval.isTest() {
 			var n int
 			files, n = withoutEdges(files)
 			droppedTestEdges += n
@@ -442,7 +442,7 @@ func foldReport(r helperReport, projects []ProjectEvaluation) typeGraphResult {
 		res.files[path] = files
 	}
 	for _, p := range projects {
-		if _, reported := byPath[p.Path]; !reported && !p.IsTestProject {
+		if _, reported := byPath[p.Path]; !reported && !p.isTest() {
 			res.unreported = append(res.unreported, p.Path)
 		}
 	}

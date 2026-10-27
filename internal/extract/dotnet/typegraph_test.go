@@ -904,3 +904,68 @@ func mapsEqual[V comparable](a, b map[string]V) bool {
 	}
 	return true
 }
+
+// evalJSON is a synthetic MSBuild evaluation of project with IsTestProject
+// unset (as offline, when the test SDK props under obj/ are not imported) and
+// one ProjectReference to ref.
+func evalJSON(root, project, ref string) string {
+	return fmt.Sprintf(`{"Properties":{"TargetFramework":"net10.0","TargetFrameworks":"","IsTestProject":""},
+ "Items":{"ProjectReference":[{"Identity":"x","FullPath":"%s/%s","DefiningProjectFullPath":"%s/%s"}],"PackageReference":[]}}`,
+		filepath.ToSlash(root), ref, filepath.ToSlash(root), project)
+}
+
+func TestTypeGraph_TestClassifiedPathDropsEdgesWithoutIsTestProject(t *testing.T) {
+	const (
+		core      = "src/Core/Core.csproj"
+		testDir   = "test/Foo.Test/Foo.Test.csproj"
+		testsName = "src/Foo.Tests/Foo.Tests.csproj"
+		app       = "src/App/App.csproj"
+	)
+	projects := []string{testDir, testsName, app}
+	fileOf := func(project string) string { return filepath.ToSlash(filepath.Join(filepath.Dir(project), "Use.cs")) }
+	entries := make([]string, 0, 1+len(projects))
+	for _, p := range append([]string{core}, projects...) {
+		edges := ""
+		if p != core {
+			edges = `{"to":"src/Core/Core.cs","hint":"functional","data_hint":""}`
+		}
+		entries = append(entries, fmt.Sprintf(`{"path":%q,"tfm":"net10.0","status":"complete","unused_references":0,"files":[{"path":%q,"edges":[%s]}]}`, p, fileOf(p), edges))
+	}
+	report := `{"schema_version":1,"skipped_projects":[],"projects":[` + strings.Join(entries, ",") + `]}`
+
+	for _, helper := range []bool{false, true} {
+		t.Run(fmt.Sprintf("helper loaded %v", helper), func(t *testing.T) {
+			root := tree(t, core, testDir, testsName, app)
+			replies := map[string]reply{core: {stdout: `{"Properties":{"TargetFramework":"net10.0"},"Items":{}}`}}
+			for _, p := range projects {
+				replies[p] = reply{stdout: evalJSON(root, p, core)}
+			}
+			fake := newFake(t, root, replies)
+			if helper {
+				installHelper(t)
+				fake.helper = fakeHelper(replying(report))
+			}
+			facts, _, err := dotnet.New(fake, autoCfg(), nil).Extract(context.Background(), scope.Scope{Root: root})
+			if err != nil {
+				t.Fatal(err)
+			}
+			from := map[string]bool{}
+			for _, e := range facts.Edges {
+				from[graph.NodePath(e.From)] = true
+			}
+			kept := map[string]bool{testDir: false, testsName: true, app: true}
+			for project, want := range kept {
+				source := project
+				if helper {
+					source = fileOf(project)
+				}
+				if from[source] != want {
+					t.Errorf("edges from %s = %v, want %v (edges %+v)", source, from[source], want, facts.Edges)
+				}
+			}
+			if helper && !slices.Contains(nodeIDs(facts), "file:"+fileOf(testDir)) {
+				t.Error("the test project's file is no longer a node")
+			}
+		})
+	}
+}
