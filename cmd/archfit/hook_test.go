@@ -415,3 +415,39 @@ func TestHookOutcomeFollowsTheChangeStatus(t *testing.T) {
 		})
 	}
 }
+
+// TestIdentityGitFactsFollowTheAnalysisRoot: with an external policy directory
+// the tree digest names the analyzed checkout, never the repository that holds
+// the config.
+func TestIdentityGitFactsFollowTheAnalysisRoot(t *testing.T) {
+	t.Parallel()
+	root := hookRepo(t, hookModules, hookCleanA, "")
+	policyDir := t.TempDir()
+	writeFixtureFile(t, policyDir, defaultConfigPath, hookModules)
+	gitInitFixtureRepo(t, policyDir)
+	gitCommitFixture(t, policyDir)
+
+	_, out, stderr := runArchfit(t, cmdCheck, "-c", filepath.Join(policyDir, defaultConfigPath), "--root", root, "--progress=none", "--format="+formatJSON)
+	var state struct {
+		Identity struct {
+			HeadTreeDigest string `json:"head_tree_digest"`
+			PolicyDigest   string `json:"policy_digest"`
+		} `json:"identity"`
+	}
+	if err := json.Unmarshal([]byte(out), &state); err != nil {
+		t.Fatalf("decode: %v\nstderr: %s", err, stderr)
+	}
+	tree := func(dir string) string {
+		raw, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD^{tree}").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(raw))
+	}
+	if want := tree(root); state.Identity.HeadTreeDigest != want {
+		t.Errorf("head_tree_digest = %q, want the analysis root's tree %q (config repo tree is %q)", state.Identity.HeadTreeDigest, want, tree(policyDir))
+	}
+	if sum := sha256.Sum256([]byte(hookModules)); state.Identity.PolicyDigest != fmt.Sprintf("%x", sum) {
+		t.Errorf("policy_digest = %q, want the digest of the external config", state.Identity.PolicyDigest)
+	}
+}

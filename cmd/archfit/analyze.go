@@ -218,7 +218,7 @@ func executeScan(ctx context.Context, deps *appDeps, req scanRequest, advance fu
 		NoAdvisories:   req.noAdvisories,
 		RequireTools:   req.requireTools,
 		ValidationArgs: scanValidationArgs(req), ValidationConfig: req.validationConfig, ValidationRoot: req.validationRoot,
-		Identity: identityInputs(ctx, deps.Runner, req.configPath, bundleDir, req.baseRef),
+		Identity: identityInputs(ctx, deps.Runner, req.configPath, req.root, bundleDir, req.baseRef),
 	})
 	if err != nil {
 		return application.Response{}, config.Config{}, applicationExitError(err)

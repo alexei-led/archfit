@@ -20,14 +20,21 @@ const dirtySuffix = report.DirtySuffix
 // of the three policy files as they are on disk, the commit the change is
 // compared against, and the tree that was measured. A fact that cannot be read
 // (no git, no baseline file) stays empty rather than guessed.
-func identityInputs(ctx context.Context, runner toolrun.Runner, configPath, bundleDir, baseRef string) application.IdentityInputs {
+//
+// The policy digests follow the config bundle. The git facts follow the
+// analysis root (--root, else the config's directory): an external policy
+// directory may belong to another repository or to none.
+func identityInputs(ctx context.Context, runner toolrun.Runner, configPath, root, bundleDir, baseRef string) application.IdentityInputs {
 	in := application.IdentityInputs{
 		PolicyDigest:   fileDigest(configPath),
 		BaselineDigest: fileDigest(filepath.Join(bundleDir, defaultBaselinePath)),
 		LabelsDigest:   fileDigest(filepath.Join(bundleDir, defaultLabelsPath)),
 		EngineVersion:  version,
 	}
-	dir := filepath.Dir(configPath)
+	dir := root
+	if dir == "" {
+		dir = filepath.Dir(configPath)
+	}
 	if baseRef != "" {
 		if sha, err := historygit.ResolveCommit(ctx, dir, baseRef, runner); err == nil {
 			in.BaseSHA = sha
