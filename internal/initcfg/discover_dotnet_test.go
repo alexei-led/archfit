@@ -103,6 +103,13 @@ func TestRender_DotNetToolMode(t *testing.T) {
 	if strings.Contains(off, "roslyn:") {
 		t.Errorf("HasDotNet=false should not write analyzers.roslyn; got:\n%s", off)
 	}
+	// A Rust-only tree keeps its analyzers block byte for byte.
+	rustBlock := "# Rust deep analysis: explicit so single-crate Rust does not degenerate to one crate node.\n" +
+		"analyzers:\n  cargo_modules:\n    enabled: true\n  scip:\n    enabled: true\n\n" +
+		"# Optional analyzers (deeper facts; off by default because they are slow).\n"
+	if rust := Render(DiscoveredConfig{HasRust: true}, nil, false); !strings.Contains(rust, rustBlock) {
+		t.Errorf("Rust-only analyzers block changed; got:\n%s", rust)
+	}
 	both := Render(DiscoveredConfig{HasRust: true, HasDotNet: true}, nil, false)
 	if n := strings.Count(both, "\nanalyzers:\n"); n != 1 {
 		t.Errorf("Rust and .NET wrote %d analyzers: blocks, want 1:\n%s", n, both)
