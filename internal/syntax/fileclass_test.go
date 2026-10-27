@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/syntax"
 )
 
@@ -33,6 +34,10 @@ func TestClassifyFile_BuiltIn(t *testing.T) {
 		{name: "go _mock suffix", lang: "go", path: "pkg/x/client_mock.go", header: noHeader, want: fileclass.Generated},
 		{name: "go _moq suffix", lang: "go", path: "pkg/x/client_moq.go", header: noHeader, want: fileclass.Generated},
 		{name: "go _gen suffix", lang: "go", path: "pkg/x/wire_gen.go", header: noHeader, want: fileclass.Generated},
+		// --- .NET PascalCase folders ---
+		{name: "dotnet Mocks folder", lang: graph.LangDotNet, path: "src/Api/Mocks/FakeClock.cs", header: noHeader, want: fileclass.Generated},
+		{name: "dotnet Tests folder", lang: graph.LangDotNet, path: "src/Api/Tests/ClockFixture.cs", header: noHeader, want: fileclass.Test},
+		{name: "go Mocks folder keeps the lowercase convention", lang: "go", path: "pkg/Mocks/client.go", header: noHeader, want: fileclass.Production},
 		// --- TypeScript ---
 		{name: "ts production", lang: langTypeScript, path: "src/app.ts", header: noHeader, want: fileclass.Production},
 		{name: "ts mts production", lang: langTypeScript, path: "src/app.mts", header: noHeader, want: fileclass.Production},

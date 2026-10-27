@@ -74,8 +74,12 @@ func TestIsTestFile(t *testing.T) {
 		{langDotNet, "src/Core/Contest.cs", false},       // "test" in a word, not a suffix
 		{langDotNet, "src/Core/Testing/Clock.cs", false}, // not a test/ or tests/ segment
 		{langDotNet, "src/Core.Tests/Program.cs", false}, // project dir name alone is not a rule
-		{langGo, "test/tool.go", false},                  // the .NET segment rule stays .NET-only
-		{langRust, "src/UserServiceTests.rs", false},     // the .NET file forms stay .NET-only
+		{langDotNet, "src/Core/Tests/Fixture.cs", true},  // .NET folders are PascalCase
+		{langDotNet, "Test/Core/Helpers.cs", true},
+		{langPython, "pkg/Tests/helpers.py", false}, // other languages keep their lowercase convention
+		{langRust, "crate/Tests/helpers.rs", false},
+		{langGo, "test/tool.go", false},              // the .NET segment rule stays .NET-only
+		{langRust, "src/UserServiceTests.rs", false}, // the .NET file forms stay .NET-only
 		// Unknown language
 		{"java", "Test.java", false},
 	}

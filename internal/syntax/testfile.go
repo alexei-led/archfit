@@ -14,7 +14,9 @@ import (
 // Python:     test_*.py, *_test.py, or any path containing a /tests/ segment
 // TypeScript/JavaScript: any filename containing .test. or .spec., or a path containing __tests__/
 // Rust:       tests.rs, *_test.rs, *_tests.rs, or a tests/, benches/, *_tests/, or *-tests/ dir
-// .NET:       *Tests.cs, *Test.cs, or any path containing a test/ or tests/ segment
+// .NET:       *Tests.cs, *Test.cs, or any path containing a test/ or tests/ segment,
+//
+//	in any case: .NET folders are PascalCase (Tests/)
 //
 // Ceiling: Rust classification is file-level. A `#[cfg(test)] mod tests { … }`
 // block inside a production file stays Production; only a test module in its own
@@ -42,7 +44,7 @@ func IsTestFile(lang, path string) bool {
 	case graph.LangDotNet:
 		stem := strings.TrimSuffix(base, ".cs")
 		return strings.HasSuffix(stem, "Tests") || strings.HasSuffix(stem, "Test") ||
-			containsPathSegment(path, "test") || containsPathSegment(path, "tests")
+			containsPathSegmentFold(path, "test") || containsPathSegmentFold(path, "tests")
 	default:
 		return false
 	}
@@ -55,6 +57,18 @@ func containsRustTestDir(path string) bool {
 	parts := strings.Split(filepath.ToSlash(path), "/")
 	for _, dir := range parts[:len(parts)-1] {
 		if dir == "tests" || dir == "benches" || strings.HasSuffix(dir, "_tests") || strings.HasSuffix(dir, "-tests") {
+			return true
+		}
+	}
+	return false
+}
+
+// containsPathSegmentFold is containsPathSegment ignoring case, for .NET, whose
+// folder convention is PascalCase. Other languages keep their lowercase
+// convention exact.
+func containsPathSegmentFold(path, seg string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if strings.EqualFold(part, seg) {
 			return true
 		}
 	}

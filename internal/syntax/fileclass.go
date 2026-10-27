@@ -95,7 +95,8 @@ func ClassifyFile(lang, path string, header []byte, cfg FileClassConfig) filecla
 	//     (gomock, moq, mockery, Jest). loc's walk skips these dirs entirely, so
 	//     they never appear in the FileClassIndex; the path-only fallback must
 	//     classify them without a header sniff (C6).
-	if containsPathSegment(slash, "mocks") || containsPathSegment(slash, "__mocks__") {
+	if containsPathSegment(slash, "mocks") || containsPathSegment(slash, "__mocks__") ||
+		(lang == graph.LangDotNet && containsPathSegmentFold(slash, "mocks")) {
 		return fileclass.Generated
 	}
 	if lang == graph.LangDotNet && InDotNetBuildDir(slash) {
