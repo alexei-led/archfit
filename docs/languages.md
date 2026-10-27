@@ -193,6 +193,7 @@ The image ships one SDK band, 10.0.x. Which SDK a host uses is the host's choice
 - A target `global.json` that pins an SDK this host cannot satisfy makes its projects `failed`, with a reason that names `global.json`.
 - The SDK carries only its own reference pack. A `net8.0` project resolves its framework references only if the 8.0 targeting pack is installed (`Microsoft.NETCore.App.Ref` 8.x). In the image contract (offline, one SDK, empty NuGet cache), a `net8.0` target is `partial` and the reason names the missing pack. On a developer machine with that pack, it can be `complete`.
 - MSBuild SDKs listed in `global.json` `msbuild-sdks` (for example `Bitwarden.Server.Sdk`), or pinned with a version in the project's `Sdk` attribute (for example `Sdk="Aspire.AppHost.Sdk/13.6.0"`), are fetched by the SDK resolver when the network is reachable. That is SDK behavior, not an archfit restore. Offline, each unresolvable SDK costs about 11 s per evaluation, and the project is `failed` with `MSB4236`.
+- To reproduce a cold offline machine, empty both NuGet caches, not only `NUGET_PACKAGES`. The HTTP cache keeps downloaded `.nupkg` files and serves them offline, so an SDK fetched once still resolves. Point `NUGET_PACKAGES` and `NUGET_HTTP_CACHE_PATH` at empty directories. On Linux and macOS the HTTP cache defaults to `~/.local/share/NuGet/http-cache`, or sits under `DOTNET_CLI_HOME` when that is set; `dotnet nuget locals all --list` prints both paths.
 
 #### Timeouts
 
