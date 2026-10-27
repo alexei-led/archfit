@@ -240,8 +240,13 @@ func normalizeRoot(s, root string) string {
 	if fwd := filepath.ToSlash(root); fwd != root {
 		out = strings.ReplaceAll(out, fwd, "<ROOT>")
 	}
-	return out
+	return identityHostState.ReplaceAllString(out, "$1<HASH>")
 }
+
+// identityHostState matches the identity line's profile and tree digests: the
+// profile hash covers the host's tool versions and the tree follows the temp
+// repository, so a golden may not pin either.
+var identityHostState = regexp.MustCompile(`((?:profile|tree) )[0-9a-f]{12}(?:\+dirty)?`)
 
 // assertMatchesBaseline compares got against the committed fixture at path.
 // ARCHFIT_UPDATE_FORMATS explicitly regenerates it so the resulting diff can be

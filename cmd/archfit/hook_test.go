@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alexei-led/archfit/v3/internal/output/agentout"
 )
 
 const (
@@ -123,13 +126,13 @@ func TestHookClaude(t *testing.T) {
 		wantStderr string // substring of stderr; "" means empty stderr
 	}{
 		{name: "repair on the first stop blocks", repo: introduced, event: hookEventStop, wantCode: 2,
-			wantStderr: "next_action repair"},
+			wantStderr: "change fail, next_action repair"},
 		{name: "repair with stop_hook_active blocks only once", repo: introduced, event: hookEventSubagentStop, active: true,
 			wantStdout: "still reports blockers"},
-		{name: "a blocker outside the change is reported", event: hookEventStop,
+		{name: "a blocker outside the change is repository attention, not a stop", event: hookEventStop,
 			repo: func(t *testing.T) string {
 				return hookRepo(t, hookRuleCfg, hookViolatingA, hookViolatingA+"\n// unrelated edit\n")
-			}, wantStdout: "next_action report_blocked"},
+			}},
 		{name: "nothing to do is silent", event: hookEventStop,
 			repo: func(t *testing.T) string { return hookRepo(t, hookModules, hookCleanA, hookCleanA+"\n// edit\n") }},
 		{name: "a clean tree skips the run", event: hookEventStop,
@@ -148,10 +151,10 @@ func TestHookClaude(t *testing.T) {
 				writeFixtureFile(t, dir, ".archfit-cache/facts/x.json", "{}")
 				return dir
 			}},
-		{name: "a pre-existing dead selector is reported, not blocked", event: hookEventStop,
+		{name: "a dead selector is repository attention, not a stop", event: hookEventStop,
 			repo: func(t *testing.T) string {
 				return hookRepo(t, hookDeadSelectorCfg, hookCleanA, hookCleanA+"\n// edit\n")
-			}, wantStdout: "next_action ask_owner"},
+			}},
 		{name: "another event is ignored", repo: introduced, event: "PreToolUse"},
 		{name: "malformed stdin", repo: introduced, rawStdin: "{not json", wantCode: 1, wantStderr: "malformed hook event"},
 	} {
@@ -380,5 +383,72 @@ func gitFixtureEnv(t *testing.T, dir string, env []string, args ...string) {
 	cmd.Env = append(scrubGitFixtureEnv(os.Environ()), env...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// TestHookOutcomeFollowsTheChangeStatus feeds the agent JSON of the five
+// result-contract cases to the hook decision. The same files are the CLI's
+// output, so the CLI and the hook cannot read one result two ways.
+func TestHookOutcomeFollowsTheChangeStatus(t *testing.T) {
+	t.Parallel()
+	cases := map[string]hookOutcome{
+		"new_violation.json":                         hookBlock,
+		"existing_violation.json":                    hookAllow,
+		"unmeasured_ratchet_from_profile_drift.json": hookAllow,
+		"dead_selector.json":                         hookAllow,
+		"missing_evidence.json":                      hookReport,
+	}
+	dir := filepath.Join("..", "..", "internal", "output", "agentout", "testdata", "cases")
+	for name, want := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			raw, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // fixture path is a constant
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result agentout.Result
+			if err := json.Unmarshal(raw, &result); err != nil {
+				t.Fatalf("decode %s: %v", name, err)
+			}
+			if got := outcomeOf(result); got != want {
+				t.Errorf("outcome = %d for change %q, want %d", got, result.Change.Status, want)
+			}
+		})
+	}
+}
+
+// TestIdentityGitFactsFollowTheAnalysisRoot: with an external policy directory
+// the tree digest names the analyzed checkout, never the repository that holds
+// the config.
+func TestIdentityGitFactsFollowTheAnalysisRoot(t *testing.T) {
+	t.Parallel()
+	root := hookRepo(t, hookModules, hookCleanA, "")
+	policyDir := t.TempDir()
+	writeFixtureFile(t, policyDir, defaultConfigPath, hookModules)
+	gitInitFixtureRepo(t, policyDir)
+	gitCommitFixture(t, policyDir)
+
+	_, out, stderr := runArchfit(t, cmdCheck, "-c", filepath.Join(policyDir, defaultConfigPath), "--root", root, "--progress=none", "--format="+formatJSON)
+	var state struct {
+		Identity struct {
+			HeadTreeDigest string `json:"head_tree_digest"`
+			PolicyDigest   string `json:"policy_digest"`
+		} `json:"identity"`
+	}
+	if err := json.Unmarshal([]byte(out), &state); err != nil {
+		t.Fatalf("decode: %v\nstderr: %s", err, stderr)
+	}
+	tree := func(dir string) string {
+		raw, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD^{tree}").Output() //nolint:gosec // fixture directory from t.TempDir
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(raw))
+	}
+	if want := tree(root); state.Identity.HeadTreeDigest != want {
+		t.Errorf("head_tree_digest = %q, want the analysis root's tree %q (config repo tree is %q)", state.Identity.HeadTreeDigest, want, tree(policyDir))
+	}
+	if sum := sha256.Sum256([]byte(hookModules)); state.Identity.PolicyDigest != hex.EncodeToString(sum[:]) {
+		t.Errorf("policy_digest = %q, want the digest of the external config", state.Identity.PolicyDigest)
 	}
 }

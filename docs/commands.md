@@ -218,12 +218,12 @@ Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `vol
 
 ### `hook claude` and `hook git`
 
-`hook claude` implements the Claude Code Stop and SubagentStop protocol. `hook git` checks staged content for in-scope repairs.
+`hook claude` implements the Claude Code Stop and SubagentStop protocol. `hook git` checks staged content. Both stop a change only when `change.status` is `fail`.
 
 | Flag | Meaning |
 | --- | --- |
 | `-c, --config <file>` | Config path, relative to the hook working directory. |
-| `--base <ref>` | Scope repairs against a Git ref. Default: `HEAD`. |
+| `--base <ref>` | Scope blockers against a Git ref. Default: `HEAD`. |
 
 `hook git` also accepts hidden `--index-file` for Git hook integration. `GIT_INDEX_FILE` supplies its default.
 

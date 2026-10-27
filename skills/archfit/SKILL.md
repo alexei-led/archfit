@@ -146,22 +146,24 @@ allowlist or layer order that permits it. `unconstrained` is not permission.
 and the rules that select the path.
 
 **2. Check before you finish.** Run `archfit check --format agent`. It prints
-`archfit.agent-result.v1` with the verdict, one `next_action`, and repairs grouped
-by edge. The output is at most 8 KB.
+`archfit.agent-result.v1` with `change.status` (`pass`, `fail`, `unknown`), one
+`next_action`, the `change.blockers` grouped by edge, and `repository.attention`.
+The output is at most 8 KB.
 
-Follow `next_action`:
+Follow `next_action`. It follows `change` only:
 
-- `repair` — follow each repair's `goal` and `constraints`. Edit the files in
+- `repair` — follow each blocker's `goal` and `constraints`. Edit the files in
   `edit`. For a forbidden edge, change the importing side. An empty `edit`
   means the source file is unknown. In that case, `edge.from` names the source.
   Run `validate` after the repair.
 - `ask_owner` — stop and report to the architecture owner.
-- `restore_evidence` — install or fix the named analyzer.
-- `report_blocked` — report blockers that are outside this change.
+- `restore_evidence` — the change is `unknown`: install or fix the named analyzer.
 - `none` — the task is done, even with exit 2.
 
-With `--base HEAD`, a repair is outside this change when all its findings exist
-at HEAD. Do not edit config, baseline, waivers, or labels to pass. Do not fix
+`repository.attention` is not your change: an existing violation, a ratchet that
+cannot be evaluated, a dead selector. Report it to the owner; do not act on it.
+With `--base HEAD`, a blocker is existing, and so attention, when all its
+findings exist at HEAD. Do not edit config, baseline, waivers, or labels to pass. Do not fix
 `baseline` or `waived` findings without a request. Read
 `references/agent-loop.md` for the full JSON contract.
 

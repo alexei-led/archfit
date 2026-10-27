@@ -110,6 +110,10 @@ The `schema_version` field identifies a wire contract. It does not identify the 
 | `archfit.config-review.v1` | `config update --json` | Go contract in `internal/initcfg`; no published JSON Schema. |
 | `archfit.config-compare.v1` | `config compare --json` | Go contract in `cmd/archfit/config_compare.go`; no published JSON Schema. |
 
+Every state and agent result carries an `identity` block (`archfit.result-identity.v1`): the sha256 of the policy, baseline, and labels files as read from disk, the base commit, the git tree of the measured head (with `+dirty` for uncommitted edits), the engine version, and a hash of the measurement profile. A value the run could not read is omitted, never empty. The text footer, the SARIF run properties, and the hook message repeat it in short form.
+
+The agent result splits into `change` and `repository`. `change.status` is `pass`, `fail`, or `unknown`; `change.blockers` are the in-scope repairs. `unknown` means evidence is missing and never passes. `repository.attention` holds what the change did not cause: `existing_violation`, `unmeasured_ratchet`, `dead_selector`, `blocked_without_finding`. `next_action` follows `change` only, and the hooks stop a change only on `fail`. The process exit code still follows the verdict, so a clean change in a repository with attention exits `2`.
+
 `archfit.schema.json` describes configuration input. It is not a report schema. Configuration files use numeric `version: 2`. See [configuration](configuration.md) for fields and validation.
 
 The coverage sidecar uses numeric schema version `1`. Its shape and source rules belong to the configuration reference because they define input data. The sidecar is separate from the configuration file and report contracts.

@@ -924,6 +924,12 @@
     ],
     "status": "non_comparable"
   },
+  "identity": {
+    "engine_version": "dev",
+    "measurement_profile_hash": "\u003cMEASUREMENT_PROFILE_HASH\u003e",
+    "policy_digest": "0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6",
+    "schema_version": "archfit.result-identity.v1"
+  },
   "measurement": {
     "history_depth": 0,
     "history_window": "unavailable",

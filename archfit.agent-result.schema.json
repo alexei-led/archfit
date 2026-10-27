@@ -2,6 +2,75 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.agent-result.schema.json",
   "$defs": {
+    "Attention": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "unmeasured_ratchet",
+            "dead_selector",
+            "existing_violation",
+            "blocked_without_finding"
+          ]
+        },
+        "rule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "reason"
+      ]
+    },
+    "Change": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "unknown"
+          ]
+        },
+        "blockers": {
+          "items": {
+            "$ref": "#/$defs/Repair"
+          },
+          "type": "array"
+        },
+        "evidence_gaps": {
+          "items": {
+            "$ref": "#/$defs/EvidenceGap"
+          },
+          "type": "array"
+        },
+        "unevaluated_rules": {
+          "items": {
+            "$ref": "#/$defs/UnevaluatedRule"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "status",
+        "blockers",
+        "evidence_gaps",
+        "unevaluated_rules"
+      ]
+    },
     "Edge": {
       "properties": {
         "from": {
@@ -59,10 +128,13 @@
     },
     "Omitted": {
       "properties": {
-        "repairs": {
+        "blockers": {
           "type": "integer"
         },
         "unevaluated_rules": {
+          "type": "integer"
+        },
+        "attention": {
           "type": "integer"
         },
         "advisories": {
@@ -72,9 +144,26 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "repairs",
+        "blockers",
         "unevaluated_rules",
+        "attention",
         "advisories"
+      ]
+    },
+    "PolicyRef": {
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "sha": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ref",
+        "sha"
       ]
     },
     "Repair": {
@@ -160,6 +249,61 @@
         "edit"
       ]
     },
+    "Repository": {
+      "properties": {
+        "attention": {
+          "items": {
+            "$ref": "#/$defs/Attention"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "attention"
+      ]
+    },
+    "ResultIdentity": {
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "enum": [
+            "archfit.result-identity.v1"
+          ]
+        },
+        "policy_digest": {
+          "type": "string"
+        },
+        "baseline_digest": {
+          "type": "string"
+        },
+        "labels_digest": {
+          "type": "string"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/PolicyRef"
+        },
+        "base_sha": {
+          "type": "string"
+        },
+        "head_tree_digest": {
+          "type": "string"
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "measurement_profile_hash": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "schema_version",
+        "engine_version"
+      ]
+    },
     "UnevaluatedRule": {
       "properties": {
         "rule_id": {
@@ -199,30 +343,20 @@
         "repair",
         "ask_owner",
         "restore_evidence",
-        "report_blocked",
         "none"
       ]
     },
     "summary": {
       "type": "string"
     },
-    "repairs": {
-      "items": {
-        "$ref": "#/$defs/Repair"
-      },
-      "type": "array"
+    "identity": {
+      "$ref": "#/$defs/ResultIdentity"
     },
-    "evidence_gaps": {
-      "items": {
-        "$ref": "#/$defs/EvidenceGap"
-      },
-      "type": "array"
+    "change": {
+      "$ref": "#/$defs/Change"
     },
-    "unevaluated_rules": {
-      "items": {
-        "$ref": "#/$defs/UnevaluatedRule"
-      },
-      "type": "array"
+    "repository": {
+      "$ref": "#/$defs/Repository"
     },
     "omitted": {
       "$ref": "#/$defs/Omitted"
@@ -241,9 +375,9 @@
     "verdict",
     "next_action",
     "summary",
-    "repairs",
-    "evidence_gaps",
-    "unevaluated_rules",
+    "identity",
+    "change",
+    "repository",
     "omitted"
   ]
 }

@@ -234,6 +234,15 @@ func normalizeToolVersions(node interface{}) {
 					}
 				}
 			}
+			if identity, ok := child.(map[string]interface{}); ok && key == "identity" {
+				// The profile hash covers the tool versions normalized above, so
+				// it is host state too. The tree digest follows the temp repo.
+				for _, field := range []string{"measurement_profile_hash", "head_tree_digest"} {
+					if _, present := identity[field]; present {
+						identity[field] = "<" + strings.ToUpper(field) + ">"
+					}
+				}
+			}
 			if versions, ok := child.(map[string]interface{}); ok && key == keyToolVersions {
 				for tool := range versions {
 					delete(versions, tool)

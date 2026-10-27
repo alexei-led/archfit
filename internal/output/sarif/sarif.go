@@ -193,6 +193,7 @@ func runProperties(d report.Document) map[string]any {
 	return map[string]any{
 		"schema_version": s.SchemaVersion,
 		"verdict":        s.Verdict,
+		"identity":       s.Identity,
 		"decision":       s.Decision,
 		"dimensions":     dims,
 		"coverage":       s.Coverage,

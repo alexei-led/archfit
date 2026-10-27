@@ -370,8 +370,10 @@ type Seam struct {
 // no repository-level scalar by construction: the verdict comes from explicit
 // hard gates, diagnostics, and evidence coverage.
 type ArchitectureState struct {
-	SchemaVersion string           `json:"schema_version"`
-	Verdict       StateVerdict     `json:"verdict"`
+	SchemaVersion string       `json:"schema_version"`
+	Verdict       StateVerdict `json:"verdict"`
+	// Identity names what the run was judged under.
+	Identity      ResultIdentity   `json:"identity"`
 	Decision      StateDecision    `json:"decision"`
 	Comparison    StateComparison  `json:"comparison"`
 	GateReference *StateComparison `json:"gate_reference,omitempty"`
@@ -398,6 +400,7 @@ type ArchitectureState struct {
 func NewArchitectureState() ArchitectureState {
 	return ArchitectureState{
 		SchemaVersion: StateSchemaVersion,
+		Identity:      ResultIdentity{SchemaVersion: IdentitySchemaVersion},
 		Decision:      StateDecision{HardGates: HardGateUnmeasured, UnknownDimensions: DimensionCount},
 		Comparison:    StateComparison{Status: ComparisonNotRequested, Reasons: []string{}},
 		Measurement:   StateMeasurement{ToolVersions: map[string]string{}},

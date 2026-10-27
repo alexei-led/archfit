@@ -3,6 +3,7 @@ package reportschema
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"github.com/invopop/jsonschema"
 
@@ -22,6 +23,10 @@ const agentSchemaID = "https://raw.githubusercontent.com/alexei-led/archfit/main
 func GenerateAgentResult(srcDir string) ([]byte, error) {
 	r := &jsonschema.Reflector{ExpandedStruct: true}
 	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/output/agentout", srcDir); err != nil {
+		return nil, fmt.Errorf("reportschema: AddGoComments: %w", err)
+	}
+	// ResultIdentity and Location live in the report contract.
+	if err := r.AddGoComments("github.com/alexei-led/archfit/v3/internal/model/report", filepath.Join(srcDir, "..", "..", "model", "report")); err != nil {
 		return nil, fmt.Errorf("reportschema: AddGoComments: %w", err)
 	}
 
@@ -58,8 +63,23 @@ func patchAgentDefinitions(schema *jsonschema.Schema) {
 				string(agentout.ActionRepair),
 				string(agentout.ActionAskOwner),
 				string(agentout.ActionRestoreEvidence),
-				string(agentout.ActionReportBlocked),
 				string(agentout.ActionNone),
+			}
+		}
+	}
+	if def, ok := schema.Definitions["ResultIdentity"]; ok && def.Properties != nil {
+		pinIdentityVersion(def)
+	}
+	if change, ok := schema.Definitions["Change"]; ok && change.Properties != nil {
+		if status, ok := change.Properties.Get("status"); ok {
+			status.Enum = []any{string(agentout.ChangePass), string(agentout.ChangeFail), string(agentout.ChangeUnknown)}
+		}
+	}
+	if attention, ok := schema.Definitions["Attention"]; ok && attention.Properties != nil {
+		if kind, ok := attention.Properties.Get("kind"); ok {
+			kind.Enum = []any{
+				agentout.AttentionUnmeasuredRatchet, agentout.AttentionDeadSelector,
+				agentout.AttentionExistingViolation, agentout.AttentionBlockedWithoutFinding,
 			}
 		}
 	}

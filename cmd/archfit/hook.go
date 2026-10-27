@@ -70,12 +70,13 @@ A clean working tree (git status --porcelain lists nothing but archfit's own
 .archfit-cache) skips the run. Otherwise it runs check --format agent
 --base <ref> in process and maps the next action:
 
-  repair, ask_owner with an in-scope repair (first stop)
-                                    exit 2; stderr holds the repair for the agent
-  the same, with stop_hook_active   exit 0 with a systemMessage: it blocks once
-  any other action but none         exit 0 with a systemMessage (a dead selector
-                                    or an unmeasured ratchet is not scoped to the change)
-  none                              exit 0, silent
+  change fail (first stop)          exit 2; stderr holds the blockers for the agent
+  change fail, with stop_hook_active
+                                    exit 0 with a systemMessage: it blocks once
+  change unknown                    exit 0 with a systemMessage (missing evidence)
+  change pass                       exit 0, silent; repository attention (a dead
+                                    selector, an unmeasured ratchet, an existing
+                                    violation) is not the change's
   archfit error                     exit 0 with a systemMessage (fails open)
   malformed stdin                   exit 1
   any other event                   exit 0`
@@ -97,8 +98,8 @@ agent --base <ref> there; the working tree, the index, and every ref stay as
 they are. The config comes from the index; the baseline, labels, and fact
 cache come from the config's directory on disk.
 
-Exit 1 with the repair on stderr when the next action is repair or ask_owner
-and a repair is in scope, 0 otherwise (other actions are printed), and 3 when
+Exit 1 with the blockers on stderr when the change status is fail, 0 otherwise
+(an unknown change is printed), and 3 when
 archfit cannot run (no git repository, unmerged index entries, or a config
 that is not in the index).`
 }
@@ -139,13 +140,13 @@ func (c *HookClaudeCmd) Run(deps *appDeps) error {
 		return systemMessage(deps, "archfit hook failed open: "+err.Error())
 	}
 	brief := agentout.Brief(result)
-	switch {
-	case blocksChange(result):
+	switch outcomeOf(result) {
+	case hookBlock:
 		if event.StopHookActive {
 			return systemMessage(deps, "archfit still reports blockers after one repair attempt:\n"+brief)
 		}
 		return &exitError{code: 2, msg: strings.TrimSuffix(brief, "\n")}
-	case result.NextAction == agentout.ActionNone:
+	case hookAllow:
 		return nil
 	default:
 		return systemMessage(deps, brief)
@@ -157,10 +158,10 @@ func (c *HookGitCmd) Run(deps *appDeps) error {
 	if err != nil {
 		return &exitError{code: 3, msg: "archfit hook: " + err.Error()}
 	}
-	switch {
-	case blocksChange(result):
+	switch outcomeOf(result) {
+	case hookBlock:
 		return &exitError{code: 1, msg: strings.TrimSuffix(agentout.Brief(result), "\n")}
-	case result.NextAction != agentout.ActionNone:
+	case hookReport:
 		_, err := fmt.Fprint(deps.stderr(), agentout.Brief(result))
 		return err
 	default:
@@ -168,22 +169,29 @@ func (c *HookGitCmd) Run(deps *appDeps) error {
 	}
 }
 
-// blocksChange reports whether a hook blocks: the next action is repair or
-// ask_owner and an in-scope repair exists. A dead selector or an unmeasured
-// ratchet (the stored reference does not compare) also leads to those actions,
-// but neither is scoped to the change: both may predate it, so a hook reports
-// them and lets the change through. A tripped ratchet is a repair task like any
-// other blocker, so it blocks.
-func blocksChange(r agentout.Result) bool {
-	if r.NextAction != agentout.ActionRepair && r.NextAction != agentout.ActionAskOwner {
-		return false
+// hookOutcome is what a hook does with a result.
+type hookOutcome int
+
+const (
+	// hookAllow: the change passes; the hook is silent.
+	hookAllow hookOutcome = iota
+	// hookReport: the change cannot be judged; the hook shows why and lets it through.
+	hookReport
+	// hookBlock: the change fails; the hook stops it.
+	hookBlock
+)
+
+// outcomeOf reads the change status and nothing else: the hook holds no
+// judgement of its own, so it cannot disagree with the CLI.
+func outcomeOf(r agentout.Result) hookOutcome {
+	switch r.Change.Status {
+	case agentout.ChangeFail:
+		return hookBlock
+	case agentout.ChangePass:
+		return hookAllow
+	default:
+		return hookReport
 	}
-	for _, rep := range r.Repairs {
-		if rep.InScope {
-			return true
-		}
-	}
-	return r.Omitted.Repairs > 0
 }
 
 // hookResult runs check --format agent over the files on disk: the Claude

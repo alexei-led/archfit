@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -94,55 +96,129 @@ func decode(t *testing.T, raw []byte) Result {
 	return r
 }
 
-func TestNextActionPrecedence(t *testing.T) {
-	t.Parallel()
+// e1Case is one row of the change-status table: the five cases the result
+// contract must agree on, plus the edges around them.
+type e1Case struct {
+	name          string
+	doc           report.Document
+	wantStatus    ChangeStatus
+	wantAction    NextAction
+	wantAttention []string
+}
+
+func changeCases() []e1Case {
 	ownerTask := gateTask("b2", "new_dep")
 	ownerTask.kind = repairNeedsOwnerDecision
 	ownerTask.from, ownerTask.to = "internal/c/c.go", "internal/d"
 	preExisting := gateTask("c3", "no_x")
-	preExisting.origin = report.OriginPreExisting
+	preExisting.origin, preExisting.from = report.OriginPreExisting, "internal/old/old.go"
 	introduced := gateTask("d4", "no_x")
 	introduced.origin = "introduced"
 	unknown := gateTask("e5", "no_x")
 	unknown.origin = "unknown"
-	ratchet := document(report.StateBlocked, gateTask("m1", "metric/coverage"))
+	ratchetTripped := document(report.StateBlocked, gateTask("m1", "metric/coverage"))
 	requiredTool := document(report.StateBlocked)
 	requiredTool.CoverageGaps = []report.CoverageGap{{Tool: "sg", Gate: string(report.GateFail)}}
 	warnTool := document(report.StateNeedsAttention)
 	warnTool.CoverageGaps = []report.CoverageGap{{Tool: "sg", Gate: string(report.GateWarn)}}
 
-	for _, tc := range []struct {
-		name string
-		doc  report.Document
-		want NextAction
-	}{
-		{name: "in-scope code change", doc: document(report.StateBlocked, gateTask("a1", "no_x")), want: ActionRepair},
-		{name: "code change wins over owner decision", doc: document(report.StateBlocked, ownerTask, gateTask("a1", "no_x")), want: ActionRepair},
-		{name: "introduced origin is in scope", doc: document(report.StateBlocked, introduced), want: ActionRepair},
-		{name: "unknown origin is in scope", doc: document(report.StateBlocked, unknown), want: ActionRepair},
-		{name: "ratchet block", doc: ratchet, want: ActionRepair},
-		{name: "ratchets that cannot be evaluated need the owner", doc: withUnevaluated(document(report.StateNeedsAttention), "reference not comparable (drift: rubric_version): 5 metric ratchets cannot be evaluated"), want: ActionAskOwner},
-		{name: "only owner decisions", doc: document(report.StateBlocked, ownerTask), want: ActionAskOwner},
-		{name: "dead selector", doc: withUnevaluated(document(report.StateNeedsAttention), "selector matches nothing: from internal/x/**"), want: ActionAskOwner},
-		{name: "dead selector beats missing evidence", doc: withUnevaluated(document(report.StateNeedsAttention), "go/packages evidence is partial", "selector matches nothing: to x"), want: ActionAskOwner},
-		{name: "missing producer evidence", doc: withUnevaluated(document(report.StateNeedsAttention), "go/packages evidence is partial"), want: ActionRestoreEvidence},
-		{name: "unanalysed selector is missing evidence", doc: withUnevaluated(document(report.StateNeedsAttention), "selector matches only source no dependency producer analyses: from web/**"), want: ActionRestoreEvidence},
-		{name: "required analyzer failed", doc: requiredTool, want: ActionRestoreEvidence},
-		{name: "warn-gated analyzer gap is not a blocker", doc: warnTool, want: ActionNone},
-		{name: "blocked only outside scope", doc: document(report.StateBlocked, preExisting), want: ActionReportBlocked},
-		{name: "in-scope repair beats out-of-scope one", doc: document(report.StateBlocked, preExisting, introduced), want: ActionRepair},
-		{name: "blocked with nothing to name", doc: document(report.StateBlocked), want: ActionReportBlocked},
-		{name: "needs attention", doc: document(report.StateNeedsAttention), want: ActionNone},
-		{name: "healthy", doc: document(report.StateHealthy), want: ActionNone},
-	} {
+	return []e1Case{
+		{name: "new violation", doc: document(report.StateBlocked, introduced), wantStatus: ChangeFail, wantAction: ActionRepair},
+		{name: "existing violation", doc: document(report.StateBlocked, preExisting), wantStatus: ChangePass, wantAction: ActionNone, wantAttention: []string{AttentionExistingViolation}},
+		{name: "unmeasured ratchet from profile drift", doc: withUnevaluated(document(report.StateNeedsAttention), "reference not comparable (drift: measurement_profile): 3 metric ratchets cannot be evaluated"), wantStatus: ChangePass, wantAction: ActionNone, wantAttention: []string{AttentionUnmeasuredRatchet}},
+		{name: "dead selector", doc: withUnevaluated(document(report.StateNeedsAttention), "selector matches nothing: from internal/x/**"), wantStatus: ChangePass, wantAction: ActionNone, wantAttention: []string{AttentionDeadSelector}},
+		{name: "missing evidence", doc: withUnevaluated(document(report.StateNeedsAttention), "go/packages evidence is partial"), wantStatus: ChangeUnknown, wantAction: ActionRestoreEvidence},
+
+		{name: "no base: every blocker is in scope", doc: document(report.StateBlocked, gateTask("a1", "no_x")), wantStatus: ChangeFail, wantAction: ActionRepair},
+		{name: "code change wins over owner decision", doc: document(report.StateBlocked, ownerTask, gateTask("a1", "no_x")), wantStatus: ChangeFail, wantAction: ActionRepair},
+		{name: "unknown origin is in scope", doc: document(report.StateBlocked, unknown), wantStatus: ChangeFail, wantAction: ActionRepair},
+		{name: "tripped ratchet is a repair", doc: ratchetTripped, wantStatus: ChangeFail, wantAction: ActionRepair},
+		{name: "only owner decisions", doc: document(report.StateBlocked, ownerTask), wantStatus: ChangeFail, wantAction: ActionAskOwner},
+		{name: "in-scope repair beats existing one", doc: document(report.StateBlocked, preExisting, introduced), wantStatus: ChangeFail, wantAction: ActionRepair, wantAttention: []string{AttentionExistingViolation}},
+		{name: "unanalysed selector is missing evidence", doc: withUnevaluated(document(report.StateNeedsAttention), "selector matches only source no dependency producer analyses: from web/**"), wantStatus: ChangeUnknown, wantAction: ActionRestoreEvidence},
+		{name: "missing evidence beside a dead selector", doc: withUnevaluated(document(report.StateNeedsAttention), "go/packages evidence is partial", "selector matches nothing: to x"), wantStatus: ChangeUnknown, wantAction: ActionRestoreEvidence, wantAttention: []string{AttentionDeadSelector}},
+		{name: "required analyzer failed", doc: requiredTool, wantStatus: ChangeUnknown, wantAction: ActionRestoreEvidence},
+		{name: "warn-gated analyzer gap is not a blocker", doc: warnTool, wantStatus: ChangePass, wantAction: ActionNone},
+		{name: "blocked with nothing to name", doc: document(report.StateBlocked), wantStatus: ChangePass, wantAction: ActionNone, wantAttention: []string{AttentionBlockedWithoutFinding}},
+		{name: "needs attention", doc: document(report.StateNeedsAttention), wantStatus: ChangePass, wantAction: ActionNone},
+		{name: "healthy", doc: document(report.StateHealthy), wantStatus: ChangePass, wantAction: ActionNone},
+	}
+}
+
+func attentionKinds(r Result) []string {
+	kinds := make([]string, 0, len(r.Repository.Attention))
+	for _, item := range r.Repository.Attention {
+		kinds = append(kinds, item.Kind)
+	}
+	return kinds
+}
+
+func TestChangeStatus(t *testing.T) {
+	t.Parallel()
+	for _, tc := range changeCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := decode(t, render(t, tc.doc))
-			if got.NextAction != tc.want {
-				t.Errorf("next_action = %q, want %q (summary %q)", got.NextAction, tc.want, got.Summary)
+			if got.Change.Status != tc.wantStatus || got.NextAction != tc.wantAction {
+				t.Errorf("change %q next_action %q, want %q %q (summary %q)", got.Change.Status, got.NextAction, tc.wantStatus, tc.wantAction, got.Summary)
 			}
-			if got.Verdict == string(report.StateBlocked) && got.NextAction == ActionNone {
-				t.Error("a blocked verdict must never map to none")
+			if !slices.Equal(attentionKinds(got), append([]string{}, tc.wantAttention...)) {
+				t.Errorf("attention = %v, want %v", attentionKinds(got), tc.wantAttention)
+			}
+			if got.Change.Blocks() != (tc.wantStatus == ChangeFail) {
+				t.Errorf("Blocks() = %v for status %q", got.Change.Blocks(), got.Change.Status)
+			}
+			if got.Change.Status != ChangeFail && len(got.Change.Blockers) > 0 {
+				t.Errorf("status %q lists blockers %v", got.Change.Status, got.Change.Blockers)
+			}
+		})
+	}
+}
+
+// TestCleanMainIsPassWithOneAttention is the regression case for the result
+// contract: a clean tree whose ratchet reference does not compare used to ask
+// the owner with zero repairs. The change passes; the repository has one item.
+func TestCleanMainIsPassWithOneAttention(t *testing.T) {
+	t.Parallel()
+	d := withUnevaluated(document(report.StateNeedsAttention), "reference not comparable (drift: measurement_profile): 3 metric ratchets cannot be evaluated")
+	got := decode(t, render(t, d))
+	if got.Change.Status != ChangePass || got.NextAction != ActionNone || len(got.Change.Blockers) != 0 {
+		t.Fatalf("change %q next_action %q blockers %d, want pass none 0", got.Change.Status, got.NextAction, len(got.Change.Blockers))
+	}
+	if len(got.Repository.Attention) != 1 || got.Repository.Attention[0].Kind != AttentionUnmeasuredRatchet {
+		t.Errorf("attention = %+v, want one unmeasured_ratchet", got.Repository.Attention)
+	}
+}
+
+// TestCasesFixtures pins the agent JSON of the change-status cases. The App
+// ingest test reads the same files. ARCHFIT_UPDATE_AGENT_CASES=1 rewrites them;
+// review the diff before committing.
+func TestCasesFixtures(t *testing.T) {
+	identity := report.ResultIdentity{
+		SchemaVersion: report.IdentitySchemaVersion, PolicyDigest: strings.Repeat("a", 64), BaselineDigest: strings.Repeat("b", 64),
+		LabelsDigest: strings.Repeat("c", 64), BaseSHA: strings.Repeat("d", 40), HeadTreeDigest: strings.Repeat("e", 40),
+		EngineVersion: "v0.0.0-test", MeasurementProfileHash: strings.Repeat("f", 64),
+	}
+	for _, tc := range changeCases()[:5] {
+		t.Run(tc.name, func(t *testing.T) {
+			d := tc.doc
+			d.State.Identity = identity
+			path := filepath.Join("testdata", "cases", strings.ReplaceAll(tc.name, " ", "_")+".json")
+			got := render(t, d)
+			if os.Getenv("ARCHFIT_UPDATE_AGENT_CASES") == "1" {
+				if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, got, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want, err := os.ReadFile(path) //nolint:gosec // path is built from a constant case name
+			if err != nil {
+				t.Fatalf("read %s: %v (ARCHFIT_UPDATE_AGENT_CASES=1 writes it)", path, err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("%s drifted; review and rerun with ARCHFIT_UPDATE_AGENT_CASES=1\n got: %s\nwant: %s", path, got, want)
 			}
 		})
 	}
@@ -154,10 +230,10 @@ func TestTwoRulesOnOneEdgeAreOneRepair(t *testing.T) {
 	second.severity = report.FindingSeverityCritical
 	got := decode(t, render(t, document(report.StateBlocked, gateTask("a1", "no_x"), second)))
 
-	if len(got.Repairs) != 1 {
-		t.Fatalf("repairs = %d, want 1: %+v", len(got.Repairs), got.Repairs)
+	if len(got.Change.Blockers) != 1 {
+		t.Fatalf("repairs = %d, want 1: %+v", len(got.Change.Blockers), got.Change.Blockers)
 	}
-	rep := got.Repairs[0]
+	rep := got.Change.Blockers[0]
 	for _, check := range []struct {
 		name      string
 		got, want any
@@ -203,8 +279,8 @@ func TestEditListsOnlyTheSourceSide(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := decode(t, render(t, document(report.StateBlocked, tc.spec)))
-			if !slices.Equal(got.Repairs[0].Edit, tc.want) {
-				t.Errorf("edit = %v, want %v", got.Repairs[0].Edit, tc.want)
+			if !slices.Equal(got.Change.Blockers[0].Edit, tc.want) {
+				t.Errorf("edit = %v, want %v", got.Change.Blockers[0].Edit, tc.want)
 			}
 		})
 	}
@@ -230,8 +306,8 @@ func TestOnlyDependenciesGroup(t *testing.T) {
 		return s
 	}
 	got := decode(t, render(t, document(report.StateBlocked, apiChange("a1"), apiChange("a2"))))
-	if len(got.Repairs) != 2 {
-		t.Errorf("repairs = %d, want one per public_api finding", len(got.Repairs))
+	if len(got.Change.Blockers) != 2 {
+		t.Errorf("repairs = %d, want one per public_api finding", len(got.Change.Blockers))
 	}
 }
 
@@ -257,7 +333,7 @@ func TestGroupOrigin(t *testing.T) {
 				s.origin = origin
 				specs = append(specs, s)
 			}
-			rep := decode(t, render(t, document(report.StateBlocked, specs...))).Repairs[0]
+			rep := buildRepairs(document(report.StateBlocked, specs...).State)[0]
 			if rep.Origin != tc.want || rep.InScope != tc.inScope {
 				t.Errorf("origin %q in_scope %v, want %q %v", rep.Origin, rep.InScope, tc.want, tc.inScope)
 			}
@@ -301,15 +377,15 @@ func TestRepairOrder(t *testing.T) {
 	high.from = "internal/high.go"
 
 	got := decode(t, render(t, document(report.StateBlocked, out, owner, low, critical, high)))
-	order := make([]string, 0, len(got.Repairs))
-	for _, r := range got.Repairs {
+	order := make([]string, 0, len(got.Change.Blockers))
+	for _, r := range got.Change.Blockers {
 		order = append(order, r.FindingIDs[0])
 	}
-	if want := []string{"a9", "a3", "a2", "a1", "a0"}; !slices.Equal(order, want) {
-		t.Errorf("repair order = %v, want %v", order, want)
+	if want := []string{"a9", "a3", "a2", "a1"}; !slices.Equal(order, want) {
+		t.Errorf("blocker order = %v, want %v", order, want)
 	}
-	if got.Repairs[4].InScope {
-		t.Error("a pre_existing repair is in scope")
+	if kinds := attentionKinds(got); !slices.Equal(kinds, []string{AttentionExistingViolation}) {
+		t.Errorf("a pre_existing repair must be repository attention, got %v", kinds)
 	}
 }
 
@@ -351,8 +427,8 @@ func TestBudget(t *testing.T) {
 			t.Fatalf("ten repairs take %d bytes, budget %d", len(raw), budgetBytes)
 		}
 		got := decode(t, raw)
-		if len(got.Repairs) != 10 || got.Truncated || got.Omitted.Repairs != 0 {
-			t.Errorf("ten repairs were cut: repairs=%d truncated=%v omitted=%d", len(got.Repairs), got.Truncated, got.Omitted.Repairs)
+		if len(got.Change.Blockers) != 10 || got.Truncated || got.Omitted.Blockers != 0 {
+			t.Errorf("ten repairs were cut: repairs=%d truncated=%v omitted=%d", len(got.Change.Blockers), got.Truncated, got.Omitted.Blockers)
 		}
 	})
 	t.Run("two runs are byte-identical", func(t *testing.T) {
@@ -369,13 +445,13 @@ func TestBudget(t *testing.T) {
 		if len(raw) > budgetBytes {
 			t.Errorf("result takes %d bytes, budget %d", len(raw), budgetBytes)
 		}
-		if !got.Truncated || got.Omitted.Repairs == 0 {
-			t.Errorf("truncated=%v omitted.repairs=%d, want a cut", got.Truncated, got.Omitted.Repairs)
+		if !got.Truncated || got.Omitted.Blockers == 0 {
+			t.Errorf("truncated=%v omitted.repairs=%d, want a cut", got.Truncated, got.Omitted.Blockers)
 		}
-		if len(got.Repairs)+got.Omitted.Repairs != 60 {
-			t.Errorf("repairs %d + omitted %d != 60", len(got.Repairs), got.Omitted.Repairs)
+		if len(got.Change.Blockers)+got.Omitted.Blockers != 60 {
+			t.Errorf("repairs %d + omitted %d != 60", len(got.Change.Blockers), got.Omitted.Blockers)
 		}
-		if got.NextAction != ActionRepair || !strings.Contains(got.Summary, "60 repairs in scope") {
+		if got.NextAction != ActionRepair || !strings.Contains(got.Summary, "60 blockers") {
 			t.Errorf("the budget changed the decision: %q, %q", got.NextAction, got.Summary)
 		}
 	})
@@ -395,10 +471,10 @@ func TestBudget(t *testing.T) {
 			t.Errorf("result takes %d bytes, budget %d", len(raw), budgetBytes)
 		}
 		got := decode(t, raw)
-		if len(got.Repairs) != 1 || !got.Truncated {
-			t.Fatalf("repairs=%d truncated=%v, want the first repair kept and the result truncated", len(got.Repairs), got.Truncated)
+		if len(got.Change.Blockers) != 1 || !got.Truncated {
+			t.Fatalf("repairs=%d truncated=%v, want the first repair kept and the result truncated", len(got.Change.Blockers), got.Truncated)
 		}
-		rep := got.Repairs[0]
+		rep := got.Change.Blockers[0]
 		for _, list := range []struct {
 			name          string
 			kept, omitted int
@@ -412,8 +488,8 @@ func TestBudget(t *testing.T) {
 				t.Errorf("%s: kept %d + omitted %d, want at most %d kept of %d", list.name, list.kept, list.omitted, tightListLen, list.total)
 			}
 		}
-		if got.Omitted.UnevaluatedRules+len(got.UnevaluatedRules) != 50 {
-			t.Errorf("unevaluated rules lost: kept %d, omitted %d", len(got.UnevaluatedRules), got.Omitted.UnevaluatedRules)
+		if got.Omitted.UnevaluatedRules+len(got.Change.UnevaluatedRules) != 50 {
+			t.Errorf("unevaluated rules lost: kept %d, omitted %d", len(got.Change.UnevaluatedRules), got.Omitted.UnevaluatedRules)
 		}
 	})
 }
@@ -424,7 +500,7 @@ func TestTextIsBounded(t *testing.T) {
 	d.State.AgentTasks[0].Goal = strings.Repeat("g", 3600)
 	raw := render(t, d)
 	got := decode(t, raw)
-	if n := len([]rune(got.Repairs[0].Goal)); n != textRunes {
+	if n := len([]rune(got.Change.Blockers[0].Goal)); n != textRunes {
 		t.Errorf("goal has %d runes, want %d", n, textRunes)
 	}
 	if !got.Truncated {
@@ -447,7 +523,7 @@ func TestCompleteness(t *testing.T) {
 	d.State.AgentTasks = append(d.State.AgentTasks, report.AgentTask{FindingID: "orphan", RuleID: "seam", RepairKind: repairCodeChange})
 	got := decode(t, render(t, d))
 	var ids []string
-	for _, r := range got.Repairs {
+	for _, r := range got.Change.Blockers {
 		ids = append(ids, r.FindingIDs...)
 	}
 	slices.Sort(ids)
