@@ -7,19 +7,16 @@ import (
 )
 
 // Brief renders the result as short plain text for a hook's stderr or system
-// message: the next action, then each listed repair with its IDs, locations,
-// goal, constraints, and files, then the other blockers and the validation
-// command. Lists and free text are bounded as in an over-budget result.
+// message: the change status and next action, then each blocker with its IDs,
+// locations, goal, constraints, and files, then what is unknown, what needs the
+// owner's attention, the identity, and the validation command. Lists and free
+// text are bounded as in an over-budget result.
 func Brief(r Result) string {
 	r = bound(r, tightRunes, tightListLen)
 	var b strings.Builder
-	fmt.Fprintf(&b, "archfit: next_action %s (%s)\n", r.NextAction, r.Summary)
-	for i, rep := range r.Repairs {
-		scope := "in scope"
-		if !rep.InScope {
-			scope = "outside scope"
-		}
-		fmt.Fprintf(&b, "repair %d (%s, %s): %s [%s]\n", i+1, rep.RepairKind, scope, strings.Join(rep.RuleIDs, ", "), strings.Join(rep.FindingIDs, ", "))
+	fmt.Fprintf(&b, "archfit: change %s, next_action %s (%s)\n", r.Change.Status, r.NextAction, r.Summary)
+	for i, rep := range r.Change.Blockers {
+		fmt.Fprintf(&b, "blocker %d (%s): %s [%s]\n", i+1, rep.RepairKind, strings.Join(rep.RuleIDs, ", "), strings.Join(rep.FindingIDs, ", "))
 		if len(rep.At) > 0 {
 			sites := make([]string, 0, len(rep.At))
 			for _, loc := range rep.At {
@@ -35,12 +32,16 @@ func Brief(r Result) string {
 			fmt.Fprintf(&b, "  edit: %s%s\n", strings.Join(rep.Edit, ", "), more(rep.EditOmitted))
 		}
 	}
-	for _, rule := range r.UnevaluatedRules {
-		fmt.Fprintf(&b, "unevaluated rule: %s: %s\n", rule.RuleID, rule.Reason)
+	for _, rule := range r.Change.UnevaluatedRules {
+		fmt.Fprintf(&b, "unknown: %s: %s\n", rule.RuleID, rule.Reason)
 	}
-	for _, gap := range r.EvidenceGaps {
+	for _, gap := range r.Change.EvidenceGaps {
 		fmt.Fprintf(&b, "evidence gap: %s (gate %s)\n", gap.Tool, gap.Gate)
 	}
+	for _, item := range r.Repository.Attention {
+		fmt.Fprintf(&b, "repository attention (not this change): %s: %s\n", item.Kind, item.Reason)
+	}
+	fmt.Fprintf(&b, "identity: %s\n", r.Identity.Line())
 	if r.Validate != "" {
 		fmt.Fprintf(&b, "validate: %s\n", r.Validate)
 	}

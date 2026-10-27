@@ -13,13 +13,14 @@ func TestBriefNamesTheRepair(t *testing.T) {
 	d.State.Decision.UnevaluatedRequiredRules = []report.UnevaluatedRule{{RuleID: "r2", Reason: "go/packages evidence is partial"}}
 	got := Brief(Build(d))
 	for _, want := range []string{
-		"archfit: next_action repair",
-		"repair 1 (code_change, in scope): no_x [a1]",
+		"archfit: change fail, next_action repair",
+		"blocker 1 (code_change): no_x [a1]",
 		"  at: " + sourceFile + ":5",
 		"  goal: Remove the forbidden dependency",
 		"  constraint: constraint of no_x",
 		"  edit: " + sourceFile,
-		"unevaluated rule: r2: go/packages evidence is partial",
+		"unknown: r2: go/packages evidence is partial",
+		"identity: engine ",
 		"validate: " + validation + " --format agent",
 	} {
 		if !strings.Contains(got, want) {

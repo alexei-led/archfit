@@ -12,13 +12,16 @@ type agentResult struct {
 	SchemaVersion string `json:"schema_version"`
 	Verdict       string `json:"verdict"`
 	NextAction    string `json:"next_action"`
-	Repairs       []struct {
-		FindingIDs []string `json:"finding_ids"`
-		RuleIDs    []string `json:"rule_ids"`
-		Edit       []string `json:"edit"`
-	} `json:"repairs"`
+	Change        struct {
+		Status   string `json:"status"`
+		Blockers []struct {
+			FindingIDs []string `json:"finding_ids"`
+			RuleIDs    []string `json:"rule_ids"`
+			Edit       []string `json:"edit"`
+		} `json:"blockers"`
+	} `json:"change"`
 	Omitted struct {
-		Repairs int `json:"repairs"`
+		Blockers int `json:"blockers"`
 	} `json:"omitted"`
 	Truncated bool   `json:"truncated"`
 	Validate  string `json:"validate"`
@@ -63,11 +66,11 @@ func TestFormatMatrix_AgentDigestCarriesTheState(t *testing.T) {
 	if got.SchemaVersion != "archfit.agent-result.v1" || got.Verdict != state.Verdict {
 		t.Errorf("schema %q verdict %q, want archfit.agent-result.v1 and %q", got.SchemaVersion, got.Verdict, state.Verdict)
 	}
-	if got.NextAction != "repair" {
-		t.Errorf("next_action = %q, want repair for an in-scope forbidden dependency", got.NextAction)
+	if got.NextAction != "repair" || got.Change.Status != "fail" {
+		t.Errorf("next_action = %q change = %q, want repair and fail for an in-scope forbidden dependency", got.NextAction, got.Change.Status)
 	}
 	var inRepairs []string
-	for _, r := range got.Repairs {
+	for _, r := range got.Change.Blockers {
 		inRepairs = append(inRepairs, r.FindingIDs...)
 	}
 	active := 0
@@ -76,7 +79,7 @@ func TestFormatMatrix_AgentDigestCarriesTheState(t *testing.T) {
 			continue
 		}
 		active++
-		if !slices.Contains(inRepairs, f.ID) && got.Omitted.Repairs == 0 {
+		if !slices.Contains(inRepairs, f.ID) && got.Omitted.Blockers == 0 {
 			t.Errorf("active gate finding %s is in no repair and nothing was omitted", f.ID)
 		}
 	}
@@ -98,7 +101,7 @@ func TestFormatMatrix_AgentDigestNamesTheRatchet(t *testing.T) {
 		t.Fatalf("check --format agent: exit = %d, want 1 (ratchet block)\nstderr:\n%s", code, stderr)
 	}
 	got := decodeAgentResult(t, raw)
-	if got.NextAction != "repair" || len(got.Repairs) != 1 || len(got.Repairs[0].RuleIDs) != 1 || got.Repairs[0].RuleIDs[0] != ratchetCoverageRule {
-		t.Errorf("next_action = %q, repairs = %+v, want repair with one metric/coverage repair", got.NextAction, got.Repairs)
+	if got.NextAction != "repair" || len(got.Change.Blockers) != 1 || len(got.Change.Blockers[0].RuleIDs) != 1 || got.Change.Blockers[0].RuleIDs[0] != ratchetCoverageRule {
+		t.Errorf("next_action = %q, blockers = %+v, want repair with one metric/coverage blocker", got.NextAction, got.Change.Blockers)
 	}
 }

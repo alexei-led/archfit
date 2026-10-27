@@ -91,6 +91,8 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			continue
 		}
 		switch name {
+		case "ResultIdentity":
+			pinIdentityVersion(def)
 		case "MeasurementProducer":
 			if basis, ok := def.Properties.Get("partial_basis"); ok {
 				basis.Enum = []any{"unresolved_specifiers", "degraded_precision"}
@@ -152,5 +154,12 @@ func patchDefinitions(schema *jsonschema.Schema) {
 				}
 			}
 		}
+	}
+}
+
+// pinIdentityVersion pins the identity block's own version string.
+func pinIdentityVersion(def *jsonschema.Schema) {
+	if version, ok := def.Properties.Get("schema_version"); ok {
+		version.Enum = []any{report.IdentitySchemaVersion}
 	}
 }

@@ -20,7 +20,7 @@ const (
 )
 
 // fit encodes the result within the budget. It cuts free text first, then
-// moves tail repairs and tail unevaluated rules into Omitted. The header and
+// moves tail blockers, tail unevaluated rules, and tail attention into Omitted. The header and
 // the first repair always stay, so a result whose header and first repair
 // alone exceed the budget (paths thousands of characters long) is returned
 // over it. The next action and the summary were decided on the full result,
@@ -39,12 +39,15 @@ func fit(r Result) ([]byte, error) {
 			return out, err
 		}
 		switch {
-		case len(r.Repairs) > 1:
-			r.Repairs = r.Repairs[:len(r.Repairs)-1]
-			r.Omitted.Repairs++
-		case len(r.UnevaluatedRules) > 0:
-			r.UnevaluatedRules = r.UnevaluatedRules[:len(r.UnevaluatedRules)-1]
+		case len(r.Change.Blockers) > 1:
+			r.Change.Blockers = r.Change.Blockers[:len(r.Change.Blockers)-1]
+			r.Omitted.Blockers++
+		case len(r.Change.UnevaluatedRules) > 0:
+			r.Change.UnevaluatedRules = r.Change.UnevaluatedRules[:len(r.Change.UnevaluatedRules)-1]
 			r.Omitted.UnevaluatedRules++
+		case len(r.Repository.Attention) > 0:
+			r.Repository.Attention = r.Repository.Attention[:len(r.Repository.Attention)-1]
+			r.Omitted.Attention++
 		default:
 			return out, nil
 		}
@@ -65,8 +68,8 @@ func bound(r Result, maxRunes, maxList int) Result {
 		return out
 	}
 	r.Summary = cut(r.Summary)
-	repairs := make([]Repair, len(r.Repairs))
-	for i, rep := range r.Repairs {
+	repairs := make([]Repair, len(r.Change.Blockers))
+	for i, rep := range r.Change.Blockers {
 		rep.Goal = cut(rep.Goal)
 		if maxList > 0 {
 			rep.At = capList(rep.At, maxList, &rep.AtOmitted, &r.Truncated)
@@ -80,13 +83,19 @@ func bound(r Result, maxRunes, maxList int) Result {
 		rep.Constraints = constraints
 		repairs[i] = rep
 	}
-	r.Repairs = repairs
-	rules := make([]UnevaluatedRule, len(r.UnevaluatedRules))
-	for i, rule := range r.UnevaluatedRules {
+	r.Change.Blockers = repairs
+	rules := make([]UnevaluatedRule, len(r.Change.UnevaluatedRules))
+	for i, rule := range r.Change.UnevaluatedRules {
 		rule.Reason = cut(rule.Reason)
 		rules[i] = rule
 	}
-	r.UnevaluatedRules = rules
+	r.Change.UnevaluatedRules = rules
+	attention := make([]Attention, len(r.Repository.Attention))
+	for i, item := range r.Repository.Attention {
+		item.Reason = cut(item.Reason)
+		attention[i] = item
+	}
+	r.Repository.Attention = attention
 	return r
 }
 

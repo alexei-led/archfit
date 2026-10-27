@@ -35,6 +35,32 @@ func ProjectReport(r result.Result, sc score.Scorecard) report.Document {
 	return doc
 }
 
+// IdentityInputs are the identity facts the caller reads from disk and git. An
+// empty value means the run could not know it; the report omits it.
+type IdentityInputs struct {
+	PolicyDigest   string
+	BaselineDigest string
+	LabelsDigest   string
+	PolicyRef      *report.PolicyRef
+	BaseSHA        string
+	HeadTreeDigest string
+	EngineVersion  string
+}
+
+// withIdentity stamps the document's state with what the run was judged under.
+// The measurement profile hash comes from the document itself, so it always
+// describes the evidence the verdict rests on.
+func withIdentity(doc report.Document, in IdentityInputs) report.Document {
+	doc.State.Identity = report.ResultIdentity{
+		SchemaVersion: report.IdentitySchemaVersion,
+		PolicyDigest:  in.PolicyDigest, BaselineDigest: in.BaselineDigest, LabelsDigest: in.LabelsDigest,
+		PolicyRef: in.PolicyRef, BaseSHA: in.BaseSHA, HeadTreeDigest: in.HeadTreeDigest,
+		EngineVersion:          in.EngineVersion,
+		MeasurementProfileHash: report.ProfileHash(doc.State.Comparison.MeasurementProfile),
+	}
+	return doc
+}
+
 // projectArchitectureState projects the assessment-owned architecture state
 // onto the external archfit.architecture-state.v1 contract, and adds the run
 // facts assessment deliberately never sees: which tree was measured, which tool

@@ -97,6 +97,12 @@ func HeadRef(ctx context.Context, workDir string, runner toolrun.Runner) (string
 	return runGitRevParse(ctx, workDir, runner, []string{"HEAD"}, "rev-parse HEAD")
 }
 
+// TreeID returns the id of the tree HEAD points to.
+// It runs: git rev-parse HEAD^{tree}
+func TreeID(ctx context.Context, workDir string, runner toolrun.Runner) (string, error) {
+	return runGitRevParse(ctx, workDir, runner, []string{"HEAD^{tree}"}, "rev-parse HEAD^{tree}")
+}
+
 // RepoRoot returns the absolute path to the repository root.
 // It runs: git rev-parse --show-toplevel
 func RepoRoot(ctx context.Context, workDir string, runner toolrun.Runner) (string, error) {

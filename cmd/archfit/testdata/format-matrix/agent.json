@@ -1,45 +1,58 @@
 {
-  "evidence_gaps": [],
+  "change": {
+    "blockers": [
+      {
+        "at": [
+          {
+            "file": "pkg/a/a.go",
+            "line": 3
+          }
+        ],
+        "constraints": [
+          "Remove the dependency or move the code"
+        ],
+        "edge": {
+          "from": "pkg/a/a.go",
+          "kind": "imports",
+          "to": "pkg/b"
+        },
+        "edit": [
+          "pkg/a/a.go"
+        ],
+        "finding_ids": [
+          "ba3803eca947bf3c1b7efa8f37854d5e"
+        ],
+        "goal": "Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.",
+        "in_scope": true,
+        "repair_kind": "code_change",
+        "rule_ids": [
+          "no_direct_b_dependency"
+        ],
+        "severity": "medium"
+      }
+    ],
+    "evidence_gaps": [],
+    "status": "fail",
+    "unevaluated_rules": []
+  },
+  "identity": {
+    "engine_version": "dev",
+    "measurement_profile_hash": "\u003cMEASUREMENT_PROFILE_HASH\u003e",
+    "policy_digest": "0f7b1dd7cce2ed8eed516d5f81983186aeba1f240f01b913c1d30fbb0814d6e6",
+    "schema_version": "archfit.result-identity.v1"
+  },
   "next_action": "repair",
   "omitted": {
     "advisories": 1,
-    "repairs": 0,
+    "attention": 0,
+    "blockers": 0,
     "unevaluated_rules": 0
   },
-  "repairs": [
-    {
-      "at": [
-        {
-          "file": "pkg/a/a.go",
-          "line": 3
-        }
-      ],
-      "constraints": [
-        "Remove the dependency or move the code"
-      ],
-      "edge": {
-        "from": "pkg/a/a.go",
-        "kind": "imports",
-        "to": "pkg/b"
-      },
-      "edit": [
-        "pkg/a/a.go"
-      ],
-      "finding_ids": [
-        "ba3803eca947bf3c1b7efa8f37854d5e"
-      ],
-      "goal": "Remove the forbidden dependency from pkg/a/a.go on pkg/b; move shared behavior to a location permitted by the existing dependency rules.",
-      "in_scope": true,
-      "repair_kind": "code_change",
-      "rule_ids": [
-        "no_direct_b_dependency"
-      ],
-      "severity": "medium"
-    }
-  ],
+  "repository": {
+    "attention": []
+  },
   "schema_version": "archfit.agent-result.v1",
-  "summary": "blocked: 1 repairs in scope, 0 outside scope; 0 unevaluated required rules; 0 evidence gaps",
-  "unevaluated_rules": [],
+  "summary": "blocked: change fail, 1 blockers, 0 existing; 0 unknown rules, 0 evidence gaps; 0 attention",
   "validate": "archfit check -c \u003cROOT\u003e/.archfit.yaml --format agent",
   "verdict": "blocked"
 }

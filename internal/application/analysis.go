@@ -59,6 +59,9 @@ type Request struct {
 	// command, so it names the repository instead.
 	ValidationConfig string
 	ValidationRoot   string
+	// Identity carries the run facts only the caller can read: the policy
+	// files' bytes, the git tree, the engine build.
+	Identity IdentityInputs
 }
 
 // AnalysisRequest is the narrow technical-stage input. The application owns
@@ -554,7 +557,7 @@ func (s Service) Execute(ctx context.Context, req Request) (Response, error) {
 	}
 
 	return Response{
-		Document: ProjectReport(out.Diagnostic, out.Score),
+		Document: withIdentity(ProjectReport(out.Diagnostic, out.Score), req.Identity),
 		Formats:  formats,
 		Outcome:  outcomeFor(out),
 	}, nil

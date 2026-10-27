@@ -4,11 +4,16 @@
 // Document every other renderer reads; it never changes the verdict or the exit
 // code, and the architecture state gets no agent-only field.
 //
-// The next action is decided here, once, from the report contract alone. A
-// report adapter may import only the report DTOs (internal/arch_test.go), so
-// the decision reads the state the pipeline already decided: active gate tasks
-// with their origin, the unevaluated required rules, the required-analyzer
-// gaps. A tripped metric ratchet is an ordinary repair task.
+// The change status and the next action are decided here, once, in judge, from
+// the report contract alone. A report adapter may import only the report DTOs
+// (internal/arch_test.go), so the decision reads the state the pipeline already
+// decided: active gate tasks with their origin, the unevaluated required
+// rules, the required-analyzer gaps. A tripped metric ratchet is an ordinary
+// repair task. The hook and the CLI read the same Change; neither re-judges.
+//
+// The result separates two questions. change: may this change land (pass,
+// fail, unknown). repository: what is wrong with the repository that this
+// change did not cause (attention). The next action follows change only.
 package agentout
 
 import (
@@ -33,23 +38,50 @@ const FormatName = "agent"
 // NextAction is the one instruction the result gives the agent.
 type NextAction string
 
-// Next actions, in precedence order: the first matching one wins.
+// Next actions. Each follows from the change status alone.
 const (
-	// ActionRepair: an in-scope repair needs a code change (a tripped metric
-	// ratchet is such a repair).
+	// ActionRepair: the change fails and an in-scope repair needs a code change
+	// (a tripped metric ratchet is such a repair).
 	ActionRepair NextAction = "repair"
-	// ActionAskOwner: every in-scope repair needs an owner decision, or a
-	// required rule has a selector that matches nothing (a policy defect).
+	// ActionAskOwner: the change fails and every in-scope repair needs an owner
+	// decision.
 	ActionAskOwner NextAction = "ask_owner"
-	// ActionRestoreEvidence: a required analyzer failed its gate, or a
-	// required rule lacks producer evidence.
+	// ActionRestoreEvidence: the change is unknown: a required analyzer failed
+	// its gate, or a required rule lacks producer evidence.
 	ActionRestoreEvidence NextAction = "restore_evidence"
-	// ActionReportBlocked: the verdict is blocked, but only by blockers
-	// outside the scope of this change.
-	ActionReportBlocked NextAction = "report_blocked"
 	// ActionNone: nothing for the agent to do. Exit 2 with none is a correct
-	// finish.
+	// finish: the repository attention is not the change's.
 	ActionNone NextAction = "none"
+)
+
+// ChangeStatus is whether the change may land.
+type ChangeStatus string
+
+// Change statuses.
+const (
+	// ChangePass: nothing in scope blocks and no evidence is missing.
+	ChangePass ChangeStatus = "pass"
+	// ChangeFail: an in-scope repair exists.
+	ChangeFail ChangeStatus = "fail"
+	// ChangeUnknown: evidence is missing, so the change cannot be judged. It
+	// never passes.
+	ChangeUnknown ChangeStatus = "unknown"
+)
+
+// Repository attention kinds.
+const (
+	// AttentionUnmeasuredRatchet: a metric ratchet cannot be evaluated because
+	// the stored reference does not compare (profile drift, missing baseline).
+	AttentionUnmeasuredRatchet = "unmeasured_ratchet"
+	// AttentionDeadSelector: a required rule has a selector that matches
+	// nothing, a policy defect for the owner.
+	AttentionDeadSelector = "dead_selector"
+	// AttentionExistingViolation: blockers that exist at the base and are not
+	// this change's.
+	AttentionExistingViolation = "existing_violation"
+	// AttentionBlockedWithoutFinding: the verdict is blocked and nothing in
+	// the result names why.
+	AttentionBlockedWithoutFinding = "blocked_without_finding"
 )
 
 // Repair kinds, as the agent task contract publishes them.
@@ -80,17 +112,16 @@ type Result struct {
 	SchemaVersion string `json:"schema_version"`
 	// Verdict is the architecture-state verdict of the same run.
 	Verdict string `json:"verdict"`
-	// NextAction is the one instruction for the agent.
+	// NextAction is the one instruction for the agent. It follows Change only.
 	NextAction NextAction `json:"next_action"`
 	// Summary is one deterministic line that counts what the result holds.
 	Summary string `json:"summary"`
-	// Repairs are the active gate tasks, grouped by edge and sorted in scope
-	// first, then code changes, then severity, then lowest finding ID.
-	Repairs []Repair `json:"repairs"`
-	// EvidenceGaps are the required analyzers that did not run.
-	EvidenceGaps []EvidenceGap `json:"evidence_gaps"`
-	// UnevaluatedRules are the fail-gated rules the run could not evaluate.
-	UnevaluatedRules []UnevaluatedRule `json:"unevaluated_rules"`
+	// Identity names what the run was judged under.
+	Identity report.ResultIdentity `json:"identity"`
+	// Change is whether this change may land, and why not.
+	Change Change `json:"change"`
+	// Repository is what is wrong with the repository outside this change.
+	Repository Repository `json:"repository"`
 	// Omitted counts what the result leaves out.
 	Omitted Omitted `json:"omitted"`
 	// Truncated is true when the size budget cut text or moved entries into
@@ -100,6 +131,41 @@ type Result struct {
 	// It is absent when the run has no repair or advisory task; re-run the
 	// command that produced this result instead.
 	Validate string `json:"validate,omitempty"`
+}
+
+// Change is the part of the result that decides whether the change lands.
+type Change struct {
+	// Status is pass, fail, or unknown.
+	Status ChangeStatus `json:"status"`
+	// Blockers are the in-scope repairs, grouped by edge and sorted code
+	// changes first, then severity, then lowest finding ID.
+	Blockers []Repair `json:"blockers"`
+	// EvidenceGaps are the required analyzers that did not run.
+	EvidenceGaps []EvidenceGap `json:"evidence_gaps"`
+	// UnevaluatedRules are the fail-gated rules that lack producer evidence.
+	UnevaluatedRules []UnevaluatedRule `json:"unevaluated_rules"`
+}
+
+// Blocks reports whether a hook or a gate must stop the change: the one
+// judgement every consumer of the result shares.
+func (c Change) Blocks() bool { return c.Status == ChangeFail }
+
+// Repository is the repository-level state the change did not cause.
+type Repository struct {
+	// Attention lists what the owner should look at. The agent does not act on it.
+	Attention []Attention `json:"attention"`
+}
+
+// Attention is one repository-level item.
+type Attention struct {
+	// Kind is one of the Attention* constants.
+	Kind string `json:"kind"`
+	// RuleIDs are the rules involved, sorted.
+	RuleIDs []string `json:"rule_ids,omitempty"`
+	// Count is how many findings the item stands for, when it groups findings.
+	Count int `json:"count,omitempty"`
+	// Reason says what is wrong, in one sentence.
+	Reason string `json:"reason"`
 }
 
 // Repair is one self-contained repair: every active gate task on one edge.
@@ -156,10 +222,12 @@ type UnevaluatedRule struct {
 
 // Omitted counts entries the result does not list.
 type Omitted struct {
-	// Repairs moved out by the size budget.
-	Repairs int `json:"repairs"`
+	// Blockers moved out by the size budget.
+	Blockers int `json:"blockers"`
 	// UnevaluatedRules moved out by the size budget.
 	UnevaluatedRules int `json:"unevaluated_rules"`
+	// Attention moved out by the size budget.
+	Attention int `json:"attention"`
 	// Advisories are the active advisory findings. The agent result never
 	// lists them; --format json does.
 	Advisories int `json:"advisories"`
@@ -189,73 +257,92 @@ func (r *Renderer) Render(d report.Document, w io.Writer) error {
 // Build projects the document onto the agent result, before the size budget.
 func Build(d report.Document) Result {
 	s := d.State
-	res := Result{
-		SchemaVersion:    SchemaVersion,
-		Verdict:          string(s.Verdict),
-		Repairs:          buildRepairs(s),
-		EvidenceGaps:     evidenceGaps(d.CoverageGaps),
-		UnevaluatedRules: unevaluatedRules(s.Decision.UnevaluatedRequiredRules),
-		Omitted:          Omitted{Advisories: activeAdvisories(s.Findings)},
-		Validate:         validateCommand(s.AgentTasks, d.AdvisoryTasks),
+	var blockers, existing []Repair
+	for _, rep := range buildRepairs(s) {
+		if rep.InScope {
+			blockers = append(blockers, rep)
+		} else {
+			existing = append(existing, rep)
+		}
 	}
-	res.NextAction = decide(res)
-	res.Summary = summarize(res)
+	change := Change{Blockers: nonNil(blockers), EvidenceGaps: evidenceGaps(d.CoverageGaps), UnevaluatedRules: []UnevaluatedRule{}}
+	attention := []Attention{}
+	for _, rule := range unevaluatedRules(s.Decision.UnevaluatedRequiredRules) {
+		switch {
+		case strings.HasPrefix(rule.Reason, deadSelectorPrefix):
+			attention = append(attention, Attention{Kind: AttentionDeadSelector, RuleIDs: []string{rule.RuleID}, Reason: rule.Reason})
+		case strings.HasPrefix(rule.Reason, unmeasuredRatchetPrefix):
+			attention = append(attention, Attention{Kind: AttentionUnmeasuredRatchet, RuleIDs: []string{rule.RuleID}, Reason: rule.Reason})
+		default:
+			change.UnevaluatedRules = append(change.UnevaluatedRules, rule)
+		}
+	}
+	var next NextAction
+	change.Status, next = judge(change)
+	if len(existing) > 0 {
+		var rules []string
+		count := 0
+		for _, rep := range existing {
+			rules = append(rules, rep.RuleIDs...)
+			count += len(rep.FindingIDs)
+		}
+		attention = append(attention, Attention{
+			Kind: AttentionExistingViolation, RuleIDs: sortedUnique(rules), Count: count,
+			Reason: "blockers that exist at the base; this change did not add them",
+		})
+	}
+	if s.Verdict == report.StateBlocked && change.Status == ChangePass && len(existing) == 0 {
+		attention = append(attention, Attention{Kind: AttentionBlockedWithoutFinding, Reason: "the verdict is blocked and the result names no blocker; read --format json"})
+	}
+	res := Result{
+		SchemaVersion: SchemaVersion,
+		Verdict:       string(s.Verdict),
+		NextAction:    next,
+		Identity:      s.Identity,
+		Change:        change,
+		Repository:    Repository{Attention: attention},
+		Omitted:       Omitted{Advisories: activeAdvisories(s.Findings)},
+		Validate:      validateCommand(s.AgentTasks, d.AdvisoryTasks),
+	}
+	res.Summary = summarize(res, len(existing))
 	return res
 }
 
-// decide applies the next-action precedence. A blocked verdict never maps to
-// none: when nothing else explains it, the blocker is outside the scope.
-func decide(r Result) NextAction {
-	inScope, inScopeCode := 0, 0
-	for _, rep := range r.Repairs {
-		if !rep.InScope {
-			continue
-		}
-		inScope++
+// judge is the one table that turns a change into a status and a next action.
+// A blocker fails the change; missing evidence makes it unknown; anything else
+// passes. Repository attention never enters the table.
+func judge(c Change) (ChangeStatus, NextAction) {
+	for _, rep := range c.Blockers {
 		if rep.RepairKind == repairCodeChange {
-			inScopeCode++
+			return ChangeFail, ActionRepair
 		}
 	}
-	deadSelector, missingEvidence := false, false
-	for _, rule := range r.UnevaluatedRules {
-		if strings.HasPrefix(rule.Reason, deadSelectorPrefix) || strings.HasPrefix(rule.Reason, unmeasuredRatchetPrefix) {
-			deadSelector = true
-		} else {
-			missingEvidence = true
-		}
+	if len(c.Blockers) > 0 {
+		return ChangeFail, ActionAskOwner
 	}
-	gateFailed := false
-	for _, gap := range r.EvidenceGaps {
+	for _, gap := range c.EvidenceGaps {
 		if gap.Gate == string(report.GateFail) {
-			gateFailed = true
+			return ChangeUnknown, ActionRestoreEvidence
 		}
 	}
-	switch {
-	case inScopeCode > 0:
-		return ActionRepair
-	case inScope > 0 || deadSelector:
-		return ActionAskOwner
-	case gateFailed || missingEvidence:
-		return ActionRestoreEvidence
-	case r.Verdict == string(report.StateBlocked):
-		return ActionReportBlocked
-	default:
-		return ActionNone
+	if len(c.UnevaluatedRules) > 0 {
+		return ChangeUnknown, ActionRestoreEvidence
 	}
+	return ChangePass, ActionNone
+}
+
+func nonNil[T any](in []T) []T {
+	if in == nil {
+		return []T{}
+	}
+	return in
 }
 
 // summarize counts what the result holds, in one fixed sentence.
-func summarize(r Result) string {
-	inScope, outScope := 0, 0
-	for _, rep := range r.Repairs {
-		if rep.InScope {
-			inScope++
-		} else {
-			outScope++
-		}
-	}
-	return fmt.Sprintf("%s: %d repairs in scope, %d outside scope; %d unevaluated required rules; %d evidence gaps",
-		r.Verdict, inScope, outScope, len(r.UnevaluatedRules), len(r.EvidenceGaps))
+func summarize(r Result, existing int) string {
+	return fmt.Sprintf("%s: change %s, %d blockers, %d existing; %d unknown rules, %d evidence gaps; %d attention",
+		r.Verdict, r.Change.Status, len(r.Change.Blockers), existing,
+		len(r.Change.UnevaluatedRules), len(r.Change.EvidenceGaps), len(r.Repository.Attention))
 }
 
 // edgeKey groups the tasks of one dependency. A finding that names no

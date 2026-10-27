@@ -29,16 +29,26 @@ Run the agent format after a change:
 archfit check -c .archfit.yaml --format agent
 ```
 
-Use `--base HEAD` to scope repairs to uncommitted changes. Read the command
-status with `next_action`:
+Use `--base HEAD` to scope blockers to uncommitted changes. The result has two
+parts. `change` says whether your change may land. `repository` lists what is
+wrong outside it. Read `change.status` and follow `next_action`; both come from
+`change` only:
 
-| `next_action`      | Action                                                                    |
-| ------------------ | ------------------------------------------------------------------------- |
-| `repair`           | Change the source within the listed goal and constraints. Run `validate`. |
-| `ask_owner`        | Stop and ask the architecture owner to decide.                            |
-| `restore_evidence` | Install or fix the named analyzer, then run `validate`.                   |
-| `report_blocked`   | Report blockers outside the change.                                       |
-| `none`             | Finish. Exit `2` with `none` is a valid result.                           |
+| `change.status` | `next_action`      | Action                                                                    |
+| --------------- | ------------------ | ------------------------------------------------------------------------- |
+| `fail`          | `repair`           | Change the source within the listed goal and constraints. Run `validate`. |
+| `fail`          | `ask_owner`        | Stop and ask the architecture owner to decide.                            |
+| `unknown`       | `restore_evidence` | Install or fix the named analyzer, then run `validate`.                   |
+| `pass`          | `none`             | Finish. Exit `2` with `none` is a valid result.                           |
+
+`unknown` never means pass: a required analyzer failed or a required rule has no
+producer evidence.
+
+`repository.attention` lists items the change did not cause: an existing
+violation, a metric ratchet that cannot be evaluated, a rule selector that
+matches nothing. Report them to the owner. Do not act on them.
+`identity` names the policy, baseline, labels, tree, and engine the result was
+judged under.
 
 Use `edit` to find source files. Do not edit the target of a forbidden edge.
 An empty `edit` means the source file is unknown. Use `edge.from` to identify

@@ -59,6 +59,7 @@ func writeState(s report.ArchitectureState, view brief.View, w io.Writer) error 
 	writeComparison(&b, s.Comparison)
 	writeGateReference(&b, s.GateReference)
 	writeFindingIndex(&b, s.Findings)
+	fmt.Fprintf(&b, "\nIDENTITY  %s\n", s.Identity.Line())
 
 	_, err := io.WriteString(w, b.String())
 	return err
