@@ -58,6 +58,8 @@ func rustReaderCoverage(raw []byte) (evidence.Coverage, error) {
 	}
 	return evidence.Coverage{
 		Status: evidence.StatusPartial,
-		Reason: fmt.Sprintf("Rust target attribution partial: %d unresolved symbols (%s)", count, strings.Join(details, ", ")),
+		Reason: fmt.Sprintf(
+			"Rust target attribution partial: %d unresolved symbols (%s) — rust-analyzer saw symbols it cannot pin to one Cargo target; pin languages.rust.manifest to the workspace you analyse, or set analyzers.scip.enabled: false to keep crate-level coupling",
+			count, strings.Join(details, ", ")),
 	}, nil
 }

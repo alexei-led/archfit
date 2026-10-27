@@ -21,3 +21,41 @@ testdata/
 
 # Coding-agent runtime settings and session artifacts are not image inputs.
 .pi/
+
+# Local tool state: indexes, caches and session artifacts. They are the largest
+# things in a working tree (hundreds of MB) and none of them is a build input.
+.book/
+.claude/
+.codegraph/
+.grimp_cache/
+.pi-subagents/
+.ralphex/
+.revmux/
+.ruff_cache/
+.DS_Store
+**/.DS_Store
+
+# Repository automation, documentation and generated schemas: nothing here is
+# read by the binary build. skills/**/*.md deliberately stays: those files are
+# embedded into the binary by skills/skills.go.
+.github/
+examples/
+Makefile
+README.md
+CONTRIBUTING.md
+CHANGELOG.md
+AGENTS.md
+CLAUDE.md
+LICENSE
+*.schema.json
+.golangci.yaml
+.hadolint.yaml
+.markdownlint.json
+.pre-commit-config.yaml
+.pre-commit-hooks.yaml
+.gitleaks.toml
+.archfit.yaml
+.archfit-app.yaml
+.archfit-baseline.json
+.archfit-labels.yaml
+

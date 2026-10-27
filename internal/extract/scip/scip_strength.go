@@ -49,7 +49,7 @@ const (
 	// actionable enable step. Static strings so a double-run stays byte-stable.
 	reasonScipNoIndexer   = "no SCIP indexer found — install scip-go, scip-typescript, scip-python, or rust-analyzer for semantic integration strength"
 	reasonScipNoUv        = "uv not found — install uv (https://astral.sh/uv) so archfit can read the SCIP index"
-	reasonTSNoNodeModules = "install JS/TS dependencies (e.g. `npm install`) for semantic strength — scip-typescript needs node_modules to resolve cross-package imports"
+	reasonTSNoNodeModules = "install the project's JS/TS dependencies (`npm ci` in the project root, the workspace root for a monorepo) so scip-typescript can resolve cross-package imports; set analyzers.scip.enabled: false to skip symbol-level strength"
 	reasonTimedOut        = "SCIP analysis timed out — increase analyzers.scip.timeout or reduce the scope"
 )
 

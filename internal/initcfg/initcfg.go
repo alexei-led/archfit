@@ -444,7 +444,9 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 		b.WriteString("    enabled: true\n")
 		b.WriteString("\n")
 	}
-	b.WriteString("# Optional analyzers (deeper facts; opt in deliberately because they can be slow).\n")
+	b.WriteString("# Optional analyzers (deeper facts; off by default because they are slow).\n")
+	b.WriteString("#   scip needs the target to be installable: npm ci for TS/JS, cargo metadata for Rust.\n")
+	b.WriteString("#   Large tree? Give one more time, e.g. scip: { enabled: true, timeout: \"10m\" }.\n")
 	if cfg.HasRust {
 		// A live analyzers: block (cargo_modules + scip) already exists above. Emitting
 		// a second "# analyzers:" header here would trap a user who uncomments it into a

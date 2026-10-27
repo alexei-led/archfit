@@ -52,7 +52,7 @@ const (
 	// installed, but the user deliberately opted out. The action is to enable it
 	// in config, NOT to install it. reasonNotInstalled is used when the tool is
 	// genuinely absent from the environment.
-	reasonDisabled     = "clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable"
+	reasonDisabled     = "off by default because the pass is slow: set `analyzers.clones.enabled: true` in .archfit.yaml to enable the jscpd pass (slowest on large trees)"
 	reasonNotInstalled = "jscpd not found — install it (`npm install -g jscpd`) to enable clone detection"
 	reasonRunFailed    = "jscpd run failed or its report was unreadable"
 	reasonTimedOut     = "clone detection timed out — increase analyzers.clones.timeout or reduce the scope"
