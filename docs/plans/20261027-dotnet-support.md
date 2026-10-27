@@ -249,17 +249,21 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 - Task 8: the ast-grep language id is `csharp`; the rules are embedded in the astgrep package, so Task 7 only passes `csharp`. A file with `ERROR` nodes makes the syntax coverage row `partial`, its reason naming up to five files with the first error line.
 - Task 9: format `cobertura` (`.xml`, root element `<coverage>`), parser version `coverage-parser.cobertura.v1`. A file whose every join lies outside the root is dropped without counting as unresolved. ➕ The config format vocabulary lives outside the coverage package: `internal/config/config.go` allowed formats and error text, the `internal/config/types.go` jsonschema enum, `internal/configschema/schema_test.go`, and the schema; Task 7 adds `cobertura` there and Task 12 regenerates the schema.
 
+**Review round 1 and 2 (revmux, Tasks 2, 4, 8, 9; 2026-10-27).** Round 1 (comprehensive, 4/4 sources) found 5 issues, all fixed with tests: `record struct` was never a DTO; CS1061/CS0117 did not make a project `partial`; indexer uses were ignored; the C# route regex took `Name = "..."` or a `MapGroup` prefix as the template; `install_dotnet` nested the SDK over an existing `prefix/dotnet` (Go and Node had the same flaw, now one `replace_directory` helper). Round 2 (final, 2/2 sources) found nothing.
+
+**Task 5 results.** `internal/extract/dotnet` (`New(runner, cfg, targets)`, `Applicable`, `Evaluation`, `ProjectEvaluation.FallbackReferences`). Evaluations run in parallel (4 workers, 5 min each) because an unresolvable SDK costs about 11 s offline. Test projects are detected from `IsTestProject` only; offline, projects that rely on the Test SDK props in `obj/*.nuget.g.props` may evaluate as `""`, so Task 7's path classifier (D8) must back it up. Timeout is project `failed` plus coverage `timed out`. Unexported placeholders for Task 7: `langDotNet`, `nodeKindProject` (no project node kind exists in `graph` yet), `coverageTool`. `ExtractConfig` has no dotnet fields, so the configured targets go in as `targets`. No fact cache yet (Rust has one). Reason strings: `MSB4236: SDK '<name>' not resolvable offline; run with NuGet access and a warm cache`; `global.json requests SDK X, which is not installed; install a matching SDK or relax the pin`; `target framework <tfm>: <reason>`.
+
 ### Task 5: Project graph extractor
 
-- [ ] create `internal/extract/dotnet` with an applicability function used by `Extract` and by the registry probe
-- [ ] parse `.slnx` (XML `<Project Path>`) and `.sln` (`Project(...)` lines) into project paths; test both, including a solution folder and a missing path
-- [ ] run `dotnet msbuild <project> -getItem:ProjectReference,PackageReference -getProperty:TargetFramework,TargetFrameworks,IsTestProject` once per project and once per TFM from `TargetFrameworks`, on the original tree; parse the JSON
-- [ ] map a failing evaluation to `failed` with the reason: `MSB4236` names the SDK, a `global.json` mismatch names the file, other errors keep the first MSBuild error line
-- [ ] emit project nodes and per-TFM-deduplicated `ProjectReference` facts; drop references from test projects
-- [ ] write table-driven tests with recorded MSBuild JSON: one TFM, two TFMs, missing reference, `MSB4236`, unsatisfied SDK pin, test project
-- [ ] write an integration test (skipped without `dotnet` on `PATH`) that evaluates the fixture's `Legacy` project with the real SDK and finds the `net10.0`-only reference through the per-TFM loop
-- [ ] write a test that a root with no `.csproj` or solution yields `absent`, not `partial`
-- [ ] run the package tests; they must pass before the next task
+- [x] create `internal/extract/dotnet` with an applicability function used by `Extract` and by the registry probe
+- [x] parse `.slnx` (XML `<Project Path>`) and `.sln` (`Project(...)` lines) into project paths; test both, including a solution folder and a missing path
+- [x] run `dotnet msbuild <project> -getItem:ProjectReference,PackageReference -getProperty:TargetFramework,TargetFrameworks,IsTestProject` once per project and once per TFM from `TargetFrameworks`, on the original tree; parse the JSON
+- [x] map a failing evaluation to `failed` with the reason: `MSB4236` names the SDK, a `global.json` mismatch names the file, other errors keep the first MSBuild error line
+- [x] emit project nodes and per-TFM-deduplicated `ProjectReference` facts; drop references from test projects
+- [x] write table-driven tests with recorded MSBuild JSON: one TFM, two TFMs, missing reference, `MSB4236`, unsatisfied SDK pin, test project
+- [x] write an integration test (skipped without `dotnet` on `PATH`) that evaluates the fixture's `Legacy` project with the real SDK and finds the `net10.0`-only reference through the per-TFM loop
+- [x] write a test that a root with no `.csproj` or solution yields `absent`, not `partial`
+- [x] run the package tests; they must pass before the next task
 
 ### Task 6: Type graph, snapshot, and fallback
 
