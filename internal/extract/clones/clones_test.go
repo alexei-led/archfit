@@ -2,8 +2,10 @@ package clones
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,7 +117,7 @@ func malformedRunner() *toolrun.RunnerMock {
 }
 
 func TestRun_Success(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), makeReportRunner(jscpdSuccessJSON), t.TempDir(), true, 0, nil, nil)
+	clusters, cov, err := Run(context.Background(), makeReportRunner(jscpdSuccessJSON), t.TempDir(), true, 0, nil, allLanguages, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,7 +151,7 @@ func TestRun_Success(t *testing.T) {
 }
 
 func TestRun_AbsentTool(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, 0, nil, nil)
+	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, 0, nil, allLanguages, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -164,7 +166,7 @@ func TestRun_AbsentTool(t *testing.T) {
 func TestRun_Disabled(t *testing.T) {
 	// enabled=false → disabled status (not absent), no Detect call needed.
 	// The tool may or may not be installed; the user turned it off in config.
-	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false, 0, nil, nil)
+	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false, 0, nil, allLanguages, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -181,7 +183,7 @@ func TestRun_Disabled(t *testing.T) {
 // disabled → StatusDisabled (do not show "install" prompt).
 // not installed but enabled → StatusAbsent (show "install" prompt).
 func TestRun_StatusDistinction(t *testing.T) {
-	_, covDisabled, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, 0, nil, nil)
+	_, covDisabled, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, 0, nil, allLanguages, nil)
 	if covDisabled.Status != reportmodel.StatusDisabled {
 		t.Errorf("disabled status = %q, want %q", covDisabled.Status, reportmodel.StatusDisabled)
 	}
@@ -189,7 +191,7 @@ func TestRun_StatusDistinction(t *testing.T) {
 		t.Errorf("disabled reason = %q, want %q", covDisabled.Reason, reasonDisabled)
 	}
 
-	_, covAbsent, _ := Run(context.Background(), absentRunner(), t.TempDir(), true, 0, nil, nil)
+	_, covAbsent, _ := Run(context.Background(), absentRunner(), t.TempDir(), true, 0, nil, allLanguages, nil)
 	if covAbsent.Status != reportmodel.StatusAbsent {
 		t.Errorf("absent status = %q, want %q", covAbsent.Status, reportmodel.StatusAbsent)
 	}
@@ -199,7 +201,7 @@ func TestRun_StatusDistinction(t *testing.T) {
 }
 
 func TestRun_MalformedOutput(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), malformedRunner(), t.TempDir(), true, 0, nil, nil)
+	clusters, cov, err := Run(context.Background(), malformedRunner(), t.TempDir(), true, 0, nil, allLanguages, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -212,7 +214,7 @@ func TestRun_MalformedOutput(t *testing.T) {
 }
 
 func TestRun_ToolFailure(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, 0, nil, nil)
+	clusters, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, 0, nil, allLanguages, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -245,7 +247,7 @@ func blockingRunner() *toolrun.RunnerMock {
 // returns StatusTimedOut coverage, a nil error, and no deadlock.
 // The test must complete quickly (short timeout + blocking runner).
 func TestRun_Timeout(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), blockingRunner(), t.TempDir(), true, 10*time.Millisecond, nil, nil)
+	clusters, cov, err := Run(context.Background(), blockingRunner(), t.TempDir(), true, 10*time.Millisecond, nil, allLanguages, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -397,7 +399,7 @@ func argAfter(args []string, flag string) string {
 func TestRun_ExclusionsPassedAsIgnore(t *testing.T) {
 	excl := []string{"**/vendor/**", "**/testdata/**"}
 	var captured toolrun.ToolCmd
-	_, _, err := Run(context.Background(), capturingRunner(&captured, jscpdEmptyJSON), t.TempDir(), true, 0, excl, nil)
+	_, _, err := Run(context.Background(), capturingRunner(&captured, jscpdEmptyJSON), t.TempDir(), true, 0, excl, allLanguages, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -415,12 +417,56 @@ func TestRun_ExclusionsPassedAsIgnore(t *testing.T) {
 // the jscpd invocation is byte-identical to before this change: no --ignore flag.
 func TestRun_NoExclusions_NoIgnoreFlag(t *testing.T) {
 	var captured toolrun.ToolCmd
-	_, _, err := Run(context.Background(), capturingRunner(&captured, jscpdEmptyJSON), t.TempDir(), true, 0, nil, nil)
+	_, _, err := Run(context.Background(), capturingRunner(&captured, jscpdEmptyJSON), t.TempDir(), true, 0, nil, allLanguages, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if hasArg(captured.Args, flagIgnore) {
 		t.Errorf("jscpd args %v unexpectedly contains %q (no exclusions configured)", captured.Args, flagIgnore)
+	}
+}
+
+// allLanguages is every language id archfit analyses, in config order.
+var allLanguages = []string{langGo, langTypeScript, langPython, langRust, langDotNet}
+
+// Language ids the format tests pass to Run.
+const (
+	langGo         = "go"
+	langTypeScript = "typescript"
+	langPython     = "python"
+	langRust       = "rust"
+	langDotNet     = "dotnet"
+)
+
+// TestRun_FormatsFollowAnalysedLanguages pins that jscpd compares only the
+// source files of the languages not turned off: lock files, templates,
+// Dockerfiles and scripts are not duplicated knowledge.
+func TestRun_FormatsFollowAnalysedLanguages(t *testing.T) {
+	tests := []struct {
+		name        string
+		languages   []string
+		wantFormats string
+		wantStatus  string
+	}{
+		{"every language", allLanguages, "csharp,go,javascript,jsx,python,rust,tsx,typescript", reportmodel.StatusOK},
+		{"dotnet only", []string{langDotNet}, "csharp", reportmodel.StatusOK},
+		{"typescript covers javascript", []string{langTypeScript}, "javascript,jsx,tsx,typescript", reportmodel.StatusOK},
+		{"no language", nil, "", reportmodel.StatusDisabled},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var captured toolrun.ToolCmd
+			_, cov, err := Run(context.Background(), capturingRunner(&captured, jscpdEmptyJSON), t.TempDir(), true, 0, nil, tc.languages, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cov.Status != tc.wantStatus {
+				t.Fatalf("coverage status = %q (%s), want %q", cov.Status, cov.Reason, tc.wantStatus)
+			}
+			if got := argAfter(captured.Args, flagFormat); got != tc.wantFormats {
+				t.Errorf("--format value = %q, want %q (args %v)", got, tc.wantFormats, captured.Args)
+			}
+		})
 	}
 }
 
@@ -501,7 +547,7 @@ func TestRun_NonZeroExitWithValidReport(t *testing.T) {
 		],
 		"statistics": {"total": {"sources": 2}}
 	}`
-	clusters, cov, err := Run(context.Background(), exitOneWithReportRunner(rustReport), t.TempDir(), true, 0, nil, nil)
+	clusters, cov, err := Run(context.Background(), exitOneWithReportRunner(rustReport), t.TempDir(), true, 0, nil, allLanguages, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -558,7 +604,7 @@ func TestRun_RealTool_RustClones(t *testing.T) {
 	}
 
 	runner := toolrun.New()
-	clusters, cov, err := Run(context.Background(), runner, root, true, 0, nil, nil)
+	clusters, cov, err := Run(context.Background(), runner, root, true, 0, nil, allLanguages, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -570,5 +616,115 @@ func TestRun_RealTool_RustClones(t *testing.T) {
 	}
 	if len(clusters) == 0 {
 		t.Error("expected at least one clone cluster for identical Rust blocks, got 0")
+	}
+}
+
+// TestRun_RealTool_SourceFilesOnly runs jscpd over two projects that share a
+// .NET lock file, an npm lock file, a C# class, and a TypeScript module, and
+// pins that a language's scan pairs only that language's source: a lock file
+// shared by two projects is not duplicated knowledge, and it is not reported
+// by the TypeScript scan either.
+func TestRun_RealTool_SourceFilesOnly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping real-tool test under -short")
+	}
+	root := t.TempDir()
+	class := `namespace Shared;
+
+public sealed class PriceCalculator
+{
+    public decimal Total(decimal[] prices, decimal discount)
+    {
+        decimal total = 0;
+        foreach (var price in prices)
+        {
+            total += price;
+        }
+        total -= discount;
+        return total < 0 ? 0 : total;
+    }
+}
+`
+	module := `export function total(prices: number[], discount: number): number {
+  let sum = 0;
+  for (const price of prices) {
+    if (Number.isNaN(price)) {
+      throw new Error("price must be a number");
+    }
+    sum += price;
+  }
+  sum -= discount;
+  return sum < 0 ? 0 : sum;
+}
+
+export function average(prices: number[]): number {
+  if (prices.length === 0) {
+    return 0;
+  }
+  return total(prices, 0) / prices.length;
+}
+`
+	var nuget strings.Builder
+	nuget.WriteString("{\n  \"version\": 1,\n  \"dependencies\": {\n")
+	for i := range 30 {
+		fmt.Fprintf(&nuget, "    \"Package%d\": {\"type\": \"Direct\", \"requested\": \"[1.%d.0, )\", \"resolved\": \"1.%d.0\"},\n", i, i, i)
+	}
+	nuget.WriteString("    \"Last\": {}\n  }\n}\n")
+	npmLock := `{
+  "name": "shared",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "node_modules/typescript": {"version": "5.9.2", "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.2.tgz"}
+  }
+}
+`
+	files := map[string]string{
+		"PriceCalculator.cs": class,
+		"packages.lock.json": nuget.String(),
+		"price.ts":           module,
+		"package-lock.json":  npmLock,
+	}
+	for _, project := range []string{"A", "B"} {
+		dir := filepath.Join(root, "src", project)
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		for name, body := range files {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	for _, tc := range []struct {
+		languages  []string
+		wantExt    string
+		wantClones bool
+	}{
+		{[]string{langDotNet}, ".cs", true},
+		{[]string{langTypeScript}, ".ts", true},
+		{[]string{langGo}, "", false},
+	} {
+		clusters, cov, err := Run(context.Background(), toolrun.New(), root, true, 0, nil, tc.languages, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cov.Status == reportmodel.StatusAbsent {
+			t.Skip("jscpd not installed — skipping real-tool test")
+		}
+		if cov.Status != reportmodel.StatusOK {
+			t.Fatalf("languages %v: coverage status = %q (reason: %s), want ok", tc.languages, cov.Status, cov.Reason)
+		}
+		for _, c := range clusters {
+			for _, f := range c.Files {
+				if ext := filepath.Ext(f); ext != tc.wantExt {
+					t.Errorf("languages %v: clone file %q has extension %q, want only %q source", tc.languages, f, ext, tc.wantExt)
+				}
+			}
+		}
+		if got := len(clusters) > 0; got != tc.wantClones {
+			t.Errorf("languages %v: clusters = %+v, want clones %v", tc.languages, clusters, tc.wantClones)
+		}
 	}
 }

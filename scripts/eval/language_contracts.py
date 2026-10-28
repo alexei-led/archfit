@@ -5,8 +5,12 @@ This gate creates five disposable repositories (Go, TypeScript, JavaScript,
 Python, and a Rust workspace) and exercises the branch binary through the
 public CLI.  The fixtures deliberately contain one forbidden dependency so
 the gate proves both a real producer edge and the finding lifecycle around it.
+A sixth case runs the .NET SDK, the Roslyn helper, and the branch binary on a
+copy of internal/testdata/dotnet and asserts project statuses, file edges, and
+strength hints.
 Every required producer is checked before the run; a missing tool is an
-environment failure, never an accepted skip.
+environment failure, never an accepted skip.  `--only LANGUAGE` runs one case
+and checks only the producers that case uses.
 """
 
 from __future__ import annotations
@@ -31,6 +35,11 @@ OUTPUT_MARKER = ".archfit-language-contracts"
 TOOL_MANIFEST = json.loads((REPO_ROOT / "tools/manifest.json").read_text())
 RUST_TOOLCHAIN = TOOL_MANIFEST["versions"]["rust"]
 DEPCRUISE_VERSION = TOOL_MANIFEST["node"]["dependency-cruiser"]
+DOTNET_VERSION = TOOL_MANIFEST["versions"]["dotnet"]
+DOTNET_FIXTURE = REPO_ROOT / "internal" / "testdata" / "dotnet"
+DOTNET_HELPER_DEFAULT = REPO_ROOT / ".bin" / "dotnet-roslyn"
+DOTNET_HELPER_DLL = "archfit-roslyn.dll"
+DOTNET_HELPER_ENV = "ARCHFIT_DOTNET_ROSLYN"
 TYPESCRIPT_VERSION = TOOL_MANIFEST["node"]["typescript"]
 RULE_ID = "core_no_adapter"
 WARN_RULE_ID = "core_warn_adapter"
@@ -177,6 +186,308 @@ FIXTURES = (
 )
 
 
+DOTNET_PROJECTS = (
+    "Application",
+    "Broken",
+    "Domain",
+    "Infrastructure",
+    "Legacy",
+    "Tests",
+    "Unresolved",
+)
+DOTNET_MISSING_SDK = "Archfit.Fixture.Missing.Sdk"
+DOTNET_NET8_PACK = "Microsoft.NETCore.App.Ref 8."
+DOTNET_EXPECTED_EDGES = (
+    # (from file, to file, strength hint, data hint)
+    ("Infrastructure/Repository.cs", "Application/Contracts.cs", "dto", "dto"),
+    ("Infrastructure/Repository.cs", "Domain/Domain.cs", "intrusive", "model"),
+    ("Application/Contracts.cs", "Domain/Domain.cs", "model", "model"),
+    ("Legacy/Legacy.cs", "Domain/Domain.cs", "functional", "model"),
+)
+DOTNET_EXPECTED_SEAMS = {
+    ("Infrastructure", "Domain"): "intrusive",
+    ("Application", "Domain"): "model",
+    ("Legacy", "Domain"): "functional",
+}
+# Broken fails evaluation too and Tests is a test project: neither has an edge.
+DOTNET_EDGELESS_PROJECTS = ("Broken", "Tests")
+
+
+def dotnet_config_text() -> str:
+    modules = "".join(
+        f"  {name}:\n    paths: ['{name}/**']\n    owner: team-{name.lower()}\n"
+        for name in DOTNET_PROJECTS
+    )
+    return f"""version: 2
+languages:
+  go:
+    enabled: false
+  typescript:
+    enabled: false
+  python:
+    enabled: false
+  rust:
+    enabled: false
+  dotnet:
+    enabled: true
+analyzers:
+  syntax:
+    enabled: false
+  scip:
+    enabled: false
+  clones:
+    enabled: false
+  cargo_modules:
+    enabled: false
+  roslyn:
+    enabled: true
+modules:
+{modules}"""
+
+
+def dotnet_environment(home: Path, helper: Path) -> dict[str, str]:
+    env = command_environment()
+    env.update(
+        {
+            DOTNET_HELPER_ENV: str(helper),
+            "DOTNET_CLI_HOME": str(home / "dotnet-home"),
+            "NUGET_PACKAGES": str(home / "nuget"),
+            "DOTNET_NOLOGO": "1",
+            "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+        }
+    )
+    return env
+
+
+def helper_entries(doc: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
+    return {(row["path"], row["tfm"]): row for row in doc.get("projects", [])}
+
+
+def helper_edges(doc: dict[str, Any]) -> dict[tuple[str, str], tuple[str, str]]:
+    edges: dict[tuple[str, str], tuple[str, str]] = {}
+    for row in doc.get("projects", []):
+        for file in row.get("files", []):
+            for edge in file.get("edges", []):
+                edges[(file["path"], edge["to"])] = (
+                    edge.get("hint", ""),
+                    edge.get("data_hint", ""),
+                )
+    return edges
+
+
+def check_dotnet_helper(result: ContractResult, doc: dict[str, Any]) -> None:
+    """Assert D5 statuses, reasons, hints, and edge-less projects from the helper."""
+    entries = helper_entries(doc)
+    for name in ("Domain", "Application", "Infrastructure"):
+        row = entries.get((f"{name}/{name}.csproj", "net10.0"), {})
+        assert_result(
+            result,
+            f"{name}@net10.0 is complete",
+            row.get("status") == "complete",
+            row,
+        )
+    legacy10 = entries.get(("Legacy/Legacy.csproj", "net10.0"), {})
+    assert_result(
+        result,
+        "Legacy@net10.0 is complete",
+        legacy10.get("status") == "complete",
+        legacy10,
+    )
+    legacy8 = entries.get(("Legacy/Legacy.csproj", "net8.0"), {})
+    # A host may carry the 8.0 targeting pack; the exact `partial` is the image contract's.
+    packs = re.findall(r"reference pack (\S+ \S+)", legacy8.get("reason", ""))
+    assert_result(
+        result,
+        "Legacy@net8.0 is complete or partial naming only the 8.x reference pack",
+        legacy8.get("status") == "complete"
+        or (
+            legacy8.get("status") == "partial"
+            and len(packs) == 1
+            and packs[0].startswith(DOTNET_NET8_PACK)
+        ),
+        legacy8,
+    )
+    broken = [
+        row for (path, _), row in entries.items() if path == "Broken/Broken.csproj"
+    ]
+    assert_result(
+        result,
+        "Broken failed naming its SDK with no files",
+        len(broken) == 1
+        and broken[0].get("status") == "failed"
+        and DOTNET_MISSING_SDK in broken[0].get("reason", "")
+        and not broken[0].get("files"),
+        broken,
+    )
+    tests = entries.get(("Tests/Tests.csproj", "net10.0"), {})
+    assert_result(
+        result,
+        "Tests is partial naming the missing SDK",
+        tests.get("status") == "partial"
+        and DOTNET_MISSING_SDK in tests.get("reason", ""),
+        tests,
+    )
+    unresolved = entries.get(("Unresolved/Unresolved.csproj", "net10.0"), {})
+    assert_result(
+        result,
+        "Unresolved is partial with counted unresolved symbols",
+        unresolved.get("status") == "partial"
+        and unresolved.get("unresolved_symbols", 0) > 0,
+        unresolved,
+    )
+    missing_reason = [
+        f"{path}@{tfm}"
+        for (path, tfm), row in entries.items()
+        if row.get("status") in {"partial", "failed"} and not row.get("reason")
+    ]
+    assert_result(
+        result,
+        "every partial or failed project carries a reason",
+        not missing_reason,
+        missing_reason,
+    )
+    edges = helper_edges(doc)
+    for source, target, hint, data_hint in DOTNET_EXPECTED_EDGES:
+        assert_result(
+            result,
+            f"{source} -> {target} is {hint}/{data_hint or 'none'}",
+            edges.get((source, target)) == (hint, data_hint),
+            edges.get((source, target)),
+        )
+    leaked = sorted(
+        source
+        for source, _ in edges
+        if source.split("/", 1)[0] in DOTNET_EDGELESS_PROJECTS
+    )
+    assert_result(result, "Broken and Tests emit no helper edges", not leaked, leaked)
+
+
+def check_dotnet_state(result: ContractResult, state: dict[str, Any]) -> None:
+    """Assert what the branch binary reports for the fixture through the public state."""
+    rows = {row.get("tool"): row for row in state.get("coverage", {}).get("tools", [])}
+    msbuild = rows.get("dotnet-msbuild", {})
+    assert_result(
+        result,
+        "dotnet-msbuild row is partial and names Broken's SDK",
+        msbuild.get("status") == "partial"
+        and "Broken/Broken.csproj" in msbuild.get("reason", "")
+        and DOTNET_MISSING_SDK in msbuild.get("reason", ""),
+        msbuild,
+    )
+    roslyn = rows.get("roslyn", {})
+    reason = roslyn.get("reason", "")
+    named_pack = " Legacy/Legacy.csproj partial" not in f" {reason}" or (
+        "Microsoft.NETCore.App.Ref 8." in reason
+    )
+    assert_result(
+        result,
+        "roslyn row is partial with unresolved inputs and names the failed project",
+        roslyn.get("status") == "partial"
+        and re.search(r"\d+ unresolved symbols?", reason) is not None
+        and "Broken/Broken.csproj failed" in reason
+        and re.search(
+            rf"\d+ of {len(DOTNET_PROJECTS)} projects partial, 1 failed", reason
+        )
+        and named_pack,
+        roslyn,
+    )
+    versions = state.get("measurement", {}).get("tool_versions", {})
+    assert_result(
+        result,
+        "producer versions are recorded",
+        versions.get("dotnet-msbuild") == DOTNET_VERSION
+        and versions.get("roslyn", "").startswith("archfit-roslyn "),
+        versions,
+    )
+    seams = {
+        f"{seam.get('from_module')}->{seam.get('to_module')}": seam.get("strength")
+        for seam in state.get("seams", [])
+    }
+    assert_result(
+        result,
+        "seams carry the compiler-derived strengths",
+        all(
+            seams.get(f"{source}->{target}") == want
+            for (source, target), want in DOTNET_EXPECTED_SEAMS.items()
+        ),
+        seams,
+    )
+    leaked = sorted(
+        pair
+        for pair in seams
+        if any(name in pair.split("->") for name in DOTNET_EDGELESS_PROJECTS)
+    )
+    assert_result(
+        result,
+        "Broken and Tests have no seams, so no fallback edges",
+        not leaked,
+        leaked,
+    )
+
+
+def copy_dotnet_fixture(destination: Path) -> Path:
+    shutil.copytree(DOTNET_FIXTURE, destination)
+    return destination
+
+
+def run_dotnet_contract(
+    archfit: Path, output: Path, commands: list[CommandResult]
+) -> ContractResult:
+    result = ContractResult("dotnet")
+    artifact_dir = output / "dotnet"
+    artifact_dir.mkdir(parents=True)
+    helper = artifact_dir / "helper"
+    # The helper lives outside every analyzed tree, as in the image.
+    shutil.copytree(dotnet_helper_source(), helper)
+    env = dotnet_environment(artifact_dir, helper)
+
+    helper_root = copy_dotnet_fixture(artifact_dir / "helper-repo")
+    run = run_command(
+        "dotnet-helper",
+        ["dotnet", str(helper / DOTNET_HELPER_DLL), str(helper_root), "Fixture.slnx"],
+        helper_root,
+        env=env,
+    )
+    commands.append(run)
+    try:
+        doc = json.loads(run.stdout)
+    except json.JSONDecodeError as exc:
+        assert_result(result, "helper JSON parses", False, f"{exc}: {run.stderr}")
+        doc = None
+    if doc is not None:
+        assert_result(result, "helper exits 0", run.returncode == 0, run.stderr)
+        check_dotnet_helper(result, doc)
+
+    root = copy_dotnet_fixture(artifact_dir / "repo")
+    config = root / ".archfit.yaml"
+    config.write_text(dotnet_config_text(), encoding="utf-8")
+    validate_config_v2(result, config)
+    git_fixture(root, commands)
+    cli = run_command(
+        "dotnet-analyze",
+        [
+            str(archfit),
+            "analyze",
+            "--root",
+            str(root),
+            "--config",
+            str(config),
+            "--json",
+            "--quiet",
+        ],
+        root,
+        env=env,
+        timeout=900,
+    )
+    commands.append(cli)
+    (artifact_dir / "analyze.stderr").write_text(cli.stderr, encoding="utf-8")
+    assert_result(result, "analyze exits 0", cli.returncode == 0, cli.stderr)
+    state = parse_state(result, cli)
+    if state is not None:
+        check_dotnet_state(result, state)
+    return result
+
+
 def prepare_output_dir(path: Path) -> Path:
     """Create an owned output directory, refusing to delete user data."""
     if path.exists():
@@ -228,8 +539,21 @@ def _version_number(output: str) -> str:
     return match.group(0) if match else ""
 
 
-def preflight(archfit: Path, root: Path) -> list[str]:
-    """Require every producer used by the fixture run and exact tool pins."""
+PRODUCER_TOOLS = {
+    "go": ("go",),
+    "typescript": ("node", "depcruise"),
+    "javascript": ("node", "depcruise"),
+    "python": (),
+    "rust": ("cargo",),
+    "dotnet": ("dotnet",),
+}
+ALL_CASES = (*PRODUCER_TOOLS,)
+
+
+def preflight(
+    archfit: Path, root: Path, cases: tuple[str, ...] = ALL_CASES
+) -> list[str]:
+    """Require every producer used by the selected cases and exact tool pins."""
     failures: list[str] = []
     try:
         import jsonschema  # noqa: F401
@@ -240,45 +564,76 @@ def preflight(archfit: Path, root: Path) -> list[str]:
         )
     if not archfit.is_file() or not os.access(archfit, os.X_OK):
         failures.append(f"archfit binary is missing or not executable: {archfit}")
-    for tool in ("git", "go", "node", "cargo", "ast-grep", "depcruise"):
+    tools = {"git"}
+    for case in cases:
+        tools.update(PRODUCER_TOOLS[case])
+    if set(cases) - {"dotnet"}:
+        tools.add("ast-grep")
+    for tool in sorted(tools):
         if shutil.which(tool) is None:
             failures.append(f"required tool {tool!r} is not on PATH")
 
-    if shutil.which("node"):
+    if "node" in tools and shutil.which("node"):
         node = run_command("node-version", ["node", "--version"], root)
         if _version_number(node.stdout) != TOOL_MANIFEST["versions"]["node"]:
             failures.append(
                 f"Node {TOOL_MANIFEST['versions']['node']} is required, got {node.stdout.strip()!r}"
             )
-    if shutil.which("ast-grep"):
+    if "ast-grep" in tools and shutil.which("ast-grep"):
         sg = run_command("ast-grep-version", ["ast-grep", "--version"], root)
         if "ast-grep" not in (sg.stdout + sg.stderr).lower():
             failures.append("required ast-grep is not the canonical syntax producer")
-    if shutil.which("cargo"):
+    if "cargo" in tools and shutil.which("cargo"):
         cargo = run_command("cargo-version", ["cargo", "--version"], root)
         if _version_number(cargo.stdout) != RUST_TOOLCHAIN:
             failures.append(
                 f"Cargo/Rust toolchain {RUST_TOOLCHAIN} is required, got {cargo.stdout.strip()!r}"
             )
-    python = os.environ.get("ARCHFIT_TOOL_PYTHON", sys.executable)
-    grimp = run_command(
-        "grimp-preflight",
-        [
-            python,
-            "-I",
-            "-c",
-            "import grimp, importlib.metadata, platform; print(importlib.metadata.version('grimp')); print(platform.python_version())",
-        ],
-        root,
-    )
-    if grimp.returncode != 0 or grimp.stdout.splitlines() != [
-        TOOL_MANIFEST["python"]["grimp"],
-        TOOL_MANIFEST["versions"]["python"],
-    ]:
-        failures.append(
-            f"isolated pinned Python/grimp is unavailable: {grimp.stdout} {grimp.stderr}"
+    if "python" in cases:
+        python = os.environ.get("ARCHFIT_TOOL_PYTHON", sys.executable)
+        grimp = run_command(
+            "grimp-preflight",
+            [
+                python,
+                "-I",
+                "-c",
+                "import grimp, importlib.metadata, platform; print(importlib.metadata.version('grimp')); print(platform.python_version())",
+            ],
+            root,
         )
+        if grimp.returncode != 0 or grimp.stdout.splitlines() != [
+            TOOL_MANIFEST["python"]["grimp"],
+            TOOL_MANIFEST["versions"]["python"],
+        ]:
+            failures.append(
+                f"isolated pinned Python/grimp is unavailable: {grimp.stdout} {grimp.stderr}"
+            )
+    if "dotnet" in cases:
+        failures.extend(dotnet_preflight(root))
+    return failures
 
+
+def dotnet_helper_source() -> Path:
+    configured = os.environ.get(DOTNET_HELPER_ENV)
+    return Path(configured) if configured else DOTNET_HELPER_DEFAULT
+
+
+def dotnet_preflight(root: Path) -> list[str]:
+    failures: list[str] = []
+    if shutil.which("dotnet"):
+        sdk = run_command("dotnet-version", ["dotnet", "--version"], root)
+        if sdk.stdout.strip() != DOTNET_VERSION:
+            failures.append(
+                f".NET SDK {DOTNET_VERSION} is required, got {sdk.stdout.strip()!r}"
+            )
+    helper = dotnet_helper_source()
+    if not (helper / DOTNET_HELPER_DLL).is_file():
+        failures.append(
+            f"Roslyn helper {DOTNET_HELPER_DLL} is missing under {helper}; "
+            f"run `make dotnet-roslyn` or set {DOTNET_HELPER_ENV}"
+        )
+    if not DOTNET_FIXTURE.is_dir():
+        failures.append(f".NET fixture is missing: {DOTNET_FIXTURE}")
     return failures
 
 
@@ -808,6 +1163,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archfit", type=Path, default=DEFAULT_ARCHFIT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--only",
+        choices=ALL_CASES,
+        help="run one case and check only the producers it uses",
+    )
     return parser
 
 
@@ -818,7 +1178,8 @@ def main(argv: list[str] | None = None) -> int:
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    failures = preflight(args.archfit.resolve(), REPO_ROOT)
+    cases = (args.only,) if args.only else ALL_CASES
+    failures = preflight(args.archfit.resolve(), REPO_ROOT, cases)
     if failures:
         print("language acceptance preflight failed:", file=sys.stderr)
         for failure in failures:
@@ -827,6 +1188,8 @@ def main(argv: list[str] | None = None) -> int:
     commands: list[CommandResult] = []
     results: list[ContractResult] = []
     for spec in FIXTURES:
+        if spec.name not in cases:
+            continue
         try:
             results.append(run_fixture(spec, args.archfit.resolve(), output, commands))
         except Exception as exc:  # noqa: BLE001 - one fixture failure must not hide the rest
@@ -834,6 +1197,16 @@ def main(argv: list[str] | None = None) -> int:
             result.failures.append(f"fixture harness error: {exc!r}")
             results.append(result)
             print(f"{spec.name}: FAIL ({exc})", file=sys.stderr)
+    if "dotnet" in cases:
+        try:
+            results.append(
+                run_dotnet_contract(args.archfit.resolve(), output, commands)
+            )
+        except Exception as exc:  # noqa: BLE001 - one case failure must not hide the rest
+            result = ContractResult("dotnet")
+            result.failures.append(f"fixture harness error: {exc!r}")
+            results.append(result)
+            print(f"dotnet: FAIL ({exc})", file=sys.stderr)
     (output / "commands.json").write_text(
         json.dumps(
             [dataclasses.asdict(command) for command in commands],
@@ -846,6 +1219,7 @@ def main(argv: list[str] | None = None) -> int:
         "archfit": str(args.archfit.resolve()),
         "toolchain": {
             "rust": RUST_TOOLCHAIN,
+            "dotnet": DOTNET_VERSION,
             "dependency_cruiser": DEPCRUISE_VERSION,
             "optional_analyzers": OPTIONAL_DISABLED,
         },

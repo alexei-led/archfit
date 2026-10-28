@@ -126,6 +126,11 @@ const (
 // matches nothing: a policy defect for the owner, not missing evidence.
 const deadSelectorPrefix = "selector matches nothing:"
 
+// unsupportedTargetPrefix is the unevaluated-rule reason prefix for a to:
+// path naming a file type no dependency producer analyses: the owner fixes the
+// rule, since no analyzer install makes it evaluable.
+const unsupportedTargetPrefix = "selector names a file type no dependency producer analyses:"
+
 // uncoveredChangePrefix starts the reason of the unevaluated entry that the
 // module_review.change_gate: fail posture adds when the change adds code no
 // analysis covers (evaluation.UncoveredChangePrefix). It is missing evidence
@@ -353,7 +358,10 @@ func Build(d report.Document) Result {
 	attention := []Attention{}
 	for _, rule := range unevaluatedRules(s.Decision.UnevaluatedRequiredRules) {
 		switch {
-		case strings.HasPrefix(rule.Reason, deadSelectorPrefix):
+		case strings.HasPrefix(rule.Reason, deadSelectorPrefix), strings.HasPrefix(rule.Reason, unsupportedTargetPrefix):
+			// Neither is missing evidence: no analyzer install makes a dead
+			// selector or an unanalysed file type evaluable, so both are
+			// policy defects the owner fixes.
 			attention = append(attention, Attention{Kind: AttentionDeadSelector, RuleIDs: []string{rule.RuleID}, Reason: rule.Reason})
 		case strings.HasPrefix(rule.Reason, unmeasuredRatchetPrefix):
 			attention = append(attention, Attention{Kind: AttentionUnmeasuredRatchet, RuleIDs: []string{rule.RuleID}, Reason: rule.Reason})

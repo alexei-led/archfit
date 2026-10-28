@@ -40,7 +40,7 @@ The [configuration reference](configuration.md#metrics) owns settings.
 | Metric | Value and direction | Meaning |
 | --- | --- | --- |
 | `unbalanced_edge` (`unbalanced_edge.v3`) | Count. Higher is worse. | New intrusive edges across a module boundary into high volatility. External systems do not count. Zero is strong. One or more is critical. |
-| `cycle` (`cycle.v1`) | Count. Higher is worse. | Strongly connected dependency components. All-Rust module cycles receive a `poor` band. Other cycles receive a `critical` band. `module_cycle` handles cycles between declared modules. |
+| `cycle` (`cycle.v1`) | Count. Higher is worse. | Strongly connected dependency components. Cycles built only from Rust edges (intra-crate module cycles) or only from .NET edges (intra-project file cycles) receive a `poor` band: cargo and MSBuild forbid cycles between crates and projects, so the language permits the cycle. Any other cycle receives a `critical` band. `module_cycle` handles cycles between declared modules. |
 | `encapsulation` (`encapsulation.v2`) | Ratio from 0 to 1. Lower is worse. | Contract edges divided by contract plus intrusive edges across module boundaries. Other strengths and unknown edges do not enter the denominator. |
 | `coverage` (`coverage.v1`) | Ratio from 0 to 1. Higher is better. | Extracted files divided by applicable files across contributing tool-coverage records. This is analyzer coverage, not test coverage. |
 

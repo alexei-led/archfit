@@ -70,7 +70,7 @@ archfit analyze -c .archfit.yaml
 
 Review the generated module paths and rules before you use the configuration as policy. Create a baseline only after you review the findings. Run `archfit check` in CI.
 
-The Docker image includes the locked Go, TypeScript/JavaScript, Python, and Rust toolchains, plus ast-grep, SCIP indexers, jscpd, and cargo-modules. Deeper analyzers remain configuration-controlled. See [Getting started](docs/getting-started.md#use-docker) for details.
+The Docker image includes the locked Go, TypeScript/JavaScript, Python, Rust, and .NET toolchains, plus ast-grep, SCIP indexers, jscpd, cargo-modules, and the Roslyn helper (`archfit-roslyn`). Deeper analyzers remain configuration-controlled. See [Getting started](docs/getting-started.md#use-docker) for details.
 
 ## Documentation
 

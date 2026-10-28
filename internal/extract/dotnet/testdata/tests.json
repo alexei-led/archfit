@@ -1,0 +1,32 @@
+{
+  "Properties": {
+    "TargetFramework": "net10.0",
+    "TargetFrameworks": "",
+    "IsTestProject": "true"
+  },
+  "Items": {
+    "ProjectReference": [
+      {
+        "Identity": "../Broken/Broken.csproj",
+        "Targets": "",
+        "OutputItemType": "",
+        "ReferenceSourceTarget": "ProjectReference",
+        "FullPath": "{{ROOT}}/Broken/Broken.csproj",
+        "RootDir": "/",
+        "Filename": "Broken",
+        "Extension": ".csproj",
+        "RelativeDir": "../Broken/",
+        "Directory": "{{ROOT}}/Broken/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "{{ROOT}}/Tests/Tests.csproj",
+        "DefiningProjectDirectory": "{{ROOT}}/Tests/",
+        "DefiningProjectName": "Tests",
+        "DefiningProjectExtension": ".csproj"
+      }
+    ],
+    "PackageReference": []
+  }
+}

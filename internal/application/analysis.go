@@ -108,6 +108,9 @@ type AnalysisRequest struct {
 	// it: they are analyze/check-only (see DiscloseHealthWarnings).
 	WarnLabel            string
 	CaptureRelationships bool
+	// DependencyRoot is the working tree a checkout Root stands in for: the
+	// --base sub-run sets it to the head scan root (see scope.Scope).
+	DependencyRoot string
 }
 
 // AnalysisResult is the stage output consumed by the application projection.
@@ -220,7 +223,7 @@ type WorktreeProvider interface {
 // AnalyzerFamilies records which optional finding-producing analyzers the
 // config activates. Task-origin comparison uses it to compare like with like.
 type AnalyzerFamilies struct {
-	Patterns, Syntax, SCIP, Clones, CargoModules bool
+	Patterns, Syntax, SCIP, Clones, CargoModules, Roslyn bool
 }
 
 // StageExecutor sequences one analysis run. It owns the stage order, the single
@@ -365,6 +368,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		if err := s.attachBaseComparison(ctx, req, runCtx, &diag); err != nil {
 			return AnalysisResult{}, err
 		}
+		discloseRawComparisonReasons(s.stderr(), diag.Comparison)
 	}
 	out.Diagnostic = diag
 	if req.CaptureRelationships {

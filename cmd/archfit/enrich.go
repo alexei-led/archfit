@@ -52,7 +52,7 @@ type EnrichLabelsCmd struct {
 }
 
 func (c *EnrichLabelsCmd) Run(deps *appDeps) error {
-	return c.runLabelEnrich(context.Background(), deps)
+	return c.runLabelEnrich(deps.runContext(), deps)
 }
 
 // EnrichOwnerCmd drafts a module owner per module; --apply writes approved entries.
@@ -64,9 +64,9 @@ type EnrichOwnerCmd struct {
 
 func (c *EnrichOwnerCmd) Run(deps *appDeps) error {
 	if c.Apply {
-		return c.runValuePin(context.Background(), deps, ownerSpec, c.ReviewedBy)
+		return c.runValuePin(deps.runContext(), deps, ownerSpec, c.ReviewedBy)
 	}
-	return c.runValueDraft(context.Background(), deps, ownerSpec)
+	return c.runValueDraft(deps.runContext(), deps, ownerSpec)
 }
 
 // EnrichVolatilityCmd drafts module volatility; --apply writes approved entries.
@@ -78,9 +78,9 @@ type EnrichVolatilityCmd struct {
 
 func (c *EnrichVolatilityCmd) Run(deps *appDeps) error {
 	if c.Apply {
-		return c.runValuePin(context.Background(), deps, volatilitySpec, c.ReviewedBy)
+		return c.runValuePin(deps.runContext(), deps, volatilitySpec, c.ReviewedBy)
 	}
-	return c.runValueDraft(context.Background(), deps, volatilitySpec)
+	return c.runValueDraft(deps.runContext(), deps, volatilitySpec)
 }
 
 // EnrichSubdomainCmd drafts module subdomain; --apply writes approved entries.
@@ -92,9 +92,9 @@ type EnrichSubdomainCmd struct {
 
 func (c *EnrichSubdomainCmd) Run(deps *appDeps) error {
 	if c.Apply {
-		return c.runSubdomainPin(context.Background(), deps, c.ReviewedBy)
+		return c.runSubdomainPin(deps.runContext(), deps, c.ReviewedBy)
 	}
-	return c.runSubdomainDraft(context.Background(), deps)
+	return c.runSubdomainDraft(deps.runContext(), deps)
 }
 
 // runLabelEnrich is the original coupling-strength label draft workflow.

@@ -45,7 +45,7 @@ type AnalyzeCmd struct {
 
 	NoAdvisories bool     `name:"no-advisories" help:"Drop advisory findings: Balanced-Coupling advisories and violations of gate: warn rules. Dropped findings do not count as diagnostics."`
 	MinSeverity  string   `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
-	Lang         []string `name:"lang" help:"Language to force on: go, typescript (ts), python (py), rust (rs). Repeatable."`
+	Lang         []string `name:"lang" help:"Language to force on: go, typescript (ts), python (py), rust (rs), dotnet (csharp). Repeatable."`
 	RequireTools bool     `name:"require-tools" help:"Mark missing required analyzer tools as fail in the rendered verdict."`
 
 	// Progress controls live phase reporting on stderr; Quiet suppresses it.
@@ -87,7 +87,7 @@ Docs:
 }
 
 func (c *AnalyzeCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
+	ctx := deps.runContext()
 	return runScan(ctx, deps, scanRequest{
 		configPath:       c.Config,
 		root:             c.Root,

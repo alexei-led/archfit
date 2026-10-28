@@ -65,10 +65,11 @@ class CIProvisionTest(unittest.TestCase):
             self.assertNotIn("sudo", [call[0] for call in calls])
             entries = path.read_text().splitlines()
             self.assertEqual(
-                entries[:5],
+                entries[:6],
                 [
                     str(prefix / "analyzers/node/node_modules/.bin"),
                     str(prefix / "bin"),
+                    str(prefix / "dotnet"),
                     str(prefix / "go/bin"),
                     str(prefix / "node/bin"),
                     str(prefix / "rust/bin"),
@@ -77,7 +78,7 @@ class CIProvisionTest(unittest.TestCase):
             # The base interpreter is published by its resolved directory: the
             # venv entry is a symlink into uv's tree, as in the shipped image.
             self.assertEqual(
-                Path(entries[5]).resolve(), (base / "owned python/bin").resolve()
+                Path(entries[6]).resolve(), (base / "owned python/bin").resolve()
             )
             self.assertEqual(
                 env.read_text().splitlines(),
@@ -87,6 +88,7 @@ class CIProvisionTest(unittest.TestCase):
                     "CARGO_HOME=/tmp/archfit-cargo",
                     "RUST_SRC_PATH="
                     + str(prefix / "rust/lib/rustlib/src/rust/library"),
+                    "DOTNET_ROOT=" + str(prefix / "dotnet"),
                     "UV_PYTHON_DOWNLOADS=never",
                 ],
             )
@@ -119,7 +121,7 @@ class CIProvisionTest(unittest.TestCase):
             )
 
     def test_unusable_cache_is_rebuilt_instead_of_trusted(self):
-        for broken in ("cargo-modules", "python"):
+        for broken in ("cargo-modules", "dotnet", "python"):
             with (
                 self.subTest(broken=broken),
                 tempfile.TemporaryDirectory() as directory,
@@ -174,6 +176,7 @@ class CIProvisionTest(unittest.TestCase):
         for name in (
             "bin/cargo-modules",
             "bin/scip-go",
+            "dotnet/dotnet",
             "rust/bin/rustc",
             "analyzers/node/node_modules/.bin/sg",
         ):

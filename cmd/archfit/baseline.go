@@ -32,7 +32,7 @@ Typical calibration:
 }
 
 func (c *BaselineCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
+	ctx := deps.runContext()
 
 	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {

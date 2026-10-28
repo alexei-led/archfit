@@ -135,7 +135,7 @@ type CoverageConfig struct {
 // distinguish omission (use the bounded default) from an explicit invalid zero.
 type CoverageSource struct {
 	Path        string `yaml:"path" jsonschema:"required"`
-	Format      string `yaml:"format,omitempty" jsonschema:"enum=auto,enum=go-coverprofile,enum=lcov,enum=coverage-py-json,enum=llvm-cov-json"`
+	Format      string `yaml:"format,omitempty" jsonschema:"enum=auto,enum=go-coverprofile,enum=lcov,enum=coverage-py-json,enum=llvm-cov-json,enum=cobertura"`
 	SidecarPath string `yaml:"sidecar_path,omitempty"`
 	MaxBytes    *int64 `yaml:"max_bytes,omitempty" jsonschema:"minimum=1,default=67108864"`
 	MaxFacts    *int   `yaml:"max_facts,omitempty" jsonschema:"minimum=1,default=1000000"`

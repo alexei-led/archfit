@@ -56,11 +56,11 @@ func TestFactCache_HitServesParsedResult(t *testing.T) {
 	runner := cacheScanRunner(jscpdSuccessJSON, &scans, false)
 	ctx := context.Background()
 
-	cold, coldCov, err := Run(ctx, runner, root, true, 0, nil, store)
+	cold, coldCov, err := Run(ctx, runner, root, true, 0, nil, allLanguages, store)
 	if err != nil {
 		t.Fatalf("cold Run: %v", err)
 	}
-	warm, warmCov, err := Run(ctx, runner, root, true, 0, nil, store)
+	warm, warmCov, err := Run(ctx, runner, root, true, 0, nil, allLanguages, store)
 	if err != nil {
 		t.Fatalf("warm Run: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestFactCache_TimedOutRunNotCached(t *testing.T) {
 	store := factcache.NewStore(t.TempDir())
 	scans := 0
 
-	_, cov, err := Run(context.Background(), cacheScanRunner("", &scans, true), root, true, 10*time.Millisecond, nil, store)
+	_, cov, err := Run(context.Background(), cacheScanRunner("", &scans, true), root, true, 10*time.Millisecond, nil, allLanguages, store)
 	if err != nil {
 		t.Fatalf("timed-out Run: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestFactCache_TimedOutRunNotCached(t *testing.T) {
 	}
 
 	// Healthy re-run: must invoke jscpd (nothing was cached by the timeout).
-	clusters, cov, err := Run(context.Background(), cacheScanRunner(jscpdSuccessJSON, &scans, false), root, true, 0, nil, store)
+	clusters, cov, err := Run(context.Background(), cacheScanRunner(jscpdSuccessJSON, &scans, false), root, true, 0, nil, allLanguages, store)
 	if err != nil {
 		t.Fatalf("healthy Run: %v", err)
 	}
@@ -105,5 +105,26 @@ func TestFactCache_TimedOutRunNotCached(t *testing.T) {
 	}
 	if cov.Status != reportmodel.StatusOK || len(clusters) == 0 {
 		t.Errorf("healthy run: want OK coverage with clusters, got %s / %d clusters", cov.Status, len(clusters))
+	}
+}
+
+// TestFactCache_KeyedOnLanguages pins that a cached scan of one language set
+// is not served for another: --format changes what jscpd compares.
+func TestFactCache_KeyedOnLanguages(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := factcache.NewStore(t.TempDir())
+	scans := 0
+	runner := cacheScanRunner(jscpdSuccessJSON, &scans, false)
+	for _, languages := range [][]string{{langGo}, {langDotNet}, {langGo}} {
+		if _, _, err := Run(context.Background(), runner, root, true, 0, nil, languages, store); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if scans != 2 {
+		t.Errorf("jscpd scans = %d, want 2 (one per language set, the repeat served from cache)", scans)
 	}
 }

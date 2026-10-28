@@ -210,23 +210,60 @@ func sameModule(mm policy.ModuleMap, e relationship.Edge) bool {
 // internal-access rules. Declared surfaces decide first (policy.ModuleMap.
 // MatchesInternal): a public: glob of the target's module exempts the edge, and
 // any module's internal: glob marks it internal, in every language. Only when no
-// declaration speaks does the extractor's uses_internal kind decide — the Go
-// `/internal/` path segment, or the TS/Python extractors' own internal-glob test.
+// declaration speaks does the extractor evidence decide (internalSignal): the
+// uses_internal kind — the Go `/internal/` path segment, or the TS/Python
+// extractors' own internal-glob test — or an intrusive strength, a use of a
+// member the target keeps out of its surface (a C# internal member reached
+// through InternalsVisibleTo, a Python private name, a private symbol a SCIP
+// index resolves). An intrusive use is the same fact as a declared internal:
+// match, so the guard fires on both.
 //
 // Deciding here rather than in the extractor keeps edge kinds, and therefore
 // finding fingerprints, unchanged. Callers pass dependency edges only: a
 // belongs_to or exposes edge is not an access. glob names the declaration that made the
-// target internal; it is empty when the extractor kind decided.
+// target internal; it is empty when extractor evidence decided.
 func internalTarget(mm policy.ModuleMap, e relationship.Edge) (internal bool, glob string) {
 	if internal, glob := mm.MatchesInternal(e.ToPath, e.Language); glob != "" {
 		return internal, glob
 	}
-	return e.Kind == relEdgeKindUsesInt, ""
+	return internalSignal(e) != "", ""
+}
+
+// internalSignal names the extractor fact that made an edge target internal
+// when no declared surface did, or "" when no such fact applies. A strength an
+// approved label pinned is the owner's verdict on how deeply two modules are
+// coupled, not a report that a member was reached without access, so it is not
+// evidence here.
+func internalSignal(e relationship.Edge) string {
+	switch {
+	case e.Kind == relEdgeKindUsesInt:
+		return relEdgeKindUsesInt
+	case e.Strength == relationship.StrengthIntrusive && !e.Provenance.StrengthPinned:
+		return string(relationship.StrengthIntrusive)
+	}
+	return ""
 }
 
 // matchedByInternalGlob is the MatchedBy key naming the declared internal: glob
 // that made an edge target internal.
 const matchedByInternalGlob = "internal_glob"
+
+// matchedByInternalSignal is the MatchedBy key naming the extractor evidence
+// that made an edge target internal when no declaration covered the target.
+const matchedByInternalSignal = "internal_signal"
+
+// setInternalEvidence records in matched_by what made the target internal: the
+// declared internal: glob when a declaration decided, otherwise the extractor
+// signal, so a finding that fired without any internal: declaration says why.
+func setInternalEvidence(f *finding.Finding, e relationship.Edge, glob string) {
+	if glob != "" {
+		f.MatchedBy[matchedByInternalGlob] = glob
+		return
+	}
+	if signal := internalSignal(e); signal != "" {
+		f.MatchedBy[matchedByInternalSignal] = signal
+	}
+}
 
 // ---------------------------------------------------------------------------
 // PublicAPIOnly
@@ -268,9 +305,7 @@ func (r *publicAPIOnly) Check(s relationship.Set, _ Evidence) []finding.Finding 
 			"edge_kind": e.Kind,
 			"to_path":   toPath,
 		}
-		if glob != "" {
-			f.MatchedBy[matchedByInternalGlob] = glob
-		}
+		setInternalEvidence(&f, e, glob)
 		why := "Access to internal path " + toPath
 		if fromModule, fromOK := r.mm.ModuleForNode(fromPath, e.Language); fromOK {
 			if toModule, toOK := r.mm.ModuleForNode(toPath, e.Language); toOK {
@@ -385,9 +420,7 @@ func (r *internalAPIAccess) Check(s relationship.Set, _ Evidence) []finding.Find
 			"from_path": fromPath,
 			"to_path":   toPath,
 		}
-		if glob != "" {
-			f.MatchedBy[matchedByInternalGlob] = glob
-		}
+		setInternalEvidence(&f, e, glob)
 		f.Why = "Access to internal API path " + toPath + " from " + fromPath
 		f.Constraint = "Only import from the module's public API surface"
 		out = append(out, f)
@@ -566,10 +599,13 @@ func validateModuleCycleDef(def policy.RuleDef) error {
 // silent on Go, whose edges run file -> package; a module cycle closes through
 // different files and packages, so only the module graph sees it.
 //
-// It emits one finding per ordered module pair whose dependency lies inside a
-// cycle, keyed on (rule, kind, from module, to module): removing a direction
-// fixes that direction's finding, and breaking the cycle fixes the rest. A
-// component reports at most maxModuleCyclePairs pairs.
+// It emits one finding per strongly-connected component, keyed on (rule, kind,
+// cycle members): a cycle is one architecture defect, so one finding and one
+// agent task stand for it, whatever the number of ordered module pairs inside
+// it. matched_by lists the members once and counts the pairs; the locations are
+// the import sites of every member pair, capped as for forbidden_dependency.
+// The finding's edge is the component's first module pair in (from, to) order,
+// so the repair goal names a dependency that exists inside the cycle.
 // Synthetic modules (auto-registered Rust crate::mod nodes, Go workspace
 // members) stay out — the rule speaks for the declared architecture, and the
 // node-level cycle rule already sees their cycles. Only edges that start in
@@ -600,7 +636,14 @@ func (r *moduleCycle) Check(s relationship.Set, ev Evidence) []finding.Finding {
 		}
 	}
 	type pair struct{ from, to string }
-	sites := make(map[pair][]relationship.Location)
+	// pairs[i] holds component i's ordered module pairs, sites[i] their import
+	// sites. Both are indexed by component, so a finding reads its own slice.
+	pairs := make([][]pair, len(sccs))
+	pairSeen := make([]map[pair]struct{}, len(sccs))
+	sites := make([][]relationship.Location, len(sccs))
+	for i := range sccs {
+		pairSeen[i] = make(map[pair]struct{})
+	}
 	for _, e := range production.Edges {
 		i, fromOK := component[e.FromModule]
 		j, toOK := component[e.ToModule]
@@ -608,51 +651,42 @@ func (r *moduleCycle) Check(s relationship.Set, ev Evidence) []finding.Finding {
 			continue
 		}
 		p := pair{from: e.FromModule, to: e.ToModule}
-		sites[p] = append(sites[p], edgeLocations(e)...)
-	}
-	pairs := make([]pair, 0, len(sites))
-	for p := range sites {
-		pairs = append(pairs, p)
-	}
-	sort.Slice(pairs, func(a, b int) bool {
-		if pairs[a].from != pairs[b].from {
-			return pairs[a].from < pairs[b].from
+		if _, seen := pairSeen[i][p]; !seen {
+			pairSeen[i][p] = struct{}{}
+			pairs[i] = append(pairs[i], p)
 		}
-		return pairs[a].to < pairs[b].to
-	})
-
-	pairTotals := make([]int, len(sccs))
-	for _, p := range pairs {
-		pairTotals[component[p.from]]++
+		sites[i] = append(sites[i], edgeLocations(e)...)
 	}
-	pairsKept := make([]int, len(sccs))
-	out := make([]finding.Finding, 0, min(len(pairs), len(sccs)*maxModuleCyclePairs))
-	for _, p := range pairs {
-		i := component[p.from]
-		if pairsKept[i] == maxModuleCyclePairs {
-			continue
-		}
-		pairsKept[i]++
-		scc := sccs[i]
-		locs, total := sortedCappedLocations(sites[p])
-		f := finding.NewKeyed(r.def.ID, edgeKindModuleDependency, p.from, p.to)
+	out := make([]finding.Finding, 0, len(sccs))
+	for i, scc := range sccs {
+		sort.Slice(pairs[i], func(a, b int) bool {
+			if pairs[i][a].from != pairs[i][b].from {
+				return pairs[i][a].from < pairs[i][b].from
+			}
+			return pairs[i][a].to < pairs[i][b].to
+		})
+		// A component of two or more members is strongly connected, so it has
+		// at least one pair; the first in (from, to) order represents it.
+		representative := pairs[i][0]
+		locs, total := sortedCappedLocations(sites[i])
+		f := finding.NewKeyed(r.def.ID, edgeKindModuleDependency, scc...)
 		f.Severity = finding.SeverityHigh
-		f.Edge.From = finding.Endpoint{Module: p.from}
-		f.Edge.To = finding.Endpoint{Module: p.to}
+		f.Edge.From = finding.Endpoint{Module: representative.from}
+		f.Edge.To = finding.Endpoint{Module: representative.to}
 		f.Locations = locs
 		f.MatchedBy = map[string]string{
-			matchedByFromModule:     p.from,
-			matchedByToModule:       p.to,
+			matchedByFromModule:     representative.from,
+			matchedByToModule:       representative.to,
 			"cycle_modules":         strings.Join(scc, ", "),
 			"cycle_size":            strconv.Itoa(len(scc)),
-			"cycle_pairs_total":     strconv.Itoa(pairTotals[i]),
+			"cycle_pairs_total":     strconv.Itoa(len(pairs[i])),
 			matchedByLocationsTotal: strconv.Itoa(total),
 		}
-		// The why names the pair and the cycle size only: a component can hold
-		// every declared module, and matched_by.cycle_modules lists them.
-		f.Why = fmt.Sprintf("Module %s depends on %s, and the two are in a dependency cycle among %d declared modules", p.from, p.to, len(scc))
-		if pairTotals[i] > maxModuleCyclePairs {
-			f.Why += fmt.Sprintf("; %d of the cycle's %d module pairs are reported", maxModuleCyclePairs, pairTotals[i])
+		// The why names the cycle size and its members: a component can hold
+		// every declared module, and matched_by.cycle_modules keeps the list.
+		f.Why = fmt.Sprintf("A dependency cycle closes through %d declared modules: %s", len(scc), boundedMemberList(scc, ", "))
+		if total > len(locs) {
+			f.Why += fmt.Sprintf("; locations list %d of %d import sites", len(locs), total)
 		}
 		f.Constraint = "Delete one of the cycle's dependencies. Routing the same dependency through a third module keeps the cycle"
 		out = append(out, f)
@@ -823,18 +857,6 @@ func deniedBy(violates []string, from, to string) string {
 	}
 	return strings.Join(parts, "; ")
 }
-
-// maxModuleCyclePairs caps the findings one strongly-connected component
-// emits. A component of n modules has up to n(n-1) ordered pairs, each a
-// finding and an agent task, so an unbounded component grows the report
-// quadratically: a 19-module cycle produced 81 pairs and a 1.29 MB report, and
-// a densely coupled 50-module monolith would pass a consumer's 5 MiB cap. The
-// first pairs in (from, to) order are kept, so a kept pair's ID never moves;
-// every finding names the component's full count in
-// matched_by.cycle_pairs_total. The cost of the bound: once kept pairs are
-// fixed, pairs past the cap surface as new findings, which a baseline captured
-// while they were hidden does not cover.
-const maxModuleCyclePairs = 200
 
 // ProductionEdge reports whether module_cycle and module_dependencies count an
 // edge, given only the production class of edge sources the source walk never

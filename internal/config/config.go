@@ -25,8 +25,8 @@ import (
 //
 // Top-level layout (see docs/configuration.md):
 //   - exclude        — path globs to skip during scanning
-//   - languages      — per-language extractor settings (go/typescript/python/rust)
-//   - analyzers      — opt-in deeper analysis backends (syntax/scip/clones/cargo_modules)
+//   - languages      — per-language extractor settings (go/typescript/python/rust/dotnet)
+//   - analyzers      — opt-in deeper analysis backends (syntax/scip/clones/cargo_modules/roslyn)
 //   - coverage       — opt-in ingestion of caller-supplied coverage artifacts
 //   - ai             — off-gate LLM provider for init/update/enrich/analyze/explain LLM flows
 //   - coupling       — Balanced-Coupling advisory tuning
@@ -281,7 +281,7 @@ func validateAll(cfg Config) error {
 }
 
 var coverageFormats = map[string]struct{}{
-	"auto": {}, "go-coverprofile": {}, "lcov": {}, "coverage-py-json": {}, "llvm-cov-json": {},
+	"auto": {}, "go-coverprofile": {}, "lcov": {}, "coverage-py-json": {}, "llvm-cov-json": {}, "cobertura": {},
 }
 
 // validateCoverage checks the opt-in supplied-coverage declaration. Paths are
@@ -303,7 +303,7 @@ func validateCoverage(coverage CoverageConfig) error {
 			format = "auto"
 		}
 		if _, ok := coverageFormats[format]; !ok {
-			return fmt.Errorf("coverage.sources[%d].format %q is not one of: auto, go-coverprofile, lcov, coverage-py-json, llvm-cov-json", i, source.Format)
+			return fmt.Errorf("coverage.sources[%d].format %q is not one of: auto, go-coverprofile, lcov, coverage-py-json, llvm-cov-json, cobertura", i, source.Format)
 		}
 		if source.MaxBytes != nil && *source.MaxBytes <= 0 {
 			return fmt.Errorf("coverage.sources[%d].max_bytes must be positive", i)
@@ -540,6 +540,7 @@ func Default() Config {
 			TypeScript: TypeScriptLanguage{Enabled: evidenceports.ModeAuto},
 			Python:     PythonLanguage{Enabled: evidenceports.ModeAuto},
 			Rust:       RustLanguage{Enabled: evidenceports.ModeAuto},
+			DotNet:     DotNetLanguage{Enabled: evidenceports.ModeAuto},
 		},
 	}
 }
@@ -560,10 +561,12 @@ func (c Config) toolEntries() []toolEntry {
 		{"languages.typescript", c.Languages.TypeScript.Gate, ""},
 		{"languages.python", c.Languages.Python.Gate, ""},
 		{"languages.rust", c.Languages.Rust.Gate, ""},
+		{"languages.dotnet", c.Languages.DotNet.Gate, ""},
 		{"analyzers.syntax", c.Analyzers.Syntax.Gate, ""},
 		{"analyzers.scip", c.Analyzers.Scip.Gate, c.Analyzers.Scip.Timeout},
 		{"analyzers.clones", c.Analyzers.Clones.Gate, c.Analyzers.Clones.Timeout},
 		{"analyzers.cargo_modules", c.Analyzers.CargoModules.Gate, ""},
+		{"analyzers.roslyn", c.Analyzers.Roslyn.Gate, c.Analyzers.Roslyn.Timeout},
 	}
 }
 

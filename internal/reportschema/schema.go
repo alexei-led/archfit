@@ -145,6 +145,18 @@ func patchDefinitions(schema *jsonschema.Schema) {
 				percentile.OneOf = []*jsonschema.Schema{{Type: "integer"}, {Type: "null"}}
 				percentile.Description = "Nearest-rank percentile, or null below ten scored samples."
 			}
+		case "SeamDistance":
+			// same_owner/same_deploy_unit are *bool and serialize as null unless
+			// both sides are known: undeclared is not "different".
+			for _, field := range []string{"same_owner", "same_deploy_unit"} {
+				same, ok := def.Properties.Get(field)
+				if !ok {
+					continue
+				}
+				same.Type = ""
+				same.OneOf = []*jsonschema.Schema{{Type: "boolean"}, {Type: "null"}}
+				same.Description = "Whether both sides share the value, or null unless both sides are known."
+			}
 		case "StateDecision":
 			if gates, ok := def.Properties.Get("hard_gates"); ok {
 				gates.Enum = []any{

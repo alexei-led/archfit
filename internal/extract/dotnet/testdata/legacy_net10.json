@@ -1,0 +1,32 @@
+{
+  "Properties": {
+    "TargetFramework": "net10.0",
+    "TargetFrameworks": "net10.0;net8.0",
+    "IsTestProject": ""
+  },
+  "Items": {
+    "ProjectReference": [
+      {
+        "Identity": "../Domain/Domain.csproj",
+        "Targets": "",
+        "OutputItemType": "",
+        "ReferenceSourceTarget": "ProjectReference",
+        "FullPath": "{{ROOT}}/Domain/Domain.csproj",
+        "RootDir": "/",
+        "Filename": "Domain",
+        "Extension": ".csproj",
+        "RelativeDir": "../Domain/",
+        "Directory": "{{ROOT}}/Domain/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "{{ROOT}}/Legacy/Legacy.csproj",
+        "DefiningProjectDirectory": "{{ROOT}}/Legacy/",
+        "DefiningProjectName": "Legacy",
+        "DefiningProjectExtension": ".csproj"
+      }
+    ],
+    "PackageReference": []
+  }
+}

@@ -12,14 +12,20 @@ import "strings"
 // inline in a core package (see BuiltinConventions). Lookup returns a safe
 // default for unknown languages.
 type NodeConvention struct {
-	// Language is the canonical language id ("go", "typescript", "python", "rust").
+	// Language is the canonical language id ("go", "typescript", "python", "rust", "dotnet").
 	Language string
 	// ModuleSegmentSep separates a hierarchical module name into path segments:
 	// "/" for path modules (Go/TS), "::" for Rust, "." for dotted modules (Python).
 	ModuleSegmentSep string
+	// ExternalSegmentSep separates the segments of an external dependency node
+	// name when it differs from ModuleSegmentSep: .NET file nodes are slash
+	// paths, but its external nodes are dotted assembly names
+	// (Microsoft.EntityFrameworkCore). Empty means externals use
+	// ModuleSegmentSep or have a single segment.
+	ExternalSegmentSep string
 	// FileExtensions lists this language's source-file extensions.
 	FileExtensions []string
-	// Priority orders multi-source edge dedup; lower wins (Go 0 … Rust 3).
+	// Priority orders multi-source edge dedup; lower wins (Go 0 … .NET 4).
 	Priority int
 
 	// moduleFileCandidatesFn maps a module-node path to the repo-relative source
@@ -126,6 +132,15 @@ var BuiltinConventions = ConventionRegistry{
 		FileExtensions:    []string{".rs"},
 		Priority:          3,
 		fileToModuleKeyFn: rustFileToModuleKey,
+	},
+	LangDotNet: {
+		Language:           LangDotNet,
+		ModuleSegmentSep:   "/",
+		ExternalSegmentSep: ".",
+		FileExtensions:     []string{".cs"},
+		Priority:           4,
+		// fileToModuleKeyFn nil → passthrough: project membership needs the
+		// project files, which this filesystem-free mapping cannot read.
 	},
 }
 

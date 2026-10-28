@@ -474,15 +474,16 @@ func (mm ModuleMap) RuleSelectorForFile(file string, roots ...graph.CrateRoot) (
 //
 // A rule selector is matched against graph node IDs, and those IDs are spelled
 // differently per language: Go and TypeScript use slash paths, Python uses
-// dotted module IDs, Rust uses `crate::mod`. A selector therefore excludes
+// dotted module IDs, Rust uses `crate::mod`, and .NET uses slash file paths
+// beside dotted external assembly names. A selector therefore excludes
 // languages by its own shape, independently of which analyzers ran — a slash
 // glob can never match a dotted Python node ID, which is why the configuration
 // reference insists Python globs are written `prefect.**` and not
 // `src/prefect/**`.
 //
 // The separators come from the shipped conventions (NodeConvention.
-// ModuleSegmentSep), so a new language declares its vocabulary once rather than
-// teaching this function about itself.
+// ModuleSegmentSep and ExternalSegmentSep), so a new language declares its
+// vocabulary once rather than teaching this function about itself.
 //
 // An explicit supported extension names exactly one language and wins. A
 // pattern carrying no separator at all ("**") addresses every language, which
@@ -493,17 +494,24 @@ func (mm ModuleMap) SelectorLanguages(pattern string) map[string]struct{} {
 			return map[string]struct{}{language: {}}
 		}
 	}
+	spells := func(conv graph.NodeConvention) bool {
+		for _, sep := range [...]string{conv.ModuleSegmentSep, conv.ExternalSegmentSep} {
+			if sep != "" && strings.Contains(pattern, sep) {
+				return true
+			}
+		}
+		return false
+	}
 	anySeparator := false
 	for _, conv := range graph.BuiltinConventions {
-		if conv.ModuleSegmentSep != "" && strings.Contains(pattern, conv.ModuleSegmentSep) {
+		if spells(conv) {
 			anySeparator = true
 			break
 		}
 	}
 	out := make(map[string]struct{}, len(graph.BuiltinConventions))
 	for language, conv := range graph.BuiltinConventions {
-		sep := conv.ModuleSegmentSep
-		if sep == "" || !anySeparator || strings.Contains(pattern, sep) {
+		if conv.ModuleSegmentSep == "" || !anySeparator || spells(conv) {
 			out[language] = struct{}{}
 		}
 	}

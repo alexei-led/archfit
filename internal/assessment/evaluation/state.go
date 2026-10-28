@@ -101,7 +101,9 @@ func buildState(diag *result.Result, in stateInput) state.Architecture {
 	st.Dimensions = buildDimensions(diag, in, split.byDimension)
 	unevaluated := unevaluatedRequiredRules(diag, in.Policy, in.Facts)
 	if u, ok := in.Ratchets.unevaluated(in.Policy.Gates.Metrics); ok {
-		unevaluated = append(unevaluated, u)
+		if _, fired := firedRules(diag.Findings)[u.RuleID]; !fired {
+			unevaluated = append(unevaluated, u)
+		}
 	}
 	if in.Policy.Gates.UncoveredChange == policy.GateFail {
 		// Recomputed from the evidence, not read from the findings: a waiver, the
@@ -130,13 +132,26 @@ func buildState(diag *result.Result, in stateInput) state.Architecture {
 	return st
 }
 
+// firedRules is the set of rules that produced a finding. Such a rule has a
+// result, so a report must not also list it as unevaluated: only a rule whose
+// scope could not be established may carry both, because a finding from a
+// scope the configuration did not define is not the declared rule's result.
+func firedRules(findings []finding.Finding) map[string]struct{} {
+	fired := make(map[string]struct{}, len(findings))
+	for _, f := range findings {
+		fired[f.RuleID] = struct{}{}
+	}
+	return fired
+}
+
 func unevaluatedRequiredRules(diag *result.Result, p policy.PolicySnapshot, f Observations) []state.UnevaluatedRule {
 	var missing []state.UnevaluatedRule
+	fired := firedRules(diag.Findings)
 	for _, rule := range p.Gates.Rules.Rules {
 		if !rule.Blocks() {
 			continue
 		}
-		if reason := ruleUnevaluatedReason(diag, rule, p, f); reason != "" {
+		if reason := ruleUnevaluatedReason(diag, rule, p, f, fired); reason != "" {
 			missing = append(missing, state.UnevaluatedRule{RuleID: rule.ID, Reason: reason})
 		}
 	}
@@ -144,7 +159,13 @@ func unevaluatedRequiredRules(diag *result.Result, p policy.PolicySnapshot, f Ob
 	return missing
 }
 
-func ruleUnevaluatedReason(diag *result.Result, rule policy.RuleDef, p policy.PolicySnapshot, f Observations) string {
+// ruleUnevaluatedReason names why a required rule has no trustworthy result,
+// and is empty once the rule is evaluated. A scope the configuration does not
+// establish is reported even when the rule produced a finding: the finding
+// comes from a file set the declaration did not define, so it is not that
+// rule's result. Past the scope, a finding is a result, and a rule that fired
+// is not unevaluated.
+func ruleUnevaluatedReason(diag *result.Result, rule policy.RuleDef, p policy.PolicySnapshot, f Observations, fired map[string]struct{}) string {
 	scope := ruleProducerScope(diag, rule, p, f)
 	if scope.status == ruleScopeNotApplicable {
 		return ""
@@ -155,9 +176,26 @@ func ruleUnevaluatedReason(diag *result.Result, rule policy.RuleDef, p policy.Po
 		}
 		return "rule scope cannot be established from the supported source inventory"
 	}
+	if _, ok := fired[rule.ID]; ok {
+		return ""
+	}
 	var reasons []string
-	if ruleNeedsDependencies(rule.Type) && !primaryEvidenceComplete(diag, scope.languages) {
+	rowLanguages := scope.languages
+	if ruleNeedsDependencies(rule.Type) && len(f.ScopedDependencyEvidence) > 0 {
+		rowLanguages = make(map[string]struct{}, len(scope.languages))
 		for language := range scope.languages {
+			ev, scoped := f.ScopedDependencyEvidence[language]
+			if !scoped {
+				rowLanguages[language] = struct{}{}
+				continue
+			}
+			if reason := scopedEvidenceReason(rule, p, f, ev); reason != "" {
+				reasons = append(reasons, reason)
+			}
+		}
+	}
+	if ruleNeedsDependencies(rule.Type) && len(rowLanguages) > 0 && !primaryEvidenceComplete(diag, rowLanguages) {
+		for language := range rowLanguages {
 			tool, ok := primaryToolForLanguage(diag, language)
 			if !ok {
 				reasons = append(reasons, language+" dependency producer is not registered")
@@ -168,7 +206,7 @@ func ruleUnevaluatedReason(diag *result.Result, rule policy.RuleDef, p policy.Po
 			}
 		}
 	}
-	if ruleNeedsSyntax(rule.Type) && !syntaxEvidenceComplete(diag, scope.languages) {
+	if ruleNeedsSyntax(rule.Type) && !syntaxEvidenceComplete(diag, scope.languages, f) {
 		reasons = append(reasons, "syntax evidence is incomplete for the rule scope")
 	}
 	if ruleNeedsPatterns(rule.Type) {
