@@ -210,23 +210,57 @@ func sameModule(mm policy.ModuleMap, e relationship.Edge) bool {
 // internal-access rules. Declared surfaces decide first (policy.ModuleMap.
 // MatchesInternal): a public: glob of the target's module exempts the edge, and
 // any module's internal: glob marks it internal, in every language. Only when no
-// declaration speaks does the extractor's uses_internal kind decide — the Go
-// `/internal/` path segment, or the TS/Python extractors' own internal-glob test.
+// declaration speaks does the extractor evidence decide (internalSignal): the
+// uses_internal kind — the Go `/internal/` path segment, or the TS/Python
+// extractors' own internal-glob test — or an intrusive strength, a use of a
+// member the target keeps out of its surface (a C# internal member reached
+// through InternalsVisibleTo, a Python private name, a private symbol a SCIP
+// index resolves). An intrusive use is the same fact as a declared internal:
+// match, so the guard fires on both.
 //
 // Deciding here rather than in the extractor keeps edge kinds, and therefore
 // finding fingerprints, unchanged. Callers pass dependency edges only: a
 // belongs_to or exposes edge is not an access. glob names the declaration that made the
-// target internal; it is empty when the extractor kind decided.
+// target internal; it is empty when extractor evidence decided.
 func internalTarget(mm policy.ModuleMap, e relationship.Edge) (internal bool, glob string) {
 	if internal, glob := mm.MatchesInternal(e.ToPath, e.Language); glob != "" {
 		return internal, glob
 	}
-	return e.Kind == relEdgeKindUsesInt, ""
+	return internalSignal(e) != "", ""
+}
+
+// internalSignal names the extractor fact that made an edge target internal
+// when no declared surface did, or "" when no such fact applies.
+func internalSignal(e relationship.Edge) string {
+	switch {
+	case e.Kind == relEdgeKindUsesInt:
+		return relEdgeKindUsesInt
+	case e.Strength == relationship.StrengthIntrusive:
+		return string(relationship.StrengthIntrusive)
+	}
+	return ""
 }
 
 // matchedByInternalGlob is the MatchedBy key naming the declared internal: glob
 // that made an edge target internal.
 const matchedByInternalGlob = "internal_glob"
+
+// matchedByInternalSignal is the MatchedBy key naming the extractor evidence
+// that made an edge target internal when no declaration covered the target.
+const matchedByInternalSignal = "internal_signal"
+
+// setInternalEvidence records in matched_by what made the target internal: the
+// declared internal: glob when a declaration decided, otherwise the extractor
+// signal, so a finding that fired without any internal: declaration says why.
+func setInternalEvidence(f *finding.Finding, e relationship.Edge, glob string) {
+	if glob != "" {
+		f.MatchedBy[matchedByInternalGlob] = glob
+		return
+	}
+	if signal := internalSignal(e); signal != "" {
+		f.MatchedBy[matchedByInternalSignal] = signal
+	}
+}
 
 // ---------------------------------------------------------------------------
 // PublicAPIOnly
@@ -268,9 +302,7 @@ func (r *publicAPIOnly) Check(s relationship.Set, _ Evidence) []finding.Finding 
 			"edge_kind": e.Kind,
 			"to_path":   toPath,
 		}
-		if glob != "" {
-			f.MatchedBy[matchedByInternalGlob] = glob
-		}
+		setInternalEvidence(&f, e, glob)
 		why := "Access to internal path " + toPath
 		if fromModule, fromOK := r.mm.ModuleForNode(fromPath, e.Language); fromOK {
 			if toModule, toOK := r.mm.ModuleForNode(toPath, e.Language); toOK {
@@ -385,9 +417,7 @@ func (r *internalAPIAccess) Check(s relationship.Set, _ Evidence) []finding.Find
 			"from_path": fromPath,
 			"to_path":   toPath,
 		}
-		if glob != "" {
-			f.MatchedBy[matchedByInternalGlob] = glob
-		}
+		setInternalEvidence(&f, e, glob)
 		f.Why = "Access to internal API path " + toPath + " from " + fromPath
 		f.Constraint = "Only import from the module's public API surface"
 		out = append(out, f)
