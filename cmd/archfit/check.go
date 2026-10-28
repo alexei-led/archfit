@@ -8,7 +8,8 @@ import "context"
 type CheckCmd struct {
 	Config string `short:"c" help:"Path to config file." default:".archfit.yaml"`
 	Root   string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
-	Base   string `help:"Git ref to compare against (e.g. main, HEAD~1). When set, the normal output gains a base-vs-head delta."`
+	Base   string `help:"What the change is compared with. auto: the merge-base of HEAD and the target branch (the whole tree on the target branch itself). Any other value is a git ref (e.g. origin/main, HEAD~1)." default:"auto"`
+	Target string `help:"Branch the change lands on. Default: target_branch from the config, then origin/HEAD, then main or master when exactly one exists. The policy files on the branch are compared with this branch's tip."`
 
 	NoAdvisories bool     `name:"no-advisories" help:"Drop advisory findings: Balanced-Coupling advisories and violations of gate: warn rules. Dropped findings do not count as diagnostics."`
 	MinSeverity  string   `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
@@ -58,6 +59,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		configPath:   c.Config,
 		root:         c.Root,
 		baseRef:      c.Base,
+		target:       c.Target,
 		json:         c.JSON,
 		markdown:     c.Markdown,
 		sarif:        c.Sarif,

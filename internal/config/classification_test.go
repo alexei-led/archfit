@@ -32,6 +32,7 @@ const (
 // needs a decision.
 var leafClasses = map[string]leafClass{
 	"version":                        classGovernance,
+	"target_branch":                  classGovernance, // picks what a check compares with; no fact changes
 	"exclude":                        classProfile,
 	"languages":                      classProfile,
 	"languages.*.gate":               classProfile, // reaches the profile only through the producer status it changes

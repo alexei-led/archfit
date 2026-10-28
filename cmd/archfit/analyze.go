@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -140,6 +142,8 @@ type scanRequest struct {
 	// lint selects the linter-shaped text renderer and keeps the coupling
 	// gate's reasons off stderr: check reports them as repository attention.
 	lint bool
+	// target is --target: the branch a check compares the change with.
+	target string
 
 	providerOverride llm.Provider
 }
@@ -157,6 +161,19 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 		return applicationExitError(err)
 	}
 
+	var scope *application.ScopeResolution
+	if req.lint {
+		cfg, err := loadAnalysisConfig(ctx, req.configPath)
+		if err != nil {
+			return configLoadError(err)
+		}
+		res, err := resolveCheckScope(ctx, deps, &req, cfg.TargetBranch)
+		if err != nil {
+			return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+		}
+		scope = &res
+	}
+
 	rep := newProgressReporter(deps.stderr(), analyzePhaseTotal(req.aiSummary, req.baseRef != ""), req.progress, req.quiet, time.Now())
 	rep.banner("Archfit analyzing " + analyzeTarget(req.configPath, req.root))
 	defer rep.finish()
@@ -164,6 +181,14 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	resp, cfg, err := executeScan(ctx, deps, req, rep.advance)
 	if err != nil {
 		return err
+	}
+
+	if scope != nil {
+		underTarget, err := measureUnderTargetPolicy(ctx, deps, req, *scope)
+		if err != nil {
+			return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+		}
+		resp.Document = application.AttachScope(resp.Document, *scope, underTarget)
 	}
 
 	if err := analyzeRender(deps, resp, req.lint); err != nil {
@@ -180,10 +205,41 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	if req.reportOnly {
 		return nil
 	}
-	if code := outcomeExitCode(resp.Outcome); code != 0 {
+	code := outcomeExitCode(resp.Outcome)
+	// A change that is unknown for its scope or its policy is never a clean
+	// exit, whatever the verdict of the tree says.
+	if code == 0 && agentout.Build(resp.Document).Change.Reason != "" {
+		code = outcomeExitCode(application.OutcomeWarn)
+	}
+	if code != 0 {
 		return &exitError{code: code}
 	}
 	return nil
+}
+
+// measureUnderTargetPolicy measures the same tree under the target tip's policy
+// files when the branch changed any of them. It returns nil when no policy
+// changed, or when the target has no config to judge with.
+func measureUnderTargetPolicy(ctx context.Context, deps *appDeps, req scanRequest, scope application.ScopeResolution) (*report.Document, error) {
+	if len(scope.PolicyChanged) == 0 && len(scope.PolicyStale) == 0 {
+		return nil, nil
+	}
+	dir, ok, err := materializePolicyAtTarget(ctx, deps, req, scope)
+	if err != nil || !ok {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	treq, err := targetPolicyRequest(req, dir)
+	if err != nil {
+		return nil, err
+	}
+	quiet := *deps
+	quiet.Stderr = io.Discard
+	resp, _, err := executeScan(ctx, &quiet, treq, nil)
+	if err != nil {
+		return nil, fmt.Errorf("measure under the policy at %s: %w", scope.Target, err)
+	}
+	return &resp.Document, nil
 }
 
 // executeScan loads the config and runs the analyze/check use case, returning

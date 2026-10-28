@@ -38,6 +38,13 @@ func Brief(r Result) string {
 	for _, gap := range r.Change.EvidenceGaps {
 		fmt.Fprintf(&b, "evidence gap: %s (gate %s)\n", gap.Tool, gap.Gate)
 	}
+	if r.Change.Reason != "" {
+		fmt.Fprintf(&b, "reason: %s: %s\n", r.Change.Reason, r.Change.ReasonDetail)
+	}
+	if pc := r.Change.PolicyChange; pc != nil {
+		fmt.Fprintf(&b, "under the target's policy (the gate uses this): %s, %d blockers\n",
+			pc.UnderTargetPolicy.Status, len(pc.UnderTargetPolicy.Blockers))
+	}
 	for _, item := range r.Repository.Attention {
 		fmt.Fprintf(&b, "repository attention (not this change): %s: %s\n", item.Kind, item.Reason)
 	}

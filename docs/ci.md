@@ -73,21 +73,24 @@ analyzer is missing. A tool with `gate: off` remains optional. See
 
 ## Pull request checks
 
-Fetch the base branch before you use `--base`:
+`check` compares the change with the target branch by default (`--base auto`),
+so fetch the full history. A shallow clone has no merge-base: the result is
+`unknown` with `reason: scope_unresolved` and the exit code is `2`.
 
 ```yaml
 - uses: actions/checkout@v7
   with:
     fetch-depth: 0
 
-- name: Architecture delta check
-  run: archfit check -c .archfit.yaml --base origin/main
+- name: Architecture check
+  run: archfit check -c .archfit.yaml
 ```
 
-Use the ordinary check for branch protection. Use `--base` to classify current
-findings as introduced, pre-existing, or unknown. This comparison does not
-change the verdict or exit code. See [agent workflows](agents.md) for scope
-handling.
+If `origin/HEAD` is not set in CI, set `target_branch` in `.archfit.yaml` or
+pass `--target`. Pass `--base <sha>` to compare with a fixed commit, for
+example the target tip on a merge commit. `--base` classifies current findings
+as introduced, pre-existing, or unknown. See [agent workflows](agents.md) for
+scope handling.
 
 ## Upload SARIF
 

@@ -141,6 +141,9 @@ type Document struct {
 	LocalCoupling             []LocalCouplingModule      `json:"local_coupling,omitempty"`
 	Summary                   Summary                    `json:"summary"`
 
+	// Scope is how a check resolved the change and the policy that judges it.
+	// It is nil for analyze and for a run that resolved no scope.
+	Scope *CheckScope `json:"-"`
 	// Score is the computed scorecard used by config comparison and the AI review.
 	Score Scorecard `json:"-"`
 	// State is the canonical archfit.architecture-state.v1 contract. Renderers

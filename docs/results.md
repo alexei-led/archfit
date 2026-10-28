@@ -131,6 +131,8 @@ Every state and agent result carries an `identity` block (`archfit.result-identi
 
 The agent result splits into `change` and `repository`. `change.status` is `pass`, `fail`, or `unknown`; `change.blockers` are the in-scope repairs. `unknown` means evidence is missing and never passes. `repository.attention` holds what the change did not cause: `existing_violation`, `unmeasured_ratchet`, `dead_selector`, `blocked_without_finding`. `next_action` follows `change` only, and the hooks stop a change only on `fail`. The process exit code still follows the verdict, so a clean change in a repository with attention exits `2`.
 
+A `check` result also carries `scope` (how the change and its base were resolved) and, when the change is unknown for a reason other than missing evidence, `change.reason`: `scope_unresolved` (the target or the base could not be resolved) or `policy_changed_on_branch` (the branch edited a protected policy file that now differs from the target tip, with `change.policy_change` holding the changed files and the change judged under the target's policy), or `policy_stale_on_branch` (the target moved a policy file the branch left alone; merge or rebase). Both exit `2`. Identity's `policy_ref` names the target branch and tip.
+
 `archfit.schema.json` describes configuration input. It is not a report schema. Configuration files use numeric `version: 2`. See [configuration](configuration.md) for fields and validation.
 
 The coverage sidecar uses numeric schema version `1`. Its shape and source rules belong to the configuration reference because they define input data. The sidecar is separate from the configuration file and report contracts.

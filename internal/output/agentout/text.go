@@ -55,12 +55,18 @@ func (r *TextRenderer) Render(d report.Document, w io.Writer) error {
 		}
 		b.WriteString("\n")
 	}
+	if res.Change.Reason != "" {
+		fmt.Fprintf(&b, "%s: %s\n", res.Change.Reason, res.Change.ReasonDetail)
+	}
 	if b.Len() > 0 {
 		b.WriteString("\n")
 	}
 	fmt.Fprintf(&b, "%s  %d new, %d unknown, %d accepted\n", footerWord[res.Change.Status],
 		len(res.Change.Blockers), len(res.Change.UnevaluatedRules)+len(res.Change.EvidenceGaps), accepted(d.State.Findings))
 	fmt.Fprintf(&b, "%s\n", res.Identity.Line())
+	if pc := res.Change.PolicyChange; pc != nil {
+		writePolicyChange(&b, res, pc)
+	}
 	if len(res.Repository.Attention) > 0 {
 		b.WriteString("\nrepository attention (not this change):\n")
 		for _, item := range res.Repository.Attention {
@@ -126,4 +132,28 @@ func accepted(findings []report.Finding) int {
 		}
 	}
 	return n
+}
+
+// writePolicyChange shows the two results a changed policy needs: what the
+// author sees under the branch's own policy, and what the gate will use.
+func writePolicyChange(b *strings.Builder, res Result, pc *PolicyChange) {
+	target := "the target"
+	if res.Scope != nil && res.Scope.Target != "" {
+		target = res.Scope.Target
+	}
+	heading := "policy changed on the branch"
+	if res.Change.Reason == ReasonPolicyStale {
+		heading = "policy changed on the target since this branch forked"
+	}
+	fmt.Fprintf(b, "\n%s: %s\n", heading, strings.Join(pc.Files, ", "))
+	fmt.Fprintf(b, "  under the branch's policy: %d blockers\n", len(res.Change.Blockers))
+	fmt.Fprintf(b, "  under %s's policy (the gate uses this): %s, %d blockers\n",
+		target, footerWord[pc.UnderTargetPolicy.Status], len(pc.UnderTargetPolicy.Blockers))
+	for _, rep := range pc.UnderTargetPolicy.Blockers {
+		var rec strings.Builder
+		writeRecord(&rec, rep)
+		for _, line := range strings.Split(strings.TrimSuffix(rec.String(), "\n"), "\n") {
+			fmt.Fprintf(b, "    %s\n", line)
+		}
+	}
 }

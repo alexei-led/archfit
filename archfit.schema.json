@@ -765,6 +765,10 @@
         2
       ]
     },
+    "target_branch": {
+      "type": "string",
+      "description": "TargetBranch names the branch changes land on. check compares a change\nwith it: --base auto is the merge-base with this branch, and the policy\nfiles on the branch are compared with this branch's tip. Empty means\norigin/HEAD, then main or master when exactly one exists."
+    },
     "exclude": {
       "items": {
         "type": "string"

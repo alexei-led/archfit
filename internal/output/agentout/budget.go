@@ -42,6 +42,12 @@ func fit(r Result) ([]byte, error) {
 		case len(r.Change.Blockers) > 1:
 			r.Change.Blockers = r.Change.Blockers[:len(r.Change.Blockers)-1]
 			r.Omitted.Blockers++
+		case r.Change.PolicyChange != nil && len(r.Change.PolicyChange.UnderTargetPolicy.Blockers) > 1:
+			pc := *r.Change.PolicyChange
+			view := &pc.UnderTargetPolicy
+			view.Blockers = view.Blockers[:len(view.Blockers)-1]
+			view.BlockersOmitted++
+			r.Change.PolicyChange = &pc
 		case len(r.Change.UnevaluatedRules) > 0:
 			r.Change.UnevaluatedRules = r.Change.UnevaluatedRules[:len(r.Change.UnevaluatedRules)-1]
 			r.Omitted.UnevaluatedRules++
@@ -68,22 +74,15 @@ func bound(r Result, maxRunes, maxList int) Result {
 		return out
 	}
 	r.Summary = cut(r.Summary)
-	repairs := make([]Repair, len(r.Change.Blockers))
-	for i, rep := range r.Change.Blockers {
-		rep.Goal = cut(rep.Goal)
-		if maxList > 0 {
-			rep.At = capList(rep.At, maxList, &rep.AtOmitted, &r.Truncated)
-			rep.Edit = capList(rep.Edit, maxList, &rep.EditOmitted, &r.Truncated)
-			rep.Constraints = capList(rep.Constraints, maxList, &rep.ConstraintsOmitted, &r.Truncated)
-		}
-		constraints := make([]string, len(rep.Constraints))
-		for j, c := range rep.Constraints {
-			constraints[j] = cut(c)
-		}
-		rep.Constraints = constraints
-		repairs[i] = rep
-	}
+	repairs := boundRepairs(r.Change.Blockers, cut, maxList, &r.Truncated)
 	r.Change.Blockers = repairs
+	if pc := r.Change.PolicyChange; pc != nil {
+		// The second result is bounded like the first: it can hold as many
+		// blockers as the rule the branch removed covered.
+		bounded := *pc
+		bounded.UnderTargetPolicy.Blockers = boundRepairs(pc.UnderTargetPolicy.Blockers, cut, maxList, &r.Truncated)
+		r.Change.PolicyChange = &bounded
+	}
 	rules := make([]UnevaluatedRule, len(r.Change.UnevaluatedRules))
 	for i, rule := range r.Change.UnevaluatedRules {
 		rule.Reason = cut(rule.Reason)
@@ -97,6 +96,27 @@ func bound(r Result, maxRunes, maxList int) Result {
 	}
 	r.Repository.Attention = attention
 	return r
+}
+
+// boundRepairs cuts the free text of each repair and, when maxList is
+// positive, its lists. It returns new repairs and leaves the input unchanged.
+func boundRepairs(in []Repair, cut func(string) string, maxList int, truncated *bool) []Repair {
+	out := make([]Repair, len(in))
+	for i, rep := range in {
+		rep.Goal = cut(rep.Goal)
+		if maxList > 0 {
+			rep.At = capList(rep.At, maxList, &rep.AtOmitted, truncated)
+			rep.Edit = capList(rep.Edit, maxList, &rep.EditOmitted, truncated)
+			rep.Constraints = capList(rep.Constraints, maxList, &rep.ConstraintsOmitted, truncated)
+		}
+		constraints := make([]string, len(rep.Constraints))
+		for j, c := range rep.Constraints {
+			constraints[j] = cut(c)
+		}
+		rep.Constraints = constraints
+		out[i] = rep
+	}
+	return out
 }
 
 // capList keeps the first maxList entries and counts the rest.
