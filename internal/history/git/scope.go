@@ -99,6 +99,9 @@ func IsAncestor(ctx context.Context, dir, a, b string, runner toolrun.Runner) (b
 // edited in place) and the new names of renamed files, plus untracked files git
 // does not ignore. A file only modified is not listed.
 //
+// Before the first commit (base names no commit) every file in the index and
+// every untracked file is added.
+//
 // The comparison starts at the merge-base of HEAD and base, so a file the base
 // branch deleted after the fork is not counted as added by this branch. Paths
 // are read NUL-separated, so a name git would quote (non-ASCII bytes, quotes,
@@ -112,11 +115,19 @@ func Added(ctx context.Context, dir, base string, runner toolrun.Runner) ([]stri
 	if fork, found, err := MergeBase(ctx, dir, "HEAD", base, runner); err == nil && found {
 		from = fork
 	}
-	seen := map[string]struct{}{}
-	for _, args := range [][]string{
+	lists := [][]string{
 		{"diff", nameOnly, "-z", "--diff-filter=AR", "-M", from},
 		{"ls-files", "-z", "--others", "--exclude-standard", "--full-name", "--", ":/"},
-	} {
+	}
+	if _, exists, err := Lookup(ctx, dir, from, runner); err != nil {
+		return nil, err
+	} else if !exists {
+		// Before the first commit there is nothing to diff against: every file
+		// in the index and every untracked file is new.
+		lists[0] = []string{"ls-files", "-z", "--cached", "--full-name", "--", ":/"}
+	}
+	seen := map[string]struct{}{}
+	for _, args := range lists {
 		out, err := run(ctx, dir, runner, args...)
 		if err != nil {
 			return nil, err

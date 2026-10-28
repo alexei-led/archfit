@@ -3,6 +3,7 @@ package acquisition
 import (
 	"bytes"
 	"context"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -444,6 +445,7 @@ type addedFileFacts struct {
 // Only added files are considered, so the maps stay the size of the change.
 func addedFacts(added []string, f evidencecontract.Facts, unwalked map[string]bool, exclusions []string, cov CoverageOptions, cfg syntax.FileClassConfig) addedFileFacts {
 	disabled := disabledLanguages(cov)
+	loaded := loadedFiles(f)
 	out := addedFileFacts{}
 	for _, file := range added {
 		language, _, supported := (policy.ModuleMap{}).RuleSelectorForFile(file)
@@ -453,6 +455,11 @@ func addedFacts(added []string, f evidencecontract.Facts, unwalked map[string]bo
 				continue
 			}
 			class = syntax.ClassifyFile(language, file, nil, cfg)
+			if inTestdata(file) {
+				// A testdata tree holds fixtures, not production code; the path
+				// classifier knows only the language's own test-file names.
+				class = fileclass.Test
+			}
 			if out.classes == nil {
 				out.classes = make(map[string]fileclass.FileClass)
 			}
@@ -482,7 +489,9 @@ func addedFacts(added []string, f evidencecontract.Facts, unwalked map[string]bo
 			out.causes[file] = cause
 			continue
 		}
-		if _, seen := unwalked[file]; !walked && !seen {
+		_, onEdge := unwalked[file]
+		_, isNode := loaded[file]
+		if !walked && !onEdge && !isNode {
 			if out.unread == nil {
 				out.unread = make(map[string]struct{})
 			}
@@ -490,6 +499,26 @@ func addedFacts(added []string, f evidencecontract.Facts, unwalked map[string]bo
 		}
 	}
 	return out
+}
+
+// loadedFiles are the files an extractor reported as graph file nodes: read by
+// an analyzer even when they import nothing and so sit on no edge.
+func loadedFiles(f evidencecontract.Facts) map[string]struct{} {
+	if f.Graph == nil {
+		return nil
+	}
+	out := make(map[string]struct{})
+	for _, n := range f.Graph.Nodes() {
+		if n.Kind == graph.NodeKindFile {
+			out[n.Path] = struct{}{}
+		}
+	}
+	return out
+}
+
+// inTestdata reports whether a slash path has a testdata directory segment.
+func inTestdata(file string) bool {
+	return slices.Contains(strings.Split(path.Dir(file), "/"), "testdata")
 }
 
 // outOfDeclaredScope reports whether one repo-relative source file is outside

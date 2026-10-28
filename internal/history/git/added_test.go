@@ -77,3 +77,24 @@ func TestAdded_Real(t *testing.T) {
 		}
 	}
 }
+
+// TestAdded_UnbornHEAD: before the first commit every staged and untracked
+// file is added.
+func TestAdded_UnbornHEAD(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	gitIn(t, dir, "init", "-q")
+	writeIn(t, dir, "staged.go", "package x\n")
+	gitIn(t, dir, "add", "staged.go")
+	writeIn(t, dir, ".tools/x.go", "package tools\n")
+
+	got, err := gitpkg.Added(context.Background(), dir, "HEAD", toolrun.New())
+	if err != nil {
+		t.Fatalf("Added: %v", err)
+	}
+	if want := []string{".tools/x.go", "staged.go"}; !slices.Equal(got, want) {
+		t.Errorf("Added = %q, want %q", got, want)
+	}
+}

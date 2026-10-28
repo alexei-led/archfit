@@ -177,3 +177,28 @@ func TestCheckUncoveredChangeUnderRoot(t *testing.T) {
 		t.Fatalf("change %q exit %d unevaluated %+v, want unknown naming %s", res.Change.Status, code, res.Change.UnevaluatedRules, unownedPkgC)
 	}
 }
+
+// TestCheckUncoveredChangeFalsePositives: under change_gate: fail, added code
+// that is not production or that an analyzer did read must not make the change
+// unknown, or fail mode is unusable.
+func TestCheckUncoveredChangeFalsePositives(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+	}{
+		{name: "a test fixture under testdata/", files: map[string]string{"pkg/a/testdata/repo/main.go": "package main\n\nfunc main() {}\n"}},
+		{name: "an import-free owned file in a directory the walk skips", files: map[string]string{"pkg/a/target/doc.go": "// Package target holds build targets.\npackage target\n"}},
+		{name: "a modified file", files: map[string]string{filePkgAA: hookCleanA + "\n// edited\n"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := scopeRepo(t, lintCleanModules+hookRuleSection+failChange, hookCleanA)
+			commitFiles(t, dir, tc.files)
+			_, res := checkUncovered(t, dir)
+			if res.Change.Status != changePass || len(res.Change.UnevaluatedRules) != 0 || len(res.Change.Notices) != 0 {
+				t.Errorf("change %q unevaluated %+v notices %+v, want a plain pass", res.Change.Status, res.Change.UnevaluatedRules, res.Change.Notices)
+			}
+		})
+	}
+}
