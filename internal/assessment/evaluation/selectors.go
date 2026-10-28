@@ -577,12 +577,20 @@ func nodeKindPrefix(pattern string) (kind, endpoint string, ok bool) {
 	return kind, endpoint, true
 }
 
+// nodeKindedSelector reports a selector spelled as a graph node ID. A guard
+// cannot turn one live: the endpoint path never carries the kind prefix, so a
+// path that appears later would still not match.
+func nodeKindedSelector(pattern string) bool {
+	_, _, ok := nodeKindPrefix(pattern)
+	return ok
+}
+
 // unmatchableSelector reports a spelling no endpoint path can take. doublestar
 // has no negation, so "!(...)" and a leading "!" are literal text; endpoint
 // paths are clean relative paths or dotted/crate names, never "./x", "../x",
 // "/x" or a node ID's "kind:" prefix.
 func unmatchableSelector(pattern string) bool {
-	if _, _, ok := nodeKindPrefix(pattern); ok {
+	if nodeKindedSelector(pattern) {
 		return true
 	}
 	return strings.HasPrefix(pattern, "!") || strings.Contains(pattern, "!(") ||

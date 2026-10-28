@@ -142,7 +142,7 @@ func ruleDiagnostics(rules []policy.RuleDef, inv selectorInventory) []PolicyDiag
 			out = append(out, PolicyDiagnostic{Code: LintDeadSelector, Severity: deadSelectorSeverity(rule), Path: path + "." + side,
 				Message: side + ": " + glob + " matches only source no dependency producer analyses: its language's" +
 					" extractor finds no project under the analysis root, so the rule can never be evaluated"})
-		case rule.Guard && vacuous:
+		case rule.Guard && vacuous && !nodeKindedSelector(glob):
 			out = append(out, PolicyDiagnostic{Code: LintGuardRule, Severity: LintSeverityInfo, Path: path,
 				Message: "guard rule: " + side + " " + glob + " matches nothing by design"})
 		case rule.Guard && inv.matches(rule.Type, selectorFrom, orMatchAll(rule.From)) &&

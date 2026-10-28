@@ -35,6 +35,7 @@ func lintFixture() (policy.PolicySnapshot, evaluation.Observations) {
 		{ID: "stale_guard", Type: ruleForbidden, Gate: gateFail, From: assessPathsA, To: assessPathsB, Guard: true},
 		{ID: "external", Type: ruleForbidden, Gate: gateFail, From: assessPathsA, To: "github.com/sirupsen/logrus"},
 		{ID: "external_prefix", Type: ruleForbidden, Gate: gateFail, From: assessPathsA, To: selExternalPrefix},
+		{ID: "external_prefix_guard", Type: ruleForbidden, Gate: gateFail, From: assessPathsA, To: selExternalPrefix, Guard: true},
 		{ID: "cycles", Type: metricCycle, Gate: gateFail, From: "nowhere/**"},
 	}
 	topology := policy.TopologyView{Modules: modules, Layers: []string{"domain", "app"}, ModuleMap: policy.BuildModuleMap(modules)}
@@ -66,6 +67,7 @@ func TestLintPolicyReportsEachDefectOnce(t *testing.T) {
 		{evaluation.LintUnknownVolatility, evaluation.LintSeverityError, "modules.a.volatility"},
 		{evaluation.LintAmbiguousOwnership, evaluation.LintSeverityError, "modules.b.paths"},
 		{evaluation.LintDeadSelector, evaluation.LintSeverityError, "rules[external_prefix].to"},
+		{evaluation.LintDeadSelector, evaluation.LintSeverityError, "rules[external_prefix_guard].to"},
 		{evaluation.LintGuardRule, evaluation.LintSeverityInfo, "rules[guard]"},
 		{evaluation.LintDeadSelector, evaluation.LintSeverityError, "rules[modpath].to"},
 		{evaluation.LintDeadSelector, evaluation.LintSeverityWarning, "rules[off_typo].from"},
