@@ -53,3 +53,13 @@ public static class EndpointWrappers
         return builder.MapGet(pattern, handler);
     }
 }
+
+[Route("v2/{organizationId}/groups")]
+public class PrefixOnlyController : ControllerBase
+{
+    [HttpGet("")]
+    public IActionResult List() => Ok();
+
+    [HttpPost("")]
+    public IActionResult Create() => Ok();
+}

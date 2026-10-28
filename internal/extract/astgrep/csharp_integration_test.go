@@ -16,7 +16,6 @@ import (
 const (
 	langCSharpStr = "dotnet"
 	statusPartial = "partial"
-	routeHTTPGet  = "HttpGet"
 	pathJobID     = "/jobs/{id}"
 )
 
@@ -61,7 +60,6 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 			dir:  "routes",
 			wantRoutes: []routeWant{
 				{"api/orders", 3},
-				{routeHTTPGet, 6},
 				{"{id}", 9},
 				{"create", 12},
 				{"{id}", 15},
@@ -71,10 +69,11 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 				{pathJobID, 26},
 				{pathJobID, 27},
 				{pathItems, 28},
-				{routeHTTPGet, 34},
 				{pathJobID, 42},
 				{"/jobs", 43},
-				{"MapIdentityApi", 44},
+				// Class prefix of PrefixOnlyController: the only route its
+				// [HttpGet("")] and [HttpPost("")] actions address.
+				{"v2/{organizationId}/groups", 57},
 			},
 			wantStatus: "ok",
 		},
@@ -111,7 +110,7 @@ func TestSyntaxIntegration_CSharp(t *testing.T) {
 			// would need the build's symbols, so the file is named instead.
 			name:       "#if splitting a statement is partial and keeps routes in other files",
 			dir:        "preprocessor",
-			wantRoutes: []routeWant{{"api/kept", 1}, {routeHTTPGet, 4}, {"/before", 9}, {"/after", 15}},
+			wantRoutes: []routeWant{{"api/kept", 1}, {"/before", 9}, {"/after", 15}},
 			wantStatus: statusPartial,
 			wantReason: "syntax errors in 1 file(s), routes there may be missing: Program.cs:",
 		},
