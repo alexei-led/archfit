@@ -215,7 +215,10 @@ func answerRestoreGraph(t *testing.T, next func(context.Context, toolrun.ToolCmd
 // worktree) holds no gitignored restore outputs, so the snapshot takes them
 // from the working tree, project by project, at the path MSBuild evaluates in
 // the checkout. A project whose restore inputs differ from the ones the working
-// tree restored with is partial and named. Neither tree is written.
+// tree restored with is partial and named, and so is one whose restore outputs
+// record a project path that cannot be matched to the project's. Restore
+// outputs produced under another root but naming the same project are
+// reconciled with the checkout's. Neither tree is written.
 func TestSnapshot_CheckoutBorrowsWorkingTreeRestoreOutputs(t *testing.T) {
 	const (
 		restored   = "Restored/Restored.csproj"     // restored in the working tree, same inputs
@@ -223,25 +226,28 @@ func TestSnapshot_CheckoutBorrowsWorkingTreeRestoreOutputs(t *testing.T) {
 		consumer   = "Consumer/Consumer.csproj"     // same own inputs, references Artifacts
 		sourced    = "Sourced/Sourced.csproj"       // a NuGet.config only the working tree has
 		propped    = "Propped/Propped.csproj"       // a Directory.Build.props that differs
+		moved      = "Moved/Moved.csproj"           // restored at another root, same inputs
+		foreign    = "Foreign/Foreign.csproj"       // restore outputs record a path that is not its own
 		unrestored = "Unrestored/Unrestored.csproj" // never restored in the working tree
 		baseOnly   = "BaseOnly/BaseOnly.csproj"     // gone from the working tree
 		committed  = "Committed/Committed.csproj"   // the checkout tracks its own restore outputs
 		outside    = "Outside/Outside.csproj"       // restore dir outside the root
 		pkgVersion = "1.0.0"
 	)
-	projects := []string{restored, artifacts, consumer, sourced, propped, unrestored, baseOnly, committed, outside}
+	projects := []string{restored, artifacts, consumer, sourced, propped, moved, foreign, unrestored, baseOnly, committed, outside}
 	restoreDirs := map[string]string{
 		restored: "Restored/obj", artifacts: "artifacts/obj/Artifacts", consumer: "Consumer/obj", sourced: "Sourced/obj", propped: "Propped/obj",
+		moved: "Moved/obj", foreign: "Foreign/obj",
 		unrestored: "Unrestored/obj", baseOnly: "BaseOnly/obj", committed: "Committed/obj",
 	}
 	baseGraph := map[string]restoreProject{
 		restored: {version: pkgVersion}, artifacts: {version: pkgVersion}, consumer: {version: pkgVersion, refs: []string{artifacts}},
-		sourced: {version: pkgVersion}, propped: {version: pkgVersion},
+		sourced: {version: pkgVersion}, propped: {version: pkgVersion}, moved: {version: pkgVersion}, foreign: {version: pkgVersion},
 	}
 	headGraph := maps.Clone(baseGraph)
 	headGraph[artifacts] = restoreProject{version: "2.0.0"}
 
-	work := tree(t, restored, artifacts, consumer, sourced, propped, unrestored, committed, outside)
+	work := tree(t, restored, artifacts, consumer, sourced, propped, moved, foreign, unrestored, committed, outside)
 	writeFile(t, work, "global.json", `{"sdk":{"version":"10.0.100"}}`)
 	writeFile(t, work, "Sourced/NuGet.config", "<configuration />")
 	writeFile(t, work, "Propped/Directory.Build.props", "<Project />")
@@ -250,6 +256,14 @@ func TestSnapshot_CheckoutBorrowsWorkingTreeRestoreOutputs(t *testing.T) {
 		writeFile(t, work, dir+"/project.assets.json", "work assets")
 		writeFile(t, work, dir+"/"+filepath.Base(p)+".nuget.dgspec.json", restoreGraphJSON(work, "/work-machine", closure(headGraph, p)))
 	}
+	// Restore outputs of a tree copied from elsewhere still name the original root.
+	for _, p := range []string{moved, foreign} {
+		writeFile(t, work, restoreDirs[p]+"/project.assets.json", "work assets")
+	}
+	writeFile(t, work, restoreDirs[moved]+"/Moved.csproj.nuget.dgspec.json",
+		restoreGraphJSON("/another-tree", "/work-machine", closure(headGraph, moved)))
+	writeFile(t, work, restoreDirs[foreign]+"/Foreign.csproj.nuget.dgspec.json",
+		restoreGraphJSON("/another-tree", "/work-machine", map[string]restoreProject{"Elsewhere/Foreign.csproj": {version: pkgVersion}}))
 	writeFile(t, work, "Restored/obj/Restored.csproj.nuget.g.props", "<Project />")
 	writeFile(t, work, "Restored/obj/Debug/net10.0/Restored.dll", "build output")
 	writeFile(t, work, "BaseOnly/obj/project.assets.json", "stale assets of a removed project")
@@ -293,11 +307,13 @@ func TestSnapshot_CheckoutBorrowsWorkingTreeRestoreOutputs(t *testing.T) {
 			},
 			wantReason: "no restore outputs for 2 projects in the checkout or at the same path in the working tree; " +
 				"run dotnet restore in the working tree: BaseOnly/BaseOnly.csproj, Unrestored/Unrestored.csproj; " +
+				"restore outputs were produced for another path, so they are partial; " +
+				"run dotnet restore in the working tree: Foreign/Foreign.csproj; " +
 				"restore inputs (package references, central versions, sources, global.json, NuGet.config, Directory.Build.props/.targets, " +
 				"Directory.Packages.props) differ from the working tree's for 4 projects, so they are partial: " +
 				"Artifacts/Artifacts.csproj, Consumer/Consumer.csproj, Propped/Propped.csproj, Sourced/Sourced.csproj; " +
-				"restore outputs reused from the working tree for 5 projects",
-			wantPartial: []string{artifacts, consumer, propped, sourced},
+				"restore outputs reused from the working tree for 7 projects",
+			wantPartial: []string{artifacts, consumer, foreign, propped, sourced},
 		},
 		{
 			name: "working tree scan",

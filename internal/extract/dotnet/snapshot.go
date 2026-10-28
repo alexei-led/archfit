@@ -342,6 +342,15 @@ func newSnapshotMapper(snap snapshot, repoRoot string) snapshotMapper {
 	return m
 }
 
+// addPrefix returns m with one more path spelling mapped the same way, still
+// longest first so a longer spelling is never rewritten by a shorter one it
+// contains.
+func (m snapshotMapper) addPrefix(from, to string) snapshotMapper {
+	out := append(slices.Clone(m), snapshotPrefix{from: filepath.ToSlash(from), to: filepath.ToSlash(to)})
+	slices.SortFunc(out, func(a, b snapshotPrefix) int { return len(b.from) - len(a.from) })
+	return out
+}
+
 // text replaces "<root counterpart>/x" with "x" and a bare one with ".", and
 // "<snapshot dir>/x" with "<repo root>/x".
 func (m snapshotMapper) text(s string) string {

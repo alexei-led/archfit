@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
@@ -22,6 +23,7 @@ const (
 	dgspecSuffix = ".nuget.dgspec.json"
 
 	reasonRestoreInputsDiffer = "restore inputs differ from the working tree's, and its reused restore outputs describe other packages"
+	reasonRestoreOutputsMoved = "restore outputs were produced for another path; re-run dotnet restore in this tree"
 )
 
 // restoreViewKeys are the restore-section fields that decide which packages
@@ -52,26 +54,32 @@ type restoreEntry struct {
 
 // changedRestoreInputs returns the borrowed projects whose restore inputs in
 // the checkout differ from those the working tree was restored with, or cannot
-// be compared. Restore inputs are the project's and every referenced project's
-// package references, central package versions and sources, as NuGet's
-// restore graph records them, plus the packageInputFiles. The
-// checkout's graph is generated in the snapshot (`msbuild
-// -t:GenerateRestoreGraphFile`, no restore); the working tree's is the one
-// restore wrote. Only cancellation is an error: any other failure to build
-// the checkout's graph leaves every borrowed project uncompared, so changed.
-func (e *Extractor) changedRestoreInputs(ctx context.Context, snapRoot, depRoot string, targets []string, borrowed []ProjectEvaluation, mapper snapshotMapper) ([]string, error) {
+// be compared, split by cause: changed are the projects whose package inputs
+// genuinely differ; moved are the projects whose restore outputs record a
+// project path that cannot be reconciled with their path in the working tree.
+// Restore inputs are the project's and every referenced project's package
+// references, central package versions and sources, as NuGet's restore graph
+// records them, plus the packageInputFiles. The checkout's graph is generated
+// in the snapshot (`msbuild -t:GenerateRestoreGraphFile`, no restore); the
+// working tree's is the one restore wrote. Only cancellation is an error: any
+// other failure to build the checkout's graph leaves every borrowed project
+// uncompared, so changed.
+func (e *Extractor) changedRestoreInputs(ctx context.Context, snapRoot, depRoot string, targets []string, borrowed []ProjectEvaluation, mapper snapshotMapper) (changed, moved []string, err error) {
 	base, err := e.restoreGraph(ctx, snapRoot, targets, mapper)
 	if err != nil && ctx.Err() != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	depMapper := newSnapshotMapper(snapshot{dir: depRoot, root: depRoot}, "")
-	var changed []string
 	for _, p := range borrowed {
-		if !sameRestoreGraph(p, base, depRoot, depMapper) || !samePackageInputFiles(snapRoot, depRoot, p.Path) {
+		same, reconciled := sameRestoreGraph(p, base, depRoot, depMapper)
+		switch {
+		case !reconciled:
+			moved = append(moved, p.Path)
+		case !same || !samePackageInputFiles(snapRoot, depRoot, p.Path):
 			changed = append(changed, p.Path)
 		}
 	}
-	return changed, nil
+	return changed, moved, nil
 }
 
 // restoreGraph generates the restore graph of every target in the snapshot,
@@ -148,20 +156,26 @@ func parseRestoreGraph(data []byte, mapper snapshotMapper) (map[string]restoreEn
 }
 
 // sameRestoreGraph compares p and every project it references, as the
-// checkout's graph has them, with the working tree's graph for p.
-func sameRestoreGraph(p ProjectEvaluation, base map[string]restoreEntry, depRoot string, mapper snapshotMapper) bool {
+// checkout's graph has them, with the working tree's graph for p. reconciled
+// is false when the working tree's restore outputs record a project path that
+// is not p's, so they were produced under another root and cannot be trusted.
+func sameRestoreGraph(p ProjectEvaluation, base map[string]restoreEntry, depRoot string, mapper snapshotMapper) (same, reconciled bool) {
 	file := filepath.Join(depRoot, filepath.FromSlash(p.RestoreDir), path.Base(p.Path)+dgspecSuffix)
 	data, err := os.ReadFile(file) //nolint:gosec // a restore output in the working tree
 	if err != nil {
-		return false
+		return false, true
+	}
+	mapper, reconciled = dgspecMapper(data, p.Path, mapper)
+	if !reconciled {
+		return false, false
 	}
 	head, err := parseRestoreGraph(data, mapper)
 	if err != nil {
-		return false
+		return false, true
 	}
 	seen := map[string]bool{}
-	var same func(project string) bool
-	same = func(project string) bool {
+	var walk func(project string) bool
+	walk = func(project string) bool {
 		if seen[project] {
 			return true
 		}
@@ -172,13 +186,40 @@ func sameRestoreGraph(p ProjectEvaluation, base map[string]restoreEntry, depRoot
 			return false
 		}
 		for _, ref := range b.refs {
-			if !same(ref) {
+			if !walk(ref) {
 				return false
 			}
 		}
 		return true
 	}
-	return same(p.Path)
+	return walk(p.Path), true
+}
+
+// dgspecMapper returns the mapper that makes a working tree dgspec's paths
+// root-relative, and whether the dgspec belongs to project. NuGet records the
+// absolute path the project was restored at, and a copied tree (cp -a, a CI
+// cache) keeps the original. The top-level restore entry names that project;
+// the suffix it shares with project's path is the project's path past the
+// recorded root, so what precedes it is that root.
+func dgspecMapper(data []byte, project string, mapper snapshotMapper) (snapshotMapper, bool) {
+	var doc struct {
+		Restore  map[string]json.RawMessage `json:"restore"`
+		Projects map[string]json.RawMessage `json:"projects"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return mapper, true // parseRestoreGraph reports the malformed graph as an input mismatch
+	}
+	keys := slices.Sorted(maps.Keys(doc.Restore))
+	if len(keys) == 0 {
+		keys = slices.Sorted(maps.Keys(doc.Projects))
+	}
+	for _, key := range keys {
+		root, ok := strings.CutSuffix(filepath.ToSlash(key), "/"+filepath.ToSlash(project))
+		if ok && root != "" {
+			return mapper.addPrefix(root, ""), true
+		}
+	}
+	return mapper, false
 }
 
 // samePackageInputFiles reports whether the package input files from the
