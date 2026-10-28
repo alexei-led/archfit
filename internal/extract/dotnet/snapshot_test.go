@@ -500,4 +500,45 @@ func TestSnapshot_CheckoutBorrowsWorkingTreeRestoreOutputs(t *testing.T) {
 			}
 		})
 	}
+
+	// A checkout whose project directory is a link outside the scan root has no
+	// project the snapshot can load, so it must not borrow restore outputs for
+	// it either: the working tree's assets would describe a tree the helper
+	// never sees, and copying them must not write through the link.
+	t.Run("symlinked project directory outside the snapshot", func(t *testing.T) {
+		outside := t.TempDir()
+		writeFile(t, outside, "Proj/Domain.csproj", "")
+		work := tree(t, domainProj)
+		writeFile(t, work, "Domain/obj/project.assets.json", "work assets")
+		checkout := t.TempDir()
+		if err := os.Symlink(filepath.Join(outside, "Proj"), filepath.Join(checkout, "Domain")); err != nil {
+			t.Fatal(err)
+		}
+		beforeOutside, beforeCheckout := treeState(t, outside), treeState(t, checkout)
+		installHelper(t)
+		fake := newFake(t, checkout, map[string]reply{domainProj: {
+			stdout: `{"Properties":{"TargetFramework":"net10.0","MSBuildProjectExtensionsPath":"` +
+				filepath.ToSlash(filepath.Join(checkout, "Domain", "obj")) + `"},"Items":{}}`,
+		}})
+		fake.helper = fakeHelper(func(_ context.Context, snap string) (toolrun.Output, error) {
+			if _, err := os.Lstat(filepath.Join(snap, "Domain")); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("the snapshot has a Domain entry (err %v): the project link was reproduced or written through", err)
+			}
+			return toolrun.Output{Stdout: []byte(domainOnlyReport)}, nil
+		})
+		e := dotnet.New(fake, autoCfg(), []string{domainProj})
+		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: checkout, DependencyRoot: work}); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+		cov := e.LastTypeGraphCoverage()
+		if !strings.Contains(cov.Reason, "no restore outputs for 1 project") || !strings.Contains(cov.Reason, domainProj) {
+			t.Errorf("roslyn reason %q does not name the project left without restore outputs", cov.Reason)
+		}
+		if after := treeState(t, outside); !mapsEqual(after, beforeOutside) {
+			t.Errorf("a write through the project link reached the outside directory:\nbefore %v\nafter  %v", beforeOutside, after)
+		}
+		if after := treeState(t, checkout); !mapsEqual(after, beforeCheckout) {
+			t.Errorf("the checkout changed:\nbefore %v\nafter  %v", beforeCheckout, after)
+		}
+	})
 }

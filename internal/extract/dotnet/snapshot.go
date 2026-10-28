@@ -196,12 +196,14 @@ const restoreAssets = "project.assets.json"
 // the snapshot's checkout stands in for. A checkout holds tracked files only and
 // restore outputs are gitignored, so without them the helper resolves no
 // package on the checkout side. Only a project at the same path in both trees
-// borrows, and only the files directly in its restore directory (the assets
-// file and the NuGet imports), never build output below it. depRoot is read,
-// never written, and nothing is written outside the snapshot. The borrowed
-// outputs describe the working tree's packages: changedRestoreInputs names the
-// projects whose own restore inputs differ. It returns the projects that
-// borrowed and those left without restore outputs.
+// borrows — the checkout's copy must really be in the snapshot, since a
+// symlinked project directory is dropped from it — and only the files directly
+// in its restore directory (the assets file and the NuGet imports), never build
+// output below it. depRoot is read, never written, and nothing is written
+// outside the snapshot. The borrowed outputs describe the working tree's
+// packages: changedRestoreInputs names the projects whose own restore inputs
+// differ. It returns the projects that borrowed and those left without restore
+// outputs.
 func borrowRestoreOutputs(snapRoot, depRoot string, projects []ProjectEvaluation) (borrowed []ProjectEvaluation, unrestored []string, err error) {
 	for _, p := range projects {
 		if p.RestoreDir == "" {
@@ -213,7 +215,9 @@ func borrowRestoreOutputs(snapRoot, depRoot string, projects []ProjectEvaluation
 			continue
 		}
 		src := filepath.Join(depRoot, dir)
-		if !fileExists(filepath.Join(depRoot, filepath.FromSlash(p.Path))) || !fileExists(filepath.Join(src, restoreAssets)) ||
+		if !fileExists(filepath.Join(depRoot, filepath.FromSlash(p.Path))) ||
+			!fileExists(filepath.Join(snapRoot, filepath.FromSlash(p.Path))) ||
+			!fileExists(filepath.Join(src, restoreAssets)) ||
 			!withinSnapshot(snapRoot, dst) {
 			unrestored = append(unrestored, p.Path)
 			continue
