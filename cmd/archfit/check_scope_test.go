@@ -80,7 +80,7 @@ func TestCheckScope_PolicyDeletedOnBranch(t *testing.T) {
 	commitFiles(t, dir, map[string]string{filePkgAA: hookViolatingA, defaultConfigPath: lintCleanModules})
 
 	code, res, stderr := checkAgent(t, dir)
-	if res.Change.Status != claimTypeUnknown || res.Change.Reason != reasonPolicyChanged || res.NextAction != "ask_owner" {
+	if res.Change.Status != claimTypeUnknown || res.Change.Reason != reasonPolicyChanged || res.NextAction != nextAskOwner {
 		t.Fatalf("change %q reason %q next_action %q, want unknown policy_changed_on_branch ask_owner\nstderr: %s", res.Change.Status, res.Change.Reason, res.NextAction, stderr)
 	}
 	if len(res.Change.Blockers) != 0 {
@@ -192,7 +192,7 @@ func TestCheckScope_UnresolvedTarget(t *testing.T) {
 	gitFixture(t, clone, "remote", "set-head", "origin", "-d")
 
 	code, res, stderr := checkAgent(t, clone)
-	if res.Change.Status != claimTypeUnknown || res.Change.Reason != "scope_unresolved" || res.NextAction != "restore_evidence" {
+	if res.Change.Status != claimTypeUnknown || res.Change.Reason != "scope_unresolved" || res.NextAction != nextRestoreEvidence {
 		t.Fatalf("change %q reason %q next_action %q, want unknown scope_unresolved restore_evidence\nstderr: %s", res.Change.Status, res.Change.Reason, res.NextAction, stderr)
 	}
 	if !strings.Contains(res.Change.ReasonDetail, "no target branch") {
@@ -244,7 +244,7 @@ func TestCheckScope_TargetMovedThePolicy(t *testing.T) {
 	gitFixture(t, dir, "checkout", "-q", "feature")
 
 	code, res, stderr := checkAgent(t, dir)
-	if res.Change.Status != claimTypeUnknown || res.Change.Reason != "policy_stale_on_branch" || res.NextAction != "restore_evidence" {
+	if res.Change.Status != claimTypeUnknown || res.Change.Reason != "policy_stale_on_branch" || res.NextAction != nextRestoreEvidence {
 		t.Fatalf("change %q reason %q next_action %q, want unknown policy_stale_on_branch restore_evidence\nstderr: %s", res.Change.Status, res.Change.Reason, res.NextAction, stderr)
 	}
 	if !strings.Contains(res.Change.ReasonDetail, "merge or rebase main") {

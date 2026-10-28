@@ -66,13 +66,14 @@ Run the gate locally or in CI:
 archfit check -c .archfit.yaml
 ```
 
-The command returns `0` for healthy, `1` for blocked, `2` for needs attention, and `3` for a configuration, tool, or runtime error. During adoption, CI can fail only on blockers:
+The command returns `0` for healthy, `1` for blocked, `2` for needs attention, and `3` for a configuration, tool, or runtime error. Exit `2` alone does not mean "fine": an `unknown` change also exits `2`, and `unknown` never passes. In CI, read `change.status` from the agent format. Pass only on `pass`:
 
 ```sh
-archfit check -c .archfit.yaml || [ "$?" -eq 2 ]
+archfit check -c .archfit.yaml --format agent > archfit.json || [ "$?" -eq 2 ]
+jq -e '.change.status == "pass"' archfit.json
 ```
 
-This shell expression accepts exit `2`. It still fails on exit `1` or `3`. See [CI](ci.md) for stable workflows and stricter policies.
+The first line tolerates exit `2` so that the second line decides. The second line fails on `fail` and on `unknown`. Exit `1` and `3` still fail the step. See [CI](ci.md) for stable workflows and stricter policies.
 
 ## Use Docker
 

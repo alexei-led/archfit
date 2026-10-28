@@ -33,7 +33,7 @@ type SkillInstallCmd struct {
 }
 
 func (*SkillInstallCmd) Help() string {
-	return `Install the archfit agent skill (SKILL.md and references) that ships in
+	return `Install the archfit agent skill (the worker loop, SKILL.md) that ships in
 this binary, so the skill matches the commands the binary has.
 
 It writes <dir>/archfit. A file that exists with other content is left alone

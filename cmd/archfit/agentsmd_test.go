@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/alexei-led/archfit/v3/internal/policy"
 )
 
 const (
@@ -103,7 +101,10 @@ func TestAgentsMDWriteAndCheck(t *testing.T) {
 	}
 
 	after := "\n## Footer\n\nAlso hand-written.\n"
-	stale := strings.Replace(string(second), "| `catalog` |", "| `catalog_old` |", 1) + after
+	stale := strings.Replace(string(second), "archfit doctor", "archfit doctor --old", 1) + after
+	if stale == string(second)+after {
+		t.Fatal("the stale edit matched nothing: the test is vacuous")
+	}
 	if err := os.WriteFile(file, []byte(stale), 0o600); err != nil { //nolint:gosec // test temp path
 		t.Fatal(err)
 	}
@@ -141,13 +142,13 @@ func TestAgentsMDAppendKeepsEveryByte(t *testing.T) {
 // when the config is not the default .archfit.yaml.
 func TestAgentsMDNamesANonDefaultConfig(t *testing.T) {
 	t.Parallel()
-	block := renderAgentsBlock(policy.PolicySnapshot{}, "policy/team.yaml")
+	block := renderAgentsBlock("policy/team.yaml")
 	for _, want := range []string{"archfit policy can-import -c policy/team.yaml", "archfit check -c policy/team.yaml --format agent", "`policy/team.yaml`"} {
 		if !strings.Contains(block, want) {
 			t.Errorf("block is missing %q:\n%s", want, block)
 		}
 	}
-	if strings.Contains(renderAgentsBlock(policy.PolicySnapshot{}, defaultConfigPath), " -c ") {
+	if strings.Contains(renderAgentsBlock(defaultConfigPath), " -c ") {
 		t.Error("the default config must not add -c")
 	}
 	if got := configArg("/repo/policy/team.yaml", "/repo/AGENTS.md"); got != "policy/team.yaml" {
@@ -155,30 +156,27 @@ func TestAgentsMDNamesANonDefaultConfig(t *testing.T) {
 	}
 }
 
-// TestAgentsMDKeepsEachRuleOnOneListItem pins that multi-line config text never
-// breaks the Markdown it lands in: a block-scalar rationale and docs stay inside
-// their rule's list item, and a block-scalar owner stays inside its table row.
-// A selector is rendered verbatim: its whitespace is part of what it matches.
-func TestAgentsMDKeepsEachRuleOnOneListItem(t *testing.T) {
+// next_action values the agent results and the block name.
+const (
+	nextAskOwner        = "ask_owner"
+	nextRestoreEvidence = "restore_evidence"
+)
+
+// TestAgentsMDStaysSmall pins the size budget and the loop it carries: a
+// worker reads the block in every session, so it holds the commands and the
+// escalation path and nothing a lookup can answer.
+func TestAgentsMDStaysSmall(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	cfg := filepath.Join(dir, ".archfit.yaml")
-	body := "version: 2\nmodules:\n  billing:\n    paths: [billing/**]\n    owner: |\n      team\n      billing\n" +
-		"rules:\n  - id: billing_no_stripe\n    type: forbidden_dependency\n    from: billing/**\n    to: \"stripe  api/**\"\n" +
-		"    rationale: |\n      Domain code stays\n      free of I/O.\n    docs: |\n      docs/adr/0001.md\n"
-	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	code, stdout, stderr := runArchfit(t, cmdAgentsMD, "-c", cfg, "--file", filepath.Join(dir, "AGENTS.md"))
-	if code != 0 {
-		t.Fatalf("exit = %d\n%s", code, stderr)
+	block := renderAgentsBlock(defaultConfigPath)
+	if lines := strings.Count(block, "\n"); lines > agentsMDMaxLines {
+		t.Errorf("block has %d lines, budget %d:\n%s", lines, agentsMDMaxLines, block)
 	}
 	for _, want := range []string{
-		"- `billing_no_stripe`: must not import `stripe  api/**`. Why: Domain code stays free of I/O. See docs/adr/0001.md.\n",
-		"| `billing` | `billing/**` | — | team billing |",
+		"archfit policy can-import <file> <target>", "archfit check --format agent", "archfit policy where <path>",
+		"archfit doctor", ".archfit-baseline.json", ".archfit-labels.yaml", nextRestoreEvidence, nextAskOwner,
 	} {
-		if !strings.Contains(stdout, want) {
-			t.Errorf("block is missing line %q:\n%s", want, stdout)
+		if !strings.Contains(block, want) {
+			t.Errorf("block is missing %q:\n%s", want, block)
 		}
 	}
 }
