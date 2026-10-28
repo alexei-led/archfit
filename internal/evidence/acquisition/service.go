@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/alexei-led/archfit/v3/internal/application"
@@ -20,6 +22,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/factcache"
 	"github.com/alexei-led/archfit/v3/internal/history/git"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/ownership"
@@ -27,6 +30,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/relationship/facts"
 	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 	"github.com/alexei-led/archfit/v3/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/syntax"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -99,6 +103,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	if err != nil {
 		return application.Acquired{}, err
 	}
+	resolved.DependencyRoot = req.DependencyRoot
 
 	declaredDeployUnits, ownerProvenance := declaredOperationsFacts(runPolicy)
 	store := factcache.NewStore(factsCacheDir(bundleDir))
@@ -163,6 +168,8 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	if err != nil {
 		return application.Acquired{}, err
 	}
+	// Every extractor has run by now, so the run's cache decisions are known.
+	discloseCacheSkips(s.stderr(), warnLabel, store.Skips())
 	coverage := append(append([]evidence.Coverage(nil), graphResult.Coverages...), ruleCoverage...)
 	crateRootDirs := map[string]string{}
 	// cargo-modules is an opt-in module-graph analyzer, not a file extractor: its
@@ -181,6 +188,12 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		crateRootDirs = crateRootDirsOf(ex.LastCrateRoots())
 		rustModuleGraphCrates = ex.LastModuleGraphCrates()
 		rustTargetCrates = ex.LastTargetCrates()
+	}
+	// The roslyn row is cargo-modules' shape for .NET: an optional second graph
+	// level under a primary row that already counts the projects, so it is
+	// report evidence only and never enters the coverage metric's file totals.
+	if ex := registry.DotNetExtractor(extractors); ex != nil {
+		reportOnlyCoverage = append(reportOnlyCoverage, ex.LastTypeGraphCoverage())
 	}
 	// Unresolved-specifier disclosure. Both analyzers complete but drop edges
 	// into the external bucket, so the gap must not be stderr-silent.
@@ -216,6 +229,16 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 		declaredDeployUnits, collected.CorroboratedDeployUnits, ownerProvenance,
 		crateOwnersOf(snapshot, runPolicy.Gates.Rules.ModuleMap),
 	)
+	if ex := registry.DotNetExtractor(extractors); ex != nil {
+		// The .NET file edges come from Roslyn per project, so its gaps are
+		// pinned to the files of incomplete projects; unattributed gaps leave
+		// the coverage rows to decide for the whole language.
+		if gaps, attributed := ex.LastDependencyGaps(walkedFiles(snapshot)); attributed {
+			observations.ScopedDependencyEvidence = map[string]evaluation.ScopedDependencyEvidence{
+				graph.LangDotNet: {Tool: registry.ToolRoslyn, Incomplete: gaps.Files, Fixes: gaps.Fixes},
+			}
+		}
+	}
 	// Config values schema v2 still loads but classification cannot read, and
 	// warn-gated rules whose selector matches nothing, are disclosed with the
 	// run's other config warnings. config lint reports the same defects.
@@ -244,6 +267,18 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 			DeployUnitDetectedModules: len(collected.DeployUnitsByModule),
 		},
 	}, nil
+}
+
+// walkedFiles are the files the LOC walk visited, sorted.
+func walkedFiles(f evidencecontract.Facts) []string {
+	set := make(map[string]struct{}, len(f.FileLOC)+len(f.FileClassIndex))
+	for file := range f.FileLOC {
+		set[file] = struct{}{}
+	}
+	for file := range f.FileClassIndex {
+		set[file] = struct{}{}
+	}
+	return slices.Sorted(maps.Keys(set))
 }
 
 // crateRootDirsOf maps each Rust crate spelling to the crate's repo-relative
@@ -353,10 +388,33 @@ func (s *Service) collectRuleEvidence(ctx context.Context, sc scope.Scope, p pol
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	for i := range syntaxFacts {
-		syntaxFacts[i].Module, _ = p.Relationship.Topology.ModuleMap.ModuleForFile(syntaxFacts[i].File)
+	facts := make([]evidence.SyntaxFact, 0, len(syntaxFacts))
+	cfg := s.Options.Acquisition.FileClass
+	for _, fact := range syntaxFacts {
+		if !keepsSyntaxFact(fact, collected.FileClassIndex, cfg) {
+			continue
+		}
+		fact.Module, _ = p.Relationship.Topology.ModuleMap.ModuleForFile(fact.File)
+		facts = append(facts, fact)
 	}
-	return patternMatches, syntaxFacts, append(coverage, syntaxCoverage), nil
+	return patternMatches, facts, append(coverage, syntaxCoverage), nil
+}
+
+// syntaxKindRoute is the SyntaxFact kind of one route registration.
+const syntaxKindRoute = "route"
+
+// keepsSyntaxFact keeps every declaration fact, and a route fact only when its
+// file is production source. A route a test, generated, or vendored file
+// registers is a test fixture (`/__probe`, a fake controller) or a codegen
+// artifact, not a production entry point: the same file-class rule that keeps
+// those files out of clone pairs and pattern findings keeps their routes out of
+// the syntax surface, where they would otherwise read as source outside every
+// declared module.
+func keepsSyntaxFact(fact evidence.SyntaxFact, index map[string]fileclass.FileClass, cfg syntax.FileClassConfig) bool {
+	if fact.Kind != syntaxKindRoute {
+		return true
+	}
+	return fileclass.IsProduction(syntax.LookupFileClass(fact.File, index, fact.Language, cfg))
 }
 
 // loadLabels reads the pinned labels from the RUN's bundle directory, not from
@@ -387,6 +445,17 @@ func (s *Service) loadLabels(bundleDir string, modules map[string]policy.ModuleD
 
 // labelsFileName is the pinned-label file every bundle carries.
 const labelsFileName = ".archfit-labels.yaml"
+
+// discloseCacheSkips prints the fact-cache decisions that cost this run its
+// cache — an input tree too large to key, for instance, leaves every extractor
+// re-running on every invocation. Without this the run only gets slower and
+// nothing says why. Disclosed on stderr, not as a config warning: nothing in
+// the configuration fixes it.
+func discloseCacheSkips(w io.Writer, label string, skips []string) {
+	for _, skip := range skips {
+		_, _ = fmt.Fprintln(w, "warning: "+label+skip)
+	}
+}
 
 func (s *Service) stderr() io.Writer {
 	if s != nil && s.Stderr != nil {

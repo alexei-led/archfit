@@ -242,6 +242,7 @@ func TestCoverage_JSONFieldNames(t *testing.T) {
 		FilesApplicable: 40,
 		Unresolved:      2,
 		Status:          "ok",
+		Details:         []string{"src/App/App.csproj ok frameworks=net10.0 files=3 unresolved=0"},
 	}
 
 	data, err := json.Marshal(c)
@@ -254,7 +255,7 @@ func TestCoverage_JSONFieldNames(t *testing.T) {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
 
-	for _, f := range []string{"tool", "version", "files_seen", "files_applicable", "unresolved", "status"} {
+	for _, f := range []string{"tool", "version", "files_seen", "files_applicable", "unresolved", "status", "details"} {
 		if _, ok := m[f]; !ok {
 			t.Errorf("Coverage JSON field %q missing", f)
 		}

@@ -126,6 +126,14 @@ type Scope struct {
 	// GitRoot is empty (non-git). Git history consumers use this to scope
 	// commands to the subtree (Task 3).
 	SubtreePrefix string
+	// DependencyRoot is the working-tree counterpart of Root when Root is a
+	// checkout of tracked files only (the --base worktree); empty when Root is
+	// the working tree itself. A checkout lacks every gitignored input. Those an
+	// analyzer finds by walking up from Root (node_modules) or in a global cache
+	// (Go modules, site-packages, the cargo registry) need nothing; per-project
+	// dependency state (.NET restore outputs under obj/) is read from here, and
+	// never written.
+	DependencyRoot string
 }
 
 // Resolver supplies the version-control queries scope resolution needs.

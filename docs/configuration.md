@@ -74,6 +74,7 @@ Each language accepts `enabled` and `gate`. `enabled` accepts YAML booleans or t
 | `languages.typescript` | `enabled`, `gate` | Uses the TypeScript extractor when its project markers and tools exist. |
 | `languages.python` | `enabled`, `gate`, `package` | `package` is the top-level importable package name. Empty means auto-detect from the project layout. |
 | `languages.rust` | `enabled`, `gate`, `manifest`, `features`, `include_dev_deps` | Empty `manifest` uses the root Cargo manifest. `features` defaults empty. `include_dev_deps` defaults false. |
+| `languages.dotnet` | `enabled`, `gate`, `projects` | `projects` lists `.slnx`, `.sln`, `.slnf` (solution filter), or `.csproj` paths under the analysis root. Empty uses the first `.slnx` or `.sln` at the root (by file name), else every `*.csproj` outside `obj/`, `bin/`, `.git/`, `node_modules/`, and `exclude`. A listed path that does not exist makes `dotnet-msbuild` partial; when none exists the language reads absent, or reports an extractor error under `enabled: true`. Generated configs write `enabled: auto`, so a missing `dotnet` is a coverage gap. |
 
 Example Go workspace filter:
 
@@ -88,18 +89,19 @@ languages:
 
 ## Optional analyzers
 
-Analyzers are opt-in. Every analyzer requires `enabled: true` to run. `auto`, `false`, and omission disable it. A schema-valid `enabled: auto` value does not enable an analyzer.
+Analyzers are opt-in, except `roslyn`. Every other analyzer requires `enabled: true` to run. `auto`, `false`, and omission disable it. A schema-valid `enabled: auto` value does not enable an analyzer.
 
 | Key | Fields | Purpose and limits |
 | --- | --- | --- |
-| `analyzers.syntax` | `enabled`, `gate` | Uses ast-grep (`sg`) for declaration facts in Go, TypeScript, Python, and Rust. |
+| `analyzers.syntax` | `enabled`, `gate` | Uses ast-grep (`sg`) for declaration facts in Go, TypeScript, Python, and Rust, and route and function-extent facts in C#. |
 | `analyzers.scip` | `enabled`, `gate`, `timeout` | Uses language SCIP indexers for symbol-level edge strength. Go type information remains primary. |
-| `analyzers.clones` | `enabled`, `gate`, `timeout` | Uses `jscpd` for cross-module clone facts. Clone facts do not alter import-edge strength. |
+| `analyzers.clones` | `enabled`, `gate`, `timeout` | Uses `jscpd` for cross-module clone facts over the source files of the languages not turned off. Clone facts do not alter import-edge strength. |
 | `analyzers.cargo_modules` | `enabled`, `gate` | Uses `cargo-modules` to extract Rust intra-crate modules. It can compile the crate. |
+| `analyzers.roslyn` | `enabled`, `gate`, `timeout` | Uses the `archfit-roslyn` helper for the .NET type-level graph and coupling strength. Unlike the others, it is on unless `enabled: false` (`auto` and omission enable it). It runs when `ARCHFIT_DOTNET_ROSLYN` names an installed helper; unset, its row is `absent` with a coverage gap. `enabled: false` forces the project-only graph and reports `disabled` without a gap. The project graph serves the map and the report only: required rules over .NET source need the helper's file edges, so without them those rules are unevaluated. The image ships the helper. See [.NET](languages.md#net). |
 
 All analyzer `gate` fields accept `off`, `warn`, or `fail`, defaulting to `warn`. A missing tool creates a coverage gap. `enabled: false` skips the analyzer without a gap. `--require-tools` raises gaps unless the gate is explicitly `off`.
 
-`scip` and `clones` accept Go duration strings in `timeout`. Omitted or zero values use built-in timeouts: 20 minutes for SCIP and 5 minutes for clones. A timeout drops that analyzer's result and the run continues. Dependent measurements can report `n/a`.
+`scip`, `clones`, and `roslyn` accept Go duration strings in `timeout`. Omitted or zero values use built-in timeouts: 20 minutes for SCIP and Roslyn, 5 minutes for clones. A SCIP or clones timeout drops that analyzer's result and the run continues; dependent measurements can report `n/a`. A Roslyn timeout covers the snapshot copy and the helper run; the row reads `timed out`, every .NET project falls back to its `ProjectReference` edges, and the coupling dimension does not reach `measured`.
 
 ### Why the optional analyzers are off
 
@@ -117,12 +119,13 @@ analyzers:
 
 Prerequisites, per analyzer and language. A missing prerequisite shows up as `absent` with the reason that names it.
 
-| Analyzer | Go | TypeScript / JavaScript | Python | Rust |
-| --- | --- | --- | --- | --- |
-| `scip` | `scip-go` | `node_modules` installed (`npm ci`) and `scip-typescript` | `scip-python` and `uv` | Cargo metadata (`cargo`) and `rust-analyzer` |
-| `syntax` | `sg` (ast-grep) | `sg` | `sg` | `sg` |
-| `clones` | `jscpd` | `jscpd` | `jscpd` | `jscpd` |
-| `cargo_modules` | — | — | — | `cargo-modules` (compiles the crate) |
+| Analyzer | Go | TypeScript / JavaScript | Python | Rust | .NET |
+| --- | --- | --- | --- | --- | --- |
+| `scip` | `scip-go` | `node_modules` installed (`npm ci`) and `scip-typescript` | `scip-python` and `uv` | Cargo metadata (`cargo`) and `rust-analyzer` | — |
+| `syntax` | `sg` (ast-grep) | `sg` | `sg` | `sg` | `sg` |
+| `clones` | `jscpd` | `jscpd` | `jscpd` | `jscpd` | `jscpd` |
+| `cargo_modules` | — | — | — | `cargo-modules` (compiles the crate) | — |
+| `roslyn` | — | — | — | — | `dotnet` and the `archfit-roslyn` helper (`ARCHFIT_DOTNET_ROSLYN`) |
 
 The shipped image contains all of them. When you run archfit from somewhere else, `--require-tools` turns any missing required analyzer into a failure instead of a gap.
 
@@ -149,12 +152,12 @@ coverage:
 | `coverage.gate` | enum | `warn`. Accepts `off`, `warn`, `fail`. Applies when none of the sources can be read. It is not a minimum coverage ratio. |
 | `coverage.sources` | list | Required when enabled. Paths resolve under the analysis root and cannot escape it. |
 | `sources[].path` | path | Required artifact path. |
-| `sources[].format` | enum | `auto`, `go-coverprofile`, `lcov`, `coverage-py-json`, or `llvm-cov-json`. `auto` is the default and requires an unambiguous content and extension match. |
+| `sources[].format` | enum | `auto`, `go-coverprofile`, `lcov`, `coverage-py-json`, `llvm-cov-json`, or `cobertura`. `auto` is the default and requires an unambiguous content and extension match. |
 | `sources[].sidecar_path` | path | Defaults to `<path>.sidecar.json`. |
 | `sources[].max_bytes` | positive integer | Defaults to `67108864` bytes per source. The limit covers the artifact, sidecar, and enumerated source files. |
 | `sources[].max_facts` | positive integer | Defaults to `1000000` normalized facts per artifact. Exceeding the limit rejects the whole artifact. |
 
-Supported formats read statements for Go cover profiles and coverage.py JSON. LCOV and LLVM coverage JSON report lines. Archfit normalizes file names to slash-separated paths relative to the analysis root. Missing files, paths outside the root, and escaping symlinks remain unresolved and keep testability partial.
+Supported formats read statements for Go cover profiles and coverage.py JSON. LCOV, LLVM coverage JSON, and Cobertura report lines. Archfit normalizes file names to slash-separated paths relative to the analysis root. Missing files, paths outside the root, and escaping symlinks remain unresolved and keep testability partial.
 
 ### Freshness sidecar
 
@@ -238,7 +241,7 @@ Each `modules.<name>` entry accepts these fields:
 | `layer` | string | Must name an entry in `layers`. |
 | `subdomain` | enum | `core`, `supporting`, or `generic`, matched case-insensitively. `core` implies high volatility; the others imply low. |
 | `volatility` | enum | `high`, `medium`, `low`, `frozen`, or legacy alias `legacy`, case-insensitive. Overrides the subdomain-derived value. |
-| `owner` | string | Team or person responsible for the module. |
+| `owner` | string | Team or person responsible for the module. Without a declared owner or a CODEOWNERS file, archfit takes the module's most frequent git author. It applies `.mailmap`, and it counts author identities that share a name or an email as one person. |
 | `deploy_unit` | string | Runtime or deployment boundary used by coupling classification. |
 | `role` | enum | Empty or `composition_root`, `adapter`, `core`, `shared_model`, `generated`, `test`. |
 | `reviewed_at` | date/time | Last architecture map review date. |
@@ -321,7 +324,7 @@ An applied LLM label needs explicit `confidence: high` to avoid lowering couplin
 
 `evidence_hash` records the import-edge evidence for the ordered module pair when the label was drafted. Archfit ignores an approved label when current evidence exists and the hash differs. The stale label adds a `labels/stale` diagnostic. It does not gate the run. An empty hash skips freshness checks and can leave an override active permanently. A pair with no current edges is moot, and a run with no measured graph cannot check freshness.
 
-Strength precedence depends on provenance. A config internal glob sets intrusive strength and cannot be overridden. A public glob sets contract strength. An approved human, tool, or unset-provenance label can refine that contract strength and takes precedence over extractor hints. An approved LLM-provenance label only fills an unknown edge after config globs and extractor hints leave it unknown. Draft labels never affect classification.
+Strength precedence depends on provenance. A config internal glob sets intrusive strength and cannot be overridden. A public glob sets contract strength; model data evidence raises it to model, and an intrusive hint raises it to intrusive. An approved human, tool, or unset-provenance label can refine that contract strength and takes precedence over extractor hints. An approved LLM-provenance label only fills an unknown edge after config globs and extractor hints leave it unknown. Draft labels never affect classification.
 
 `archfit config enrich labels` writes label proposals for review. Approve a proposal by setting `status: approved`. Review its evidence and hash before analysis. See [AI workflows](ai.md) for command behavior.
 
@@ -373,7 +376,7 @@ VS Code can bind the schema in `.vscode/settings.json`:
 
 The schema helps editors validate keys and closed values. It does not replace `archfit config lint` or runtime validation.
 Some conditional rules need runtime context. For example, `coverage.sources` is required only when coverage is enabled.
-Rule selector liveness depends on the scanned repository.
+Rule selector liveness depends on the scanned repository. A dependency rule's `to:` is the target's spelling in the language graph — a file path, a Go package directory, a Python dotted module, a Rust crate, or a .NET assembly name — never a graph node ID with its `kind:` prefix, such as `external:Npgsql`.
 The schema treats module `layer`, `role`, `subdomain`, and `volatility` values as strings.
 An unknown `role` is a configuration error.
 Runtime analysis warns about unknown layer, subdomain, and volatility declarations. `config lint` reports those declarations too.

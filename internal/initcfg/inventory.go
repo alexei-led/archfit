@@ -148,6 +148,7 @@ const (
 	gapPython     = "Python discovery builds no import graph"
 	gapTypeScript = "TypeScript discovery builds no import graph"
 	gapRust       = "Rust analysis adds intra-crate modules discovery cannot see"
+	gapDotNet     = ".NET discovery builds no project graph"
 )
 
 // maxGapModules bounds how many module names a graph-gap reason lists.
@@ -167,6 +168,9 @@ func graphGap(mods []ModuleDef, origins []string, rustPresent bool, sources []So
 	}
 	if slices.Contains(origins, langTypeScript) {
 		reasons = append(reasons, gapTypeScript)
+	}
+	if slices.Contains(origins, langDotNet) {
+		reasons = append(reasons, gapDotNet)
 	}
 	if rustPresent {
 		reasons = append(reasons, gapRust)

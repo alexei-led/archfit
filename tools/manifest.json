@@ -6,7 +6,8 @@
     "uv": "0.13.5",
     "rust": "1.99.1",
     "cargo-modules": "0.28.0",
-    "scip-go": "0.2.9"
+    "scip-go": "0.2.9",
+    "dotnet": "10.0.402"
   },
   "node": {
     "dependency-cruiser": "18.7.0",
@@ -54,6 +55,10 @@
       "rust-analyzer": {
         "url": "https://static.rust-lang.org/dist/2026-10-15/rust-analyzer-1.99.1-x86_64-unknown-linux-gnu.tar.xz",
         "sha256": "5f2613d62003fc8cbe788d4ae409359c91c241ba248adbefe032df8bb77357bf"
+      },
+      "dotnet": {
+        "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.402/dotnet-sdk-10.0.402-linux-x64.tar.gz",
+        "sha256": "a131496fe7dac21dceea13354e50a3636126fac05d6e5ccf5fb250829c6e9b6a"
       }
     },
     "arm64": {
@@ -88,10 +93,15 @@
       "rust-analyzer": {
         "url": "https://static.rust-lang.org/dist/2026-10-15/rust-analyzer-1.99.1-aarch64-unknown-linux-gnu.tar.xz",
         "sha256": "b626351402eb9ea16af2ebc2b2cd02ec6f6ca6f0c18fa74b41243eb42996e2b1"
+      },
+      "dotnet": {
+        "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.402/dotnet-sdk-10.0.402-linux-arm64.tar.gz",
+        "sha256": "5c33483bf8af611524301afe0200fef2b44bfd93d2cf792da5404ca73e7bb8cb"
       }
     }
   },
   "checksum_sources": {
+    "dotnet": "https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json",
     "go": "https://go.dev/dl/?mode=json&include=all",
     "node": "https://nodejs.org/dist/v24.22.1/SHASUMS256.txt",
     "rust": "https://static.rust-lang.org/dist/channel-rust-1.99.1.toml",

@@ -22,7 +22,7 @@ type ExplainCmd struct {
 }
 
 func (c *ExplainCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
+	ctx := deps.runContext()
 
 	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {

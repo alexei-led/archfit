@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,7 +21,7 @@ const installSubcmd = "install"
 // (the former `install` command, folded in so `doctor` both diagnoses and fixes).
 type DoctorCmd struct {
 	Fix    bool     `name:"fix" aliases:"install" help:"Install missing analyzer toolchains (archfit installs what it can)."`
-	Lang   []string `name:"lang" help:"Toolchains to install with --fix (default: all). Repeatable." enum:"go,ts,py,rust"`
+	Lang   []string `name:"lang" help:"Toolchains to install with --fix (default: all). Repeatable. .NET has no automatic install: install the .NET SDK and build the helper with make dotnet-roslyn." enum:"go,ts,py,rust"`
 	DryRun bool     `name:"dry-run" short:"n" help:"With --fix: print install commands without running them."`
 }
 
@@ -29,7 +30,7 @@ func (*DoctorCmd) Help() string {
 }
 
 func (c *DoctorCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
+	ctx := deps.runContext()
 
 	// Cross-language tools stay literal here; per-language tools (compilers,
 	// scip indexers) come from the language registry so adding a language adds
@@ -45,14 +46,41 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		tools = append(tools, lang.DoctorTools...)
 	}
 
-	_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", "TOOL", "STATUS", "PATH / INSTALL")
+	nameWidth := len("TOOL")
+	for _, t := range tools {
+		nameWidth = max(nameWidth, len(t.Name))
+	}
+	row := func(name, status string, detail any) {
+		_, _ = fmt.Fprintf(deps.Stdout, "%-*s %-8s %v\n", nameWidth, name, status, detail)
+	}
+	row("TOOL", "STATUS", "PATH / INSTALL")
 	_, _ = fmt.Fprintf(deps.Stdout, "%s\n", strings.Repeat("-", 60))
 
+	// Versions are probed where analysis runs: here, where a global.json
+	// selects the .NET SDK.
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	// A tool configured to an unusable value fails doctor after the full
+	// report, as it fails analysis: a missing tool is not an error, a wrong one is.
+	var invalid []error
 	for _, t := range tools {
-		if info, ok := deps.Runner.Detect(ctx, t.Command); ok {
-			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.Name, "ok", info.Path)
-		} else {
-			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.Name, "missing", t.InstallHint)
+		path, found, err := locateTool(ctx, deps.Runner, t)
+		if err == nil && found && t.Version != nil {
+			var version string
+			if version, err = t.Version(ctx, deps.Runner, path, dir); err == nil {
+				path += " (" + version + ")"
+			}
+		}
+		switch {
+		case err != nil:
+			invalid = append(invalid, fmt.Errorf("%s: %w", t.Name, err))
+			row(t.Name, "invalid", err)
+		case found:
+			row(t.Name, "ok", path)
+		default:
+			row(t.Name, "missing", t.InstallHint)
 		}
 	}
 
@@ -93,9 +121,21 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	}
 
 	if c.Fix {
-		return c.runFix(ctx, deps)
+		if err := c.runFix(ctx, deps); err != nil {
+			return err
+		}
 	}
-	return nil
+	return errors.Join(invalid...)
+}
+
+// locateTool finds one doctor tool: through its own probe when it has one,
+// else on PATH.
+func locateTool(ctx context.Context, runner toolrun.Runner, t registry.Tool) (string, bool, error) {
+	if t.Locate != nil {
+		return t.Locate()
+	}
+	info, ok := runner.Detect(ctx, t.Command)
+	return info.Path, ok, nil
 }
 
 // keyStatus renders the presence of an API key without leaking it.

@@ -8,7 +8,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -113,11 +112,11 @@ type policyQuerier interface {
 }
 
 func (c *WhereCmd) Run(deps *appDeps) error {
-	cfg, err := loadAnalysisConfig(context.Background(), c.Config)
+	cfg, err := loadAnalysisConfig(deps.runContext(), c.Config)
 	if err != nil {
 		return configLoadError(err)
 	}
-	q, err := newPolicyQuery(context.Background(), c.Config, c.Root, cfg, deps)
+	q, err := newPolicyQuery(deps.runContext(), c.Config, c.Root, cfg, deps)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -129,7 +128,7 @@ func (c *WhereCmd) Run(deps *appDeps) error {
 }
 
 func (c *CanImportCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
+	ctx := deps.runContext()
 	cfg, err := loadAnalysisConfig(ctx, c.Config)
 	if err != nil {
 		return configLoadError(err)

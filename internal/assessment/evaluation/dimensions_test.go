@@ -526,6 +526,29 @@ func TestEvidenceDependentDimensionsRequireCompletedProducers(t *testing.T) {
 	}
 }
 
+// TestPartialDotNetEvaluationKeepsModularityPartial pins the offline .NET shape
+// to the TypeScript precedent above: projects that fail evaluation make the
+// dotnet-msbuild primary partial, so modularity is partial and names the
+// module graph shape it could not observe. blast_radius is still computed and
+// reported, as it is over a partial TypeScript graph; the dimension status,
+// not the metric, carries the incompleteness.
+func TestPartialDotNetEvaluationKeepsModularityPartial(t *testing.T) {
+	t.Parallel()
+	diag, in := dimensionsFixture()
+	diag.PrimaryExtractorTools = append(diag.PrimaryExtractorTools, "dotnet-msbuild")
+	diag.ToolCoverage = append(diag.ToolCoverage,
+		modevidence.Coverage{Tool: "dotnet-msbuild", Status: modevidence.StatusPartial},
+		modevidence.Coverage{Tool: "roslyn", Status: modevidence.StatusPartial, Unresolved: 3, UnresolvedInputsMissing: 4},
+	)
+	dim := evaluation.BuildDimensions(diag, in, nil).Modularity
+	if dim.Status != state.Partial || !hasUnknownFact(dim.Unknown, state.FactModuleGraphShape) {
+		t.Errorf("modularity = status %q unknown %+v, want partial naming the module graph shape", dim.Status, dim.Unknown)
+	}
+	if !hasMetric(dim.Metrics, "blast_radius") {
+		t.Errorf("modularity metrics = %+v, want blast_radius still reported", dim.Metrics)
+	}
+}
+
 // TestIntentRequiresSyntaxEvidenceForSyntaxRules prevents a rule invocation over
 // an empty syntax fact set from being mistaken for a successful conformance
 // result.
@@ -741,14 +764,45 @@ func TestCompletedEmptyDependencyInventoryIsMeasured(t *testing.T) {
 
 // TestStructureUsesTheDependencyOnlyDenominator pins STR-3: containment edges,
 // clone-only pairs, and declared external systems stay out of the structure
-// claim even though coupling's existing summary still carries them.
+// claim even though coupling's existing summary still carries them. Library
+// edges stay out of the denominator too — the bitwarden shape (19,749 internal
+// + 8 unmapped first-party + 11,653 library) read as 19,749/31,410, a ratio no
+// library-using repository can pass — while first-party edges no module owns
+// stay in, because those are the gap the module map leaves.
 func TestStructureUsesTheDependencyOnlyDenominator(t *testing.T) {
 	t.Parallel()
+	tests := []struct {
+		name         string
+		internal     int
+		unmapped     int
+		library      int
+		wantObserved int
+		wantTotal    int
+	}{
+		{name: "mixed", internal: 15, unmapped: 2, library: 3, wantObserved: 15, wantTotal: 17},
+		{name: "library-heavy", internal: 15, unmapped: 2, library: 11653, wantObserved: 15, wantTotal: 17},
+		{name: "no library edges", internal: 15, unmapped: 2, library: 0, wantObserved: 15, wantTotal: 17},
+		{name: "every first-party edge unmapped", internal: 0, unmapped: 5, library: 0, wantObserved: 0, wantTotal: 5},
+		{name: "only library edges", internal: 0, unmapped: 0, library: 20, wantObserved: 0, wantTotal: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			diag, in := dimensionsFixture()
+			diag.ClassifiedEdges.InternalDependencies = tc.internal
+			diag.ClassifiedEdges.UnmappedFirstPartyDependencies = tc.unmapped
+			diag.ClassifiedEdges.LibraryDependencies = tc.library
+			diag.ClassifiedEdges.DependencyEdges = tc.internal + tc.unmapped + tc.library
+			dim := evaluation.BuildDimensions(diag, in, nil).Structure
+			if dim.Coverage.Observed != tc.wantObserved || dim.Coverage.Total != tc.wantTotal {
+				t.Errorf("structure coverage = %d/%d, want first-party %d/%d",
+					dim.Coverage.Observed, dim.Coverage.Total, tc.wantObserved, tc.wantTotal)
+			}
+		})
+	}
+
 	diag, in := dimensionsFixture()
 	dim := evaluation.BuildDimensions(diag, in, nil).Structure
-	if dim.Coverage.Observed != 15 || dim.Coverage.Total != 20 {
-		t.Errorf("structure coverage = %d/%d, want dependency-only 15/20", dim.Coverage.Observed, dim.Coverage.Total)
-	}
 	for name, want := range map[string]float64{
 		"internal_edges": 15, "library_edges": 3, "unmapped_first_party_edges": 2,
 		"same_module_edges": 3, "connected_modules": 2,
@@ -985,6 +1039,70 @@ func TestCouplingDimension_UnresolvedTypeScriptImportsLowerTheEnvelope(t *testin
 				t.Errorf("names the unresolved imports = %v, want %v (unknown: %+v)", named, tc.wantUnknown, dim.Unknown)
 			}
 		})
+	}
+}
+
+// TestCouplingDimension_UnresolvedRoslynSymbolsKeepItPartial pins the .NET
+// promotion rule: every resolved edge is scored and rated, yet one unresolved
+// Roslyn reference may hide a cross-boundary edge, so the envelope stays
+// partial and names why. There is no ratio ceiling as for TypeScript.
+func TestCouplingDimension_UnresolvedRoslynSymbolsKeepItPartial(t *testing.T) {
+	t.Parallel()
+	const roslyn = "roslyn"
+	edges := &result.ClassifiedEdgeSummary{Total: 10, Scored: 10, ConnectedModules: 2}
+	for _, tc := range []struct {
+		name       string
+		coverage   modevidence.Coverage
+		wantStatus state.MeasurementStatus
+	}{
+		{"a complete Roslyn run stays measured", modevidence.Coverage{Tool: roslyn, Status: modevidence.StatusOK}, state.Measured},
+		{"one unresolved reference makes it partial", modevidence.Coverage{Tool: roslyn, Status: modevidence.StatusPartial, Unresolved: 1, UnresolvedInputsMissing: 1}, state.Partial},
+		{"a timed-out Roslyn run makes it partial", modevidence.Coverage{Tool: roslyn, Status: modevidence.StatusTimedOut}, state.Partial},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			diag := &result.Result{
+				Findings:        []finding.Finding{},
+				ClassifiedEdges: edges,
+				ToolCoverage:    []modevidence.Coverage{{Tool: "dotnet-msbuild", Status: modevidence.StatusOK}, tc.coverage},
+			}
+			dim := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).Coupling
+			if dim.Status != tc.wantStatus {
+				t.Fatalf("status = %q, want %q (unknown: %+v)", dim.Status, tc.wantStatus, dim.Unknown)
+			}
+			var reason string
+			for _, u := range dim.Unknown {
+				if u.Fact == state.FactExtractorResolutionWithinCeiling {
+					reason = u.Reason
+				}
+			}
+			if blocked := tc.wantStatus == state.Partial; blocked != strings.Contains(reason, roslyn) {
+				t.Errorf("resolution unknown reason = %q, want one naming roslyn: %v", reason, blocked)
+			}
+		})
+	}
+}
+
+func TestCouplingDimension_TypeScriptAndRoslynBothNamed(t *testing.T) {
+	t.Parallel()
+	diag := &result.Result{
+		Findings:        []finding.Finding{},
+		ClassifiedEdges: &result.ClassifiedEdgeSummary{Total: 10, Scored: 10, ConnectedModules: 2},
+		ToolCoverage: []modevidence.Coverage{
+			{Tool: toolDepCruiser, Status: modevidence.StatusPartial, Unresolved: 5, SpecifiersSeen: 10},
+			{Tool: "roslyn", Status: modevidence.StatusPartial, Unresolved: 1, UnresolvedInputsMissing: 1},
+		},
+	}
+	dim := evaluation.BuildDimensions(diag, evaluation.StateInput{}, nil).Coupling
+	var reason string
+	for _, u := range dim.Unknown {
+		if u.Fact == state.FactExtractorResolutionWithinCeiling {
+			reason = u.Reason
+		}
+	}
+	tsAt, roslynAt := strings.Index(reason, "dependency-cruiser"), strings.Index(reason, "roslyn")
+	if dim.Status != state.Partial || tsAt < 0 || roslynAt < tsAt || !strings.Contains(reason, "; roslyn") {
+		t.Errorf("status = %q, reason = %q, want partial naming dependency-cruiser then roslyn", dim.Status, reason)
 	}
 }
 

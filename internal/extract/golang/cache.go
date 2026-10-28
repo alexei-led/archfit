@@ -523,7 +523,9 @@ func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDir
 			infos[i].requires[r.Mod.Path] = struct{}{}
 		}
 		infos[i].localReplace = hasLocalReplace(mod.Replace)
-		infos[i].files = memberInputFiles(scanRoot, dir, memberDirs)
+		files, skip := memberInputFiles(scanRoot, dir, memberDirs)
+		infos[i].files = files
+		e.Cache.NoteSkip(skip)
 	}
 	unkeyed, workLocalReplace := unkeyedWorkspaceMods(scanRoot, memberDirs, env)
 	if workLocalReplace {
@@ -648,7 +650,7 @@ var goBuildExts = []string{
 // files cannot affect this member's load). Directory names and config exclusions
 // do not filter the hash: explicit imports can load even testdata, and vendored
 // sources contribute dependency type information.
-func memberInputFiles(scanRoot, memberDir string, memberDirs []string) []string {
+func memberInputFiles(scanRoot, memberDir string, memberDirs []string) ([]string, string) {
 	var nested []string
 	for _, other := range memberDirs {
 		if other == memberDir {
@@ -658,7 +660,7 @@ func memberInputFiles(scanRoot, memberDir string, memberDirs []string) []string 
 			nested = append(nested, filepath.ToSlash(rel)+"/")
 		}
 	}
-	files := factcache.ListInputs(memberDir, factcache.MatchExts(goBuildExts, []string{"go.mod", "go.sum"}), nil)
+	files, skip := factcache.ListInputs(memberDir, factcache.MatchExts(goBuildExts, []string{"go.mod", "go.sum"}), nil)
 	var out []string
 	for _, f := range files {
 		underNested := false
@@ -678,7 +680,7 @@ func memberInputFiles(scanRoot, memberDir string, memberDirs []string) []string 
 		}
 		out = append(out, filepath.ToSlash(rel))
 	}
-	return out
+	return out, skip
 }
 
 // hashGoWork returns the sha256 of the effective go.work + go.work.sum

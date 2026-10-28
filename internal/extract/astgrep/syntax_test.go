@@ -607,7 +607,7 @@ func TestSyntax_Py_Route_Decorator(t *testing.T) {
 		syntaxEntry("py-import-fastapi", fileRoutes, "fastapi", 1, 1),
 		// Route facts: emitted because import is confirmed above.
 		syntaxEntryWithPath("py-route-decorator", fileRoutes, pathUsers, 5),
-		syntaxEntryWithPath("py-route-decorator", fileRoutes, "/items", 10),
+		syntaxEntryWithPath("py-route-decorator", fileRoutes, pathItems, 10),
 	})
 
 	a := astgrep.New(presentRunner(entries))
@@ -636,7 +636,7 @@ func TestSyntax_Py_Route_Decorator(t *testing.T) {
 	if facts[0].Name != pathUsers {
 		t.Errorf("facts[0].Name = %q, want /users", facts[0].Name)
 	}
-	if facts[1].Name != "/items" {
+	if facts[1].Name != pathItems {
 		t.Errorf("facts[1].Name = %q, want /items", facts[1].Name)
 	}
 }
@@ -852,7 +852,7 @@ func TestSyntax_Rust_Route_Axum(t *testing.T) {
 		syntaxEntry("rs-import-axum", fileRouter, "axum", 1, 1),
 		// Route facts: emitted because import is confirmed above.
 		syntaxEntryWithPath("rs-route-axum-warp", fileRouter, pathUsers, 5),
-		syntaxEntryWithPath("rs-route-axum-warp", fileRouter, "/items", 8),
+		syntaxEntryWithPath("rs-route-axum-warp", fileRouter, pathItems, 8),
 	})
 
 	a := astgrep.New(presentRunner(entries))
@@ -881,7 +881,7 @@ func TestSyntax_Rust_Route_Axum(t *testing.T) {
 	if facts[0].Name != pathUsers {
 		t.Errorf("facts[0].Name = %q, want /users", facts[0].Name)
 	}
-	if facts[1].Name != "/items" {
+	if facts[1].Name != pathItems {
 		t.Errorf("facts[1].Name = %q, want /items", facts[1].Name)
 	}
 }

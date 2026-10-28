@@ -116,6 +116,7 @@ func TestGraphGap(t *testing.T) {
 		{name: "python modules", mods: []ModuleDef{{Name: layerCore}}, origins: []string{langPython}, want: gapPython},
 		{name: "typescript modules", mods: []ModuleDef{{Name: invModAPI}}, origins: []string{langTypeScript}, want: gapTypeScript},
 		{name: "rust present", origins: nil, rust: true, want: gapRust},
+		{name: "dotnet modules", mods: []ModuleDef{{Name: "Core"}}, origins: []string{langDotNet}, want: gapDotNet},
 		{name: "no inventory supplied", mods: []ModuleDef{tsdb, webUI}, origins: []string{langGo, langGo}},
 	}
 	for _, tt := range tests {

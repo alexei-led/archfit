@@ -107,7 +107,8 @@ Shared analysis/check flags:
 - `--min-severity <level>` — minimum advisory severity to show (`low`, `medium`,
   `high`, `critical`).
 - `--lang <language>` — force a language on: `go`, `typescript` (`ts`),
-  `python` (`py`), `rust` (`rs`). Repeatable. Analyzer names are rejected.
+  `python` (`py`), `rust` (`rs`), `dotnet` (`csharp`). Repeatable. Analyzer
+  names are rejected.
 - `--refresh` — re-run extractors/AI calls and refresh cache entries. Supported
   by `check` when a gate run must refresh cached evidence.
 - `--require-tools` — opt-in hard gate: mark missing required analyzer tools as

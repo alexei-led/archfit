@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -36,7 +35,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		Configs: adapter, Files: adapter, Discovery: adapter, Projection: adapter,
 		Classifier: adapter, Reviewer: adapter, Editor: adapter, Writer: adapter,
 	}
-	out, err := service.Execute(context.Background(), application.ConfigUpdateRequest{
+	out, err := service.Execute(deps.runContext(), application.ConfigUpdateRequest{
 		ConfigPath: c.Config, Root: root, AIClassify: c.AIClassify,
 		Apply: c.Apply, JSON: c.JSON, Refresh: c.Refresh,
 	})

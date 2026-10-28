@@ -43,6 +43,7 @@ func buildSourceExts() map[string]bool {
 		".go": true,
 		".py": true,
 		".rs": true,
+		".cs": true,
 	}
 	for _, ext := range graph.TypeScriptSourceExtensions() {
 		exts[ext] = true
@@ -55,6 +56,7 @@ func buildExtLang() map[string]string {
 		".go": graph.LangGo,
 		".py": graph.LangPython,
 		".rs": graph.LangRust,
+		".cs": graph.LangDotNet,
 	}
 	for _, ext := range graph.TypeScriptSourceExtensions() {
 		exts[ext] = graph.LangTypeScript
@@ -118,6 +120,9 @@ func RunWithConfig(root string, cfg syntax.FileClassConfig) (map[string]int, map
 		rel = filepath.ToSlash(rel)
 
 		lang := extLang[ext]
+		if !walkedFile(rel, lang) {
+			return nil
+		}
 		header := readHeader(path)
 		fc := syntax.ClassifyFile(lang, rel, header, cfg)
 		classes[rel] = fc
@@ -157,7 +162,14 @@ func Walked(rel string) bool {
 			return false
 		}
 	}
-	return true
+	return walkedFile(rel, extLang[path.Ext(rel)])
+}
+
+// walkedFile reports whether the walk keeps a source file its dirs did not
+// skip. MSBuild's obj/ and bin/ hold build output, skipped for C# files only:
+// skipDirs would drop other languages' real source under a bin/ dir.
+func walkedFile(rel, lang string) bool {
+	return lang != graph.LangDotNet || !syntax.InDotNetBuildDir(rel)
 }
 
 // ClassifyFile classifies one ScanRoot-relative source file the way a run

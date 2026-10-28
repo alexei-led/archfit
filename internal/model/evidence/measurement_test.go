@@ -15,6 +15,8 @@ func TestChangedProducerContractsHaveDistinctSemantics(t *testing.T) {
 		{"grimp", "grimp.v3"},
 		{"cargo", "cargo.v1"},
 		{"cargo-modules", "cargo-modules.v2"},
+		{"dotnet-msbuild", "dotnet-msbuild.v1"},
+		{"roslyn", "roslyn.v1"},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			semantics, external := MeasurementContract(tc.tool)

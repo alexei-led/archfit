@@ -1,0 +1,1 @@
+archfit-roslyn: global.json requests SDK 9.0.100, which is not installed; install a matching SDK or relax the pin

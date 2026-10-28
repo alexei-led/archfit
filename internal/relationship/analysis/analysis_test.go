@@ -354,6 +354,21 @@ func TestAnalyzeClonePairs(t *testing.T) {
 			wantPairs: 0,
 		},
 		{
+			name:      "lock files shared across modules are not source",
+			cluster:   clone.Cluster{Files: []string{"a/packages.lock.json", "b/packages.lock.json"}, Lines: 40},
+			wantPairs: 0,
+		},
+		{
+			name:      "Dockerfiles shared across modules are not source",
+			cluster:   clone.Cluster{Files: []string{"a/Dockerfile", "b/Dockerfile"}, Lines: 40},
+			wantPairs: 0,
+		},
+		{
+			name:      "scripts and templates shared across modules are not source",
+			cluster:   clone.Cluster{Files: []string{"a/entrypoint.sh", "b/mail.html.hbs"}, Lines: 40},
+			wantPairs: 0,
+		},
+		{
 			name:      "clone inside one module is not cross-module",
 			cluster:   clone.Cluster{Files: []string{cloneA, "a/dup2.go"}, Lines: 40},
 			index:     map[string]fileclass.FileClass{cloneA: fileclass.Production, "a/dup2.go": fileclass.Production},
@@ -383,6 +398,33 @@ func TestAnalyzeClonePairs(t *testing.T) {
 				if c.RuleID == ruleClone && c.EdgeKind != "clone" {
 					t.Errorf("duplicated-knowledge candidate kind = %q, want clone", c.EdgeKind)
 				}
+			}
+		})
+	}
+}
+
+// TestAnalyzeClonePairsClassifiesCSharpByPath pins the path-only fallback for
+// C# clone files the LOC walk never indexed: MSBuild output and test files are
+// not production, so they form no clone seam.
+func TestAnalyzeClonePairsClassifiesCSharpByPath(t *testing.T) {
+	const cloneA = "a/Dup.cs"
+	g := graph.Build([]graph.Facts{{Nodes: []graph.Node{{Kind: graph.NodeKindFile, Path: cloneA, Language: graph.LangDotNet}}}})
+	for _, tc := range []struct {
+		other     string
+		wantPairs int
+	}{
+		{"b/Dup.cs", 1},
+		{"b/obj/Debug/net10.0/Dup.cs", 0},
+		{"b/DupTests.cs", 0},
+		{"b/Dup.g.cs", 0},
+	} {
+		t.Run(tc.other, func(t *testing.T) {
+			got := analysis.Analyze(analysis.Input{
+				Graph: g, Policy: relationshipPolicy(twoModules()),
+				CloneClusters: []clone.Cluster{{Files: []string{cloneA, tc.other}, Lines: 40}},
+			})
+			if len(got.Evidence.CloneOnly) != tc.wantPairs {
+				t.Fatalf("clone-only pairs = %+v, want %d", got.Evidence.CloneOnly, tc.wantPairs)
 			}
 		})
 	}

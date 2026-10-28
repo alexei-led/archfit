@@ -46,6 +46,13 @@ type Observations struct {
 	// skips them; forbidden_pattern, which reads the ast-grep pattern pass,
 	// keeps them. Nil excludes nothing.
 	UnanalysedFiles map[string]struct{}
+	// ScopedDependencyEvidence is keyed by language. A listed language has
+	// every incompleteness of its dependency producers pinned to source files
+	// here, so a dependency rule over it is judged by the files in its own
+	// scope instead of by the language's primary coverage row: a rule clear of
+	// the incomplete files is evaluated while the rows are partial, and one
+	// that reaches them is not. Nil judges every language by its primary row.
+	ScopedDependencyEvidence map[string]ScopedDependencyEvidence
 	// RustModuleNodes are the crate::mod node IDs of the Rust module graph
 	// (cargo-modules), sorted. A crate::mod selector under a crate the module
 	// graph covers (RustModuleGraphCrates, or a crate with nodes here) is
@@ -96,6 +103,20 @@ type Observations struct {
 	DeclaredDeployUnits     map[string]string
 	CorroboratedDeployUnits map[string]modevidence.CorroboratedDeployUnit
 	OwnerProvenance         map[string]modevidence.OwnerProvenance
+}
+
+// ScopedDependencyEvidence is one language's dependency-evidence completeness
+// per source file, for producers that judge completeness per source unit (a
+// .NET project) rather than per run.
+type ScopedDependencyEvidence struct {
+	// Tool is the producer the gaps are about, as its coverage row names it.
+	Tool string
+	// Incomplete maps each in-scope source file whose unit lacks complete
+	// evidence to that unit's gap, "<unit> <status>". Files of one unit share
+	// one gap.
+	Incomplete map[string]string
+	// Fixes maps each gap to what restores it.
+	Fixes map[string]string
 }
 
 // AssessInput carries every value the assessment stage decides over. All of it

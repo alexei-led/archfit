@@ -120,7 +120,7 @@ func TestExtract_HermeticConfigCannotHideForbiddenImport(t *testing.T) {
 				}
 				if mode == "cold" {
 					first, firstCov = facts, cov
-				} else if !reflect.DeepEqual(first, facts) || firstCov != cov {
+				} else if !reflect.DeepEqual(first, facts) || !reflect.DeepEqual(firstCov, cov) {
 					t.Fatalf("%s differs from cold evidence", mode)
 				}
 			}
@@ -329,7 +329,7 @@ func TestExtract_CompilerAndRuntimeIdentityInvalidateCache(t *testing.T) {
 		return cov
 	}
 	first := extract()
-	if first != extract() || calls != 1 {
+	if !reflect.DeepEqual(first, extract()) || calls != 1 {
 		t.Fatalf("stable environment missed cache: calls=%d", calls)
 	}
 	info = strings.ReplaceAll(info, "typescript@6.0.3", "typescript@5.9.3")

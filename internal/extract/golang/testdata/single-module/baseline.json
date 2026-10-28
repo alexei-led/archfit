@@ -63,6 +63,11 @@
           "semantics_version": "scip.v3",
           "status": "disabled",
           "tool": "scip"
+        },
+        {
+          "semantics_version": "supplied-coverage.v1",
+          "status": "disabled",
+          "tool": "supplied-coverage"
         }
       ],
       "settings_hash": "\u003cSETTINGS_HASH\u003e",
@@ -95,6 +100,10 @@
         "tool": "cargo"
       },
       {
+        "status": "absent",
+        "tool": "dotnet-msbuild"
+      },
+      {
         "status": "ok",
         "tool": "loc"
       },
@@ -122,8 +131,17 @@
         "tool": "ast-grep"
       },
       {
+        "reason": "off by default because another tool supplies the artifact: set coverage.enabled: true and name it under coverage.sources to measure testability from it",
+        "status": "disabled",
+        "tool": "supplied-coverage"
+      },
+      {
         "status": "absent",
         "tool": "cargo-modules"
+      },
+      {
+        "status": "absent",
+        "tool": "roslyn"
       }
     ],
     "unmeasured": 2
@@ -670,7 +688,7 @@
             "evidence/acquisition"
           ],
           "unit": "count",
-          "value": 8
+          "value": 11
         },
         {
           "name": "coverage",
@@ -705,7 +723,7 @@
     "structure": {
       "confidence": "high",
       "coverage": {
-        "basis": "discovered dependencies resolved inside the declared module map",
+        "basis": "discovered first-party dependencies resolved inside the declared module map",
         "observed": 1,
         "total": 1
       },
@@ -957,7 +975,7 @@
         "boundary_crossings": 2,
         "from_owner": "team-a",
         "level": "cross_module_different_owner",
-        "same_deploy_unit": false,
+        "same_deploy_unit": null,
         "same_owner": false,
         "shared_ancestor": 0,
         "to_owner": "team-b"
