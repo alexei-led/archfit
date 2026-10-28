@@ -147,7 +147,7 @@ The `intrusive` hint feeds the `encapsulation` metric. `InternalsVisibleTo` decl
 
 #### Project status
 
-The helper classifies each project and target framework from workspace and compilation diagnostics, and one target framework's outcome never decides another's. Archfit folds the frameworks: a project is `complete` only when every framework is, `failed` only when every framework failed, and `partial` otherwise. Its file edges are the union of the frameworks that loaded.
+The helper classifies each project and target framework from workspace and compilation diagnostics, and one target framework's outcome never decides another's. Archfit folds the frameworks: a project is `complete` only when every framework is, `failed` only when every framework failed, and `partial` otherwise. Its file edges are the union of the frameworks that loaded. The union drops which framework contributed an edge: an edge is reported for its project, not for `net8.0` or `net10.0`, because the graph has one node per file.
 
 | Status | Condition | Edges |
 | --- | --- | --- |
