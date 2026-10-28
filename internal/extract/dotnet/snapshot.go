@@ -33,9 +33,16 @@ type snapshot struct {
 	// root is the scan root's counterpart: dir plus the root's path below the
 	// repository root, so ancestor build inputs keep their relative places.
 	root string
+	// top is the highest ancestor whose build inputs the snapshot has: the
+	// repository root, or the scan root when it does not lie below one.
+	top string
 	// aboveRepo are build inputs above the repository root. MSBuild would read
 	// them in the original tree; the snapshot does not have them.
 	aboveRepo []string
+	// dropped are the root-relative links whose target lies outside the scan
+	// root. Reproducing such a link would let the design-time build write into
+	// the original tree, so it is absent from the snapshot and disclosed.
+	dropped []string
 }
 
 // makeSnapshot copies root into a new private temp directory, laid out as
@@ -61,22 +68,25 @@ func makeSnapshot(ctx context.Context, root, repoRoot string) (snapshot, error) 
 }
 
 func fillSnapshot(ctx context.Context, dir, root, repoRoot string) (snapshot, error) {
-	snap := snapshot{dir: dir, root: dir}
+	snap := snapshot{dir: dir, root: dir, top: root}
 	prefix, top := "", root
 	if repoRoot != "" {
 		if rel, inside := relToRoot(repoRoot, root); inside {
 			prefix, top = rel, repoRoot
 		}
 	}
+	snap.top = top
 	if prefix != "" {
 		snap.root = filepath.Join(dir, filepath.FromSlash(prefix))
 		if err := os.MkdirAll(snap.root, 0o700); err != nil {
 			return snapshot{}, err
 		}
 	}
-	if err := copyTree(ctx, root, snap.root, dir); err != nil {
+	dropped, err := copyTree(ctx, root, snap.root, dir)
+	if err != nil {
 		return snapshot{}, err
 	}
+	snap.dropped = dropped
 	levels := 0
 	if prefix != "" {
 		levels = strings.Count(prefix, "/") + 1
@@ -125,14 +135,16 @@ func buildInputsAbove(top string) []string {
 	}
 }
 
-// copyTree copies root into dst. skip is the snapshot directory: when the temp
-// directory lies inside root, the copy must not copy itself.
-func copyTree(ctx context.Context, root, dst, skip string) error {
+// copyTree copies root into dst and returns the root-relative links it dropped
+// because their target lies outside root. skip is the snapshot directory: when
+// the temp directory lies inside root, the copy must not copy itself.
+func copyTree(ctx context.Context, root, dst, skip string) ([]string, error) {
 	skipInfo, err := os.Stat(skip)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return filepath.WalkDir(root, func(src string, d fs.DirEntry, walkErr error) error {
+	var dropped []string
+	err = filepath.WalkDir(root, func(src string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -157,13 +169,18 @@ func copyTree(ctx context.Context, root, dst, skip string) error {
 			}
 			return os.Mkdir(target, 0o700)
 		case d.Type()&fs.ModeSymlink != 0:
-			return copySymlink(root, dst, src, target)
+			outside, err := copySymlink(root, dst, src, target)
+			if outside {
+				dropped = append(dropped, filepath.ToSlash(rel))
+			}
+			return err
 		case d.Type().IsRegular():
 			return copyFile(src, target)
 		default:
 			return nil // sockets, pipes, devices: not build inputs
 		}
 	})
+	return dropped, err
 }
 
 // restoreAssets is the file restore writes into a project's restore directory;
@@ -246,22 +263,26 @@ func copyRestoreDir(src, dst string) error {
 // snapshot, so a write through the link cannot reach the original tree. Inside
 // is decided on the lexical target and on its resolved form, so an alias of an
 // ancestor (macOS /var for /private/var) cannot hide the original.
-func copySymlink(root, dst, src, target string) error {
+//
+// A link whose target lies outside the root is dropped instead, and outside
+// reports it: the snapshot must never carry a link out of itself, because the
+// design-time build writes through it into the original tree. MSBuild then
+// creates a real directory inside the snapshot where the link was.
+func copySymlink(root, dst, src, target string) (outside bool, err error) {
 	link, err := os.Readlink(src)
 	if err != nil {
-		return err
+		return false, err
 	}
 	abs := link
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(filepath.Dir(src), link)
 	}
 	abs = filepath.Clean(abs)
-	if rel, inside := insideRoot(root, abs); inside {
-		link = filepath.Join(dst, filepath.FromSlash(rel))
-	} else {
-		link = abs
+	rel, inside := insideRoot(root, abs)
+	if !inside {
+		return true, nil
 	}
-	return os.Symlink(link, target)
+	return false, os.Symlink(filepath.Join(dst, filepath.FromSlash(rel)), target)
 }
 
 // insideRoot reports p as root-relative when it lies in root, lexically or
