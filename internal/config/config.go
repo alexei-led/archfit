@@ -627,7 +627,9 @@ func sortedKeys[V any](m map[string]V) []string {
 // SchemaVersion is the only config schema version this binary analyses.
 const SchemaVersion = 2
 
-const manualMigrationHint = "follow the Archfit skill manual migration reference (references/migration.md)"
+// manualMigrationHint points at the rebuild steps. An installed binary has no
+// repository checkout, so it names the published page.
+const manualMigrationHint = "see https://github.com/alexei-led/archfit/blob/main/docs/migration.md#rebuild-an-older-configuration"
 
 // validateSchemaVersion accepts only the current schema.
 func validateSchemaVersion(v int) error {

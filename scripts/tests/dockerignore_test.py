@@ -26,7 +26,6 @@ REQUIRED = (
     "internal/extract/scip/scip_reader.py",
     "skills/skills.go",
     "skills/archfit/SKILL.md",
-    "skills/archfit/references/commands.md",
     "tools/manifest.json",
     "tools/dotnet/archfit-roslyn/src/archfit-roslyn.csproj",
     "tools/dotnet/archfit-roslyn/src/packages.lock.json",

@@ -9,7 +9,7 @@ import (
 
 // TestSkillInstall pins that install writes exactly the repository's
 // skills/archfit tree, rewrites nothing on a second run, and refuses to
-// overwrite a local change without --force.
+// overwrite a local change without --force, and that the skill stays small.
 func TestSkillInstall(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -21,6 +21,13 @@ func TestSkillInstall(t *testing.T) {
 		t.Fatalf("install: exit %d\n%s", code, out)
 	}
 	source := filepath.Join("..", "..", "skills", skillName)
+	// The skill is the worker loop an agent loads every session: its body
+	// stays under 1 KB, owner material lives in docs/agents.md.
+	if raw, err := os.ReadFile(filepath.Join(source, "SKILL.md")); err != nil { //nolint:gosec // repo path
+		t.Fatal(err)
+	} else if parts := strings.SplitN(string(raw), "---\n", 3); len(parts) != 3 || len(parts[2]) > 1024 {
+		t.Errorf("SKILL.md body is %d bytes, budget 1024", len(parts[len(parts)-1]))
+	}
 	count := 0
 	err := filepath.WalkDir(source, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
