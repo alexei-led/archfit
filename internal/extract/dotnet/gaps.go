@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
+	"github.com/alexei-led/archfit/v3/internal/syntax"
 )
 
 // Fixes of a project gap whose cause the roslyn row already details.
@@ -26,9 +27,11 @@ type DependencyGaps struct {
 
 // LastDependencyGaps returns the gaps of files (root-relative,
 // slash-separated) that a non-test project of the most recent Extract call
-// compiles without complete file evidence. A file whose every compiling
-// project the helper loaded complete is left out, as are the files of test
-// projects (their edges are dropped by design) and files no project compiles.
+// compiles without complete file evidence: a project the MSBuild evaluation
+// selected, or one the helper loaded through ProjectReference (D1). A file
+// whose every compiling project the helper loaded complete is left out, as are
+// the files of test projects (their edges are dropped by design) and files no
+// project compiles.
 //
 // A project's file evidence is complete only when the helper loaded it
 // complete. A partial project's unresolved symbols are missing candidates. A
@@ -39,7 +42,9 @@ type DependencyGaps struct {
 // A project whose MSBuild evaluation failed has no edges at all.
 //
 // A file belongs to the projects the helper reported it for (linked files
-// included), else to the project with the deepest directory that holds it.
+// included), else to the project with the deepest directory that holds it,
+// helper-only projects included: a project that failed to load reports no
+// files, so its directory is the only way its gap reaches them.
 //
 // attributed is false when the run's incompleteness cannot be pinned to
 // projects: Extract did not finish, no project was evaluated, or a listed
@@ -52,10 +57,7 @@ func (e *Extractor) LastDependencyGaps(files []string) (gaps DependencyGaps, att
 	if len(projectGaps) == 0 {
 		return DependencyGaps{}, true
 	}
-	dirs := make([]string, 0, len(e.last.Projects))
-	for _, p := range e.last.Projects {
-		dirs = append(dirs, path.Dir(p.Path))
-	}
+	projects := e.gapOwners()
 	extensions := graph.BuiltinConventions.Lookup(graph.LangDotNet).FileExtensions
 	for _, file := range files {
 		if !slices.Contains(extensions, path.Ext(file)) {
@@ -63,7 +65,7 @@ func (e *Extractor) LastDependencyGaps(files []string) (gaps DependencyGaps, att
 		}
 		owners := e.lastMembers[file]
 		if len(owners) == 0 {
-			if owner, ok := deepestProject(e.last.Projects, dirs, file); ok {
+			if owner, ok := deepestProject(projects, file); ok {
 				owners = []string{owner}
 			}
 		}
@@ -80,12 +82,44 @@ func (e *Extractor) LastDependencyGaps(files []string) (gaps DependencyGaps, att
 	return gaps, true
 }
 
-// projectGaps names the gap of every evaluated non-test project whose file
-// evidence is incomplete, keyed by project, and the fix of each gap. An
-// incomplete project's gap carries the cause the roslyn row already states, so
-// an unevaluated rule names why the project's evidence is short instead of
-// always advising a restore. A run with no helper report shares the roslyn
-// row's reason as its fix, since the cause is the run and not the project.
+// gapOwner is a project a file can belong to: its path, and the project
+// directory that holds the files no project reported.
+type gapOwner struct {
+	path, dir string
+}
+
+// gapOwners returns every project a file can belong to: the MSBuild evaluations
+// in their order, then the projects only the helper reported. The helper reaches
+// a project the evaluation did not select through ProjectReference and reports
+// it (D1), and an incomplete one's files are missing evidence like any evaluated
+// project's. Such a project has no MSBuild evaluation, so nothing reports
+// IsTestProject for it: its path is the only test signal, the rule isTest falls
+// back to offline.
+func (e *Extractor) gapOwners() []gapOwner {
+	seen := make(map[string]struct{}, len(e.last.Projects))
+	owners := make([]gapOwner, 0, len(e.last.Projects)+len(e.lastTypeGraph.Projects))
+	add := func(project string) {
+		seen[project] = struct{}{}
+		owners = append(owners, gapOwner{path: project, dir: path.Dir(project)})
+	}
+	for _, p := range e.last.Projects {
+		add(p.Path)
+	}
+	for _, p := range e.lastTypeGraph.Projects {
+		if _, evaluated := seen[p.Path]; !evaluated {
+			add(p.Path)
+		}
+	}
+	return owners
+}
+
+// projectGaps names the gap of every non-test project whose file evidence is
+// incomplete, keyed by project, and the fix of each gap: the MSBuild evaluations
+// and the projects only the helper loaded. An incomplete project's gap carries
+// the cause the roslyn row already states, so an unevaluated rule names why the
+// project's evidence is short instead of always advising a restore. A run with
+// no helper report shares the roslyn row's reason as its fix, since the cause is
+// the run and not the project.
 func (e *Extractor) projectGaps() (gaps, fixes map[string]string) {
 	reported := make(map[string]TypeGraphProject, len(e.lastTypeGraph.Projects))
 	for _, p := range e.lastTypeGraph.Projects {
@@ -98,7 +132,18 @@ func (e *Extractor) projectGaps() (gaps, fixes map[string]string) {
 			fixes[gap] = fix
 		}
 	}
+	// An incomplete helper result: its reason carries the cause and the fix when
+	// it states one, else a restore is the fix.
+	addIncomplete := func(p TypeGraphProject) {
+		if p.Reason == "" {
+			add(p.Path, p.Path+" "+p.Status, fixRestore)
+			return
+		}
+		add(p.Path, p.Path+" "+p.Status+": "+p.Reason, "")
+	}
+	selected := make(map[string]struct{}, len(e.last.Projects))
 	for _, p := range e.last.Projects {
+		selected[p.Path] = struct{}{}
 		if p.isTest() {
 			continue
 		}
@@ -111,30 +156,36 @@ func (e *Extractor) projectGaps() (gaps, fixes map[string]string) {
 		case !inReport:
 			add(p.Path, p.Path+" not reported", fixUnreported)
 		case tp.Status != TypeGraphComplete:
-			if tp.Reason == "" {
-				add(p.Path, p.Path+" "+tp.Status, fixRestore)
-				continue
-			}
-			add(p.Path, p.Path+" "+tp.Status+": "+tp.Reason, "")
+			addIncomplete(tp)
 		}
+	}
+	// A project the helper loaded through ProjectReference that the evaluation
+	// did not select still supplies file edges, so an incomplete one hides the
+	// same missing candidates: its files must carry its gap rather than read as
+	// complete evidence.
+	for _, p := range e.lastTypeGraph.Projects {
+		if _, evaluated := selected[p.Path]; evaluated || p.Status == TypeGraphComplete || syntax.IsTestFile(graph.LangDotNet, p.Path) {
+			continue
+		}
+		addIncomplete(p)
 	}
 	return gaps, fixes
 }
 
-// deepestProject returns the evaluated project whose directory most closely
-// holds file. dirs are the projects' directories, in project order.
-func deepestProject(projects []ProjectEvaluation, dirs []string, file string) (string, bool) {
+// deepestProject returns the project whose directory most closely holds file.
+// projects is in project order; the deepest matching directory wins.
+func deepestProject(projects []gapOwner, file string) (string, bool) {
 	best := -1
-	for i, dir := range dirs {
-		if dir != "." && !strings.HasPrefix(file, dir+"/") {
+	for i, p := range projects {
+		if p.dir != "." && !strings.HasPrefix(file, p.dir+"/") {
 			continue
 		}
-		if best < 0 || len(dir) > len(dirs[best]) || dirs[best] == "." {
+		if best < 0 || len(p.dir) > len(projects[best].dir) || projects[best].dir == "." {
 			best = i
 		}
 	}
 	if best < 0 {
 		return "", false
 	}
-	return projects[best].Path, true
+	return projects[best].path, true
 }
