@@ -35,15 +35,20 @@ import (
 //   - module_review  — review of the module declarations; can block on unowned source
 //   - file_class / outputs — classification overrides and accepted output fields
 type Config struct {
-	Version   int                         `yaml:"version" jsonschema:"required"`
-	Exclude   []string                    `yaml:"exclude"`
-	Languages LanguagesConfig             `yaml:"languages"`
-	Analyzers AnalyzersConfig             `yaml:"analyzers"`
-	Coverage  CoverageConfig              `yaml:"coverage,omitempty"`
-	AI        AIConfig                    `yaml:"ai"`
-	Coupling  CouplingConfig              `yaml:"coupling"`
-	Layers    []string                    `yaml:"layers"`
-	Modules   map[string]policy.ModuleDef `yaml:"modules"`
+	Version int `yaml:"version" jsonschema:"required"`
+	// TargetBranch names the branch changes land on. check compares a change
+	// with it: --base auto is the merge-base with this branch, and the policy
+	// files on the branch are compared with this branch's tip. Empty means
+	// origin/HEAD, then main or master when exactly one exists.
+	TargetBranch string                      `yaml:"target_branch,omitempty"`
+	Exclude      []string                    `yaml:"exclude"`
+	Languages    LanguagesConfig             `yaml:"languages"`
+	Analyzers    AnalyzersConfig             `yaml:"analyzers"`
+	Coverage     CoverageConfig              `yaml:"coverage,omitempty"`
+	AI           AIConfig                    `yaml:"ai"`
+	Coupling     CouplingConfig              `yaml:"coupling"`
+	Layers       []string                    `yaml:"layers"`
+	Modules      map[string]policy.ModuleDef `yaml:"modules"`
 	// ExternalSystems declares external integration seams (book Ch10 Example 1)
 	// whose edges enter coupling_balance scoring at declared_external (D=10).
 	ExternalSystems map[string]policy.ExternalSystemDef `yaml:"external_systems,omitempty"`

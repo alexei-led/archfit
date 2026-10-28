@@ -89,7 +89,7 @@ func testIntegrationReachabilityBaselineTransition(t *testing.T) {
 	}
 
 	checkCode, check := runReachabilityState(t, cmdCheck, configPath)
-	if !bytes.Equal(post, check) {
+	if !bytes.Equal(withoutPolicyRef(t, post), withoutPolicyRef(t, check)) {
 		t.Fatalf("analyze and check JSON differ on the same persisted baseline:\n%s",
 			firstDiffLine(string(post), string(check)))
 	}
@@ -748,4 +748,17 @@ func logReachabilityState(t *testing.T, state report.ArchitectureState, checkCod
 	t.Logf("verdict=%s check_exit=%d hard_gates=%s unknown_dimensions=%d active_diagnostics=%d envelope=document-root",
 		state.Verdict, checkCode, state.Decision.HardGates, state.Decision.UnknownDimensions, len(diagnostics))
 	t.Logf("dimension statuses: %s", strings.Join(dimensions, " "))
+}
+
+// withoutPolicyRef re-encodes a state document without identity.policy_ref.
+// Only check resolves a target branch, so only check records it.
+func withoutPolicyRef(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	state := decodeReachabilityState(t, raw)
+	state.Identity.PolicyRef = nil
+	out, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

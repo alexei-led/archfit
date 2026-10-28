@@ -68,6 +68,19 @@ const (
 	ChangeUnknown ChangeStatus = "unknown"
 )
 
+// Reasons a change is unknown beyond missing evidence. They are a closed set.
+const (
+	// ReasonPolicyChanged: the branch changed a protected policy file. The
+	// branch cannot grade itself under rules it wrote, so an owner decides.
+	ReasonPolicyChanged = "policy_changed_on_branch"
+	// ReasonPolicyStale: the target changed a protected policy file after this
+	// branch forked and the branch did not touch it. Update the branch.
+	ReasonPolicyStale = "policy_stale_on_branch"
+	// ReasonScopeUnresolved: the target branch or the base could not be
+	// resolved, so what the change is stays unknown.
+	ReasonScopeUnresolved = "scope_unresolved"
+)
+
 // Repository attention kinds.
 const (
 	// AttentionUnmeasuredRatchet: a metric ratchet cannot be evaluated because
@@ -121,6 +134,9 @@ type Result struct {
 	Summary string `json:"summary"`
 	// Identity names what the run was judged under.
 	Identity report.ResultIdentity `json:"identity"`
+	// Scope says how the change and its base were resolved. It is absent when
+	// the run resolved none.
+	Scope *ScopeInfo `json:"scope,omitempty"`
 	// Change is whether this change may land, and why not.
 	Change Change `json:"change"`
 	// Repository is what is wrong with the repository outside this change.
@@ -136,10 +152,43 @@ type Result struct {
 	Validate string `json:"validate,omitempty"`
 }
 
+// ScopeInfo is how a check resolved the change.
+type ScopeInfo struct {
+	// Mode is none, explicit, target_branch, or merge_base.
+	Mode string `json:"mode"`
+	// Target and TargetSHA name the target branch and its tip.
+	Target    string `json:"target,omitempty"`
+	TargetSHA string `json:"target_sha,omitempty"`
+	// Base is what the change was compared against; absent means the whole tree.
+	Base string `json:"base,omitempty"`
+}
+
+// PolicyChange is the second result a changed policy needs: the same tree
+// judged by the policy files the gate will use.
+type PolicyChange struct {
+	// Files are the protected policy files that differ from the target tip.
+	Files []string `json:"files"`
+	// UnderTargetPolicy is the change judged under the target tip's policy.
+	UnderTargetPolicy PolicyView `json:"under_target_policy"`
+}
+
+// PolicyView is a status and its blockers under one policy.
+type PolicyView struct {
+	Status   ChangeStatus `json:"status"`
+	Blockers []Repair     `json:"blockers"`
+}
+
 // Change is the part of the result that decides whether the change lands.
 type Change struct {
 	// Status is pass, fail, or unknown.
 	Status ChangeStatus `json:"status"`
+	// Reason says why the change is unknown when evidence is not the cause: a
+	// Reason* constant.
+	Reason string `json:"reason,omitempty"`
+	// ReasonDetail is the one-sentence explanation of Reason.
+	ReasonDetail string `json:"reason_detail,omitempty"`
+	// PolicyChange is set with ReasonPolicyChanged.
+	PolicyChange *PolicyChange `json:"policy_change,omitempty"`
 	// Blockers are the in-scope repairs, grouped by edge and sorted code
 	// changes first, then severity, then lowest finding ID.
 	Blockers []Repair `json:"blockers"`
@@ -300,8 +349,10 @@ func Build(d report.Document) Result {
 	if s.Verdict == report.StateBlocked && change.Status == ChangePass && len(existing) == 0 {
 		attention = append(attention, Attention{Kind: AttentionBlockedWithoutFinding, Reason: "the verdict is blocked and the result names no blocker; read --format json"})
 	}
+	scope := applyScope(&change, &next, d.Scope)
 	res := Result{
 		SchemaVersion: SchemaVersion,
+		Scope:         scope,
 		Verdict:       string(s.Verdict),
 		NextAction:    next,
 		Identity:      s.Identity,
@@ -312,6 +363,45 @@ func Build(d report.Document) Result {
 	}
 	res.Summary = summarize(res, len(existing))
 	return res
+}
+
+// applyScope folds the scope resolution into the change. A changed policy makes
+// the change unknown whatever it finds: the branch cannot grade itself under
+// rules it wrote. An unresolved scope never passes; it fails only when blockers
+// are already in hand, because with no base every blocker is in scope.
+func applyScope(change *Change, next *NextAction, sc *report.CheckScope) *ScopeInfo {
+	if sc == nil {
+		return nil
+	}
+	switch {
+	case len(sc.PolicyChanged) > 0:
+		change.Status, *next = ChangeUnknown, ActionAskOwner
+		change.Reason = ReasonPolicyChanged
+		change.ReasonDetail = fmt.Sprintf("%s differ from %s: an owner approves the policy change", strings.Join(sc.PolicyChanged, ", "), sc.Target)
+		change.PolicyChange = policyChange(sc.PolicyChanged, sc.TargetPolicy)
+	case len(sc.PolicyStale) > 0:
+		change.Status, *next = ChangeUnknown, ActionRestoreEvidence
+		change.Reason = ReasonPolicyStale
+		change.ReasonDetail = fmt.Sprintf("%s changed on %s after this branch forked: merge or rebase %s", strings.Join(sc.PolicyStale, ", "), sc.Target, sc.Target)
+		change.PolicyChange = policyChange(sc.PolicyStale, sc.TargetPolicy)
+	case sc.Unresolved != "":
+		change.Reason, change.ReasonDetail = ReasonScopeUnresolved, sc.Unresolved
+		if change.Status == ChangePass {
+			change.Status, *next = ChangeUnknown, ActionRestoreEvidence
+		}
+	}
+	return &ScopeInfo{Mode: sc.Mode, Target: sc.Target, TargetSHA: sc.TargetSHA, Base: sc.Base}
+}
+
+// policyChange builds the second result: the files and the change judged under
+// the target tip's policy, unknown when the target has no policy to judge with.
+func policyChange(files []string, underTarget *report.Document) *PolicyChange {
+	pc := &PolicyChange{Files: slices.Clone(files), UnderTargetPolicy: PolicyView{Status: ChangeUnknown, Blockers: []Repair{}}}
+	if underTarget != nil {
+		t := Build(*underTarget)
+		pc.UnderTargetPolicy = PolicyView{Status: t.Change.Status, Blockers: t.Change.Blockers}
+	}
+	return pc
 }
 
 // judge is the one table that turns a change into a status and a next action.

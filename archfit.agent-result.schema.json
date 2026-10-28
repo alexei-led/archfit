@@ -44,6 +44,15 @@
             "unknown"
           ]
         },
+        "reason": {
+          "type": "string"
+        },
+        "reason_detail": {
+          "type": "string"
+        },
+        "policy_change": {
+          "$ref": "#/$defs/PolicyChange"
+        },
         "blockers": {
           "items": {
             "$ref": "#/$defs/Repair"
@@ -151,6 +160,25 @@
         "advisories"
       ]
     },
+    "PolicyChange": {
+      "properties": {
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "under_target_policy": {
+          "$ref": "#/$defs/PolicyView"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "files",
+        "under_target_policy"
+      ]
+    },
     "PolicyRef": {
       "properties": {
         "ref": {
@@ -165,6 +193,25 @@
       "required": [
         "ref",
         "sha"
+      ]
+    },
+    "PolicyView": {
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "blockers": {
+          "items": {
+            "$ref": "#/$defs/Repair"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "status",
+        "blockers"
       ]
     },
     "Repair": {
@@ -305,6 +352,27 @@
         "engine_version"
       ]
     },
+    "ScopeInfo": {
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "target_sha": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "mode"
+      ]
+    },
     "UnevaluatedRule": {
       "properties": {
         "rule_id": {
@@ -352,6 +420,9 @@
     },
     "identity": {
       "$ref": "#/$defs/ResultIdentity"
+    },
+    "scope": {
+      "$ref": "#/$defs/ScopeInfo"
     },
     "change": {
       "$ref": "#/$defs/Change"

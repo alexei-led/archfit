@@ -29,6 +29,7 @@ See [Rules](rules.md) for rule fields, rule types, selectors, and waivers. See [
 | Key | Type | Default or requirement | Purpose |
 | --- | --- | --- | --- |
 | `version` | integer | Required. Must be `2`. | Configuration contract version. |
+| `target_branch` | string | Empty: `origin/HEAD`, then `main` or `master` when exactly one exists. | Branch changes land on. `check` compares a change with it. See [commands](commands.md#check). |
 | `exclude` | list of globs | Built-in exclusions plus no user globs. | Skips paths during analysis. |
 | `languages` | object | Each language uses `auto`. | Selects language extractors and missing-tool gates. |
 | `analyzers` | object | Every analyzer is disabled. | Enables optional evidence producers. |

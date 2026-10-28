@@ -199,7 +199,7 @@ func TestHookClaudeStderrCarriesTheRepair(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, stderr)
 	}
-	for _, want := range []string{"no_b_impl", filePkgAA + ":3", "goal: ", "validate: archfit check", "--format agent"} {
+	for _, want := range []string{ruleNoBImpl, filePkgAA + ":3", "goal: ", "validate: archfit check", "--format agent"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr is missing %q:\n%s", want, stderr)
 		}

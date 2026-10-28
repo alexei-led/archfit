@@ -85,6 +85,15 @@ archfit check -c .archfit.yaml
 archfit check --format agent --base HEAD -c .archfit.yaml
 ```
 
+| Flag | Meaning |
+| --- | --- |
+| `--base <ref>` | What the change is compared with. Default `auto`: the merge-base of `HEAD` and the target branch. On the target branch itself the whole tree is the change. Any other value is a git ref. |
+| `--target <branch>` | The branch the change lands on. Default: `target_branch` from the config, then `origin/HEAD`, then `main` or `master` when exactly one exists. A bare name is looked up on `origin` first. |
+
+`check` never falls back to `HEAD` when it cannot resolve the target or the base. It reports `change.status: unknown` with `reason: scope_unresolved` and exits `2`. Fetch the history (`fetch-depth: 0`) or pass `--target` or `--base`.
+
+Before it measures, `check` compares `.archfit.yaml`, `.archfit-baseline.json`, and `.archfit-labels.yaml` with the target branch's tip. If any differs, the branch cannot grade itself under rules it wrote: the change is `unknown` with `reason: policy_changed_on_branch`, the exit code is `2`, and the result shows both the branch's findings under its own policy and the findings under the target's policy, which is the one the gate will use. If the branch did not touch the file and the target changed it after the fork, the change is `unknown` with `reason: policy_stale_on_branch`: merge or rebase the target. A policy directory outside the repository is not compared, and a target that holds no config has no policy to protect, so nothing is compared.
+
 ### `baseline`
 
 `archfit baseline [flags]` accepts current findings as the gate baseline.
