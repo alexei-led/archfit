@@ -19,11 +19,15 @@ import (
 // the program the helper compiles (D6).
 var snapshotSkip = map[string]struct{}{".git": {}, "node_modules": {}}
 
+// nugetConfigName is the build-input file NuGet layers over its ancestors
+// instead of replacing: every level's file applies.
+const nugetConfigName = "nuget.config"
+
 // buildInputNames are the files MSBuild, the SDK resolver, and NuGet read from
 // a project's ancestor directories, lowercased: NuGet accepts any case.
 var buildInputNames = map[string]struct{}{
 	"directory.build.props": {}, "directory.build.targets": {}, "directory.build.rsp": {},
-	"directory.packages.props": {}, "global.json": {}, "nuget.config": {},
+	"directory.packages.props": {}, "global.json": {}, nugetConfigName: {},
 }
 
 // snapshot is a per-run copy of the scan root.
