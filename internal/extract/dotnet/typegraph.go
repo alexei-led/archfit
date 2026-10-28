@@ -447,8 +447,8 @@ func borrowReason(borrowed int, changed, moved, unrestored []string) string {
 			plural(len(unrestored), "project", "projects"), strings.Join(unrestored, ", ")))
 	}
 	if len(moved) > 0 {
-		parts = append(parts, fmt.Sprintf("restore outputs were produced for another path, so they are partial; run dotnet restore in the working tree: %s",
-			strings.Join(moved, ", ")))
+		parts = append(parts, "restore outputs were produced for another path, so they are partial; run dotnet restore in the working tree: "+
+			strings.Join(moved, ", "))
 	}
 	if len(changed) > 0 {
 		parts = append(parts, fmt.Sprintf("restore inputs (package references, central versions, sources, global.json, NuGet.config, Directory.Build.props/.targets, Directory.Packages.props) differ from the working tree's for %s, so they are partial: %s",

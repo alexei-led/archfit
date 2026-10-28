@@ -63,7 +63,7 @@ func TestBaseComparison_BaseRunReadsTheWorkingTreeAndLeaksNoBasePath(t *testing.
 		Preparer: noPreparation{}, Evidence: head, Stderr: io.Discard, Worktree: fixedWorktree{},
 		NewBaseEvidence: func(string) EvidenceStage { return base },
 	}
-	out, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: "main"})
+	out, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: blockBaseRef})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestBaseComparison_LongOriginReasonIsDisclosedInFull(t *testing.T) {
 		Preparer: noPreparation{}, Evidence: head, Stderr: &stderr, Worktree: fixedWorktree{},
 		NewBaseEvidence: func(string) EvidenceStage { return base },
 	}
-	out, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: "main"})
+	out, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: blockBaseRef})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestBaseComparison_ShortOriginReasonAddsNoStderr(t *testing.T) {
 		Preparer: noPreparation{}, Evidence: head, Stderr: &stderr, Worktree: fixedWorktree{},
 		NewBaseEvidence: func(string) EvidenceStage { return base },
 	}
-	if _, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: "main"}); err != nil {
+	if _, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: blockBaseRef}); err != nil {
 		t.Fatal(err)
 	}
 	if stderr.Len() != 0 {
