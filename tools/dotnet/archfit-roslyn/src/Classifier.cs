@@ -289,9 +289,12 @@ internal static partial class Classifier
         {
             return ($"MSB4236: SDK '{sdk.Groups[1].Value}' not resolvable", "run with NuGet access and a warm cache, or install the SDK");
         }
-        var line = MSBuildPrefix().Replace(message, "")
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .FirstOrDefault() ?? message;
+        // Prefer the line that reports a diagnostic: a failure message can open
+        // with a warning (a vulnerable package, NU1902) and end with the error
+        // that failed the build (ASPIRE009), and the warning is not the cause.
+        var lines = MSBuildPrefix().Replace(message, "")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var line = lines.FirstOrDefault(l => ErrorDiagnostic().IsMatch(l)) ?? lines.FirstOrDefault() ?? message;
         line = line.Replace(root + Path.DirectorySeparatorChar, "", StringComparison.Ordinal);
         return message.Contains("global.json", StringComparison.OrdinalIgnoreCase)
             ? (line, "install the SDK that global.json pins or relax the pin")

@@ -160,6 +160,14 @@ func failureReason(out toolrun.Output, root string) string {
 		}
 		return file + " cannot be satisfied by the installed SDKs; install a matching SDK or relax the pin"
 	}
+	// Prefer the line that reports a diagnostic: MSBuild output can open with a
+	// warning (a vulnerable package, NU1902) and end with the error that failed
+	// the evaluation (ASPIRE009), and the warning is not the cause.
+	for line := range strings.SplitSeq(text, "\n") {
+		if errorDiagnosticLine.MatchString(line) {
+			return strings.TrimSpace(strings.ReplaceAll(line, filepath.ToSlash(root)+"/", ""))
+		}
+	}
 	for line := range strings.SplitSeq(text, "\n") {
 		if strings.Contains(strings.ToLower(line), "error") {
 			return strings.TrimSpace(strings.ReplaceAll(line, filepath.ToSlash(root)+"/", ""))
@@ -167,6 +175,11 @@ func failureReason(out toolrun.Output, root string) string {
 	}
 	return fmt.Sprintf("dotnet msbuild exited %d", out.ExitCode)
 }
+
+// errorDiagnosticLine matches MSBuild's diagnostic line, "path(line,col): error
+// CODE: message", so a warning whose text contains "error" is never chosen over
+// the failure itself.
+var errorDiagnosticLine = regexp.MustCompile(`:\s*error\s+[A-Za-z]+\d+\s*:`)
 
 // relativeTo spells abs relative to root when it lies inside it, else as given.
 func relativeTo(root, abs string) string {

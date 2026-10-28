@@ -1133,6 +1133,32 @@ func TestTypeGraph_TestClassifiedPathDropsEdgesWithoutIsTestProject(t *testing.T
 	}
 }
 
+// A failed evaluation reports the error that failed it, not a warning printed
+// before it: eShop's functional tests print the NU1902 vulnerable-package
+// warning first and fail on ASPIRE009.
+func TestFailedEvaluationNamesTheErrorNotAWarning(t *testing.T) {
+	const app = "App/App.csproj"
+	root := tree(t, app)
+	fake := newFake(t, root, map[string]reply{app: {exit: 1, stderr: strings.Join([]string{
+		app + " : warning NU1902: Package 'MessagePack' 2.5.302 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-qhrr-8q5h-9q3h",
+		"",
+		app + " : error ASPIRE009: The Aspire CLI bundle could not be resolved.",
+		"",
+		"Build FAILED.",
+	}, "\n")}})
+	e := dotnet.New(fake, autoCfg(), nil)
+	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	projects := e.LastEvaluation().Projects
+	if len(projects) != 1 {
+		t.Fatalf("projects = %+v, want one", projects)
+	}
+	if reason := projects[0].Reason; !strings.Contains(reason, "ASPIRE009") || strings.Contains(reason, "NU1902") {
+		t.Errorf("reason = %q, want the ASPIRE009 error, not the NU1902 warning", reason)
+	}
+}
+
 func TestCoverage_NamesEveryProjectWithAProblem(t *testing.T) {
 	const projects = 7
 	paths := make([]string, 0, projects)

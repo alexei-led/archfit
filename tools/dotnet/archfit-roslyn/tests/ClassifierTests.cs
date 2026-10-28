@@ -119,6 +119,18 @@ public class ClassifierTests
 
     // A framework that does not compile is partial even when every name
     // resolved: the edges it would carry are not all real.
+    // MSBuild can print a warning first and the error that failed the build
+    // last; the cause is the error, not the warning's text.
+    [Fact]
+    public void CausePrefersTheErrorLineOverAWarning()
+    {
+        const string message = "/r/tests/Basket.FunctionalTests/Basket.FunctionalTests.csproj : warning NU1902: Package 'MessagePack' 2.5.302 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-qhrr-8q5h-9q3h\n\n/r/tests/Basket.FunctionalTests/Basket.FunctionalTests.csproj : error ASPIRE009: The Aspire CLI bundle could not be resolved.";
+        var (cause, fix) = Classifier.Cause(message, "/r");
+        Assert.StartsWith("tests/Basket.FunctionalTests/Basket.FunctionalTests.csproj : error ASPIRE009", cause);
+        Assert.DoesNotContain("NU1902", cause);
+        Assert.Equal("fix the project so `dotnet build` loads it", fix);
+    }
+
     // A file whose symbol walk threw costs that file's edges; the reason names
     // it and the exception, and the framework stays partial.
     [Fact]
