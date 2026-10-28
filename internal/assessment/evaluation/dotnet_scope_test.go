@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
+	"github.com/alexei-led/archfit/v3/internal/assessment/finding"
 	"github.com/alexei-led/archfit/v3/internal/assessment/result"
 	"github.com/alexei-led/archfit/v3/internal/assessment/state"
 	modevidence "github.com/alexei-led/archfit/v3/internal/model/evidence"
@@ -171,6 +172,28 @@ func TestDotNetRulesUnevaluatedOnlyWhereRoslynEvidenceIsIncomplete(t *testing.T)
 				t.Fatalf("unevaluated_required_rules = %v, want %v", got, want)
 			}
 		})
+	}
+}
+
+// TestARuleThatProducedFindingsIsNotAlsoUnevaluated pins the report's
+// consistency: a rule whose evidence gap is named here and that also fired has
+// been evaluated. Its findings keep it a blocker, and the unevaluated list must
+// not deny that it ran.
+func TestARuleThatProducedFindingsIsNotAlsoUnevaluated(t *testing.T) {
+	diag, in := dotnetScopeFixture(modevidence.StatusOK, map[string]string{csApplication: gapApplication})
+	withRule(&in, policy.RuleDef{Type: typeLayerDir})
+	if _, listed := unevaluatedReasons(diag, in)[ruleIDScoped]; !listed {
+		t.Fatal("the rule is not unevaluated before it fires: the fixture does not exercise the case")
+	}
+	diag.Findings = []finding.Finding{{
+		ID: "f1", RuleID: ruleIDScoped, Kind: finding.KindGate,
+		Severity: finding.SeverityHigh, Status: finding.StatusNew,
+	}}
+	if got := unevaluatedReasons(diag, in); len(got) != 0 {
+		t.Errorf("unevaluated_required_rules = %v, want none: the rule produced a finding", got)
+	}
+	if st := evaluation.BuildState(diag, in); st.Decision.HardGates != state.HardGateFail {
+		t.Errorf("hard gates = %q, want fail: the finding still blocks", st.Decision.HardGates)
 	}
 }
 

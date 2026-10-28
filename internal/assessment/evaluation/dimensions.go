@@ -818,12 +818,13 @@ func intentDimension(diag *result.Result, p policy.PolicySnapshot, f Observation
 
 	active, evaluated := 0, 0
 	var unevaluatedRules []string
+	fired := firedRules(diag.Findings)
 	for _, rule := range rules {
 		if rule.Gate == gateOffPosture {
 			continue
 		}
 		active++
-		if ruleUnevaluatedReason(diag, rule, p, f) == "" {
+		if ruleUnevaluatedReason(diag, rule, p, f, fired) == "" {
 			evaluated++
 		} else {
 			unevaluatedRules = append(unevaluatedRules, rule.ID)
