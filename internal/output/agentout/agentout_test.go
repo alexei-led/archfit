@@ -141,6 +141,7 @@ func changeCases() []e1Case {
 	ownerTask.from, ownerTask.to = "internal/c/c.go", "internal/d"
 	preExisting := gateTask("c3", "no_x")
 	preExisting.origin, preExisting.from = report.OriginPreExisting, "internal/old/old.go"
+	preExisting.files = []string{"internal/old/old.go", "internal/b/b.go"}
 	introduced := gateTask("d4", "no_x")
 	introduced.origin = "introduced"
 	unknown := gateTask("e5", "no_x")
