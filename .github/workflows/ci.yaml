@@ -383,6 +383,10 @@ jobs:
       # policy_agreement_dotnet_test.go, which needs the Roslyn helper in .bin).
       - name: Build the Roslyn helper
         run: make dotnet-roslyn
+      - name: Test the Roslyn helper
+        # The helper is a shipped binary inside the image; its xUnit suite gates
+        # the per-project classification and reasons the Go side folds.
+        run: make dotnet-roslyn-test
       - name: CI gate — architecture-state erosion
         env:
           ARCHFIT_REQUIRE_TOOLS: "1"
