@@ -399,8 +399,6 @@ jobs:
         run: go test ./internal/ ./cmd/archfit/ -run TestErosion_ -count=1
       - name: CI gate — real supported-language contracts
         run: make language-contracts
-      - name: CI gate — architecture drift
-        run: make arch-lint
   image:
     name: Complete image (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
@@ -446,6 +444,23 @@ jobs:
         run: |
           python3 scripts/image_contracts.py --docker-context default \
             --image archfit-upgrade-image:ci --output-dir "$RUNNER_TEMP/archfit-image-contract"
+      # The drift gate measures in the image the Action runs, not on the runner.
+      # The measurement profile compares each producer's exact tool version, and
+      # the runner's git (and its missing scip-go) differ from the image's, so a
+      # runner check reads the ratchet reference as not comparable.
+      - name: CI gate — architecture drift (in the image)
+        if: matrix.platform == 'linux/amd64'
+        run: |
+          set +e
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/repo" -w /repo \
+            archfit-upgrade-image:ci check --config .archfit.yaml --require-tools --format agent \
+            > "$RUNNER_TEMP/arch-lint.json"
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/arch-lint.json"
+          jq -r '.repository.attention[]? | "attention: \(.kind): \(.reason)"' "$RUNNER_TEMP/arch-lint.json"
+          # make arch-lint's contract: healthy (0) and needs_attention (2) pass.
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then exit "$rc"; fi
       - name: Preserve image and report evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
