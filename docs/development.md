@@ -61,7 +61,7 @@ make dotnet-roslyn
 make dotnet-roslyn-test
 ```
 
-`make dotnet-roslyn` publishes `tools/dotnet/archfit-roslyn` to `.bin/dotnet-roslyn`, restoring in locked mode. Set `ARCHFIT_DOTNET_ROSLYN` to that directory. `make dotnet-roslyn-test` runs the helper's xUnit tests against `internal/testdata/dotnet`. Update `tools/dotnet/archfit-roslyn/src/packages.lock.json` when the helper's dependencies change.
+`make dotnet-roslyn` publishes `tools/dotnet/archfit-roslyn` to `.bin/dotnet-roslyn`, restoring in locked mode. Set `ARCHFIT_DOTNET_ROSLYN` to that directory. `make dotnet-roslyn-test` runs the helper's xUnit tests against `internal/testdata/dotnet`; the `gates` CI job builds the helper and runs that suite, because the helper ships inside the image. Update `tools/dotnet/archfit-roslyn/src/packages.lock.json` when the helper's dependencies change.
 
 The helper's own project makes archfit's self-scan detect .NET. Without `ARCHFIT_DOTNET_ROSLYN`, `make archfit` reports a `roslyn` coverage gap, raised to fail by `--require-tools`. `.bin/dotnet-roslyn` lies inside the repository, which the extractor rejects, so copy it outside the checkout before you point the variable at it.
 
