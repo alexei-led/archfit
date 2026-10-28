@@ -257,7 +257,7 @@ Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `vol
 | --- | --- |
 | `--harness <name>` | Required: `claude`, `codex`, or `git`. |
 | `--dir <path>` | Repository to install into. Default: `.`. |
-| `-c, --config <file>` | Config path the hooks pass on, relative to the repository root. Default: `.archfit.yaml`. |
+| `-c, --config <file>` | Config path the hooks pass on, relative to the repository root, not to `--dir`. Default: `.archfit.yaml`. `install` warns on stderr when no config is there, or when `--dir` holds its own config that `-c` does not name. |
 
 `install` keeps every other key and hook in the settings file, replaces an earlier `archfit hook run` entry instead of adding a second one, and removes entries of the removed `archfit hook claude`. It never replaces a pre-commit hook that archfit did not write: it exits `3` and names the file. It prints one line per file written. Codex runs the hooks only after you trust them.
 

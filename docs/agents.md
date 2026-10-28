@@ -83,7 +83,7 @@ archfit hook install --harness git      # the git pre-commit hook
 `install` merges into the settings file and keeps every other key and hook.
 Running it again changes nothing. It removes entries of the old
 `archfit hook claude` command. Pass `-c <config>` when the config is not
-`.archfit.yaml`; the path is relative to the repository root. Pass `--dir <repo>` to install into another repository. A
+`.archfit.yaml` at the repository root; the path is relative to the root, so a subproject's config is `-c service/.archfit.yaml` even when you run `install` from `service/`. `install` warns when the hooks would load another config, or none. Pass `--dir <repo>` to install into another repository. A
 pre-commit hook that archfit did not write is left alone: `install` exits `3`
 and names it.
 

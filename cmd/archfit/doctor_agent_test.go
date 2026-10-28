@@ -61,7 +61,7 @@ func TestDoctorAgentLoop(t *testing.T) {
 	}
 
 	for _, harness := range []string{harnessClaude, harnessCodex, harnessGit} {
-		if code, _, stderr := runHook(t, "", "install", "--harness", harness, "--dir", dir); code != 0 {
+		if code, _, stderr := runHook(t, "", "install", flagHarness, harness, flagDir, dir); code != 0 {
 			t.Fatalf("install %s: exit %d\n%s", harness, code, stderr)
 		}
 	}
@@ -175,7 +175,7 @@ func TestDoctorClaudeHooksDisabled(t *testing.T) {
 			if tc.project != "" {
 				writeFixtureFile(t, dir, harnessConfigFile(harnessClaude), `{"disableAllHooks": `+tc.project+`}`)
 			}
-			if code, _, stderr := runHook(t, "", "install", "--harness", harnessClaude, "--dir", dir); code != 0 {
+			if code, _, stderr := runHook(t, "", "install", flagHarness, harnessClaude, flagDir, dir); code != 0 {
 				t.Fatalf("install: exit %d\n%s", code, stderr)
 			}
 			if tc.local != "" {
