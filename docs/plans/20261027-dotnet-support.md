@@ -386,7 +386,23 @@ Importing `internal/relationship/coupling` for the hint constants joins the acce
 
 *Items requiring action outside this repository. No checkboxes.*
 
-**Acceptance numbers** (filled in Task 13): projects measured offline, projects measured networked, edge counts, runtime, memory.
+**Acceptance numbers** (measured 2026-10-28 on macOS 27, .NET SDK 10.0.403, helper 1.1.0, offline except where noted, restored trees):
+
+| repo | projects | roslyn | partial projects | findings | unevaluated rules | runtime |
+| --- | --- | --- | --- | --- | --- | --- |
+| jasontaylordev/CleanArchitecture | 13 | ok | 0 | 2 (waived) | 0 | 15 s |
+| dotnet/eShop (`eShop.Web.slnf`) | 25 | partial | 2 (Razor source generator) | 6 | 5 (the two partial projects are in scope) | 36 s |
+| serilog/serilog (5 frameworks) | 1 | ok | 0 | 2 (real) | 0 | 24 s |
+| bitwarden/server | 86 | partial | 1 (`util/RustSdk`, 13 unresolved) | 281 | 2 (`layer-direction`, `module-boundaries`) | 3 m 39 s |
+
+Measured results worth keeping: `no-module-cycles` reports one finding for the 11-project bitwarden component (50 of 2455 import sites listed, the cap stated in `why`) instead of 72 pair findings; `internal_api_access` fires exactly once, on `bitwarden_license/src/Services/Pam/Services/CipherLeaseGate.cs` → `src/Core/Vault/Authorization/FullCipherAccess.cs`; a rule that fired is never also listed unevaluated (bitwarden: `no-module-cycles` fired and is absent from the list, while the two rules that produced nothing over the incomplete scope stay listed). eShop loses its three MAUI apps because this host cannot load their workloads; on a host with them, point `languages.dotnet.projects` at `eShop.slnx`.
+
+**Decisions taken during acceptance**:
+- Fallback `ProjectReference` edges are incomplete evidence for rule evaluation, so a required rule over a project the helper did not load completely stays unevaluated. The project-only graph serves the map and the report.
+- An `intrusive` extractor hint lifts a `public:` contract floor, language-agnostic: it changes Python underscore and Rust SCIP hints too, and `internal_api_access` fires on it.
+- `blast_radius` keeps a value under partial evidence, as over a partial TypeScript graph; the dimension status carries the incompleteness.
+- A selector spelled as a graph node ID (`external:X`, `file:x`) is never matchable: `config lint` rejects it and `check` stops counting the rule as evaluated.
+- archfit's own self-scan turns `languages.dotnet` off and excludes `tools/dotnet/**`: the helper makes the repository detect .NET, and the change is a policy change the owner approves. The stored baseline was re-recorded once because the measurement profile gains `dotnet-msbuild`, `roslyn` and `supplied-coverage` rows.
 
 **Manual verification**:
 - Run `archfit analyze` on an Aspire repository (one NuGet SDK in `global.json`) and check the partial reason.
