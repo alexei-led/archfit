@@ -20,6 +20,7 @@ const (
 
 	globBillingAll   = "internal/billing/**"
 	globPyDomainAll  = "myapp.domain.**"
+	globTSInternal   = "packages/core/src/internal/**"
 	pkgPyDomain      = "myapp.domain"
 	nodeBillingDomPk = "package:internal/billing/domain"
 )
@@ -37,7 +38,7 @@ func surfaceModules() map[string]policy.ModuleDef {
 		"web":        {Paths: []string{"packages/web/**"}},
 		"core": {
 			Paths:    []string{"packages/core/**"},
-			Internal: []string{"packages/core/src/internal/**"},
+			Internal: []string{globTSInternal},
 		},
 		"pyapi": {Paths: []string{"myapp.api", "myapp.api.**"}},
 		"pydomain": {
@@ -123,7 +124,7 @@ func TestInternalAccessRules_DecideFromDeclaredSurfaces(t *testing.T) {
 			name: "typescript file edge into a declared internal file fires",
 			edge: testEdge{From: "file:packages/web/src/app.ts", To: "file:packages/core/src/internal/cache.ts",
 				Kind: edgeKindImports, Language: langTypeScript},
-			want: 1, wantGlob: "packages/core/src/internal/**",
+			want: 1, wantGlob: globTSInternal,
 		},
 		{
 			name: "python dotted edge into a declared internal module fires",
