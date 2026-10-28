@@ -21,6 +21,10 @@ import (
 // artifact through the existing required-tool gate.
 const ToolName = "supplied-coverage"
 
+// ReasonDisabled is the published Reason on the StatusDisabled coverage row
+// this package emits when supplied coverage is off.
+const ReasonDisabled = "off by default because another tool supplies the artifact: set coverage.enabled: true and name it under coverage.sources to measure testability from it"
+
 // Supported supplied-coverage format names. Concrete parsers implement the
 // pure byte-to-fact registry behind this vocabulary.
 const (
@@ -126,10 +130,11 @@ func SupportedFormats() []string {
 
 // IngestAll processes every configured source and returns one normalized ingest
 // per source plus a report-only analyzer health row. Disabled coverage returns
-// no row, preserving the pre-feature output byte-for-byte.
+// no ingest and a disabled row, so a consumer sees the analyzer's status the
+// way it sees every other analyzer's.
 func (i *Ingestor) IngestAll(scanRoot string, options Options) ([]evidence.CoverageIngest, evidence.Coverage) {
 	if !options.Enabled {
-		return nil, evidence.Coverage{}
+		return nil, evidence.Coverage{Tool: ToolName, Status: evidence.StatusDisabled, Reason: ReasonDisabled}
 	}
 	normalizer, err := NewNormalizer(scanRoot)
 	if err != nil {
