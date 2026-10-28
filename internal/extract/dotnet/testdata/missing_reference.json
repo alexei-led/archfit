@@ -1,0 +1,32 @@
+{
+  "Properties": {
+    "TargetFramework": "net10.0",
+    "TargetFrameworks": "",
+    "IsTestProject": ""
+  },
+  "Items": {
+    "ProjectReference": [
+      {
+        "Identity": "../Ghost/Ghost.csproj",
+        "Targets": "",
+        "OutputItemType": "",
+        "ReferenceSourceTarget": "ProjectReference",
+        "FullPath": "{{ROOT}}/Ghost/Ghost.csproj",
+        "RootDir": "/",
+        "Filename": "Domain",
+        "Extension": ".csproj",
+        "RelativeDir": "../Domain/",
+        "Directory": "{{ROOT}}/Domain/",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "{{ROOT}}/Application/Application.csproj",
+        "DefiningProjectDirectory": "{{ROOT}}/Application/",
+        "DefiningProjectName": "Application",
+        "DefiningProjectExtension": ".csproj"
+      }
+    ],
+    "PackageReference": []
+  }
+}

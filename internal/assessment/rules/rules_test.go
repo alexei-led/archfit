@@ -228,6 +228,37 @@ func TestForbiddenDependency(t *testing.T) {
 	}
 }
 
+// TestForbiddenDependency_ExternalTargetNamesTheAssembly pins the .NET external
+// spelling: symbols from referenced assemblies are external:<assembly> nodes,
+// but a rule selector compares the endpoint path, so to: Npgsql fires and
+// to: external:Npgsql can never match.
+func TestForbiddenDependency_ExternalTargetNamesTheAssembly(t *testing.T) {
+	set := makeGraph([]testEdge{{
+		From: "file:src/OrderProcessor/Services/GracePeriodOrdersRepository.cs",
+		To:   "external:Npgsql", Kind: edgeKindImports, Language: "dotnet",
+	}})
+	for _, tc := range []struct {
+		name, to string
+		want     int
+	}{
+		{"assembly name", "Npgsql", 1},
+		{"graph node ID", "external:Npgsql", 0},
+		{"graph node ID with a glob", "external:Npgsql*", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ruleSet, err := rules.New(policy.RuleConfig{Rules: []policy.RuleDef{{
+				ID: "raw-ordering-db", Type: typeForbiddenDependency, From: "src/OrderProcessor/**", To: tc.to,
+			}}})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			if got := len(ruleSet[0].Check(set, rules.Evidence{})); got != tc.want {
+				t.Errorf("to %q produced %d findings, want %d", tc.to, got, tc.want)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // PublicAPIOnly
 // ---------------------------------------------------------------------------

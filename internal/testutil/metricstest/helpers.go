@@ -25,6 +25,7 @@ const (
 	LangRust       = "rust"
 	LangTypeScript = "typescript"
 	LangPython     = "python"
+	LangDotNet     = "dotnet"
 )
 
 // Edge kinds carried by relationship edges.

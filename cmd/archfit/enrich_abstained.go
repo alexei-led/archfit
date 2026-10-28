@@ -45,7 +45,7 @@ type EnrichAbstainedCmd struct {
 }
 
 func (c *EnrichAbstainedCmd) Run(deps *appDeps) error {
-	return c.runAbstainedEnrich(context.Background(), deps)
+	return c.runAbstainedEnrich(deps.runContext(), deps)
 }
 
 func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDeps) error {

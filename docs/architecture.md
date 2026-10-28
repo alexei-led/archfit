@@ -68,7 +68,7 @@ Keep decisions with their domain owner. Add a port when an inner layer needs an 
 
 ## Accepted boundaries
 
-`internal/extract/ts` and `internal/extract/py` use strength constants from `internal/relationship/coupling`. They emit vocabulary only. They do not classify or score relationships. If an extractor needs classification behavior, move the shared value to a neutral model package first.
+`internal/extract/ts`, `internal/extract/py`, and `internal/extract/dotnet` use strength constants from `internal/relationship/coupling`. They emit vocabulary only. They do not classify or score relationships. If an extractor needs classification behavior, move the shared value to a neutral model package first.
 
 The report projection sits in the application layer because it maps domain results to the report contract. It has a restricted import rule so it cannot reach into relationship or evidence internals.
 
@@ -90,7 +90,9 @@ Update the matching tests when a contract changes.
 | Relationship and assessment | `internal/relationship` owns classification and coupling. Assessment consumes its public contract. `TestAssessmentConsumesOnlyThePublicRelationshipContract` checks this rule. |
 | Report projection | `internal/application` maps results to report DTOs. The projector does not import relationship or evidence internals. `TestReportProjectionHasOneOwner` checks this rule. |
 | Model surface | `internal/model` is a published contract. `TestModelSurfaceNoDrift` checks `internal/testdata/model_surface.golden`. See [development](development.md) before changing it. |
-| Tool boundaries | Go and Rust tools run through adapters and `toolrun.Runner`. Core code does not start subprocesses. `TestArchImports` checks the import boundary. |
+| Tool boundaries | Go, Rust, and .NET tools run through adapters and `toolrun.Runner`. Core code does not start subprocesses. `TestArchImports` checks the import boundary. `TestDotnetExtractorRunsToolsOnlyThroughToolrun` keeps `internal/extract/dotnet` free of `os/exec` and concrete adapters. |
+
+The .NET Roslyn helper is an adapter artifact built from `tools/dotnet/archfit-roslyn`. The Go side starts it through `toolrun.Runner` and reads its JSON. It is not a core dependency. `internal/extract/dotnet` emits strength hints only; `internal/relationship` classifies.
 
 Rust extraction first reports crate-level facts. Optional module and SCIP analyzers add intra-crate evidence. See [evidence](evidence.md) for evidence limits. See [languages](languages.md) for analyzer setup.
 

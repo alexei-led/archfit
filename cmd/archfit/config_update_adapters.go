@@ -95,6 +95,9 @@ func (a *configUpdateAdapter) DiscoverConfigUpdate(ctx context.Context, req appl
 	if needsRustDeepAnalysisConfig(a.cfg, registry.ProjectPresent(config.LangRust, req.Root, a.cfg.ForExtract(config.LangRust))) {
 		report.Settings = append(report.Settings, initcfg.RustDeepAnalysisSetting())
 	}
+	if needsDotNetTypeGraphConfig(a.cfg, presence.DotNet) {
+		report.Settings = append(report.Settings, initcfg.DotNetTypeGraphSetting())
+	}
 	a.report = report
 	return nil
 }
@@ -175,8 +178,13 @@ func (a *configUpdateAdapter) EditConfigUpdate(_ context.Context, original []byt
 			return nil, fmt.Errorf("applying edits: %w", err)
 		}
 	}
-	if len(a.report.Settings) > 0 {
-		edited = ensureRustDeepAnalysisConfig(edited, a.cfg)
+	for _, setting := range a.report.Settings {
+		switch setting.Code {
+		case initcfg.SettingCodeRustDeepAnalysis:
+			edited = ensureRustDeepAnalysisConfig(edited, a.cfg)
+		case initcfg.SettingCodeDotNetTypeGraph:
+			edited = ensureDotNetTypeGraphConfig(edited, a.cfg)
+		}
 	}
 	return edited, nil
 }

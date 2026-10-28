@@ -288,6 +288,10 @@ type StateToolCoverage struct {
 	Tool   string `json:"tool"`
 	Status string `json:"status"`
 	Reason string `json:"reason,omitempty"`
+	// Details is the per-unit table behind Reason: one line per project, target
+	// or package. The row keeps one shortened reason, so this is where a
+	// consumer reads each unit without re-running the producer.
+	Details []string `json:"details,omitempty"`
 }
 
 // StateCoverage summarises evidence coverage across the nine dimensions. The
@@ -307,10 +311,10 @@ type SeamDistance struct {
 	Basis             string `json:"basis,omitempty"`
 	FromOwner         string `json:"from_owner,omitempty"`
 	ToOwner           string `json:"to_owner,omitempty"`
-	SameOwner         bool   `json:"same_owner"`
+	SameOwner         *bool  `json:"same_owner"` // null unless both owners are known
 	FromDeployUnit    string `json:"from_deploy_unit,omitempty"`
 	ToDeployUnit      string `json:"to_deploy_unit,omitempty"`
-	SameDeployUnit    bool   `json:"same_deploy_unit"`
+	SameDeployUnit    *bool  `json:"same_deploy_unit"` // null unless both deploy units are declared
 	BoundaryCrossings int    `json:"boundary_crossings"`
 	SharedAncestor    int    `json:"shared_ancestor"`
 }

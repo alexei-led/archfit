@@ -22,10 +22,11 @@ func assertBoundedWhy(t *testing.T, why string) {
 	}
 }
 
-// TestModuleCycle_WhyNamesThePairAndSizeOnly pins a bounded why on a large
-// strongly-connected component: it names the pair and the cycle size, and the
-// members stay in matched_by.cycle_modules.
-func TestModuleCycle_WhyNamesThePairAndSizeOnly(t *testing.T) {
+// TestModuleCycle_WhyStaysBoundedOnALargeCycle pins a bounded why on a large
+// strongly-connected component: it names the component size and the leading
+// members, and the full member list stays in matched_by.cycle_modules. The
+// component is one finding, however many members it holds.
+func TestModuleCycle_WhyStaysBoundedOnALargeCycle(t *testing.T) {
 	const size = 30
 	modules := make([]string, size)
 	for i := range modules {
@@ -37,19 +38,21 @@ func TestModuleCycle_WhyNamesThePairAndSizeOnly(t *testing.T) {
 		edges = append(edges, moduleTestEdge{"file:" + from + "/a.go", "package:" + to, from, to, nil})
 	}
 	findings := checkProduction(newModuleCycleRule(t, "", modules...), moduleSet(edges...))
-	if len(findings) != size {
-		t.Fatalf("got %d findings, want %d", len(findings), size)
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want one for the component", len(findings))
 	}
-	for _, f := range findings {
-		assertBoundedWhy(t, f.Why)
-		for _, want := range []string{f.Edge.From.Module, f.Edge.To.Module, strconv.Itoa(size)} {
-			if !strings.Contains(f.Why, want) {
-				t.Errorf("why lacks %q: %s", want, f.Why)
-			}
+	f := findings[0]
+	assertBoundedWhy(t, f.Why)
+	for _, want := range []string{strconv.Itoa(size), "more"} {
+		if !strings.Contains(f.Why, want) {
+			t.Errorf("why lacks %q: %s", want, f.Why)
 		}
-		if got := strings.Count(f.MatchedBy["cycle_modules"], ", ") + 1; got != size {
-			t.Errorf("matched_by.cycle_modules lists %d members, want %d", got, size)
-		}
+	}
+	if got := strings.Count(f.MatchedBy["cycle_modules"], ", ") + 1; got != size {
+		t.Errorf("matched_by.cycle_modules lists %d members, want %d", got, size)
+	}
+	if f.MatchedBy["cycle_pairs_total"] != strconv.Itoa(size) {
+		t.Errorf("cycle_pairs_total = %s, want the %d ring pairs", f.MatchedBy["cycle_pairs_total"], size)
 	}
 }
 

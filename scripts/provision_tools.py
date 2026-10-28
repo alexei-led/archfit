@@ -74,8 +74,30 @@ def fetch_verified(artifact: dict[str, str], destination: Path) -> None:
         raise ValueError(f"checksum mismatch for {artifact['url']}: {digest}")
 
 
+def replace_directory(source: Path, destination: Path) -> None:
+    # shutil.move onto an existing directory nests the source inside it (or fails),
+    # and a restored CI cache can leave a previous install behind.
+    if destination.exists():
+        shutil.rmtree(destination)
+    shutil.move(source, destination)
+
+
+def install_dotnet(artifact: dict[str, str], temp: Path, prefix: Path) -> None:
+    archive = temp / artifact["url"].rsplit("/", 1)[1]
+    print(f"verify/install dotnet: {artifact['url']}", flush=True)
+    fetch_verified(artifact, archive)
+    unpacked = temp / "dotnet"
+    unpacked.mkdir()
+    with tarfile.open(archive) as tar:
+        tar.extractall(unpacked, filter="data")
+    # The SDK archive has no top-level directory: the unpack dir is the SDK root.
+    replace_directory(unpacked, prefix / "dotnet")
+
+
 def install_sdks(root: Path, prefix: Path, arch: str) -> None:
     manifest = json.loads((root / "tools/manifest.json").read_text())
+    if arch not in manifest["artifacts"]:
+        raise ValueError(f"unsupported architecture: {arch}")
     artifacts = manifest["artifacts"][arch]
     prefix.mkdir(parents=True, exist_ok=True)
     (prefix / "bin").mkdir(exist_ok=True)
@@ -101,7 +123,7 @@ def install_sdks(root: Path, prefix: Path, arch: str) -> None:
                 tar.extractall(unpacked, filter="data")
             source = next(unpacked.iterdir())
             if name in ("go", "node"):
-                shutil.move(source, prefix / name)
+                replace_directory(source, prefix / name)
             elif name == "uv":
                 for binary in ("uv", "uvx"):
                     shutil.copy2(source / binary, prefix / "bin" / binary)
@@ -115,6 +137,7 @@ def install_sdks(root: Path, prefix: Path, arch: str) -> None:
                     ],
                     check=True,
                 )
+        install_dotnet(artifacts["dotnet"], temp, prefix)
 
 
 def main() -> None:

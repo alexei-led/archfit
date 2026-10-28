@@ -37,4 +37,5 @@ const (
 
 	// Repeated route path strings used across syntax tests.
 	pathUsers = "/users"
+	pathItems = "/items"
 )

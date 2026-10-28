@@ -2,6 +2,7 @@ package score
 
 import (
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -978,6 +979,43 @@ func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
 			t.Errorf("confidence = %q, want high (SpecifiersSeen 0 = untracked, no cap)", cb.Confidence)
 		}
 	})
+}
+
+// TestSynthesize_RoslynIncomplete_LowersConfidence pins D5: a partial or
+// timed-out Roslyn run is never confident, whatever the scored edge count.
+func TestSynthesize_RoslynIncomplete_LowersConfidence(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		row    evidence.Coverage
+		capped bool
+	}{
+		{"partial caps", evidence.Coverage{Tool: toolRoslyn, Status: evidence.StatusPartial, Unresolved: 3, UnresolvedInputsMissing: 3}, true},
+		{"timed out caps", evidence.Coverage{Tool: toolRoslyn, Status: evidence.StatusTimedOut, UnresolvedInputsMissing: 1}, true},
+		{"complete stays high", evidence.Coverage{Tool: toolRoslyn, Status: evidence.StatusOK}, false},
+		{"absent stays high", evidence.Coverage{Tool: toolRoslyn, Status: evidence.StatusAbsent}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := result.New()
+			d.Metrics = []result.MetricResult{metric("blast_radius", 3, "info", "high")}
+			d.ClassifiedEdges = &result.ClassifiedEdgeSummary{
+				Total: 50, Scored: 50, MeanBalance: 9.0, BySeverity: map[string]int{sevLow: 50},
+			}
+			d.ToolCoverage = []evidence.Coverage{{Tool: "dotnet-msbuild", Status: evidence.StatusOK}, tc.row}
+
+			cb := couplingBalanceDim(t, Synthesize(d))
+			want := ConfidenceHigh
+			if tc.capped {
+				want = ConfidenceMedium
+			}
+			if cb.Confidence != want {
+				t.Errorf("confidence = %q, want %q", cb.Confidence, want)
+			}
+			named := slices.ContainsFunc(cb.Evidence, func(ev string) bool { return strings.Contains(ev, toolRoslyn) })
+			if named != tc.capped {
+				t.Errorf("evidence names roslyn = %v, want %v: %v", named, tc.capped, cb.Evidence)
+			}
+		})
+	}
 }
 
 // TestSynthesize_ConfidenceCapsNeverStack pins the minimum-band rule: two

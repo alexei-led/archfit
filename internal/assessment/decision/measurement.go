@@ -119,6 +119,12 @@ func knownProducerVersion(tool, version string) bool {
 	if tool == "grimp" {
 		return strings.HasPrefix(version, "grimp ") && strings.Contains(version, "; python ")
 	}
+	if tool == toolRoslyn {
+		// The helper names itself, the Roslyn release and the SDK; a bare
+		// helper version would pair two runs whose compiler differs.
+		return strings.HasPrefix(version, "archfit-roslyn ") &&
+			strings.Contains(version, "; Microsoft.CodeAnalysis ") && strings.Contains(version, "; SDK ")
+	}
 	return true
 }
 

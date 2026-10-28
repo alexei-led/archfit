@@ -27,6 +27,7 @@ func TestNodeConventionModuleSegments(t *testing.T) {
 		{"python dotted", LangPython, "pkg.metrics.boundary", []string{"pkg", "metrics", "boundary"}},
 		{"rust module path", LangRust, "demo::api::server", []string{"demo", "api", "server"}},
 		{"rust flat crate", LangRust, "lone-crate", []string{"lone-crate"}},
+		{"dotnet project path", LangDotNet, "src/Core/Core.csproj", []string{"src", "Core", "Core.csproj"}},
 		{"flat single segment", LangGo, "core", []string{"core"}},
 		{"unknown lang slash default", langRuby, "a/b/c", []string{"a", "b", "c"}},
 	}
@@ -59,6 +60,7 @@ func TestNodeConventionModuleFileCandidates(t *testing.T) {
 		{"go nil", LangGo, "internal/metrics", nil},
 		{"ts nil", LangTypeScript, "src/utils", nil},
 		{"rust nil", LangRust, "crates/grep", nil},
+		{"dotnet nil", LangDotNet, "src/Core", nil},
 		{"unknown nil", langRuby, "lib/foo", nil},
 	}
 	for _, tt := range tests {
@@ -91,6 +93,7 @@ func TestNodeConventionFileToModuleKey(t *testing.T) {
 		{"rust root crate src", LangRust, fileSrcMain, ""},
 		{"rust root crate nested src", LangRust, "src/cmd/run.rs", ""},
 		{"rust non-rs file", LangRust, "crates/grep/Cargo.toml", ""},
+		{"dotnet passthrough", LangDotNet, "src/Core/Auth/Login.cs", "src/Core/Auth/Login.cs"},
 		{"unknown passthrough", langRuby, "lib/foo.rb", "lib/foo.rb"},
 	}
 	for _, tt := range tests {
@@ -110,6 +113,7 @@ func TestConventionRegistryLookup(t *testing.T) {
 			LangTypeScript: 1,
 			LangPython:     2,
 			LangRust:       3,
+			LangDotNet:     4,
 		}
 		for lang, want := range wantPriority {
 			c := BuiltinConventions.Lookup(lang)

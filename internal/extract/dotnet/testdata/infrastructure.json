@@ -1,0 +1,52 @@
+{
+  "Properties": {
+    "TargetFramework": "net10.0",
+    "TargetFrameworks": "",
+    "IsTestProject": ""
+  },
+  "Items": {
+    "ProjectReference": [
+      {
+        "Identity": "../Application/Application.csproj",
+        "Targets": "",
+        "OutputItemType": "",
+        "ReferenceSourceTarget": "ProjectReference",
+        "FullPath": "{{ROOT}}/Application/Application.csproj",
+        "RootDir": "/",
+        "Filename": "Application",
+        "Extension": ".csproj",
+        "RelativeDir": "../Application/",
+        "Directory": "{{ROOT}}/Application/",
+        "RecursiveDir": "",
+        "ModifiedTime": "2026-10-27 12:35:36.8074811",
+        "CreatedTime": "2026-10-27 12:35:36.8072864",
+        "AccessedTime": "2026-10-27 12:35:36.8105595",
+        "DefiningProjectFullPath": "{{ROOT}}/Infrastructure/Infrastructure.csproj",
+        "DefiningProjectDirectory": "{{ROOT}}/Infrastructure/",
+        "DefiningProjectName": "Infrastructure",
+        "DefiningProjectExtension": ".csproj"
+      },
+      {
+        "Identity": "../Domain/Domain.csproj",
+        "Targets": "",
+        "OutputItemType": "",
+        "ReferenceSourceTarget": "ProjectReference",
+        "FullPath": "{{ROOT}}/Domain/Domain.csproj",
+        "RootDir": "/",
+        "Filename": "Domain",
+        "Extension": ".csproj",
+        "RelativeDir": "../Domain/",
+        "Directory": "{{ROOT}}/Domain/",
+        "RecursiveDir": "",
+        "ModifiedTime": "2026-10-27 12:35:36.8114506",
+        "CreatedTime": "2026-10-27 12:35:36.8111776",
+        "AccessedTime": "2026-10-27 12:35:36.8271345",
+        "DefiningProjectFullPath": "{{ROOT}}/Infrastructure/Infrastructure.csproj",
+        "DefiningProjectDirectory": "{{ROOT}}/Infrastructure/",
+        "DefiningProjectName": "Infrastructure",
+        "DefiningProjectExtension": ".csproj"
+      }
+    ],
+    "PackageReference": []
+  }
+}

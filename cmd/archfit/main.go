@@ -3,12 +3,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"syscall"
 
 	"github.com/alecthomas/kong"
 
@@ -182,6 +185,18 @@ type appDeps struct {
 	// refresh bypasses cache reads but still records fresh extractor facts.
 	// Set by each pipeline command from its --refresh flag before the analysis pipeline.
 	refresh bool
+
+	// ctx is cancelled on SIGINT or SIGTERM, so tool runs stop and extractor
+	// cleanup (the .NET snapshot) runs before the process exits. nil →
+	// context.Background() (tests that build appDeps directly).
+	ctx context.Context
+}
+
+func (d *appDeps) runContext() context.Context {
+	if d.ctx == nil {
+		return context.Background()
+	}
+	return d.ctx
 }
 
 // stdin returns the configured stdin reader, falling back to os.Stdin.
@@ -251,7 +266,17 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) (exitSt
 		}
 	}()
 
-	deps := &appDeps{Runner: toolrun.New(), Stdin: stdin, Stdout: stdout, Stderr: stderr}
+	// The first SIGINT or SIGTERM cancels ctx: running tools are killed and
+	// deferred cleanup runs. stop then restores the default handling, so a
+	// second signal exits at once.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
+
+	deps := &appDeps{Runner: toolrun.New(), Stdin: stdin, Stdout: stdout, Stderr: stderr, ctx: ctx}
 
 	var c cli
 	parser, err := kong.New(&c,
@@ -278,6 +303,12 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) (exitSt
 	}
 
 	runErr := kctx.Run(deps)
+	if ctx.Err() != nil {
+		// A signal cut tool runs short: whatever the command printed is
+		// incomplete and must not pass as a verdict.
+		_, _ = fmt.Fprintln(stderr, "archfit: interrupted by a signal; the results are incomplete")
+		return 3
+	}
 	if runErr == nil {
 		return 0
 	}

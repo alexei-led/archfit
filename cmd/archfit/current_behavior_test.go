@@ -102,6 +102,27 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		}
 	})
 
+	// Switching .NET off is a deliberate opt-out: its roslyn row is disabled,
+	// not an install prompt that --require-tools would turn into a block.
+	t.Run("a .NET opt-out does not block", func(t *testing.T) {
+		t.Parallel()
+		cfgPath := writeNonGoRepo(t, "version: 2\nlanguages:\n  dotnet:\n    enabled: false\n")
+		if err := os.WriteFile(filepath.Join(filepath.Dir(cfgPath), "App.csproj"), []byte("<Project Sdk=\"Microsoft.NET.Sdk\" />\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		if code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, requireToolsFlag, fmtJSON}, &buf); code == 1 {
+			t.Fatalf("check --require-tools: exit = 1, want no tool block\n%s", buf.String())
+		}
+		state := decodeCurrentState(t, buf.Bytes())
+		if state.Decision.HardGates != string(report.HardGatePass) {
+			t.Fatalf("hard_gates = %q, want pass", state.Decision.HardGates)
+		}
+		if status, _ := toolStatus(state, toolRoslyn); status != "disabled" {
+			t.Fatalf("roslyn status = %q, want disabled", status)
+		}
+	})
+
 	t.Run("require tools remains report-only under analyze", func(t *testing.T) {
 		t.Parallel()
 		cfgPath := writeGapRepo(t, "")

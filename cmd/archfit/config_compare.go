@@ -61,7 +61,7 @@ type CompareCmd struct {
 }
 
 func (c *CompareCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
+	ctx := deps.runContext()
 
 	// Load and validate BOTH configurations before any pipeline runs, so an
 	// unreadable or invalid candidate costs no analysis time.

@@ -26,8 +26,8 @@ type OriginInput struct {
 
 	// PrimaryTools are the per-language dependency-graph analyzers this build
 	// registers; the flags name the opt-in analyzers the config activated.
-	PrimaryTools                                 []string
-	Patterns, Syntax, SCIP, Clones, CargoModules bool
+	PrimaryTools                                         []string
+	Patterns, Syntax, SCIP, Clones, CargoModules, Roslyn bool
 }
 
 // AttachOrigins classifies every current finding by origin, copies each
@@ -43,7 +43,7 @@ func AttachOrigins(diag *result.Result, in OriginInput) {
 		Base:         decision.AnalyzerEvidence{Coverage: in.BaseCoverage, Gaps: in.BaseGaps, Profile: in.BaseProfile},
 		Families: decision.AnalyzerFamilies(decision.FamilyOptions{
 			PrimaryTools: in.PrimaryTools, Patterns: in.Patterns, Syntax: in.Syntax,
-			SCIP: in.SCIP, Clones: in.Clones, CargoModules: in.CargoModules,
+			SCIP: in.SCIP, Clones: in.Clones, CargoModules: in.CargoModules, Roslyn: in.Roslyn,
 		}),
 	})
 

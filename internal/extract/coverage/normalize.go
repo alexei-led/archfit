@@ -108,6 +108,17 @@ func (n *Normalizer) Normalize(raw string) (string, error) {
 	return "", ErrUnresolvedPath
 }
 
+// lexicallyInside reports whether raw names a location under the scan root
+// without requiring it to exist. A relative path is taken as root-relative.
+func (n *Normalizer) lexicallyInside(raw string) bool {
+	cleaned := filepath.FromSlash(strings.ReplaceAll(raw, `\`, "/"))
+	if !filepath.IsAbs(cleaned) {
+		cleaned = filepath.Join(n.root, cleaned)
+	}
+	rel, err := filepath.Rel(n.root, filepath.Clean(cleaned))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 func (n *Normalizer) normalizeCandidate(candidate string) (string, error) {
 	resolved, err := filepath.EvalSymlinks(filepath.Clean(candidate))
 	if err != nil {

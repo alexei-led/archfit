@@ -31,14 +31,17 @@ func (m CycleMetric) Calculate(in signal.CommonInput) assessmentresult.MetricRes
 	value := float64(cycles)
 	confidence := result.ConfidenceHigh
 	// allRust: every cycle is built solely from Rust edges → intra-crate module
-	// cycles (cargo forbids crate cycles), language-permitted. Computed once and
-	// reused for the band and the display.
-	allRust := cycles > 0 && cyclesAllRust(in.Relationships)
+	// cycles (cargo forbids crate cycles), language-permitted. allDotNet is the
+	// same rule for .NET: MSBuild forbids project reference cycles, so a cycle
+	// built only from .NET edges is between files of one project. Computed once
+	// and reused for the band and the display.
+	allRust := cycles > 0 && cyclesAllLanguage(in.Relationships, langRust)
+	allDotNet := cycles > 0 && cyclesAllLanguage(in.Relationships, langDotNet)
 	var band string
 	switch {
 	case cycles == 0:
 		band = result.BandStrong
-	case allRust:
+	case allRust || allDotNet:
 		// cargo forbids crate cycles, so a cycle built only from Rust edges is
 		// module-level — language-permitted, commonly just mutual type references
 		// (cargo-modules `uses` edges). Treat as a real but mild signal (poor), not the
@@ -55,8 +58,11 @@ func (m CycleMetric) Calculate(in signal.CommonInput) assessmentresult.MetricRes
 	// `poor` while fewer real import cycles band `critical`, which reads as inverted
 	// if the display shows only the count (F8).
 	display := fmt.Sprintf("%d import cycles", cycles)
-	if allRust {
+	switch {
+	case allRust:
 		display = fmt.Sprintf("%d intra-crate module cycles (Rust — language-permitted, not import cycles)", cycles)
+	case allDotNet:
+		display = fmt.Sprintf("%d intra-project file cycles (.NET — language-permitted, not import cycles)", cycles)
 	}
 	delta := result.ComputeDelta(value, in.Baseline, m.Name(), m.Version())
 
@@ -79,13 +85,21 @@ func countCycles(set relationship.Set) int {
 	return len(set.Cycles())
 }
 
-// cyclesAllRust reports whether every detected cycle is built solely from Rust edges
-// — the signal that all cycles are intra-crate module cycles (cargo forbids crate
-// cycles), which the language permits. It inspects the dependency edges WITHIN each SCC,
-// not the global edge-language majority: a polyglot repo whose Rust crate-dep edges
-// outnumber a single Go import cycle must still flag that Go cycle as critical. Returns
-// false when there are no cycles or any cycle includes a non-Rust edge.
-func cyclesAllRust(set relationship.Set) bool {
+// Languages whose build tool forbids cycles between its units (cargo crates,
+// MSBuild projects), so a cycle built only from their edges stays inside one unit.
+const (
+	langRust   = "rust"
+	langDotNet = "dotnet"
+)
+
+// cyclesAllLanguage reports whether every detected cycle is built solely from
+// lang's edges — for Rust, the signal that all cycles are intra-crate module
+// cycles (cargo forbids crate cycles), which the language permits. It inspects
+// the dependency edges WITHIN each SCC, not the global edge-language majority:
+// a polyglot repo whose Rust crate-dep edges outnumber a single Go import cycle
+// must still flag that Go cycle as critical. Returns false when there are no
+// cycles or any cycle includes an edge of another language.
+func cyclesAllLanguage(set relationship.Set, lang string) bool {
 	sccs := set.Cycles()
 	if len(sccs) == 0 {
 		return false
@@ -99,7 +113,7 @@ func cyclesAllRust(set relationship.Set) bool {
 	for _, e := range set.DependencyEdges() {
 		// An edge is part of a cycle iff both endpoints sit in the same SCC.
 		if fi, ok := sccOf[e.FromID]; ok {
-			if ti, ok2 := sccOf[e.ToID]; ok2 && fi == ti && e.Language != "rust" {
+			if ti, ok2 := sccOf[e.ToID]; ok2 && fi == ti && e.Language != lang {
 				return false
 			}
 		}
