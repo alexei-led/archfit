@@ -230,36 +230,42 @@ rules:
 		}
 	}
 	got := findingsOf(state, ruleIDModuleCycles)
-	want := []struct{ from, to, file string }{
-		{fixtureModBilling, fixtureModShipping, notifyGo},
-		{fixtureModShipping, fixtureModBilling, billGo},
+	if len(got) != 1 {
+		t.Fatalf("module_cycle findings = %+v, want one per strongly-connected component", got)
 	}
-	if len(got) != len(want) {
-		t.Fatalf("module_cycle findings = %+v, want one per direction", got)
+	f := got[0]
+	if f.Edge.From.Module != fixtureModBilling || f.Edge.To.Module != fixtureModShipping || f.Edge.From.Path != "" || f.Edge.To.Path != "" || f.Edge.Kind != "module_dependency" {
+		t.Errorf("edge = %+v, want the component's pair billing -> shipping with empty paths", f.Edge)
 	}
-	for i, w := range want {
-		f := got[i]
-		if f.Edge.From.Module != w.from || f.Edge.To.Module != w.to || f.Edge.From.Path != "" || f.Edge.To.Path != "" || f.Edge.Kind != "module_dependency" {
-			t.Errorf("finding %d edge = %+v, want module pair %s -> %s with empty paths", i, f.Edge, w.from, w.to)
-		}
-		if len(f.Locations) != 1 || f.Locations[0].File != w.file || f.Locations[0].Line != 3 {
-			t.Errorf("finding %d locations = %+v, want %s:3", i, f.Locations, w.file)
+	if f.MatchedBy["cycle_size"] != "2" || f.MatchedBy["cycle_pairs_total"] != "2" || f.MatchedBy["cycle_modules"] != "billing, shipping" {
+		t.Errorf("matched_by = %v, want one component of billing and shipping and its two ordered pairs", f.MatchedBy)
+	}
+	wantLocations := []struct {
+		file string
+		line int
+	}{{notifyGo, 3}, {billGo, 3}}
+	if len(f.Locations) != len(wantLocations) {
+		t.Fatalf("locations = %+v, want both import sites", f.Locations)
+	}
+	for i, w := range wantLocations {
+		if f.Locations[i].File != w.file || f.Locations[i].Line != w.line {
+			t.Errorf("location %d = %+v, want %s:%d", i, f.Locations[i], w.file, w.line)
 		}
 	}
 	tasks := 0
 	for _, task := range state.AgentTasks {
 		if task.RuleID == ruleIDModuleCycles {
 			tasks++
-			if len(task.Files) != 1 {
-				t.Errorf("agent task files = %v, want the import site", task.Files)
+			if len(task.Files) != 2 {
+				t.Errorf("agent task files = %v, want both import sites", task.Files)
 			}
 		}
 	}
-	if tasks != 2 {
-		t.Errorf("module_cycle agent tasks = %d, want 2", tasks)
+	if tasks != 1 {
+		t.Errorf("module_cycle agent tasks = %d, want one per component", tasks)
 	}
 
-	code, stdout, stderr := runArchfit(t, cmdExplain, got[0].ID, "-c", cfgPath)
+	code, stdout, stderr := runArchfit(t, cmdExplain, f.ID, "-c", cfgPath)
 	if code != 0 {
 		t.Fatalf("explain exit = %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 	}
