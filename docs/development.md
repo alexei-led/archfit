@@ -25,6 +25,10 @@ go test ./internal/ -run TestModelSurfaceNoDrift -count=1
 Review the golden diff and describe the contract change in the change review.
 Do not update the golden to hide an accidental API change.
 
+## Contract fixtures
+
+The result contract has five reference cases: a new violation, an existing violation, an unmeasured ratchet from profile drift, a dead selector, and missing evidence. `internal/output/agentout/testdata/cases/` holds each one three ways: `<case>.json` (the agent result), `<case>.txt` (the `check` text), and `<case>.state.json` (the state report, `archfit.architecture-state.v1`, as `check --format json` prints it). A consumer of the state report, such as the App, ingests the `.state.json` files. The reportschema test validates them against `archfit.state.schema.json`. `new_violation` carries analyzer coverage rows with per-unit `details`, and `missing_evidence` carries a row without them. After an intended change, rewrite them with `ARCHFIT_UPDATE_AGENT_CASES=1 go test ./internal/output/agentout/` and review the diff.
+
 ## Release
 
 The release workflow starts when a version tag is pushed. It builds the binaries and image.

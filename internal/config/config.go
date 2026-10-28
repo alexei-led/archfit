@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"strings"
@@ -488,6 +489,9 @@ func validateFileClass(fc FileClassDef) error {
 func validateMetricEntry(name string, knob metricKnob, e policy.MetricEntry) error {
 	if err := validateGate("metrics."+name, e.Gate); err != nil {
 		return err
+	}
+	if e.MinDelta != nil && (math.IsNaN(*e.MinDelta) || math.IsInf(*e.MinDelta, 0)) {
+		return fmt.Errorf("metrics.%s.min_delta must be a finite number (got %v)", name, *e.MinDelta)
 	}
 	if e.MinDelta != nil && *e.MinDelta < 0 {
 		return fmt.Errorf("metrics.%s.min_delta must be >= 0 (a tolerated drop, got %v)", name, *e.MinDelta)

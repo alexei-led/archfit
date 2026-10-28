@@ -274,7 +274,31 @@ type canImportAnswer struct {
 	Denials    []policyFinding `json:"denials"`
 	Accepted   []policyFinding `json:"accepted"`
 	Advisories []policyFinding `json:"advisories"`
+	// Instead is what the owners of the denying rules declared to do instead.
+	Instead []string `json:"instead"`
+	// Candidates are the declared alternatives that name a place a module owns,
+	// each judged again from the same file.
+	Candidates []policyCandidate `json:"candidates"`
+	// CandidatesNote warns that a permitted placement is not an equivalence.
+	CandidatesNote string `json:"candidates_note,omitempty"`
 }
+
+// policyCandidate is one owner-declared alternative the policy can judge.
+type policyCandidate struct {
+	Path        string `json:"path"`
+	Module      string `json:"module"`
+	PublicAPI   bool   `json:"public_api"`
+	PolicyCheck string `json:"policy_check"`
+	Basis       string `json:"basis"`
+}
+
+// Candidate basis: every candidate comes from a rule's declared alternatives,
+// never from a guess.
+const candidateBasis = "owner_alternative"
+
+// candidatesNote: the policy can say a placement is allowed; only a reader can
+// say it does the same job.
+const candidatesNote = "A permitted placement is not proof that it does the same thing: read the candidate before you move code or an import there."
 
 // policyFinding is one finding on the queried import, with its repair text.
 type policyFinding struct {
@@ -300,6 +324,10 @@ func canImportAnswerOf(a application.CanImportAnswer) canImportAnswer {
 		From: a.From, Target: a.Target, Language: a.Language, Answer: a.Answer,
 		Reasons: nonNil(a.Reasons), Denials: policyFindings(a.Denials),
 		Accepted: policyFindings(a.Accepted), Advisories: policyFindings(a.Advisories),
+		Instead: nonNil(a.Instead), Candidates: policyCandidates(a.Candidates),
+	}
+	if len(out.Candidates) > 0 {
+		out.CandidatesNote = candidatesNote
 	}
 	switch a.Answer {
 	case answerDenied:
@@ -314,27 +342,37 @@ func canImportAnswerOf(a application.CanImportAnswer) canImportAnswer {
 	return out
 }
 
+func policyCandidates(in []application.Candidate) []policyCandidate {
+	out := make([]policyCandidate, 0, len(in))
+	for _, c := range in {
+		out = append(out, policyCandidate{Path: c.Path, Module: c.Module, PublicAPI: c.PublicAPI, PolicyCheck: c.PolicyCheck, Basis: candidateBasis})
+	}
+	return out
+}
+
 func policyFindings[T interface {
 	~struct {
-		FindingID   string
-		RuleID      string
-		Status      string
-		Why         string
-		RepairKind  string
-		Goal        string
-		Constraints []string
+		FindingID    string
+		RuleID       string
+		Status       string
+		Why          string
+		RepairKind   string
+		Goal         string
+		Constraints  []string
+		Alternatives []string
 	}
 }](in []T) []policyFinding {
 	out := make([]policyFinding, 0, len(in))
 	for _, f := range in {
 		v := (struct {
-			FindingID   string
-			RuleID      string
-			Status      string
-			Why         string
-			RepairKind  string
-			Goal        string
-			Constraints []string
+			FindingID    string
+			RuleID       string
+			Status       string
+			Why          string
+			RepairKind   string
+			Goal         string
+			Constraints  []string
+			Alternatives []string
 		})(f)
 		out = append(out, policyFinding{
 			FindingID: v.FindingID, RuleID: v.RuleID, Status: v.Status, Why: v.Why,
