@@ -63,6 +63,11 @@
           "semantics_version": "scip.v3",
           "status": "disabled",
           "tool": "scip"
+        },
+        {
+          "semantics_version": "supplied-coverage.v1",
+          "status": "disabled",
+          "tool": "supplied-coverage"
         }
       ],
       "settings_hash": "\u003cSETTINGS_HASH\u003e",
@@ -124,6 +129,11 @@
       {
         "status": "disabled",
         "tool": "ast-grep"
+      },
+      {
+        "reason": "off by default because another tool supplies the artifact: set coverage.enabled: true and name it under coverage.sources to measure testability from it",
+        "status": "disabled",
+        "tool": "supplied-coverage"
       },
       {
         "status": "absent",
@@ -678,7 +688,7 @@
             "evidence/acquisition"
           ],
           "unit": "count",
-          "value": 10
+          "value": 11
         },
         {
           "name": "coverage",

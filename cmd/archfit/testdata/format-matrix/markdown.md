@@ -105,7 +105,7 @@
 - `declared_external_systems`: 0 count
 - `analyzers_reporting_coverage`: 3 count (3/3)
 - `coverage_gaps`: 0 count
-- `analyzers_not_applicable`: 10 count
+- `analyzers_not_applicable`: 11 count
 - `coverage`: 1 ratio
 
 ## Evidence coverage
@@ -123,6 +123,7 @@
 | scip | disabled | off by default because the pass is slow: set analyzers.scip.enabled: true for symbol-level coupling strength |
 | ast-grep/syntax | disabled | off by default because the pass is slow: set analyzers.syntax.enabled: true for roles, routes and exported surface |
 | ast-grep | disabled | — |
+| supplied-coverage | disabled | off by default because another tool supplies the artifact: set coverage.enabled: true and name it under coverage.sources to measure testability from it |
 | cargo-modules | absent | — |
 | roslyn | absent | — |
 
@@ -255,6 +256,7 @@ Report-only. These metrics support Balanced Coupling reasoning but never gate.
 - scip: disabled — off by default because the pass is slow: set analyzers.scip.enabled: true for symbol-level coupling strength
 - ast-grep/syntax: disabled — off by default because the pass is slow: set analyzers.syntax.enabled: true for roles, routes and exported surface
 - ast-grep: disabled
+- supplied-coverage: disabled — off by default because another tool supplies the artifact: set coverage.enabled: true and name it under coverage.sources to measure testability from it
 - cargo-modules: absent
 - roslyn: absent
 
