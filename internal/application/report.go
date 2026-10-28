@@ -63,6 +63,22 @@ func withRunFacts(doc report.Document, in IdentityInputs, gateReasons []string) 
 	return doc
 }
 
+// AttachScope attaches how the check resolved the change to the document, and
+// the same tree measured under the target tip's policy when the branch changed
+// a policy file. It also records the target in the identity, as the policy the
+// result is to be compared with.
+func AttachScope(doc report.Document, res ScopeResolution, underTargetPolicy *report.Document) report.Document {
+	doc.Scope = &report.CheckScope{
+		Mode: res.Mode, Target: res.Target, TargetSHA: res.TargetSHA, Base: res.Base,
+		Unresolved: res.Unresolved, PolicyChanged: slices.Clone(res.PolicyChanged), PolicyStale: slices.Clone(res.PolicyStale),
+		TargetPolicy: underTargetPolicy,
+	}
+	if res.TargetSHA != "" {
+		doc.State.Identity.PolicyRef = &report.PolicyRef{Ref: res.Target, SHA: res.TargetSHA}
+	}
+	return doc
+}
+
 // projectArchitectureState projects the assessment-owned architecture state
 // onto the external archfit.architecture-state.v1 contract, and adds the run
 // facts assessment deliberately never sees: which tree was measured, which tool

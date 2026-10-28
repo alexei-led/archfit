@@ -562,3 +562,27 @@ func TestAdvisoriesAreCountedNotListed(t *testing.T) {
 		t.Errorf("omitted.advisories = %d, want 2 active", got.Omitted.Advisories)
 	}
 }
+
+// TestBudgetBoundsTheResultUnderTheTargetPolicy: a branch that removes a rule
+// covering many violations has few blockers of its own and many under the
+// target's policy. The second result obeys the same size budget.
+func TestBudgetBoundsTheResultUnderTheTargetPolicy(t *testing.T) {
+	t.Parallel()
+	branch := document(report.StateHealthy)
+	target := realisticDocument(60)
+	branch.Scope = &report.CheckScope{
+		Mode: report.ScopeModeMergeBase, Target: "origin/main", PolicyChanged: []string{".archfit.yaml"}, TargetPolicy: &target,
+	}
+	raw := render(t, branch)
+	if len(raw) > budgetBytes {
+		t.Fatalf("result takes %d bytes, budget %d", len(raw), budgetBytes)
+	}
+	got := decode(t, raw)
+	view := got.Change.PolicyChange.UnderTargetPolicy
+	if got.Change.Status != ChangeUnknown || view.Status != ChangeFail {
+		t.Fatalf("change %q, under target %q, want unknown and fail", got.Change.Status, view.Status)
+	}
+	if view.BlockersOmitted == 0 || len(view.Blockers)+view.BlockersOmitted != 60 || !got.Truncated {
+		t.Errorf("kept %d + omitted %d of 60, truncated=%v: the nested list was not budgeted", len(view.Blockers), view.BlockersOmitted, got.Truncated)
+	}
+}
