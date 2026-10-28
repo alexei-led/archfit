@@ -88,3 +88,24 @@ func TestCycleRule_WhyStaysBoundedOnALargeCycle(t *testing.T) {
 		t.Errorf("matched_by.cycle_members lists %d members, want 30", got)
 	}
 }
+
+// TestModuleCycle_ConstraintSaysDeleteNotReroute pins the repair sentence an
+// agent reads: removing a dependency breaks the cycle, routing the same
+// dependency through a third module does not.
+func TestModuleCycle_ConstraintSaysDeleteNotReroute(t *testing.T) {
+	modules := []string{"a", "b"}
+	edges := []moduleTestEdge{
+		{"file:a/a.go", "package:b", "a", "b", nil},
+		{"file:b/b.go", "package:a", "b", "a", nil},
+	}
+	findings := checkProduction(newModuleCycleRule(t, "", modules...), moduleSet(edges...))
+	if len(findings) == 0 {
+		t.Fatal("no cycle finding")
+	}
+	const want = "Delete one of the cycle's dependencies. Routing the same dependency through a third module keeps the cycle"
+	for _, f := range findings {
+		if f.Constraint != want {
+			t.Errorf("constraint = %q, want %q", f.Constraint, want)
+		}
+	}
+}

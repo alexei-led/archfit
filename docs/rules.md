@@ -26,7 +26,7 @@ rules:
 | `threshold` | Reserved | Accepted by the schema for a reserved per-rule integer threshold. No built-in rule uses it. |
 | `patterns` | `forbidden_pattern` | Required ast-grep pattern entries. Accepted on other rules but ignored, with a warning. |
 | `guard` | Selector rules | Marks an expected empty selector. Default is false. |
-| `rationale` | All rules | Adds a reason to the finding and repair constraints. |
+| `rationale` | All rules | Adds a reason to the finding and repair constraints. Give every `gate: fail` rule one: it names the consequence the rule prevents, so an agent that hits the rule fixes the cause. `config lint` warns when it is missing (`--strict`: error). |
 | `alternatives` | All rules | Lists allowed alternatives in findings and repair constraints. |
 | `docs` | All rules | Adds a document reference to findings and repair constraints. |
 

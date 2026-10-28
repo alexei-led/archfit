@@ -654,7 +654,7 @@ func (r *moduleCycle) Check(s relationship.Set, ev Evidence) []finding.Finding {
 		if pairTotals[i] > maxModuleCyclePairs {
 			f.Why += fmt.Sprintf("; %d of the cycle's %d module pairs are reported", maxModuleCyclePairs, pairTotals[i])
 		}
-		f.Constraint = "Remove one direction of the module cycle; routing the dependency through another module keeps the cycle"
+		f.Constraint = "Delete one of the cycle's dependencies. Routing the same dependency through a third module keeps the cycle"
 		out = append(out, f)
 	}
 	return out

@@ -17,6 +17,12 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/application"
 )
 
+// lintMissingRationale is the config-lint code --strict promotes to an error.
+const (
+	lintMissingRationale = "missing_rationale"
+	lintErrorSeverity    = "error"
+)
+
 // configLintSchemaVersion versions the `config lint --json` document.
 const configLintSchemaVersion = "archfit.config-lint.v1"
 
@@ -25,6 +31,7 @@ type LintCmd struct {
 	Config string `short:"c" help:"Config file path." default:".archfit.yaml"`
 	Root   string `short:"r" help:"Repository root to lint against (default: the analysis root of --config, as check resolves it)." type:"path"`
 	JSON   bool   `name:"json" help:"Emit the diagnostics as a JSON document (archfit.config-lint.v1)."`
+	Strict bool   `name:"strict" help:"Treat a blocking rule without a rationale as an error."`
 }
 
 func (*LintCmd) Help() string {
@@ -37,7 +44,8 @@ Exit codes:
 
 Errors: dead_selector, unknown_volatility, unknown_subdomain, undeclared_layer,
 public_outside_module, public_matches_nothing, ambiguous_ownership.
-Warnings: guard_matches_source, and dead_selector on a gate: off rule.
+Warnings: guard_matches_source, dead_selector on a gate: off rule, and
+missing_rationale (a gate: fail rule with no rationale; an error under --strict).
 Info: guard_rule.
 
 A dead selector is decided by the predicate check uses, over the same source
@@ -67,6 +75,9 @@ func (c *LintCmd) Run(deps *appDeps) error {
 	doc := configLintDoc{SchemaVersion: configLintSchemaVersion, Diagnostics: make([]configLintDiagnostic, 0, len(diagnostics))}
 	failed := false
 	for _, d := range diagnostics {
+		if c.Strict && d.Code == lintMissingRationale {
+			d.Severity = lintErrorSeverity
+		}
 		doc.Diagnostics = append(doc.Diagnostics, configLintDiagnostic{Code: d.Code, Severity: d.Severity, Path: d.Path, Message: d.Message})
 		failed = failed || d.IsError()
 	}
