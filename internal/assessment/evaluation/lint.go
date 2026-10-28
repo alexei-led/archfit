@@ -212,6 +212,9 @@ func orMatchAll(selector string) string {
 // vacuityHint names why a dead selector can never match, when the spelling
 // itself is the defect.
 func (inv selectorInventory) vacuityHint(glob string) string {
+	if kind, endpoint, ok := nodeKindPrefix(glob); ok {
+		return " (a selector is the endpoint path, not a graph node ID: write " + endpoint + " without the " + kind + ": prefix)"
+	}
 	if unmatchableSelector(glob) {
 		return " (selectors are relative paths or dotted/crate names: no leading !, ./, ../ or /, and no !( negation)"
 	}

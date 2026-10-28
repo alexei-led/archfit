@@ -20,6 +20,9 @@ const (
 	pyCoreFile   = "src/app/core.py"
 	tsAppFile    = "web/src/app.ts"
 	rustLibFile  = "crates/core/src/lib.rs"
+	// selExternalPrefix is a graph node ID, not a rule selector: the endpoint
+	// path is the assembly name alone.
+	selExternalPrefix = "external:Npgsql"
 )
 
 // vacuityFixture is a Go repo with a Python package and a Rust crate whose
@@ -76,6 +79,10 @@ func TestVacuousSelectorsNeverCountAsConformance(t *testing.T) {
 			wantReason: "selector matches nothing: to app.adaptr"},
 		{name: "stdlib target", rule: policy.RuleDef{From: selShipping, To: "net/http"}},
 		{name: "third-party target", rule: policy.RuleDef{From: selShipping, To: "github.com/sirupsen/logrus"}},
+		{name: "external node ID prefix on the target", rule: policy.RuleDef{From: selShipping, To: selExternalPrefix},
+			wantReason: "selector matches nothing: to " + selExternalPrefix},
+		{name: "file node ID prefix on the source", rule: policy.RuleDef{From: "file:internal/shipping/ship.go", To: selBilling},
+			wantReason: "selector matches nothing: from file:internal/shipping/ship.go"},
 		{name: "module path prefix shorter than the module", rule: policy.RuleDef{From: selShipping, To: "example.com/**"}},
 		{name: "unsupported source file type", rule: policy.RuleDef{From: selJava, To: selBilling},
 			wantReason: genericReason},

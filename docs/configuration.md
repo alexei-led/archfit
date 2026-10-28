@@ -376,7 +376,7 @@ VS Code can bind the schema in `.vscode/settings.json`:
 
 The schema helps editors validate keys and closed values. It does not replace `archfit config lint` or runtime validation.
 Some conditional rules need runtime context. For example, `coverage.sources` is required only when coverage is enabled.
-Rule selector liveness depends on the scanned repository.
+Rule selector liveness depends on the scanned repository. A dependency rule's `to:` is the target's spelling in the language graph — a file path, a Go package directory, a Python dotted module, a Rust crate, or a .NET assembly name — never a graph node ID with its `kind:` prefix, such as `external:Npgsql`.
 The schema treats module `layer`, `role`, `subdomain`, and `volatility` values as strings.
 An unknown `role` is a configuration error.
 Runtime analysis warns about unknown layer, subdomain, and volatility declarations. `config lint` reports those declarations too.
