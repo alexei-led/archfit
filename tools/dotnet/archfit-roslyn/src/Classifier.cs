@@ -87,7 +87,15 @@ internal static partial class Classifier
                 reports.Add(Failed(attempt.Path, attempt.Tfm, projectFailures.FirstOrDefault() ?? unattributed ?? NoDocuments, fullRoot));
                 continue;
             }
-            var collected = await collector.CollectAsync(attempt.Project, ct);
+            var (collected, failure) = await CollectGuarded(collector, attempt.Project, ct);
+            if (collected is null)
+            {
+                reports.Add(new ProjectReport(
+                    attempt.Path, attempt.Tfm, Status.Partial,
+                    $"the compiler threw while analysing the project ({failure}), so its file edges are unknown; restore the project with NuGet access (`dotnet restore`) or install the missing references",
+                    0, [], [], [], []));
+                continue;
+            }
             // The attempt's own compilation decides. A workspace failure names
             // the project, not the evaluation it belongs to, so it is the cause
             // of a framework that is already partial; it never marks a
@@ -95,6 +103,7 @@ internal static partial class Classifier
             // error. A failure that lost evidence leaves no documents at all,
             // which is the failed branch above.
             var status = collected.UnresolvedSymbols == 0 && collected.CompileErrors == 0
+                && collected.Unreadable.Count == 0 && collected.DiagnosticsFailure == ""
                 ? Status.Complete
                 : Status.Partial;
             reports.Add(new ProjectReport(
@@ -145,6 +154,27 @@ internal static partial class Classifier
     }
 
     private sealed record Attempt(Project Project, string Path, string FullPath, string Tfm);
+
+    // CollectGuarded keeps one project's failure from ending the run: the
+    // collector already guards each file, so this catches what is left (the
+    // compilation, its diagnostics, a project's metadata) and names it.
+    private static async Task<(Collected? Collected, string Failure)> CollectGuarded(
+        Collector collector, Project project, CancellationToken ct)
+    {
+        try
+        {
+            return (await collector.CollectAsync(project, ct), "");
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            return (null, e.GetType().Name);
+        }
+    }
+
+    // roslynThrewFix is the fix of a Roslyn fault: the nullable flow analysis
+    // dereferences an unresolved type, so an incomplete reference set causes it.
+    private const string roslynThrewFix =
+        "Roslyn threw while binding the project, which an incomplete reference set causes: restore the project with NuGet access (`dotnet restore`) or install the missing references";
 
     private const string NoDocuments = "the workspace loaded no source documents";
     private const string NotLoaded = "the workspace did not load the project";
@@ -214,7 +244,29 @@ internal static partial class Classifier
             parts.Add($"{collected.CompileErrors} {noun} ({Ids(collected.CompileErrorsById)})");
             fixes.Add("fix the compile errors: a file that does not compile keeps only the edges it resolved");
         }
+        if (collected.Unreadable.Count > 0)
+        {
+            var noun = collected.Unreadable.Count == 1 ? "file" : "files";
+            parts.Add($"{collected.Unreadable.Count} {noun} could not be analysed ({ListIds(collected.Unreadable)})");
+            fixes.Add(roslynThrewFix);
+        }
+        if (collected.DiagnosticsFailure != "")
+        {
+            parts.Add($"the compiler failed to report diagnostics ({collected.DiagnosticsFailure})");
+            fixes.Add(roslynThrewFix);
+        }
         return string.Join("; ", parts.Concat(fixes.Distinct()));
+    }
+
+    // ListIds names at most five items of a list, then counts the rest: a
+    // reason keeps which units are affected, not every one.
+    internal static string ListIds(IReadOnlyList<string> items)
+    {
+        const int limit = 5;
+        var sorted = items.Order(StringComparer.Ordinal).ToList();
+        return sorted.Count <= limit
+            ? string.Join(", ", sorted)
+            : string.Join(", ", sorted.Take(limit)) + $", and {sorted.Count - limit} more";
     }
 
     private static string Ids(IReadOnlyDictionary<string, int> byId) =>

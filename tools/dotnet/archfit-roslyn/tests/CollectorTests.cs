@@ -269,6 +269,44 @@ public class CollectorTests
     private static WorkspaceDiagnostic Failed(string project, string message) =>
         new(WorkspaceDiagnosticKind.Failure, $"Msbuild failed when processing the file '{project}' with message: {message}");
 
+    // Roslyn's semantic model throws while binding a file of a compilation
+    // whose references are missing. One file must cost its own edges, not the
+    // run: the guard turns it into that file's failure.
+    [Fact]
+    public void AThrowingFileIsNamedAndOtherFilesKeepTheirEdges()
+    {
+        var (edges, failure) = Collector.Guard(() => throw new NullReferenceException());
+        Assert.Empty(edges);
+        Assert.Equal("NullReferenceException", failure);
+
+        var (kept, none) = Collector.Guard(() => (IReadOnlyList<EdgeReport>)[new EdgeReport("A.cs", false, "model", "", "type_use", 1)]);
+        Assert.Single(kept);
+        Assert.Equal("", none);
+    }
+
+    // The diagnostics call throws on the same fault; the framework keeps its
+    // files and reports the failure instead of the run losing the project.
+    [Fact]
+    public void ADiagnosticsFailureIsNamed()
+    {
+        var (unresolved, other, failure) = Collector.ErrorDiagnostics(() => throw new NullReferenceException());
+        Assert.Equal(("NullReferenceException", 0, 0), (failure, unresolved.Count, other.Count));
+    }
+
+    [Fact]
+    public void ErrorDiagnosticsSplitsUnresolvedNamesFromOtherErrors()
+    {
+        var compilation = CSharpCompilation.Create(
+            "T",
+            [CSharpSyntaxTree.ParseText("class U { Missing m; void M() { int x = \"s\"; } }")],
+            Framework,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var (unresolved, other, failure) = Collector.ErrorDiagnostics(() => compilation.GetDiagnostics());
+        Assert.Equal("", failure);
+        Assert.Contains("CS0246", unresolved.Keys);
+        Assert.Contains("CS0029", other.Keys);
+    }
+
     // MultiProject is the one project file the attempts of AnalyzeAttempts
     // share, as MSBuildWorkspace reports a multi-targeted project.
     private static readonly string MultiProject = Path.Combine(Root, "Multi", "Multi.csproj");

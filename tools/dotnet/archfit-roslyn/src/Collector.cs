@@ -14,6 +14,13 @@ internal sealed record Collected(
     // file does not compile, so the edges it would carry are not all real.
     int CompileErrors,
     IReadOnlyDictionary<string, int> CompileErrorsById,
+    // Unreadable are the files whose symbol walk threw, as "<path>: <exception>".
+    // Roslyn's nullable flow analysis throws on a compilation whose references
+    // are missing; the file's edges are unknown, the rest of the project is not.
+    IReadOnlyList<string> Unreadable,
+    // DiagnosticsFailure names the exception the compiler threw while reporting
+    // its diagnostics, "" when it reported them.
+    string DiagnosticsFailure,
     IReadOnlyList<string> UsedProjects,
     IReadOnlyList<IvtDeclaration> IvtDeclarations,
     IReadOnlyList<string> LinkedFiles,
@@ -48,21 +55,13 @@ internal sealed class Collector(Solution solution, string root)
         var compilation = await project.GetCompilationAsync(ct)
             ?? throw new InvalidOperationException($"no compilation for {project.FilePath}");
 
-        var errors = compilation.GetDiagnostics(ct)
-            .Where(d => d.Severity == DiagnosticSeverity.Error)
-            .ToList();
-        var unresolvedById = errors
-            .Where(d => UnresolvedIds.Contains(d.Id))
-            .GroupBy(d => d.Id)
-            .ToDictionary(g => g.Key, g => g.Count());
-        var compileErrorsById = errors
-            .Where(d => !UnresolvedIds.Contains(d.Id))
-            .GroupBy(d => d.Id)
-            .ToDictionary(g => g.Key, g => g.Count());
+        var (unresolvedById, compileErrorsById, diagnosticsFailure) =
+            ErrorDiagnostics(() => compilation.GetDiagnostics(ct));
 
         var projectDir = project.FilePath is null ? _root : Path.GetDirectoryName(Paths.Full(project.FilePath))!;
         var files = new List<FileReport>();
         var linked = new List<string>();
+        var unreadable = new List<string>();
         var usedAssemblies = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var document in project.Documents.OrderBy(d => d.FilePath, StringComparer.Ordinal))
@@ -82,7 +81,13 @@ internal sealed class Collector(Solution solution, string root)
                 linked.Add(rel);
             }
             var model = compilation.GetSemanticModel(tree);
-            var edges = CollectFile(rel, await tree.GetRootAsync(ct), model, compilation, usedAssemblies, ct);
+            var syntaxRoot = await tree.GetRootAsync(ct);
+            var (edges, failure) = Guard(() => CollectFile(rel, syntaxRoot, model, compilation, usedAssemblies, ct));
+            if (failure != "")
+            {
+                unreadable.Add($"{rel}: {failure}");
+                continue;
+            }
             files.Add(new FileReport(rel, Generated.IsGenerated(rel, tree, ct), edges));
         }
 
@@ -92,10 +97,50 @@ internal sealed class Collector(Solution solution, string root)
             unresolvedById,
             compileErrorsById.Values.Sum(),
             compileErrorsById,
+            unreadable,
+            diagnosticsFailure,
             UsedProjects(project, usedAssemblies),
             IvtDeclarations(compilation, project),
             linked,
             files);
+    }
+
+    // Guard runs one file's collection. Roslyn's semantic model can throw while
+    // binding a file of a compilation whose references are missing (nullable
+    // flow analysis over error types, in 5.6: System.NullReferenceException),
+    // and one such file must cost its own edges, not the run's whole report.
+    internal static (IReadOnlyList<EdgeReport> Edges, string Failure) Guard(Func<IReadOnlyList<EdgeReport>> collect)
+    {
+        try
+        {
+            return (collect(), "");
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            return ([], e.GetType().Name);
+        }
+    }
+
+    // ErrorDiagnostics counts the compilation's errors, split into unresolved
+    // names and the rest. The same Roslyn fault can throw here, and a framework
+    // whose error count is unknown keeps its files and is partial, not a failed
+    // run.
+    internal static (IReadOnlyDictionary<string, int> Unresolved, IReadOnlyDictionary<string, int> Other, string Failure)
+        ErrorDiagnostics(Func<IEnumerable<Diagnostic>> report)
+    {
+        List<Diagnostic> errors;
+        try
+        {
+            errors = report().Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            return (new Dictionary<string, int>(), new Dictionary<string, int>(), e.GetType().Name);
+        }
+        return (
+            errors.Where(d => UnresolvedIds.Contains(d.Id)).GroupBy(d => d.Id).ToDictionary(g => g.Key, g => g.Count()),
+            errors.Where(d => !UnresolvedIds.Contains(d.Id)).GroupBy(d => d.Id).ToDictionary(g => g.Key, g => g.Count()),
+            "");
     }
 
     private List<EdgeReport> CollectFile(
