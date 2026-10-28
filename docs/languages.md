@@ -147,15 +147,19 @@ The `intrusive` hint feeds the `encapsulation` metric. `InternalsVisibleTo` decl
 
 #### Project status
 
-The helper classifies each project and target framework from workspace and compilation diagnostics. Archfit folds the frameworks: a project is `complete` only when every framework is, `failed` only when every framework failed, and `partial` otherwise. Its file edges are the union of the frameworks that loaded.
+The helper classifies each project and target framework from workspace and compilation diagnostics, and one target framework's outcome never decides another's. Archfit folds the frameworks: a project is `complete` only when every framework is, `failed` only when every framework failed, and `partial` otherwise. Its file edges are the union of the frameworks that loaded.
 
 | Status | Condition | Edges |
 | --- | --- | --- |
-| `complete` | The project loaded and no symbol is unresolved. | File edges. |
-| `partial` | The project loaded, but some symbols are unresolved (missing NuGet packages or reference packs), or the workspace reported a failure for it. | File edges for resolved symbols. Coverage names the counts. |
-| `failed` | The workspace kept the project with 0 source documents, or could not add it. | None from the helper. See the fallback below. |
+| `complete` | The framework loaded its documents, every name resolved, and the compilation has no error. | File edges. |
+| `partial` | The framework loaded its documents, but a name is unresolved (missing NuGet packages or reference packs) or the compilation has an error (the file keeps only the edges it resolved). | File edges for resolved symbols. Coverage names the counts. |
+| `failed` | The framework loaded no source documents: its evaluation produced no `Compile` items, or the workspace could not add it. | None from the helper. See the fallback below. |
 
-`failed` is measured, not assumed: MSBuildWorkspace keeps a project whose evaluation failed as an empty project. A workspace failure on a project that did load its documents is `partial`. A `Tests` project that references a broken project can therefore be `partial`, not `failed`. The `dotnet-msbuild` row names the evaluation cause and fix, for example `MSB4236: SDK 'Bitwarden.Server.Sdk' not resolvable offline; run with NuGet access and a warm cache` or `global.json requests SDK X, which is not installed; install a matching SDK or relax the pin`. The `roslyn` row reads `N of M projects partial, K failed, U unresolved symbols` and names every such project with its cause, as the `dotnet-msbuild` row names every project that did not evaluate. The report keeps one shortened line per row; the run prints the whole reason on stderr (`warning: roslyn is partial; full analyzer output ...`).
+`failed` is measured, not assumed: MSBuildWorkspace keeps a project whose evaluation failed as an empty project. A framework that loaded documents is measured by its own compilation; a workspace failure for the project file is reported as that framework's cause in the `roslyn` row, but it does not hold a framework whose compilation is clean, because the failure names the project, not the framework its evaluation belongs to. A failure that loses evidence leaves no documents, which is `failed`.
+
+A multi-targeted project also has a framework-less evaluation, and MSBuild's cross-targeting build for it defines no `Compile` target, so it loads no documents. The helper omits it: it measures nothing, and its failure says nothing about the frameworks, which load separately. A project whose evaluation fails before its frameworks are known is reported `failed` with that cause.
+
+The `dotnet-msbuild` row names the evaluation cause and fix, for example `MSB4236: SDK 'Bitwarden.Server.Sdk' not resolvable offline; run with NuGet access and a warm cache` or `global.json requests SDK X, which is not installed; install a matching SDK or relax the pin`. The `roslyn` row reads `N of M projects partial, K failed, U unresolved symbols` and names every such project with its cause, as the `dotnet-msbuild` row names every project that did not evaluate. The report keeps one shortened line per row; the run prints the whole reason on stderr (`warning: roslyn is partial; full analyzer output ...`).
 
 When the helper itself fails, for example on an unsatisfiable `global.json`, it writes one `archfit-roslyn: …` line to stderr and exits 1, or 2 for an unexpected error (`ARCHFIT_ROSLYN_DEBUG=1` adds the trace). The `roslyn` row is then `partial` with `archfit-roslyn failed: <that line>`, and every project falls back to its project graph. A project whose MSBuild evaluation also failed has no project edges to fall back to; the row says how many projects fall back, or that none does.
 
@@ -168,7 +172,7 @@ Fallback limits:
 - Project edges have unknown strength. The scorer abstains unless a policy glob or an approved label supplies strength.
 - Selectors match a project edge by the `.csproj` path: a directory glob such as `src/Core/**` matches it, a glob for files below it (`src/Core/Api/**`) does not.
 - Edge counts become project pairs for fallback projects.
-- A required rule that reads a file of a fallback or `partial` project is unevaluated, and the reason names the projects and the fix. Rules scoped to `complete` projects stay evaluated. See [evidence](evidence.md#net-trust-limits).
+- A required rule that reads a file of a fallback or `partial` project is unevaluated, and the reason names each such project with its own cause (its unresolved symbols, its missing reference pack, or its compile errors), not a generic restore. Rules scoped to `complete` projects stay evaluated. A rule whose scope is established and that produced a finding is never also listed unevaluated: it was evaluated, and its finding is the result. See [evidence](evidence.md#net-trust-limits).
 - The `roslyn` row reads `partial` when the helper failed for a project or the whole run, `timed out` on a timeout, `absent` with a coverage gap when `ARCHFIT_DOTNET_ROSLYN` is unset, and `disabled` without a gap when switched off. A `partial` or `timed out` row counts as missing inputs, not reduced precision.
 - Edges from test projects are dropped, both fallback and file edges, as Rust drops dev-dependencies. Their files stay as nodes. A test project is one that evaluates `IsTestProject=true`, or whose project path has a `test/` or `tests/` segment (the .NET test-file rule in [file classification](#file-classification)): offline, the test SDK props under `obj/` may not be imported and `IsTestProject` evaluates empty. A project outside such a segment and without the property, such as `src/Foo.Tests/Foo.Tests.csproj`, keeps its edges.
 
