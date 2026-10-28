@@ -163,6 +163,8 @@ Run the SCIP reader tests with the provisioned interpreter; they do not bootstra
 "$ARCHFIT_TOOL_PYTHON" -I internal/extract/scip/scip_reader_test.py
 ```
 
+CI runs the architecture drift gate (`make arch-lint`'s check) inside the image built from the change, in the `Complete image (linux/amd64)` job, not on the runner. The measurement profile compares each producer's exact tool version. Runner images vary (two jobs of one run have seen git 2.55 and 2.56), and the image is the measurement environment of the Action, the gate of record. On the runner or locally, the same check reports the ratchet reference as not comparable (`unmeasured_ratchet`, repository attention). The step accepts exit `0` and `2`, as `make arch-lint` does, and prints the repository attention. A baseline recorded outside the image does not compare in it either: re-anchor through the `archfit` workflow (`workflow_dispatch`, `mode: reanchor`), whose pull request an owner approves.
+
 The release identity distinguishes the multiarch index from platform manifests. App/Action pins
 must use the matching platform digest, and their strict consumer/capture tests need separate
 adoption. Keep baseline migration owner-reviewed rather than editing a reference to pass CI.
