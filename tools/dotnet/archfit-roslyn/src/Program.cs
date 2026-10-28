@@ -133,7 +133,8 @@ internal static class Loader
             {
                 diagnostics.Add(e.Diagnostic);
             }
-            if (e.Diagnostic.Kind == WorkspaceDiagnosticKind.Failure)
+            if (e.Diagnostic.Kind == WorkspaceDiagnosticKind.Failure
+                && !Classifier.IsCrossTargetingFailure(e.Diagnostic.Message))
             {
                 Console.Error.WriteLine($"archfit-roslyn: workspace failure: {e.Diagnostic.Message}");
             }

@@ -122,6 +122,78 @@ public class CollectorTests
         Assert.Contains($"{id} x1", project.Reason);
     }
 
+    // A cross-targeting build imports no Compile target, so MSBuildWorkspace
+    // keeps the framework-less evaluation of a multi-targeted project as an
+    // empty project and reports its failure. It measured nothing: it is not an
+    // entry, and it does not mark the frameworks complete.
+    [Fact]
+    public async Task TheFrameworklessEvaluationIsNotReportedAndDoesNotMarkAFramework()
+    {
+        var report = await AnalyzeAttempts(
+            [Failed(MultiProject, "Project does not contain 'Compile' target.")],
+            ("Multi", ""),
+            ("Multi(net10.0)", "class A { }"),
+            ("Multi(net8.0)", "class B { }"));
+
+        Assert.Equal(
+            [("Multi/Multi.csproj", "net10.0", Status.Complete), ("Multi/Multi.csproj", "net8.0", Status.Complete)],
+            report.Projects.Select(p => (p.Path, p.Tfm, p.Status)));
+        Assert.All(report.Projects, p => Assert.Equal("", p.Reason));
+    }
+
+    // Each framework carries its own failure: the framework that loaded a
+    // clean compilation is complete even though another framework of the same
+    // project did not load, and neither reason borrows the other's cause.
+    [Fact]
+    public async Task AFrameworksFailureDoesNotMakeASiblingPartial()
+    {
+        var report = await AnalyzeAttempts(
+            [
+                Failed(MultiProject, "Project does not contain 'Compile' target."),
+                Failed(MultiProject, "The TargetFramework value 'bogus1.0' was not recognized."),
+            ],
+            ("Multi", ""),
+            ("Multi(net10.0)", "class A { }"),
+            ("Multi(bogus1.0)", "class B { Missing m; }"));
+
+        var net10 = report.Projects.Single(p => p.Tfm == "net10.0");
+        Assert.Equal((Status.Complete, ""), (net10.Status, net10.Reason));
+        var bogus = report.Projects.Single(p => p.Tfm == "bogus1.0");
+        Assert.Equal(Status.Partial, bogus.Status);
+        Assert.Contains("The TargetFramework value 'bogus1.0' was not recognized", bogus.Reason);
+        Assert.DoesNotContain("'Compile' target", bogus.Reason);
+    }
+
+    // A framework that loaded no documents is failed, and it carries its own
+    // framework: the caller names the framework whose evidence is missing
+    // instead of the whole project.
+    [Fact]
+    public async Task AFrameworkThatLoadedNothingIsFailedWithItsOwnReason()
+    {
+        var report = await AnalyzeAttempts(
+            [Failed(MultiProject, "The TargetFramework value 'missing1.0' was not recognized.")],
+            ("Multi(net10.0)", "class A { }"),
+            ("Multi(missing1.0)", ""));
+
+        var missing = report.Projects.Single(p => p.Tfm == "missing1.0");
+        Assert.Equal(Status.Failed, missing.Status);
+        Assert.Contains("The TargetFramework value 'missing1.0' was not recognized", missing.Reason);
+        Assert.Empty(missing.Files);
+        Assert.Equal(Status.Complete, report.Projects.Single(p => p.Tfm == "net10.0").Status);
+    }
+
+    // A compilation that does not compile may have dropped edges, so an error
+    // other than an unresolved name keeps the framework partial.
+    [Fact]
+    public async Task ACompileErrorMakesTheFrameworkPartial()
+    {
+        var report = await Analyze(("App", [("App/U.cs", "class U { void M() { int x = \"s\"; } }")], []));
+
+        var project = Assert.Single(report.Projects);
+        Assert.Equal(Status.Partial, project.Status);
+        Assert.Contains("1 compile error (CS0029 x1)", project.Reason);
+    }
+
     // The workspace's references include transitive ones (Core here); the
     // report names only the projects used, and the caller compares them with
     // the direct references it evaluated.
@@ -191,7 +263,90 @@ public class CollectorTests
     private static IEnumerable<EdgeReport> Edges(Report report, string file) =>
         report.Projects.SelectMany(p => p.Files).Single(f => f.Path == file).Edges;
 
-    private static async Task<Report> Analyze(params (string Name, (string Path, string Source)[] Files, string[] References)[] projects)
+    private static async Task<Report> Analyze(params (string Name, (string Path, string Source)[] Files, string[] References)[] projects) =>
+        await AnalyzeWith([], projects);
+
+    private static WorkspaceDiagnostic Failed(string project, string message) =>
+        new(WorkspaceDiagnosticKind.Failure, $"Msbuild failed when processing the file '{project}' with message: {message}");
+
+    // Roslyn's semantic model throws while binding a file of a compilation
+    // whose references are missing. One file must cost its own edges, not the
+    // run: the guard turns it into that file's failure.
+    [Fact]
+    public void AThrowingFileIsNamedAndOtherFilesKeepTheirEdges()
+    {
+        var (edges, failure) = Collector.Guard(() => throw new NullReferenceException());
+        Assert.Empty(edges);
+        Assert.Equal("NullReferenceException", failure);
+
+        var (kept, none) = Collector.Guard(() => (IReadOnlyList<EdgeReport>)[new EdgeReport("A.cs", false, "model", "", "type_use", 1)]);
+        Assert.Single(kept);
+        Assert.Equal("", none);
+    }
+
+    // The diagnostics call throws on the same fault; the framework keeps its
+    // files and reports the failure instead of the run losing the project.
+    [Fact]
+    public void ADiagnosticsFailureIsNamed()
+    {
+        var (unresolved, other, failure) = Collector.ErrorDiagnostics(() => throw new NullReferenceException());
+        Assert.Equal(("NullReferenceException", 0, 0), (failure, unresolved.Count, other.Count));
+    }
+
+    [Fact]
+    public void ErrorDiagnosticsSplitsUnresolvedNamesFromOtherErrors()
+    {
+        var compilation = CSharpCompilation.Create(
+            "T",
+            [CSharpSyntaxTree.ParseText("class U { Missing m; void M() { int x = \"s\"; } }")],
+            Framework,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var (unresolved, other, failure) = Collector.ErrorDiagnostics(() => compilation.GetDiagnostics());
+        Assert.Equal("", failure);
+        Assert.Contains("CS0246", unresolved.Keys);
+        Assert.Contains("CS0029", other.Keys);
+    }
+
+    // MultiProject is the one project file the attempts of AnalyzeAttempts
+    // share, as MSBuildWorkspace reports a multi-targeted project.
+    private static readonly string MultiProject = Path.Combine(Root, "Multi", "Multi.csproj");
+
+    // AnalyzeAttempts loads attempts of one project file: the same FilePath
+    // under several project names, as MSBuildWorkspace keeps a multi-targeted
+    // project's frameworks. An empty source is an attempt with no documents.
+    private static async Task<Report> AnalyzeAttempts(
+        IReadOnlyList<WorkspaceDiagnostic> diagnostics, params (string Name, string Source)[] attempts)
+    {
+        using var workspace = new AdhocWorkspace();
+        var solution = workspace.CurrentSolution;
+        foreach (var (name, source) in attempts)
+        {
+            var id = ProjectId.CreateNewId();
+            var documents = source.Length == 0
+                ? Array.Empty<DocumentInfo>()
+                : [DocumentInfo.Create(
+                    DocumentId.CreateNewId(id),
+                    name + ".cs",
+                    loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Default)),
+                    filePath: Path.Combine(Root, "Multi", name + ".cs"))];
+            solution = solution.AddProject(ProjectInfo.Create(
+                id,
+                VersionStamp.Default,
+                name,
+                name,
+                LanguageNames.CSharp,
+                filePath: MultiProject,
+                compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable),
+                parseOptions: new CSharpParseOptions(LanguageVersion.Latest),
+                documents: documents,
+                metadataReferences: Framework));
+        }
+        return await Classifier.ClassifyAsync(solution, Root, diagnostics, CancellationToken.None);
+    }
+
+    private static async Task<Report> AnalyzeWith(
+        IReadOnlyList<WorkspaceDiagnostic> diagnostics,
+        params (string Name, (string Path, string Source)[] Files, string[] References)[] projects)
     {
         using var workspace = new AdhocWorkspace();
         var ids = projects.ToDictionary(p => p.Name, _ => ProjectId.CreateNewId());
@@ -215,7 +370,7 @@ public class CollectorTests
                 projectReferences: references.Select(r => new ProjectReference(ids[r])),
                 metadataReferences: Framework));
         }
-        return await Classifier.ClassifyAsync(solution, Root, [], CancellationToken.None);
+        return await Classifier.ClassifyAsync(solution, Root, diagnostics, CancellationToken.None);
     }
 
     private static readonly MetadataReference[] Framework = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)

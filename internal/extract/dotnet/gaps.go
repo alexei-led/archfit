@@ -81,9 +81,11 @@ func (e *Extractor) LastDependencyGaps(files []string) (gaps DependencyGaps, att
 }
 
 // projectGaps names the gap of every evaluated non-test project whose file
-// evidence is incomplete, keyed by project, and the fix of each gap. A run
-// with no helper report shares the roslyn row's reason as its fix, since the
-// cause is the run and not the project.
+// evidence is incomplete, keyed by project, and the fix of each gap. An
+// incomplete project's gap carries the cause the roslyn row already states, so
+// an unevaluated rule names why the project's evidence is short instead of
+// always advising a restore. A run with no helper report shares the roslyn
+// row's reason as its fix, since the cause is the run and not the project.
 func (e *Extractor) projectGaps() (gaps, fixes map[string]string) {
 	reported := make(map[string]TypeGraphProject, len(e.lastTypeGraph.Projects))
 	for _, p := range e.lastTypeGraph.Projects {
@@ -91,7 +93,10 @@ func (e *Extractor) projectGaps() (gaps, fixes map[string]string) {
 	}
 	gaps, fixes = map[string]string{}, map[string]string{}
 	add := func(project, gap, fix string) {
-		gaps[project], fixes[gap] = gap, fix
+		gaps[project] = gap
+		if fix != "" {
+			fixes[gap] = fix
+		}
 	}
 	for _, p := range e.last.Projects {
 		if p.isTest() {
@@ -106,7 +111,11 @@ func (e *Extractor) projectGaps() (gaps, fixes map[string]string) {
 		case !inReport:
 			add(p.Path, p.Path+" not reported", fixUnreported)
 		case tp.Status != TypeGraphComplete:
-			add(p.Path, p.Path+" "+tp.Status, fixRestore)
+			if tp.Reason == "" {
+				add(p.Path, p.Path+" "+tp.Status, fixRestore)
+				continue
+			}
+			add(p.Path, p.Path+" "+tp.Status+": "+tp.Reason, "")
 		}
 	}
 	return gaps, fixes

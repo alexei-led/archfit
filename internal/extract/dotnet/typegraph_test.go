@@ -311,6 +311,48 @@ func TestTypeGraph_RecordedFixtureProjects(t *testing.T) {
 	}
 }
 
+// The helper omits the framework-less evaluation of a multi-targeted project.
+// A helper that still reports it as failed names no framework, so when every
+// framework the project evaluates loaded, the entry measured nothing: it must
+// not hold the project. When an evaluated framework has no loaded entry the
+// failure may name it and stays.
+func TestTypeGraph_FrameworklessFailureDoesNotHoldTheLoadedFrameworks(t *testing.T) {
+	withOuterFailure := func(dropNet8 bool) string {
+		return editReport(t, func(ps []map[string]any) []map[string]any {
+			out := make([]map[string]any, 0, len(ps)+1)
+			for _, p := range ps {
+				if p[keyPath] == legacyProj {
+					if dropNet8 && p["tfm"] == "net8.0" {
+						continue
+					}
+					p["status"], p["reason"], p["unresolved_symbols"] = "complete", "", 0
+				}
+				out = append(out, p)
+			}
+			return append(out, map[string]any{
+				keyPath: legacyProj, "tfm": "", "status": "failed", "unresolved_symbols": 0,
+				"reason": "Project does not contain 'Compile' target.; fix the project so `dotnet build` loads it",
+				"files":  []any{},
+			})
+		})
+	}
+
+	e, _, _, _ := fixtureRun(t, autoCfg(), replying(withOuterFailure(false)))
+	legacy := typeProject(t, e.LastTypeGraph(), legacyProj)
+	if legacy.Status != dotnet.TypeGraphComplete || legacy.Reason != "" {
+		t.Errorf("legacy = %+v, want complete: the framework-less evaluation measured nothing", legacy)
+	}
+	if !slices.Equal(legacy.TargetFrameworks, []string{targetNet10, targetNet8}) {
+		t.Errorf("legacy frameworks = %v", legacy.TargetFrameworks)
+	}
+
+	e, _, _, _ = fixtureRun(t, autoCfg(), replying(withOuterFailure(true)))
+	legacy = typeProject(t, e.LastTypeGraph(), legacyProj)
+	if legacy.Status != dotnet.TypeGraphPartial || !strings.Contains(legacy.Reason, targetNet8) {
+		t.Errorf("legacy = %+v, want partial naming %s: its framework did not load", legacy, targetNet8)
+	}
+}
+
 func TestTypeGraph_HelperInvocation(t *testing.T) {
 	_, fake, _, _ := fixtureRun(t, autoCfg(), replying(recordedReport(t)))
 	if len(fake.helperCalls) != 2 {
@@ -1088,6 +1130,32 @@ func TestTypeGraph_TestClassifiedPathDropsEdgesWithoutIsTestProject(t *testing.T
 				t.Error("the test project's file is no longer a node")
 			}
 		})
+	}
+}
+
+// A failed evaluation reports the error that failed it, not a warning printed
+// before it: eShop's functional tests print the NU1902 vulnerable-package
+// warning first and fail on ASPIRE009.
+func TestFailedEvaluationNamesTheErrorNotAWarning(t *testing.T) {
+	const app = "App/App.csproj"
+	root := tree(t, app)
+	fake := newFake(t, root, map[string]reply{app: {exit: 1, stderr: strings.Join([]string{
+		app + " : warning NU1902: Package 'MessagePack' 2.5.302 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-qhrr-8q5h-9q3h",
+		"",
+		app + " : error ASPIRE009: The Aspire CLI bundle could not be resolved.",
+		"",
+		"Build FAILED.",
+	}, "\n")}})
+	e := dotnet.New(fake, autoCfg(), nil)
+	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	projects := e.LastEvaluation().Projects
+	if len(projects) != 1 {
+		t.Fatalf("projects = %+v, want one", projects)
+	}
+	if reason := projects[0].Reason; !strings.Contains(reason, "ASPIRE009") || strings.Contains(reason, "NU1902") {
+		t.Errorf("reason = %q, want the ASPIRE009 error, not the NU1902 warning", reason)
 	}
 }
 

@@ -599,6 +599,7 @@ func withoutEdges(files []helperFile) ([]helperFile, int) {
 // unused (the helper's workspace adds transitive ones).
 func foldProject(path string, entries []helperProject, eval ProjectEvaluation) (TypeGraphProject, []helperFile) {
 	tp := TypeGraphProject{Path: path, Status: TypeGraphFailed}
+	entries = withoutOuterFailure(entries, eval.TargetFrameworks)
 	ivts := map[helperIVT]struct{}{}
 	linked := map[string]struct{}{}
 	used := map[string]struct{}{}
@@ -663,6 +664,40 @@ func foldProject(path string, entries []helperProject, eval ProjectEvaluation) (
 	tp.IVTDeclarations = len(ivts)
 	tp.LinkedFiles = sortedKeys(linked)
 	return tp, files
+}
+
+// withoutOuterFailure drops a failed entry that names no framework when every
+// framework the project evaluates loaded one: such an entry is MSBuild's
+// framework-less evaluation of a multi-targeted project, which loads no
+// documents and measures nothing, so it neither holds the project nor adds a
+// reason. When a framework the project evaluates has no loaded entry, the
+// failure may name it and stays.
+func withoutOuterFailure(entries []helperProject, evaluated []string) []helperProject {
+	if len(evaluated) == 0 {
+		return entries
+	}
+	loaded := make([]string, 0, len(entries))
+	for _, p := range entries {
+		if p.Status != TypeGraphFailed && p.TFM != "" {
+			loaded = append(loaded, p.TFM)
+		}
+	}
+	if len(loaded) == 0 {
+		return entries
+	}
+	for _, tfm := range evaluated {
+		if !slices.Contains(loaded, tfm) {
+			return entries
+		}
+	}
+	out := make([]helperProject, 0, len(entries))
+	for _, p := range entries {
+		if p.Status == TypeGraphFailed && p.TFM == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // failedFrameworks names the framework of a failed entry: its own, else the
