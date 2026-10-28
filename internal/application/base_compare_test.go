@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/alexei-led/archfit/v3/internal/assessment/evaluation"
 	"github.com/alexei-led/archfit/v3/internal/evidence"
@@ -62,7 +63,7 @@ func TestBaseComparison_BaseRunReadsTheWorkingTreeAndLeaksNoBasePath(t *testing.
 		Preparer: noPreparation{}, Evidence: head, Stderr: io.Discard, Worktree: fixedWorktree{},
 		NewBaseEvidence: func(string) EvidenceStage { return base },
 	}
-	out, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: "main"})
+	out, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: blockBaseRef})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,5 +79,80 @@ func TestBaseComparison_BaseRunReadsTheWorkingTreeAndLeaksNoBasePath(t *testing.
 		if strings.Contains(r, baseScanRoot) {
 			t.Errorf("origin reason leaks the base checkout path: %q", r)
 		}
+	}
+}
+
+// TestBaseComparison_LongOriginReasonIsDisclosedInFull: an origin reason names
+// every project behind a degraded base side and can run far past the report's
+// one-line bound. The projected line stays bounded; stderr carries it whole.
+func TestBaseComparison_LongOriginReasonIsDisclosedInFull(t *testing.T) {
+	long := "cannot load: " + strings.Repeat("src/Some/Project.csproj, ", 30) + "src/Last/Project.csproj"
+	head := &coverageStage{root: headScanRoot, row: modevidence.Coverage{Tool: toolPrimary, Status: modevidence.StatusOK}}
+	base := &coverageStage{root: baseScanRoot, row: modevidence.Coverage{Tool: toolPrimary, Status: modevidence.StatusPartial, Reason: long}}
+	var stderr strings.Builder
+	stages := StageExecutor{
+		Preparer: noPreparation{}, Evidence: head, Stderr: &stderr, Worktree: fixedWorktree{},
+		NewBaseEvidence: func(string) EvidenceStage { return base },
+	}
+	out, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: blockBaseRef})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := toolPrimary + ": head ok, base partial — base: " + long
+	if !strings.Contains(stderr.String(), want) {
+		t.Errorf("stderr does not carry the whole origin reason:\n%s", stderr.String())
+	}
+	reasons := ProjectReport(out.Diagnostic, out.Score).State.Comparison.OriginReasons
+	if len(reasons) != 1 {
+		t.Fatalf("projected origin reasons = %q, want one", reasons)
+	}
+	if n := utf8.RuneCountInString(reasons[0]); n > maxReportTextRunes || !strings.HasSuffix(reasons[0], "…") {
+		t.Errorf("projected origin reason is %d runes, %q; want a bounded line ending in an ellipsis", n, reasons[0])
+	}
+}
+
+// TestBaseComparison_BaseDegradationIsDisclosedOnStderr: the head run prints
+// each analyzer's full reason from Execute; the base sub-run bypasses Execute,
+// so a base-side partial row was only visible as the comparison's bounded reason.
+// It now gets the same disclosure, labelled with the base prefix.
+func TestBaseComparison_BaseDegradationIsDisclosedOnStderr(t *testing.T) {
+	long := "13 complete, 54 partial, 18 failed: " + strings.Repeat("src/Some/Project.csproj partial: no reference pack; ", 20)
+	head := &coverageStage{root: headScanRoot, row: modevidence.Coverage{Tool: toolPrimary, Status: modevidence.StatusOK}}
+	base := &coverageStage{root: baseScanRoot, row: modevidence.Coverage{Tool: toolPrimary, Status: modevidence.StatusPartial, Reason: long}}
+	var stderr strings.Builder
+	stages := StageExecutor{
+		Preparer: noPreparation{}, Evidence: head, Stderr: &stderr, Worktree: fixedWorktree{},
+		NewBaseEvidence: func(string) EvidenceStage { return base },
+	}
+	if _, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: blockBaseRef}); err != nil {
+		t.Fatal(err)
+	}
+	got := stderr.String()
+	if !strings.Contains(got, "warning: [base] "+toolPrimary+" is partial") {
+		t.Errorf("stderr does not carry a base-labelled coverage warning:\n%s", got)
+	}
+	if !strings.Contains(got, long) {
+		t.Errorf("stderr does not carry the base analyzer's full reason:\n%s", got)
+	}
+	if strings.Contains(got, "warning: "+toolPrimary) {
+		t.Errorf("the ok head row was disclosed as degraded:\n%s", got)
+	}
+}
+
+// TestBaseComparison_ShortOriginReasonAddsNoStderr keeps stderr quiet for the
+// ordinary case: a reason within the bound is published as is.
+func TestBaseComparison_ShortOriginReasonAddsNoStderr(t *testing.T) {
+	head := &coverageStage{root: headScanRoot, row: modevidence.Coverage{Tool: toolPrimary, Status: modevidence.StatusOK}}
+	base := &coverageStage{root: baseScanRoot, row: modevidence.Coverage{Tool: toolPrimary, Status: modevidence.StatusPartial, Reason: "cannot load: one package"}}
+	var stderr strings.Builder
+	stages := StageExecutor{
+		Preparer: noPreparation{}, Evidence: head, Stderr: &stderr, Worktree: fixedWorktree{},
+		NewBaseEvidence: func(string) EvidenceStage { return base },
+	}
+	if _, err := stages.Execute(t.Context(), AnalysisRequest{BaseRef: blockBaseRef}); err != nil {
+		t.Fatal(err)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("a report-safe origin reason was disclosed on stderr: %q", stderr.String())
 	}
 }

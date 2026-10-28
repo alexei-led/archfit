@@ -355,9 +355,9 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 		helperRoot = resolved
 	}
 	mapper := newSnapshotMapper(snap, s.GitRoot)
-	var changed []string
+	var changed, moved []string
 	if len(borrowed) > 0 {
-		if changed, err = e.changedRestoreInputs(ctx, helperRoot, s.DependencyRoot, targets, borrowed, mapper); err != nil {
+		if changed, moved, err = e.changedRestoreInputs(ctx, helperRoot, s.DependencyRoot, targets, borrowed, mapper); err != nil {
 			if isTimeout(ctx, err) {
 				return timedOutRun("", fallback), nil
 			}
@@ -400,43 +400,55 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 		return typeGraphResult{}, err
 	}
 	res = foldReport(report, projects)
-	markChangedRestoreInputs(res.graph.Projects, changed)
+	markChangedRestoreInputs(res.graph.Projects, changed, moved)
 	if len(snap.aboveRepo) > 0 {
 		res.details = append(res.details, "build inputs above the copied tree are not in the snapshot: "+strings.Join(snap.aboveRepo, ", "))
 	}
 	res.cov = typeGraphCoverage(version, res)
 	if len(borrowed) > 0 || len(unrestored) > 0 {
 		// First, so the cause survives every shortened rendering of the reason.
-		res.cov.Reason = joinReason(borrowReason(len(borrowed), changed, unrestored), res.cov.Reason)
+		res.cov.Reason = joinReason(borrowReason(len(borrowed), changed, moved, unrestored), res.cov.Reason)
 	}
 	return res, nil
 }
 
 // markChangedRestoreInputs makes every project whose restore inputs differ
-// from the working tree's partial: it was analysed against packages its own
-// restore may not resolve, so its edges are not proven to be the checkout's.
-func markChangedRestoreInputs(projects []TypeGraphProject, changed []string) {
+// from the working tree's, or whose restore outputs were produced for another
+// path, partial: it was analysed against packages its own restore may not
+// resolve, so its edges are not proven to be the checkout's.
+func markChangedRestoreInputs(projects []TypeGraphProject, changed, moved []string) {
 	for i := range projects {
 		p := &projects[i]
-		if !slices.Contains(changed, p.Path) {
+		var reason string
+		switch {
+		case slices.Contains(moved, p.Path):
+			reason = reasonRestoreOutputsMoved
+		case slices.Contains(changed, p.Path):
+			reason = reasonRestoreInputsDiffer
+		default:
 			continue
 		}
 		if p.Status == TypeGraphComplete {
 			p.Status = TypeGraphPartial
 		}
-		p.Reason = joinReason(reasonRestoreInputsDiffer, p.Reason)
+		p.Reason = joinReason(reason, p.Reason)
 	}
 }
 
 // borrowReason discloses a checkout's restore outputs: the projects without
-// any, the projects whose borrowed outputs do not match their restore inputs,
-// and how many borrowed. Each fix precedes its list, so a shortened reason
-// keeps it; every project is named, as in the rest of the row.
-func borrowReason(borrowed int, changed, unrestored []string) string {
+// any, the projects whose borrowed outputs cannot be matched to their path,
+// the projects whose restore inputs differ, and how many borrowed. Each fix
+// precedes its list, so a shortened reason keeps it; every project is named,
+// as in the rest of the row.
+func borrowReason(borrowed int, changed, moved, unrestored []string) string {
 	var parts []string
 	if len(unrestored) > 0 {
 		parts = append(parts, fmt.Sprintf("no restore outputs for %s in the checkout or at the same path in the working tree; run dotnet restore in the working tree: %s",
 			plural(len(unrestored), "project", "projects"), strings.Join(unrestored, ", ")))
+	}
+	if len(moved) > 0 {
+		parts = append(parts, "restore outputs were produced for another path, so they are partial; run dotnet restore in the working tree: "+
+			strings.Join(moved, ", "))
 	}
 	if len(changed) > 0 {
 		parts = append(parts, fmt.Sprintf("restore inputs (package references, central versions, sources, global.json, NuGet.config, Directory.Build.props/.targets, Directory.Packages.props) differ from the working tree's for %s, so they are partial: %s",

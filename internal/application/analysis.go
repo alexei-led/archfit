@@ -363,6 +363,7 @@ func (s StageExecutor) assess(ctx context.Context, req AnalysisRequest, acquired
 		if err := s.attachBaseComparison(ctx, req, runCtx, &diag); err != nil {
 			return AnalysisResult{}, err
 		}
+		discloseRawComparisonReasons(s.stderr(), diag.Comparison)
 	}
 	out.Diagnostic = diag
 	if req.CaptureRelationships {

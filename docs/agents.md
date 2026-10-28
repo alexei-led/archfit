@@ -18,7 +18,8 @@ returns `denied`, `not_decided`, `allowed`, or `unconstrained`.
 - `denied`: do not add the import. Use the reported repair goal and constraints.
 - `not_decided`: a whole-graph rule or missing evidence can still block it.
   Add the import only if needed, then run `check`.
-- `allowed`: the current allowlist or layer order permits the import.
+- `allowed`: the current allowlist or layer order permits the import, and no
+  configured whole-graph rule could still block it.
 - `unconstrained`: no rule decides the import. This is not permission.
 
 ## Check and repair

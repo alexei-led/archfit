@@ -553,10 +553,46 @@ func (inv selectorInventory) goModulePathOf(pattern string) (string, bool) {
 	return "", false
 }
 
-// unmatchableSelector reports a spelling no graph node ID can take. doublestar
-// has no negation, so "!(...)" and a leading "!" are literal text; node IDs are
-// clean relative paths or dotted/crate names, never "./x", "../x" or "/x".
+// graphNodeKinds are the kind labels a graph node ID is prefixed with
+// ("file:src/a.go", "external:Npgsql"). This package judges selectors, not the
+// graph, so it does not import the graph's own constant: the labels are the
+// serialized contract and a rule that reads the raw graph bypasses
+// relationship classification.
+var graphNodeKinds = map[string]struct{}{
+	"repo": {}, "module": {}, "package": {}, "file": {}, "external": {}, "project": {},
+}
+
+// nodeKindPrefix splits a selector written as a graph node ID into that kind and
+// the endpoint spelling after it ("external:Npgsql" → "external", "Npgsql"). ok
+// is false for a Rust crate::mod path and for any leading segment that is not a
+// node kind.
+func nodeKindPrefix(pattern string) (kind, endpoint string, ok bool) {
+	kind, endpoint, found := strings.Cut(pattern, ":")
+	if !found || strings.HasPrefix(endpoint, ":") {
+		return "", "", false
+	}
+	if _, known := graphNodeKinds[kind]; !known {
+		return "", "", false
+	}
+	return kind, endpoint, true
+}
+
+// nodeKindedSelector reports a selector spelled as a graph node ID. A guard
+// cannot turn one live: the endpoint path never carries the kind prefix, so a
+// path that appears later would still not match.
+func nodeKindedSelector(pattern string) bool {
+	_, _, ok := nodeKindPrefix(pattern)
+	return ok
+}
+
+// unmatchableSelector reports a spelling no endpoint path can take. doublestar
+// has no negation, so "!(...)" and a leading "!" are literal text; endpoint
+// paths are clean relative paths or dotted/crate names, never "./x", "../x",
+// "/x" or a node ID's "kind:" prefix.
 func unmatchableSelector(pattern string) bool {
+	if nodeKindedSelector(pattern) {
+		return true
+	}
 	return strings.HasPrefix(pattern, "!") || strings.Contains(pattern, "!(") ||
 		strings.HasPrefix(pattern, "./") || strings.HasPrefix(pattern, "../") || strings.HasPrefix(pattern, "/")
 }

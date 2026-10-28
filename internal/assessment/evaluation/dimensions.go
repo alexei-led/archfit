@@ -369,18 +369,19 @@ func ruleProducerScope(diag *result.Result, rule policy.RuleDef, p policy.Policy
 // policy defect unless the rule is a guard. A guard holds while either side
 // matches nothing: no edge can start at a source that is not there or reach a
 // target that is not there, whatever state the dependency producer is in, so a
-// partial producer run cannot hold it unevaluated. vacuous() already refuses a
-// selector the inventory cannot judge. A selector that matches only source no
-// dependency producer analyses is neither: the code is there and nothing reads
-// its relationships, so guard or not the rule stays unevaluated with a reason
-// saying so. decided is false when the selectors are live, so the caller
-// scopes the rule as usual.
+// partial producer run cannot hold it unevaluated. A selector spelled as a graph
+// node ID is the exception: it can never match, however the tree changes, so a
+// guard cannot hold it. vacuous() already refuses a selector the inventory
+// cannot judge. A selector that matches only source no dependency producer
+// analyses is neither: the code is there and nothing reads its relationships, so
+// guard or not the rule stays unevaluated with a reason saying so. decided is
+// false when the selectors are live, so the caller scopes the rule as usual.
 func vacuityScope(rule policy.RuleDef, inv selectorInventory) (scope ruleScope, decided bool) {
 	side, glob, vacuous := inv.vacuousSelector(rule)
 	switch {
 	case !vacuous:
 		return ruleScope{}, false
-	case !rule.Guard || inv.matchesOnlyUnanalysed(rule.Type, side, glob):
+	case !rule.Guard || nodeKindedSelector(glob) || inv.matchesOnlyUnanalysed(rule.Type, side, glob):
 		return ruleScope{status: ruleScopeUnknown, reason: inv.vacuityReason(rule.Type, side, glob)}, true
 	default:
 		return ruleScope{status: ruleScopeNotApplicable}, true
