@@ -268,8 +268,17 @@ func testOriginGoOnlyFindings(t *testing.T) {
 	if !maps.Equal(byFrom, want) {
 		t.Errorf("finding origins by importer = %v, want %v", byFrom, want)
 	}
-	if ids := got.Comparison.IntroducedFindingIDs; ids == nil || !slices.Equal(*ids, []string{idByFrom["pkg/c/c.go"]}) {
-		t.Errorf("introduced_finding_ids = %v, want [%s]", ids, idByFrom["pkg/c/c.go"])
+	// The change adds pkg/c/c.go, which no module owns: besides the rule's
+	// finding it introduces the map/uncovered_change advisory for that file.
+	introduced := []string{idByFrom["pkg/c/c.go"]}
+	for _, f := range got.Findings {
+		if f.RuleID == "map/uncovered_change" {
+			introduced = append(introduced, f.ID)
+		}
+	}
+	slices.Sort(introduced)
+	if ids := got.Comparison.IntroducedFindingIDs; ids == nil || !slices.Equal(sortedCopy(*ids), introduced) {
+		t.Errorf("introduced_finding_ids = %v, want the rule finding and the uncovered_change advisory %v", ids, introduced)
 	}
 	if ids := got.Comparison.ResolvedFindingIDs; ids == nil || len(*ids) != 1 {
 		t.Errorf("resolved_finding_ids = %v, want the removed pkg/d edge", ids)
@@ -285,7 +294,7 @@ func testOriginGoOnlyFindings(t *testing.T) {
 	// The architect's brief with origin counts is analyze; check prints the
 	// linter record with the blocker's origin.
 	code, text, _ := runArchfit(t, cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath)
-	if code != 0 || !strings.Contains(text, "origin: introduced") || !strings.Contains(text, "introduced: 1  ·  resolved: 1") {
+	if code != 0 || !strings.Contains(text, "origin: introduced") || !strings.Contains(text, "introduced: 2  ·  resolved: 1") {
 		t.Errorf("text brief must show blocker origins and the origin counts (exit %d):\n%s", code, text)
 	}
 	code, lint, _ := runArchfit(t, cmdCheck, flagBase, diffBaseRef, "-c", cfgPath)
@@ -297,4 +306,10 @@ func testOriginGoOnlyFindings(t *testing.T) {
 	if strings.Contains(plain, `"origin`) || strings.Contains(plain, "introduced_finding_ids") {
 		t.Error("a run without --base must carry no origin key")
 	}
+}
+
+func sortedCopy(in []string) []string {
+	out := slices.Clone(in)
+	slices.Sort(out)
+	return out
 }
