@@ -188,6 +188,9 @@ type typeGraphResult struct {
 	// unreported are evaluated non-test projects the helper left out of its
 	// report: missing inventory, never silently complete.
 	unreported []string
+	// unattributed are dropped symlinks no project directory holds: the row
+	// reports them, since no project can carry the gap.
+	unattributed []string
 	// details are extra coverage detail clauses.
 	details []string
 	// reported is true when the helper produced a report.
@@ -401,6 +404,7 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 	}
 	res = foldReport(report, projects)
 	markChangedRestoreInputs(res.graph.Projects, changed, moved)
+	res.unattributed = markDroppedLinks(res.graph.Projects, snap.dropped)
 	if len(snap.aboveRepo) > 0 {
 		res.details = append(res.details, "build inputs above the copied tree are not in the snapshot: "+strings.Join(snap.aboveRepo, ", "))
 	}
@@ -410,6 +414,52 @@ func (e *Extractor) runTypeGraph(ctx context.Context, s scope.Scope, targets []s
 		res.cov.Reason = joinReason(borrowReason(len(borrowed), changed, moved, unrestored), res.cov.Reason)
 	}
 	return res, nil
+}
+
+// reasonDroppedLink is the cause a link dropped from the snapshot states, both
+// per project and per run.
+const reasonDroppedLink = "a symlink target outside the copied tree is not reproduced in the snapshot"
+
+// markDroppedLinks makes the project whose directory most closely holds each
+// dropped link partial, naming the link: the snapshot does not have the link's
+// target, so the project's file edges are not proven to be the original tree's.
+// It returns the links no project directory holds, which the row reports
+// instead.
+func markDroppedLinks(projects []TypeGraphProject, dropped []string) []string {
+	var unattributed []string
+	for _, link := range dropped {
+		i := projectHoldingLink(projects, link)
+		if i < 0 {
+			unattributed = append(unattributed, link)
+			continue
+		}
+		p := &projects[i]
+		if p.Status == TypeGraphComplete {
+			p.Status = TypeGraphPartial
+		}
+		p.Reason = joinReason(reasonDroppedLink+": "+link, p.Reason)
+	}
+	return unattributed
+}
+
+// projectHoldingLink returns the index of the project whose directory most
+// closely holds link, or -1: a link at the root belongs to the root project.
+func projectHoldingLink(projects []TypeGraphProject, link string) int {
+	best, bestLen := -1, -1
+	for i, p := range projects {
+		dir := filepath.ToSlash(filepath.Dir(p.Path))
+		if dir != "." && link != dir && !strings.HasPrefix(link, dir+"/") {
+			continue
+		}
+		n := 0
+		if dir != "." {
+			n = len(dir)
+		}
+		if n > bestLen {
+			best, bestLen = i, n
+		}
+	}
+	return best
 }
 
 // markChangedRestoreInputs makes every project whose restore inputs differ
@@ -767,6 +817,9 @@ func typeGraphCoverage(version string, res typeGraphResult) evidence.Coverage {
 	}
 	for _, path := range res.unreported {
 		problems = append(problems, path+" not reported by archfit-roslyn")
+	}
+	for _, link := range res.unattributed {
+		problems = append(problems, reasonDroppedLink+": "+link)
 	}
 	var parts []string
 	if len(problems) > 0 {
