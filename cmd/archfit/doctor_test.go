@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -22,6 +23,8 @@ func runDoctorCmd(t *testing.T, dir string) string {
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
 			return toolrun.ToolInfo{}, false
 		},
+		// The agent loop section asks git about the repository.
+		RunFunc: toolrun.New().Run,
 	}
 	deps := &appDeps{Runner: runner, Stdout: &buf}
 	if err := (&DoctorCmd{}).Run(deps); err != nil {
@@ -212,6 +215,11 @@ func TestDoctorCmd_DotNetSDKVersion(t *testing.T) {
 					return toolrun.ToolInfo{Path: "/usr/bin/dotnet"}, name == "dotnet"
 				},
 				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					// The agent loop runs git through the same runner after the
+					// tool rows; only the SDK probe answers this test.
+					if !slices.Contains(cmd.Args, "--version") {
+						return toolrun.Output{ExitCode: 128}, nil
+					}
 					gotDir = cmd.WorkDir
 					return tt.out, nil
 				},

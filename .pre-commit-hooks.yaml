@@ -5,7 +5,7 @@
 - id: archfit
   name: archfit architecture guardrails
   description: Block a commit that adds an architecture violation (archfit check --format agent).
-  entry: archfit hook git
+  entry: archfit hook run pre-commit
   language: system
   pass_filenames: false
   require_serial: true

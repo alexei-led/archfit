@@ -15,11 +15,11 @@ Run `archfit <command> --help` for built-in help. Bare `archfit` runs `analyze`.
 | Ask which module owns a path | `archfit policy where <path>` |
 | Ask whether a file can import a target | `archfit policy can-import <file> <target>` |
 | Draw modules and seams | `archfit map` |
-| Check or install analyzer tools | `archfit doctor` or `archfit doctor --fix` |
+| Check analyzer tools and the agent loop, or install tools | `archfit doctor` or `archfit doctor --fix` |
 | Create or review the config | `archfit config init` or `archfit config update` |
 | Compare two configs on one source tree | `archfit config compare <candidate>` |
 | Check config defects | `archfit config lint` |
-| Run an agent or Git hook | `archfit hook claude` or `archfit hook git` |
+| Install the agent or Git hooks | `archfit hook install --harness claude`, `codex`, or `git` |
 | Render the instruction block | `archfit agents-md --write` |
 | Install the bundled agent skill | `archfit skill install` |
 
@@ -30,13 +30,13 @@ Successful `analyze` runs exit `0` for every verdict. Use `check` when the verdi
 | Code | `check` meaning | Other command behavior |
 | --- | --- | --- |
 | `0` | `healthy` | Success for report-only and setup commands. `analyze` also exits `0` for `needs_attention` and `blocked`. |
-| `1` | `blocked` | `config lint` found an error; `policy can-import` denied a target; `hook git` found an in-scope repair or owner decision; `agents-md --check` found a missing or stale block. |
-| `2` | `needs_attention` | `policy can-import` found a target with no decision. The Claude hook uses `2` to block a stop under its protocol. |
-| `3` | Config, usage, or runtime error | General command error. `hook git` uses `3` when archfit cannot run. A run stopped by `SIGINT` or `SIGTERM` also exits `3`: archfit stops its tools, removes its temporary copies, and reports the results as incomplete. A second signal exits at once. |
+| `1` | `blocked` | `config lint` found an error; `policy can-import` denied a target; `hook run pre-commit` found an in-scope repair or owner decision; `agents-md --check` found a missing or stale block. |
+| `2` | `needs_attention` | `policy can-import` found a target with no decision. `hook run stop` and `hook run post-tool-use` use `2` to give the agent feedback under the harness protocol. |
+| `3` | Config, usage, or runtime error | General command error. `hook run pre-commit` uses `3` when archfit cannot run. A run stopped by `SIGINT` or `SIGTERM` also exits `3`: archfit stops its tools, removes its temporary copies, and reports the results as incomplete. A second signal exits at once. |
 
 `check` exits `2` when there is no blocker, but evidence or diagnostics need attention. `--require-tools` makes missing required tools affect the verdict. `analyze` stays report-only.
 
-The Claude Code hook has protocol-specific behavior. It exits `1` for malformed input, `2` to block a stop, and `0` for other events. An archfit error fails open and returns a `systemMessage`.
+The agent hooks (`hook run session-start`, `post-tool-use`, `stop`) follow the Claude Code and Codex protocol. They exit `1` for malformed input, `2` to give the agent feedback (a denied import, or a stop to block), and `0` otherwise. An archfit error in `post-tool-use` or `stop` fails open and returns a `systemMessage`.
 
 ## Shared flags
 
@@ -170,6 +170,9 @@ A rule that needs the whole graph, such as `module_cycle`, leaves a target not d
 | `--fix` | Install missing supported tools. `--install` is an alias. |
 | `--lang <name>` | Limit installation to `go`, `ts`, `py`, or `rust`. Repeatable. Default: all. |
 | `-n, --dry-run` | Print install commands without running them. Requires `--fix`. |
+| `--format <name>` | `text` (default) or `json`. `json` prints the tool rows (`ok`, `missing`, or `invalid` with its `error`) and the agent loop as `archfit.doctor.v1`. It cannot be combined with `--fix`. An `invalid` tool fails `doctor` in both formats, after the full report. |
+
+After the tool table and the LLM settings, `doctor` reports the agent loop: the harnesses it finds (Claude Code, Codex, git), each archfit hook as `active` or `inactive` (not installed; for Claude Code, `disableAllHooks` in `.claude/settings.json` or `.claude/settings.local.json`; for Codex, not trusted yet), the target branch, the scope `check` would use, and whether a policy file differs from the target. Codex keeps hook trust in `~/.codex/config.toml` (`CODEX_HOME`); `doctor` cannot recompute the trusted hash, so a trusted Codex hook is `active (hash not verified)`. In JSON this is `agent_loop`.
 
 ### `config init`
 
@@ -245,16 +248,34 @@ Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `vol
 
 ## Integration commands
 
-### `hook claude` and `hook git`
+### `hook install`
 
-`hook claude` implements the Claude Code Stop and SubagentStop protocol. `hook git` checks staged content. Both stop a change only when `change.status` is `fail`.
+`archfit hook install --harness claude|codex|git [flags]` writes the archfit hooks for one harness. See [coding agent workflows](agents.md#install-hooks).
+
+| Harness | File | Events |
+| --- | --- | --- |
+| `claude` | `<dir>/.claude/settings.json` | `SessionStart`, `PostToolUse` (after `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`), `Stop`, `SubagentStop` |
+| `codex` | `<dir>/.codex/hooks.json` | `SessionStart`, `PostToolUse` (after `apply_patch`, `Bash`), `Stop` |
+| `git` | `pre-commit` in the hooks directory git uses (`core.hooksPath` when set) | the pre-commit hook |
 
 | Flag | Meaning |
 | --- | --- |
-| `-c, --config <file>` | Config path, relative to the hook working directory. |
-| `--base <ref>` | Scope blockers against a Git ref. Default: `HEAD`. |
+| `--harness <name>` | Required: `claude`, `codex`, or `git`. |
+| `--dir <path>` | Repository to install into. Default: `.`. |
+| `-c, --config <file>` | Config path the hooks pass on, relative to the repository root, not to `--dir`. Default: `.archfit.yaml`. `install` warns on stderr when no config is there, or when `--dir` holds its own config that `-c` does not name. |
 
-`hook git` also accepts hidden `--index-file` for Git hook integration. `GIT_INDEX_FILE` supplies its default.
+`install` keeps every other key and hook in the settings file, replaces an earlier `archfit hook run` entry instead of adding a second one, and removes entries of the removed `archfit hook claude`. It never replaces a pre-commit hook that archfit did not write: it exits `3` and names the file. It prints one line per file written. Codex runs the hooks only after you trust them.
+
+### `hook run <event>`
+
+`archfit hook run <event> [flags]` is what the installed hooks call. Events are `session-start`, `post-tool-use`, `stop`, and `pre-commit`. The first three read the hook event (`session_id`, `cwd`, `stop_hook_active`) on stdin and keep the session in `.archfit-cache/session/<session_id>.json`. `stop` and `pre-commit` stop a change only when `change.status` is `fail`; `post-tool-use` reports an import that `policy can-import` denies once while it stays: an import removed and added again is reported again. A pass forgets a stop's block, so the same blockers coming back block again; a `SubagentStop` is blocked once and never suppresses the main agent's stop.
+
+| Flag | Meaning |
+| --- | --- |
+| `--harness <name>` | `claude` (default) or `codex`. Both use the same protocol. |
+| `-c, --config <file>` | Config path, relative to the root of the repository that holds the event `cwd`, so an agent that changed directory still finds it. `pre-commit` reads it relative to its working directory, which git sets to the root. |
+
+`pre-commit` also accepts hidden `--index-file` for Git hook integration. `GIT_INDEX_FILE` supplies its default. `archfit hook claude` and `archfit hook git` are removed: run `archfit hook install` again, or call `hook run stop` and `hook run pre-commit`.
 
 ### `agents-md`
 

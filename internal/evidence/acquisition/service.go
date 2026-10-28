@@ -97,7 +97,7 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 	}
 
 	sc := s.Options.Scope
-	sc.WorkDir, sc.Root, sc.Base = scanDir(root, bundleDir), root, req.BaseRef
+	sc.WorkDir, sc.Root, sc.Base, sc.AddedBase = scanDir(root, bundleDir), root, req.BaseRef, req.AddedBase
 	s.reportPhase("Discovering project")
 	resolved, err := scope.Resolve(ctx, sc, gitResolver{workDir: sc.WorkDir, runner: s.Runner})
 	if err != nil {
@@ -239,6 +239,11 @@ func (s *Service) Acquire(ctx context.Context, req application.AnalysisRequest) 
 			}
 		}
 	}
+	// The files the change adds: the evidence the uncovered-change check reads.
+	observations.AddedFiles = addedSet(resolved.Added)
+	added := addedFacts(resolved.Added, snapshot, observations.UnwalkedSourceProduction,
+		s.Options.Exclusions, s.Options.Coverage, s.Options.Acquisition.FileClass)
+	observations.UncoveredCauses, observations.AddedClasses, observations.AddedUnread = added.causes, added.classes, added.unread
 	// Config values schema v2 still loads but classification cannot read, and
 	// warn-gated rules whose selector matches nothing, are disclosed with the
 	// run's other config warnings. config lint reports the same defects.
@@ -505,6 +510,10 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 	return cs.Files, nil
 }
 
+func (g gitResolver) Added(ctx context.Context, base string) ([]string, error) {
+	return git.Added(ctx, g.workDir, base, g.runner)
+}
+
 // configHash returns the sha256 hex digest of the raw config file bytes at
 // path, or "" when the file cannot be read. It is the run's config identity
 // (the App binds it to the protected policy digest); comparability reads the
@@ -516,4 +525,16 @@ func configHash(path string) string {
 	}
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
+}
+
+// addedSet turns the added file list into a set; nil for no added files.
+func addedSet(added []string) map[string]struct{} {
+	if len(added) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(added))
+	for _, f := range added {
+		out[f] = struct{}{}
+	}
+	return out
 }

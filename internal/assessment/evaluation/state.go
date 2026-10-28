@@ -105,6 +105,19 @@ func buildState(diag *result.Result, in stateInput) state.Architecture {
 			unevaluated = append(unevaluated, u)
 		}
 	}
+	if in.Policy.Gates.UncoveredChange == policy.GateFail {
+		// Recomputed from the evidence, not read from the findings: a waiver, the
+		// baseline, or --no-advisories must not turn unread code into a pass.
+		uncovered := uncoveredChange(RuleEvidence{
+			FileClasses: inScopeFileClasses(in.Facts), UnanalysedFiles: in.Facts.UnanalysedFiles,
+			SourceSelectors: in.Facts.SourceSelectors, CrateOwners: in.Facts.CrateOwners,
+			AddedFiles: in.Facts.AddedFiles, UncoveredCauses: in.Facts.UncoveredCauses,
+			AddedClasses: in.Facts.AddedClasses, AddedUnread: in.Facts.AddedUnread,
+		}, in.Policy.Assessment)
+		if u, ok := uncoveredChangeUnevaluated(uncovered); ok {
+			unevaluated = append(unevaluated, u)
+		}
+	}
 	hardGates := state.HardGatePass
 	if in.RequiredToolFailure || len(st.Blockers) > 0 {
 		hardGates = state.HardGateFail

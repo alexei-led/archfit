@@ -3,6 +3,7 @@ package acquisition
 import (
 	"bytes"
 	"context"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -421,6 +422,110 @@ func disabledLanguages(cov CoverageOptions) map[string]struct{} {
 		}
 	}
 	return disabled
+}
+
+// addedFileFacts are the facts the uncovered-change check needs about files a
+// change adds, beyond the source walk.
+type addedFileFacts struct {
+	// causes names, for the added production source files declared out of
+	// scope, the `exclude:` glob or language switch that did it.
+	causes map[string]string
+	// classes classifies, by path, the added source files the walk skipped
+	// (dot directories, build/, target/, mocks/, ...).
+	classes map[string]fileclass.FileClass
+	// unread are the walk-skipped added production files no analyzer reported:
+	// nothing in this run read them.
+	unread map[string]struct{}
+}
+
+// addedFacts classifies the files a change adds. A file the source walk visited
+// keeps its walked class; one the walk skipped is classified by path with the
+// configured file_class globs, the way unwalkedSourceProduction does, so a
+// production file in a skipped directory is not mistaken for no file at all.
+// Only added files are considered, so the maps stay the size of the change.
+func addedFacts(added []string, f evidencecontract.Facts, unwalked map[string]bool, exclusions []string, cov CoverageOptions, cfg syntax.FileClassConfig) addedFileFacts {
+	disabled := disabledLanguages(cov)
+	loaded := loadedFiles(f)
+	testdataExcluded := slices.Contains(exclusions, testdataExclusion)
+	out := addedFileFacts{}
+	for _, file := range added {
+		language, _, supported := (policy.ModuleMap{}).RuleSelectorForFile(file)
+		class, walked := f.FileClassIndex[file]
+		if !walked {
+			if !supported {
+				continue
+			}
+			class = syntax.ClassifyFile(language, file, nil, cfg)
+			if inTestdata(file) && testdataExcluded {
+				// A testdata tree holds fixtures, not production code; the path
+				// classifier knows only the language's own test-file names. A
+				// config that re-includes testdata ("!testdata") put it in scope,
+				// so then the classifier and the exclusions decide.
+				class = fileclass.Test
+			}
+			if out.classes == nil {
+				out.classes = make(map[string]fileclass.FileClass)
+			}
+			out.classes[file] = class
+		}
+		if !fileclass.IsProduction(class) {
+			continue
+		}
+		cause := ""
+		if supported {
+			if _, off := disabled[language]; off {
+				cause = "languages." + language + ".enabled: false"
+			}
+		}
+		if cause == "" {
+			for _, glob := range exclusions {
+				if matched, _ := doublestar.Match(glob, file); matched {
+					cause = "exclude: " + glob
+					break
+				}
+			}
+		}
+		if cause != "" {
+			if out.causes == nil {
+				out.causes = make(map[string]string)
+			}
+			out.causes[file] = cause
+			continue
+		}
+		_, onEdge := unwalked[file]
+		_, isNode := loaded[file]
+		if !walked && !onEdge && !isNode {
+			if out.unread == nil {
+				out.unread = make(map[string]struct{})
+			}
+			out.unread[file] = struct{}{}
+		}
+	}
+	return out
+}
+
+// loadedFiles are the files an extractor reported as graph file nodes: read by
+// an analyzer even when they import nothing and so sit on no edge.
+func loadedFiles(f evidencecontract.Facts) map[string]struct{} {
+	if f.Graph == nil {
+		return nil
+	}
+	out := make(map[string]struct{})
+	for _, n := range f.Graph.Nodes() {
+		if n.Kind == graph.NodeKindFile {
+			out[n.Path] = struct{}{}
+		}
+	}
+	return out
+}
+
+// testdataExclusion is the default exclusion of fixture trees
+// (scope.DefaultExclusions); a config's "!testdata" removes it.
+const testdataExclusion = "**/testdata/**"
+
+// inTestdata reports whether a slash path has a testdata directory segment.
+func inTestdata(file string) bool {
+	return slices.Contains(strings.Split(path.Dir(file), "/"), "testdata")
 }
 
 // outOfDeclaredScope reports whether one repo-relative source file is outside

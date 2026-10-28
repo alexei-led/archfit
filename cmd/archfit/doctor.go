@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -23,14 +24,18 @@ type DoctorCmd struct {
 	Fix    bool     `name:"fix" aliases:"install" help:"Install missing analyzer toolchains (archfit installs what it can)."`
 	Lang   []string `name:"lang" help:"Toolchains to install with --fix (default: all). Repeatable. .NET has no automatic install: install the .NET SDK and build the helper with make dotnet-roslyn." enum:"go,ts,py,rust"`
 	DryRun bool     `name:"dry-run" short:"n" help:"With --fix: print install commands without running them."`
+	Format string   `name:"format" help:"Output format: text or json. json prints the tool rows and the agent loop (archfit.doctor.v1)." enum:"text,json" default:"text"`
 }
 
 func (*DoctorCmd) Help() string {
-	return "Checks local analyzer tools and prints a status table. With --fix, installs the toolchains archfit can install automatically. For complete setup notes, see " + languagesDocsURL + "."
+	return "Checks local analyzer tools and prints a status table, then the agent loop: which harness is here, which archfit hooks it would run (an uninstalled or untrusted hook is inactive), the target branch and scope a check resolves, and whether a policy file differs from the target. With --fix, installs the toolchains archfit can install automatically. For complete setup notes, see " + languagesDocsURL + "."
 }
 
 func (c *DoctorCmd) Run(deps *appDeps) error {
 	ctx := deps.runContext()
+	if c.Format == formatJSON && c.Fix {
+		return &exitError{code: 3, msg: "error: doctor --format json only reports; run doctor --fix without it"}
+	}
 
 	// Cross-language tools stay literal here; per-language tools (compilers,
 	// scip indexers) come from the language registry so adding a language adds
@@ -46,16 +51,6 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		tools = append(tools, lang.DoctorTools...)
 	}
 
-	nameWidth := len("TOOL")
-	for _, t := range tools {
-		nameWidth = max(nameWidth, len(t.Name))
-	}
-	row := func(name, status string, detail any) {
-		_, _ = fmt.Fprintf(deps.Stdout, "%-*s %-8s %v\n", nameWidth, name, status, detail)
-	}
-	row("TOOL", "STATUS", "PATH / INSTALL")
-	_, _ = fmt.Fprintf(deps.Stdout, "%s\n", strings.Repeat("-", 60))
-
 	// Versions are probed where analysis runs: here, where a global.json
 	// selects the .NET SDK.
 	dir, err := os.Getwd()
@@ -65,6 +60,7 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	// A tool configured to an unusable value fails doctor after the full
 	// report, as it fails analysis: a missing tool is not an error, a wrong one is.
 	var invalid []error
+	rows := make([]toolRow, 0, len(tools))
 	for _, t := range tools {
 		path, found, err := locateTool(ctx, deps.Runner, t)
 		if err == nil && found && t.Version != nil {
@@ -76,17 +72,38 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		switch {
 		case err != nil:
 			invalid = append(invalid, fmt.Errorf("%s: %w", t.Name, err))
-			row(t.Name, "invalid", err)
+			rows = append(rows, toolRow{Name: t.Name, Status: "invalid", Error: err.Error()})
 		case found:
-			row(t.Name, "ok", path)
+			rows = append(rows, toolRow{Name: t.Name, Status: "ok", Path: path})
 		default:
-			row(t.Name, "missing", t.InstallHint)
+			rows = append(rows, toolRow{Name: t.Name, Status: "missing", InstallHint: t.InstallHint})
 		}
+	}
+	cfg, cfgErr := loadConfig(ctx, defaultConfigPath)
+	if c.Format == formatJSON {
+		if err := writeDoctorJSON(deps, doctorReport{
+			SchemaVersion: doctorSchemaVersion, Tools: rows, AgentLoop: agentLoopStatus(ctx, deps, cfg.TargetBranch),
+		}); err != nil {
+			return err
+		}
+		return errors.Join(invalid...)
+	}
+
+	nameWidth := len("TOOL")
+	for _, t := range tools {
+		nameWidth = max(nameWidth, len(t.Name))
+	}
+	row := func(name, status, detail string) {
+		_, _ = fmt.Fprintf(deps.Stdout, "%-*s %-8s %s\n", nameWidth, name, status, detail)
+	}
+	row("TOOL", "STATUS", "PATH / INSTALL")
+	_, _ = fmt.Fprintf(deps.Stdout, "%s\n", strings.Repeat("-", 60))
+	for _, r := range rows {
+		row(r.Name, r.Status, r.Path+r.InstallHint+r.Error)
 	}
 
 	// Off-gate LLM setup (config init/update/enrich, analyze/explain --ai-summary): provider config + key + cache.
 	_, _ = fmt.Fprintf(deps.Stdout, "\nLLM (off-gate; config init/update/enrich, analyze/explain --ai-summary — never used by the gate):\n")
-	cfg, cfgErr := loadConfig(ctx, defaultConfigPath)
 	// cfgErr is non-nil only when the file exists but fails to load (an absent
 	// default config falls back to config.Default()) — surface it, or doctor
 	// misreports a broken config as "not configured" and skips config checks.
@@ -120,6 +137,8 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		_, _ = fmt.Fprintln(deps.Stdout, "  not configured (set ai provider + model to enable LLM commands)")
 	}
 
+	writeAgentLoop(deps.Stdout, agentLoopStatus(ctx, deps, cfg.TargetBranch))
+
 	if c.Fix {
 		if err := c.runFix(ctx, deps); err != nil {
 			return err
@@ -136,6 +155,17 @@ func locateTool(ctx context.Context, runner toolrun.Runner, t registry.Tool) (st
 	}
 	info, ok := runner.Detect(ctx, t.Command)
 	return info.Path, ok, nil
+}
+
+// writeDoctorJSON writes the doctor report as one indented JSON document.
+func writeDoctorJSON(deps *appDeps, doc doctorReport) error {
+	enc := json.NewEncoder(deps.Stdout)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(doc); err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: write the doctor report: %v", err)}
+	}
+	return nil
 }
 
 // keyStatus renders the presence of an API key without leaking it.
