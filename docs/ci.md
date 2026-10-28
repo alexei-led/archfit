@@ -44,21 +44,23 @@ The example installs only Archfit and the Go SDK. Add each optional analyzer
 tool required by your `.archfit.yaml`, or disable that analyzer. Keep the tool
 versions and build settings stable when you create or reanchor a baseline.
 The example allows exit `2` while adopting the gate. Remove that allowance
-when the project requires complete evidence. Review and commit baselines in a
+when the project requires complete evidence, and never read exit `2` alone as a pass. Review and commit baselines in a
 separate change. Do not generate one in this workflow.
 
 ## Adopt the gate
 
-During adoption, allow exit `2` and fail on exits `1` and `3`:
+During adoption, fail on exits `1` and `3` and on any change that is not `pass`.
+Exit `2` alone is not a pass: an `unknown` change also exits `2`.
 
 ```yaml
 - name: Architecture check
-  run: archfit check -c .archfit.yaml || [ $? -eq 2 ]
+  run: |
+    archfit check -c .archfit.yaml --format agent > archfit.json || [ "$?" -eq 2 ]
+    jq -e '.change.status == "pass"' archfit.json
 ```
 
-Exit `2` reports incomplete evidence or active diagnostics. It does not report a
-healthy result. Read the result and add the missing evidence before you require
-a fully healthy run.
+Exit `2` can report incomplete evidence or repository attention. Read the result and add
+the missing evidence before you require a fully healthy run.
 
 Use this strict gate when the pipeline requires complete evidence:
 
@@ -91,6 +93,33 @@ pass `--target`. Pass `--base <sha>` to compare with a fixed commit, for
 example the target tip on a merge commit. `--base` classifies current findings
 as introduced, pre-existing, or unknown. See [agent workflows](agents.md) for
 scope handling.
+
+## Concurrency
+
+Run one archfit job per pull request. Give the workflow a concurrency group
+that keys on the PR number:
+
+```yaml
+concurrency:
+  group: archfit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+```
+
+A new push to a pull request cancels the older run. A push or a dispatched
+baseline run on the same ref does not cancel another run, so it cannot drop
+that run's upload.
+
+## Cache
+
+The fact cache lives under `.archfit-cache/facts`. Restoring it in CI is not
+supported in this release. Do not add a cache step for it.
+
+## Re-check when the target moves
+
+The App can ask for a fresh run when the target branch moves and the change
+overlaps the new commits. The setting is `integration.recheck: overlap` in
+`.archfit-app.yaml`. The App owns that file and that setting. Configure it
+there, not in the workflow.
 
 ## Upload SARIF
 

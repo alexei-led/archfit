@@ -231,7 +231,7 @@ Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `vol
 
 ### `hook install`
 
-`archfit hook install --harness claude|codex|git [flags]` writes the archfit hooks for one harness. See [coding agent workflows](agents.md#install-hooks).
+`archfit hook install --harness claude|codex|git [flags]` writes the archfit hooks for one harness. See [coding agent workflows](agents.md#hooks).
 
 | Harness | File | Events |
 | --- | --- | --- |

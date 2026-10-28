@@ -26,7 +26,6 @@ REQUIRED = (
     "internal/extract/scip/scip_reader.py",
     "skills/skills.go",
     "skills/archfit/SKILL.md",
-    "skills/archfit/references/commands.md",
     "tools/manifest.json",
     "tools/node/package-lock.json",
     "tools/python/requirements.lock",
