@@ -38,6 +38,9 @@ func Brief(r Result) string {
 	for _, gap := range r.Change.EvidenceGaps {
 		fmt.Fprintf(&b, "evidence gap: %s (gate %s)\n", gap.Tool, gap.Gate)
 	}
+	for _, notice := range r.Change.Notices {
+		fmt.Fprintf(&b, "notice: %s: %s\n", notice.Kind, notice.Reason)
+	}
 	if r.Change.Reason != "" {
 		fmt.Fprintf(&b, "reason: %s: %s\n", r.Change.Reason, r.Change.ReasonDetail)
 	}

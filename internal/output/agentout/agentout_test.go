@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/v3/internal/model/report"
+	"github.com/alexei-led/archfit/v3/internal/output/jsonout"
 	reporttest "github.com/alexei-led/archfit/v3/internal/testutil/report"
 )
 
@@ -41,9 +42,37 @@ func gateTask(id, rule string) taskSpec {
 func document(verdict report.StateVerdict, specs ...taskSpec) report.Document {
 	d := report.NewDocument()
 	d.State.Verdict = verdict
+	// The state report carries what the verdict rests on, so the fixtures the
+	// App ingests are consistent with it: a blocked run fails its hard gates, a
+	// healthy one passes them, anything else leaves them unmeasured.
+	d.State.Decision.ActiveBlockers = len(specs)
+	switch verdict {
+	case report.StateBlocked:
+		d.State.Decision.HardGates = report.HardGateFail
+	case report.StateHealthy:
+		d.State.Decision.HardGates = report.HardGatePass
+	}
+	// A run with origins was compared with a base; the state says so, or a
+	// consumer would read an origin on a finding of an uncompared run.
+	introduced := []string{}
+	for _, s := range specs {
+		if s.origin == report.OriginIntroduced {
+			introduced = append(introduced, s.id)
+		}
+		if s.origin != "" {
+			resolved := []string{}
+			d.State.Comparison.Status = report.ComparisonComparable
+			d.State.Comparison.BaseRef = "main"
+			d.State.Comparison.OriginStatus = report.OriginStatusComparable
+			d.State.Comparison.IntroducedFindingIDs = &introduced
+			d.State.Comparison.ResolvedFindingIDs = &resolved
+		}
+	}
 	for _, s := range specs {
 		d.State.Findings = append(d.State.Findings, report.Finding{
 			ID: s.id, Kind: report.FindingKindGate, RuleID: s.rule, Status: report.FindingStatusNew, Severity: s.severity,
+			MatchedBy: map[string]string{},
+			Origin:    s.origin,
 			Edge: report.FindingEdge{
 				From: report.FindingEndpoint{Path: s.from}, To: report.FindingEndpoint{Path: s.to}, Kind: s.edgeKind,
 			},
@@ -75,6 +104,12 @@ func withUnevaluated(d report.Document, reasons ...string) report.Document {
 		d.State.Decision.UnevaluatedRequiredRules = append(d.State.Decision.UnevaluatedRequiredRules,
 			report.UnevaluatedRule{RuleID: fmt.Sprintf("rule_%d", i), Reason: reason})
 	}
+	return d
+}
+
+// withTools sets the analyzer coverage rows the state report carries.
+func withTools(d report.Document, rows ...report.StateToolCoverage) report.Document {
+	d.State.Coverage.Tools = rows
 	return d
 }
 
@@ -112,6 +147,7 @@ func changeCases() []e1Case {
 	ownerTask.from, ownerTask.to = "internal/c/c.go", "internal/d"
 	preExisting := gateTask("c3", "no_x")
 	preExisting.origin, preExisting.from = report.OriginPreExisting, "internal/old/old.go"
+	preExisting.files = []string{"internal/old/old.go", "internal/b/b.go"}
 	introduced := gateTask("d4", "no_x")
 	introduced.origin = "introduced"
 	unknown := gateTask("e5", "no_x")
@@ -123,11 +159,16 @@ func changeCases() []e1Case {
 	warnTool.CoverageGaps = []report.CoverageGap{{Tool: "sg", Gate: string(report.GateWarn)}}
 
 	return []e1Case{
-		{name: "new violation", doc: document(report.StateBlocked, introduced), wantStatus: ChangeFail, wantAction: ActionRepair},
+		{name: "new violation", doc: withTools(document(report.StateBlocked, introduced),
+			report.StateToolCoverage{Tool: "go/packages", Status: report.StatusOK},
+			report.StateToolCoverage{Tool: "dotnet-msbuild", Status: report.StatusOK, Details: []string{
+				"src/App/App.csproj ok frameworks=net10.0", "src/Domain/Domain.csproj ok frameworks=net8.0,net10.0",
+			}}), wantStatus: ChangeFail, wantAction: ActionRepair},
 		{name: "existing violation", doc: document(report.StateBlocked, preExisting), wantStatus: ChangePass, wantAction: ActionNone, wantAttention: []string{AttentionExistingViolation}},
 		{name: "unmeasured ratchet from profile drift", doc: withUnevaluated(document(report.StateNeedsAttention), "reference not comparable (drift: measurement_profile): 3 metric ratchets cannot be evaluated"), wantStatus: ChangePass, wantAction: ActionNone, wantAttention: []string{AttentionUnmeasuredRatchet}},
 		{name: "dead selector", doc: withUnevaluated(document(report.StateNeedsAttention), "selector matches nothing: from internal/x/**"), wantStatus: ChangePass, wantAction: ActionNone, wantAttention: []string{AttentionDeadSelector}},
-		{name: "missing evidence", doc: withUnevaluated(document(report.StateNeedsAttention), "go/packages evidence is partial"), wantStatus: ChangeUnknown, wantAction: ActionRestoreEvidence},
+		{name: "missing evidence", doc: withTools(withUnevaluated(document(report.StateNeedsAttention), "go/packages evidence is partial"),
+			report.StateToolCoverage{Tool: "go/packages", Status: report.StatusPartial, Reason: "1 of 12 packages failed to load"}), wantStatus: ChangeUnknown, wantAction: ActionRestoreEvidence},
 
 		{name: "no base: every blocker is in scope", doc: document(report.StateBlocked, gateTask("a1", "no_x")), wantStatus: ChangeFail, wantAction: ActionRepair},
 		{name: "code change wins over owner decision", doc: document(report.StateBlocked, ownerTask, gateTask("a1", "no_x")), wantStatus: ChangeFail, wantAction: ActionRepair},
@@ -220,8 +261,9 @@ func pinFixture(t *testing.T, path string, got []byte) {
 	}
 }
 
-// TestCasesFixtures pins the agent JSON and the check text of the five
-// change-status cases. The App ingest test reads the JSON files.
+// TestCasesFixtures pins, for each of the five change-status cases, the agent
+// JSON, the check text, and the state report (archfit.architecture-state.v1).
+// The App ingests the state report: the *.state.json files are its fixtures.
 func TestCasesFixtures(t *testing.T) {
 	for _, tc := range changeCases()[:5] {
 		t.Run(tc.name, func(t *testing.T) {
@@ -234,6 +276,13 @@ func TestCasesFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			pinFixture(t, base+".txt", text.Bytes())
+			// The state report is what the App ingests: the same case, as
+			// `check --format json` prints it.
+			var state bytes.Buffer
+			if err := jsonout.New().Render(d, &state); err != nil {
+				t.Fatal(err)
+			}
+			pinFixture(t, base+".state.json", state.Bytes())
 		})
 	}
 }

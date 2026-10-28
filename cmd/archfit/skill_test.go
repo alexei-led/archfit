@@ -14,7 +14,7 @@ func TestSkillInstall(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	install := func(args ...string) (int, string) {
-		code, stdout, stderr := runArchfit(t, append([]string{"skill", "install", "--dir", dir}, args...)...)
+		code, stdout, stderr := runArchfit(t, append([]string{"skill", installSubcmd, flagDir, dir}, args...)...)
 		return code, stdout + stderr
 	}
 	if code, out := install(); code != 0 || !strings.Contains(out, "files written") {

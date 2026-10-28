@@ -87,7 +87,7 @@ func TestHookInstall(t *testing.T) {
 			if tc.existing != "" {
 				writeFixtureFile(t, dir, harnessConfigFile(tc.harness), tc.existing)
 			}
-			code, stdout, stderr := runHook(t, "", "install", "--harness", tc.harness, "--dir", dir)
+			code, stdout, stderr := runHook(t, "", "install", flagHarness, tc.harness, flagDir, dir)
 			if code != 0 || stderr != "" || !strings.Contains(stdout, "wrote "+path+"\n") || !strings.Contains(stdout, tc.wantStdout) {
 				t.Fatalf("install: exit %d\nstdout %q\nstderr %q", code, stdout, stderr)
 			}
@@ -95,7 +95,7 @@ func TestHookInstall(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if code, _, stderr := runHook(t, "", "install", "--harness", tc.harness, "--dir", dir); code != 0 {
+			if code, _, stderr := runHook(t, "", "install", flagHarness, tc.harness, flagDir, dir); code != 0 {
 				t.Fatalf("second install: exit %d\n%s", code, stderr)
 			}
 			if second, _ := os.ReadFile(path); string(second) != string(first) { //nolint:gosec // fixture path
@@ -175,7 +175,7 @@ func TestHookInstallRefusesABrokenSettingsFile(t *testing.T) {
 	dir := t.TempDir()
 	const broken = `{"hooks": [`
 	writeFixtureFile(t, dir, harnessConfigFile(harnessClaude), broken)
-	code, _, stderr := runHook(t, "", "install", "--harness", harnessClaude, "--dir", dir)
+	code, _, stderr := runHook(t, "", "install", flagHarness, harnessClaude, flagDir, dir)
 	if code != 3 || !strings.Contains(stderr, "settings.json") {
 		t.Errorf("exit %d, stderr %q; want 3 naming the file", code, stderr)
 	}
@@ -209,7 +209,7 @@ func TestHookInstallGit(t *testing.T) {
 			if tc.foreign != "" {
 				writeFixtureFile(t, dir, filepath.Join(hooksPath, hookEventPreCommit), tc.foreign)
 			}
-			args := []string{"install", "--harness", harnessGit, "--dir", dir}
+			args := []string{installSubcmd, flagHarness, harnessGit, flagDir, dir}
 			if tc.config != "" {
 				args = append(args, "-c", tc.config)
 			}
@@ -249,10 +249,62 @@ func TestHookInstallGit(t *testing.T) {
 	}
 }
 
+// Install flags the hook and skill tests pass.
+const (
+	flagDir     = "--dir"
+	flagHarness = "--harness"
+)
+
+// TestHookInstallWarnsWhenTheHooksCannotFindTheConfig: hook run resolves -c
+// against the repository root, so an install from a subproject that leaves -c
+// at its default would load nothing. The install says so and names the path.
+func TestHookInstallWarnsWhenTheHooksCannotFindTheConfig(t *testing.T) {
+	t.Parallel()
+	const service = "service"
+	subConfig := service + "/" + defaultConfigPath
+	for _, tc := range []struct {
+		name, dir, config, wantStderr string
+		noRootConfig                  bool
+	}{
+		{name: "the root config"},
+		{name: "a subproject config named from the root", dir: service, config: subConfig},
+		{name: "a subproject config left at the default beside a root config", dir: service,
+			wantStderr: ", not the config in "},
+		{name: "a subproject config left at the default", dir: service, noRootConfig: true,
+			wantStderr: "the hooks resolve -c against the repository root; pass -c " + subConfig + "\n"},
+		{name: "a config that does not exist", config: "nope.yaml",
+			wantStderr: "the hooks resolve -c against the repository root, so they cannot load it\n"},
+	} {
+		for _, harness := range []string{harnessClaude, harnessGit} {
+			t.Run(tc.name+"/"+harness, func(t *testing.T) {
+				t.Parallel()
+				repo := hookRepo(t, hookModules, hookCleanA, "")
+				writeFixtureFile(t, repo, subConfig, hookModules)
+				if tc.noRootConfig {
+					if err := os.Remove(filepath.Join(repo, defaultConfigPath)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				args := []string{installSubcmd, flagHarness, harness, flagDir, filepath.Join(repo, tc.dir)}
+				if tc.config != "" {
+					args = append(args, "-c", tc.config)
+				}
+				code, _, stderr := runHook(t, "", args...)
+				if code != 0 {
+					t.Fatalf("exit %d, stderr %q", code, stderr)
+				}
+				if tc.wantStderr == "" && stderr != "" || !strings.Contains(stderr, tc.wantStderr) {
+					t.Errorf("stderr = %q, want %q in it", stderr, tc.wantStderr)
+				}
+			})
+		}
+	}
+}
+
 // TestHookInstallGitOutsideARepository is an error, not a hook in a guessed place.
 func TestHookInstallGitOutsideARepository(t *testing.T) {
 	t.Parallel()
-	code, _, stderr := runHook(t, "", "install", "--harness", harnessGit, "--dir", t.TempDir())
+	code, _, stderr := runHook(t, "", "install", flagHarness, harnessGit, flagDir, t.TempDir())
 	if code != 3 || !strings.Contains(stderr, "not in a git repository") {
 		t.Errorf("exit %d, stderr %q; want 3", code, stderr)
 	}
@@ -272,7 +324,7 @@ func TestHookInstallWritesThroughASymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, stderr := runHook(t, "", "install", "--harness", harnessClaude, "--dir", dir); code != 0 {
+	if code, _, stderr := runHook(t, "", "install", flagHarness, harnessClaude, flagDir, dir); code != 0 {
 		t.Fatalf("install: exit %d\n%s", code, stderr)
 	}
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {

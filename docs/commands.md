@@ -127,7 +127,7 @@ Reports the module, layer, owner, public surface, allowlists, and selected rules
 
 ### `policy can-import <file> <target>...`
 
-Reports whether a source file can import each target. A denied target exits `1`. A target without a decision exits `2`.
+Reports whether a source file can import each target. A denied target exits `1`. A target without a decision exits `2`. A denial also carries `instead` (the alternatives the rule's owners declared) and `candidates`: each alternative that names a package a module owns, judged again from the same file.
 
 The answer runs no analyzer. It spells the edge the language's extractor would emit and runs the rule pass on that edge. Write the target in the language's graph vocabulary:
 
@@ -227,6 +227,11 @@ Measures one source tree under the current and candidate configs. It is report-o
 
 The text report shows changed findings, edge counts, and classification mix. It has no repository score. JSON includes `score_delta`. See [results](results.md#config-comparison).
 
+Both forms also classify the policy change from the two configs' declarations, as they take effect, with no measurement involved. JSON `policy_change` has `direction`: `none`, `tightening`, `loosening`, or `mixed`. A loosening always needs a human approver. Only a difference the classifier can order counts as a tightening; every other difference counts as loosening.
+
+- Loosening lists: `rules_removed`; `rules_loosened` (`gate` lowered, `max` raised, `declaration` for any other change of what a rule checks, such as a selector, patterns, or `guard`; for a metric as `metric/<name>`: a lowered gate, a larger `max_new` or `min_delta`; a metric with no entry ratchets at `fail`); `waivers_added`; `allowlists_widened` (`depends_on` or `visible_to`: `any` is an absent key, `none` an empty list); `coverage_lost` (`exclude_added` on the effective exclusions, defaults and re-includes applied; `language_disabled`; `language_mode_lowered` such as `on` to `auto`; `analyzer_disabled`, where only `on` runs an optional analyzer; `module_removed`; `module_paths_removed`; `module_review_gate_lowered`, where an absent block or no `stale_after` with no gate means the pass is off); `declarations_changed` (any other difference: a module added or given a new path, a module's other fields as `modules[<name>]`, and every other configuration key except `ai`, `outputs` and `version`). The last list is built by subtraction, so a configuration key added later is compared from the day it exists.
+- Tightening lists: `rules_added`, `rules_tightened`, `waivers_removed`, `allowlists_narrowed`, `coverage_gained`. A rule's `rationale`, `alternatives` and `docs` never change a verdict and are not compared.
+
 ### `config enrich <kind>`
 
 Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `volatility`, and `subdomain`.
@@ -257,7 +262,7 @@ Drafts or applies AI annotations. Kinds are `labels`, `abstained`, `owner`, `vol
 | --- | --- |
 | `--harness <name>` | Required: `claude`, `codex`, or `git`. |
 | `--dir <path>` | Repository to install into. Default: `.`. |
-| `-c, --config <file>` | Config path the hooks pass on, relative to the repository root. Default: `.archfit.yaml`. |
+| `-c, --config <file>` | Config path the hooks pass on, relative to the repository root, not to `--dir`. Default: `.archfit.yaml`. `install` warns on stderr when no config is there, or when `--dir` holds its own config that `-c` does not name. |
 
 `install` keeps every other key and hook in the settings file, replaces an earlier `archfit hook run` entry instead of adding a second one, and removes entries of the removed `archfit hook claude`. It never replaces a pre-commit hook that archfit did not write: it exits `3` and names the file. It prints one line per file written. Codex runs the hooks only after you trust them.
 

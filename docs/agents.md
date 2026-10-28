@@ -33,6 +33,12 @@ module facts instead of reading the config. `can-import` returns `denied`,
 `not_decided`, `allowed`, or `unconstrained`.
 
 - `denied`: do not add the import. Use the reported repair goal and constraints.
+  `instead` repeats what the rule's owners declared to do instead. `candidates`
+  lists each declared alternative that names a package a module owns, with the
+  module, whether it is in that module's public surface, and the rule pass's
+  answer for the same import from your file (`policy_check`). A candidate comes
+  only from the owners' own text, never from a guess. A permitted placement is
+  not proof that it does the same thing: read it before you move code there.
 - `not_decided`: a whole-graph rule or missing evidence can still block it.
   Add the import only if needed, then run `check`.
 - `allowed`: the current allowlist or layer order permits the import, and no
@@ -107,7 +113,7 @@ archfit hook install --harness git      # the git pre-commit hook
 `install` merges into the settings file and keeps every other key and hook.
 Running it again changes nothing. It removes entries of the old
 `archfit hook claude` command. Pass `-c <config>` when the config is not
-`.archfit.yaml`; the path is relative to the repository root. Pass `--dir <repo>` to install into another repository. A
+`.archfit.yaml` at the repository root; the path is relative to the root, so a subproject's config is `-c service/.archfit.yaml` even when you run `install` from `service/`. `install` warns when the hooks would load another config, or none. Pass `--dir <repo>` to install into another repository. A
 pre-commit hook that archfit did not write is left alone: `install` exits `3`
 and names it.
 

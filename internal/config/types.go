@@ -148,6 +148,10 @@ type CoverageSource struct {
 type ModuleReviewConfig struct {
 	StaleAfter string `yaml:"stale_after,omitempty"`
 	Gate       string `yaml:"gate,omitempty"`
+	// ChangeGate is the posture for production source a change adds that no
+	// analysis covers (map/uncovered_change): off, warn (default), or fail.
+	// fail makes the change unknown, never a pass.
+	ChangeGate string `yaml:"change_gate,omitempty"`
 }
 
 // CouplingConfig tunes the Balanced-Coupling advisory pass (`coupling:`).

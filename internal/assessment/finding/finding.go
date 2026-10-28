@@ -71,6 +71,9 @@ const (
 	// source no declared module owns. module_review.gate: fail makes it a
 	// gate finding.
 	RuleIDMapUncoveredPath = modelrule.RuleIDMapUncoveredPath
+	// RuleIDMapUncoveredChange is a file the change adds that no analysis
+	// covers. A waiver cannot excuse it: unread code is unknown, not accepted.
+	RuleIDMapUncoveredChange = modelrule.RuleIDMapUncoveredChange
 	// RuleIDMetricPrefix starts the rule ID of a tripped metric ratchet.
 	RuleIDMetricPrefix = modelrule.RuleIDMetricPrefix
 )

@@ -55,6 +55,9 @@ func (r *TextRenderer) Render(d report.Document, w io.Writer) error {
 		}
 		b.WriteString("\n")
 	}
+	for _, notice := range res.Change.Notices {
+		fmt.Fprintf(&b, "notice: %s: %s\n", notice.Kind, notice.Reason)
+	}
 	if res.Change.Reason != "" {
 		fmt.Fprintf(&b, "%s: %s\n", res.Change.Reason, res.Change.ReasonDetail)
 	}

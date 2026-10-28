@@ -406,7 +406,7 @@ func runAgentCheck(ctx context.Context, deps *appDeps, req scanRequest, scope *a
 
 // refExists reports whether ref names a commit in the repository at dir.
 func refExists(ctx context.Context, runner toolrun.Runner, dir, ref string) bool {
-	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: gitBinary, Args: []string{"rev-parse", "--verify", "--quiet", ref + "^{commit}"}, WorkDir: dir})
+	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: gitBinary, Args: []string{gitRevParse, "--verify", "--quiet", ref + "^{commit}"}, WorkDir: dir})
 	return err == nil && out.ExitCode == 0
 }
 

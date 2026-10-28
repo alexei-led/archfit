@@ -186,7 +186,7 @@ func TestHookRunStop(t *testing.T) {
 			hookOutputCase: hookOutputCase{wantCode: 2, wantStderr: "change fail, next_action repair"}},
 		{name: "repair with stop_hook_active blocks only once", repo: introduced, event: harnessEventSubagentStop, active: true,
 			hookOutputCase: hookOutputCase{wantStdout: "still reports blockers"}},
-		{name: "codex reads the same protocol", repo: introduced, event: harnessEventStop, args: []string{"--harness", harnessCodex},
+		{name: "codex reads the same protocol", repo: introduced, event: harnessEventStop, args: []string{flagHarness, harnessCodex},
 			hookOutputCase: hookOutputCase{wantCode: 2, wantStderr: "change fail, next_action repair"}},
 		{name: "a blocker outside the change is repository attention, not a stop", event: harnessEventStop,
 			repo: func(t *testing.T) string {

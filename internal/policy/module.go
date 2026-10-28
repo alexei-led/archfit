@@ -172,6 +172,20 @@ func (mm ModuleMap) ModuleFor(path string) (string, bool) {
 	return best, true
 }
 
+// Exposes reports whether path is part of the module's public surface: it
+// equals, or matches the glob of, one of the module's public entries.
+func (mm ModuleMap) Exposes(module, path string) bool {
+	for _, public := range mm.modules[module].Public {
+		if public == path {
+			return true
+		}
+		if matched, _ := doublestar.Match(public, path); matched {
+			return true
+		}
+	}
+	return false
+}
+
 // CrateOwners maps each Rust crate spelling — the package name and the crate
 // identifier of every crate root — to the declared module that owns the crate:
 // the module whose path globs match the package name, the crate identifier, or

@@ -115,10 +115,69 @@ func (c *HookInstallCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: "error: " + err.Error()}
 	}
 	_, _ = fmt.Fprintf(deps.Stdout, "wrote %s\n", path)
+	if warning := missingConfigWarning(deps.runContext(), deps.Runner, c.Dir, c.Config); warning != "" {
+		_, _ = fmt.Fprintln(deps.stderr(), warning)
+	}
 	if c.Harness == harnessCodex {
 		_, _ = fmt.Fprintln(deps.Stdout, codexTrustNotice)
 	}
 	return nil
+}
+
+// gitRevParse is the git subcommand the hook adapters ask for paths and refs.
+const gitRevParse = "rev-parse"
+
+// missingConfigWarning names a config the installed hooks will not load.
+// hook run resolves -c against the repository root, so an install from a
+// subproject that leaves -c at its default loads the root's config, or none.
+// Outside a git repository there is no root to check against.
+func missingConfigWarning(ctx context.Context, runner toolrun.Runner, dir, configPath string) string {
+	if filepath.IsAbs(configPath) {
+		if _, err := os.Stat(configPath); err != nil {
+			return fmt.Sprintf("warning: %s does not exist; the installed hooks cannot load it until it does", configPath)
+		}
+		return ""
+	}
+	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: gitBinary, Args: []string{gitRevParse, "--show-toplevel"}, WorkDir: dir})
+	if err != nil || out.ExitCode != 0 {
+		return ""
+	}
+	root := strings.TrimSpace(string(out.Stdout))
+	loaded := filepath.Join(root, configPath)
+	_, missing := os.Stat(loaded)
+	local := configFromRoot(root, filepath.Join(dir, configPath))
+	if local == filepath.ToSlash(configPath) {
+		local = "" // --dir is the root: the same file
+	}
+	switch {
+	case missing == nil && local == "":
+		return ""
+	case missing == nil:
+		return fmt.Sprintf("warning: the hooks load %s, not the config in %s; to use that one, pass -c %s", loaded, dir, shellQuote(local))
+	case local != "":
+		return fmt.Sprintf("warning: %s does not exist: the hooks resolve -c against the repository root; pass -c %s", loaded, shellQuote(local))
+	default:
+		return fmt.Sprintf("warning: %s does not exist: the hooks resolve -c against the repository root, so they cannot load it", loaded)
+	}
+}
+
+// configFromRoot is an existing config's slash path from the repository root,
+// or "" when it does not exist or lies outside the root. git prints the root
+// with symlinks resolved, so the config's path is resolved too.
+func configFromRoot(root, path string) string {
+	found, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return ""
+	}
+	abs, err := filepath.Abs(found)
+	if err != nil {
+		return ""
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+		return ""
+	}
+	return filepath.ToSlash(rel)
 }
 
 // hookRunLine is the command an installed hook runs.
@@ -303,7 +362,7 @@ func encodeJSON(v any, indent bool) ([]byte, error) {
 // gitHooksDir is the hooks directory git runs hooks from in dir: core.hooksPath
 // when set, else the repository's hooks directory.
 func gitHooksDir(ctx context.Context, runner toolrun.Runner, dir string) (string, error) {
-	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: gitBinary, Args: []string{"rev-parse", "--git-path", "hooks"}, WorkDir: dir})
+	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: gitBinary, Args: []string{gitRevParse, "--git-path", "hooks"}, WorkDir: dir})
 	if err != nil {
 		return "", err
 	}

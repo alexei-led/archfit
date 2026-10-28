@@ -49,7 +49,7 @@ func (c Config) PolicySnapshot() policy.PolicySnapshot {
 			gate.MaxNewSeams = *n
 		}
 	}
-	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: c.ForRules(), Metrics: c.Metrics.MetricEntries(), Coupling: gate, ModuleReview: policy.GateMode(c.ModuleReview.Gate)}, owners, deployUnits)
+	return policy.New(topology, relationship, assessment, policy.GatePolicy{Rules: c.ForRules(), Metrics: c.Metrics.MetricEntries(), Coupling: gate, ModuleReview: policy.GateMode(c.ModuleReview.Gate), UncoveredChange: policy.GateMode(c.ModuleReview.ChangeGate)}, owners, deployUnits)
 }
 
 // CoverageOptions projects analyzer gates and applicability probes. Every probe
