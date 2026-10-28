@@ -167,24 +167,19 @@ findings exist at HEAD. Do not edit config, baseline, waivers, or labels to pass
 `baseline` or `waived` findings without a request. Read
 `references/agent-loop.md` for the full JSON contract.
 
-**3. Configure hooks.** Register `archfit hook claude` in
-`.claude/settings.json` for `Stop` and `SubagentStop` events:
+**3. Configure hooks.** Install the hooks of your harness:
 
-```json
-{
-  "hooks": {
-    "Stop": [{ "hooks": [{ "type": "command", "command": "archfit hook claude" }] }],
-    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "archfit hook claude" }] }]
-  }
-}
+```sh
+archfit hook install --harness claude   # or codex, or git
 ```
 
-The handler reads the hook event from stdin. On a dirty tree, it checks against
-`HEAD`. It exits 2 with a repair on stderr at most once per stop. It fails open
-when archfit returns an error.
+They record the session start, report a denied import after each edit, and
+block one stop when the change fails against the session start. They fail open
+when archfit returns an error. `archfit doctor` shows whether each hook is
+active.
 
-To use the Git pre-commit handler, install the archfit binary and add this hook
-to `.pre-commit-config.yaml`:
+To use the Git pre-commit handler through the pre-commit framework instead,
+install the archfit binary and add this hook to `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
