@@ -130,6 +130,15 @@ func TestComparePolicies(t *testing.T) {
 				p.Modules["billing.api"] = policy.ModuleDef{Paths: []string{"billing/**"}}
 				p.ModuleDeclarations["billing.api"] = `{"public":["billing/**"]}`
 			}},
+		{name: "one of two declarations under one ID removed", want: decision.PolicyLoosening,
+			edit: func(p *decision.PolicyInput) {
+				p.Rules = append(p.Rules, policy.RuleDef{ID: ruleNoImpl, Type: typeForbid, Gate: gateFail, From: "c/**", To: "d/**"})
+			},
+			assert: func(t *testing.T, c decision.PolicyChange) {
+				if len(c.RulesLoosened) != 1 || c.RulesLoosened[0].ID != ruleNoImpl {
+					t.Errorf("rules loosened = %+v, want the duplicated ID", c.RulesLoosened)
+				}
+			}},
 		{name: "a rule made a guard", want: decision.PolicyLoosening,
 			edit: func(p *decision.PolicyInput) { p.Rules[0].Guard = true }},
 		{name: "a rule's rationale reworded is no change", want: decision.PolicyNoChange,
@@ -188,5 +197,19 @@ func TestComparePoliciesLanguageOnToAuto(t *testing.T) {
 	got := decision.ComparePolicies(cur, cand)
 	if got.Direction != decision.PolicyLoosening || len(got.CoverageLost) != 1 || got.CoverageLost[0].Kind != decision.CoverageLanguageLowered {
 		t.Errorf("on -> auto = %+v, want a language_mode_lowered loosening", got)
+	}
+}
+
+// TestComparePoliciesDuplicateRuleIDRemoval: two declarations share an ID and
+// the candidate drops the first. The dropped declaration no longer blocks, so
+// the change is a loosening, not no change.
+func TestComparePoliciesDuplicateRuleIDRemoval(t *testing.T) {
+	t.Parallel()
+	cur, cand := basePolicy(), basePolicy()
+	second := policy.RuleDef{ID: ruleNoImpl, Type: typeForbid, Gate: gateFail, From: "c/**", To: "d/**"}
+	cur.Rules = append(cur.Rules, second)
+	cand.Rules = []policy.RuleDef{second, cand.Rules[1]}
+	if got := decision.ComparePolicies(cur, cand); got.Direction != decision.PolicyLoosening {
+		t.Errorf("direction = %q, want loosening (%+v)", got.Direction, got)
 	}
 }

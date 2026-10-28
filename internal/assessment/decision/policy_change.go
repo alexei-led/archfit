@@ -217,16 +217,28 @@ func compareRules(current, candidate PolicyInput, out *PolicyChange) {
 	cur := rulesByID(current.Rules)
 	cand := rulesByID(candidate.Rules)
 	for _, id := range sortedKeys(cur) {
-		r, ok := cand[id]
-		if !ok {
-			out.RulesRemoved = append(out.RulesRemoved, RuleRef{ID: id, Type: cur[id].Type, Gate: effectiveGate(cur[id])})
-			continue
+		rs, ok := cand[id]
+		switch {
+		case !ok:
+			for _, r := range cur[id] {
+				out.RulesRemoved = append(out.RulesRemoved, RuleRef{ID: id, Type: r.Type, Gate: effectiveGate(r)})
+			}
+		case len(cur[id]) == 1 && len(rs) == 1:
+			compareRule(cur[id][0], rs[0], out)
+		default:
+			// Several declarations share the ID (the config accepts it and
+			// every one is evaluated): they cannot be paired, so any
+			// difference between the two sets is a loosening.
+			if from, to := ruleSet(cur[id]), ruleSet(rs); from != to {
+				out.RulesLoosened = append(out.RulesLoosened, RuleChange{ID: id, Field: "declaration", From: from, To: to})
+			}
 		}
-		compareRule(cur[id], r, out)
 	}
 	for _, id := range sortedKeys(cand) {
 		if _, ok := cur[id]; !ok {
-			out.RulesAdded = append(out.RulesAdded, RuleRef{ID: id, Type: cand[id].Type, Gate: effectiveGate(cand[id])})
+			for _, r := range cand[id] {
+				out.RulesAdded = append(out.RulesAdded, RuleRef{ID: id, Type: r.Type, Gate: effectiveGate(r)})
+			}
 		}
 	}
 	// Metric ratchets: a lowered gate or a larger tolerance lets a regression
@@ -460,12 +472,24 @@ func compareDeclarations(current, candidate PolicyInput, out *PolicyChange) {
 	}
 }
 
-func rulesByID(rules []policy.RuleDef) map[string]policy.RuleDef {
-	out := make(map[string]policy.RuleDef, len(rules))
+// rulesByID groups the rules by ID; an ID can carry several declarations.
+func rulesByID(rules []policy.RuleDef) map[string][]policy.RuleDef {
+	out := make(map[string][]policy.RuleDef, len(rules))
 	for _, r := range rules {
-		out[r.ID] = r
+		out[r.ID] = append(out[r.ID], r)
 	}
 	return out
+}
+
+// ruleSet encodes the declarations of one ID as an order-free set, gate and
+// max included: every one of them is evaluated.
+func ruleSet(rules []policy.RuleDef) string {
+	parts := make([]string, 0, len(rules))
+	for _, r := range rules {
+		parts = append(parts, effectiveGate(r)+" "+maxString(r.Max)+" "+ruleDeclaration(r))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "\n")
 }
 
 func sortedKeys[V any](m map[string]V) []string {
