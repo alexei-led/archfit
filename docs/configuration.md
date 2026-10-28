@@ -95,7 +95,7 @@ Analyzers are opt-in, except `roslyn`. Every other analyzer requires `enabled: t
 | --- | --- | --- |
 | `analyzers.syntax` | `enabled`, `gate` | Uses ast-grep (`sg`) for declaration facts in Go, TypeScript, Python, and Rust, and route and function-extent facts in C#. |
 | `analyzers.scip` | `enabled`, `gate`, `timeout` | Uses language SCIP indexers for symbol-level edge strength. Go type information remains primary. |
-| `analyzers.clones` | `enabled`, `gate`, `timeout` | Uses `jscpd` for cross-module clone facts. Clone facts do not alter import-edge strength. |
+| `analyzers.clones` | `enabled`, `gate`, `timeout` | Uses `jscpd` for cross-module clone facts over the source files of the languages not turned off. Clone facts do not alter import-edge strength. |
 | `analyzers.cargo_modules` | `enabled`, `gate` | Uses `cargo-modules` to extract Rust intra-crate modules. It can compile the crate. |
 | `analyzers.roslyn` | `enabled`, `gate`, `timeout` | Uses the `archfit-roslyn` helper for the .NET type-level graph and coupling strength. Unlike the others, it is on unless `enabled: false` (`auto` and omission enable it). It runs when `ARCHFIT_DOTNET_ROSLYN` names an installed helper; unset, its row is `absent` with a coverage gap. `enabled: false` forces the project-only graph and reports `disabled` without a gap. The project graph serves the map and the report only: required rules over .NET source need the helper's file edges, so without them those rules are unevaluated. The image ships the helper. See [.NET](languages.md#net). |
 

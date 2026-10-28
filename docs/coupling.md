@@ -142,6 +142,10 @@ attaches to its existing seam. A clone-only pair has no seam, but still
 contributes to `coupling_balance`. With `advisory`, clone facts stay outside the
 score and appear as advisory evidence. Clone facts never qualify a seam.
 
+Only production source of the languages that are not turned off can form a
+clone pair: Go, TypeScript and JavaScript, Python, Rust, and C#. Lock files,
+templates, Dockerfiles, scripts, test files, and generated files never do.
+
 SCIP refines symbol-level hints for TypeScript, Python, and Rust. Go uses
 `go/types` data. .NET uses Roslyn compiler symbols from the `archfit-roslyn` helper. SCIP cannot identify a method receiver, so concrete-method data
 evidence is available only for Go.

@@ -155,7 +155,7 @@ func (c Config) AcquisitionOptions() acquire.Options {
 		Exclusions: c.Exclude, FileClass: c.ForFileClass(), ModuleMap: c.ModuleMapView(),
 		ClonesEnabled: c.ClonesEnabled(), CloneTimeout: c.ToolTimeout(ToolClones),
 		SCIPEnabled: c.ScipEnabled(), SCIPTimeout: c.ToolTimeout(ToolScip),
-		Syntax: c.ForSyntax(), GoExtract: c.ForExtract(LangGo),
+		Syntax: c.ForSyntax(), GoExtract: c.ForExtract(LangGo), Languages: c.analysedLanguages(),
 	}
 }
 

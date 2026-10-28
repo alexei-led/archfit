@@ -162,20 +162,7 @@ func pairEvidence(g *graph.Graph, mm policy.ModuleMap, lbls []labels.Label) map[
 }
 
 func clonePairs(clusters []clone.Cluster, mm policy.ModuleMap, index map[string]fileclass.FileClass) (map[string]struct{}, map[string][]graph.Location) {
-	filtered := make([]clone.Cluster, 0, len(clusters))
-	cfg := syntax.FileClassConfig{}
-	for _, c := range clusters {
-		bad := false
-		for _, f := range c.Files {
-			if !fileclass.IsProduction(syntax.LookupFileClass(filepath.ToSlash(f), index, cloneLanguage(f), cfg)) {
-				bad = true
-				break
-			}
-		}
-		if !bad {
-			filtered = append(filtered, c)
-		}
-	}
+	filtered := sourceClusters(clusters, index)
 	moduleFor := func(f string) string {
 		m, ok := mm.ModuleForFile(f)
 		if ok {
@@ -188,12 +175,34 @@ func clonePairs(clusters []clone.Cluster, mm policy.ModuleMap, index map[string]
 	for _, p := range pairs {
 		set[p[0]+"\x00"+p[1]] = struct{}{}
 	}
-	return set, cloneEvidence(clusters, mm, index)
+	return set, cloneEvidence(filtered, mm)
 }
 
-func cloneEvidence(clusters []clone.Cluster, mm policy.ModuleMap, index map[string]fileclass.FileClass) map[string][]graph.Location {
-	out := map[string][]graph.Location{}
+// sourceClusters keeps the clusters whose every file is production source of
+// a language archfit analyses. A lock file, template, Dockerfile or script
+// shared by two modules is not duplicated knowledge, and a test or generated
+// copy is not an architecture signal.
+func sourceClusters(clusters []clone.Cluster, index map[string]fileclass.FileClass) []clone.Cluster {
+	out := make([]clone.Cluster, 0, len(clusters))
 	cfg := syntax.FileClassConfig{}
+	for _, c := range clusters {
+		source := true
+		for _, f := range c.Files {
+			lang := cloneLanguage(f)
+			if lang == "" || !fileclass.IsProduction(syntax.LookupFileClass(filepath.ToSlash(f), index, lang, cfg)) {
+				source = false
+				break
+			}
+		}
+		if source {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func cloneEvidence(clusters []clone.Cluster, mm policy.ModuleMap) map[string][]graph.Location {
+	out := map[string][]graph.Location{}
 	moduleFor := func(f string) string {
 		m, ok := mm.ModuleForFile(f)
 		if ok {
@@ -202,16 +211,6 @@ func cloneEvidence(clusters []clone.Cluster, mm policy.ModuleMap, index map[stri
 		return ""
 	}
 	for _, c := range clusters {
-		bad := false
-		for _, f := range c.Files {
-			if !fileclass.IsProduction(syntax.LookupFileClass(filepath.ToSlash(f), index, cloneLanguage(f), cfg)) {
-				bad = true
-				break
-			}
-		}
-		if bad {
-			continue
-		}
 		for i, f := range c.Files {
 			a := moduleFor(f)
 			if a == "" {
@@ -271,8 +270,7 @@ func appendUniqueLocation(locs []graph.Location, file string, line int) []graph.
 // for built-in test/generated detection. The TS/JS family all routes through the
 // TypeScript classifier because IsTestFile handles .test./.spec. and __tests__
 // there for both TS and JS extensions. An extension outside the supported set
-// abstains with "": defaulting it to TypeScript would apply TS test-path
-// heuristics to unrelated languages and silently drop those clusters.
+// returns "": the file is not source of an analysed language.
 func cloneLanguage(path string) string {
 	ext := filepath.Ext(path)
 	switch ext {

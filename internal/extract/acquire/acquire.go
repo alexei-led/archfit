@@ -49,10 +49,13 @@ type Options struct {
 	ModuleMap     policy.ModuleMap
 	ClonesEnabled bool
 	CloneTimeout  time.Duration
-	SCIPEnabled   bool
-	SCIPTimeout   time.Duration
-	Syntax        evidenceports.SyntaxConfig
-	GoExtract     evidenceports.ExtractConfig
+	// Languages are the language ids not turned off; clone detection
+	// compares only their source files.
+	Languages   []string
+	SCIPEnabled bool
+	SCIPTimeout time.Duration
+	Syntax      evidenceports.SyntaxConfig
+	GoExtract   evidenceports.ExtractConfig
 }
 
 // Result contains neutral evidence and adapter ports for one pipeline run.
@@ -105,7 +108,7 @@ func Collect(ctx context.Context, root string, opts Options, runner toolrun.Runn
 	cloneExclusions := append(append([]string(nil), opts.Exclusions...), cloneTestGenGlobs...)
 	var cloneCoverage evidence.Coverage
 	out.DuplicationClusters, cloneCoverage, out.CloneError = clones.Run(
-		ctx, runner, root, opts.ClonesEnabled, opts.CloneTimeout, cloneExclusions, facts,
+		ctx, runner, root, opts.ClonesEnabled, opts.CloneTimeout, cloneExclusions, opts.Languages, facts,
 	)
 	out.ExtraCoverage = append(out.ExtraCoverage, cloneCoverage)
 

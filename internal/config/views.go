@@ -221,10 +221,17 @@ func (c Config) ForPatterns() pattern.Config {
 	return out
 }
 
-// ForSyntax returns the syntax-stage view. Languages are derived from the five
-// known language keys; an unset mode is enabled.
+// ForSyntax returns the syntax-stage view over the analysed languages.
 func (c Config) ForSyntax() evidenceports.SyntaxConfig {
-	enabled := c.SyntaxEnabled()
+	return evidenceports.SyntaxConfig{
+		Enabled:   c.SyntaxEnabled(),
+		Languages: c.analysedLanguages(),
+	}
+}
+
+// analysedLanguages returns the five known language keys whose mode is not
+// off; an unset mode is enabled.
+func (c Config) analysedLanguages() []string {
 	var langs []string
 	for _, lang := range []string{LangGo, LangTypeScript, LangPython, LangRust, LangDotNet} {
 		if c.ToolMode(lang) == evidenceports.ModeOff {
@@ -232,10 +239,7 @@ func (c Config) ForSyntax() evidenceports.SyntaxConfig {
 		}
 		langs = append(langs, lang)
 	}
-	return evidenceports.SyntaxConfig{
-		Enabled:   enabled,
-		Languages: langs,
-	}
+	return langs
 }
 
 // ForFileClass returns the file-class configuration for the classifier.

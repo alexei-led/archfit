@@ -22,6 +22,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/factcache"
 	"github.com/alexei-led/archfit/v3/internal/history/git"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/fileclass"
 	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/model/pattern"
 	"github.com/alexei-led/archfit/v3/internal/ownership"
@@ -29,6 +30,7 @@ import (
 	"github.com/alexei-led/archfit/v3/internal/relationship/facts"
 	"github.com/alexei-led/archfit/v3/internal/relationship/labels"
 	"github.com/alexei-led/archfit/v3/internal/scope"
+	"github.com/alexei-led/archfit/v3/internal/syntax"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -384,10 +386,33 @@ func (s *Service) collectRuleEvidence(ctx context.Context, sc scope.Scope, p pol
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	for i := range syntaxFacts {
-		syntaxFacts[i].Module, _ = p.Relationship.Topology.ModuleMap.ModuleForFile(syntaxFacts[i].File)
+	facts := make([]evidence.SyntaxFact, 0, len(syntaxFacts))
+	cfg := s.Options.Acquisition.FileClass
+	for _, fact := range syntaxFacts {
+		if !keepsSyntaxFact(fact, collected.FileClassIndex, cfg) {
+			continue
+		}
+		fact.Module, _ = p.Relationship.Topology.ModuleMap.ModuleForFile(fact.File)
+		facts = append(facts, fact)
 	}
-	return patternMatches, syntaxFacts, append(coverage, syntaxCoverage), nil
+	return patternMatches, facts, append(coverage, syntaxCoverage), nil
+}
+
+// syntaxKindRoute is the SyntaxFact kind of one route registration.
+const syntaxKindRoute = "route"
+
+// keepsSyntaxFact keeps every declaration fact, and a route fact only when its
+// file is production source. A route a test, generated, or vendored file
+// registers is a test fixture (`/__probe`, a fake controller) or a codegen
+// artifact, not a production entry point: the same file-class rule that keeps
+// those files out of clone pairs and pattern findings keeps their routes out of
+// the syntax surface, where they would otherwise read as source outside every
+// declared module.
+func keepsSyntaxFact(fact evidence.SyntaxFact, index map[string]fileclass.FileClass, cfg syntax.FileClassConfig) bool {
+	if fact.Kind != syntaxKindRoute {
+		return true
+	}
+	return fileclass.IsProduction(syntax.LookupFileClass(fact.File, index, fact.Language, cfg))
 }
 
 // loadLabels reads the pinned labels from the RUN's bundle directory, not from

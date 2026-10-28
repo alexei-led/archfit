@@ -19,12 +19,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit/v3/internal/factcache"
 	"github.com/alexei-led/archfit/v3/internal/model/clone"
 	"github.com/alexei-led/archfit/v3/internal/model/evidence"
+	"github.com/alexei-led/archfit/v3/internal/model/graph"
 	"github.com/alexei-led/archfit/v3/internal/toolrun"
 )
 
@@ -45,6 +47,7 @@ const (
 	reportFile = "jscpd-report.json"
 	flagOutput = "--output"
 	flagIgnore = "--ignore"
+	flagFormat = "--format"
 
 	// Coverage reasons: why functional-candidate (clone) detection is n/a.
 	// Static strings so a double-run stays byte-stable.
@@ -56,7 +59,29 @@ const (
 	reasonNotInstalled = "jscpd not found — install it (`npm install -g jscpd`) to enable clone detection"
 	reasonRunFailed    = "jscpd run failed or its report was unreadable"
 	reasonTimedOut     = "clone detection timed out — increase analyzers.clones.timeout or reduce the scope"
+	reasonNoLanguage   = "every language is turned off, so no source files are compared"
 )
+
+// languageFormats maps an archfit language id to the jscpd formats of its
+// source files. Only source code is duplicated knowledge: without --format,
+// jscpd also pairs lock files, templates, Dockerfiles and shell scripts.
+var languageFormats = map[string][]string{
+	graph.LangGo:         {"go"},
+	graph.LangTypeScript: {"javascript", "typescript", "jsx", "tsx"},
+	graph.LangPython:     {"python"},
+	graph.LangRust:       {"rust"},
+	graph.LangDotNet:     {"csharp"},
+}
+
+// formats returns the sorted jscpd formats of languages; unknown ids add none.
+func formats(languages []string) []string {
+	var out []string
+	for _, lang := range languages {
+		out = append(out, languageFormats[lang]...)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // effectiveTimeout returns configured when it is non-zero, else fallback.
 // This lets a configured analyzers.clones.timeout extend or shorten the inner
@@ -71,10 +96,12 @@ func effectiveTimeout(configured, fallback time.Duration) time.Duration {
 // CoverageTool returns the coverage name emitted by this detector.
 func CoverageTool() string { return toolName }
 
-// Run invokes jscpd over root and returns detected clone clusters.
-// exclusions is the effective set of glob patterns (scope.MergeExclusions result)
-// that jscpd should skip via --ignore; empty means no --ignore flag is added
-// (byte-identical to before this change). Best-effort: jscpd-only. scip-go
+// Run invokes jscpd over the source files of languages under root and returns
+// detected clone clusters. languages are the archfit language ids not turned
+// off; with none, jscpd does not run. exclusions is the effective set of glob
+// patterns (scope.MergeExclusions result) that jscpd should skip via --ignore;
+// empty means no --ignore flag is added (byte-identical to before this change).
+// Best-effort: jscpd-only. scip-go
 // cannot honor file-level exclusions because it indexes via the Go build system,
 // not a file list — Task 12's per-analyzer timeout is its guard.
 // timeout is the per-analyzer outer watchdog; 0 uses defaultTimeout. When
@@ -86,12 +113,16 @@ func CoverageTool() string { return toolName }
 // temp file, not stdout, so the seam is store-direct: the cached fact is the
 // PARSED result (clusters + files-scanned). Only StatusOK results are cached —
 // a timed-out or failed run must re-run next time (fact-cache.md D3).
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, timeout time.Duration, exclusions []string, cache *factcache.Store) ([]clone.Cluster, evidence.Coverage, error) {
+func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, timeout time.Duration, exclusions, languages []string, cache *factcache.Store) ([]clone.Cluster, evidence.Coverage, error) {
 	if !enabled {
 		// Disabled by config — tool may or may not be installed. Report as
 		// disabled (not absent) so the pipeline does not generate an "install"
 		// coverage gap for a deliberate opt-out.
 		return nil, evidence.Coverage{Tool: toolName, Status: evidence.StatusDisabled, Reason: reasonDisabled}, nil
+	}
+	fmts := formats(languages)
+	if len(fmts) == 0 {
+		return nil, evidence.Coverage{Tool: toolName, Status: evidence.StatusDisabled, Reason: reasonNoLanguage}, nil
 	}
 
 	// Apply the per-analyzer watchdog BEFORE any subprocess or tree walk. The
@@ -111,7 +142,7 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 	// report which jscpd produced the facts.
 	version := jscpdVersion(ctx, runner)
 
-	key := cacheKey(root, exclusions, cache, version)
+	key := cacheKey(root, exclusions, fmts, cache, version)
 	if key != "" {
 		if blob, ok := cache.Get(cacheAnalyzer, key); ok {
 			var ce cacheEntry
@@ -129,10 +160,10 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 
 	partial := evidence.Coverage{Tool: toolName, Version: version, Status: evidence.StatusPartial, Reason: reasonRunFailed}
 
-	// Build jscpd args: --reporters json --output <tmp> [--ignore "<globs>"] <root>
+	// Build jscpd args: --reporters json --output <tmp> --format <formats> [--ignore "<globs>"] <root>
 	// --ignore accepts a comma-separated list of glob patterns. Only added when
 	// exclusions are configured — no exclusions → byte-identical to before.
-	args := []string{"--reporters", "json", flagOutput, tmp}
+	args := []string{"--reporters", "json", flagOutput, tmp, flagFormat, strings.Join(fmts, ",")}
 	if len(exclusions) > 0 {
 		args = append(args, flagIgnore, strings.Join(exclusions, ","))
 	}
@@ -200,18 +231,19 @@ type cacheEntry struct {
 
 // cacheKey derives the fact-cache key for one jscpd scan, or "" when the
 // cache is off or key material cannot be derived (never an error). Key
-// inputs: the caller's jscpd version probe, the scan root + exclusion set (the
-// report may embed tree-specific paths, and --ignore changes the scan), and the
-// content hash of every non-excluded file under root — jscpd is multi-language,
-// so the input scope is the whole tree.
-func cacheKey(root string, exclusions []string, cache *factcache.Store, version string) string {
+// inputs: the caller's jscpd version probe, the scan root, the exclusion set
+// and the formats (the report may embed tree-specific paths, and --ignore and
+// --format change the scan), and the content hash of every non-excluded file
+// under root — jscpd's input scope is the whole tree, whatever the formats.
+func cacheKey(root string, exclusions, formats []string, cache *factcache.Store, version string) string {
 	if cache == nil {
 		return ""
 	}
 	cfgHash, err := factcache.HashJSON(struct {
 		Root       string
 		Exclusions []string
-	}{root, exclusions})
+		Formats    []string
+	}{root, exclusions, formats})
 	if err != nil {
 		return ""
 	}

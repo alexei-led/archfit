@@ -354,6 +354,21 @@ func TestAnalyzeClonePairs(t *testing.T) {
 			wantPairs: 0,
 		},
 		{
+			name:      "lock files shared across modules are not source",
+			cluster:   clone.Cluster{Files: []string{"a/packages.lock.json", "b/packages.lock.json"}, Lines: 40},
+			wantPairs: 0,
+		},
+		{
+			name:      "Dockerfiles shared across modules are not source",
+			cluster:   clone.Cluster{Files: []string{"a/Dockerfile", "b/Dockerfile"}, Lines: 40},
+			wantPairs: 0,
+		},
+		{
+			name:      "scripts and templates shared across modules are not source",
+			cluster:   clone.Cluster{Files: []string{"a/entrypoint.sh", "b/mail.html.hbs"}, Lines: 40},
+			wantPairs: 0,
+		},
+		{
 			name:      "clone inside one module is not cross-module",
 			cluster:   clone.Cluster{Files: []string{cloneA, "a/dup2.go"}, Lines: 40},
 			index:     map[string]fileclass.FileClass{cloneA: fileclass.Production, "a/dup2.go": fileclass.Production},
